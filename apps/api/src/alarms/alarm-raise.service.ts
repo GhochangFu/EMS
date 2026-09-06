@@ -10,6 +10,7 @@ import type { AlarmMessageRule } from "../rules/alarm-message";
 import { composeAlarmMessage } from "../rules/alarm-message";
 import { defaultAlarmSeverity } from "../rules/alarm-severity-default";
 import type { EvaluationResult, RuleRow } from "../rules/rules.types";
+import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
 import { AlarmsGateway } from "./alarms.gateway";
 
 /**
@@ -75,9 +76,13 @@ export const MAX_RAISE_CLOCK_SKEW_MS = 60 * 60 * 1000;
  * streaming engine (`AlarmEngineService`), whose samples are always the live
  * reading that just arrived on the hub. Security review, F3.6: without this
  * gate, pressing "Evaluate now" against a long-silent asset raises an alarm
- * off stale data today, and — because acknowledging an alarm clears the
- * dedupe key `alarms_open_per_rule_uidx` relies on — re-opens the same
- * alarm every time the button is pressed again afterwards.
+ * off stale data.
+ *
+ * `F3.10` (ADR 0057 decision 2, migration `0066`) removed the second half of
+ * that finding: acknowledging an alarm no longer frees the dedupe key
+ * `alarms_open_per_rule_uidx` holds, so a repeated press cannot re-open the
+ * same alarm. The gate is still the only thing standing between a 730-day-old
+ * reading (ADR 0024 retention) and the first alarm of a new lifecycle.
  *
  * Two-sided, not one-sided: code review and security review both caught that
  * a future-dated sample defeats a `now - sampleTime <= MAX` check entirely
@@ -135,10 +140,20 @@ export type AlarmRaiseResult = {
  * not a hypothetical one. `.onConflictDoNothing()` is called with no target,
  * emitting a bare `ON CONFLICT DO NOTHING` — Postgres' partial-index arbiter
  * inference requires the ON CONFLICT predicate to *imply* the index's, and
- * `acknowledged_at IS NULL` alone does not imply `... AND rule_id IS NOT
- * NULL`, so a targeted clause here would risk "no unique or exclusion
- * constraint matching" on some plans. The bare form matches any constraint
- * the row could violate and needs no such proof.
+ * `cleared_at IS NULL` alone does not imply `... AND rule_id IS NOT NULL`, so
+ * a targeted clause here would risk "no unique or exclusion constraint
+ * matching" on some plans. The bare form matches any constraint the row could
+ * violate and needs no such proof.
+ *
+ * **What that index means changed with `F3.10`.** Migration `0066` (ADR 0057
+ * decision 2) moved its predicate from `acknowledged_at IS NULL` to
+ * `cleared_at IS NULL`, so "already open" now means "not yet cleared". An
+ * acknowledged alarm whose condition still holds is deduped like any other
+ * open one — it does not re-raise on the next evaluation, which it did before
+ * — and a new row for the same `(asset_id, rule_id)` opens only after
+ * `AlarmLifecycleService` has cleared the previous one and the condition
+ * breaches again. Nothing in this class encodes that: the predicate is the
+ * database's, which is why `alarm-raise.integration.spec.ts` proves it.
  */
 @Injectable()
 export class AlarmRaiser {
@@ -209,25 +224,13 @@ export class AlarmRaiser {
 
       const row = inserted[0];
       if (!row) {
-        // Already open for this (asset, rule) — the dedupe, not a failure.
+        // Already active (raised, not yet cleared) for this (asset, rule) —
+        // the dedupe, not a failure.
         return { raised: false as const, alarmId: null as string | null, broadcast: null };
       }
 
       const [full] = await tx
-        .select({
-          id: alarms.id,
-          assetId: alarms.assetId,
-          ruleKey: alarms.ruleKey,
-          ruleId: alarms.ruleId,
-          severity: alarms.severity,
-          message: alarms.message,
-          raisedAt: alarms.raisedAt,
-          acknowledgedAt: alarms.acknowledgedAt,
-          acknowledgedBy: alarms.acknowledgedBy,
-          assetCode: assets.code,
-          assetName: assets.name,
-          siteName: assets.siteName,
-        })
+        .select(alarmListItemColumns)
         .from(alarms)
         .innerJoin(assets, eq(alarms.assetId, assets.id))
         .where(eq(alarms.id, row.id))
@@ -261,21 +264,7 @@ export class AlarmRaiser {
     });
 
     if (outcome.broadcast) {
-      const full = outcome.broadcast;
-      this.gateway.broadcastCreated({
-        id: full.id,
-        assetId: full.assetId,
-        ruleKey: full.ruleKey,
-        ruleId: full.ruleId,
-        severity: full.severity,
-        message: full.message,
-        raisedAt: full.raisedAt.toISOString(),
-        acknowledgedAt: full.acknowledgedAt?.toISOString() ?? null,
-        acknowledgedBy: full.acknowledgedBy,
-        assetCode: full.assetCode,
-        assetName: full.assetName,
-        siteName: full.siteName,
-      });
+      this.gateway.broadcastCreated(toAlarmListItem(outcome.broadcast));
     }
 
     return { raised: outcome.raised, alarmId: outcome.alarmId, severity, message };

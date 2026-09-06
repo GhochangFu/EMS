@@ -45,7 +45,7 @@ describe.skipIf(!connectionString)("F3.6 — AlarmRaiser against a real database
     }
   });
 
-  it("raises once, dedupes a repeat, and traces only on the raise", async () => {
+  it("raises once, dedupes a repeat, traces only on a raise, and re-opens only after a clear", async () => {
     await assertRaisesDedupesAndTracesOnlyOnRaise(db);
   });
 

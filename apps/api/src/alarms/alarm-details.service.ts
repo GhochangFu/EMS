@@ -52,6 +52,10 @@ export class AlarmDetailsService {
         raisedAt: alarms.raisedAt,
         acknowledgedAt: alarms.acknowledgedAt,
         acknowledgedBy: alarms.acknowledgedBy,
+        // `F3.10` / ADR 0057 decision 1: the panel prints one of four states,
+        // and "cleared, unacknowledged" is indistinguishable from "open"
+        // without this stamp.
+        clearedAt: alarms.clearedAt,
         ruleId: alarms.ruleId,
         assetCode: assets.code,
         assetName: assets.name,
@@ -138,6 +142,7 @@ export class AlarmDetailsService {
       raisedAt: row.raisedAt.toISOString(),
       acknowledgedAt: row.acknowledgedAt?.toISOString() ?? null,
       acknowledgedBy: row.acknowledgedBy,
+      clearedAt: row.clearedAt?.toISOString() ?? null,
       ruleId: row.ruleId,
       thresholdOperator: row.thresholdOperator as AutomationRuleOperator | null,
       thresholdValue: row.thresholdValue,

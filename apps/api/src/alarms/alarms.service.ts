@@ -13,6 +13,7 @@ import type { AlarmListItem, JwtPayload } from "@bms/shared";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
+import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
 import { AlarmsGateway } from "./alarms.gateway";
 
 function encodeCursor(raisedAt: Date, id: string): string {
@@ -75,36 +76,6 @@ export class AlarmsService {
     return row.organizationId;
   }
 
-  private mapRow(r: {
-    id: string;
-    assetId: string;
-    ruleKey: string | null;
-    ruleId: string | null;
-    severity: string;
-    message: string;
-    raisedAt: Date;
-    acknowledgedAt: Date | null;
-    acknowledgedBy: string | null;
-    assetCode: string;
-    assetName: string;
-    siteName: string;
-  }): AlarmListItem {
-    return {
-      id: r.id,
-      assetId: r.assetId,
-      ruleKey: r.ruleKey,
-      ruleId: r.ruleId,
-      severity: r.severity,
-      message: r.message,
-      raisedAt: r.raisedAt.toISOString(),
-      acknowledgedAt: r.acknowledgedAt?.toISOString() ?? null,
-      acknowledgedBy: r.acknowledgedBy,
-      assetCode: r.assetCode,
-      assetName: r.assetName,
-      siteName: r.siteName,
-    };
-  }
-
   /**
    * Keyset pagination on `(raised_at DESC, id DESC)`.
    */
@@ -124,20 +95,7 @@ export class AlarmsService {
       () => ({ items: [], nextCursor: null }),
       async (tx) => {
         const base = tx
-          .select({
-            id: alarms.id,
-            assetId: alarms.assetId,
-            ruleKey: alarms.ruleKey,
-            ruleId: alarms.ruleId,
-            severity: alarms.severity,
-            message: alarms.message,
-            raisedAt: alarms.raisedAt,
-            acknowledgedAt: alarms.acknowledgedAt,
-            acknowledgedBy: alarms.acknowledgedBy,
-            assetCode: assets.code,
-            assetName: assets.name,
-            siteName: assets.siteName,
-          })
+          .select(alarmListItemColumns)
           .from(alarms)
           .innerJoin(assets, eq(alarms.assetId, assets.id));
 
@@ -174,7 +132,7 @@ export class AlarmsService {
         const nextCursor = hasMore && last ? encodeCursor(last.raisedAt, last.id) : null;
 
         return {
-          items: page.map((r) => this.mapRow(r)),
+          items: page.map((r) => toAlarmListItem(r)),
           nextCursor,
         };
       },
@@ -183,6 +141,12 @@ export class AlarmsService {
 
   /**
    * Acknowledges an alarm and writes a lightweight audit row.
+   *
+   * `F3.10` / ADR 0057 decision 1: this never writes `cleared_at`. The filter
+   * below stays `acknowledged_at IS NULL` *only* — a cleared, unacknowledged
+   * alarm is still acknowledgeable, and that press is the transition to
+   * *closed*. Adding a `cleared_at IS NULL` filter here would strand every
+   * swept alarm in the alarm centre for ever.
    */
   async acknowledge(
     alarmId: string,
@@ -237,20 +201,7 @@ export class AlarmsService {
       });
 
       const [row] = await tx
-        .select({
-          id: alarms.id,
-          assetId: alarms.assetId,
-          ruleKey: alarms.ruleKey,
-          ruleId: alarms.ruleId,
-          severity: alarms.severity,
-          message: alarms.message,
-          raisedAt: alarms.raisedAt,
-          acknowledgedAt: alarms.acknowledgedAt,
-          acknowledgedBy: alarms.acknowledgedBy,
-          assetCode: assets.code,
-          assetName: assets.name,
-          siteName: assets.siteName,
-        })
+        .select(alarmListItemColumns)
         .from(alarms)
         .innerJoin(assets, eq(alarms.assetId, assets.id))
         .where(eq(alarms.id, alarmId))
@@ -260,7 +211,7 @@ export class AlarmsService {
         throw new NotFoundException("Alarm vanished after update");
       }
 
-      const item = this.mapRow(row);
+      const item = toAlarmListItem(row);
       this.gateway.broadcastAcknowledged(item);
       return item;
     });

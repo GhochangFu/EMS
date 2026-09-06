@@ -38,6 +38,10 @@ import type { AlarmsService } from "./alarms.service";
  *     non-disclosure wording a nonexistent id gets, and the in-scope
  *     acknowledge runs under org A's GUC, resolves the actor on `fleetDb`
  *     (`acknowledged_by`, not NULL), and leaves the org intact.
+ *
+ * `F3.10` / ADR 0057 decision 1 adds the lifecycle stamp to 1 and 4: every list
+ * item reports `clearedAt`, and acknowledging leaves `bms.alarms.cleared_at`
+ * NULL — acknowledgement annotates an alarm, only the sweep closes it.
  */
 export type AlarmsRlsFixtures = {
   /** Fleet-backed service: `db` = `bms_tenant`, `fleetDb` = `bms_fleet`. */
@@ -68,14 +72,21 @@ async function alarmRow(
   pool: pg.Pool,
   id: string,
 ): Promise<
-  { organization_id: string; acknowledged_at: Date | null; acknowledged_by: string | null } | undefined
+  | {
+      organization_id: string;
+      acknowledged_at: Date | null;
+      acknowledged_by: string | null;
+      cleared_at: Date | null;
+    }
+  | undefined
 > {
   const { rows } = await pool.query<{
     organization_id: string;
     acknowledged_at: Date | null;
     acknowledged_by: string | null;
+    cleared_at: Date | null;
   }>(
-    "SELECT organization_id, acknowledged_at, acknowledged_by FROM bms.alarms WHERE id = $1",
+    "SELECT organization_id, acknowledged_at, acknowledged_by, cleared_at FROM bms.alarms WHERE id = $1",
     [id],
   );
   return rows[0];
@@ -92,6 +103,15 @@ export async function assertAlarmListScopedByAssetIds(ctx: AlarmsRlsFixtures): P
   const scoped = await svc.list({ limit: 100, assetIds: [inScopeAssetId] });
   const scopedIds = scoped.items.map((i) => i.id);
   expect(scopedIds, "the in-scope alarm is listed").toContain(inScopeAlarmId);
+  // `F3.10` / ADR 0057 decision 1: `cleared_at` is what makes an alarm inactive,
+  // so every list item reports it. The fixture alarm has never been swept, so
+  // the column is NULL and the item must say so rather than omit the key —
+  // `alarmListItemSchema` requires it and `checkResponse` throws in dev on a
+  // missing one.
+  expect(
+    scoped.items.find((i) => i.id === inScopeAlarmId)?.clearedAt,
+    "a freshly raised alarm is active: the list item carries clearedAt: null",
+  ).toBeNull();
   expect(
     scopedIds,
     "a foreign-org alarm is filtered out by the assetIds WHERE clause",
@@ -170,9 +190,14 @@ export async function assertAcknowledgeRefusesForeignAlarmButAllowsInScope(
     inScopeAssetId,
   ]);
   expect(acked.acknowledgedAt).not.toBeNull();
+  // `F3.10` / ADR 0057 decision 1: acknowledgement is an annotation, not a
+  // closure. `POST /alarms/:id/ack` never writes `cleared_at` — only the
+  // lifecycle sweep does — so the alarm this call returns is still active.
+  expect(acked.clearedAt, "acknowledging does not clear: the item stays active").toBeNull();
 
   const row = await alarmRow(ownerPool, inScopeAlarmId);
   expect(row?.acknowledged_at, "the in-scope alarm is acknowledged").not.toBeNull();
+  expect(row?.cleared_at, "the acknowledge write leaves cleared_at NULL").toBeNull();
   expect(row?.acknowledged_by, "the actor resolves under bms_fleet, not NULL").toBe(actorUserId);
   expect(row?.organization_id, "acknowledge leaves the org untouched").toBe(organizationId);
 }
