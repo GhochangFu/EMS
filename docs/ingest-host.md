@@ -202,11 +202,13 @@ logged once per segment at `warn`.
 
 They are applied after every append — **including one that failed**, which is
 then retried once, so a disk that filled is not left full for ever — and on a
-**sweep** an idle endpoint performs once a minute. The sweep is what makes the
-age bound a rolling hour rather than a rolling hour *of appends*: an endpoint
-whose broker went down, or whose RTUs were disabled, stops appending, and
-nothing else would ever look at its last segments again. So the hour holds to
-within a minute of itself.
+**sweep** the replay loop performs once a minute, whether or not the buffer is
+empty. The sweep is what makes the age bound a rolling hour rather than a
+rolling hour *of appends*: an endpoint whose broker went down, or whose RTUs
+were disabled, stops appending, and nothing else would ever look at its last
+segments again — and the case that needs it most is the broker down *and* the
+database down, where the buffer is **not** empty and still nothing appends. So
+the hour holds to within a minute of itself.
 
 **A segment the host cannot read is retired.** Three consecutive failed reads
 (anything but "the file is gone") and it is unlinked, its lines counted into
@@ -220,8 +222,11 @@ five times a second.
 file is unlinked first and the record dropped only once it is gone, so a
 read-only remount or a Windows lock cannot leave the store counting bytes that
 are no longer bounded, or `bufferDropped` counting samples that are still on
-disk. The cost is that such a segment is re-read — and, once written,
-re-replayed idempotently — on every pass until an operator clears it.
+disk. From then on that record is **skipped** — by both bounds and by replay —
+so the byte bound goes on to the next-oldest segment and the endpoint's later
+segments still replay: one refused file costs that file, not the store. Its
+bytes still count and its lines still show in `buffered`, one `error` line
+names it once (a second refusal is silent), and an operator clears it.
 
 **One bad file is skipped; one bad directory refuses start-up.** The start-up
 scan measures each candidate and leaves alone, with one `warn`, any file

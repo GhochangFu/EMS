@@ -1193,7 +1193,9 @@ is the loss this amendment bounds and records.
    **Also on the failure path, and on a sweep.** An append that fails enforces
    the bounds and retries once before counting the loss — `ENOSPC` is the state
    the bounds exist to leave, and a catch that returns first makes a full disk
-   permanent. And an idle supervisor calls `sweep()` once a minute, which
+   permanent. And every supervisor calls `sweep()` once a minute — drained or
+   not, since the outage that needs it most is the broker down *and* the
+   database down, where the buffer is not empty and nothing appends — which
    applies both bounds with no append at all: the age bound is a rolling hour,
    not a rolling hour of appends, and an endpoint whose broker went down stops
    appending exactly when its segments start ageing out.
@@ -1201,7 +1203,11 @@ is the loss this amendment bounds and records.
    first and the record dropped only on success or `ENOENT`; otherwise one
    `error` names it and the record — and its bytes — stay. Forgetting first
    would leave a file nothing counts, so the byte bound would stop bounding it
-   and `bufferDropped` would count samples still on disk.
+   and `bufferDropped` would count samples still on disk. The refused record is
+   then **skipped** by both bounds and by replay — the byte bound goes on to the
+   next-oldest and the endpoint's later segments still replay, so one refusal
+   costs that file rather than the host's whole byte bound, and it is logged
+   once until an operator clears it.
 7. **Format.** `INGEST_BUFFER_DIR/<protocol>/<encodeURIComponent(endpointKey)>/
    <epoch-minute>.jsonl`. One append-only segment per minute of *receipt* time.
    One `SourceSample` per line, `at` as ISO-8601 text, `deviceKey` kept. The
