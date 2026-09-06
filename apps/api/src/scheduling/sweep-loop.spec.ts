@@ -180,6 +180,12 @@ async function testAbortInsideASweepReturnsBeforeSleep(): Promise<void> {
   assert(sleeps === 0, `an abort raised inside a sweep must return before sleep, got ${sleeps} sleeps`);
 }
 
+/**
+ * Runs the five cases above in order, each against injected `sleep`/`now` so
+ * no real tick is waited out. `sweep-loop.test.ts` is the vitest wrapper (ADR
+ * 0014); the file header says what this file proves and what the three hosts'
+ * own specs prove about their wrappers.
+ */
 export async function runSweepLoopTests(): Promise<void> {
   await testSweepsBeforeItSleeps();
   await testThrowingSweepIsWarnedAndTheLoopContinues();

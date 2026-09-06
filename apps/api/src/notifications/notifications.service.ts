@@ -31,16 +31,25 @@ export type { DispatchEvent } from "./dedupe-key";
  * row for the alarm (`sentChannelIdsForAlarm`), so the caller supplies the
  * list. Both funnel into `dispatchToChannel`, and **both dedupes live inside
  * it** — the raise path's once-recorded refusal (`F3.46`) and the event's
- * once-per-key ledger read (decision 10). `F3.8` refused a second entry point
- * because it would be a second place for the dedupe to be forgotten; the
- * answer here is that neither entry point holds a dedupe to forget.
+ * ledger read (decision 10), which answers a key that holds any row but a
+ * `failed` one, and a `failed` one too once there are `MAX_EVENT_ATTEMPTS`
+ * of them (owner ruling Q9). `F3.8` refused a second entry point because it
+ * would be a second place for the dedupe to be forgotten; the answer here is
+ * that neither entry point holds a dedupe to forget.
+ *
+ * **What `dispatchToChannels` refuses before the per-channel path** (PR 1's
+ * security review): an event with no alarm id, whole (L2 — its key would be
+ * shared by every alarm of the rule), and any channel whose organization is
+ * neither `null` nor the input's (M2 — the floor under every caller, whatever
+ * list it loaded). Both warn with codes and ids only (§9.6).
  *
  * **Neither entry point rejects** (ADR 0041 decision 1). `dispatch` is called
  * fire-and-forget from the alarm raise path, so a rejection would surface as
  * an unhandled promise rather than in front of anyone; `dispatchToChannels` is
  * called from a sweep whose one warn line would hide which channel failed.
- * Every failure becomes a `failed` result — recorded as a row, except the one
- * case D3 keeps out of the ledger — and the promise resolves.
+ * Every failure becomes a `failed` result — recorded as a row, except the two
+ * event-path reads that D3 and H1 keep out of the ledger — and the promise
+ * resolves.
  */
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */
@@ -80,6 +89,19 @@ export type DispatchInput = {
 
 /** How much of a transport's failure text is stored. */
 const MAX_ERROR_LENGTH = 1_000;
+
+/**
+ * `F3.10` (owner ruling Q9, 2026-09-06): how many `failed` rows an event's key
+ * may hold on one channel before the event stops being retried.
+ *
+ * A transport failure is not a decision. A webhook that timed out at 03:00
+ * should be tried again on the next tick, where a rate-limited or deduped step
+ * should not (Q7) — but an unbounded retry would let one dead endpoint grow
+ * the ledger by a row per tick for the life of the alarm. Three rows per key
+ * per channel is the growth bound; `eventDeliveryBlocked` reads at most this
+ * many and blocks the key once it finds them.
+ */
+export const MAX_EVENT_ATTEMPTS = 3;
 
 @Injectable()
 export class NotificationsService {
@@ -141,18 +163,55 @@ export class NotificationsService {
    * its profile, a cleared message's from `sentChannelIdsForAlarm`, and
    * neither is the rule's `rule_notifications` join that `dispatch` loads.
    *
-   * Returns one `DeliveryResult` per channel, **in the order given** — the
-   * caller chose the order, and `loadEnabledChannelsByIds` already sorts by
-   * code. Never rejects, for the reason the class header gives.
+   * Two refusals live here rather than in the per-channel path, because they
+   * are about the input and the list, not about one channel (PR 1's security
+   * review, 2026-09-06):
+   *
+   * - **An event with no alarm id is refused whole** (L2). Its key would be
+   *   `<rule>:no-alarm:<severity>:<event>` — one key shared by every alarm the
+   *   rule ever raises — so the first step sent for any of them would answer
+   *   every later one from the ledger. One warn (rule code, event kind),
+   *   nothing sent, nothing written, an empty result. Plan U7 never builds
+   *   this input; the service refuses it because the sweep is not the only
+   *   possible caller.
+   * - **A channel in another organization is dropped** (M2). `setRuleChannels`
+   *   refuses the pairing when a rule's join is written and the profile write
+   *   path mirrors it (plan U8), but this is the caller-independent floor: a
+   *   delivery is stamped with the rule's organization (`E7.1c`), and sending
+   *   it through another tenant's channel would carry one tenant's alarm into
+   *   another's inbox. A fleet-wide (`null`) channel passes. One warn per
+   *   dropped channel — its code and the two organization ids, nothing else
+   *   (§9.6) — and no result entry for it, so `results.length` still says how
+   *   many channels were really tried.
+   *
+   * Returns one `DeliveryResult` per channel kept, **in the order given** —
+   * the caller chose the order, and `loadEnabledChannelsByIds` already sorts
+   * by code. Never rejects, for the reason the class header gives.
    */
   async dispatchToChannels(
     channels: readonly NotificationChannelRow[],
     input: DispatchInput,
   ): Promise<DeliveryResult[]> {
+    if (input.event !== undefined && input.alarmId === null) {
+      this.logger.warn(
+        `event=${input.event.kind} refused for rule=${input.ruleCode}: no alarm id, so the dedupe key would be shared by every alarm of the rule`,
+      );
+      return [];
+    }
+
+    const kept = channels.filter((channel) => {
+      if (channel.organizationId === null || channel.organizationId === input.organizationId) {
+        return true;
+      }
+      this.logger.warn(
+        `channel=${channel.code} dropped for rule=${input.ruleCode}: channel organization=${channel.organizationId} is not the rule's organization=${input.organizationId}`,
+      );
+      return false;
+    });
+
     const dedupeKey = buildDedupeKey(input);
     const results: DeliveryResult[] = [];
-
-    for (const channel of channels) {
+    for (const channel of kept) {
       const result = await this.dispatchToChannel(input, channel, dedupeKey);
       results.push(result);
     }
@@ -166,17 +225,19 @@ export class NotificationsService {
   ): Promise<DeliveryResult> {
     // 0. `F3.10` — event idempotency (ADR 0057 decision 10), and it comes
     //    FIRST. An escalation step or a cleared message is sent once per
-    //    (channel, organization, dedupe key), for the life of the ledger; the
-    //    read is for ANY status, so a `skipped_rate_limited` step stays
-    //    answered too (owner ruling Q7). A row that exists is the record —
-    //    nothing is written. `raised` is not consulted on this path: an event
-    //    is not a transition, and had the raise-path refusal below run first
-    //    it would have written a `skipped_deduped` row under the event's key
-    //    and made the event unsendable forever.
+    //    (channel, organization, dedupe key), for the life of the ledger; any
+    //    row but a `failed` one answers the key, so a `skipped_rate_limited`
+    //    step stays answered too (owner ruling Q7), and a `failed` one is
+    //    retried until there are `MAX_EVENT_ATTEMPTS` of them (owner ruling
+    //    Q9). A blocked key is the record — nothing is written. `raised` is
+    //    not consulted on this path: an event is not a transition, and had
+    //    the raise-path refusal below run first it would have written a
+    //    `skipped_deduped` row under the event's key and made the event
+    //    unsendable forever.
     if (input.event !== undefined) {
       let alreadyRecorded: boolean;
       try {
-        alreadyRecorded = await this.hasRecordedDelivery(
+        alreadyRecorded = await this.eventDeliveryBlocked(
           channel.id,
           input.organizationId,
           dedupeKey,
@@ -231,10 +292,15 @@ export class NotificationsService {
     } catch (err) {
       // A ceiling that cannot be read is not a licence to send without one.
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
-      return this.record(input, channel, dedupeKey, {
-        status: "failed",
-        error: "rate-limit check failed",
-      });
+      const failed: DeliveryResult = { status: "failed", error: "rate-limit check failed" };
+      // Review H1: on the event path this row is NOT written, for step 0's
+      // reason. An event's key is for the life of the ledger, and a `failed`
+      // row here records a read that never reached the transport — it would
+      // spend one of the key's `MAX_EVENT_ATTEMPTS` (Q9), and before Q9 it
+      // blocked the key for ever. The raise path keeps its row: that write is
+      // bounded by the transition, and the next raise is a new alarm with a
+      // new key. The next tick retries the event.
+      return input.event !== undefined ? failed : this.record(input, channel, dedupeKey, failed);
     }
     if (overLimit) {
       return this.record(input, channel, dedupeKey, {
@@ -360,10 +426,21 @@ export class NotificationsService {
   }
 
   /**
-   * `F3.10`: `true` when this channel, for THIS organization, already holds a
-   * row of ANY status under this key — the event (an escalation step, a
-   * cleared message) has been answered once and is not sent again (ADR 0057
-   * decision 10; owner ruling Q7 for the rate-limited case).
+   * `F3.10`: `true` when this channel, for THIS organization, has already
+   * answered this event's key — the event (an escalation step, a cleared
+   * message) is not sent again (ADR 0057 decision 10; owner rulings Q7, Q9).
+   *
+   * **Which rows consume the key.** Any row whose status is not `failed` —
+   * `sent`, `skipped_deduped`, `skipped_rate_limited`, `skipped_unconfigured`
+   * — consumes it for the life of the ledger: the event was delivered, or a
+   * decision was taken not to deliver it, and a decision is not retried (Q7:
+   * a rate-limited step stays answered). A `failed` row is a transport that
+   * threw or refused, which is not a decision, so the event is retried on the
+   * next tick — up to `MAX_EVENT_ATTEMPTS` such rows, after which the key is
+   * blocked as if it had been answered (Q9). So the read asks for at most
+   * `MAX_EVENT_ATTEMPTS` rows' `status`: fewer than that and every row under
+   * the key was seen, so "any non-`failed`" is exact; that many and the key
+   * is blocked whatever they hold, so no order is needed.
    *
    * Same connection and the same reason as `isOverHourlyLimit`: a read with no
    * tenant transaction to run under — the sweep spans every tenant with no
@@ -377,7 +454,7 @@ export class NotificationsService {
    * `(channel_id, dedupe_key) WHERE dedupe_key IS NOT NULL` probe (plan Q3).
    * No unique index: one loop, sweep-then-sleep, so two ticks never overlap.
    */
-  private async hasRecordedDelivery(
+  private async eventDeliveryBlocked(
     channelId: string,
     organizationId: string,
     dedupeKey: string,
@@ -392,16 +469,22 @@ export class NotificationsService {
           eq(notificationDeliveries.dedupeKey, dedupeKey),
         ),
       )
-      .limit(1);
-    return rows.length > 0;
+      .limit(MAX_EVENT_ATTEMPTS);
+    return rows.length >= MAX_EVENT_ATTEMPTS || rows.some((row) => row.status !== "failed");
   }
 
   /**
    * `F3.10` — the cleared message's recipients (ADR 0057 decision 9, owner
    * ruling Q5): every channel that holds a `sent` row for this alarm in this
    * organization — the raise or any step — and nobody else. Distinct, in
-   * first-seen order, de-duplicated here rather than in SQL so the read stays
-   * the one index-friendly shape.
+   * first-seen order, de-duplicated here rather than in SQL.
+   *
+   * **No index serves `alarm_id` today** — this is the column's first reader,
+   * and `notification_deliveries_channel_time_idx` leads on `channel_id`, so
+   * the read is a scan of the organization's rows. PR 2's migration `0065`
+   * adds `notification_deliveries_alarm_idx ON (alarm_id) WHERE alarm_id IS
+   * NOT NULL` beside plan Q3's probe (`0038`'s rule: the reader adds the
+   * index), and the plan records it.
    *
    * Same connection and the same reason as `isOverHourlyLimit`: a sweep read
    * with no tenant transaction, so the organization is the `WHERE`. Unlike

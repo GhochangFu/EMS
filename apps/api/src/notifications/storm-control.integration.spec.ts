@@ -41,7 +41,12 @@ const FIXTURE_ALARM_MESSAGE = "F3.10 storm-control event fixture";
  *
  * `F3.10` U2 adds the event proof at the end: an escalation step and a cleared
  * message each send once per `(channel, organization, dedupe key)` against the
- * real `WHERE` of `hasRecordedDelivery`, which the unit spec's fake cannot see.
+ * real `WHERE` of `eventDeliveryBlocked`, which the unit spec's fake cannot
+ * see. PR 1's review added three more real-`WHERE` gates there: a row in the
+ * other seeded organization under the same key, which no read may see (L1);
+ * `failed` rows planted by hand, retried up to `MAX_EVENT_ATTEMPTS` and then
+ * blocked (ruling Q9); and a `skipped_rate_limited` row that blocks the key
+ * like a `sent` one (rulings Q7 and Q9 together).
  *
  * Everything it writes, it removes.
  */
@@ -265,12 +270,43 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       raised: true,
       event: { kind: "escalation", step: 1 },
     };
+    const stepKey = buildDedupeKey(step);
+
+    // --- review L1: a row in another organization under the same key --------
+    //
+    // Every ledger read here filters on `organization_id`, and the fake in the
+    // unit spec cannot see a WHERE. So one `sent` row is planted that matches
+    // the step in every column but the organization — the other seeded
+    // organization's — and each read is asked while it is the ONLY row under
+    // the key: `sentChannelIdsForAlarm` must not name its channel for the
+    // fixture's organization (and must for the foreign one, so the row is
+    // known to be there), and the first step must still send.
+    const otherOrganizationId = await otherOrganization(pool, first.organization_id);
+    await plantDeliveries(pool, {
+      organizationId: otherOrganizationId,
+      ruleId: first.id,
+      alarmId,
+      channelId: channelId as string,
+      status: "sent",
+      dedupeKey: stepKey,
+    });
+    assert(
+      (await service.sentChannelIdsForAlarm(alarmId, first.organization_id)).length === 0,
+      "L1: the foreign organization's sent row is not a recipient in the fixture's organization",
+    );
+    assert(
+      (await service.sentChannelIdsForAlarm(alarmId, otherOrganizationId)).join(",") === channelId,
+      "L1: the same read names the planted channel for its own organization — the row is there",
+    );
+
     const sentBeforeStep = sent.length;
     const firstStep = await service.dispatchToChannels([channel], step);
     const secondStep = await service.dispatchToChannels([channel], step);
     assert(
       firstStep[0]?.status === "sent",
-      `the first step sends, got ${String(firstStep[0]?.status)}`,
+      `the first step sends — the foreign row under its key is not seen (L1), got ${String(
+        firstStep[0]?.status,
+      )}`,
     );
     assert(
       secondStep[0]?.status === "skipped_deduped",
@@ -283,16 +319,94 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       `two ticks of one step must reach the transport once, got ${sent.length - sentBeforeStep}`,
     );
     assert(
-      (await countByKey(pool, channelId as string, buildDedupeKey(step))) === 1,
-      "exactly one row holds the step's key — the second tick wrote nothing",
+      (await countByKey(pool, channelId as string, first.organization_id, stepKey)) === 1,
+      "exactly one row in the fixture's organization holds the step's key — the second tick " +
+        "wrote nothing",
+    );
+
+    // --- ruling Q9: `failed` is retried, three attempts, then the key blocks -
+    //
+    // Two `failed` rows planted under step 2's key: the third attempt sends,
+    // and the fourth finds the `sent` row and is answered from it. Then three
+    // `failed` rows under step 3's key: blocked outright, no fourth row. The
+    // `LIMIT` and the count in `eventDeliveryBlocked` meet a real Postgres
+    // here; the unit spec's fake only slices what it is told.
+    const stepTwo: DispatchInput = { ...step, event: { kind: "escalation", step: 2 } };
+    const stepTwoKey = buildDedupeKey(stepTwo);
+    const planted = {
+      organizationId: first.organization_id,
+      ruleId: first.id,
+      alarmId,
+      channelId: channelId as string,
+      status: "failed",
+    };
+    await plantDeliveries(pool, { ...planted, dedupeKey: stepTwoKey }, 2);
+    const sentBeforeRetry = sent.length;
+    const third = await service.dispatchToChannels([channel], stepTwo);
+    assert(
+      third[0]?.status === "sent",
+      `two failed attempts leave a third, got ${String(third[0]?.status)}`,
+    );
+    const fourth = await service.dispatchToChannels([channel], stepTwo);
+    assert(
+      fourth[0]?.status === "skipped_deduped",
+      `after the send the key is answered from the ledger, got ${String(fourth[0]?.status)}`,
+    );
+    assert(
+      sent.length === sentBeforeRetry + 1,
+      `the retry reaches the transport once, got ${sent.length - sentBeforeRetry}`,
+    );
+    assert(
+      (await countByKey(pool, channelId as string, first.organization_id, stepTwoKey)) === 3,
+      "two failed rows and one sent row hold step 2's key — no fourth",
+    );
+
+    const stepThree: DispatchInput = { ...step, event: { kind: "escalation", step: 3 } };
+    const stepThreeKey = buildDedupeKey(stepThree);
+    await plantDeliveries(pool, { ...planted, dedupeKey: stepThreeKey }, 3);
+    const exhausted = await service.dispatchToChannels([channel], stepThree);
+    assert(
+      exhausted[0]?.status === "skipped_deduped",
+      `three failed attempts block the key, got ${String(exhausted[0]?.status)}`,
+    );
+    assert(sent.length === sentBeforeRetry + 1, "an exhausted key never reaches the transport");
+    assert(
+      (await countByKey(pool, channelId as string, first.organization_id, stepThreeKey)) === 3,
+      "still three rows under step 3's key — the ledger stops growing at the bound",
+    );
+
+    // --- FG1: a non-`sent`, non-`failed` row consumes the key too ------------
+    //
+    // Rulings Q7 and Q9 together: only `failed` is retried. The ceiling-of-1
+    // service records step 9 as `skipped_rate_limited` (this channel already
+    // holds sent rows this hour); the normal service then finds that row and
+    // answers from it. A read narrowed to `status = 'sent'` would send here.
+    const stepNine: DispatchInput = { ...step, event: { kind: "escalation", step: 9 } };
+    const stepNineKey = buildDedupeKey(stepNine);
+    const limitedStep = await limited.dispatchToChannels([channel], stepNine);
+    assert(
+      limitedStep[0]?.status === "skipped_rate_limited",
+      `at the ceiling of 1 the step is rate-limited, got ${String(limitedStep[0]?.status)}`,
+    );
+    const sentBeforeNine = sent.length;
+    const afterLimited = await service.dispatchToChannels([channel], stepNine);
+    assert(
+      afterLimited[0]?.status === "skipped_deduped",
+      `a rate-limited step is answered from its row, got ${String(afterLimited[0]?.status)}`,
+    );
+    assert(sent.length === sentBeforeNine, "the rate-limited step never reaches the transport");
+    assert(
+      (await countByKey(pool, channelId as string, first.organization_id, stepNineKey)) === 1,
+      "one rate-limited row holds step 9's key and nothing was written after it",
     );
 
     // Decision 9 / ruling Q5: the cleared message goes to whoever holds a
-    // `sent` row for the alarm. The step above is that row.
+    // `sent` row for the alarm. The steps above are those rows — and the
+    // planted foreign one is not.
     const recipients = await service.sentChannelIdsForAlarm(alarmId, first.organization_id);
     assert(
       recipients.length === 1 && recipients[0] === channelId,
-      `the step's channel is the cleared recipient, got [${recipients.join(",")}]`,
+      `the steps' channel is the cleared recipient, got [${recipients.join(",")}]`,
     );
 
     const cleared: DispatchInput = { ...step, event: { kind: "cleared" } };
@@ -310,12 +424,13 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       `two ticks of one clear must reach the transport once, got ${sent.length - sentBeforeClear}`,
     );
     assert(
-      (await countByKey(pool, channelId as string, buildDedupeKey(cleared))) === 1,
+      (await countByKey(pool, channelId as string, first.organization_id, buildDedupeKey(cleared))) ===
+        1,
       "exactly one row holds the cleared key",
     );
     assert(
       (await service.sentChannelIdsForAlarm(alarmId, first.organization_id)).length === 1,
-      "two sent rows for one channel are still one recipient",
+      "several sent rows for one channel are still one recipient",
     );
 
     // The other direction of `loadEnabledChannelsByIds`: a disabled channel is
@@ -347,13 +462,58 @@ async function countDeliveries(pool: Pool, channelId: string, status: string): P
   return Number(res.rows[0]?.count ?? "0");
 }
 
-async function countByKey(pool: Pool, channelId: string, dedupeKey: string): Promise<number> {
+/** Rows under one key on one channel in one organization — the triple every event read is keyed on. */
+async function countByKey(
+  pool: Pool,
+  channelId: string,
+  organizationId: string,
+  dedupeKey: string,
+): Promise<number> {
   const res = await pool.query<{ count: string }>(
     `SELECT count(*)::text AS count FROM bms.notification_deliveries
-      WHERE channel_id = $1 AND dedupe_key = $2`,
-    [channelId, dedupeKey],
+      WHERE channel_id = $1 AND organization_id = $2 AND dedupe_key = $3`,
+    [channelId, organizationId, dedupeKey],
   );
   return Number(res.rows[0]?.count ?? "0");
+}
+
+/** The id of a seeded organization other than `organizationId` — the L1 row's tenant. */
+async function otherOrganization(pool: Pool, organizationId: string): Promise<string> {
+  const res = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY code LIMIT 1`,
+    [organizationId],
+  );
+  const id = res.rows[0]?.id;
+  assert(id !== undefined, "the seed holds two organizations; the second is L1's cross-tenant row");
+  return id as string;
+}
+
+/**
+ * Plants `count` rows by hand — the ledger states the service is asked to
+ * read past. `attempted_at` defaults to now, as a real row's would; `error`
+ * is set on a `failed` row only, as `record()` would leave it. Removed by
+ * `cleanup` through the channel and the fixture alarm.
+ */
+async function plantDeliveries(
+  pool: Pool,
+  row: {
+    organizationId: string;
+    ruleId: string;
+    alarmId: string;
+    channelId: string;
+    status: string;
+    dedupeKey: string;
+  },
+  count = 1,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO bms.notification_deliveries
+       (organization_id, rule_id, alarm_id, channel_id, status, dedupe_key, error)
+     SELECT $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, $6::text,
+            CASE WHEN $5::text = 'failed' THEN 'planted by storm-control.integration.spec.ts' END
+       FROM generate_series(1, $7::int)`,
+    [row.organizationId, row.ruleId, row.alarmId, row.channelId, row.status, row.dedupeKey, count],
+  );
 }
 
 /**
