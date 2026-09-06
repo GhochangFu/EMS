@@ -2,12 +2,15 @@ import type { SourceSample } from "@bms/shared/ingest";
 
 import {
   buildUpsert,
+  droppedCount,
+  emptyCounters,
   resolveSamples,
   writeResolved,
   type PointIndex,
   type PointTarget,
   type PointValueRow,
   type QueryableClient,
+  type SampleCounters,
 } from "./normaliser.js";
 
 function assert(condition: boolean, message: string): void {
@@ -29,20 +32,41 @@ function makeIndex(
   );
 }
 
+/**
+ * A point with no resolved metadata — five `NULL` columns, which ADR 0056
+ * decision 1 defines as today's behaviour: multiplier `1`, offset `0`, no range
+ * test, `discard_bad`. Every pre-`F2.7` case below is written against this, so
+ * the cases that were green before decision 4 must stay green after it.
+ */
+const NO_METADATA = {
+  scaleMultiplier: null,
+  scaleOffset: null,
+  engMin: null,
+  engMax: null,
+  qualityPolicy: null,
+} as const;
+
+/** A `PointTarget`, metadata-free unless the case under test sets some. */
+function target(
+  assetId: string,
+  pointKey: string,
+  unit: string | null,
+  metadata: Partial<PointTarget> = {},
+): PointTarget {
+  return { ...NO_METADATA, assetId, pointKey, unit, ...metadata };
+}
+
 const PILOT_INDEX = makeIndex({
   "RTU-1": {
-    flow: [{ assetId: "asset-a", pointKey: "FLOW_RATE", unit: "m³/h" }],
-    press: [{ assetId: "asset-a", pointKey: "PRESSURE", unit: "bar" }],
+    flow: [target("asset-a", "FLOW_RATE", "m³/h")],
+    press: [target("asset-a", "PRESSURE", "bar")],
     // One meter feeding two assets — the fan-out case a Map<string, target>
     // would silently drop.
-    shared: [
-      { assetId: "asset-a", pointKey: "TOTALISER", unit: "m³" },
-      { assetId: "asset-b", pointKey: "INLET_TOTAL", unit: "m³" },
-    ],
-    unitless: [{ assetId: "asset-a", pointKey: "STATUS", unit: null }],
+    shared: [target("asset-a", "TOTALISER", "m³"), target("asset-b", "INLET_TOTAL", "m³")],
+    unitless: [target("asset-a", "STATUS", null)],
   },
   "RTU-2": {
-    flow: [{ assetId: "asset-c", pointKey: "FLOW_RATE", unit: "m³/h" }],
+    flow: [target("asset-c", "FLOW_RATE", "m³/h")],
   },
 });
 
@@ -458,5 +482,267 @@ export async function runNormaliserWriteTests(): Promise<void> {
     const result = await writeResolved(client, []);
     assert(calls.length === 0, "an empty batch must not open a transaction or notify");
     assert(result.rowsWritten === 0, "an empty batch writes nothing");
+  }
+}
+
+/**
+ * `F2.7` / ADR 0056 decision 4 — the resolved point metadata, applied **per
+ * target** in one fixed order: quality policy → scale → finite → range.
+ *
+ * The order is the decision, not an implementation detail, so the cases below
+ * are written in that order and the two that make it observable (case 7) fail
+ * on any other. A `discard_bad` sample that the range test would also have
+ * refused must count `badQuality` and not `outOfRange`, or the two policies are
+ * indistinguishable in the counters — which is the reason the ADR fixes the
+ * order at all.
+ */
+export function runMetadataTests(): void {
+  /** One sample, one target, no fan-out — the shape most cases below need. */
+  function resolveOne(
+    pointTarget: PointTarget,
+    overrides: Partial<SourceSample> = {},
+  ): ReturnType<typeof resolveSamples> {
+    const index = makeIndex({ "RTU-1": { flow: [pointTarget] } });
+    return resolveSamples(
+      [sample({ sourceKey: "flow", ...overrides })],
+      index,
+      RECEIVED_AT,
+      "RTU-1",
+    );
+  }
+
+  const point = (metadata: Partial<PointTarget> = {}): PointTarget =>
+    target("asset-a", "FLOW_RATE", "m³/h", metadata);
+
+  // ---- 1. quality policy: NULL is `discard_bad`, today's rule --------------
+
+  {
+    const { rows, counters } = resolveOne(point(), { good: false });
+    assert(
+      counters.badQuality === 1,
+      `a NULL quality policy discards a bad sample, got badQuality ${counters.badQuality}`,
+    );
+    assert(rows.length === 0, "a discarded sample writes no row");
+  }
+
+  // ---- 2. `accept_bad` stores the reading ---------------------------------
+
+  {
+    const { rows, counters } = resolveOne(point({ qualityPolicy: "accept_bad" }), {
+      value: 12,
+      good: false,
+    });
+    assert(rows.length === 1, `accept_bad must store the sample, got ${rows.length} rows`);
+    assert(rows[0].value === 12, `accept_bad stores the value unchanged, got ${rows[0].value}`);
+    assert(counters.badQuality === 0, "an accepted sample is not counted as bad quality");
+  }
+
+  // ---- 3. scale: value × multiplier + offset ------------------------------
+
+  {
+    const { rows } = resolveOne(point({ scaleMultiplier: 0.5, scaleOffset: 2 }), { value: 10 });
+    assert(
+      rows.length === 1 && rows[0].value === 7,
+      `10 × 0.5 + 2 must be stored as 7, got ${rows[0]?.value}`,
+    );
+  }
+
+  // ---- 4. finite runs on the SCALED value, before the range test ----------
+
+  {
+    // Scaling overflows to Infinity. The range test would also refuse it — and
+    // must not be the one that does, or an overflow is reported as an
+    // instrument reading outside its band rather than as arithmetic that broke.
+    const { rows, counters } = resolveOne(
+      point({ scaleMultiplier: 1e308, engMin: 0, engMax: 100 }),
+      { value: 1e10 },
+    );
+    assert(rows.length === 0, "an overflowed value must not be written");
+    assert(counters.nonFinite === 1, `the overflow is nonFinite, got ${counters.nonFinite}`);
+    assert(
+      counters.outOfRange === 0,
+      `the finite test runs before the range test, so outOfRange must stay 0, got ${counters.outOfRange}`,
+    );
+  }
+
+  // ---- 5. range is inclusive at both ends ---------------------------------
+
+  {
+    const banded = point({ engMin: 0, engMax: 100 });
+
+    const above = resolveOne(banded, { value: 150 });
+    assert(above.rows.length === 0, "150 is outside [0, 100] and must not be written");
+    assert(above.counters.outOfRange === 1, "an over-range sample is counted");
+
+    const below = resolveOne(banded, { value: -1 });
+    assert(below.rows.length === 0, "-1 is outside [0, 100] and must not be written");
+    assert(below.counters.outOfRange === 1, "an under-range sample is counted");
+
+    for (const edge of [0, 100]) {
+      const { rows, counters } = resolveOne(banded, { value: edge });
+      assert(rows.length === 1, `${edge} is inside the inclusive band and must be written`);
+      assert(rows[0].value === edge, `the edge value is stored unchanged, got ${rows[0].value}`);
+      assert(counters.outOfRange === 0, `${edge} must not count as out of range`);
+    }
+  }
+
+  // ---- 5b. the two bounds are independent ---------------------------------
+
+  {
+    // The CHECK constrains only the both-non-null pair, so one bound alone is a
+    // valid row and a `&&` between the two tests would let its half through.
+    const floorOnly = resolveOne(point({ engMin: 0 }), { value: -5 });
+    assert(floorOnly.rows.length === 0, "engMin alone still refuses a value below it");
+    assert(floorOnly.counters.outOfRange === 1, "engMin alone counts the refusal");
+
+    const ceilingOnly = resolveOne(point({ engMax: 10 }), { value: 1e9 });
+    assert(ceilingOnly.rows.length === 0, "engMax alone still refuses a value above it");
+    assert(ceilingOnly.counters.outOfRange === 1, "engMax alone counts the refusal");
+
+    const inside = resolveOne(point({ engMin: 0 }), { value: 1e9 });
+    assert(inside.rows.length === 1, "engMin alone imposes no ceiling");
+  }
+
+  // ---- 6. the range tests the scaled value, not the raw one ---------------
+
+  {
+    const { rows, counters } = resolveOne(
+      point({ scaleMultiplier: 0.01, engMin: 0, engMax: 100 }),
+      { value: 1000 },
+    );
+    assert(
+      rows.length === 1 && rows[0].value === 10,
+      `a raw 1000 scaled by 0.01 is 10 and inside [0, 100], got ${rows.length} rows`,
+    );
+    assert(counters.outOfRange === 0, "the raw value is not what the band is about");
+  }
+
+  // ---- 7. the order is observable in the counters -------------------------
+
+  {
+    const accepted = resolveOne(
+      point({ qualityPolicy: "accept_bad", engMin: 0, engMax: 100 }),
+      { value: 150, good: false },
+    );
+    assert(accepted.counters.outOfRange === 1, "accept_bad lets the sample reach the range test");
+    assert(accepted.counters.badQuality === 0, "accept_bad never counts badQuality");
+
+    const discarded = resolveOne(
+      point({ qualityPolicy: "discard_bad", engMin: 0, engMax: 100 }),
+      { value: 150, good: false },
+    );
+    assert(discarded.counters.badQuality === 1, "discard_bad refuses before the range test");
+    assert(
+      discarded.counters.outOfRange === 0,
+      `a sample refused by policy never reaches the band, got outOfRange ${discarded.counters.outOfRange}`,
+    );
+  }
+
+  // ---- 7b. the raw pre-check still runs ahead of every target -------------
+
+  {
+    // A non-numeric or non-finite raw value cannot be scaled, so it is dropped
+    // once per sample rather than once per target — which is why the pre-check
+    // stays where it is and a bad-quality NaN counts `nonFinite`, not
+    // `badQuality`.
+    const { rows, counters } = resolveOne(point(), { value: Number.NaN, good: false });
+    assert(rows.length === 0, "NaN is dropped whatever the policy says");
+    assert(counters.nonFinite === 1, "an unscalable raw value is nonFinite");
+    assert(
+      counters.badQuality === 0,
+      `the raw pre-check runs before the per-target policy, got badQuality ${counters.badQuality}`,
+    );
+  }
+
+  // ---- 8. no metadata means no arithmetic ---------------------------------
+
+  {
+    // `x * 1 + 0` is not the identity: it turns -0 into 0, and -0 is what a
+    // signed power meter reports for an idle circuit. With both scale fields
+    // NULL the stored value must be the sample's own.
+    const { rows } = resolveOne(point(), { value: -0 });
+    assert(
+      Object.is(rows[0].value, -0),
+      `both scale fields NULL must skip the arithmetic, got ${Object.is(rows[0].value, 0) ? "0" : String(rows[0].value)}`,
+    );
+
+    // One field set is enough to make it a scaled point, and then the
+    // arithmetic runs as written.
+    const scaled = resolveOne(point({ scaleOffset: 0 }), { value: -0 });
+    assert(
+      Object.is(scaled.rows[0].value, 0) && !Object.is(scaled.rows[0].value, -0),
+      "an offset of 0 is still a scaling rule, and -0 + 0 is 0",
+    );
+  }
+
+  // ---- 9. fan-out resolves metadata per target ----------------------------
+
+  {
+    const index = makeIndex({
+      "RTU-1": {
+        shared: [
+          target("asset-a", "TOTALISER", "m³", { scaleMultiplier: 0.001 }),
+          target("asset-b", "INLET_TOTAL", "m³"),
+        ],
+      },
+    });
+    const { rows } = resolveSamples(
+      [sample({ sourceKey: "shared", value: 2500 })],
+      index,
+      RECEIVED_AT,
+      "RTU-1",
+    );
+    const byAsset = new Map(rows.map((r) => [r.assetId, r.value]));
+    assert(byAsset.get("asset-a") === 2.5, `the scaled target stores 2.5, got ${byAsset.get("asset-a")}`);
+    assert(
+      byAsset.get("asset-b") === 2500,
+      `the unscaled target stores the raw value, got ${byAsset.get("asset-b")}`,
+    );
+  }
+
+  {
+    // A counter counts a refused **write**, not a refused sample: one target of
+    // a fan-out can be out of range while the other is written.
+    const index = makeIndex({
+      "RTU-1": {
+        shared: [
+          target("asset-a", "TOTALISER", "m³", { engMax: 10 }),
+          target("asset-b", "INLET_TOTAL", "m³"),
+        ],
+      },
+    });
+    const { rows, counters } = resolveSamples(
+      [sample({ sourceKey: "shared", value: 42 })],
+      index,
+      RECEIVED_AT,
+      "RTU-1",
+    );
+    assert(rows.length === 1 && rows[0].assetId === "asset-b", "the in-range target is written");
+    assert(counters.outOfRange === 1, `the refused target is counted once, got ${counters.outOfRange}`);
+  }
+
+  // ---- 10. the counters and the dropped-sample sum ------------------------
+
+  {
+    const zeroed = emptyCounters();
+    assert(zeroed.outOfRange === 0, "emptyCounters must zero the new bucket too");
+    assert(droppedCount(zeroed) === 0, "a zeroed counter set has dropped nothing");
+
+    // Powers of two, so a missing or extra key names itself in the arithmetic
+    // rather than hiding in a sum that happens to match.
+    const filled: SampleCounters = {
+      badQuality: 1,
+      nonFinite: 2,
+      unknownDevice: 4,
+      unmappedSourceKey: 8,
+      ambiguousDevice: 16,
+      outOfRange: 32,
+      invalidTimestamp: 64,
+      duplicateInBatch: 128,
+    };
+    assert(
+      droppedCount(filled) === 63,
+      `droppedCount sums the six drop buckets and ignores invalidTimestamp and duplicateInBatch, got ${droppedCount(filled)}`,
+    );
   }
 }

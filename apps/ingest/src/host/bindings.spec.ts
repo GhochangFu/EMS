@@ -73,6 +73,14 @@ function row(overrides: Partial<BindingRow> = {}): BindingRow {
     point_key: "FLOW_RATE",
     source_data_key: "flow",
     unit: "m³/h",
+    // ADR 0056 decision 1: the resolved metadata is
+    // `coalesce(asset_points.<c>, template_points.<c>)`, and a resolved NULL is
+    // today's behaviour — multiplier 1, offset 0, no band, `discard_bad`.
+    scale_multiplier: null,
+    scale_offset: null,
+    eng_min: null,
+    eng_max: null,
+    quality_policy: null,
     config_protocol: null,
     connection_config: null,
     credentials_ciphertext: null,
@@ -80,6 +88,15 @@ function row(overrides: Partial<BindingRow> = {}): BindingRow {
     ...overrides,
   };
 }
+
+/** The five point-metadata columns, in the order ADR 0056 decision 1 lists them. */
+const METADATA_COLUMNS = [
+  "scale_multiplier",
+  "scale_offset",
+  "eng_min",
+  "eng_max",
+  "quality_policy",
+] as const;
 
 /** The binding query, protocol resolution and endpoint grouping (ADR 0016 §3, §4). */
 export function runBindingsTests(): void {
@@ -112,6 +129,24 @@ export function runBindingsTests(): void {
       !sql.includes("telemetrySource'") || sql.includes("AS telemetry_source"),
       "telemetrySource must be selected, not filtered, in the multi-protocol query",
     );
+
+    // ---- F2.7 / ADR 0056 decision 4: the resolved point metadata ----------
+
+    assert(
+      sql.includes("LEFT JOIN bms.template_points tp"),
+      "the template default must be joined, and as a LEFT JOIN — a hand-created asset has no template",
+    );
+    assert(
+      sql.includes("tp.template_id = a.template_id") && sql.includes("tp.point_key = ap.point_key"),
+      "the template point is resolved on (template_id, point_key), ADR 0039 decision 6's join",
+    );
+    for (const column of METADATA_COLUMNS) {
+      assert(
+        sql.includes(`coalesce(ap.${column}, tp.${column}) AS ${column}`),
+        `${column} must resolve as coalesce(asset_points, template_points) — the asset override ` +
+          "wins per column, and reversing the arguments makes the template win instead",
+      );
+    }
   }
 
   // ---- one broker, many RTUs, one endpoint ---------------------------------
@@ -664,5 +699,60 @@ export function runBindingsTests(): void {
   {
     const { endpoints, skipped } = planEndpoints([], makeOptions());
     assert(endpoints.length === 0 && skipped.length === 0, "no rows means no work, not a throw");
+  }
+
+  // ---- the resolved metadata reaches the target (ADR 0056 decision 4) ------
+
+  {
+    const { endpoints } = planEndpoints(
+      [
+        row({
+          scale_multiplier: 0.5,
+          scale_offset: 2,
+          eng_min: 0,
+          eng_max: 100,
+          quality_policy: "accept_bad",
+        }),
+      ],
+      makeOptions(),
+    );
+    const target = endpoints[0].pointIndex.get("RTU-1")?.get("flow")?.[0];
+    assert(target !== undefined, "the point must be indexed");
+    assert(target?.scaleMultiplier === 0.5, `scale_multiplier must reach the target, got ${target?.scaleMultiplier}`);
+    assert(target?.scaleOffset === 2, `scale_offset must reach the target, got ${target?.scaleOffset}`);
+    assert(target?.engMin === 0, `eng_min must reach the target, got ${target?.engMin}`);
+    assert(target?.engMax === 100, `eng_max must reach the target, got ${target?.engMax}`);
+    assert(
+      target?.qualityPolicy === "accept_bad",
+      `quality_policy must reach the target, got ${String(target?.qualityPolicy)}`,
+    );
+  }
+
+  {
+    // The column is a varchar with a CHECK, not an enum type, so the row can
+    // still carry a value this build does not know — an older host reading a
+    // database a newer API wrote. An unknown policy reads as NULL, which is
+    // `discard_bad`, rather than being passed through as a live branch value.
+    const { endpoints } = planEndpoints([row({ quality_policy: "clamp" })], makeOptions());
+    const target = endpoints[0].pointIndex.get("RTU-1")?.get("flow")?.[0];
+    assert(
+      target?.qualityPolicy === null,
+      `an unknown quality policy must narrow to null, got ${String(target?.qualityPolicy)}`,
+    );
+  }
+
+  {
+    // A row with no metadata at all — a hand-created asset with no template —
+    // carries five nulls, not undefined: `resolveSamples` branches on `null`.
+    const { endpoints } = planEndpoints([row()], makeOptions());
+    const target = endpoints[0].pointIndex.get("RTU-1")?.get("flow")?.[0];
+    assert(
+      target?.scaleMultiplier === null &&
+        target?.scaleOffset === null &&
+        target?.engMin === null &&
+        target?.engMax === null &&
+        target?.qualityPolicy === null,
+      `an unresolved point carries five nulls, got ${JSON.stringify(target)}`,
+    );
   }
 }

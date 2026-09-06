@@ -9,5 +9,16 @@
   // `src/index.js` was excluded here until ADR 0016 §6 commit 4 deleted it.
   // `src/**/*.test.js` is still load-bearing: `rtu-config.test.js` is the one
   // ingest test CI has run since ADR 0007, and it must stay out of `dist`.
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.js", "src/**/*.spec.ts"]
+  //
+  // `src/testing/` holds the `F2.7` integration-database gate, which reads
+  // `process.env`, opens a `pg` pool and can `throw` at module scope — the same
+  // reason `apps/api/tsconfig.build.json` excludes its own copy (ADR 0025
+  // decision 8). `tsconfig.json` still typechecks it, and
+  // `tests/repo-invariants.test.ts` is what stops a runtime file importing it.
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.js",
+    "src/**/*.spec.ts",
+    "src/testing/**"
+  ]
 }

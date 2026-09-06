@@ -1,4 +1,9 @@
-import { INGEST_PROTOCOLS, type IngestProtocol } from "@bms/shared/ingest";
+import {
+  INGEST_PROTOCOLS,
+  QUALITY_POLICIES,
+  type IngestProtocol,
+  type QualityPolicy,
+} from "@bms/shared/ingest";
 
 import type { IngestAdapterFactory, RtuBinding } from "../adapter/types.js";
 import type { PointIndex, PointTarget } from "./normaliser.js";
@@ -32,6 +37,21 @@ export type BindingRow = {
   readonly point_key: string;
   readonly source_data_key: string;
   readonly unit: string | null;
+  /**
+   * The five resolved point-metadata columns (ADR 0056 decision 1), each already
+   * `coalesce`d in the query — see `BINDING_QUERY`. `null` is the resolved
+   * value, not a missing one, and means today's behaviour.
+   */
+  readonly scale_multiplier: number | null;
+  readonly scale_offset: number | null;
+  readonly eng_min: number | null;
+  readonly eng_max: number | null;
+  /**
+   * `varchar(16)` with a CHECK, not an enum type, so this is a `string` here and
+   * `planEndpoints` narrows it — an older host may read a value a newer API
+   * wrote.
+   */
+  readonly quality_policy: string | null;
   /** `rtu_connection_configs.protocol`; `null` when the RTU has no config row. */
   readonly config_protocol: string | null;
   readonly connection_config: unknown;
@@ -58,6 +78,25 @@ export type BindingRow = {
  * `rtu_id`, so the join and the filter cannot disagree.
  *
  * `telemetrySource` is deliberately **not** filtered here — see `planEndpoints`.
+ *
+ * ## The five resolved metadata columns (`F2.7` / ADR 0056 decisions 1 and 4)
+ *
+ * `scale_multiplier`, `scale_offset`, `eng_min`, `eng_max` and `quality_policy`
+ * exist on **both** `template_points` (the class default) and `asset_points`
+ * (the per-asset override), and the resolved value is
+ * `coalesce(asset_points.<c>, template_points.<c>)` **per column** — ADR 0039
+ * decision 6's rule for the calc-config columns on the same two tables, reused
+ * rather than re-invented. Per column, so a partial override restates one field
+ * rather than a whole point.
+ *
+ * A resolved `NULL` is a stated rule and not a missing value: multiplier `1`,
+ * offset `0`, no range test, `discard_bad` — which is exactly what the host did
+ * before `F2.7`, so every existing row reads as "unchanged".
+ *
+ * **The template join must stay a `LEFT JOIN`.** A hand-created asset has no
+ * `template_id`, and an inner join would silently unbind every one of them —
+ * including all 105 seeded PHE bindings, which is what
+ * `bindings.integration.spec.ts`'s row count asserts.
  */
 export const BINDING_QUERY = `
   SELECT
@@ -70,6 +109,11 @@ export const BINDING_QUERY = `
     ap.point_key,
     ap.source_data_key,
     ap.unit,
+    coalesce(ap.scale_multiplier, tp.scale_multiplier) AS scale_multiplier,
+    coalesce(ap.scale_offset, tp.scale_offset) AS scale_offset,
+    coalesce(ap.eng_min, tp.eng_min) AS eng_min,
+    coalesce(ap.eng_max, tp.eng_max) AS eng_max,
+    coalesce(ap.quality_policy, tp.quality_policy) AS quality_policy,
     c.protocol AS config_protocol,
     c.config AS connection_config,
     c.credentials_ciphertext,
@@ -80,10 +124,26 @@ export const BINDING_QUERY = `
          AND ap.active = true
          AND ap.source_kind = 'measured'
   INNER JOIN bms.assets a ON a.id = ap.asset_id
+  LEFT JOIN bms.template_points tp
+         ON tp.template_id = a.template_id
+        AND tp.point_key = ap.point_key
   LEFT JOIN bms.rtu_connection_configs c ON c.rtu_id = r.id
   WHERE r.ingest_enabled = true
   ORDER BY r.id, ap.point_key
 `;
+
+/**
+ * Narrows a stored `quality_policy` to the vocabulary this build knows.
+ *
+ * The column is a `varchar(16)` with a CHECK, so a row can carry a value a newer
+ * API wrote and this host has never heard of. An unknown string resolves to
+ * `null`, which is `discard_bad` — the safe reading, and the one that keeps the
+ * host's branch set closed. Declared here rather than in `packages/shared`
+ * because the host is the only thing that acts on the value.
+ */
+function isQualityPolicy(value: string | null): value is QualityPolicy {
+  return value !== null && (QUALITY_POLICIES as readonly string[]).includes(value);
+}
 
 /** Why an RTU or a point was left out, so nothing is dropped silently. */
 export type SkippedBinding = {
@@ -500,6 +560,11 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         assetId: row.asset_id,
         pointKey: row.point_key,
         unit: row.unit,
+        scaleMultiplier: row.scale_multiplier,
+        scaleOffset: row.scale_offset,
+        engMin: row.eng_min,
+        engMax: row.eng_max,
+        qualityPolicy: isQualityPolicy(row.quality_policy) ? row.quality_policy : null,
       };
       if (targets === undefined) {
         bySourceKey.set(row.source_data_key, [target]);
