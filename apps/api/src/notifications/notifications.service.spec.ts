@@ -61,24 +61,59 @@ type Recorded = {
 
 /**
  * A fake `BmsDb` narrow enough for this service: it answers the rate-limit
- * SELECT with a settable count and records every delivery INSERT.
+ * SELECT with a settable count, answers `F3.46`'s existence SELECT from a queue
+ * of booleans, and records every delivery INSERT.
+ *
+ * **The two SELECTs are told apart by their projection, not by their `WHERE`.**
+ * Drizzle hands the fake an opaque SQL object for the `WHERE`, so it can see
+ * nothing of it: the rate-limit read asks for `{ count }` and ends at
+ * `.where()`, `hasRecordedSkip` asks for `{ id }` and adds `.limit(1)`. That
+ * the real `WHERE` names this channel, this organization, this key and
+ * `skipped_deduped` is proven against Postgres in
+ * `storm-control.integration.spec.ts`, which is where it can be.
  */
 function fakeDb(sentInLastHour = 0): {
   db: ConstructorParameters<typeof NotificationsService>[0];
   recorded: Recorded[];
+  /** Per-fake call counters — not a lifetime statistic (§4.6). */
+  reads: { rateLimit: number; skipExists: number };
   setCount: (n: number) => void;
+  /** Answers for the next existence reads, in dispatch order. Empty = `false`. */
+  setSkipRecorded: (...values: boolean[]) => void;
+  failSkipReads: (fail: boolean) => void;
   failInserts: (fail: boolean) => void;
 } {
   const recorded: Recorded[] = [];
+  const reads = { rateLimit: 0, skipExists: 0 };
+  const skipQueue: boolean[] = [];
   let count = sentInLastHour;
   let insertsFail = false;
+  let skipReadsFail = false;
 
   const db = {
-    select: () => ({
-      from: () => ({
-        where: () => Promise.resolve([{ count }]),
-      }),
-    }),
+    select: (projection: Record<string, unknown>) => {
+      if ("count" in projection) {
+        return {
+          from: () => ({
+            where: () => {
+              reads.rateLimit += 1;
+              return Promise.resolve([{ count }]);
+            },
+          }),
+        };
+      }
+      return {
+        from: () => ({
+          where: () => ({
+            limit: () => {
+              reads.skipExists += 1;
+              if (skipReadsFail) return Promise.reject(new Error("ledger unavailable"));
+              return Promise.resolve(skipQueue.shift() === true ? [{ id: "x" }] : []);
+            },
+          }),
+        }),
+      };
+    },
     insert: () => ({
       values: (row: Recorded) => {
         if (insertsFail) return Promise.reject(new Error("ledger unavailable"));
@@ -97,8 +132,16 @@ function fakeDb(sentInLastHour = 0): {
   return {
     db,
     recorded,
+    reads,
     setCount: (n) => {
       count = n;
+    },
+    setSkipRecorded: (...values) => {
+      skipQueue.length = 0;
+      skipQueue.push(...values);
+    },
+    failSkipReads: (fail) => {
+      skipReadsFail = fail;
     },
     failInserts: (fail) => {
       insertsFail = fail;
@@ -158,7 +201,7 @@ export async function runNotificationsServiceTests(): Promise<void> {
   // caught a rule already open for that asset: the condition still matches,
   // nothing transitioned, nobody needs telling again.
   {
-    const { db, recorded } = fakeDb();
+    const { db, recorded, reads, setSkipRecorded } = fakeDb();
     const webhook = fakeTransport("webhook", () =>
       Promise.resolve({ status: "sent", error: null }),
     );
@@ -170,13 +213,132 @@ export async function runNotificationsServiceTests(): Promise<void> {
       results.every((r) => r.status === "skipped_deduped"),
       `every result must be skipped_deduped, got ${results.map((r) => r.status).join(",")}`,
     );
-    // The skip is RECORDED. "We chose not to send" and "nothing happened" must
-    // not look the same in the ledger (decision 4).
+    // The skip is RECORDED — "we chose not to send" and "nothing happened" must
+    // not look the same in the ledger (decision 4) — and, since `F3.46`, ONCE
+    // per (channel, organization, dedupe key).
     assert(recorded.length === 1, `the skip must be recorded, got ${recorded.length} rows`);
     assert(recorded[0]?.status === "skipped_deduped", "the row carries the skip reason");
     assert(
       recorded[0]?.dedupeKey === buildDedupeKey(input()),
       "the row carries the dedupe key it was skipped under",
+    );
+
+    // `F3.46`: press Evaluate now again against the same unchanged plant. The
+    // ledger already answers this key, so the refusal answers from it — same
+    // result, same silence at the transport, no second row.
+    setSkipRecorded(true);
+    const again = await service.dispatch(input({ raised: false }));
+    assert(
+      again.length === 1 && again[0]?.status === "skipped_deduped",
+      `the repeat refusal is still one skipped_deduped result, got ${again
+        .map((r) => r.status)
+        .join(",")}`,
+    );
+    assert(again[0]?.error === null, "a suppressed refusal is not an error");
+    assert(
+      recorded.length === 1,
+      `the refusal must be recorded once, not once per press; got ${recorded.length} rows`,
+    );
+    assert(webhook.sent.length === 0, "a suppressed refusal still sends nothing");
+    assert(
+      reads.skipExists === 2,
+      `both refusals must read the ledger before writing, got ${reads.skipExists}`,
+    );
+  }
+
+  // --- `F3.46`: the suppression is per channel -----------------------------
+  //
+  // Two channels joined to one rule. One already holds the row, the other does
+  // not: both report the refusal, only the second writes.
+  {
+    const { db, recorded, setSkipRecorded } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({
+      db,
+      channels: [
+        channelRow({ id: "aaaaaaaa-0000-0000-0000-000000000001", code: "a" }),
+        channelRow({ id: "aaaaaaaa-0000-0000-0000-000000000002", code: "b" }),
+      ],
+      webhook: webhook.transport,
+    });
+
+    setSkipRecorded(true, false);
+    const results = await service.dispatch(input({ raised: false }));
+    assert(results.length === 2, `two channels, two results, got ${results.length}`);
+    assert(
+      results.every((r) => r.status === "skipped_deduped"),
+      `both channels report the refusal, got ${results.map((r) => r.status).join(",")}`,
+    );
+    assert(
+      recorded.length === 1,
+      `only the channel with no row yet writes one, got ${recorded.length}`,
+    );
+    assert(
+      recorded[0]?.channelId === "aaaaaaaa-0000-0000-0000-000000000002",
+      `the row belongs to channel b, got ${String(recorded[0]?.channelId)}`,
+    );
+  }
+
+  // --- `F3.46` D2: an unreadable ledger writes the row, never sends --------
+  //
+  // "The ledger could not be read" must not become indistinguishable from "we
+  // already recorded this". The fallback is today's write — bounded by today's
+  // growth — never a send, and never a rejection out of `dispatch`.
+  {
+    const { db, recorded, reads, failSkipReads } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [channelRow()], webhook: webhook.transport });
+
+    failSkipReads(true);
+    const results = await service.dispatch(input({ raised: false }));
+    // Without this line the case passes against a service that never reads:
+    // the flag would do nothing and every assertion below would still hold.
+    assert(
+      reads.skipExists === 1,
+      `the ledger read must have been attempted, got ${reads.skipExists}`,
+    );
+    assert(
+      results.length === 1 && results[0]?.status === "skipped_deduped",
+      `an unreadable ledger still reports the refusal, got ${results
+        .map((r) => r.status)
+        .join(",")}`,
+    );
+    assert(
+      results[0]?.error === null,
+      "the read failure is the service's problem, not the caller's",
+    );
+    assert(
+      recorded.length === 1 && recorded[0]?.status === "skipped_deduped",
+      `the refusal falls back to being written, got ${recorded.length} rows`,
+    );
+    assert(webhook.sent.length === 0, "a failed dedupe read must never become a send");
+  }
+
+  // --- `F3.46`: a raise is never affected ----------------------------------
+  //
+  // The existence read lives on the refusal path only. A transition still pays
+  // for the ceiling read and nothing else.
+  {
+    const { db, recorded, reads } = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({ db, channels: [channelRow()], webhook: webhook.transport });
+
+    const results = await service.dispatch(input({ raised: true }));
+    assert(results[0]?.status === "sent", "a raise still sends");
+    assert(
+      reads.skipExists === 0,
+      `a raise must not read the dedupe ledger, got ${reads.skipExists} reads`,
+    );
+    assert(reads.rateLimit === 1, `the hourly ceiling is still read once, got ${reads.rateLimit}`);
+    assert(
+      recorded.length === 1 && recorded[0]?.status === "sent",
+      `one sent row, got ${recorded.length}`,
     );
   }
 
@@ -359,7 +521,7 @@ export async function runNotificationsServiceTests(): Promise<void> {
   // pressing Send Test on a global channel would send the real message and
   // write no ledger row — both directions are asserted, not just the throw.
   {
-    const { db, recorded } = fakeDb();
+    const { db, recorded, reads } = fakeDb();
     const webhook = fakeTransport("webhook", () =>
       Promise.resolve({ status: "sent", error: null }),
     );
@@ -382,6 +544,12 @@ export async function runNotificationsServiceTests(): Promise<void> {
     assert(
       recorded.length === 1 && recorded[0]?.organizationId === ORG_ID,
       "the ledger row carries the channel's organization",
+    );
+    // `F3.46`: a test passes `dedupeKey: null` and never enters the refusal
+    // branch, so it never reads the dedupe ledger either.
+    assert(
+      reads.skipExists === 0,
+      `sendTest must not read the dedupe ledger, got ${reads.skipExists} reads`,
     );
   }
 

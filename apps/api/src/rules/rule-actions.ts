@@ -49,7 +49,8 @@ export function shouldNotify(action: unknown): boolean {
  * what `bms.alarms` holds for the alarm, so the notification text is the alarm
  * text by construction rather than a second computation that could drift.
  * `raised` passes straight through — `dispatch` turns `false` into a
- * `skipped_deduped` ledger row (decision 7).
+ * `skipped_deduped` result, recorded once per channel and dedupe key
+ * (decision 7; `F3.46`).
  */
 export function toDispatchInput(
   rule: NotifiableRule,

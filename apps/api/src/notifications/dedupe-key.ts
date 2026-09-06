@@ -14,6 +14,19 @@
  * acknowledged and the condition trips again, a new `bms.alarms` row exists,
  * and that genuinely is a new event the operator wants to hear about.
  *
+ * **Since `F3.46` the key has a reader, not only a writer.** Before a refusal
+ * is recorded, `NotificationsService.hasRecordedSkip` looks this key up on the
+ * channel and writes the row only if no `skipped_deduped` row holds it yet, so
+ * an unchanged plant stops growing the ledger one row per press.
+ *
+ * On the sweep path the refusal's key is `<ruleId>:no-alarm:<severity>`, not
+ * the open alarm's: `AlarmRaiser` returns `alarmId: null` when the
+ * already-open conflict is the thing that refused the raise. Suppression there
+ * is therefore per rule and severity for the life of the ledger, not per alarm
+ * episode — accepted by the owner (ruling Q1, 2026-09-06), because the answer
+ * the row exists to give, *"already open"*, is the same for every episode of
+ * it, and `bms.rule_executions` still records that the sweep reached the rule.
+ *
  * Bounded to the column width — `dedupe_key varchar(255)` in migration 0038 —
  * so a long rule id can never make the insert fail. Two uuids and a severity
  * are far short of it; the clamp is there for the case nobody predicted.

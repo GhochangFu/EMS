@@ -127,6 +127,47 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       `every one of the ${rules.rows.length} refusals must be recorded; found ${deduped}`,
     );
 
+    // --- `F3.46`: the second sweep records nothing new -----------------------
+    //
+    // The same unchanged plant, pressed again — byte-identical input, so every
+    // dedupe key is the one the first sweep already wrote. The contract does
+    // not move (one skipped_deduped result per joined channel, every time), but
+    // the ledger must not grow: this is the only place the WHERE clause of
+    // `hasRecordedSkip` is exercised against a real Postgres, where the fake in
+    // the unit spec can see nothing of it.
+    for (const rule of rules.rows) {
+      const again = await service.dispatch({
+        ruleId: rule.id,
+        ruleCode: rule.code,
+        organizationId: rule.organization_id,
+        alarmId: null,
+        severity: "warning",
+        message: "unchanged",
+        raised: false,
+      });
+      assert(
+        again.filter((r) => r.status === "skipped_deduped").length === 1,
+        `rule ${rule.code} must still report exactly one skipped_deduped result on the second ` +
+          `sweep; got [${again.map((r) => r.status).join(",")}]`,
+      );
+    }
+
+    assert(
+      sent.length === 0,
+      `a second sweep over the same unchanged plant sent ${sent.length} notifications`,
+    );
+    // This count is the whole claim. A read that failed and fell back to the
+    // write (D2) records a second `skipped_deduped` row, not a `failed` one, so
+    // a fallback on this sweep shows up here as `2 × rules` — there is no other
+    // status to check for it.
+    const dedupedAgain = await countDeliveries(pool, channelId as string, "skipped_deduped");
+    assert(
+      dedupedAgain === rules.rows.length,
+      `a second sweep must add no rows: expected still ${rules.rows.length} skipped_deduped ` +
+        `rows, found ${dedupedAgain} — the once-per-key suppression is not holding, or a ` +
+        `ledger read failed and fell back to the write`,
+    );
+
     // --- the positive direction ---------------------------------------------
     //
     // A test that only proves nothing is sent passes just as well when nothing

@@ -529,8 +529,9 @@ export async function assertNotifyRuleDispatchesOnRaiseOnly(db: BmsDb): Promise<
     );
 
     // Last, and only now. Every dispatch this sweep started is a `loadForRule`
-    // SELECT with at most one follow-up insert, all issued before the `until`
-    // poll above returned — pg queues them on this one connection in order — so
+    // SELECT, then per channel at most one existence read (`F3.46`) and one
+    // insert — the insert is always last — all issued before the `until` poll
+    // above returned; pg queues them on this one connection in order, so
     // nothing is still in flight to land on a released connection.
     tx.rollback();
   });

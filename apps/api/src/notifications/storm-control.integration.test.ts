@@ -30,7 +30,7 @@ describe.skipIf(!connectionString)("F3.8 storm control", () => {
     await pool?.end();
   }, 60_000);
 
-  it("sends nothing for an unchanged plant, once for a real transition, and honours the ceiling", async () => {
+  it("sends nothing for an unchanged plant, records each refusal once, sends once for a real transition, and honours the ceiling", async () => {
     if (!pool) throw new Error("pool not initialised");
     await runStormControlTests(pool, createDb(pool));
   }, 120_000);
