@@ -68,12 +68,16 @@ describe.skipIf(!connectionString)("F3.6 — evaluateEnabledRules against a real
   );
 
   // `F3.7`. Two sweeps of every enabled+published rule, not one, so this is the
-  // slowest assertion in the file — and it still fits the siblings' budget.
+  // slowest assertion in the file. Alone it runs in ~12 s; under the full
+  // parallel suite on 2026-09-06 both sweeps together passed 30 s and the
+  // sibling budget timed out (three times, each green on a solo re-run). The
+  // two `until` waits inside cap at 10 s each and fail loudly on their own, so
+  // this outer budget only has to outlast two loaded sweeps.
   it(
     "dispatches a notify rule's raise, records the second sweep's refusal, and leaves a trace_only rule silent",
     async () => {
       await assertNotifyRuleDispatchesOnRaiseOnly(db);
     },
-    30_000,
+    90_000,
   );
 });
