@@ -339,3 +339,65 @@ branch writes *before* the hourly ceiling, keyed by a forensic (non-unique)
 **Consequences for this ADR's text.** Decision 4 ("a row for every attempt")
 now has one reading per path, stated in ruling 1; decision 9's "`F3.7` becomes
 buildable" is discharged. Nothing else moves.
+
+## Amendment 2 — `F3.46` built: a refusal is recorded once per key, and `dedupe_key` has its index (2026-09-06)
+
+**Status: Accepted — 2026-09-06.** Ruled by the repository owner at `F3.46`'s
+step-2 and step-5 gates on `docs/plans/f3.46-dedupe-skip-growth.md`; recorded
+here in the `chore(agents):` sweep after PR #336 merged squashed as `fd6117d`
+and PR #339 merged squashed as `64db1db`.
+
+1. **Decision 4 reads differently again, now that the sweep path grows
+   without bound.** A refusal still leaves a row — that much of decision 4
+   stands — but `NotificationsService.dispatchToChannel` now reads the ledger
+   *before* writing one, and writes `skipped_deduped` at most once per
+   `(channel_id, organization_id, dedupe_key)` for the life of the ledger: the
+   second and every later press of *Evaluate now* against the same unchanged
+   alarm answers from the existing row rather than adding another. A failed
+   read is not treated as "no prior refusal" — it logs one warning and falls
+   back to today's plain write, so a read outage degrades to Amendment 1's
+   behavior rather than to silence. The narrow window this leaves under two
+   concurrent sweeps racing the same key was named and accepted as the bound
+   this amendment buys, not closed by it — a unique constraint would close it
+   at the cost of a write-path failure mode this ADR is not ready to take on.
+2. **Ruling Q1 gives the sweep's key its content.** `AlarmRaiser` returns no
+   alarm id on an already-open conflict, and none either on the E7.1b
+   organization-mismatch refusal (ADR 0043 Amendment 5) — both are the same
+   shape of "nothing to raise" to the caller. The sweep's refusal key is
+   therefore `rule:no-alarm:severity`, and the two refusals share it: a
+   suppression is per rule and severity, not per alarm, for as long as the
+   ledger keeps the row. The owner accepted this rather than widen the key,
+   because the two refusals are indistinguishable to the operator reading the
+   deliveries view — both mean "nothing new to tell you about this rule" — and
+   a wider key would only restore the growth this amendment exists to bound.
+3. **Decision 7's forensic key gets its first reader, and `0038`'s own promise
+   is discharged — by migration `0065`, not the plan's `0064`.** `F2.7`'s PR 1
+   (#337) landed migrations `0063` and `0064` first, so the index that
+   `dedupe_key` was always going to need lands numbered `0065`:
+   `notification_deliveries_dedupe_skip_idx ON bms.notification_deliveries
+   (channel_id, dedupe_key) WHERE status = 'skipped_deduped'`, partial on the
+   skip status so a `sent` or `failed` row never enters it. `organization_id`
+   is deliberately outside the index — the rule id inside `dedupe_key` already
+   belongs to one organization, so the extra column would only widen the index
+   for no selectivity. The migration runs under `SET ROLE bms_owner` /
+   `RESET ROLE` per ADR 0045, and the read this amendment adds must stay an
+   unnamed statement so a prepared plan never survives across the role switch.
+   Ruling Q2 is why this shipped as two pull requests rather than folded into
+   one: the index is the discharge of `0038`'s own rule that whoever gives
+   `dedupe_key` a reader adds the index with it, recorded in this amendment
+   rather than gated on it landing first.
+4. **Retention for `bms.notification_deliveries` stays deliberately
+   unchosen.** This amendment bounds growth from the dedupe branch only; a
+   channel's `sent` and `failed` history still has no retention policy, and
+   nothing here rules on adding one.
+5. **Left open, filed as `F3.47`:** `POST /api/v1/rules/evaluate` still writes
+   one `bms.rule_executions` row per enabled rule per press — 289 on the
+   seeded database — with no throttle and no retention policy of its own.
+   This amendment bounds the delivery ledger the sweep writes to, not the
+   execution trace the sweep itself is; a `configuration`-role user looping
+   *Evaluate now* still grows `bms.rule_executions` one sweep at a time.
+6. **Forward pointer.** ADR 0057 (`F3.10`, PR 1 merged #338 `452c1f4`) adds
+   escalation and cleared event kinds to the same `dedupe_key` shape and a
+   wider partial index of its own in migration `0066`; that migration must
+   drop or re-key `notification_deliveries_dedupe_skip_idx` rather than leave
+   two partial indexes disagreeing about which statuses they cover.
