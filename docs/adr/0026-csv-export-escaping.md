@@ -94,7 +94,9 @@ timestamps, action names, free text, JSON — so **no audit cell is a number** a
 the question never arose there. `energyCsv` emits **8 fixed numeric cells**
 (`totalKwh`, `peakKw`, `pueEstimate`, `indicativeCostZar`, `tariffZarPerKwh`,
 `gridKwh`, `solarKwh`, `dgKwh`) plus **2 per top-consumer row** (`avgKw`,
-`estimatedKwh`), up to 10 rows — so up to 28. Guarding those makes Excel import
+`estimatedKwh`), up to 10 rows — so up to 28 (since `F2.8`, 2026-09-06,
+`pueEstimate` is nullable and a `null` writes the U+2014 dash — text, and not a
+leader, so an unconfigured estate has 7 numeric cells). Guarding those makes Excel import
 them as **text**, and the client's own arithmetic on the sheet breaks.
 
 **Fact 8 — negative telemetry is representable, so the exemption must not rest

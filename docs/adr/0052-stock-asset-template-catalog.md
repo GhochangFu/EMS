@@ -183,8 +183,10 @@ tables would need a NULL escape.
    shape.
 
 9. **Nothing is seeded, and `BASELINE-*` are untouched.** The four seeded
-   baselines keep doing their one job (health bands on demo assets). No
-   `db:seed` step imports a pack. If a demo ever needs a pack present at boot,
+   baselines keep doing their one job (health bands on demo assets) — and
+   since `F2.8` (2026-09-06) a fifth, `BASELINE-ELECTRICAL-INCOMER`, carries
+   three `bms-calc-v2` formulas, seeded with `DO NOTHING` and pinned to the
+   incomers, not imported. No `db:seed` step imports a pack. If a demo ever needs a pack present at boot,
    that is its own row, and it must be idempotent on the stamp — an import
    that runs on every `compose up` would open a new version each time, by
    decision 4.

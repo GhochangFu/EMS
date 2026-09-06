@@ -123,10 +123,11 @@ export class CalcDefinitionsService {
         minCoverageRatio: templatePoints.minCoverageRatio,
       })
       .from(assets)
-      // assets.templateId is nullable (every seeded asset is hand-created,
-      // per its own column comment) — `eq` against a NULL column fails the
-      // join condition, so a hand-created asset contributes no rows here
-      // without any extra filter.
+      // assets.templateId is nullable (its column comment says every seeded
+      // asset is hand-created; false since F4.75 pinned the health baselines
+      // and F2.8 pinned the incomers, but the shape holds) — `eq` against a
+      // NULL column fails the join condition, so an unpinned asset
+      // contributes no rows here without any extra filter.
       .innerJoin(templatePoints, eq(templatePoints.templateId, assets.templateId))
       // ADR 0039 decision 6. LEFT, on `(asset_id, point_key)` — the pair
       // `asset_points_asset_id_point_key_unique` covers, so this matches at

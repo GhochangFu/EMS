@@ -87,7 +87,9 @@ laptop. Pipeline:
 - **Status:** complete
 - **Goal:** first user-facing screen, fully live.
 - **Deliverables**
-  - KPI tile row: total kW, sites online, alarms open, PUE estimate.
+  - KPI tile row: total kW, sites online, alarms open, PUE (a fitted estimate
+    until `F2.8`; since 2026-09-06 Σ site kW ÷ Σ IT kW from the incomers'
+    derived points, or a dash when nothing is configured).
   - One ECharts trend chart bound to the live telemetry hook.
   - Layout matches mockup (`R.dash`).
   - Loading, empty, and error states for each tile.
@@ -1879,7 +1881,8 @@ Process (`AGENTS.md` §10).
   stays inexpressible as a derived tag without an ADR 0036 amendment or a
   site-level rollup asset — recorded on `F2.8`'s own `docs/BACKLOG.md` row.
   **That amendment arrived as ADR 0055 and shipped on 2026-09-05 (`F2.9`, PRs
-  #324 and #325), so `F2.8` is startable.**
+  #324 and #325), so `F2.8` was startable — and it shipped on 2026-09-06
+  (PR #329); see its own section below.**
 
 ### Cross-asset aggregation & balance calculations (`F2.9`, ADR 0055) — done
 
@@ -1911,6 +1914,34 @@ Process (`AGENTS.md` §10).
 - **Read the plan before touching this code.**
   `docs/plans/f2.9-cross-asset-calc-v2.md` carries 67 numbered corrections, and
   its body is stale wherever they correct it.
+
+### Replace hardcoded PUE SQL with user-defined derived tags (`F2.8`) — done
+
+- **Delivered 2026-09-06 in PR #329** (squash `2d145de`), on the grammar and
+  engine `F2.9` shipped the day before. Plan:
+  `docs/plans/f2.8-pue-derived-tags.md`; nine owner rulings, no ADR.
+- **What PUE is now.** Three `bms-calc-v2` derived points on the stock
+  incomer (`electrical-feeder` v2): `site_kw = sum({kw} @site)`,
+  `it_kw = sum({kw} @group('IT_LOAD'))`, `pue = {site_kw} / {it_kw}` —
+  scheduled every 60 s, fail-closed coverage. `IT_LOAD` is a reserved asset
+  group code the importing organization creates per site. The API reads
+  Σ `site_kw` / Σ `it_kw` over the incomers in scope (latest, bounded at
+  15 minutes; and windowed for the energy page and the reports), and
+  `pueEstimate` is `null` — a dash and a "not configured" hint on all three
+  tiles, `PUE estimate,—,` in the CSV — where no incomer in scope computes
+  the pair. All three `estimatePue()` copies of the fitted curve are gone,
+  held by `tests/f2.8-pue-curve-is-gone.test.ts`.
+- **The demo.** The ESKOM seed pins each site's `incoming-supply` asset to a
+  seeded `BASELINE-ELECTRICAL-INCOMER` template carrying the same three
+  points (`it_kw` reads `{rack_kw}`, the key the simulator emits on IT
+  assets), creates the `IT_LOAD` groups, declares `rack_kw` on every IT
+  asset, and keeps the engine's own outputs out of the health baselines on a
+  re-seed. The simulator's IT load and provincial feeder band were re-sized
+  so the demo ratio is plausible; the compose simulator covers three sites,
+  so seven demo incomers stay silent (`F4.95`).
+- **Still open:** `F2.22` (the `v2` authoring affordances), `F4.95` (demo
+  simulator coverage), `F4.96` (an open baseline draft blocks the next
+  `compose up`).
 
 ### Template authoring UI + formula editor (`F2.5`, ADR 0038) — done
 

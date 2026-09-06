@@ -82,7 +82,9 @@ considered and both rejected **for this row**. Amending the grammar with
 aggregates and a window notation would break `evaluate(ast, inputs)`, require a
 set-selector concept that does not exist, and turn an expression language into
 a query language; it is the right answer for `F2.8`, which genuinely needs
-asset-qualified references, and it should be driven by `F2.8`. A site-level
+asset-qualified references, and it should be driven by `F2.8` *(it was: ADR
+0055 on 2026-09-04, `F2.9` on 2026-09-05, and `F2.8` shipped on them on
+2026-09-06)*. A site-level
 asset carrying totals as measured points needs `F2.10`'s parent tier, which
 re-opens ADR 0008 and touches every scoped authorization check, and it would
 leave the aggregation logic as code rather than configuration anyway.
@@ -205,6 +207,8 @@ silent: a deleted raw row leaves a stale in-range count readable forever.
 
 - **No grammar change.** Decision 1. ADR 0036 stands unamended, and `F2.8`
   still needs its own answer on asset-qualified references or aggregates.
+  *(Answered since: ADR 0055 amended the grammar as `bms-calc-v2`, and `F2.8`
+  shipped on it on 2026-09-06.)*
 - **No severity weighting inside the tag ratio.** Decision 2. A second axis,
   and nobody has asked for it.
 - **No bad-actor identification beyond ranking.** The client's phrase is
