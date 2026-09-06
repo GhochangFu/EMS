@@ -158,6 +158,33 @@ const SECTION_TEMPLATE_CONTENT =
   "body root is still a 400. A strict write-side mirror of the widget spec is owed as its " +
   "own row.";
 
+/**
+ * `F3.10` (ADR 0057 decision 7) — the three escalation nodes below the body
+ * roots, which need their own reason rather than `CALLER_ERROR`'s.
+ *
+ * The step object's decisive key is the one that is **not** declared:
+ * `step_no` is the 1-based position and is assigned by the server on every
+ * write, so `(profile_id, step_no)` can never be handed a gap or a duplicate.
+ * A client that sends `stepNo` is stating a numbering it does not own; stripped
+ * and answered 200, that reads as "my numbering was accepted" and the ladder
+ * silently renumbers underneath it.
+ */
+const ESCALATION_STEP =
+  "F3.10 (ADR 0057 decision 7). One producer, the /admin/escalation-profiles page. `stepNo` " +
+  "is deliberately not a field — the server assigns it from the array position — so it is " +
+  "exactly the key a caller invents, and dropping it silently would report an accepted " +
+  "numbering the server never honoured.";
+const ESCALATION_MAP_ITEM =
+  "F3.10 (ADR 0057 decision 7). The map has two columns and both are named. A third key is a " +
+  "caller error, and the obvious candidate — a per-severity override the ADR explicitly did " +
+  "NOT give this row — must be a 400 rather than a field quietly dropped at 200.";
+const ESCALATION_PATCH =
+  "F3.10 (ADR 0057 decision 7). `updateNotificationChannelBodySchema`'s reason, one table " +
+  "over: `code` and `organizationId` are absent from this body because they are the " +
+  "profile's identity, so a mixed PATCH naming either would answer 200 with the identity " +
+  "unchanged — the E7.1f finding verbatim. `steps` is replace-all, so a stripped sibling of " +
+  "it is a ladder rewritten by accident.";
+
 const STRICT = (why: string): LedgerEntry => ({ strict: true, why });
 
 /**
@@ -283,6 +310,15 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "updateDashboardTemplateBodySchema/content/widgets[]&right|3/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&right|4": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/widgets[]&right|4/config": { strict: false, because: SECTION_TEMPLATE_CONTENT },
+  // `F3.10` (ADR 0057 decision 7, plan D15). One producer — the
+  // `/admin/escalation-profiles` page — so Amendment 3's "how many producers
+  // share this object?" has one answer, and the nested nodes carry their own
+  // `.strict()` because it does not descend. `stepNo` is deliberately absent
+  // from the step object (the server assigns it from the position), which is
+  // exactly the key a client would try to send: stripped and answered 200, it
+  // reads as "my numbering was accepted".
+  createEscalationProfileBodySchema: STRICT(CALLER_ERROR),
+  "createEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   createLocationBodySchema: STRICT(CALLER_ERROR),
   createMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
   createNotificationChannelBodySchema: STRICT(CALLER_ERROR),
@@ -346,6 +382,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
       "destructive read of an additive intent (`F3.37`, ADR 0049 decision 5).",
   ),
   setCredentialsBodySchema: STRICT(ALREADY),
+  setEscalationDefaultsBodySchema: STRICT(CALLER_ERROR),
+  "setEscalationDefaultsBodySchema/items[]": STRICT(ESCALATION_MAP_ITEM),
   setRuleNotificationsBodySchema: STRICT(CALLER_ERROR),
   updateAssetBodySchema: STRICT(CALLER_ERROR),
   updateAssetPointBodySchema: STRICT(CALLER_ERROR),
@@ -402,6 +440,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "updateAssetTemplateBodySchema/content/maintenance[]": STRICT(ALREADY),
   "updateAssetTemplateBodySchema/points[]": STRICT(CALLER_ERROR),
   "updateAssetTemplateBodySchema/points[]/meta": STRICT(CALLER_ERROR),
+  updateEscalationProfileBodySchema: STRICT(ESCALATION_PATCH),
+  "updateEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   updateLocationBodySchema: STRICT(CALLER_ERROR),
   updateMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
   updateNotificationChannelBodySchema: STRICT(

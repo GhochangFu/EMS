@@ -63,6 +63,12 @@ import {
 } from "../asset-health/asset-health.schema";
 import { pointAggregateQuerySchema } from "../telemetry/telemetry.schema";
 import {
+  createEscalationProfileBodySchema,
+  escalationDefaultsQuerySchema,
+  setEscalationDefaultsBodySchema,
+  updateEscalationProfileBodySchema,
+} from "../notifications/escalation-profiles.schema";
+import {
   createNotificationChannelBodySchema,
   listDeliveriesQuerySchema,
   setRuleNotificationsBodySchema,
@@ -199,6 +205,17 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   DashboardBuilderController_putWidgets: putDashboardWidgetsBodySchema,
   DashboardBuilderController_update: updateDashboardBodySchema,
   DashboardController_energyTopConsumers: locationDashboardQuerySchema,
+  // `F3.10` (ADR 0057 decision 7). Four operations across the two controllers
+  // in `escalation-profiles.controller.ts`; the keys are Nest's own
+  // `ControllerClass_handlerName`, copied from the classes and methods rather
+  // than composed by hand — nothing fails if one is wrong, the route simply
+  // reads as "no body" in the served document, which is the `F4.20` defect.
+  // `EscalationProfilesController_list` and `_remove` are absent because they
+  // take no body and no query.
+  EscalationDefaultsController_get: escalationDefaultsQuerySchema,
+  EscalationDefaultsController_set: setEscalationDefaultsBodySchema,
+  EscalationProfilesController_create: createEscalationProfileBodySchema,
+  EscalationProfilesController_update: updateEscalationProfileBodySchema,
   LocationsAdminController_create: createLocationBodySchema,
   LocationsAdminController_update: updateLocationBodySchema,
   MaintenanceController_convert: convertMaintenanceBodySchema,
