@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, Logger } from "@nestjs/common";
 
 import { buildDedupeKey } from "./dedupe-key";
 import type {
@@ -10,16 +10,26 @@ import type {
 import { buildConfig } from "./notifications.config";
 import { NotificationsService, type DispatchInput } from "./notifications.service";
 
-function assert(condition: boolean, message: string): void {
+/*
+ * The builders, the fake database and the warn capture below are exported for
+ * `notifications.events.spec.ts`, which holds the `F3.10` event cases — this
+ * file reached §4.5's cap when they were added here. A spec exporting to a
+ * sibling spec is the shape `stock-catalog.spec.ts` already uses; a helper
+ * module under `notifications/` would be compiled into `dist/` and counted in
+ * the coverage denominator, which a `.spec.ts` is not.
+ */
+
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-const RULE_ID = "11111111-1111-1111-1111-111111111111";
-const ORG_ID = "aaaaaaaa-0000-0000-0000-00000000000a";
+export const RULE_ID = "11111111-1111-1111-1111-111111111111";
+export const ORG_ID = "aaaaaaaa-0000-0000-0000-00000000000a";
 
-function channelRow(overrides: Partial<NotificationChannelRow> = {}): NotificationChannelRow {
+/** A channel row in `ORG_ID`, webhook kind, enabled; every field overridable. */
+export function channelRow(overrides: Partial<NotificationChannelRow> = {}): NotificationChannelRow {
   return {
     id: "33333333-3333-3333-3333-333333333333",
     organizationId: ORG_ID,
@@ -34,7 +44,8 @@ function channelRow(overrides: Partial<NotificationChannelRow> = {}): Notificati
   };
 }
 
-function input(overrides: Partial<DispatchInput> = {}): DispatchInput {
+/** A raise-path input for `RULE_ID` in `ORG_ID`, with an alarm; every field overridable. */
+export function input(overrides: Partial<DispatchInput> = {}): DispatchInput {
   return {
     ruleId: RULE_ID,
     ruleCode: "UPS-BATT-TEMP",
@@ -57,62 +68,120 @@ type Recorded = {
   channelId: string;
   dedupeKey: string;
   organizationId: string;
+  alarmId: string | null;
 };
 
 /**
  * A fake `BmsDb` narrow enough for this service: it answers the rate-limit
- * SELECT with a settable count, answers `F3.46`'s existence SELECT from a queue
- * of booleans, and records every delivery INSERT.
+ * SELECT with a settable count, answers each ledger SELECT from its own queue,
+ * answers the cleared-recipient SELECT from a settable row list, and records
+ * every delivery INSERT.
  *
- * **The two SELECTs are told apart by their projection, not by their `WHERE`.**
+ * **The SELECTs are told apart by their projection, not by their `WHERE`.**
  * Drizzle hands the fake an opaque SQL object for the `WHERE`, so it can see
  * nothing of it: the rate-limit read asks for `{ count }` and ends at
- * `.where()`, `hasRecordedSkip` asks for `{ id }` and adds `.limit(1)`. That
- * the real `WHERE` names this channel, this organization, this key and
- * `skipped_deduped` is proven against Postgres in
+ * `.where()`; `hasRecordedSkip` asks for `{ id }` and adds `.limit(1)`;
+ * `F3.10`'s `eventDeliveryBlocked` asks for `{ status }` and adds
+ * `.limit(MAX_EVENT_ATTEMPTS)`; `sentChannelIdsForAlarm` asks for
+ * `{ channelId }` and ends at `.where()`. Each projection has its own queue and
+ * counter, so a read that reached the wrong branch shows up as the wrong
+ * counter moving — the `F3.46` lesson: a fake that fed one boolean queue to two
+ * reads passed for the wrong reason. The match is on the **exact** sorted key
+ * set, never on "has this key": a future `{ id, status }` read must throw here
+ * rather than land in the skip queue and pass for the wrong reason again. An
+ * unknown projection throws. That the real `WHERE` of each read names this
+ * channel, this organization, this key (and, for the skip, `skipped_deduped`;
+ * for the recipients, this alarm and `sent`) is proven against Postgres in
  * `storm-control.integration.spec.ts`, which is where it can be.
+ *
+ * The `{ status }` queue holds one **row list** per read, and the fake honours
+ * the `LIMIT` it is given by slicing that list — so the Q9 bound's "three
+ * `failed` rows block" case only passes if the service really asks for three.
  */
-function fakeDb(sentInLastHour = 0): {
+export function fakeDb(sentInLastHour = 0): {
   db: ConstructorParameters<typeof NotificationsService>[0];
   recorded: Recorded[];
   /** Per-fake call counters — not a lifetime statistic (§4.6). */
-  reads: { rateLimit: number; skipExists: number };
+  reads: { rateLimit: number; skipExists: number; deliveryExists: number; sentChannels: number };
+  /** The `LIMIT` each `{ status }` read asked for, in read order. */
+  deliveryLimits: number[];
   setCount: (n: number) => void;
-  /** Answers for the next existence reads, in dispatch order. Empty = `false`. */
+  failRateLimitReads: (fail: boolean) => void;
+  /** Answers for the next `{ id }` (skip) existence reads, in dispatch order. Empty = `false`. */
   setSkipRecorded: (...values: boolean[]) => void;
   failSkipReads: (fail: boolean) => void;
+  /** The statuses each of the next `{ status }` (event) reads finds, in dispatch order. Missing = none. */
+  setDeliveryRecorded: (...rows: string[][]) => void;
+  failDeliveryReads: (fail: boolean) => void;
+  /** The rows every `{ channelId }` read returns, duplicates and all. */
+  setSentChannels: (...channelIds: string[]) => void;
   failInserts: (fail: boolean) => void;
 } {
   const recorded: Recorded[] = [];
-  const reads = { rateLimit: 0, skipExists: 0 };
+  const reads = { rateLimit: 0, skipExists: 0, deliveryExists: 0, sentChannels: 0 };
+  const deliveryLimits: number[] = [];
   const skipQueue: boolean[] = [];
+  const deliveryQueue: string[][] = [];
+  const sentChannels: string[] = [];
   let count = sentInLastHour;
   let insertsFail = false;
+  let rateLimitReadsFail = false;
   let skipReadsFail = false;
+  let deliveryReadsFail = false;
 
   const db = {
     select: (projection: Record<string, unknown>) => {
-      if ("count" in projection) {
+      const shape = Object.keys(projection).sort().join(",");
+      if (shape === "count") {
         return {
           from: () => ({
             where: () => {
               reads.rateLimit += 1;
+              if (rateLimitReadsFail) return Promise.reject(new Error("ledger unavailable"));
               return Promise.resolve([{ count }]);
             },
           }),
         };
       }
-      return {
-        from: () => ({
-          where: () => ({
-            limit: () => {
-              reads.skipExists += 1;
-              if (skipReadsFail) return Promise.reject(new Error("ledger unavailable"));
-              return Promise.resolve(skipQueue.shift() === true ? [{ id: "x" }] : []);
+      if (shape === "id") {
+        return {
+          from: () => ({
+            where: () => ({
+              limit: () => {
+                reads.skipExists += 1;
+                if (skipReadsFail) return Promise.reject(new Error("ledger unavailable"));
+                return Promise.resolve(skipQueue.shift() === true ? [{ id: "x" }] : []);
+              },
+            }),
+          }),
+        };
+      }
+      if (shape === "status") {
+        return {
+          from: () => ({
+            where: () => ({
+              limit: (n: number) => {
+                reads.deliveryExists += 1;
+                deliveryLimits.push(n);
+                if (deliveryReadsFail) return Promise.reject(new Error("ledger unavailable"));
+                const statuses = deliveryQueue.shift() ?? [];
+                return Promise.resolve(statuses.slice(0, n).map((status) => ({ status })));
+              },
+            }),
+          }),
+        };
+      }
+      if (shape === "channelId") {
+        return {
+          from: () => ({
+            where: () => {
+              reads.sentChannels += 1;
+              return Promise.resolve(sentChannels.map((channelId) => ({ channelId })));
             },
           }),
-        }),
-      };
+        };
+      }
+      throw new Error(`fakeDb: no queue for projection {${shape}}`);
     },
     insert: () => ({
       values: (row: Recorded) => {
@@ -123,6 +192,7 @@ function fakeDb(sentInLastHour = 0): {
           channelId: row.channelId,
           dedupeKey: row.dedupeKey,
           organizationId: row.organizationId,
+          alarmId: row.alarmId,
         });
         return Promise.resolve();
       },
@@ -133,8 +203,12 @@ function fakeDb(sentInLastHour = 0): {
     db,
     recorded,
     reads,
+    deliveryLimits,
     setCount: (n) => {
       count = n;
+    },
+    failRateLimitReads: (fail) => {
+      rateLimitReadsFail = fail;
     },
     setSkipRecorded: (...values) => {
       skipQueue.length = 0;
@@ -143,13 +217,48 @@ function fakeDb(sentInLastHour = 0): {
     failSkipReads: (fail) => {
       skipReadsFail = fail;
     },
+    setDeliveryRecorded: (...rows) => {
+      deliveryQueue.length = 0;
+      deliveryQueue.push(...rows);
+    },
+    failDeliveryReads: (fail) => {
+      deliveryReadsFail = fail;
+    },
+    setSentChannels: (...channelIds) => {
+      sentChannels.length = 0;
+      sentChannels.push(...channelIds);
+    },
     failInserts: (fail) => {
       insertsFail = fail;
     },
   };
 }
 
-function fakeTransport(kind: string, behaviour: () => Promise<DeliveryResult>) {
+/**
+ * Runs `run` with `Logger.prototype.warn` captured, and restores it after.
+ *
+ * The service builds its own `Logger` (no injection seam, on purpose — the
+ * constructor is the module's), so the one way to see a warn line from a spec
+ * is the prototype. Scoped to the call and restored in `finally`, so a failing
+ * assertion inside `run` cannot leave the next case deaf.
+ */
+export async function captureWarnings<T>(
+  run: () => Promise<T>,
+): Promise<{ result: T; warnings: string[] }> {
+  const warnings: string[] = [];
+  const original = Logger.prototype.warn;
+  Logger.prototype.warn = function warn(message: unknown): void {
+    warnings.push(String(message));
+  };
+  try {
+    return { result: await run(), warnings };
+  } finally {
+    Logger.prototype.warn = original;
+  }
+}
+
+/** A transport of `kind` that records every message it is handed and answers with `behaviour()`. */
+export function fakeTransport(kind: string, behaviour: () => Promise<DeliveryResult>) {
   const sent: NotificationMessage[] = [];
   const transport: NotificationTransport = {
     kind,
@@ -163,7 +272,8 @@ function fakeTransport(kind: string, behaviour: () => Promise<DeliveryResult>) {
 
 type Deps = ConstructorParameters<typeof NotificationsService>;
 
-function serviceWith(options: {
+/** A service over the fake database, a stub channel loader and the given transports. */
+export function serviceWith(options: {
   db: Deps[0];
   channels: NotificationChannelRow[] | (() => Promise<NotificationChannelRow[]>);
   webhook: NotificationTransport;
@@ -192,7 +302,10 @@ function serviceWith(options: {
 
 /**
  * `F3.8` U6 — dedupe, the hourly ceiling, and the promise `dispatch` always
- * keeps. The database and every transport are fakes; no socket, no Postgres.
+ * keeps. `F3.10` U2's event cases (the explicit-channel entry point, the two
+ * event kinds, the once-per-key ledger read and its retry bound) live in
+ * `notifications.events.spec.ts`. The database and every transport are fakes;
+ * no socket, no Postgres.
  */
 export async function runNotificationsServiceTests(): Promise<void> {
   // --- the transition dedupe ----------------------------------------------
