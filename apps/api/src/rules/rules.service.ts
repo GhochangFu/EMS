@@ -5,15 +5,9 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { asc, desc, eq, inArray, or } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 
-import {
-  assets,
-  auditLog,
-  automationRules,
-  ruleExecutions,
-  users,
-} from "@bms/db";
+import { assets, auditLog, automationRules, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AssetDomain,
@@ -45,7 +39,7 @@ import {
   unsupportedRuleType,
   type LatestSampleLoader,
 } from "./rule-evaluation";
-import { insertRuleAuditLog } from "./rule-audit";
+import { insertRuleAuditLog, resolveActorId } from "./rule-audit";
 import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
 import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
 import { resolveAssetOrgOrNull, resolveWriteOrg } from "./rule-org";
@@ -153,7 +147,7 @@ export class RulesService {
     // both branches, so this is the same value the old order would have used.
     const organizationId = await resolveWriteOrg(this.fleetDb, dto.assetId ?? null, dto.ruleType);
     const values = await this.validateRuleDraft(dto, undefined, organizationId);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const code = values.code ?? (await nextRuleCode(this.fleetDb, dto.name));
     const now = new Date();
 
@@ -214,7 +208,7 @@ export class RulesService {
     // validateRuleDraft so its E7.1c code check can be scoped to it.
     const organizationId = this.requireRuleOrg(current);
     const values = await this.validateRuleDraft(merged, id, organizationId);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
 
     const updated = await withTenant(this.db, organizationId, async (tx) => {
@@ -255,7 +249,7 @@ export class RulesService {
     // there is no org to scope the code-uniqueness check to — it is skipped
     // here and left to the authoritative check in `createDraft`.
     const values = await this.validateRuleDraft(dto, dto.id, null);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const result = await this.evaluateRule({
       id: dto.id ?? "00000000-0000-0000-0000-000000000000",
       code: values.code ?? "DRAFT",
@@ -405,7 +399,7 @@ export class RulesService {
     // The copy inherits the source rule's tenant. `duplicateRule` bypasses
     // `validateRuleDraft`, so it carries its own `organizationId` stamp.
     const organizationId = this.requireRuleOrg(current);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
     const code = await nextRuleCode(this.fleetDb, `${current.code}-COPY`);
 
@@ -541,7 +535,7 @@ export class RulesService {
       throw new BadRequestException("Only published rules can be enabled or disabled");
     }
     const organizationId = this.requireRuleOrg(current);
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
 
     const updated = await withTenant(this.db, organizationId, async (tx) => {
@@ -958,7 +952,7 @@ export class RulesService {
     }>,
     organizationId: string,
   ): Promise<RuleRow> {
-    const actorId = await this.resolveActorId(actor);
+    const actorId = await resolveActorId(this.fleetDb, actor);
     return withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
@@ -976,17 +970,5 @@ export class RulesService {
 
       return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC
     });
-  }
-
-  private async resolveActorId(
-    actor: Pick<JwtPayload, "sub" | "email">,
-  ): Promise<string | null> {
-    // fleetDb: a pre-tenant identity read (pre-empts the Task-4 actor-loss).
-    const [actorRow] = await this.fleetDb
-      .select({ id: users.id })
-      .from(users)
-      .where(or(eq(users.id, actor.sub), eq(users.email, actor.email)))
-      .limit(1);
-    return actorRow?.id ?? null;
   }
 }
