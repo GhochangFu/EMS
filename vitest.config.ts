@@ -523,11 +523,26 @@ export default defineConfig({
       // `db:seed` may not reproduce, and `F4.33` still open — and this
       // measurement was again taken against this machine's long-lived database
       // rather than CI's fresh one.
+      //
+      // `F1.10` (2026-09-06) — the ingest disk buffer (ADR 0016 Amendment 4).
+      // Measured against the live database on a full run, 362/362 files and
+      // 1982/1982 tests, none skipped, exit 0:
+      // 74.14 statements · 70.17 branches · 75.89 functions · 74.22 lines.
+      //
+      // **Most of the ~4-point rise from the `F3.1d` figures is not this row.**
+      // Several items landed between 2026-08-30 and today without ratcheting
+      // (`F3.35`–`F3.42`, `F2.13`, `F2.14`, `F2.8`, `F2.9`, `F4.94`), each
+      // arriving with its specs; this row measures the sum. Its own share is
+      // `apps/ingest/src/host/disk-buffer.ts` (794 lines, 20 spec blocks) and
+      // the supervisor's spill/breaker/replay additions (12 blocks), both fully
+      // in the denominator, against ~15 deliberately uncovered wiring lines in
+      // `apps/ingest/src/main.ts`. Margin held at ~0.7–0.8 per axis for the
+      // same two hazards named above.
       thresholds: {
-        statements: 69.4,
-        branches: 65.5,
-        functions: 71.7,
-        lines: 69.5,
+        statements: 73.4,
+        branches: 69.4,
+        functions: 75.1,
+        lines: 73.5,
       },
     },
   },

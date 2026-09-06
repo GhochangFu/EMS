@@ -10,6 +10,8 @@
  * ordinary `config` and `credentials` values.
  */
 
+import { isAbsolute } from "node:path";
+
 export type HostConfig = {
   readonly databaseUrl: string;
   /**
@@ -51,6 +53,23 @@ export type HostConfig = {
    * the stored JSONB, so a database value always wins.
    */
   readonly mqttConnectionDefaults: Readonly<Record<string, unknown>>;
+  /**
+   * Where spilled batches land when the database is unreachable (ADR 0016
+   * Amendment 4, ruling 4). The host refuses to start if this directory
+   * cannot be created and written — there is no "no buffer" mode.
+   */
+  readonly bufferDir: string;
+  /**
+   * How long a spilled segment survives, by receipt time, before the bound
+   * erases it. Amendment 4 states this as "rolling 1 h"
+   * (`docs/AGENTS.production.md:218`); the default preserves it.
+   */
+  readonly bufferMaxAgeMs: number;
+  /**
+   * Total bytes the on-disk buffer may hold across every endpoint before the
+   * oldest segment is erased. 256 MiB is Amendment 4's ruling 3.
+   */
+  readonly bufferMaxBytes: number;
 };
 
 /**
@@ -64,6 +83,9 @@ export type HostConfig = {
 export const DEFAULT_HEALTH_PORT: number = 9103;
 export const DEFAULT_RELOAD_MS: number = 60_000;
 export const DEFAULT_STALE_AFTER_MS: number = 300_000;
+export const DEFAULT_BUFFER_DIR: string = "/var/lib/bms-ingest";
+export const DEFAULT_BUFFER_MAX_AGE_MS: number = 3_600_000;
+export const DEFAULT_BUFFER_MAX_BYTES: number = 268_435_456;
 
 /**
  * The largest delay `setInterval` honours.
@@ -75,6 +97,16 @@ export const DEFAULT_STALE_AFTER_MS: number = 300_000;
  * slow the reload down speeds it up without bound.
  */
 const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/**
+ * The largest byte cap the on-disk buffer accepts.
+ *
+ * Unlike a timer this ceiling is not a fact about the language runtime — it
+ * is a fact about a disk: 1 TiB is more than any pilot host provisions for
+ * `INGEST_BUFFER_DIR`, so anything above it is a typo (a missing `*1024`) and
+ * not a deliberately large buffer.
+ */
+const MAX_BUFFER_BYTES = 2 ** 40;
 
 function positiveInt(
   raw: string | undefined,
@@ -109,6 +141,29 @@ function positiveInt(
     throw new Error(`${name} must be between 1 and ${max}, got "${raw}"`);
   }
   return value;
+}
+
+/**
+ * The buffer directory, trimmed, defaulted, and **required to be absolute**.
+ *
+ * A relative value resolves against the process working directory — `/app/apps/
+ * ingest` in the image — so the buffer would land on the container's writable
+ * layer, the named volume mounted at `/var/lib/bms-ingest` would sit unused,
+ * and every spilled segment would vanish with the next `docker compose up`.
+ * Nothing in the store can detect that: the directory it is handed is created
+ * and written perfectly well. Ruling 4 says a host that cannot buffer refuses
+ * to start; a host that buffers into a place nothing preserves is the same
+ * failure with a `disk buffer opened` line in front of it.
+ */
+function readBufferDir(raw: string | undefined): string {
+  const trimmed = raw === undefined ? "" : raw.trim();
+  if (trimmed === "") {
+    return DEFAULT_BUFFER_DIR;
+  }
+  if (!isAbsolute(trimmed)) {
+    throw new Error(`INGEST_BUFFER_DIR must be an absolute path, got "${trimmed}"`);
+  }
+  return trimmed;
 }
 
 /** Pure over its input, so the parsing rules are testable without mutating `process.env`. */
@@ -160,5 +215,18 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
       // reinterpreted.
       rejectUnauthorized: env.MQTT_TLS_REJECT_UNAUTHORIZED !== "false",
     },
+    bufferDir: readBufferDir(env.INGEST_BUFFER_DIR),
+    bufferMaxAgeMs: positiveInt(
+      env.INGEST_BUFFER_MAX_AGE_MS,
+      DEFAULT_BUFFER_MAX_AGE_MS,
+      "INGEST_BUFFER_MAX_AGE_MS",
+      MAX_TIMER_MS,
+    ),
+    bufferMaxBytes: positiveInt(
+      env.INGEST_BUFFER_MAX_BYTES,
+      DEFAULT_BUFFER_MAX_BYTES,
+      "INGEST_BUFFER_MAX_BYTES",
+      MAX_BUFFER_BYTES,
+    ),
   };
 }

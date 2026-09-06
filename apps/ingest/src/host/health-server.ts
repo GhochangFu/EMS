@@ -7,9 +7,10 @@ import type { SupervisorHealth } from "./supervisor.js";
  * The health endpoint (ADR 0016 §Dependencies).
  *
  * "No metrics library. The existing plain-text health endpoint is extended with
- * per-RTU state. `prom-client` is deferred to F1.10 / F3.16." So this stays the
- * same shape as `index.js`'s one-line response, with the per-endpoint detail
- * `F3.16` will eventually read through the API rather than by scraping this.
+ * per-RTU state." `prom-client` is deferred to `F3.16` (ADR 0016 Amendment 4
+ * decision 11). So this stays the same shape as `index.js`'s one-line
+ * response, with the per-endpoint detail `F3.16` will eventually read through
+ * the API rather than by scraping this.
  */
 
 export type HealthSnapshot = {
@@ -74,13 +75,25 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   const devices = snapshot.endpoints.reduce((n, e) => n + e.devices.length, 0);
   const unhealthy = snapshot.endpoints.filter((e) => e.state !== "connected");
   const stale = staleDevices(snapshot, now);
+  const buffered = snapshot.endpoints.reduce((n, e) => n + e.buffered, 0);
+  // `buffered` cannot see the worst case: a batch that fails to write *and*
+  // fails to spill leaves the gauge at 0 with the samples destroyed. `losing`
+  // is that state, and `buffering` is the ordinary one — both degrade, and
+  // both clear on their own, which a lifetime counter would not.
+  const everyWritePathOk = snapshot.endpoints.every((e) => e.writePath === "ok");
 
   const lines: string[] = [];
   lines.push(
-    // A silent RTU degrades the host even while every connection is healthy.
+    // A silent RTU degrades the host even while every connection is healthy,
+    // and so does a non-empty disk buffer even while every connection and
+    // every RTU is fine — the database, not the broker, is the thing down.
     // Reporting `ok` with a mapped RTU publishing nothing is exactly what let
     // three silent PHE stations go unnoticed — see `stale rtu=` below.
-    `ingest-host ${unhealthy.length === 0 && stale.length === 0 ? "ok" : "degraded"} ` +
+    `ingest-host ${
+      unhealthy.length === 0 && stale.length === 0 && buffered === 0 && everyWritePathOk
+        ? "ok"
+        : "degraded"
+    } ` +
       `endpoints=${snapshot.endpoints.length} rtus=${devices} stale=${stale.length} ` +
       // `notify=on` is a literal since ADR 0016 §6 commit 4 deleted the switch.
       // Kept for continuity — an operator or check matching on the token still
@@ -93,6 +106,14 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
       // `samplesWritten` when the whole call succeeded. `docs/ingest-host.md`
       // says so; do not reintroduce a `notify` field that varies, because a
       // varying one would mean the switch is back.
+      //
+      // `buffered=` is the second delivery signal, added by F1.10: a batch
+      // that fails to write is not lost, it is spilled to disk, so
+      // `writeFailures` alone can no longer answer "is telemetry being kept".
+      // `buffered>0` is what degrades the host (see above) — the gauge, not
+      // the lifetime `bufferDropped` counter. `writePath=` on the endpoint
+      // line is the second gauge, for the case the first cannot see: nothing
+      // on disk because nothing could be put there.
       `skipped=${snapshot.skipped.length} notify=on ` +
       `uptime=${uptimeSeconds}s`,
   );
@@ -100,10 +121,12 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   for (const endpoint of snapshot.endpoints) {
     lines.push(
       `endpoint protocol=${endpoint.protocol} key=${endpoint.endpointKey} ` +
-        `state=${endpoint.state} rtus=${endpoint.devices.map((d) => d.rtuCode).join("|")} ` +
+        `state=${endpoint.state} writePath=${endpoint.writePath} ` +
+        `rtus=${endpoint.devices.map((d) => d.rtuCode).join("|")} ` +
         `restarts=${endpoint.restarts} pollFailures=${endpoint.consecutivePollFailures} ` +
         `queue=${endpoint.queueDepth} dropped=${endpoint.droppedSamples} ` +
         `written=${endpoint.samplesWritten} writeFailures=${endpoint.writeFailures} ` +
+        `buffered=${endpoint.buffered} bufferDropped=${endpoint.bufferDropped} replayed=${endpoint.replayed} ` +
         `lastSample=${endpoint.lastSampleAt?.toISOString() ?? "never"}`,
     );
   }

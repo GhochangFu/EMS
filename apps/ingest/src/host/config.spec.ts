@@ -1,4 +1,7 @@
 import {
+  DEFAULT_BUFFER_DIR,
+  DEFAULT_BUFFER_MAX_AGE_MS,
+  DEFAULT_BUFFER_MAX_BYTES,
   DEFAULT_HEALTH_PORT,
   DEFAULT_RELOAD_MS,
   DEFAULT_STALE_AFTER_MS,
@@ -127,6 +130,14 @@ export function runHostConfigTests(): void {
       `staleness window "${bad}" must be rejected — a window that silently ` +
         `falls back to the default is a fleet reported healthy on the wrong rule`,
     );
+    expectThrow(
+      () => readHostConfig({ ...BASE, INGEST_BUFFER_MAX_AGE_MS: bad }),
+      `buffer max age "${bad}" must be rejected`,
+    );
+    expectThrow(
+      () => readHostConfig({ ...BASE, INGEST_BUFFER_MAX_BYTES: bad }),
+      `buffer max bytes "${bad}" must be rejected`,
+    );
   }
 
   // ---- and a magnitude the digit check waves through ----------------------
@@ -141,6 +152,14 @@ export function runHostConfigTests(): void {
       () => readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: huge }),
       `staleness window "${huge}" is not a safe integer and must be rejected — ` +
         `an accepted one means no RTU is ever stale`,
+    );
+    expectThrow(
+      () => readHostConfig({ ...BASE, INGEST_BUFFER_MAX_AGE_MS: huge }),
+      `buffer max age "${huge}" is not a safe integer and must be rejected`,
+    );
+    expectThrow(
+      () => readHostConfig({ ...BASE, INGEST_BUFFER_MAX_BYTES: huge }),
+      `buffer max bytes "${huge}" is not a safe integer and must be rejected`,
     );
   }
 
@@ -199,6 +218,100 @@ export function runHostConfigTests(): void {
   assert(
     readHostConfig({ ...BASE, INGEST_STALE_AFTER_MS: "900000" }).staleAfterMs === 900_000,
     "a slower protocol can widen the window",
+  );
+
+  // ---- the on-disk buffer (ADR 0016 Amendment 4) ---------------------------
+
+  {
+    const config = readHostConfig({ ...BASE });
+    assert(
+      config.bufferDir === DEFAULT_BUFFER_DIR,
+      `the buffer directory default should be ${DEFAULT_BUFFER_DIR}, got ${config.bufferDir}`,
+    );
+    assert(
+      DEFAULT_BUFFER_DIR === "/var/lib/bms-ingest",
+      "the default buffer directory is the path ruling 4 names and compose mounts",
+    );
+    assert(
+      config.bufferMaxAgeMs === DEFAULT_BUFFER_MAX_AGE_MS,
+      "the buffer max-age default applies when the variable is unset",
+    );
+    assert(
+      DEFAULT_BUFFER_MAX_AGE_MS === 60 * 60 * 1000,
+      "the buffer keeps a rolling 1 h, per docs/AGENTS.production.md:218",
+    );
+    assert(
+      config.bufferMaxBytes === DEFAULT_BUFFER_MAX_BYTES,
+      "the buffer max-bytes default applies when the variable is unset",
+    );
+    assert(
+      DEFAULT_BUFFER_MAX_BYTES === 256 * 1024 * 1024,
+      "the buffer caps at 256 MiB, per Amendment 4 ruling 3",
+    );
+  }
+
+  assert(
+    readHostConfig({ ...BASE, INGEST_BUFFER_DIR: " /tmp/x " }).bufferDir === "/tmp/x",
+    "the buffer directory is overridable, and trimmed",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_BUFFER_DIR: "/var/lib/x" }).bufferDir === "/var/lib/x",
+    "an absolute path is accepted as given",
+  );
+
+  // A relative value resolves against the container's working directory
+  // (`/app/apps/ingest`), so the buffer lands on the writable layer, the named
+  // volume mounted at `/var/lib/bms-ingest` is never touched, and the backlog
+  // is destroyed by the next container replace — with `disk buffer opened`
+  // logged as though everything were well. Nothing downstream can see it, so
+  // it has to be refused here.
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_BUFFER_DIR: "data/buffer" }),
+    "a relative INGEST_BUFFER_DIR must be rejected",
+  );
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_BUFFER_DIR: "  ./buffer  " }),
+    "a relative INGEST_BUFFER_DIR is still relative after trimming",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_BUFFER_MAX_AGE_MS: "60000" }).bufferMaxAgeMs === 60_000,
+    "the buffer max age is overridable",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_BUFFER_MAX_BYTES: "1048576" }).bufferMaxBytes === 1_048_576,
+    "the buffer max bytes is overridable",
+  );
+
+  // A blank directory must fall back to the default, not become an empty
+  // string — an empty path would reach `mkdir("")` and fail with a message
+  // naming nothing, which is unusable for diagnosing a startup failure.
+  assert(
+    readHostConfig({ ...BASE, INGEST_BUFFER_DIR: "   " }).bufferDir === DEFAULT_BUFFER_DIR,
+    "a blank INGEST_BUFFER_DIR must fall back to the default, not an empty string",
+  );
+
+  // The buffer max age shares `MAX_TIMER_MS` with the other timers: Node
+  // clamps a `setInterval` delay above 2^31-1 to 1 ms.
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_BUFFER_MAX_AGE_MS: String(2 ** 31) }),
+    "a buffer max age above 2^31-1 must be rejected",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_BUFFER_MAX_AGE_MS: String(2 ** 31 - 1) }).bufferMaxAgeMs ===
+      2 ** 31 - 1,
+    "the largest delay setInterval honours is still accepted for the buffer max age",
+  );
+
+  // The buffer max bytes ceiling is 1 TiB — a fact about a disk, not about
+  // integers, so it is its own constant rather than reusing a timer's bound.
+  expectThrow(
+    () => readHostConfig({ ...BASE, INGEST_BUFFER_MAX_BYTES: String(2 ** 40 + 1) }),
+    "a buffer max bytes above 1 TiB must be rejected",
+  );
+  assert(
+    readHostConfig({ ...BASE, INGEST_BUFFER_MAX_BYTES: String(2 ** 40) }).bufferMaxBytes ===
+      2 ** 40,
+    "1 TiB itself is accepted — the bound is a ceiling, not a fence",
   );
 
   // ---- DATABASE_URL is required -------------------------------------------
