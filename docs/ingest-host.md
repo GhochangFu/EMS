@@ -56,6 +56,15 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through the unmodified `src/rtu-config.js`. No new adapter gets an environment fallback. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, as in the ADR 0007 pilot. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
+| `INGEST_BUFFER_DIR` | `/var/lib/bms-ingest` | Where a batch the database refused lands (`F1.10`, ADR 0016 Amendment 4 ruling 4). Blank or unset takes the default; compose mounts a named volume at that path. A directory that cannot be created, that fails a write-and-unlink probe, or that cannot be scanned refuses host start-up with the path in the error — there is no "no buffer" mode. |
+| `INGEST_BUFFER_MAX_AGE_MS` | `3600000` | How long a spilled segment survives, by receipt minute, before the age bound erases it. Strictly older than the bound is erased; exactly the bound is kept. Ceiling `2^31-1`, the same timer limit `INGEST_RELOAD_MS` and `INGEST_STALE_AFTER_MS` share. |
+| `INGEST_BUFFER_MAX_BYTES` | `268435456` | Total bytes the on-disk buffer may hold, host-wide across every endpoint, before the byte bound erases the oldest segment. Ceiling `2^40` (1 TiB) — a fact about a disk, not about integers. |
+
+`INGEST_BUFFER_MAX_AGE_MS` and `INGEST_BUFFER_MAX_BYTES` parse through the
+same digits-only, safe-integer rule as `INGEST_RELOAD_MS` and
+`INGEST_STALE_AFTER_MS` (`config.ts`'s `positiveInt`) — `"1e21"`, `"0x493e0"`
+and a blank string are all refused or defaulted the same way; each variable
+just states its own ceiling.
 
 **Deleted at §6 commit 4, and not merely defaulted:** `INGEST_NOTIFY`,
 `INGEST_METRICS_PORT` and `MQTT_RECONNECT_MS`. The last two were read only by the
@@ -105,11 +114,11 @@ on that, both worth knowing before an incident:
 ## Health endpoint
 
 Plain text, on `INGEST_HOST_HEALTH_PORT`. No metrics library — `prom-client`
-is deferred to `F1.10` / `F3.16` (ADR 0016 §Dependencies).
+is deferred to `F3.16` (ADR 0016 Amendment 4 decision 11).
 
 ```
 ingest-host degraded endpoints=1 rtus=3 stale=1 skipped=0 notify=on uptime=39s
-endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=connected rtus=861736076104923|861736076128245|861736076133666 restarts=1 pollFailures=0 queue=0 dropped=0 written=812 writeFailures=0 lastSample=2026-08-22T09:41:07.000Z
+endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=connected rtus=861736076104923|861736076128245|861736076133666 restarts=1 pollFailures=0 queue=0 dropped=0 written=812 writeFailures=0 buffered=0 bufferDropped=0 replayed=0 lastSample=2026-08-22T09:41:07.000Z
 stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
 ```
 
@@ -135,12 +144,107 @@ stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
 - `skipped` lines name every RTU left out and why (`no-adapter`,
   `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`, …),
   so a gateway that never appears is visible without reading the log.
-- `dropped` and `writeFailures` are the loss counters. They are the signal that
-  a database outage is costing telemetry; durable buffering across one is
-  `F1.10`, not this.
+- `dropped` is the memory tier's loss — the in-memory queue dropping oldest
+  because it filled before anything could be written or spilled.
+  `bufferDropped` is the disk tier's loss — a segment erased by an age or byte
+  bound, an unparseable crash-truncated line, or a batch whose disk append also
+  failed. `writeFailures` counts every failed database write, live or replay —
+  it is the signal that a database outage is costing telemetry, and it keeps
+  moving for the whole outage because a replay probe that fails is also a
+  failed write. `buffered` is a gauge, not a counter: samples sitting on disk
+  right now, host-wide `> 0` degrades the verdict even while every endpoint
+  stays `state=connected` — the connection is fine, the database is not.
+  `replayed` is the lifetime count of samples the backlog has landed. See
+  *The disk buffer* below.
 
 Logs are JSON lines on stdout. Credential values never appear in them — the
 adapter conformance suite asserts it with a seeded sentinel.
+
+## The disk buffer
+
+`F1.10` (ADR 0016 Amendment 4, `apps/ingest/src/host/disk-buffer.ts`). It
+survives a database outage — it does not survive a broker outage; that is
+`E7.2` and is a different problem, on the other side of the adapter.
+
+**Path and format.** Each endpoint's spilled batches land at
+`<INGEST_BUFFER_DIR>/<protocol>/<encodeURIComponent(endpointKey)>/<epoch-minute>.jsonl`
+— for the pilot, `mqtt/phe.thinkiot.co.in%3A8883/<minute>.jsonl`. Each line is
+one `SourceSample`, written as an explicit field whitelist — `sourceKey`,
+`value`, `deviceKey` (when the sample carried one), `at` (always, ISO-8601),
+`good` (when present) — never `JSON.stringify` of the whole object, so a
+credential or any other field a future adapter might attach cannot reach disk
+by accident. **`at` is stamped at spill time when the sample had none**, the
+same substitution the live path makes at write time. That is why a replayed
+row lands where the live path would have put it, and why replaying the same
+segment twice is safe: both writes target the same `(time, asset_id,
+point_key)` and the second is an `ON CONFLICT DO UPDATE`, not a duplicate.
+Because the buffer is written before normalisation, a point mapping fixed
+during the outage applies to the whole backlog when it replays — the backlog
+is not frozen to a stale mapping.
+
+**The two bounds.** `INGEST_BUFFER_MAX_AGE_MS` (default 1 h) erases a segment
+strictly older than the bound, by receipt minute — exactly the bound is kept.
+`INGEST_BUFFER_MAX_BYTES` (default 256 MiB) is host-wide across every
+endpoint: once the total exceeds it, the oldest segment across *all*
+endpoints is erased, oldest first, regardless of which endpoint owns it. Both
+erasures count into that segment's endpoint's `bufferDropped`, and both are
+logged once per segment at `warn`.
+
+**The state machine.** A batch the database refuses is appended to disk; only
+once that append succeeds does the endpoint enter *buffering* (if the disk
+append also fails there is nothing to replay, so the endpoint stays on the
+live path and the batch is counted lost, as it was before `F1.10`). While
+buffering, every later batch goes straight to disk with no database attempt —
+attempting each one would cost a full `writeTimeoutMs` and starve the
+in-memory queue into drop-oldest, which is the failure this feature exists to
+avoid. A replay loop retries the oldest segment on the same backoff every
+other retry in this host uses (§5: 1 s, doubling, capped at 60 s, ±20%
+jitter), and that retried write **is** the probe — there is no separate
+health check. The first successful write clears buffering: live batches
+resume immediately, and the backlog drains oldest-first, one batch at a time,
+with a `drainIdleMs` (200 ms) pause between batches so a long backlog cannot
+starve the live path either. A segment is unlinked only after every
+parseable line in it has been written; a failure partway through leaves the
+segment in place for the next pass, so a crash or a renewed outage mid-segment
+re-replays at most one minute of samples, and idempotently.
+
+**Crash safety.** One append is one write of whole lines. If a process is
+killed mid-write, the last line of the last segment can be truncated; a
+truncated line is skipped, counted once in `bufferDropped`, and logged once
+per segment — the good lines before it are still replayed. On start-up,
+before the broker is even connected, the store scans `INGEST_BUFFER_DIR` and
+replays whatever an earlier process left, under the same two bounds — a host
+restart during an outage loses nothing already on disk.
+
+**What an operator can look at directly.** Segment files are plain JSON lines
+under the mounted volume, so they can be read without touching the API. In
+compose (project name `bms`, so the volume is `bms_bms-ingest-buffer` and the
+service container is `bms-ingest-1`):
+
+```bash
+docker compose --profile phe exec ingest ls -la /var/lib/bms-ingest/mqtt/
+docker compose --profile phe exec ingest sh -c 'wc -l /var/lib/bms-ingest/mqtt/*/*.jsonl'
+docker volume inspect bms_bms-ingest-buffer
+```
+
+**Segment files hold telemetry values.** They are plant data, the same
+readings that land in `telemetry.point_values` — copying one off the host
+moves that data off the host, and the usual handling rules for production
+telemetry apply to it exactly as they would to a database export.
+
+**What an operator will see in the logs**, all JSON lines on stdout, none of
+them carrying a sample value or a credential:
+
+- The store, on open: `info` with `{ dir, endpoints, segments, buffered,
+  dropped, bytes }` — the recovered state before anything else runs.
+- The store, on each bound erasure: `warn`, naming the segment.
+- The store, on a failed unlink, read, or append: `error`.
+- The supervisor, on the write that triggers a spill: `error` "sample batch
+  write failed; spilling to disk".
+- The supervisor, on a failed replay probe: `warn` "replay write failed;
+  probing after backoff" with `{ delayMs, attempt, buffered }`.
+- The supervisor, on the first write after an outage: `info` "database write
+  path recovered; replaying backlog".
 
 ## The ADR 0016 §6 commit 3 parallel verification (historical)
 
@@ -313,9 +417,19 @@ decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
 - **RTUs sharing an endpoint share credentials.** The first non-empty set wins.
   This narrows the `activeMqttConnection` singleton in `index.js` but does not
   cure it; `F1.7` owns the per-RTU credential story (ADR 0016 §Consequences).
-- **A batch lost to a failed write is gone**, counted in `writeFailures`. The
-  in-memory queue is bounded at 10 000 samples and drops oldest. `F1.10` gates
-  any poll adapter at a customer site behind disk buffering for this reason.
+- **A batch whose disk append also fails is still gone**, counted in
+  `bufferDropped` rather than replayed — `F1.10` buffers a write failure, it
+  does not make one impossible. Beyond that, four things are still lost: a
+  sample beyond either bound (`INGEST_BUFFER_MAX_AGE_MS`,
+  `INGEST_BUFFER_MAX_BYTES`); the broker-outage window, where nothing reaches
+  the host to buffer in the first place — that is `E7.2`, not this; and the
+  segments of an endpoint no longer in the plan (an RTU or gateway removed
+  between an outage and the reload) — nobody replays them, because a handle is
+  keyed to a live endpoint, and they sit until the age bound erases them, the
+  byte bound erases them to make room for another endpoint, or the next
+  start-up scan finds them stale and does the same. The in-memory queue is
+  still bounded at 10 000 samples and still drops oldest, but only until the
+  first failed write spills it to disk — see *The disk buffer* above.
 - **`bms.rtus.mqtt_topic` is still a column.** The host shims it into the device
   slice for MQTT only, and a written `config.device.topic` wins. Backfilling it
   and retiring the column is owed follow-up.
