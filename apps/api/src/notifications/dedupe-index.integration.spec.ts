@@ -32,8 +32,11 @@ export async function runDedupeIndexTests(pool: Pool): Promise<void> {
     indexdef.includes("(channel_id, dedupe_key)"),
     `notification_deliveries_dedupe_skip_idx's indexdef does not key on (channel_id, dedupe_key): ${indexdef}`,
   );
+  // `= 'skipped_deduped'` and not the bare value: Postgres renders the stored
+  // predicate as `((status)::text = 'skipped_deduped'::text)`, and the equality
+  // sign is what rules out a later recreate with the predicate negated.
   assert(
-    indexdef.includes("skipped_deduped"),
-    `notification_deliveries_dedupe_skip_idx's indexdef has no skipped_deduped predicate: ${indexdef}`,
+    indexdef.includes("= 'skipped_deduped'"),
+    `notification_deliveries_dedupe_skip_idx's indexdef has no "= 'skipped_deduped'" predicate: ${indexdef}`,
   );
 }

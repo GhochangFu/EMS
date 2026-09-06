@@ -92,13 +92,29 @@ describe("F3.46 notification_deliveries dedupe skip index (ADR 0041 Amendment 2)
     ).toBeGreaterThan(entry64!.when);
   });
 
-  it("the reader exists: NotificationsService.hasRecordedSkip reads dedupe_key", () => {
+  it("the reader exists: NotificationsService.hasRecordedSkip reads dedupe_key under the index's own predicate", () => {
     const service = read(SERVICE_REL);
+    // Scoped to the method body, not the whole file: the partial index serves
+    // this read only while the read filters on BOTH the key column and the
+    // exact status the index is partial on. A drifted status elsewhere in the
+    // file must not satisfy this check for it.
+    const start = service.indexOf("private async hasRecordedSkip(");
+    const end = service.indexOf("return rows.length > 0;", start);
     expect(
-      service.includes("eq(notificationDeliveries.dedupeKey"),
-      "apps/api/src/notifications/notifications.service.ts no longer reads dedupe_key — " +
+      start >= 0 && end > start,
+      "apps/api/src/notifications/notifications.service.ts no longer has hasRecordedSkip — " +
         "0038's rule in reverse: an index whose reader is later removed should be named by " +
         "a failing test rather than carried for free.",
+    ).toBe(true);
+    const body = service.slice(start, end);
+    expect(
+      body.includes("eq(notificationDeliveries.dedupeKey"),
+      "hasRecordedSkip no longer filters on dedupe_key, so 0065's index has no reader",
+    ).toBe(true);
+    expect(
+      body.includes('eq(notificationDeliveries.status, "skipped_deduped")'),
+      "hasRecordedSkip no longer filters on status = 'skipped_deduped', which is the " +
+        "predicate 0065's partial index rests on — the index would be pure write cost",
     ).toBe(true);
   });
 });
