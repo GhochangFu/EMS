@@ -10,6 +10,7 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import {
   assertPointMetaRoundTrips,
+  assertPointMetadataRoundTrips,
   cleanup,
   loadFixtures,
   type Fixtures,
@@ -79,5 +80,11 @@ describe.skipIf(!connectionString)("F2.13 — template point meta.tier round-tri
 
   it("carries meta.tier through create, GET :id and createDraftFrom", async () => {
     await assertPointMetaRoundTrips(svc, fx);
+  });
+
+  // `F2.7` / ADR 0056 — the same three hops for the five instrument-metadata
+  // defaults, which land on the same write path through the same mapper.
+  it("carries the five point-metadata defaults through create, GET :id and createDraftFrom", async () => {
+    await assertPointMetadataRoundTrips(svc, fx);
   });
 });

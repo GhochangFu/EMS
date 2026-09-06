@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
@@ -56,6 +56,16 @@ function point(index: number, meta: unknown): unknown {
     sortOrder: index - 1,
     meta,
     createdAt: "2026-09-04T00:00:00.000Z",
+    // `F2.7` / ADR 0056 decision 1 — the five metadata defaults, read-side,
+    // `null` = none set. Required on the DTO, so the parse below forces them.
+    // `p1` carries values so the draft case has something non-null to render
+    // and to leave untouched (the `p2` pattern this file already uses for
+    // `meta`, extended to the five).
+    scaleMultiplier: index === 1 ? 1.5 : null,
+    scaleOffset: index === 1 ? -2 : null,
+    engMin: index === 1 ? 0 : null,
+    engMax: index === 1 ? 100 : null,
+    qualityPolicy: index === 1 ? "accept_bad" : null,
   };
 }
 
@@ -86,7 +96,7 @@ const TEMPLATE: AdminAssetTemplateDto = adminAssetTemplateDtoSchema.parse({
   ],
 });
 
-/** The twelve carried fields of one point, as `buildPointsPayload` sends them. */
+/** The seventeen carried fields of one point, as `buildPointsPayload` sends them. */
 function expectedPoint(index: number): Record<string, unknown> {
   return {
     pointKey: `p${index}`,
@@ -106,6 +116,13 @@ function expectedPoint(index: number): Record<string, unknown> {
     // `null` on a measured one: only a `bms-calc-v2` derived point may hold a
     // value, and the server refuses it anywhere else.
     minCoverageRatio: null,
+    // `F2.7` / ADR 0056 decision 9 — sent as the row holds them, never
+    // omitted. `p1`'s fixture carries values; `p2` and `p3` carry null.
+    scaleMultiplier: index === 1 ? 1.5 : null,
+    scaleOffset: index === 1 ? -2 : null,
+    engMin: index === 1 ? 0 : null,
+    engMax: index === 1 ? 100 : null,
+    qualityPolicy: index === 1 ? "accept_bad" : null,
   };
 }
 
@@ -134,6 +151,23 @@ async function catalogSettles(): Promise<void> {
 }
 
 /**
+ * The text of one data-row's cell under a named column header — scoped, so a
+ * read-only "—" placeholder in one column (the five metadata defaults) does
+ * not get counted alongside another column's (the Tier column) by a bare
+ * `getAllByText`.
+ */
+function cellText(rowIndex: number, columnName: string): string | null {
+  const table = screen.getByRole("table");
+  const headers = within(table)
+    .getAllByRole("columnheader")
+    .map((header) => header.textContent);
+  const columnIndex = headers.indexOf(columnName);
+  const rows = within(table).getAllByRole("row").slice(1);
+  const cells = within(rows[rowIndex]).getAllByRole("cell");
+  return cells[columnIndex]?.textContent ?? null;
+}
+
+/**
  * Case 1 — a frozen version shows the tier and offers no control.
  *
  * Text rather than a disabled select is what
@@ -151,8 +185,12 @@ export async function readOnlyRendersTheTierAsText(): Promise<void> {
 
   expect(screen.getByText("core")).toBeInTheDocument();
   expect(screen.getByText("extended")).toBeInTheDocument();
-  // Exactly one, so a placeholder leaking into the two tiered rows fails here.
-  expect(screen.getAllByText("—")).toHaveLength(1);
+  // Scoped to the Tier column: a placeholder leaking into the two tiered
+  // rows' Tier cells fails here. The five metadata columns have their own
+  // "—" cells, asserted by `readOnlyRendersMetadataAsText`.
+  expect(cellText(0, "Tier")).toBe("core");
+  expect(cellText(1, "Tier")).toBe("extended");
+  expect(cellText(2, "Tier")).toBe("—");
 
   expect(screen.queryByRole("button", { name: "Save points" })).toBeNull();
 }
@@ -208,4 +246,109 @@ export async function draftRendersASelectPerRowAndSaveCarriesEveryMeta(): Promis
   expect(points[0]).toEqual(expectedPoint(1));
   expect(points[1]).toEqual({ ...expectedPoint(2), meta: { tier: "extended" } });
   expect(points[2]).toEqual({ ...expectedPoint(3), meta: { tier: "manual" } });
+}
+
+/**
+ * `F2.7` / ADR 0056 decision 9 — the Points tab edits the five template
+ * defaults on a draft.
+ *
+ * Same shape as the Tier assertions above: a draft renders one control per
+ * field per row, a frozen version renders text, and a save carries every
+ * row's five — including `p2`'s, which this test never touches, the same
+ * "untouched row is not silently erased" claim `F2.13` made for `meta`.
+ */
+export async function draftRendersFiveMetadataControlsAndSaveCarriesThem(): Promise<void> {
+  const save = vi
+    .spyOn(templateApi, "updateAdminAssetTemplate")
+    .mockResolvedValue(TEMPLATE);
+  renderTab(true);
+  await catalogSettles();
+
+  const numberFor = (label: string, key: string) =>
+    screen.getByRole("spinbutton", { name: `${label} for ${key}` }) as HTMLInputElement;
+  const qualityFor = (key: string) =>
+    screen.getByRole("combobox", { name: `Quality policy for ${key}` }) as HTMLSelectElement;
+
+  expect(numberFor("Scale multiplier", "p1").value).toBe("1.5");
+  expect(numberFor("Scale offset", "p1").value).toBe("-2");
+  expect(numberFor("Engineering minimum", "p1").value).toBe("0");
+  expect(numberFor("Engineering maximum", "p1").value).toBe("100");
+  expect(qualityFor("p1").value).toBe("accept_bad");
+  // `p3` carries no default — the inherit state is expressible.
+  expect(numberFor("Scale multiplier", "p3").value).toBe("");
+  expect(qualityFor("p3").value).toBe("");
+
+  await userEvent.clear(numberFor("Engineering maximum", "p1"));
+  await userEvent.type(numberFor("Engineering maximum", "p1"), "150");
+
+  const saveButton = screen.getByRole("button", { name: "Save points" });
+  await waitFor(() => expect(saveButton).toBeEnabled());
+  await userEvent.click(saveButton);
+
+  await waitFor(() => {
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  const [, body] = save.mock.calls[0];
+  const points = body.points ?? [];
+  // `p1`'s edit landed, and `p2` — never touched — still carries its own
+  // null five rather than losing them to the whole-array replace. `meta` is
+  // untouched too, carried the way `F2.13`'s save already proved.
+  expect(points[0]).toEqual({ ...expectedPoint(1), engMax: 150, meta: { tier: "core" } });
+  expect(points[1]).toEqual({ ...expectedPoint(2), meta: { tier: "extended" } });
+  expect(points[2]).toEqual(expectedPoint(3));
+}
+
+/**
+ * Case 1's sibling — the five render as read-only text on a frozen version,
+ * matching the Tier column's rule and keeping the stock viewer's "no field on
+ * this screen accepts input" sweep true.
+ */
+export async function readOnlyRendersMetadataAsText(): Promise<void> {
+  renderTab(false);
+  await catalogSettles();
+
+  expect(screen.getByRole("columnheader", { name: "Scale ×" })).toBeInTheDocument();
+  expect(screen.queryByRole("spinbutton", { name: /^Scale multiplier for / })).toBeNull();
+  expect(screen.getByText("1.5")).toBeInTheDocument();
+  expect(screen.getByText("accept_bad")).toBeInTheDocument();
+}
+
+/**
+ * A `derived` row has no instrument to scale (ADR 0056 decision 3), so the
+ * five controls are disabled on a draft the same way the source-key pattern
+ * input already is.
+ */
+export async function derivedRowMetadataControlsAreDisabled(): Promise<void> {
+  const derivedTemplate = adminAssetTemplateDtoSchema.parse({
+    ...TEMPLATE,
+    points: [
+      {
+        ...(point(1, null) as Record<string, unknown>),
+        kind: "derived",
+        sourceDataKeyPattern: null,
+        formula: "{p1} * 2",
+        formulaDialect: "bms-calc-v1",
+        calcTrigger: "streaming",
+      },
+    ],
+  });
+  vi.spyOn(pointKeyApi, "fetchAdminPointKeys").mockResolvedValue({
+    items: [{ code: "p1" }],
+  } as never);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <PointsTab template={derivedTemplate} editable onSaved={vi.fn()} onDirtyChange={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => {
+    expect(screen.getAllByRole("option", { name: "p1" })).toHaveLength(1);
+  });
+
+  expect(screen.getByRole("spinbutton", { name: "Scale multiplier for p1" })).toBeDisabled();
+  expect(screen.getByRole("spinbutton", { name: "Scale offset for p1" })).toBeDisabled();
+  expect(screen.getByRole("spinbutton", { name: "Engineering minimum for p1" })).toBeDisabled();
+  expect(screen.getByRole("spinbutton", { name: "Engineering maximum for p1" })).toBeDisabled();
+  expect(screen.getByRole("combobox", { name: "Quality policy for p1" })).toBeDisabled();
 }

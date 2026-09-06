@@ -1,4 +1,4 @@
-import type { SourceSample } from "@bms/shared/ingest";
+import type { QualityPolicy, SourceSample } from "@bms/shared/ingest";
 
 import { chunkReadings, type NotifyReading } from "./chunk.js";
 
@@ -18,11 +18,27 @@ import { chunkReadings, type NotifyReading } from "./chunk.js";
  * all, per ADR 0016 §9.
  */
 
-/** One destination a `source_data_key` writes to. */
+/**
+ * One destination a `source_data_key` writes to.
+ *
+ * The five metadata fields are ADR 0056 decision 1's resolved values —
+ * `coalesce(asset_points.<c>, template_points.<c>)`, computed in
+ * `BINDING_QUERY`. **`null` is not "unset", it is a stated rule**: multiplier
+ * `1`, offset `0`, no range test, `discard_bad`. That is what every point did
+ * before `F2.7`, so a target carrying five nulls behaves exactly as it did.
+ */
 export type PointTarget = {
   readonly assetId: string;
   readonly pointKey: string;
   readonly unit: string | null;
+  /** `value × multiplier + offset`; both `null` means the value is stored as it is. */
+  readonly scaleMultiplier: number | null;
+  readonly scaleOffset: number | null;
+  /** Inclusive plausibility band on the **scaled** value. Either bound alone is valid. */
+  readonly engMin: number | null;
+  readonly engMax: number | null;
+  /** What to do with a sample the protocol marks bad. `null` is `discard_bad`. */
+  readonly qualityPolicy: QualityPolicy | null;
 };
 
 /**
@@ -51,7 +67,7 @@ export type PointValueRow = {
  * explanation (ADR 0016 §Context, "Failure handling is currently absent").
  */
 export type SampleCounters = {
-  /** Samples the adapter flagged `good: false`. */
+  /** Samples the adapter flagged `good: false`, refused by the target's quality policy. */
   badQuality: number;
   /** `value` was `NaN` or infinite. */
   nonFinite: number;
@@ -61,6 +77,13 @@ export type SampleCounters = {
   unmappedSourceKey: number;
   /** `deviceKey` omitted while the endpoint serves more than one device. */
   ambiguousDevice: number;
+  /**
+   * The scaled value fell outside the point's inclusive engineering band
+   * (ADR 0056 decision 4). An instrument plausibility band, **not** an operating
+   * limit — decision 5 keeps "in safe range" with the threshold rules, and an
+   * out-of-range sample leaves a counter rather than a row.
+   */
+  outOfRange: number;
   /** `at` was present but not a usable `Date`; receive time was substituted. */
   invalidTimestamp: number;
   /** Rows collapsed by the in-batch `(time, assetId, pointKey)` dedupe. */
@@ -75,9 +98,39 @@ export function emptyCounters(): SampleCounters {
     unknownDevice: 0,
     unmappedSourceKey: 0,
     ambiguousDevice: 0,
+    outOfRange: 0,
     invalidTimestamp: 0,
     duplicateInBatch: 0,
   };
+}
+
+/**
+ * How many writes this batch refused, and why the other two counters are not in
+ * the sum.
+ *
+ * `invalidTimestamp` and `duplicateInBatch` are **not** drops: a sample with an
+ * unusable `at` is still written at receive time, and a collapsed duplicate is
+ * one row written rather than one lost. Adding either to this total would make
+ * `main.ts` log "samples discarded" for a batch that discarded nothing.
+ *
+ * Lives here, next to the counters, because `main.ts` summed the buckets by hand
+ * and a new bucket was therefore invisible to the log that exists to explain it
+ * — `outOfRange` would have been the second counter added and the second one
+ * forgotten. A caller cannot forget a field of a function it does not write.
+ *
+ * The unit is a refused **write**, not a refused sample: the checks run per
+ * target, so a fan-out sample refused for two of its three targets counts twice
+ * and writes once.
+ */
+export function droppedCount(counters: SampleCounters): number {
+  return (
+    counters.badQuality +
+    counters.nonFinite +
+    counters.unknownDevice +
+    counters.unmappedSourceKey +
+    counters.ambiguousDevice +
+    counters.outOfRange
+  );
 }
 
 /**
@@ -98,6 +151,36 @@ export type ResolveResult = {
 };
 
 /**
+ * Applies the target's scale rule to one raw value (ADR 0056 decision 4, step 2).
+ *
+ * With **both** fields `null` the sample's own value is returned, object-
+ * identical. `value * 1 + 0` is not the identity: it turns `-0` into `0`, and
+ * `-0` is what a signed power meter reports for an idle circuit. One field set
+ * is enough to make the point a scaled one, and then the arithmetic runs as
+ * ADR 0056 decision 1 writes it, with the unset half at its documented default.
+ */
+function scaleValue(value: number, target: PointTarget): number {
+  if (target.scaleMultiplier === null && target.scaleOffset === null) {
+    return value;
+  }
+  return value * (target.scaleMultiplier ?? 1) + (target.scaleOffset ?? 0);
+}
+
+/**
+ * Whether the scaled value sits inside the target's inclusive band.
+ *
+ * The two bounds are **independent**: migration `0063`'s CHECK constrains only
+ * the both-non-null pair, so `eng_min` alone is a valid row and imposes a floor
+ * with no ceiling.
+ */
+function isInEngineeringRange(value: number, target: PointTarget): boolean {
+  if (target.engMin !== null && value < target.engMin) {
+    return false;
+  }
+  return !(target.engMax !== null && value > target.engMax);
+}
+
+/**
  * Turns raw samples into the rows to write. Pure — no clock, no database.
  *
  * `receivedAt` is passed in rather than read from `Date.now()` so a test can
@@ -105,6 +188,30 @@ export type ResolveResult = {
  * one, which is the case in which `SourceSample.deviceKey` may be omitted; pass
  * `undefined` when the endpoint serves several devices, and a sample without a
  * `deviceKey` is then counted and dropped rather than guessed at.
+ *
+ * ## The point metadata (`F2.7` / ADR 0056 decision 4)
+ *
+ * Quality policy → scale → finite → range, **inside the target loop and in that
+ * order**. All four are properties of the resolved point, not of the sample, so
+ * they cannot be applied before the `source_data_key` names its targets: one
+ * `sourceKey` can fan out to two assets whose templates scale differently, and
+ * a pre-loop check would have to pick one of them.
+ *
+ * The order is a decision, not an implementation detail. A policy that stored a
+ * bad-quality sample only for the range test to drop it would be
+ * indistinguishable from `discard_bad` in the counters, and an overflow that the
+ * range test refused first would be reported as an instrument out of its band
+ * rather than as arithmetic that broke.
+ *
+ * Three consequences of moving the quality check inside the loop, all intended:
+ * a `good: false` sample for an **unknown device** now counts `unknownDevice`
+ * rather than `badQuality`; a counter counts a refused *write* rather than a
+ * refused sample; and a `good: false` sample with a malformed `at` now also
+ * counts `invalidTimestamp`, which used to be unreachable for it — harmless,
+ * because `invalidTimestamp` is not a drop and `droppedCount` never sums it. The
+ * raw `typeof value !== "number" || !isFinite` pre-check stays **outside** the
+ * loop: an unscalable value is dropped once, not once per target — so a
+ * bad-quality `NaN` counts `nonFinite`.
  */
 export function resolveSamples(
   samples: readonly SourceSample[],
@@ -122,10 +229,6 @@ export function resolveSamples(
   const deduped = new Map<string, PointValueRow>();
 
   for (const sample of samples) {
-    if (sample.good === false) {
-      counters.badQuality += 1;
-      continue;
-    }
     if (typeof sample.value !== "number" || !Number.isFinite(sample.value)) {
       counters.nonFinite += 1;
       continue;
@@ -162,6 +265,28 @@ export function resolveSamples(
     }
 
     for (const target of targets) {
+      // 1. Quality policy. A null policy is `discard_bad` — today's rule.
+      if (sample.good === false && target.qualityPolicy !== "accept_bad") {
+        counters.badQuality += 1;
+        continue;
+      }
+
+      // 2. Scale.
+      const value = scaleValue(sample.value, target);
+
+      // 3. Finite. Scaling can overflow, so the test runs on what would be
+      //    stored rather than on what arrived.
+      if (!Number.isFinite(value)) {
+        counters.nonFinite += 1;
+        continue;
+      }
+
+      // 4. Range, on the scaled value.
+      if (!isInEngineeringRange(value, target)) {
+        counters.outOfRange += 1;
+        continue;
+      }
+
       const key = [time.toISOString(), target.assetId, target.pointKey].join(KEY_SEPARATOR);
       if (deduped.has(key)) {
         counters.duplicateInBatch += 1;
@@ -170,7 +295,7 @@ export function resolveSamples(
         time,
         assetId: target.assetId,
         pointKey: target.pointKey,
-        value: sample.value,
+        value,
         unit: target.unit,
       });
     }

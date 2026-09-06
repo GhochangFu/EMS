@@ -16,7 +16,7 @@ import { openDiskBufferStore } from "./host/disk-buffer.js";
 import { startHealthServer } from "./host/health-server.js";
 import { createHostLogger } from "./host/logger.js";
 import type { PointIndex } from "./host/normaliser.js";
-import { resolveSamples, writeResolved } from "./host/normaliser.js";
+import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
 // The ADR 0012 seam, imported from the **unmodified** pilot file (ADR 0016 §4,
 // §6). It keeps its `resolveMqttConnection` export so `rtu-config.test.js` —
@@ -163,12 +163,11 @@ async function main(): Promise<void> {
       writeSamples: async (samples) => {
         const index = pointIndexes.get(key) ?? plan.pointIndex;
         const { rows, counters } = resolveSamples(samples, index, new Date(), soleDeviceKey);
-        const discarded =
-          counters.badQuality +
-          counters.nonFinite +
-          counters.unknownDevice +
-          counters.unmappedSourceKey +
-          counters.ambiguousDevice;
+        // `droppedCount`, not a list summed here: this file summed five buckets
+        // by hand and `F2.7`'s `outOfRange` would have been the sixth and the
+        // one nobody added, leaving a batch that dropped readings logging
+        // nothing (ADR 0056 decision 4).
+        const discarded = droppedCount(counters);
         if (discarded > 0) {
           // Rule 9 in host form: a discarded reading always has a stated reason.
           logger.warn("samples discarded", { endpointKey: plan.endpointKey, ...counters });

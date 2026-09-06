@@ -10,6 +10,7 @@ import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 
 import { assetPoints, assetTemplates, assets, pointKeys, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { SOURCE_KEY_RESERVED_VAR, substituteSourceKeyPattern } from "@bms/shared";
 import type {
   JwtPayload,
   TemplateMigrationAssetDto,
@@ -113,12 +114,6 @@ const MAX_POINT_ROWS = 8_000;
  * needs a readable sample and the total, not every sentence.
  */
 const MAX_REPORTED_REFUSALS = 50;
-
-/** Only `{asset_code}` survives into a migration — see Q-A above. */
-const MIGRATION_RESOLVABLE_VAR = "asset_code";
-
-/** `{token}` in a `source_data_key_pattern`. */
-const PATTERN_TOKEN = /\{([a-zA-Z0-9_]+)\}/g;
 
 /**
  * `bms.asset_points.source_data_key` is `varchar(128)`.
@@ -874,6 +869,16 @@ export class AssetTemplateMigrationService {
    * plausible-looking string pointing at nothing is the failure
    * `AssetTemplateInstantiationService.resolveSourceDataKey` also refuses to
    * produce.
+   *
+   * **`F2.7` — the grammar is `@bms/shared`'s** (ADR 0056 decision 10, "one
+   * vocabulary, wired twice"). This service used to carry its own copy of the
+   * token regex and of the reserved variable name, beside the instantiate
+   * service's copy of both; a duplicated grammar is the drift AGENTS.md §4.8
+   * names, and the sheet's pre-fill is now a third reader. Behaviour is
+   * unchanged: `vars` holds `asset_code` alone, so any other token comes back
+   * unresolved exactly as before, and the empty-key guard stays — a pattern of
+   * nothing but the reserved token on an asset with no code would otherwise
+   * produce an empty `source_data_key`.
    */
   private resolveSourceDataKey(
     pattern: string | null,
@@ -882,17 +887,12 @@ export class AssetTemplateMigrationService {
     if (!pattern) {
       return { ok: false, unresolved: [] };
     }
-    const unresolved: string[] = [];
-    const resolved = pattern.replace(PATTERN_TOKEN, (_match, name: string) => {
-      if (name === MIGRATION_RESOLVABLE_VAR) {
-        return assetCode;
-      }
-      unresolved.push(name);
-      return "";
+    const { key, unresolved } = substituteSourceKeyPattern(pattern, {
+      [SOURCE_KEY_RESERVED_VAR]: assetCode,
     });
-    if (unresolved.length > 0 || resolved.length === 0) {
-      return { ok: false, unresolved: [...new Set(unresolved)] };
+    if (unresolved.length > 0 || key.length === 0) {
+      return { ok: false, unresolved };
     }
-    return { ok: true, sourceDataKey: resolved };
+    return { ok: true, sourceDataKey: key };
   }
 }

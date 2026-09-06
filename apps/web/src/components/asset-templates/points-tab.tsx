@@ -28,9 +28,19 @@
  * The tier is provenance, not behaviour. Nothing here and nothing in
  * `lib/template-points-grid.ts` branches on its value — no validation, no
  * ordering, no styling — and the amendment says no code may start to.
+ *
+ * **`F2.7` / ADR 0056 decision 9 — the five instrument-metadata class
+ * defaults** (`Scale ×`, `Offset`, `Min`, `Max`, `Quality`), after the source
+ * key pattern column. Same lifecycle split as the Tier column: `<input
+ * type="number">` / `<select>` on a draft, read-only text on a frozen version
+ * — which is what makes the stock viewer's reuse of this tab (`editable={false}`)
+ * show them read-only for free. Disabled on a `derived` row like the pattern
+ * input, whether or not the version is a draft: a computed value has no
+ * instrument to scale or to bound (ADR 0056 decision 3).
  */
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { QUALITY_POLICIES } from "@bms/shared";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
@@ -45,6 +55,8 @@ import {
   pointRowsFrom,
   pointsHaveChanged,
   setPointKind,
+  setPointNumber,
+  setPointQuality,
   setPointTier,
   type TemplatePointRow,
 } from "../../lib/template-points-grid";
@@ -133,6 +145,14 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
                   kind is, rather than one of its editable values. */}
               <th className="py-1 pr-2">Tier</th>
               <th className="py-1 pr-2">Source key pattern</th>
+              {/* `F2.7` / ADR 0056 decision 9 — the five instrument-metadata
+                  class defaults. Draft-editable like the kind and the tier;
+                  read-only text on a frozen version and in the stock viewer. */}
+              <th className="py-1 pr-2">Scale ×</th>
+              <th className="py-1 pr-2">Offset</th>
+              <th className="py-1 pr-2">Min</th>
+              <th className="py-1 pr-2">Max</th>
+              <th className="py-1 pr-2">Quality</th>
               <th className="py-1 pr-2">Required</th>
               <th className="py-1 pr-2">Order</th>
               {editable ? <th className="py-1" /> : null}
@@ -258,6 +278,114 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
                       className={cellClass(!editable || row.kind === "derived", undefined)}
                     />
                   </td>
+                  {editable ? (
+                    <>
+                      <td className="py-1.5 pr-2">
+                        <input
+                          type="number"
+                          aria-label={`Scale multiplier for ${row.pointKey || `row ${index + 1}`}`}
+                          value={row.scaleMultiplier ?? ""}
+                          disabled={row.kind === "derived"}
+                          onChange={(event) =>
+                            setRows((current) =>
+                              current.map((entry, position) =>
+                                position === index
+                                  ? setPointNumber(entry, "scaleMultiplier", event.target.value)
+                                  : entry,
+                              ),
+                            )
+                          }
+                          className={`${cellClass(row.kind === "derived", problemFor("scaleMultiplier"))} w-20`}
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input
+                          type="number"
+                          aria-label={`Scale offset for ${row.pointKey || `row ${index + 1}`}`}
+                          value={row.scaleOffset ?? ""}
+                          disabled={row.kind === "derived"}
+                          onChange={(event) =>
+                            setRows((current) =>
+                              current.map((entry, position) =>
+                                position === index
+                                  ? setPointNumber(entry, "scaleOffset", event.target.value)
+                                  : entry,
+                              ),
+                            )
+                          }
+                          className={`${cellClass(row.kind === "derived", undefined)} w-20`}
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input
+                          type="number"
+                          aria-label={`Engineering minimum for ${row.pointKey || `row ${index + 1}`}`}
+                          value={row.engMin ?? ""}
+                          disabled={row.kind === "derived"}
+                          onChange={(event) =>
+                            setRows((current) =>
+                              current.map((entry, position) =>
+                                position === index
+                                  ? setPointNumber(entry, "engMin", event.target.value)
+                                  : entry,
+                              ),
+                            )
+                          }
+                          className={`${cellClass(row.kind === "derived", problemFor("engMin"))} w-20`}
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <input
+                          type="number"
+                          aria-label={`Engineering maximum for ${row.pointKey || `row ${index + 1}`}`}
+                          value={row.engMax ?? ""}
+                          disabled={row.kind === "derived"}
+                          onChange={(event) =>
+                            setRows((current) =>
+                              current.map((entry, position) =>
+                                position === index
+                                  ? setPointNumber(entry, "engMax", event.target.value)
+                                  : entry,
+                              ),
+                            )
+                          }
+                          className={`${cellClass(row.kind === "derived", undefined)} w-20`}
+                        />
+                      </td>
+                      <td className="py-1.5 pr-2">
+                        <select
+                          aria-label={`Quality policy for ${row.pointKey || `row ${index + 1}`}`}
+                          value={row.qualityPolicy ?? ""}
+                          disabled={row.kind === "derived"}
+                          onChange={(event) =>
+                            setRows((current) =>
+                              current.map((entry, position) =>
+                                position === index
+                                  ? setPointQuality(entry, event.target.value)
+                                  : entry,
+                              ),
+                            )
+                          }
+                          className={cellClass(row.kind === "derived", undefined)}
+                        >
+                          <option value="">inherit</option>
+                          {QUALITY_POLICIES.map((policy) => (
+                            <option key={policy} value={policy}>
+                              {policy}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="py-1.5 pr-2 text-xs">{row.scaleMultiplier ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-xs">{row.scaleOffset ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-xs">{row.engMin ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-xs">{row.engMax ?? "—"}</td>
+                      <td className="py-1.5 pr-2 text-xs">{row.qualityPolicy ?? "—"}</td>
+                    </>
+                  )}
                   <td className="py-1.5 pr-2">
                     <input
                       type="checkbox"
@@ -296,7 +424,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
             })}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-4 text-center text-bms-muted">
+                <td colSpan={editable ? 14 : 13} className="py-4 text-center text-bms-muted">
                   This template declares no points yet.
                 </td>
               </tr>

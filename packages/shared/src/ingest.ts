@@ -85,6 +85,26 @@ export type SourceSample = {
 };
 
 /**
+ * `F2.7` / ADR 0056 Q3 — a two-valued policy on the protocol's quality bit
+ * (`SourceSample.good`), resolved per point as
+ * `coalesce(asset_points.quality_policy, template_points.quality_policy)`.
+ *
+ * `discard_bad` is today's rule and what a `NULL` column reads as: a
+ * `good: false` sample is dropped and counted (`badQuality`). `accept_bad`
+ * stores it. The host is the only thing that acts on the value, and nothing it
+ * needs could be carried as a column of a lookup table, so this is a closed
+ * vocabulary by AGENTS.md §4.8's test: `as const` here, `z.enum` in
+ * `contracts/point-metadata.ts`, a CHECK in migration `0063`.
+ *
+ * Here and not in `contracts/`, because the host imports this zod-free module
+ * and the policy is the host's own rule; the contract side builds its schema
+ * from this array rather than restating it.
+ */
+export const QUALITY_POLICIES = ["discard_bad", "accept_bad"] as const;
+
+export type QualityPolicy = (typeof QUALITY_POLICIES)[number];
+
+/**
  * Operator-facing adapter state, consumed by `F3.16` (device health).
  *
  * **Never carries secrets.** `detail` must not be derived from

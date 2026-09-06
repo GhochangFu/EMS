@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runAssetTemplateSchemaTests,
   runCalcDialectGuardTests,
+  runPointMetadataGuardTests,
   runTemplateCycleGuardTests,
 } from "./asset-templates.schema.spec";
 
@@ -18,5 +19,9 @@ describe("asset-templates schema", () => {
 
   it("refuses a dependency cycle among the template's own points (F2.9 Task 12)", () => {
     runTemplateCycleGuardTests();
+  });
+
+  it("authors the five point-metadata defaults and refuses them on a derived point (F2.7)", () => {
+    runPointMetadataGuardTests();
   });
 });

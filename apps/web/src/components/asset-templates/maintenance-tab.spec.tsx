@@ -105,6 +105,12 @@ function template(): AdminAssetTemplateDto {
         sortOrder: 0,
         meta: { tier: "core" },
         createdAt: "2026-09-04T00:00:00.000Z",
+        // `F2.7` / ADR 0056 decision 1 — required-nullable on the read DTO.
+        scaleMultiplier: null,
+        scaleOffset: null,
+        engMin: null,
+        engMax: null,
+        qualityPolicy: null,
       },
     ],
   });

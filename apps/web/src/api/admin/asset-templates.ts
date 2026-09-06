@@ -31,6 +31,7 @@ import type {
   AssetTemplateStatus,
   CalcDialect,
   CalcTrigger,
+  QualityPolicy,
   StockAssetTemplatesListResponse,
   TemplateDraftDeletedResponse,
   TemplateMigrationPreviewResponse,
@@ -96,6 +97,20 @@ export interface TemplatePointInput {
    * formula computing, with a 200 and no other column holding the value.
    */
   minCoverageRatio?: number | null;
+  /**
+   * `F2.7` / ADR 0056 decisions 1 and 3 — the five instrument-metadata class
+   * defaults. Optional nullable, matching `templatePointBodySchema`'s
+   * `pointMetadataBodyShape` spread (`.nullish()` on every field): `null`
+   * means "no default, inherit"; the Points tab's grid sends all five on
+   * every row, so in practice these are never actually omitted here, but the
+   * type stays optional to match the wire contract rather than the one
+   * caller.
+   */
+  scaleMultiplier?: number | null;
+  scaleOffset?: number | null;
+  engMin?: number | null;
+  engMax?: number | null;
+  qualityPolicy?: QualityPolicy | null;
   required?: boolean;
   sortOrder?: number;
   meta?: { tier: TemplatePointTier };

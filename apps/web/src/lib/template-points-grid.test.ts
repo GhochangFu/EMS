@@ -10,6 +10,7 @@ import {
   runIncompleteDerivedPointTests,
   runKindChangeTests,
   runMinCoverageRatioSurvivesARoundTripTests,
+  runPointMetadataAuthoringTests,
   runPointMetaSurvivesARoundTripTests,
   runSeedTests,
   runTierAuthoringTests,
@@ -63,5 +64,9 @@ describe("template points grid", () => {
 
   it("makes the tier authorable: a tier-only edit is a change, and no rule branches on it (F2.15)", () => {
     runTierAuthoringTests();
+  });
+
+  it("makes the five instrument-metadata defaults authorable on a draft (F2.7, ADR 0056 decision 9)", () => {
+    runPointMetadataAuthoringTests();
   });
 });

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { CALC_DIALECTS, CALC_TRIGGERS } from "../calc-dsl";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
 import { assetRoleCodeSchema } from "./operations";
+import { pointMetadataFieldsSchema, pointMetadataShape } from "./point-metadata";
 import { pointSourceKindSchema } from "./telemetry-entry";
 
 export const masterDataActiveFilterSchema = z.enum(["true", "false", "all"]);
@@ -105,7 +106,18 @@ export const adminAssetPointDtoSchema = z.object({
   active: z.boolean(),
   /** ADR 0018 — where this point's provenance comes from. */
   sourceKind: pointSourceKindSchema,
+  /**
+   * ADR 0018 decision 3 — the RTU this point reads from; `null` for an
+   * `unmapped`, `manual` or `computed` point. Surfaced since `F2.7` (ADR 0056
+   * decision 3, owner ruling Q-H): once the single-row routes can wire and
+   * unwire a point, the response has to show which RTU it landed on.
+   */
+  rtuId: z.string().nullable(),
   createdAt: z.string(),
+  // `F2.7` / ADR 0056 decision 1 — the per-asset **override** of the five
+  // metadata columns, as stored: `null` = inherit the template default. Spread,
+  // not merged: this DTO is not an intersection type (`point-metadata.ts`).
+  ...pointMetadataShape,
 });
 
 /**
@@ -284,6 +296,11 @@ export const adminTemplatePointDtoSchema = z.object({
   sortOrder: z.number(),
   meta: templatePointMetaDtoSchema,
   createdAt: z.string(),
+  // `F2.7` / ADR 0056 decision 1 — the class **default** of the five metadata
+  // columns; `null` = none set. Read-side, no bounds (`point-metadata.ts`).
+  // Carried for the reason the calc fields above are: the Points tab
+  // round-trips the whole point set, and must see these or lose them.
+  ...pointMetadataShape,
 });
 
 /**
@@ -378,6 +395,15 @@ export const stockTemplatePointDtoSchema = z.object({
   // catalog entry is authored fresh, never a stored row that might predate
   // this field.
   meta: z.object({ tier: z.enum(["core", "extended", "manual"]) }).strict().optional(),
+  // `F2.7` / ADR 0056 decision 9 — a stock entry MAY declare the five metadata
+  // defaults. **Optional** here, unlike the two row DTOs above, for the same
+  // reason `meta` is: this is the write shape, and every catalog entry is
+  // parsed through `apps/api`'s `.strict()` `templatePointBodySchema` (the
+  // build-time spec and the runtime import both), so a required key would force
+  // 615 literals to spell five nulls into a body that refuses them. `.partial()`
+  // of the one shape, never five restated names — the vocabulary is declared
+  // once in `point-metadata.ts`.
+  ...pointMetadataFieldsSchema.partial().shape,
 });
 
 /**
