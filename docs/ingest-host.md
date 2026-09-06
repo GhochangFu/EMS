@@ -56,7 +56,7 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through the unmodified `src/rtu-config.js`. No new adapter gets an environment fallback. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, as in the ADR 0007 pilot. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
-| `INGEST_BUFFER_DIR` | `/var/lib/bms-ingest` | Where a batch the database refused lands (`F1.10`, ADR 0016 Amendment 4 ruling 4). Blank or unset takes the default; compose mounts a named volume at that path. A directory that cannot be created, that fails a write-and-unlink probe, or that cannot be scanned refuses host start-up with the path in the error — there is no "no buffer" mode. |
+| `INGEST_BUFFER_DIR` | `/var/lib/bms-ingest` | Where a batch the database refused lands (`F1.10`, ADR 0016 Amendment 4 ruling 4). Blank or unset takes the default; compose mounts a named volume at that path. **Must be absolute** — a relative value would resolve against the container working directory, putting the buffer on the writable layer with the volume unused, which nothing downstream can detect. A directory that cannot be created, that fails a write-and-unlink probe, or whose listing fails refuses host start-up with the path in the error — there is no "no buffer" mode. |
 | `INGEST_BUFFER_MAX_AGE_MS` | `3600000` | How long a spilled segment survives, by receipt minute, before the age bound erases it. Strictly older than the bound is erased; exactly the bound is kept. Ceiling `2^31-1`, the same timer limit `INGEST_RELOAD_MS` and `INGEST_STALE_AFTER_MS` share. |
 | `INGEST_BUFFER_MAX_BYTES` | `268435456` | Total bytes the on-disk buffer may hold, host-wide across every endpoint, before the byte bound erases the oldest segment. Ceiling `2^40` (1 TiB) — a fact about a disk, not about integers. |
 
@@ -118,7 +118,7 @@ is deferred to `F3.16` (ADR 0016 Amendment 4 decision 11).
 
 ```
 ingest-host degraded endpoints=1 rtus=3 stale=1 skipped=0 notify=on uptime=39s
-endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=connected rtus=861736076104923|861736076128245|861736076133666 restarts=1 pollFailures=0 queue=0 dropped=0 written=812 writeFailures=0 buffered=0 bufferDropped=0 replayed=0 lastSample=2026-08-22T09:41:07.000Z
+endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=connected writePath=ok rtus=861736076104923|861736076128245|861736076133666 restarts=1 pollFailures=0 queue=0 dropped=0 written=812 writeFailures=0 buffered=0 bufferDropped=0 replayed=0 lastSample=2026-08-22T09:41:07.000Z
 stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
 ```
 
@@ -156,6 +156,16 @@ stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
   stays `state=connected` — the connection is fine, the database is not.
   `replayed` is the lifetime count of samples the backlog has landed. See
   *The disk buffer* below.
+- **`writePath=` says where the last batch went, and it is the second thing
+  that degrades the host.** `ok` — it was written, live or from the backlog.
+  `buffering` — the breaker is open and it went to disk; the database is down
+  and nothing is lost. `losing` — it was neither written **nor** spilled, so it
+  is gone: the disk is refusing writes too. `buffered=` cannot see that last
+  case, because nothing reached the disk to be counted — the gauge reads 0, the
+  endpoint reads `connected`, every RTU is fresh, and before `writePath` the
+  host reported `ok` while telemetry was being destroyed. Both non-`ok` states
+  clear themselves: the next successful write returns it to `ok`, which is why
+  the verdict reads this and not the lifetime `bufferDropped`.
 
 Logs are JSON lines on stdout. Credential values never appear in them — the
 adapter conformance suite asserts it with a seeded sentinel.
@@ -189,6 +199,48 @@ endpoint: once the total exceeds it, the oldest segment across *all*
 endpoints is erased, oldest first, regardless of which endpoint owns it. Both
 erasures count into that segment's endpoint's `bufferDropped`, and both are
 logged once per segment at `warn`.
+
+They are applied after every append — **including one that failed**, which is
+then retried once, so a disk that filled is not left full for ever — and on a
+**sweep** an idle endpoint performs once a minute. The sweep is what makes the
+age bound a rolling hour rather than a rolling hour *of appends*: an endpoint
+whose broker went down, or whose RTUs were disabled, stops appending, and
+nothing else would ever look at its last segments again. So the hour holds to
+within a minute of itself.
+
+**A segment the host cannot read is retired.** Three consecutive failed reads
+(anything but "the file is gone") and it is unlinked, its lines counted into
+`bufferDropped`, and one `error` line names it. Without that ceiling it is
+immortal: the replay loop retries it for ever and `buffered>0` keeps the host
+degraded with nothing able to clear it. The replay loop backs off between
+those attempts on the same §5 schedule the probe uses, rather than re-reading
+five times a second.
+
+**An erasure that the volume refuses does not pretend to have happened.** The
+file is unlinked first and the record dropped only once it is gone, so a
+read-only remount or a Windows lock cannot leave the store counting bytes that
+are no longer bounded, or `bufferDropped` counting samples that are still on
+disk. The cost is that such a segment is re-read — and, once written,
+re-replayed idempotently — on every pass until an operator clears it.
+
+**One bad file is skipped; one bad directory refuses start-up.** The start-up
+scan measures each candidate and leaves alone, with one `warn`, any file
+bigger than `INGEST_BUFFER_MAX_BYTES` or that it cannot read; those files are
+not counted, replayed or erased. A directory it cannot list is still fatal,
+with the path in the message (ruling 4) — a subtree the store cannot enumerate
+is a backlog it can neither replay nor bound.
+
+**Directories are created `0700` and segment files `0600`**, so on a POSIX
+host only the account running the ingest process can read the plant telemetry
+on the volume. Windows ignores both.
+
+**The store's queue is one queue for the whole host.** The *accounting* is per
+endpoint — segments, `buffered` and `bufferDropped` belong to the endpoint that
+produced them — but every filesystem operation runs through a single promise
+chain, because a spill racing an erasure on one segment is a silent loss. So a
+slow append on one endpoint delays every other endpoint's spill and replay.
+Per-endpoint isolation is about the *bookkeeping* and the blast radius of a
+failing adapter, not about the disk.
 
 **The state machine.** A batch the database refuses is appended to disk; only
 once that append succeeds does the endpoint enter *buffering* (if the disk
@@ -250,7 +302,12 @@ them carrying a sample value or a credential:
 - The store, on open: `info` with `{ dir, endpoints, segments, buffered,
   dropped, bytes }` — the recovered state before anything else runs.
 - The store, on each bound erasure: `warn`, naming the segment.
-- The store, on a failed unlink, read, or append: `error`.
+- The store, at start-up, on a file it skipped — oversized or unreadable:
+  `warn` with the path, and for an oversized one its size and the bound.
+- The store, on a failed unlink, read, or append: `error`. On the third failed
+  read of one segment, `error` "disk buffer segment unreadable; erased".
+- The supervisor, on an oldest segment it could not read: `warn` "oldest
+  segment unreadable; retrying after backoff" with `{ delayMs, attempt }`.
 - The supervisor, on the write that triggers a spill: `error` "sample batch
   write failed; spilling to disk".
 - The supervisor, on a failed replay probe: `warn` "replay write failed;

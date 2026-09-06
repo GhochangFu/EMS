@@ -1150,7 +1150,14 @@ is the loss this amendment bounds and records.
    `DiskBufferStore` over `INGEST_BUFFER_DIR` and hands each supervisor a
    per-endpoint handle. The store owns the bounds (decision 6) host-wide, since
    the disk is host-wide; the handle owns the endpoint's segments and counters,
-   so one endpoint's backlog is still that endpoint's blast radius (§5).
+   so one endpoint's backlog is still that endpoint's blast radius (§5). **The
+   accounting is per endpoint; the filesystem queue is not** — every operation
+   of the store runs through one promise chain, because a spill racing an
+   erasure on the same segment is a silent loss, so a slow append on one
+   endpoint delays every other endpoint's spill and replay. `INGEST_BUFFER_DIR`
+   must be an absolute path: a relative one resolves against the container
+   working directory, which puts the buffer on the writable layer with the
+   named volume unused and nothing able to detect it.
 3. **Spill on failure, then breaker.** A batch whose write throws is appended
    to the disk buffer instead of dropped. The supervisor then enters a
    *buffering* state in which every later batch goes to disk **without** a
@@ -1181,7 +1188,20 @@ is the loss this amendment bounds and records.
    the store — across endpoints — is unlinked while the store total exceeds the
    byte bound. Each unlinked segment's line count is added to the **owning
    endpoint's** `bufferDropped`. Sizes are tracked in memory from one scan at
-   start-up and updated on append and unlink, so enforcement costs no `stat`.
+   start-up and updated on append and unlink, so enforcement costs no `stat`
+   on the append path.
+   **Also on the failure path, and on a sweep.** An append that fails enforces
+   the bounds and retries once before counting the loss — `ENOSPC` is the state
+   the bounds exist to leave, and a catch that returns first makes a full disk
+   permanent. And an idle supervisor calls `sweep()` once a minute, which
+   applies both bounds with no append at all: the age bound is a rolling hour,
+   not a rolling hour of appends, and an endpoint whose broker went down stops
+   appending exactly when its segments start ageing out.
+   **An erasure the volume refuses does not count.** The file is unlinked
+   first and the record dropped only on success or `ENOENT`; otherwise one
+   `error` names it and the record — and its bytes — stay. Forgetting first
+   would leave a file nothing counts, so the byte bound would stop bounding it
+   and `bufferDropped` would count samples still on disk.
 7. **Format.** `INGEST_BUFFER_DIR/<protocol>/<encodeURIComponent(endpointKey)>/
    <epoch-minute>.jsonl`. One append-only segment per minute of *receipt* time.
    One `SourceSample` per line, `at` as ISO-8601 text, `deviceKey` kept. The
@@ -1193,7 +1213,13 @@ is the loss this amendment bounds and records.
    line that does not parse, counts it in `bufferDropped`, and logs it once per
    segment. Progress is per segment: a segment is unlinked only after every
    parseable line in it is written, so a write failure mid-segment re-replays
-   at most one minute, idempotently, when the database returns. On start-up the
+   at most one minute, idempotently, when the database returns. A segment that
+   fails three consecutive reads — anything but "the file is gone" — is
+   unlinked, counted into `bufferDropped` and logged once at `error`; without
+   that ceiling it is immortal, because the replay loop retries it for ever and
+   `buffered>0` keeps the host degraded with nothing able to clear it. The
+   replay loop waits the §5 backoff between those attempts rather than
+   re-reading on the `drainIdleMs` tick. On start-up the
    store scans the directory and the supervisors replay whatever an earlier
    process left, under the same bounds — a host restart during an outage loses
    nothing the bounds would have kept. *Measured at step 6 (2026-09-06): a host
@@ -1211,10 +1237,27 @@ is the loss this amendment bounds and records.
    — because a host that reports `ok` with an hour of telemetry on disk is the
    healthy-looking state the `writeTimeoutMs` comment already warns against.
    `writeFailures=` keeps counting the write that triggered each spill.
+   **And `writePath=` (`ok` / `buffering` / `losing`), which degrades the host
+   unless it is `ok`.** The gauge alone cannot see the worst case: a batch that
+   fails to write *and* fails to spill leaves `buffered` at 0, the endpoint
+   `connected` and every RTU fresh, so the verdict read `ok` while the samples
+   were being destroyed and only the lifetime `bufferDropped` moved. A state
+   and not a counter, deliberately — the verdict must not turn on a lifetime
+   total, or a host stays degraded for ever over one batch it lost an hour ago
+   (AGENTS.md §4.6). The next successful write returns it to `ok`.
 10. **Start-up (ruling 4).** `main.ts` creates `INGEST_BUFFER_DIR`
     recursively and probes it with one write-and-unlink before any supervisor
     starts. A failure is a start-up fault: exit 1 with the path in the message,
-    the same treatment as a missing `DATABASE_URL`. Once running, a buffer
+    the same treatment as a missing `DATABASE_URL`. **A bad file is skipped; a
+    bad directory refuses.** The scan measures each candidate and leaves alone,
+    with one `warn`, anything larger than the byte bound or that it cannot
+    read — one stray oversized file must not make the host unstartable for
+    ever, and erasing something the store never wrote is not the store's call.
+    A `readdir` that fails is still fatal, for the reason ruling 4 gives: a
+    subtree the store cannot enumerate is a backlog it can neither replay nor
+    bound. Directories are created `0700` and segments `0600`, so on a POSIX
+    host the telemetry on the volume is readable only by the account running
+    the host. Once running, a buffer
     write that fails is logged and counted, never thrown into the drain loop —
     the disk failing must not also take the memory tier down with it.
 11. **Not in scope, stated.** `prom-client` — §Dependencies deferred it "to
