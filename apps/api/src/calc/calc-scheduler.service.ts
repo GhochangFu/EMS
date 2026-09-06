@@ -5,6 +5,7 @@ import { CALC_DIALECT, crossRefKey, evaluate } from "@bms/shared";
 
 import { sleep } from "../telemetry/sleep";
 import { MetricsService, type CalcRuntimeSkipReason } from "../observability/metrics.service";
+import { runSweepLoop } from "../scheduling/sweep-loop";
 import { resolveAggregate } from "./calc-aggregate";
 import { defKey, inputKey } from "./calc-batch";
 import type { CalcDefinition } from "./calc-definition";
@@ -471,12 +472,9 @@ export interface CalcSchedulerLoopDeps extends CalcSchedulerDeps {
 }
 
 /**
- * The self-scheduling loop itself (ADR 0037 decision 7): `for (;;)`, do the
- * sweep, **then** sleep — never `setInterval`, which would let a slow sweep
- * overlap the next tick. `apps/ingest/src/host/supervisor.ts`'s
- * `runPollLoop` is the precedent this mirrors. `sleep`/`now` are injected —
- * `TelemetryListenerDeps.sleep`'s reason applies unchanged: tests must not
- * wait out real ticks.
+ * The self-scheduling loop itself (ADR 0037 decision 7) — the shared
+ * sweep-then-sleep shape in `scheduling/sweep-loop.ts`, which records why it
+ * is never `setInterval` and why `sleep`/`now` are injected.
  *
  * The loop owns the cyclic set the transition log compares against, one per
  * loop, so a cycle that persists is logged once for as long as it persists.
@@ -487,20 +485,17 @@ export async function runSchedulerLoop(
   signal: AbortSignal,
 ): Promise<void> {
   const previousCyclic = new Set<NodeId>();
-  for (;;) {
-    if (signal.aborted) {
-      return;
-    }
-    try {
-      await runScheduledSweep(deps, lastRunMs, deps.now(), previousCyclic);
-    } catch (err) {
-      deps.logger.warn(`calc scheduler: sweep failed: ${(err as Error)?.message ?? err}`);
-    }
-    if (signal.aborted) {
-      return;
-    }
-    await deps.sleep(deps.baseTickMs, signal);
-  }
+  return runSweepLoop(
+    {
+      sweep: (nowMs) => runScheduledSweep(deps, lastRunMs, nowMs, previousCyclic),
+      sleep: deps.sleep,
+      now: deps.now,
+      baseTickMs: deps.baseTickMs,
+      label: "calc scheduler",
+      logger: deps.logger,
+    },
+    signal,
+  );
 }
 
 /**

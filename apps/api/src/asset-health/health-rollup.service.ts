@@ -10,6 +10,7 @@ import { type BmsDb, organizations } from "@bms/db";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
+import { runSweepLoop } from "../scheduling/sweep-loop";
 import type { AggregateLevel } from "../telemetry/point-aggregates";
 import { floorToBucket } from "../telemetry/point-aggregate-window";
 import { sleep } from "../telemetry/sleep";
@@ -22,10 +23,11 @@ import { levelRollupSql, rawRollupSql } from "./health-rollup-sql";
  *
  * This is the SECOND scheduled host in `apps/api`. ADR 0037 decision 7 built
  * the first, and its Consequences say the two should share the loop shape —
- * so `runHealthRollupLoop` below is deliberately the same `for (;;)` sweep-then-
- * sleep as `runSchedulerLoop` in `calc-scheduler.service.ts`, down to the
- * injected `sleep`/`now` and the `AbortController` shutdown. A third would be
- * the point at which extracting the shape stops being premature; two is not.
+ * so `runHealthRollupLoop` below is the same `for (;;)` sweep-then-sleep as
+ * `runSchedulerLoop` in `calc-scheduler.service.ts`, down to the injected
+ * `sleep`/`now` and the `AbortController` shutdown. The third host (`F3.10`'s
+ * alarm lifecycle sweep) is where the copy became a helper: all three are
+ * wrappers over `runSweepLoop` in `scheduling/sweep-loop.ts`.
  *
  * **Never `setInterval`.** A slow sweep must delay the next tick, not overlap
  * it — two sweeps writing the same buckets would still be correct thanks to
@@ -140,28 +142,25 @@ export interface HealthRollupLoopDeps extends HealthRollupDeps {
 }
 
 /**
- * The self-scheduling loop (ADR 0037 decision 7's shape): `for (;;)`, sweep,
- * **then** sleep. `sleep`/`now` are injected so a test does not wait out a real
- * 60-second tick — `CalcSchedulerLoopDeps`' reason applies unchanged.
+ * The self-scheduling loop (ADR 0037 decision 7's shape) — the shared
+ * sweep-then-sleep in `scheduling/sweep-loop.ts`. The sweep takes a `Date`, so
+ * the tick's `now()` is wrapped here rather than read by the sweep itself.
  */
 export async function runHealthRollupLoop(
   deps: HealthRollupLoopDeps,
   signal: AbortSignal,
 ): Promise<void> {
-  for (;;) {
-    if (signal.aborted) {
-      return;
-    }
-    try {
-      await runHealthRollupSweep(deps, new Date(deps.now()));
-    } catch (err) {
-      deps.logger.warn(`health roll-up: sweep failed: ${(err as Error)?.message ?? err}`);
-    }
-    if (signal.aborted) {
-      return;
-    }
-    await deps.sleep(deps.baseTickMs, signal);
-  }
+  return runSweepLoop(
+    {
+      sweep: (nowMs) => runHealthRollupSweep(deps, new Date(nowMs)),
+      sleep: deps.sleep,
+      now: deps.now,
+      baseTickMs: deps.baseTickMs,
+      label: "health roll-up",
+      logger: deps.logger,
+    },
+    signal,
+  );
 }
 
 /**
