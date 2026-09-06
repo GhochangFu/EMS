@@ -223,12 +223,11 @@ export function runTemplatePointInsertFromBodyTests(): void {
   );
 
   // ADR 0056 decision 1 / Correction 1 — a body carrying the five inserts
-  // them. `templatePointBodySchema` does not gain the five until Unit C2 of
-  // the same plan, so a parsed body has no such keys yet; the cast reaches
-  // the same code path a Unit-C2 body will reach unchanged.
+  // them. Unit C2 gave `templatePointBodySchema` the five, so this is now a
+  // parsed body's own shape rather than a cast reaching the same code path.
   sameObject(
     toTemplatePointInsert(
-      { ...full, scaleMultiplier: 0.1, engMax: 100, qualityPolicy: "accept_bad" } as TemplatePointBody,
+      { ...full, scaleMultiplier: 0.1, engMax: 100, qualityPolicy: "accept_bad" },
       "t-2",
       "o-2",
       0,

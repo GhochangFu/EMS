@@ -18,6 +18,11 @@ import {
 import { z } from "zod";
 
 import { templateCycles } from "../../calc/calc-graph";
+import {
+  hasAnyPointMetadata,
+  pointMetadataBodyShape,
+  refinePointMetadata,
+} from "../asset-points/point-metadata.schema";
 import { templateContentSchema } from "./asset-templates-content.schema";
 
 /**
@@ -87,6 +92,17 @@ export const templatePointBodySchema = z
     // key today, and a free-form jsonb bag on an authoring surface is the
     // drift ADR 0019 §3 refuses.
     meta: z.object({ tier: z.enum(["core", "extended", "manual"]) }).strict().optional(),
+    // `F2.7` / ADR 0056 decisions 1 and 3 — the five instrument-metadata
+    // **class defaults**: scale, engineering band and quality policy. Spread
+    // from the one write-side shape every authoring body uses
+    // (`point-metadata.schema.ts`), so the template surface and the per-asset
+    // override surface cannot drift on the bounds or on the vocabulary.
+    //
+    // `null`/absent means the template declares no default, and a resolved
+    // `NULL` is today's behaviour: multiplier 1, offset 0, no range test,
+    // `discard_bad`. The per-asset override is `asset_points`' own five,
+    // coalesced per column by the ingest host.
+    ...pointMetadataBodyShape,
   })
   // `.strict()` must sit on the object, before `.superRefine` — a
   // `ZodEffects` (what `.superRefine`/`.refine`/`.transform` return) has no
@@ -180,13 +196,40 @@ export const templatePointBodySchema = z
           "dialect — it is the fraction of an aggregate's declared members that must be fresh",
       });
     }
+
+    // ADR 0056 decision 3's last sentence. `hasAnyPointMetadata` reads an
+    // explicit `null` as absent, which is what makes this compatible with the
+    // two surfaces that restate all five on every point: the Points tab clears
+    // them to `null` when a row flips to `derived`, and `createDraftFrom`
+    // copies a parent version's row through this same body shape.
+    if (point.kind === "derived" && hasAnyPointMetadata(point)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["scaleMultiplier"],
+        message:
+          "A derived point has no instrument to scale or to bound: scaleMultiplier, " +
+          "scaleOffset, engMin, engMax and qualityPolicy describe a measured signal, and " +
+          "a computed value is produced from points that already carry them",
+      });
+    }
+
+    // The within-row bounds, from the one shared refinement body — never
+    // restated here. A second `.superRefine` on this object would move the
+    // `.describe()` below onto an inner node, where the OpenAPI generator never
+    // looks (ADR 0029 Amendment 1).
+    refinePointMetadata(point, ctx);
   })
   .describe(
     'A derived point requires "formula", a formulaDialect of "bms-calc-v1" or ' +
       '"bms-calc-v2", and a calcTrigger of "streaming" or "scheduled" ("scheduled" also ' +
       'requires calcIntervalSeconds). A "bms-calc-v2" point must be "scheduled", and is ' +
       "the only shape that may carry minCoverageRatio, which is bounded to (0, 1] and " +
-      "means fail-closed when absent. A measured point must carry none of those fields.",
+      "means fail-closed when absent. A measured point must carry none of those fields. " +
+      "The five instrument-metadata defaults belong to a measured point only: " +
+      "scaleMultiplier must not be 0, engMin must be below engMax when both are stated, " +
+      "and qualityPolicy is one of discard_bad or accept_bad. Null means the template " +
+      "sets no default, which resolves to multiplier 1, offset 0, no range test and " +
+      "discard_bad.",
   );
 
 /**

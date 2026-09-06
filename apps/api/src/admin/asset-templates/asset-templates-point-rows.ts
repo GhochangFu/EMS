@@ -13,19 +13,20 @@ import type { TemplatePointBody } from "./asset-templates.schema";
  * mappers it held inline. Pure functions, no IO, spec'd whole-object so the
  * move is provably a move (`asset-templates-point-rows.spec.ts`).
  *
- * **The five metadata fields, now read and written off the row (Unit B).**
+ * **The five metadata fields, read and written off the row (Unit B).**
  * Migration `0063` gives both tables the columns and `TemplatePointRow`
  * carries them as `number | string | null`; `toTemplatePointDto` reads them
  * straight off the row (narrowing `qualityPolicy` to `QualityPolicy | null`,
  * the way `formulaDialect`/`calcTrigger` already narrow their own varchar
- * columns). `toTemplatePointInsert`'s `point` parameter is intersected with
- * `PointMetadataOverrides` — a widened, all-optional shape typed on the raw
- * `string | null` the column actually is, not the narrower `PointMetadataFields`
- * from `@bms/shared` — rather than widened on `TemplatePointBody` itself,
- * because the write-side schema (`templatePointBodySchema`) does not gain the
- * five until Unit C2 of the same plan: until then a parsed body simply has no
- * such keys, and `?? null` reads that absence the same way it reads an
- * explicit `null`.
+ * columns).
+ *
+ * `toTemplatePointInsert` needed a widened `PointMetadataOverrides`
+ * intersection while Unit B was ahead of the write body; **Unit C2 gave
+ * `templatePointBodySchema` the five**, so both members of the union now
+ * declare them and the union alone types the parameter. The `?? null` on each
+ * still reads an absent key the same way it reads an explicit `null` — which is
+ * what a body clearing an override, and a parent row that never had one, both
+ * send.
  */
 
 /** One stored `template_points` row, as drizzle selects it. */
@@ -33,21 +34,6 @@ export type TemplatePointRow = typeof templatePoints.$inferSelect;
 
 /** One `template_points` insert, as drizzle accepts it. */
 export type TemplatePointInsert = typeof templatePoints.$inferInsert;
-
-/**
- * The five metadata fields, optional and typed on the raw column shape
- * (`qualityPolicy: string | null`, not `QualityPolicy | null`) so this
- * intersects cleanly with `TemplatePointRow`, whose own `quality_policy`
- * column is an unnarrowed varchar — the same reason `toTemplatePointDto`
- * below casts it to `QualityPolicy | null` only on the way out to the DTO.
- */
-type PointMetadataOverrides = {
-  scaleMultiplier?: number | null;
-  scaleOffset?: number | null;
-  engMin?: number | null;
-  engMax?: number | null;
-  qualityPolicy?: string | null;
-};
 
 /**
  * The insert `replacePoints` writes for one point of a draft.
@@ -66,7 +52,7 @@ type PointMetadataOverrides = {
  * `template_points` write stamps it so `0047`'s `WITH CHECK` accepts the row.
  */
 export function toTemplatePointInsert(
-  point: (TemplatePointBody | TemplatePointRow) & PointMetadataOverrides,
+  point: TemplatePointBody | TemplatePointRow,
   templateId: string,
   organizationId: string,
   index: number,
@@ -89,9 +75,9 @@ export function toTemplatePointInsert(
     sortOrder: point.sortOrder ?? index,
     meta: point.meta ?? {},
     // ADR 0056 decision 1 — `null` = inherit / today's behaviour. `?? null`
-    // reads an absent key (a body Zod has not yet been taught to carry, Unit
-    // C2) the same way it reads an explicit `null` (a parent row's own
-    // uninherited value).
+    // reads an absent key (a body that states none of the five) the same way it
+    // reads an explicit `null` (a body clearing a default, or a parent row that
+    // never carried one).
     scaleMultiplier: point.scaleMultiplier ?? null,
     scaleOffset: point.scaleOffset ?? null,
     engMin: point.engMin ?? null,

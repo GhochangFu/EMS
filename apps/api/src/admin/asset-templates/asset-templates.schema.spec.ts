@@ -792,3 +792,89 @@ export function runTemplateCycleGuardTests(): void {
       "refuse a v2 formula merely for being one",
   );
 }
+
+// ---- F2.7 / ADR 0056: the five point-metadata defaults on a template point ---
+
+/** A complete, valid `bms-calc-v1` derived point, before the field under test. */
+function derivedPoint(overrides: Record<string, unknown>): Record<string, unknown> {
+  return {
+    pointKey: "D",
+    kind: "derived",
+    formula: "{A} * 2",
+    formulaDialect: CALC_DIALECT,
+    calcTrigger: "streaming",
+    ...overrides,
+  };
+}
+
+/**
+ * `F2.7` / ADR 0056 decisions 1 and 3 — `templatePointBodySchema` authors the
+ * five class defaults, under the same within-row bounds migration `0063` puts
+ * on the column and one rule of its own: a **derived** point carries none of
+ * them, because a computed value has no instrument to scale or to bound.
+ *
+ * The last case is the one that is easy to get wrong. An explicit `null` is
+ * "inherit / no default", not "carries metadata": the Points tab posts all five
+ * on every row and clears them to `null` when a point flips to `derived`, and
+ * `createDraftFrom` copies a parent version's row through the same body shape.
+ * A refusal that counted `null` would 400 both of those.
+ */
+export function runPointMetadataGuardTests(): void {
+  pointAcceptanceOf(
+    {
+      pointKey: "A",
+      scaleMultiplier: 0.1,
+      scaleOffset: -40,
+      engMin: 0,
+      engMax: 100,
+      qualityPolicy: "accept_bad",
+    },
+    "a measured point carrying all five metadata defaults",
+  );
+
+  const zero = pointRefusalOf({ pointKey: "A", scaleMultiplier: 0 }, "a zero scale multiplier");
+  assert(
+    refusedAt(zero, "scaleMultiplier"),
+    `a multiplier of 0 zeroes every reading and must be refused at scaleMultiplier, got: ${describeIssues(zero)}`,
+  );
+
+  const empty = pointRefusalOf({ pointKey: "A", engMin: 100, engMax: 100 }, "an empty band");
+  assert(
+    refusedAt(empty, "engMin"),
+    `engMin === engMax admits no reading and must be refused at engMin, got: ${describeIssues(empty)}`,
+  );
+
+  const derived = pointRefusalOf(
+    derivedPoint({ engMax: 100 }),
+    "a derived point carrying an engineering bound",
+  );
+  assert(
+    refusedAt(derived, "scaleMultiplier"),
+    `a derived point's metadata must be refused at scaleMultiplier, got: ${describeIssues(derived)}`,
+  );
+  assert(
+    messagesOf(derived).includes("no instrument"),
+    `the refusal must say why — a computed value has no instrument, got: ${describeIssues(derived)}`,
+  );
+
+  const policy = pointRefusalOf(
+    { pointKey: "A", qualityPolicy: "clamp" },
+    "a quality policy outside QUALITY_POLICIES",
+  );
+  assert(
+    refusedAt(policy, "qualityPolicy"),
+    `the policy vocabulary is closed, got: ${describeIssues(policy)}`,
+  );
+
+  pointAcceptanceOf(
+    derivedPoint({
+      scaleMultiplier: null,
+      scaleOffset: null,
+      engMin: null,
+      engMax: null,
+      qualityPolicy: null,
+    }),
+    "a derived point stating all five as null — that is a round trip clearing them, not " +
+      "an attempt to scale a computed value",
+  );
+}
