@@ -86,6 +86,14 @@ export class NotificationsService {
    * Sends one alarm to every channel joined to its rule, and records a row for
    * every attempt — including every skip.
    *
+   * **A refusal is recorded once, not once per attempt** (`F3.46`). The first
+   * `raised: false` dispatch writes the `skipped_deduped` row; every later one
+   * under the same `(channel, organization, dedupe key)` finds that row and
+   * answers from it without writing. Before this, re-evaluating an unchanged
+   * plant added one row per open-alarm rule per joined channel on every press,
+   * and nothing bounded it. The result the caller sees is identical either way
+   * — what is bounded is the ledger, not the contract.
+   *
    * Returns one `DeliveryResult` per channel, in channel-code order. A rule
    * with no channels returns an empty array and writes nothing: there is no
    * channel to attribute a row to (`notification_deliveries.channel_id` is NOT
@@ -122,12 +130,28 @@ export class NotificationsService {
   ): Promise<DeliveryResult> {
     // 1. The transition dedupe. The skip is still RECORDED: "we chose not to
     //    send" and "nothing happened" must not look the same in the ledger
-    //    (decision 4).
+    //    (decision 4). `F3.46`: but only ONCE per (channel, organization,
+    //    dedupe key) — read the ledger before writing, and let the row that is
+    //    already there answer the second and every later press. Decision 4
+    //    asks that the refusal be visible, not that it be re-stated; ADR 0041
+    //    Amendment 1 ruling 1 left the growth of that restatement open, and
+    //    this is where it is closed.
     if (!input.raised) {
-      return this.record(input, channel, dedupeKey, {
-        status: "skipped_deduped",
-        error: null,
-      });
+      const skip: DeliveryResult = { status: "skipped_deduped", error: null };
+      let alreadyRecorded: boolean;
+      try {
+        alreadyRecorded = await this.hasRecordedSkip(channel.id, input.organizationId, dedupeKey);
+      } catch (err) {
+        // An unreadable ledger falls back to today's write — bounded by today's
+        // growth — never to a send, and never to silence. Skipping the write
+        // instead would make "the ledger was unreadable" look exactly like "we
+        // already recorded this", which is the silent-loss shape §4.6 names.
+        this.logger.warn(
+          `dedupe ledger read failed for channel=${channel.code} rule=${input.ruleCode}: ${reasonOf(err)}`,
+        );
+        alreadyRecorded = false;
+      }
+      return alreadyRecorded ? skip : this.record(input, channel, dedupeKey, skip);
     }
 
     // 2. The per-channel hourly ceiling.
@@ -221,6 +245,48 @@ export class NotificationsService {
         ),
       );
     return (rows[0]?.count ?? 0) >= this.config.ratePerHour;
+  }
+
+  /**
+   * `F3.46`: `true` when this channel, for THIS organization, already holds a
+   * `skipped_deduped` row under this key — the refusal has been answered once
+   * and is not recorded again.
+   *
+   * Same connection and the same reason as `isOverHourlyLimit`: a
+   * fire-and-forget read with no tenant transaction to run under, so the
+   * organization filter is the `WHERE` clause, not the connection.
+   *
+   * The `channel_id` equality is served today by the leading column of
+   * `notification_deliveries_channel_time_idx`, and the other three predicates
+   * filter that channel's own rows. After this change a channel's ledger holds
+   * at most one skip row per `(organization, rule, severity)` plus one row per
+   * real transition, so the read stays cheap; the partial index on
+   * `(channel_id, dedupe_key)` turns it into a single probe once a channel's
+   * history reaches the tens of thousands.
+   *
+   * Concurrency is a growth bound, not an invariant: two sweeps in flight can
+   * both read "no row" and both write, which costs one extra row per key per
+   * overlapping sweep. There is deliberately no unique index — the ledger is
+   * history and stays append-only.
+   */
+  private async hasRecordedSkip(
+    channelId: string,
+    organizationId: string,
+    dedupeKey: string,
+  ): Promise<boolean> {
+    const rows = await this.fleetDb
+      .select({ id: notificationDeliveries.id })
+      .from(notificationDeliveries)
+      .where(
+        and(
+          eq(notificationDeliveries.channelId, channelId),
+          eq(notificationDeliveries.organizationId, organizationId),
+          eq(notificationDeliveries.dedupeKey, dedupeKey),
+          eq(notificationDeliveries.status, "skipped_deduped"),
+        ),
+      )
+      .limit(1);
+    return rows.length > 0;
   }
 
   /**
