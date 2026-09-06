@@ -188,6 +188,36 @@ export async function runDiskBufferTests(): Promise<void> {
     }
   });
 
+  // ---- 2b. a filesystem that lies about ENOENT cannot hang start-up ---------
+
+  await withTempDir(async (root) => {
+    // procfs shape, measured 2026-09-06 with `INGEST_BUFFER_DIR=/proc/nope`:
+    // `mkdir("/proc/nope")` returns ENOENT while `mkdir("/proc")` returns
+    // EEXIST, and Node's `{ recursive: true }` loops on that for ever at 100 %
+    // CPU with no log line. The store must reject, name the directory, and
+    // touch each path segment a bounded number of times.
+    const harness = makeHarness();
+    const parent = join(root, "proc");
+    const dir = join(parent, "nope");
+    let calls = 0;
+    const lying: BufferFileSystem = {
+      ...realFs(),
+      mkdir: async (path) => {
+        calls += 1;
+        const code = String(path) === dir ? "ENOENT" : "EEXIST";
+        throw Object.assign(new Error(`${code}: ${String(path)}`), { code });
+      },
+    };
+    let message = "";
+    try {
+      await openDiskBufferStore(harness.options(dir, { fs: lying }));
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    assert(message.includes(dir) && message.includes("ENOENT"), `expected a bounded ENOENT rejection naming ${dir}, got: ${message}`);
+    assert(calls <= 3, `mkdir must be tried at most once per segment plus one retry, got ${calls} calls`);
+  });
+
   // ---- 3. one append: the path, the line, the whitelist ----------------------
 
   await withTempDir(async (dir) => {

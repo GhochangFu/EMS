@@ -1,5 +1,5 @@
 import * as fsPromises from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { z } from "zod";
 
@@ -145,6 +145,55 @@ function isEnoent(error: unknown): boolean {
     "code" in error &&
     (error as { code?: unknown }).code === "ENOENT"
   );
+}
+
+function errnoCode(error: unknown): string | undefined {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : undefined;
+}
+
+/**
+ * `mkdir -p`, bounded.
+ *
+ * Node's own `{ recursive: true }` walks up on `ENOENT` and retries, and it
+ * retries **for ever** on a filesystem where `mkdir` returns `ENOENT` although
+ * the parent exists — procfs does exactly that. Measured 2026-09-06 at the
+ * `F1.10` step-6 drill: `INGEST_BUFFER_DIR=/proc/nope` left `node dist/main.js`
+ * at 100 % CPU with no log line, which turned ruling 4's "refuse to start" into
+ * a silent hang. This walks up collecting the missing ancestors (each segment
+ * at most once, stopping at the root), then creates them top-down, and a second
+ * `ENOENT` for the same segment is thrown rather than retried.
+ */
+async function ensureDir(fs: BufferFileSystem, target: string): Promise<void> {
+  const missing: string[] = [];
+  let current = target;
+  for (;;) {
+    try {
+      await fs.mkdir(current);
+      break;
+    } catch (error) {
+      const code = errnoCode(error);
+      if (code === "EEXIST") {
+        break;
+      }
+      const parent = dirname(current);
+      if (code !== "ENOENT" || parent === current) {
+        throw error;
+      }
+      missing.push(current);
+      current = parent;
+    }
+  }
+  for (const path of missing.reverse()) {
+    try {
+      await fs.mkdir(path);
+    } catch (error) {
+      if (errnoCode(error) !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
 }
 
 function isProtocol(name: string): name is IngestProtocol {
@@ -380,7 +429,7 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     const payload = `${samples.map((sample) => serialise(sample, receivedAt)).join("\n")}\n`;
     const bytes = Buffer.byteLength(payload, "utf8");
     try {
-      await fs.mkdir(endpoint.dir, { recursive: true });
+      await ensureDir(fs, endpoint.dir);
       await fs.appendFile(path, payload, "utf8");
     } catch (error) {
       // Decision 10: logged and counted, never thrown into the drain loop —
@@ -529,7 +578,7 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
 
   await enqueue(async () => {
     try {
-      await fs.mkdir(dir, { recursive: true });
+      await ensureDir(fs, dir);
       const probe = join(dir, `.probe-${process.pid}`);
       await fs.writeFile(probe, "");
       await fs.unlink(probe);
