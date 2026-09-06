@@ -268,6 +268,13 @@ export class NotificationsService {
    * both read "no row" and both write, which costs one extra row per key per
    * overlapping sweep. There is deliberately no unique index — the ledger is
    * history and stays append-only.
+   *
+   * The partial index (migration `0065`) is usable only while the status
+   * filter reaches the planner as a folded constant: an unnamed statement, as
+   * drizzle sends today. A `.prepare()` here can switch Postgres to a generic
+   * plan, the `$n` stays a parameter, the predicate no longer proves the
+   * index's `WHERE`, and the read silently falls back to walking the channel's
+   * ledger. Keep it unprepared.
    */
   private async hasRecordedSkip(
     channelId: string,
