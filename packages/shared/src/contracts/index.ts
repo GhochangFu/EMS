@@ -27,6 +27,7 @@ export * from "./dashboard-builder";
 export * from "./dashboard-templates";
 export * from "./envelopes";
 export * from "./health";
+export * from "./mapping-sheet";
 export type * from "./schema-types";
 export * from "./notifications";
 export * from "./onboarding";
