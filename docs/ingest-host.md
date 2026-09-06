@@ -216,6 +216,18 @@ before the broker is even connected, the store scans `INGEST_BUFFER_DIR` and
 replays whatever an earlier process left, under the same two bounds — a host
 restart during an outage loses nothing already on disk.
 
+**But a host restarted while the database is still down does not start.** The
+binding plan is read from the database before any supervisor exists
+(`main.ts`, unchanged by `F1.10`), so the fresh process opens the store, logs
+`disk buffer opened` with the segments it found, then exits 1 on
+`ingest host failed to start` — measured 2026-09-06 in the step-6 drill:
+`segments=1 buffered=26` scanned, then the exit; on the next start after the
+database returned, the same 26 replayed in 9 s. The segments wait on the
+volume; nothing is lost that the bounds would have kept. The compose `ingest`
+service has no `restart:` policy, so that next start is an operator's
+`docker compose up -d ingest`, not automatic — the same as before `F1.10`,
+but it now also decides when the backlog lands.
+
 **What an operator can look at directly.** Segment files are plain JSON lines
 under the mounted volume, so they can be read without touching the API. In
 compose (project name `bms`, so the volume is `bms_bms-ingest-buffer` and the

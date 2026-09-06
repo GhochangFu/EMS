@@ -1196,7 +1196,14 @@ is the loss this amendment bounds and records.
    at most one minute, idempotently, when the database returns. On start-up the
    store scans the directory and the supervisors replay whatever an earlier
    process left, under the same bounds — a host restart during an outage loses
-   nothing the bounds would have kept.
+   nothing the bounds would have kept. *Measured at step 6 (2026-09-06): a host
+   restarted while the database is still down scans the volume and then exits
+   1, because the binding plan is read from the database before any supervisor
+   exists (pre-existing, `main.ts`); the segments wait on the volume and
+   replayed in 9 s on the first start after the database returned. The compose
+   `ingest` service carries no `restart:` policy, so that start is an
+   operator's — unchanged by this amendment, and left as a question for the
+   owner rather than decided here.*
 9. **Health.** Each `endpoint` line gains `buffered=` (samples on disk),
    `bufferDropped=` (samples erased by a bound or unparseable) and `replayed=`
    (samples written from disk since start). **A non-empty buffer degrades the
