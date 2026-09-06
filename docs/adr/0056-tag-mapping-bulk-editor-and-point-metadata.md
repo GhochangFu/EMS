@@ -391,6 +391,19 @@ effect of the feature commit:**
 - Pointers, one sentence each, in ADR 0015 (the seed column is now used as
   written), ADR 0038 (the `F2.7` exclusion is discharged), ADR 0050 (a range
   column exists and is *not* the safe range), and the `F4.56` row.
+- **An amendment to decision 3 for the owner's plan-gate ruling Q-H
+  (2026-09-06):** `rtuId` is accepted on the *update* body too (`uuid` wires,
+  `null` unwires, absent leaves the wiring alone), and the asset-point read
+  DTO surfaces `rtuId` so the wiring is observable in the response. Both
+  shipped in PR 1 under the plan's design decision 14; this record is what the
+  sweep amends so that the ADR and the code agree.
+- **An amendment to decision 2 for a fourth within-row rule:** the four numeric
+  metadata columns are constrained to *finite* values by migration `0064`
+  (`<table>_point_metadata_finite_check`, the `0031` range form), because
+  PostgreSQL's `NaN` ordering lets `0063`'s three rules admit `NaN` and both
+  infinities. Found by the PR 1 migration and security reviews; the API layer
+  had `.finite()` from the start, so this closes the direct-writer door before
+  PR 2's importer opens it.
 
 ## Verification
 
