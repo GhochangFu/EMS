@@ -494,7 +494,7 @@ implements all of it; adapters implement none of it):
 | Poll overlap | forbidden — next tick is scheduled only after `poll()` settles |
 | Consecutive poll failures before `degraded` | 3 |
 | In-memory sample queue | bounded, default 10 000 samples, drop-oldest with a counter |
-| Disk buffering | **out of scope — `F1.10`** |
+| Disk buffering | ~~out of scope — `F1.10`~~ **in scope since Amendment 4 (2026-09-06):** spill on write failure, 1 h by receipt time and 256 MiB host-wide, oldest-first replay after live |
 
 The host installs `process.on("unhandledRejection")` and
 `process.on("uncaughtException")` handlers that log and mark the owning
@@ -842,7 +842,7 @@ querying the database rather than by opinion.
    pilot.** Any poll adapter going live at a **customer site** is gated behind
    F1.10 (backoff + disk buffering) so that telemetry loss during a database
    outage is bounded and recorded rather than silent. State that gate in F1.10's
-   scope.
+   scope. *(Stated, and discharged — **Amendment 4**, 2026-09-06.)*
 7. **Topic sharing is not real in the pilot today** — 1 MQTT RTU, 1 distinct
    topic. See the correction in Context. The endpoint/device split is justified
    by Modbus/OPC-UA/SNMP mechanics, not by current MQTT data.
@@ -1081,3 +1081,158 @@ so the worst case is the dead dashboard the operator was trying to avoid.
 (`MQTT_TLS_REJECT_UNAUTHORIZED`), `AUTH_MODE`, or the local-JWT fallback must
 still refuse startup, because there the fail-open direction weakens a security
 property rather than restoring one.
+
+## Amendment 4 — Disk buffering leaves §5's out-of-scope row (`F1.10`, 2026-09-06)
+
+**Status: Accepted — 2026-09-06.** Ruled by the repository owner at the `F1.10`
+scope gate, before any code, as the four rulings below.
+
+Written at the `F1.10` gate. It flips one §5 row, discharges Resolved decision
+6's customer-site gate, and records the buffer's on-disk format so that `E7.2`
+(edge store-and-forward) extends one format rather than inventing a second.
+
+### Why an amendment and not a new ADR
+
+`docs/BACKLOG.md` §5 already settled the scope question — *"`F1.7` and `F1.10`
+are the exceptions: MQTT is already promoted (ADR 0007) and backpressure is
+host-side, so neither reopens the protocol question."* Nothing is promoted out
+of AGENTS.md §6 and no dependency is added (ruling 2), so neither §9.4 nor §10
+fires. What does change is a row in **this** ADR's §5 table — `Disk buffering |
+out of scope — F1.10` — and a Resolved decision that accepts the loss the row
+describes. An accepted ADR still saying "out of scope" after the feature ships
+is exactly the drift §10.1 exists to prevent, and amending the record that
+carries the row is the smallest true fix. Same shape as ADR 0007 Amendment 1.
+
+### The four rulings
+
+1. **The record is this amendment**, not a new ADR and not code-plus-docs only.
+2. **No library.** Node core `fs` only; append-only JSON-lines segment files. A
+   persistent-queue library or SQLite would each be a §9.4 dependency, and the
+   format would then not be ours to extend at `E7.2`.
+3. **Two bounds, not one.** `docs/AGENTS.production.md` §7's "rolling 1 h" by
+   receipt time, **plus** a byte cap, default 256 MiB (≈600 samples/s for an
+   hour at ~120 bytes a line). A time bound alone lets a fast fleet fill the
+   disk inside the hour, and a full disk takes the host down *with* the data it
+   was keeping. Every sample erased by either bound is counted.
+4. **`INGEST_BUFFER_DIR`, a named Compose volume, fail loud.** Default
+   `/var/lib/bms-ingest` in the image; the compose `ingest` service mounts a
+   named volume there so the buffer survives a container replace; a directory
+   that cannot be created or written **refuses start-up** with the path in the
+   error. A host that cannot buffer does not meet §7, and a host that runs
+   without the guarantee and says nothing is the failure mode §6 commit 4 exists
+   to remove — the *degrade instead* option was considered and declined for
+   that reason.
+
+### What the buffer is for, and the half of `F1.10` that already exists
+
+The backlog title reads *"broker-disconnect backoff + 1 h disk buffer"*. The
+first half shipped with the host: reconnect backoff is the §5 table, lives in
+`packages/shared/src/ingest.ts` since `F4.34`, and the MQTT adapter switches the
+library's own `reconnectPeriod` off so that one policy governs (§5 rule 4).
+This amendment is the second half only.
+
+**The buffer survives a database outage, not a broker outage.** When the broker
+is down nothing reaches the host and there is nothing to buffer; the edge-side
+store-and-forward that covers *that* window is `E7.2`. When Postgres is down,
+`writeSamples` throws, and until now the supervisor counted the batch in
+`writeFailures` and let it go — which `docs/ingest-host.md` records as *"a batch
+lost to a failed write is gone"* and this ADR's §5 accepted for the pilot. That
+is the loss this amendment bounds and records.
+
+### Decision — the disk tier
+
+1. **Placement.** A second tier under the supervisor's existing drain loop, in
+   `apps/ingest/src/host/disk-buffer.ts`. The in-memory ring queue (§5: 10 000,
+   drop-oldest, counted) is unchanged — it is still the seam that keeps a push
+   adapter's `emit` off the database round trip. Adapters are untouched and the
+   §1 interface does not change, so `F1.2`–`F1.6` are unaffected.
+2. **One store, one directory, per-endpoint subtrees.** `main.ts` builds one
+   `DiskBufferStore` over `INGEST_BUFFER_DIR` and hands each supervisor a
+   per-endpoint handle. The store owns the bounds (decision 6) host-wide, since
+   the disk is host-wide; the handle owns the endpoint's segments and counters,
+   so one endpoint's backlog is still that endpoint's blast radius (§5).
+3. **Spill on failure, then breaker.** A batch whose write throws is appended
+   to the disk buffer instead of dropped. The supervisor then enters a
+   *buffering* state in which every later batch goes to disk **without** a
+   database attempt. Attempting each one would cost `writeTimeoutMs` (30 s) per
+   500-sample batch and starve the memory queue into drop-oldest — loss by
+   another route, with `dropped=` rising while `writeFailures=` explained it.
+4. **Probe on the §5 backoff, and the probe is the replay.** A replay loop
+   runs for the life of the supervisor. Whenever the endpoint's buffer is
+   non-empty it tries to write the oldest segment's next batch. A failure marks
+   the supervisor *buffering* and sleeps `backoffDelayMs(attempt)` — base 1 s,
+   factor 2, cap 60 s, ±20 % jitter, from the same shared module the connect
+   path uses, for the reason §5 gives: one policy, not two. A success clears
+   the state and resets the attempt. There is no separate probe query: the next
+   real write is the probe.
+5. **Live before backlog.** Once a write succeeds, live batches resume through
+   the normal drain path at once, and the replay loop drains segments
+   oldest-first, one batch at a time, yielding `drainIdleMs` between batches so
+   live writes are never queued behind an hour of backlog. A dashboard shows
+   *now* before it shows the hour it missed — the priority the memory queue's
+   newest-wins already encodes. Replay is safe because `writeResolved` is
+   `ON CONFLICT DO UPDATE`: a replayed row is idempotent. Replayed rows are
+   notified like any upsert; a listener sees the backlog arrive once.
+6. **Bounds (ruling 3), host-wide.** `INGEST_BUFFER_MAX_AGE_MS` (default
+   `3600000`) and `INGEST_BUFFER_MAX_BYTES` (default `268435456`), parsed by
+   `host/config.ts` under the same digits-only, safe-integer, per-caller-ceiling
+   rules as the existing values. Enforced on every append: every segment whose
+   minute is older than the age bound is unlinked, then the oldest segment in
+   the store — across endpoints — is unlinked while the store total exceeds the
+   byte bound. Each unlinked segment's line count is added to the **owning
+   endpoint's** `bufferDropped`. Sizes are tracked in memory from one scan at
+   start-up and updated on append and unlink, so enforcement costs no `stat`.
+7. **Format.** `INGEST_BUFFER_DIR/<protocol>/<encodeURIComponent(endpointKey)>/
+   <epoch-minute>.jsonl`. One append-only segment per minute of *receipt* time.
+   One `SourceSample` per line, `at` as ISO-8601 text, `deviceKey` kept. The
+   sample is stored **before** normalisation, so the point index at replay time
+   applies — a mapping corrected during the outage corrects the backlog too. A
+   segment is only ever appended to or unlinked; nothing rewrites in place.
+8. **Crash safety.** One append is one `appendFile` of whole lines, so a
+   process killed mid-write leaves at most one partial last line. Replay skips a
+   line that does not parse, counts it in `bufferDropped`, and logs it once per
+   segment. Progress is per segment: a segment is unlinked only after every
+   parseable line in it is written, so a write failure mid-segment re-replays
+   at most one minute, idempotently, when the database returns. On start-up the
+   store scans the directory and the supervisors replay whatever an earlier
+   process left, under the same bounds — a host restart during an outage loses
+   nothing the bounds would have kept.
+9. **Health.** Each `endpoint` line gains `buffered=` (samples on disk),
+   `bufferDropped=` (samples erased by a bound or unparseable) and `replayed=`
+   (samples written from disk since start). **A non-empty buffer degrades the
+   host verdict** — `ingest-host degraded` while any endpoint has `buffered>0`
+   — because a host that reports `ok` with an hour of telemetry on disk is the
+   healthy-looking state the `writeTimeoutMs` comment already warns against.
+   `writeFailures=` keeps counting the write that triggered each spill.
+10. **Start-up (ruling 4).** `main.ts` creates `INGEST_BUFFER_DIR`
+    recursively and probes it with one write-and-unlink before any supervisor
+    starts. A failure is a start-up fault: exit 1 with the path in the message,
+    the same treatment as a missing `DATABASE_URL`. Once running, a buffer
+    write that fails is logged and counted, never thrown into the drain loop —
+    the disk failing must not also take the memory tier down with it.
+11. **Not in scope, stated.** `prom-client` — §Dependencies deferred it "to
+    F1.10 / F3.16"; it stays with `F3.16`, because a metrics library is a §9.4
+    dependency and the plain-text health line carries every counter this
+    amendment adds. Edge-side store-and-forward — `E7.2`, which extends decision
+    7's format. Reconciling the endpoint set on reload — unchanged; see
+    `docs/ingest-host.md` *Known limits*.
+
+### Resolved decision 6 — the gate is stated and discharged
+
+Decision 6 accepted the bounded drop-oldest queue "for the pilot", gated any
+poll adapter at a customer site behind `F1.10`, and asked that the gate be
+stated in `F1.10`'s scope. It is stated here. It is **discharged when this
+amendment's code lands**: telemetry loss during a database outage is bounded by
+ruling 3 and recorded in `bufferDropped`, which is what decision 6 asked for.
+`F1.2`–`F1.6` no longer carry that gate. They still each carry their own
+protocol ADR under §10 — this amendment changes nothing about that.
+
+### What is owed separately
+
+Per §10 and §9.10, the `chore(agents):` sweep after merge: the AGENTS.md §2
+*Ingest adapters* row ("bounded queue" gains the disk tier), the
+`docs/roadmap.md` Phase 2 "buffer + backpressure rules" line and its
+`F1.10`-owed sentence, `docs/BACKLOG.md` §5's `F1.10` row, and the two `F1.10`
+sentences in `docs/ingest-host.md` *Health endpoint* and *Known limits* — the
+last of which lands with the feature, not the sweep, because it documents the
+host.
