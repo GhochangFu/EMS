@@ -2,6 +2,7 @@ import type { OnboardingDraft } from "@bms/shared";
 
 import { MAX_ECHOED_CELL_CHARS } from "../spreadsheet-guard";
 import { OnboardingChatService } from "./onboarding-chat.service";
+import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -27,7 +28,21 @@ function chatService(): OnboardingChatService {
   return new OnboardingChatService({} as never, {} as never, {} as never, {} as never);
 }
 
-/** A draft carrying two RTUs and two assets, all named with 32,767-character cells. */
+/** A topic exactly at the bound — the longest one `parseRtus` accepts. */
+const LEGAL_TOPIC = `L/${"o".repeat(MAX_RTU_TOPIC_CHARS - 2)}`;
+
+/**
+ * A draft carrying two RTUs and two assets, all named with 32,767-character
+ * cells, and the **first RTU's `topic` is one of them**.
+ *
+ * That cell is load-bearing. `mqttSetupTemplate` prints `topic:` unquoted so
+ * the operator can edit the block and paste it back, so it is the one echo site
+ * `quoteCell` cannot cover. Before the post-merge review this fixture set every
+ * topic to `""`, the template rendered the `your/topic/here` placeholder, and
+ * the length assertion below could not see the site it was written to guard.
+ * The second RTU keeps a topic at exactly the bound, so the same call also
+ * asserts the other direction: a legal topic is echoed whole.
+ */
 function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft {
   return {
     rtus: [
@@ -35,7 +50,7 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
         code: longCell("C"),
         displayName: longCell("D"),
         protocol: "mqtt",
-        config: { host: "phe.thinkiot.co.in", port: 8883, tls: true, topic: "" },
+        config: { host: "phe.thinkiot.co.in", port: 8883, tls: true, topic: longCell("T") },
         credentialsSet: false,
         ingestEnabled: true,
       },
@@ -43,7 +58,7 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
         code: longCell("E"),
         displayName: longCell("F"),
         protocol: "mqtt",
-        config: { host: "phe.thinkiot.co.in", port: 8883, tls: true, topic: "" },
+        config: { host: "phe.thinkiot.co.in", port: 8883, tls: true, topic: LEGAL_TOPIC },
         credentialsSet: false,
         ingestEnabled: true,
       },
@@ -57,8 +72,20 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
 }
 
 /**
- * `F4.102` — the import summary echoes sheet-supplied text at four places, and
- * before this row none of them was bounded.
+ * `F4.102` — the import summary echoes sheet-supplied text at **five** places,
+ * and before this row none of them was bounded. Enumerated rather than counted,
+ * because a bare number is a claim nobody can check:
+ *
+ * 1. `excelImportFollowUp`'s `imported.locationName`;
+ * 2. `mqttSetupTemplate`'s `RTU: <displayName>`;
+ * 3. `mqttSetupTemplate`'s `topic: <topic>`;
+ * 4. `formatAssetsByRtuSummary`'s `<displayName>`;
+ * 5. `formatAssetsByRtuSummary`'s `<asset.name>`, once per asset on the line.
+ *
+ * The `displayNameFixes` lines are sheet text too, but they arrive already
+ * quoted from `normalizeRtuDisplayNames`, and `onboarding-excel.service.spec.ts`
+ * is what holds that. Site 3 is the one no `quoteCell` can cover — see
+ * `hostileDraft` — and the docblock said "four" while it went unguarded.
  *
  * Measured at `ef1a3e11` through the real path: a workbook of 3,000 RTU rows
  * whose cells each held 32,767 characters produced an `assistantMessage` of
@@ -72,14 +99,14 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
  * The three sub-cases exist because `excelImportFollowUp` returns from the
  * first branch that matches. One call cannot reach both `mqttSetupTemplate` and
  * `formatAssetsByRtuSummary`, so a single-call assertion would leave one of the
- * four sites unguarded and green.
+ * five sites unguarded and green.
  */
 export function assertExcelImportFollowUpBoundsEchoedText(): void {
   const service = chatService();
 
-  // --- sites 1 and 3: the location name, and the MQTT paste-back template ---
-  // Every RTU is `credentialsSet: false` with a blank topic, so the incomplete
-  // branch fires and `mqttSetupTemplate` runs.
+  // --- sites 1, 3 and 5: the location name, and the MQTT paste-back template -
+  // Every RTU is `credentialsSet: false`, so the incomplete branch fires and
+  // `mqttSetupTemplate` runs whatever each topic holds.
   const mqtt = service.excelImportFollowUp(
     hostileDraft(),
     { locationName: longCell("L"), rtuCount: 2, assetCount: 2 },
@@ -91,12 +118,32 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
     "this sub-case must reach the MQTT setup template, or site 3 goes unasserted",
   );
   assert(
+    mqtt.assistantMessage.includes("topic: "),
+    "this sub-case must render a topic line, or site 5 goes unasserted",
+  );
+  assert(
     mqtt.assistantMessage.length < 4000,
     `the MQTT follow-up must be bounded, got ${mqtt.assistantMessage.length} characters`,
   );
   assert(
     mqtt.assistantMessage.includes("more characters"),
     "a cut cell says how much was omitted",
+  );
+  // Site 5 in both directions. The over-long topic is replaced by the
+  // placeholder — never cut, because a truncated topic pasted back subscribes
+  // to a topic nobody asked for — and the one at exactly the bound is printed
+  // whole, because the operator copies this block and edits it.
+  assert(
+    !mqtt.assistantMessage.includes("T".repeat(MAX_RTU_TOPIC_CHARS + 1)),
+    "a topic past the bound must not be echoed into the template",
+  );
+  assert(
+    mqtt.assistantMessage.includes("topic: your/topic/here"),
+    `an unusable topic falls back to the placeholder, got "${mqtt.assistantMessage.slice(0, 300)}"`,
+  );
+  assert(
+    mqtt.assistantMessage.includes(`topic: ${LEGAL_TOPIC}`),
+    `a topic of exactly ${MAX_RTU_TOPIC_CHARS} characters is echoed whole for the paste-back`,
   );
 
   // --- site 4: the assets-by-RTU summary -----------------------------------

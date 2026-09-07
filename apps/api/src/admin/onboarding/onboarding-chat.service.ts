@@ -12,6 +12,7 @@ import type {
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { quoteCell } from "../spreadsheet-guard";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import {
   attachEncryptedCredentials,
   reconcileSecrets,
@@ -529,8 +530,19 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     }
     const blocks = mqttRtus.map((rtu) => {
       const existingTopic = String(rtu.config.topic ?? rtu.config.mqttTopic ?? "").trim();
+      // `topic:` is the one echo site `quoteCell` cannot cover — the operator
+      // copies this block, edits it and pastes it back, and the quotes would be
+      // captured into the stored topic by `defaultConfig`'s
+      // `/topic[:\s]+(\S+)/i`. So it is bounded by *length* instead, against the
+      // same `MAX_RTU_TOPIC_CHARS` the sheet is refused on, and an unusable
+      // value falls back to the placeholder rather than being cut: a truncated
+      // topic pasted back subscribes to a topic nobody asked for. A draft can
+      // reach here without passing `parseRtus` (chat and the draft API both
+      // write `config.topic`), which is why the bound is applied twice.
       const topic =
-        existingTopic && existingTopic !== "-" ? existingTopic : "your/topic/here";
+        existingTopic && existingTopic !== "-" && existingTopic.length <= MAX_RTU_TOPIC_CHARS
+          ? existingTopic
+          : "your/topic/here";
       return [
         // Quoting this breaks no round trip: the paste-back parser is
         // `defaultConfig`'s `/topic[:\s]+(\S+)/i`, which reads the `topic:`

@@ -77,6 +77,33 @@ export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
 }
 
 /**
+ * The longest `topic` cell an onboarding workbook may carry.
+ *
+ * **Derived from the column it commits to, not invented.** `bms.rtus.mqtt_topic`
+ * is `character varying(255)` (`packages/db/src/schema/bms-schema.ts`), and
+ * `OnboardingCommitService` writes this exact value there, so a longer topic can
+ * never reach a committed RTU — it can only be carried around the draft, echoed
+ * into chat, and refused by Postgres at the end.
+ *
+ * **Why the sheet is refused rather than the cell cut** (owner ruling). Every
+ * other sheet-supplied string this importer echoes is bounded at the *message*
+ * with `quoteCell`, which leaves the data whole. `topic` cannot be: it is
+ * printed unquoted by `OnboardingChatService.mqttSetupTemplate` for the operator
+ * to edit and paste back, so a quote character would end up inside the stored
+ * topic (the paste-back parser is `/topic[:\s]+(\S+)/i`). Truncating instead is
+ * worse than refusing — a shortened topic subscribes to a topic nobody asked
+ * for, the RTU commits, and no telemetry ever arrives. Past this bound the sheet
+ * is wrong, and saying so is the only answer that does not invent a result.
+ *
+ * **What it closes.** Measured at `ef1a3e11` past all five other guards: 2,000
+ * RTU rows sharing one 32,767-character topic made a 77,564-byte upload produce
+ * a 65.6 MB `assistantMessage`; 8,000 rows produced 250.3 MB at 1,452 MB RSS and
+ * 11.7 s of blocked event loop; 16,500 rows threw `RangeError: Invalid string
+ * length`, which nothing catches — an uncaught 500 from a 600 KB file.
+ */
+export const MAX_RTU_TOPIC_CHARS = 255;
+
+/**
  * Reads a spreadsheet's `domain` cell into a plant-domain code (ADR 0031).
  *
  * **Case and spacing are normalised; an unrecognised value is not.** A sheet
@@ -347,6 +374,17 @@ export class OnboardingExcelService {
       const portRaw = get(values, "port");
       const port = portRaw ? Number.parseInt(portRaw, 10) : 8883;
       const tlsRaw = get(values, "tls").toLowerCase();
+      const topic = get(values, "topic");
+      if (topic.length > MAX_RTU_TOPIC_CHARS) {
+        // The row number is the RTU's position in the `RTUS` section's data
+        // rows, which is what the operator counts down the sheet. Neither the
+        // topic nor any other cell is echoed: a refusal describes the cell it
+        // refused, it does not repeat it (AGENTS.md §4.3).
+        throw new BadRequestException(
+          `RTU row ${rtuIndex + 1} has a topic of ${topic.length} characters, more than the ` +
+            `${MAX_RTU_TOPIC_CHARS} an MQTT topic may hold; shorten it and upload the workbook again`,
+        );
+      }
       const username = get(values, "username").trim();
       const password = get(values, "password").trim();
       if (
@@ -368,7 +406,7 @@ export class OnboardingExcelService {
           host: get(values, "host") || "phe.thinkiot.co.in",
           port: Number.isFinite(port) ? port : 8883,
           tls: tlsRaw === "" || tlsRaw === "true" || tlsRaw === "1" || tlsRaw === "yes",
-          topic: get(values, "topic"),
+          topic,
         },
         credentialsSet: false,
         ingestEnabled: protocol === "mqtt",

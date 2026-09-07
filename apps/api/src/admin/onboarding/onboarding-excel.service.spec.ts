@@ -6,7 +6,11 @@ import { syntheticZip } from "../../testing/synthetic-zip";
 import { MAX_INFLATED_BYTES } from "../spreadsheet-guard";
 import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
-import { OnboardingExcelService, onboardingSheetRangeProblem } from "./onboarding-excel.service";
+import {
+  MAX_RTU_TOPIC_CHARS,
+  OnboardingExcelService,
+  onboardingSheetRangeProblem,
+} from "./onboarding-excel.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -391,5 +395,70 @@ export function assertEchoedSheetTextIsBounded(): void {
   assert(
     parsed.rtus[1].displayName.length > 1000,
     `the RTU keeps its full name — only the message is cut, got ${parsed.rtus[1].displayName.length} characters`,
+  );
+}
+
+/**
+ * The `topic` cell is **refused** past {@link MAX_RTU_TOPIC_CHARS}, not cut
+ * (post-merge review, finding 1; owner ruling).
+ *
+ * `topic` is the one RTU cell that reaches a response message unquoted —
+ * `mqttSetupTemplate` prints it as `topic: <value>` so the operator can edit
+ * the block and paste it back, and quoting it would put the quote character
+ * inside the topic the paste-back parser stores. Bounding it here is what makes
+ * that echo safe, which is why the refusal lives at the parse boundary rather
+ * than at the interpolation.
+ *
+ * **Refusing, not truncating, is the point.** A silently shortened topic is a
+ * subscription to a topic nobody asked for: the RTU commits, ingest connects,
+ * and no telemetry ever arrives. The bound is not invented either — see the
+ * constant's docblock for where 255 comes from.
+ */
+export function assertOverlongRtuTopicIsRefused(): void {
+  // Exactly at the bound, on the second RTU row: parsed, and kept whole.
+  const legalRows = templateRows();
+  legalRows[7] = [...legalRows[7]];
+  legalRows[7][5] = "L".repeat(MAX_RTU_TOPIC_CHARS);
+  const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(legalRows));
+  assert(
+    String(parsed.rtus[1].config.topic).length === MAX_RTU_TOPIC_CHARS,
+    `a topic of exactly ${MAX_RTU_TOPIC_CHARS} characters parses whole, got ${String(parsed.rtus[1].config.topic).length}`,
+  );
+
+  // One character more, same row.
+  const overRows = templateRows();
+  overRows[7] = [...overRows[7]];
+  overRows[7][5] = "X".repeat(MAX_RTU_TOPIC_CHARS + 1);
+  const message = refusalMessage(
+    buildWorkbookBuffer(overRows),
+    `a topic of ${MAX_RTU_TOPIC_CHARS + 1} characters`,
+  );
+  assert(
+    message.includes("RTU row 2"),
+    `the refusal names the row to repair — the second RTU data row, got "${message}"`,
+  );
+  assert(
+    message.includes(String(MAX_RTU_TOPIC_CHARS + 1)),
+    `the refusal names the length it read, got "${message}"`,
+  );
+  assert(
+    message.includes(String(MAX_RTU_TOPIC_CHARS)),
+    `the refusal names the bound it applied, got "${message}"`,
+  );
+  // AGENTS.md §4.3, and the same rule the range refusals follow: a refusal
+  // describes the cell, never echoes it. A 32,767-character topic quoted back
+  // is the amplification this row exists to close.
+  assert(
+    !message.includes("XXXXXXXXXX"),
+    `the refusal must not echo the topic it refused, got "${message.slice(0, 200)}"`,
+  );
+
+  // And the honest sheet is untouched: the template's own topics are short.
+  const template = new OnboardingExcelService().parseUpload(
+    new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+  );
+  assert(
+    template.rtus[0].config.topic === "BERHAMPUR-RTU-1/Topic1",
+    `the template's topic survives the bound, got ${JSON.stringify(template.rtus[0].config.topic)}`,
   );
 }

@@ -4,6 +4,7 @@ import {
   assertDeclaredWidthIsRefusedNotWindowed,
   assertEchoedSheetTextIsBounded,
   assertDeclaredZipBombIsRefusedBeforeRead,
+  assertOverlongRtuTopicIsRefused,
   assertOversizeBufferIsRefused,
   assertSheetReachingTheRowBoundIsRefused,
   assertTemplateRoundTripsUnchanged,
@@ -45,5 +46,9 @@ describe("OnboardingExcelService.parseUpload (F4.102)", () => {
 
   it("bounds the sheet text the display-name fix reports, without bounding the name itself", () => {
     assertEchoedSheetTextIsBounded();
+  });
+
+  it("refuses an RTU topic longer than the column it commits to, and keeps one at the bound", () => {
+    assertOverlongRtuTopicIsRefused();
   });
 });
