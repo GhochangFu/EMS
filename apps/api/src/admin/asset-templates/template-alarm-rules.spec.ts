@@ -194,6 +194,24 @@ export function assertEveryHostileInputStillProducesAValidCode(): void {
   assert(failures.length === 0, `hostile inputs produced invalid codes:\n  ${failures.join("\n  ")}`);
 }
 
+/**
+ * Two alarm codes the content contract accepts as distinct — its uniqueness
+ * check is exact-match — derive the SAME rule code, because normalisation maps
+ * `-` and `_` onto one character.
+ *
+ * Pinned deliberately rather than treated as a defect: it is the whole reason
+ * the seed needs an intra-batch code pre-check (plan D4). Without one, a
+ * template carrying both codes reaches migration `0048`'s unique index inside
+ * the transaction and rolls the whole instantiation back with a raw 23505.
+ */
+export function assertTwoAlarmCodesCanDeriveTheSameRuleCode(): void {
+  sameString(
+    seededRuleCode("CHILLER-1", "high-temp"),
+    seededRuleCode("CHILLER-1", "high_temp"),
+    "`high-temp` and `high_temp` derive one code — U4's pre-check is what catches this",
+  );
+}
+
 // --------------------------------------------------------------------------
 // D1 — the philosophy rendering
 // --------------------------------------------------------------------------

@@ -17,6 +17,7 @@ import {
   assertTheFourDriftQuadrants,
   assertTheNameIsTruncatedToTheColumnWidth,
   assertThePrefixIsCountedBeforeTheLengthCheck,
+  assertTwoAlarmCodesCanDeriveTheSameRuleCode,
 } from "./template-alarm-rules.spec";
 
 /** `E2.4` U3 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -44,6 +45,10 @@ describe("E2.4 — template alarm rule derivation (ADR 0058)", () => {
 
     it("produces a code the rule contract accepts for every hostile input", () => {
       assertEveryHostileInputStillProducesAValidCode();
+    });
+
+    it("maps two contract-distinct alarm codes onto one rule code, which is why D4 pre-checks", () => {
+      assertTwoAlarmCodesCanDeriveTheSameRuleCode();
     });
   });
 

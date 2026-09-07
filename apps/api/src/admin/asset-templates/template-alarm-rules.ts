@@ -27,10 +27,19 @@ import type { TemplateContentParsed } from "./asset-templates-content.schema";
  * Ceiling on `automation_rules` rows per instantiate call.
  *
  * The same arithmetic as `MAX_POINT_ROWS`, one table over: Postgres caps a
- * statement at 65,535 bind parameters and a rule insert binds ~22 columns per
- * row, so a single statement fails above ~2,970 rows. The Zod contracts permit
- * 200 assets x 200 alarms = 40,000. Set under the hard limit so a legitimately
- * large batch returns a named domain error instead of a raw driver one.
+ * statement at 65,535 bind parameters and `seededRuleValues` below binds **26**
+ * columns per row, so a single statement fails above 2,520 rows. The Zod
+ * contracts permit 200 assets x 200 alarms = 40,000, so a bound is needed for a
+ * legitimately large batch to return a named domain error instead of a raw
+ * driver one.
+ *
+ * **The margin here is thin and the caller must know it.** 2,500 x 26 = 65,000
+ * bind parameters, 535 under the ceiling — about twenty rows. The plan's "~22
+ * columns" predates this file stamping `createdAt`, `updatedAt` and
+ * `archivedAt` explicitly. **One more column on this insert takes the ceiling
+ * below 2,500** and a full batch then fails with a driver error rather than the
+ * 400 this constant exists to produce. Anything that widens the row must
+ * re-measure this number in the same change.
  */
 export const MAX_RULE_ROWS = 2_500;
 
