@@ -143,18 +143,21 @@ export function AlarmsTab({ template, editable, onSaved, onDirtyChange }: Alarms
         </p>
       ) : null}
 
-      {/* An instruction, not a disclaimer. This used to end "Nothing here
-          creates or edits a live automation rule" — true, and it still let a
-          reader who had just read it expect that saving here armed something.
-          A negative gives an author nothing to act on. Naming the next step
-          does, and an alarm screen that looks like it protects an asset class
-          while nothing watches is the one misreading here that has a
-          consequence. */}
+      {/* An instruction, not a disclaimer. It used to say "nothing here watches
+          a live asset yet" and send the author to build each rule by hand;
+          `E2.4` (ADR 0058) made that false, because instantiating now seeds the
+          rules. The two sentences that survive are the ones an author can still
+          act on and would otherwise get wrong: that a philosophy row arrives
+          disabled and is owed a limit, and that saving this tab moves nothing
+          already live — decision 1's republish semantics, which is the single
+          most likely misreading now that a link between the two exists. */}
       <p className="rounded border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-900">
         These are the thresholds this asset class ships with, and the knowledge behind each one.
-        They are stored on the template as a standard — <strong>nothing here watches a live asset
-        yet</strong>. To act on one of these, create the matching rule in the Rule Engine for each
-        asset. Saving this tab does not create, change or remove any automation rule.
+        <strong> Instantiating a published version creates one automation rule per alarm per
+        asset</strong> — a row with a threshold arms at once, and a row without one is created
+        disabled until its limit is set per site. Seeded rules raise alarms and notify nobody
+        until you join channels to them in the Rule Engine. Saving this tab changes no live rule,
+        and republishing never moves one.
       </p>
 
       {sectionProblems.map((problem) => (

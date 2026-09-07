@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  bannerSaysInstantiateSeedsTheRules,
   fullPairRendersAnEditableThresholdBox,
   pairAbsentRowRendersCommissioningCopyAndAnEmptyOperator,
   philosophyIsForcedOpenByAProblemOnADraft,
@@ -19,6 +20,10 @@ describe("F2.13 alarms tab — ADR 0019 Amendment 2", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("tells the author that instantiating seeds the rules, and no longer sends them to build each one", async () => {
+    await bannerSaysInstantiateSeedsTheRules();
   });
 
   it("renders the commissioning copy and an unselected operator for a pair-absent row", async () => {
