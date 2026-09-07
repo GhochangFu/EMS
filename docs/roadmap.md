@@ -3135,7 +3135,11 @@ before a row was read, because `XLSX.read`'s `sheetRows` bounds rows, not
 strings. `spreadsheet-guard.ts` closes both — every echo of sheet text is cut
 to 64 characters, and the zip's central directory is read for its declared
 inflation before a byte is inflated — and `F1.9`'s importer, which had the same
-read shape, runs behind the same guard.
+read shape, runs behind the same guard. **Neither guard bounds a sheet's
+declared *column* span**, which `F4.100`'s security review measured on
+2026-09-07 at 53.6 s of blocked event loop from an 8,696-byte upload; that is
+`F4.101`, and `F4.102` records that the onboarding upload predates both guards
+and never got either.
 
 **Three lessons worth carrying.** Another session redeployed the shared api
 and web from the root three times while a browser run was in progress, each
@@ -3185,6 +3189,47 @@ the point-identity gap as its acceptance detail.
   bounded once per key, and the four page states on the served bundle.
 - **Residual:** `F3.48` — a step refused by the hourly ceiling is never
   retried (ruling Q7). `F3.28`'s Active Alarms rail is now buildable.
+
+### The telemetry import reads a sheet by its absolute position (`F4.100`) — done
+
+`F4.100` closed 2026-09-07 in one pull request, no ADR owed — a defect inside
+`F1.9`'s shipped scope, with no schema, dependency, contract or route change.
+PR [#346](https://github.com/GhochangFu/EMS/pull/346), squash `cb62c4d7`.
+
+- **One mismatch, two faces.** `sheet_to_json` indexes **both** axes from the
+  sheet's used range — measured on the pinned xlsx 0.20.3, `raw[0]` is the
+  range's first row and `raw[n][0]` its first column — while `sheet[...]` is
+  addressed absolutely. `F1.9`'s parser took its indices from the first and
+  spent them on the second.
+- **Rows**, the filed defect. On an A2-origin sheet — what a workbook becomes
+  when a blank row is inserted above the header before saving — the first data
+  row read the header's `time` cell and was rejected, and every later row was
+  *accepted carrying the previous row's timestamp*, with a `rowNumber` one
+  below its true Excel row. Nothing was raised structurally.
+- **Columns**, found by the pre-merge reviews and fixed on the owner's ruling.
+  A sheet starting at column B re-read the cell one column *left* of `time`.
+  That usually fails closed and blames the operator's data for a parser fault;
+  where the neighbour holds its own ISO timestamp it corrupts silently, the way
+  the row axis did. Measured: a `captured_at` column beside `time` yielded
+  `2001-01-01T00:00:00.000Z` for a cell holding `2026-08-19T10:00:00Z`.
+- **The sibling parser was already right.** `F2.7`'s `mapping-sheet-rows.ts`
+  anchors both axes (correction 56, `r + 1` and `range.s.c + c`). The lesson is
+  that correction 56 was applied where it was found and not swept for; the same
+  arithmetic sat one directory away for a fortnight.
+- **What makes the fixtures gate.** Four properties, each measured red: distinct
+  timestamps per row (the at-cap fixture gives all 20,000 rows one instant, so a
+  shift is invisible in it), text ISO cells rather than date serials (the
+  numeric-serial path never addresses the sheet), several origins rather than
+  one, and the decoy column — without it the column axis only ever fails closed,
+  and a "rejected" assertion would pass against both the defect and the fix.
+- **A test that could never have failed.** The pre-existing at-cap assertion
+  summed accepted and rejected rows. That sum is invariant under a shift that
+  only moves a row between the two lists, so it was permanently satisfiable
+  rather than merely loose. It now asserts each side.
+- **Residual:** `F4.101` — the same function densifies a workbook's whole
+  *declared* range, measured at 53.6 s of blocked event loop from an 8,696-byte
+  upload; ruled by the owner into its own row. `F4.102` — the onboarding upload
+  runs behind neither spreadsheet guard.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
