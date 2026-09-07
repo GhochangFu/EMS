@@ -10,7 +10,9 @@ import type {
 } from "@bms/shared";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
+import { quoteCell } from "../spreadsheet-guard";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import {
   attachEncryptedCredentials,
   reconcileSecrets,
@@ -63,7 +65,15 @@ export class OnboardingChatService {
     orgPointKeyCodes: string[],
     displayNameFixes: string[] = [],
   ): { assistantMessage: string; suggestedReplies: string[] } {
-    const summaryParts = [`location **${imported.locationName}**`];
+    // `F4.102`. Everything this method interpolates from the import is sheet
+    // text, and a cell may hold 32,767 characters. `quoteCell` is applied at
+    // each site rather than to the finished message, because four of the five
+    // sites live in `mqttSetupTemplate` and `formatAssetsByRtuSummary`, which
+    // build their strings before this one is assembled (AGENTS.md §6). The
+    // fifth is the `topic:` line, which cannot take `quoteCell` at all and is
+    // bounded by length instead — see `mqttSetupTemplate`.
+    // `onboarding-chat.service.spec.ts` enumerates all five.
+    const summaryParts = [`location **${quoteCell(imported.locationName)}**`];
     if (imported.rtuCount > 0) {
       summaryParts.push(`**${imported.rtuCount}** RTU(s)`);
     }
@@ -523,10 +533,24 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     }
     const blocks = mqttRtus.map((rtu) => {
       const existingTopic = String(rtu.config.topic ?? rtu.config.mqttTopic ?? "").trim();
+      // `topic:` is the one echo site `quoteCell` cannot cover — the operator
+      // copies this block, edits it and pastes it back, and the quotes would be
+      // captured into the stored topic by `defaultConfig`'s
+      // `/topic[:\s]+(\S+)/i`. So it is bounded by *length* instead, against the
+      // same `MAX_RTU_TOPIC_CHARS` the sheet is refused on, and an unusable
+      // value falls back to the placeholder rather than being cut: a truncated
+      // topic pasted back subscribes to a topic nobody asked for. A draft can
+      // reach here without passing `parseRtus` (chat and the draft API both
+      // write `config.topic`), which is why the bound is applied twice.
       const topic =
-        existingTopic && existingTopic !== "-" ? existingTopic : "your/topic/here";
+        existingTopic && existingTopic !== "-" && existingTopic.length <= MAX_RTU_TOPIC_CHARS
+          ? existingTopic
+          : "your/topic/here";
       return [
-        `RTU: ${rtu.displayName}`,
+        // Quoting this breaks no round trip: the paste-back parser is
+        // `defaultConfig`'s `/topic[:\s]+(\S+)/i`, which reads the `topic:`
+        // line below and never this one.
+        `RTU: ${quoteCell(rtu.displayName)}`,
         `topic: ${topic}`,
         // No username/password lines (ADR 0022, decision 2). A copy-paste block
         // that models credential entry teaches exactly the behaviour this ADR
@@ -545,13 +569,34 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
   private formatAssetsByRtuSummary(draft: OnboardingDraft): string {
     const rtus = draft.rtus ?? [];
     const assets = draft.assets ?? [];
+    // One pass to index, then one lookup per RTU. This was `rtus.map` wrapping
+    // `assets.filter`, i.e. O(rtus × assets) closure calls on the event loop
+    // with nothing between it and a request: the F4.102 security review measured
+    // 30 ms, 471 ms and 2,027 ms at 1,000, 5,000 and 10,050 of each — all
+    // reachable inside the row bound and the 5 MiB upload cap. Push order is
+    // input order, so each line reads exactly as it did.
+    const assetsByRtu = new Map<number, NonNullable<OnboardingDraft["assets"]>>();
+    for (const asset of assets) {
+      const bucket = assetsByRtu.get(asset.rtuIndex);
+      if (bucket) {
+        bucket.push(asset);
+      } else {
+        assetsByRtu.set(asset.rtuIndex, [asset]);
+      }
+    }
     const lines = rtus.map((rtu, index) => {
-      const rtuAssets = assets.filter((asset) => asset.rtuIndex === index);
+      const rtuAssets = assetsByRtu.get(index) ?? [];
+      // Both halves are sheet text: the RTU display name, and every asset name
+      // under it. One line can carry as many cells as the RTU has assets, so
+      // the per-cell bound is what keeps each name a hint — and the index above
+      // is what keeps the *number of trips* over the assets bounded too. An
+      // asset whose `rtuIndex` matches no RTU is in the map and on no line,
+      // which is what the filter did.
       const assetList =
         rtuAssets.length > 0
-          ? rtuAssets.map((asset) => asset.name).join(", ")
+          ? rtuAssets.map((asset) => quoteCell(asset.name)).join(", ")
           : "(no assets yet)";
-      return `- **${rtu.displayName}**: ${assetList}`;
+      return `- **${quoteCell(rtu.displayName)}**: ${assetList}`;
     });
     return `**Assets by RTU:**\n${lines.join("\n")}`;
   }

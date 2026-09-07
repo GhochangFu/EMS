@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 
+import { buildWorkbookBufferDeclaring } from "../../testing/declared-range-workbook";
 import { syntheticZip } from "../../testing/synthetic-zip";
 import {
   MAX_HEADER_COLUMNS,
@@ -79,27 +80,6 @@ function buildWorkbookBufferFromRow(rows: (string | number)[][], startRow: numbe
 /** A blank Excel row 1 above the header — the common case, and the one the row numbering turns on. */
 function buildWorkbookBufferFromRowTwo(rows: (string | number)[][]): Buffer {
   return buildWorkbookBufferFromRow(rows, 2);
-}
-
-/**
- * A workbook that **declares** a used range far wider than the cells it holds —
- * what `<dimension ref="A1:XFD20102"/>` looks like on disk, and the shape
- * `F4.101` bounds. SheetJS's writer preserves a hand-set `!ref` and its reader
- * takes the declared range at face value; both measured on the pinned 0.20.3.
- *
- * The declared width is modest on purpose. Writing is O(declared cells), so
- * `A1:XFD2000` takes **46.8 s to write** where `A1:ZZ200` takes 187 ms — a
- * full-width fixture cannot live in a test suite. 702 columns is 11× the
- * 64-column bound, which is all an end-to-end case needs to show. The real
- * ceiling is asserted against {@link columnBoundedRange} directly instead, where
- * no workbook has to exist at all.
- */
-function buildWorkbookBufferDeclaring(rows: (string | number)[][], declaredRef: string): Buffer {
-  const sheet = XLSX.utils.aoa_to_sheet(rows);
-  sheet["!ref"] = declaredRef;
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, "Import");
-  return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
 }
 
 const HEADER = ["asset_code", "point_key", "value", "unit", "time"];
