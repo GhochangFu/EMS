@@ -1700,8 +1700,9 @@ Process (`AGENTS.md` §10).
   a read-time `GET /api/v1/alarms/:id/details` pairing the current value
   beside its threshold (the backlog row's cheapest useful piece, needing no
   schema at all), and `PUT /api/v1/alarms/:id/enrichment` to author the rest.
-- **Companion table, not new `alarms` columns.** `F3.10`'s pending
-  `bms.alarms.cleared_at` addition was the reason: two backlog items altering
+- **Companion table, not new `alarms` columns.** `F3.10`'s then-pending
+  `bms.alarms.cleared_at` addition (landed in `0066`, 2026-09-07) was the
+  reason: two backlog items altering
   the same table around the same time is exactly the collision a separate
   table avoids.
 - **`skill` is coded; the rest stays free text.** Nothing today routes a work
@@ -2363,9 +2364,11 @@ PR #336, squashed `fd6117d`, and PR #339, squashed `64db1db`.
   writes one `bms.rule_executions` row per enabled rule per press — 289 on the
   seeded database — with no throttle and no retention policy of its own;
   `F3.46` bounds the delivery ledger, not the endpoint.
-- **Forward pointer.** `F3.10` (ADR 0057, PR 1 merged #338 `452c1f4`) adds
-  escalation and cleared event kinds to the same dedupe key and a wider partial
-  index in its own `0066`, which must drop or re-key `0065`'s index.
+- **Forward pointer, discharged 2026-09-07.** `F3.10` (ADR 0057, PR 1 #338
+  `452c1f4`, PR 2 #341 `f9aa102e`) added the escalation and cleared event kinds
+  to the same dedupe key, and its `0066` replaced this index with the wider
+  `notification_deliveries_channel_key_idx (channel_id, dedupe_key) WHERE
+  dedupe_key IS NOT NULL`, which serves `hasRecordedSkip` and the event reads.
 
 ### Non-superuser table owner — makes `FORCE ROW LEVEL SECURITY` bind (`F4.16`, ADR 0043 decision 8 + ADR 0044) — done
 
@@ -3101,7 +3104,7 @@ PostgreSQL sorts `NaN` above every float, so `eng_min < eng_max` and
 `scale_multiplier <> 0` both admit it; `0064` added the finite rule in `0031`'s
 range form. Both landed before the importer that would have been the first
 direct writer to test them. The numbering has a consequence for the board:
-`F3.46` took `0065` and `F3.10` follows.
+`F3.46` took `0065` and `F3.10` took `0066`.
 
 **The ingest host applies the five in one fixed order per target** — quality
 policy, scale, finite, range — and the order is a decision: a policy that
@@ -3151,6 +3154,37 @@ persisting `sourceDataKeyVars`, the template-side merged check, the
 whole-object form) and `F4.97`–`F4.99` (a `bms_ingest` role, multipart routes
 in OpenAPI, `tests/` under `--strict`). `F3.16` gained the drop counters and
 the point-identity gap as its acceptance detail.
+
+### Alarm lifecycle: auto-clear on normal and escalation profiles (`F3.10`, ADR 0057) — done
+
+**2026-09-07, two pull requests on one ADR and one plan**
+(`docs/plans/f3.10-alarm-lifecycle-escalation.md`): PR #338, squashed
+`452c1f4`, and PR #341, squashed `f9aa102e`.
+
+- **Acknowledgement is an annotation; a clear is the closure.** `bms.alarms`
+  gained `cleared_at` and `normal_since`, the open-per-rule index moved to
+  `cleared_at IS NULL` behind a guarded per-organization backfill, and an
+  acknowledged alarm whose condition still holds no longer re-raises.
+- **One sweep clears and escalates.** `AlarmLifecycleService` is the third
+  host of the shared `runSweepLoop` (PR 1 extracted it from the calc scheduler
+  and the health roll-up), 30 s tick: fresh non-matching samples for the
+  rule's `clear_hold_seconds` (default 120 s) clear the alarm, stale never
+  does; the steps of the organization-and-severity profile go once each to
+  active unacknowledged alarms, idempotent by a ledger read.
+- **Two event kinds on one key.** `:escalation:<n>` and `:cleared` ride ADR
+  0041's dedupe key; `0066`'s `(channel_id, dedupe_key) WHERE dedupe_key IS
+  NOT NULL` index subsumed and dropped `0065`'s.
+- **Four tenant tables and an admin page.** Profiles, steps, step channels
+  and the severity defaults under FORCE RLS, administered at
+  `/admin/escalation-profiles` behind the channel-admin gate; nothing
+  escalates until an operator maps a severity.
+- **Verified on the stack:** a 30.4 s clear against a 30 s hold, the cleared
+  row on the `sent` channel only, a `pg_notify` re-raise beside the cleared
+  row, an acknowledgement inside the step window leaving no step row while
+  the unacknowledged sibling got step 1, the first mapping's 52-alarm burst
+  bounded once per key, and the four page states on the served bundle.
+- **Residual:** `F3.48` — a step refused by the hourly ceiling is never
+  retried (ruling Q7). `F3.28`'s Active Alarms rail is now buildable.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending

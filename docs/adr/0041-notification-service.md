@@ -401,3 +401,9 @@ and PR #339 merged squashed as `64db1db`.
    wider partial index of its own in migration `0066`; that migration must
    drop or re-key `notification_deliveries_dedupe_skip_idx` rather than leave
    two partial indexes disagreeing about which statuses they cover.
+   **Landed 2026-09-07** (PR #341, `f9aa102e`): the two kinds ride decision
+   7's key as `:escalation:<n>` and `:cleared`, and `0066` dropped
+   `notification_deliveries_dedupe_skip_idx` for
+   `notification_deliveries_channel_key_idx (channel_id, dedupe_key) WHERE
+   dedupe_key IS NOT NULL`, which serves both `hasRecordedSkip` and the event
+   reads (ADR 0057 Amendment 1).
