@@ -114,11 +114,27 @@ export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
  * for, the RTU commits, and no telemetry ever arrives. Past this bound the sheet
  * is wrong, and saying so is the only answer that does not invent a result.
  *
- * **What it closes.** Measured at `ef1a3e11` past all five other guards: 2,000
- * RTU rows sharing one 32,767-character topic made a 77,564-byte upload produce
- * a 65.6 MB `assistantMessage`; 8,000 rows produced 250.3 MB at 1,452 MB RSS and
- * 11.7 s of blocked event loop; 16,500 rows threw `RangeError: Invalid string
- * length`, which nothing catches — an uncaught 500 from a 600 KB file.
+ * **What it closes, and what already closed itself.** The security review that
+ * found this measured a workbook of RTU rows sharing one 32,767-character topic
+ * and reported, on its own fixture: 65.6 MB of `assistantMessage` at 2,000 rows,
+ * 250.3 MB at 8,000 (1,452 MB RSS, 11.7 s of blocked event loop), and
+ * `RangeError: Invalid string length` at 16,500 — an uncaught 500, since nothing
+ * catches it.
+ *
+ * Reproduced against this branch, that family splits in two, and only the first
+ * half is this constant's business:
+ *
+ * - 2,000 rows: a 981,745-byte upload declaring ~66.2 MB inflated, just under
+ *   the 67,108,864-byte budget. It reaches `parseRtus` and **this bound refuses
+ *   it** — after 5.2 s inside `XLSX.read`, which is the inflation budget's cost
+ *   to bound, not this one's.
+ * - 8,000 rows: the same fixture declares 264,948,749 bytes, so
+ *   `zipInflationProblem` refuses it in 1 ms and the topic is never read. 16,500
+ *   rows declare more still.
+ *
+ * The four other guards are this row's own commits, not `ef1a3e11`'s: at
+ * `ef1a3e11` `parseUpload` had no byte cap, no inflation check, no `sheetRows`
+ * and no range check.
  */
 export const MAX_RTU_TOPIC_CHARS = 255;
 
