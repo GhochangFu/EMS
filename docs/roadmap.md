@@ -739,11 +739,13 @@ Process (`AGENTS.md` §10).
   re-parses stored content, because `content` and `points` are patched
   independently and a points patch can orphan content the request never
   mentioned.
-- **Deliberately not delivered:** nothing converts a template alarm into a
-  `bms.automation_rules` row (that needs `ruleType`/`condition`/`action`), and
+- **Deliberately not delivered *at the time*, and half of it since shipped:**
   nothing materialises a maintenance plan into `bms.maintenance_task_templates`
-  (its `asset_id` is `NOT NULL`). This is the authoring surface; deploying it is
-  `E2.x`/`E3.x` work with its own ADR.
+  (its `asset_id` is `NOT NULL`), which is still `E3.x` work with its own ADR.
+  The alarm half was delivered by `E2.4` under ADR 0058 on 2026-09-07 — a
+  template alarm becomes an `bms.automation_rules` row per created asset at
+  instantiate, and the three fields a template does not carry are supplied by
+  the ADR rather than invented.
 - **Notable:** `E1.7`'s backlog row promises six things, and five of the six
   consumers did not exist on `main`. The item is really five reopenings gated on
   five different future items — `F2.3`, `F3.1`, `E1.1`, `E1.6`, `E2.1` — not one
@@ -2032,9 +2034,10 @@ Process (`AGENTS.md` §10).
 - **Raised rather than smuggled in.** `F4.52`: a 403 clears the session,
   shared across 42 `adminFetch` call sites, which also makes decision 10's
   residual case impossible as written — the org-scope 403 cannot render
-  inline because the user is logged out first. `E2.4`: template alarms reach
-  no rule engine, deliberate per ADR 0019 §3 and verified in code here,
-  mitigated for now by turning the Alarms banner from a disclaimer into an
+  inline because the user is logged out first. `E2.4`: **closed 2026-09-07 under ADR 0058** — template
+  alarms now seed rules at instantiate. When this was written they reached no
+  rule engine, deliberate per ADR 0019 §3 and verified in code here,
+  mitigated at the time by turning the Alarms banner from a disclaimer into an
   instruction.
 - ~~**Still unverified:** the org-scope 403 in the browser.~~ **Verified
   2026-08-22 by `F4.52`** (see that section below). Opening an out-of-scope
