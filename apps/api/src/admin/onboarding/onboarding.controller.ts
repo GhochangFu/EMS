@@ -22,6 +22,7 @@ import type { JwtPayload } from "@bms/shared";
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema } from "../admin.schema";
+import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 import {
   chatBodySchema,
   createSessionBodySchema,
@@ -87,7 +88,22 @@ export class OnboardingController {
 
   @Post("sessions/:id/upload")
   @HttpCode(HttpStatus.OK)
-  @UseInterceptors(FileInterceptor("file"))
+  // `F4.102`. Until this row the route took an unbounded upload: multer buffered
+  // whatever arrived before `parseUpload` saw a byte, and the two sibling
+  // spreadsheet routes had carried these limits since `F1.9`. `files: 1` caps
+  // the multipart part count for the file field; `fields: 1` caps the non-file
+  // fields, of which the SPA sends none (`apps/web/src/api/admin/onboarding.ts`
+  // posts only `file`) — multer defaults `fields` to Infinity at 1 MB each,
+  // otherwise unbounded regardless of `fileSize`. Nest maps multer's
+  // `LIMIT_FILE_SIZE` to a 413 and every other limit breach to a 400.
+  //
+  // What gates this line: `tests/f4.102-file-interceptor-limits.test.ts` scans
+  // every controller and fails when a `FileInterceptor` carries no `fileSize`,
+  // so the limit being *declared* is gated statically. That it is *enforced* is
+  // not gated by Vitest — no Nest module is instantiated anywhere in the suite,
+  // so nothing here exercises multer. The API layer is the only gate on the
+  // enforcement, which is why `parseUpload` keeps its own byte cap as well.
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_IMPORT_FILE_BYTES, files: 1, fields: 1 } }))
   async uploadExcel(
     @Param("id") id: string,
     @UploadedFile() file: { buffer: Buffer } | undefined,

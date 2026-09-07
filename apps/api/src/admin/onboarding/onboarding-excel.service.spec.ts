@@ -1,11 +1,38 @@
+import { BadRequestException } from "@nestjs/common";
 import * as XLSX from "xlsx";
 
+import { syntheticZip } from "../../testing/synthetic-zip";
+import { MAX_INFLATED_BYTES } from "../spreadsheet-guard";
+import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+/**
+ * The message `parseUpload` refused a buffer with. Fails the test when the call
+ * returns instead of throwing — a guard that silently accepts is the thing
+ * every assertion below is looking for.
+ *
+ * `parseUpload` has one caller, `OnboardingService.uploadExcel`, and it does
+ * not catch, so a `BadRequestException` raised here reaches the client as a 400
+ * carrying exactly this sentence.
+ */
+function refusalMessage(buffer: Buffer, what: string): string {
+  const service = new OnboardingExcelService();
+  try {
+    service.parseUpload(buffer);
+  } catch (error) {
+    assert(
+      error instanceof BadRequestException,
+      `${what} must be refused as a 400, got ${error instanceof Error ? error.constructor.name : String(error)}`,
+    );
+    return (error as Error).message;
+  }
+  throw new Error(`${what} must be refused, but parseUpload returned`);
 }
 
 /**
@@ -60,5 +87,59 @@ export function assertTemplateRoundTripsUnchanged(): void {
   assert(
     range.e.c - range.s.c + 1 === 9,
     `the template is nine columns wide (RTU_HEADERS.length), got ${range.e.c - range.s.c + 1} from '${String(ref)}'`,
+  );
+}
+
+/**
+ * The service's own byte cap, which is **not** the interceptor's.
+ *
+ * `onboarding.controller.ts` now declares `limits.fileSize`, and multer refuses
+ * an oversize part with a 413 before this method is reached — but the
+ * interceptor guards one route, and `parseUpload` is a public method any future
+ * caller may reach without it. `mapping-sheet-rows.ts` keeps both for the same
+ * reason. Nothing in Vitest instantiates a Nest module, so the interceptor's
+ * enforcement is not what this asserts; the cap inside the service is.
+ */
+export function assertOversizeBufferIsRefused(): void {
+  const message = refusalMessage(
+    Buffer.alloc(MAX_IMPORT_FILE_BYTES + 1),
+    `a ${MAX_IMPORT_FILE_BYTES + 1}-byte upload`,
+  );
+  assert(
+    message.includes(`${MAX_IMPORT_FILE_BYTES}-byte limit`),
+    `the refusal names the cap it applied, got "${message}"`,
+  );
+
+  // The other direction, and the reason the comparison is `>` and not `>=`: a
+  // buffer of exactly the cap is not this guard's business. It is still refused
+  // — it holds no LOCATION section — but by the parser, with a different
+  // sentence. Measured: `XLSX.read` takes 58 ms over it and yields `!ref` `A1`.
+  const atCap = refusalMessage(Buffer.alloc(MAX_IMPORT_FILE_BYTES), "a buffer of exactly the cap");
+  assert(
+    !atCap.includes("byte limit"),
+    `a buffer of exactly the cap is not over it, got "${atCap}"`,
+  );
+}
+
+/**
+ * What the zip *declares* it unpacks to, refused before `XLSX.read` inflates a
+ * byte — the third guard `spreadsheet-guard.ts` exists for, and the one
+ * `sheetRows` cannot cover because the shared-string table is inflated whole.
+ */
+export function assertDeclaredZipBombIsRefusedBeforeRead(): void {
+  const message = refusalMessage(syntheticZip([500 * 1024 * 1024]), "a zip declaring 500 MB unpacked");
+  // `when unpacked` is the discriminator, not decoration. `syntheticZip` builds
+  // a central directory over no real payload, so had `XLSX.read` been reached
+  // the refusal would have been the unreadable-file sentence instead. The
+  // wording is therefore what proves the check ran *first*.
+  assert(
+    message.includes("when unpacked"),
+    `the refusal must come from the declared-inflation guard, got "${message}"`,
+  );
+
+  const atBudget = refusalMessage(syntheticZip([MAX_INFLATED_BYTES]), "a zip declaring exactly the budget");
+  assert(
+    !atBudget.includes("when unpacked"),
+    `a zip at exactly the inflation budget is not over it, got "${atBudget}"`,
   );
 }

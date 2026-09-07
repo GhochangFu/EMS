@@ -3,6 +3,8 @@ import * as XLSX from "xlsx";
 
 import type { OnboardingDraft, OnboardingProtocol } from "@bms/shared";
 
+import { zipInflationProblem } from "../spreadsheet-guard";
+import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
 /**
@@ -110,9 +112,42 @@ export class OnboardingExcelService {
     return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
   }
 
-  /** Parses an uploaded workbook into onboarding draft sections. */
+  /**
+   * Parses an uploaded workbook into onboarding draft sections.
+   *
+   * `F4.102` put this behind the bounds its two sibling parsers already had.
+   * The controller's `FileInterceptor` limit is not a substitute for the byte
+   * cap below: this is a public method, and any future caller reaching it
+   * without the interceptor would otherwise be unbounded — the same reason
+   * `mapping-sheet-rows.ts` keeps both.
+   */
   parseUpload(buffer: Buffer): ParsedExcel {
-    const book = XLSX.read(buffer, { type: "buffer" });
+    if (buffer.length > MAX_IMPORT_FILE_BYTES) {
+      throw new BadRequestException(
+        `File is ${buffer.length} bytes, more than the ${MAX_IMPORT_FILE_BYTES}-byte limit`,
+      );
+    }
+
+    // What the zip *declares* it unpacks to, read from its central directory
+    // before a byte is inflated. `sheetRows` below bounds row materialisation
+    // only; the shared-string table is inflated whole, and the `F2.7` security
+    // review took the process to 2.5 GB RSS with a 1.3 MB file through this
+    // same `XLSX.read` shape (`spreadsheet-guard.ts`).
+    const inflation = zipInflationProblem(buffer);
+    if (inflation !== null) {
+      throw new BadRequestException(inflation);
+    }
+
+    let book: XLSX.WorkBook;
+    try {
+      book = XLSX.read(buffer, { type: "buffer" });
+    } catch {
+      // A corrupt or truncated buffer was a 500 before this row: `XLSX.read`
+      // throws and nothing between here and the controller caught it. Both
+      // siblings answer a 400 instead, and an unreadable upload is the client's
+      // fault, not the server's.
+      throw new BadRequestException("Could not read the uploaded file as Excel");
+    }
     const sheet = book.Sheets[book.SheetNames[0] ?? ""];
     if (!sheet) {
       throw new BadRequestException("Workbook has no sheets");
