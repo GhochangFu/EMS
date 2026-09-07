@@ -424,17 +424,29 @@ export function assertSheetReachingTheRowBoundIsRefused(): void {
  * (owner ruling 3). Named in prose, not `{@link}`: the helper is not imported
  * here, and an unresolved link renders as plain text.
  *
- * **The bound is on the message, never on the data.** The RTU keeps the whole
- * display name it was given; only the sentence that reports the adjustment is
- * cut. Both halves are asserted, because a "fix" that quietly truncated the
- * stored name would pass a message-length check and corrupt the import.
+ * **The bound is on the message, never on the data.** Both RTUs keep the whole
+ * cell they were given — the first its 32,767-character display name, the
+ * second the 32,767-character *code* the fix substituted — and only the
+ * sentence that reports the adjustment is cut. Both halves are asserted,
+ * because a "fix" that quietly truncated the stored name would pass a
+ * message-length check and corrupt the import.
  *
  * `assetDomainFromCell`'s pass-through needs no `quoteCell` and deliberately
- * has none: `onboardingDraftAssetSchema.domain` is
+ * has none: `draftAssetSchema.domain` is `assetDomainCodeSchema`, i.e.
  * `z.string().min(1).max(64)`, and `OnboardingValidateService.validate` runs
  * `onboardingDraftSchema.safeParse` before `assertAssetDomain`, so
- * `unknownCodeMessage` can never be handed an unbounded value. Recorded here so
- * the next reviewer does not have to re-derive it.
+ * `unknownCodeMessage` can never be handed an unbounded value. Zod's `too_big`
+ * message states the bound and never repeats the value, which is what makes
+ * that safe.
+ *
+ * **The same reasoning does not carry to an enum, and the post-merge review of
+ * `c79114c4` found where.** `invalid_enum_value` *does* repeat the whole
+ * received value, so a `z.enum` field fed straight from a cell is an echo site
+ * however short the schema's other members are — see
+ * `assertUnknownRtuProtocolIsRefused` below for `protocol`, the sixth site.
+ * `location.type` is the other enum reachable from this sheet and is safe by a
+ * different route: `parseLocation` maps anything that is not `rsmoc` or
+ * `csmoc` onto `smoc_campus`, so no cell text ever reaches it.
  */
 export function assertEchoedSheetTextIsBounded(): void {
   const rows = templateRows();
@@ -444,11 +456,12 @@ export function assertEchoedSheetTextIsBounded(): void {
   // unchanged, nothing would be pushed, and the count below would pass for the
   // wrong reason.
   const sharedName = "N".repeat(32_767);
+  const duplicateCode = "B".repeat(32_767);
   rows[6] = [...rows[6]];
   rows[7] = [...rows[7]];
   rows[6][0] = "A".repeat(32_767);
   rows[6][1] = sharedName;
-  rows[7][0] = "B".repeat(32_767);
+  rows[7][0] = duplicateCode;
   rows[7][1] = sharedName;
 
   const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(rows));
@@ -459,9 +472,20 @@ export function assertEchoedSheetTextIsBounded(): void {
   const line = parsed.displayNameFixes[0];
   assert(line.length < 400, `the reported fix must be bounded, got ${line.length} characters`);
   assert(line.includes("more characters"), `a cut cell says how much was omitted, got "${line}"`);
+  // The RTU that keeps the name it was given is index **0**. Index 1 is the
+  // duplicate, whose name `normalizeRtuDisplayNames` replaced, so a length
+  // check there vouches for the substituted code and never for the given name —
+  // which is what it did until the post-merge review of `c79114c4`.
   assert(
-    parsed.rtus[1].displayName.length > 1000,
-    `the RTU keeps its full name — only the message is cut, got ${parsed.rtus[1].displayName.length} characters`,
+    parsed.rtus[0].displayName === sharedName,
+    `the first RTU keeps all ${sharedName.length} characters of the name it was given, got ${parsed.rtus[0].displayName.length}`,
+  );
+  // Kept, restated for what it actually proves: the substitution is not a
+  // truncation either. The duplicate's name becomes its own maximum-length
+  // code, whole.
+  assert(
+    parsed.rtus[1].displayName === duplicateCode,
+    `the duplicate's name is replaced by its full code, got ${parsed.rtus[1].displayName.length} characters`,
   );
 }
 
