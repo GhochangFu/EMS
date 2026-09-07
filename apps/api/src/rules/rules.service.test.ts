@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runCompatiblePointWideningTests,
   runDuplicateRuleCopiesClearHoldTests,
   runRuleCodeUniquenessTests,
   runRuleSeverityRoundTripTests,
@@ -16,6 +17,10 @@ describe("rules.service", () => {
   // code-uniqueness failure reported under the severity test's name).
   it("scopes the code-uniqueness check to organizationId, and skips it when null", async () => {
     await runRuleCodeUniquenessTests();
+  });
+
+  it("accepts a point key the pinned template declares, and still refuses a half-built threshold draft (E2.4)", async () => {
+    await runCompatiblePointWideningTests();
   });
 
   it("copies the clear hold onto a duplicated rule, null included (F3.10)", async () => {

@@ -44,6 +44,7 @@ type ValidateAccess = {
 
 type Chain = {
   from: () => Chain;
+  innerJoin: () => Chain;
   where: () => Chain;
   orderBy: () => Chain;
   limit: () => Chain;
@@ -52,13 +53,16 @@ type Chain = {
 
 /**
  * A thenable that answers every Drizzle builder call with itself and resolves
- * to `rows`. Enough for the two reads `validateRuleDraft` can perform: the code
- * uniqueness scan (`.select().from().orderBy()`) and `assertCompatiblePoint`'s
- * asset lookup (`.select().from().where().limit()`).
+ * to `rows`. Enough for the three reads `validateRuleDraft` can perform: the
+ * code uniqueness scan (`.select().from().orderBy()`), `assertCompatiblePoint`'s
+ * asset lookup (`.select().from().where().limit()`) and — since `E2.4` widened
+ * that check — `templatePointKeysForAsset`'s
+ * `.select().from().innerJoin().where()`.
  */
 function selectChain(rows: unknown[]): Chain {
   const chain: Chain = {
     from: () => chain,
+    innerJoin: () => chain,
     where: () => chain,
     orderBy: () => chain,
     limit: () => chain,
@@ -67,10 +71,19 @@ function selectChain(rows: unknown[]): Chain {
   return chain;
 }
 
-function validator(rows: unknown[] = []): ValidateAccess {
+/**
+ * `rows` answers every select, which is what every case written before `E2.4`
+ * relies on. `queue`, when given, answers the selects **in order** and falls
+ * back to `rows` once it is spent — the one thing `rows` alone cannot do, and
+ * exactly what the widened `assertCompatiblePoint` needs: its asset lookup and
+ * the template-point read are two selects that must answer differently.
+ */
+function validator(rows: unknown[] = [], queue?: unknown[][]): ValidateAccess {
+  const pending = queue ? [...queue] : undefined;
+  const nextRows = (): unknown[] => pending?.shift() ?? rows;
   // E7.1b: `validateRuleDraft`'s reads (the code scan, `assertCompatiblePoint`)
   // moved to `fleetDb`, so the same thenable stands in for both pools here.
-  const db = { select: () => selectChain(rows) } as unknown as BmsDb;
+  const db = { select: () => selectChain(nextRows()) } as unknown as BmsDb;
   // Both vocabularies are data — categories under ADR 0031 Amendment 1,
   // severities under ADR 0032 — and live in `bms.rule_categories` and
   // `bms.alarm_severities`. Whether a code is live is not what these cases are
@@ -305,6 +318,73 @@ export async function runRuleCodeUniquenessTests(): Promise<void> {
   assert(
     skipped.code === "DUP-CODE",
     `organizationId: null must skip the uniqueness check entirely, got code=${String(skipped.code)}`,
+  );
+}
+
+/**
+ * `E2.4` Q1 — `assertCompatiblePoint` accepts a point key the asset's **pinned
+ * template** declares, not only one from `rule-points.ts`'s hard-coded map.
+ *
+ * The map falls through to `ELECTRICAL_POINT_KEYS` for every domain it does not
+ * name, so before this widening a water, mechanical or facility asset built
+ * from a template could not be given a rule on any of its own points. ADR
+ * 0058's local override and its commissioning PATCH — the one that arms a
+ * seeded philosophy row — both run through `validateRuleDraft`, so both were
+ * API-refused for exactly the assets the ADR is about.
+ *
+ * The third case is the load-bearing one and it asserts on **existing**
+ * behaviour: decision 3's update-path guard is already implemented, by
+ * `validateRuleDraft`'s own threshold branch, and `ruleUpdateBodySchema` has no
+ * `enabled` field at all. Only the toggle needed a new guard. This case exists
+ * so the refusal has a name and a message pinned to it, and nobody later adds a
+ * second copy of a guard that is already here.
+ */
+export async function runCompatiblePointWideningTests(): Promise<void> {
+  // `domain: "water"` names no branch in `pointKeysForAsset`, so the hard-coded
+  // lookup falls through to the electrical list, which this key is not in.
+  const WATER_ASSET = [{ code: "WTP-1", domain: "water" }];
+  const TEMPLATE_KEY = "residual_chlorine_mgl";
+  // No `code` on the draft, so no uniqueness scan runs and the queue is exactly
+  // two selects deep: the asset lookup, then the template-point read.
+  const draft: RuleDraftBody = { ...thresholdDraft(), pointKey: TEMPLATE_KEY };
+
+  const accepted = await validator(
+    [],
+    [WATER_ASSET, [{ pointKey: TEMPLATE_KEY }]],
+  ).validateRuleDraft(draft, undefined, null);
+  assert(
+    accepted.pointKey === TEMPLATE_KEY,
+    `a point key the pinned template declares must be accepted, got ${String(accepted.pointKey)}`,
+  );
+
+  // The same asset and the same key, with the template read answering nothing —
+  // so this fails unless the widening genuinely consults the template set,
+  // rather than accepting any key once the asset resolves.
+  let refused: string | null = null;
+  try {
+    await validator([], [WATER_ASSET, []]).validateRuleDraft(draft, undefined, null);
+  } catch (err) {
+    refused = err instanceof BadRequestException ? err.message : `not a 400: ${String(err)}`;
+  }
+  assert(
+    refused === "Selected telemetry point is not compatible with asset",
+    `a key in neither set must keep the existing refusal, got ${String(refused)}`,
+  );
+
+  // ADR 0058 decision 3, update path — already guarded, pinned here.
+  let halfBuilt: string | null = null;
+  try {
+    await validator(HVAC_ASSET).validateRuleDraft(
+      { ...thresholdDraft(), operator: null },
+      undefined,
+      null,
+    );
+  } catch (err) {
+    halfBuilt = err instanceof BadRequestException ? err.message : `not a 400: ${String(err)}`;
+  }
+  assert(
+    halfBuilt === "Threshold rules require asset, point, operator, and threshold value",
+    `a threshold draft with a null operator must already be refused on the update path, got ${String(halfBuilt)}`,
   );
 }
 

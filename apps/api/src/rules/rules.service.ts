@@ -41,6 +41,7 @@ import {
   unsupportedRuleType,
   type LatestSampleLoader,
 } from "./rule-evaluation";
+import { assertArmable } from "./rule-arming";
 import { insertRuleAuditLog, resolveActorId } from "./rule-audit";
 import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
 import {
@@ -57,7 +58,7 @@ import {
   selectRuleRows,
   traceProjection,
 } from "./rule-reads";
-import { pointKeysForAsset } from "./rule-points";
+import { pointKeysForAsset, templatePointKeysForAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
   ListRuleExecutionsQuery,
@@ -554,6 +555,11 @@ export class RulesService {
     if (current.lifecycleStatus !== "published") {
       throw new BadRequestException("Only published rules can be enabled or disabled");
     }
+    // ADR 0058 decision 3 — see `rule-arming.ts`. Guarded on `dto.enabled`, not
+    // run unconditionally: *disabling* a half-built seeded rule stays allowed.
+    if (dto.enabled) {
+      assertArmable(current);
+    }
     const organizationId = this.requireRuleOrg(current);
     const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
@@ -929,7 +935,12 @@ export class RulesService {
       throw new BadRequestException("Selected asset does not exist");
     }
     if (!pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
-      throw new BadRequestException("Selected telemetry point is not compatible with asset");
+      // E2.4 Q1: only on the miss, so nothing that passed before pays for this
+      // query or changes behaviour. Same `fleetDb` and the same reason as the
+      // asset read above — see `templatePointKeysForAsset`'s doc.
+      if (!(await templatePointKeysForAsset(this.fleetDb, assetId)).includes(pointKey)) {
+        throw new BadRequestException("Selected telemetry point is not compatible with asset");
+      }
     }
   }
 
