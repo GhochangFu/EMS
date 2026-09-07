@@ -1,10 +1,12 @@
 import { BadRequestException } from "@nestjs/common";
 import * as XLSX from "xlsx";
 
+import { buildWorkbookBufferDeclaring } from "../../testing/declared-range-workbook";
 import { syntheticZip } from "../../testing/synthetic-zip";
 import { MAX_INFLATED_BYTES } from "../spreadsheet-guard";
+import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
-import { OnboardingExcelService } from "./onboarding-excel.service";
+import { OnboardingExcelService, onboardingSheetRangeProblem } from "./onboarding-excel.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -141,5 +143,208 @@ export function assertDeclaredZipBombIsRefusedBeforeRead(): void {
   assert(
     !atBudget.includes("when unpacked"),
     `a zip at exactly the inflation budget is not over it, got "${atBudget}"`,
+  );
+}
+
+/**
+ * The template's own rows, read back out of the workbook the service generates
+ * rather than restated here. Every fixture below is this shape with one thing
+ * changed, so the "and the honest sheet still parses" direction compares
+ * against the real thing and cannot drift from it.
+ */
+function templateRows(): (string | number)[][] {
+  const book = XLSX.read(new OnboardingExcelService().buildTemplateBuffer("Berhampur"), { type: "buffer" });
+  return XLSX.utils.sheet_to_json<(string | number)[]>(book.Sheets[book.SheetNames[0]], {
+    header: 1,
+    defval: "",
+  });
+}
+
+/** Rows 0–10 of the template: everything down to and including the `ASSETS` header row. */
+const ROWS_ABOVE_THE_FIRST_ASSET = 11;
+
+/** An ordinary workbook — no hand-set `!ref`, so SheetJS declares what the cells occupy. */
+function buildWorkbookBuffer(rows: (string | number)[][]): Buffer {
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "Onboarding");
+  return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
+}
+
+/** The template, with its `ASSETS` section grown to `assetRowCount` data rows. */
+function rowsWithAssetCount(assetRowCount: number): (string | number)[][] {
+  const rows = templateRows().slice(0, ROWS_ABOVE_THE_FIRST_ASSET);
+  for (let i = 1; i <= assetRowCount; i += 1) {
+    rows.push([`BERHAMPUR-ASSET-${i}`, `Device ${i}`, "BERHAMPUR-RTU-1", "electrical", "Berhampur"]);
+  }
+  return rows;
+}
+
+/**
+ * Owner ruling 1 — a sheet declaring more than {@link MAX_HEADER_COLUMNS}
+ * columns is **refused**, not read through a window.
+ *
+ * The pure cases matter more than the workbook ones: a hostile
+ * `<dimension ref="…"/>` can name a width no writer would ever produce, so the
+ * ceiling has to be assertable without a workbook existing. That is why
+ * `onboardingSheetRangeProblem` is exported.
+ */
+export function assertDeclaredWidthIsRefusedNotWindowed(): void {
+  // --- the shape that killed the mapping sheet, at O(1) ---------------------
+  // A malformed `<dimension ref="A1:AAAAAAAA21"/>`. Nothing may scan this; the
+  // answer comes from arithmetic on the range and the clock proves it.
+  const started = performance.now();
+  const absurd = onboardingSheetRangeProblem({ s: { r: 0, c: 0 }, e: { r: 20, c: 8_353_082_582 } });
+  const elapsedMs = performance.now() - started;
+  assert(absurd !== null, "a range declaring 8.35 billion columns must be refused");
+  assert(
+    String(absurd).includes("8353082583"),
+    `the refusal names the width it read, got "${String(absurd)}"`,
+  );
+  assert(
+    String(absurd).includes(String(MAX_HEADER_COLUMNS)),
+    `the refusal names the bound it applied, got "${String(absurd)}"`,
+  );
+  // A ceiling, not a benchmark: unbounded, this range takes minutes.
+  assert(elapsedMs < 50, `the width check must not scan, took ${elapsedMs.toFixed(1)} ms`);
+
+  // --- the boundary, from both sides ---------------------------------------
+  assert(
+    onboardingSheetRangeProblem({ s: { r: 0, c: 0 }, e: { r: 10, c: MAX_HEADER_COLUMNS - 1 } }) === null,
+    `exactly ${MAX_HEADER_COLUMNS} columns is inside the bound`,
+  );
+  assert(
+    onboardingSheetRangeProblem({ s: { r: 0, c: 0 }, e: { r: 10, c: MAX_HEADER_COLUMNS } }) !== null,
+    `${MAX_HEADER_COLUMNS + 1} columns is outside it`,
+  );
+  // Width counts from the range's own first column, not from column A — a sheet
+  // whose used range starts at F is not 5 columns closer to the bound.
+  assert(
+    onboardingSheetRangeProblem({ s: { r: 0, c: 5 }, e: { r: 10, c: 5 + MAX_HEADER_COLUMNS - 1 } }) === null,
+    "a range starting at column F is measured from F",
+  );
+
+  // --- which sentence a sheet that breaches both bounds gets ----------------
+  // Both branches are O(1), so the order is a choice about what an operator can
+  // act on: deleting content to the right is a repair, "your file may have been
+  // cut" is not. Neither workbook fixture below fires both branches, so this is
+  // the only thing holding that order.
+  const both = onboardingSheetRangeProblem({ s: { r: 0, c: 0 }, e: { r: 30_000, c: 100 } });
+  assert(
+    String(both).includes("columns"),
+    `a sheet over both bounds is told about its width first, got "${String(both)}"`,
+  );
+
+  // --- the WIRING: the check must actually run inside parseUpload -----------
+  // 702 declared columns over 16 rows — 11× the bound, and milliseconds to
+  // write. A full-width fixture cannot exist here; see the helper's docblock.
+  const wide = refusalMessage(
+    buildWorkbookBufferDeclaring(templateRows(), "A1:ZZ16", "Onboarding"),
+    "a workbook declaring 702 columns",
+  );
+  assert(wide.includes("702"), `the refusal names the declared width, got "${wide}"`);
+  assert(wide.includes(String(MAX_HEADER_COLUMNS)), `the refusal names the bound, got "${wide}"`);
+  assert(
+    wide.includes("to the right"),
+    `the refusal tells the operator what to remove, got "${wide}"`,
+  );
+  // AGENTS.md §4.3 and `spreadsheet-guard.ts`: a refusal describes the range,
+  // never the cells. Nothing here may echo sheet text.
+  assert(!wide.includes("Berhampur"), `the refusal must not echo cell text, got "${wide}"`);
+
+  // --- ruling 1's rationale, evidenced rather than asserted in prose --------
+  // `password` moved to column BM (index 64), with a real secret under it. The
+  // sheet is 65 columns wide, so it is refused.
+  const movedRows = templateRows();
+  for (const rowIndex of [5, 6, 7]) {
+    const row = [...movedRows[rowIndex]];
+    for (let c = 8; c < 64; c += 1) {
+      row[c] = "";
+    }
+    row[64] = rowIndex === 5 ? "password" : `s3cr3t-${rowIndex}`;
+    movedRows[rowIndex] = row;
+  }
+  const moved = refusalMessage(buildWorkbookBuffer(movedRows), "a workbook with password at column BM");
+  assert(moved.includes("columns"), `the BM-password sheet is refused for its width, got "${moved}"`);
+
+  // And this is what a windowing read would have returned instead: the same
+  // rows cut to exactly the 64 columns a window would keep parse fine, report
+  // no credentials, and say nothing at all about the secret that was dropped.
+  // That silence is why ruling 1 refuses.
+  const windowed = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(movedRows.map((row) => row.slice(0, MAX_HEADER_COLUMNS))),
+  );
+  assert(
+    windowed.rtuCredentials.length === 0 && windowed.rtus.every((rtu) => rtu.credentialsSet === false),
+    `a windowed read drops the credential silently — that is the point, got ${JSON.stringify(windowed.rtuCredentials)}`,
+  );
+
+  // --- the other direction: at the bound, nothing changes -------------------
+  // `A1:BL16` is exactly 64 columns and two rows more than the template holds.
+  // Every extra cell densifies to "", which washes out through the header
+  // `indexOf` and the blank-row break, so the parse must be identical.
+  const atBound = new OnboardingExcelService().parseUpload(
+    buildWorkbookBufferDeclaring(templateRows(), "A1:BL16", "Onboarding"),
+  );
+  const untouched = new OnboardingExcelService().parseUpload(
+    new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+  );
+  assert(
+    JSON.stringify(atBound) === JSON.stringify(untouched),
+    `a sheet at exactly the column bound parses unchanged, got ${JSON.stringify(atBound)}`,
+  );
+}
+
+/**
+ * Owner ruling 2 — reuse {@link SHEET_ROWS_BOUND} rather than invent a tighter
+ * figure, and refuse a sheet that **reaches** it.
+ *
+ * **What `sheetRows` does and does not buy, honestly.** With this refusal in
+ * place a 25,000-row sheet is refused with or without `sheetRows` — the
+ * declared range says so either way. What `sheetRows` bounds is how much
+ * SheetJS materialises *before* the check can run, and that is gated by the
+ * V1/V2 heap measurements recorded on `onboardingSheetRangeProblem`, not by
+ * anything in this suite. Do not read a green run here as evidence that
+ * `sheetRows` is doing the work: it is a cost bound, not a correctness one.
+ */
+export function assertSheetReachingTheRowBoundIsRefused(): void {
+  // Exactly at the bound: 20,102 rows = 11 template rows above the assets plus
+  // 20,091 asset rows. Reaching it is enough — the sheet may have been cut, and
+  // a cut workbook must never be imported as if it were whole.
+  const atBound = refusalMessage(
+    buildWorkbookBuffer(rowsWithAssetCount(SHEET_ROWS_BOUND - ROWS_ABOVE_THE_FIRST_ASSET)),
+    `a sheet of exactly ${SHEET_ROWS_BOUND} rows`,
+  );
+  assert(
+    atBound.includes(`reading bound of ${SHEET_ROWS_BOUND} rows`),
+    `the refusal says the reading bound is what fired, got "${atBound}"`,
+  );
+  // The count of what survived a cut is not the size of the file. Quoting it
+  // produced a self-contradicting message in the sibling parser (F2.7
+  // post-merge review, finding 1), so nothing here quotes a data-row count.
+  assert(
+    !atBound.includes(String(SHEET_ROWS_BOUND - ROWS_ABOVE_THE_FIRST_ASSET)),
+    `the refusal must not quote a data-row count as the file's, got "${atBound}"`,
+  );
+
+  // One row fewer parses whole. This is what pins ruling 2: no figure tighter
+  // than SHEET_ROWS_BOUND was invented, so a workbook one row under the bound
+  // keeps every one of its 20,090 assets.
+  const underBound = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(rowsWithAssetCount(SHEET_ROWS_BOUND - 1 - ROWS_ABOVE_THE_FIRST_ASSET)),
+  );
+  assert(
+    underBound.assets.length === 20_090,
+    `a sheet one row under the bound is read whole, got ${underBound.assets.length} assets`,
+  );
+
+  // And the case where `sheetRows` really cuts: 25,000 rows come back clamped
+  // at the bound, so the declared range reads as exactly the bound and the same
+  // sentence fires. Without the refusal this file would import as ~20,000 rows
+  // with nothing said.
+  const cut = refusalMessage(buildWorkbookBuffer(rowsWithAssetCount(24_989)), "a 25,000-row sheet");
+  assert(
+    cut.includes(`reading bound of ${SHEET_ROWS_BOUND} rows`),
+    `a cut sheet gets the same sentence, got "${cut}"`,
   );
 }

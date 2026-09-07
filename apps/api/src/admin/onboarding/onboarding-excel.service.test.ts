@@ -1,8 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  assertDeclaredWidthIsRefusedNotWindowed,
   assertDeclaredZipBombIsRefusedBeforeRead,
   assertOversizeBufferIsRefused,
+  assertSheetReachingTheRowBoundIsRefused,
   assertTemplateRoundTripsUnchanged,
 } from "./onboarding-excel.service.spec";
 
@@ -19,4 +21,24 @@ describe("OnboardingExcelService.parseUpload (F4.102)", () => {
   it("refuses a zip whose central directory declares more than the inflation budget", () => {
     assertDeclaredZipBombIsRefusedBeforeRead();
   });
+
+  it(
+    "refuses a declared range wider than the column bound rather than windowing it",
+    () => {
+      assertDeclaredWidthIsRefusedNotWindowed();
+    },
+    // Four small workbooks, but one declares 702 columns and SheetJS writes
+    // O(declared cells). The vitest default (5s) breaches under a full-suite
+    // run contending for CPU, as `telemetry-import-rows.test.ts` records.
+    60_000,
+  );
+
+  it(
+    "refuses a sheet that reaches the reading bound, and reads one row under it whole",
+    () => {
+      assertSheetReachingTheRowBoundIsRefused();
+    },
+    // Three workbooks of ~20,000–25,000 rows, written and parsed.
+    60_000,
+  );
 });

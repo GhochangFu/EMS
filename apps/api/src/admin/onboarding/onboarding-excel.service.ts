@@ -4,8 +4,77 @@ import * as XLSX from "xlsx";
 import type { OnboardingDraft, OnboardingProtocol } from "@bms/shared";
 
 import { zipInflationProblem } from "../spreadsheet-guard";
+import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
+
+/**
+ * The sentence that refuses an onboarding workbook whose **declared** used
+ * range is too wide or reaches the reading bound, or `null` when
+ * `sheet_to_json` may densify it (`F4.102`).
+ *
+ * Both branches are O(1) on the range alone — no cell is touched — which is the
+ * whole point: the cost this bounds is paid inside `sheet_to_json`, so the
+ * check has to happen before it and must not itself scan.
+ *
+ * **Why the width is checked first.** Both tests are O(1), so ordering is not
+ * about cost; it is about which sentence an operator can act on. A sheet that
+ * is both too wide and too tall gets the column message, because deleting
+ * content to the right is a repair and "your file may have been cut" is not.
+ *
+ * **Why {@link columnBoundedRange} cannot be reused.** That helper is written
+ * for a sheet with one header row at `range.s.r`, and it scans that row by name
+ * to refuse a recognised header pushed beyond the window. This workbook has
+ * three marker-delimited sections — `LOCATION`, `RTUS`, `ASSETS` — each with
+ * its own header row further down, and `range.s.r` is the `LOCATION` marker
+ * row, which holds one cell and no headers at all. A by-name scan of that row
+ * would vouch for nothing.
+ *
+ * **Why refusing beats windowing** (owner ruling 1). The importer can narrow
+ * its range and still be correct, because a column it drops is one it does not
+ * read. Here every dropped column is data: move `password` to column BM and a
+ * windowed read parses the sheet, reports `credentialsSet: false` and an empty
+ * `rtuCredentials`, and says nothing — the operator's RTU silently arrives
+ * without the credential they supplied. Refusing is the only answer that does
+ * not invent a result.
+ *
+ * **The numbers.** The template's widest section is `RTU_HEADERS` at nine
+ * columns, so {@link MAX_HEADER_COLUMNS} = 64 is roughly 7× the sheet this
+ * system itself produces, and the worst case a workbook can still buy is
+ * 20,102 × 64 = 1,286,528 cells — the figure `F4.101` accepted.
+ *
+ * **Why both bounds ship, and not just the column one.** Measured at `ef1a3e11`
+ * on node v24.17.0 / xlsx 0.20.3, through the real `parseUpload`, from a
+ * **3,038-byte** upload holding three real rows:
+ *
+ * - `<dimension ref="A1:XFD20102"/>` declares 329,351,168 cells: the process
+ *   died with `FATAL ERROR: JavaScript heap out of memory` after ~86 s at a
+ *   512 MB heap cap, and after 362 s at 2048 MB. A bigger heap postpones the
+ *   kill rather than preventing it.
+ * - `<dimension ref="A1:I1048576"/>` declares 9,437,184 cells and **is nine
+ *   columns wide** — comfortably inside the column bound — and still cost 12.7 s
+ *   and 552 MB RSS at 512 MB, 10.8 s and 622 MB at 2048 MB. The column bound
+ *   alone does not close that; the row branch is what refuses it.
+ */
+export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
+  const declaredColumns = range.e.c - range.s.c + 1;
+  if (declaredColumns > MAX_HEADER_COLUMNS) {
+    return (
+      `The sheet declares ${declaredColumns} columns, more than the ${MAX_HEADER_COLUMNS} this importer reads; ` +
+      `remove the content to the right of column ${XLSX.utils.encode_col(range.s.c + MAX_HEADER_COLUMNS - 1)} and upload the workbook again`
+    );
+  }
+  // `>=`, not `>`: reaching the bound means the sheet may have been cut, and a
+  // cut workbook must never be imported as if it were whole. Both sibling
+  // parsers refuse on the same condition.
+  if (range.e.r + 1 >= SHEET_ROWS_BOUND) {
+    return (
+      `The sheet reaches the reading bound of ${SHEET_ROWS_BOUND} rows, so it may have been cut; ` +
+      "split the workbook into smaller ones and upload them one at a time"
+    );
+  }
+  return null;
+}
 
 /**
  * Reads a spreadsheet's `domain` cell into a plant-domain code (ADR 0031).
@@ -140,7 +209,10 @@ export class OnboardingExcelService {
 
     let book: XLSX.WorkBook;
     try {
-      book = XLSX.read(buffer, { type: "buffer" });
+      // Bounds what SheetJS materialises before the range check below can run.
+      // It is a cost bound, not the correctness one: a 25,000-row sheet is
+      // refused either way, because the declared range says so.
+      book = XLSX.read(buffer, { type: "buffer", sheetRows: SHEET_ROWS_BOUND });
     } catch {
       // A corrupt or truncated buffer was a 500 before this row: `XLSX.read`
       // throws and nothing between here and the controller caught it. Both
@@ -151,6 +223,16 @@ export class OnboardingExcelService {
     const sheet = book.Sheets[book.SheetNames[0] ?? ""];
     if (!sheet) {
       throw new BadRequestException("Workbook has no sheets");
+    }
+    // Before `sheet_to_json` densifies anything. A sheet with no `!ref` yields
+    // `[]` and falls into the LOCATION refusal below, which is what it did
+    // before this guard existed.
+    const ref = sheet["!ref"];
+    if (ref !== undefined) {
+      const problem = onboardingSheetRangeProblem(XLSX.utils.decode_range(ref));
+      if (problem !== null) {
+        throw new BadRequestException(problem);
+      }
     }
     const rows = XLSX.utils.sheet_to_json<(string | number | boolean)[]>(sheet, {
       header: 1,
