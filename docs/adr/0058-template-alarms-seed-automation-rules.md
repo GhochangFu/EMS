@@ -249,3 +249,130 @@ None. No new npm package.
   version. Both are lifecycle questions with no live consumer yet.
 - **AGENTS.md §6 and `docs/roadmap.md`** need the matching promotion in a
   separate `chore(agents):` PR (§9.10) once this lands.
+
+---
+
+## Amendment 1 — what the two build PRs actually shipped (2026-09-07)
+
+`E2.4` closed the same day this ADR was accepted, in two pull requests. This
+amendment records where the code and the ten decisions above disagree. Every
+item is a correction of this record rather than a change of behaviour: the code
+is what merged, and it merged under owner rulings taken at the time.
+
+### A. Decision 8's access gate was too wide, and is corrected
+
+Decision 8 gates both routes on `requireMasterDataUser` plus
+`canManageOrganization`. **They are instead scoped to writable locations**: the
+list omits a rule whose asset sits in a location the caller cannot write, and
+re-apply refuses one with a 403.
+
+This is a correction, not a tightening for tidiness. `canManageOrganization`
+returns true for a location-scoped admin — the integration suite proves it, by
+having `wc-admin@bms.local` pass the organization check and then receive 7 rows
+of 14. Under decision 8 as written, that admin could have listed and re-applied
+alarm thresholds on assets in locations they hold no grant on. `instantiate`
+checks the organization on the template and then `canManageLocation` on the
+target, so a caller who could never have created these rules must not be able to
+change what they alarm on.
+
+**Do not "restore" the code to match decision 8.** The paragraph above is why.
+
+### B. Four refusals the ten decisions do not name
+
+All four were ruled by the owner on 2026-09-07, and all four write nothing.
+
+1. **The current version removed the limit.** An author turns a proto-rule alarm
+   into a philosophy row in a later version; an engineer re-applies. Before the
+   guard, the rule became `enabled = true` with a null operator — it read as
+   armed in the Rule Engine list, the drift verdict and the DTO, while the alarm
+   engine dropped it in a JS filter, and the toggle could not repair it because
+   `assertArmable` refuses to re-enable. That is decision 3's own stated failure,
+   *"a rule that looks complete and watches nothing"*, reached through decision
+   8. Re-apply now refuses with a 400 and the rule keeps watching at its earlier
+   threshold, so a plant does not silently lose an alarm to a template edit. The
+   guard fires whether or not the rule is enabled — clearing a disabled rule's
+   limit destroys the same value.
+2. **The current version moved the alarm to a different point.** Re-apply used
+   to write the new threshold and leave `point_key` alone, so a rule raised at
+   one parameter's limit against another parameter, and the list then reported
+   `in_sync`. It now refuses with a 400 naming both keys. Writing the new point
+   was considered and rejected: the asset was instantiated from an earlier
+   version and may hold no `asset_points` row for it, which would bind the rule
+   to a point the asset does not have — a silently dead rule instead of a wrong
+   one.
+3. **The rule is archived.** Re-apply never read `lifecycle_status`, so it could
+   set `enabled = true` on an archived rule and undo `archiveRule`'s
+   postcondition. It refuses by name — deliberately **not** by filtering the
+   selection, which would fold an archived rule into the 404 branch whose
+   sentence would then be false.
+4. **The version's alarm vocabulary was retired.** Re-apply was the only writer
+   of `severity` and `category` that skipped the live-vocabulary gate. Since
+   retirement is `active = false`, both foreign keys stay satisfied and a
+   retired code would land on a live rule — the hole
+   `template-alarm-vocabularies.ts` exists to close, reopened on a new path.
+
+### C. Two behaviours PR 1 shipped that no decision authorizes
+
+5. **`assertCompatiblePoint` was widened** to accept a point key the asset's
+   pinned template declares. It changes acceptance on `POST`/`PATCH /rules` for
+   **every** rule, not only seeded ones. Without it, decision 1's local override
+   and decision 3's commissioning PATCH were API-refused for every point key
+   outside `rule-points.ts`'s hard-coded electrical fallback — which is most
+   water, mechanical and facility templates. The ADR would have shipped an
+   unreachable promise. Ruled by the owner as plan question Q1.
+6. **Instantiate re-validates the alarm vocabularies.** A template whose alarm
+   category or severity was retired between publish and instantiate is refused
+   with a 409. Before `E2.4` the vocabulary was inert, because nothing consumed
+   it; the seed is what made a retired code reachable.
+
+### D. Statements in this record that were wrong
+
+7. **The Consequences bullet** above says the contract test in
+   `apps/api/src/openapi/` must be updated with the new `source` value. Nothing
+   there pins that enum — `tests/rule-vocabulary.test.ts` uses `toContain`. The
+   diff correctly touches neither.
+8. **Decision 10** calls the per-asset field "a `seededRules` count". It ships as
+   a `string[]` of rule codes.
+9. **Decision 7's derivation grew a fourth step.** A code shorter than three
+   characters is padded: `seededRuleCode("A", "-")` returned a two-character
+   code, which `ruleCodeSchema`'s `.min(3)` refuses, so the rule builder would
+   have returned 400 on a field the operator never typed. The eight hex
+   characters of step 3 are also upper-cased, which decision 7 does not say and
+   the regex requires.
+10. **Migration `0067`'s header states the wrong mechanism for the column
+    grant.** It says the `SET ROLE bms_owner` bracket is what gives the new
+    columns their grant to `bms_tenant`/`bms_fleet`. Measured on a real
+    database: the table-level grant from `0039` governs every column present and
+    future, `ALTER DEFAULT PRIVILEGES` applies to new *objects* rather than new
+    *columns*, and a PostgreSQL index carries no ACL at all. The conclusion is
+    right and the bracket stays — it is the convention, and
+    `tests/adr-0045-owner-and-superuser-url.test.ts` enforces the pairing — but
+    a committed migration is frozen, so the paragraph cannot be fixed there. It
+    is recorded here because that header is what gets copied into the next
+    migration.
+
+### E. Route behaviours worth naming
+
+11. The list keys on the template **code across every version**, so listing
+    through any version's id returns the same rows. Re-apply re-stamps
+    `source_template_id` as well as the version, and overwrites `name`,
+    `category` and `severity` alongside the limit. The body is bounded at 500
+    rule ids and refuses duplicates rather than deduplicating them. Four further
+    refusals exist that no decision names: no published version, incomplete
+    provenance, a short UPDATE count under RLS, and unparseable stored content.
+    A rule with `source_template_id` set and `seeded_baseline` NULL is omitted
+    from the list rather than throwing.
+
+### F. One defect this ADR's own text caused
+
+12. **`seeded_baseline` originally stored the raw `alarm.message`** while the
+    rule's `name` stored a normalised one, so `driftVerdict` — which compares
+    the baseline's `message` against the rule's `name`, the rule table having no
+    message column — reported `local_override` on rules nobody had touched, for
+    any message that was long, short or padded. Fixed before PR 1 merged: the
+    baseline stores the derived name, because "as seeded" in decision 5 means as
+    written to the rule. **The column takes no backfill**, so the merged
+    derivation defines the meaning of every row ever written, and a later
+    correction cannot repair them — the template will have moved. All three
+    `SeededRuleValues` passed to `driftVerdict` must come from the same
+    derivation, for the same reason.
