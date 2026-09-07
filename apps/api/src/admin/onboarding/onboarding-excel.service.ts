@@ -22,7 +22,9 @@ import type { OnboardingDraftInput } from "./onboarding.schema";
  * is both too wide and too tall gets the column message, because deleting
  * content to the right is a repair and "your file may have been cut" is not.
  *
- * **Why {@link columnBoundedRange} cannot be reused.** That helper is written
+ * **Why `columnBoundedRange` cannot be reused** (`telemetry-import-rows.ts`;
+ * named in prose because it is not imported here, so a `{@link}` would render
+ * as plain text). That helper is written
  * for a sheet with one header row at `range.s.r`, and it scans that row by name
  * to refuse a recognised header pushed beyond the window. This workbook has
  * three marker-delimited sections — `LOCATION`, `RTUS`, `ASSETS` — each with
@@ -41,20 +43,37 @@ import type { OnboardingDraftInput } from "./onboarding.schema";
  * **The numbers.** The template's widest section is `RTU_HEADERS` at nine
  * columns, so {@link MAX_HEADER_COLUMNS} = 64 is roughly 7× the sheet this
  * system itself produces, and the worst case a workbook can still buy is
- * 20,102 × 64 = 1,286,528 cells — the figure `F4.101` accepted.
+ * 20,101 × 64 = **1,286,464** cells. Not 20,102 × 64: the row test below is
+ * `>=` and it runs *before* `sheet_to_json`, so the tallest range this parser
+ * ever densifies is one row under the bound. The importer states 20,102 × 64
+ * from the same two constants and is right about itself — its row refusal
+ * happens after densification, so it pays for the row this one never reads.
  *
  * **Why both bounds ship, and not just the column one.** Measured at `ef1a3e11`
- * on node v24.17.0 / xlsx 0.20.3, through the real `parseUpload`, from a
- * **3,038-byte** upload holding three real rows:
+ * — the commit this row starts from, where `XLSX.read` was called with no
+ * `sheetRows` — on node v24.17.0 / xlsx 0.20.3, through the real `parseUpload`,
+ * from a **3,038-byte** upload holding three real rows:
  *
  * - `<dimension ref="A1:XFD20102"/>` declares 329,351,168 cells: the process
  *   died with `FATAL ERROR: JavaScript heap out of memory` after ~86 s at a
  *   512 MB heap cap, and after 362 s at 2048 MB. A bigger heap postpones the
- *   kill rather than preventing it.
+ *   kill rather than preventing it. That range is 16,384 columns wide, so the
+ *   **column** branch is what answers it now, in O(1) on the range alone.
  * - `<dimension ref="A1:I1048576"/>` declares 9,437,184 cells and **is nine
- *   columns wide** — comfortably inside the column bound — and still cost 12.7 s
- *   and 552 MB RSS at 512 MB, 10.8 s and 622 MB at 2048 MB. The column bound
- *   alone does not close that; the row branch is what refuses it.
+ *   columns wide**, so no column bound can see it. It cost 12.7 s and 552 MB RSS
+ *   at `ef1a3e11` — and on this branch it is **accepted**, in 64 ms, because
+ *   `sheetRows` makes SheetJS's reader clamp a declared end row past the bound
+ *   down to the sheet's real extent: `!ref` comes back `A1:B3` over a three-row
+ *   fixture. `A1:C25000` clamps the same way. A declared end row *under* the
+ *   bound is preserved as declared — `A1:XFD20000` reads back at 16,384 columns
+ *   and is refused for its width.
+ *
+ * So the row branch is not dead code, but its live case is a **real** sheet that
+ * fills to the bound rather than a declared-but-empty range: 25,000 rows of data
+ * clamp to exactly 20,102 and are refused as possibly cut, which
+ * `onboarding-excel.service.spec.ts` asserts end to end. The clamp handles the
+ * empty declaration, and neither branch may be removed on the strength of the
+ * other.
  */
 export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
   const declaredColumns = range.e.c - range.s.c + 1;

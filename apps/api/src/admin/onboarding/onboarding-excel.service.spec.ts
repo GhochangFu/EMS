@@ -233,7 +233,12 @@ export function assertDeclaredWidthIsRefusedNotWindowed(): void {
   // act on: deleting content to the right is a repair, "your file may have been
   // cut" is not. Neither workbook fixture below fires both branches, so this is
   // the only thing holding that order.
-  const both = onboardingSheetRangeProblem({ s: { r: 0, c: 0 }, e: { r: 30_000, c: 100 } });
+  // One past each bound, expressed as both constants: `30_000` and `100` were
+  // literals that stop breaching the moment either bound moves.
+  const both = onboardingSheetRangeProblem({
+    s: { r: 0, c: 0 },
+    e: { r: SHEET_ROWS_BOUND, c: MAX_HEADER_COLUMNS },
+  });
   assert(
     String(both).includes("columns"),
     `a sheet over both bounds is told about its width first, got "${String(both)}"`,
@@ -257,15 +262,18 @@ export function assertDeclaredWidthIsRefusedNotWindowed(): void {
   assert(!wide.includes("Berhampur"), `the refusal must not echo cell text, got "${wide}"`);
 
   // --- ruling 1's rationale, evidenced rather than asserted in prose --------
-  // `password` moved to column BM (index 64), with a real secret under it. The
-  // sheet is 65 columns wide, so it is refused.
+  // `password` moved one column past the bound, with a real secret under it, so
+  // the sheet is one column too wide and is refused. Every index below is
+  // `MAX_HEADER_COLUMNS`, never the literal 64: restated, *lowering* the
+  // constant would leave this green with the fixture no longer past the bound —
+  // which is the whole claim.
   const movedRows = templateRows();
   for (const rowIndex of [5, 6, 7]) {
     const row = [...movedRows[rowIndex]];
-    for (let c = 8; c < 64; c += 1) {
+    for (let c = 8; c < MAX_HEADER_COLUMNS; c += 1) {
       row[c] = "";
     }
-    row[64] = rowIndex === 5 ? "password" : `s3cr3t-${rowIndex}`;
+    row[MAX_HEADER_COLUMNS] = rowIndex === 5 ? "password" : `s3cr3t-${rowIndex}`;
     movedRows[rowIndex] = row;
   }
   const moved = refusalMessage(buildWorkbookBuffer(movedRows), "a workbook with password at column BM");
@@ -333,13 +341,16 @@ export function assertSheetReachingTheRowBoundIsRefused(): void {
 
   // One row fewer parses whole. This is what pins ruling 2: no figure tighter
   // than SHEET_ROWS_BOUND was invented, so a workbook one row under the bound
-  // keeps every one of its 20,090 assets.
+  // keeps every asset it declares. The fixture and the claim share one
+  // expression — a restated `20_090` still passes with the bound moved, and
+  // then vouches for nothing.
+  const assetsUnderBound = SHEET_ROWS_BOUND - 1 - ROWS_ABOVE_THE_FIRST_ASSET;
   const underBound = new OnboardingExcelService().parseUpload(
-    buildWorkbookBuffer(rowsWithAssetCount(SHEET_ROWS_BOUND - 1 - ROWS_ABOVE_THE_FIRST_ASSET)),
+    buildWorkbookBuffer(rowsWithAssetCount(assetsUnderBound)),
   );
   assert(
-    underBound.assets.length === 20_090,
-    `a sheet one row under the bound is read whole, got ${underBound.assets.length} assets`,
+    underBound.assets.length === assetsUnderBound,
+    `a sheet one row under the bound is read whole, got ${underBound.assets.length} of ${assetsUnderBound} assets`,
   );
 
   // And the case where `sheetRows` really cuts: 25,000 rows come back clamped
@@ -355,7 +366,9 @@ export function assertSheetReachingTheRowBoundIsRefused(): void {
 
 /**
  * The `displayNameFixes` line is sheet text read back to the operator, so it
- * carries {@link quoteCell} like every other echo site (owner ruling 3).
+ * carries `quoteCell` (`spreadsheet-guard.ts`) like every other echo site
+ * (owner ruling 3). Named in prose, not `{@link}`: the helper is not imported
+ * here, and an unresolved link renders as plain text.
  *
  * **The bound is on the message, never on the data.** The RTU keeps the whole
  * display name it was given; only the sentence that reports the adjustment is
