@@ -372,7 +372,14 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
   while (headers.length > 0 && headers[headers.length - 1] === "") {
     headers.pop();
   }
-  if (headers.length === 0 && !binary) {
+  // `range.e.c <= lastHeaderColumn` is what makes "no file" honest: it says the
+  // scan reached the end of the declared width and found nothing, rather than
+  // stopping at the bound. A CSV whose first thirteen columns are blank but
+  // which carries content further right is a file with a wrong header, and
+  // saying `file_unreadable` there tells the operator their readable CSV is not
+  // a CSV — the web renders that code as "File cannot be read"
+  // (`mapping-sheet-preview.ts`). Post-merge review, Q1.
+  if (headers.length === 0 && !binary && range.e.c <= lastHeaderColumn) {
     // SheetJS reads an empty or non-spreadsheet text buffer as one sheet with
     // one blank cell; that is not a file with a wrong header, it is no file.
     return { ok: false, error: fileError("file_unreadable", "The uploaded file is empty or is not CSV or Excel") };

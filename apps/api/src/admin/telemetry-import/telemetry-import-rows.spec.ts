@@ -806,21 +806,84 @@ export function runTelemetryImportColumnBoundTests(): void {
     );
   }
 
-  // ---- a header cell too long to be a header is not compared --------------
-  // SheetJS dedupes shared strings, so one long string referenced from every
+  // ---- a header row of long cells is bounded per cell, not just per column -
+  // SheetJS dedupes shared strings, so ONE long string referenced from every
   // scanned column multiplies its own length by the column count, and neither
-  // upload guard bounds that product. A cell past `MAX_HEADER_CELL_CHARS` reads
-  // as blank rather than being trimmed and lower-cased.
-  const longCell = "x".repeat(5_000);
+  // upload guard bounds that product. The scanned width is already bounded; this
+  // holds the other factor.
+  //
+  // The fixture is the full scan width against the string length the security
+  // review measured, because the previous one (201 columns of 5,000 characters,
+  // ~1M character operations) cost milliseconds either way — it asserted a
+  // ceiling nothing could breach, so disabling the bound left the suite green.
+  // Unbounded, this input took 204 s; `U+0130` is the expensive case, since
+  // `toLowerCase` expands it to two code units as it copies.
+  const longCell = "İ".repeat(131_068);
   const longSheet: XLSX.WorkSheet = {};
-  for (let c = 0; c <= 200; c += 1) {
+  for (let c = 0; c <= 16_383; c += 1) {
     longSheet[XLSX.utils.encode_cell({ r: 0, c })] = { t: "s", v: longCell };
   }
   const longStart = performance.now();
-  const longResult = columnBoundedRange(longSheet, { s: { r: 0, c: 0 }, e: { r: 199, c: 200 } });
+  const longResult = columnBoundedRange(longSheet, { s: { r: 0, c: 0 }, e: { r: 199, c: 16_383 } });
   const longMs = performance.now() - longStart;
   assert(longResult.ok, "a header row of long cells holds no recognised header, so it must be bounded not refused");
-  assert(longMs < 2_000, `a header row of long cells must not be normalised in full, took ${longMs.toFixed(0)} ms`);
+  assert(longMs < 5_000, `a header row of long cells must not be normalised in full, took ${longMs.toFixed(0)} ms`);
+
+  // ---- a PADDED recognised header beyond the window is still recognised ----
+  // The per-cell bound must be applied the way the header row itself is read —
+  // `parseWorkbook` normalises `String(cell).trim().toLowerCase()`, so a cell
+  // whose padding pushes it past the bound is still a real header once trimmed.
+  // Testing the raw length instead made the two disagree: the parser saw
+  // `time`, the window logic saw `""`, and the file failed as "Missing required
+  // column 'time'" — the exact message this refusal exists to replace, on a
+  // sheet that parsed before `F4.101` (post-merge review, C2).
+  const paddedHeader: (string | number)[] = [];
+  const paddedData: (string | number)[] = [];
+  for (let c = 0; c <= strayColumn; c += 1) {
+    paddedHeader[c] = c === 0 ? "asset_code" : c === 1 ? "point_key" : c === 2 ? "value" : `spare_${c}`;
+    paddedData[c] = c === 0 ? "F19-ASSET-1" : c === 1 ? "kw" : c === 2 ? "12.5" : "";
+  }
+  paddedHeader[strayColumn] = `${" ".repeat(80)}time${" ".repeat(80)}`;
+  paddedData[strayColumn] = "2026-08-19T10:00:00Z";
+  const paddedResult = parseWorkbook(buildWorkbookBuffer([paddedHeader, paddedData]));
+  assert(!paddedResult.ok, "a whitespace-padded `time` beyond the window must be refused");
+  if (!paddedResult.ok) {
+    // The column LETTER, not the header name: the fallback this exists to
+    // replace is `Missing required column 'time'`, which also contains `'time'`
+    // and so cannot tell the two refusals apart. Only the by-name refusal says
+    // where the column is.
+    assert(
+      paddedResult.reason.includes(XLSX.utils.encode_col(strayColumn)),
+      `a padded header is still that header — the refusal must say where it is, got ${paddedResult.reason}`,
+    );
+  }
+
+  // ---- the asset-reference headers are recognised beyond the window too ----
+  // `asset_code` and `asset_id` were in `RECOGNISED_HEADERS` but nothing
+  // asserted them: removing either left the suite green while a sheet carrying
+  // it beyond the window degraded to "Missing required column 'asset_code' or
+  // 'asset_id'" (post-merge review, F1).
+  for (const assetHeader of ["asset_code", "asset_id"]) {
+    const assetRowHeader: (string | number)[] = [];
+    const assetRowData: (string | number)[] = [];
+    for (let c = 0; c <= strayColumn; c += 1) {
+      assetRowHeader[c] = c === 0 ? "point_key" : c === 1 ? "value" : c === 2 ? "time" : `spare_${c}`;
+      assetRowData[c] = c === 0 ? "kw" : c === 1 ? "12.5" : c === 2 ? "2026-08-19T10:00:00Z" : "";
+    }
+    assetRowHeader[strayColumn] = assetHeader;
+    assetRowData[strayColumn] = "F19-ASSET-1";
+    const assetResult = parseWorkbook(buildWorkbookBuffer([assetRowHeader, assetRowData]));
+    assert(!assetResult.ok, `a ${assetHeader} column beyond the window must be refused`);
+    if (!assetResult.ok) {
+      // Again the column letter: the fallback is `Missing required column
+      // 'asset_code' or 'asset_id'`, which names BOTH headers, so asserting the
+      // name would pass against the defect too.
+      assert(
+        assetResult.reason.includes(XLSX.utils.encode_col(strayColumn)),
+        `the refusal must say where ${assetHeader} is, got ${assetResult.reason}`,
+      );
+    }
+  }
 
   // ---- a case-variant header beyond the window is still recognised ---------
   // `headerCellText` lower-cases; without that the refusal below degrades to
