@@ -111,9 +111,14 @@ export const V2_PROTO_THRESHOLD = 7;
 export const V2_PHILOSOPHY_OPERATOR = "gt";
 export const V2_PHILOSOPHY_THRESHOLD = 3;
 
-/** The two assets every case builds. `D` for drift, so a sibling's `01`/`02` never collide. */
-const ASSET_A = `${TEST_ASSET_PREFIX}D1`;
-const ASSET_B = `${TEST_ASSET_PREFIX}D2`;
+/**
+ * The two assets every case builds. `D` for drift, so a sibling's `01`/`02`
+ * never collide. Exported for the guards suite, which builds the same two
+ * assets from its own template: one spelling, so `cleanup2`'s `LIKE` prefix
+ * sweeps both files' rows.
+ */
+export const ASSET_A = `${TEST_ASSET_PREFIX}D1`;
+export const ASSET_B = `${TEST_ASSET_PREFIX}D2`;
 
 /**
  * The fixture guards. If any of these stops holding, the `in_sync` case below
@@ -258,7 +263,7 @@ export async function publishV2(
   return v2;
 }
 
-async function expectRejection(
+export async function expectRejection(
   run: () => Promise<unknown>,
   match: RegExp,
   what: string,
@@ -277,11 +282,15 @@ async function expectRejection(
   return message ?? "";
 }
 
-type RuleRow = {
+export type RuleRow = {
   id: string;
   code: string;
   name: string;
   enabled: boolean;
+  /** Carried so `snapshot` sees an arming write, and for the archived-rule guard. */
+  lifecycle_status: string;
+  /** Carried for the moved-point guard: re-apply must never change it. */
+  point_key: string | null;
   category: string;
   operator: string | null;
   threshold_value: number | null;
@@ -298,9 +307,10 @@ type RuleRow = {
 };
 
 /** Every rule on this suite's assets, joined to its asset, by independent SQL. */
-async function ruleRows(pool: pg.Pool): Promise<RuleRow[]> {
+export async function ruleRows(pool: pg.Pool): Promise<RuleRow[]> {
   const { rows } = await pool.query<RuleRow>(
-    `SELECT r.id, r.code, r.name, r.enabled, r.category, r.operator,
+    `SELECT r.id, r.code, r.name, r.enabled, r.lifecycle_status, r.point_key,
+            r.category, r.operator,
             r.threshold_value::float8 AS threshold_value, r.severity,
             r.source_template_id, r.source_template_version, r.source_alarm_code,
             r.seeded_baseline, r.updated_at::text AS updated_at,
@@ -314,7 +324,7 @@ async function ruleRows(pool: pg.Pool): Promise<RuleRow[]> {
   return rows;
 }
 
-function rowFor(rows: RuleRow[], assetCode: string, alarmCode: string): RuleRow {
+export function rowFor(rows: RuleRow[], assetCode: string, alarmCode: string): RuleRow {
   const row = rows.find((r) => r.asset_code === assetCode && r.source_alarm_code === alarmCode);
   if (!row) {
     throw new Error(
@@ -325,7 +335,11 @@ function rowFor(rows: RuleRow[], assetCode: string, alarmCode: string): RuleRow 
   return row;
 }
 
-function itemFor(list: SeededRulesListResponse, assetCode: string, alarmCode: string): SeededRuleDto {
+export function itemFor(
+  list: SeededRulesListResponse,
+  assetCode: string,
+  alarmCode: string,
+): SeededRuleDto {
   const item = list.items.find(
     (i) => i.assetCode === assetCode && i.sourceAlarmCode === alarmCode,
   );
@@ -339,11 +353,11 @@ function itemFor(list: SeededRulesListResponse, assetCode: string, alarmCode: st
 }
 
 /** A serialisation of every rule row, for "nothing was written" claims. */
-async function snapshot(pool: pg.Pool): Promise<string> {
+export async function snapshot(pool: pg.Pool): Promise<string> {
   return JSON.stringify(await ruleRows(pool));
 }
 
-async function seed(
+export async function seed(
   svc: DriftServices,
   jwt: JwtPayload,
   templateId: string,
@@ -848,6 +862,11 @@ export async function assertReapplyMovesOnlyTheNamedRules(
  * rule seeded from another template, 400 naming the rule whose alarm code v2
  * no longer carries, 403 across locations — and a mixed batch is all or
  * nothing.
+ *
+ * The last case is the **crossed** one, added by the PR 2 security review: a
+ * caller who could take either the 403 or the 400 must take the 403, because
+ * the 400 quotes stored template content. It asserts the message the caller
+ * gets AND, negatively, that the alarm code is absent from it.
  */
 export async function assertReapplyRefusals(
   svc: DriftServices,
@@ -911,6 +930,24 @@ export async function assertReapplyRefusals(
     "a mixed batch with one rule outside the caller's locations",
   );
   assert((await snapshot(pool)) === before, "a 403 must write nothing, the in-scope rule included");
+
+  // The crossed case, and it is a security assertion rather than a third
+  // refusal: a location admin naming an out-of-scope rule whose alarm the
+  // current version has DROPPED must be told about their access scope and
+  // never about the alarm. Both refusals fit, and only the statement order in
+  // `reapply` decides which fires — the 400 interpolates `sourceAlarmCode`,
+  // which is stored template content. Nothing but this case pins that order.
+  const derivedB = rowFor(rows, ASSET_B, ALARM_DERIVED);
+  const crossed = await expectRejection(
+    () => svc.seededRules.reapply(fx.locationAdminJwt, v1.id, { ruleIds: [derivedB.id] }),
+    /outside your access scope/i,
+    "a location admin naming an out-of-scope rule whose alarm the current version dropped",
+  );
+  assert(
+    !crossed.includes(ALARM_DERIVED) && !crossed.includes(derivedB.code),
+    `the access-scope refusal must not echo the stored alarm code or the rule code, got "${crossed}"`,
+  );
+  assert((await snapshot(pool)) === before, "the crossed refusal must write nothing");
 
   // The in-scope half of that batch DOES apply for the same caller alone —
   // otherwise the 403 could be "refuse every location admin" and still pass.

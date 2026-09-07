@@ -113,7 +113,15 @@ describe.skipIf(!connectionString)("E2.4 — seeded-rules drift list and re-appl
       // path, transform included — not a hand-built post-transform shape.
       instantiate: (jwt, id, body) =>
         instantiation.instantiate(jwt, id, instantiateAssetsBodySchema.parse(body)),
-      seededRules: new AssetTemplateSeededRulesService(fleetDb, tenantDb, access, audit),
+      seededRules: new AssetTemplateSeededRulesService(
+        fleetDb,
+        tenantDb,
+        access,
+        audit,
+        // The PR 2 security review's S2: re-apply now runs the same live
+        // vocabulary gate instantiate does, so it takes the same collaborator.
+        vocabularies,
+      ),
     };
     const base = await loadFixtures(created);
     fx = {

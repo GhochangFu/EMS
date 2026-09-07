@@ -22,10 +22,15 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { parseStoredTemplateContent } from "./asset-templates-content.schema";
 import type { ReapplySeededRulesBody } from "./asset-templates.schema";
 import { driftVerdict, seededBaselineValues, type TemplateAlarm } from "./template-alarm-rules";
+import {
+  alarmVocabularyMessage,
+  findAlarmVocabularyProblem,
+} from "./template-alarm-vocabularies";
 
 type TemplateRow = typeof assetTemplates.$inferSelect;
 
@@ -44,6 +49,14 @@ type CurrentVersion = {
   id: string;
   version: number;
   alarmsByCode: ReadonlyMap<string, TemplateAlarm>;
+  /**
+   * The same alarms in **content order**, kept beside the map because
+   * `findAlarmVocabularyProblem` reports `content.alarms.<n>.<axis>` and that
+   * index is only true of the stored array. A list rebuilt from the map's
+   * values would collapse on a repeated code and point a reader at the wrong
+   * alarm; a filtered one would point at the wrong index entirely.
+   */
+  alarms: readonly TemplateAlarm[];
 };
 
 /** A named rule with the values re-apply will write to it. */
@@ -96,6 +109,11 @@ export class AssetTemplateSeededRulesService {
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // Appended, never inserted: the first four positions are what `AdminModule`
+    // has wired since this class was added. `VocabulariesModule` is already
+    // imported there for `AssetTemplateInstantiationService`, so this needs no
+    // module change — see `assertAlarmVocabulariesStillLive`.
+    private readonly vocabularies: VocabulariesService,
   ) {}
 
   /**
@@ -135,9 +153,19 @@ export class AssetTemplateSeededRulesService {
    *
    * Every refusal is decided before the transaction opens and writes nothing:
    * 404 for an id not seeded from this template code, 403 for a rule whose
-   * asset the caller cannot write, 409 for a rule whose provenance does not
-   * parse, 400 for a rule whose alarm code the current version no longer
-   * carries. The batch is all or nothing — a mixed batch is refused whole.
+   * asset the caller cannot write, 409 for a version naming a retired
+   * vocabulary, 409 for a rule whose provenance does not parse, and 400 for a
+   * rule that is not published, whose alarm code the current version no longer
+   * carries, whose limit the current version has removed, or whose alarm the
+   * current version has moved to a different point. The batch is all or
+   * nothing — a mixed batch is refused whole.
+   *
+   * **The order of those refusals is a security property, not a convenience.**
+   * The two 400s that quote a stored alarm code or point key are decided in
+   * `planReapply`, which runs *after* the writable-location check, so a caller
+   * naming a rule outside their scope learns only that it is outside their
+   * scope. Nothing but this ordering holds that, and the crossed case is
+   * pinned by an integration assertion.
    *
    * What moves is decision 5's five fields (`operator`, `threshold_value`,
    * `severity`, `category`, `name`) plus the three provenance stamps
@@ -191,6 +219,9 @@ export class AssetTemplateSeededRulesService {
         `${refused} of these ${noun} on an asset outside your access scope. Nothing was written.`,
       );
     }
+
+    // After the 403 and before anything derived from stored content is quoted.
+    await this.assertAlarmVocabulariesStillLive(current, template);
 
     const plans = body.ruleIds.map((id) => this.planReapply(found.get(id) as SeededRuleRow, current, template));
     const armed = plans
@@ -361,10 +392,12 @@ export class AssetTemplateSeededRulesService {
           parsed.detail,
       );
     }
+    const alarms = parsed.content.alarms ?? [];
     return {
       id: published.id,
       version: published.version,
-      alarmsByCode: new Map((parsed.content.alarms ?? []).map((alarm) => [alarm.code, alarm])),
+      alarmsByCode: new Map(alarms.map((alarm) => [alarm.code, alarm])),
+      alarms,
     };
   }
 
@@ -449,25 +482,159 @@ export class AssetTemplateSeededRulesService {
     };
   }
 
-  /** The two per-rule refusals of D6, then the values the rule will take. */
+  /**
+   * The same live-vocabulary gate `instantiate` makes, on the **other** path
+   * that stamps `severity` and `category` onto a live rule.
+   *
+   * Re-apply writes both from stored template content into columns closed by
+   * `automation_rules_category_fk` / `automation_rules_severity_fk`, and
+   * retirement in this estate is `active = false`, not a delete — so the
+   * foreign keys stay satisfied and a code the organization has withdrawn
+   * lands on a live rule with nothing to say so. That is exactly the hole
+   * `template-alarm-vocabularies.ts` was extracted to close on the publish and
+   * instantiate paths, and this route reopened it on a third one. A security
+   * review named it; the fix is to call the shared check rather than to spell a
+   * fourth version of "is this code live".
+   *
+   * **The whole version's alarms, not the named rules' alarms.** The problem's
+   * `path` is `content.alarms.<n>.<axis>` — an index into the stored array — so
+   * a filtered subset would name an alarm the reader cannot find. It is also
+   * the same question `instantiate` asks of the same version.
+   *
+   * **409, and the message never echoes the stored value.** Both properties are
+   * `instantiate`'s, for its stated reasons: nothing is wrong with the request,
+   * the estate moved under a frozen version; and `content` is `jsonb` with no
+   * foreign key, so the offending value is arbitrary stored text. The problem
+   * carries the path and the live codes only.
+   */
+  private async assertAlarmVocabulariesStillLive(
+    current: CurrentVersion,
+    template: TemplateRow,
+  ): Promise<void> {
+    // Skipped for a version with no alarms, exactly as `instantiate` skips it:
+    // `VocabulariesService.list` is six parallel selects on the tenant handle,
+    // and a template with no alarms has nothing for them to answer about.
+    if (current.alarms.length === 0) {
+      return;
+    }
+    const { ruleCategories, alarmSeverities, alarmSkills } = await this.vocabularies.list();
+    const problem = findAlarmVocabularyProblem(current.alarms, {
+      ruleCategories,
+      alarmSeverities,
+      alarmSkills,
+    });
+    if (!problem) {
+      return;
+    }
+    throw new ConflictException(
+      `Cannot re-apply ${template.code} v${current.version}: ` +
+        `${alarmVocabularyMessage(problem)} ` +
+        `Reactivate that ${problem.axis}, or publish a new template version that does not ` +
+        "use it. Nothing was written.",
+    );
+  }
+
+  /** The per-rule refusals of D6, then the values the rule will take. */
   private planReapply(
     row: SeededRuleRow,
     current: CurrentVersion,
     template: TemplateRow,
   ): ReapplyPlan {
-    const dto = this.toDto(row, current);
-    if (!dto) {
-      throw new ConflictException(
-        `Rule ${row.rule.code} carries incomplete template provenance (one of source_template_id, ` +
-          "source_template_version, source_alarm_code or seeded_baseline is missing or unreadable), " +
-          "so it has no drift verdict and cannot be re-applied. Nothing was written.",
+    // Before the provenance parse, because this is a property of the row rather
+    // than of what the row records.
+    //
+    // `selectSeeded` deliberately does **not** carry this predicate: filtering
+    // it there would fold an archived rule into the 404 branch, whose sentence
+    // says it was never seeded from this template code — which would be false.
+    //
+    // Nothing else stops it. The arming write below sets `enabled = true`
+    // directly, while `archiveRule` archives with `enabled = false` and
+    // `setEnabled` refuses to enable anything that is not published; re-apply
+    // goes through neither, so an archived philosophy row that the current
+    // version now gives a limit would come out `enabled = true,
+    // lifecycle_status = 'archived'` — contradicting `archiveRule`'s
+    // postcondition and showing as enabled in the Rule Engine list, which sorts
+    // on that column. Spelled `!== "published"`, matching `setEnabled`, so the
+    // two cannot drift apart.
+    if (row.rule.lifecycleStatus !== "published") {
+      throw new BadRequestException(
+        `Rule ${row.rule.code} is ${row.rule.lifecycleStatus}, not published, so it cannot be ` +
+          "re-applied — re-apply arms a rule the template completes, and only a published rule " +
+          "may be armed. Restore it to published first. Nothing was written.",
       );
     }
-    if (dto.current === null) {
+    const dto = this.toDto(row, current);
+    if (!dto) {
+      // Widened from the four provenance columns alone: `toDto` also returns
+      // `null` when the rule's OWN columns fail `seededRuleValuesSchema` — an
+      // operator, severity, category or name outside the values contract — and
+      // the narrower sentence sent a reader to inspect four columns that are
+      // all intact.
+      throw new ConflictException(
+        `Rule ${row.rule.code} has no drift verdict, so it cannot be re-applied. Either its ` +
+          "template provenance is incomplete (one of source_template_id, " +
+          "source_template_version, source_alarm_code or seeded_baseline is missing or " +
+          "unreadable), or its own operator, threshold_value, severity, category and name no " +
+          "longer read as the seeded-rule values contract. Nothing was written.",
+      );
+    }
+    // One lookup for three questions. `alarm === undefined` and
+    // `dto.current === null` are the same fact — `toDto` derives `current` from
+    // this very entry — and pairing them here is what narrows both for the two
+    // refusals below.
+    const alarm = current.alarmsByCode.get(dto.sourceAlarmCode);
+    if (alarm === undefined || dto.current === null) {
       throw new BadRequestException(
         `Rule ${row.rule.code} was seeded from alarm "${dto.sourceAlarmCode}", which ` +
           `${template.code} v${current.version} no longer carries; there is nothing to re-apply ` +
           "it from. Nothing was written.",
+      );
+    }
+    // Owner ruling of 2026-09-07, over what ADR 0058 names. A v1 proto-rule
+    // seeds an ARMED rule; if v2 restates the same alarm code as a philosophy
+    // row, `templateAlarmSchema` permits it and re-apply would write
+    // `operator: null, threshold_value: null` while the `armed` filter skips
+    // the enable-write — leaving `enabled = true` with a null operator. That
+    // rule reads as armed in every list and is dropped by the alarm engine's
+    // own filter, with `driftVerdict` reporting `in_sync` because all three
+    // sides then agree; and the toggle cannot repair it, because
+    // `assertArmable` refuses to re-enable a rule with no limit. Refusing keeps
+    // the rule watching at the limit it was commissioned with, so a plant does
+    // not silently lose an alarm because someone edited a template.
+    //
+    // Not conditioned on `enabled`: clearing a disabled rule's commissioned
+    // limit destroys the same value, and `assertArmable` then blocks the toggle
+    // that would put it back. A philosophy row re-applied from a philosophy row
+    // writes null over null and is untouched by this.
+    if (
+      dto.current.operator === null &&
+      dto.current.thresholdValue === null &&
+      (dto.live.operator !== null || dto.live.thresholdValue !== null)
+    ) {
+      throw new BadRequestException(
+        `Rule ${row.rule.code} holds a limit (${dto.live.operator ?? "none"} ` +
+          `${dto.live.thresholdValue ?? "none"}) and ${template.code} v${current.version} now ` +
+          `states alarm "${dto.sourceAlarmCode}" as a philosophy row with no operator and no ` +
+          "threshold value. Re-applying would clear the limit without disabling the rule, " +
+          "leaving a rule that reads as armed and evaluates nothing. Edit the rule directly, or " +
+          "publish a version that carries a limit. Nothing was written.",
+      );
+    }
+    // The second owner ruling of the same day. Re-apply moves decision 5's five
+    // fields and never `point_key`, so an alarm that keeps its code and changes
+    // its point would put the new point's limit on the old point's rule — and
+    // the list would then read `in_sync`. Writing v2's point instead was
+    // considered and refused: the asset was instantiated from an earlier
+    // version and may hold no `asset_points` row for the new key, so the rule
+    // would bind to a point the asset does not have.
+    if (alarm.pointKey !== row.rule.pointKey) {
+      throw new BadRequestException(
+        `Rule ${row.rule.code} watches point "${row.rule.pointKey ?? "(none)"}" and ` +
+          `${template.code} v${current.version} now binds alarm "${dto.sourceAlarmCode}" to ` +
+          `point "${alarm.pointKey}". Re-applying would set that alarm's limit against a ` +
+          "different measurement. Re-apply does not move a rule between points — this asset was " +
+          "built from an earlier version and may carry no point of that key. Create the rule on " +
+          "the new point instead. Nothing was written.",
       );
     }
     return { row, dto, values: dto.current };
