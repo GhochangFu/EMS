@@ -38,6 +38,13 @@ type BuilderForm = {
   operator: AutomationRuleOperator;
   thresholdValue: string;
   /**
+   * Seconds an alarm must stay clear before it self-clears (`F3.10`, `D16`).
+   * Blank means "use the 120 s default" — the same null discipline `F4.46`
+   * uses for severity, and the same reason: no default is substituted here,
+   * only on the read path that consumes the stored value.
+   */
+  clearHoldSeconds: string;
+  /**
    * Nullable since `F4.46`. A rule may have no severity — the API stores one
    * that way today — and a non-nullable form field could not hold that, so
    * opening such a rule silently promoted it to `warning` and saving wrote the
@@ -71,6 +78,7 @@ const emptyForm: BuilderForm = {
   pointKey: "",
   operator: "gt",
   thresholdValue: "",
+  clearHoldSeconds: "",
   severity: "warning",
   actionType: "notify",
   actionTarget: "Operations",
@@ -137,6 +145,7 @@ export function RuleBuilderPanel({
 
   const payload = useMemo(() => buildPayload(form), [form]);
   const invalidReason = validateForm(form);
+  const clearHoldReason = clearHoldInvalidReason(form);
 
   const createM = useMutation({
     mutationFn: createRuleDraft,
@@ -179,7 +188,7 @@ export function RuleBuilderPanel({
   });
 
   const busy = createM.isPending || updateM.isPending || previewM.isPending || publishM.isPending;
-  const canSubmit = !invalidReason && !busy;
+  const canSubmit = !invalidReason && !clearHoldReason && !busy;
 
   return (
     <section className="rounded border border-gray-200 bg-white">
@@ -334,6 +343,22 @@ export function RuleBuilderPanel({
                   placeholder="3"
                 />
               </Field>
+              <div>
+                <Field label="Clear hold (seconds)">
+                  <input
+                    className={fieldClass}
+                    inputMode="numeric"
+                    value={form.clearHoldSeconds}
+                    onChange={(e) => setForm({ ...form, clearHoldSeconds: e.target.value })}
+                    placeholder="120 (default)"
+                  />
+                </Field>
+                {/* A sibling of the label, not a child: inside it the text would
+                    join the field's accessible name. */}
+                {clearHoldReason ? (
+                  <p className="mt-1 text-xs text-amber-900">{clearHoldReason}</p>
+                ) : null}
+              </div>
             </div>
           </div>
         ) : (
@@ -552,6 +577,7 @@ function buildPayload(form: BuilderForm): RuleDraftPayload & {
     operator: form.operator,
     thresholdValue: Number(form.thresholdValue),
     severity: form.severity,
+    clearHoldSeconds: form.clearHoldSeconds.trim() === "" ? null : Number(form.clearHoldSeconds),
     condition: { window: "latest" },
     action: { type: form.actionType, target: form.actionTarget },
   };
@@ -575,6 +601,7 @@ function formFromRule(rule: RuleListItem, vocabulary: AlarmSeverityDto[]): Build
     pointKey: rule.pointKey ?? "",
     operator: rule.operator ?? "gt",
     thresholdValue: rule.thresholdValue === null ? "" : String(rule.thresholdValue),
+    clearHoldSeconds: rule.clearHoldSeconds === null ? "" : String(rule.clearHoldSeconds),
     severity: severityFromRule(rule.severity, vocabulary),
     actionType: rule.action.type,
     actionTarget: rule.action.target,
@@ -582,6 +609,25 @@ function formFromRule(rule: RuleListItem, vocabulary: AlarmSeverityDto[]): Build
     startTime: timeCondition?.startTime ?? emptyForm.startTime,
     endTime: timeCondition?.endTime ?? emptyForm.endTime,
   };
+}
+
+/**
+ * Review 3: a non-numeric, non-blank clear hold is refused HERE, at the
+ * field. `buildPayload` would otherwise send `Number("abc")` — `NaN`, which
+ * JSON serialises as `null`, which the API reads as "use the default": the
+ * operator's typo would silently become 120 s. Blank still means the default
+ * on purpose (plan D16). Only the numeric shape is checked; the 1–86 400 s
+ * bound stays the server's, so its message reaches the screen.
+ */
+function clearHoldInvalidReason(form: BuilderForm): string | null {
+  if (form.ruleType !== "threshold") {
+    return null;
+  }
+  const raw = form.clearHoldSeconds.trim();
+  if (raw === "" || !Number.isNaN(Number(raw))) {
+    return null;
+  }
+  return "Enter the clear hold as a number of seconds, or leave it blank for the default.";
 }
 
 function validateForm(form: BuilderForm): string | null {

@@ -160,6 +160,14 @@ export const masterDataTabs = [
   // are not any more.
   { label: "Notifications", path: "/admin/notification-channels", notificationAdmin: true },
   { label: "Deliveries", path: "/admin/notification-deliveries", notificationAdmin: true },
+  // `F3.10` (ADR 0057 decision 11, plan ruling Q6). The third `notificationAdmin`
+  // tab, and it takes that flag rather than `globalAdminOnly` for the same
+  // reason the two above it did: `EscalationProfilesService` gates every route
+  // on `canManageNotificationChannel`, so an `organization_admin` administers
+  // its own profiles and would not meet a 403. A profile binds channels, so the
+  // two screens must be reachable by exactly the same set of roles — one of
+  // them hidden would leave a ladder pointing at channels its owner cannot see.
+  { label: "Escalation", path: "/admin/escalation-profiles", notificationAdmin: true },
 ] as const;
 
 /** Returns tabs visible for the given role. */

@@ -65,6 +65,16 @@ export type RuleDraftPayload = {
   severity?: AutomationRuleSeverity | null;
   condition: AutomationRuleCondition;
   action: AutomationRuleAction;
+  /**
+   * Seconds an alarm must stay clear before it self-clears (`F3.10`, `D16`).
+   * Nullable: `null` means "the 120 s default", applied where the value is
+   * consumed, not on this write path.
+   *
+   * **Optional because the server treats an absent field as "keep what is
+   * stored" on update.** `mergeRuleDraft` preserves an *absent* key but an
+   * explicit `undefined` would clear it, so omit rather than unset.
+   */
+  clearHoldSeconds?: number | null;
 };
 
 /** GET /api/v1/rules */

@@ -70,7 +70,9 @@ export class DashboardService {
           WHERE latest.kw_time > now() - interval '25 seconds'
         )::int AS fresh_asset_count,
         COALESCE(SUM(latest.kw), 0)::float8 AS total_kw,
-        COUNT(DISTINCT al.id) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarms,
+        -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
+        -- An acknowledged alarm is still open; acknowledgement only annotates it.
+        COUNT(DISTINCT al.id) FILTER (WHERE al.cleared_at IS NULL)::int AS open_alarms,
         COUNT(DISTINCT al.id) FILTER (
           -- ADR 0032: matched on TONE, not on a severity code. tone is the closed
           -- half of that ADR (bounded by alarm_severities_tone_check) while the code
@@ -79,7 +81,7 @@ export class DashboardService {
           -- the literal 'critical' made that promise false, which the compliance
           -- review caught after F4.46 fixed only the 'major' half of this same file
           -- (AGENTS.md 4.4: fix the class, not the instance).
-          WHERE al.acknowledged_at IS NULL
+          WHERE al.cleared_at IS NULL
             AND al.severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')
         )::int AS critical_alarms
       FROM bms.locations l
@@ -267,11 +269,12 @@ export class DashboardService {
       alarm_rollup AS (
         SELECT
           al.asset_id,
-          COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarm_count,
+          -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
+          COUNT(*) FILTER (WHERE al.cleared_at IS NULL)::int AS open_alarm_count,
           COUNT(*) FILTER (
             -- ADR 0032: by tone, so a newly seeded level rolls up. See the note
             -- on the KPI query above.
-            WHERE al.acknowledged_at IS NULL
+            WHERE al.cleared_at IS NULL
               AND al.severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')
           )::int AS critical_alarm_count,
           -- F4.46: this read IN ('warning', 'major'). 'major' is the mockup's
@@ -291,17 +294,17 @@ export class DashboardService {
           -- can. If the unknown case ever needs to be visible here, it wants
           -- its own unrecognised_alarm_count, not a wider WHERE.
           COUNT(*) FILTER (
-            WHERE al.acknowledged_at IS NULL
+            WHERE al.cleared_at IS NULL
               AND al.severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'warning')
           )::int AS warning_alarm_count,
           (ARRAY_AGG(al.severity ORDER BY al.raised_at DESC) FILTER (
-            WHERE al.acknowledged_at IS NULL
+            WHERE al.cleared_at IS NULL
           ))[1] AS latest_alarm_severity,
           (ARRAY_AGG(al.message ORDER BY al.raised_at DESC) FILTER (
-            WHERE al.acknowledged_at IS NULL
+            WHERE al.cleared_at IS NULL
           ))[1] AS latest_alarm_message,
           (ARRAY_AGG(al.raised_at ORDER BY al.raised_at DESC) FILTER (
-            WHERE al.acknowledged_at IS NULL
+            WHERE al.cleared_at IS NULL
           ))[1] AS latest_alarm_raised_at
         FROM bms.alarms al
         INNER JOIN scoped_assets sa ON sa.id = al.asset_id
@@ -471,8 +474,9 @@ export class DashboardService {
           JOIN asset_sites s ON s.id = k.asset_id
           WHERE k.kw_time > now() - interval '20 seconds') AS sites_online,
         (SELECT COUNT(DISTINCT site_name)::int FROM asset_sites) AS sites_total,
-        (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE acknowledged_at IS NULL) AS alarms_open,
-        (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE acknowledged_at IS NULL AND severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')) AS alarms_critical
+        -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
+        (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE cleared_at IS NULL) AS alarms_open,
+        (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE cleared_at IS NULL AND severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')) AS alarms_critical
     `,
       [assetIds ?? null],
     );

@@ -6,6 +6,7 @@ import {
   mergeRuleDraft,
   ruleBodyFromRow,
 } from "./rule-mapping";
+import { ruleDraftBodySchema } from "./rules.schema";
 import type { RuleRow } from "./rules.types";
 
 function assert(condition: boolean, message: string): void {
@@ -48,6 +49,11 @@ export function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
     operator: "gt",
     thresholdValue: 100,
     severity: "warning",
+    // `F3.10`. Non-null on purpose, so the "an absent key keeps the value"
+    // cases below can tell a preserved value from a substituted default — the
+    // distinction `F4.46` lost on severity. The null direction is covered by
+    // its own overridden fixtures.
+    clearHoldSeconds: 300,
     condition: { window: "latest", unit: "kW" },
     action: { type: "notify", target: "Operations" },
     lastEvaluatedAt: null,
@@ -141,6 +147,14 @@ function testMapRuleRow(): void {
   assert(item.id === "rule-1", "the id survives");
   assert(item.assetCode === "ASSET-1", "the joined asset code survives");
 
+  // `F3.10` — the hold reaches the response as the stored number, and a row
+  // that has none reports `null` rather than the consumer's 120 s default.
+  assert(item.clearHoldSeconds === 300, "the stored clear hold reaches the response");
+  assert(
+    mapRuleRow(ruleRow({ clearHoldSeconds: null })).clearHoldSeconds === null,
+    "a rule with no clear hold reports null, not the default",
+  );
+
   // Dates cross the wire as ISO strings, and nullable dates stay null rather
   // than becoming the epoch.
   assert(item.createdAt === CREATED.toISOString(), "createdAt is ISO");
@@ -165,6 +179,16 @@ function testRuleBodyFromRow(): void {
   const body = ruleBodyFromRow(ruleRow());
   assert(body.code === "RULE-1", "the code round-trips");
   assert(body.thresholdValue === 100, "the threshold round-trips");
+  assert(body.clearHoldSeconds === 300, "the clear hold round-trips");
+
+  // `F3.10` / D16 — the body is what `mergeRuleDraft` folds a PATCH over, so a
+  // stored null must arrive as `null` and not as an absent key: an absent key
+  // would be indistinguishable from "leave it alone" one call later.
+  const noHold = ruleBodyFromRow(ruleRow({ clearHoldSeconds: null }));
+  assert(
+    noHold.clearHoldSeconds === null,
+    `a null clear hold round-trips as null, got ${String(noHold.clearHoldSeconds)}`,
+  );
 
   // The jsonb columns are narrowed on the way into the body, not passed raw —
   // a draft body is what re-validation runs against.
@@ -190,6 +214,7 @@ function testMergeRuleDraft(): void {
   assert(untouched.thresholdValue === 100, "an absent threshold keeps the value");
   assert(untouched.assetId === "asset-1", "an absent assetId keeps the value");
   assert(untouched.severity === "warning", "an absent severity keeps the value");
+  assert(untouched.clearHoldSeconds === 300, "an absent clear hold keeps the value");
 
   // `F4.46`. The three checks above all run over a row whose severity is
   // `"warning"`, so neither direction of the defect could show here: the value
@@ -203,6 +228,16 @@ function testMergeRuleDraft(): void {
     `an absent severity over a null row must stay null, got ${String(noSeverity.severity)}`,
   );
 
+  // `F3.10` / D16 — the same trap at the same door, one column over. `null`
+  // means "the 120 s default", so a merge that quietly turned it into `120`
+  // would freeze today's default into the row and make a later change to
+  // `DEFAULT_CLEAR_HOLD_SECONDS` skip every rule ever saved.
+  const noHold = mergeRuleDraft(ruleRow({ clearHoldSeconds: null }), {});
+  assert(
+    noHold.clearHoldSeconds === null,
+    `an absent clear hold over a null row must stay null, got ${String(noHold.clearHoldSeconds)}`,
+  );
+
   // An explicit null CLEARS it. This is the distinction a plain spread loses,
   // and the reason the per-field checks exist.
   const cleared = mergeRuleDraft(row, {
@@ -212,6 +247,7 @@ function testMergeRuleDraft(): void {
     pointKey: null,
     operator: null,
     severity: null,
+    clearHoldSeconds: null,
   });
   assert(cleared.description === null, "an explicit null clears the description");
   assert(cleared.thresholdValue === null, "an explicit null clears the threshold");
@@ -219,17 +255,81 @@ function testMergeRuleDraft(): void {
   assert(cleared.pointKey === null, "an explicit null clears the point key");
   assert(cleared.operator === null, "an explicit null clears the operator");
   assert(cleared.severity === null, "an explicit null clears the severity");
+  assert(cleared.clearHoldSeconds === null, "an explicit null clears the clear hold");
 
   // A supplied value wins.
-  const updated = mergeRuleDraft(row, { name: "Renamed", thresholdValue: 250 });
+  const updated = mergeRuleDraft(row, {
+    name: "Renamed",
+    thresholdValue: 250,
+    clearHoldSeconds: 45,
+  });
   assert(updated.name === "Renamed", "a supplied name wins");
   assert(updated.thresholdValue === 250, "a supplied threshold wins");
+  assert(updated.clearHoldSeconds === 45, "a supplied clear hold wins");
   assert(updated.code === "RULE-1", "an untouched field is preserved alongside");
 
   // Zero and empty string are values, not absences — a truthiness check here
   // would silently restore the stored value instead of applying the update.
   const zeroed = mergeRuleDraft(row, { thresholdValue: 0 });
   assert(zeroed.thresholdValue === 0, "zero is an update, not an absence");
+}
+
+/**
+ * `F3.10` ruling Q2 — the bound on `clearHoldSeconds`, asserted here because
+ * `ruleDraftBodySchema` has no behavioural spec of its own today: the OpenAPI
+ * ledger walks its *shape* and nothing exercises its parsing.
+ *
+ * `ruleUpdateBodySchema` and `rulePreviewBodySchema` are derived from this
+ * schema (`.partial().extend(...)` and `.extend(...)`), so they inherit the
+ * field and its bound; restating the matrix over all three would assert Zod's
+ * own derivation rather than this rule.
+ */
+function testClearHoldSecondsSchema(): void {
+  const draft = (clearHoldSeconds?: unknown): Record<string, unknown> => ({
+    name: "Feeder overload",
+    ruleType: "threshold",
+    assetId: "11111111-1111-1111-1111-111111111111",
+    pointKey: "kw",
+    operator: "gt",
+    thresholdValue: 100,
+    condition: { window: "latest" },
+    action: { type: "notify", target: "Operations" },
+    ...(clearHoldSeconds === undefined ? {} : { clearHoldSeconds }),
+  });
+
+  const parse = (value?: unknown) => ruleDraftBodySchema.safeParse(draft(value));
+
+  // A form posts strings; `z.coerce` is what spares the SPA a parseInt.
+  const coerced = parse("45");
+  assert(
+    coerced.success && coerced.data.clearHoldSeconds === 45,
+    "a numeric string clear hold coerces to a number",
+  );
+
+  assert(parse(1).success, "one second is the lower bound, inclusive");
+  assert(parse(86_400).success, "twenty-four hours is the upper bound, inclusive");
+
+  // `0` would make "hold" meaningless — an alarm would clear on the first
+  // non-matching sample, which is the debounce this column exists to prevent.
+  assert(!parse(0).success, "zero seconds is refused");
+  assert(!parse(-1).success, "a negative clear hold is refused");
+  assert(!parse(86_401).success, "more than twenty-four hours is refused");
+  // The column is `integer`; without `.int()` a fractional value would reach
+  // Postgres and be rounded there rather than refused here.
+  assert(!parse(1.5).success, "a fractional clear hold is refused");
+
+  // Both spellings of "the default": absent on a create, explicit `null` on a
+  // clear. Neither is turned into a number on this path (D16).
+  const omitted = parse();
+  assert(
+    omitted.success && omitted.data.clearHoldSeconds === undefined,
+    "an omitted clear hold stays absent",
+  );
+  const explicitNull = parse(null);
+  assert(
+    explicitNull.success && explicitNull.data.clearHoldSeconds === null,
+    "an explicit null clear hold is accepted and stays null",
+  );
 }
 
 /** Assertions for the pure row/DTO mapping layer (ADR 0014, §4.6). */
@@ -240,4 +340,5 @@ export function runRuleMappingTests(): void {
   testMapRuleRow();
   testRuleBodyFromRow();
   testMergeRuleDraft();
+  testClearHoldSecondsSchema();
 }

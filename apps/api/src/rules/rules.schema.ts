@@ -94,6 +94,11 @@ export const ruleDraftBodySchema = z
     operator: operatorSchema.nullable().optional(),
     thresholdValue: z.coerce.number().finite().nullable().optional(),
     severity: severitySchema.nullable().optional(),
+    // `F3.10` ruling Q2 — one second to twenty-four hours. `0` is refused
+    // because a zero hold is no hold at all, and `null` already means "the
+    // default", which is applied where the value is consumed rather than
+    // substituted here (see `rule-mapping.ts`).
+    clearHoldSeconds: z.coerce.number().int().min(1).max(86_400).nullable().optional(),
     condition: z.union([latestConditionSchema, timeWindowConditionSchema]),
     action: actionSchema,
   })

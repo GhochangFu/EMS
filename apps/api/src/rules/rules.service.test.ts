@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
-import { runRuleCodeUniquenessTests, runRuleSeverityRoundTripTests } from "./rules.service.spec";
+import {
+  runDuplicateRuleCopiesClearHoldTests,
+  runRuleCodeUniquenessTests,
+  runRuleSeverityRoundTripTests,
+} from "./rules.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("rules.service", () => {
@@ -12,5 +16,9 @@ describe("rules.service", () => {
   // code-uniqueness failure reported under the severity test's name).
   it("scopes the code-uniqueness check to organizationId, and skips it when null", async () => {
     await runRuleCodeUniquenessTests();
+  });
+
+  it("copies the clear hold onto a duplicated rule, null included (F3.10)", async () => {
+    await runDuplicateRuleCopiesClearHoldTests();
   });
 });

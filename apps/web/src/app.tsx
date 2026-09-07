@@ -37,6 +37,7 @@ import { AssetsAdminPage } from "./pages/admin/assets-page";
 import { LocationsAdminPage } from "./pages/admin/locations-page";
 import { ManualReadingsPage } from "./pages/admin/manual-readings-page";
 import { OrganizationsAdminPage } from "./pages/admin/organizations-page";
+import { EscalationProfilesPage } from "./pages/admin/escalation-profiles-page";
 import { NotificationChannelsPage } from "./pages/admin/notification-channels-page";
 import { NotificationDeliveriesPage } from "./pages/admin/notification-deliveries-page";
 import { OnboardingChatPage } from "./pages/admin/onboarding-chat-page";
@@ -400,6 +401,24 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user} requireNotificationAdmin>
               <NotificationDeliveriesPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* `F3.10` (ADR 0057 decision 11). Gated exactly as the two `F3.8`
+          screens beside it: `EscalationProfilesService` runs on
+          `canManageNotificationChannel` (plan ruling Q6), so a `location_admin`
+          reaching this URL would get an empty list that reads as "no profiles"
+          rather than as a refusal. `tests/e7.1d-notification-route-gate.test.ts`
+          is what keeps the prop here. */}
+      <Route
+        path="/admin/escalation-profiles"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user} requireNotificationAdmin>
+              <EscalationProfilesPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

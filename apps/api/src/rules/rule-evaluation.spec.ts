@@ -42,6 +42,8 @@ function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
     operator: "gt",
     thresholdValue: 100,
     severity: "warning",
+    // `F3.10` — the lifecycle sweep reads it; evaluation does not.
+    clearHoldSeconds: null,
     condition: { window: "latest" },
     action: { type: "trace_only", target: "Operations" },
     lastEvaluatedAt: null,

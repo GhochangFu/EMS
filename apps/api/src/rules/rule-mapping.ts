@@ -11,7 +11,7 @@ import type {
 } from "@bms/shared";
 
 import type { RuleDraftBody, RuleUpdateBody } from "./rules.schema";
-import type { RuleRow } from "./rules.types";
+import type { RuleDraftValues, RuleRow } from "./rules.types";
 
 /**
  * Pure coercion between the `automation_rules` row shape, the wire DTOs, and
@@ -98,6 +98,7 @@ export function mapRuleRow(row: RuleRow): RuleListItem {
     operator: row.operator as AutomationRuleOperator | null,
     thresholdValue: row.thresholdValue,
     severity: row.severity,
+    clearHoldSeconds: row.clearHoldSeconds,
     lifecycleStatus: row.lifecycleStatus as AutomationRuleLifecycleStatus,
     condition: asCondition(row.condition),
     action: asAction(row.action),
@@ -150,6 +151,25 @@ export function ruleBodyFromRow(row: RuleRow): RuleDraftBody {
     // at compile time. This compiled only because `AutomationRuleSeverity`
     // became `string`, so nothing errored on a cast that had quietly gone false.
     severity: row.severity as AutomationRuleSeverity | null,
+    // `F3.10` / ADR 0057 decision 3, and the whole of `F4.46`'s lesson applied
+    // one column over: `clearHoldSeconds` is nullable everywhere and `null`
+    // MEANS "the default" — it is not a missing value waiting to be filled in.
+    //
+    // **No default is substituted anywhere on the write path.** Not here, not
+    // in `mergeRuleDraft` below, and not in `draftValuesFromDto` below it,
+    // which is where `validateRuleDraft` (`rules.service.ts`) now builds both
+    // of its branches and carries the value through as
+    // `dto.clearHoldSeconds ?? null` — a `?? DEFAULT_CLEAR_HOLD_SECONDS` in any
+    // of those three places would mean that saving an unrelated field froze
+    // today's default into the row, and a later change to the default would
+    // then skip every rule ever saved. That is exactly how a downgraded
+    // severity used to be written back.
+    //
+    // The one default lives where the value is CONSUMED —
+    // `DEFAULT_CLEAR_HOLD_SECONDS` in `alarms/alarm-lifecycle.ts`, applied by
+    // the sweep when it decides whether the hold has elapsed — precisely as
+    // `defaultAlarmSeverity` is the single default for a null severity.
+    clearHoldSeconds: row.clearHoldSeconds,
     condition: asCondition(row.condition),
     action: asAction(row.action),
   };
@@ -174,7 +194,67 @@ export function mergeRuleDraft(row: RuleRow, dto: RuleUpdateBody): RuleDraftBody
     thresholdValue:
       dto.thresholdValue === undefined ? current.thresholdValue : dto.thresholdValue,
     severity: dto.severity === undefined ? current.severity : dto.severity,
+    clearHoldSeconds:
+      dto.clearHoldSeconds === undefined ? current.clearHoldSeconds : dto.clearHoldSeconds,
     condition: dto.condition === undefined ? current.condition : dto.condition,
     action: dto.action === undefined ? current.action : dto.action,
+  };
+}
+
+/**
+ * Builds the validated draft values that `RulesService.validateRuleDraft`
+ * returns, once its threshold and time-window branches have each decided the
+ * four fields they disagree on.
+ *
+ * **Why it lives here.** It is pure coercion from a wire DTO to a row shape —
+ * no database, no clock — which is this module's whole remit (D16), and
+ * `rules.service.ts` sits at the AGENTS.md §4.5 1000-line cap that the
+ * pre-commit hook measures whole-file. `rule-reads.ts`, `rule-codes.ts` and
+ * `rule-audit.ts` were split off that same file for the same two reasons.
+ *
+ * **Why `branch` is a parameter** rather than something derived from
+ * `dto.ruleType` in here: the threshold path reaches its return only after
+ * throwing on a missing asset, point, operator or threshold, and that narrowing
+ * — the part that turns `undefined` into `null | string` — exists only at the
+ * call site. Re-deriving it here would need casts that assert what the caller
+ * has already proved.
+ *
+ * No default is substituted for `severity` or `clearHoldSeconds`; see
+ * {@link ruleBodyFromRow} for why both nulls have to survive the write path.
+ */
+export function draftValuesFromDto(
+  dto: RuleDraftBody,
+  code: string | undefined,
+  branch: Pick<RuleDraftValues, "assetId" | "pointKey" | "operator" | "thresholdValue">,
+): RuleDraftValues {
+  return {
+    code,
+    name: dto.name.trim(),
+    description: dto.description?.trim() || null,
+    category: dto.category,
+    ruleType: dto.ruleType,
+    ...branch,
+    // `F4.46`. No default here, on purpose. `severity` is nullable in the
+    // schema and every other layer round-trips the null, so substituting one on
+    // this path meant an update that merely omitted the field overwrote a
+    // stored null — `updateRule` funnels through here after `mergeRuleDraft`
+    // has carefully preserved it.
+    //
+    // The `NOT NULL` that a default exists to satisfy is `alarms.severity`, and
+    // that boundary already has its own: `defaultAlarmSeverity`
+    // (`alarm-severity-default.ts:21`) maps a null rule to `"warning"` when
+    // `AlarmRaiser` raises it. One default, at the edge that needs it.
+    //
+    // The time-window branch defended nothing even in principle: the alarm
+    // engine's cache query filters to `ruleType = "threshold"`
+    // (`alarm-engine.service.ts:81`), and `shouldRaise` (F3.6,
+    // `alarm-raise.service.ts`) makes the same exclusion explicit for the
+    // on-demand evaluator, so a time-window rule never reaches either engine to
+    // need a severity. The seed agrees — `weekday_energy_review` is the only
+    // time-window rule and the only row with no severity.
+    severity: dto.severity ?? null,
+    clearHoldSeconds: dto.clearHoldSeconds ?? null,
+    condition: dto.condition,
+    action: dto.action,
   };
 }

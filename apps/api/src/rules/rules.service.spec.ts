@@ -12,7 +12,7 @@ import { mergeRuleDraft } from "./rule-mapping";
 import { ruleRow } from "./rule-mapping.spec";
 import { RulesService } from "./rules.service";
 import type { RuleDraftBody } from "./rules.schema";
-import type { RuleDraftValues } from "./rules.types";
+import type { RuleDraftValues, RuleRow } from "./rules.types";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -239,6 +239,25 @@ async function runComposedUpdateTest(): Promise<void> {
     merged.severity === null,
     `an update that never mentions severity must leave a null one alone, got ${String(merged.severity)}`,
   );
+
+  assert(
+    merged.clearHoldSeconds === 300,
+    `a stored clear hold must survive an update that never mentions it, got ${String(merged.clearHoldSeconds)}`,
+  );
+
+  // `F3.10` — the same seam, one column over. `clearHoldSeconds` is nullable
+  // for the same reason severity is (null means "the default, applied where
+  // the value is consumed"), so the composed path has to preserve it too.
+  // Neither `rule-mapping.spec.ts` nor the validator cases above see this
+  // pair; that is what let `F4.46` live.
+  const hold = ruleRow({ clearHoldSeconds: null });
+  const mergedHold = await validator([
+    { code: hold.assetCode, domain: hold.assetDomain },
+  ]).validateRuleDraft(mergeRuleDraft(hold, {}), undefined, null);
+  assert(
+    mergedHold.clearHoldSeconds === null,
+    `an update that never mentions the clear hold must leave a null one alone, got ${String(mergedHold.clearHoldSeconds)}`,
+  );
 }
 
 /**
@@ -286,5 +305,134 @@ export async function runRuleCodeUniquenessTests(): Promise<void> {
   assert(
     skipped.code === "DUP-CODE",
     `organizationId: null must skip the uniqueness check entirely, got code=${String(skipped.code)}`,
+  );
+}
+
+type ReadChain = {
+  from: () => ReadChain;
+  leftJoin: () => ReadChain;
+  where: () => ReadChain;
+  orderBy: () => ReadChain;
+  limit: () => ReadChain;
+  then: (resolve: (rows: unknown[]) => void) => void;
+};
+
+/**
+ * The read stand-in for {@link duplicatedValues} below. Like {@link selectChain}
+ * it answers every Drizzle builder call with itself, but it discriminates on
+ * `.leftJoin()`, because `duplicateRule` drives four reads that need two
+ * different answers.
+ *
+ * The two that must resolve to the rule join the asset: `selectRuleRows`
+ * (behind `getRuleRow`) and `selectRuleRowById` (the E7.1c read-back, which
+ * 404s on an empty answer). The two that must resolve to nothing do not join:
+ * `nextRuleCode`'s collision probe, which throws after a hundred taken
+ * candidates, and `resolveActorId`'s `bms.users` lookup, where an unresolved
+ * actor is a legitimate null rather than a failure.
+ */
+function ruleReadChain(row: RuleRow): ReadChain {
+  let joined = false;
+  const chain: ReadChain = {
+    from: () => chain,
+    leftJoin: () => {
+      joined = true;
+      return chain;
+    },
+    where: () => chain,
+    orderBy: () => chain,
+    limit: () => chain,
+    then: (resolve) => resolve(joined ? [row] : []),
+  };
+  return chain;
+}
+
+/**
+ * `.values()` has to be both awaitable and chainable: `insertRuleAuditLog`
+ * awaits it bare, while the rule insert calls `.returning()` on it.
+ */
+type InsertResult = {
+  returning: () => Promise<{ id: string }[]>;
+  then: (resolve: (rows: unknown[]) => void) => void;
+};
+
+/** Runs the real `duplicateRule` and hands back the values it inserted. */
+async function duplicatedValues(row: RuleRow): Promise<Record<string, unknown>> {
+  const inserts: Record<string, unknown>[] = [];
+  const tx = {
+    // `withTenant`'s `set_config` — the fake has no GUC to set.
+    execute: () => Promise.resolve(undefined),
+    select: () => ruleReadChain(row),
+    insert: () => ({
+      values: (values: Record<string, unknown>): InsertResult => {
+        inserts.push(values);
+        return {
+          returning: () => Promise.resolve([{ id: "copy-1" }]),
+          then: (resolve) => resolve([]),
+        };
+      },
+    }),
+  };
+  // One fake for both pools, as `validator` above does: `duplicateRule` reads
+  // the source row and the actor on `fleetDb` and writes on the tenant handle,
+  // and the chain discriminator, not the pool, decides what each read answers.
+  const db = {
+    transaction: (fn: (handle: unknown) => Promise<unknown>) => fn(tx),
+    select: () => ruleReadChain(row),
+  } as unknown as BmsDb;
+  const vocabularies = {
+    assertRuleCategory: async () => undefined,
+    assertAlarmSeverity: async () => undefined,
+  } as unknown as VocabulariesService;
+  const alarmRaiser = {} as unknown as AlarmRaiser;
+  const notifications = {
+    dispatch: () => Promise.resolve([]),
+  } as unknown as NotificationsService;
+
+  const service = new RulesService(db, db, vocabularies, alarmRaiser, notifications);
+  await service.duplicateRule(row.id, {}, {
+    sub: "00000000-0000-4000-8000-0000000000d1",
+    email: "duplicator@bms.local",
+  });
+
+  // Two inserts run: the rule copy and its audit row. The copy is the one
+  // carrying `duplicatedFromRuleId`, which the audit entry never has.
+  const copy = inserts.find((values) => "duplicatedFromRuleId" in values);
+  if (!copy) {
+    throw new Error("duplicateRule inserted no automation_rules row");
+  }
+  return copy;
+}
+
+/**
+ * `F3.10` — the duplicate carries the source rule's clear hold.
+ *
+ * `duplicateRule` is the one write path that never reaches `validateRuleDraft`.
+ * It enumerates the columns it copies inline, so a column added to
+ * `automation_rules` is copied only if someone adds it to that list by hand —
+ * and `clearHoldSeconds` was not on it. `clear_hold_seconds` is nullable with
+ * no database default (`alarms-schema.ts:216`) and `null` MEANS "the default",
+ * so the omission was silent: the copy stored null and the lifecycle sweep then
+ * applied `DEFAULT_CLEAR_HOLD_SECONDS` to a rule whose operator had chosen 300.
+ *
+ * The assertion is on the object handed to `.values()`, because that is exactly
+ * where the defect lived — the insert never carried the key at all. The
+ * real-Postgres proof would belong in `rules.service.rls.integration.spec.ts`,
+ * which has no `duplicateRule` case of any kind; that gap is reported rather
+ * than filled here.
+ */
+export async function runDuplicateRuleCopiesClearHoldTests(): Promise<void> {
+  const withHold = await duplicatedValues(ruleRow());
+  assert(
+    withHold.clearHoldSeconds === 300,
+    `a duplicated rule must copy the stored clear hold, got ${String(withHold.clearHoldSeconds)}`,
+  );
+
+  // `=== null`, not a falsy or `== null` check. An ABSENT key is the whole
+  // defect and `undefined` would satisfy either of those, so only strict
+  // equality tells "copied a null" apart from "never copied the column".
+  const withoutHold = await duplicatedValues(ruleRow({ clearHoldSeconds: null }));
+  assert(
+    withoutHold.clearHoldSeconds === null,
+    `a null clear hold must be copied as null, got ${String(withoutHold.clearHoldSeconds)}`,
   );
 }

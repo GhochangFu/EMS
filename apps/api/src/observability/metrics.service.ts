@@ -205,8 +205,9 @@ export class MetricsService {
     this.telemetryReadings.inc(count);
   }
 
-  /** Records alarm event emission by alarm event type. */
-  countAlarmEvent(type: "created" | "acknowledged"): void {
+  /** Records alarm event emission by alarm event type. `"cleared"` is the
+   * `F3.10` lifecycle sweep's arm (ADR 0057 decision 1). */
+  countAlarmEvent(type: "created" | "acknowledged" | "cleared"): void {
     this.alarmEvents.labels(type).inc();
   }
 

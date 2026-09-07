@@ -73,8 +73,10 @@ export class MapService {
       critical_alarms: string;
     }>(
       `SELECT a.location_id,
-              COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL)::int AS open_alarms,
-              COUNT(*) FILTER (WHERE al.acknowledged_at IS NULL AND al.severity = 'critical')::int AS critical_alarms
+              -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
+              -- An acknowledged alarm is still active; acknowledgement only annotates it.
+              COUNT(*) FILTER (WHERE al.cleared_at IS NULL)::int AS open_alarms,
+              COUNT(*) FILTER (WHERE al.cleared_at IS NULL AND al.severity = 'critical')::int AS critical_alarms
        FROM bms.alarms al
        INNER JOIN bms.assets a ON a.id = al.asset_id
        WHERE a.location_id IS NOT NULL

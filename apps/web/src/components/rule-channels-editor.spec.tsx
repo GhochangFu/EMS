@@ -327,6 +327,7 @@ const notifyRule: RuleListItem = {
   operator: "gte",
   thresholdValue: 12,
   severity: "warning",
+  clearHoldSeconds: null,
   lifecycleStatus: "published",
   condition: { window: "latest" },
   action: { type: "notify", target: "Operations" },

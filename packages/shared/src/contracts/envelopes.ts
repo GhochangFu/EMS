@@ -60,6 +60,7 @@ import {
   notificationReadinessDtoSchema,
   notificationTestResultSchema,
 } from "./notifications";
+import { escalationDefaultDtoSchema, escalationProfileDtoSchema } from "./escalation";
 
 /** `{ items: T[] }` — the shape every master-data list route returns. */
 const itemsOf = <S extends z.ZodTypeAny>(item: S) => z.object({ items: z.array(item) });
@@ -387,4 +388,19 @@ export const notificationChannelDeletedResponseSchema = z.object({
  */
 export const ruleNotificationsResponseSchema = z.object({
   channelIds: z.array(z.string()),
+});
+
+/**
+ * Alarm escalation profile administration (`F3.10`, ADR 0057 decision 7 / D8).
+ *
+ * `escalationProfileDeletedResponseSchema` follows
+ * `notificationChannelDeletedResponseSchema` above — the route deletes the
+ * profile or throws, so it has no `false` to return.
+ */
+export const escalationProfilesListResponseSchema = itemsOf(escalationProfileDtoSchema);
+export const escalationProfileResponseSchema = escalationProfileDtoSchema;
+export const escalationProfileDeletedResponseSchema = z.object({ deleted: z.literal(true) });
+export const escalationDefaultsResponseSchema = z.object({
+  organizationId: z.string(),
+  items: z.array(escalationDefaultDtoSchema),
 });

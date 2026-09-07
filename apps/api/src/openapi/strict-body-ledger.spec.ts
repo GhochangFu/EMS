@@ -77,6 +77,12 @@ import {
   updateMaintenanceScheduleBodySchema,
 } from "../maintenance/maintenance.schema";
 import {
+  createEscalationProfileBodySchema,
+  escalationDefaultsQuerySchema,
+  setEscalationDefaultsBodySchema,
+  updateEscalationProfileBodySchema,
+} from "../notifications/escalation-profiles.schema";
+import {
   createNotificationChannelBodySchema,
   listDeliveriesQuerySchema,
   setRuleNotificationsBodySchema,
@@ -197,6 +203,12 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   importStockTemplateBodySchema,
   instantiateSectionTemplateBodySchema,
   updateDashboardTemplateBodySchema,
+  // `F3.10` (ADR 0057 decision 7). All three are `.strict()` at every node,
+  // and the nested ones say so themselves — `.strict()` does not descend, so
+  // the step object and the severity-map item carry their own.
+  createEscalationProfileBodySchema,
+  setEscalationDefaultsBodySchema,
+  updateEscalationProfileBodySchema,
   // `F3.40`. Both are `.strict()`, and the decision is the same one
   // `createPointKeyBodySchema` records for the sibling global vocabulary: a
   // caller sending a field this table does not have — `organizationId`, the
@@ -286,6 +298,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   auditExportQuerySchema,
   auditListQuerySchema,
   energyReportQuerySchema,
+  escalationDefaultsQuerySchema,
   getDashboardQuerySchema,
   listDashboardsQuerySchema,
   listDeliveriesQuerySchema,
@@ -729,6 +742,22 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // `.strict()`). Widened deliberately, and said so, per this assertion's own
   // instruction.
   //
+  // 14 -> 15: `F2.7` (ADR 0056 decision 6) registered `mappingSheetQuerySchema`,
+  // the single `locationId` the three mapping-sheet routes take. Widened
+  // deliberately and said so, per this assertion's own instruction: the route
+  // it is registered against is `GET .../mapping-sheet.xlsx`, which returns a
+  // workbook and has no request body at all, and its two siblings carry the
+  // uploaded sheet as a multipart `file` part rather than as JSON. It is
+  // `.strict()` anyway.
+  //
+  // 15 -> 16: `F3.10` registered `escalationDefaultsQuerySchema`
+  // (`GET /admin/escalation-defaults`, ADR 0057 decision 7). One optional
+  // `organizationId` filter and no request body at all, so there is no
+  // body strictness being dodged here — the three bodies that row adds are all
+  // in `BODY_SCHEMAS` above with a decision each. Registered rather than
+  // skipped for the `F4.20` reason the entries above give: the parameter that
+  // picks the organization must be discoverable from the served document.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -738,14 +767,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-    // 14 -> 15: `F2.7` (ADR 0056 decision 6) registered `mappingSheetQuerySchema`,
-    // the single `locationId` the three mapping-sheet routes take. Widened
-    // deliberately and said so, per this assertion's own instruction: the route
-    // it is registered against is `GET .../mapping-sheet.xlsx`, which returns a
-    // workbook and has no request body at all, and its two siblings carry the
-    // uploaded sheet as a multipart `file` part rather than as JSON. It is
-    // `.strict()` anyway.
-  ).toBe(15);
+  ).toBe(16);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

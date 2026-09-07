@@ -71,6 +71,7 @@ const ruleRowColumns = {
   operator: automationRules.operator,
   thresholdValue: automationRules.thresholdValue,
   severity: automationRules.severity,
+  clearHoldSeconds: automationRules.clearHoldSeconds,
   condition: automationRules.condition,
   action: automationRules.action,
   lastEvaluatedAt: automationRules.lastEvaluatedAt,

@@ -28,6 +28,7 @@ const validAlarm = {
   raisedAt: "2026-08-15T10:00:00Z",
   acknowledgedAt: null,
   acknowledgedBy: null,
+  clearedAt: null,
   assetCode: "AHU-1",
   assetName: "Air Handler 1",
   siteName: "Campus",

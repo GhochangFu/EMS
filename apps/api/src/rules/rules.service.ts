@@ -43,7 +43,13 @@ import {
 } from "./rule-evaluation";
 import { insertRuleAuditLog, resolveActorId } from "./rule-audit";
 import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
-import { asTrace, mapRuleRow, mergeRuleDraft, ruleBodyFromRow } from "./rule-mapping";
+import {
+  asTrace,
+  draftValuesFromDto,
+  mapRuleRow,
+  mergeRuleDraft,
+  ruleBodyFromRow,
+} from "./rule-mapping";
 import { resolveAssetOrgOrNull, resolveWriteOrg } from "./rule-org";
 import {
   filterRuleRowsByAssetIds,
@@ -280,6 +286,7 @@ export class RulesService {
       operator: values.operator ?? null,
       thresholdValue: values.thresholdValue ?? null,
       severity: values.severity ?? null,
+      clearHoldSeconds: values.clearHoldSeconds ?? null,
       condition: values.condition,
       action: values.action,
       lastEvaluatedAt: null,
@@ -427,6 +434,12 @@ export class RulesService {
           operator: current.operator,
           thresholdValue: current.thresholdValue,
           severity: current.severity,
+          // `F3.10`. This list is enumerated, not spread, so a column added to
+          // `automation_rules` is copied only if it is added here by hand — and
+          // an omission is silent, because `clear_hold_seconds` is nullable and
+          // a null means "the default". The copy used to drop a chosen 300 s
+          // hold back to `DEFAULT_CLEAR_HOLD_SECONDS`.
+          clearHoldSeconds: current.clearHoldSeconds,
           condition: current.condition,
           action: current.action,
           lifecycleStatus: "draft",
@@ -882,58 +895,27 @@ export class RulesService {
       if (!("window" in dto.condition) || dto.condition.window !== "latest") {
         throw new BadRequestException("Threshold rules must use the latest-value window");
       }
-      return {
-        code,
-        name: dto.name.trim(),
-        description: dto.description?.trim() || null,
-        category: dto.category,
-        ruleType: dto.ruleType,
+      // The four fields the branches disagree on are passed in, not derived:
+      // the throws above are what narrow them away from `undefined`, and that
+      // narrowing exists only here. `draftValuesFromDto` owns the rest.
+      return draftValuesFromDto(dto, code, {
         assetId: dto.assetId,
         pointKey: dto.pointKey,
         operator: dto.operator,
         thresholdValue: dto.thresholdValue,
-        // `F4.46`. No default here, on purpose. `severity` is nullable in the
-        // schema and every other layer round-trips the null, so substituting
-        // one on this path meant an update that merely omitted the field
-        // overwrote a stored null — `updateRule` funnels through here after
-        // `mergeRuleDraft` has carefully preserved it.
-        //
-        // The `NOT NULL` that a default exists to satisfy is `alarms.severity`,
-        // and that boundary already has its own: `defaultAlarmSeverity`
-        // (`alarm-severity-default.ts:21`) maps a null rule to `"warning"` when
-        // `AlarmRaiser` raises it. One default, at the edge that needs it.
-        severity: dto.severity ?? null,
-        condition: dto.condition,
-        action: dto.action,
-      };
+      });
     }
 
     if (!("days" in dto.condition)) {
       throw new BadRequestException("Time-window rules require days and start/end times");
     }
 
-    return {
-      code,
-      name: dto.name.trim(),
-      description: dto.description?.trim() || null,
-      category: dto.category,
-      ruleType: dto.ruleType,
+    return draftValuesFromDto(dto, code, {
       assetId: dto.assetId ?? null,
       pointKey: null,
       operator: null,
       thresholdValue: null,
-      // `F4.46`, and this one defended nothing even in principle: the alarm
-      // engine's cache query filters to `ruleType = "threshold"`
-      // (`alarm-engine.service.ts:81`), so a time-window rule never reaches the
-      // code that requires a severity. `shouldRaise` (F3.6,
-      // `alarm-raise.service.ts`) makes the same exclusion explicit for the
-      // on-demand evaluator, which has no such query to filter on. The seed
-      // agrees — `weekday_energy_review` is the only time-window rule and the
-      // only row with no severity.
-      severity: dto.severity ?? null,
-      condition: dto.condition,
-      action: dto.action,
-    };
+    });
   }
 
   private async assertCompatiblePoint(assetId: string, pointKey: string): Promise<void> {

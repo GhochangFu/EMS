@@ -101,6 +101,8 @@ export function runAssetTemplateTabTests(): void {
         // deliberately — which is what happened.
         "/admin/notification-channels",
         "/admin/notification-deliveries",
+        // `F3.10` (ADR 0057 decision 11) — the third `notificationAdmin` tab.
+        "/admin/escalation-profiles",
       ].join(" "),
     `master data tabs changed — got ${masterDataTabs.map((tab) => tab.path).join(" ")}`,
   );
@@ -119,8 +121,10 @@ export function runAssetTemplateTabTests(): void {
     // `F3.37` added Asset Groups, which is gated by neither `catalogOnly` nor
     // `notificationAdmin`, so every role that reaches this list sees it: 8 -> 9
     // and 11 -> 12. `F3.36` Part F added Dashboard Templates the same
-    // ungated way: 9 -> 10 and 12 -> 13.
-    const expected = role === "location_admin" ? 10 : 13;
+    // ungated way: 9 -> 10 and 12 -> 13. `F3.10` added Escalation as a third
+    // `notificationAdmin` tab, so 13 -> 14 for the two roles that hold that
+    // gate and `location_admin` stays at 10.
+    const expected = role === "location_admin" ? 10 : 14;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -157,6 +161,8 @@ export function runAssetTemplateTabTests(): void {
 export function runNotificationTabTests(): void {
   const CHANNELS = "/admin/notification-channels";
   const DELIVERIES = "/admin/notification-deliveries";
+  /** `F3.10`, ADR 0057 decision 11 — the same gate, for the same reason. */
+  const ESCALATION = "/admin/escalation-profiles";
 
   assert(canManageNotificationChannels("admin"), "admin may manage channels");
   assert(
@@ -175,22 +181,24 @@ export function runNotificationTabTests(): void {
     const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
     assert(paths.includes(CHANNELS), `${role} must see the Notifications tab`);
     assert(paths.includes(DELIVERIES), `${role} must see the Deliveries tab`);
+    assert(paths.includes(ESCALATION), `${role} must see the Escalation tab`);
   }
   for (const role of ["location_admin"] as const) {
     const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
     assert(!paths.includes(CHANNELS), `${role} must not see the Notifications tab`);
     assert(!paths.includes(DELIVERIES), `${role} must not see the Deliveries tab`);
+    assert(!paths.includes(ESCALATION), `${role} must not see the Escalation tab`);
   }
 
-  // The two tabs are the only `notificationAdmin` ones, and no tab is left on
+  // These three are the only `notificationAdmin` tabs, and no tab is left on
   // the old `globalAdminOnly` gate — if one is added later it must be a
   // deliberate choice between the two flags, not an inheritance from here.
   const gated = masterDataTabs
     .filter((tab) => "notificationAdmin" in tab && tab.notificationAdmin)
     .map((tab) => tab.path);
   assert(
-    gated.join(",") === `${CHANNELS},${DELIVERIES}`,
-    `only the two F3.8 tabs are notificationAdmin — got ${gated.join(",")}`,
+    gated.join(",") === `${CHANNELS},${DELIVERIES},${ESCALATION}`,
+    `only the two F3.8 tabs and F3.10's are notificationAdmin — got ${gated.join(",")}`,
   );
 }
 

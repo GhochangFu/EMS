@@ -53,6 +53,12 @@ export type RuleRow = {
   operator: string | null;
   thresholdValue: number | null;
   severity: string | null;
+  /**
+   * `F3.10` — how long the condition must read normal before the lifecycle
+   * sweep clears the alarm. `null` is the common case and means the default
+   * (`DEFAULT_CLEAR_HOLD_SECONDS`), which is applied by the sweep, not stored.
+   */
+  clearHoldSeconds: number | null;
   condition: unknown;
   action: unknown;
   lastEvaluatedAt: Date | null;
@@ -85,6 +91,7 @@ export type RuleDraftValues = {
   operator: AutomationRuleOperator | null;
   thresholdValue: number | null;
   severity: string | null;
+  clearHoldSeconds: number | null;
   condition: AutomationRuleCondition;
   action: AutomationRuleAction;
 };

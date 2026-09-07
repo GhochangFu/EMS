@@ -110,6 +110,13 @@ async function withRollback(
  * row only on a successful raise) in one pass — both share the same two-raise
  * setup, and decision 3 needs to observe the deduped second raise adding no
  * trace, not just that the first one adds exactly one.
+ *
+ * `F3.10` / ADR 0057 decision 2 extends the same fixture with the lifecycle
+ * pair, because it is the same dedupe seen from the other side: migration
+ * `0066` moved the index predicate from `acknowledged_at IS NULL` to
+ * `cleared_at IS NULL`, so acknowledging no longer frees the key. Two raises
+ * are therefore not enough — the acknowledged alarm must still refuse a raise,
+ * and only clearing it may let a new row open.
  */
 export async function assertRaisesDedupesAndTracesOnlyOnRaise(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
@@ -131,7 +138,7 @@ export async function assertRaisesDedupesAndTracesOnlyOnRaise(db: BmsDb): Promis
     const openAfterFirst = await tx
       .select({ id: alarms.id })
       .from(alarms)
-      .where(and(eq(alarms.assetId, assetId), eq(alarms.ruleId, rule.id), isNull(alarms.acknowledgedAt)));
+      .where(and(eq(alarms.assetId, assetId), eq(alarms.ruleId, rule.id), isNull(alarms.clearedAt)));
     assert(
       openAfterFirst.length === 1,
       `expected exactly 1 open alarm after the first raise, found ${openAfterFirst.length}`,
@@ -147,7 +154,7 @@ export async function assertRaisesDedupesAndTracesOnlyOnRaise(db: BmsDb): Promis
     const openAfterSecond = await tx
       .select({ id: alarms.id })
       .from(alarms)
-      .where(and(eq(alarms.assetId, assetId), eq(alarms.ruleId, rule.id), isNull(alarms.acknowledgedAt)));
+      .where(and(eq(alarms.assetId, assetId), eq(alarms.ruleId, rule.id), isNull(alarms.clearedAt)));
     assert(
       openAfterSecond.length === 1,
       `the dedupe must not have inserted a second row, found ${openAfterSecond.length}`,
@@ -163,6 +170,75 @@ export async function assertRaisesDedupesAndTracesOnlyOnRaise(db: BmsDb): Promis
         "the deduped second raise must not add a second trace",
     );
 
+    // `F3.10` / ADR 0057 decision 2, first half. Acknowledging is an annotation
+    // now, so it must NOT free the dedupe key. Before migration `0066` this
+    // third raise opened a second alarm — the behaviour the `F3.46` stack run
+    // measured (acknowledge, press *Evaluate now*, a new alarm appears).
+    await tx
+      .update(alarms)
+      .set({ acknowledgedAt: new Date() })
+      .where(eq(alarms.id, first.alarmId as string));
+
+    const afterAck = await raiser.raise(assetId, loc.organizationId, rule, 1_000_002);
+    assert(
+      !afterAck.raised,
+      "an acknowledged alarm whose condition still holds must NOT re-raise — the index " +
+        "predicate is cleared_at IS NULL since 0066, not acknowledged_at IS NULL",
+    );
+    const rowsAfterAck = await tx
+      .select({ id: alarms.id })
+      .from(alarms)
+      .where(and(eq(alarms.assetId, assetId), eq(alarms.ruleId, rule.id)));
+    assert(
+      rowsAfterAck.length === 1,
+      `the acknowledged alarm must still be the only row, found ${rowsAfterAck.length}`,
+    );
+
+    // Second half: clearing is what frees the key. A condition that breaches
+    // again after the sweep cleared the alarm opens a genuinely new row — and,
+    // being a real raise, it traces (ADR 0033 decision 3 again).
+    await tx
+      .update(alarms)
+      .set({ clearedAt: new Date() })
+      .where(eq(alarms.id, first.alarmId as string));
+
+    const afterClear = await raiser.raise(assetId, loc.organizationId, rule, 1_000_003);
+    assert(
+      afterClear.raised,
+      "once the previous alarm is cleared, the same condition must open a new alarm",
+    );
+    assert(
+      afterClear.alarmId !== null && afterClear.alarmId !== first.alarmId,
+      "the post-clear raise must be a new row, not the cleared one",
+    );
+    const rowsAfterClear = await tx
+      .select({ id: alarms.id })
+      .from(alarms)
+      .where(and(eq(alarms.assetId, assetId), eq(alarms.ruleId, rule.id)));
+    assert(
+      rowsAfterClear.length === 2,
+      `expected the cleared row plus the new one, found ${rowsAfterClear.length}`,
+    );
+    const openAfterClear = await tx
+      .select({ id: alarms.id })
+      .from(alarms)
+      .where(and(eq(alarms.assetId, assetId), eq(alarms.ruleId, rule.id), isNull(alarms.clearedAt)));
+    assert(
+      openAfterClear.length === 1,
+      `exactly one alarm may be active per (asset, rule), found ${openAfterClear.length}`,
+    );
+
+    const tracesAfterClear = await tx
+      .select({ id: ruleExecutions.id })
+      .from(ruleExecutions)
+      .where(eq(ruleExecutions.ruleId, rule.id));
+    assert(
+      tracesAfterClear.length === 2,
+      `expected 2 rule_executions rows (one per real raise), found ${tracesAfterClear.length}`,
+    );
+
+    // Every row above lives inside this transaction; the rollback restores the
+    // database, alarms, rule and traces together.
     tx.rollback();
   });
 }

@@ -61,7 +61,29 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
     this.metrics.countAlarmEvent("acknowledged");
   }
 
-  private emitScoped(alarm: AlarmListItem, type: "created" | "acknowledged"): void {
+  /**
+   * `F3.10` / ADR 0057 decision 1 (plan D7). The lifecycle sweep runs in this
+   * process, so the alarm that just stopped being active can leave by the same
+   * socket the raise arrived on; `alarms-page.tsx` invalidates on any `alarm`
+   * event, so the rail drains without a reload.
+   *
+   * No unit case asserts this method: every spec that touches `AlarmsGateway`
+   * stubs it (`{ broadcastCreated: () => undefined } as unknown as
+   * AlarmsGateway`), so nothing here is ever constructed with a fake
+   * namespace, and a stub cannot prove the scoping. `U7`'s
+   * `AlarmLifecycleService` spec asserts the call through its deps fake, and
+   * the scoping itself is `emitScoped`'s, shared with the two broadcasts above.
+   */
+  broadcastCleared(alarm: AlarmListItem): void {
+    this.emitScoped(alarm, "cleared");
+    this.metrics.countWebsocketEvent("/ws/alarms", "alarm");
+    this.metrics.countAlarmEvent("cleared");
+  }
+
+  private emitScoped(
+    alarm: AlarmListItem,
+    type: "created" | "acknowledged" | "cleared",
+  ): void {
     for (const client of this.server.sockets.values()) {
       const assetIds = client.data.assetIds as string[] | null | undefined;
       if (assetIds === null || assetIds?.includes(alarm.assetId)) {

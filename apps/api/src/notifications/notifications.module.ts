@@ -3,6 +3,11 @@ import { Module } from "@nestjs/common";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { ChannelsService } from "./channels.service";
 import { EmailTransport } from "./email.transport";
+import {
+  EscalationDefaultsController,
+  EscalationProfilesController,
+} from "./escalation-profiles.controller";
+import { EscalationProfilesService } from "./escalation-profiles.service";
 import { LogTransport } from "./log.transport";
 import { NotificationsController } from "./notifications.controller";
 import { NOTIFICATIONS_CONFIG, notificationsConfig } from "./notifications.config";
@@ -23,12 +28,25 @@ import { WebhookTransport } from "./webhook.transport";
  * Grows through U4–U7 with the two real transports, the dispatcher and the
  * controller. Registered in `app.module.ts` from this unit onward so the
  * providers are wired before anything depends on them.
+ *
+ * **`F3.10` U8 adds the escalation-profile surface and still declares no
+ * `imports`** (plan D11), which is what keeps the module edge acyclic —
+ * `alarms.module.ts:17-19` records the same constraint from the other side.
+ * The severity on `alarm_escalation_defaults` is validated by its foreign key
+ * to `bms.alarm_severities`, so no `VocabulariesModule` is needed;
+ * `AccessControlService` and the two drizzle tokens come from `@Global()`
+ * modules, exactly as `ChannelsService` already gets them.
  */
 @Module({
-  controllers: [NotificationsController],
+  controllers: [
+    NotificationsController,
+    EscalationProfilesController,
+    EscalationDefaultsController,
+  ],
   providers: [
     CredentialCryptoService,
     ChannelsService,
+    EscalationProfilesService,
     NotificationsService,
     { provide: NOTIFICATIONS_CONFIG, useValue: notificationsConfig },
     LogTransport,
