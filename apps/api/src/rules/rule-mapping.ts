@@ -81,20 +81,16 @@ export function mapRuleRow(row: RuleRow): RuleListItem {
     description: row.description,
     category: row.category as AutomationRuleCategory,
     ruleType: row.ruleType as AutomationRuleType,
-    // `phe_alarm_seed` belongs in this cast: migration 0022 writes it on 48
-    // rows and `ruleListItemSchema` declares it. Omitting it asserted a type
-    // the data has always contradicted — harmless only because a cast is not a
-    // check and the response schema accepted the real value anyway. ADR 0031
-    // makes `source = 'phe_alarm_seed'` migration 0029's filter key, so the
-    // value is load-bearing rather than incidental. `template_alarm` (ADR
-    // 0058 decision 6, `E2.4`) is written by
-    // `AssetTemplateInstantiationService` on instantiate, one row per
-    // template alarm per created asset.
-    source: row.source as
-      | "operator_rule"
-      | "simulator_threshold"
-      | "phe_alarm_seed"
-      | "template_alarm",
+    // Derived from the response contract, never restated: this cast used to
+    // list the union by hand and had already drifted once — `phe_alarm_seed`
+    // was missing, so the cast asserted a type migration 0022's 48 rows have
+    // always contradicted (harmless only because a cast is not a check and
+    // `ruleListItemSchema` accepted the real value anyway). A copied enum is a
+    // copy that drifts (§4.8). `template_alarm` (ADR 0058 decision 6, `E2.4`),
+    // written by `AssetTemplateInstantiationService` one row per template
+    // alarm per created asset, is admitted here because the contract declares
+    // it — not because someone remembered to add it twice.
+    source: row.source as RuleListItem["source"],
     enabled: row.enabled,
     assetId: row.assetId,
     assetCode: row.assetCode,

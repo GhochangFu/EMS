@@ -121,6 +121,22 @@ describe("E2.4 template alarm provenance migration 0067 (ADR 0058 decision 5)", 
   });
 });
 
+/**
+ * Block and line comments removed, so a match is code rather than prose.
+ *
+ * This repository's files explain themselves at length, and several of them
+ * quote the very literal a test like this looks for. Without this, an assertion
+ * that a *builder* writes `type: "review"` is satisfied by a *docblock* saying
+ * that it does — which is precisely what happened while this test was written.
+ *
+ * Declared above its first use rather than beside its last: a `const` arrow is
+ * in the temporal dead zone until module evaluation reaches it, so a describe
+ * body below that called an arrow defined further down would throw at collection
+ * time rather than fail an assertion.
+ */
+const codeOnly = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
 // --- Part 5: the seeded rule's `source` is a contract value -----------------
 
 /**
@@ -151,28 +167,24 @@ describe("E2.4 — template_alarm is a contract value (ADR 0058 decision 6)", ()
     expect(options).not.toContain("not_a_rule_source");
   });
 
-  it("rule-mapping.ts carries the literal, so the row mapper's cast admits it", () => {
-    const mapping = read("apps/api/src/rules/rule-mapping.ts");
+  it("rule-mapping.ts derives the row mapper's cast from the contract instead of restating it", () => {
+    // Comments stripped first. Asserted against the raw file this test was
+    // unfalsifiable: `rule-mapping.ts` *explains* `template_alarm` in prose, and
+    // the old literal-presence check passed on that prose alone the moment the
+    // comment quoted the value with double quotes rather than backticks.
+    const mapping = codeOnly(read("apps/api/src/rules/rule-mapping.ts"));
     expect(
       mapping,
-      "`mapRuleRow` casts `automation_rules.source` to a literal union. A stored " +
-        "`template_alarm` that the cast does not name is a lie the type system cannot see.",
-    ).toContain('"template_alarm"');
+      "`mapRuleRow` narrows `automation_rules.source` for the response. Derived from " +
+        '`RuleListItem["source"]` it admits exactly what the contract declares and cannot ' +
+        "drift from it; a hand-restated union silently omits a stored value the enum has " +
+        "since gained — which had already happened once, to `phe_alarm_seed` (§4.8). The " +
+        "sibling case above is what pins that the enum itself carries `template_alarm`.",
+    ).toContain('row.source as RuleListItem["source"]');
   });
 });
 
 // --- Part 6: where the seed is written, and what it does not write ----------
-
-/**
- * Block and line comments removed, so a match is code rather than prose.
- *
- * This repository's files explain themselves at length, and several of them
- * quote the very literal a test like this looks for. Without this, an assertion
- * that a *builder* writes `type: "review"` is satisfied by a *docblock* saying
- * that it does — which is precisely what happened while this test was written.
- */
-const codeOnly = (source: string): string =>
-  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 const INSTANTIATE_REL = "apps/api/src/admin/asset-templates/asset-templates-instantiate.service.ts";
 const HELPERS_REL = "apps/api/src/admin/asset-templates/template-alarm-rules.ts";
@@ -258,14 +270,26 @@ describe("E2.4 — the seed is written inside the batch transaction (ADR 0058 de
     expect(helpers).toContain('source: "template_alarm"');
   });
 
-  it("no file under admin/asset-templates writes a rule_notifications row", () => {
+  it("no file anywhere under admin/asset-templates writes a rule_notifications row", () => {
     const forbidden = /insert\(\s*ruleNotifications\s*\)/;
     // Anti-vacuity: the pattern matches the thing it is looking for.
     expect(forbidden.test("await tx.insert(ruleNotifications).values(x)")).toBe(true);
 
-    const offenders = readdirSync(join(repoRoot, TEMPLATES_DIR))
-      .filter((name) => name.endsWith(".ts"))
-      .filter((name) => forbidden.test(read(`${TEMPLATES_DIR}/${name}`)));
+    // `recursive`, and that is the claim rather than a detail: the directory has
+    // a `stock-catalog/` subdirectory, and a flat read scanned none of it while
+    // the assertion still read as "no file under admin/asset-templates".
+    // `encoding` is passed so the `string[]` overload is the one selected.
+    const scanned = readdirSync(join(repoRoot, TEMPLATES_DIR), {
+      recursive: true,
+      encoding: "utf8",
+    }).filter((name) => name.endsWith(".ts"));
+    expect(
+      scanned.some((name) => name.includes("stock-catalog")),
+      "the scan must descend into stock-catalog/ — if this fails the recursion was dropped, " +
+        "and the assertion below holds only at the top level.",
+    ).toBe(true);
+
+    const offenders = scanned.filter((name) => forbidden.test(read(join(TEMPLATES_DIR, name))));
     expect(
       offenders,
       "ADR 0058 decision 2: a seeded rule joins NO notification channel. Promoting one to " +

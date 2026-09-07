@@ -3,7 +3,9 @@ import type { SeededRuleValues } from "@bms/shared";
 
 import {
   driftVerdict,
+  MAX_RULE_ROWS,
   philosophyDescription,
+  seededBaselineValues,
   seededRuleCode,
   seededRuleValues,
   type TemplateAlarm,
@@ -49,8 +51,17 @@ function sameObject(actual: unknown, expected: unknown, message: string): void {
   );
 }
 
-/** `ruleCodeSchema`'s regex, restated here so the spec fails if either moves. */
+/**
+ * `ruleCodeSchema`'s three checks, restated here so the spec fails if either
+ * side moves. All three, not only the regex: the schema is
+ * `.min(3).max(64).regex(...)`, and a derived code that satisfies the pattern
+ * and the column can still be too short for the rule builder's own PATCH.
+ * `ruleCodeSchema` is private to `rules.schema.ts`, so this is a restatement
+ * rather than an import — that is why it lists every check the schema applies.
+ */
 const RULE_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]*$/;
+const RULE_CODE_MIN_LENGTH = 3;
+const RULE_CODE_MAX_LENGTH = 64;
 
 const TEMPLATE = { id: "11111111-1111-4111-8111-111111111111", version: 3 };
 const ASSET_ID = "22222222-2222-4222-8222-222222222222";
@@ -179,6 +190,12 @@ export function assertEveryHostileInputStillProducesAValidCode(): void {
     ["a b c", "d.e/f"],
     ["_LEADING", "TRAILING_"],
     ["9-lives", "0"],
+    // A single-alphanumeric asset code with a punctuation-only alarm code: the
+    // join is two characters, under `ruleCodeSchema`'s `.min(3)` floor. Both
+    // halves are reachable — each is `min(1).max(64)` with no character class.
+    ["A", "-"],
+    ["9", "___"],
+    ["Z", "。"],
   ];
 
   const failures: string[] = [];
@@ -187,11 +204,37 @@ export function assertEveryHostileInputStillProducesAValidCode(): void {
     if (!RULE_CODE_PATTERN.test(code)) {
       failures.push(`[${assetCode}] + [${alarmCode}] -> ${code} does not match ${String(RULE_CODE_PATTERN)}`);
     }
-    if (code.length > 64) {
+    if (code.length > RULE_CODE_MAX_LENGTH) {
       failures.push(`[${assetCode}] + [${alarmCode}] -> ${code.length} characters, over varchar(64)`);
+    }
+    // The lower bound, which the pattern does not carry: `^[A-Z0-9][A-Z0-9_-]*$`
+    // accepts a one-character code and `ruleCodeSchema` does not.
+    if (code.length < RULE_CODE_MIN_LENGTH) {
+      failures.push(
+        `[${assetCode}] + [${alarmCode}] -> ${code} is ${code.length} characters, under ruleCodeSchema's .min(3)`,
+      );
     }
   }
   assert(failures.length === 0, `hostile inputs produced invalid codes:\n  ${failures.join("\n  ")}`);
+}
+
+/**
+ * The floor, named rather than left to the table: `A` + `-` normalises to `A_`.
+ *
+ * Two characters satisfies the regex and the column and is refused by
+ * `ruleCodeSchema`, so the rule builder PATCHing a seeded rule — which sends the
+ * whole object, its own derived code included — would 400 on a field the
+ * operator never typed. The same defect class as the `name` and `description`
+ * bounds, one field over.
+ *
+ * The exact padded string is pinned because it is written to the database: a
+ * later change of padding character or side would orphan every stored code.
+ */
+export function assertADegenerateCodeStillMeetsTheSchemasMinimumLength(): void {
+  sameString(seededRuleCode("A", "-"), "A__", "a single-alphanumeric asset code with no alarm part");
+  sameString(seededRuleCode("A", ""), "A__", "an empty alarm code");
+  sameString(seededRuleCode("-", "-"), "R__", "two empty parts already reach three through the R_ prefix");
+  sameString(seededRuleCode("AB", "-"), "AB_", "three characters are left exactly as they are");
 }
 
 /**
@@ -364,19 +407,99 @@ export function assertAFreshlySeededRowReadsAsInSync(): void {
   for (const message of ["T".repeat(500), "Hi", "  padded  "]) {
     const row = buildRow({ message });
     const baseline = row.seededBaseline as SeededRuleValues;
-    const live: SeededRuleValues = {
-      operator: row.operator ?? null,
-      thresholdValue: row.thresholdValue ?? null,
-      severity: row.severity ?? null,
-      category: row.category as string,
-      message: row.name as string,
-    };
     sameString(
-      driftVerdict(live, baseline, baseline),
+      driftVerdict(liveFrom(row), baseline, baseline),
       "in_sync",
       `a row just written from message ${JSON.stringify(message)} must read as in_sync`,
     );
   }
+}
+
+/**
+ * `live` as U6 must read it — off the rule's own columns, with `name` carrying
+ * `message`, because `automation_rules` has no message column.
+ *
+ * `operator` and `category` are plain `varchar` columns, so the row type says
+ * `string` and the narrowing is a cast — the same one `mapRuleRow` makes on the
+ * same two columns, with `automation_rules_operator_check` and
+ * `automation_rules_category_fk` as the actual enforcement.
+ */
+function liveFrom(row: ReturnType<typeof buildRow>): SeededRuleValues {
+  return {
+    operator: (row.operator ?? null) as SeededRuleValues["operator"],
+    thresholdValue: row.thresholdValue ?? null,
+    severity: row.severity ?? null,
+    category: row.category as string,
+    message: row.name as string,
+  };
+}
+
+/**
+ * The THIRD side of decision 8's comparison, which the two cases above do not
+ * reach: `current` — what the presently published version would seed today.
+ *
+ * `live` against `baseline` was fixed by storing the derived name; `current` is
+ * the same hazard one field over. Built from `alarm.message` raw it would differ
+ * from an untouched baseline for every message the schema permits but
+ * `seededRuleName` rewrites, and the route would report `template_moved` on a
+ * template nobody has edited — the false `local_override` traded for a false
+ * `template_moved`. So `current` is built HERE the way U6 must build it: through
+ * the module's own derivation, never by hand.
+ *
+ * The first assertion is the structural one: `seededBaselineValues` on the same
+ * alarm is exactly the jsonb `seededRuleValues` stored, so a `current` derived
+ * with it agrees with the baseline by construction rather than by coincidence.
+ */
+export function assertCurrentMustComeFromTheSameDerivation(): void {
+  for (const message of ["T".repeat(500), "Hi", "  padded  "]) {
+    const seeded: Partial<TemplateAlarm> = { message, operator: "gt", thresholdValue: 45 };
+    const row = buildRow(seeded);
+    const baseline = row.seededBaseline as SeededRuleValues;
+
+    sameObject(
+      seededBaselineValues(alarm(seeded)),
+      baseline,
+      `the shared derivation must reproduce the stored baseline for ${JSON.stringify(message)}`,
+    );
+
+    // The template has NOT moved: the published version still carries this alarm.
+    const unchanged = buildRow(seeded).seededBaseline as SeededRuleValues;
+    sameString(
+      driftVerdict(liveFrom(row), baseline, unchanged),
+      "in_sync",
+      `an unchanged alarm with message ${JSON.stringify(message)} must not read as template_moved`,
+    );
+
+    // The template HAS moved: a genuinely edited alarm, derived the same way.
+    const movedCurrent = buildRow({ ...seeded, thresholdValue: 50 }).seededBaseline as SeededRuleValues;
+    sameString(
+      driftVerdict(liveFrom(row), baseline, movedCurrent),
+      "template_moved",
+      `a re-limited alarm with message ${JSON.stringify(message)} must read as template_moved`,
+    );
+  }
+}
+
+/**
+ * `MAX_RULE_ROWS`' arithmetic, asserted rather than described.
+ *
+ * Postgres caps a statement at 65,535 bind parameters and the seed inserts one
+ * statement of up to `MAX_RULE_ROWS` rows. The constant's own docblock demands
+ * that anything widening the row re-measures it, and prose enforces nothing: a
+ * 27th column makes 27 x 2,500 = 67,500, and a legitimately full batch then dies
+ * with a raw driver error instead of the named 400 the bound exists to produce
+ * — with this suite green, because no unit test inserts 2,500 rows.
+ */
+export function assertTheRowFitsThePostgresBindParameterCeiling(): void {
+  const columns = Object.keys(buildRow()).length;
+  // Anti-vacuity: a row that lost its columns would satisfy the product trivially.
+  assert(columns > 20, `the seeded row must still be a full insert, counted ${columns} columns`);
+  assert(
+    columns * MAX_RULE_ROWS <= 65_535,
+    `MAX_RULE_ROWS is stale: ${columns} columns x ${MAX_RULE_ROWS} rows = ${columns * MAX_RULE_ROWS} ` +
+      "bind parameters, over Postgres' 65,535 ceiling. Lower MAX_RULE_ROWS in the same change " +
+      "that widened the row, or a full batch fails with a driver error instead of the named 400.",
+  );
 }
 
 /**

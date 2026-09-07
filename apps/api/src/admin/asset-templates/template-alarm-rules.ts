@@ -40,11 +40,18 @@ import type { TemplateContentParsed } from "./asset-templates-content.schema";
  * below 2,500** and a full batch then fails with a driver error rather than the
  * 400 this constant exists to produce. Anything that widens the row must
  * re-measure this number in the same change.
+ *
+ * That demand is no longer only prose: `template-alarm-rules.spec.ts` counts the
+ * keys of a real `seededRuleValues` row and multiplies, so a 27th column reddens
+ * the suite here rather than in production on the first full batch.
  */
 export const MAX_RULE_ROWS = 2_500;
 
 /** `bms.automation_rules.code` is `varchar(64)`. */
 const CODE_MAX_LENGTH = 64;
+
+/** `ruleCodeSchema` is `.min(3)` as well as `.max(64)` — see {@link seededRuleCode}. */
+const CODE_MIN_LENGTH = 3;
 
 /** Decision 7 step 3: `55 + 1 + 8 = 64`, the column's whole width. */
 const TRUNCATED_LENGTH = 55;
@@ -99,13 +106,14 @@ function normalisePart(part: string): string {
  * existing seed convention (`CR-BATT-1` + `TEMP_WARNING` ->
  * `CR_BATT_1_TEMP_WARNING`).
  *
- * The output always satisfies `ruleCodeSchema`'s `^[A-Z0-9][A-Z0-9_-]*$` and
- * fits `varchar(64)`, for every input the content contract permits — an asset
- * code is `z.string().min(1).max(64)` with **no** character restriction and an
- * alarm code is up to 64 characters, so a naive join both overflows the column
- * and can carry characters the regex refuses.
+ * The output always satisfies `ruleCodeSchema` — `^[A-Z0-9][A-Z0-9_-]*$`,
+ * `.min(3)` and `.max(64)` — and fits `varchar(64)`, for every input the content
+ * contract permits. An asset code is `z.string().min(1).max(64)` with **no**
+ * character restriction and an alarm code is up to 64 characters, so a naive
+ * join overflows the column, can carry characters the regex refuses, and can
+ * come out shorter than the schema's floor.
  *
- * Two orderings are load-bearing and neither is obvious:
+ * Three orderings are load-bearing and none is obvious:
  *
  * - **The `R_` prefix is applied before the length is measured.** An empty
  *   asset part with a 63-character alarm code joins to exactly 64 and the
@@ -115,6 +123,16 @@ function normalisePart(part: string): string {
  *   step 2, which is what decision 7 calls "the untruncated string". Pinned
  *   here so U4 and U6 do not re-derive it differently and compute a code that
  *   no longer matches the stored one.
+ * - **The three-character floor is applied after the prefix, on the branch that
+ *   did not overflow.** `A` + `-` normalises to `A_`: two characters, which
+ *   `ruleCodeSchema` refuses, so the rule builder PATCHing a seeded rule's own
+ *   code would 400 on a field the operator never typed — the same class of
+ *   defect as the `name` and `description` bounds below. Only this branch can
+ *   be short: two empty parts already reach three as `R__`, and the hash branch
+ *   always lands on 64. A padded degenerate code can equal another degenerate
+ *   sibling — asset `R` and asset `-` both give `R__` for a punctuation-only
+ *   alarm code — which is the collision class plan D4's intra-batch pre-check
+ *   already exists for, not a new one.
  *
  * The hex is **upper-cased**: `ruleCodeSchema` accepts `[A-Z0-9_-]` only, so a
  * lower-case digest would produce a code the API's own contract rejects. ADR
@@ -124,7 +142,7 @@ export function seededRuleCode(assetCode: string, alarmCode: string): string {
   const joined = `${normalisePart(assetCode)}_${normalisePart(alarmCode)}`;
   const prefixed = /^[A-Z0-9]/.test(joined) ? joined : `R_${joined}`;
   if (prefixed.length <= CODE_MAX_LENGTH) {
-    return prefixed;
+    return prefixed.padEnd(CODE_MIN_LENGTH, "_");
   }
   const digest = createHash("sha256")
     .update(prefixed)
@@ -201,6 +219,34 @@ export function philosophyDescription(philosophy: TemplateAlarm["philosophy"]): 
 }
 
 /**
+ * The five fields decision 5 makes drift attributable on, as one template alarm
+ * resolves them: the **defaulted** category, `null` rather than `undefined` for
+ * an absent operator or threshold, and the **derived** name rather than
+ * `alarm.message` verbatim.
+ *
+ * Exported and shared rather than inlined, because decision 8 compares three
+ * `SeededRuleValues` and two of them are derived from a template alarm.
+ * `seededRuleValues` builds both the row's own columns and its `seeded_baseline`
+ * from this one call, and U6 must build its `current` by calling this on the
+ * currently published version's alarm. **A second derivation is the hazard.**
+ * `templateAlarmSchema.message` allows 1 to 500 characters while `seededRuleName`
+ * trims, floors at three and slices to 255, so a `current` built from
+ * `alarm.message` raw would differ from a baseline nobody has touched, and every
+ * rule whose message is long, short or padded would read `template_moved`. The
+ * rule table has no message column: `driftVerdict` compares this `message`
+ * against the rule's `name`, which is what "as seeded" in decision 5 means.
+ */
+export function seededBaselineValues(alarm: TemplateAlarm): SeededRuleValues {
+  return {
+    operator: alarm.operator ?? null,
+    thresholdValue: alarm.thresholdValue ?? null,
+    severity: alarm.severity,
+    category: alarm.category ?? DEFAULT_RULE_CATEGORY_CODE,
+    message: seededRuleName(alarm),
+  };
+}
+
+/**
  * The `automation_rules` row one template alarm becomes on one asset — ADR
  * 0058 decisions 2, 3, 4 and 5, and the plan's D1/D2.
  *
@@ -215,19 +261,22 @@ export function philosophyDescription(philosophy: TemplateAlarm["philosophy"]): 
  *   rail and page nobody until someone joins a channel deliberately.
  * - `lifecycleStatus: "published"` is not cosmetic: `setEnabled` refuses a
  *   non-published rule, so a `draft` seed would be uncommissionable.
- * - `seededBaseline` stores the **resolved** values (D2) — the defaulted
- *   category, and `null` rather than `undefined` for an absent operator or
- *   threshold — because that jsonb is what `driftVerdict` compares against, and
- *   an unresolved value there would read as drift the moment it is defaulted.
+ * - `seededBaseline` stores the **resolved** values (D2), and the row's own
+ *   `category`, `operator`, `threshold_value`, `severity` and `name` are taken
+ *   off that same object rather than re-derived beside it. One derivation, so
+ *   the jsonb records what was written by construction instead of by two
+ *   expressions that happen to agree today — see {@link seededBaselineValues}.
  * - `createdAt`/`updatedAt`/`publishedAt` all take the caller's `now` rather
  *   than the column default, matching `createDraft`, so every row of one batch
  *   carries one timestamp.
  */
 export function seededRuleValues(input: SeededRuleInput): SeededRuleInsert {
   const { alarm, assetCode, assetId, now, organizationId, template, unit } = input;
-  const category = alarm.category ?? DEFAULT_RULE_CATEGORY_CODE;
-  const operator = alarm.operator ?? null;
-  const thresholdValue = alarm.thresholdValue ?? null;
+  // The row's columns and the baseline it stores are ONE derivation. Destructured
+  // from the baseline rather than computed again beside it, so `seeded_baseline`
+  // cannot record a value the row does not carry.
+  const baseline = seededBaselineValues(alarm);
+  const { category, operator, thresholdValue } = baseline;
 
   // Built conditionally, never `unit: unit ?? undefined`: a key holding
   // `undefined` is still a key once it reaches jsonb, and
@@ -237,27 +286,10 @@ export function seededRuleValues(input: SeededRuleInput): SeededRuleInsert {
     condition.unit = unit;
   }
 
-  // `message` stores the DERIVED name, not `alarm.message` verbatim, and the
-  // difference is load-bearing for decision 8. The rule table has no message
-  // column, so `driftVerdict` compares the baseline's `message` against the
-  // rule's `name` — which is `seededRuleName`'s output: trimmed, floored at
-  // three characters, sliced to 255. `templateAlarmSchema.message` allows 1 to
-  // 500, so storing it raw makes `valuesEqual(live, baseline)` false the
-  // instant the row is written for any message that is long, short or padded,
-  // and the drift route then reports `local_override` on a rule nobody has
-  // touched. "As seeded" in decision 5 means as written to the rule.
-  const baseline: SeededRuleValues = {
-    operator,
-    thresholdValue,
-    severity: alarm.severity,
-    category,
-    message: seededRuleName(alarm),
-  };
-
   return {
     organizationId,
     code: seededRuleCode(assetCode, alarm.code),
-    name: seededRuleName(alarm),
+    name: baseline.message,
     description: philosophyDescription(alarm.philosophy),
     category,
     ruleType: "threshold",
@@ -267,7 +299,7 @@ export function seededRuleValues(input: SeededRuleInput): SeededRuleInsert {
     pointKey: alarm.pointKey,
     operator,
     thresholdValue,
-    severity: alarm.severity,
+    severity: baseline.severity,
     clearHoldSeconds: null,
     condition,
     action: { type: "review", target: category },
@@ -309,6 +341,16 @@ export function valuesEqual(a: SeededRuleValues, b: SeededRuleValues): boolean {
  * it was written with, and `current` is what the presently published version
  * would seed today. Comparing live against current alone says only that the two
  * differ; the baseline is what says **who** moved.
+ *
+ * **All three sides must speak one dialect.** `baseline` and `current` must both
+ * come from {@link seededBaselineValues} — the baseline does by construction,
+ * and the caller building `current` must call it rather than read the alarm's
+ * fields directly. `live` is the rule row, read through the columns that
+ * derivation wrote (`name` for `message`), possibly edited since: that edit is
+ * the signal this function exists to detect. A `current` assembled any other way
+ * reports `template_moved` on every rule whose message is long, short or padded
+ * — trading the false `local_override` this module already fixed for a false
+ * `template_moved`, on the same inputs.
  *
  * `current === null` is D5's removed alarm: the published version no longer
  * carries this `source_alarm_code`, so there is nothing to compare against and

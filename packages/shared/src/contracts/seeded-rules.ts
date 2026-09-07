@@ -77,7 +77,7 @@ export const seededRulesListResponseSchema = z.object({
   items: z.array(seededRuleDtoSchema),
 });
 
-/** `POST /admin/asset-templates/:id/seeded-rules/reapply` (ADR 0058 decision 6). */
+/** `POST /admin/asset-templates/:id/seeded-rules/reapply` (ADR 0058 decision 8). */
 export const reapplySeededRulesResponseSchema = z.object({
   appliedVersion: z.number().int(),
   items: z.array(seededRuleDtoSchema),

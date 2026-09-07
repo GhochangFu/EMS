@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertADegenerateCodeStillMeetsTheSchemasMinimumLength,
   assertAFreshlySeededRowReadsAsInSync,
   assertAPhilosophyAlarmSeedsADisabledRule,
   assertASeededRowSatisfiesTheRuleEditorsOwnBounds,
@@ -10,6 +11,7 @@ import {
   assertCodeGetsTheRPrefixWhenItWouldNotStartAlphanumeric,
   assertCodeMatchesTheExistingSeedConvention,
   assertCodeNormalisesCaseSpacesAndPunctuation,
+  assertCurrentMustComeFromTheSameDerivation,
   assertEveryHostileInputStillProducesAValidCode,
   assertNumericAndNullEqualityInTheComparison,
   assertPhilosophyRendersPresentFieldsOnly,
@@ -19,6 +21,7 @@ import {
   assertTheFourDriftQuadrants,
   assertTheNameIsTruncatedToTheColumnWidth,
   assertThePrefixIsCountedBeforeTheLengthCheck,
+  assertTheRowFitsThePostgresBindParameterCeiling,
   assertTwoAlarmCodesCanDeriveTheSameRuleCode,
 } from "./template-alarm-rules.spec";
 
@@ -47,6 +50,10 @@ describe("E2.4 — template alarm rule derivation (ADR 0058)", () => {
 
     it("produces a code the rule contract accepts for every hostile input", () => {
       assertEveryHostileInputStillProducesAValidCode();
+    });
+
+    it("pads a degenerate code up to ruleCodeSchema's three-character floor", () => {
+      assertADegenerateCodeStillMeetsTheSchemasMinimumLength();
     });
 
     it("maps two contract-distinct alarm codes onto one rule code, which is why D4 pre-checks", () => {
@@ -92,6 +99,10 @@ describe("E2.4 — template alarm rule derivation (ADR 0058)", () => {
     it("stays inside the rule editor's own name and description bounds, so the row can be PATCHed", () => {
       assertASeededRowSatisfiesTheRuleEditorsOwnBounds();
     });
+
+    it("still fits Postgres' 65,535 bind parameters at MAX_RULE_ROWS", () => {
+      assertTheRowFitsThePostgresBindParameterCeiling();
+    });
   });
 
   describe("driftVerdict (decision 8)", () => {
@@ -105,6 +116,10 @@ describe("E2.4 — template alarm rule derivation (ADR 0058)", () => {
 
     it("compares numbers and nulls by value", () => {
       assertNumericAndNullEqualityInTheComparison();
+    });
+
+    it("agrees with a `current` derived through the module's own derivation, on every message the schema permits", () => {
+      assertCurrentMustComeFromTheSameDerivation();
     });
   });
 });

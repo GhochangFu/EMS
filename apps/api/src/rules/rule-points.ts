@@ -68,10 +68,12 @@ export function pointKeysForAsset(domain: string, code: string): string[] {
  * `template_id = NULL` and joins to zero rows, which is the honest answer —
  * it declares no template points, so the hard-coded map remains its only source.
  *
- * `fleetDb`, like every other pre-write lookup in this module and in
- * `rule-codes.ts`: the caller has already scope-checked the asset, and
- * `template_points` is a tenant table under `FORCE ROW LEVEL SECURITY` that a
- * bare tenant handle could not read outside a `withTenant` block.
+ * `fleetDb`, because `template_points` is a tenant table under `FORCE ROW LEVEL
+ * SECURITY` and a bare tenant handle reads zero rows from it outside a
+ * `withTenant` block — which would silently refuse every point rather than
+ * widen the check. This is a pre-write lookup on a path where the caller has
+ * already scope-checked the asset, so the isolation control is that check and
+ * the `assetId` in the WHERE, not the pool.
  *
  * Called only when the hard-coded lookup misses, so no existing rule edit pays
  * for it and none of them changes behaviour.

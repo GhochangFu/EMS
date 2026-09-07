@@ -391,8 +391,17 @@ export class AssetTemplateInstantiationService {
         // ADR 0058 decision 10 — the codes of the rules this asset was seeded
         // with, taken off the rows that were actually inserted rather than
         // re-derived here. Two derivations of one code is how the response and
-        // the table drift apart; `??` on a miss would report an empty list for
-        // an asset that was seeded, which is a lie the caller cannot detect.
+        // the table drift apart.
+        //
+        // The `??` is unreachable, not a fallback: the loop above calls
+        // `seededByCode.set` once per plan, including the template that carries
+        // no alarms, where it sets an empty array. `plans` is the same array
+        // being mapped here and the key is the same `plan.entry.code`, so a miss
+        // would mean the two loops disagreed about their own input. It stays as
+        // a total expression because a `[]` on the impossible branch is the same
+        // value the zero-alarm case legitimately returns — unlike the `idByCode`
+        // lookups above, which throw because a missing id there is a real
+        // outcome (the database's `RETURNING` decides that one, not this code).
         seededRules: created.seededByCode.get(plan.entry.code) ?? [],
       };
     });
