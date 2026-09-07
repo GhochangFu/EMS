@@ -151,6 +151,59 @@ export function assertDeclaredZipBombIsRefusedBeforeRead(): void {
 }
 
 /**
+ * The 500-to-400 conversion around `XLSX.read` must not swallow the reason.
+ *
+ * The `catch` that turns an unreadable buffer into a `BadRequestException` had
+ * no binding at all, so the only record that anything went wrong was a sentence
+ * the client got and the server did not. That is a support call with nothing to
+ * read: every corrupt upload looks identical from the outside.
+ *
+ * **What may be logged, and at what level.** The error's `message`, and nothing
+ * else — never the buffer, never a cell (AGENTS.md §9.6). `debug`, because a
+ * client sending a broken file is not an operational fault and must not be able
+ * to fill a log by repeating it.
+ */
+export function assertUnreadableUploadIsLogged(): void {
+  const service = new OnboardingExcelService();
+  const logged: string[] = [];
+  // The service's own logger, replaced in place. `private readonly` is a
+  // compile-time constraint on an ordinary own property.
+  (service as unknown as { logger: { debug(message: string): void } }).logger = {
+    debug: (message: string) => logged.push(message),
+  };
+
+  // A zip whose central directory is well-formed and whose payload is not: it
+  // passes the size and inflation guards, so `XLSX.read` is what fails.
+  const buffer = syntheticZip([1024]);
+  let refusal = "";
+  try {
+    service.parseUpload(buffer);
+  } catch (error) {
+    refusal = (error as Error).message;
+  }
+  assert(
+    refusal === "Could not read the uploaded file as Excel",
+    `an unreadable buffer is still a 400 with the same sentence, got "${refusal}"`,
+  );
+
+  assert(logged.length === 1, `the swallowed error is logged exactly once, got ${logged.length}`);
+  const line = logged[0];
+  const prefix = "onboarding workbook unreadable: ";
+  assert(line.startsWith(prefix), `the line says what failed, got "${line}"`);
+  assert(
+    line.length > prefix.length,
+    "the line carries the underlying error message, which is the whole point of logging it",
+  );
+  // §9.6, asserted rather than trusted: a log line is a message, not a payload.
+  assert(line.length < 500, `a log line is bounded, got ${line.length} characters`);
+  assert(
+    !line.includes(buffer.toString("base64").slice(0, 24)) &&
+      !line.includes(buffer.toString("hex").slice(0, 24)),
+    `the buffer must never reach the log, got "${line}"`,
+  );
+}
+
+/**
  * The template's own rows, read back out of the workbook the service generates
  * rather than restated here. Every fixture below is this shape with one thing
  * changed, so the "and the honest sheet still parses" direction compares

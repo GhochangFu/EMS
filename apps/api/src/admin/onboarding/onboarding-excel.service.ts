@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import * as XLSX from "xlsx";
 
 import type { OnboardingDraft, OnboardingProtocol } from "@bms/shared";
@@ -181,6 +181,8 @@ const ASSET_HEADERS = [
 /** Generates and parses onboarding Excel templates (location + RTUs + assets). */
 @Injectable()
 export class OnboardingExcelService {
+  private readonly logger = new Logger(OnboardingExcelService.name);
+
   /** Builds a sample single-sheet workbook buffer. */
   buildTemplateBuffer(locationExample = "Berhampur"): Buffer {
     const prefix = locationExample.toUpperCase().replace(/[^A-Z0-9]+/g, "-");
@@ -259,11 +261,21 @@ export class OnboardingExcelService {
       // It is a cost bound, not the correctness one: a 25,000-row sheet is
       // refused either way, because the declared range says so.
       book = XLSX.read(buffer, { type: "buffer", sheetRows: SHEET_ROWS_BOUND });
-    } catch {
+    } catch (error) {
       // A corrupt or truncated buffer was a 500 before this row: `XLSX.read`
       // throws and nothing between here and the controller caught it. Both
       // siblings answer a 400 instead, and an unreadable upload is the client's
       // fault, not the server's.
+      //
+      // The reason is logged rather than discarded, or every corrupt upload
+      // looks identical from the outside and the sentence the client gets is
+      // the only record that anything happened. The error's `message` and
+      // nothing else — never the buffer, never a cell (AGENTS.md §9.6) — at
+      // `debug`, because a client sending a broken file is not an operational
+      // fault and must not be able to fill a log by repeating it.
+      this.logger.debug(
+        `onboarding workbook unreadable: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw new BadRequestException("Could not read the uploaded file as Excel");
     }
     const sheet = book.Sheets[book.SheetNames[0] ?? ""];

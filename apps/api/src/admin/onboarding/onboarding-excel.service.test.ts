@@ -8,6 +8,7 @@ import {
   assertOversizeBufferIsRefused,
   assertSheetReachingTheRowBoundIsRefused,
   assertTemplateRoundTripsUnchanged,
+  assertUnreadableUploadIsLogged,
 } from "./onboarding-excel.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -50,5 +51,9 @@ describe("OnboardingExcelService.parseUpload (F4.102)", () => {
 
   it("refuses an RTU topic longer than the column it commits to, and keeps one at the bound", () => {
     assertOverlongRtuTopicIsRefused();
+  });
+
+  it("logs the error it converts into the unreadable-file 400", () => {
+    assertUnreadableUploadIsLogged();
   });
 });
