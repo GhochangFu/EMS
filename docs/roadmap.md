@@ -3299,8 +3299,57 @@ precedent by landing with their security fix. PR
 - **After:** the 2,668-byte killer refused in 1.53 s, 16,384 × 2,000 from 56.0 s
   to 167 ms, and the mapping kill from dead to 29 ms with RSS flat at 70 MiB.
   Six mutations measured red, four on one bound and two on the other.
-- **Still owed:** the API layer, which `F4.100` could record N/A and this cannot
-  — it adds a 400 the route could not previously return.
+- **The API layer, owed here, closed with `F4.102`** on 2026-09-07 — the two
+  rows share a deployed image, so one signed-in session cleared both. A
+  recognised header past the window returns 400 (`Column 'time' is at BR, beyond
+  the 64 columns read from the start of the sheet's used range`), and a normal
+  preview still returns 200.
+
+### The last unguarded upload, and an echo surface that took three passes to enumerate (`F4.102`) — done
+
+`F4.102` closed 2026-09-07 in two pull requests, no ADR owed — AGENTS.md §6 had
+named the gap verbatim since `F4.101`, which makes it a defect inside shipped
+scope rather than a promotion.
+
+- **Filed unmeasured; it is a process kill, and the cheapest one of the three.**
+  The onboarding upload ran behind none of the three guards its two siblings
+  had, and its `FileInterceptor` carried no `limits` object at all, so multer
+  defaulted `fileSize` to `Infinity`. A **3,038-byte** workbook declaring
+  `<dimension ref="A1:XFD20102"/>` with three real cells died with
+  `JavaScript heap out of memory` after ~86 s at a 512 MB cap and 362 s at 2 GB.
+- **Six gaps where the row named three.** The two it missed were a
+  service-level byte cap — kept *as well as* the interceptor, because any future
+  caller of the parse function bypasses the interceptor — and `quoteCell` at the
+  echo sites, which was not in the row at all.
+- **The echo surface took three passes to enumerate, and that is the lasting
+  lesson.** The build bounded four sites. The pre-merge review measured a fifth,
+  `topic`, interpolated unquoted one line below a `quoteCell` the same commit
+  added: a 77,564-byte upload returned a 65.6 MB message, persisted. The
+  post-merge review measured a sixth, the RTU `protocol` cell, cast rather than
+  validated, where Zod 3's `invalid_enum_value` embeds the whole received value:
+  a 231,182-byte upload returned 65.8 MB of `validationErrors`, and a 2.27 MB
+  one took the draft jsonb to ~658 MB and died at the write. **All of them
+  passed every guard**, because a shared-string table lets many cells reference
+  one 32,767-character value.
+- **Twelve revert-and-measure-red results were all honest while the conclusion
+  was wrong.** The hostile fixture pinned `topic: ""`, so no assertion ever
+  reached that line. A revert-check proves an assertion depends on the code you
+  reverted; it never proves the enumeration is complete. Count the sites from
+  the source, and check each fixture reaches the site it claims to gate.
+- **Two docblock figures were measured false before merge and rewritten.** The
+  worst case is 20,101 × 64 = 1,286,464 cells, not 20,102 × 64, because the
+  refusal is `>=` and runs before `sheet_to_json`; and `A1:I1048576` is refused
+  by neither branch — `sheetRows` alone neutralises it, since SheetJS's row
+  clamp rewrites `!ref` down to the real extent.
+- **After:** the 3,038-byte killer refused in milliseconds; the `topic` vector
+  refused; the `protocol` vector from 65.8 MB to a 167-character 400 in 204 ms.
+  The API layer verified against a pinned image: 413 over the cap, 400 on each
+  refusal, and — load-bearing — the API's own `template.xlsx` re-uploaded still
+  returns 200.
+- **Residual, stated rather than assumed:** 20,095 RTU rows with `topic` at its
+  255 bound still yield a 1.75 MB upload and a **13.16 MB** message. Cells are
+  bounded; per-row counts are not. Accepted knowingly and filed as `F4.105`,
+  with `F4.103`, `F4.104`, `F4.106` and `F4.107` beside it.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
