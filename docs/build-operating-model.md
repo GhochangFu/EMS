@@ -114,10 +114,40 @@ The ladder for step 4, applied per unit:
 
 | Model | Gets | Why |
 |-------|------|-----|
-| **Fable 5.1** (premium) | **Step 3 plan** (`plan-architect`, ruled 2026-09-03) · step 4 units that define a seam, span several tasks, or touch auth/RLS production code | The plan is what every later pass transcribes, and the seam is what the next items hang off; both land under review. A wrong plan or a wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. |
+| **Fable 5.1** (premium) | **Step 3 plan** (`plan-architect`, ruled 2026-09-03) · step 4 units that define a seam, span several tasks, or touch auth/RLS production code | The plan is what every later pass transcribes, and the seam is what the next items hang off; both land under review. A wrong plan or a wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. **When the Fable limit is reached, these run on Opus** — see the subsection below. |
 | **Opus** | Step 2 scope/ADR · step 4 units that need judgment in the execution, and the **default pin** when a dispatch omits `model:` · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
 | **Sonnet** | Step 4 mechanical units · step 5 `agents-compliance-reviewer` · doc writing · step 6 evidence gathering | Well-specified work against a plan or a written checklist; a wrong answer is cheap to spot. |
 | **Haiku** | Step 1 pick · locating a file · grepping a symbol · reading a config · summarising one file | Mechanical and verifiable; a wrong answer is cheap to spot. |
+
+### When Fable is exhausted, the work moves to Opus — it does not wait
+
+**Added 2026-09-07, after a `Fable limit` 429 killed an `implementer` mid-unit.**
+
+Fable is rate-limited per account and the limit is reached in practice, not
+theoretically. When it is, every Fable-mapped job in this document — the step-3
+plan and the step-4 units the ladder sends to Fable — **runs on Opus instead**.
+Opus is the next model up the same ladder and already carries step 2, the
+reviews and the default `implementer` pin, so the fallback is the model the work
+would have had before 2026-09-03.
+
+Two things about how the limit arrives, because neither is obvious from a
+transcript:
+
+- **The failure is a 429 at dispatch or mid-run, not a refusal to start.** The
+  agent that hit it had already written its unit and committed; it died waiting
+  on its verification run. So a rate-limited dispatch can leave real work behind
+  in a state nobody has gated. Check what the agent committed before re-running
+  anything, and run the gate it never reached rather than inheriting its claim.
+- **Nothing routes down.** The fallback is Fable → Opus, never Fable → Sonnet or
+  Fable → Haiku. A Fable-mapped unit is one that defines a seam, spans several
+  plan tasks, or touches auth/RLS production code, and those are exactly the
+  units where a cheaper model costs a review-fix loop and the owner's attention.
+  If Opus is also exhausted, the work stops and the operator is told — it does
+  not silently drop a rung.
+
+Say in the dispatch that the model is a fallback and why, so the choice stays
+reviewable at step 5 alongside every other `model:` decision. The reviewers are
+unaffected: step 5 never routes down, exhausted or not.
 
 **Never let a dispatch inherit.** `Explore` and `general-purpose` declare no model
 of their own, so an unpinned fan-out runs on whatever the session is set to —
@@ -153,7 +183,10 @@ Per step:
   `model: fable` in its own frontmatter (Opus until 2026-09-03), is read-only,
   and returns the plan text for the caller to transcribe. It refuses to plan
   past the step-2 gate. Pass `model: "fable"` on the dispatch as well — the
-  rule that no dispatch inherits applies to the plan too.
+  rule that no dispatch inherits applies to the plan too. If the Fable limit is
+  reached, dispatch `plan-architect` with `model: "opus"` and say so — the
+  agent's frontmatter pin is a default, and the override is what the caller
+  passes.
 - **Step 4 (Build) — per unit, delegated.** Hand the unit to the `implementer`
   agent with `model:` on the `Agent` call chosen by the ladder above, and name
   the reason in the dispatch so the choice is reviewable. The agent's own
@@ -380,7 +413,7 @@ the critical path, and merge approvals.
 ```
 [ ] 1. Confirm the next item is UNBLOCKED (BACKLOG.md Depends + ADR gate). [Haiku, delegated]
 [ ] 2. Brainstorm -> open an ADR (new-adr). Human approves scope + deps.   [Opus, inline]
-[ ] 3. plan-architect writes the plan. Human skims.                        [Fable, delegated]
+[ ] 3. plan-architect writes the plan. Human skims.              [Fable, or Opus if limited]
 [ ] 4. TDD build. Delegate to implementer; pick model: per unit (§2).   [Fable/Opus/Sonnet]
        Fan out to worktrees ONLY for independent siblings.
 [ ] 5. code-reviewer + security-reviewer + agents-compliance-reviewer,
