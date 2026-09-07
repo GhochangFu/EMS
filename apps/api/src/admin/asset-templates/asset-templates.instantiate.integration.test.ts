@@ -92,7 +92,17 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
     const access = new AccessControlService(createDb(authPool), fleetDb);
     const audit = new MasterDataAuditService(tenantDb, fleetDb);
     const vocabularies = new VocabulariesService(tenantDb);
-    const instantiation = new AssetTemplateInstantiationService(fleetDb, tenantDb, access, audit);
+    // `E2.4`: the fifth argument re-checks the alarm vocabularies at instantiate
+    // time. This fixture carries no alarms, so the check returns before it asks
+    // the database anything — the service is wired here exactly as `AdminModule`
+    // wires it, and nothing in this suite's timings changes.
+    const instantiation = new AssetTemplateInstantiationService(
+      fleetDb,
+      tenantDb,
+      access,
+      audit,
+      vocabularies,
+    );
     svc = {
       templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
       // Parse through the real schema so these cases exercise the controller's

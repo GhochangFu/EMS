@@ -97,7 +97,13 @@ describe.skipIf(!connectionString)("E2.4 — template alarms seed automation rul
     const access = new AccessControlService(createDb(authPool), fleetDb);
     const audit = new MasterDataAuditService(tenantDb, fleetDb);
     const vocabularies = new VocabulariesService(tenantDb);
-    const instantiation = new AssetTemplateInstantiationService(fleetDb, tenantDb, access, audit);
+    const instantiation = new AssetTemplateInstantiationService(
+      fleetDb,
+      tenantDb,
+      access,
+      audit,
+      vocabularies,
+    );
     // Real pools for both halves of `RulesService`, because the two things this
     // suite proves about it are database behaviours. The last two constructor
     // slots are stand-ins: `setEnabled` and `updateRule` neither evaluate nor

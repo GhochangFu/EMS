@@ -26,6 +26,7 @@ import type { AssetInstantiationResultDto, JwtPayload } from "@bms/shared";
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { parseStoredTemplateContent } from "./asset-templates-content.schema";
 import type {
@@ -40,6 +41,10 @@ import {
   type SeededRuleInsert,
   type TemplateAlarm,
 } from "./template-alarm-rules";
+import {
+  alarmVocabularyMessage,
+  findAlarmVocabularyProblem,
+} from "./template-alarm-vocabularies";
 
 /**
  * `F2.2` — building assets from a published template (ADR 0015 §6/§7 as
@@ -131,6 +136,11 @@ export class AssetTemplateInstantiationService {
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // `E2.4`: the same service `AssetTemplatesAdminService` publishes through,
+    // so "live" means one thing on both sides of a published version. Reads are
+    // uncached by design there, which is what makes a retirement visible to the
+    // very next instantiate rather than after a restart.
+    private readonly vocabularies: VocabulariesService,
   ) {}
 
   /**
@@ -209,6 +219,12 @@ export class AssetTemplateInstantiationService {
     // silently zero rules — the one outcome ADR 0058 names as worse than a
     // refusal, because nobody inspects a batch that reported success.
     const alarms = this.parseTemplateAlarms(template);
+    // `E2.4`, and the same reason `assertCatalogActive` above exists: a template
+    // published six months ago can name a *vocabulary* value retired last week.
+    // Before the seed there was no consumer of a template alarm, so a retired
+    // severity on one was inert; now every alarm becomes an `automation_rules`
+    // row whose `category`/`severity` are closed by foreign keys.
+    await this.assertAlarmVocabulariesStillLive(alarms, template);
     // The unit an alarm's rule records, keyed over **every** template point and
     // not over `measured` or a plan: the template override first, the catalog
     // unit second (D1). A derived point has no `asset_points` row and an
@@ -529,6 +545,68 @@ export class AssetTemplateInstantiationService {
       );
     }
     return parsed.content.alarms ?? [];
+  }
+
+  /**
+   * Re-validates the alarms' `category`, `severity` and `philosophy.skill`
+   * against the live vocabularies, **before the transaction opens**.
+   *
+   * The publish gate is not enough on its own. A published version is
+   * immutable and its content is frozen, but the vocabularies are not: a value
+   * live at publish can be `active = false` by the time someone presses
+   * instantiate, and `E2.4` is what gave that case a consequence — every alarm
+   * now becomes a `bms.automation_rules` row that stamps `category` and
+   * `severity` into columns behind `automation_rules_category_fk` /
+   * `automation_rules_severity_fk`. Ungated, a retired code either fails the
+   * insert as a raw driver error or, when the row still exists and is merely
+   * retired, succeeds *silently* — a rules table quietly seeded from a
+   * vocabulary the organization has withdrawn, which nobody looks for because
+   * the batch reported success. This refuses instead, in the same place and for
+   * the same reason `assertCatalogActive` re-checks point keys.
+   *
+   * **409 rather than the 400 `assertCatalogActive` uses**, matching every
+   * other state-of-the-world refusal in this service (not published, no points,
+   * codes taken, content no longer parses): nothing is wrong with the request,
+   * the estate changed under a frozen version.
+   *
+   * **The message never echoes the stored value** — see the module comment on
+   * `template-alarm-vocabularies.ts`. `content` is `jsonb` with no foreign key,
+   * so the offending value is arbitrary stored text; this names the path and
+   * lists the live codes, exactly as the publish path does.
+   *
+   * The `list()` call is skipped when the version carries no alarms, which is
+   * both the common case and what keeps every pre-`E2.4` instantiation on the
+   * queries it already made.
+   *
+   * One gap, stated rather than left to be found: an alarm with **no**
+   * category seeds its rule at `DEFAULT_RULE_CATEGORY_CODE`, and that code is
+   * not checked here — absent is not a problem for the publish gate either, and
+   * making the two disagree is the drift this shared check exists to prevent.
+   * Retiring the default category is a fleet-wide event with its own blast
+   * radius; it is not this method's to catch.
+   */
+  private async assertAlarmVocabulariesStillLive(
+    alarms: TemplateAlarm[],
+    template: TemplateRow,
+  ): Promise<void> {
+    if (alarms.length === 0) {
+      return;
+    }
+    const { ruleCategories, alarmSeverities, alarmSkills } = await this.vocabularies.list();
+    const problem = findAlarmVocabularyProblem(alarms, {
+      ruleCategories,
+      alarmSeverities,
+      alarmSkills,
+    });
+    if (!problem) {
+      return;
+    }
+    throw new ConflictException(
+      `Cannot instantiate ${template.code} v${template.version}: ` +
+        `${alarmVocabularyMessage(problem)} ` +
+        `Reactivate that ${problem.axis}, or publish a new template version that does not ` +
+        "use it.",
+    );
   }
 
   /** Keeps one statement under the Postgres bind-parameter ceiling. */

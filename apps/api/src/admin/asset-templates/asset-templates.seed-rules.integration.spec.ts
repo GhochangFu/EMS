@@ -80,7 +80,7 @@ export const PHILOSOPHY_CAUSE = "Fouled plate pack, or a failed supply-side cont
  * `water`, so `pointKeysForAsset` falls through to its electrical default —
  * which is exactly the set the fixture's point keys are chosen to avoid.
  */
-const FIXTURE_DOMAIN = "water";
+export const FIXTURE_DOMAIN = "water";
 
 export type Services = {
   templates: AssetTemplatesAdminService;
@@ -962,7 +962,7 @@ export async function assertUnparseableContentRefusesToInstantiate(
  * suite-level one also drops the fixture template, and calling it here would
  * delete the row every remaining case instantiates.
  */
-async function cleanup2(pool: pg.Pool): Promise<void> {
+export async function cleanup2(pool: pg.Pool): Promise<void> {
   const ruleScope = `
     SELECT id FROM bms.automation_rules
      WHERE source_template_id IN (SELECT id FROM bms.asset_templates WHERE code LIKE $1)
