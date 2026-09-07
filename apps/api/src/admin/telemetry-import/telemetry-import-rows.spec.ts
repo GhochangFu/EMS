@@ -40,10 +40,13 @@ function buildWorkbookBufferWithDates(rows: (string | number | Date)[][]): Buffe
 }
 
 /**
- * The same workbook with its used range starting at Excel row `startRow`: the
- * rows are written from there and `!ref` is hand-set to match, which is what a
- * sheet with rows inserted above the header looks like on disk
- * (`aoa_to_sheet([[]])` alone leaves a `!ref` of `A1:A1`).
+ * The same workbook with its used range starting at `origin` — down the sheet,
+ * across it, or both: the rows are written from that cell and `!ref` is
+ * hand-set to match, which is what a sheet with rows or columns inserted above
+ * and left of the header looks like on disk (`aoa_to_sheet([[]])` alone leaves
+ * a `!ref` of `A1:A1`). Both axes matter, because `sheet_to_json` indexes
+ * `raw` from the range's own origin on both, which is the mismatch `F4.100`
+ * closed.
  *
  * Written **deflated**, as every real `.xlsx` is — the ~20,000-row fixtures
  * below are 1.3–1.7 MiB compressed against 8–10 MiB plain, and this parser's
@@ -62,6 +65,7 @@ function buildWorkbookBufferFromCell(rows: (string | number)[][], origin: string
   return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
 }
 
+/** Column A, `startRow` down — the row-axis-only shape the cap fixtures want. */
 function buildWorkbookBufferFromRow(rows: (string | number)[][], startRow: number): Buffer {
   return buildWorkbookBufferFromCell(rows, `A${startRow}`);
 }
