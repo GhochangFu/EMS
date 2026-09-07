@@ -281,6 +281,10 @@ export class AssetTemplateInstantiationService {
         rtuId: target.rtuId,
         pointCount: plan.points.length,
         skippedPoints: plan.skippedPoints,
+        // E2.4 (ADR 0058 decision 10): honest zero until the seed exists. This
+        // service still writes only `assets` and `asset_points`, so nothing has
+        // been seeded and reporting an empty list is the truth, not a stub.
+        seededRules: [],
       };
     });
 
@@ -294,6 +298,9 @@ export class AssetTemplateInstantiationService {
       assets: assetDtos,
       assetCount: assetDtos.length,
       pointCount: created.pointCount,
+      // E2.4: see the per-asset comment above — zero until the seed lands.
+      ruleCount: 0,
+      disabledRuleCount: 0,
     };
   }
 
