@@ -871,9 +871,20 @@ export type StoredContentParse =
  * needs in order to fix it, and nothing a caller could use to read a value back
  * out of a row they are not otherwise permitted to read.
  *
- * Our own `custom` messages are kept, because we wrote them: they interpolate
- * only a key name and a byte count, and they are the only place a reserved
- * section explains which backlog item it is waiting for.
+ * Our own `custom` messages are kept, because we wrote them, and they are the
+ * only place a reserved section explains which backlog item it is waiting for.
+ *
+ * **They are not uniformly value-free, and the sentence here used to claim they
+ * were** — it said they interpolate only a key name and a byte count. Four in
+ * this file interpolate a stored value: the duplicate-code message, the two
+ * health-band messages, and the calc-expression error. That was already true on
+ * `main` for the publish path; what `E2.4` changed is that this renderer gained
+ * a second caller, the instantiate refusal. Both callers sit behind the same
+ * read gate as `getById`, which returns `content` raw, so nothing crosses a
+ * trust boundary — but the comment mattered, because it is cited as a security
+ * property and a future author tightening one copy would have trusted it and
+ * skipped those four. Add a `custom` message that interpolates a stored value
+ * only where that gate still holds.
  *
  * Extracted from `AssetTemplatesAdminService.parseStoredContent` rather than
  * copied. It is a security property, and a second copy is a second thing to

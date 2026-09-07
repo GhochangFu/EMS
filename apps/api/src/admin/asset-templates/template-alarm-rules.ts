@@ -134,17 +134,6 @@ export function seededRuleCode(assetCode: string, alarmCode: string): string {
   return `${prefixed.slice(0, TRUNCATED_LENGTH)}_${digest}`;
 }
 
-/**
- * D1 — the alarm philosophy as the rule's `description`: `Cause:`, `Impact:`,
- * `Action:` and `Skill:` lines, present fields only, `null` when the alarm
- * carries no philosophy or an empty one.
- *
- * This is the ISA-18.2 rationalization record ADR 0058's Context names — the
- * same four fields `bms.alarm_enrichments` (ADR 0034) makes an operator type
- * per live alarm, carried onto the rule so the knowledge reaches the person
- * looking at it. `skill` renders as its code: it is a key into
- * `bms.alarm_skills` and this function does no IO to resolve a label.
- */
 /** `ruleUpdateBodySchema`'s `description.max(2000)` — see {@link philosophyDescription}. */
 const MAX_RULE_DESCRIPTION = 2000;
 
@@ -166,6 +155,17 @@ export function seededRuleName(alarm: TemplateAlarm): string {
   return name.slice(0, 255);
 }
 
+/**
+ * D1 — the alarm philosophy as the rule's `description`: `Cause:`, `Impact:`,
+ * `Action:` and `Skill:` lines, present fields only, `null` when the alarm
+ * carries no philosophy or an empty one.
+ *
+ * This is the ISA-18.2 rationalization record ADR 0058's Context names — the
+ * same four fields `bms.alarm_enrichments` (ADR 0034) makes an operator type
+ * per live alarm, carried onto the rule so the knowledge reaches the person
+ * looking at it. `skill` renders as its code: it is a key into
+ * `bms.alarm_skills` and this function does no IO to resolve a label.
+ */
 export function philosophyDescription(philosophy: TemplateAlarm["philosophy"]): string | null {
   if (!philosophy) {
     return null;
@@ -237,12 +237,21 @@ export function seededRuleValues(input: SeededRuleInput): SeededRuleInsert {
     condition.unit = unit;
   }
 
+  // `message` stores the DERIVED name, not `alarm.message` verbatim, and the
+  // difference is load-bearing for decision 8. The rule table has no message
+  // column, so `driftVerdict` compares the baseline's `message` against the
+  // rule's `name` — which is `seededRuleName`'s output: trimmed, floored at
+  // three characters, sliced to 255. `templateAlarmSchema.message` allows 1 to
+  // 500, so storing it raw makes `valuesEqual(live, baseline)` false the
+  // instant the row is written for any message that is long, short or padded,
+  // and the drift route then reports `local_override` on a rule nobody has
+  // touched. "As seeded" in decision 5 means as written to the rule.
   const baseline: SeededRuleValues = {
     operator,
     thresholdValue,
     severity: alarm.severity,
     category,
-    message: alarm.message,
+    message: seededRuleName(alarm),
   };
 
   return {

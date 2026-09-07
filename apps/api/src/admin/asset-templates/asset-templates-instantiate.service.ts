@@ -675,17 +675,23 @@ export class AssetTemplateInstantiationService {
         const code = seededRuleCode(entry.code, alarm.code);
         const first = derivedBy.get(code);
         if (first) {
-          collisions.push(`${code} (from ${first} and from ${entry.code} / ${alarm.code})`);
+          // Asset codes only, never `alarm.code`. The alarm code is stored
+          // `jsonb` with no charset restriction, and `template-alarm-vocabularies.ts`
+          // states the rule for this service: no field that can hold a stored
+          // value. Naming the two asset codes — which the caller just typed into
+          // this request body — says exactly as much about what to rename.
+          collisions.push(`${code} (from assets ${first} and ${entry.code})`);
           continue;
         }
-        derivedBy.set(code, `${entry.code} / ${alarm.code}`);
+        derivedBy.set(code, entry.code);
       }
     }
     if (collisions.length > 0) {
       throw new ConflictException(
         "This batch would derive the same rule code twice — a rule code is unique per " +
           `organization, so nothing was written: ${collisions.join("; ")}. ` +
-          "Rename one of the asset codes or one of the template alarm codes.",
+          "Rename one of the asset codes, or one of the template's alarm codes — two alarm " +
+          "codes differing only in punctuation derive the same rule code.",
       );
     }
 

@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAFreshlySeededRowReadsAsInSync,
   assertAPhilosophyAlarmSeedsADisabledRule,
   assertASeededRowSatisfiesTheRuleEditorsOwnBounds,
   assertAProtoAlarmSeedsAnArmedRule,
@@ -76,12 +77,16 @@ describe("E2.4 — template alarm rule derivation (ADR 0058)", () => {
       assertTheBaselineCarriesTheResolvedValues();
     });
 
-    it("truncates the name to the column width without shortening the baseline message", () => {
+    it("truncates the name to the column width and stores that same derived name in the baseline", () => {
       assertTheNameIsTruncatedToTheColumnWidth();
     });
 
     it("omits condition.unit entirely when no unit was resolved", () => {
       assertTheConditionOmitsUnitWhenThereIsNone();
+    });
+
+    it("reads as in_sync the instant it is written, for every message the schema permits", () => {
+      assertAFreshlySeededRowReadsAsInSync();
     });
 
     it("stays inside the rule editor's own name and description bounds, so the row can be PATCHed", () => {

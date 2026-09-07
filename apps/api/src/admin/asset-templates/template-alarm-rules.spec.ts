@@ -344,9 +344,39 @@ export function assertTheNameIsTruncatedToTheColumnWidth(): void {
   sameString(row.name, message.slice(0, 255), "name is the message's first 255 characters");
   sameString(
     (row.seededBaseline as { message: string }).message,
-    message,
-    "the baseline keeps the whole message — it is compared against the template, not the column",
+    row.name as string,
+    "the baseline stores the DERIVED name, so an untouched rule does not read as drifted",
   );
+}
+
+/**
+ * The baseline exists to answer "who moved this", so it must record the value
+ * that was actually written. `driftVerdict` compares the baseline's `message`
+ * against the rule's `name`, and the three inputs `templateAlarmSchema` permits
+ * but `seededRuleName` rewrites — over 255 characters, under 3, and padded —
+ * would otherwise each report `local_override` on a rule nobody has touched.
+ *
+ * This feeds a real `seededRuleValues` row back in as `live`, rather than
+ * building `live` by hand as the quadrant cases do. That hand-building is
+ * exactly why the mismatch survived until the rulebook review found it.
+ */
+export function assertAFreshlySeededRowReadsAsInSync(): void {
+  for (const message of ["T".repeat(500), "Hi", "  padded  "]) {
+    const row = buildRow({ message });
+    const baseline = row.seededBaseline as SeededRuleValues;
+    const live: SeededRuleValues = {
+      operator: row.operator ?? null,
+      thresholdValue: row.thresholdValue ?? null,
+      severity: row.severity ?? null,
+      category: row.category as string,
+      message: row.name as string,
+    };
+    sameString(
+      driftVerdict(live, baseline, baseline),
+      "in_sync",
+      `a row just written from message ${JSON.stringify(message)} must read as in_sync`,
+    );
+  }
 }
 
 /**
