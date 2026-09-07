@@ -10,6 +10,11 @@ record was accepted as drafted ("Accept"). `plan-architect` writes the plan
 next; no implementation code exists at acceptance. Effort is re-set from
 `4–6` to **`8–10`** (decision 12).
 
+**Built 2026-09-07:** PR 1 #338 (`452c1f4`, the shared sweep loop and the
+event kinds), PR 2 #341 (`f9aa102e`, migration `0066` through the pages).
+Amendment 1 records the plan's rulings and the facts that differ from the
+text below.
+
 ## Context
 
 `F3.6` unified the alarm engine and left one lifecycle state: an alarm is
@@ -203,3 +208,58 @@ have.
   inherited item is discharged here. **ADR 0041** — a note that two event
   kinds now ride decision 7's key.
 - None of these edits belong in the `F3.10` feature commits (§9.10).
+
+## Amendment 1 — `F3.10` built: the rulings, the migration number, and three corrected facts (2026-09-07)
+
+The plan (`docs/plans/f3.10-alarm-lifecycle-escalation.md`) took nine rulings
+from the owner on 2026-09-06 and named three places where the text above is
+not what was built. All are recorded here; none re-opens a decision.
+
+1. **The schema unit is migration `0066_alarm_lifecycle`**, not "`0065` or
+   later" as the Context guessed: `F2.7` landed `0063` and `0064`, and `F3.46`
+   took `0065`. The plan's own `0065` references read `0066`.
+2. **Decision 10's index is this record's own.** `F3.46`'s `0065` index is
+   scoped `WHERE status = 'skipped_deduped'`, which a read for `sent` or
+   `failed` rows cannot use. `0066` creates
+   `notification_deliveries_channel_key_idx (channel_id, dedupe_key) WHERE
+   dedupe_key IS NOT NULL`, which subsumes it, and drops `0065`'s in the same
+   file (ruling Q3); `hasRecordedSkip` and the event reads share it. `0066`
+   also adds `(alarm_id) WHERE alarm_id IS NOT NULL` for the cleared-message
+   recipient read.
+3. **Decision 2's "one line" in `AlarmRaiser` does not exist.** The raiser's
+   dedupe is the database's bare `ON CONFLICT DO NOTHING`; what moved was the
+   predicate in the raise integration spec and the comments that said
+   acknowledgement clears the key.
+4. **Decision 5's "existing batched loader" is `batchedLatestPointValues`
+   over rule rows**, so the sweep selects the rule rows first and matches
+   threshold rules only.
+5. **The backfill is guarded on the old predicate.** `0066` runs
+   `cleared_at = acknowledged_at` per organization under the tenant GUC only
+   while `alarms_open_per_rule_uidx` still reads `acknowledged_at IS NULL`, so
+   a replay of the file is inert and cannot close a live acknowledged alarm
+   (proved by applying the file twice on a scratch database). The seed stamps
+   its two acknowledged demo alarms cleared for the same reason: a fresh
+   database must not hold rule-less alarms that nothing can clear.
+6. **Rulings.** Q1: the dashboard KPIs, the map counts and the metric
+   catalogue count active = not cleared. Q2: `clear_hold_seconds` 1–86 400,
+   `after_minutes` 1–10 080 strictly increasing, at most ten steps. Q3: the
+   index above. Q4: a step with no channel is refused; a profile with no
+   steps is allowed. Q5: the admin page follows the channels page layout.
+   Q6: profile administration sits behind the channel-admin gate. Q7: the
+   once-per-key ledger read is literal — a step refused by the hourly ceiling
+   is not retried in this row, and the first mapping of a severity sends the
+   step to every backlogged alarm of that severity at once (52 on the seeded
+   database, measured on the stack); the retry is `F3.48`. Q8: escalation
+   ignores the rule's `action`. Q9 (PR 1's security review): a `failed` event
+   delivery is retried, at most three attempts per key per channel
+   (`MAX_EVENT_ATTEMPTS`); any other row blocks the key.
+7. **Facts from the build.** At most 50 channels per step (security review).
+   Foreign-organization channels are dropped at dispatch, and an event with
+   no alarm id is refused. The escalation phase isolates each step in its own
+   try/catch, so one channel's failure does not stop the tick. The alarms
+   page's *Active* card counts uncleared alarms, acknowledged ones included,
+   and was renamed from the mockups' "Active (unack)" — a divergence recorded
+   under decision 11, because the mockups predate the four-state lifecycle.
+   An acknowledgement on the page needs a reason (the existing dialog).
+8. **The promotion follow-ups above are discharged** by the `chore(agents):`
+   sweep that carries this amendment; `F3.28`'s rail is buildable.

@@ -34,6 +34,9 @@ expensive to unwind once `F3.10`/`F3.28` build on top of it.
    normal. A latched alarm rail without auto-clear would accumulate every
    transient simulator breach and never drain it, which fails the "does not fire
    when it should not" half of AGENTS.md §4.6 verification by construction.
+   *Discharged 2026-09-07 by ADR 0057 (`F3.10`): `bms.alarms.cleared_at` and
+   the auto-clear sweep exist and active alarms drain; the rail itself stays
+   `F3.28`.*
 
 2. **`POST /api/v1/rules/evaluate` raises real alarms, unscoped, and returns
    only the caller's scoped traces.** Alarms are facts about the plant, not a
@@ -137,7 +140,8 @@ None — no new npm package.
 - `F3.10` inherits an open item: it must add `bms.alarms.cleared_at` (or
   equivalent) and the auto-clear logic before the `F3.28` rail can switch from
   `ActiveRulesPanel` to a real Active Alarms table. Decision 1 is what makes
-  that F3.10's job rather than F3.6's.
+  that F3.10's job rather than F3.6's. *Done 2026-09-07: ADR 0057, migration
+  `0066`.*
 - Decision 2 means an unprivileged, location-scoped operator can cause
   org-wide side effects (alarms raised for assets they cannot see) by pressing
   "evaluate now." This mirrors the streaming path's existing scope and is
