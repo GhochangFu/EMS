@@ -46,7 +46,59 @@ export const MAX_RANGE_START_ROW = 100;
  */
 export const SHEET_ROWS_BOUND = MAX_IMPORT_ROWS + 2 + MAX_RANGE_START_ROW;
 
+/**
+ * How wide a window, counted from the first column of the sheet's used range,
+ * the importer reads (`F4.101`; 64 is the owner's ruling, as
+ * {@link MAX_RANGE_START_ROW} was).
+ *
+ * `sheetRows` bounds rows only. `sheet_to_json` densifies every cell of the
+ * **declared** range on both axes, and SheetJS clamps the column span solely
+ * inside its row-clamp branch — which never fires for a range whose declared
+ * end row is *under* {@link SHEET_ROWS_BOUND}. A workbook may therefore declare
+ * `<dimension ref="A1:XFD20102"/>` while holding two real cells, cost nothing
+ * to read, and cost 20,102 × 16,384 = 3.29 **billion** cells to densify.
+ * Measured on the pinned xlsx 0.20.3, through the real `parseWorkbook`, from a
+ * **2,668-byte** upload: the process died with `JavaScript heap out of memory`
+ * after 78.9 s at a 512 MiB heap cap and after 331.9 s at 2 GiB. A larger heap
+ * postpones the kill proportionally rather than preventing it — at the measured
+ * ~48 bytes per cell the range needs about 150 GiB. Smaller declarations stall
+ * instead of dying: 16,384 × 2,000 took 56.0 s and 1.5 GiB from 2,667 bytes.
+ * The request writes nothing and is repeatable, so it is a denial of service
+ * against the whole API, not against one import.
+ *
+ * It bounds a second path as well, which is easy to miss because the row clamp
+ * looks like it already covers it: when that clamp *does* fire it sets
+ * `tmpref.e.c = min(declared, refguess.e.c)`, and `refguess` is measured from
+ * the cells actually present — so one real cell at XFD leaves `refguess.e.c` at
+ * 16,383 and the clamped range is still 20,102 × 16,384. A declared end row
+ * *over* the bound is therefore no safer than one under it.
+ *
+ * This parser names six columns, so 64 leaves 58 for whatever else an
+ * operator's sheet carries beside them, and bounds the worst case a sheet can
+ * still buy at 20,102 × 64 = 1,286,528 cells. The window is applied to the *read*,
+ * and a recognised header found beyond it refuses the file by name rather than
+ * being dropped — see {@link columnBoundedRange}. AGENTS.md §4.3: a size cap on
+ * the upload is not a bound on the work.
+ */
+export const MAX_HEADER_COLUMNS = 64;
+
+/**
+ * How far right {@link columnBoundedRange} looks for a misplaced header. The
+ * XLSX format stops at 16,384 columns (XFD), so this only bounds the scan of a
+ * *malformed* `<dimension>` that declares more than the format allows.
+ */
+const HEADER_SCAN_COLUMN_CEILING = 16_384;
+
 const REQUIRED_HEADERS = ["point_key", "value", "time"] as const;
+
+/**
+ * Every header this parser reads — the three required ones, the two that
+ * satisfy the asset reference, and optional `unit`. A recognised header outside
+ * the read window is refused rather than ignored: dropping `unit` silently
+ * would change the imported data, and dropping a required one would blame the
+ * operator's file for a bound they cannot see.
+ */
+const RECOGNISED_HEADERS: ReadonlySet<string> = new Set([...REQUIRED_HEADERS, "asset_code", "asset_id", "unit"]);
 
 export type ParsedImportRow = {
   /**
@@ -154,6 +206,110 @@ function rawCellText(sheet: XLSX.WorkSheet, sheetRowIndex: number, colIndex: num
 }
 
 /**
+ * The longest a header cell may be and still be compared. The longest header
+ * this parser recognises is `asset_code` at ten characters, so nothing legible
+ * is lost — and without it the scan below is O(columns × cell length), not
+ * O(columns). SheetJS dedupes shared strings, so one long string referenced
+ * from every column of the header row multiplies its own length by the column
+ * count, and neither `zipInflationProblem` (64 MiB declared) nor
+ * `MAX_IMPORT_FILE_BYTES` (5 MiB) bounds that product.
+ */
+const MAX_HEADER_CELL_CHARS = 64;
+
+/**
+ * A header cell, addressed absolutely and compared the way the header row is:
+ * the cell's own value, trimmed and lower-cased.
+ *
+ * Reads `.v` rather than `rawCellText`'s `.w` because `sheet_to_json` is called
+ * with no `raw` key, which SheetJS resolves to `raw: true` — so `raw[0]` holds
+ * `.v` too, and comparing `.v` here is comparing like with like. (`.w` is the
+ * formatted source text, which the time column needs and a header does not, and
+ * a cell can carry one without the other.) Mirrors `F2.7`'s sibling
+ * `cellText(sheet, r, c)`.
+ */
+function headerCellText(sheet: XLSX.WorkSheet, r: number, c: number): string {
+  const cell = sheet[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined;
+  if (cell === undefined || cell.v === undefined || cell.v === null) {
+    return "";
+  }
+  // Length first, before `trim`/`toLowerCase` allocate: a cell this long is not
+  // a header this parser knows, and `toLowerCase` on some code points (U+0130)
+  // expands as it copies.
+  if (typeof cell.v === "string" && cell.v.length > MAX_HEADER_CELL_CHARS) {
+    return "";
+  }
+  return String(cell.v).trim().toLowerCase();
+}
+
+/**
+ * The range `sheet_to_json` may densify, or the sentence that refuses the sheet
+ * (`F4.101`).
+ *
+ * Bounds the **column** span to {@link MAX_HEADER_COLUMNS} counted from the
+ * range's own first column, which is what stops a declared-but-empty range from
+ * costing billions of cells. Two properties matter and each is load-bearing:
+ *
+ * - **`s` is copied unchanged.** `sheet_to_json` indexes `raw` from the range
+ *   it is given, on both axes, so `F4.100`'s `headerSheetRowIndex` /
+ *   `firstSheetColIndex` arithmetic stays correct only while the range handed
+ *   to it starts exactly where `!ref` does. Snapping `s.c` to 0 shifts every
+ *   index out of `raw` one column right on a B-origin sheet while
+ *   `firstSheetColIndex` still counts from `!ref`, so the absolute address
+ *   lands one column past `time`.
+ *
+ *   `F4.100`'s four-origin suite does **not** catch that — measured. The two
+ *   shifts cancel for everything read out of `raw`, and the absolute read is
+ *   rescued by `rawCellText`'s `?? cellText(row, timeIdx)` fallback whenever
+ *   the column it lands on is empty, which it is in those fixtures. It would
+ *   stop being rescued the moment that column held an ISO timestamp — exactly
+ *   the silent corruption `F4.100` closed. So the invariant is asserted
+ *   directly instead, on the returned range.
+ * - **A recognised header beyond the window refuses the file, by name.** The
+ *   scan is `sheet[addr]` lookups over the header row only, so it is bounded by
+ *   the declared width and costs microseconds — nothing is densified to run it.
+ *   Without it the file would fail later as `Missing required column 'time'`,
+ *   blaming the operator's sheet for a bound this parser imposes. A header that
+ *   also appears **inside** the window is not a problem: `indexOf` takes the
+ *   first, so the in-window one is the one that would have been read anyway.
+ */
+export function columnBoundedRange(
+  sheet: XLSX.WorkSheet,
+  range: XLSX.Range,
+): { readonly ok: true; readonly range: XLSX.Range } | { readonly ok: false; readonly reason: string } {
+  const lastReadableColumn = range.s.c + MAX_HEADER_COLUMNS - 1;
+
+  const insideWindow = new Set<string>();
+  for (let c = range.s.c; c <= Math.min(range.e.c, lastReadableColumn); c += 1) {
+    insideWindow.add(headerCellText(sheet, range.s.r, c));
+  }
+
+  const scanTo = Math.min(range.e.c, range.s.c + HEADER_SCAN_COLUMN_CEILING - 1);
+  for (let c = lastReadableColumn + 1; c <= scanTo; c += 1) {
+    const text = headerCellText(sheet, range.s.r, c);
+    if (RECOGNISED_HEADERS.has(text) && !insideWindow.has(text)) {
+      return {
+        ok: false,
+        // `text` is NOT echoed sheet text despite reading like it: the branch
+        // is reached only when `RECOGNISED_HEADERS.has(text)`, and `Set.has`
+        // is SameValueZero, not a property lookup, so `text` is provably one of
+        // the six literals in that set. That is why `spreadsheet-guard.ts`'s
+        // `quoteCell` is not applied here — the membership test is the stronger
+        // bound. Apply `quoteCell` if this message ever interpolates a cell the
+        // set does not vouch for.
+        reason:
+          `Column '${text}' is at ${XLSX.utils.encode_col(c)}, beyond the ${MAX_HEADER_COLUMNS} columns ` +
+          `read from the start of the sheet's used range; move the import columns to the left of the sheet`,
+      };
+    }
+  }
+
+  return {
+    ok: true,
+    range: { s: { r: range.s.r, c: range.s.c }, e: { r: range.e.r, c: Math.min(range.e.c, lastReadableColumn) } },
+  };
+}
+
+/**
  * Parses an uploaded CSV or XLSX buffer into accepted rows and per-row
  * rejections. Returns a discriminated result instead of throwing: a
  * genuinely unreadable buffer, a missing required column, an empty sheet, or
@@ -167,6 +323,12 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   // only; the shared-string table is inflated whole, and the F2.7 security
   // review took the process to 2.5 GB RSS with a 1.3 MB file through this same
   // `XLSX.read` shape (`spreadsheet-guard.ts`).
+  //
+  // Three guards, and each bounds something the other two do not: this one the
+  // declared inflation, `sheetRows` the row count, and `MAX_HEADER_COLUMNS` the
+  // column span. A workbook can satisfy the first two and still declare
+  // 16,384 columns — that is `F4.101`, and it killed the process from 2,668
+  // bytes.
   const inflation = zipInflationProblem(buffer);
   if (inflation !== null) {
     return { ok: false, reason: inflation };
@@ -204,7 +366,23 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
     return { ok: false, reason: "Workbook has no sheets" };
   }
 
-  const raw = XLSX.utils.sheet_to_json<SheetCell[]>(sheet, { header: 1, defval: "" });
+  // The declared used range, decoded BEFORE anything densifies it. A sheet with
+  // no `!ref` produces no rows at all — `sheet_to_json` iterates the range — so
+  // it is the empty sheet the next check used to name after the fact.
+  const ref = sheet["!ref"];
+  if (ref === undefined) {
+    return { ok: false, reason: "Sheet is empty" };
+  }
+  const range = XLSX.utils.decode_range(ref);
+  // `F4.101`: bound the column span first. `sheetRows` above bounded rows only,
+  // and a declared range costs its full area to densify whether or not a cell
+  // is really there.
+  const bounded = columnBoundedRange(sheet, range);
+  if (!bounded.ok) {
+    return { ok: false, reason: bounded.reason };
+  }
+
+  const raw = XLSX.utils.sheet_to_json<SheetCell[]>(sheet, { header: 1, defval: "", range: bounded.range });
   if (raw.length === 0 || raw.every(isBlankRow)) {
     return { ok: false, reason: "Sheet is empty" };
   }
@@ -231,9 +409,9 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   // Two ways to be over the cap: more data rows than it allows, or a used range
   // that reached the reading bound — in which case `dataRows` is what survived
   // the cut, not what the file holds, and is not a number to trust.
-  const ref = sheet["!ref"];
-  const range = ref !== undefined ? XLSX.utils.decode_range(ref) : undefined;
-  const cutAtTheReadingBound = range !== undefined && range.e.r + 1 >= SHEET_ROWS_BOUND;
+  // The TRUE declared end row, not the bounded range's — the column bound never
+  // moves it, and this check is about what the reading may have cut.
+  const cutAtTheReadingBound = range.e.r + 1 >= SHEET_ROWS_BOUND;
   if (cutAtTheReadingBound || dataRows.length > MAX_IMPORT_ROWS) {
     return {
       ok: false,
@@ -264,11 +442,12 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   // measured. Every index derived from `raw` is therefore range-relative,
   // while `sheet[...]` is addressed absolutely, so the two are reconciled here
   // once (`F4.100`; `F2.7`'s sibling parser anchors the same way, as `r + 1`
-  // and `range.s.c + c`). A sheet with no `!ref` never reaches this point —
-  // `raw` is empty and the sheet is refused as empty above — so the 0
-  // fallbacks are a formality.
-  const headerSheetRowIndex = range?.s.r ?? 0;
-  const firstSheetColIndex = range?.s.c ?? 0;
+  // and `range.s.c + c`). `F4.101` hands `sheet_to_json` a column-bounded
+  // range, which is why that range keeps `!ref`'s own `s` untouched: `raw` is
+  // indexed from whatever range it was given, so these two would silently go
+  // wrong if the bound moved the origin.
+  const headerSheetRowIndex = range.s.r;
+  const firstSheetColIndex = range.s.c;
   // `time` is a required header, so `timeIdx` is never -1 here; the guard keeps
   // `rawCellText`'s own "no such column" contract intact rather than letting the
   // offset turn a -1 into a real, wrong cell.
@@ -283,7 +462,12 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
     const rowNumber = sheetRowIndex + 1;
 
     if (isBlankRow(row)) {
-      return; // silently ignored — spacer rows are common in hand-edited sheets
+      // Silently ignored — spacer rows are common in hand-edited sheets. Since
+      // `F4.101` `row` is the row within the read window, so a row whose only
+      // content sits beyond `MAX_HEADER_COLUMNS` is blank here too. It was
+      // previously rejected as "Row must include asset_code or asset_id"; it
+      // never held data this importer reads, under a column it never read.
+      return;
     }
 
     const assetCode = hasAssetCode ? cellText(row, assetCodeIdx) : "";

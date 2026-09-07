@@ -1,7 +1,13 @@
 import * as XLSX from "xlsx";
 
 import { syntheticZip } from "../../testing/synthetic-zip";
-import { MAX_IMPORT_ROWS, SHEET_ROWS_BOUND, parseWorkbook } from "./telemetry-import-rows";
+import {
+  MAX_HEADER_COLUMNS,
+  MAX_IMPORT_ROWS,
+  SHEET_ROWS_BOUND,
+  columnBoundedRange,
+  parseWorkbook,
+} from "./telemetry-import-rows";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -73,6 +79,27 @@ function buildWorkbookBufferFromRow(rows: (string | number)[][], startRow: numbe
 /** A blank Excel row 1 above the header — the common case, and the one the row numbering turns on. */
 function buildWorkbookBufferFromRowTwo(rows: (string | number)[][]): Buffer {
   return buildWorkbookBufferFromRow(rows, 2);
+}
+
+/**
+ * A workbook that **declares** a used range far wider than the cells it holds —
+ * what `<dimension ref="A1:XFD20102"/>` looks like on disk, and the shape
+ * `F4.101` bounds. SheetJS's writer preserves a hand-set `!ref` and its reader
+ * takes the declared range at face value; both measured on the pinned 0.20.3.
+ *
+ * The declared width is modest on purpose. Writing is O(declared cells), so
+ * `A1:XFD2000` takes **46.8 s to write** where `A1:ZZ200` takes 187 ms — a
+ * full-width fixture cannot live in a test suite. 702 columns is 11× the
+ * 64-column bound, which is all an end-to-end case needs to show. The real
+ * ceiling is asserted against {@link columnBoundedRange} directly instead, where
+ * no workbook has to exist at all.
+ */
+function buildWorkbookBufferDeclaring(rows: (string | number)[][], declaredRef: string): Buffer {
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet["!ref"] = declaredRef;
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "Import");
+  return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
 }
 
 const HEADER = ["asset_code", "point_key", "value", "unit", "time"];
@@ -616,4 +643,221 @@ export function runTelemetryImportRowsTests(): void {
     !capWithBlanksResult.ok,
     "a blank row that pushes the sheet one row past the cap must still be refused as over the cap",
   );
+}
+
+/**
+ * `F4.101`: the column span a sheet may cost is bounded before anything
+ * densifies it.
+ *
+ * `sheetRows` bounds rows only, and `sheet_to_json` materialises every cell of
+ * the **declared** range whether or not a cell is really there. SheetJS clamps
+ * the column span solely inside its row-clamp branch, which never fires while
+ * the declared end row is under `SHEET_ROWS_BOUND` — so a workbook could
+ * declare `A1:XFD20102`, hold two real cells, weigh 2,668 bytes, and cost 3.29
+ * billion cells to read. Measured through the real `parseWorkbook`: the process
+ * died with `JavaScript heap out of memory` after 78.9 s at a 512 MiB heap cap
+ * and after 331.9 s at 2 GiB — a bigger heap postpones the kill, it does not
+ * prevent it. The request writes nothing and is repeatable.
+ *
+ * The gates below are split deliberately, because the obvious end-to-end
+ * assertion does not gate this at all: "the wide sheet still returns its one
+ * row" passes against the defect too — just 56 s later. So:
+ *
+ * - the **ceiling** is asserted against {@link columnBoundedRange} directly, on
+ *   the worst range a workbook can declare, with no fixture to build;
+ * - the **wiring** is asserted through `parseWorkbook` by a case whose *result*
+ *   differs depending on whether the bounded range actually reached
+ *   `sheet_to_json` — computing the bound and not passing it must go red;
+ * - the **anchor** `F4.100` depends on is asserted separately, because a bound
+ *   that moved the range's `s` would silently shift every column by one.
+ */
+export function runTelemetryImportColumnBoundTests(): void {
+  const emptySheet = {} as XLSX.WorkSheet;
+
+  // ---- the ceiling, on the worst range a workbook can declare --------------
+  // 20,102 rows x 16,384 columns = 329,351,168 cells before the bound.
+  const worst = columnBoundedRange(emptySheet, { s: { r: 0, c: 0 }, e: { r: SHEET_ROWS_BOUND - 1, c: 16_383 } });
+  assert(worst.ok, "the worst declarable range must be bounded, not refused — no recognised header sits in it");
+  if (worst.ok) {
+    const width = worst.range.e.c - worst.range.s.c + 1;
+    assert(width === MAX_HEADER_COLUMNS, `the widest read must be ${MAX_HEADER_COLUMNS} columns, got ${width}`);
+    const cells = (worst.range.e.r - worst.range.s.r + 1) * width;
+    assert(
+      cells <= SHEET_ROWS_BOUND * MAX_HEADER_COLUMNS,
+      `the worst declarable range must cost at most ${SHEET_ROWS_BOUND * MAX_HEADER_COLUMNS} cells, got ${cells}`,
+    );
+    // The rows are NOT bounded here — that is `SHEET_ROWS_BOUND`'s job, and a
+    // column bound that also moved the end row would break the cap check.
+    assert(worst.range.e.r === SHEET_ROWS_BOUND - 1, "the column bound must not move the range's end row");
+  }
+
+  // ---- the anchor `F4.100` depends on: `s` is never moved ------------------
+  // `sheet_to_json` indexes `raw` from the range it is given, on both axes,
+  // while `firstSheetColIndex` counts from `!ref`. A bound that snapped `s.c`
+  // to 0 makes the two disagree, and the absolute time read lands one column
+  // past `time`.
+  //
+  // This assertion is not redundant with `F4.100`'s four-origin suite —
+  // measured, that suite stays GREEN under the snapped bound. The two shifts
+  // cancel for everything taken out of `raw`, and the absolute read is rescued
+  // by `rawCellText`'s `?? cellText(row, timeIdx)` fallback whenever the column
+  // it lands on is empty, as it is in those fixtures. A sheet with an ISO
+  // timestamp in that column would be read at the wrong instant instead, which
+  // is the `F4.100` defect returning. Hence the invariant is held here,
+  // directly on the returned range, rather than left to a fixture to imply.
+  const bOrigin = columnBoundedRange(emptySheet, { s: { r: 1, c: 1 }, e: { r: 199, c: 700 } });
+  assert(bOrigin.ok, "a B2-origin range with no recognised header beyond the window must be bounded");
+  if (bOrigin.ok) {
+    assert(bOrigin.range.s.c === 1, `the bounded range must keep its own first column, got ${bOrigin.range.s.c}`);
+    assert(bOrigin.range.s.r === 1, `the bounded range must keep its own first row, got ${bOrigin.range.s.r}`);
+    assert(
+      bOrigin.range.e.c === 1 + MAX_HEADER_COLUMNS - 1,
+      `the window is counted from the range's own first column, expected ${MAX_HEADER_COLUMNS} wide, got ${bOrigin.range.e.c - bOrigin.range.s.c + 1}`,
+    );
+  }
+
+  // ---- a sheet already narrower than the window is returned untouched ------
+  const narrow = columnBoundedRange(emptySheet, { s: { r: 0, c: 0 }, e: { r: 9, c: 4 } });
+  assert(narrow.ok && narrow.range.e.c === 4, "a sheet narrower than the window must keep its own width");
+
+  // ---- a `<dimension>` wider than the XLSX format allows -------------------
+  // `safe_decode_range` accumulates column letters with no XFD clamp, so a
+  // hand-written `<dimension ref="A1:AAAAAAAA20102"/>` decodes to 8,353,082,582
+  // columns from a ~2.4 KB upload — measured. `HEADER_SCAN_COLUMN_CEILING` is
+  // the only thing bounding the scan for that input, and no fixture below is
+  // wide enough to bind it, so it is asserted here or it is not asserted at all.
+  const malformedStart = performance.now();
+  const malformed = columnBoundedRange(emptySheet, { s: { r: 0, c: 0 }, e: { r: SHEET_ROWS_BOUND - 1, c: 8_353_082_582 } });
+  const malformedMs = performance.now() - malformedStart;
+  assert(malformed.ok, "a dimension wider than the format allows must be bounded, not refused");
+  if (malformed.ok) {
+    assert(
+      malformed.range.e.c - malformed.range.s.c + 1 === MAX_HEADER_COLUMNS,
+      `a malformed dimension must still read ${MAX_HEADER_COLUMNS} columns, got ${malformed.range.e.c - malformed.range.s.c + 1}`,
+    );
+  }
+  // Generous by 3 orders of magnitude against the ~5 ms this takes bounded, and
+  // against the minutes it takes unbounded — a ceiling, not a benchmark.
+  assert(malformedMs < 5_000, `the header scan must be bounded, took ${malformedMs.toFixed(0)} ms`);
+
+  // ---- the WIRING: the bounded range must actually reach sheet_to_json -----
+  // Row 3 is empty in every named column and carries a stray note far to the
+  // right, past the window. Read bounded, it is a blank row — silently skipped,
+  // as a spacer row always was. Read unbounded, it is a row with content and no
+  // asset reference, so it lands in `rejected`. Nothing else in this file tells
+  // the two apart, and computing the bound without passing it fails here.
+  const strayColumn = 99;
+  const strayHeader = [...HEADER];
+  const goodRow: (string | number)[] = ["F19-ASSET-1", "kw", 12.5, "kW", "2026-08-19T10:00:00Z"];
+  const strayRow: (string | number)[] = ["", "", "", "", ""];
+  for (let c = HEADER.length; c <= strayColumn; c += 1) {
+    strayHeader[c] = "";
+    goodRow[c] = "";
+    strayRow[c] = c === strayColumn ? "a note the importer never reads" : "";
+  }
+  const strayResult = parseWorkbook(buildWorkbookBufferDeclaring([strayHeader, goodRow, strayRow], "A1:ZZ200"));
+  assert(strayResult.ok, `a sheet declaring a wide range must still parse, got ${JSON.stringify(strayResult)}`);
+  if (strayResult.ok) {
+    assert(strayResult.rows.length === 1, `expected the one real row, got ${strayResult.rows.length}`);
+    assert(strayResult.rows[0]?.rowNumber === 2, `the real row must still be numbered 2, got ${strayResult.rows[0]?.rowNumber}`);
+    assert(strayResult.rows[0]?.time === "2026-08-19T10:00:00.000Z", `the real row must keep its instant, got ${strayResult.rows[0]?.time}`);
+    assert(
+      strayResult.rejected.length === 0,
+      `a row whose only content is outside the read window is a spacer row, not a rejection — got ${JSON.stringify(strayResult.rejected)}`,
+    );
+  }
+
+  // ---- a recognised header beyond the window refuses the file, by name -----
+  // Fail closed, and say what is wrong. Without this the file would fail later
+  // as "Missing required column 'time'", blaming the operator's sheet for a
+  // bound this parser imposes — the same "blame the data for a parser fault"
+  // shape `F4.100` closed on the column axis.
+  const farHeader: (string | number)[] = [];
+  const farData: (string | number)[] = [];
+  for (let c = 0; c <= strayColumn; c += 1) {
+    farHeader[c] = c === 0 ? "asset_code" : c === 1 ? "point_key" : c === 2 ? "value" : `spare_${c}`;
+    farData[c] = c === 0 ? "F19-ASSET-1" : c === 1 ? "kw" : c === 2 ? "12.5" : "";
+  }
+  farHeader[strayColumn] = "time";
+  farData[strayColumn] = "2026-08-19T10:00:00Z";
+  const farResult = parseWorkbook(buildWorkbookBuffer([farHeader, farData]));
+  assert(!farResult.ok, "a sheet whose `time` column sits beyond the window must be refused");
+  if (!farResult.ok) {
+    assert(farResult.reason.includes("'time'"), `the refusal must name the column, got ${farResult.reason}`);
+    assert(
+      farResult.reason.includes(XLSX.utils.encode_col(strayColumn)),
+      `the refusal must name where the column is (${XLSX.utils.encode_col(strayColumn)}), got ${farResult.reason}`,
+    );
+  }
+
+  // ---- the same header ALSO inside the window is not a refusal ------------
+  // `indexOf` takes the first, so the in-window column is the one that would
+  // have been read anyway; refusing here would reject a sheet that works.
+  const duplicateHeader = [...farHeader];
+  const duplicateData = [...farData];
+  duplicateHeader[4] = "time";
+  duplicateData[4] = "2026-08-19T11:00:00Z";
+  const duplicateResult = parseWorkbook(buildWorkbookBuffer([duplicateHeader, duplicateData]));
+  assert(duplicateResult.ok, `a duplicate header inside the window must not be refused, got ${JSON.stringify(duplicateResult)}`);
+  if (duplicateResult.ok) {
+    assert(
+      duplicateResult.rows[0]?.time === "2026-08-19T11:00:00.000Z",
+      `the in-window column is the one read, expected 11:00, got ${duplicateResult.rows[0]?.time}`,
+    );
+  }
+
+  // ---- a header cell too long to be a header is not compared --------------
+  // SheetJS dedupes shared strings, so one long string referenced from every
+  // scanned column multiplies its own length by the column count, and neither
+  // upload guard bounds that product. A cell past `MAX_HEADER_CELL_CHARS` reads
+  // as blank rather than being trimmed and lower-cased.
+  const longCell = "x".repeat(5_000);
+  const longSheet: XLSX.WorkSheet = {};
+  for (let c = 0; c <= 200; c += 1) {
+    longSheet[XLSX.utils.encode_cell({ r: 0, c })] = { t: "s", v: longCell };
+  }
+  const longStart = performance.now();
+  const longResult = columnBoundedRange(longSheet, { s: { r: 0, c: 0 }, e: { r: 199, c: 200 } });
+  const longMs = performance.now() - longStart;
+  assert(longResult.ok, "a header row of long cells holds no recognised header, so it must be bounded not refused");
+  assert(longMs < 2_000, `a header row of long cells must not be normalised in full, took ${longMs.toFixed(0)} ms`);
+
+  // ---- a case-variant header beyond the window is still recognised ---------
+  // `headerCellText` lower-cases; without that the refusal below degrades to
+  // "Missing required column 'time'", which is the message this row exists to
+  // stop the parser giving.
+  const casedHeader: (string | number)[] = [];
+  const casedData: (string | number)[] = [];
+  for (let c = 0; c <= strayColumn; c += 1) {
+    casedHeader[c] = c === 0 ? "asset_code" : c === 1 ? "point_key" : c === 2 ? "value" : `spare_${c}`;
+    casedData[c] = c === 0 ? "F19-ASSET-1" : c === 1 ? "kw" : c === 2 ? "12.5" : "";
+  }
+  casedHeader[strayColumn] = "TiMe";
+  casedData[strayColumn] = "2026-08-19T10:00:00Z";
+  const casedResult = parseWorkbook(buildWorkbookBuffer([casedHeader, casedData]));
+  assert(!casedResult.ok, "a case-variant `time` beyond the window must be refused");
+  if (!casedResult.ok) {
+    assert(
+      casedResult.reason.includes("'time'"),
+      `the refusal must name the column in its canonical spelling, got ${casedResult.reason}`,
+    );
+  }
+
+  // ---- an OPTIONAL recognised header beyond the window is refused too ------
+  // `unit` is optional, so dropping it silently would import the same rows with
+  // different data rather than failing. Fail closed instead.
+  const farUnitHeader: (string | number)[] = [];
+  const farUnitData: (string | number)[] = [];
+  for (let c = 0; c <= strayColumn; c += 1) {
+    farUnitHeader[c] =
+      c === 0 ? "asset_code" : c === 1 ? "point_key" : c === 2 ? "value" : c === 3 ? "time" : `spare_${c}`;
+    farUnitData[c] = c === 0 ? "F19-ASSET-1" : c === 1 ? "kw" : c === 2 ? "12.5" : c === 3 ? "2026-08-19T10:00:00Z" : "";
+  }
+  farUnitHeader[strayColumn] = "unit";
+  farUnitData[strayColumn] = "kW";
+  const farUnitResult = parseWorkbook(buildWorkbookBuffer([farUnitHeader, farUnitData]));
+  assert(!farUnitResult.ok, "an optional `unit` column beyond the window must be refused, not silently dropped");
+  if (!farUnitResult.ok) {
+    assert(farUnitResult.reason.includes("'unit'"), `the refusal must name the column, got ${farUnitResult.reason}`);
+  }
 }

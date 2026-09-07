@@ -14,6 +14,7 @@ import {
   assertRequiredCellsAndDuplicateRows,
   assertRowCap,
   assertSheetSelection,
+  assertTheHeaderScanIsBoundedByTheTwelve,
   assertTheRowCapTripsWhenTheRangeStartsBelowRowOne,
 } from "./mapping-sheet-rows.spec";
 
@@ -87,5 +88,9 @@ describe("F2.7 — parseMappingSheet, the pure half of the import", () => {
 
   it("refuses a zip that declares a 500 MiB inflation before XLSX.read runs (security H2)", () => {
     assertADeclaredZipBombIsRefusedBeforeRead();
+  });
+
+  it("scans the header row over the twelve columns it has, not the width the file declares (F4.101)", () => {
+    assertTheHeaderScanIsBoundedByTheTwelve();
   });
 });

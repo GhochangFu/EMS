@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runTelemetryImportColumnBoundTests,
   runTelemetryImportRangeOriginTests,
   runTelemetryImportRangeStartTests,
   runTelemetryImportReadingBoundTests,
@@ -54,5 +55,17 @@ describe("parseWorkbook", () => {
     // the reference machine, and it shares the suite's CPU with every other
     // parallel file.
     60_000,
+  );
+
+  it(
+    "bounds the column span a declared range may cost, and refuses a recognised header beyond it",
+    () => {
+      runTelemetryImportColumnBoundTests();
+    },
+    // The ceiling and anchor cases build no workbook at all. The four fixtures
+    // that do are 100 columns wide and 2–3 rows deep, plus one declaring
+    // A1:ZZ200 — writing is O(declared cells), which is why none of them
+    // declares the full 16,384.
+    20_000,
   );
 });
