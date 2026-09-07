@@ -67,9 +67,12 @@ export class OnboardingChatService {
   ): { assistantMessage: string; suggestedReplies: string[] } {
     // `F4.102`. Everything this method interpolates from the import is sheet
     // text, and a cell may hold 32,767 characters. `quoteCell` is applied at
-    // each site rather than to the finished message, because two of the four
-    // (`mqttSetupTemplate`, `formatAssetsByRtuSummary`) build their strings
-    // before this one is assembled (AGENTS.md §6).
+    // each site rather than to the finished message, because four of the five
+    // sites live in `mqttSetupTemplate` and `formatAssetsByRtuSummary`, which
+    // build their strings before this one is assembled (AGENTS.md §6). The
+    // fifth is the `topic:` line, which cannot take `quoteCell` at all and is
+    // bounded by length instead — see `mqttSetupTemplate`.
+    // `onboarding-chat.service.spec.ts` enumerates all five.
     const summaryParts = [`location **${quoteCell(imported.locationName)}**`];
     if (imported.rtuCount > 0) {
       summaryParts.push(`**${imported.rtuCount}** RTU(s)`);

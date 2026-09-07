@@ -93,8 +93,18 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
  * `RangeError: Invalid string length`. Those two uploads were 198 MB and
  * 461 MB, so `MAX_IMPORT_FILE_BYTES` (5 MiB) now closes them at the door;
  * `quoteCell` ships anyway (owner ruling 3) because a 5 MiB workbook may still
- * declare tens of MiB inflated, i.e. thousands of maximum-length cells. **No
- * figure is claimed for that residual — it has not been measured.**
+ * declare tens of MiB inflated, i.e. thousands of maximum-length cells.
+ *
+ * **What that residual is, now that it has been measured.** Through the
+ * compiled services on this branch: a **1.75 MB** upload of 20,095 RTU rows —
+ * one row under the sheet bound, every `topic` at exactly the 255-character
+ * bound and every display name a duplicate, so each row also buys a
+ * `displayNameFixes` line — parses in 4.1 s and produces a **13.16 MB**
+ * `assistantMessage` at 658 MB RSS, which `OnboardingService.uploadExcel` then
+ * appends to the session's stored message history. Every *cell* on that message
+ * is bounded; the *counts* are not, because nothing caps the number of RTU rows
+ * a workbook may declare. Closing that needs a semantic row cap and a per-line
+ * cap on the summary, both filed as their own rows — deliberately not this one.
  *
  * The three sub-cases exist because `excelImportFollowUp` returns from the
  * first branch that matches. One call cannot reach both `mqttSetupTemplate` and
