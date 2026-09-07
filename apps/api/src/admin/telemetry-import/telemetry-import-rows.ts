@@ -49,7 +49,12 @@ export const SHEET_ROWS_BOUND = MAX_IMPORT_ROWS + 2 + MAX_RANGE_START_ROW;
 const REQUIRED_HEADERS = ["point_key", "value", "time"] as const;
 
 export type ParsedImportRow = {
-  /** 1-based, matching what the operator sees in Excel — header is row 1. */
+  /**
+   * 1-based, matching what the operator sees in Excel. The header is the first
+   * row of the sheet's **used range**, which is Excel row 1 only when nothing
+   * sits above it; a workbook saved with a blank row inserted above the header
+   * has its header on row 2 and its first data row on row 3.
+   */
   readonly rowNumber: number;
   readonly assetId?: string;
   readonly assetCode?: string;
@@ -217,8 +222,8 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   }
 
   // Everything after the header, in original sheet order, blanks included —
-  // this is what makes `rowNumber` (offset + 2) match the operator's actual
-  // Excel row, and what makes the cap below count what the sheet counts.
+  // this is what keeps `rowNumber` aligned with the operator's actual Excel
+  // row, and what makes the cap below count what the sheet counts.
   const dataRows = raw.slice(1);
   if (dataRows.length === 0 || dataRows.every(isBlankRow)) {
     return { ok: false, reason: "Sheet has a header row but no data rows" };
@@ -227,7 +232,8 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   // that reached the reading bound — in which case `dataRows` is what survived
   // the cut, not what the file holds, and is not a number to trust.
   const ref = sheet["!ref"];
-  const cutAtTheReadingBound = ref !== undefined && XLSX.utils.decode_range(ref).e.r + 1 >= SHEET_ROWS_BOUND;
+  const range = ref !== undefined ? XLSX.utils.decode_range(ref) : undefined;
+  const cutAtTheReadingBound = range !== undefined && range.e.r + 1 >= SHEET_ROWS_BOUND;
   if (cutAtTheReadingBound || dataRows.length > MAX_IMPORT_ROWS) {
     return {
       ok: false,
@@ -253,9 +259,28 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   const seenAt = new Map<string, number>();
   const trustNumericDateSerial = isBinarySpreadsheet(book);
 
+  // `sheet_to_json` indexes BOTH axes from the used range, not from A1 —
+  // `raw[0]` is the range's first row and `raw[n][0]` its first column, both
+  // measured. Every index derived from `raw` is therefore range-relative,
+  // while `sheet[...]` is addressed absolutely, so the two are reconciled here
+  // once (`F4.100`; `F2.7`'s sibling parser anchors the same way, as `r + 1`
+  // and `range.s.c + c`). A sheet with no `!ref` never reaches this point —
+  // `raw` is empty and the sheet is refused as empty above — so the 0
+  // fallbacks are a formality.
+  const headerSheetRowIndex = range?.s.r ?? 0;
+  const firstSheetColIndex = range?.s.c ?? 0;
+  // `time` is a required header, so `timeIdx` is never -1 here; the guard keeps
+  // `rawCellText`'s own "no such column" contract intact rather than letting the
+  // offset turn a -1 into a real, wrong cell.
+  const timeSheetColIndex = timeIdx >= 0 ? firstSheetColIndex + timeIdx : -1;
+
   dataRows.forEach((row, offset) => {
-    const rowNumber = offset + 2; // header occupies row 1; offset runs over the UNFILTERED rows
-    const sheetRowIndex = offset + 1; // 0-based index into `sheet`; header consumed row index 0
+    // 0-based absolute index into `sheet`; the header consumed the range's
+    // first row, and `offset` runs over the UNFILTERED rows after it.
+    const sheetRowIndex = headerSheetRowIndex + offset + 1;
+    // Excel numbers its rows from 1, so the operator's row is the absolute
+    // index plus one — never the offset within the used range.
+    const rowNumber = sheetRowIndex + 1;
 
     if (isBlankRow(row)) {
       return; // silently ignored — spacer rows are common in hand-edited sheets
@@ -298,7 +323,9 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
       // The cell's original text, not `cellText(row, timeIdx)` — for a CSV
       // cell SheetJS type-guessed into a number, `row[timeIdx]` is already
       // that number, and stringifying it would parse the wrong value.
-      const timeRaw = rawCellText(sheet, sheetRowIndex, timeIdx) ?? cellText(row, timeIdx);
+      // `timeIdx` came from `raw`, so it counts columns from the range's first
+      // one; the address is absolute, which is what `timeSheetColIndex` adds.
+      const timeRaw = rawCellText(sheet, sheetRowIndex, timeSheetColIndex) ?? cellText(row, timeIdx);
       parsedTime = timeRaw ? parseStrictIsoUtc(timeRaw) : Number.NaN;
     }
     if (Number.isNaN(parsedTime)) {

@@ -49,16 +49,21 @@ function buildWorkbookBufferWithDates(rows: (string | number | Date)[][]): Buffe
  * below are 1.3–1.7 MiB compressed against 8–10 MiB plain, and this parser's
  * own upload route caps a file at `MAX_IMPORT_FILE_BYTES` (5 MiB).
  */
-function buildWorkbookBufferFromRow(rows: (string | number)[][], startRow: number): Buffer {
+function buildWorkbookBufferFromCell(rows: (string | number)[][], origin: string): Buffer {
+  const start = XLSX.utils.decode_cell(origin);
   const sheet = XLSX.utils.aoa_to_sheet([[]]);
-  XLSX.utils.sheet_add_aoa(sheet, rows, { origin: `A${startRow}` });
+  XLSX.utils.sheet_add_aoa(sheet, rows, { origin });
   sheet["!ref"] = XLSX.utils.encode_range({
-    s: { r: startRow - 1, c: 0 },
-    e: { r: startRow - 2 + rows.length, c: (rows[0]?.length ?? 1) - 1 },
+    s: { r: start.r, c: start.c },
+    e: { r: start.r + rows.length - 1, c: start.c + (rows[0]?.length ?? 1) - 1 },
   });
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, "Import");
   return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
+}
+
+function buildWorkbookBufferFromRow(rows: (string | number)[][], startRow: number): Buffer {
+  return buildWorkbookBufferFromCell(rows, `A${startRow}`);
 }
 
 /** A blank Excel row 1 above the header — the common case, and the one the row numbering turns on. */
@@ -81,17 +86,16 @@ const HEADER = ["asset_code", "point_key", "value", "unit", "time"];
  * carries `MAX_RANGE_START_ROW` rows of slack so a sheet that merely starts a
  * little below row 1 is still read whole.
  *
- * The at-cap case is asserted as `rows + rejected`, not as `rows`, because this
- * parser still assumes the header is absolute row 0 when it re-reads a time
- * cell's source text: `sheetRowIndex = offset + 1` points **one row above**
- * each data row of an A2-origin sheet. Measured, the consequence is not a
- * wholesale rejection — only the *first* data row reads the header cell and is
- * rejected on `time`; every later row is **accepted carrying the previous
- * row's timestamp**, and its `rowNumber` is one below its true Excel row. A
- * silent time shift, in other words, not a refusal. That is `F1.9`'s own defect
- * (correction 56 was never applied here), it is filed as `F4.100`, and it is
- * not this change's to fix; what matters for the cap is that all 20,000 rows
- * reached the row loop instead of being cut.
+ * The at-cap case was asserted as `rows + rejected` while `F4.100` stood open:
+ * the parser then assumed the header was absolute row 0 when it re-read a time
+ * cell's source text, so an A2-origin sheet had its first data row rejected on
+ * `time` and every later row accepted carrying the previous row's timestamp.
+ * `F4.100` fixed that, so the assertion is now the exact one — 20,000 accepted
+ * and nothing rejected. What this pair still exists to hold is the cap itself:
+ * all 20,000 rows reached the row loop instead of being cut. The row numbering
+ * and the time shift have their own fixtures in
+ * {@link runTelemetryImportRangeOriginTests}, which use distinct timestamps —
+ * every row here shares one instant, so a one-row shift is invisible in it.
  */
 export function runTelemetryImportRangeStartTests(): void {
   const overCapRows: (string | number)[][] = [HEADER];
@@ -117,8 +121,146 @@ export function runTelemetryImportRangeStartTests(): void {
   const atCapResult = parseWorkbook(buildWorkbookBufferFromRowTwo(atCapRows));
   assert(atCapResult.ok, `exactly ${MAX_IMPORT_ROWS} data rows under a header on Excel row 2 must be accepted structurally`);
   if (atCapResult.ok) {
-    const seen = atCapResult.rows.length + atCapResult.rejected.length;
-    assert(seen === MAX_IMPORT_ROWS, `every one of the ${MAX_IMPORT_ROWS} data rows reached the row loop, got ${seen}`);
+    assert(
+      atCapResult.rejected.length === 0,
+      `no row of the at-cap sheet may be rejected, got ${atCapResult.rejected.length}`,
+    );
+    assert(
+      atCapResult.rows.length === MAX_IMPORT_ROWS,
+      `every one of the ${MAX_IMPORT_ROWS} data rows reached the row loop and was accepted, got ${atCapResult.rows.length}`,
+    );
+  }
+}
+
+/**
+ * `F4.100`: a sheet whose used range does not start at A1 must address its
+ * cells by their **absolute** sheet position, not by their offset within the
+ * range — on both axes.
+ *
+ * `sheet_to_json` indexes `raw` from the range's own origin, measured on both:
+ * `raw[0]` is the range's first row and `raw[n][0]` its first column, whatever
+ * `!ref` says. Every index taken out of `raw` is therefore range-relative,
+ * while `rawCellText` addresses `sheet` absolutely, and the parser used to hand
+ * the one to the other unchanged. Two defects came out of that single mismatch:
+ *
+ * - **Rows.** `sheetRowIndex = offset + 1` pointed one row **above** each data
+ *   row of an A2-origin sheet. The first data row read the header's `time`
+ *   cell and was rejected; every later row was accepted carrying the
+ *   **previous row's timestamp**, with a `rowNumber` one below the operator's
+ *   true Excel row. No structural error — a silent time shift.
+ * - **Columns.** `timeIdx` counts columns from the range's first one, so a
+ *   sheet starting at column B read the cell one column to the **left** of
+ *   `time`. Usually that is unparsable and the row fails closed on `time`,
+ *   blaming the operator's data for a parser fault; where the neighbour holds
+ *   its own ISO timestamp, the row is accepted at that other instant instead.
+ *
+ * `F2.7`'s sibling parser anchors both axes (`r + 1` and `range.s.c + c`).
+ *
+ * Four properties of the fixtures matter, because each one hides the defect if
+ * it is wrong:
+ *
+ * - **Distinct timestamps per row.** The at-cap fixture above gives every row
+ *   the same instant, so a one-row shift is invisible in it.
+ * - **Text ISO time cells, not date serials.** The numeric date-serial branch
+ *   reads `row[timeIdx]` out of the parsed array and never addresses `sheet`,
+ *   so neither index is used there and the defect does not fire.
+ * - **Several origins, not one.** A single A2 case is satisfied by a hardcoded
+ *   `+1`; row 5 and columns B and C kill that.
+ * - **A decoy ISO column beside `time`.** Without it the column axis only ever
+ *   fails closed, and a fixture that asserts "rejected" would pass against
+ *   both the defect and the fix. The decoy is what makes the column axis
+ *   corrupt silently, which is the property worth gating.
+ *
+ * XLSX only — a CSV's range always starts at A1.
+ */
+export function runTelemetryImportRangeOriginTests(): void {
+  const times = ["2026-08-19T10:00:00Z", "2026-08-19T11:00:00Z", "2026-08-19T12:00:00Z"];
+
+  // A2/A5 move the range down, B2/C3 move it down AND right.
+  for (const origin of ["A2", "A5", "B2", "C3"]) {
+    const start = XLSX.utils.decode_cell(origin);
+    const rows: (string | number)[][] = [HEADER];
+    times.forEach((time, i) => {
+      rows.push([`F19-ASSET-${i + 1}`, "kw", i + 1, "kW", time]);
+    });
+    const result = parseWorkbook(buildWorkbookBufferFromCell(rows, origin));
+    assert(result.ok, `a sheet whose used range starts at ${origin} must parse`);
+    if (!result.ok) {
+      continue;
+    }
+    assert(
+      result.rejected.length === 0,
+      `no row of the ${origin}-origin sheet may be rejected, got ${JSON.stringify(result.rejected)}`,
+    );
+    assert(
+      result.rows.length === times.length,
+      `expected ${times.length} accepted rows in the ${origin}-origin sheet, got ${result.rows.length}`,
+    );
+    times.forEach((time, i) => {
+      const row = result.rows[i];
+      // The header sits on the range's first row, so the first data row is the
+      // one below it — what the operator sees in Excel, which is the whole
+      // point of reporting a row number at all.
+      const expectedRowNumber = start.r + 2 + i;
+      assert(
+        row?.rowNumber === expectedRowNumber,
+        `data row ${i + 1} of the ${origin}-origin sheet must be numbered ${expectedRowNumber}, got ${row?.rowNumber}`,
+      );
+      const expectedTime = new Date(time).toISOString();
+      assert(
+        row?.time === expectedTime,
+        `data row ${i + 1} of the ${origin}-origin sheet must keep its OWN timestamp ${expectedTime}, got ${row?.time}`,
+      );
+      assert(
+        row?.assetCode === `F19-ASSET-${i + 1}`,
+        `data row ${i + 1} of the ${origin}-origin sheet must carry its own asset code, got ${row?.assetCode}`,
+      );
+    });
+  }
+
+  // ---- the column axis, corrupting silently rather than failing closed ------
+  // `captured_at` is an unknown column the parser ignores, placed immediately
+  // left of `time` and holding its own valid ISO instant. On a B1-origin sheet
+  // the relative `timeIdx` of 5 addressed absolute column F — `captured_at` —
+  // so the row was accepted at 2001-01-01 instead of its real instant, with
+  // nothing rejected and nothing logged.
+  const decoyHeader = ["asset_code", "point_key", "value", "unit", "captured_at", "time"];
+  const decoyRows: (string | number)[][] = [
+    decoyHeader,
+    ["F19-ASSET-1", "kw", 1, "kW", "2001-01-01T00:00:00Z", "2026-08-19T10:00:00Z"],
+    ["F19-ASSET-2", "kw", 2, "kW", "2001-01-02T00:00:00Z", "2026-08-19T11:00:00Z"],
+  ];
+  const decoyResult = parseWorkbook(buildWorkbookBufferFromCell(decoyRows, "B1"));
+  assert(decoyResult.ok, "a B1-origin sheet with an extra ISO column must parse");
+  if (decoyResult.ok) {
+    assert(decoyResult.rejected.length === 0, `the decoy sheet must reject nothing, got ${decoyResult.rejected.length}`);
+    assert(
+      decoyResult.rows[0]?.time === "2026-08-19T10:00:00.000Z",
+      `the first row must take the 'time' column, not the ISO column beside it, got ${decoyResult.rows[0]?.time}`,
+    );
+    assert(
+      decoyResult.rows[1]?.time === "2026-08-19T11:00:00.000Z",
+      `the second row must take the 'time' column, not the ISO column beside it, got ${decoyResult.rows[1]?.time}`,
+    );
+  }
+
+  // A rejection must name the operator's true Excel line as well — the same
+  // arithmetic drives both, and a rejection list that points at the wrong line
+  // is what an operator actually has to act on.
+  const badRows: (string | number)[][] = [
+    HEADER,
+    ["F19-ASSET-1", "kw", 1, "kW", "2026-08-19T10:00:00Z"],
+    ["F19-ASSET-2", "kw", "not-a-number", "kW", "2026-08-19T11:00:00Z"],
+  ];
+  const badResult = parseWorkbook(buildWorkbookBufferFromRowTwo(badRows));
+  assert(badResult.ok, "a sheet with one bad value must not fail structurally");
+  if (badResult.ok) {
+    assert(badResult.rejected.length === 1, `expected exactly 1 rejection, got ${badResult.rejected.length}`);
+    assert(
+      badResult.rejected[0]?.rowNumber === 4,
+      `the bad-value row must be numbered 4 (header on Excel row 2), got ${badResult.rejected[0]?.rowNumber}`,
+    );
+    assert(badResult.rejected[0]?.field === "value", "the rejection must name the value field");
   }
 }
 

@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runTelemetryImportRangeOriginTests,
   runTelemetryImportRangeStartTests,
   runTelemetryImportReadingBoundTests,
   runTelemetryImportRowsTests,
@@ -32,6 +33,16 @@ describe("parseWorkbook", () => {
     // Two more ~20,000-row workbooks, written as xlsx rather than CSV because
     // only a real sheet carries a `!ref` that starts below row 1.
     60_000,
+  );
+
+  it(
+    "addresses rows and columns absolutely when the used range does not start at A1",
+    () => {
+      runTelemetryImportRangeOriginTests();
+    },
+    // Six tiny xlsx fixtures — four range origins, the decoy-column sheet and
+    // the rejection sheet. No cap-sized workbook here.
+    20_000,
   );
 
   it(
