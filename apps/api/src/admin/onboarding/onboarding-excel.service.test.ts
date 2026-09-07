@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertDeclaredWidthIsRefusedNotWindowed,
+  assertEchoedSheetTextIsBounded,
   assertDeclaredZipBombIsRefusedBeforeRead,
   assertOversizeBufferIsRefused,
   assertSheetReachingTheRowBoundIsRefused,
@@ -41,4 +42,8 @@ describe("OnboardingExcelService.parseUpload (F4.102)", () => {
     // Three workbooks of ~20,000–25,000 rows, written and parsed.
     60_000,
   );
+
+  it("bounds the sheet text the display-name fix reports, without bounding the name itself", () => {
+    assertEchoedSheetTextIsBounded();
+  });
 });

@@ -348,3 +348,48 @@ export function assertSheetReachingTheRowBoundIsRefused(): void {
     `a cut sheet gets the same sentence, got "${cut}"`,
   );
 }
+
+/**
+ * The `displayNameFixes` line is sheet text read back to the operator, so it
+ * carries {@link quoteCell} like every other echo site (owner ruling 3).
+ *
+ * **The bound is on the message, never on the data.** The RTU keeps the whole
+ * display name it was given; only the sentence that reports the adjustment is
+ * cut. Both halves are asserted, because a "fix" that quietly truncated the
+ * stored name would pass a message-length check and corrupt the import.
+ *
+ * `assetDomainFromCell`'s pass-through needs no `quoteCell` and deliberately
+ * has none: `onboardingDraftAssetSchema.domain` is
+ * `z.string().min(1).max(64)`, and `OnboardingValidateService.validate` runs
+ * `onboardingDraftSchema.safeParse` before `assertAssetDomain`, so
+ * `unknownCodeMessage` can never be handed an unbounded value. Recorded here so
+ * the next reviewer does not have to re-derive it.
+ */
+export function assertEchoedSheetTextIsBounded(): void {
+  const rows = templateRows();
+  // Two RTUs sharing one display name, each with its own maximum-length code.
+  // The name and the codes are three *different* strings on purpose: were the
+  // code equal to the name, `displayNameFromRtuCode` would return the name
+  // unchanged, nothing would be pushed, and the count below would pass for the
+  // wrong reason.
+  const sharedName = "N".repeat(32_767);
+  rows[6] = [...rows[6]];
+  rows[7] = [...rows[7]];
+  rows[6][0] = "A".repeat(32_767);
+  rows[6][1] = sharedName;
+  rows[7][0] = "B".repeat(32_767);
+  rows[7][1] = sharedName;
+
+  const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(rows));
+  assert(
+    parsed.displayNameFixes.length === 1,
+    `the duplicate display name is adjusted once, got ${parsed.displayNameFixes.length}`,
+  );
+  const line = parsed.displayNameFixes[0];
+  assert(line.length < 400, `the reported fix must be bounded, got ${line.length} characters`);
+  assert(line.includes("more characters"), `a cut cell says how much was omitted, got "${line}"`);
+  assert(
+    parsed.rtus[1].displayName.length > 1000,
+    `the RTU keeps its full name — only the message is cut, got ${parsed.rtus[1].displayName.length} characters`,
+  );
+}

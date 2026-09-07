@@ -10,6 +10,7 @@ import type {
 } from "@bms/shared";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
+import { quoteCell } from "../spreadsheet-guard";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import {
   attachEncryptedCredentials,
@@ -63,7 +64,12 @@ export class OnboardingChatService {
     orgPointKeyCodes: string[],
     displayNameFixes: string[] = [],
   ): { assistantMessage: string; suggestedReplies: string[] } {
-    const summaryParts = [`location **${imported.locationName}**`];
+    // `F4.102`. Everything this method interpolates from the import is sheet
+    // text, and a cell may hold 32,767 characters. `quoteCell` is applied at
+    // each site rather than to the finished message, because two of the four
+    // (`mqttSetupTemplate`, `formatAssetsByRtuSummary`) build their strings
+    // before this one is assembled (AGENTS.md §6).
+    const summaryParts = [`location **${quoteCell(imported.locationName)}**`];
     if (imported.rtuCount > 0) {
       summaryParts.push(`**${imported.rtuCount}** RTU(s)`);
     }
@@ -526,7 +532,10 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       const topic =
         existingTopic && existingTopic !== "-" ? existingTopic : "your/topic/here";
       return [
-        `RTU: ${rtu.displayName}`,
+        // Quoting this breaks no round trip: the paste-back parser is
+        // `defaultConfig`'s `/topic[:\s]+(\S+)/i`, which reads the `topic:`
+        // line below and never this one.
+        `RTU: ${quoteCell(rtu.displayName)}`,
         `topic: ${topic}`,
         // No username/password lines (ADR 0022, decision 2). A copy-paste block
         // that models credential entry teaches exactly the behaviour this ADR
@@ -547,11 +556,14 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     const assets = draft.assets ?? [];
     const lines = rtus.map((rtu, index) => {
       const rtuAssets = assets.filter((asset) => asset.rtuIndex === index);
+      // Both halves are sheet text: the RTU display name, and every asset name
+      // under it. One line can carry as many cells as the RTU has assets, so
+      // the per-cell bound is what keeps the summary a summary.
       const assetList =
         rtuAssets.length > 0
-          ? rtuAssets.map((asset) => asset.name).join(", ")
+          ? rtuAssets.map((asset) => quoteCell(asset.name)).join(", ")
           : "(no assets yet)";
-      return `- **${rtu.displayName}**: ${assetList}`;
+      return `- **${quoteCell(rtu.displayName)}**: ${assetList}`;
     });
     return `**Assets by RTU:**\n${lines.join("\n")}`;
   }

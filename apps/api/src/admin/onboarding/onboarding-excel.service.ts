@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 
 import type { OnboardingDraft, OnboardingProtocol } from "@bms/shared";
 
-import { zipInflationProblem } from "../spreadsheet-guard";
+import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
 import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
@@ -389,7 +389,14 @@ export class OnboardingExcelService {
       if (!trimmed || seen.has(key)) {
         const fixed = this.displayNameFromRtuCode(rtu.code);
         if (fixed !== trimmed) {
-          displayNameFixes.push(`**${trimmed || rtu.code}** → **${fixed}** (from \`${rtu.code}\`)`);
+          // Three cells of sheet-supplied text, each bounded where it is
+          // interpolated (`spreadsheet-guard.ts`) — never in a wrapper, because
+          // this line is built before anything that could wrap it runs.
+          // `quoteCell` supplies the quotes, so the backticks that used to
+          // surround the code are gone.
+          displayNameFixes.push(
+            `**${quoteCell(trimmed || rtu.code)}** → **${quoteCell(fixed)}** (from ${quoteCell(rtu.code)})`,
+          );
         }
         seen.add(fixed.toLowerCase());
         return { ...rtu, displayName: fixed };
