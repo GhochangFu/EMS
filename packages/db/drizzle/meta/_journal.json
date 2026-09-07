@@ -463,6 +463,13 @@
       "when": 1788708536104,
       "tag": "0066_alarm_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1788756979078,
+      "tag": "0067_template_alarm_provenance",
+      "breakpoints": true
     }
   ]
 }
