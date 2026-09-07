@@ -3,7 +3,7 @@ import type { MappingSheetErrorDto } from "@bms/shared";
 import * as XLSX from "xlsx";
 
 import { syntheticZip } from "../../testing/synthetic-zip";
-import { MAX_IMPORT_ROWS } from "../telemetry-import/telemetry-import-rows";
+import { MAX_IMPORT_ROWS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES, parseMappingSheet } from "./mapping-sheet-rows";
 import type { ParsedMappingRow } from "./mapping-sheet-rows";
 
@@ -32,22 +32,31 @@ function buildBuffer(rows: Cell[][], bookType: "csv" | "xlsx" = "xlsx", sheetNam
 }
 
 /**
- * The same workbook with a blank Excel row 1: the rows are written from `A2`
- * and `!ref` is hand-set to match, which is what a sheet with a row inserted
- * above the header looks like on disk. `aoa_to_sheet([[]])` alone leaves a
- * `!ref` of `A1:A1`, so the range is stated rather than inferred.
+ * The same workbook with its used range starting at Excel row `startRow`: the
+ * rows are written from there and `!ref` is hand-set to match, which is what a
+ * sheet with rows inserted above the header looks like on disk.
+ * `aoa_to_sheet([[]])` alone leaves a `!ref` of `A1:A1`, so the range is stated
+ * rather than inferred.
  *
  * Written **deflated**, as every real `.xlsx` is: an uncompressed 20,000-row
  * fixture is 9.98 MiB and the parser refuses it as `file_too_large` before the
  * row cap is ever reached, which would make the cap cases below vacuous.
  */
-function buildBufferFromRowTwo(rows: Cell[][]): Buffer {
+function buildBufferFromRow(rows: Cell[][], startRow: number): Buffer {
   const sheet = XLSX.utils.aoa_to_sheet([[]]);
-  XLSX.utils.sheet_add_aoa(sheet, rows, { origin: "A2" });
-  sheet["!ref"] = XLSX.utils.encode_range({ s: { r: 1, c: 0 }, e: { r: rows.length, c: (rows[0]?.length ?? 1) - 1 } });
+  XLSX.utils.sheet_add_aoa(sheet, rows, { origin: `A${startRow}` });
+  sheet["!ref"] = XLSX.utils.encode_range({
+    s: { r: startRow - 1, c: 0 },
+    e: { r: startRow - 2 + rows.length, c: (rows[0]?.length ?? 1) - 1 },
+  });
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, "MAPPINGS");
   return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
+}
+
+/** A blank Excel row 1 above the header — the common case, and the one the row numbering turns on. */
+function buildBufferFromRowTwo(rows: Cell[][]): Buffer {
+  return buildBufferFromRow(rows, 2);
 }
 
 const HEADER: Cell[] = [...MAPPING_SHEET_HEADERS];
@@ -332,6 +341,42 @@ export function assertTheRowCapTripsWhenTheRangeStartsBelowRowOne(): void {
   }
   const atCap = parseOk(buildBufferFromRowTwo(atCapRows), "exactly 20,000 data rows under a header on Excel row 2");
   assert(atCap.totalRows === MAX_IMPORT_ROWS, `the sheet at the cap is read whole, got ${atCap.totalRows}`);
+}
+
+/**
+ * The **reading-bound** half of that refusal, on its own (post-merge review of
+ * the fix, finding 1).
+ *
+ * The A2 pair above is decided by the count clause alone — its over-cap sheet
+ * ends at absolute row 20,002, short of the 20,102-row bound — so neither case
+ * exercises `range.e.r + 1 >= SHEET_ROWS_BOUND`. This one does: the header sits
+ * on Excel row 201 and 25,000 data rows follow, so materialisation stops at the
+ * bound and the range comes back `A201:L20102`. What survives the cut is 19,901
+ * data rows — **under** the cap, so the count clause is silent and the bound
+ * clause is the only thing between the operator and a 25,000-row file imported
+ * as 19,901 rows with nothing said. Measured: delete the clause and this case
+ * parses `ok`.
+ *
+ * The message is asserted too, because both clauses raise the same
+ * `too_many_rows` code: a refusal that reported "File has 19901 data rows, more
+ * than the 20000-row limit" contradicted itself, and the count it quoted was
+ * the size of the cut rather than the size of the file.
+ */
+export function assertASheetCutAtTheReadingBoundIsRefused(): void {
+  const rows: Cell[][] = [HEADER];
+  for (let i = 0; i < 25_000; i += 1) {
+    rows.push(row({ asset_code: `A${i}` }));
+  }
+  const error = parseFile(buildBufferFromRow(rows, 201), "25,000 data rows under a header on Excel row 201");
+  assert(error.code === "too_many_rows", `a sheet cut at the reading bound → too_many_rows, got ${error.code}`);
+  assert(
+    error.message.includes(`reading bound of ${SHEET_ROWS_BOUND} rows`),
+    `the refusal says the reading bound is what fired, got "${error.message}"`,
+  );
+  assert(
+    !error.message.includes("19901"),
+    `the refusal must not quote the cut's row count as the file's, got "${error.message}"`,
+  );
 }
 
 /**

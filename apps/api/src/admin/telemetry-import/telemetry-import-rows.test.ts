@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
-import { runTelemetryImportRangeStartTests, runTelemetryImportRowsTests } from "./telemetry-import-rows.spec";
+import {
+  runTelemetryImportRangeStartTests,
+  runTelemetryImportReadingBoundTests,
+  runTelemetryImportRowsTests,
+} from "./telemetry-import-rows.spec";
 
 /**
  * Vitest entry point. Assertions live in the sibling `.spec.ts` module
@@ -27,6 +31,17 @@ describe("parseWorkbook", () => {
     },
     // Two more ~20,000-row workbooks, written as xlsx rather than CSV because
     // only a real sheet carries a `!ref` that starts below row 1.
+    60_000,
+  );
+
+  it(
+    "refuses a sheet whose reading was cut at the bound, and says that is what fired",
+    () => {
+      runTelemetryImportReadingBoundTests();
+    },
+    // One 25,000-row xlsx fixture, written deflated and read back; ~2 s alone on
+    // the reference machine, and it shares the suite's CPU with every other
+    // parallel file.
     60_000,
   );
 });

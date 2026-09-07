@@ -101,6 +101,11 @@ export function theThreeProblemsAreNamed(): void {
  * editor would have stored sixteen for a cell the sheet parser refuses as
  * `number_invalid` (correction 59, L3). One rule for both surfaces — only a
  * plain decimal literal is a number.
+ *
+ * The accepted half is asserted with it, as `assertOnlyDecimalLiteralsAreNumbers`
+ * does on the sheet side: a rule written only against its refusals is satisfied
+ * by refusing everything, and a sign, a bare fraction or an exponent are all
+ * ordinary things to type into an engineering bound.
  */
 export function aFieldThatIsNotANumberIsRefused(): void {
   for (const value of ["abc", "1e999", "Infinity", "-Infinity", "0x10", "0b101", "0o17"]) {
@@ -109,6 +114,13 @@ export function aFieldThatIsNotANumberIsRefused(): void {
       problems.some((problem) => problem.toLowerCase().includes("number")),
       `${JSON.stringify(value)} must be refused as not a finite number`,
     ).toBe(true);
+  }
+  for (const [value, parsed] of [["-2", -2], [".5", 0.5], ["1e3", 1000], ["+5", 5]] as const) {
+    expect(
+      bulkEditProblems(draftWith({ engMin: { set: true, value } })),
+      `${JSON.stringify(value)} is a plain decimal literal and must be accepted`,
+    ).toHaveLength(0);
+    expect(draftToPatch(draftWith({ engMin: { set: true, value } }))).toEqual({ engMin: parsed });
   }
   // And the patch builder never emits a non-finite number even if asked.
   const patch = draftToPatch(draftWith({ engMin: { set: true, value: "1e999" } }));

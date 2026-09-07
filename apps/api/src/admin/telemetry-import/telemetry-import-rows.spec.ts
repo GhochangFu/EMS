@@ -1,7 +1,7 @@
 import * as XLSX from "xlsx";
 
 import { syntheticZip } from "../../testing/synthetic-zip";
-import { MAX_IMPORT_ROWS, parseWorkbook } from "./telemetry-import-rows";
+import { MAX_IMPORT_ROWS, SHEET_ROWS_BOUND, parseWorkbook } from "./telemetry-import-rows";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -40,18 +40,30 @@ function buildWorkbookBufferWithDates(rows: (string | number | Date)[][]): Buffe
 }
 
 /**
- * The same workbook with a blank Excel row 1: the rows are written from `A2`
- * and `!ref` is hand-set to match, which is what a sheet with a row inserted
- * above the header looks like on disk (`aoa_to_sheet([[]])` alone leaves a
- * `!ref` of `A1:A1`).
+ * The same workbook with its used range starting at Excel row `startRow`: the
+ * rows are written from there and `!ref` is hand-set to match, which is what a
+ * sheet with rows inserted above the header looks like on disk
+ * (`aoa_to_sheet([[]])` alone leaves a `!ref` of `A1:A1`).
+ *
+ * Written **deflated**, as every real `.xlsx` is — the ~20,000-row fixtures
+ * below are 1.3–1.7 MiB compressed against 8–10 MiB plain, and this parser's
+ * own upload route caps a file at `MAX_IMPORT_FILE_BYTES` (5 MiB).
  */
-function buildWorkbookBufferFromRowTwo(rows: (string | number)[][]): Buffer {
+function buildWorkbookBufferFromRow(rows: (string | number)[][], startRow: number): Buffer {
   const sheet = XLSX.utils.aoa_to_sheet([[]]);
-  XLSX.utils.sheet_add_aoa(sheet, rows, { origin: "A2" });
-  sheet["!ref"] = XLSX.utils.encode_range({ s: { r: 1, c: 0 }, e: { r: rows.length, c: (rows[0]?.length ?? 1) - 1 } });
+  XLSX.utils.sheet_add_aoa(sheet, rows, { origin: `A${startRow}` });
+  sheet["!ref"] = XLSX.utils.encode_range({
+    s: { r: startRow - 1, c: 0 },
+    e: { r: startRow - 2 + rows.length, c: (rows[0]?.length ?? 1) - 1 },
+  });
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, "Import");
-  return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
+}
+
+/** A blank Excel row 1 above the header — the common case, and the one the row numbering turns on. */
+function buildWorkbookBufferFromRowTwo(rows: (string | number)[][]): Buffer {
+  return buildWorkbookBufferFromRow(rows, 2);
 }
 
 const HEADER = ["asset_code", "point_key", "value", "unit", "time"];
@@ -69,12 +81,17 @@ const HEADER = ["asset_code", "point_key", "value", "unit", "time"];
  * carries `MAX_RANGE_START_ROW` rows of slack so a sheet that merely starts a
  * little below row 1 is still read whole.
  *
- * The at-cap case is asserted as `rows + rejected`, not as `rows`: this parser
- * still assumes the header is absolute row 0 when it re-reads a time cell's
- * source text, so an A2-origin data row is rejected on `time` rather than
- * accepted. That is `F1.9`'s own defect (correction 56 was never applied here)
- * and it is not this change's to fix; what matters for the cap is that all
- * 20,000 rows reached the row loop instead of being cut.
+ * The at-cap case is asserted as `rows + rejected`, not as `rows`, because this
+ * parser still assumes the header is absolute row 0 when it re-reads a time
+ * cell's source text: `sheetRowIndex = offset + 1` points **one row above**
+ * each data row of an A2-origin sheet. Measured, the consequence is not a
+ * wholesale rejection — only the *first* data row reads the header cell and is
+ * rejected on `time`; every later row is **accepted carrying the previous
+ * row's timestamp**, and its `rowNumber` is one below its true Excel row. A
+ * silent time shift, in other words, not a refusal. That is `F1.9`'s own defect
+ * (correction 56 was never applied here), it is filed as `F4.100`, and it is
+ * not this change's to fix; what matters for the cap is that all 20,000 rows
+ * reached the row loop instead of being cut.
  */
 export function runTelemetryImportRangeStartTests(): void {
   const overCapRows: (string | number)[][] = [HEADER];
@@ -83,6 +100,15 @@ export function runTelemetryImportRangeStartTests(): void {
   }
   const overCapResult = parseWorkbook(buildWorkbookBufferFromRowTwo(overCapRows));
   assert(!overCapResult.ok, `${MAX_IMPORT_ROWS + 1} data rows under a header on Excel row 2 must be refused as over the cap`);
+  if (!overCapResult.ok) {
+    // Not merely "refused" — refused *for being over the row limit*. The sibling
+    // mapping-sheet assertion pins its `too_many_rows` code; this parser has no
+    // codes, so the reason has to name the limit itself.
+    assert(
+      /20000|row/i.test(overCapResult.reason),
+      `the refusal must name the ${MAX_IMPORT_ROWS}-row limit, got "${overCapResult.reason}"`,
+    );
+  }
 
   const atCapRows: (string | number)[][] = [HEADER];
   for (let i = 0; i < MAX_IMPORT_ROWS; i += 1) {
@@ -93,6 +119,48 @@ export function runTelemetryImportRangeStartTests(): void {
   if (atCapResult.ok) {
     const seen = atCapResult.rows.length + atCapResult.rejected.length;
     assert(seen === MAX_IMPORT_ROWS, `every one of the ${MAX_IMPORT_ROWS} data rows reached the row loop, got ${seen}`);
+  }
+}
+
+/**
+ * The **reading-bound** half of that refusal, on its own (post-merge review of
+ * the fix, finding 1).
+ *
+ * The A2 pair above is decided by the count clause alone — its over-cap sheet
+ * ends at absolute row 20,002, short of the 20,102-row bound — so neither case
+ * exercises `range.e.r + 1 >= SHEET_ROWS_BOUND`. This one does: the header sits
+ * on Excel row 201 and 25,000 data rows follow, so materialisation stops at the
+ * bound and the range comes back `A201:E20102`. What survives the cut is 19,901
+ * data rows — **under** the cap, so the count clause is silent and the bound
+ * clause is the only thing between the operator and a 25,000-row file imported
+ * as 19,901 rows with nothing said. Measured: delete the clause and this case
+ * parses `ok`.
+ *
+ * The reason is asserted too, because both clauses raise the same refusal: one
+ * that reported "File has 19901 data rows, more than the 20000-row limit"
+ * contradicted itself, and the count it quoted was the size of the cut rather
+ * than the size of the file.
+ */
+export function runTelemetryImportReadingBoundTests(): void {
+  const rows: (string | number)[][] = [HEADER];
+  for (let i = 0; i < 25_000; i += 1) {
+    rows.push([`F19-ASSET-${i}`, "kw", 1, "kW", "2026-08-19T10:00:00Z"]);
+  }
+  const result = parseWorkbook(buildWorkbookBufferFromRow(rows, 201));
+  assert(!result.ok, "a sheet whose reading was cut at the bound must be refused, not imported as the part that survived");
+  if (!result.ok) {
+    assert(
+      result.reason.includes(`reading bound of ${SHEET_ROWS_BOUND} rows`),
+      `the refusal says the reading bound is what fired, got "${result.reason}"`,
+    );
+    assert(
+      /20000|row/i.test(result.reason),
+      `the refusal must name the ${MAX_IMPORT_ROWS}-row limit, got "${result.reason}"`,
+    );
+    assert(
+      !result.reason.includes("19901"),
+      `the refusal must not quote the cut's row count as the file's, got "${result.reason}"`,
+    );
   }
 }
 

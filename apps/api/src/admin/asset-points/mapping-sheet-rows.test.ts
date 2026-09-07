@@ -5,6 +5,7 @@ import {
   assertBlankRowsKeepTheExcelNumbering,
   assertCellErrorsAreDeferredInOrder,
   assertADeclaredZipBombIsRefusedBeforeRead,
+  assertASheetCutAtTheReadingBoundIsRefused,
   assertCellsAreReadAsText,
   assertEchoedCellTextIsBounded,
   assertOnlyDecimalLiteralsAreNumbers,
@@ -62,6 +63,17 @@ describe("F2.7 — parseMappingSheet, the pure half of the import", () => {
     // Two xlsx fixtures of ~20,000 rows are written and read here; the default
     // 5 s breaches under a full-suite run contending for CPU, as
     // `telemetry-import-rows.test.ts` already records for its own cap fixtures.
+    60_000,
+  );
+
+  it(
+    "refuses a sheet whose reading was cut at the bound, and says that is what fired",
+    () => {
+      assertASheetCutAtTheReadingBoundIsRefused();
+    },
+    // One 25,000-row xlsx fixture, written deflated and read back; ~3.5 s alone
+    // on the reference machine, and it shares the suite's CPU with every other
+    // parallel file.
     60_000,
   );
 

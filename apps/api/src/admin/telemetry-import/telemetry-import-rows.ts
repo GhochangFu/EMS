@@ -28,9 +28,11 @@ export const MAX_IMPORT_ROWS = 20_000;
  * exactly `MAX_IMPORT_ROWS` data rows in it — indistinguishable from a sheet
  * that really holds the cap, so the cap could not trip and the rest of a
  * 25,000-row file was dropped in silence. The slack makes the two
- * distinguishable for a header anywhere in Excel rows 1–100; a header below
- * that, on a sheet at the cap, is refused rather than truncated — fail closed
- * (see {@link SHEET_ROWS_BOUND}).
+ * distinguishable for a header anywhere in Excel rows 1–101 — measured, a sheet
+ * at the cap whose header is on Excel row 101 ends at absolute row 20,100 and
+ * is read whole, and one on row 102 ends at the bound and is refused. A header
+ * below that, on a sheet at the cap, is refused rather than truncated — fail
+ * closed (see {@link SHEET_ROWS_BOUND}).
  */
 export const MAX_RANGE_START_ROW = 100;
 
@@ -229,7 +231,13 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   if (cutAtTheReadingBound || dataRows.length > MAX_IMPORT_ROWS) {
     return {
       ok: false,
-      reason: `File has ${dataRows.length} data rows, more than the ${MAX_IMPORT_ROWS}-row limit (or the sheet was cut at the reading bound)`,
+      // Which of the two fired decides what can honestly be said. When the
+      // sheet was cut, `dataRows.length` is the size of the cut and not the
+      // size of the file — quoting it read "File has 19901 data rows, more than
+      // the 20000-row limit", which contradicts itself.
+      reason: cutAtTheReadingBound
+        ? `The sheet was cut at the reading bound of ${SHEET_ROWS_BOUND} rows; the file has more than the ${MAX_IMPORT_ROWS}-row limit`
+        : `File has ${dataRows.length} data rows, more than the ${MAX_IMPORT_ROWS}-row limit`,
     };
   }
 

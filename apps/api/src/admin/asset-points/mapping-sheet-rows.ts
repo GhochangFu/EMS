@@ -378,12 +378,19 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
   // 25,000-row sheet came back reading as exactly 20,000 — the cap could not
   // trip and 20,000 rows imported with nothing said (post-merge review,
   // finding 1).
-  if (range.e.r + 1 >= SHEET_ROWS_BOUND || dataRowCount > MAX_IMPORT_ROWS) {
+  const cutAtTheReadingBound = range.e.r + 1 >= SHEET_ROWS_BOUND;
+  if (cutAtTheReadingBound || dataRowCount > MAX_IMPORT_ROWS) {
     return {
       ok: false,
+      // Which of the two fired decides what can honestly be said. When the
+      // sheet was cut, `dataRowCount` is the size of the cut and not the size
+      // of the file — quoting it read "File has 19901 data rows, more than the
+      // 20000-row limit", which contradicts itself.
       error: fileError(
         "too_many_rows",
-        `File has ${dataRowCount} data rows, more than the ${MAX_IMPORT_ROWS}-row limit (or the sheet was cut at the reading bound)`,
+        cutAtTheReadingBound
+          ? `The sheet was cut at the reading bound of ${SHEET_ROWS_BOUND} rows; the file has more than the ${MAX_IMPORT_ROWS}-row limit`
+          : `File has ${dataRowCount} data rows, more than the ${MAX_IMPORT_ROWS}-row limit`,
       ),
     };
   }
