@@ -206,19 +206,37 @@ function rawCellText(sheet: XLSX.WorkSheet, sheetRowIndex: number, colIndex: num
 }
 
 /**
- * The longest a header cell may be and still be compared. The longest header
- * this parser recognises is `asset_code` at ten characters, so nothing legible
- * is lost — and without it the scan below is O(columns × cell length), not
- * O(columns). SheetJS dedupes shared strings, so one long string referenced
- * from every column of the header row multiplies its own length by the column
- * count, and neither `zipInflationProblem` (64 MiB declared) nor
- * `MAX_IMPORT_FILE_BYTES` (5 MiB) bounds that product.
+ * How much of one header cell is normalised before it is compared.
+ *
+ * Bounding the scanned *width* is not enough on its own. SheetJS dedupes shared
+ * strings, so one long string referenced from every column of the header row
+ * multiplies its own length by the column count, and neither
+ * `zipInflationProblem` (64 MiB declared) nor `MAX_IMPORT_FILE_BYTES` (5 MiB)
+ * bounds that product — 16,320 columns sharing a 131,068-character string took
+ * 204 s to normalise, measured. `toLowerCase` is the expensive half, because
+ * some code points (`U+0130`) expand as it copies.
+ *
+ * 1,024 is far past any legible header — the longest this parser recognises is
+ * `asset_code`, at ten characters — and it leaves room for a header a person
+ * has padded with whitespace, which {@link headerCellText} must still read as
+ * that header.
  */
-const MAX_HEADER_CELL_CHARS = 64;
+const MAX_HEADER_CELL_SCAN_CHARS = 1_024;
 
 /**
- * A header cell, addressed absolutely and compared the way the header row is:
- * the cell's own value, trimmed and lower-cased.
+ * A header cell, addressed absolutely and normalised **exactly the way
+ * `parseWorkbook` normalises `headerRow`** — `String(cell).trim().toLowerCase()`
+ * — because the two are compared against the same set and a disagreement
+ * between them is a defect, not a nuance.
+ *
+ * The `slice` bounds the work to a constant per cell without changing that
+ * normalisation for any legible header. It comes *before* `trim` deliberately:
+ * an earlier version tested the raw, untrimmed length instead and returned `""`
+ * for anything longer, so a `time` header padded with 61 or more characters of
+ * whitespace read as `time` to the parser and as `""` here. The file then failed
+ * as `Missing required column 'time'` — the very message
+ * {@link columnBoundedRange}'s by-name refusal exists to replace — on a sheet
+ * that parsed before `F4.101` (post-merge review, C2).
  *
  * Reads `.v` rather than `rawCellText`'s `.w` because `sheet_to_json` is called
  * with no `raw` key, which SheetJS resolves to `raw: true` — so `raw[0]` holds
@@ -232,13 +250,7 @@ function headerCellText(sheet: XLSX.WorkSheet, r: number, c: number): string {
   if (cell === undefined || cell.v === undefined || cell.v === null) {
     return "";
   }
-  // Length first, before `trim`/`toLowerCase` allocate: a cell this long is not
-  // a header this parser knows, and `toLowerCase` on some code points (U+0130)
-  // expands as it copies.
-  if (typeof cell.v === "string" && cell.v.length > MAX_HEADER_CELL_CHARS) {
-    return "";
-  }
-  return String(cell.v).trim().toLowerCase();
+  return String(cell.v).slice(0, MAX_HEADER_CELL_SCAN_CHARS).trim().toLowerCase();
 }
 
 /**

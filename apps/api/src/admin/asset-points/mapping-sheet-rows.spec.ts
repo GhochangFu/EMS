@@ -471,6 +471,25 @@ export function assertTheHeaderScanIsBoundedByTheTwelve(): void {
     thirteenth.ok === false && thirteenth.error.message.includes("thirteenth"),
     `the refusal must still name it a thirteenth, got ${thirteenth.ok === false ? thirteenth.error.message : ""}`,
   );
+
+  // A CSV whose first thirteen header cells are blank but which carries content
+  // further right is a file with a **wrong header**, not an unreadable file.
+  // Bounding the scan made `headers` pop to empty and took the "no file" branch,
+  // which the web renders as "File cannot be read" — telling the operator their
+  // readable CSV is not a CSV. The error CODE is part of the contract here, so
+  // this asserts the code and not the prose (post-merge review, Q1).
+  const shiftedHeader: Cell[] = [];
+  const shiftedData: Cell[] = [];
+  for (let c: number = 0; c <= 20; c += 1) {
+    shiftedHeader[c] = c < 14 ? "" : String(MAPPING_SHEET_HEADERS[c - 14] ?? "");
+    shiftedData[c] = c < 14 ? "" : "x";
+  }
+  const shifted = parseMappingSheet(buildBuffer([shiftedHeader, shiftedData], "csv"));
+  assert(!shifted.ok, "a CSV whose header sits beyond the scanned columns must be refused");
+  assert(
+    shifted.ok === false && shifted.error.code === "header_mismatch",
+    `it is a wrong header, not an unreadable file — got ${shifted.ok === false ? shifted.error.code : "ok"}`,
+  );
 }
 
 /** PR 2 security review, H2 — a zip declaring a 500 MiB inflation is refused before `XLSX.read` inflates anything. */
