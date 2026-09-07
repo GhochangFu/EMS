@@ -14,6 +14,7 @@ import { migrateAssetsBodySchema } from "../admin/asset-templates/asset-template
 import {
   createAssetTemplateBodySchema,
   instantiateAssetsBodySchema,
+  reapplySeededRulesBodySchema,
   templateStatusQuerySchema,
   updateAssetTemplateBodySchema,
 } from "../admin/asset-templates/asset-templates.schema";
@@ -231,6 +232,10 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   migrateAssetsBodySchema,
   patchDraftBodySchema,
   putDashboardWidgetsBodySchema,
+  // `E2.4` (ADR 0058 decision 8). `.strict()`: the body names rule ids and
+  // nothing else — a `{ all: true }` silently dropped and answered 200 would
+  // read as the republish-moves-live-rules outcome decision 1 refuses.
+  reapplySeededRulesBodySchema,
   reorderWorkOrdersBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,

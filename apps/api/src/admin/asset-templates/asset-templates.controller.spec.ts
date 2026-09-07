@@ -51,20 +51,47 @@ export function runAssetTemplatesControllerTests(): void {
       "not one. Nothing else in the file makes this order visible, which is why it is asserted.",
   ).toBeLessThan(idAt);
 
-  // The same trap one level down: `POST stock/:code/import` has three segments
-  // and no `@Post(":id/…")` route has three, so it is safe by construction —
-  // asserted so a later reorder or a new `@Post(":id/:verb/:x")` cannot
-  // quietly break it.
+  // The same trap one level down: `POST stock/:code/import` has three segments,
+  // and since `E2.4` so does `@Post(":id/seeded-rules/reapply")`. The two
+  // cannot match each other's requests — their literal segments differ — but
+  // the declaration order is what keeps that true against a future
+  // `@Post(":id/:verb/:x")`, so it is asserted rather than trusted.
   const stockImportAt = decoratorAt(source, '@Post("stock/:code/import")');
   expect(stockImportAt, "the controller must declare the stock import route").toBeGreaterThan(-1);
   const firstIdPostAt = decoratorAt(source, '@Post(":id');
   expect(firstIdPostAt, 'the controller must declare a @Post(":id/…") route').toBeGreaterThan(-1);
   expect(
     stockImportAt,
-    '@Post("stock/:code/import") must be declared BEFORE the first @Post(":id/…"). Three ' +
-      "segments against two is safe by segment count today; the order makes it safe against a " +
-      'future three-segment @Post(":id/:verb/:x") as well, which the comment above promises.',
+    '@Post("stock/:code/import") must be declared BEFORE the first @Post(":id/…"). The order ' +
+      'is what makes it safe against a three-segment @Post(":id/:verb/:x"), and since E2.4 ' +
+      'one exists: @Post(":id/seeded-rules/reapply").',
   ).toBeLessThan(firstIdPostAt);
+
+  // `E2.4` / ADR 0058 decision 8 — the two seeded-rules routes sit AFTER
+  // `@Post(":id/instantiate")`, which is where the plan placed them, and the
+  // three-segment POST sits after the stock import for the reason above.
+  const instantiateAt = decoratorAt(source, '@Post(":id/instantiate")');
+  const seededListAt = decoratorAt(source, '@Get(":id/seeded-rules")');
+  const seededReapplyAt = decoratorAt(source, '@Post(":id/seeded-rules/reapply")');
+  expect(instantiateAt, "the controller must declare the instantiate route").toBeGreaterThan(-1);
+  expect(seededListAt, 'the controller must declare @Get(":id/seeded-rules")').toBeGreaterThan(-1);
+  expect(
+    seededReapplyAt,
+    'the controller must declare @Post(":id/seeded-rules/reapply")',
+  ).toBeGreaterThan(-1);
+  expect(
+    seededListAt,
+    '@Get(":id/seeded-rules") must be declared after @Post(":id/instantiate") (plan U6)',
+  ).toBeGreaterThan(instantiateAt);
+  expect(
+    seededReapplyAt,
+    '@Post(":id/seeded-rules/reapply") must be declared after @Get(":id/seeded-rules")',
+  ).toBeGreaterThan(seededListAt);
+  expect(
+    stockImportAt,
+    '@Post("stock/:code/import") must be declared BEFORE @Post(":id/seeded-rules/reapply") — ' +
+      "the first three-segment :id POST this controller has",
+  ).toBeLessThan(seededReapplyAt);
 
   // **The guard on `GET stock` is proven here, not only exercised.** The
   // integration suite's `assertListNeedsAMasterDataRole` calls the *service*

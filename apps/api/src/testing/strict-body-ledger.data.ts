@@ -358,6 +358,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // where an unknown key is an author's typo rather than a field a newer client added.
   "putDashboardWidgetsBodySchema/widgets[]|4": STRICT(DASHBOARD_WIDGET_ARM),
   "putDashboardWidgetsBodySchema/widgets[]|4/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
+  // `E2.4` (ADR 0058 decision 8) — the body names rule ids and nothing else.
+  reapplySeededRulesBodySchema: STRICT(CALLER_ERROR),
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),
   "reorderWorkOrdersBodySchema/items[]": STRICT(CALLER_ERROR),
   ruleDraftBodySchema: STRICT(CALLER_ERROR),

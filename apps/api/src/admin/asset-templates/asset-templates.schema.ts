@@ -491,12 +491,71 @@ export const instantiateAssetsBodySchema = z
     return { target, assets: body.assets };
   });
 
+/**
+ * Ceiling on rule ids per re-apply call.
+ *
+ * Wider than the 200-asset batch ceilings above because the unit here is a
+ * rule, and one instantiate of 200 assets carrying 200 alarms seeds up to
+ * `MAX_RULE_ROWS` (2,500) of them. 500 is one `inArray` well under the bind
+ * ceiling and enough to re-apply one alarm across a whole press in one call.
+ */
+const MAX_REAPPLY_RULES = 500;
+
+/**
+ * `E2.4` / ADR 0058 decision 8 — the body of
+ * `POST /admin/asset-templates/:id/seeded-rules/reapply`.
+ *
+ * The ids are named explicitly and nothing else is accepted: decision 8's
+ * whole answer to the local-override question is that a tuned threshold is
+ * only ever overwritten by someone choosing that rule, having seen both
+ * values. A `{ all: true }` here would be the republish-moves-live-rules
+ * outcome decision 1 refuses, one field away.
+ *
+ * Duplicates are refused rather than deduplicated: the same id twice is a
+ * client that built its list wrongly, and a silent `Set` would answer 200 to
+ * a request that does not say what the client meant.
+ */
+export const reapplySeededRulesBodySchema = z
+  .object({
+    ruleIds: z
+      .array(z.string().uuid())
+      .min(1)
+      .max(MAX_REAPPLY_RULES)
+      .describe(
+        `The seeded rules to move to the currently published version's alarm values. Between ` +
+          `1 and ${MAX_REAPPLY_RULES}, each seeded from this template and on an asset inside your ` +
+          "writable locations.",
+      ),
+  })
+  // `.strict()` must precede `.superRefine` — it returns a `ZodEffects`,
+  // which has no `.strict()`. Nothing may separate `.superRefine(...)` from
+  // its `.describe(...)` (tests/adr-0029-openapi-contract.test.ts).
+  .strict()
+  .superRefine((body, ctx) => {
+    const seen = new Set<string>();
+    body.ruleIds.forEach((id, index) => {
+      if (seen.has(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["ruleIds", index],
+          message: `Duplicate rule id "${id}" in this batch; name each rule once`,
+        });
+      }
+      seen.add(id);
+    });
+  })
+  .describe(
+    "Names the seeded rules to re-apply, explicitly and once each — a rule an engineer tuned " +
+      "is only ever overwritten by someone choosing it here (ADR 0058 decision 8).",
+  );
+
 export type CreateAssetTemplateBody = z.infer<typeof createAssetTemplateBodySchema>;
 export type UpdateAssetTemplateBody = z.infer<typeof updateAssetTemplateBodySchema>;
 export type TemplatePointBody = z.infer<typeof templatePointBodySchema>;
 export type InstantiateAssetsBody = z.infer<typeof instantiateAssetsBodySchema>;
 export type InstantiateAssetBody = z.infer<typeof instantiateAssetBodySchema>;
 export type InstantiationTargetInput = InstantiateAssetsBody["target"];
+export type ReapplySeededRulesBody = z.infer<typeof reapplySeededRulesBodySchema>;
 
 /**
  * The `status` filter on `GET /admin/asset-templates`.
