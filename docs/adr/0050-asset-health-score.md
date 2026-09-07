@@ -224,6 +224,13 @@ silent: a deleted raw row leaves a stale in-range count readable forever.
 - **No new hierarchy tier.** `F2.10` owns campus/township and asset
   parent/child. Decision 4 keeps the roll-up level-agnostic so those tiers
   arrive as data.
+- **A range column exists since 2026-09-07, and it is *not* the safe range.**
+  ADR 0056 (`F2.7`) gave every point an optional `eng_min`/`eng_max` — an
+  instrument's plausibility band, applied by the ingest host, which *discards*
+  a sample outside it and counts it rather than storing a mark. Decision 2
+  above is unchanged: "in safe range" still means no threshold rule fires. A
+  later row that wants range-based goodness amends this ADR explicitly and
+  says which of the two bands it means.
 
 ## Dependencies
 

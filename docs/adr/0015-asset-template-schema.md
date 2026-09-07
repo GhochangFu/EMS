@@ -414,7 +414,10 @@ Zod contract for `content` uses the `zod` already present for DTO validation
 (`content` + a Zod contract), `E5.1`/`E5.2`/`E5.3` have a pack format that
 imports per org, `F2.2` has a deterministic instantiation contract with no DDL of
 its own, `F3.2` has `asset_type` to group by, `F2.7` has
-`source_data_key_pattern` as the seed column for the bulk mapping sheet, and
+`source_data_key_pattern` as the seed column for the bulk mapping sheet (used
+exactly as written on 2026-09-07 — ADR 0056 decision 6's export pre-fills each
+suggested row from it, `{asset_code}` substituted and every other token left
+literal), and
 `F2.6` has `kind = 'derived'` already carved out. Provenance ("which assets came
 from RO-SKID v3") is a single indexed join.
 

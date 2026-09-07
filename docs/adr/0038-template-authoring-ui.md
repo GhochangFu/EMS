@@ -268,7 +268,9 @@ wrong organization.
   assets is unchanged and unaddressed.
 - **The tag-mapping bulk editor and the Excel mapping sheet.** `F2.7`. The
   Points tab edits `sourceDataKeyPattern` one row at a time; bulk is a separate
-  row with its own shape.
+  row with its own shape. *Discharged 2026-09-07 by ADR 0056 (`F2.7`): the
+  sheet lives on the Asset Points page, not in this UI, and the Points tab
+  gained the five template-default metadata columns on a draft instead.*
 - **Maintenance plan authoring** (`content.maintenance`). The section is open
   in the contract (ADR 0019), but no ruling has been asked for on whether
   class-level plans are authored here or with the work-order surface. Note that
