@@ -69,10 +69,19 @@ export class OnboardingChatService {
     // text, and a cell may hold 32,767 characters. `quoteCell` is applied at
     // each site rather than to the finished message, because four of the five
     // sites live in `mqttSetupTemplate` and `formatAssetsByRtuSummary`, which
-    // build their strings before this one is assembled (AGENTS.md §6). The
-    // fifth is the `topic:` line, which cannot take `quoteCell` at all and is
-    // bounded by length instead — see `mqttSetupTemplate`.
-    // `onboarding-chat.service.spec.ts` enumerates all five.
+    // build their strings before this one is assembled (AGENTS.md §4.3); the
+    // fifth is the location name below. One of those four — the `topic:` line —
+    // cannot take `quoteCell` at all, and is bounded by length instead; see
+    // `mqttSetupTemplate`. `onboarding-chat.service.spec.ts` enumerates all
+    // five.
+    //
+    // The summary is not the whole echo surface. A **sixth** site leaves the
+    // import by another route: the `protocol` cell reaches `draftRtuSchema`'s
+    // `z.enum`, whose `invalid_enum_value` message repeats the value into the
+    // upload response's `validationErrors`. Nothing here can bound it, so it is
+    // refused at the parse boundary instead — `OnboardingExcelService.parseRtus`
+    // and `assertUnknownRtuProtocolIsRefused` in
+    // `onboarding-excel.service.spec.ts`.
     const summaryParts = [`location **${quoteCell(imported.locationName)}**`];
     if (imported.rtuCount > 0) {
       summaryParts.push(`**${imported.rtuCount}** RTU(s)`);
