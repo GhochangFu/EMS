@@ -350,6 +350,37 @@ export function assertTheNameIsTruncatedToTheColumnWidth(): void {
 }
 
 /**
+ * A seeded row must survive a round trip through `ruleUpdateBodySchema`, or the
+ * local override ADR 0058 decision 1 promises is unreachable — the rule editor
+ * PATCHes the whole object. Two bounds are tighter than the columns: `name` is
+ * `min(3)` against a template `message` of `min(1)`, and `description` is
+ * `max(2000)` against four philosophy fields of 2000 each.
+ */
+export function assertASeededRowSatisfiesTheRuleEditorsOwnBounds(): void {
+  const shortMessage = buildRow({ message: "Hi" });
+  assert(
+    shortMessage.name.length >= 3,
+    `a two-character message must still yield a name of at least 3, got ${JSON.stringify(shortMessage.name)}`,
+  );
+  assert(
+    shortMessage.name.includes("Hi"),
+    "the fallback name keeps the message rather than replacing it",
+  );
+
+  const long = "P".repeat(2000);
+  const row = buildRow({
+    philosophy: { cause: long, impact: long, action: long, skill: "electrical" },
+  });
+  const description = row.description as string;
+  assert(
+    description.length <= 2000,
+    `a fully authored philosophy must clamp to 2000, got ${description.length}`,
+  );
+  assert(description.endsWith("…"), "a clamped description says so rather than ending mid-word silently");
+  assert(description.startsWith("Cause: "), "clamping keeps the rendering, it does not replace it");
+}
+
+/**
  * D1 — `condition.unit` is present only when a unit was resolved.
  * `latestConditionSchema` is `.strict()` with `unit` optional, and a key
  * holding `undefined` is a key: it survives into the jsonb column as

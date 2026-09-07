@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertAPhilosophyAlarmSeedsADisabledRule,
+  assertASeededRowSatisfiesTheRuleEditorsOwnBounds,
   assertAProtoAlarmSeedsAnArmedRule,
   assertARemovedAlarmReadsAsTemplateMoved,
   assertAnOverflowingCodeIsTruncatedAndHashed,
@@ -81,6 +82,10 @@ describe("E2.4 — template alarm rule derivation (ADR 0058)", () => {
 
     it("omits condition.unit entirely when no unit was resolved", () => {
       assertTheConditionOmitsUnitWhenThereIsNone();
+    });
+
+    it("stays inside the rule editor's own name and description bounds, so the row can be PATCHed", () => {
+      assertASeededRowSatisfiesTheRuleEditorsOwnBounds();
     });
   });
 

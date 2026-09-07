@@ -145,6 +145,27 @@ export function seededRuleCode(assetCode: string, alarmCode: string): string {
  * looking at it. `skill` renders as its code: it is a key into
  * `bms.alarm_skills` and this function does no IO to resolve a label.
  */
+/** `ruleUpdateBodySchema`'s `description.max(2000)` — see {@link philosophyDescription}. */
+const MAX_RULE_DESCRIPTION = 2000;
+
+/** `ruleUpdateBodySchema`'s `name.min(3)` — see {@link seededRuleName}. */
+const MIN_RULE_NAME = 3;
+
+/**
+ * The rule's human label, kept inside `ruleUpdateBodySchema`'s `name` bounds.
+ *
+ * A template alarm's `message` is `min(1)`, so a one- or two-character message
+ * would produce a name the rule editor's own schema refuses — the row saves
+ * (the column is `varchar(255)`) and can then never be edited. Falling back to
+ * `code: message` is always at least four characters, because `code` is
+ * `min(1)` too, and it reads as a label rather than as padding.
+ */
+export function seededRuleName(alarm: TemplateAlarm): string {
+  const message = alarm.message.trim();
+  const name = message.length >= MIN_RULE_NAME ? message : `${alarm.code}: ${message}`;
+  return name.slice(0, 255);
+}
+
 export function philosophyDescription(philosophy: TemplateAlarm["philosophy"]): string | null {
   if (!philosophy) {
     return null;
@@ -162,7 +183,21 @@ export function philosophyDescription(philosophy: TemplateAlarm["philosophy"]): 
   if (philosophy.skill !== undefined) {
     lines.push(`Skill: ${philosophy.skill}`);
   }
-  return lines.length > 0 ? lines.join("\n") : null;
+  if (lines.length === 0) {
+    return null;
+  }
+  // Clamped to `ruleUpdateBodySchema`'s `description.max(2000)`, not to the
+  // column, which is `text` and would take all of it. The four philosophy
+  // fields are 2000 characters each, so a fully authored philosophy renders at
+  // over 8000 and the row would then be un-PATCHable: the rule editor sends the
+  // whole object, and the write would 400 on a field the operator never typed.
+  // That is the same class of defect as the point-key refusal ruled on as Q1 —
+  // a seeded rule the local override cannot reach. The full text stays on the
+  // template, which is its home; the ellipsis says the rule's copy is short.
+  const joined = lines.join("\n");
+  return joined.length <= MAX_RULE_DESCRIPTION
+    ? joined
+    : `${joined.slice(0, MAX_RULE_DESCRIPTION - 1)}…`;
 }
 
 /**
@@ -213,7 +248,7 @@ export function seededRuleValues(input: SeededRuleInput): SeededRuleInsert {
   return {
     organizationId,
     code: seededRuleCode(assetCode, alarm.code),
-    name: alarm.message.slice(0, 255),
+    name: seededRuleName(alarm),
     description: philosophyDescription(alarm.philosophy),
     category,
     ruleType: "threshold",
