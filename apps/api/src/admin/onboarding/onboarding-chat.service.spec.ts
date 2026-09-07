@@ -204,3 +204,132 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
     `a name inside ${MAX_ECHOED_CELL_CHARS} characters is echoed whole, got "${firstLine}"`,
   );
 }
+
+/** An RTU with nothing left to complete, so `excelImportFollowUp` walks past the MQTT branch. */
+function completeRtu(name: string): NonNullable<OnboardingDraft["rtus"]>[number] {
+  return {
+    code: name,
+    displayName: name,
+    protocol: "mqtt",
+    config: { host: "phe.thinkiot.co.in", port: 8883, tls: true, topic: "site/topic" },
+    credentialsSet: true,
+    ingestEnabled: true,
+  };
+}
+
+function assetOf(rtuIndex: number, name: string): NonNullable<OnboardingDraft["assets"]>[number] {
+  return { rtuIndex, code: name, name, siteName: "Berhampur", domain: "electrical" };
+}
+
+/** The draft shape that reaches `formatAssetsByRtuSummary` — every earlier branch satisfied. */
+function summaryDraftOf(
+  rtus: NonNullable<OnboardingDraft["rtus"]>,
+  assets: NonNullable<OnboardingDraft["assets"]>,
+): OnboardingDraft {
+  return { rtus, assets, assetPoints: [], onboardingMeta: { useExistingPointKeys: true } };
+}
+
+/**
+ * `formatAssetsByRtuSummary` costs one pass over the assets, not one per RTU
+ * (post-merge review, finding 3).
+ *
+ * It was `rtus.map` wrapping `assets.filter` — O(rtus × assets) closure calls on
+ * the event loop, with nothing between it and a request. The security review
+ * measured 30 ms, 471 ms and **2,027 ms** at 1,000, 5,000 and 10,050 of each,
+ * all inside every guard this row added: the row bound admits ~20,090 rows, and
+ * a workbook of repeated short cells deflates far under the 5 MiB cap.
+ *
+ * **The trip count is asserted, not just the clock.** A wall-clock ceiling alone
+ * is a flaky gate under a contended full-suite run and says nothing about why.
+ * The fixture counts calls to `assets.filter`: the indexed version makes none,
+ * the quadratic one makes one per RTU. The clock is kept as a second, generous
+ * ceiling because the trip count is a proxy and a future rewrite could satisfy
+ * it while being slow another way.
+ *
+ * The behaviour half is asserted first and by whole-string equality, because
+ * "identical output" is the constraint the optimisation had to meet: asset order
+ * within a line, the `(no assets yet)` case, and an asset whose `rtuIndex`
+ * matches no RTU appearing nowhere.
+ */
+export function assertAssetsByRtuSummaryIsIndexedNotRescanned(): void {
+  const service = chatService();
+
+  // --- behaviour: identical output, including the two edge cases ------------
+  const small = service.excelImportFollowUp(
+    summaryDraftOf(
+      [completeRtu("A"), completeRtu("B"), completeRtu("C")],
+      [
+        assetOf(0, "a-first"),
+        assetOf(2, "c-only"),
+        assetOf(0, "a-second"),
+        // No RTU has index 7. `Map.get(7)` and `filter(a => a.rtuIndex === 7)`
+        // agree that it belongs to no line, and it must stay that way: an
+        // orphan silently attributed to RTU 0 would be a wrong summary.
+        assetOf(7, "orphan"),
+      ],
+    ),
+    { locationName: "Berhampur", rtuCount: 3, assetCount: 4 },
+    [],
+    [],
+  );
+  const summarySection = small.assistantMessage
+    .split("\n")
+    .filter((line) => line.startsWith("- **"))
+    .join("\n");
+  assert(
+    summarySection ===
+      ["- **'A'**: 'a-first', 'a-second'", "- **'B'**: (no assets yet)", "- **'C'**: 'c-only'"].join(
+        "\n",
+      ),
+    `the summary must be unchanged by the indexing, got:\n${summarySection}`,
+  );
+  assert(
+    !small.assistantMessage.includes("orphan"),
+    "an asset whose rtuIndex matches no RTU belongs to no line",
+  );
+
+  // --- cost: the shape the review measured at 2,027 ms ----------------------
+  const count = 10_050;
+  const rtus = Array.from({ length: count }, (_, index) => completeRtu(`RTU-${index}`));
+  const assets = Array.from({ length: count }, (_, index) => assetOf(index, `Asset-${index}`));
+  let assetScans = 0;
+  const nativeFilter = Array.prototype.filter as unknown as (
+    this: unknown[],
+    ...args: unknown[]
+  ) => unknown[];
+  Object.defineProperty(assets, "filter", {
+    configurable: true,
+    value(this: unknown[], ...args: unknown[]): unknown[] {
+      assetScans += 1;
+      return nativeFilter.apply(this, args);
+    },
+  });
+
+  const started = performance.now();
+  const big = service.excelImportFollowUp(
+    summaryDraftOf(rtus, assets),
+    { locationName: "Berhampur", rtuCount: count, assetCount: count },
+    [],
+    [],
+  );
+  const elapsedMs = performance.now() - started;
+
+  assert(
+    big.assistantMessage.includes("Assets by RTU"),
+    "this sub-case must reach the assets summary, or it measures the wrong branch",
+  );
+  assert(
+    big.assistantMessage.split("\n").filter((line) => line.startsWith("- **")).length === count,
+    "every RTU still gets its line — a cheaper summary that lists fewer is not the same summary",
+  );
+  assert(
+    assetScans <= 1,
+    `the summary must index the assets once, not rescan them per RTU: ${assetScans} scans for ${count} RTUs`,
+  );
+  // A ceiling, not a benchmark. Measured 2,027 ms before the index and single
+  // -digit ms after, so this sits far from both and survives a contended run.
+  assert(
+    elapsedMs < 750,
+    `${count} RTUs × ${count} assets must not cost a quadratic walk, took ${elapsedMs.toFixed(0)} ms`,
+  );
+}
