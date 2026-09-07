@@ -86,8 +86,15 @@ export function mapRuleRow(row: RuleRow): RuleListItem {
     // the data has always contradicted — harmless only because a cast is not a
     // check and the response schema accepted the real value anyway. ADR 0031
     // makes `source = 'phe_alarm_seed'` migration 0029's filter key, so the
-    // value is load-bearing rather than incidental.
-    source: row.source as "operator_rule" | "simulator_threshold" | "phe_alarm_seed",
+    // value is load-bearing rather than incidental. `template_alarm` (ADR
+    // 0058 decision 6, `E2.4`) is written by
+    // `AssetTemplateInstantiationService` on instantiate, one row per
+    // template alarm per created asset.
+    source: row.source as
+      | "operator_rule"
+      | "simulator_threshold"
+      | "phe_alarm_seed"
+      | "template_alarm",
     enabled: row.enabled,
     assetId: row.assetId,
     assetCode: row.assetCode,

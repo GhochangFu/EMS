@@ -34,6 +34,7 @@ export * from "./notifications";
 export * from "./onboarding";
 export * from "./operations";
 export * from "./point-metadata";
+export * from "./seeded-rules";
 export * from "./telemetry-entry";
 export * from "./telemetry-import";
 export * from "./template-lifecycle";

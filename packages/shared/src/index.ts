@@ -37,6 +37,7 @@ import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
 import type * as PM from "./contracts/point-metadata";
+import type * as SR from "./contracts/seeded-rules";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
 import { TELEMETRY_POINT_REF_SEP } from "./constants";
@@ -452,6 +453,14 @@ export type InstantiatedAssetDto = z.infer<typeof A.instantiatedAssetDtoSchema>;
 /** The result of one instantiate call — the whole batch or nothing. */
 export type AssetInstantiationResultDto = z.infer<
   typeof A.assetInstantiationResultDtoSchema
+>;
+/** `E2.4` / ADR 0058 — the resolved values a template alarm seeds a rule with. */
+export type SeededRuleValues = z.infer<typeof SR.seededRuleValuesSchema>;
+export type SeededRuleDriftVerdict = z.infer<typeof SR.seededRuleDriftVerdictSchema>;
+export type SeededRuleDto = z.infer<typeof SR.seededRuleDtoSchema>;
+export type SeededRulesListResponse = z.infer<typeof SR.seededRulesListResponseSchema>;
+export type ReapplySeededRulesResponse = z.infer<
+  typeof SR.reapplySeededRulesResponseSchema
 >;
 
 // `F2.6` template version lifecycle (ADR 0039).

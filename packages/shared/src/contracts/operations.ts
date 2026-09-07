@@ -572,8 +572,20 @@ export const ruleListItemSchema = z.object({
    * `AlarmThresholdService` used to evaluate in code — same idempotency-key
    * role `phe_alarm_seed` plays above, via `NOT EXISTS` on the condition
    * tuple rather than a `WHERE r.source = ...` literal.
+   *
+   * `template_alarm` (ADR 0058 decision 6, `E2.4`) is written by
+   * `AssetTemplateInstantiationService` — one row per `content.alarms[]` entry
+   * per created asset, inside the same transaction as `assets` and
+   * `asset_points`. `source` says *that* a rule was seeded this way;
+   * `source_template_id` / `source_template_version` / `source_alarm_code` /
+   * `seeded_baseline` (migration `0067`) say *from what*.
    */
-  source: z.enum(["operator_rule", "simulator_threshold", "phe_alarm_seed"]),
+  source: z.enum([
+    "operator_rule",
+    "simulator_threshold",
+    "phe_alarm_seed",
+    "template_alarm",
+  ]),
   enabled: z.boolean(),
   assetId: z.string().nullable(),
   assetCode: z.string().nullable(),
