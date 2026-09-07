@@ -351,8 +351,22 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
   }
   const range = XLSX.utils.decode_range(ref);
 
+  // `F4.101`: bounded, and the bound is the whole point. This loop used to walk
+  // `range.s.c..range.e.c` — whatever the file *declares*, not what it holds.
+  // `safe_decode_range` accumulates column letters with no XFD clamp, so a
+  // hand-written `<dimension ref="A1:AAAAAAA20102"/>` decodes to 321,272,406
+  // columns; measured through this function, a **2,465-byte** upload took the
+  // process to `FATAL ERROR: JavaScript heap out of memory` at a 768 MiB cap,
+  // and 12.4M columns took 13.4 s and 494 MiB before that. No densification is
+  // involved, which is why the `sheet_to_json` bound its sibling needed does
+  // not apply here and this parser looked safe: the header scan alone is the
+  // amplifier, and it runs BEFORE `cutAtTheReadingBound`.
+  //
+  // One column past the twelve, so `headerProblem` can still say "this is a
+  // thirteenth"; nothing beyond that was ever read.
+  const lastHeaderColumn = Math.min(range.e.c, range.s.c + MAPPING_SHEET_HEADERS.length);
   const headers: string[] = [];
-  for (let c = range.s.c; c <= range.e.c; c += 1) {
+  for (let c = range.s.c; c <= lastHeaderColumn; c += 1) {
     headers.push(cellText(sheet, range.s.r, c).toLowerCase());
   }
   while (headers.length > 0 && headers[headers.length - 1] === "") {

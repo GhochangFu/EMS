@@ -675,7 +675,7 @@ export function runTelemetryImportColumnBoundTests(): void {
   const emptySheet = {} as XLSX.WorkSheet;
 
   // ---- the ceiling, on the worst range a workbook can declare --------------
-  // 20,102 rows x 16,384 columns = 3,29,35,1168 cells before the bound.
+  // 20,102 rows x 16,384 columns = 329,351,168 cells before the bound.
   const worst = columnBoundedRange(emptySheet, { s: { r: 0, c: 0 }, e: { r: SHEET_ROWS_BOUND - 1, c: 16_383 } });
   assert(worst.ok, "the worst declarable range must be bounded, not refused — no recognised header sits in it");
   if (worst.ok) {
@@ -719,6 +719,26 @@ export function runTelemetryImportColumnBoundTests(): void {
   // ---- a sheet already narrower than the window is returned untouched ------
   const narrow = columnBoundedRange(emptySheet, { s: { r: 0, c: 0 }, e: { r: 9, c: 4 } });
   assert(narrow.ok && narrow.range.e.c === 4, "a sheet narrower than the window must keep its own width");
+
+  // ---- a `<dimension>` wider than the XLSX format allows -------------------
+  // `safe_decode_range` accumulates column letters with no XFD clamp, so a
+  // hand-written `<dimension ref="A1:AAAAAAAA20102"/>` decodes to 8,353,082,582
+  // columns from a ~2.4 KB upload — measured. `HEADER_SCAN_COLUMN_CEILING` is
+  // the only thing bounding the scan for that input, and no fixture below is
+  // wide enough to bind it, so it is asserted here or it is not asserted at all.
+  const malformedStart = performance.now();
+  const malformed = columnBoundedRange(emptySheet, { s: { r: 0, c: 0 }, e: { r: SHEET_ROWS_BOUND - 1, c: 8_353_082_582 } });
+  const malformedMs = performance.now() - malformedStart;
+  assert(malformed.ok, "a dimension wider than the format allows must be bounded, not refused");
+  if (malformed.ok) {
+    assert(
+      malformed.range.e.c - malformed.range.s.c + 1 === MAX_HEADER_COLUMNS,
+      `a malformed dimension must still read ${MAX_HEADER_COLUMNS} columns, got ${malformed.range.e.c - malformed.range.s.c + 1}`,
+    );
+  }
+  // Generous by 3 orders of magnitude against the ~5 ms this takes bounded, and
+  // against the minutes it takes unbounded — a ceiling, not a benchmark.
+  assert(malformedMs < 5_000, `the header scan must be bounded, took ${malformedMs.toFixed(0)} ms`);
 
   // ---- the WIRING: the bounded range must actually reach sheet_to_json -----
   // Row 3 is empty in every named column and carries a stray note far to the
@@ -783,6 +803,43 @@ export function runTelemetryImportColumnBoundTests(): void {
     assert(
       duplicateResult.rows[0]?.time === "2026-08-19T11:00:00.000Z",
       `the in-window column is the one read, expected 11:00, got ${duplicateResult.rows[0]?.time}`,
+    );
+  }
+
+  // ---- a header cell too long to be a header is not compared --------------
+  // SheetJS dedupes shared strings, so one long string referenced from every
+  // scanned column multiplies its own length by the column count, and neither
+  // upload guard bounds that product. A cell past `MAX_HEADER_CELL_CHARS` reads
+  // as blank rather than being trimmed and lower-cased.
+  const longCell = "x".repeat(5_000);
+  const longSheet: XLSX.WorkSheet = {};
+  for (let c = 0; c <= 200; c += 1) {
+    longSheet[XLSX.utils.encode_cell({ r: 0, c })] = { t: "s", v: longCell };
+  }
+  const longStart = performance.now();
+  const longResult = columnBoundedRange(longSheet, { s: { r: 0, c: 0 }, e: { r: 199, c: 200 } });
+  const longMs = performance.now() - longStart;
+  assert(longResult.ok, "a header row of long cells holds no recognised header, so it must be bounded not refused");
+  assert(longMs < 2_000, `a header row of long cells must not be normalised in full, took ${longMs.toFixed(0)} ms`);
+
+  // ---- a case-variant header beyond the window is still recognised ---------
+  // `headerCellText` lower-cases; without that the refusal below degrades to
+  // "Missing required column 'time'", which is the message this row exists to
+  // stop the parser giving.
+  const casedHeader: (string | number)[] = [];
+  const casedData: (string | number)[] = [];
+  for (let c = 0; c <= strayColumn; c += 1) {
+    casedHeader[c] = c === 0 ? "asset_code" : c === 1 ? "point_key" : c === 2 ? "value" : `spare_${c}`;
+    casedData[c] = c === 0 ? "F19-ASSET-1" : c === 1 ? "kw" : c === 2 ? "12.5" : "";
+  }
+  casedHeader[strayColumn] = "TiMe";
+  casedData[strayColumn] = "2026-08-19T10:00:00Z";
+  const casedResult = parseWorkbook(buildWorkbookBuffer([casedHeader, casedData]));
+  assert(!casedResult.ok, "a case-variant `time` beyond the window must be refused");
+  if (!casedResult.ok) {
+    assert(
+      casedResult.reason.includes("'time'"),
+      `the refusal must name the column in its canonical spelling, got ${casedResult.reason}`,
     );
   }
 

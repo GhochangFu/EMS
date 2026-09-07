@@ -416,6 +416,63 @@ export function assertOnlyDecimalLiteralsAreNumbers(): void {
   }
 }
 
+/**
+ * `F4.101` — the header scan is bounded by the twelve columns this sheet has,
+ * not by the width the file declares.
+ *
+ * The scan used to walk `range.s.c..range.e.c`, and `safe_decode_range`
+ * accumulates column letters with no XFD clamp, so a hand-written
+ * `<dimension ref="A1:AAAAAAA20102"/>` decodes to 321,272,406 columns. Measured
+ * through `parseMappingSheet`: 12.4M declared columns took 13.4 s and 494 MiB,
+ * and 321M took the process to `FATAL ERROR: JavaScript heap out of memory` at
+ * a 768 MiB cap — all from uploads of about 2.46 KB, holding two real cells.
+ * The scan runs BEFORE `cutAtTheReadingBound`, and no densification is
+ * involved, which is why the row cap and the `sheet_to_json` bound its sibling
+ * needed both miss it.
+ *
+ * That fixture cannot be built here: SheetJS's writer is O(declared cells), so
+ * a 321M-column declaration cannot be written by a test. The wall clock was
+ * measured out-of-suite against a hand-built zip; what is gated here is the
+ * bound itself, structurally.
+ *
+ * A stray cell far right in the header row is the discriminator. Unbounded, the
+ * scan reaches it, the trailing-blank `pop` stops at it, and `headerProblem`
+ * refuses the file as having a thirteenth column. Bounded, the twelve are read
+ * and the file parses. That is a deliberate behaviour change and it is the
+ * kinder one: a stray cell Excel left behind in the header row no longer
+ * refuses an otherwise-correct sheet.
+ */
+export function assertTheHeaderScanIsBoundedByTheTwelve(): void {
+  const strayColumn = 700;
+  const headerRow: Cell[] = [...HEADER];
+  const dataRow: Cell[] = [...row()];
+  // Annotated: `MAPPING_SHEET_HEADERS` is a readonly tuple, so `.length` is the
+  // literal `12` and `c` would be inferred as `12` rather than `number`.
+  for (let c: number = MAPPING_SHEET_HEADERS.length; c <= strayColumn; c += 1) {
+    headerRow[c] = c === strayColumn ? "stray" : "";
+    dataRow[c] = "";
+  }
+
+  const result = parseMappingSheet(buildBuffer([headerRow, dataRow]));
+  assert(
+    result.ok,
+    `a stray header-row cell beyond the twelve must not refuse the sheet, got ${result.ok === false ? result.error.message : ""}`,
+  );
+  if (result.ok) {
+    assert(result.rows.length === 1, `expected the one data row, got ${result.rows.length}`);
+    assert(result.rows[0]?.rowNumber === 2, `the data row keeps its Excel number, got ${result.rows[0]?.rowNumber}`);
+  }
+
+  // And the thirteenth-column refusal still fires when the thirteenth is really
+  // the thirteenth — the bound reads one past the twelve for exactly this.
+  const thirteenth = parseMappingSheet(buildBuffer([[...HEADER, "extra"], [...row(), ""]]));
+  assert(!thirteenth.ok, "a real thirteenth column must still be refused");
+  assert(
+    thirteenth.ok === false && thirteenth.error.message.includes("thirteenth"),
+    `the refusal must still name it a thirteenth, got ${thirteenth.ok === false ? thirteenth.error.message : ""}`,
+  );
+}
+
 /** PR 2 security review, H2 — a zip declaring a 500 MiB inflation is refused before `XLSX.read` inflates anything. */
 export function assertADeclaredZipBombIsRefusedBeforeRead(): void {
   const result = parseMappingSheet(syntheticZip([500 * 1024 * 1024]));

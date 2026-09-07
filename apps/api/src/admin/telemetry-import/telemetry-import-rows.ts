@@ -66,9 +66,16 @@ export const SHEET_ROWS_BOUND = MAX_IMPORT_ROWS + 2 + MAX_RANGE_START_ROW;
  * The request writes nothing and is repeatable, so it is a denial of service
  * against the whole API, not against one import.
  *
+ * It bounds a second path as well, which is easy to miss because the row clamp
+ * looks like it already covers it: when that clamp *does* fire it sets
+ * `tmpref.e.c = min(declared, refguess.e.c)`, and `refguess` is measured from
+ * the cells actually present — so one real cell at XFD leaves `refguess.e.c` at
+ * 16,383 and the clamped range is still 20,102 × 16,384. A declared end row
+ * *over* the bound is therefore no safer than one under it.
+ *
  * This parser names six columns, so 64 leaves 58 for whatever else an
  * operator's sheet carries beside them, and bounds the worst case a sheet can
- * still buy at 20,102 × 64 ≈ 1.29M cells. The window is applied to the *read*,
+ * still buy at 20,102 × 64 = 1,286,528 cells. The window is applied to the *read*,
  * and a recognised header found beyond it refuses the file by name rather than
  * being dropped — see {@link columnBoundedRange}. AGENTS.md §4.3: a size cap on
  * the upload is not a bound on the work.
@@ -199,15 +206,36 @@ function rawCellText(sheet: XLSX.WorkSheet, sheetRowIndex: number, colIndex: num
 }
 
 /**
+ * The longest a header cell may be and still be compared. The longest header
+ * this parser recognises is `asset_code` at ten characters, so nothing legible
+ * is lost — and without it the scan below is O(columns × cell length), not
+ * O(columns). SheetJS dedupes shared strings, so one long string referenced
+ * from every column of the header row multiplies its own length by the column
+ * count, and neither `zipInflationProblem` (64 MiB declared) nor
+ * `MAX_IMPORT_FILE_BYTES` (5 MiB) bounds that product.
+ */
+const MAX_HEADER_CELL_CHARS = 64;
+
+/**
  * A header cell, addressed absolutely and compared the way the header row is:
- * the cell's own value, trimmed and lower-cased. Deliberately reads `.v` and
- * not `rawCellText`'s `.w` — `.w` is the source *text*, which the time column
- * needs and a header does not, and a cell can carry one without the other.
- * Mirrors `F2.7`'s sibling `cellText(sheet, r, c)`.
+ * the cell's own value, trimmed and lower-cased.
+ *
+ * Reads `.v` rather than `rawCellText`'s `.w` because `sheet_to_json` is called
+ * with no `raw` key, which SheetJS resolves to `raw: true` — so `raw[0]` holds
+ * `.v` too, and comparing `.v` here is comparing like with like. (`.w` is the
+ * formatted source text, which the time column needs and a header does not, and
+ * a cell can carry one without the other.) Mirrors `F2.7`'s sibling
+ * `cellText(sheet, r, c)`.
  */
 function headerCellText(sheet: XLSX.WorkSheet, r: number, c: number): string {
   const cell = sheet[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined;
   if (cell === undefined || cell.v === undefined || cell.v === null) {
+    return "";
+  }
+  // Length first, before `trim`/`toLowerCase` allocate: a cell this long is not
+  // a header this parser knows, and `toLowerCase` on some code points (U+0130)
+  // expands as it copies.
+  if (typeof cell.v === "string" && cell.v.length > MAX_HEADER_CELL_CHARS) {
     return "";
   }
   return String(cell.v).trim().toLowerCase();
@@ -261,6 +289,13 @@ export function columnBoundedRange(
     if (RECOGNISED_HEADERS.has(text) && !insideWindow.has(text)) {
       return {
         ok: false,
+        // `text` is NOT echoed sheet text despite reading like it: the branch
+        // is reached only when `RECOGNISED_HEADERS.has(text)`, and `Set.has`
+        // is SameValueZero, not a property lookup, so `text` is provably one of
+        // the six literals in that set. That is why `spreadsheet-guard.ts`'s
+        // `quoteCell` is not applied here — the membership test is the stronger
+        // bound. Apply `quoteCell` if this message ever interpolates a cell the
+        // set does not vouch for.
         reason:
           `Column '${text}' is at ${XLSX.utils.encode_col(c)}, beyond the ${MAX_HEADER_COLUMNS} columns ` +
           `read from the start of the sheet's used range; move the import columns to the left of the sheet`,
@@ -427,7 +462,12 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
     const rowNumber = sheetRowIndex + 1;
 
     if (isBlankRow(row)) {
-      return; // silently ignored — spacer rows are common in hand-edited sheets
+      // Silently ignored — spacer rows are common in hand-edited sheets. Since
+      // `F4.101` `row` is the row within the read window, so a row whose only
+      // content sits beyond `MAX_HEADER_COLUMNS` is blank here too. It was
+      // previously rejected as "Row must include asset_code or asset_id"; it
+      // never held data this importer reads, under a column it never read.
+      return;
     }
 
     const assetCode = hasAssetCode ? cellText(row, assetCodeIdx) : "";
