@@ -37,7 +37,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   findUnresolvedContentRefs,
-  templateContentSchema,
+  parseStoredTemplateContent,
   type TemplateContentParsed,
 } from "./asset-templates-content.schema";
 import {
@@ -54,6 +54,10 @@ import type {
   UpdateAssetTemplateBody,
 } from "./asset-templates.schema";
 import type { StockImportStamp } from "./stock-catalog/types";
+import {
+  alarmVocabularyMessage,
+  findAlarmVocabularyProblem,
+} from "./template-alarm-vocabularies";
 
 /**
  * The template **version lifecycle** (ADR 0015 §5). Instantiation — building
@@ -678,33 +682,22 @@ export class AssetTemplatesAdminService {
    * to move forward rather than only what is wrong.
    */
   private parseStoredContent(template: TemplateRow): TemplateContentParsed {
-    const parsed = templateContentSchema.safeParse(template.content ?? {});
-    if (!parsed.success) {
-      // Report *structure*, never values. Stored content on a pre-ADR row is
-      // arbitrary JSON, and zod's own message text echoes the received value
-      // back for `invalid_enum_value` ("… received 'x'"). Paths, unexpected key
-      // names and issue codes say everything an author needs to fix it. Our own
-      // `custom` messages are kept because we wrote them and they interpolate
-      // only a key name and a byte count — and because they are the only place
-      // a reserved section explains which item it is waiting for.
-      const detail = parsed.error.issues
-        .map((issue) => {
-          const at = issue.path.join(".") || "content";
-          if (issue.code === "custom") {
-            return `${at}: ${issue.message}`;
-          }
-          if (issue.code === "unrecognized_keys") {
-            return `${at}: unrecognized key(s) ${issue.keys.join(", ")}`;
-          }
-          return `${at}: ${issue.code}`;
-        })
-        .join("; ");
+    // `E2.4`: the parse and the structure-only (non-echoing) issue renderer now
+    // live in `asset-templates-content.schema.ts`, because `instantiate` reads
+    // the same stored column for its alarms and owes a different status for the
+    // same failure (ADR 0058 D7 — a 409, not this 400). Extracted rather than
+    // copied: the non-echoing property is security-relevant, and a second copy
+    // is a second thing to remember when the first one is tightened. **The
+    // message below is unchanged, byte for byte** — the lifecycle integration
+    // suite matches on it.
+    const parsed = parseStoredTemplateContent(template.content);
+    if (!parsed.ok) {
       throw new BadRequestException(
         "This template's stored content does not match the current content contract, " +
-          `so it cannot be published. PATCH \`content\` into conformance first. ${detail}`,
+          `so it cannot be published. PATCH \`content\` into conformance first. ${parsed.detail}`,
       );
     }
-    return parsed.data;
+    return parsed.content;
   }
 
   /**
@@ -761,51 +754,23 @@ export class AssetTemplatesAdminService {
     // in the same commit, so the echoing category branch was newly reachable
     // over stored content. All three are non-echoing now — they name the path
     // and list the expected codes, and nothing else.
-    const {
-      ruleCategories: liveCategories,
-      alarmSeverities: liveSeverities,
-      alarmSkills: liveSkills,
-    } = await this.vocabularies.list();
-
-    // `category` is optional on a template alarm, so an absent one is not a
-    // failure — it means "unspecified", and the rule builder's default applies
-    // if this ever becomes a rule.
-    const liveCategoryCodes = new Set(liveCategories.map((row) => row.code));
-    const badCategory = alarms.findIndex(
-      (alarm) => typeof alarm.category === "string" && !liveCategoryCodes.has(alarm.category),
-    );
-    if (badCategory >= 0) {
-      throw new BadRequestException(
-        `content.alarms.${badCategory}.category is not a live category. Expected one of: ${[
-          ...liveCategoryCodes,
-        ].join(", ")}.`,
-      );
-    }
-
-    const liveSeverityCodes = new Set(liveSeverities.map((row) => row.code));
-    const badSeverity = alarms.findIndex((alarm) => !liveSeverityCodes.has(alarm.severity));
-    if (badSeverity >= 0) {
-      throw new BadRequestException(
-        `content.alarms.${badSeverity}.severity is not a live severity. Expected one of: ${[
-          ...liveSeverityCodes,
-        ].join(", ")}.`,
-      );
-    }
-
-    // `philosophy` and `philosophy.skill` are both optional — absent is not a
-    // failure, matching `category`'s guard rather than `severity`'s unconditional
-    // one.
-    const liveSkillCodes = new Set(liveSkills.map((row) => row.code));
-    const badSkill = alarms.findIndex(
-      (alarm) =>
-        typeof alarm.philosophy?.skill === "string" && !liveSkillCodes.has(alarm.philosophy.skill),
-    );
-    if (badSkill >= 0) {
-      throw new BadRequestException(
-        `content.alarms.${badSkill}.philosophy.skill is not a live skill. Expected one of: ${[
-          ...liveSkillCodes,
-        ].join(", ")}.`,
-      );
+    //
+    // **`E2.4`: the comparison itself moved to `template-alarm-vocabularies.ts`
+    // and this method keeps only the 400.** Instantiation now writes these two
+    // codes into `bms.automation_rules`, so the same question is asked a second
+    // time at instantiate — where a value can have been retired since publish —
+    // and two spellings of "is this code live" is how the two gates drift into
+    // disagreeing. The messages, the check order and the non-echoing property
+    // are unchanged; they are pinned by the shared module and by the probes in
+    // `asset-templates.lifecycle.integration.spec.ts`.
+    const { ruleCategories, alarmSeverities, alarmSkills } = await this.vocabularies.list();
+    const problem = findAlarmVocabularyProblem(alarms, {
+      ruleCategories,
+      alarmSeverities,
+      alarmSkills,
+    });
+    if (problem) {
+      throw new BadRequestException(alarmVocabularyMessage(problem));
     }
   }
 

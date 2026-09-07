@@ -90,6 +90,34 @@ function renderTab(alarms: unknown[], editable = true): HTMLElement {
   return container;
 }
 
+/**
+ * `E2.4` / ADR 0058 — the banner used to send an author away to build every
+ * rule by hand, and instantiate now seeds them. The old sentence is asserted
+ * absent as well as the new one present: a banner that still says nothing
+ * watches a live asset is worse than no banner, because an author who reads it
+ * will not go looking for the disabled philosophy rows they are owed a limit
+ * on.
+ */
+export async function bannerSaysInstantiateSeedsTheRules(): Promise<void> {
+  renderTab([
+    {
+      code: "OVERLOAD",
+      pointKey: "current_a",
+      severity: "warning",
+      message: "Load above the feeder's rating",
+    },
+  ]);
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/Instantiating a published version creates one automation rule per alarm/),
+    ).toBeInTheDocument();
+  });
+  expect(screen.getByText(/republishing never moves one/)).toBeInTheDocument();
+  expect(screen.queryByText(/nothing here watches a live asset/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/create the matching rule in the Rule Engine for each/)).toBeNull();
+}
+
 /** The pair-absent row itself — ADR 0019 Amendment 2 decision 5's claim. */
 export async function pairAbsentRowRendersCommissioningCopyAndAnEmptyOperator(): Promise<void> {
   renderTab([

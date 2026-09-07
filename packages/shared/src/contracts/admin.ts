@@ -458,6 +458,10 @@ export const stockAssetTemplateDtoSchema = z.object({
  * Required points abort the batch instead, so anything listed here was
  * explicitly declared optional — surfaced because "12 points in, 10 rows out"
  * is otherwise indistinguishable from a bug.
+ *
+ * `seededRules` (ADR 0058 decision 10, `E2.4`) names the automation-rule
+ * codes seeded from this asset's template alarms — `.length` is the count a
+ * caller reads as "how many rules this asset got".
  */
 export const instantiatedAssetDtoSchema = z.object({
   id: z.string(),
@@ -467,6 +471,7 @@ export const instantiatedAssetDtoSchema = z.object({
   rtuId: z.string().nullable(),
   pointCount: z.number(),
   skippedPoints: z.array(z.string()),
+  seededRules: z.array(z.string()),
 });
 
 /** The result of one instantiate call — the whole batch or nothing. */
@@ -486,6 +491,14 @@ export const assetInstantiationResultDtoSchema = z.object({
   assets: z.array(instantiatedAssetDtoSchema),
   assetCount: z.number(),
   pointCount: z.number(),
+  /**
+   * ADR 0058 decision 10 (`E2.4`) — how many `bms.automation_rules` rows this
+   * call seeded, and how many of them seeded `enabled = false` (a philosophy
+   * row with no operator/threshold, decision 3). A caller can tell from the
+   * response how many commissioning limits are still owed.
+   */
+  ruleCount: z.number().int(),
+  disabledRuleCount: z.number().int(),
 });
 
 // Compile-time guard: the narrowing above must still describe exactly

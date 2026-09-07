@@ -13,6 +13,7 @@ import {
 
 import {
   alarmSeverities,
+  assetTemplates,
   assets,
   bmsSchema,
   organizations,
@@ -223,6 +224,14 @@ export const automationRules = bmsSchema.table("automation_rules", {
   publishedAt: timestamp("published_at", { withTimezone: true }).defaultNow(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   duplicatedFromRuleId: uuid("duplicated_from_rule_id"),
+  // ADR 0058 decision 5 (E2.4, migration 0067). All four NULL for every rule
+  // not seeded from a template — which is every row that predates this
+  // migration, and `duplicateRule`'s insert on purpose (blast radius table):
+  // a duplicate is an operator rule, and its provenance stays NULL too.
+  sourceTemplateId: uuid("source_template_id").references(() => assetTemplates.id),
+  sourceTemplateVersion: integer("source_template_version"),
+  sourceAlarmCode: varchar("source_alarm_code", { length: 64 }),
+  seededBaseline: jsonb("seeded_baseline"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
