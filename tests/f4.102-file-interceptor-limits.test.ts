@@ -47,7 +47,12 @@ const UPLOAD_INTERCEPTORS = /\b(File|Files|FileFields|AnyFiles)Interceptor\s*\(/
  *   above are a closed list, so a fifth from a future Nest release is invisible
  *   until this constant is updated;
  * - an upload route in a file not named `*.controller.ts`, which the walk never
- *   opens.
+ *   opens;
+ * - **a `fileSize` that is not a bound.** The match is `/fileSize\s*:/`-shaped,
+ *   so `fileSize: Infinity` — multer's own default, written out — satisfies it
+ *   exactly as `fileSize: MAX_IMPORT_FILE_BYTES` does. This gates that a cap is
+ *   *named*, not that the number is small; nothing here can compare two
+ *   constants from different modules by reading text.
  *
  * All of that is acceptable. The failure this guards is a new upload route
  * written without limits at all, which is what happened to

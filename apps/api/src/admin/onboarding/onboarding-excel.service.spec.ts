@@ -11,6 +11,7 @@ import {
   OnboardingExcelService,
   onboardingSheetRangeProblem,
 } from "./onboarding-excel.service";
+import { onboardingProtocolSchema } from "./onboarding.schema";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -423,17 +424,29 @@ export function assertSheetReachingTheRowBoundIsRefused(): void {
  * (owner ruling 3). Named in prose, not `{@link}`: the helper is not imported
  * here, and an unresolved link renders as plain text.
  *
- * **The bound is on the message, never on the data.** The RTU keeps the whole
- * display name it was given; only the sentence that reports the adjustment is
- * cut. Both halves are asserted, because a "fix" that quietly truncated the
- * stored name would pass a message-length check and corrupt the import.
+ * **The bound is on the message, never on the data.** Both RTUs keep the whole
+ * cell they were given — the first its 32,767-character display name, the
+ * second the 32,767-character *code* the fix substituted — and only the
+ * sentence that reports the adjustment is cut. Both halves are asserted,
+ * because a "fix" that quietly truncated the stored name would pass a
+ * message-length check and corrupt the import.
  *
  * `assetDomainFromCell`'s pass-through needs no `quoteCell` and deliberately
- * has none: `onboardingDraftAssetSchema.domain` is
+ * has none: `draftAssetSchema.domain` is `assetDomainCodeSchema`, i.e.
  * `z.string().min(1).max(64)`, and `OnboardingValidateService.validate` runs
  * `onboardingDraftSchema.safeParse` before `assertAssetDomain`, so
- * `unknownCodeMessage` can never be handed an unbounded value. Recorded here so
- * the next reviewer does not have to re-derive it.
+ * `unknownCodeMessage` can never be handed an unbounded value. Zod's `too_big`
+ * message states the bound and never repeats the value, which is what makes
+ * that safe.
+ *
+ * **The same reasoning does not carry to an enum, and the post-merge review of
+ * `c79114c4` found where.** `invalid_enum_value` *does* repeat the whole
+ * received value, so a `z.enum` field fed straight from a cell is an echo site
+ * however short the schema's other members are — see
+ * `assertUnknownRtuProtocolIsRefused` below for `protocol`, the sixth site.
+ * `location.type` is the other enum reachable from this sheet and is safe by a
+ * different route: `parseLocation` maps anything that is not `rsmoc` or
+ * `csmoc` onto `smoc_campus`, so no cell text ever reaches it.
  */
 export function assertEchoedSheetTextIsBounded(): void {
   const rows = templateRows();
@@ -443,11 +456,12 @@ export function assertEchoedSheetTextIsBounded(): void {
   // unchanged, nothing would be pushed, and the count below would pass for the
   // wrong reason.
   const sharedName = "N".repeat(32_767);
+  const duplicateCode = "B".repeat(32_767);
   rows[6] = [...rows[6]];
   rows[7] = [...rows[7]];
   rows[6][0] = "A".repeat(32_767);
   rows[6][1] = sharedName;
-  rows[7][0] = "B".repeat(32_767);
+  rows[7][0] = duplicateCode;
   rows[7][1] = sharedName;
 
   const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(rows));
@@ -458,9 +472,20 @@ export function assertEchoedSheetTextIsBounded(): void {
   const line = parsed.displayNameFixes[0];
   assert(line.length < 400, `the reported fix must be bounded, got ${line.length} characters`);
   assert(line.includes("more characters"), `a cut cell says how much was omitted, got "${line}"`);
+  // The RTU that keeps the name it was given is index **0**. Index 1 is the
+  // duplicate, whose name `normalizeRtuDisplayNames` replaced, so a length
+  // check there vouches for the substituted code and never for the given name —
+  // which is what it did until the post-merge review of `c79114c4`.
   assert(
-    parsed.rtus[1].displayName.length > 1000,
-    `the RTU keeps its full name — only the message is cut, got ${parsed.rtus[1].displayName.length} characters`,
+    parsed.rtus[0].displayName === sharedName,
+    `the first RTU keeps all ${sharedName.length} characters of the name it was given, got ${parsed.rtus[0].displayName.length}`,
+  );
+  // Kept, restated for what it actually proves: the substitution is not a
+  // truncation either. The duplicate's name becomes its own maximum-length
+  // code, whole.
+  assert(
+    parsed.rtus[1].displayName === duplicateCode,
+    `the duplicate's name is replaced by its full code, got ${parsed.rtus[1].displayName.length} characters`,
   );
 }
 
@@ -526,5 +551,149 @@ export function assertOverlongRtuTopicIsRefused(): void {
   assert(
     template.rtus[0].config.topic === "BERHAMPUR-RTU-1/Topic1",
     `the template's topic survives the bound, got ${JSON.stringify(template.rtus[0].config.topic)}`,
+  );
+}
+
+/**
+ * The **sixth** echo site, and the one every guard this row shipped with let
+ * through: the `protocol` cell was cast, not validated (post-merge review of
+ * `c79114c4`; owner ruling).
+ *
+ * `parseRtus` wrote `get(values, "protocol") as OnboardingProtocol` straight
+ * into the draft. `draftRtuSchema.protocol` is `onboardingProtocolSchema`, a
+ * `z.enum`, and Zod 3's `invalid_enum_value` message embeds the **whole**
+ * received value — so `OnboardingValidateService.validate` turned one hostile
+ * cell per row into one maximum-length string per row, returned in
+ * `validationErrors` of the upload response, after the same draft was written
+ * to `onboarding_sessions.draft`.
+ *
+ * **Why the other five guards do not see it.** A shared-string table lets every
+ * RTU row reference *one* 32,767-character value, so the file stays small and
+ * declares little. Measured on `c79114c4` (xlsx 0.20.3, zod 3.25.76): 2,000 RTU
+ * rows in a 231,182-byte upload returned **65.8 MB** of `validationErrors`, and
+ * 20,090 rows in a 2,274,916-byte upload took the draft jsonb to ~658 MB and
+ * died at the write with `RangeError: Invalid string length`. Both passed the
+ * interceptor's limits, the byte cap, the inflation budget, the declared width,
+ * the reading bound and the topic bound.
+ *
+ * So the fix is the same shape the topic took: refuse at the parse boundary,
+ * and **echo the length, never the value** (AGENTS.md §4.3). Validating here
+ * closes the spreadsheet route only — `PATCH :id/draft` and the model's
+ * `draftPatch` write `rtus[].protocol` into the same enum, which is the already
+ * filed `.max()`-on-the-draft-schema row, deliberately not this one.
+ */
+export function assertUnknownRtuProtocolIsRefused(): void {
+  // The whole vocabulary parses, not just the default. `modbus_tcp` also flips
+  // `ingestEnabled`, so this pins that the guard reads the cell rather than
+  // replacing it with `mqtt`.
+  const legalRows = templateRows();
+  legalRows[7] = [...legalRows[7]];
+  legalRows[7][2] = "modbus_tcp";
+  const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(legalRows));
+  assert(
+    parsed.rtus[0].protocol === "mqtt",
+    `an ordinary mqtt row parses unchanged, got ${JSON.stringify(parsed.rtus[0].protocol)}`,
+  );
+  assert(
+    parsed.rtus[0].ingestEnabled === true,
+    "an mqtt RTU still arrives with ingest enabled",
+  );
+  assert(
+    parsed.rtus[1].protocol === "modbus_tcp",
+    `every member of the vocabulary parses, got ${JSON.stringify(parsed.rtus[1].protocol)}`,
+  );
+  assert(
+    parsed.rtus[1].ingestEnabled === false,
+    "a non-mqtt RTU arrives with ingest disabled, as it did before the guard",
+  );
+
+  // A blank cell is not an unknown protocol — it is the `mqtt` default, and the
+  // guard must not turn the sheet's own optional column into a refusal.
+  const blankRows = templateRows();
+  blankRows[6] = [...blankRows[6]];
+  blankRows[6][2] = "";
+  const blank = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(blankRows));
+  assert(
+    blank.rtus[0].protocol === "mqtt",
+    `a blank protocol cell still defaults to mqtt, got ${JSON.stringify(blank.rtus[0].protocol)}`,
+  );
+
+  // A hand-written sheet says `MQTT`, and that is the same protocol. The fold
+  // is the owner's ruling and matches `assetDomainFromCell`, which normalises
+  // its own cell for the same stated reason — so the guard refuses an unknown
+  // protocol, never a differently-typed known one. Spacing folds too: the
+  // section reader trims, and this pins the parser's own fold rather than
+  // relying on that.
+  const casedRows = templateRows();
+  casedRows[6] = [...casedRows[6]];
+  casedRows[7] = [...casedRows[7]];
+  casedRows[6][2] = "MQTT";
+  casedRows[7][2] = "  Modbus_TCP  ";
+  const cased = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(casedRows));
+  assert(
+    cased.rtus[0].protocol === "mqtt",
+    `an uppercase MQTT cell imports as mqtt, got ${JSON.stringify(cased.rtus[0].protocol)}`,
+  );
+  assert(
+    cased.rtus[1].protocol === "modbus_tcp",
+    `a mixed-case padded cell imports folded, got ${JSON.stringify(cased.rtus[1].protocol)}`,
+  );
+  // The fold must not leak past the vocabulary check into what the RTU does.
+  assert(
+    cased.rtus[0].ingestEnabled === true && cased.rtus[1].ingestEnabled === false,
+    "a folded protocol drives ingestEnabled exactly as the lowercase spelling does",
+  );
+
+  // The amplifier itself: one maximum-length cell, on the second RTU row.
+  const hostileRows = templateRows();
+  hostileRows[7] = [...hostileRows[7]];
+  hostileRows[7][2] = "Z".repeat(32_767);
+  const message = refusalMessage(
+    buildWorkbookBuffer(hostileRows),
+    "a 32,767-character protocol cell",
+  );
+  assert(
+    message.includes("RTU row 2"),
+    `the refusal names the row to repair — the second RTU data row, got "${message}"`,
+  );
+  assert(
+    message.includes(String(32_767)),
+    `the refusal names the length it read, got "${message}"`,
+  );
+  assert(
+    onboardingProtocolSchema.options.every((option) => message.includes(option)),
+    `the refusal names the vocabulary the operator must choose from, got "${message}"`,
+  );
+  // The point of the whole row: the refusal is bounded by what it says, not by
+  // what it was given. A message that carried the cell would be the same
+  // amplification through a 400 instead of a 200.
+  assert(
+    !message.includes("ZZZZZZZZZZ"),
+    `the refusal must not echo the protocol it refused, got "${message.slice(0, 200)}"`,
+  );
+  assert(
+    message.length < 500,
+    `the refusal is a sentence, not a copy of the cell, got ${message.length} characters`,
+  );
+
+  // A short unknown value is refused on the same sentence. Asserted because the
+  // guard is about the vocabulary, not the length — a bound alone would let
+  // `http` through to the enum and back out through `validationErrors`.
+  const shortRows = templateRows();
+  shortRows[6] = [...shortRows[6]];
+  shortRows[6][2] = "http";
+  const shortMessage = refusalMessage(buildWorkbookBuffer(shortRows), "an unknown short protocol");
+  assert(
+    shortMessage.includes("RTU row 1") && shortMessage.includes("of 4 characters"),
+    `a four-character unknown protocol is refused by the same sentence, got "${shortMessage}"`,
+  );
+
+  // And the honest sheet is untouched.
+  const template = new OnboardingExcelService().parseUpload(
+    new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+  );
+  assert(
+    template.rtus.every((rtu) => rtu.protocol === "mqtt"),
+    `the template's own protocol column survives the guard, got ${JSON.stringify(template.rtus.map((rtu) => rtu.protocol))}`,
   );
 }

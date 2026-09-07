@@ -82,6 +82,18 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
  * 4. `formatAssetsByRtuSummary`'s `<displayName>`;
  * 5. `formatAssetsByRtuSummary`'s `<asset.name>`, once per asset on the line.
  *
+ * **The summary is not the whole echo surface, and this docblock claimed it
+ * was.** There is a sixth site, outside this file and outside the summary: the
+ * `protocol` cell reaches `draftRtuSchema`'s `z.enum`, whose
+ * `invalid_enum_value` message repeats the received value into the upload
+ * response's `validationErrors` — 65.8 MB of it from a 231,182-byte workbook.
+ * No `quoteCell` can reach that message, so it is refused at the parse boundary
+ * instead, and the function that asserts it is
+ * `assertUnknownRtuProtocolIsRefused` in `onboarding-excel.service.spec.ts` —
+ * **not** one of the three sub-cases below. Named here because a count that
+ * claims completeness has to be checkable against the thing that holds it; the
+ * post-merge review of `c79114c4` found this one by re-deriving it.
+ *
  * The `displayNameFixes` lines are sheet text too, but they arrive already
  * quoted from `normalizeRtuDisplayNames`, and `onboarding-excel.service.spec.ts`
  * is what holds that. Site 3 is the one no `quoteCell` can cover — see
@@ -109,12 +121,12 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
  * The three sub-cases exist because `excelImportFollowUp` returns from the
  * first branch that matches. One call cannot reach both `mqttSetupTemplate` and
  * `formatAssetsByRtuSummary`, so a single-call assertion would leave one of the
- * five sites unguarded and green.
+ * five summary sites unguarded and green.
  */
 export function assertExcelImportFollowUpBoundsEchoedText(): void {
   const service = chatService();
 
-  // --- sites 1, 3 and 5: the location name, and the MQTT paste-back template -
+  // --- sites 1, 2 and 3: the location name, and the MQTT paste-back template -
   // Every RTU is `credentialsSet: false`, so the incomplete branch fires and
   // `mqttSetupTemplate` runs whatever each topic holds.
   const mqtt = service.excelImportFollowUp(
@@ -125,11 +137,11 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
   );
   assert(
     mqtt.assistantMessage.includes("RTU: "),
-    "this sub-case must reach the MQTT setup template, or site 3 goes unasserted",
+    "this sub-case must reach the MQTT setup template, or site 2 goes unasserted",
   );
   assert(
     mqtt.assistantMessage.includes("topic: "),
-    "this sub-case must render a topic line, or site 5 goes unasserted",
+    "this sub-case must render a topic line, or site 3 goes unasserted",
   );
   assert(
     mqtt.assistantMessage.length < 4000,
@@ -139,7 +151,7 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
     mqtt.assistantMessage.includes("more characters"),
     "a cut cell says how much was omitted",
   );
-  // Site 5 in both directions. The over-long topic is replaced by the
+  // Site 3 in both directions. The over-long topic is replaced by the
   // placeholder — never cut, because a truncated topic pasted back subscribes
   // to a topic nobody asked for — and the one at exactly the bound is printed
   // whole, because the operator copies this block and edits it.
@@ -156,7 +168,7 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
     `a topic of exactly ${MAX_RTU_TOPIC_CHARS} characters is echoed whole for the paste-back`,
   );
 
-  // --- site 4: the assets-by-RTU summary -----------------------------------
+  // --- sites 4 and 5: the assets-by-RTU summary -----------------------------
   // Credentials set, a real topic, point keys satisfied and no asset points:
   // the only branch left is the one that calls `formatAssetsByRtuSummary`.
   const summaryDraft = hostileDraft({
@@ -175,11 +187,11 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
   );
   assert(
     summary.assistantMessage.includes("Assets by RTU"),
-    "this sub-case must reach the assets summary, or site 4 goes unasserted",
+    "this sub-case must reach the assets summary, or sites 4 and 5 go unasserted",
   );
   // Asserted per sub-case on purpose. A length check on the MQTT case alone
-  // stays green with site 4's quoting removed, which is exactly the "asserted
-  // in one direction only" failure this row exists to correct.
+  // stays green with sites 4 and 5 unquoted, which is exactly the "asserted in
+  // one direction only" failure this row exists to correct.
   assert(
     summary.assistantMessage.length < 4000,
     `the assets summary must be bounded, got ${summary.assistantMessage.length} characters`,
@@ -188,8 +200,9 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
     summary.assistantMessage.includes("more characters"),
     "a cut cell says how much was omitted",
   );
-  // Both halves of site 4 — the RTU display name and each asset name — are
-  // interpolated on the same line, so each is checked for its own cut.
+  // Both halves of the line — site 4's RTU display name and site 5's asset
+  // name — are interpolated on the same line, so each is checked for its own
+  // cut.
   const summaryLine = summary.assistantMessage
     .split("\n")
     .find((line) => line.startsWith("- **"));
