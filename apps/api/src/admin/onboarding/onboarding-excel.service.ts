@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import * as XLSX from "xlsx";
 
-import type { OnboardingDraft, OnboardingProtocol } from "@bms/shared";
+import type { OnboardingDraft } from "@bms/shared";
 
 import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
 import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
+import { onboardingProtocolSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
 /**
@@ -417,7 +418,30 @@ export class OnboardingExcelService {
     };
     const rtuCredentials: ParsedExcel["rtuCredentials"] = [];
     const rtus = rows.slice(1).map((values, rtuIndex) => {
-      const protocol = (get(values, "protocol") || "mqtt") as OnboardingProtocol;
+      // Validated, never cast. `draftRtuSchema.protocol` is a `z.enum`, and
+      // Zod 3's `invalid_enum_value` message embeds the **whole** received
+      // value — so a cast here turned one hostile cell per row into one
+      // 32,767-character string per row in the `validationErrors` of the upload
+      // response, and into `onboarding_sessions.draft` before that. Measured on
+      // `c79114c4`: 2,000 rows in a 231,182-byte upload returned 65.8 MB;
+      // 20,090 rows took the draft jsonb to ~658 MB and died at the write with
+      // `RangeError: Invalid string length`. A shared-string table lets every
+      // row reference one such value, so the file itself stays small and
+      // declares little: both uploads pass every guard this row shipped with —
+      // the interceptor's limits, the byte cap, the inflation budget, the
+      // declared width, the reading bound and the topic bound.
+      const protocolCell = get(values, "protocol") || "mqtt";
+      const parsedProtocol = onboardingProtocolSchema.safeParse(protocolCell);
+      if (!parsedProtocol.success) {
+        // Same rule and same row numbering as the topic refusal below: the
+        // sentence describes the cell by length and names the vocabulary, and
+        // never repeats what it read (AGENTS.md §4.3).
+        throw new BadRequestException(
+          `RTU row ${rtuIndex + 1} has an unknown protocol of ${protocolCell.length} characters; ` +
+            `use one of ${onboardingProtocolSchema.options.join(", ")} and upload the workbook again`,
+        );
+      }
+      const protocol = parsedProtocol.data;
       const portRaw = get(values, "port");
       const port = portRaw ? Number.parseInt(portRaw, 10) : 8883;
       const tlsRaw = get(values, "tls").toLowerCase();

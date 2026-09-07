@@ -8,6 +8,7 @@ import {
   assertOversizeBufferIsRefused,
   assertSheetReachingTheRowBoundIsRefused,
   assertTemplateRoundTripsUnchanged,
+  assertUnknownRtuProtocolIsRefused,
   assertUnreadableUploadIsLogged,
 } from "./onboarding-excel.service.spec";
 
@@ -51,6 +52,10 @@ describe("OnboardingExcelService.parseUpload (F4.102)", () => {
 
   it("refuses an RTU topic longer than the column it commits to, and keeps one at the bound", () => {
     assertOverlongRtuTopicIsRefused();
+  });
+
+  it("refuses an unknown RTU protocol without echoing the cell, and parses every known one", () => {
+    assertUnknownRtuProtocolIsRefused();
   });
 
   it("logs the error it converts into the unreadable-file 400", () => {
