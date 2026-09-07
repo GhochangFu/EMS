@@ -12,6 +12,7 @@ import { migrateAssetsBodySchema } from "../admin/asset-templates/asset-template
 import {
   createAssetTemplateBodySchema,
   instantiateAssetsBodySchema,
+  reapplySeededRulesBodySchema,
   templateStatusQuerySchema,
   updateAssetTemplateBodySchema,
 } from "../admin/asset-templates/asset-templates.schema";
@@ -183,6 +184,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetTemplatesAdminController_list: templateStatusQuerySchema,
   AssetTemplatesAdminController_migrate: migrateAssetsBodySchema,
   AssetTemplatesAdminController_previewMigration: migrateAssetsBodySchema,
+  // `E2.4` (ADR 0058 decision 8) — the per-rule re-apply body.
+  AssetTemplatesAdminController_reapplySeededRules: reapplySeededRulesBodySchema,
   AssetTemplatesAdminController_update: updateAssetTemplateBodySchema,
   // `F3.36` (ADR 0049). Registered for TWO reasons, and the second is the one
   // that bites: an unregistered route reads as "no body" in the generated

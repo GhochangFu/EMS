@@ -25,12 +25,14 @@ import { importStockTemplateBodySchema } from "../dashboard-templates/dashboard-
 import {
   createAssetTemplateBodySchema,
   instantiateAssetsBodySchema,
+  reapplySeededRulesBodySchema,
   templateStatusQuerySchema,
   updateAssetTemplateBodySchema,
 } from "./asset-templates.schema";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { migrateAssetsBodySchema } from "./asset-templates-migrate.schema";
 import { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
+import { AssetTemplateSeededRulesService } from "./asset-templates-seeded-rules.service";
 import { AssetTemplatesStockService } from "./asset-templates-stock.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 
@@ -60,6 +62,7 @@ export class AssetTemplatesAdminController {
     private readonly instantiation: AssetTemplateInstantiationService,
     private readonly migration: AssetTemplateMigrationService,
     private readonly stock: AssetTemplatesStockService,
+    private readonly seededRules: AssetTemplateSeededRulesService,
   ) {}
 
   @Get()
@@ -97,7 +100,12 @@ export class AssetTemplatesAdminController {
   /**
    * `F2.13` — imports one stock entry into `organizationId` as a stamped
    * draft. Three segments, so no collision with the two-segment
-   * `@Post(":id/…")` routes below.
+   * `@Post(":id/…")` routes below. Since `E2.4` one three-segment `:id` POST
+   * exists — `@Post(":id/seeded-rules/reapply")` — and its literal middle and
+   * last segments differ from `import`, so neither can match the other's
+   * request; the declaration order here is what keeps that so against a
+   * future `@Post(":id/:verb/:x")`, and `asset-templates.controller.spec.ts`
+   * asserts it.
    *
    * `:code` is parsed like `:id` is — inside the `try`, so a malformed segment
    * is a 400 rather than an echo of whatever arrived (`stockCodeParamSchema`).
@@ -182,6 +190,45 @@ export class AssetTemplatesAdminController {
         user,
         idParamSchema.parse(id),
         instantiateAssetsBodySchema.parse(body),
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `E2.4` / ADR 0058 decision 8 — every rule seeded from any version of this
+   * template's code, on an asset the caller can write, with its drift verdict
+   * against the currently published version.
+   */
+  @Get(":id/seeded-rules")
+  async listSeededRules(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.seededRules.list(user, idParamSchema.parse(id));
+  }
+
+  /**
+   * `E2.4` / ADR 0058 decision 8 — applies the currently published version's
+   * alarm values to the rules the body names, and re-stamps their provenance.
+   *
+   * `200` rather than `201`: it creates nothing. The three-segment `:id` route
+   * this controller has — see `importStock`'s docblock for why the order
+   * against `@Post("stock/:code/import")` is asserted.
+   */
+  @Post(":id/seeded-rules/reapply")
+  @HttpCode(HttpStatus.OK)
+  async reapplySeededRules(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.seededRules.reapply(
+        user,
+        idParamSchema.parse(id),
+        reapplySeededRulesBodySchema.parse(body),
       );
     } catch (err) {
       if (err instanceof ZodError) {

@@ -10,6 +10,7 @@ import type { AssetTemplatesAdminService } from "./asset-templates.service";
 import { AssetTemplatesStockService } from "./asset-templates-stock.service";
 import type { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import type { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
+import type { AssetTemplateSeededRulesService } from "./asset-templates-seeded-rules.service";
 import type { StockAssetTemplateEntry, StockImportStamp } from "./stock-catalog/types";
 
 /**
@@ -248,6 +249,8 @@ export async function assertTheControllerAnswers400WithTheSchemasOwnMessage(): P
     {} as unknown as AssetTemplateInstantiationService,
     {} as unknown as AssetTemplateMigrationService,
     stock,
+    // `E2.4` — the fifth collaborator; this case never reaches it.
+    {} as unknown as AssetTemplateSeededRulesService,
   );
 
   let caught: unknown;
