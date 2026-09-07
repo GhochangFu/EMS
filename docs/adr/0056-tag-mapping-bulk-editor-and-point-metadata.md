@@ -391,19 +391,13 @@ effect of the feature commit:**
 - Pointers, one sentence each, in ADR 0015 (the seed column is now used as
   written), ADR 0038 (the `F2.7` exclusion is discharged), ADR 0050 (a range
   column exists and is *not* the safe range), and the `F4.56` row.
-- **An amendment to decision 3 for the owner's plan-gate ruling Q-H
-  (2026-09-06):** `rtuId` is accepted on the *update* body too (`uuid` wires,
-  `null` unwires, absent leaves the wiring alone), and the asset-point read
-  DTO surfaces `rtuId` so the wiring is observable in the response. Both
-  shipped in PR 1 under the plan's design decision 14; this record is what the
-  sweep amends so that the ADR and the code agree.
-- **An amendment to decision 2 for a fourth within-row rule:** the four numeric
-  metadata columns are constrained to *finite* values by migration `0064`
-  (`<table>_point_metadata_finite_check`, the `0031` range form), because
-  PostgreSQL's `NaN` ordering lets `0063`'s three rules admit `NaN` and both
-  infinities. Found by the PR 1 migration and security reviews; the API layer
-  had `.finite()` from the start, so this closes the direct-writer door before
-  PR 2's importer opens it.
+- An amendment to decision 3 for the owner's plan-gate ruling Q-H, and one to
+  decision 2 for the finite rule — **both written below as Amendments 1 and 2
+  on 2026-09-07**, the day the sweep landed.
+
+**Done in the sweep, 2026-09-07** (`chore(agents):` PR after #337 and #342):
+every item above, plus the fourteen deferred rows the plan filed as backlog
+rows `F2.24`–`F2.31` and `F4.97`–`F4.99`.
 
 ## Verification
 
@@ -432,3 +426,35 @@ deployment:
 Reviews before merge: `code-reviewer`, `security-reviewer` (a file upload and
 a spreadsheet parser are §9.6 surfaces), `agents-compliance-reviewer`, and
 `migration-reviewer` for `0063`.
+
+## Amendment 1 — `rtuId` on the update body and in the read DTO (owner ruling Q-H, 2026-09-06; recorded 2026-09-07)
+
+Decision 3 said "the create body also gains an optional `rtuId`". At the plan
+gate the owner ruled (Q-H) that the single-row route must be able to do what
+the sheet can, so the **update** body accepts `rtuId` too: a `uuid` wires the
+point (the RTU asserted to be in the asset's location, `source_kind =
+'measured'`), `null` unwires it (`rtu_id NULL`; `measured` → `unmapped`, a
+`manual` row stays `manual`), absent leaves the wiring alone; a `computed` row
+refuses it on presence. And because a wiring that cannot be read back is not
+observable, the asset-point **read DTO** surfaces `rtuId` (ADR 0018 decision 3's
+column, never exposed before). Both shipped in PR 1 (#337, `22d4cea`) under the
+plan's design decision 14; the browser run on the merged stack read `rtuId`
+back on wire and unwire. ADR 0018's CHECK is unchanged — every pair the update
+path writes satisfies it.
+
+## Amendment 2 — Decision 2 gains a fourth within-row rule: finite values (migration `0064`, 2026-09-06; recorded 2026-09-07)
+
+Decision 2's three CHECKs — `eng_min < eng_max`, `scale_multiplier <> 0`, the
+policy enum — **admit `NaN` and both infinities**, because PostgreSQL defines
+`NaN` as equal to itself and greater than every other float so that float
+columns can be indexed: `'NaN'::float8 <> 0` and `100 < 'NaN'::float8` are
+both true. The PR 1 migration and security reviews measured it. Migration
+`0064_point_metadata_finite_check` adds one constraint per table over the four
+numeric columns in `0031`'s range form (`col > '-Infinity' AND col <
+'Infinity'`, NULL-permissive per column), the same guarantee `0031` moved into
+the database for `telemetry.point_values.value`. The API layer had `.finite()`
+from the start, so the exposure was direct writers — and PR 2's importer,
+which reads every cell as text and parses a number, is exactly such a writer;
+it now also accepts only a plain decimal literal (`0x10` is `number_invalid`,
+not 16). Decision 5 is unchanged: a non-finite value is refused at the door,
+never stored with a mark.

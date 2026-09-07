@@ -226,7 +226,9 @@ CHECK**, matching the precedent `template_points` set for `formula` /
   survives decision 7.
 - **`F2.7` shares the table.** The tag-mapping bulk editor seeds from
   `template_points.source_data_key_pattern`, and decision 4 reads the same
-  column. They must not be built in parallel.
+  column. They must not be built in parallel. *They were not: `F2.7` started
+  2026-09-06, after this row closed, and ADR 0056 reused decisions 6 and 7's
+  coalesce shape for five more nullable columns on the same two tables.*
 - **`F2.8` is untouched.** The PUE path stays unreachable on `bms-calc-v1` for
   the reasons ADR 0037 records, and `F2.9` carries that fork.
 - **`E5.1` benefits, and is not unblocked.** A water-treatment pack will be

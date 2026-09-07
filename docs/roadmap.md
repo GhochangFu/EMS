@@ -3074,6 +3074,84 @@ simulator are N/A, and the reason is recorded rather than left silent.
 compels one — no schema change landed, and decision 6 genuinely gates the row —
 but Amendments 1 to 4 of ADR 0051 all record rulings from this same gate.
 
+### Point metadata, the Excel mapping sheet and the bulk editor (`F2.7` · `F4.56`, ADR 0056 + Amendments 1 and 2) — done
+
+`F2.7` closed 2026-09-07 in two pull requests on one ADR and one plan — PR 1
+#337 (squash `22d4cea`) and PR 2 #342 (squash `a5fc671`) — and took `F4.56`
+with it. It is the row the client's feature sheet named in one sentence on
+2026-08-22: *map source tags to platform tags and assets; define units,
+scaling, engineering ranges, quality flags; support bulk mapping/import*.
+Parent/child, the same sentence's last clause, stays `F2.10`.
+
+**The owner chose the whole sentence over the no-schema minimum**, which is
+what made the ADR necessary, and then ruled the six design questions in one
+sitting: five nullable metadata columns on both template points and asset
+points in ADR 0039's coalesce shape; scaling in the ingest host; an
+out-of-range sample discarded and counted rather than stored with a mark
+(`telemetry.point_values` untouched, ADR 0050's threshold-based goodness
+untouched); a two-valued quality policy on the protocol's own bit; one
+workbook per location seeded from `source_data_key_pattern`; and — against
+the recommendation — a commit that writes the valid rows and skips the rest,
+after a mandatory preview. The in-app bulk editor stayed all-or-nothing, and
+the plan says why the two surfaces differ.
+
+**Two migrations, and the second was owed by the first.** `0063` added the ten
+columns and six within-row CHECKs. The PR 1 reviews then measured that
+PostgreSQL sorts `NaN` above every float, so `eng_min < eng_max` and
+`scale_multiplier <> 0` both admit it; `0064` added the finite rule in `0031`'s
+range form. Both landed before the importer that would have been the first
+direct writer to test them. The numbering has a consequence for the board:
+`F3.46` took `0065` and `F3.10` follows.
+
+**The ingest host applies the five in one fixed order per target** — quality
+policy, scale, finite, range — and the order is a decision: a policy that
+stored a bad-quality sample only for the range test to drop it would be
+indistinguishable from `discard_bad` in the counters, and an overflow the
+range test refused first would read as an instrument out of its band. Proven
+live on the PHE broker: a ×1000 multiplier stored `236370`, a band of 10
+dropped one minute-row and counted `outOfRange: 1`, the revert resumed raw.
+`BINDING_QUERY` grew a LEFT JOIN to `template_points`, measured at 1.56 →
+1.70 ms on the unique index.
+
+**The sheet's contract is a fifteen-step evaluation order and a closed list of
+24 error codes**, and export → import is an identity gated by name. That
+property found two things nobody had predicted: the seed stores `unit = ''` on
+52 Western Cape asset points, so the first round trip on the running stack
+reported 52 changes from `''` to `null` until the snapshot read an empty stored
+unit as null; and a retired RTU's code must be accepted where the row already
+points at it, or a row nobody edited breaks the identity. A key swap between
+two rows in one sheet needs a three-phase commit, because the unique index on
+`(asset_id, source_data_key)` has no safe sequential order.
+
+**The upload path is a security surface, and the reviews measured it.** One
+4.8 MB workbook of 6,000 duplicate rows with 32,767-character cells produced
+375 MiB of `duplicate_row` messages and ~32 s of blocked event loop — 83×
+amplification from a route that writes nothing; and a 1.3 MB workbook whose
+shared-string table inflates to 1.2 GiB took the API process to 2.5 GB RSS
+before a row was read, because `XLSX.read`'s `sheetRows` bounds rows, not
+strings. `spreadsheet-guard.ts` closes both — every echo of sheet text is cut
+to 64 characters, and the zip's central directory is read for its declared
+inflation before a byte is inflated — and `F1.9`'s importer, which had the same
+read shape, runs behind the same guard.
+
+**Three lessons worth carrying.** Another session redeployed the shared api
+and web from the root three times while a browser run was in progress, each
+time landing a `main` image without the branch's routes; every verifier
+dispatch now pins image ids and aborts on a mismatch. A `\\` in a `node -e`
+argument under Git Bash becomes `\`, so the fix that replaces a raw NUL byte
+with its escape re-inserted the byte twice before `String.fromCharCode(92)`
+did it. And a whole-table "every row is NULL" assertion is permanently green
+in CI and structurally red on the first real database that uses the feature —
+the migration review caught it before it shipped.
+
+**Eleven rows filed rather than smuggled in:** `F2.24`–`F2.31` (the version
+delta ignores the defaults, the list shows stored not effective values, a
+TEMPLATES sheet, an RTU picker on the form, a header version marker,
+persisting `sourceDataKeyVars`, the template-side merged check, the
+whole-object form) and `F4.97`–`F4.99` (a `bms_ingest` role, multipart routes
+in OpenAPI, `tests/` under `--strict`). `F3.16` gained the drop counters and
+the point-identity gap as its acceptance detail.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
