@@ -3135,11 +3135,13 @@ before a row was read, because `XLSX.read`'s `sheetRows` bounds rows, not
 strings. `spreadsheet-guard.ts` closes both — every echo of sheet text is cut
 to 64 characters, and the zip's central directory is read for its declared
 inflation before a byte is inflated — and `F1.9`'s importer, which had the same
-read shape, runs behind the same guard. **Neither guard bounds a sheet's
+read shape, runs behind the same guard. **Neither guard bounded a sheet's
 declared *column* span**, which `F4.100`'s security review measured on
-2026-09-07 at 53.6 s of blocked event loop from an 8,696-byte upload; that is
-`F4.101`, and `F4.102` records that the onboarding upload predates both guards
-and never got either.
+2026-09-07 at 53.6 s of blocked event loop from an 8,696-byte upload. That
+figure understated it by about two orders of magnitude: `F4.101` closed the gap
+the same day and found the reachable ceiling to be a **process kill** from
+2,668 bytes, in this parser and in the mapping sheet both. `F4.102` records
+that the onboarding upload predates every guard and never got any of them.
 
 **Three lessons worth carrying.** Another session redeployed the shared api
 and web from the root three times while a browser run was in progress, each
@@ -3226,10 +3228,76 @@ PR [#346](https://github.com/GhochangFu/EMS/pull/346), squash `cb62c4d7`.
   summed accepted and rejected rows. That sum is invariant under a shift that
   only moves a row between the two lists, so it was permanently satisfiable
   rather than merely loose. It now asserts each side.
-- **Residual:** `F4.101` — the same function densifies a workbook's whole
-  *declared* range, measured at 53.6 s of blocked event loop from an 8,696-byte
-  upload; ruled by the owner into its own row. `F4.102` — the onboarding upload
-  runs behind neither spreadsheet guard.
+- **Residual, since closed:** `F4.101` — the same function densifies a
+  workbook's whole *declared* range, filed at 53.6 s of blocked event loop from
+  an 8,696-byte upload and ruled by the owner into its own row. That figure was
+  about two orders of magnitude short; see below. `F4.102` — the onboarding
+  upload runs behind neither spreadsheet guard, and is now P1.
+
+### A declared range costs what it declares (`F4.101`) — done
+
+`F4.101` closed 2026-09-07 in one pull request, no ADR owed — it bounds existing
+capability rather than moving scope, and `F2.7`'s guard constants set that
+precedent by landing with their security fix. PR
+[#349](https://github.com/GhochangFu/EMS/pull/349), squash `ef9cba42`.
+
+- **Filed as a stall in one parser; it was a process kill in two.**
+  `sheet_to_json` materialises every cell of the *declared* used range on both
+  axes. None of the three guards already on the upload bounds that:
+  `zipInflationProblem` bounds declared zip inflation, `sheetRows` bounds rows,
+  `MAX_IMPORT_FILE_BYTES` bounds the upload. SheetJS clamps the column span only
+  inside its row-clamp branch, which never fires while the declared end row is
+  *under* `SHEET_ROWS_BOUND` — so `A1:XFD20102` sits in the one window where
+  nothing clamps it. 329,351,168 cells from a **2,668-byte** upload; the process
+  died with `JavaScript heap out of memory` after 78.9 s at a 512 MiB heap cap
+  and 331.9 s at 2 GiB. A larger heap postpones the kill proportionally.
+- **The row's own text was wrong twice, and both were caught by measuring it
+  rather than by reading it.** It estimated a ceiling of roughly ten times its
+  largest measurement and claimed no OOM; the ceiling is about a hundred times
+  it, and it is a kill. And it stated that `mapping-sheet-rows.ts` is not
+  vulnerable "because it addresses cells directly over a fixed header span and
+  never densifies".
+- **That second claim is the one worth carrying.** The densification reasoning
+  was correct and beside the point. Densification was never the only amplifier:
+  the sibling's *header scan* walked `range.s.c` to `range.e.c` — whatever the
+  file declares — and ran *before* the row cap, so neither the cap nor the bound
+  its sibling needed could reach it. `safe_decode_range` accumulates column
+  letters with no XFD clamp, so `<dimension ref="A1:AAAAAAA20102"/>` decodes to
+  321,272,406 columns and a **2,465-byte** upload killed the process there too.
+  **Any loop bounded by a number the input declares is unbounded work, whether
+  or not it allocates per cell.**
+- **Two reviewers split on it.** One called the file safe after checking only
+  the per-row loop; the other measured the kill. The numbers recorded here are
+  an independent reproduction rather than either agent's, which is the whole
+  reason a disagreement between review gates is worth resolving with a probe
+  instead of a majority.
+- **The fixes differ because the parsers differ.** The telemetry import gains
+  `columnBoundedRange`, bounding the densified span to `MAX_HEADER_COLUMNS`
+  (**64, the owner's ruling**, as `MAX_RANGE_START_ROW` was) counted from the
+  range's own first column, and refusing a recognised header beyond that window
+  **by name** — optional `unit` included, since dropping it silently would
+  import the same rows carrying different data. The mapping sheet reads a fixed
+  header, so it simply scans twelve columns plus one; the plus one is
+  load-bearing, because `headerProblem` must see a thirteenth to call it one.
+- **The origin is copied, never snapped.** `raw` is indexed from whatever range
+  `sheet_to_json` is given, while `firstSheetColIndex` counts from `!ref`;
+  moving the bound's `s` makes them disagree and re-opens `F4.100`'s column
+  axis. `F4.100`'s four-origin suite does **not** catch that — measured. The two
+  shifts cancel for everything read out of `raw`, and `rawCellText`'s
+  `?? cellText(row, timeIdx)` fallback rescues the absolute read whenever the
+  column it lands on is empty, as it is in those fixtures. The invariant is now
+  asserted directly on the returned range rather than left to a fixture to
+  imply — a reminder that a passing suite is evidence about its fixtures, not
+  about the property.
+- **Two branches no fixture reached**, both found by review: `!ref === undefined`,
+  and `HEADER_SCAN_COLUMN_CEILING`, which never bound because no fixture was
+  wider than `ZZ` — and which is the only thing between the telemetry parser and
+  the input that killed its sibling.
+- **After:** the 2,668-byte killer refused in 1.53 s, 16,384 × 2,000 from 56.0 s
+  to 167 ms, and the mapping kill from dead to 29 ms with RSS flat at 70 MiB.
+  Six mutations measured red, four on one bound and two on the other.
+- **Still owed:** the API layer, which `F4.100` could record N/A and this cannot
+  — it adds a 400 the route could not previously return.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
