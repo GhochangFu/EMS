@@ -618,6 +618,32 @@ export function assertUnknownRtuProtocolIsRefused(): void {
     `a blank protocol cell still defaults to mqtt, got ${JSON.stringify(blank.rtus[0].protocol)}`,
   );
 
+  // A hand-written sheet says `MQTT`, and that is the same protocol. The fold
+  // is the owner's ruling and matches `assetDomainFromCell`, which normalises
+  // its own cell for the same stated reason — so the guard refuses an unknown
+  // protocol, never a differently-typed known one. Spacing folds too: the
+  // section reader trims, and this pins the parser's own fold rather than
+  // relying on that.
+  const casedRows = templateRows();
+  casedRows[6] = [...casedRows[6]];
+  casedRows[7] = [...casedRows[7]];
+  casedRows[6][2] = "MQTT";
+  casedRows[7][2] = "  Modbus_TCP  ";
+  const cased = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(casedRows));
+  assert(
+    cased.rtus[0].protocol === "mqtt",
+    `an uppercase MQTT cell imports as mqtt, got ${JSON.stringify(cased.rtus[0].protocol)}`,
+  );
+  assert(
+    cased.rtus[1].protocol === "modbus_tcp",
+    `a mixed-case padded cell imports folded, got ${JSON.stringify(cased.rtus[1].protocol)}`,
+  );
+  // The fold must not leak past the vocabulary check into what the RTU does.
+  assert(
+    cased.rtus[0].ingestEnabled === true && cased.rtus[1].ingestEnabled === false,
+    "a folded protocol drives ingestEnabled exactly as the lowercase spelling does",
+  );
+
   // The amplifier itself: one maximum-length cell, on the second RTU row.
   const hostileRows = templateRows();
   hostileRows[7] = [...hostileRows[7]];

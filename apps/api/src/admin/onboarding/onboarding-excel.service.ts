@@ -430,7 +430,13 @@ export class OnboardingExcelService {
       // declares little: both uploads pass every guard this row shipped with —
       // the interceptor's limits, the byte cap, the inflation budget, the
       // declared width, the reading bound and the topic bound.
-      const protocolCell = get(values, "protocol") || "mqtt";
+      //
+      // Case and spacing are folded before the check, for the reason
+      // `assetDomainFromCell` states three functions above: a sheet written by
+      // hand says `MQTT`, and that is the same protocol — folding it is not
+      // guessing. Only a genuinely unknown vocabulary member is refused, so
+      // the fold narrows what this throws on rather than widening it.
+      const protocolCell = (get(values, "protocol") || "mqtt").trim().toLowerCase();
       const parsedProtocol = onboardingProtocolSchema.safeParse(protocolCell);
       if (!parsedProtocol.success) {
         // Same rule and same row numbering as the topic refusal below: the
