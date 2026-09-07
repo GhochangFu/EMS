@@ -12,6 +12,7 @@ import {
   assetPoints,
   assetTemplates,
   assets,
+  automationRules,
   locations,
   organizations,
   pointKeys,
@@ -26,11 +27,19 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { parseStoredTemplateContent } from "./asset-templates-content.schema";
 import type {
   InstantiateAssetBody,
   InstantiateAssetsBody,
   InstantiationTargetInput,
 } from "./asset-templates.schema";
+import {
+  MAX_RULE_ROWS,
+  seededRuleCode,
+  seededRuleValues,
+  type SeededRuleInsert,
+  type TemplateAlarm,
+} from "./template-alarm-rules";
 
 /**
  * `F2.2` — building assets from a published template (ADR 0015 §6/§7 as
@@ -87,6 +96,18 @@ type AssetPlan = {
 };
 
 /**
+ * **`E2.4` / ADR 0058.** This service used to write exactly two tables. It now
+ * writes three: every `content.alarms[]` entry of the published version becomes
+ * one `bms.automation_rules` row per created asset, inside the same
+ * transaction, with `source = 'template_alarm'` and the four provenance columns
+ * migration `0067` added. The row derivation itself is pure and lives in
+ * `template-alarm-rules.ts`; what lives here is the transaction, the two
+ * pre-checks the new table needs (a rule-code collision scan and a row ceiling)
+ * and the refusal to seed silently from content that no longer parses (D7).
+ * `bms.rule_notifications` is deliberately **not** written — decision 2 makes a
+ * seeded rule `review`, which raises an alarm and pages nobody until someone
+ * joins a channel on purpose.
+ *
  * `F4.16` / ADR 0043 — `asset_templates`, `locations` and `point_keys` carry
  * `ENABLE ROW LEVEL SECURITY` (migration `0040`); the reads against them here
  * (`fetchTemplate`, `resolveTarget`, `assertCatalogActive`) run on `fleetDb`,
@@ -183,13 +204,33 @@ export class AssetTemplateInstantiationService {
     // measured points become rows (§6 step 5): a derived point is computed by
     // the calc engine (`F2.6`), and there is no honest `source_data_key` for it.
     const catalogUnits = await this.assertCatalogActive(points, template);
+    // `E2.4` D7. Read before anything is planned, so a version whose stored
+    // content no longer parses fails here rather than instantiating assets with
+    // silently zero rules — the one outcome ADR 0058 names as worse than a
+    // refusal, because nobody inspects a batch that reported success.
+    const alarms = this.parseTemplateAlarms(template);
+    // The unit an alarm's rule records, keyed over **every** template point and
+    // not over `measured` or a plan: the template override first, the catalog
+    // unit second (D1). A derived point has no `asset_points` row and an
+    // unresolvable optional one is skipped (D8), and both still seed a rule, so
+    // sourcing this from the written points would silently drop their unit.
+    const unitByPointKey = new Map(
+      points.map((point) => [
+        point.pointKey,
+        point.unit ?? catalogUnits.get(point.pointKey) ?? null,
+      ]),
+    );
     const measured = points.filter((point) => point.kind === "measured");
-    this.assertBatchFits(body.assets.length, measured.length);
+    this.assertBatchFits(body.assets.length, measured.length, alarms.length);
 
     await this.assertAssetCodesFree(jwt, body.assets);
+    await this.assertRuleCodesFree(template.organizationId, body.assets, alarms);
     const plans = body.assets.map((entry) => this.planAsset(entry, measured, catalogUnits));
 
     const sourceKind = target.rtuId ? "measured" : "unmapped";
+    // One clock for the whole batch, matching `createDraft`: every rule seeded
+    // by one press carries the same `created_at`/`published_at`.
+    const now = new Date();
     // E7.1b: `assets` and `asset_points` are policied tenant tables since 0046.
     // The whole batch is one org — `resolveTarget` already refuses a target in a
     // different org than the template (above) — so the write runs inside
@@ -239,6 +280,45 @@ export class AssetTemplateInstantiationService {
           await tx.insert(assetPoints).values(pointValues);
         }
 
+        // `E2.4` / ADR 0058 decisions 1–4 and 9. Inside this `withTenant` block
+        // and not after it: `bms.automation_rules` is a policied tenant table,
+        // its `WITH CHECK` compares the stamped `organization_id` against the
+        // GUC, and — the reason that matters operationally — a seed written
+        // outside the transaction could survive a rolled-back batch as rules
+        // pointing at assets that do not exist.
+        //
+        // One row per alarm per asset, keyed by asset code so the per-asset
+        // `seededRules` in the response is the same array that was inserted
+        // rather than a second derivation that could disagree with it.
+        const seededByCode = new Map<string, string[]>();
+        const ruleValues: SeededRuleInsert[] = [];
+        for (const plan of plans) {
+          const assetId = idByCode.get(plan.entry.code);
+          if (!assetId) {
+            throw new Error(`instantiate: no id returned for asset ${plan.entry.code}`);
+          }
+          const rows = alarms.map((alarm) =>
+            seededRuleValues({
+              alarm,
+              assetId,
+              assetCode: plan.entry.code,
+              organizationId: template.organizationId,
+              template: { id: template.id, version: template.version },
+              unit: unitByPointKey.get(alarm.pointKey) ?? null,
+              now,
+            }),
+          );
+          ruleValues.push(...rows);
+          seededByCode.set(
+            plan.entry.code,
+            rows.map((row) => row.code),
+          );
+        }
+        if (ruleValues.length > 0) {
+          await tx.insert(automationRules).values(ruleValues);
+        }
+        const disabledRuleCount = ruleValues.filter((row) => row.enabled === false).length;
+
         // E7.1c (item D): folded into this transaction so the stamped
         // organizationId matches the GUC the strict WITH CHECK now demands.
         // Safe inside the `.catch` below: translateAssetCodeCollision only
@@ -258,11 +338,22 @@ export class AssetTemplateInstantiationService {
               rtuId: target.rtuId,
               assetIds: inserted.map((row) => row.id),
               pointCount: pointValues.length,
+              // ADR 0058 decision 10: the audit row is the durable record of
+              // how many rules one press armed, and how many commissioning
+              // limits it left owed. The response is transient; this is not.
+              ruleCount: ruleValues.length,
+              disabledRuleCount,
             },
           },
           tx,
         );
-        return { idByCode, pointCount: pointValues.length };
+        return {
+          idByCode,
+          pointCount: pointValues.length,
+          seededByCode,
+          ruleCount: ruleValues.length,
+          disabledRuleCount,
+        };
       })
       .catch((err: unknown) => {
         throw this.translateAssetCodeCollision(err);
@@ -281,10 +372,12 @@ export class AssetTemplateInstantiationService {
         rtuId: target.rtuId,
         pointCount: plan.points.length,
         skippedPoints: plan.skippedPoints,
-        // E2.4 (ADR 0058 decision 10): honest zero until the seed exists. This
-        // service still writes only `assets` and `asset_points`, so nothing has
-        // been seeded and reporting an empty list is the truth, not a stub.
-        seededRules: [],
+        // ADR 0058 decision 10 — the codes of the rules this asset was seeded
+        // with, taken off the rows that were actually inserted rather than
+        // re-derived here. Two derivations of one code is how the response and
+        // the table drift apart; `??` on a miss would report an empty list for
+        // an asset that was seeded, which is a lie the caller cannot detect.
+        seededRules: created.seededByCode.get(plan.entry.code) ?? [],
       };
     });
 
@@ -298,9 +391,8 @@ export class AssetTemplateInstantiationService {
       assets: assetDtos,
       assetCount: assetDtos.length,
       pointCount: created.pointCount,
-      // E2.4: see the per-asset comment above — zero until the seed lands.
-      ruleCount: 0,
-      disabledRuleCount: 0,
+      ruleCount: created.ruleCount,
+      disabledRuleCount: created.disabledRuleCount,
     };
   }
 
@@ -416,14 +508,124 @@ export class AssetTemplateInstantiationService {
     return units;
   }
 
+  /**
+   * The alarms the published version carries — ADR 0058 D7.
+   *
+   * A 409 and not the publish path's 400, because the two failures have
+   * different remedies. Publishing is refused so the author can `PATCH` the
+   * draft back into conformance; a *published* version is immutable, so the
+   * only way forward here is a new version. Never a silent zero-rule seed: a
+   * batch that reported success is a batch nobody inspects, and the missing
+   * rules would be found the first time a limit was breached and no alarm rose.
+   */
+  private parseTemplateAlarms(template: TemplateRow): TemplateAlarm[] {
+    const parsed = parseStoredTemplateContent(template.content);
+    if (!parsed.ok) {
+      throw new ConflictException(
+        `Cannot instantiate ${template.code} v${template.version}: its stored content no longer ` +
+          "matches the current content contract, so the alarms it carries cannot be read. " +
+          "A published version is immutable — create a new draft from it, repair the content " +
+          `and publish that version instead. ${parsed.detail}`,
+      );
+    }
+    return parsed.content.alarms ?? [];
+  }
+
   /** Keeps one statement under the Postgres bind-parameter ceiling. */
-  private assertBatchFits(assetCount: number, measuredCount: number): void {
+  private assertBatchFits(assetCount: number, measuredCount: number, alarmCount: number): void {
     const rows = assetCount * measuredCount;
     if (rows > MAX_POINT_ROWS) {
       throw new BadRequestException(
         `This batch would create ${rows} asset points (${assetCount} assets × ` +
           `${measuredCount} measured points), over the ${MAX_POINT_ROWS} limit for one call. ` +
           "Split it into smaller batches.",
+      );
+    }
+    // `E2.4`: the same arithmetic one table over. The rule insert binds 26
+    // columns per row against Postgres' 65,535 bind-parameter ceiling, so
+    // `MAX_RULE_ROWS` leaves about twenty rows of headroom — anything that
+    // widens `seededRuleValues` must re-measure it there. Without this bound
+    // the contract's 200 assets x 200 alarms would reach the driver as a raw
+    // error instead of this named one.
+    const ruleRows = assetCount * alarmCount;
+    if (ruleRows > MAX_RULE_ROWS) {
+      throw new BadRequestException(
+        `This batch would seed ${ruleRows} automation rules (${assetCount} assets × ` +
+          `${alarmCount} template alarms), over the ${MAX_RULE_ROWS} limit for one call. ` +
+          "Split it into smaller batches.",
+      );
+    }
+  }
+
+  /**
+   * Fails before writing anything when a rule code this batch would derive is
+   * already taken, or is taken twice by the batch itself — ADR 0058 D4.
+   *
+   * Two checks, because they fail for genuinely different reasons.
+   *
+   * **Intra-batch.** `seededRuleCode` normalises, so `high-temp` and
+   * `high_temp` are distinct template alarm codes (uniqueness there is exact
+   * match only) that derive the *same* rule code — and so do two asset codes
+   * that differ only in punctuation. Both are legal inputs today and would
+   * reach Postgres as a self-collision inside the transaction.
+   *
+   * **Already taken.** Scanned across **every** lifecycle status, unlike
+   * `assertRuleCodeAvailable`, which excludes `archived`. That exclusion is a
+   * pre-existing mismatch with the live index: `automation_rules_org_code_idx`
+   * is a *total* unique index on `(organization_id, code)`, so an archived rule
+   * really does hold its code. Inheriting the bug here would turn a batch of
+   * forty assets into a rolled-back constraint error.
+   *
+   * `fleetDb`, like `assertAssetCodesFree`: this runs before the transaction
+   * opens, and `automation_rules` is `FORCE`d, so a bare tenant handle would
+   * read zero rows and find no collision at all. Scoped to the template's own
+   * organization, which is where the unique index is scoped — so unlike the
+   * asset-code check this discloses nothing across a tenant boundary.
+   */
+  private async assertRuleCodesFree(
+    organizationId: string,
+    entries: InstantiateAssetBody[],
+    alarms: TemplateAlarm[],
+  ): Promise<void> {
+    if (alarms.length === 0) {
+      return;
+    }
+    const derivedBy = new Map<string, string>();
+    const collisions: string[] = [];
+    for (const entry of entries) {
+      for (const alarm of alarms) {
+        const code = seededRuleCode(entry.code, alarm.code);
+        const first = derivedBy.get(code);
+        if (first) {
+          collisions.push(`${code} (from ${first} and from ${entry.code} / ${alarm.code})`);
+          continue;
+        }
+        derivedBy.set(code, `${entry.code} / ${alarm.code}`);
+      }
+    }
+    if (collisions.length > 0) {
+      throw new ConflictException(
+        "This batch would derive the same rule code twice — a rule code is unique per " +
+          `organization, so nothing was written: ${collisions.join("; ")}. ` +
+          "Rename one of the asset codes or one of the template alarm codes.",
+      );
+    }
+
+    const taken = await this.fleetDb
+      .select({ code: automationRules.code })
+      .from(automationRules)
+      .where(
+        and(
+          eq(automationRules.organizationId, organizationId),
+          inArray(automationRules.code, [...derivedBy.keys()]),
+        ),
+      );
+    if (taken.length > 0) {
+      throw new ConflictException(
+        "Cannot seed this template's alarms — these rule codes already exist in this " +
+          `organization: ${taken.map((row) => row.code).join(", ")}. Rule codes are unique per ` +
+          "organization across every lifecycle status, archived rules included. " +
+          "Nothing was written.",
       );
     }
   }
@@ -553,13 +755,29 @@ export class AssetTemplateInstantiationService {
     return unresolved.length > 0 || key === "" ? null : key;
   }
 
-  /** Backstop for a code taken between the pre-check and the insert. */
+  /**
+   * Backstop for a code taken between a pre-check and the insert — for an asset
+   * code, and since `E2.4` for a seeded rule code too.
+   *
+   * Branched on the constraint name rather than collapsed into one message: the
+   * two say different things to whoever hit them, and the asset-code text is
+   * matched by `F2.2`'s rollback case. `automation_rules_org_code_idx` is the
+   * live index name — migration `0048` re-keyed rule identity to
+   * `(organization_id, code)`, and `automation_rules_code_unique` has never
+   * existed in this database.
+   */
   private translateAssetCodeCollision(err: unknown): unknown {
     const constraint = (err as { constraint?: string } | null)?.constraint;
     if (constraint === "assets_code_unique") {
       return new ConflictException(
         "An asset code in this batch was taken while the batch was being created. " +
           "Nothing was written — retry with fresh codes.",
+      );
+    }
+    if (constraint === "automation_rules_org_code_idx") {
+      return new ConflictException(
+        "A rule code this template's alarms would seed was taken while the batch was being " +
+          "created. Nothing was written — no asset, no point and no rule — so retry.",
       );
     }
     return err;

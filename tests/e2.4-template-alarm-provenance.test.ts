@@ -1,4 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -117,5 +118,159 @@ describe("E2.4 template alarm provenance migration 0067 (ADR 0058 decision 5)", 
     expect(rulesBlock).toMatch(/sourceTemplateVersion:\s*integer\(\s*"source_template_version"\s*\)/);
     expect(rulesBlock).toMatch(/sourceAlarmCode:\s*varchar\(\s*"source_alarm_code"/);
     expect(rulesBlock).toMatch(/seededBaseline:\s*jsonb\(\s*"seeded_baseline"\s*\)/);
+  });
+});
+
+// --- Part 5: the seeded rule's `source` is a contract value -----------------
+
+/**
+ * Resolved through `createRequire` and never a static `@bms/shared` import.
+ * The `tests` project runs from the repo root, where the bundler resolver has
+ * no workspace link to `@bms/shared` — a static import typechecks green on a
+ * hand-repaired local `node_modules` and dies in CI's clean install with
+ * `TS2307`. It did exactly that on PR #324; `tests/adr-0055-*` documents the
+ * same rule.
+ */
+const require_ = createRequire(import.meta.url);
+const shared = require_("@bms/shared") as {
+  ruleListItemSchema: { shape: { source: { options: readonly string[] } } };
+};
+
+describe("E2.4 — template_alarm is a contract value (ADR 0058 decision 6)", () => {
+  it("the rule list contract offers template_alarm as a source", () => {
+    const options = [...shared.ruleListItemSchema.shape.source.options];
+    expect(
+      options,
+      "`GET /rules` validates its own response against this schema (ADR 0030). Without " +
+        "`template_alarm` in the enum, every seeded rule makes the API throw a " +
+        "ResponseContractError in dev and strips the field in production — the rules page " +
+        "would go blank the first time a template was instantiated.",
+    ).toContain("template_alarm");
+    // Anti-vacuity: the enum really is the closed set it looks like.
+    expect(options).toContain("operator_rule");
+    expect(options).not.toContain("not_a_rule_source");
+  });
+
+  it("rule-mapping.ts carries the literal, so the row mapper's cast admits it", () => {
+    const mapping = read("apps/api/src/rules/rule-mapping.ts");
+    expect(
+      mapping,
+      "`mapRuleRow` casts `automation_rules.source` to a literal union. A stored " +
+        "`template_alarm` that the cast does not name is a lie the type system cannot see.",
+    ).toContain('"template_alarm"');
+  });
+});
+
+// --- Part 6: where the seed is written, and what it does not write ----------
+
+/**
+ * Block and line comments removed, so a match is code rather than prose.
+ *
+ * This repository's files explain themselves at length, and several of them
+ * quote the very literal a test like this looks for. Without this, an assertion
+ * that a *builder* writes `type: "review"` is satisfied by a *docblock* saying
+ * that it does — which is precisely what happened while this test was written.
+ */
+const codeOnly = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+const INSTANTIATE_REL = "apps/api/src/admin/asset-templates/asset-templates-instantiate.service.ts";
+const HELPERS_REL = "apps/api/src/admin/asset-templates/template-alarm-rules.ts";
+const TEMPLATES_DIR = "apps/api/src/admin/asset-templates";
+
+/**
+ * The body of `instantiate`'s `withTenant(...)` callback, by brace matching.
+ *
+ * Sliced rather than grepped because the claim is *positional*: ADR 0058
+ * decision 9 says the rule insert happens inside the same transaction as
+ * `assets` and `asset_points`. An insert moved one line below the closing brace
+ * still compiles, still passes every unit test, and still writes rules — it
+ * just writes them outside the transaction, so a rolled-back batch leaves rules
+ * pointing at assets that never existed, and `bms.automation_rules`' own
+ * `WITH CHECK` no longer has a GUC to compare against.
+ */
+function withTenantBody(source: string): string {
+  const at = source.indexOf("withTenant(this.tenantDb, template.organizationId");
+  if (at < 0) {
+    throw new Error(
+      "instantiate() no longer opens `withTenant(this.tenantDb, template.organizationId, ...)`. " +
+        "If the write path moved, this test must move with it — do not delete it.",
+    );
+  }
+  const open = source.indexOf("{", source.indexOf("=>", at));
+  let depth = 0;
+  for (let i = open; i < source.length; i += 1) {
+    if (source[i] === "{") {
+      depth += 1;
+    } else if (source[i] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(open, i + 1);
+      }
+    }
+  }
+  throw new Error("unbalanced braces in instantiate()'s withTenant callback");
+}
+
+describe("E2.4 — the seed is written inside the batch transaction (ADR 0058 decisions 2, 9)", () => {
+  const instantiate = read(INSTANTIATE_REL);
+  const body = withTenantBody(instantiate);
+
+  it("slices a proper sub-range of the service, not the whole file", () => {
+    // Anti-vacuity for the two assertions below: a slicer that returned the
+    // whole file would make "the insert is inside the transaction" unfalsifiable.
+    expect(body.length).toBeGreaterThan(200);
+    expect(body.length).toBeLessThan(instantiate.length);
+    expect(body).toContain("insert(assets)");
+    expect(
+      body,
+      "the slice must stop at the callback's closing brace — `fetchTemplate` is defined well " +
+        "after it, so finding it here means the brace matching ran off the end",
+    ).not.toContain("private async fetchTemplate");
+  });
+
+  it("inserts automationRules inside the withTenant callback", () => {
+    expect(
+      instantiate,
+      "instantiate() must seed the template's alarms at all (ADR 0058 decision 1)",
+    ).toContain("insert(automationRules)");
+    expect(
+      body,
+      "the rule insert must sit INSIDE the withTenant callback (decision 9). Outside it the " +
+        "rows are written on a handle with no `app.current_organization` GUC, and a rolled-back " +
+        "batch leaves rules whose assets do not exist.",
+    ).toContain("insert(automationRules)");
+  });
+
+  it("the row builder writes a review action and the template_alarm source", () => {
+    // Comments stripped first, and this is not a formality: `template-alarm-rules.ts`
+    // *explains* decision 2 in its docblock, in the words `{type: "review", target:
+    // <category>}`. Asserted against the raw file, this test passed with the
+    // builder mutated to `notify` — the prose held it up. The same `f3.1a` lesson
+    // the migration half of this file applies with `sqlOnly`.
+    const helpers = codeOnly(read(HELPERS_REL));
+    expect(
+      helpers,
+      "ADR 0041 decision 9 and the F3.7 Q3 ruling make `review` inert: it raises the alarm and " +
+        "dispatches nothing. `notify` here would page every on-call rota the moment forty " +
+        "chillers were instantiated.",
+    ).toContain('type: "review"');
+    expect(helpers).toContain('source: "template_alarm"');
+  });
+
+  it("no file under admin/asset-templates writes a rule_notifications row", () => {
+    const forbidden = /insert\(\s*ruleNotifications\s*\)/;
+    // Anti-vacuity: the pattern matches the thing it is looking for.
+    expect(forbidden.test("await tx.insert(ruleNotifications).values(x)")).toBe(true);
+
+    const offenders = readdirSync(join(repoRoot, TEMPLATES_DIR))
+      .filter((name) => name.endsWith(".ts"))
+      .filter((name) => forbidden.test(read(`${TEMPLATES_DIR}/${name}`)));
+    expect(
+      offenders,
+      "ADR 0058 decision 2: a seeded rule joins NO notification channel. Promoting one to " +
+        "`notify` and giving it a channel is a commissioning act done in F3.7's per-rule " +
+        "picker, never a side effect of pressing Instantiate.",
+    ).toEqual([]);
   });
 });

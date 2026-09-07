@@ -37,7 +37,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   findUnresolvedContentRefs,
-  templateContentSchema,
+  parseStoredTemplateContent,
   type TemplateContentParsed,
 } from "./asset-templates-content.schema";
 import {
@@ -678,33 +678,22 @@ export class AssetTemplatesAdminService {
    * to move forward rather than only what is wrong.
    */
   private parseStoredContent(template: TemplateRow): TemplateContentParsed {
-    const parsed = templateContentSchema.safeParse(template.content ?? {});
-    if (!parsed.success) {
-      // Report *structure*, never values. Stored content on a pre-ADR row is
-      // arbitrary JSON, and zod's own message text echoes the received value
-      // back for `invalid_enum_value` ("… received 'x'"). Paths, unexpected key
-      // names and issue codes say everything an author needs to fix it. Our own
-      // `custom` messages are kept because we wrote them and they interpolate
-      // only a key name and a byte count — and because they are the only place
-      // a reserved section explains which item it is waiting for.
-      const detail = parsed.error.issues
-        .map((issue) => {
-          const at = issue.path.join(".") || "content";
-          if (issue.code === "custom") {
-            return `${at}: ${issue.message}`;
-          }
-          if (issue.code === "unrecognized_keys") {
-            return `${at}: unrecognized key(s) ${issue.keys.join(", ")}`;
-          }
-          return `${at}: ${issue.code}`;
-        })
-        .join("; ");
+    // `E2.4`: the parse and the structure-only (non-echoing) issue renderer now
+    // live in `asset-templates-content.schema.ts`, because `instantiate` reads
+    // the same stored column for its alarms and owes a different status for the
+    // same failure (ADR 0058 D7 — a 409, not this 400). Extracted rather than
+    // copied: the non-echoing property is security-relevant, and a second copy
+    // is a second thing to remember when the first one is tightened. **The
+    // message below is unchanged, byte for byte** — the lifecycle integration
+    // suite matches on it.
+    const parsed = parseStoredTemplateContent(template.content);
+    if (!parsed.ok) {
       throw new BadRequestException(
         "This template's stored content does not match the current content contract, " +
-          `so it cannot be published. PATCH \`content\` into conformance first. ${detail}`,
+          `so it cannot be published. PATCH \`content\` into conformance first. ${parsed.detail}`,
       );
     }
-    return parsed.data;
+    return parsed.content;
   }
 
   /**

@@ -844,3 +844,66 @@ export function findUnresolvedContentRefs(
   );
   return [...missing].sort();
 }
+
+/**
+ * A stored `content` value re-read under the current contract — `E2.4`.
+ *
+ * A **result**, never a throw, because the two callers owe different HTTP
+ * answers for the same failure. `publish` returns 400 ("PATCH `content` into
+ * conformance first" — matched byte for byte by
+ * `asset-templates.lifecycle.integration.spec.ts`); `instantiate` returns 409
+ * per ADR 0058's D7, because the caller of an instantiate cannot repair a
+ * *published* row and must publish a new version instead. A shared throw would
+ * force one of them to catch and re-wrap the other's status, and a shared
+ * `@nestjs/common` import would drag the framework into a module that is
+ * otherwise pure Zod.
+ */
+export type StoredContentParse =
+  | { ok: true; content: TemplateContentParsed }
+  | { ok: false; detail: string };
+
+/**
+ * Renders a `ZodError` as **structure**, never as values.
+ *
+ * Stored content on a pre-ADR-0019 row is arbitrary JSON written by whoever,
+ * and Zod's own message text echoes the received value back for several issue
+ * codes. Paths, unexpected key names and issue codes say everything an author
+ * needs in order to fix it, and nothing a caller could use to read a value back
+ * out of a row they are not otherwise permitted to read.
+ *
+ * Our own `custom` messages are kept, because we wrote them: they interpolate
+ * only a key name and a byte count, and they are the only place a reserved
+ * section explains which backlog item it is waiting for.
+ *
+ * Extracted from `AssetTemplatesAdminService.parseStoredContent` rather than
+ * copied. It is a security property, and a second copy is a second thing to
+ * remember when the first one is tightened.
+ */
+export function describeContentIssues(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => {
+      const at = issue.path.join(".") || "content";
+      if (issue.code === "custom") {
+        return `${at}: ${issue.message}`;
+      }
+      if (issue.code === "unrecognized_keys") {
+        return `${at}: unrecognized key(s) ${issue.keys.join(", ")}`;
+      }
+      return `${at}: ${issue.code}`;
+    })
+    .join("; ");
+}
+
+/**
+ * Re-parses a stored `content` column under the current contract.
+ *
+ * `?? {}` and not a null guard, matching what the publish path has always done:
+ * a `NULL` content column is an empty template, and `templateContentSchema`
+ * parses `{}` into `{ contentVersion: 1 }`.
+ */
+export function parseStoredTemplateContent(content: unknown): StoredContentParse {
+  const parsed = templateContentSchema.safeParse(content ?? {});
+  return parsed.success
+    ? { ok: true, content: parsed.data }
+    : { ok: false, detail: describeContentIssues(parsed.error) };
+}
