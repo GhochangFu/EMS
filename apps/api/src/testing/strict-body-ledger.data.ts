@@ -173,6 +173,14 @@ const STRICT = (why: string): LedgerEntry => ({ strict: true, why });
 export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   alarmAckBodySchema: STRICT(CALLER_ERROR),
   alarmEnrichmentUpsertBodySchema: STRICT(ALREADY),
+  // `F2.7` (ADR 0056 decision 8). Two nodes, one decision, and the reason is
+  // the surface's own rule: the edit is applied to as many as 500 rows at once
+  // and all or nothing, so a key silently dropped from the patch — `eng_max`
+  // for `engMax`, or a `pointKey` the caller believes re-keys the selection —
+  // would report success over a whole selection while writing something else.
+  // `ids` and `patch` are the only two things the body has.
+  assetPointBulkUpdateBodySchema: STRICT(CALLER_ERROR),
+  "assetPointBulkUpdateBodySchema/patch": STRICT(CALLER_ERROR),
   assetPointCalcOverrideBodySchema: STRICT(
     "A PUT states the whole override and every field is required-but-nullable, where `null` " +
       "means inherit (ADR 0039 decisions 6-7). A key outside the five columns is a caller " +

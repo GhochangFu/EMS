@@ -5,7 +5,9 @@ import type { ZodTypeAny } from "zod";
 import { setAssetGroupMemberRoleBodySchema } from "../admin/asset-groups/asset-groups.schema";
 import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
 import {
+  assetPointBulkUpdateBodySchema,
   createAssetPointBodySchema,
+  mappingSheetQuerySchema,
   updateAssetPointBodySchema,
 } from "../admin/asset-points/asset-points.schema";
 import { migrateAssetsBodySchema } from "../admin/asset-templates/asset-templates-migrate.schema";
@@ -178,6 +180,7 @@ import { REQUEST_SCHEMAS } from "./openapi-registry";
 export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   alarmAckBodySchema,
   alarmEnrichmentUpsertBodySchema,
+  assetPointBulkUpdateBodySchema,
   assetPointCalcOverrideBodySchema,
   chatBodySchema,
   closeWorkOrderBodySchema,
@@ -262,8 +265,22 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
  * for: a green suite and a static invariant still let a served document be
  * wrong. This is the "deliberate act" `testEveryRegisteredSchemaIsUnderAudit`'s
  * own comment asks for, not the shortcut it exists to catch.
+ *
+ * **14 -> 15: `F2.7` registered `mappingSheetQuerySchema`** (ADR 0056 decision
+ * 6), the single `locationId` all three mapping-sheet routes take. It is a
+ * genuine query schema, not a body smuggled in here to dodge the audit: the
+ * download it is registered against (`_exportMappingSheet`) is a GET returning
+ * an `.xlsx` and has no body at all, and its two siblings carry the workbook as
+ * a multipart `file` part rather than as JSON. It is `.strict()` anyway — a
+ * caller who spells the parameter wrong must be told, not handed a whole
+ * location's mappings — with the reasoning beside the schema in
+ * `asset-points.schema.ts`. It carries **no** `STRICTNESS_LEDGER` entry, and
+ * that is not an omission: the walker reads `BODY_SCHEMAS` only, so an entry
+ * here would be a decision no gate holds, and
+ * `testTheLedgerHasNoEntriesForNodesThatAreGone` refuses one.
  */
 export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
+  mappingSheetQuerySchema,
   listDashboardTemplatesQuerySchema,
   assetHealthQuerySchema,
   auditExportQuerySchema,
@@ -721,7 +738,14 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(14);
+    // 14 -> 15: `F2.7` (ADR 0056 decision 6) registered `mappingSheetQuerySchema`,
+    // the single `locationId` the three mapping-sheet routes take. Widened
+    // deliberately and said so, per this assertion's own instruction: the route
+    // it is registered against is `GET .../mapping-sheet.xlsx`, which returns a
+    // workbook and has no request body at all, and its two siblings carry the
+    // uploaded sheet as a multipart `file` part rather than as JSON. It is
+    // `.strict()` anyway.
+  ).toBe(15);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

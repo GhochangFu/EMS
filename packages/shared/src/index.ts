@@ -31,6 +31,7 @@ import type * as Db from "./contracts/dashboard-builder";
 import type * as Dt from "./contracts/dashboard-templates";
 import type * as E from "./contracts/envelopes";
 import type * as He from "./contracts/health";
+import type * as Ms from "./contracts/mapping-sheet";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
@@ -388,6 +389,26 @@ export type TelemetryWriteResultDto = z.infer<typeof Te.telemetryWriteResultDtoS
 export type TelemetryWriteResponse = z.infer<typeof Te.telemetryWriteResponseSchema>;
 export type TelemetryImportPreviewDto = z.infer<typeof Ti.telemetryImportPreviewDtoSchema>;
 export type TelemetryImportCommitDto = z.infer<typeof Ti.telemetryImportCommitDtoSchema>;
+
+// ---------------------------------------------------------------------------
+// The MAPPINGS sheet — export, preview, commit (ADR 0056 decisions 6, 7, `F2.7`)
+// ---------------------------------------------------------------------------
+
+/** One of the twelve sheet columns — what an error may name. */
+export type MappingSheetColumn = z.infer<typeof Ms.mappingSheetColumnSchema>;
+/** The closed error-code vocabulary; the web's label table is exhaustive over it. */
+export type MappingSheetErrorCode = z.infer<typeof Ms.mappingSheetErrorCodeSchema>;
+/** One file-level (`row: null`) or row-level problem. */
+export type MappingSheetErrorDto = z.infer<typeof Ms.mappingSheetErrorDtoSchema>;
+/** One of the nine fields the sheet may change on an existing row. */
+export type MappingSheetField = z.infer<typeof Ms.mappingSheetFieldSchema>;
+/** A cell value on either side of a change. */
+export type MappingSheetCellValue = z.infer<typeof Ms.mappingSheetCellValueSchema>;
+export type MappingSheetChangeDto = z.infer<typeof Ms.mappingSheetChangeDtoSchema>;
+export type MappingSheetCreateDto = z.infer<typeof Ms.mappingSheetCreateDtoSchema>;
+export type MappingSheetUpdateDto = z.infer<typeof Ms.mappingSheetUpdateDtoSchema>;
+export type MappingSheetPreviewDto = z.infer<typeof Ms.mappingSheetPreviewDtoSchema>;
+export type MappingSheetCommitDto = z.infer<typeof Ms.mappingSheetCommitDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Audit reads (ADR 0021, `F4.14`)

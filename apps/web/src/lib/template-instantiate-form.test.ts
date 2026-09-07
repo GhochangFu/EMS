@@ -3,10 +3,14 @@ import { describe, it } from "vitest";
 import {
   runBlankRowTests,
   runCountMatchesPayloadTests,
+  runMissingVariablesTests,
   runNoTargetTests,
+  runPatternsCarryingVariablesTests,
   runRtuWinsTests,
   runSingleTargetTests,
+  runTemplateVariablesTests,
   runTrimAndFallbackTests,
+  runVarsPayloadTests,
 } from "./template-instantiate-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -33,5 +37,21 @@ describe("template instantiate form", () => {
 
   it("builds exactly as many assets as the button promised", () => {
     runCountMatchesPayloadTests();
+  });
+
+  it("lists the measured points' pattern variables, minus asset_code", () => {
+    runTemplateVariablesTests();
+  });
+
+  it("carries sourceDataKeyVars only when a var survives trimming", () => {
+    runVarsPayloadTests();
+  });
+
+  it("names a named row's blank required variable", () => {
+    runMissingVariablesTests();
+  });
+
+  it("names only the patterns that carry a variable, not asset_code alone", () => {
+    runPatternsCarryingVariablesTests();
   });
 });

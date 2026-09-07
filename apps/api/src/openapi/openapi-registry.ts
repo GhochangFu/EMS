@@ -3,7 +3,9 @@ import type { ZodTypeAny } from "zod";
 import { setAssetGroupMemberRoleBodySchema } from "../admin/asset-groups/asset-groups.schema";
 import { assetPointCalcOverrideBodySchema } from "../admin/asset-points/asset-point-calc-override.schema";
 import {
+  assetPointBulkUpdateBodySchema,
   createAssetPointBodySchema,
+  mappingSheetQuerySchema,
   updateAssetPointBodySchema,
 } from "../admin/asset-points/asset-points.schema";
 import { migrateAssetsBodySchema } from "../admin/asset-templates/asset-templates-migrate.schema";
@@ -127,15 +129,31 @@ import {
  * undescribed, if it were registered here — worse than the "no body" gap
  * above. `OnboardingController_uploadExcel` set this precedent; `Telemetry-
  * ImportController_preview`/`_commit` (`F1.9`, both `FileInterceptor` routes
- * with a `file` field the document has no way to say) follow it. Documenting
- * multipart shape properly is a generator change, out of scope here.
+ * with a `file` field the document has no way to say) follow it.
+ * `AssetPointsAdminController_previewMappingSheet`/`_commitMappingSheet`
+ * (`F2.7`, ADR 0056 decision 7) are the same case again — the uploaded
+ * `MAPPINGS` workbook is the `file` field, and their one query parameter is
+ * registered on the sibling download, `_exportMappingSheet`, which is not
+ * multipart. Documenting multipart shape properly is a generator change, out of
+ * scope here.
  */
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,
   AlarmsController_upsertEnrichment: alarmEnrichmentUpsertBodySchema,
   AssetGroupMembersAdminController_setRole: setAssetGroupMemberRoleBodySchema,
   AssetPointCalcOverrideController_set: assetPointCalcOverrideBodySchema,
+  // `F2.7` (ADR 0056 decision 8) — the bulk editor's body. Registered rather
+  // than left out for the two reasons the `F3.40` note below gives: an
+  // unregistered route reads as "no body" in the served document, and
+  // `strict-body-ledger.spec.ts` walks only what is reachable from here, so
+  // both `.strict()` objects would carry no recorded decision.
+  AssetPointsAdminController_bulkUpdate: assetPointBulkUpdateBodySchema,
   AssetPointsAdminController_create: createAssetPointBodySchema,
+  // `F2.7` (ADR 0056 decision 6) — the mapping sheet's only parameter, on the
+  // one of its three routes the document can describe. The download is a plain
+  // GET with a `.xlsx` response; the preview and commit siblings are multipart
+  // and therefore absent, per the rule above.
+  AssetPointsAdminController_exportMappingSheet: mappingSheetQuerySchema,
   AssetPointsAdminController_update: updateAssetPointBodySchema,
   // `F3.40` (ADR 0051 decision 5), registered for the second reason the `F3.36`
   // comment below states rather than the first: an unregistered route reads as

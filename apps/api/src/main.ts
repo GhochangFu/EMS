@@ -28,6 +28,11 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
     credentials: true,
+    // The SPA is another origin, so a download's filename in
+    // `Content-Disposition` is invisible to its `fetch` unless exposed — every
+    // xlsx download (the onboarding template, `F2.7`'s mapping sheet) fell back
+    // to its default name until the F2.7 PR 2 browser run noticed.
+    exposedHeaders: ["Content-Disposition"],
   });
 
   // `F4.20` / ADR 0029 **Amendment 2** — the docs are absent or open, never
