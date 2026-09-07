@@ -18,6 +18,34 @@ import { zipInflationProblem } from "../spreadsheet-guard";
 /** The row cap decided in the plan's tunables section (`F1.9`). */
 export const MAX_IMPORT_ROWS = 20_000;
 
+/**
+ * How far below Excel row 1 a sheet's used range may start and still be read
+ * whole (`F2.7` post-merge code review, finding 1).
+ *
+ * `sheetRows` counts **absolute** rows from 0, so a blank row inserted above
+ * the header spends one of them. Bounded at `MAX_IMPORT_ROWS + 2` exactly, a
+ * sheet whose header sits on Excel row 2 came back cut to the bound with
+ * exactly `MAX_IMPORT_ROWS` data rows in it — indistinguishable from a sheet
+ * that really holds the cap, so the cap could not trip and the rest of a
+ * 25,000-row file was dropped in silence. The slack makes the two
+ * distinguishable for a header anywhere in Excel rows 1–101 — measured, a sheet
+ * at the cap whose header is on Excel row 101 ends at absolute row 20,100 and
+ * is read whole, and one on row 102 ends at the bound and is refused. A header
+ * below that, on a sheet at the cap, is refused rather than truncated — fail
+ * closed (see {@link SHEET_ROWS_BOUND}).
+ */
+export const MAX_RANGE_START_ROW = 100;
+
+/**
+ * What `XLSX.read` is allowed to materialise: the header, the cap, one overflow
+ * row so a file exactly one row over the cap is still seen as over it, and
+ * {@link MAX_RANGE_START_ROW} rows of slack for a used range that starts below
+ * row 1. Both parsers read with this bound and both refuse a sheet that
+ * **reached** it — reaching the bound means the sheet may have been cut, and a
+ * cut sheet must never be imported as if it were whole.
+ */
+export const SHEET_ROWS_BOUND = MAX_IMPORT_ROWS + 2 + MAX_RANGE_START_ROW;
+
 const REQUIRED_HEADERS = ["point_key", "value", "time"] as const;
 
 export type ParsedImportRow = {
@@ -155,10 +183,11 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
       // Bounds how many rows SheetJS materializes before the row-cap check
       // below ever runs — without this, a small compressed file that
       // inflates to a huge sheet is fully parsed into a JS array first and
-      // the cap only rejects it after the fact. +2 keeps the header plus one
-      // overflow data row, so a file exactly one row over the cap is still
-      // correctly detected as over it.
-      sheetRows: MAX_IMPORT_ROWS + 2,
+      // the cap only rejects it after the fact. `SHEET_ROWS_BOUND` keeps the
+      // header, one overflow data row and the start slack; the cap check
+      // below refuses a sheet that reached it, because such a sheet may have
+      // been cut here rather than being this short.
+      sheetRows: SHEET_ROWS_BOUND,
     });
   } catch {
     return { ok: false, reason: "Could not read the uploaded file as CSV or Excel" };
@@ -194,10 +223,21 @@ export function parseWorkbook(buffer: Buffer): ParseWorkbookResult {
   if (dataRows.length === 0 || dataRows.every(isBlankRow)) {
     return { ok: false, reason: "Sheet has a header row but no data rows" };
   }
-  if (dataRows.length > MAX_IMPORT_ROWS) {
+  // Two ways to be over the cap: more data rows than it allows, or a used range
+  // that reached the reading bound — in which case `dataRows` is what survived
+  // the cut, not what the file holds, and is not a number to trust.
+  const ref = sheet["!ref"];
+  const cutAtTheReadingBound = ref !== undefined && XLSX.utils.decode_range(ref).e.r + 1 >= SHEET_ROWS_BOUND;
+  if (cutAtTheReadingBound || dataRows.length > MAX_IMPORT_ROWS) {
     return {
       ok: false,
-      reason: `File has ${dataRows.length} data rows, more than the ${MAX_IMPORT_ROWS}-row limit`,
+      // Which of the two fired decides what can honestly be said. When the
+      // sheet was cut, `dataRows.length` is the size of the cut and not the
+      // size of the file — quoting it read "File has 19901 data rows, more than
+      // the 20000-row limit", which contradicts itself.
+      reason: cutAtTheReadingBound
+        ? `The sheet was cut at the reading bound of ${SHEET_ROWS_BOUND} rows; the file has more than the ${MAX_IMPORT_ROWS}-row limit`
+        : `File has ${dataRows.length} data rows, more than the ${MAX_IMPORT_ROWS}-row limit`,
     };
   }
 

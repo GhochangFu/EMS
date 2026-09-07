@@ -81,6 +81,9 @@ function snapshot(): PlanSnapshot {
       ["WC-RTU-1", R1],
       ["WC-RTU-2", R2],
     ]),
+    // Both fixture gateways are live; the retired one is added by
+    // `retiredRtuSnapshot`, which leaves it out of this set.
+    activeRtuIds: new Set([R1, R2]),
     catalog: new Map([
       ["kw", { unit: "kW", active: true }],
       ["kwh", { unit: "kWh", active: true }],
@@ -491,7 +494,10 @@ function retiredRtuSnapshot(): PlanSnapshot {
     // Every RTU of the location, retired ones included — this is what lets the
     // export still name the gateway the row is actually wired to.
     rtuCodesById: new Map([...base.rtuCodesById, [R3, RETIRED_CODE]]),
-    // `rtusByCode` stays the ACTIVE set: step 9's own wording.
+    // `rtusByCode` stays the ACTIVE set: step 9's own wording, and `R3` is
+    // absent from `activeRtuIds` for the same reason — the export must not
+    // pre-fill a gateway somebody retired (post-merge review, finding 4).
+    // `base.activeRtuIds` is carried through unchanged, without `R3`.
     existingByAssetPoint: new Map([...base.existingByAssetPoint, [assetPointKey("a1", "temp"), wiredToRetired]]),
     existingByAssetSource: new Map([...base.existingByAssetSource, [assetSourceKey("a1", "TX01_TEMP"), "temp"]]),
   };
@@ -511,6 +517,7 @@ function retiredRtuSnapshot(): PlanSnapshot {
  */
 export function assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt(): void {
   const snap = retiredRtuSnapshot();
+  assert(snap.rtuCodesById.has(R3) && !snap.activeRtuIds.has(R3), "the fixture gateway is known to the location and retired");
 
   // (1) the row that already points at it, restated — unchanged, no error.
   const restated = planWith(
@@ -536,4 +543,41 @@ export function assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt(): v
   // exception is scoped to "this row already had it" and not to the code.
   const rewired = planWith([row({ point_key: "kw", rtu_code: RETIRED_CODE, source_data_key: "TX01_KW" })], snap);
   onlyError(rewired, "rtu_not_found", "rtu_code", "a re-wire onto a retired RTU");
+}
+
+/**
+ * The other half of correction 39, and the post-merge review's finding 4: the
+ * export must not *write* a retired code where the import would refuse it.
+ *
+ * An asset whose own gateway was retired still gets its pre-fill rows, and case
+ * (2) above shows a create naming a retired code is refused — so a pre-fill
+ * that carried `WC-RTU-RETIRED` produced a cell that answered `rtu_not_found`
+ * the moment somebody typed `TRUE` beside it, on text nobody had written. The
+ * export leaves it blank, and this asserts the consequence end to end: the
+ * exported row, with `TRUE` typed into `active`, plans as one create with no
+ * gateway rather than as an error.
+ */
+export function assertAPreFillRowOnARetiredGatewayImportsAsACreate(): void {
+  const base = retiredRtuSnapshot();
+  const snap: PlanSnapshot = {
+    ...base,
+    assetsByCode: new Map([
+      ...base.assetsByCode,
+      ["CH02", { id: "a5", name: "Chiller 2", active: true, templateId: T1, rtuId: R3 }],
+    ]),
+  };
+
+  const preFill = buildMappingSheetRows(snap).find((cells) => cells[0] === "CH02" && cells[2] === "kw");
+  assert(preFill !== undefined, "the asset on the retired gateway still gets its pre-fill row");
+  assert(preFill?.[3] === "", `the export leaves that row's rtu_code blank, got ${JSON.stringify(preFill?.[3])}`);
+
+  // The person takes the suggestion: `TRUE` in `active`, nothing else touched.
+  const taken: Cell[] = [...(preFill ?? [])];
+  taken[11] = "TRUE";
+  const p = planMappingSheet(parsed([taken]), snap);
+  assert(p.creates.length === 1 && p.errors.length === 0, `the exported row imports as one create, got ${summary(p)}`);
+  const create = p.creates[0];
+  assert(create?.rtuId === null, `the created row carries no gateway, got ${JSON.stringify(create?.rtuId)}`);
+  assert(create?.sourceKind === "unmapped", `a measured point with no gateway is unmapped (decision 5), got ${create?.sourceKind}`);
+  assert(create?.sourceDataKey === "CH02_KW", `the pattern was substituted for this asset, got ${JSON.stringify(create?.sourceDataKey)}`);
 }

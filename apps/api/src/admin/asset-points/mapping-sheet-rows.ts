@@ -9,7 +9,7 @@ import type {
 import * as XLSX from "xlsx";
 
 import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
-import { MAX_IMPORT_ROWS } from "../telemetry-import/telemetry-import-rows";
+import { MAX_IMPORT_ROWS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 
 /**
@@ -18,7 +18,9 @@ import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.sche
  *
  * Mirrors `telemetry-import-rows.ts`: one `XLSX.read` for CSV and XLSX alike,
  * `sheetRows` bounded so a small file that inflates to a huge sheet is cut
- * before the row cap is checked, never `cellDates`. What is different is the
+ * before the row cap is checked — and a sheet that reached that bound is then
+ * refused, never imported as the part of itself that survived the cut — never
+ * `cellDates`. What is different is the
  * contract: the header is **strict** (the twelve, in order — anything else is a
  * file-level `header_mismatch`), every problem carries a stable code from
  * `MAPPING_SHEET_ERROR_CODES`, and the row errors split in two:
@@ -302,9 +304,10 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
       // are stringified below; either way a number is parsed from text here.
       raw: true,
       // Bounds what SheetJS materialises before the row cap is checked: the
-      // header plus one overflow row, so a file one row over the cap is still
-      // detected as over it (`telemetry-import-rows.ts`'s reasoning).
-      sheetRows: MAX_IMPORT_ROWS + 2,
+      // header, one overflow row so a file one row over the cap is still
+      // detected as over it, and the start slack a used range below row 1
+      // needs (`telemetry-import-rows.ts`'s `SHEET_ROWS_BOUND`).
+      sheetRows: SHEET_ROWS_BOUND,
     });
   } catch {
     return { ok: false, error: fileError("file_unreadable", "Could not read the uploaded file as CSV or Excel") };
@@ -368,10 +371,27 @@ export function parseMappingSheet(buffer: Buffer): ParseMappingSheetResult {
   // Every sheet row after the header, blanks included — that is what makes the
   // Excel row number `offset + 2`, and what the cap counts.
   const dataRowCount = range.e.r - range.s.r;
-  if (dataRowCount > MAX_IMPORT_ROWS) {
+  // Two ways to be over the cap. The count is the plain one; the other is a
+  // used range that **reached** the reading bound, where `dataRowCount` counts
+  // what survived the cut rather than what the file holds. `sheetRows` bounds
+  // absolute rows from 0, so a header on Excel row 2 spends one of them and a
+  // 25,000-row sheet came back reading as exactly 20,000 — the cap could not
+  // trip and 20,000 rows imported with nothing said (post-merge review,
+  // finding 1).
+  const cutAtTheReadingBound = range.e.r + 1 >= SHEET_ROWS_BOUND;
+  if (cutAtTheReadingBound || dataRowCount > MAX_IMPORT_ROWS) {
     return {
       ok: false,
-      error: fileError("too_many_rows", `File has ${dataRowCount} data rows, more than the ${MAX_IMPORT_ROWS}-row limit`),
+      // Which of the two fired decides what can honestly be said. When the
+      // sheet was cut, `dataRowCount` is the size of the cut and not the size
+      // of the file — quoting it read "File has 19901 data rows, more than the
+      // 20000-row limit", which contradicts itself.
+      error: fileError(
+        "too_many_rows",
+        cutAtTheReadingBound
+          ? `The sheet was cut at the reading bound of ${SHEET_ROWS_BOUND} rows; the file has more than the ${MAX_IMPORT_ROWS}-row limit`
+          : `File has ${dataRowCount} data rows, more than the ${MAX_IMPORT_ROWS}-row limit`,
+      ),
     };
   }
 

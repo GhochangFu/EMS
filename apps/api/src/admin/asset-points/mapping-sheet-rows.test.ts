@@ -5,6 +5,7 @@ import {
   assertBlankRowsKeepTheExcelNumbering,
   assertCellErrorsAreDeferredInOrder,
   assertADeclaredZipBombIsRefusedBeforeRead,
+  assertASheetCutAtTheReadingBoundIsRefused,
   assertCellsAreReadAsText,
   assertEchoedCellTextIsBounded,
   assertOnlyDecimalLiteralsAreNumbers,
@@ -13,6 +14,7 @@ import {
   assertRequiredCellsAndDuplicateRows,
   assertRowCap,
   assertSheetSelection,
+  assertTheRowCapTripsWhenTheRangeStartsBelowRowOne,
 } from "./mapping-sheet-rows.spec";
 
 /** `F2.7` G2 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -52,6 +54,28 @@ describe("F2.7 — parseMappingSheet, the pure half of the import", () => {
   it("reports absolute Excel row numbers when the used range starts below row 1", () => {
     assertRowNumbersAreAbsoluteWhenTheRangeStartsBelowRowOne();
   });
+
+  it(
+    "refuses a sheet over the cap whose used range starts below row 1, and reads one at the cap whole",
+    () => {
+      assertTheRowCapTripsWhenTheRangeStartsBelowRowOne();
+    },
+    // Two xlsx fixtures of ~20,000 rows are written and read here; the default
+    // 5 s breaches under a full-suite run contending for CPU, as
+    // `telemetry-import-rows.test.ts` already records for its own cap fixtures.
+    60_000,
+  );
+
+  it(
+    "refuses a sheet whose reading was cut at the bound, and says that is what fired",
+    () => {
+      assertASheetCutAtTheReadingBoundIsRefused();
+    },
+    // One 25,000-row xlsx fixture, written deflated and read back; ~3.5 s alone
+    // on the reference machine, and it shares the suite's CPU with every other
+    // parallel file.
+    60_000,
+  );
 
   it("echoes a 32,767-character cell bounded, with the omitted length stated (security H1)", () => {
     assertEchoedCellTextIsBounded();

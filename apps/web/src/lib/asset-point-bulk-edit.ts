@@ -96,11 +96,25 @@ type _EveryNumberFieldIsAMetadataField = Exclude<NumberField, MetadataField> ext
 const _everyNumberFieldIsAMetadataField: _EveryNumberFieldIsAMetadataField = true;
 void _everyNumberFieldIsAMetadataField;
 
-/** The number a ticked numeric field holds: `null` when empty, `NaN` when it is not a number. */
+/**
+ * A plain decimal literal: optional sign, digits with an optional fraction (or
+ * a bare fraction), optional exponent. The mapping sheet's parser holds the
+ * same rule (`mapping-sheet-rows.ts`, correction 59 / L3) because `Number()`
+ * alone also accepts `0x10`, `0b101` and `0o17` — and a hex cell silently
+ * becoming a decimal scale factor is not what the person typing it means.
+ */
+const DECIMAL_LITERAL = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$/;
+
+/**
+ * The number a ticked numeric field holds: `null` when empty, `NaN` when it is
+ * not a plain decimal number. `bulkEditProblems` refuses a `NaN`, so `0x10` is
+ * "Engineering minimum is not a number." here rather than the sixteen
+ * `Number("0x10")` would have made of it (post-merge review nit).
+ */
 function numberFrom(field: BulkEditField<string>): number | null {
   const text = field.value.trim();
   if (text === "") return null;
-  return Number(text);
+  return DECIMAL_LITERAL.test(text) ? Number(text) : Number.NaN;
 }
 
 /**
