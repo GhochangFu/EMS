@@ -214,7 +214,10 @@ export class MappingSheetService {
    *   snapshot hid would be planned as a create and raise 23505 mid-commit.
    * - **every RTU of the location, retired included** — `rtusByCode` is the
    *   active set step 9 resolves against, `rtuCodesById` is all of them, so an
-   *   existing row still names the gateway it is wired to (correction 39).
+   *   existing row still names the gateway it is wired to (correction 39), and
+   *   `activeRtuIds` is that active set keyed by id, which is what the export's
+   *   **pre-fill** reads: a row with no existing mapping must not be handed a
+   *   retired code the import would then refuse (post-merge review, finding 4).
    * - **the whole catalog**, which is fleet-wide vocabulary after ADR 0051 and
    *   small; filtering it by the sheet's keys would need the sheet, and the
    *   export needs it too.
@@ -277,10 +280,12 @@ export class MappingSheetService {
       .where(eq(rtus.locationId, locationId));
     const rtuCodesById = new Map<string, string>();
     const rtusByCode = new Map<string, string>();
+    const activeRtuIds = new Set<string>();
     for (const row of rtuRows) {
       rtuCodesById.set(row.id, row.code);
       if (row.active) {
         rtusByCode.set(row.code, row.id);
+        activeRtuIds.add(row.id);
       }
     }
 
@@ -338,6 +343,7 @@ export class MappingSheetService {
       existingByAssetSource,
       rtuCodesById,
       rtusByCode,
+      activeRtuIds,
       catalog,
       templatePoints: templatePointsByKey,
     };

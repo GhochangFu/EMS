@@ -31,6 +31,25 @@ function buildBuffer(rows: Cell[][], bookType: "csv" | "xlsx" = "xlsx", sheetNam
   return XLSX.write(book, { type: "buffer", bookType }) as Buffer;
 }
 
+/**
+ * The same workbook with a blank Excel row 1: the rows are written from `A2`
+ * and `!ref` is hand-set to match, which is what a sheet with a row inserted
+ * above the header looks like on disk. `aoa_to_sheet([[]])` alone leaves a
+ * `!ref` of `A1:A1`, so the range is stated rather than inferred.
+ *
+ * Written **deflated**, as every real `.xlsx` is: an uncompressed 20,000-row
+ * fixture is 9.98 MiB and the parser refuses it as `file_too_large` before the
+ * row cap is ever reached, which would make the cap cases below vacuous.
+ */
+function buildBufferFromRowTwo(rows: Cell[][]): Buffer {
+  const sheet = XLSX.utils.aoa_to_sheet([[]]);
+  XLSX.utils.sheet_add_aoa(sheet, rows, { origin: "A2" });
+  sheet["!ref"] = XLSX.utils.encode_range({ s: { r: 1, c: 0 }, e: { r: rows.length, c: (rows[0]?.length ?? 1) - 1 } });
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "MAPPINGS");
+  return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
+}
+
 const HEADER: Cell[] = [...MAPPING_SHEET_HEADERS];
 
 /** A complete, valid data row; override cells by column name. */
@@ -272,13 +291,8 @@ export function assertBlankRowsKeepTheExcelNumbering(): void {
  * on Excel row 2 and the first data row on 3 (PR 2 code review, finding 3).
  */
 export function assertRowNumbersAreAbsoluteWhenTheRangeStartsBelowRowOne(): void {
-  const sheet = XLSX.utils.aoa_to_sheet([[]]);
   const data = [HEADER, row({ asset_code: "A1" }), row({ asset_code: "" })];
-  XLSX.utils.sheet_add_aoa(sheet, data, { origin: "A2" });
-  sheet["!ref"] = XLSX.utils.encode_range({ s: { r: 1, c: 0 }, e: { r: 1 + data.length - 1, c: HEADER.length - 1 } });
-  const book = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(book, sheet, "MAPPINGS");
-  const result = parseOk(XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer, "a range starting at A2");
+  const result = parseOk(buildBufferFromRowTwo(data), "a range starting at A2");
   // The valid row is Excel row 3; the blank-asset_code row is a parser-side
   // error, so it lands in `errors` (not `rows`) and must name Excel row 4.
   assert(
@@ -288,6 +302,36 @@ export function assertRowNumbersAreAbsoluteWhenTheRangeStartsBelowRowOne(): void
   assert(result.errors.length === 1, `one parser-side error, got ${result.errors.length}`);
   assert(result.errors[0]?.row === 4, `the blank asset_code error names Excel row 4, got ${result.errors[0]?.row}`);
   assert(result.totalRows === 2, `both non-blank data rows are counted, got ${result.totalRows}`);
+}
+
+/**
+ * The row cap trips even when the used range starts below row 1 (post-merge
+ * code review, finding 1).
+ *
+ * `sheetRows` bounds materialisation in **absolute** rows from 0, while the cap
+ * was checked as `range.e.r - range.s.r` on the already-truncated range. A
+ * header on Excel row 2 spends one of those rows, so a 25,000-row sheet came
+ * back cut to the bound with `range.e.r - range.s.r` reading exactly
+ * `MAX_IMPORT_ROWS` — the cap could not trip, and 20,000 of the 25,000 rows
+ * were imported with nothing said. The parser now refuses whenever
+ * materialisation reached the bound as well, and the bound carries
+ * `MAX_RANGE_START_ROW` rows of slack so a sheet that merely starts a little
+ * below row 1 is still read whole and accepted at the cap.
+ */
+export function assertTheRowCapTripsWhenTheRangeStartsBelowRowOne(): void {
+  const overRows: Cell[][] = [HEADER];
+  for (let i = 0; i < MAX_IMPORT_ROWS + 1; i += 1) {
+    overRows.push(row({ asset_code: `A${i}` }));
+  }
+  const overError = parseFile(buildBufferFromRowTwo(overRows), "20,001 data rows under a header on Excel row 2");
+  assert(overError.code === "too_many_rows", `20,001 rows below row 1 → too_many_rows, got ${overError.code}`);
+
+  const atCapRows: Cell[][] = [HEADER];
+  for (let i = 0; i < MAX_IMPORT_ROWS; i += 1) {
+    atCapRows.push(row({ asset_code: `A${i}` }));
+  }
+  const atCap = parseOk(buildBufferFromRowTwo(atCapRows), "exactly 20,000 data rows under a header on Excel row 2");
+  assert(atCap.totalRows === MAX_IMPORT_ROWS, `the sheet at the cap is read whole, got ${atCap.totalRows}`);
 }
 
 /**

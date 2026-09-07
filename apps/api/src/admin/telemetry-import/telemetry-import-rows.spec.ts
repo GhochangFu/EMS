@@ -39,7 +39,62 @@ function buildWorkbookBufferWithDates(rows: (string | number | Date)[][]): Buffe
   return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
+/**
+ * The same workbook with a blank Excel row 1: the rows are written from `A2`
+ * and `!ref` is hand-set to match, which is what a sheet with a row inserted
+ * above the header looks like on disk (`aoa_to_sheet([[]])` alone leaves a
+ * `!ref` of `A1:A1`).
+ */
+function buildWorkbookBufferFromRowTwo(rows: (string | number)[][]): Buffer {
+  const sheet = XLSX.utils.aoa_to_sheet([[]]);
+  XLSX.utils.sheet_add_aoa(sheet, rows, { origin: "A2" });
+  sheet["!ref"] = XLSX.utils.encode_range({ s: { r: 1, c: 0 }, e: { r: rows.length, c: (rows[0]?.length ?? 1) - 1 } });
+  const book = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book, sheet, "Import");
+  return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
 const HEADER = ["asset_code", "point_key", "value", "unit", "time"];
+
+/**
+ * `F2.7`'s post-merge code review, finding 1, in this parser: the row cap has
+ * to trip when the used range starts below row 1.
+ *
+ * `sheetRows` bounds materialisation in **absolute** rows from 0, while the cap
+ * is checked on `raw.slice(1)` over the already-truncated range. A header on
+ * Excel row 2 spends one of those rows, so a sheet far over the cap came back
+ * cut to the bound with exactly `MAX_IMPORT_ROWS` data rows left in it — the
+ * cap could not trip and the rest of the file was dropped silently. The parser
+ * now refuses whenever materialisation reached the bound as well, and the bound
+ * carries `MAX_RANGE_START_ROW` rows of slack so a sheet that merely starts a
+ * little below row 1 is still read whole.
+ *
+ * The at-cap case is asserted as `rows + rejected`, not as `rows`: this parser
+ * still assumes the header is absolute row 0 when it re-reads a time cell's
+ * source text, so an A2-origin data row is rejected on `time` rather than
+ * accepted. That is `F1.9`'s own defect (correction 56 was never applied here)
+ * and it is not this change's to fix; what matters for the cap is that all
+ * 20,000 rows reached the row loop instead of being cut.
+ */
+export function runTelemetryImportRangeStartTests(): void {
+  const overCapRows: (string | number)[][] = [HEADER];
+  for (let i = 0; i < MAX_IMPORT_ROWS + 1; i += 1) {
+    overCapRows.push([`F19-ASSET-${i}`, "kw", 1, "kW", "2026-08-19T10:00:00Z"]);
+  }
+  const overCapResult = parseWorkbook(buildWorkbookBufferFromRowTwo(overCapRows));
+  assert(!overCapResult.ok, `${MAX_IMPORT_ROWS + 1} data rows under a header on Excel row 2 must be refused as over the cap`);
+
+  const atCapRows: (string | number)[][] = [HEADER];
+  for (let i = 0; i < MAX_IMPORT_ROWS; i += 1) {
+    atCapRows.push([`F19-ASSET-${i}`, "kw", 1, "kW", "2026-08-19T10:00:00Z"]);
+  }
+  const atCapResult = parseWorkbook(buildWorkbookBufferFromRowTwo(atCapRows));
+  assert(atCapResult.ok, `exactly ${MAX_IMPORT_ROWS} data rows under a header on Excel row 2 must be accepted structurally`);
+  if (atCapResult.ok) {
+    const seen = atCapResult.rows.length + atCapResult.rejected.length;
+    assert(seen === MAX_IMPORT_ROWS, `every one of the ${MAX_IMPORT_ROWS} data rows reached the row loop, got ${seen}`);
+  }
+}
 
 /** Coverage for `parseWorkbook` (`F1.9`) — pure, DB-free row parsing and validation. */
 export function runTelemetryImportRowsTests(): void {

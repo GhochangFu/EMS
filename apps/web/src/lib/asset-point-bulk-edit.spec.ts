@@ -96,9 +96,14 @@ export function theThreeProblemsAreNamed(): void {
  * `Infinity`, and `JSON.stringify(Infinity)` is `null` — the explicit clear —
  * so an `isNaN`-only guard would have wiped the column on every selected row
  * (PR 2 code review, finding 1).
+ *
+ * `"0x10"` is the post-merge review's nit: `Number("0x10")` is `16`, so the
+ * editor would have stored sixteen for a cell the sheet parser refuses as
+ * `number_invalid` (correction 59, L3). One rule for both surfaces — only a
+ * plain decimal literal is a number.
  */
 export function aFieldThatIsNotANumberIsRefused(): void {
-  for (const value of ["abc", "1e999", "Infinity", "-Infinity"]) {
+  for (const value of ["abc", "1e999", "Infinity", "-Infinity", "0x10", "0b101", "0o17"]) {
     const problems = bulkEditProblems(draftWith({ engMin: { set: true, value } }));
     expect(
       problems.some((problem) => problem.toLowerCase().includes("number")),

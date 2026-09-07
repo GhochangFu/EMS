@@ -35,6 +35,9 @@ import { MappingSheetPanel } from "./mapping-sheet-panel";
 
 const LOCATION_ID = "11111111-1111-4111-8111-111111111111";
 
+/** A second location, for the case that changes location under a taken preview. */
+const OTHER_LOCATION_ID = "33333333-3333-4333-8333-333333333333";
+
 /** A preview with one create, one update and two problems on two different rows. */
 const PREVIEW: MappingSheetPreviewDto = mappingSheetPreviewDtoSchema.parse({
   locationId: LOCATION_ID,
@@ -74,14 +77,24 @@ const PREVIEW: MappingSheetPreviewDto = mappingSheetPreviewDtoSchema.parse({
   ],
 });
 
-/** No default argument: `renderPanel(undefined)` has to mean "no location chosen". */
-function renderPanel(locationId: string | undefined): void {
+/**
+ * No default argument: `renderPanel(undefined)` has to mean "no location
+ * chosen". Returns the `rerender` the location-change case needs, bound to the
+ * same client so the second render is the same mounted tree.
+ */
+function renderPanel(locationId: string | undefined): (next: string | undefined) => void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+  const view = render(
     <QueryClientProvider client={queryClient}>
       <MappingSheetPanel locationId={locationId} />
     </QueryClientProvider>,
   );
+  return (next) =>
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <MappingSheetPanel locationId={next} />
+      </QueryClientProvider>,
+    );
 }
 
 /** A `.csv` so `userEvent.upload` accepts it against `accept=".xlsx,.csv"`. */
@@ -163,4 +176,36 @@ export function withoutALocationTheExportIsDisabledAndSaysWhy(): void {
   expect(screen.getByRole("button", { name: "Download mapping sheet" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
   expect(screen.getByText(/choose a location/i)).toBeInTheDocument();
+}
+
+/**
+ * Case 4 — a preview belongs to the location it was taken against (post-merge
+ * code review, finding 3).
+ *
+ * Commit was guarded on the `File` alone, and the page mounted the panel with
+ * no `key`, so choosing another location in the filter bar kept the preview of
+ * the first one on screen with Commit still enabled: pressing it would have
+ * posted the file to the **new** location's commit route and written rows
+ * nobody had previewed. The panel now also compares the preview DTO's own
+ * `locationId`, and the page keys the panel by location so the state is dropped
+ * outright; either alone would close the hole, and both are cheap.
+ */
+export async function aPreviewDoesNotSurviveALocationChange(): Promise<void> {
+  vi.spyOn(assetPointsApi, "previewMappingSheet").mockResolvedValue(PREVIEW);
+  const commit = vi.spyOn(assetPointsApi, "commitMappingSheet");
+  const rerender = renderPanel(LOCATION_ID);
+
+  await chooseFile(sheetFile("mappings.csv"));
+  await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+  await waitFor(() => expect(commitButton()).toBeEnabled());
+  expect(screen.getByRole("table", { name: "Rows to create" })).toBeInTheDocument();
+
+  // The filter bar moves to another location; the file input keeps its file.
+  rerender(OTHER_LOCATION_ID);
+
+  await waitFor(() => expect(commitButton()).toBeDisabled());
+  expect(screen.queryByRole("table", { name: "Rows to create" })).toBeNull();
+  expect(screen.queryByRole("table", { name: "Rows to update" })).toBeNull();
+  expect(screen.queryByRole("table", { name: "Problems" })).toBeNull();
+  expect(commit).not.toHaveBeenCalled();
 }

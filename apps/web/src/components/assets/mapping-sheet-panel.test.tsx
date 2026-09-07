@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aPreviewDoesNotSurviveALocationChange,
   commitFollowsAPreviewOfTheSameFile,
   everyProblemNamesItsCellAndItsReason,
   withoutALocationTheExportIsDisabledAndSaysWhy,
@@ -29,5 +30,9 @@ describe("F2.7 mapping-sheet panel (ADR 0056 decisions 6 and 7)", () => {
 
   it("disables the export until a location is chosen, and says so", () => {
     withoutALocationTheExportIsDisabledAndSaysWhy();
+  });
+
+  it("drops a preview taken against another location, so Commit cannot write it here", async () => {
+    await aPreviewDoesNotSurviveALocationChange();
   });
 });

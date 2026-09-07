@@ -24,9 +24,14 @@ export const MAX_ECHOED_CELL_CHARS = 64;
 
 /**
  * Declared uncompressed bytes a workbook may claim across all zip entries.
- * A real MAPPINGS or telemetry sheet at the 20,000-row cap inflates to a few
- * MiB; 64 MiB leaves an order of magnitude of headroom and still refuses the
- * measured bomb at under 4 % of its size.
+ * Measured, not guessed: a MAPPINGS sheet at the 20,000-row cap declares
+ * **8.7–10 MiB** unpacked depending on how full its cells are (8.68 MiB for a
+ * plain one, 9.98 MiB for the export the post-merge review measured), so 64 MiB
+ * is **6.4–7.4×** the biggest sheet this system produces — not the order of
+ * magnitude this docblock used to claim — and still refuses the measured bomb
+ * at under 4 % of its size. On disk that sheet is 2.1–2.6 MiB, because the
+ * export is deflated; the declared inflation is the same either way, which is
+ * the point of reading it rather than the file size.
  */
 export const MAX_INFLATED_BYTES = 64 * 1024 * 1024;
 

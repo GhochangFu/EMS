@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertActiveAndMetadataDiffs,
   assertAForeignStoredRtuIsRefusedNotSilentlyUnwired,
+  assertAPreFillRowOnARetiredGatewayImportsAsACreate,
   assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt,
   assertAssetNameIsInformationalAndCountsAddUp,
   assertUnmatchedTextIsEchoedBounded,
@@ -60,6 +61,10 @@ describe("F2.7 — planMappingSheet, steps 5-15 against a location snapshot (ADR
 
   it("accepts a retired RTU's code only where the existing row already points at it (correction 39)", () => {
     assertARetiredRtuIsAcceptedOnlyWhereTheRowAlreadyPointsAtIt();
+  });
+
+  it("imports the pre-fill row of an asset on a retired gateway as one unmapped create, not an error", () => {
+    assertAPreFillRowOnARetiredGatewayImportsAsACreate();
   });
 
   it("refuses a row wired to an RTU outside the location rather than reading it as blank and unwiring it", () => {

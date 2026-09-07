@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runTelemetryImportRowsTests } from "./telemetry-import-rows.spec";
+import { runTelemetryImportRangeStartTests, runTelemetryImportRowsTests } from "./telemetry-import-rows.spec";
 
 /**
  * Vitest entry point. Assertions live in the sibling `.spec.ts` module
@@ -18,5 +18,15 @@ describe("parseWorkbook", () => {
     // default (5s) was observed to breach under a full-suite run
     // contending for CPU with every other parallel test file.
     20_000,
+  );
+
+  it(
+    "refuses a sheet over the cap whose used range starts below row 1, and reads one at the cap whole",
+    () => {
+      runTelemetryImportRangeStartTests();
+    },
+    // Two more ~20,000-row workbooks, written as xlsx rather than CSV because
+    // only a real sheet carries a `!ref` that starts below row 1.
+    60_000,
   );
 });

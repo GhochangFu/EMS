@@ -26,9 +26,10 @@ import {
  * from `lib/mapping-sheet-preview.ts`, which is where they are asserted without
  * a DOM.
  *
- * **Commit follows a preview of the same `File` object**, the rule
- * `telemetry-import-page.tsx` established for `F1.9`. The preview describes one
- * file; choosing another and pressing Commit would write something nobody
+ * **Commit follows a preview of the same `File` object and the same location**,
+ * the rule `telemetry-import-page.tsx` established for `F1.9`, plus the
+ * location. The preview describes one file planned against one location;
+ * choosing another of either and pressing Commit would write something nobody
  * looked at. Identity, not the name: two exports of the same location are two
  * `File` objects with the same name and different contents.
  *
@@ -101,7 +102,14 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
 
-  const previewedDto = preview && preview.file === file ? preview.dto : null;
+  // Commit follows a preview of this file **and** of this location. The
+  // location half is the post-merge review's finding 3: the panel used to be
+  // mounted without a key, so choosing another location in the filter bar left
+  // the first location's preview on screen with Commit enabled, and pressing it
+  // would have posted the file to the new location's commit route. The DTO
+  // carries the location it was planned against, so the panel can say no even
+  // if it is ever mounted without a key again.
+  const previewedDto = preview && preview.file === file && preview.dto.locationId === locationId ? preview.dto : null;
   const canCommit =
     previewedDto !== null && commitResult === null && !commitMutation.isPending;
 

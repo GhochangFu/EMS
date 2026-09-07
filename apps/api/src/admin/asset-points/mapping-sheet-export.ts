@@ -19,7 +19,10 @@ import type { ExportSnapshot, SnapshotTemplatePoint } from "./mapping-sheet-snap
  *   `source_data_key` is the pattern with `{asset_code}` substituted and every
  *   other token left literal (`CH{unit}_CHW_SUPPLY_T` for the person to
  *   finish), blank when the pattern is `NULL`; `rtu_code` the asset's own RTU
- *   or blank; `unit = template.unit ?? catalog.unit ?? ""`; the five blank;
+ *   when that gateway is **active** and blank otherwise (the import refuses a
+ *   retired code on a row that does not already carry it, so pre-filling one
+ *   would write a cell the import rejects); `unit = template.unit ??
+ *   catalog.unit ?? ""`; the five blank;
  *   and `active` **blank** — design decision 4 / Q-B: a blank `active` on a
  *   row with no mapping is "suggestion not taken", which is the only reading
  *   under which this pre-fill and decision 7's round trip (zero creates, zero
@@ -58,6 +61,16 @@ export function buildMappingSheetRows(snapshot: ExportSnapshot): MappingSheetCel
     codeByAssetId.set(asset.id, code);
   }
   const rtuCode = (rtuId: string | null): string => (rtuId === null ? "" : snapshot.rtuCodesById.get(rtuId) ?? "");
+  /**
+   * A pre-fill row's `rtu_code`, which is blank when the asset's gateway is
+   * retired (post-merge code review, finding 4). Step 9 accepts a retired code
+   * only where the existing row already points at it; a pre-fill row has no
+   * existing row, so writing the code there produced a cell that answers
+   * `rtu_not_found` the moment somebody types `TRUE` beside it. Blank means
+   * "no gateway", which is what the row would be created as anyway.
+   */
+  const preFillRtuCode = (rtuId: string | null): string =>
+    rtuId !== null && snapshot.activeRtuIds.has(rtuId) ? rtuCode(rtuId) : "";
 
   const entries: { assetCode: string; pointKey: string; cells: MappingSheetCell[] }[] = [];
 
@@ -120,7 +133,7 @@ export function buildMappingSheetRows(snapshot: ExportSnapshot): MappingSheetCel
       entries.push({
         assetCode: code,
         pointKey: point.pointKey,
-        cells: [code, asset.name, point.pointKey, rtuCode(asset.rtuId), sourceDataKey, unit, "", "", "", "", "", ""],
+        cells: [code, asset.name, point.pointKey, preFillRtuCode(asset.rtuId), sourceDataKey, unit, "", "", "", "", "", ""],
       });
     }
   }
@@ -130,10 +143,24 @@ export function buildMappingSheetRows(snapshot: ExportSnapshot): MappingSheetCel
   return [[...MAPPING_SHEET_HEADERS], ...entries.map((entry) => entry.cells)];
 }
 
-/** The rows as an `.xlsx` buffer with one sheet, `MAPPINGS`, every cell a literal. */
+/**
+ * The rows as an `.xlsx` buffer with one sheet, `MAPPINGS`, every cell a
+ * literal.
+ *
+ * **Deflated** (post-merge code review, finding 2). `XLSX.write` stores every
+ * zip entry uncompressed unless told otherwise, and a mapping sheet is mostly
+ * repeated text: a 12,000-row export came to 5.9 MiB (5.15 MiB re-measured on a
+ * plainer sheet), over the 5 MiB `MAX_IMPORT_FILE_BYTES` that the *import*
+ * enforces — so a location big enough exported a sheet its own preview route
+ * refused. Deflating it is a little over 3× on every fixture measured: at the
+ * 20,000-row cap 9.98 MiB → 2.13 MiB for the review's export and 8.68 MiB →
+ * 2.59 MiB for the plainer one, and that 12,000-row sheet → 1.55 MiB.
+ * `mapping-sheet-export.spec.ts` asserts the sheet part's zip method rather
+ * than a byte count, because the ratio depends on how full the cells are.
+ */
 export function mappingSheetToBuffer(rows: ReadonlyArray<ReadonlyArray<MappingSheetCell>>): Buffer {
   const sheet = XLSX.utils.aoa_to_sheet(rows.map((row) => [...row]));
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, MAPPING_SHEET_NAME);
-  return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
 }

@@ -521,7 +521,13 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
       {/* `F2.7` (ADR 0056 decisions 6 and 7): the sheet is a location document
           — one location's assets, one workbook — so it appears only once a
           location is chosen. */}
-      {selection.locationId ? <MappingSheetPanel locationId={selection.locationId} /> : null}
+      {/* Keyed by location: the panel holds a chosen file and the preview taken
+          against it, and both belong to one location. Without the key, changing
+          location kept the previous location's preview mounted (post-merge
+          review, finding 3). */}
+      {selection.locationId ? (
+        <MappingSheetPanel key={selection.locationId} locationId={selection.locationId} />
+      ) : null}
 
       {/* `F2.6` (ADR 0039 decision 8): overrides live on the asset, per point.
           Only rendered on the asset drill-down — an override belongs to one

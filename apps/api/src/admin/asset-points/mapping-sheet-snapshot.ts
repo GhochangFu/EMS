@@ -59,13 +59,22 @@ export type SnapshotCatalogEntry = {
 /**
  * What the export needs: the location's assets by code, its non-computed
  * `asset_points` rows by `(assetId, pointKey)`, every RTU's code by id (active
- * or not — an existing row wired to a retired RTU still names it), the catalog
- * and the pinned template points by `(templateId, pointKey)`.
+ * or not — an existing row wired to a retired RTU still names it), which of
+ * those RTUs are active, the catalog and the pinned template points by
+ * `(templateId, pointKey)`.
  */
 export type ExportSnapshot = {
   readonly assetsByCode: ReadonlyMap<string, SnapshotAsset>;
   readonly existingByAssetPoint: ReadonlyMap<string, ExistingRow>;
   readonly rtuCodesById: ReadonlyMap<string, string>;
+  /**
+   * The ids of the location's **active** RTUs — `rtuCodesById` keyed the other
+   * way and filtered. A pre-fill row's `rtu_code` is written only from this
+   * set: the import accepts a retired code only where the existing row already
+   * carries it, and a pre-fill row has none, so pre-filling a retired gateway
+   * wrote a cell the import then refused (post-merge review, finding 4).
+   */
+  readonly activeRtuIds: ReadonlySet<string>;
   readonly catalog: ReadonlyMap<string, SnapshotCatalogEntry>;
   readonly templatePoints: ReadonlyMap<string, SnapshotTemplatePoint>;
 };
