@@ -32,7 +32,52 @@
 type ErrorEnvelope = {
   message?: unknown;
   error?: unknown;
+  /** A Zod `flatten()` thrown verbatim — see `flattenedZodMessage`. */
+  formErrors?: unknown;
+  fieldErrors?: unknown;
 };
+
+/** The non-blank strings of an unknown array, trimmed. */
+function usableStrings(values: readonly unknown[]): string[] {
+  return values
+    .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    .map((value) => value.trim());
+}
+
+/**
+ * A Zod `flatten()` thrown verbatim, as one sentence — or `null`.
+ *
+ * Four onboarding routes `throw new BadRequestException(err.flatten())`, and
+ * `HttpException.createBody` returns an object argument unchanged, so the wire
+ * body is `{"formErrors":[…],"fieldErrors":{…}}` with **no** `message`, `error`
+ * or `statusCode` at all. Before `F4.106` that fell through to the raw text and
+ * the whole JSON object was what the operator read.
+ *
+ * `formErrors` first and unlabelled — those are the whole-body complaints and
+ * naming a field there would invent one. Then each `fieldErrors` key that has
+ * at least one usable message, in `Object.keys` order.
+ *
+ * **What this shape cannot say, stated rather than implied.** `z.flatten()`
+ * collapses a nested path to its top-level key, so `PATCH :id/draft` refusing an
+ * over-cap array reports the field `draft` and cannot name the offending
+ * element. That is `F4.103`'s recorded residual; naming `draft` is the most
+ * this body carries, and this function does not manufacture more.
+ */
+function flattenedZodMessage(envelope: ErrorEnvelope): string | null {
+  const parts = Array.isArray(envelope.formErrors) ? usableStrings(envelope.formErrors) : [];
+
+  const { fieldErrors } = envelope;
+  if (typeof fieldErrors === "object" && fieldErrors !== null && !Array.isArray(fieldErrors)) {
+    for (const [field, messages] of Object.entries(fieldErrors)) {
+      const usable = Array.isArray(messages) ? usableStrings(messages) : [];
+      if (usable.length > 0) {
+        parts.push(`${field}: ${usable.join(" ")}`);
+      }
+    }
+  }
+
+  return parts.length > 0 ? parts.join(" ") : null;
+}
 
 /**
  * The readable message inside an error.
@@ -87,6 +132,16 @@ export function apiErrorMessage(cause: unknown): string {
   // server said.
   if (typeof envelope.error === "string" && envelope.error.trim() !== "") {
     return envelope.error.trim();
+  }
+
+  // LAST, and the placement is the whole safety argument for a function 22
+  // components import: everything above still wins, so this branch fires only
+  // on bodies that used to return raw JSON. It is a strict improvement for
+  // every caller and a change for none. Asserted, not asserted-in-a-comment —
+  // see `runEnvelopeMessageWinsOverFieldErrorsTests`.
+  const flattened = flattenedZodMessage(envelope);
+  if (flattened !== null) {
+    return flattened;
   }
 
   return trimmed;

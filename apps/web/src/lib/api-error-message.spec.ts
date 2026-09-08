@@ -98,6 +98,86 @@ export function runFallbackTests(): void {
 }
 
 /**
+ * `F4.106` C1 — the Zod `flatten()` four onboarding routes throw verbatim.
+ *
+ * The body is `F4.103`'s `PATCH :id/draft` refusal, character for character as
+ * `scratchpad/f4106-probe-envelope.mjs` built it from the real
+ * `BadRequestException`. It carries no `message`, no `error` and no
+ * `statusCode`, so before this the operator read the JSON object itself.
+ *
+ * **Equality, and no separate leak loop.** The plan asked for a second half
+ * asserting the output holds none of `fieldErrors`, `formErrors` or `{`,
+ * because the raw body contains `Array must contain at most 100 element(s)` as
+ * a substring and a *substring* presence assertion would survive the mutation.
+ * `===` already excludes every leak, so the loop would be an assertion no
+ * mutation can reach on its own — the shape §4.6 exists to keep out. The page
+ * spec keeps its loop, because `toHaveTextContent` really is a substring match
+ * and the loop there is what reddens.
+ */
+export function runZodFlattenFieldErrorTests(): void {
+  const shown = apiErrorMessage(
+    new Error(
+      '{"formErrors":[],"fieldErrors":{"draft":["Array must contain at most 100 element(s)"]}}',
+    ),
+  );
+  assert(
+    shown === "draft: Array must contain at most 100 element(s)",
+    `expected the field and its message, got "${shown}"`,
+  );
+}
+
+/**
+ * `F4.106` C2 — a whole-body complaint carries no field, and none is invented.
+ *
+ * `z.object(...).parse([])` produces exactly this: `formErrors` populated and
+ * `fieldErrors` empty. Labelling it with a field name would name a field the
+ * server never mentioned.
+ */
+export function runZodFlattenFormErrorTests(): void {
+  const shown = apiErrorMessage(
+    new Error('{"formErrors":["Expected object, received array"],"fieldErrors":{}}'),
+  );
+  assert(
+    shown === "Expected object, received array",
+    `a formErrors-only body must render its own sentence, got "${shown}"`,
+  );
+}
+
+/**
+ * `F4.106` C3 — the new branch regresses no existing caller.
+ *
+ * 22 components import this function, and the argument that the change is safe
+ * for all of them is entirely about **where** the branch sits: last, so every
+ * body that already produced a sentence still does. That is a claim about other
+ * people's screens, so it is asserted rather than written in a comment — moving
+ * the branch above the `message` branch reddens this and nothing else.
+ */
+export function runEnvelopeMessageWinsOverFieldErrorsTests(): void {
+  const shown = apiErrorMessage(
+    new Error(
+      '{"message":"Validation failed","error":"Bad Request","statusCode":400,"fieldErrors":{"code":["Required"]}}',
+    ),
+  );
+  // Equality, so "and does not name the field" needs no second assertion —
+  // see `runZodFlattenFieldErrorTests` for why the loop is left out here.
+  assert(shown === "Validation failed", `the envelope message must still win, got "${shown}"`);
+}
+
+/**
+ * `F4.106` C4 — a flatten with nothing usable in it still shows the body.
+ *
+ * The fallback is the point of the whole function: an empty `fieldErrors`, or a
+ * key whose message list is empty, says nothing an operator can act on. Showing
+ * the server's own body beats inventing a generic line that hides it.
+ */
+export function runEmptyZodFlattenTests(): void {
+  for (const raw of ['{"formErrors":[],"fieldErrors":{}}', '{"fieldErrors":{"a":[]}}']) {
+    const shown = apiErrorMessage(new Error(raw));
+    assert(shown === raw, `an unusable flatten must show what the server said, got "${shown}"`);
+  }
+}
+
+/**
  * A non-`Error` throw is handled.
  *
  * `adminFetch` always throws an `Error`, but a mutation's `onError` is typed
