@@ -1,7 +1,13 @@
 import type { OnboardingDraft } from "@bms/shared";
 
 import { MAX_ECHOED_ITEMS, echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
-import { chatService } from "./onboarding-chat.service.spec";
+import {
+  assetOf,
+  chatService,
+  completeRtu,
+  summaryDraftOf,
+} from "./onboarding-chat.service.spec";
+import { OnboardingExcelService } from "./onboarding-excel.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -193,6 +199,18 @@ function worstRtu(index: number, credentialsSet: boolean): NonNullable<Onboardin
   };
 }
 
+/** The `slot`-th asset of RTU `index`, its name at the bound. */
+function worstAsset(index: number, slot: number): NonNullable<OnboardingDraft["assets"]>[number] {
+  const tag = `Asset-r${String(index).padStart(3, "0")}-a${slot}-`;
+  return {
+    rtuIndex: index,
+    code: `A${String(index).padStart(3, "0")}-${slot}`,
+    name: taggedCell(tag),
+    siteName: "Berhampur",
+    domain: "electrical",
+  };
+}
+
 /** The location line's own cell, at the bound like everything else. */
 const WORST_LOCATION = taggedCell("Loc-");
 
@@ -333,4 +351,226 @@ export function assertMqttTemplateBlocksAreCapped(): void {
     message.length < 20_000,
     `the MQTT branch must stay under 20,000 characters, got ${message.length}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Sites 3 and 4 — the RTU lines, and one asset budget across the whole summary
+// ---------------------------------------------------------------------------
+
+/** RTU `index`'s display name in the plain fixtures — fixed width, so no name contains another. */
+function rtuName(index: number): string {
+  return `Rtu-r${String(index).padStart(3, "0")}`;
+}
+
+/** The `slot`-th asset of RTU `index` in the plain fixtures. */
+function assetName(index: number, slot: number): string {
+  return `Asset-r${String(index).padStart(3, "0")}-a${slot}`;
+}
+
+/** `rtuCount` RTUs each carrying `perRtu` assets, all named so they can be counted exactly. */
+function plainSummaryDraft(rtuCount: number, perRtu: number): OnboardingDraft {
+  const rtus = Array.from({ length: rtuCount }, (_, index) => completeRtu(rtuName(index)));
+  const assets = Array.from({ length: rtuCount * perRtu }, (_, i) =>
+    assetOf(Math.floor(i / perRtu), assetName(Math.floor(i / perRtu), i % perRtu)),
+  );
+  return summaryDraftOf(rtus, assets);
+}
+
+/** The lines the summary renders, one per shown RTU, plus whatever follows them. */
+function summaryLines(assistantMessage: string): { bullets: string[]; after: string } {
+  const lines = assistantMessage.split("\n");
+  const header = lines.indexOf("**Assets by RTU:**");
+  assert(header >= 0, "this case must reach the assets summary, or sites 3 and 4 go unasserted");
+  const bullets: string[] = [];
+  let i = header + 1;
+  for (; i < lines.length && lines[i]?.startsWith("- **"); i += 1) {
+    bullets.push(lines[i] as string);
+  }
+  return { bullets, after: lines[i] ?? "" };
+}
+
+/**
+ * Sites 3 and 4, and the one place where the two caps are **not** independent.
+ *
+ * A per-section 25 on both axes leaves 25 lines × 25 names ≈ 51 KB, which is
+ * why owner ruling 3 gives the asset names a single budget of 25 across the
+ * whole summary. The budget is spent with a reserve — one name held back for
+ * every later line that has assets — so no line is left naming nothing.
+ *
+ * **Assertion 3 is the only check on that distribution.** A pure-greedy spend
+ * gives line 1 all 25 names and lines 2–25 none, and the total is still ≤ 25
+ * and there are still 25 lines: assertions 1 and 2 both stay green. Without it
+ * the reserve ships untested.
+ */
+export function assertAssetsByRtuSummaryIsCapped(): void {
+  const service = chatService();
+
+  // --- 1. the RTU line cap --------------------------------------------------
+  const hundred = service.excelImportFollowUp(
+    plainSummaryDraft(100, 5),
+    { locationName: "Berhampur", rtuCount: 100, assetCount: 500 },
+    [],
+    [],
+  );
+  const hundredLines = summaryLines(hundred.assistantMessage);
+  assert(
+    hundredLines.bullets.length === MAX_ECHOED_ITEMS,
+    `100 RTUs render ${MAX_ECHOED_ITEMS} lines, got ${hundredLines.bullets.length}`,
+  );
+  assert(
+    /^…and 75 more$/.test(hundredLines.after),
+    `the line after the last RTU states what was omitted, got "${hundredLines.after}"`,
+  );
+
+  // --- 2. one asset budget across the whole summary -------------------------
+  // Counted exactly, never inferred from the message length: this is the
+  // assertion a per-line cap of 25 fails, and a per-line cap shortens the
+  // message enough to satisfy any plausible length ceiling.
+  const shownAssets: string[] = [];
+  for (let rtu = 0; rtu < 100; rtu += 1) {
+    for (let slot = 0; slot < 5; slot += 1) {
+      if (hundred.assistantMessage.includes(assetName(rtu, slot))) {
+        shownAssets.push(assetName(rtu, slot));
+      }
+    }
+  }
+  assert(
+    shownAssets.length <= MAX_ECHOED_ITEMS,
+    `the asset names share one budget of ${MAX_ECHOED_ITEMS} across the summary, got ${shownAssets.length}`,
+  );
+  // ...and every one of them belongs to a printed RTU. `shownRtus` is a
+  // prefix, so index `i` there is still the `rtuIndex` the asset map is keyed
+  // on; reordering or filtering the RTUs before the loop would mis-attribute
+  // every asset, and nothing else here would notice.
+  for (const name of shownAssets) {
+    const owner = Number(/^Asset-r(\d{3})-/.exec(name)?.[1] ?? -1);
+    assert(
+      owner >= 0 && owner < MAX_ECHOED_ITEMS,
+      `only a printed RTU's assets may be named, got "${name}"`,
+    );
+  }
+
+  // --- 3. every printed line still names an asset ---------------------------
+  // 25 RTUs × 5 assets against a budget of 25: the reserve gives each line
+  // exactly one name and its own tail. Pure greedy gives line 1 five names and
+  // lines 6–25 none, with the same total and the same line count.
+  const twentyFive = service.excelImportFollowUp(
+    plainSummaryDraft(MAX_ECHOED_ITEMS, 5),
+    { locationName: "Berhampur", rtuCount: MAX_ECHOED_ITEMS, assetCount: MAX_ECHOED_ITEMS * 5 },
+    [],
+    [],
+  );
+  const evenLines = summaryLines(twentyFive.assistantMessage);
+  assert(
+    evenLines.bullets.length === MAX_ECHOED_ITEMS,
+    `25 RTUs render 25 lines, got ${evenLines.bullets.length}`,
+  );
+  for (const [index, line] of evenLines.bullets.entries()) {
+    const named = [0, 1, 2, 3, 4].filter((slot) => line.includes(assetName(index, slot)));
+    assert(
+      named.length === 1,
+      `line ${index} must still name one of its own assets, got "${line}"`,
+    );
+    // --- 4. the per-line tail survives the shared budget --------------------
+    assert(
+      /…and 4 more$/.test(line),
+      `line ${index} says how many of its own assets it left out, got "${line}"`,
+    );
+  }
+  assert(
+    !twentyFive.assistantMessage.includes("…and 0 more"),
+    "a line that named everything gains no tail",
+  );
+
+  // --- 5. tail purity -------------------------------------------------------
+  // Every cell in this fixture is inside `MAX_ECHOED_CELL_CHARS`, so `quoteCell`
+  // cuts nothing and the phrase it would have added must be absent entirely.
+  // That is the exact check that a tail carrying `more characters` would fail.
+  assert(
+    !hundred.assistantMessage.includes("more characters"),
+    "no cell in this fixture is cut, so the message must carry no cut marker at all",
+  );
+  for (const tail of hundred.assistantMessage.match(/…and [^\n,]*/g) ?? []) {
+    assert(/^…and \d+ more$/.test(tail), `every tail is a count and nothing else, got "${tail}"`);
+  }
+
+  // --- 6. the branch's length ceiling ---------------------------------------
+  // The worst message still reachable: 100 RTUs and 500 assets at `F4.103`'s
+  // section caps, every cell at its `F4.104` bound, 99 duplicate display names.
+  // Arithmetic: header ~150 + 25 fix lines at ~290 ≈ 7.4 KB + 25 RTU lines at
+  // ~200 ≈ 5.1 KB + tails and trailer ~200 ≈ 12.8 KB. Measured 85,242 on the
+  // base, so this is red before the cap.
+  const worst = service.excelImportFollowUp(
+    summaryDraftOf(
+      Array.from({ length: 100 }, (_, index) => worstRtu(index, true)),
+      Array.from({ length: 500 }, (_, i) => worstAsset(Math.floor(i / 5), i % 5)),
+    ),
+    { locationName: WORST_LOCATION, rtuCount: 100, assetCount: 500 },
+    [],
+    fixLines(99),
+  );
+  assert(
+    worst.assistantMessage.includes("Assets by RTU"),
+    "the ceiling case must measure the assets branch, or it measures the wrong one",
+  );
+  assert(
+    worst.assistantMessage.length < 15_000,
+    `the assets branch must stay under 15,000 characters, got ${worst.assistantMessage.length}`,
+  );
+
+  // --- 7. the shipped template gains no tail at any site --------------------
+  // 2 RTUs and 3 assets are both far under 25, so nothing may be elided on the
+  // happy path. Driven through the real `parseUpload`, so this cannot drift
+  // from the workbook the service actually generates —
+  // `assertTemplateRoundTripsUnchanged` gates the parse side of the same file.
+  //
+  // **Both branches, and the credential-completed one is load-bearing.**
+  // `parseRtus` hardcodes `credentialsSet: false` and the template's password
+  // cell is blank, so the template as parsed reaches `mqttSetupTemplate` and
+  // never `formatAssetsByRtuSummary`. A single as-parsed case would leave
+  // sites 3 and 4 unasserted here, and would stay green with the cap set to 2.
+  const excel = new OnboardingExcelService();
+  const parsed = excel.parseUpload(excel.buildTemplateBuffer("Berhampur"));
+  assert(
+    parsed.rtus.length === 2 && parsed.assets.length === 3,
+    `the shipped template is 2 RTUs and 3 assets, got ${parsed.rtus.length} and ${parsed.assets.length}`,
+  );
+  const imported = {
+    locationName: parsed.location.name,
+    rtuCount: parsed.rtus.length,
+    assetCount: parsed.assets.length,
+  };
+  const asParsed = service.excelImportFollowUp(
+    { ...excel.toDraftPatch(parsed, {}), assetPoints: [] },
+    imported,
+    ["kw"],
+    parsed.displayNameFixes,
+  );
+  assert(
+    asParsed.assistantMessage.includes("RTU: "),
+    "the template as parsed reaches the MQTT template — if that changed, this case moved branch",
+  );
+  const completed = service.excelImportFollowUp(
+    summaryDraftOf(
+      parsed.rtus.map((rtu) => ({ ...rtu, credentialsSet: true })),
+      parsed.assets,
+    ),
+    imported,
+    ["kw"],
+    parsed.displayNameFixes,
+  );
+  assert(
+    completed.assistantMessage.includes("Assets by RTU"),
+    "the credential-completed template must reach the assets summary, or assertion 7 gates nothing",
+  );
+  for (const [what, message] of [
+    ["as parsed", asParsed.assistantMessage],
+    ["with credentials set", completed.assistantMessage],
+  ] as const) {
+    // `…and ` and never a bare `…`, which is also `quoteCell`'s ellipsis.
+    assert(
+      !message.includes("…and "),
+      `the shipped template must elide nothing (${what}):\n${message}`,
+    );
+  }
 }

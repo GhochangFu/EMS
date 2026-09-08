@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAssetsByRtuSummaryIsCapped,
   assertDisplayNameFixListIsCapped,
   assertEchoedItemsHelpersAreBounded,
   assertMqttTemplateBlocksAreCapped,
@@ -18,5 +19,9 @@ describe("onboarding import summary — how many items it may echo (F4.105)", ()
 
   it("caps the MQTT paste-back blocks, with the tail outside the copy markers", () => {
     assertMqttTemplateBlocksAreCapped();
+  });
+
+  it("caps the RTU lines and spends one asset budget across the whole summary", () => {
+    assertAssetsByRtuSummaryIsCapped();
   });
 });

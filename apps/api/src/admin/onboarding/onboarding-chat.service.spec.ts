@@ -1,7 +1,7 @@
 import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type { OnboardingDraft, OnboardingPhase } from "@bms/shared";
 
-import { MAX_ECHOED_CELL_CHARS } from "../spreadsheet-guard";
+import { MAX_ECHOED_CELL_CHARS, MAX_ECHOED_ITEMS } from "../spreadsheet-guard";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import type { ChatTurnResult } from "./onboarding-chat.service";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
@@ -220,6 +220,16 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
     (String(summaryLine).match(/more characters/g) ?? []).length >= 2,
     `the RTU name and the asset name are each cut, got "${String(summaryLine).slice(0, 200)}"`,
   );
+  // The count above says "two cut markers on this line"; this says **which
+  // two**, and it is what stops the count from passing for the wrong reason.
+  // `F4.105` added an "…and N more" tail to this same line, and a tail worded
+  // with `more characters` would inflate the count while one of the two cells
+  // went unquoted. `moreTail` avoids the phrase for exactly this reason.
+  const [rtuHalf, assetHalf] = String(summaryLine).split("**: ");
+  assert(
+    String(rtuHalf).includes("more characters") && String(assetHalf).includes("more characters"),
+    `the cut markers are one on the RTU name and one on the asset name, got "${String(summaryLine).slice(0, 200)}"`,
+  );
 
   // --- the other direction: an ordinary name is still readable -------------
   // `quoteCell` adds quotes and nothing else under the bound, so the operator
@@ -353,9 +363,30 @@ export function assertAssetsByRtuSummaryIsIndexedNotRescanned(): void {
     big.assistantMessage.includes("Assets by RTU"),
     "this sub-case must reach the assets summary, or it measures the wrong branch",
   );
+  // `F4.105` capped this. It used to read `=== count` with the message "every
+  // RTU still gets its line — a cheaper summary that lists fewer is not the
+  // same summary", which is now the opposite of the intended behaviour: the
+  // summary lists `MAX_ECHOED_ITEMS` and states how many it left out, while the
+  // headline `**10050** RTU(s)` keeps the number exact.
+  //
+  // **The cost claim is unchanged, and that is the point of leaving the fixture
+  // at 10,050.** `assetScans <= 1` still holds and is still meaningful because
+  // the index is built over **all** assets *before* the RTU slice — a rewrite
+  // that "simplified" the function by slicing the RTUs first and filtering the
+  // assets per rendered RTU would make 25 scans and redden the next assertion.
+  // The clock ceiling survives with room to spare, since only the rendering
+  // shrank.
+  const renderedLines = big.assistantMessage.split("\n").filter((line) => line.startsWith("- **"));
   assert(
-    big.assistantMessage.split("\n").filter((line) => line.startsWith("- **")).length === count,
-    "every RTU still gets its line — a cheaper summary that lists fewer is not the same summary",
+    renderedLines.length === MAX_ECHOED_ITEMS,
+    `the summary lists ${MAX_ECHOED_ITEMS} RTU lines however many were imported, got ${renderedLines.length}`,
+  );
+  assert(
+    big.assistantMessage.includes(`…and ${count - MAX_ECHOED_ITEMS} more`),
+    // Derived, never a literal: the fixture size and the cap must both be able
+    // to change without this assertion quietly describing a message the code
+    // no longer produces.
+    `the summary states how many RTUs it left out, expected ${count - MAX_ECHOED_ITEMS}`,
   );
   assert(
     assetScans <= 1,

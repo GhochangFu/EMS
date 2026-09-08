@@ -18,7 +18,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 // F4.105: `quoteCell` bounds how long each echoed cell is; `echoedItems` and
 // `moreTail` bound how many of them one list may name. Both axes are declared
 // together in that file, because either alone leaves the product unbounded.
-import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
+import { MAX_ECHOED_ITEMS, echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
@@ -769,20 +769,69 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
         assetsByRtu.set(asset.rtuIndex, [asset]);
       }
     }
-    const lines = rtus.map((rtu, index) => {
+    // `F4.105` sites 3 and 4. Both halves are sheet text: the RTU display name,
+    // and every asset name under it. One line can carry as many cells as the
+    // RTU has assets, so the per-cell bound is what keeps each name a hint —
+    // and these two counts are what keep the *number* of them a summary.
+    //
+    // **The two caps share one budget on the asset axis, and that is the whole
+    // point.** A per-section 25 on both would leave 25 lines × 25 names ≈
+    // 51 KB; one budget of 25 asset names across the whole summary brings the
+    // worst message to ~12.8 KB, from 85,242 characters on the base. Owner
+    // ruling 3.
+    //
+    // `shownRtus` is `slice(0, MAX_ECHOED_ITEMS)`, a **prefix**, so index `i`
+    // here is still the original `rtuIndex` the `assetsByRtu` map is keyed on.
+    // Reordering or filtering the RTUs before this loop silently
+    // mis-attributes every asset.
+    //
+    // The index above is built over **all** assets and before this slice, on
+    // purpose: it is what keeps the trip count at one pass, and a rewrite that
+    // filtered the assets per rendered RTU would make 25 scans and redden
+    // `assertAssetsByRtuSummaryIsIndexedNotRescanned`.
+    const { shown: shownRtus, omitted: omittedRtus } = echoedItems(rtus);
+    let remaining = MAX_ECHOED_ITEMS;
+    let rtusWithAssetsLeft = shownRtus.filter(
+      (_rtu, index) => (assetsByRtu.get(index)?.length ?? 0) > 0,
+    ).length;
+    const lines = shownRtus.map((rtu, index) => {
       const rtuAssets = assetsByRtu.get(index) ?? [];
-      // Both halves are sheet text: the RTU display name, and every asset name
-      // under it. One line can carry as many cells as the RTU has assets, so
-      // the per-cell bound is what keeps each name a hint — and the index above
-      // is what keeps the *number of trips* over the assets bounded too. An
-      // asset whose `rtuIndex` matches no RTU is in the map and on no line,
-      // which is what the filter did.
-      const assetList =
-        rtuAssets.length > 0
-          ? rtuAssets.map((asset) => quoteCell(asset.name)).join(", ")
-          : "(no assets yet)";
+      // An asset whose `rtuIndex` matches no RTU is in the map and on no line,
+      // which is what the filter this replaced did.
+      if (rtuAssets.length === 0) {
+        return `- **${quoteCell(rtu.displayName)}**: (no assets yet)`;
+      }
+      rtusWithAssetsLeft -= 1;
+      // **The reserve** — one name held back for each later line that has
+      // assets — is what keeps every line informative, and it is what makes the
+      // shared budget satisfy both halves of ruling 3 at once: the total taken
+      // is exactly ≤ 25, *and* each line still names its first assets and
+      // carries its own tail. Spend greedily instead and line 1 takes all 25
+      // while lines 2..25 name nothing, with the same total and the same line
+      // count — which is why `assertAssetsByRtuSummaryIsCapped` asserts the
+      // distribution and not only the total.
+      //
+      // **No `Math.max(1, allowance)`.** The invariant
+      // `remaining >= rtusWithAssetsLeft` holds at entry (`MAX_ECHOED_ITEMS`
+      // against at most that many shown lines) and is preserved, because
+      // `take <= remaining − rtusWithAssetsLeft` gives
+      // `remaining − take >= rtusWithAssetsLeft`. So `allowance >= 1` always,
+      // and a defensive floor would be an uncoverable branch that told the next
+      // reader the invariant can fail.
+      const allowance = remaining - rtusWithAssetsLeft;
+      const take = Math.min(rtuAssets.length, allowance);
+      remaining -= take;
+      const names = rtuAssets.slice(0, take).map((asset) => quoteCell(asset.name));
+      const assetList = [...names, moreTail(rtuAssets.length - take)].filter(Boolean).join(", ");
       return `- **${quoteCell(rtu.displayName)}**: ${assetList}`;
     });
+    // **Assets on the omitted RTUs are named nowhere**, and that elision comes
+    // from this line cap rather than from the asset budget. The headline
+    // `**500** asset(s)` is what keeps the message honest about it — the count
+    // stays exact while the list stops being a data dump.
+    if (omittedRtus > 0) {
+      lines.push(moreTail(omittedRtus));
+    }
     return `**Assets by RTU:**\n${lines.join("\n")}`;
   }
 
