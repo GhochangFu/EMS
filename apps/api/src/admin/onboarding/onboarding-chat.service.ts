@@ -15,7 +15,10 @@ import type {
 } from "@bms/shared";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
-import { quoteCell } from "../spreadsheet-guard";
+// F4.105: `quoteCell` bounds how long each echoed cell is; `echoedItems` and
+// `moreTail` bound how many of them one list may name. Both axes are declared
+// together in that file, because either alone leaves the product unbounded.
+import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
@@ -98,8 +101,22 @@ export class OnboardingChatService {
     const lines = [`Imported Excel data: ${summaryParts.join(", ")}.`];
 
     if (displayNameFixes.length > 0) {
+      // `F4.105` site 1. Capped where it is **rendered**, not where it is
+      // produced: `normalizeRtuDisplayNames` is the only producer and this is
+      // the only consumer, and §4.3 bounds a value where it reaches a message,
+      // so the full array stays available to anything that later wants it. 99
+      // of these at the worst case are ~29 KB of one reply.
+      //
+      // The tail is a plain line and not a bullet, so it cannot be read as one
+      // more fix.
+      const { shown, omitted } = echoedItems(displayNameFixes);
       lines.push(
-        `\n**Adjusted RTU display names:**\n${displayNameFixes.map((line) => `- ${line}`).join("\n")}`,
+        `\n**Adjusted RTU display names:**\n${[
+          ...shown.map((line) => `- ${line}`),
+          moreTail(omitted),
+        ]
+          .filter(Boolean)
+          .join("\n")}`,
       );
     }
 
@@ -676,7 +693,24 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     if (mqttRtus.length === 0) {
       return "";
     }
-    const blocks = mqttRtus.map((rtu) => {
+    // `F4.105` site 2. **Capping this costs no working function**, and that is
+    // measured rather than assumed: the template already does not do what it
+    // says past the first block. `defaultConfig` reads one *non-global*
+    // `/topic[:\s]+(\S+)/i`, so only the first block's topic is ever taken, and
+    // the `phase === "rtu"` branch of `handleRuleBasedTurn` *appends* an RTU
+    // instead of updating the ones the import created — three imported RTUs,
+    // all three topics filled in and pasted back, produced four RTUs and left
+    // the three originals on `topic: ""`. Pre-existing, filed as its own row,
+    // and deliberately not fixed here (owner ruling 4).
+    //
+    // **The tail counts omissions from this list, never from
+    // `mqttIncomplete`.** The two filter on different predicates — that one
+    // also requires a missing credential or an unusable topic — so the prose
+    // above can honestly say "still required for 100 RTU(s)" over 25 blocks. A
+    // tail derived from the prose's number would be wrong. Also pre-existing,
+    // also not this row's to fix.
+    const { shown, omitted } = echoedItems(mqttRtus);
+    const blocks = shown.map((rtu) => {
       const existingTopic = String(rtu.config.topic ?? rtu.config.mqttTopic ?? "").trim();
       // `topic:` is the one echo site `quoteCell` cannot cover — the operator
       // copies this block, edits it and pastes it back, and the quotes would be
@@ -703,12 +737,18 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
         // detector, stranding anyone who followed the instruction.
       ].join("\n");
     });
-    return (
-      "**Copy from START to END, edit the values, and paste your reply here.**\n" +
-      "────────── START COPY ──────────\n" +
-      `${blocks.join("\n---\n")}\n` +
-      "────────── END COPY ──────────"
-    );
+    return [
+      "**Copy from START to END, edit the values, and paste your reply here.**",
+      "────────── START COPY ──────────",
+      blocks.join("\n---\n"),
+      "────────── END COPY ──────────",
+      // **Outside the markers, deliberately.** Inside them the operator copies
+      // it, edits around it and pastes it back, and it would reach
+      // `defaultConfig`'s parser as if it were part of the template.
+      moreTail(omitted),
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   private formatAssetsByRtuSummary(draft: OnboardingDraft): string {
