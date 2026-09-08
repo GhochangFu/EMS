@@ -1,10 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import {
   alarmAffectedAssets,
   alarmEnrichments,
+  alarmSkills,
   alarms,
+  assetTemplates,
   assets,
   automationRules,
   locations,
@@ -12,6 +14,27 @@ import {
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AlarmDetailsResponse, AutomationRuleOperator } from "@bms/shared";
+
+/**
+ * One `content.alarms[]` entry as the jsonb pick returns it (`E2.2`, ADR 0059).
+ *
+ * Deliberately loose: this is template content, and the authoring service —
+ * not this read — is where it is validated. A shape that drifts must render
+ * nothing here, never throw on an operator's alarm panel.
+ */
+type TemplateAlarmEntry = {
+  philosophy?: {
+    cause?: unknown;
+    impact?: unknown;
+    action?: unknown;
+    skill?: unknown;
+  } | null;
+} | null;
+
+/** A philosophy field is text or it is absent. Anything else is not shown. */
+function philosophyText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
 
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 
@@ -77,12 +100,42 @@ export class AlarmDetailsService {
         skillCode: alarmEnrichments.skillCode,
         enrichmentUpdatedBy: alarmEnrichments.updatedBy,
         enrichmentUpdatedAt: alarmEnrichments.updatedAt,
+        // E2.2 / ADR 0059 decisions 2 and 3. The entry is picked in SQL, not by
+        // pulling `content` into Node: that column is bounded at 256 KiB and an
+        // alarm panel must not ship a whole template to find one object.
+        // `jsonb_path_query_first` rather than `jsonb_array_elements` because it
+        // returns NULL — instead of erroring — when `alarms` is absent or is not
+        // an array, which is the shape a drifted template would have.
+        classTemplateId: assetTemplates.id,
+        classTemplateVersion: assetTemplates.version,
+        classTemplateName: assetTemplates.name,
+        classAlarmCode: automationRules.sourceAlarmCode,
+        classAlarmEntry: sql<TemplateAlarmEntry>`jsonb_path_query_first(
+          ${assetTemplates.content},
+          '$.alarms[*] ? (@.code == $code)',
+          jsonb_build_object('code', ${automationRules.sourceAlarmCode})
+        )`,
       })
       .from(alarms)
       .innerJoin(assets, eq(alarms.assetId, assets.id))
       .innerJoin(locations, eq(assets.locationId, locations.id))
       .leftJoin(automationRules, eq(alarms.ruleId, automationRules.id))
       .leftJoin(alarmEnrichments, eq(alarmEnrichments.alarmId, alarms.id))
+      // ADR 0059 decision 9. This service runs on `bms_fleet`, which carries
+      // BYPASSRLS — RLS gives this join nothing, so the tenant predicate is
+      // hand-written and `assertDetailsRefusesATemplateFromAnotherOrganization`
+      // is what holds it. Delete the second `eq` and that test must fail.
+      //
+      // Two columns, not three: a row in `bms.asset_templates` IS a version
+      // (ADR 0015), so `source_template_id` is already version-precise and
+      // adding `source_template_version` here would only look stricter.
+      .leftJoin(
+        assetTemplates,
+        and(
+          eq(automationRules.sourceTemplateId, assetTemplates.id),
+          eq(assetTemplates.organizationId, locations.organizationId),
+        ),
+      )
       .where(
         and(
           eq(alarms.id, alarmId),
@@ -128,6 +181,30 @@ export class AlarmDetailsService {
           )
       : [];
 
+    // E2.2 / ADR 0059. Every field is read defensively: this is template content
+    // validated by the authoring service, and a drifted shape must render
+    // nothing on an operator's alarm panel rather than throw on it.
+    const philosophy = row.classAlarmEntry?.philosophy ?? null;
+    const cause = philosophyText(philosophy?.cause);
+    const impact = philosophyText(philosophy?.impact);
+    const action = philosophyText(philosophy?.action);
+    const skillCode = philosophyText(philosophy?.skill);
+
+    // No `active` filter, and that is decision 7 rather than an oversight:
+    // retiring a skill is `active = false`, never a delete, so filtering here
+    // would blank the field for exactly the older alarms most likely to carry
+    // one. One row by primary key, and only when there is a code to resolve.
+    const skillLabel =
+      skillCode === null
+        ? null
+        : ((
+            await this.db
+              .select({ label: alarmSkills.label })
+              .from(alarmSkills)
+              .where(eq(alarmSkills.code, skillCode))
+              .limit(1)
+          )[0]?.label ?? null);
+
     return {
       id: row.id,
       assetId: row.assetId,
@@ -164,6 +241,27 @@ export class AlarmDetailsService {
             affectedAssets,
           }
         : null,
+      // An entry whose philosophy carries no text at all is `null`, not a
+      // heading over four blank fields — the panel shows a class philosophy or
+      // it shows nothing.
+      classPhilosophy:
+        row.classTemplateId !== null &&
+        row.classTemplateVersion !== null &&
+        row.classTemplateName !== null &&
+        row.classAlarmCode !== null &&
+        (cause !== null || impact !== null || action !== null || skillCode !== null)
+          ? {
+              templateId: row.classTemplateId,
+              templateVersion: row.classTemplateVersion,
+              templateName: row.classTemplateName,
+              alarmCode: row.classAlarmCode,
+              cause,
+              impact,
+              action,
+              skillCode,
+              skillLabel,
+            }
+          : null,
     };
   }
 }

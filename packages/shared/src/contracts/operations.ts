@@ -492,6 +492,36 @@ export const alarmEnrichmentDtoSchema = z.object({
 });
 
 /**
+ * The **asset class's** alarm philosophy, as authored on the template alarm the
+ * live rule was seeded from (ADR 0059, `E2.2`).
+ *
+ * **Not the same thing as `alarmEnrichmentDtoSchema` above, and the near-identical
+ * field names are the trap.** ADR 0034 §Context draws the line this schema keeps:
+ * a philosophy describes an **asset class** — what engineering decided about
+ * pumps — while an enrichment describes **this alarm instance**, what happened at
+ * 14:02 to pump 3. `cause`/`impact`/`action` here are class text and are never
+ * written from `rootCause`/`impact`/`correctiveActions` there, in either
+ * direction (ADR 0059 decision 5 and ruling Q1: there is no copy action).
+ *
+ * `templateId`/`templateVersion` name the **pinned** version the rule was seeded
+ * from, not the current published one, so this block stays readable after that
+ * version is archived (ruling Q2). `skillLabel` is resolved at read time and is
+ * present for an inactive skill too — retirement is `active = false`, and a
+ * historic philosophy must stay legible.
+ */
+export const alarmClassPhilosophySchema = z.object({
+  templateId: z.string(),
+  templateVersion: z.number(),
+  templateName: z.string(),
+  alarmCode: z.string(),
+  cause: z.string().nullable(),
+  impact: z.string().nullable(),
+  action: z.string().nullable(),
+  skillCode: alarmSkillCodeSchema.nullable(),
+  skillLabel: z.string().nullable(),
+});
+
+/**
  * `GET /api/v1/alarms/:id/details` (ADR 0034 decision 5). Computed at read
  * time — nothing here is stored beyond the alarm/asset/rule rows and the
  * enrichment itself. `thresholdOperator`/`thresholdValue`/`currentValue` are
@@ -525,6 +555,17 @@ export const alarmDetailsResponseSchema = z.object({
   currentValueUnit: z.string().nullable(),
   currentValueAt: z.string().nullable(),
   enrichment: alarmEnrichmentDtoSchema.nullable(),
+  /**
+   * `E2.2` / ADR 0059 decision 2. `null` whenever the chain
+   * `alarms.rule_id` → `automation_rules.source_template_id` +
+   * `source_alarm_code` → that template's matching `content.alarms[]` entry
+   * cannot be walked — and it usually cannot: **0 of 290 rules on the dev
+   * database carry provenance** (plan §2), because every one of them predates
+   * migration `0067`. There is deliberately no `point_key` fallback; one point
+   * key carries several alarms at different thresholds, so a match on it would
+   * be a guess shown under a confident heading.
+   */
+  classPhilosophy: alarmClassPhilosophySchema.nullable(),
 });
 
 // `alarmEnrichmentUpsertBodySchema` (the `PUT .../enrichment` request body)
