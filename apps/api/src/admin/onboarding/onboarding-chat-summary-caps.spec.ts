@@ -525,6 +525,14 @@ function summaryLines(assistantMessage: string): { bullets: string[]; after: str
  * gives line 1 all 25 names and lines 2–25 none, and the total is still ≤ 25
  * and there are still 25 lines: assertions 1 and 2 both stay green. Without it
  * the reserve ships untested.
+ *
+ * **Tail purity and the branch's length ceiling are their own functions**, for
+ * the reason `assertShippedTemplateElidesNothing` was split out for. Six
+ * sections behind one `it()` means the first section a mutation reddens is the
+ * last one that runs: under `MAX_ECHOED_ITEMS = 2` this function died in
+ * section 1 and sections 2–6 were never reached, so two of them were gated by
+ * nothing and looked gated. One `it()` per claim is what makes a mutation land
+ * on the claim it is aimed at.
  */
 export function assertAssetsByRtuSummaryIsCapped(): void {
   const service = chatService();
@@ -565,16 +573,37 @@ export function assertAssetsByRtuSummaryIsCapped(): void {
     shownAssets.length <= MAX_ECHOED_ITEMS,
     `the asset names share one budget of ${MAX_ECHOED_ITEMS} across the summary, got ${shownAssets.length}`,
   );
-  // ...and every one of them belongs to a printed RTU. `shownRtus` is a
-  // prefix, so index `i` there is still the `rtuIndex` the asset map is keyed
-  // on; reordering or filtering the RTUs before the loop would mis-attribute
-  // every asset, and nothing else here would notice.
+  // ...and every one of them belongs to a printed RTU.
   for (const name of shownAssets) {
     const owner = Number(/^Asset-r(\d{3})-/.exec(name)?.[1] ?? -1);
     assert(
       owner >= 0 && owner < MAX_ECHOED_ITEMS,
       `only a printed RTU's assets may be named, got "${name}"`,
     );
+  }
+  // ...and on **its own line**. `shownRtus` is a prefix, so index `i` there is
+  // still the `rtuIndex` the asset map is keyed on, and reordering or filtering
+  // the RTUs before the loop attributes every asset to the wrong one.
+  //
+  // The check above does not see that: reverse the RTUs and the lines still
+  // look up `assetsByRtu.get(0..24)`, so every named asset still belongs to a
+  // *printed* RTU and the count is still 25. Measured — the whole function
+  // stayed green under `echoedItems([...rtus].reverse())`. This is the check
+  // that reddens, and `assertAssetsByRtuSummaryIsIndexedNotRescanned`
+  // (`onboarding-chat.service.spec.ts`) is the sibling that already catches it
+  // by whole-string equality on a 3-RTU fixture.
+  for (const [index, line] of hundredLines.bullets.entries()) {
+    const named = /^- \*\*'Rtu-r(\d{3})'\*\*/.exec(line)?.[1];
+    assert(
+      named === String(index).padStart(3, "0"),
+      `line ${index} must be RTU ${index}'s, got "${line.slice(0, 30)}"`,
+    );
+    for (const asset of line.match(/Asset-r(\d{3})-a\d/g) ?? []) {
+      assert(
+        (/Asset-r(\d{3})-/.exec(asset)?.[1] ?? "") === named,
+        `line ${index} names an asset of another RTU — "${asset}" under "${line.slice(0, 30)}"`,
+      );
+    }
   }
 
   // --- 3. every printed line still names an asset ---------------------------
@@ -606,33 +635,86 @@ export function assertAssetsByRtuSummaryIsCapped(): void {
       `line ${index} says how many of its own assets it left out, got "${line}"`,
     );
   }
-  assert(
-    !twentyFive.assistantMessage.includes("…and 0 more"),
-    "a line that named everything gains no tail",
+  // --- and a bucket the budget covers gains no tail at all ------------------
+  // This replaces `!includes("…and 0 more")`, which could not fail: `moreTail`
+  // returns `""` at zero, so that string is unproducible however the render
+  // breaks, and the helper assertion already covers the zero case directly.
+  // 25 RTUs × **one** asset spends the budget exactly, so each line is its RTU
+  // and its one asset and nothing else — asserted by whole-string equality.
+  // Drop `moreTail`'s `omitted > 0` guard and all 25 lines gain a tail.
+  const exact = service.excelImportFollowUp(
+    plainSummaryDraft(MAX_ECHOED_ITEMS, 1),
+    { locationName: "Berhampur", rtuCount: MAX_ECHOED_ITEMS, assetCount: MAX_ECHOED_ITEMS },
+    [],
+    [],
   );
+  for (const [index, line] of summaryLines(exact.assistantMessage).bullets.entries()) {
+    assert(
+      line === `- **${quoteCell(rtuName(index))}**: ${quoteCell(assetName(index, 0))}`,
+      `line ${index} names its one asset and stops there, got "${line}"`,
+    );
+  }
+}
 
-  // --- 5. tail purity -------------------------------------------------------
-  // Every cell in this fixture is inside `MAX_ECHOED_CELL_CHARS`, so `quoteCell`
-  // cuts nothing and the phrase it would have added must be absent entirely.
-  // That is the exact check that a tail carrying `more characters` would fail.
+/**
+ * A tail carries a count, optionally a unit, and **nothing from the data**.
+ *
+ * Its own `it()` and not section 5 of the function above, because six sections
+ * behind one `it()` gate only as far as the first one a mutation reddens. The
+ * mutation that reaches this one is the plausible "improvement": have the
+ * per-line asset tail name the first asset it left out — `…and 4 more (starting
+ * with 'Asset-r000-a1')`. That is the cheapest way to reopen exactly the echo
+ * this row closes, and it is invisible to a length ceiling.
+ *
+ * `more characters` is `quoteCell`'s, not a tail's. Every cell in this fixture
+ * is inside `MAX_ECHOED_CELL_CHARS`, so nothing is cut and that phrase must be
+ * absent from the whole message — which is the check a tail carrying it fails.
+ */
+export function assertSummaryTailsCarryNothingButACount(): void {
+  const hundred = chatService().excelImportFollowUp(
+    plainSummaryDraft(100, 5),
+    { locationName: "Berhampur", rtuCount: 100, assetCount: 500 },
+    [],
+    [],
+  );
+  const message = hundred.assistantMessage;
   assert(
-    !hundred.assistantMessage.includes("more characters"),
+    message.includes("Assets by RTU"),
+    "this case must reach the assets summary, or there are no tails to inspect",
+  );
+  assert(
+    !message.includes("more characters"),
     "no cell in this fixture is cut, so the message must carry no cut marker at all",
   );
-  for (const tail of hundred.assistantMessage.match(/…and [^\n,]*/g) ?? []) {
+  const tails = message.match(/…and [^\n,]*/g) ?? [];
+  assert(tails.length > 0, "this fixture must produce tails, or the loop below asserts nothing");
+  for (const tail of tails) {
     assert(
       /^…and \d+ more( RTUs)?$/.test(tail),
       `every tail is a count and its unit and nothing else, got "${tail}"`,
     );
   }
+}
 
-  // --- 6. the branch's length ceiling ---------------------------------------
-  // The worst message still reachable: 100 RTUs and 500 assets at `F4.103`'s
-  // section caps, every cell at its `F4.104` bound, 99 duplicate display names.
-  // Arithmetic: header ~150 + 25 fix lines at ~290 ≈ 7.4 KB + 25 RTU lines at
-  // ~200 ≈ 5.1 KB + tails and trailer ~200 ≈ 12.8 KB. Measured 85,242 on the
-  // base, so this is red before the cap.
-  const worst = service.excelImportFollowUp(
+/**
+ * The whole assets branch stays under 15,000 characters at the worst input
+ * `F4.103` still admits.
+ *
+ * Its own `it()` for the same reason as the function above, and this one had no
+ * reaching mutation at all while it was section 6 — it sat behind five
+ * assertions that every cap mutation reddens first. The one that reaches it is
+ * **deleting the `displayNameFixes` cap**: 99 fix lines at ~290 characters put
+ * this message at ~32 KB with every other cap still in place. Deleting the RTU
+ * line cap also crosses the ceiling, but through a broken reserve — a negative
+ * allowance renders empty asset lists — so it is the weaker of the two.
+ *
+ * The fixture is the worst message an upload can still produce: 100 RTUs and
+ * 500 assets at `F4.103`'s section caps, every echo-bearing cell at its
+ * `F4.104` bound, 99 duplicate display names. It measured **85,242** characters
+ * before this row.
+ */
+export function assertAssetsBranchStaysUnderItsCeiling(): void {
+  const worst = chatService().excelImportFollowUp(
     summaryDraftOf(
       Array.from({ length: 100 }, (_, index) => worstRtu(index, true)),
       Array.from({ length: 500 }, (_, i) => worstAsset(Math.floor(i / 5), i % 5)),

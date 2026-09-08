@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAssetsBranchStaysUnderItsCeiling,
   assertAssetsByRtuSummaryIsCapped,
   assertDisplayNameFixListIsCapped,
   assertEchoedItemsHelpersAreBounded,
@@ -8,6 +9,7 @@ import {
   assertMqttTemplateKeepsTheRtusItsProseCounts,
   assertPointKeyPreviewIsCapped,
   assertShippedTemplateElidesNothing,
+  assertSummaryTailsCarryNothingButACount,
 } from "./onboarding-chat-summary-caps.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -33,6 +35,17 @@ describe("onboarding import summary — how many items it may echo (F4.105)", ()
 
   it("caps the RTU lines and spends one asset budget across the whole summary", () => {
     assertAssetsByRtuSummaryIsCapped();
+  });
+
+  // Sections 5 and 6 of the case above, split out for the same reason: behind
+  // one `it()` they sat after assertions that every cap mutation reddens first,
+  // so no mutation ever reached them and they gated nothing.
+  it("puts a count and its unit in every tail, and nothing from the data", () => {
+    assertSummaryTailsCarryNothingButACount();
+  });
+
+  it("keeps the whole assets branch under its length ceiling", () => {
+    assertAssetsBranchStaysUnderItsCeiling();
   });
 
   // Its own case, not one more assertion inside the one above. It is an
