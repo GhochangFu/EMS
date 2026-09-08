@@ -3523,6 +3523,64 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   the post-merge review corrected them — one would have produced a fix covering
   one case in three, and the other proposed a memo that would have removed the
   hourly ceiling for the tick that used it.
+- **Residual — discharged 2026-09-08 by `F3.50`.** The `skipped_unconfigured`
+  holdout above is closed; see the next section. The other four remain open as
+  `F3.51`–`F3.54`.
+
+### An unconfigured refusal stops answering (`F3.50`, ADR 0057 Amendment 3) — done
+
+- **Status:** merged 2026-09-08 — PR
+  [#369](https://github.com/GhochangFu/EMS/pull/369) (`b96588dd`).
+- **The defect.** Decision 10's once-per-key read treated any non-`failed`,
+  non-`skipped_rate_limited` row as a final answer, so a step refused because
+  its channel had no URL, no recipients, no readable secret or no transport at
+  all was never sent again. Configuring SMTP or a webhook afterwards changed
+  nothing.
+- **The row is still written, and that is the whole difference from `F3.48`.**
+  A ceiling refusal is a self-clearing postponement, so ruling Q1 there could
+  simply stop writing it. An unconfigured channel is a configuration fault an
+  operator must see and fix, so the row is the signal. What changed is the
+  **read**: the row stops *answering* once it predates
+  `max(channel.updatedAt, PROCESS_STARTED_AT)`.
+- **Two owner rulings. Q1** — that watermark. Five sites produce the status and
+  they do not split cleanly in two: three are cleared by a channel PATCH, one
+  only by a process restart, and the `secretState: "unreadable"` case spans
+  both. The process boundary is principled rather than convenient, because
+  readiness cannot flip inside a process, so process start is the only boundary
+  at which a change is observable. **Q2** — any PATCH releases that channel's
+  stranded keys, a rename included, because without column-level change
+  tracking `update()` cannot tell a configuration write from a rename and the
+  error direction is toward delivery.
+- **The exclusion is scoped to one status against a timestamp,** written
+  `or(ne(status, 'skipped_unconfigured'), gt(attempted_at, watermark))` inside
+  the existing `and`. Not the literal `NOT (… AND …)`, which renders
+  `"status" = $n` and reddens `F3.48`'s own SQL-shape gate; and never hoisted
+  into the top-level `and`, which would drop a `failed` row older than the
+  watermark out of the sample and reset the three-attempt cap on every channel
+  edit. `F3.48` had to concede its equivalent mixed state was unreachable; this
+  one is reachable, so the argument for keeping the exclusion in SQL is
+  stronger here than where it was first made.
+- **Verification.** Mutation checks at every layer, each reddening a named
+  assertion. The restart half — which no suite can hold, since
+  `PROCESS_STARTED_AT` is one constant per run — was **measured** rather than
+  composed from two gates, which is the mistake `F3.48` shipped: against live
+  rows an earlier watermark returns the refusal and a later one returns
+  nothing, while a `failed` row of the same age is not released, and two
+  processes were shown to produce increasing watermarks. A forced `EXPLAIN`
+  confirmed no DDL. The container swap and the end-to-end sweep drill are
+  explicitly **owed**, not claimed: the shared stack was in use by another
+  session's work.
+- **A review caught a false green of ours, and the measurement settled it.** A
+  comment claimed two mutations died in the integration suite. Only one does:
+  that suite builds its channel once, before any fixture row is planted, so
+  `updatedAt: new Date()` in `toChannelRow` only moves the watermark to an
+  instant still earlier than every fresh row. The unit spec is the sole gate on
+  it, and the comment now says so instead of inviting its deletion. Two
+  reviewers independently found a second wrong claim: "blocked again
+  immediately" fails where a released key meets a closed ceiling, because
+  `F3.48` writes no row for that.
+- **What was deliberately not fixed.** `F3.51`–`F3.54` are untouched, and the
+  ledger still has no retention policy.
 - **Unblocks:** nothing directly.
 
 ### Phase 6 — Premium visuals (~3 weeks)
