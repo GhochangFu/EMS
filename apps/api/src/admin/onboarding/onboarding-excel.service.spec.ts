@@ -1,10 +1,14 @@
-import { MAX_ONBOARDING_ASSETS, MAX_ONBOARDING_RTUS } from "@bms/shared";
+import {
+  MAX_ONBOARDING_ASSETS,
+  MAX_ONBOARDING_RTUS,
+  ONBOARDING_DRAFT_STRING_MAX,
+} from "@bms/shared";
 import { BadRequestException } from "@nestjs/common";
 import * as XLSX from "xlsx";
 
 import { buildWorkbookBufferDeclaring } from "../../testing/declared-range-workbook";
 import { syntheticZip } from "../../testing/synthetic-zip";
-import { MAX_INFLATED_BYTES } from "../spreadsheet-guard";
+import { MAX_ECHOED_CELL_CHARS, MAX_INFLATED_BYTES } from "../spreadsheet-guard";
 import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 import {
@@ -28,8 +32,12 @@ function assert(condition: boolean, message: string): void {
  * `parseUpload` has one caller, `OnboardingService.uploadExcel`, and it does
  * not catch, so a `BadRequestException` raised here reaches the client as a 400
  * carrying exactly this sentence.
+ *
+ * Exported for `onboarding-excel-cell-bounds.spec.ts`, which is the same suite
+ * split at AGENTS.md §4.5's line ceiling: the two files must refuse through one
+ * helper, or "must be refused as a 400" comes to mean two different things.
  */
-function refusalMessage(buffer: Buffer, what: string): string {
+export function refusalMessage(buffer: Buffer, what: string): string {
   const service = new OnboardingExcelService();
   try {
     service.parseUpload(buffer);
@@ -223,8 +231,13 @@ export function assertUnreadableUploadIsLogged(): void {
  * rather than restated here. Every fixture below is this shape with one thing
  * changed, so the "and the honest sheet still parses" direction compares
  * against the real thing and cannot drift from it.
+ *
+ * Exported, with the two section offsets below, for
+ * `onboarding-excel-cell-bounds.spec.ts` — the same suite, split at §4.5's line
+ * ceiling. Copying these into the sibling would give the two files two different
+ * workbooks and only one of them would still be the service's own.
  */
-function templateRows(): (string | number)[][] {
+export function templateRows(): (string | number)[][] {
   const book = XLSX.read(new OnboardingExcelService().buildTemplateBuffer("Berhampur"), { type: "buffer" });
   return XLSX.utils.sheet_to_json<(string | number)[]>(book.Sheets[book.SheetNames[0]], {
     header: 1,
@@ -233,10 +246,10 @@ function templateRows(): (string | number)[][] {
 }
 
 /** Rows 0–10 of the template: everything down to and including the `ASSETS` header row. */
-const ROWS_ABOVE_THE_FIRST_ASSET = 11;
+export const ROWS_ABOVE_THE_FIRST_ASSET = 11;
 
 /** Rows 0–5 of the template: everything down to and including the `RTUS` header row. */
-const ROWS_ABOVE_THE_FIRST_RTU = 6;
+export const ROWS_ABOVE_THE_FIRST_RTU = 6;
 
 /**
  * Row 8 of the template: the blank row that closes the `RTUS` section. Rows 8
@@ -248,7 +261,7 @@ const ROWS_ABOVE_THE_FIRST_RTU = 6;
 const ROWS_CLOSING_THE_RTU_SECTION = 8;
 
 /** An ordinary workbook — no hand-set `!ref`, so SheetJS declares what the cells occupy. */
-function buildWorkbookBuffer(rows: (string | number)[][]): Buffer {
+export function buildWorkbookBuffer(rows: (string | number)[][]): Buffer {
   const sheet = XLSX.utils.aoa_to_sheet(rows);
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, "Onboarding");
@@ -668,17 +681,33 @@ export function assertSheetReachingTheRowBoundIsRefused(): void {
  * `csmoc` onto `smoc_campus`, so no cell text ever reaches it.
  */
 export function assertEchoedSheetTextIsBounded(): void {
+  // **`F4.104` shrank this fixture, and the case is the same one.** It used
+  // 32,767-character cells, which the parse-site bounds now refuse before
+  // `normalizeRtuDisplayNames` is reached — so the fixture is written at the
+  // largest cell an RTU row may now carry. Nothing about what it proves has
+  // moved: `quoteCell` bounds the *message*, the parse site bounds the *draft*,
+  // and the two guards answer different failure modes.
+  //
+  // The relationship the case rests on is asserted rather than assumed. A cell
+  // bound at or below the echo bound would leave `quoteCell` with nothing to
+  // cut, and every assertion below would pass while proving nothing.
+  assert(
+    ONBOARDING_DRAFT_STRING_MAX["rtus.displayName"] > MAX_ECHOED_CELL_CHARS,
+    `the echo cut is what this case proves, and it needs a cell bound above ${MAX_ECHOED_CELL_CHARS}, ` +
+      `got ${ONBOARDING_DRAFT_STRING_MAX["rtus.displayName"]}`,
+  );
+
   const rows = templateRows();
   // Two RTUs sharing one display name, each with its own maximum-length code.
   // The name and the codes are three *different* strings on purpose: were the
   // code equal to the name, `displayNameFromRtuCode` would return the name
   // unchanged, nothing would be pushed, and the count below would pass for the
   // wrong reason.
-  const sharedName = "N".repeat(32_767);
-  const duplicateCode = "B".repeat(32_767);
+  const sharedName = "N".repeat(ONBOARDING_DRAFT_STRING_MAX["rtus.displayName"]);
+  const duplicateCode = "B".repeat(ONBOARDING_DRAFT_STRING_MAX["rtus.code"]);
   rows[6] = [...rows[6]];
   rows[7] = [...rows[7]];
-  rows[6][0] = "A".repeat(32_767);
+  rows[6][0] = "A".repeat(ONBOARDING_DRAFT_STRING_MAX["rtus.code"]);
   rows[6][1] = sharedName;
   rows[7][0] = duplicateCode;
   rows[7][1] = sharedName;

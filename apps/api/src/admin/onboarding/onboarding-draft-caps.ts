@@ -21,11 +21,17 @@
  * where the next edit to it will be made.
  *
  * **Nothing read from a workbook or a draft reaches these messages** (AGENTS.md
- * §4.3). Every interpolation is a section name from a two-member union, a label
- * from a list of four literals in this file, or a number — so, unlike every
- * other sheet-supplied string this family echoes, none of them needs
- * `quoteCell`. That is the same argument `columnBoundedRange` records for its
- * own interpolation in `telemetry-import-rows.ts`.
+ * §4.3). Every interpolation is a section name from a closed union, a label from
+ * a list of four literals in this file, a column header literal the call site
+ * passes from its own `*_HEADERS` array, or a number — so, unlike every other
+ * sheet-supplied string this family echoes, none of them needs `quoteCell`. That
+ * is the same argument `columnBoundedRange` records for its own interpolation in
+ * `telemetry-import-rows.ts`.
+ *
+ * `F4.104` adds `cellLengthProblem` on the same terms and on a third axis: how
+ * long one value may be, as against how many items a section or a draft may
+ * carry. Its own docblock records why that bound is applied where the cell is
+ * read rather than by parsing the draft schema at the upload boundary.
  *
  * The four numbers themselves, and where each comes from, are declared once in
  * `packages/shared/src/contracts/onboarding.ts` and are deliberately not
@@ -79,6 +85,75 @@ export function workbookSectionCountProblem(
   return (
     `The ${section} section has ${dataRows} data rows, more than the ${cap} an onboarding ` +
     `workbook may carry; split the workbook into smaller ones and upload them one at a time`
+  );
+}
+
+/**
+ * The three marker-delimited sections a cell may be read from. `LOCATION` joins
+ * the two above here and only here: it produces no draft *array*, so it has no
+ * count cap, but it does produce four draft *strings*.
+ */
+export type OnboardingWorkbookCellSection = OnboardingWorkbookSection | "LOCATION";
+
+/**
+ * `F4.104` — the sentence that refuses a workbook cell longer than the draft
+ * field it becomes, or `null` when the parser may keep it.
+ *
+ * **Why the parse site and not a schema parse at the upload boundary** (owner
+ * ruling 1). `onboardingDraftSchema` bounds every one of these fields, and
+ * `uploadExcel` parses it nowhere: `parseUpload` → `toDraftPatch` → `mergeDraft`
+ * → the `UPDATE` runs with no parse between them, so every bound on the schema
+ * is inert on this producer. Measured on `9d384295`: all eleven of these cells
+ * reached `onboarding_sessions.draft` at 32,767 characters from a ~50 KB upload.
+ * The obvious repair — `onboardingDraftSchema.safeParse(patch)` in `uploadExcel`
+ * — would import `.min(2)` and two regexes with the lengths, so a workbook with
+ * one blank `code` cell would be refused **wholesale at upload**, where today it
+ * uploads and `OnboardingValidateService.validate` reports it as the per-field
+ * error the operator fixes inside the wizard (ADR 0011's partial-draft shape).
+ * Length is the denial-of-service axis; completeness is not, and the two must
+ * not be merged. So this guard refuses on length **only**.
+ *
+ * **This is a different axis from `F4.103`'s caps, and neither implies the
+ * other.** Those bound how many items a workbook may carry; this bounds how long
+ * one of them may be. Measured on the same commit: a workbook sitting exactly
+ * *at* both caps — 100 RTUs and 500 assets, so nothing `F4.103` refuses — is
+ * 166 KB on disk and yields a **72.04 MB** draft in 201 ms, re-served on every
+ * later read of the session. The product of the two is what the store holds.
+ *
+ * **Refused, never truncated**, like both siblings above and `parseWorkbook` on
+ * `MAX_IMPORT_ROWS`. A silently shortened asset code commits plant under a name
+ * nobody chose. (The rule-based chat branch *slices* against the same bounds,
+ * and that is deliberately not this decision: there the operator sees the result
+ * in the wizard preview and edits it, and a mid-conversation 400 would replace a
+ * graceful per-field validation error with a dead end. Do not generalise either
+ * ruling to the other.)
+ *
+ * **Nothing read from the sheet reaches the sentence** (AGENTS.md §4.3).
+ * `column` is a header literal supplied by the *call site* from
+ * `LOCATION_HEADERS`, `RTU_HEADERS` or `ASSET_HEADERS` — never the header text
+ * the workbook carried — and `value` is read for its `.length` alone.
+ *
+ * `dataRow` is the cell's position in the section's data rows, which is what an
+ * operator counts down the sheet, and `null` for `LOCATION`, which is a single
+ * row by construction (`parseLocation` reads `rows[1]` and nothing else).
+ */
+export function cellLengthProblem(
+  section: OnboardingWorkbookCellSection,
+  dataRow: number | null,
+  column: string,
+  value: string,
+  max: number,
+): string | null {
+  if (value.length <= max) {
+    return null;
+  }
+  const where =
+    dataRow === null
+      ? `The ${section} section's data row`
+      : `The ${section} section's data row ${dataRow}`;
+  return (
+    `${where} has ${value.length} characters in the ${column} column, more than the ${max} ` +
+    "this importer accepts; shorten that cell and upload the workbook again"
   );
 }
 

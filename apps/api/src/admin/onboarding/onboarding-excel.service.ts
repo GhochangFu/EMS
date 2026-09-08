@@ -1,13 +1,19 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import * as XLSX from "xlsx";
 
+// F4.104: the length of every draft string field this parser writes, imported
+// rather than restated. `@bms/shared` and not `@bms/shared/contracts` — apps/api
+// compiles with moduleResolution "node" and ignores the exports map (ADR 0030
+// Amendment 2).
+import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
 import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
 import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
-import { workbookSectionCountProblem } from "./onboarding-draft-caps";
-import { onboardingProtocolSchema } from "./onboarding.schema";
+import { cellLengthProblem, workbookSectionCountProblem } from "./onboarding-draft-caps";
+import type { OnboardingWorkbookCellSection } from "./onboarding-draft-caps";
+import { MAX_RTU_CREDENTIAL_CHARS, onboardingProtocolSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
 /**
@@ -139,6 +145,24 @@ export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
  * and no range check.
  */
 export const MAX_RTU_TOPIC_CHARS = 255;
+
+/**
+ * The longest `host` cell an onboarding workbook may carry (`F4.104`).
+ *
+ * **Declared here and nowhere else**, unlike every other bound this parser
+ * applies. `rtus[].config` is a `z.record(z.unknown())` in both copies of the
+ * draft schema — deliberately, and that stays `E8.5`'s question — so `host` has
+ * no schema field to derive a bound from and nothing in either copy could
+ * consume one. It is therefore absent from `ONBOARDING_DRAFT_STRING_MAX`: that
+ * record is the widths of the draft's *declared* string fields, and a number
+ * living there that no schema reads would be a fifth kind of entry.
+ *
+ * 255 is the same derivation `MAX_RTU_TOPIC_CHARS` records, for the neighbouring
+ * cell of the same sheet: RFC 1035 caps an FQDN at 253 octets, and the repo's
+ * shape for a name-like column is `varchar(255)`. Measured on `9d384295`, this
+ * cell reached `onboarding_sessions.draft` at 32,767 characters.
+ */
+export const MAX_RTU_HOST_CHARS = 255;
 
 /**
  * Reads a spreadsheet's `domain` cell into a plant-domain code (ADR 0031).
@@ -424,15 +448,60 @@ export class OnboardingExcelService {
     const typeRaw = get("type", "smoc_campus");
     const type =
       typeRaw === "rsmoc" || typeRaw === "csmoc" ? typeRaw : ("smoc_campus" as const);
+    // F4.104 — bounded **after** the transform, in `LOCATION_HEADERS` column
+    // order so a row with two long cells always gets the same sentence. Case
+    // folding does not change a length, but the section reader's `.trim()` does,
+    // and it is the folded value that reaches the draft: checking `get(...)`
+    // before `.toUpperCase()` would be checking a string the session never
+    // stores. `latitude`, `longitude` and `type` are deliberately unbounded —
+    // the first two are `Number.parseFloat` results guarded by
+    // `Number.isFinite`, and `type` is compared against two literals and
+    // otherwise replaced, so no cell text survives any of the three.
+    const name = get("name");
+    const code = get("code").toUpperCase();
+    const slug = get("slug").toLowerCase();
+    const province = get("province");
+    this.refuseIfTooLong("LOCATION", null, "name", name, ONBOARDING_DRAFT_STRING_MAX["location.name"]);
+    this.refuseIfTooLong("LOCATION", null, "code", code, ONBOARDING_DRAFT_STRING_MAX["location.code"]);
+    this.refuseIfTooLong("LOCATION", null, "slug", slug, ONBOARDING_DRAFT_STRING_MAX["location.slug"]);
+    this.refuseIfTooLong(
+      "LOCATION",
+      null,
+      "province",
+      province,
+      ONBOARDING_DRAFT_STRING_MAX["location.province"],
+    );
     return {
-      name: get("name"),
-      code: get("code").toUpperCase(),
-      slug: get("slug").toLowerCase(),
+      name,
+      code,
+      slug,
       type,
       latitude: Number.isFinite(lat) ? lat : -25.7,
       longitude: Number.isFinite(lng) ? lng : 28.2,
-      province: get("province") || undefined,
+      province: province || undefined,
     };
+  }
+
+  /**
+   * Refuses the upload when a cell is longer than the draft field it becomes.
+   *
+   * The sentence, the axis it bounds and the reason it refuses rather than cuts
+   * are all recorded on {@link cellLengthProblem}. This wrapper exists so that
+   * the thirteen call sites read as one line each: eleven cells that reach the
+   * draft, plus the two credential columns that reach
+   * `CredentialCryptoService` instead.
+   */
+  private refuseIfTooLong(
+    section: OnboardingWorkbookCellSection,
+    dataRow: number | null,
+    column: string,
+    value: string,
+    max: number,
+  ): void {
+    const problem = cellLengthProblem(section, dataRow, column, value, max);
+    if (problem !== null) {
+      throw new BadRequestException(problem);
+    }
   }
 
   private parseRtus(rows: string[][]): {
@@ -449,6 +518,39 @@ export class OnboardingExcelService {
     };
     const rtuCredentials: ParsedExcel["rtuCredentials"] = [];
     const rtus = rows.slice(1).map((values, rtuIndex) => {
+      // F4.104 — every bounded cell of this row, checked in `RTU_HEADERS`
+      // column order: the leftmost broken column is the one the operator is
+      // told about, so a row with two long cells always gets the same sentence.
+      // The order is stated because nothing else holds it, exactly as the
+      // section order is stated in `parseUpload`.
+      //
+      // **Checked after the fallback resolves.** `rtu_name` falls back to
+      // `rtu_code`, so the value bounded here is the one that reaches
+      // `rtus[].displayName`. The fallback can never be what fires the second
+      // check — a code over 64 characters is refused by the first — so the
+      // column the sentence names is always the column the operator must edit.
+      //
+      // And **before** `normalizeRtuDisplayNames`, which is the next call in
+      // `parseUpload`: its `quoteCell` echoes bound the *message* it builds,
+      // never the name it stores, so a cell arriving there is already in the
+      // draft. The two guards answer different failure modes and neither
+      // replaces the other.
+      const rtuCode = get(values, "rtu_code");
+      const displayName = get(values, "rtu_name") || rtuCode;
+      this.refuseIfTooLong(
+        "RTUS",
+        rtuIndex + 1,
+        "rtu_code",
+        rtuCode,
+        ONBOARDING_DRAFT_STRING_MAX["rtus.code"],
+      );
+      this.refuseIfTooLong(
+        "RTUS",
+        rtuIndex + 1,
+        "rtu_name",
+        displayName,
+        ONBOARDING_DRAFT_STRING_MAX["rtus.displayName"],
+      );
       // Validated, never cast. `draftRtuSchema.protocol` is a `z.enum`, and
       // Zod 3's `invalid_enum_value` message embeds the **whole** received
       // value — so a cast here turned one hostile cell per row into one
@@ -479,6 +581,11 @@ export class OnboardingExcelService {
         );
       }
       const protocol = parsedProtocol.data;
+      // Bounded after its own fallback, for the same reason `rtu_name` is: the
+      // default is what reaches `config.host` when the column is blank, and it
+      // is 18 characters, so this check can only ever fire on a cell.
+      const host = get(values, "host") || "phe.thinkiot.co.in";
+      this.refuseIfTooLong("RTUS", rtuIndex + 1, "host", host, MAX_RTU_HOST_CHARS);
       const portRaw = get(values, "port");
       const port = portRaw ? Number.parseInt(portRaw, 10) : 8883;
       const tlsRaw = get(values, "tls").toLowerCase();
@@ -495,6 +602,31 @@ export class OnboardingExcelService {
       }
       const username = get(values, "username").trim();
       const password = get(values, "password").trim();
+      // F4.104 owner ruling 5 — the two cells that never reach the draft.
+      // `parseRtus` pushes them to `rtuCredentials`, `uploadExcel` hands those
+      // to `CredentialCryptoService`, and the schema that bounds a credential —
+      // `setCredentialsBodySchema`, on `POST :id/credentials` — is bypassed by
+      // this route exactly as the draft bounds are. Measured on `9d384295`: a
+      // 32,767-character `password` cell was encrypted and stored, eight times
+      // {@link MAX_RTU_CREDENTIAL_CHARS}.
+      //
+      // **One check for both columns, and the sentence says which cell only as
+      // "username or password".** Naming the longer of the two would tell a
+      // reader of the 400 whether a password was set on that row, which is a
+      // fact the upload response has no business carrying. The length is the
+      // longer of the two for the same reason.
+      //
+      // Checked whether or not the pair is stored: the `isPlaceholderSecret`
+      // and `protocol` conditions below decide what is *kept*, and a cell this
+      // long is a sheet the operator must fix either way.
+      const longestCredential = password.length > username.length ? password : username;
+      this.refuseIfTooLong(
+        "RTUS",
+        rtuIndex + 1,
+        "username or password",
+        longestCredential,
+        MAX_RTU_CREDENTIAL_CHARS,
+      );
       if (
         username &&
         password &&
@@ -507,11 +639,11 @@ export class OnboardingExcelService {
         });
       }
       return {
-        code: get(values, "rtu_code"),
-        displayName: get(values, "rtu_name") || get(values, "rtu_code"),
+        code: rtuCode,
+        displayName,
         protocol,
         config: {
-          host: get(values, "host") || "phe.thinkiot.co.in",
+          host,
           port: Number.isFinite(port) ? port : 8883,
           tls: tlsRaw === "" || tlsRaw === "true" || tlsRaw === "1" || tlsRaw === "yes",
           topic,
@@ -575,15 +707,61 @@ export class OnboardingExcelService {
       const idx = headers.indexOf(key);
       return idx >= 0 ? values[idx] ?? "" : "";
     };
-    return rows.slice(1).map((values) => {
+    return rows.slice(1).map((values, assetIndex) => {
       const rtuCode = get(values, "rtu_code");
       const rtuIndex = rtuCodeToIndex.get(rtuCode) ?? 0;
+      // F4.104 — the four cells of this section that reach the draft, checked in
+      // `ASSET_HEADERS` column order after every fallback and every transform,
+      // for the reasons `parseRtus` and `parseLocation` record.
+      //
+      // `site_name` falls back to the location's name, which `parseLocation`
+      // has already bounded at the same 255 — `parseUpload` calls it first — so
+      // this check can only fire on the sheet's own cell. It is written against
+      // the resolved value rather than the cell so that the ordering claim is
+      // enforced here too, and not only in the call order two functions up.
+      //
+      // `rtu_code` is the one header of this section that is **not** bounded,
+      // and deliberately: it is a lookup key into `rtuCodeToIndex` whose result
+      // is an integer index, so no part of it is stored. The RTU section bounds
+      // the same cell where it *is* stored.
+      const code = get(values, "asset_code");
+      const name = get(values, "asset_name") || code;
+      const siteName = get(values, "site_name") || defaultSiteName;
+      const domain = assetDomainFromCell(get(values, "domain"));
+      this.refuseIfTooLong(
+        "ASSETS",
+        assetIndex + 1,
+        "asset_code",
+        code,
+        ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+      );
+      this.refuseIfTooLong(
+        "ASSETS",
+        assetIndex + 1,
+        "asset_name",
+        name,
+        ONBOARDING_DRAFT_STRING_MAX["assets.name"],
+      );
+      this.refuseIfTooLong(
+        "ASSETS",
+        assetIndex + 1,
+        "domain",
+        domain,
+        ONBOARDING_DRAFT_STRING_MAX["assets.domain"],
+      );
+      this.refuseIfTooLong(
+        "ASSETS",
+        assetIndex + 1,
+        "site_name",
+        siteName,
+        ONBOARDING_DRAFT_STRING_MAX["assets.siteName"],
+      );
       return {
         rtuIndex,
-        code: get(values, "asset_code"),
-        name: get(values, "asset_name") || get(values, "asset_code"),
-        siteName: get(values, "site_name") || defaultSiteName,
-        domain: assetDomainFromCell(get(values, "domain")),
+        code,
+        name,
+        siteName,
+        domain,
       };
     });
   }

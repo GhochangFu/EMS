@@ -233,6 +233,22 @@ export const chatBodySchema = z
   .strict();
 
 /**
+ * The longest credential value this system accepts, on either route that
+ * supplies one.
+ *
+ * It was an inline literal in `setCredentialsBodySchema` below until `F4.104`,
+ * which found the workbook's `username` and `password` columns reaching
+ * `CredentialCryptoService` without ever passing that schema — measured on
+ * `9d384295`, a 32,767-character `password` cell was encrypted and stored, eight
+ * times this bound. Named here rather than restated at the parse site so the two
+ * routes cannot drift into two different answers (AGENTS.md §4.8). It stays in
+ * this file, not in `ONBOARDING_DRAFT_STRING_MAX`: a credential never reaches
+ * the draft at all — `parseRtus` pushes it to `rtuCredentials` — so it is not
+ * one of the draft's string fields and must not be counted among them.
+ */
+export const MAX_RTU_CREDENTIAL_CHARS = 4096;
+
+/**
  * `POST :id/credentials` (ADR 0022 decision 1). Values are plaintext in the
  * request body and encrypted before storage — they are never echoed back,
  * never written to `messages`, and never sent to the LLM.
@@ -241,7 +257,7 @@ export const setCredentialsBodySchema = z
   .object({
     rtuIndex: z.number().int().min(0),
     credentials: z
-      .record(z.string().min(1).max(4096))
+      .record(z.string().min(1).max(MAX_RTU_CREDENTIAL_CHARS))
       .refine((value) => Object.keys(value).length > 0, {
         message: "At least one credential field is required",
       })

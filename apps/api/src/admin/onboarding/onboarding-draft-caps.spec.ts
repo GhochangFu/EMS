@@ -3,10 +3,12 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
+  ONBOARDING_DRAFT_STRING_MAX,
 } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
 import {
+  cellLengthProblem,
   distinctAssetDomains,
   draftCountProblem,
   workbookSectionCountProblem,
@@ -106,6 +108,98 @@ export function assertWorkbookSectionCountProblem(): void {
       workbookSectionCountProblem("ASSETS", MAX_ONBOARDING_RTUS + 1) === null,
     `${MAX_ONBOARDING_RTUS + 1} rows is over the RTU cap and under the asset one`,
   );
+}
+
+/**
+ * `F4.104` — the cell half of the workbook guard: a value longer than the
+ * column it commits to is refused, and the sentence says which section, which
+ * data row, which column, how long the cell was and what the bound is.
+ *
+ * **Refused, never truncated**, like every sibling in this module. A silently
+ * shortened asset code commits plant under a name nobody chose, and the
+ * operator finds out from the equipment that answers to the wrong label.
+ *
+ * **Nothing read from the sheet reaches the sentence** (AGENTS.md §4.3, and the
+ * same argument this module's head docblock makes for the count refusals).
+ * `column` is a header literal the *call site* passes — one of the members of
+ * `LOCATION_HEADERS`, `RTU_HEADERS` or `ASSET_HEADERS`, never the header text
+ * the workbook actually carried — and `value` is read for its `.length` alone.
+ * The last assertion below is what pins that: a cell of one repeated character
+ * may not appear in the message in any run.
+ *
+ * `dataRow` is `null` for `LOCATION` and a number elsewhere, because
+ * `parseLocation` reads `rows[1]` and nothing else while the two other sections
+ * are `rows.slice(1).map(...)`. Both shapes are asserted; a single sentence
+ * carrying `data row null` would be the drift this distinction exists to avoid.
+ */
+export function assertCellLengthProblem(): void {
+  const nameMax = ONBOARDING_DRAFT_STRING_MAX["assets.name"];
+
+  assert(
+    cellLengthProblem("ASSETS", 3, "asset_name", "", nameMax) === null,
+    "a blank cell is short, not long — completeness is a different axis and a different check",
+  );
+  assert(
+    cellLengthProblem("ASSETS", 3, "asset_name", "A".repeat(nameMax), nameMax) === null,
+    `a cell of exactly ${nameMax} characters is inside the bound`,
+  );
+
+  const over = cellLengthProblem("ASSETS", 3, "asset_name", "Z".repeat(nameMax + 1), nameMax);
+  assert(over !== null, `a cell of ${nameMax + 1} characters must be refused`);
+  const message = String(over);
+  assert(message.includes("ASSETS"), `the refusal names the section to repair, got "${message}"`);
+  assert(
+    message.includes("data row 3"),
+    `the refusal names the data row as the operator counts it, got "${message}"`,
+  );
+  assert(
+    message.includes("asset_name"),
+    `the refusal names the column header to repair, got "${message}"`,
+  );
+  assert(
+    message.includes(String(nameMax + 1)),
+    `the refusal names the length it read, got "${message}"`,
+  );
+  assert(message.includes(String(nameMax)), `the refusal names the bound it applied, got "${message}"`);
+  assert(
+    message.includes("upload the workbook again"),
+    `the refusal tells the operator what to do, got "${message}"`,
+  );
+
+  // The `LOCATION` shape: one data row, so there is no number to count to and
+  // the sentence must not invent one.
+  const location = String(
+    cellLengthProblem(
+      "LOCATION",
+      null,
+      "name",
+      "Z".repeat(ONBOARDING_DRAFT_STRING_MAX["location.name"] + 1),
+      ONBOARDING_DRAFT_STRING_MAX["location.name"],
+    ),
+  );
+  assert(
+    location.includes("The LOCATION section's data row has"),
+    `the LOCATION refusal names no row number — there is only one, got "${location}"`,
+  );
+  assert(
+    !location.includes("null") && !location.includes("undefined"),
+    `a missing row number is not printed, got "${location}"`,
+  );
+
+  // §4.3, the assertion the whole shape exists for: a 32,767-character cell
+  // quoted back is the amplification `F4.102` closed on the neighbouring cells
+  // of this same sheet, through a 400 instead of a 200.
+  const hostile = String(
+    cellLengthProblem("RTUS", 1, "rtu_code", "Z".repeat(32_767), ONBOARDING_DRAFT_STRING_MAX["rtus.code"]),
+  );
+  assert(
+    !hostile.includes("ZZZZZZZZZZ"),
+    `the refusal must not echo the cell it refused, got "${hostile.slice(0, 200)}"`,
+  );
+  for (const cell of TEMPLATE_CELLS) {
+    assert(!hostile.includes(cell), `the refusal must not echo cell text, got "${hostile}"`);
+  }
+  assert(hostile.length < 400, `the refusal is a sentence, got ${hostile.length} characters`);
 }
 
 /**

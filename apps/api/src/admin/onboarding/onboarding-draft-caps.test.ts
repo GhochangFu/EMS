@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertCellLengthProblem,
   assertDistinctAssetDomains,
   assertDraftCountProblem,
   assertWorkbookSectionCountProblem,
@@ -10,6 +11,10 @@ import {
 describe("onboarding draft count caps (F4.103)", () => {
   it("refuses a workbook section with more data rows than its cap", () => {
     assertWorkbookSectionCountProblem();
+  });
+
+  it("refuses a workbook cell longer than the column it commits to (F4.104)", () => {
+    assertCellLengthProblem();
   });
 
   it("refuses a draft array over its cap, and names the first one in schema order", () => {
