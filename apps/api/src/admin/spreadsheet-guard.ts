@@ -26,12 +26,14 @@
  *   on a 500-line list can be inside {@link MAX_ECHOED_CELL_CHARS} and the list
  *   still be a data dump rather than a summary.
  *
- * **The count bound has exactly one caller today**, the onboarding import
- * summary in `onboarding-chat.service.ts` — five sites in one message, all
- * enumerated in `onboarding-chat-summary-caps.spec.ts`. Neither the `F1.9`
- * telemetry importer nor the `F2.7` mapping sheet honours it; they apply
- * `quoteCell` and their own row bounds. Do not read "declared here" as
- * "applied everywhere".
+ * **The count bound has two callers today, both in onboarding** — six sites,
+ * five of them in the one import summary `onboarding-chat.service.ts` builds
+ * and the sixth the point-key catalog `onboarding-catalog.service.ts` renders
+ * into a later turn. All six are enumerated in
+ * `onboarding-chat-summary-caps.spec.ts`, which also names the file that
+ * asserts each. Neither the `F1.9` telemetry importer nor the `F2.7` mapping
+ * sheet honours it; they apply `quoteCell` and their own row bounds. Do not
+ * read "declared here" as "applied everywhere".
  *
  * All of them are pure and dependency-free.
  */

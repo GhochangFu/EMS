@@ -21,8 +21,9 @@ function assert(condition: boolean, message: string): void {
  * counted, because `F4.102`'s lasting lesson is that a bare number is a claim
  * nobody can check and that its own echo surface took three passes to count.
  *
- * The five list-rendering sites `MAX_ECHOED_ITEMS` now binds, all of them
- * inside one assistant message:
+ * The six list-rendering sites `MAX_ECHOED_ITEMS` binds. Five are in the one
+ * assistant message an upload produces; the sixth is a later turn of the same
+ * conversation:
  *
  * 1. `excelImportFollowUp`'s `displayNameFixes` bullets;
  * 2. `mqttSetupTemplate`'s paste-back blocks;
@@ -31,26 +32,38 @@ function assert(condition: boolean, message: string): void {
  *    **single budget of 25 across the whole summary**, not 25 per line, so
  *    sites 3 and 4 cannot multiply (owner ruling 3);
  * 5. `excelImportFollowUp`'s point-key preview, which carried a bare literal
- *    `8` until owner ruling 5 moved it here so one message carries one number.
+ *    `8` until owner ruling 5 moved it here so one message carries one number;
+ * 6. `OnboardingCatalogService.formatPointKeysForChat`, one bullet per point
+ *    key in the "use existing keys" turn of `handleRuleBasedTurn`. **Asserted
+ *    in `onboarding-catalog.service.spec.ts`**, next to the service that owns
+ *    it and not here — this file was 1,034 lines with it, over §4.5's 1,000.
+ *    The enumeration stays whole; only the fixture moved.
  *
- * **A sixth list site exists and is deliberately outside this row.**
- * `OnboardingCatalogService.formatPointKeysForChat` renders one bullet per
- * organisation point key into the "use existing keys" turn of
- * `handleRuleBasedTurn`, and nothing bounds it. It is named here for the same
- * reason `assertExcelImportFollowUpBoundsEchoedText` names the `z.enum` site it
- * does not hold: a count that claims completeness has to be checkable. It is
- * not reached by an upload, it is a catalog read rather than sheet text, and it
- * is not in `excelImportFollowUp` — so it is a filed row, not a silent fix.
+ * **Site 6 was left open in the first pass, on a rationale that was false on
+ * both of its clauses** (owner ruling 6 closed it here). It said the list was
+ * "the organisation's own catalog" whose length the upload does not control.
+ * `listPointKeys` ignores its `organizationId` — the catalog went fleet-wide at
+ * migration `0057`, `F3.39` — and `OnboardingCommitService` inserts into that
+ * same fleet-wide table with no per-organisation quota, so one commit of a
+ * 500-key draft grows this list for every organisation, permanently. Measured
+ * on the live seeded database as `bms_fleet`: **613 keys, 18,006 characters**
+ * of `code` + `name`, ~26 KB rendered — about twice what the other five caps
+ * bring the whole worst-case import summary down to, on a clean seed with no
+ * attacker. The **growth** term is not closed by this row; only the echo is.
  *
  * **Why these assertions are here and not in `spreadsheet-guard.spec.ts`,**
- * where the symbols they exercise are declared: all five call sites are in the
- * onboarding summary, and that spec has no fixture that reaches any of them.
- * Splitting the enumeration above across two files is what would let a site go
- * missing.
+ * where the symbols they exercise are declared: every call site is in the
+ * onboarding conversation, and that spec has no fixture that reaches any of
+ * them. The enumeration above is what must not split — the assertions may live
+ * wherever their fixture does, as long as this list says which file holds each
+ * one. That is the same discipline `assertExcelImportFollowUpBoundsEchoedText`
+ * uses for the `z.enum` site it names but does not hold.
  *
  * Its own file, and not the bottom of `onboarding-chat.service.spec.ts`,
- * because that file is at 958 of AGENTS.md §4.5's 1000 lines — the same split
- * `F4.104` needed for `onboarding-excel-cell-bounds.spec.ts`.
+ * because that file was at 958 of AGENTS.md §4.5's 1000 lines when this one
+ * was split off — the same split `F4.104` needed for
+ * `onboarding-excel-cell-bounds.spec.ts`. **It is now at 996, so the headroom
+ * is four lines**: the next edit that adds to it has to split first.
  *
  * **The measurement this row is set on, because the filed row's numbers were
  * all dead.** The row claimed 20,095 RTU rows produce a 13.16 MB message;

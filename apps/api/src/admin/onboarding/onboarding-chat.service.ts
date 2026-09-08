@@ -169,10 +169,25 @@ export class OnboardingChatService {
         // that said nothing about how much was left; it now takes the same
         // bound as the other four, so one message carries one number.
         //
-        // **This list is a catalog read, not sheet text.** Unlike the other
-        // four sites the upload does not control its length — it is the
-        // organisation's own point-key catalog — so it is bounded for
-        // consistency and readability rather than because it amplifies.
+        // **This list is a catalog read rather than sheet text**, and that is
+        // the only part of the old rationale here that survived review. Two
+        // things it also said were false, and the same two sentences justified
+        // leaving site 6 uncapped:
+        //
+        // - it is **not** "the organisation's own" catalog.
+        //   `OnboardingCatalogService.listPointKeys` ignores its
+        //   `organizationId`; the catalog went fleet-wide at migration `0057`
+        //   (`F3.39`) and every organisation reads every code;
+        // - its length **is** influenced, just not by one upload.
+        //   `OnboardingCommitService` inserts into the same fleet-wide
+        //   `bms.point_keys` with no per-organisation quota, and `F4.103` caps
+        //   a draft at 500 keys — so one commit grows this list permanently,
+        //   for everyone.
+        //
+        // The growth term is measured and recorded on
+        // `formatPointKeysForChat`, which renders the whole catalog and is the
+        // site that hurts. It is **not closed by this row**: the cap bounds
+        // what the message repeats, not what the table holds.
         const { shown, omitted } = echoedItems(orgPointKeyCodes);
         const preview = [...shown.map((code) => `\`${code}\``), moreTail(omitted)]
           .filter(Boolean)
