@@ -1,3 +1,4 @@
+import { MAX_ONBOARDING_ASSETS, MAX_ONBOARDING_RTUS } from "@bms/shared";
 import { BadRequestException } from "@nestjs/common";
 import * as XLSX from "xlsx";
 
@@ -62,6 +63,15 @@ export function assertTemplateRoundTripsUnchanged(): void {
   assert(parsed.location.slug === "berhampur", `location.slug is lower-cased, got ${JSON.stringify(parsed.location.slug)}`);
 
   assert(parsed.rtus.length === 2, `the template carries two RTUs, got ${parsed.rtus.length}`);
+  // `F4.103`'s headroom claim, gated instead of asserted in prose: the two count
+  // caps are set *above* the sheet this system itself produces, so lowering
+  // either below the template turns the generated workbook into a refusal. The
+  // constants, never their present values — a restated 100 stops checking
+  // anything the moment the cap moves.
+  assert(
+    parsed.rtus.length <= MAX_ONBOARDING_RTUS,
+    `the RTU cap must leave room for the template's own RTUs, got ${parsed.rtus.length} of ${MAX_ONBOARDING_RTUS}`,
+  );
   assert(parsed.rtus[0].code === "BERHAMPUR-RTU-1", `rtus[0].code, got ${JSON.stringify(parsed.rtus[0].code)}`);
   assert(
     parsed.rtus[0].credentialsSet === false,
@@ -69,6 +79,10 @@ export function assertTemplateRoundTripsUnchanged(): void {
   );
 
   assert(parsed.assets.length === 3, `the template carries three assets, got ${parsed.assets.length}`);
+  assert(
+    parsed.assets.length <= MAX_ONBOARDING_ASSETS,
+    `the asset cap must leave room for the template's own assets, got ${parsed.assets.length} of ${MAX_ONBOARDING_ASSETS}`,
+  );
   assert(parsed.assets[2].rtuIndex === 1, `assets[2] belongs to the second RTU, got ${parsed.assets[2].rtuIndex}`);
   assert(parsed.assets[0].domain === "electrical", `assets[0].domain, got ${JSON.stringify(parsed.assets[0].domain)}`);
 
@@ -221,6 +235,18 @@ function templateRows(): (string | number)[][] {
 /** Rows 0–10 of the template: everything down to and including the `ASSETS` header row. */
 const ROWS_ABOVE_THE_FIRST_ASSET = 11;
 
+/** Rows 0–5 of the template: everything down to and including the `RTUS` header row. */
+const ROWS_ABOVE_THE_FIRST_RTU = 6;
+
+/**
+ * Row 8 of the template: the blank row that closes the `RTUS` section. Rows 8
+ * to {@link ROWS_ABOVE_THE_FIRST_ASSET} are therefore the blank row, the
+ * `ASSETS` marker and its header row — taken from the generated template rather
+ * than restated, so a change to either marker cannot leave this file describing
+ * a workbook the service no longer produces.
+ */
+const ROWS_CLOSING_THE_RTU_SECTION = 8;
+
 /** An ordinary workbook — no hand-set `!ref`, so SheetJS declares what the cells occupy. */
 function buildWorkbookBuffer(rows: (string | number)[][]): Buffer {
   const sheet = XLSX.utils.aoa_to_sheet(rows);
@@ -236,6 +262,51 @@ function rowsWithAssetCount(assetRowCount: number): (string | number)[][] {
     rows.push([`BERHAMPUR-ASSET-${i}`, `Device ${i}`, "BERHAMPUR-RTU-1", "electrical", "Berhampur"]);
   }
   return rows;
+}
+
+/**
+ * The template with **both** sections grown: `rtuRowCount` RTU data rows and
+ * `assetRowCount` asset data rows.
+ *
+ * Every generated RTU gets its own code and its own display name, so
+ * `normalizeRtuDisplayNames` has nothing to adjust and a parse of the under-cap
+ * fixture reports exactly the rows the fixture wrote. The assets keep pointing
+ * at `BERHAMPUR-RTU-1`, which the first generated row still supplies.
+ */
+function rowsWithSectionCounts(
+  rtuRowCount: number,
+  assetRowCount: number,
+): (string | number)[][] {
+  const template = templateRows();
+  const rows = template.slice(0, ROWS_ABOVE_THE_FIRST_RTU);
+  for (let i = 1; i <= rtuRowCount; i += 1) {
+    rows.push([
+      `BERHAMPUR-RTU-${i}`,
+      `Berhampur RTU ${i}`,
+      "mqtt",
+      "phe.thinkiot.co.in",
+      "8883",
+      `BERHAMPUR-RTU-${i}/Topic1`,
+      "true",
+      "pheadmin",
+      "",
+    ]);
+  }
+  rows.push(...template.slice(ROWS_CLOSING_THE_RTU_SECTION, ROWS_ABOVE_THE_FIRST_ASSET));
+  for (let i = 1; i <= assetRowCount; i += 1) {
+    rows.push([`BERHAMPUR-ASSET-${i}`, `Device ${i}`, "BERHAMPUR-RTU-1", "electrical", "Berhampur"]);
+  }
+  return rows;
+}
+
+/**
+ * The template, with its `RTUS` section grown to `rtuRowCount` data rows and its
+ * `ASSETS` section left the size the generated template ships — derived from the
+ * template itself, not restated, for the reason
+ * {@link ROWS_CLOSING_THE_RTU_SECTION} gives.
+ */
+function rowsWithRtuCount(rtuRowCount: number): (string | number)[][] {
+  return rowsWithSectionCounts(rtuRowCount, templateRows().length - ROWS_ABOVE_THE_FIRST_ASSET);
 }
 
 /**
@@ -362,8 +433,140 @@ export function assertDeclaredWidthIsRefusedNotWindowed(): void {
 }
 
 /**
+ * `F4.103` — a `RTUS` or `ASSETS` section holding more data rows than its cap is
+ * refused before the parser walks it.
+ *
+ * **This is a different guard from the reading bound, and the two are proved
+ * apart rather than together.** `onboardingSheetRangeProblem` bounds what
+ * `sheet_to_json` may densify and fires on the declared range; this one bounds
+ * what the draft may carry once it has been read, and fires on a count. Every
+ * fixture below is under the reading bound, so nothing here can pass because
+ * the other guard answered — and `assertSheetReachingTheRowBoundIsRefused`
+ * asserts the same separation from the other side.
+ *
+ * The pure boundary cases live in `onboarding-draft-caps.spec.ts`. What this
+ * function adds is the **wiring**: that `parseUpload` calls the guard at all,
+ * that it counts data rows rather than section rows, and that the sheet the
+ * caps were sized against still parses.
+ */
+export function assertOverCapSectionIsRefused(): void {
+  // --- ASSETS, from both sides ---------------------------------------------
+  const atAssetCap = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(rowsWithAssetCount(MAX_ONBOARDING_ASSETS)),
+  );
+  assert(
+    atAssetCap.assets.length === MAX_ONBOARDING_ASSETS,
+    `a sheet of exactly ${MAX_ONBOARDING_ASSETS} asset rows parses whole, got ${atAssetCap.assets.length}`,
+  );
+
+  const overAssets = refusalMessage(
+    buildWorkbookBuffer(rowsWithAssetCount(MAX_ONBOARDING_ASSETS + 1)),
+    `a sheet of ${MAX_ONBOARDING_ASSETS + 1} asset rows`,
+  );
+  assert(
+    overAssets.includes("ASSETS"),
+    `the refusal names the section to repair, got "${overAssets}"`,
+  );
+  // The count is the section's **data** rows, not its rows: one more than the
+  // cap, never one more than that. This is what pins the `length - 1` in
+  // `parseUpload`, and it is the number the operator counts down the sheet.
+  assert(
+    overAssets.includes(String(MAX_ONBOARDING_ASSETS + 1)),
+    `the refusal names the data-row count it found, got "${overAssets}"`,
+  );
+  assert(
+    overAssets.includes(String(MAX_ONBOARDING_ASSETS)),
+    `the refusal names the cap it applied, got "${overAssets}"`,
+  );
+  // AGENTS.md §4.3, the rule every refusal in this file follows: a refusal
+  // describes what it refused and never repeats a cell. Both of the template's
+  // own strings are checked, because the fixture rows carry both.
+  assert(
+    !overAssets.includes("Berhampur") && !overAssets.includes("BERHAMPUR-RTU-1"),
+    `the refusal must not echo cell text, got "${overAssets}"`,
+  );
+
+  // --- RTUS, from both sides ------------------------------------------------
+  const atRtuCap = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(rowsWithRtuCount(MAX_ONBOARDING_RTUS)),
+  );
+  assert(
+    atRtuCap.rtus.length === MAX_ONBOARDING_RTUS,
+    `a sheet of exactly ${MAX_ONBOARDING_RTUS} RTU rows parses whole, got ${atRtuCap.rtus.length}`,
+  );
+  // The grown section is still an honest workbook: its assets resolve to the
+  // first generated RTU, and no display name needed adjusting. Without this the
+  // at-cap case above could pass over a fixture the parser had quietly repaired.
+  assert(
+    atRtuCap.displayNameFixes.length === 0 && atRtuCap.assets.every((asset) => asset.rtuIndex === 0),
+    `the grown RTUS section parses as written, got ${JSON.stringify(atRtuCap.displayNameFixes)}`,
+  );
+
+  const overRtus = refusalMessage(
+    buildWorkbookBuffer(rowsWithRtuCount(MAX_ONBOARDING_RTUS + 1)),
+    `a sheet of ${MAX_ONBOARDING_RTUS + 1} RTU rows`,
+  );
+  assert(overRtus.includes("RTUS"), `the refusal names the section to repair, got "${overRtus}"`);
+  assert(
+    overRtus.includes(String(MAX_ONBOARDING_RTUS + 1)) &&
+      overRtus.includes(String(MAX_ONBOARDING_RTUS)),
+    `the refusal names the count it found and the cap it applied, got "${overRtus}"`,
+  );
+
+  // --- which section a sheet over both caps is told about (owner answer 2) ---
+  // `RTUS` appears above `ASSETS` in the sheet and is the first thing an
+  // operator scrolls to. Nothing but the loop's order in `parseUpload` holds
+  // this, exactly as the width-versus-height ordering above is held by one case.
+  const both = refusalMessage(
+    buildWorkbookBuffer(
+      rowsWithSectionCounts(MAX_ONBOARDING_RTUS + 1, MAX_ONBOARDING_ASSETS + 1),
+    ),
+    `a sheet over both section caps`,
+  );
+  assert(
+    both.includes("RTUS") && !both.includes("ASSETS"),
+    `a sheet over both caps is told about its RTUS section first, got "${both}"`,
+  );
+
+  // --- the regression direction: the sheet this system itself produces ------
+  // `assertTemplateRoundTripsUnchanged` asserts the template's counts are under
+  // both caps; this asserts the guard does not refuse it anyway.
+  const template = new OnboardingExcelService().parseUpload(
+    new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+  );
+  assert(
+    template.rtus.length === 2 && template.assets.length === 3,
+    `the generated template survives both caps, got ${template.rtus.length} RTUs and ${template.assets.length} assets`,
+  );
+}
+
+/**
  * Owner ruling 2 — reuse {@link SHEET_ROWS_BOUND} rather than invent a tighter
  * figure, and refuse a sheet that **reaches** it.
+ *
+ * **`F4.103` supersedes the half of ruling 2 that declined a tighter figure**
+ * (owner confirmed 2026-09-08). A tighter one was declined then because
+ * `onboardingDraftSchema` carried no `.max()` to derive it from, and that is
+ * exactly what `F4.103` supplies: {@link MAX_ONBOARDING_ASSETS} is not invented
+ * here, it is the cap the draft schema already enforces on the same array. So
+ * the third fixture below — a sheet one row under the reading bound, which
+ * declares 20,090 assets — has **flipped from parsing whole to being refused by
+ * the ASSETS cap**, and this docblock says so rather than the assertion being
+ * quietly edited.
+ *
+ * **Ruling 2's surviving half is untouched, and is still what these fixtures
+ * pin.** `SHEET_ROWS_BOUND` is still the read bound, still reused rather than
+ * re-invented, and still the guard a sheet *at* the bound gets. The two guards
+ * are distinct and are asserted to be: the first and third fixtures below sit
+ * one row apart and get different sentences, and the count check's sentence is
+ * asserted **not** to mention the reading bound.
+ *
+ * **What is lost by the flip, and how it is kept.** The old assertion was the
+ * only evidence that a sheet under the bound is read *whole* — that
+ * `sheetRows: SHEET_ROWS_BOUND` does not silently cut short of it. That evidence
+ * survives in the refusal itself: the sentence interpolates the data-row count
+ * `sectionRows` returned, so asserting the message names 20,090 says the reader
+ * reached all 20,090 rows and the cap refused them, in one assertion.
  *
  * **What `sheetRows` does and does not buy, honestly.** With this refusal in
  * place a 25,000-row sheet is refused with or without `sheetRows` — the
@@ -393,18 +596,34 @@ export function assertSheetReachingTheRowBoundIsRefused(): void {
     `the refusal must not quote a data-row count as the file's, got "${atBound}"`,
   );
 
-  // One row fewer parses whole. This is what pins ruling 2: no figure tighter
-  // than SHEET_ROWS_BOUND was invented, so a workbook one row under the bound
-  // keeps every asset it declares. The fixture and the claim share one
-  // expression — a restated `20_090` still passes with the bound moved, and
-  // then vouches for nothing.
+  // One row fewer clears the reading bound — and is then refused by the ASSETS
+  // count cap `F4.103` added. This is the assertion that flipped, and the
+  // docblock above says why. The fixture and the claim still share one
+  // expression: a restated `20_090` would pass with either bound moved, and then
+  // vouch for nothing.
   const assetsUnderBound = SHEET_ROWS_BOUND - 1 - ROWS_ABOVE_THE_FIRST_ASSET;
-  const underBound = new OnboardingExcelService().parseUpload(
+  const underBound = refusalMessage(
     buildWorkbookBuffer(rowsWithAssetCount(assetsUnderBound)),
+    `a sheet one row under the bound, holding ${assetsUnderBound} assets`,
   );
   assert(
-    underBound.assets.length === assetsUnderBound,
-    `a sheet one row under the bound is read whole, got ${underBound.assets.length} of ${assetsUnderBound} assets`,
+    underBound.includes("ASSETS") && underBound.includes(String(MAX_ONBOARDING_ASSETS)),
+    `a sheet under the reading bound is refused by the ASSETS cap, got "${underBound}"`,
+  );
+  // Ruling 2's surviving evidence, carried through the flip: the sentence
+  // interpolates the data-row count `sectionRows` returned, so naming
+  // ${assetsUnderBound} is what says the reader reached every row up to the
+  // bound before the cap refused them. `sheetRows` cut nothing short of it.
+  assert(
+    underBound.includes(String(assetsUnderBound)),
+    `the refusal names every row the reader reached, got "${underBound}"`,
+  );
+  // And the two guards are distinct rather than one masking the other: this
+  // sheet is inside the reading bound, so nothing here may mention it. One row
+  // more and the sentence above fires instead.
+  assert(
+    !underBound.includes("reading bound"),
+    `the count cap is a different guard from the reading bound, got "${underBound}"`,
   );
 
   // And the case where `sheetRows` really cuts: 25,000 rows come back clamped

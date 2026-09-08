@@ -4,6 +4,7 @@ import {
   assertDeclaredWidthIsRefusedNotWindowed,
   assertEchoedSheetTextIsBounded,
   assertDeclaredZipBombIsRefusedBeforeRead,
+  assertOverCapSectionIsRefused,
   assertOverlongRtuTopicIsRefused,
   assertOversizeBufferIsRefused,
   assertSheetReachingTheRowBoundIsRefused,
@@ -38,11 +39,21 @@ describe("OnboardingExcelService.parseUpload (F4.102)", () => {
   );
 
   it(
-    "refuses a sheet that reaches the reading bound, and reads one row under it whole",
+    "refuses a sheet that reaches the reading bound, and one row under it by the ASSETS cap (F4.103)",
     () => {
       assertSheetReachingTheRowBoundIsRefused();
     },
     // Three workbooks of ~20,000–25,000 rows, written and parsed.
+    60_000,
+  );
+
+  it(
+    "refuses a RTUS or ASSETS section over its count cap, and parses one exactly at it",
+    () => {
+      assertOverCapSectionIsRefused();
+    },
+    // Six workbooks of up to ~600 rows. Small, but written and parsed six times
+    // under a full-suite run contending for CPU.
     60_000,
   );
 
