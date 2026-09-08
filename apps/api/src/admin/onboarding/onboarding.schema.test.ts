@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runDraftCountCapTests,
   runDraftStaysPermissiveTests,
   runOnboardingSchemaTests,
 } from "./onboarding.schema.spec";
@@ -13,5 +14,9 @@ describe("onboarding.schema", () => {
 
   it("keeps the draft subtree permissive for its stored and model producers (E7.1f)", () => {
     runDraftStaysPermissiveTests();
+  });
+
+  it("caps the four draft arrays and refuses one item over each (F4.103)", () => {
+    runDraftCountCapTests();
   });
 });

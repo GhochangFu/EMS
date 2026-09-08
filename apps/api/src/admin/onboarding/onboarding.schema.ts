@@ -1,4 +1,17 @@
-import { assetDomainCodeSchema } from "@bms/shared";
+import {
+  assetDomainCodeSchema,
+  // F4.103: the four draft count caps, imported rather than restated. The
+  // numbers and their derivation live once, beside the shared contract's copy
+  // of this schema (§4.8 — "a vocabulary is declared once and everything else
+  // is derived from it"); `tests/f4.103-draft-count-caps.test.ts` is what stops
+  // the two copies drifting. `@bms/shared` and not `@bms/shared/contracts`,
+  // because apps/api compiles with moduleResolution "node" and ignores the
+  // exports map — ADR 0030 Amendment 2.
+  MAX_ONBOARDING_ASSET_POINTS,
+  MAX_ONBOARDING_ASSETS,
+  MAX_ONBOARDING_POINT_KEYS,
+  MAX_ONBOARDING_RTUS,
+} from "@bms/shared";
 import { z } from "zod";
 
 export const onboardingPhaseSchema = z.enum([
@@ -126,14 +139,23 @@ export const onboardingDraftMetaSchema = z
  * object, which is a bigger change than `E7.1f` was scoped for.
  *
  * Do not add `.strict()` here without splitting those three producers first.
+ *
+ * **The four arrays are count-capped (`F4.103`), and that is a different axis
+ * from strictness.** Permissive about *which keys* an item carries; bounded
+ * about *how many items* the draft holds. This is the copy on the write path —
+ * `patchDraftBodySchema` parses a `PATCH :id/draft` body through it, and
+ * `OnboardingValidateService` re-parses the stored draft through it — so it is
+ * where the bound has to be for a draft assembled by any of the three
+ * producers above. The caps themselves and their derivation are declared once,
+ * in `packages/shared/src/contracts/onboarding.ts`.
  */
 export const onboardingDraftSchema = z
   .object({
     location: draftLocationSchema.optional(),
-    rtus: z.array(draftRtuSchema).optional(),
-    pointKeys: z.array(draftPointKeySchema).optional(),
-    assets: z.array(draftAssetSchema).optional(),
-    assetPoints: z.array(draftAssetPointSchema).optional(),
+    rtus: z.array(draftRtuSchema).max(MAX_ONBOARDING_RTUS).optional(),
+    pointKeys: z.array(draftPointKeySchema).max(MAX_ONBOARDING_POINT_KEYS).optional(),
+    assets: z.array(draftAssetSchema).max(MAX_ONBOARDING_ASSETS).optional(),
+    assetPoints: z.array(draftAssetPointSchema).max(MAX_ONBOARDING_ASSET_POINTS).optional(),
     onboardingMeta: onboardingDraftMetaSchema.optional(),
   });
 
