@@ -494,7 +494,9 @@ export function assertAssetsByRtuSummaryIsCapped(): void {
     const named = [0, 1, 2, 3, 4].filter((slot) => line.includes(assetName(index, slot)));
     assert(
       named.length === 1,
-      `line ${index} must still name one of its own assets, got "${line}"`,
+      `line ${index} must name exactly one of its own assets under the shared budget — ` +
+        `a greedy spend gives the first lines all of theirs and the rest none. ` +
+        `Got ${named.length} on "${line}"`,
     );
     // --- 4. the per-line tail survives the shared budget --------------------
     assert(
@@ -542,18 +544,34 @@ export function assertAssetsByRtuSummaryIsCapped(): void {
     worst.assistantMessage.length < 15_000,
     `the assets branch must stay under 15,000 characters, got ${worst.assistantMessage.length}`,
   );
+}
 
-  // --- 7. the shipped template gains no tail at any site --------------------
-  // 2 RTUs and 3 assets are both far under 25, so nothing may be elided on the
-  // happy path. Driven through the real `parseUpload`, so this cannot drift
-  // from the workbook the service actually generates —
-  // `assertTemplateRoundTripsUnchanged` gates the parse side of the same file.
-  //
-  // **Both branches, and the credential-completed one is load-bearing.**
-  // `parseRtus` hardcodes `credentialsSet: false` and the template's password
-  // cell is blank, so the template as parsed reaches `mqttSetupTemplate` and
-  // never `formatAssetsByRtuSummary`. A single as-parsed case would leave
-  // sites 3 and 4 unasserted here, and would stay green with the cap set to 2.
+/**
+ * The other direction, and **its own function on purpose**: nothing may be
+ * elided on the happy path.
+ *
+ * 2 RTUs and 3 assets are both far under 25, so the shipped template's own
+ * import summary carries no tail at any of the five sites. Driven through the
+ * real `parseUpload`, so it cannot drift from the workbook the service
+ * generates — `assertTemplateRoundTripsUnchanged` gates the parse side of the
+ * same file.
+ *
+ * **Why it is not the seventh assertion of the function above.** This is an
+ * *absence* assertion, and an absence assertion passes for free when the code
+ * that would violate it never runs. The mutation that proves it can fail is
+ * `MAX_ECHOED_ITEMS = 2` — and with it folded into the function above, that
+ * mutation reddened an earlier assertion and this one was never reached. Its
+ * own `it()` is what makes the mutation land on it.
+ *
+ * **Both branches, and the credential-completed one is load-bearing.**
+ * `parseRtus` hardcodes `credentialsSet: false` and the template's password
+ * cell is blank, so the template as parsed reaches `mqttSetupTemplate` and
+ * never `formatAssetsByRtuSummary`. An as-parsed case alone leaves sites 3 and
+ * 4 unasserted here and stays green with the cap set to 2 — 2 RTUs against a
+ * cap of 2 produce no tail, while 3 assets against it do.
+ */
+export function assertShippedTemplateElidesNothing(): void {
+  const service = chatService();
   const excel = new OnboardingExcelService();
   const parsed = excel.parseUpload(excel.buildTemplateBuffer("Berhampur"));
   assert(
@@ -639,6 +657,34 @@ function pointKeyDraft(): OnboardingDraft {
 export function assertPointKeyPreviewIsCapped(): void {
   const service = chatService();
 
+  // **The nine-code case first**, because it is the one that proves the
+  // constant moved rather than the literal merely being renamed: nine is over
+  // the old 8 and under the new 25. Asserted before the 30-code case so that
+  // reverting the literal reddens *this* check and not only the count below.
+  const nine = Array.from({ length: 9 }, (_, index) => pointKeyCode(index));
+  const few = service.excelImportFollowUp(
+    pointKeyDraft(),
+    { locationName: "Berhampur", rtuCount: 1, assetCount: 0 },
+    nine,
+    [],
+  );
+  assert(
+    few.assistantMessage.includes("already has point keys"),
+    "this case must reach the point-key preview, or site 5 goes unasserted",
+  );
+  for (const code of nine) {
+    assert(
+      few.assistantMessage.includes(`\`${code}\``),
+      `all nine keys are previewed under the new bound, ${code} is missing`,
+    );
+  }
+  // No ellipsis of any kind: no cell in this fixture is cut either, so the old
+  // `, …` marker and the new tail are both forbidden here.
+  assert(
+    !few.assistantMessage.includes("…"),
+    `a list under the bound is previewed whole and unmarked, got "${few.assistantMessage}"`,
+  );
+
   const thirty = Array.from({ length: 30 }, (_, index) => pointKeyCode(index));
   const many = service.excelImportFollowUp(
     pointKeyDraft(),
@@ -665,25 +711,4 @@ export function assertPointKeyPreviewIsCapped(): void {
       `key ${code} must be ${index < MAX_ECHOED_ITEMS ? "previewed" : "omitted"}, and it is not`,
     );
   }
-
-  // The nine-code case: over the old literal, under the new constant.
-  const nine = Array.from({ length: 9 }, (_, index) => pointKeyCode(index));
-  const few = service.excelImportFollowUp(
-    pointKeyDraft(),
-    { locationName: "Berhampur", rtuCount: 1, assetCount: 0 },
-    nine,
-    [],
-  );
-  for (const code of nine) {
-    assert(
-      few.assistantMessage.includes(`\`${code}\``),
-      `all nine keys are previewed under the new bound, ${code} is missing`,
-    );
-  }
-  // No ellipsis of any kind: no cell in this fixture is cut either, so the old
-  // `, …` marker and the new tail are both forbidden here.
-  assert(
-    !few.assistantMessage.includes("…"),
-    `a list under the bound is previewed whole and unmarked, got "${few.assistantMessage}"`,
-  );
 }
