@@ -1,7 +1,7 @@
 import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type { OnboardingDraft, OnboardingPhase } from "@bms/shared";
 
-import { MAX_ECHOED_CELL_CHARS } from "../spreadsheet-guard";
+import { MAX_ECHOED_CELL_CHARS, MAX_ECHOED_ITEMS } from "../spreadsheet-guard";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import type { ChatTurnResult } from "./onboarding-chat.service";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
@@ -27,8 +27,13 @@ function longCell(fill: string): string {
  * of the four injected services — verified against the method, which is why
  * empty stubs are enough. `onboarding-credentials.spec.ts` is the precedent for
  * this style.
+ *
+ * Exported, with the three fixture builders below, for
+ * `onboarding-chat-summary-caps.spec.ts` — the same suite split at AGENTS.md
+ * §4.5's line ceiling. A copy there would give the two files two different
+ * services and only one of them would still be the one this file describes.
  */
-function chatService(): OnboardingChatService {
+export function chatService(): OnboardingChatService {
   return new OnboardingChatService({} as never, {} as never, {} as never, {} as never);
 }
 
@@ -111,16 +116,18 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
  * `quoteCell` ships anyway (owner ruling 3) because a 5 MiB workbook may still
  * declare tens of MiB inflated, i.e. thousands of maximum-length cells.
  *
- * **What that residual is, now that it has been measured.** Through the
- * compiled services on this branch: a **1.75 MB** upload of 20,095 RTU rows —
- * one row under the sheet bound, every `topic` at exactly the 255-character
- * bound and every display name a duplicate, so each row also buys a
- * `displayNameFixes` line — parses in 4.1 s and produces a **13.16 MB**
- * `assistantMessage` at 658 MB RSS, which `OnboardingService.uploadExcel` then
- * appends to the session's stored message history. Every *cell* on that message
- * is bounded; the *counts* are not, because nothing caps the number of RTU rows
- * a workbook may declare. Closing that needs a semantic row cap and a per-line
- * cap on the summary, both filed as their own rows — deliberately not this one.
+ * **Every figure that paragraph asserted is now false, and `F4.105` corrected
+ * it.** It described a 1.75 MB upload of 20,095 RTU rows parsing in 4.1 s into
+ * a 13.16 MB `assistantMessage` at 658 MB RSS. That fixture is **refused**:
+ * `F4.103`'s `workbookSectionCountProblem` answers it in 1,634 ms, before
+ * `excelImportFollowUp` runs at all. The worst message still reachable is
+ * **77,817 characters from a 62,640-byte upload**, 46 ms and 399 MB RSS — a
+ * **1.24×** amplification rather than the ~7.5× that paragraph implied. The
+ * *counts* were still unbounded, and the file that now holds that axis, with
+ * the measured composition and the five sites it binds, is
+ * `onboarding-chat-summary-caps.spec.ts`. What is left is no longer an
+ * availability residual but message quality and the growth of the stored
+ * transcript — `E8.3`'s stated open residual, and not this file's.
  *
  * The three sub-cases exist because `excelImportFollowUp` returns from the
  * first branch that matches. One call cannot reach both `mqttSetupTemplate` and
@@ -215,6 +222,16 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
     (String(summaryLine).match(/more characters/g) ?? []).length >= 2,
     `the RTU name and the asset name are each cut, got "${String(summaryLine).slice(0, 200)}"`,
   );
+  // The count above says "two cut markers on this line"; this says **which
+  // two**, and it is what stops the count from passing for the wrong reason.
+  // `F4.105` added an "…and N more" tail to this same line, and a tail worded
+  // with `more characters` would inflate the count while one of the two cells
+  // went unquoted. `moreTail` avoids the phrase for exactly this reason.
+  const [rtuHalf, assetHalf] = String(summaryLine).split("**: ");
+  assert(
+    String(rtuHalf).includes("more characters") && String(assetHalf).includes("more characters"),
+    `the cut markers are one on the RTU name and one on the asset name, got "${String(summaryLine).slice(0, 200)}"`,
+  );
 
   // --- the other direction: an ordinary name is still readable -------------
   // `quoteCell` adds quotes and nothing else under the bound, so the operator
@@ -233,7 +250,7 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
 }
 
 /** An RTU with nothing left to complete, so `excelImportFollowUp` walks past the MQTT branch. */
-function completeRtu(name: string): NonNullable<OnboardingDraft["rtus"]>[number] {
+export function completeRtu(name: string): NonNullable<OnboardingDraft["rtus"]>[number] {
   return {
     code: name,
     displayName: name,
@@ -244,12 +261,16 @@ function completeRtu(name: string): NonNullable<OnboardingDraft["rtus"]>[number]
   };
 }
 
-function assetOf(rtuIndex: number, name: string): NonNullable<OnboardingDraft["assets"]>[number] {
+/** An asset on RTU `rtuIndex`, its `code` and `name` the same string so a rendered line is searchable by either. */
+export function assetOf(
+  rtuIndex: number,
+  name: string,
+): NonNullable<OnboardingDraft["assets"]>[number] {
   return { rtuIndex, code: name, name, siteName: "Berhampur", domain: "electrical" };
 }
 
 /** The draft shape that reaches `formatAssetsByRtuSummary` — every earlier branch satisfied. */
-function summaryDraftOf(
+export function summaryDraftOf(
   rtus: NonNullable<OnboardingDraft["rtus"]>,
   assets: NonNullable<OnboardingDraft["assets"]>,
 ): OnboardingDraft {
@@ -345,9 +366,26 @@ export function assertAssetsByRtuSummaryIsIndexedNotRescanned(): void {
     big.assistantMessage.includes("Assets by RTU"),
     "this sub-case must reach the assets summary, or it measures the wrong branch",
   );
+  // `F4.105` capped this. It read `=== count`, with a message — "a cheaper
+  // summary that lists fewer is not the same summary" — that is now the
+  // opposite of the intended behaviour: the list is capped and states what it
+  // omitted, while the headline `**10050** RTU(s)` keeps the number exact.
+  //
+  // **The cost claim is unchanged, which is why the fixture stays at 10,050.**
+  // `assetScans <= 1` still holds because the index is built over **all**
+  // assets *before* the RTU slice; a rewrite that sliced first and filtered the
+  // assets per rendered RTU would make 25 scans and redden it.
+  const renderedLines = big.assistantMessage.split("\n").filter((line) => line.startsWith("- **"));
   assert(
-    big.assistantMessage.split("\n").filter((line) => line.startsWith("- **")).length === count,
-    "every RTU still gets its line — a cheaper summary that lists fewer is not the same summary",
+    renderedLines.length === MAX_ECHOED_ITEMS,
+    `the summary lists ${MAX_ECHOED_ITEMS} RTU lines however many were imported, got ${renderedLines.length}`,
+  );
+  assert(
+    big.assistantMessage.includes(`…and ${count - MAX_ECHOED_ITEMS} more RTUs`),
+    // Derived, never a literal: the fixture size and the cap must both be able
+    // to change without this assertion quietly describing a message the code
+    // no longer produces.
+    `the summary states how many RTUs it left out, expected ${count - MAX_ECHOED_ITEMS}`,
   );
   assert(
     assetScans <= 1,

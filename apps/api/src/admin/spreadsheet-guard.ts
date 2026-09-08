@@ -1,7 +1,8 @@
 /**
- * Two guards every spreadsheet upload runs before it costs anything, shared by
- * the `F1.9` telemetry importer and the `F2.7` mapping sheet (PR 2 security
- * review, H1 and H2).
+ * What a spreadsheet upload may cost before it has done anything, and what the
+ * message answering it may repeat back. Shared by the `F1.9` telemetry
+ * importer and the `F2.7` mapping sheet (PR 2 security review, H1 and H2), and
+ * since `F4.105` by the onboarding import summary.
  *
  * **Why a size cap on the upload is not a bound on the work.** AGENTS.md §4.3
  * says so in as many words, and the review measured it: a 4.8 MB workbook of
@@ -13,10 +14,28 @@
  * 1.2 GiB took the process to 2.5 GB RSS before a single row was read: the
  * `sheetRows` option bounds row materialisation, not string-table inflation.
  *
- * So: {@link quoteCell} bounds what a message may echo, and
- * {@link zipInflationProblem} bounds what a zip may declare it will inflate to,
- * read from the central directory *before* `XLSX.read` inflates anything. Both
- * are pure and dependency-free.
+ * So there are three, on three separate axes, and the first two are pre-read
+ * guards while the last two are formatters applied at the echo site:
+ *
+ * - {@link zipInflationProblem} bounds what a zip may declare it will inflate
+ *   to, read from the central directory *before* `XLSX.read` inflates
+ *   anything;
+ * - {@link quoteCell} bounds **how long** each echoed cell may be;
+ * - {@link echoedItems} with {@link moreTail} bounds **how many** items a
+ *   message may list. That is the count axis of the same problem: every cell
+ *   on a 500-line list can be inside {@link MAX_ECHOED_CELL_CHARS} and the list
+ *   still be a data dump rather than a summary.
+ *
+ * **The count bound has two callers today, both in onboarding** — six sites,
+ * five of them in the one import summary `onboarding-chat.service.ts` builds
+ * and the sixth the point-key catalog `onboarding-catalog.service.ts` renders
+ * into a later turn. All six are enumerated in
+ * `onboarding-chat-summary-caps.spec.ts`, which also names the file that
+ * asserts each. Neither the `F1.9` telemetry importer nor the `F2.7` mapping
+ * sheet honours it; they apply `quoteCell` and their own row bounds. Do not
+ * read "declared here" as "applied everywhere".
+ *
+ * All of them are pure and dependency-free.
  */
 
 /** The longest run of cell text an error message may echo. `row`/`column`/`code` identify the cell; the text is a hint. */
@@ -46,6 +65,107 @@ export function quoteCell(text: string, max: number = MAX_ECHOED_CELL_CHARS): st
     return `'${text}'`;
   }
   return `'${text.slice(0, max)}…' (+${text.length - max} more characters)`;
+}
+
+/**
+ * The most items one list in a message may name. {@link MAX_ECHOED_CELL_CHARS}
+ * is its sibling on the other axis — that one bounds how long each item is,
+ * this one bounds how many there are — and the two have to be read together,
+ * because either alone leaves the product unbounded.
+ *
+ * **What 25 sits above.** The shipped `template.xlsx` carries **2 RTU and 3
+ * asset data rows**, so 25 is ~8× the happy path and the template's own import
+ * summary gains no tail at any of the summary's five sites. That is asserted,
+ * not assumed: `assertShippedTemplateElidesNothing` drives the real template
+ * through `parseUpload` and requires the reply to contain no tail anywhere.
+ * (This named `assertAssetsByRtuSummaryIsCapped` until review — that function
+ * calls no `parseUpload` and *requires* tails, so it was the wrong sibling.)
+ *
+ * **What it sits deliberately below.** The seeded estate is **99 assets**, and
+ * a 100-RTU / 500-asset workbook is legal — those are `F4.103`'s section caps.
+ * Unlike `F4.103`'s counts this is a **display** bound and not an
+ * **acceptance** bound: eliding is the point. The headline `**500** asset(s)`
+ * stays exact while the list under it stops being a data dump, so the operator
+ * is never told a smaller number than they uploaded.
+ *
+ * **Measured, not guessed — and the two measurement routes are kept apart,
+ * because they give different numbers.** At `F4.103`'s caps (100 RTUs, 500
+ * assets, 99 duplicate display names), a real **62,640-byte workbook** produced
+ * a **77,817**-character assistant message before this bound; the constructed
+ * drafts in `onboarding-chat-summary-caps.spec.ts`, which hold every
+ * echo-bearing cell at exactly its `F4.104` bound rather than merely long,
+ * produce **84,945** on the assets branch and **65,757** on the MQTT one. Do
+ * not quote one route's byte count against the other's character count — that
+ * spec's docblock carries both, with the composition that closes to the
+ * character. After this bound the same drafts produce **12,718** and
+ * **16,950**. The filed row's own 13.16 MB figure is dead either way:
+ * `workbookSectionCountProblem` refuses the 20,095-row workbook it came from.
+ *
+ * This is an `apps/api` constant and **not** a `packages/shared` one: no schema
+ * reads it and no API response *type* depends on it. `F4.103`'s section caps
+ * and `F4.104`'s `ONBOARDING_DRAFT_STRING_MAX` had to be **declared in**
+ * `packages/shared/src/contracts/` because the draft schema there parses
+ * against them. Each of those constants has exactly one declaration; the symbol
+ * with a second copy is `onboardingDraftSchema` (`packages/shared` and
+ * `apps/api/src/admin/onboarding/onboarding.schema.ts`), which is what those
+ * rows' `tests/` invariants exist to hold together and why this row needs none.
+ */
+export const MAX_ECHOED_ITEMS = 25;
+
+/**
+ * The leading {@link MAX_ECHOED_ITEMS} of `items`, and how many were left.
+ *
+ * A **prefix of whatever order the caller passes**, never a sample. Whether the
+ * caller may reorder before calling is the caller's question and the two answer
+ * it differently, so neither may be copied onto the other:
+ *
+ * - `formatAssetsByRtuSummary` **must not**. It keys its whole asset map off
+ *   the RTU's index, so a reorder or a filter there silently attributes every
+ *   asset to the wrong RTU;
+ * - `mqttSetupTemplate` **deliberately does**, sorting the RTUs that still need
+ *   setup to the front. Nothing in the block it renders keys off position, and
+ *   without the sort a leading-25 cut can drop the only RTU the message is
+ *   about.
+ */
+export function echoedItems<T>(
+  items: readonly T[],
+  max: number = MAX_ECHOED_ITEMS,
+): { shown: readonly T[]; omitted: number } {
+  if (items.length <= max) {
+    return { shown: items, omitted: 0 };
+  }
+  return { shown: items.slice(0, max), omitted: items.length - max };
+}
+
+/**
+ * The line that closes a cut list: `…and 12 more`, `…and 12 more RTUs` when the
+ * caller names the unit, or `""` when nothing was omitted so a list at the cap
+ * gains no tail.
+ *
+ * **A count and nothing else from the data** (AGENTS.md §4.3). It takes a
+ * number rather than the omitted items precisely so that no item can be
+ * interpolated here — the caller has already been through {@link quoteCell} for
+ * the items it does show, and an "N more (starting with 'x')" improvement would
+ * reopen the echo this exists to close.
+ *
+ * `noun` does not weaken that, and it must not be allowed to: it exists because
+ * `formatAssetsByRtuSummary` renders an RTU tail and an asset tail in the same
+ * block, where two bare `…and N more` lines read as the same thing. It is a
+ * **caller-side literal** — `"RTUs"`, written out at the call site — and never
+ * a value derived from an item. The type cannot enforce that; this sentence is
+ * the guard, and `assertEchoedItemsHelpersAreBounded` asserts the shape a
+ * literal produces.
+ *
+ * The wording avoids `more characters`, which is `quoteCell`'s. Specs count
+ * occurrences of that phrase on one line to prove two separate cells were each
+ * cut, and a tail carrying it would make those counts pass for the wrong
+ * reason. `…` is `quoteCell`'s ellipsis, so one message carries one vocabulary.
+ */
+export function moreTail(omitted: number, noun?: string): string {
+  if (omitted <= 0) {
+    return "";
+  }
+  return noun ? `…and ${omitted} more ${noun}` : `…and ${omitted} more`;
 }
 
 const LOCAL_HEADER_SIGNATURE = 0x04034b50;
