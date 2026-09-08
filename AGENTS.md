@@ -1936,9 +1936,22 @@ These are intentionally deferred. Do not implement them yet:
   remaining three enrichment fields (affected assets,
   energy/water/production impact, ETR) are **not** newly opened by this —
   they describe a *live alarm instance*, not an asset class, and stay off the
-  template contract permanently, not merely until a consumer exists (ADR 0034
-  §Context: no `automation_rules` row links back to the `TemplateAlarm` it
-  may have come from). Do not add them.
+  template contract permanently, not merely until a consumer exists. Do not
+  add them.
+
+  **The reason is the boundary, not the plumbing, and this bullet used to say
+  otherwise.** It carried a parenthetical — *"ADR 0034 §Context: no
+  `automation_rules` row links back to the `TemplateAlarm` it may have come
+  from"* — which was true when ADR 0034 was written and **false since
+  2026-09-07**: `E2.4` (ADR 0058, migration `0067`) added
+  `source_template_id`, `source_template_version`, `source_alarm_code` and
+  `seeded_baseline`, so a seeded rule now names the exact entry it came from.
+  The conclusion does not move, because it never rested on that premise: a
+  template describes a **class**, and a class cannot carry one instance's
+  affected assets, impact figures or ETR. The sentence is corrected rather
+  than deleted because an agent that reads only the old parenthetical would
+  conclude the fields are now openable, which is the opposite of the rule.
+  Found while drafting ADR 0059 (`E2.2`), which had to work around it.
 
   `kpis.expression` **left this list under ADR 0036** (`F2.3`): `dialect`
   widened from a locked `"unvalidated"` literal to `z.enum(["unvalidated",
