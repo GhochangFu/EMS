@@ -223,9 +223,15 @@ const asObject = (found: Map<string, string | null>): Record<string, string | nu
  *   bound + 1, and the second pins every number to the `@bms/db` column it was
  *   derived from;
  * - **a third copy of the draft schema**, in a file this list does not name;
- * - **text inside a comment.** Collapsing whitespace makes a docblock
- *   indistinguishable from code, so a comment quoting one of these declarations
- *   would satisfy the scan on its own. Neither file's docblocks do today;
+ * - **text inside a comment, on the two schema scans.** Collapsing whitespace
+ *   makes a docblock indistinguishable from code, so a comment quoting one of
+ *   these declarations would satisfy the scan on its own. Neither file's
+ *   docblocks do today. The **third** gate no longer has this limit: the post-
+ *   merge review measured it as a live false green — deleting
+ *   `if (topic.length > MAX_RTU_TOPIC_CHARS)` while leaving a comment quoting
+ *   the expression left the case green with `topic` unbounded — so its scans run
+ *   over {@link executableBodyOf}, which strips every comment and anchors the
+ *   search inside the section's own parse method;
  * - **the third gate reads call sites, not values.** It sees that a column is
  *   guarded, never that the guard was handed the value that reaches the draft —
  *   a `refuseIfTooLong` given the pre-`.trim()` cell, or the cell instead of the
@@ -377,11 +383,67 @@ const COMPOSITE_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   "username or password": ["username", "password"],
 };
 
+/** The method each section's `bounded elsewhere` checks must live inside. */
+const BOUNDED_ELSEWHERE_METHOD: Readonly<Record<string, string>> = {
+  LOCATION: "parseLocation",
+  RTUS: "parseRtus",
+  ASSETS: "parseAssets",
+};
+
+/**
+ * Source with every comment removed, so a scan for an expression cannot be
+ * satisfied by a sentence quoting it.
+ *
+ * `//` is only treated as a comment at the start of a line or after whitespace,
+ * which keeps a `https://` inside a string literal intact. The error direction
+ * of a mistake here is safe: stripping *too much* makes a check read as missing
+ * and reddens the gate, it never makes a missing check read as present.
+ */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|\s)\/\/[^\n]*/g, "$1");
+}
+
+/**
+ * The executable body of one `private <name>(` method, comments removed.
+ *
+ * The whole-file substring search this replaces was a **false green**, and the
+ * post-merge review measured it: delete `if (topic.length > MAX_RTU_TOPIC_CHARS)`
+ * from `parseRtus` while leaving any comment that quotes the expression, and the
+ * case stayed green with the `topic` cell unbounded on the upload path. The
+ * topic's own explanatory comment sits inside `parseRtus`, so anchoring to the
+ * method alone would not have been enough either — both are needed.
+ */
+function executableBodyOf(source: string, name: string): string {
+  const stripped = withoutComments(source);
+  const start = stripped.search(new RegExp(`\\bprivate ${name}\\s*\\(`));
+  if (start < 0) {
+    throw new Error(
+      `${EXCEL_REL}: could not find \`private ${name}(\`. An unfound method would search an ` +
+        "empty string and report every check as deleted — but a rename must be reflected here. " +
+        "Repair this parser rather than the assertion.",
+    );
+  }
+  const rest = stripped.slice(start + `private ${name}`.length);
+  const end = rest.search(/\n {2}(?:private|public|protected)\s/);
+  const body = end < 0 ? rest : rest.slice(0, end);
+  if (body.trim().length === 0) {
+    throw new Error(
+      `${EXCEL_REL}: \`private ${name}(\` parsed to an empty body, so every check inside it ` +
+        "would read as deleted. Repair this parser rather than the assertion.",
+    );
+  }
+  return body;
+}
+
 /**
  * Columns bounded by a check other than `cellLengthProblem`, with the source
  * text that must still be there. They are **not** exempt — both are bounded,
  * by `F4.102`'s own checks on the same two cells — so folding them into the
  * exempt set below would leave this gate green if either check were deleted.
+ *
+ * The text is searched inside {@link executableBodyOf} the section's own parse
+ * method, with comments stripped, so neither a comment quoting the expression
+ * nor the same expression in an unrelated method can hold this green.
  */
 const BOUNDED_ELSEWHERE: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   LOCATION: {},
@@ -421,9 +483,14 @@ function headerColumns(source: string, section: string): string[] {
   return [...(literal[1] as string).matchAll(/"([^"]+)"/g)].map((m) => m[1] as string);
 }
 
-/** `<SECTION>` → the column literals its `refuseIfTooLong` calls name. */
+/**
+ * `<SECTION>` → the column literals its `refuseIfTooLong` calls name.
+ *
+ * Comments are stripped first, for the reason {@link executableBodyOf} records:
+ * a docblock quoting a call it does not make would otherwise read as a guard.
+ */
 function guardedColumns(source: string): Map<string, string[]> {
-  const collapsed = source.replace(/\s+/g, " ");
+  const collapsed = withoutComments(source).replace(/\s+/g, " ");
   const guarded = new Map<string, string[]>(Object.keys(HEADER_ARRAYS).map((s) => [s, []]));
 
   for (const match of collapsed.matchAll(
@@ -500,15 +567,18 @@ describe("F4.104 — every parsed workbook column is bounded or written down as 
     }
   });
 
-  it("keeps the checks the two `bounded elsewhere` columns depend on", () => {
+  it("keeps the checks the two `bounded elsewhere` columns depend on, as code and not as prose", () => {
     const source = read(EXCEL_REL);
     for (const [section, columns] of Object.entries(BOUNDED_ELSEWHERE)) {
+      const body = executableBodyOf(source, BOUNDED_ELSEWHERE_METHOD[section] as string);
       for (const [column, mechanism] of Object.entries(columns)) {
         expect(
-          source.includes(mechanism),
+          body.includes(mechanism),
           `${EXCEL_REL}: \`${column}\` of ${section} is listed as bounded by \`${mechanism}\` ` +
             "rather than by a cell-length guard. If that check is gone the column is unbounded, " +
-            "and the union check above would still pass — this case is what stops that",
+            "and the union check above would still pass — this case is what stops that. The " +
+            "search runs over the method's body with every comment removed, so a comment " +
+            "quoting the deleted expression does not hold this green",
         ).toBe(true);
       }
     }

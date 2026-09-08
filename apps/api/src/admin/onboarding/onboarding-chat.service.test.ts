@@ -5,6 +5,7 @@ import {
   assertExcelImportFollowUpBoundsEchoedText,
   assertRuleBasedTurnBoundsDerivedDraftStrings,
   assertRuleBasedTurnBoundsMqttTopic,
+  assertRuleBasedTurnCutsWholeCharacters,
 } from "./onboarding-chat.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -37,5 +38,9 @@ describe("OnboardingChatService.handleTurn, rule-based branch (F4.104)", () => {
 
   it("bounds the MQTT topic it lifts out of the message", async () => {
     await assertRuleBasedTurnBoundsMqttTopic();
+  });
+
+  it("cuts on whole characters, so the draft it writes is valid jsonb", async () => {
+    await assertRuleBasedTurnCutsWholeCharacters();
   });
 });

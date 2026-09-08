@@ -449,11 +449,19 @@ export class OnboardingExcelService {
     const type =
       typeRaw === "rsmoc" || typeRaw === "csmoc" ? typeRaw : ("smoc_campus" as const);
     // F4.104 — bounded **after** the transform, in `LOCATION_HEADERS` column
-    // order so a row with two long cells always gets the same sentence. Case
-    // folding does not change a length, but the section reader's `.trim()` does,
-    // and it is the folded value that reaches the draft: checking `get(...)`
-    // before `.toUpperCase()` would be checking a string the session never
-    // stores. `latitude`, `longitude` and `type` are deliberately unbounded —
+    // order so a row with two long cells always gets the same sentence.
+    //
+    // The placement is load-bearing, and the reason is that **`toUpperCase()`
+    // can make a string longer**: `"ß".toUpperCase()` is `"SS"`, so a
+    // 64-character `code` cell folds to 128 characters and a pre-fold length is
+    // not the length that reaches the draft. `"ﬁ"`, `"ﬃ"` and `"İ"` do the same.
+    // Do not move either check above its `.toUpperCase()` / `.toLowerCase()` on
+    // the grounds that case folding is length-preserving — it is not, and
+    // `assertCellLengthGuardsSeeTheFoldedValue` in
+    // `onboarding-excel-cell-bounds.spec.ts` is what refuses that edit.
+    // (`.trim()` is not the reason: `sectionRows` has already trimmed every
+    // cell, and `get` does not trim again.) `latitude`, `longitude` and `type`
+    // are deliberately unbounded —
     // the first two are `Number.parseFloat` results guarded by
     // `Number.isFinite`, and `type` is compared against two literals and
     // otherwise replaced, so no cell text survives any of the three.

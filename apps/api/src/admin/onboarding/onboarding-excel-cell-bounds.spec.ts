@@ -399,3 +399,70 @@ export function assertPartialWorkbookStillParses(): void {
     `only the blank cell is reported, got ${JSON.stringify(validation.errors.map((error) => error.path))}`,
   );
 }
+
+/**
+ * The `code` and `slug` guards run **after** their case fold, and the reason is
+ * that a case fold can make a string **longer**.
+ *
+ * This is the review finding that has no live defect and a real forward hazard.
+ * The source comment on `parseLocation` used to give the placement two reasons
+ * and both were false — "case folding does not change a length" (it does) and
+ * "the section reader's `.trim()` does" (`sectionRows` has already trimmed, and
+ * `get` does not trim again). A reader who accepts the first and then finds the
+ * second inapplicable concludes the placement is cosmetic and moves the guard
+ * above the fold, and a 64-character cell of `ß` then stores 128 characters in
+ * `location.code`.
+ *
+ * So the rule is made executable rather than only written down. `"ß"` upper-
+ * cases to `"SS"` and `"İ"` lower-cases to two code units, so each fixture is
+ * legal at 64 characters *as typed* and is 128 characters by the time the draft
+ * would receive it. Both directions of the fold are covered, because `code` is
+ * folded up and `slug` is folded down and a check placed wrongly on one of them
+ * is not necessarily placed wrongly on the other.
+ */
+export function assertCellLengthGuardsSeeTheFoldedValue(): void {
+  const folds = [
+    {
+      column: "code",
+      columnIndex: 1,
+      max: ONBOARDING_DRAFT_STRING_MAX["location.code"],
+      // U+00DF LATIN SMALL LETTER SHARP S — one code unit, two when upper-cased.
+      character: "ß",
+      fold: (value: string) => value.toUpperCase(),
+    },
+    {
+      column: "slug",
+      columnIndex: 2,
+      max: ONBOARDING_DRAFT_STRING_MAX["location.slug"],
+      // U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE — one code unit, two when
+      // lower-cased (`i` plus a combining dot).
+      character: "İ",
+      fold: (value: string) => value.toLowerCase(),
+    },
+  ];
+
+  for (const { column, columnIndex, max, character, fold } of folds) {
+    const cell = character.repeat(max);
+    assert(
+      cell.length === max && fold(cell).length > max,
+      `the ${column} fixture must be legal as typed and over the bound once folded, got ` +
+        `${cell.length} then ${fold(cell).length} — repair the fixture, not the assertion`,
+    );
+
+    const rows = templateRows();
+    writeCell(rows, LOCATION_DATA_ROW, columnIndex, cell);
+    const message = refusalMessage(
+      buildWorkbookBuffer(rows),
+      `a LOCATION ${column} cell of ${max} characters that folds to ${fold(cell).length}`,
+    );
+    assert(
+      message.includes(`in the ${column} column`),
+      `the refusal names the folded column, got "${message}"`,
+    );
+    assert(
+      message.includes(`has ${fold(cell).length} characters`),
+      `the guard must measure the FOLDED value — moving it above the fold would read ${max} ` +
+        `and accept the cell. Got "${message}"`,
+    );
+  }
+}

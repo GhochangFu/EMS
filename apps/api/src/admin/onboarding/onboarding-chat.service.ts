@@ -17,6 +17,7 @@ import type {
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { quoteCell } from "../spreadsheet-guard";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import {
   attachEncryptedCredentials,
@@ -320,6 +321,13 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       // pattern was right and incomplete, and the literal is now derived
       // (§4.8).
       //
+      // The cut itself is `cutToBound`, not `.slice()` — `.slice()` counts
+      // UTF-16 code units and can halve a surrogate pair, which Postgres refuses
+      // in `jsonb` — and the two globally unique identifiers among the five,
+      // `location.slug` and `assets[].code`, take `cutToBoundWithHashSuffix` so
+      // that a cut cannot manufacture a cross-tenant collision. Both are
+      // recorded in full on those two functions.
+      //
       // **Sliced, not refused — the opposite of what the workbook upload does
       // one file away, and deliberately so.** `cellLengthProblem` refuses an
       // over-long cell because a workbook amplifies: one 5 MiB upload declares
@@ -342,16 +350,46 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       // branch: a 56-character location name — legal at every bound — produced
       // an asset code past 64 that `OnboardingValidateService` then refused, so
       // `readyToCommit` could never become true.
-      const name = message.trim().slice(0, ONBOARDING_DRAFT_STRING_MAX["location.name"]);
-      const slug = name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, ONBOARDING_DRAFT_STRING_MAX["location.slug"]);
-      const code = name
-        .toUpperCase()
-        .replace(/[^A-Z0-9]+/g, "_")
-        .slice(0, ONBOARDING_DRAFT_STRING_MAX["location.code"]);
+      // `cutToBound`, never a bare `.slice()`: `name` is arbitrary Unicode from
+      // the request body, and a cut through the middle of a surrogate pair
+      // produces a lone half that Postgres refuses in `jsonb` — a 500 from a
+      // body no schema rejects. The full account is on `cutToBound`.
+      //
+      // `slug` is additionally **hash-suffixed when the cut fires** (owner
+      // ruling 6): `bms.locations.slug` is globally unique —
+      // `locations_slug_unique`, `0010_phase5_location_access.sql:16`, never
+      // dropped — and the commit has no `onConflict`, so a plain cut turns two
+      // tenants sharing a 64-character slugified prefix into an uncaught unique
+      // violation: a 500, and an oracle that some other organisation holds that
+      // slug.
+      //
+      // **`code` is deliberately left on the plain cut.** Ruling 6 names `slug`
+      // and `assets[].code`, and `location.code`'s uniqueness is a *different*
+      // constraint: `0016` dropped `locations_code_unique` for the org-scoped
+      // `locations_org_code_idx`, so the collision it can still produce is
+      // between two locations of the **same** organisation, which is neither a
+      // cross-tenant oracle nor something this row was scoped to change. It is a
+      // residual, not a closed hole; do not read the `slug` suffix as covering
+      // it.
+      //
+      // Neither derivation strictly needs the surrogate-safe cut — each
+      // `replace` runs *before* it and maps every non-`[a-z0-9]` /
+      // non-`[A-Z0-9]` unit, surrogate halves included, to a separator — but
+      // both go through it anyway, so reordering the two steps cannot
+      // reintroduce the split.
+      const name = cutToBound(message.trim(), ONBOARDING_DRAFT_STRING_MAX["location.name"]);
+      const slug = cutToBoundWithHashSuffix(
+        name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, ""),
+        ONBOARDING_DRAFT_STRING_MAX["location.slug"],
+        "lower",
+      );
+      const code = cutToBound(
+        name.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
+        ONBOARDING_DRAFT_STRING_MAX["location.code"],
+      );
       patch.location = {
         name,
         slug: slug || "location",
@@ -423,26 +461,40 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       // F4.104, and the one site here that was a live functional bug rather
       // than only an unbounded string. `site` is the **stored** location name,
       // so it reaches this branch from any producer and from any draft written
-      // before those producers were bounded; `code` then adds nine characters
-      // to it. A location name of 56 characters — legal against every bound in
-      // this file — produced a 65-character asset code, which
+      // before those producers were bounded; `-ASSET-1` then adds eight
+      // characters to it. A location name of 57 characters — legal against
+      // every bound in this file — produced a 65-character asset code, which
       // `draftAssetSchema.code.max(64)` refuses when
       // `OnboardingValidateService.validate` re-parses the stored draft. The
       // turn still answered 200, and the operator was left with a permanent
       // validation error and no chat instruction that could clear it.
       //
-      // Cut the finished code, not `site`: slicing the name first and then
-      // appending the suffix gives 64 + 9 and fails the same way.
+      // Cut the finished code, not `site`: cutting the name to 64 first and
+      // then appending the suffix gives 64 + 8 = 72 and fails the same way.
+      //
+      // **Hash-suffixed when the cut fires** (owner ruling 6).
+      // `bms.assets.code` carries `assets_code_unique` from
+      // `0000_sprint1_foundation.sql:18` — global, across every tenant — and
+      // `OnboardingCommitService` inserts with no `onConflict`, so two long
+      // location names agreeing on their first characters would give the second
+      // organisation an uncaught unique violation. The suffix costs the trailing
+      // `-ASSET-1` marker on a code that had to be cut, which is the trade the
+      // ruling makes: a code an operator can still recognise by its prefix and
+      // that no other tenant can already hold.
+      //
+      // `siteName` takes the plain surrogate-safe cut: `bms.assets.site_name` is
+      // not unique, so there is nothing for a hash to protect.
       const site = draft.location?.name ?? orgName;
       patch.assets = [
         {
           rtuIndex: 0,
-          code: `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`.slice(
-            0,
+          code: cutToBoundWithHashSuffix(
+            `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`,
             ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+            "upper",
           ),
           name: "Primary Device",
-          siteName: site.slice(0, ONBOARDING_DRAFT_STRING_MAX["assets.siteName"]),
+          siteName: cutToBound(site, ONBOARDING_DRAFT_STRING_MAX["assets.siteName"]),
           domain: "electrical",
         },
       ];
@@ -554,7 +606,7 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
         host: process.env.MQTT_HOST ?? "phe.thinkiot.co.in",
         port: Number(process.env.MQTT_PORT ?? 8883),
         tls: true,
-        topic: (topicMatch?.[1] ?? "").slice(0, MAX_RTU_TOPIC_CHARS),
+        topic: cutToBound(topicMatch?.[1] ?? "", MAX_RTU_TOPIC_CHARS),
       };
     }
     if (protocol === "modbus_tcp") {

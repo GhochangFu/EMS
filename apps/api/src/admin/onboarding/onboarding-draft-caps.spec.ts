@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import {
   MAX_ONBOARDING_ASSET_POINTS,
   MAX_ONBOARDING_ASSETS,
@@ -9,6 +11,8 @@ import type { OnboardingDraft } from "@bms/shared";
 
 import {
   cellLengthProblem,
+  cutToBound,
+  cutToBoundWithHashSuffix,
   distinctAssetDomains,
   draftCountProblem,
   workbookSectionCountProblem,
@@ -313,5 +317,149 @@ export function assertDistinctAssetDomains(): void {
     JSON.stringify(distinctAssetDomains([{ domain: "hvac" }, { domain: "HVAC" }])) ===
       JSON.stringify(["hvac", "HVAC"]),
     "two spellings are two codes here — the vocabulary check owns that decision",
+  );
+}
+
+/** One astral-plane character: one code point, two UTF-16 code units. */
+const ASTRAL = "\u{1F600}";
+
+/** True when `value` holds a surrogate that is not part of a pair. */
+function hasLoneSurrogate(value: string): boolean {
+  return /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(value);
+}
+
+/**
+ * `cutToBound` cuts on whole characters, and it counts the same units
+ * `z.string().max()` counts.
+ *
+ * Both halves matter and they pull in opposite directions, which is why the
+ * obvious one-liner is wrong. Counting **code units** is what the schema does,
+ * so the result has to be `.length <= max`. Cutting **between** code units is
+ * what produces a lone surrogate, which `JSON.stringify` escapes as `\ud83d` and
+ * Postgres refuses in `jsonb` with `Unicode low surrogate must follow a high
+ * surrogate` — a 500 out of the rule-based chat branch, which parses no schema.
+ *
+ * The `[...value].slice(0, max).join("")` form satisfies the second and breaks
+ * the first: it returns up to `2 × max` code units, the schema then refuses the
+ * field, and `OnboardingValidateService.validate` hands the operator a permanent
+ * per-field error. The case below states that difference in numbers so the two
+ * forms cannot be swapped by a later reader who thinks them equivalent.
+ */
+export function assertCutToBound(): void {
+  assert(cutToBound("Berhampur", 255) === "Berhampur", "a value inside the bound is untouched");
+  assert(cutToBound("abcdef", 6) === "abcdef", "a value exactly at the bound is untouched");
+  assert(cutToBound("abcdef", 5) === "abcde", "a plain value is cut to the bound");
+  assert(cutToBound("", 0) === "", "an empty value survives a zero bound");
+
+  // The cut lands between the halves of a pair: 5 code units into a string of
+  // three astral characters.
+  const three = ASTRAL.repeat(3);
+  assert(three.length === 6, `the fixture must be six code units, got ${three.length}`);
+  assert(
+    "\u{1F600}".repeat(3).slice(0, 5).length === 5 &&
+      hasLoneSurrogate("\u{1F600}".repeat(3).slice(0, 5)),
+    "the oracle must be live: a bare .slice() at this bound leaves a lone surrogate",
+  );
+  const cut = cutToBound(three, 5);
+  assert(!hasLoneSurrogate(cut), `the cut leaves no half character, got ${JSON.stringify(cut)}`);
+  assert(cut === ASTRAL.repeat(2), `the whole characters that fit are kept, got ${JSON.stringify(cut)}`);
+  assert(
+    !/\\u[dD][89abAB][0-9a-fA-F]{2}/.test(JSON.stringify(cut)),
+    "the cut value must serialise without a lone-surrogate escape — that escape is what Postgres refuses",
+  );
+
+  // Code units, not code points. 200 astral characters are 400 code units, and
+  // the schema measures the 400.
+  const long = ASTRAL.repeat(200);
+  assert(
+    cutToBound(long, 255).length <= 255,
+    `the result is bounded in the units z.string().max() counts, got ${cutToBound(long, 255).length}`,
+  );
+  assert(
+    [...long].slice(0, 255).join("").length === 400,
+    "the code-point form returns 400 characters for this input — it is not interchangeable with " +
+      "this function, and the schema is what tells them apart",
+  );
+}
+
+/**
+ * `cutToBoundWithHashSuffix` makes a cut identifier distinct, and leaves an
+ * uncut one exactly as it found it.
+ *
+ * Owner ruling 6 (`F4.104` review). `bms.locations.slug` and `bms.assets.code`
+ * are unique across every tenant and the onboarding commit inserts with no
+ * `onConflict`, so a plain cut turns two organisations whose names agree on
+ * their first 64 characters into an uncaught unique violation for the second —
+ * a 500 that also says some other organisation holds that value.
+ */
+export function assertCutToBoundWithHashSuffix(): void {
+  // --- untouched below the bound, byte for byte ------------------------------
+  for (const value of ["berhampur-water-works", "a", "", "x".repeat(64)]) {
+    assert(
+      cutToBoundWithHashSuffix(value, 64, "lower") === value,
+      `a value at or inside the bound must not grow a suffix, got ${JSON.stringify(
+        cutToBoundWithHashSuffix(value, 64, "lower"),
+      )}`,
+    );
+  }
+
+  // --- cut, and inside the bound --------------------------------------------
+  const long = "berhampur-water-treatment-plant-".repeat(4);
+  const cut = cutToBoundWithHashSuffix(long, 64, "lower");
+  assert(cut.length <= 64, `the suffix is budgeted inside the bound, got ${cut.length}`);
+  assert(/-[0-9a-f]{8}$/.test(cut), `a cut value carries a hash of the whole value, got "${cut}"`);
+  assert(long.startsWith(cut.slice(0, cut.length - 9)), `the prefix is the value's own, got "${cut}"`);
+  assert(
+    /^[a-z0-9-]+$/.test(cut),
+    `the result must survive draftLocationSchema.slug's own regex, got "${cut}"`,
+  );
+  assert(!cut.includes("--"), `a trailing separator is stripped before the hash, got "${cut}"`);
+
+  // --- two long values agreeing on their prefix differ ----------------------
+  const twin = `${long}-second-tenant`;
+  assert(
+    twin.startsWith(long.slice(0, 64)) && long.slice(0, 64) === twin.slice(0, 64),
+    "this case needs two values that agree past the bound, or it asserts nothing",
+  );
+  assert(
+    cutToBoundWithHashSuffix(twin, 64, "lower") !== cut,
+    "two values sharing their first 64 characters must not produce one globally unique identifier",
+  );
+
+  // Deterministic: the same value gives the same answer on every request, so a
+  // re-uploaded workbook or a repeated turn does not manufacture a second row.
+  assert(
+    cutToBoundWithHashSuffix(long, 64, "lower") === cut,
+    "the suffix is a hash of the value, not a random or time-derived string",
+  );
+
+  // --- the alphabet follows the field's own character class -----------------
+  const upper = cutToBoundWithHashSuffix(long.toUpperCase(), 64, "upper");
+  assert(/-[0-9A-F]{8}$/.test(upper), `the upper alphabet is uppercase hex, got "${upper}"`);
+  assert(
+    /^[A-Z0-9_-]+$/.test(upper),
+    `the result must survive draftLocationSchema.code's own regex, got "${upper}"`,
+  );
+
+  // --- the hash is taken over the WHOLE value, never over the kept prefix ----
+  // Hashing the prefix would make the suffix equal for every value sharing it,
+  // which is the collision the suffix exists to prevent. Stated as a comparison
+  // against the digest of the prefix so it cannot silently regress.
+  const prefixOnly = cut.slice(0, cut.length - 9);
+  assert(
+    createHash("sha256").update(prefixOnly, "utf8").digest("hex").slice(0, 8) !==
+      cut.slice(cut.length - 8),
+    "the hash must be of the whole value — a hash of the kept prefix collides for every value " +
+      "sharing that prefix, which is the failure this suffix exists to prevent",
+  );
+  assert(
+    createHash("sha256").update(long, "utf8").digest("hex").slice(0, 8) === cut.slice(cut.length - 8),
+    "and it is the whole value's own digest, so two systems reading this code agree on it",
+  );
+
+  // --- a bound too small to hold a prefix is not a negative slice ------------
+  assert(
+    cutToBoundWithHashSuffix("x".repeat(20), 4, "lower").length === 4,
+    "a bound smaller than the suffix budget returns something inside the bound rather than throwing",
   );
 }

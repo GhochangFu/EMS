@@ -33,10 +33,19 @@
  * carry. Its own docblock records why that bound is applied where the cell is
  * read rather than by parsing the draft schema at the upload boundary.
  *
+ * `F4.104`'s review adds `cutToBound` and `cutToBoundWithHashSuffix`, which are
+ * the *other* treatment of the same axis — the one the rule-based chat branch
+ * takes, where a refusal would be a dead end mid-conversation. They live beside
+ * the refusals rather than in the chat service because a cut and a refusal must
+ * be read against each other: one module, one account of why a given producer
+ * gets one and not the other. Both are pure; `node:crypto` is Node's own.
+ *
  * The four numbers themselves, and where each comes from, are declared once in
  * `packages/shared/src/contracts/onboarding.ts` and are deliberately not
  * restated here.
  */
+import { createHash } from "node:crypto";
+
 import {
   MAX_ONBOARDING_ASSET_POINTS,
   MAX_ONBOARDING_ASSETS,
@@ -239,4 +248,122 @@ export function draftCountProblem(draft: OnboardingDraft): string | null {
  */
 export function distinctAssetDomains(assets: readonly { domain: string }[]): string[] {
   return [...new Set(assets.map((asset) => asset.domain))];
+}
+
+/** The UTF-16 range a **high** surrogate occupies; a code unit here is half of a pair. */
+const HIGH_SURROGATE_FIRST = 0xd800;
+const HIGH_SURROGATE_LAST = 0xdbff;
+
+/**
+ * `value` cut to at most `max` characters, **never through the middle of a
+ * character** — the only cut the rule-based chat branch is allowed to make.
+ *
+ * **Why a bare `.slice(0, max)` is wrong, and how it fails.**
+ * `String.prototype.slice` counts UTF-16 code units, and every character outside
+ * the Basic Multilingual Plane — an emoji, most CJK extension B ideographs, a
+ * mathematical alphanumeric — occupies two of them. A cut that lands between the
+ * two leaves a **lone high surrogate**, which is not a character at all, and the
+ * draft is written to a `jsonb` column: `JSON.stringify` escapes the orphan as
+ * `\ud83d` (ES2019 well-formed stringify), and Postgres refuses that input with
+ * `invalid input syntax for type json — Unicode low surrogate must follow a high
+ * surrogate`. A chat message of 200 emoji is 400 code units, so `.slice(0, 255)`
+ * splits the 128th pair and the turn answers **500**, repeatably, from a body no
+ * schema refuses.
+ *
+ * **Why this cuts on code units and then strips, rather than on code points.**
+ * `[...value].slice(0, max).join("")` is the form that first suggests itself and
+ * it is *not* interchangeable with this one: it keeps `max` code **points**,
+ * which is up to `2 × max` code units, and `z.string().max()` measures
+ * `String.length` — code units. The 200-emoji message above comes back at 400
+ * characters, `onboardingDraftSchema` refuses `location.name`, and
+ * `OnboardingValidateService.validate` hands the operator the permanent
+ * per-field error this whole slice exists to prevent. Cutting to `max` code
+ * units satisfies the schema, and satisfies the `varchar` column a fortiori,
+ * because a string of `max` code units is at most `max` characters.
+ *
+ * **What this does not promise.** It makes the cut no worse than its input; it
+ * does not make an arbitrary string safe for `jsonb`. A lone *low* surrogate
+ * that arrived in the request body — `JSON.parse` accepts the `\udc00` escape
+ * and `chatBodySchema` has no well-formedness check — passes through untouched
+ * and still fails the write. That is older than this function and is recorded as
+ * a residual on `packages/shared/src/contracts/onboarding.ts`; do not read this
+ * docblock as saying it is closed.
+ */
+export function cutToBound(value: string, max: number): string {
+  if (value.length <= max) {
+    return value;
+  }
+  const cut = value.slice(0, max);
+  const last = cut.charCodeAt(cut.length - 1);
+  return last >= HIGH_SURROGATE_FIRST && last <= HIGH_SURROGATE_LAST ? cut.slice(0, -1) : cut;
+}
+
+/** Hexadecimal characters of SHA-256 appended to a value this function had to cut. */
+const HASH_SUFFIX_CHARS = 8;
+
+/** What separates a cut prefix from its hash, and what is stripped off the prefix first. */
+const HASH_SEPARATOR = "-";
+
+/**
+ * `value` cut to at most `max` characters **and made distinct**, by appending a
+ * short deterministic hash of the whole value whenever — and only whenever — the
+ * cut actually removed something.
+ *
+ * **The identifier this is for is globally unique, and the commit has no
+ * `onConflict`** (owner ruling 6, `F4.104`). `bms.locations.slug` carries
+ * `locations_slug_unique` from `0010_phase5_location_access.sql:16`, which
+ * nothing has ever dropped — unlike `locations_code_unique`, which `0016`
+ * replaced with the org-scoped `locations_org_code_idx` — and `bms.assets.code`
+ * carries `assets_code_unique` from `0000_sprint1_foundation.sql:18`. Both are
+ * unique across every tenant.
+ *
+ * Before the cut, an over-long derived `slug` failed
+ * `OnboardingValidateService.validate`, `readyToCommit` stayed false and the
+ * operator saw a per-field error. With a plain cut it is silently valid, so the
+ * commit proceeds — and two tenants whose names share the first 64 slugified
+ * characters give the second an uncaught unique violation: a 500, and an oracle
+ * telling one organisation that some other one holds that slug. The hash
+ * restores the parity the cut removed. It is not a defence against a caller who
+ * already knows the victim's full name — such a caller can collide by simply
+ * repeating it, exactly as they could before any of this — it is what stops two
+ * unrelated long names from colliding because their first 64 characters agree.
+ *
+ * **A value inside the bound is returned byte-identical**, so nothing an
+ * operator types at an ordinary length grows a suffix. The hash is taken over
+ * the **whole** pre-cut value, so two values agreeing on their prefix and
+ * differing after it produce different results — which is the entire point, and
+ * hashing the prefix would defeat it.
+ *
+ * `hexCase` picks the alphabet, because the suffix must survive the field's own
+ * character class: `location.slug` is `/^[a-z0-9-]+$/` and `location.code` is
+ * `/^[A-Z0-9_-]+$/`, so `-` plus hex is legal in either at the right case.
+ * (`assets[].code` carries no regex in `draftAssetSchema` and no CHECK on
+ * `bms.assets.code`; it is uppercased by its producer, so it takes the upper
+ * alphabet to match what surrounds it.)
+ *
+ * The suffix is budgeted **inside** `max`, never appended past it: the prefix is
+ * cut to `max - HASH_SUFFIX_CHARS - 1`, any trailing separator is stripped so
+ * the result does not read `--`, and the result is therefore at most `max` and
+ * may be one or two characters short of it. Do not "fix" that by padding the
+ * hash to land exactly on the bound — that couples the suffix length to the
+ * bound and breaks the next time either one moves.
+ */
+export function cutToBoundWithHashSuffix(
+  value: string,
+  max: number,
+  hexCase: "lower" | "upper",
+): string {
+  if (value.length <= max) {
+    return value;
+  }
+  const digest = createHash("sha256").update(value, "utf8").digest("hex").slice(0, HASH_SUFFIX_CHARS);
+  const suffix = hexCase === "upper" ? digest.toUpperCase() : digest;
+  const prefixBound = max - suffix.length - HASH_SEPARATOR.length;
+  // A bound too small to carry a prefix at all is a caller error, not a value
+  // this can shorten: return the hash alone rather than a negative slice.
+  if (prefixBound <= 0) {
+    return cutToBound(suffix, max);
+  }
+  const prefix = cutToBound(value, prefixBound).replace(/-+$/, "");
+  return `${prefix}${HASH_SEPARATOR}${suffix}`;
 }

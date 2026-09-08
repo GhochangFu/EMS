@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   assertCellLengthProblem,
+  assertCutToBound,
+  assertCutToBoundWithHashSuffix,
   assertDistinctAssetDomains,
   assertDraftCountProblem,
   assertWorkbookSectionCountProblem,
@@ -23,5 +25,13 @@ describe("onboarding draft count caps (F4.103)", () => {
 
   it("collapses the asset domains to one entry per distinct code, in first-appearance order", () => {
     assertDistinctAssetDomains();
+  });
+
+  it("cuts a chat-derived string on whole characters, in the units the schema counts (F4.104)", () => {
+    assertCutToBound();
+  });
+
+  it("hash-suffixes a cut globally unique identifier, and only a cut one (F4.104)", () => {
+    assertCutToBoundWithHashSuffix();
   });
 });

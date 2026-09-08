@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertCellLengthGuardsSeeTheFoldedValue,
   assertOverlongCellsAreRefused,
   assertPartialWorkbookStillParses,
 } from "./onboarding-excel-cell-bounds.spec";
@@ -21,5 +22,9 @@ describe("OnboardingExcelService.parseUpload cell bounds (F4.104)", () => {
 
   it("still parses a partial workbook, and leaves the blanks to the wizard's per-field errors", () => {
     assertPartialWorkbookStillParses();
+  });
+
+  it("measures the case-folded value, because a fold can lengthen a cell", () => {
+    assertCellLengthGuardsSeeTheFoldedValue();
   });
 });

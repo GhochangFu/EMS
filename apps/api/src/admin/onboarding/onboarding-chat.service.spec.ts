@@ -467,14 +467,31 @@ function draftBeforeAssets(locationName: string): OnboardingDraft {
 /**
  * A location name that is **legal at every bound** — 95 characters, well inside
  * `location.name`'s 255 — and still overflows `assets[].code`, because that code
- * is the name plus nine characters. This is the case that makes the row a
- * functional bug and not only a length axis.
+ * is the name plus the eight characters of `-ASSET-1`. This is the case that
+ * makes the row a functional bug and not only a length axis.
  */
 const LEGAL_LOCATION_NAME = "Berhampur Water Treatment Plant ".repeat(3).trim();
 
 /** What the `assets` branch builds its code from, before any cut. */
 function assetCodeFor(site: string): string {
   return `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`;
+}
+
+/**
+ * Splits a cut identifier back into the prefix that was kept and the hash that
+ * was appended, or `null` when it carries no such suffix.
+ *
+ * Owner ruling 6 (`F4.104` review): `location.slug` and `assets[].code` are
+ * globally unique columns committed with no `onConflict`, so a value the
+ * producer had to shorten carries a deterministic hash of the **whole**
+ * pre-cut value. Split here rather than compared against a re-computed
+ * `sha256` — a spec that recomputed the digest would pass whatever the
+ * producer hashed, including the already-cut prefix, which is the one thing
+ * that would make the suffix useless.
+ */
+function hashSuffixParts(value: string): { prefix: string; suffix: string } | undefined {
+  const match = /^(.*)-([0-9a-f]{8}|[0-9A-F]{8})$/.exec(value);
+  return match === null ? undefined : { prefix: match[1] as string, suffix: match[2] as string };
 }
 
 /**
@@ -525,10 +542,27 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
     `location.name is cut to its bound, got ${longLocation.name.length} characters`,
   );
   assert(
-    longLocation.slug.length === ONBOARDING_DRAFT_STRING_MAX["location.slug"],
+    longLocation.slug.length <= ONBOARDING_DRAFT_STRING_MAX["location.slug"],
     // The site that made this row worth writing: `code` three lines away was
     // already `.slice(0, 64)` and `slug`, derived from the same name, was not.
+    //
+    // `<=` and not `===`, on purpose: the hash suffix is budgeted *inside* the
+    // bound and the prefix loses any trailing separator, so a cut slug is at the
+    // bound or one or two characters short of it. Pinning the exact number would
+    // make a later change to the suffix length look like a bound violation.
     `location.slug is cut to its bound, got ${longLocation.slug.length} characters`,
+  );
+  const slugParts = requiredItem(
+    hashSuffixParts(longLocation.slug),
+    `a cut slug carries a hash of the whole value (owner ruling 6), got "${longLocation.slug}"`,
+  );
+  assert(
+    slugParts.suffix === slugParts.suffix.toLowerCase(),
+    `the slug's suffix must survive /^[a-z0-9-]+$/, got "${slugParts.suffix}"`,
+  );
+  assert(
+    /^[a-z0-9-]+$/.test(longLocation.slug),
+    `the whole slug must still satisfy the schema's own regex, got "${longLocation.slug}"`,
   );
   assert(
     longLocation.code.length === ONBOARDING_DRAFT_STRING_MAX["location.code"],
@@ -568,7 +602,7 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
   );
 
   // --- the assets branch, from a location name that is legal everywhere ------
-  // 95 characters + `-ASSET-1` = 104, which `draftAssetSchema.code.max(64)`
+  // 95 characters + `-ASSET-1` = 103, which `draftAssetSchema.code.max(64)`
   // refuses. The turn answered 200 and the operator was left with a validation
   // error no chat instruction could clear.
   assert(
@@ -586,14 +620,22 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
     "only the rule-based branch names the asset — this patch came from elsewhere",
   );
   assert(
-    legalAsset.code.length === ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+    legalAsset.code.length <= ONBOARDING_DRAFT_STRING_MAX["assets.code"],
     `assets[].code is cut to its bound, got ${legalAsset.code.length} characters`,
   );
+  const legalCodeParts = requiredItem(
+    hashSuffixParts(legalAsset.code),
+    `a cut asset code carries a hash of the whole value (owner ruling 6), got "${legalAsset.code}"`,
+  );
   assert(
-    legalAsset.code === assetCodeFor(LEGAL_LOCATION_NAME).slice(0, legalAsset.code.length),
-    // Cut the finished code, not the site: slicing the site first and then
-    // appending `-ASSET-1` gives 64 + 8 and fails the same way.
+    assetCodeFor(LEGAL_LOCATION_NAME).startsWith(legalCodeParts.prefix),
+    // Cut the finished code, not the site: cutting the site to 64 first and then
+    // appending `-ASSET-1` gives 64 + 8 = 72 and fails the same way.
     `the code keeps its leading characters, got "${legalAsset.code}"`,
+  );
+  assert(
+    legalCodeParts.suffix === legalCodeParts.suffix.toUpperCase(),
+    `the asset code's suffix matches the upper case its producer builds in, got "${legalCodeParts.suffix}"`,
   );
   assert(
     legalAsset.siteName === LEGAL_LOCATION_NAME,
@@ -633,8 +675,30 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
     `assets[].siteName is cut to its bound, got ${storedAsset.siteName.length} characters`,
   );
   assert(
-    storedAsset.code.length === ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+    storedAsset.code.length <= ONBOARDING_DRAFT_STRING_MAX["assets.code"],
     `assets[].code is cut to its bound, got ${storedAsset.code.length} characters`,
+  );
+  // The collision the hash exists to stop, driven through the real branch: two
+  // different long location names whose first 64 characters agree produce two
+  // different asset codes. `assets_code_unique` is global — every tenant shares
+  // it — and `OnboardingCommitService` inserts with no `onConflict`, so equal
+  // codes here are one organisation's 500 and an oracle about another's estate.
+  const twinName = `${storedName}-second-tenant`;
+  const twinSite = await ruleBasedTurn("One asset", draftBeforeAssets(twinName), "assets");
+  const twinAsset = requiredItem(
+    twinSite.draftPatch.assets?.[0],
+    "this case must reach the rule-based assets branch, or it measures the OpenAI one",
+  );
+  assert(
+    assetCodeFor(twinName).startsWith(
+      assetCodeFor(storedName).slice(0, ONBOARDING_DRAFT_STRING_MAX["assets.code"]),
+    ),
+    "this case needs two names that agree past the bound, or it asserts nothing",
+  );
+  assert(
+    twinAsset.code !== storedAsset.code,
+    `two long names sharing their first ${ONBOARDING_DRAFT_STRING_MAX["assets.code"]} characters ` +
+      `must not produce one globally unique code, got "${twinAsset.code}" twice`,
   );
   const storedParsed = onboardingDraftSchema.safeParse(storedSite.draftPatch);
   assert(
@@ -652,6 +716,168 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
         (issue) => issue.path.join(".") === "assets.0.siteName",
       ),
     "the schema must refuse the uncut site name, or this parse proves nothing",
+  );
+}
+
+/**
+ * The cut never lands in the middle of a character, and the draft it produces
+ * can therefore be written.
+ *
+ * The regression this holds was introduced by `F4.104`'s own first pass and
+ * caught by its security review. `String.prototype.slice` counts UTF-16 code
+ * units, so `.slice(0, 255)` of a 400-unit message of astral-plane characters
+ * cuts a surrogate pair in half. `handleRuleBasedTurn` parses no schema, so the
+ * orphan reaches the `jsonb` write, where `JSON.stringify` escapes it as
+ * `\ud83d` and Postgres answers `invalid input syntax for type json — Unicode
+ * low surrogate must follow a high surrogate`. A master-data admin got a
+ * repeatable **500** from a body no schema refuses, on a field that had no cut
+ * at all before this row.
+ *
+ * **The oracle is `JSON.stringify`, not a length.** A length assertion passes on
+ * a string with an orphaned half; the escape is what the database sees and what
+ * it refuses, so that is what is asserted. `isWellFormed` would be the direct
+ * test and is Node 20's — `apps/api` targets it — but the stringify check is the
+ * one that names the failing layer in its message.
+ *
+ * The other direction is the reason the fix is not `[...message].slice(...)`:
+ * that form keeps `max` code *points*, up to `2 × max` code units, and
+ * `z.string().max()` measures code units. It would satisfy the column and fail
+ * the schema, handing the operator the permanent per-field error the cut exists
+ * to prevent. The schema parse below is what refuses that repair.
+ */
+export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
+  // 200 astral-plane characters behind an ASCII word: 210 code points, 410 UTF-16
+  // code units, so the cut at `location.name`'s 255 falls inside a pair. The
+  // ASCII prefix is load-bearing — `slug` and `code` are derived by replacing
+  // everything outside `[a-z0-9]` / `[A-Z0-9]`, so an all-emoji name collapses to
+  // a one-character `code` that `draftLocationSchema.code.min(2)` refuses. That
+  // is completeness, not length, and it is not this row's axis.
+  const astral = `Berhampur ${"\u{1F600}".repeat(200)}`;
+  assert(
+    astral.length > ONBOARDING_DRAFT_STRING_MAX["location.name"] &&
+      [...astral].length < ONBOARDING_DRAFT_STRING_MAX["location.name"],
+    "this fixture must be over the bound in code units and under it in code points, or it " +
+      "cannot tell the two cuts apart",
+  );
+
+  const turn = await ruleBasedTurn(astral, {}, "location");
+  const location = requiredItem(
+    turn.draftPatch.location,
+    "this case must reach the rule-based location branch, or it measures the OpenAI one",
+  );
+
+  assert(
+    !/\\u[dD][89abAB][0-9a-fA-F]{2}/.test(JSON.stringify(turn.draftPatch)),
+    `the patch must carry no lone surrogate — Postgres refuses one in jsonb, which is the 500 ` +
+      `this case exists for. Got ${JSON.stringify(location.name).slice(0, 120)}`,
+  );
+  assert(
+    location.name.length <= ONBOARDING_DRAFT_STRING_MAX["location.name"],
+    `the cut counts code units, as z.string().max() does — a code-point cut returns up to twice ` +
+      `the bound and fails the parse below. Got ${location.name.length} characters`,
+  );
+  const parsed = onboardingDraftSchema.safeParse(turn.draftPatch);
+  assert(
+    parsed.success,
+    `the patch must still satisfy the draft schema: ${JSON.stringify(
+      parsed.error?.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+    )}`,
+  );
+
+  // The oracle is live: the uncut message is refused by the same parse, so the
+  // success above is not a parse of something nothing had lengthened.
+  assert(
+    onboardingDraftSchema.safeParse({ location: { ...location, name: astral } }).success === false,
+    "the schema must refuse the uncut astral name, or this parse proves nothing",
+  );
+
+  // The other direction on the content: a message of astral characters that fits
+  // comes back byte-identical, so the cut is not eating characters it may keep.
+  const short = `Berhampur ${"\u{1F600}".repeat(10)}`;
+  const ordinary = await ruleBasedTurn(short, {}, "location");
+  assert(
+    ordinary.draftPatch.location?.name === short,
+    `a message inside the bound is stored whole, got ${JSON.stringify(
+      ordinary.draftPatch.location?.name,
+    )}`,
+  );
+
+  // --- the other three cut sites, each driven through its own branch ---------
+  // The location branch alone is not coverage. Every fixture in the two
+  // functions above is ASCII, so putting `.slice()` back at `assets[].code`,
+  // `assets[].siteName` or `config.topic` would leave all of them green — the
+  // "asserted in one direction only" shape this file has already been corrected
+  // for once. Each branch below carries the same astral payload and the same
+  // `JSON.stringify` oracle.
+  const assetsTurn = await ruleBasedTurn("One asset", draftBeforeAssets(astral), "assets");
+  const astralAsset = requiredItem(
+    assetsTurn.draftPatch.assets?.[0],
+    "this case must reach the rule-based assets branch, or it measures the OpenAI one",
+  );
+  assert(
+    !/\\u[dD][89abAB][0-9a-fA-F]{2}/.test(JSON.stringify(assetsTurn.draftPatch)),
+    `assets[].code and assets[].siteName must be cut on whole characters too, got code ` +
+      `${JSON.stringify(astralAsset.code)}`,
+  );
+  const assetsParsed = onboardingDraftSchema.safeParse(assetsTurn.draftPatch);
+  assert(
+    assetsParsed.success,
+    `the assets patch must still satisfy the draft schema: ${JSON.stringify(
+      assetsParsed.error?.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+    )}`,
+  );
+
+  // `assets[].code` needs a fixture of its own, and the reason is parity. A cut
+  // straddles a pair only when an odd number of the astral run's code units fall
+  // inside it, so for one ASCII prefix length `255 - prefix` and `64 - prefix`
+  // can never both be odd — 255 and 64 differ in parity. The turn above holds
+  // `siteName` at 255; this one moves the prefix by one character so the 64
+  // lands mid-pair. Without it, putting `.slice(0, 64)` back at the code site
+  // leaves every case above green.
+  const oddPrefixName = `Berhampurx ${"\u{1F600}".repeat(200)}`;
+  assert(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(
+      `${oddPrefixName.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`.slice(
+        0,
+        ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+      ),
+    ),
+    "this fixture must straddle a pair at the asset code's own bound, or it asserts nothing — " +
+      "repair the fixture, not the assertion",
+  );
+  const oddTurn = await ruleBasedTurn("One asset", draftBeforeAssets(oddPrefixName), "assets");
+  assert(
+    !/\\u[dD][89abAB][0-9a-fA-F]{2}/.test(JSON.stringify(oddTurn.draftPatch)),
+    `assets[].code must be cut on whole characters, got ${JSON.stringify(
+      oddTurn.draftPatch.assets?.[0]?.code,
+    )}`,
+  );
+  assert(
+    onboardingDraftSchema.safeParse(oddTurn.draftPatch).success,
+    "the asset code fixture must still satisfy the draft schema",
+  );
+
+  // `config.topic` has no schema oracle at all — `config` is `z.record(z.unknown())`
+  // in both copies (owner ruling 3) — so the serialisation check is the whole
+  // assertion, and it is the one the database actually applies.
+  const topicTurn = await ruleBasedTurn(
+    `topic: ${"\u{1F600}".repeat(200)}`,
+    { location: locationNamed("Berhampur") },
+    "rtu",
+  );
+  const astralRtu = requiredItem(
+    topicTurn.draftPatch.rtus?.[0],
+    "this case must reach the rule-based RTU branch, or it measures the OpenAI one",
+  );
+  assert(
+    String(astralRtu.config?.topic ?? "").length > 0,
+    "this case must produce a topic, or the check below inspects an empty string",
+  );
+  assert(
+    !/\\u[dD][89abAB][0-9a-fA-F]{2}/.test(JSON.stringify(topicTurn.draftPatch)),
+    `config.topic must be cut on whole characters too, got ${JSON.stringify(
+      String(astralRtu.config?.topic ?? "").slice(0, 40),
+    )}`,
   );
 }
 

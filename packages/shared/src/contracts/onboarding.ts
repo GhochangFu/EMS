@@ -364,6 +364,42 @@ export const MAX_ONBOARDING_ASSET_POINTS = 5_000;
  * uses `safeParse` and turns each issue into a per-field wizard error, so an
  * over-long value already in storage is something the operator is shown and can
  * fix rather than a 500.
+ *
+ * ## Two residuals on this contract that `F4.104` did NOT close
+ *
+ * Written down because the paragraphs above are about **length**, and a reader
+ * who takes them as "the draft now satisfies this schema" would be wrong on both
+ * counts. Neither is a defect introduced here; both are older than the row.
+ *
+ * 1. **`assets[].domain` can be `""`, and `.min(1)` refuses it.**
+ *    `assetDomainFromCell` in `onboarding-excel.service.ts` returns
+ *    `cell.trim().toLowerCase()` with no fallback, so a blank `domain` cell — or
+ *    an `ASSETS` header row that omits the column at all — yields `domain: ""`.
+ *    `F4.104`'s parse-site guard checks only the **maximum**, so `""` passes it,
+ *    and `onboardingSessionDtoSchema.draft.assets[].domain` is
+ *    `assetDomainCodeSchema` = `z.string().min(1).max(64)`. The reader's runtime
+ *    parse in `apps/web/src/api/admin/onboarding.ts` therefore throws in dev and
+ *    test and logs-and-passes in production, on a session the operator uploaded
+ *    successfully.
+ *
+ *    **This is deliberately out of scope and must not be "fixed" by widening a
+ *    bound.** Owner ruling 1 scopes `F4.104` to length; `.min(1)` is the
+ *    *completeness* axis, and completeness is what
+ *    `OnboardingValidateService.validate` is for — refusing it at the upload
+ *    boundary is the wholesale refusal of a partial workbook that ruling 1
+ *    exists to prevent. Removing `.min(1)` here would close the symptom by
+ *    letting an empty vocabulary code through to the commit instead.
+ *
+ * 2. **A lone surrogate is still possible, and it is a 500 rather than a schema
+ *    failure.** `JSON.parse` accepts the `"\ud83d"` escape and `chatBodySchema`
+ *    has no well-formedness check, so a caller can put an unpaired half of a
+ *    surrogate pair into a chat message. `z.string().max()` counts it happily,
+ *    but `JSON.stringify` re-emits the escape and Postgres refuses it in `jsonb`
+ *    with `Unicode low surrogate must follow a high surrogate`. `F4.104`'s
+ *    review closed the case where the *server* manufactured such a half by
+ *    cutting through a pair (`cutToBound`); it did not close the case where the
+ *    request already carried one. That needs a well-formedness check on the
+ *    request boundary, which is a different axis again.
  */
 export const onboardingDraftSchema = z.object({
   location: onboardingDraftLocationSchema.optional(),
