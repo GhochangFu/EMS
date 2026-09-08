@@ -6,12 +6,16 @@ import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import {
+  assertKbDropsAnAlarmWhoseOnlySkillDoesNotResolve,
   assertKbExcludesDraftAndArchivedTemplates,
+  assertKbKeepsBothOrganizationsForAnUnrestrictedAdmin,
+  assertKbKeepsTheSameCodeInTwoOrganizations,
   assertKbFindsAPhilosophyBearingClass,
   assertKbListsOneEntryPerCodeAtTheCurrentPublishedVersion,
   assertKbOmitsAlarmRowsWithNoPhilosophy,
   assertKbResolvesAnInactiveSkillLabel,
   assertKbReturnsNothingForAnEmptyScope,
+  assertKbTreatsANonArrayScopeAsEmpty,
   assertKbScopedToTheCallersOrganization,
   assertMechanicalSkillIsSeeded,
 } from "./alarm-kb.integration.spec";
@@ -82,5 +86,22 @@ describe.skipIf(!connectionString)("E2.2 — the alarm philosophy KB against a r
 
   it("returns nothing for a caller with an empty organization scope", async () => {
     await assertKbReturnsNothingForAnEmptyScope(db);
+  });
+
+  // Post-merge review of the merged E2.2 (2026-09-08).
+  it("keeps both organizations' versions of one shared template code", async () => {
+    await assertKbKeepsTheSameCodeInTwoOrganizations(db);
+  });
+
+  it("keeps both organizations for an unrestricted admin scope", async () => {
+    await assertKbKeepsBothOrganizationsForAnUnrestrictedAdmin(db);
+  });
+
+  it("treats a scope that is neither null nor an array as empty", async () => {
+    await assertKbTreatsANonArrayScopeAsEmpty(db);
+  });
+
+  it("drops an alarm whose only philosophy field is an unresolvable skill", async () => {
+    await assertKbDropsAnAlarmWhoseOnlySkillDoesNotResolve(db);
   });
 });

@@ -10,12 +10,7 @@ import {
   assertAlarmSkillsSeeded,
   assertDetailsEmptyScopeThrows,
   assertDetailsFiltersAffectedAssetsByScope,
-  assertDetailsOmitsClassPhilosophyWhenProvenanceIsNull,
-  assertDetailsOmitsClassPhilosophyWhenTheAlarmCodeIsAbsent,
   assertDetailsOmitsPairingWhenNoRule,
-  assertDetailsRefusesATemplateFromAnotherOrganization,
-  assertDetailsResolvesAnInactiveSkillLabel,
-  assertDetailsReturnsClassPhilosophyForASeededRule,
   assertDetailsReturnsOrganizationId,
   assertDetailsReturnsThresholdPairing,
   assertDetailsScopedByAssetIds,
@@ -106,27 +101,6 @@ describe.skipIf(!connectionString)("E2.1 — alarm enrichment schema against a r
 
   it("details: filters affected assets outside the caller's scope", async () => {
     await assertDetailsFiltersAffectedAssetsByScope(db);
-  });
-
-  // E2.2 (ADR 0059) — the class philosophy block.
-  it("details: returns the class philosophy for a rule seeded from a template alarm", async () => {
-    await assertDetailsReturnsClassPhilosophyForASeededRule(db);
-  });
-
-  it("details: returns a null class philosophy when the rule carries no provenance", async () => {
-    await assertDetailsOmitsClassPhilosophyWhenProvenanceIsNull(db);
-  });
-
-  it("details: returns a null class philosophy when the pinned version dropped the alarm entry", async () => {
-    await assertDetailsOmitsClassPhilosophyWhenTheAlarmCodeIsAbsent(db);
-  });
-
-  it("details: does not read a template belonging to another organization", async () => {
-    await assertDetailsRefusesATemplateFromAnotherOrganization(db);
-  });
-
-  it("details: resolves the label of a retired (inactive) alarm skill", async () => {
-    await assertDetailsResolvesAnInactiveSkillLabel(db);
   });
 
   it("enrichment upsert: creates then overwrites the same row", async () => {

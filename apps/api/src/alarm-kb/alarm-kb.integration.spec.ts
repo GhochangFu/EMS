@@ -334,3 +334,169 @@ export async function assertMechanicalSkillIsSeeded(db: BmsDb): Promise<void> {
     .limit(1);
   assert(row?.label === "Mechanical", `expected the seeded mechanical trade, got ${row?.label}`);
 }
+
+/**
+ * **The post-merge review's finding 1.** `bms.asset_templates` is unique on
+ * `(organization_id, code, version)`, so `code` alone is not a key. A
+ * `DISTINCT ON (code)` collapses two organizations' versions of the same class
+ * into one row and silently drops the other — and the collision is guaranteed
+ * by design rather than hypothetical: `AssetTemplateStockService.import` writes
+ * `code: body.code`, so every organization provisioned from the same stock
+ * catalog entry carries the identical code.
+ *
+ * Reached by any caller with more than one organization in scope, and by every
+ * global `admin`, for whom `readableOrganizationIds` returns `null`.
+ */
+export async function assertKbKeepsTheSameCodeInTwoOrganizations(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const { organizationId } = await fixtureLocation(tx);
+    const [otherOrg] = await tx
+      .insert(organizations)
+      .values({ code: "E22_KB_SECOND_ORG", name: "E2.2 KB - second tenant" })
+      .returning({ id: organizations.id });
+    if (!otherOrg) {
+      throw new Error("failed to insert the second organization");
+    }
+
+    // The same `code` in both organizations, which is what a shared stock
+    // catalog entry produces.
+    await seedTemplate(tx, {
+      organizationId,
+      code: "E22_KB_SHARED_CODE",
+      version: 3,
+      status: "published",
+      alarms: [{ code: "A1", philosophy: { cause: "tenant one" } }],
+    });
+    await seedTemplate(tx, {
+      organizationId: otherOrg.id,
+      code: "E22_KB_SHARED_CODE",
+      version: 5,
+      status: "published",
+      alarms: [{ code: "A1", philosophy: { cause: "tenant two" } }],
+    });
+
+    const { classes } = await new AlarmKbService(tx).list([organizationId, otherOrg.id]);
+    const ours = onlyOurClasses(classes, "E22_KB_SHARED_CODE");
+
+    assert(
+      ours.length === 2,
+      `both organizations' versions of one code must survive; got ${ours.length}`,
+    );
+    const byOrg = new Map(ours.map((c) => [c.organizationId, c]));
+    assert(
+      byOrg.get(organizationId)?.templateVersion === 3 &&
+        byOrg.get(otherOrg.id)?.templateVersion === 5,
+      "each organization must keep its OWN highest published version",
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * The same finding on the path that reaches it most easily: a global `admin`,
+ * for whom `readableOrganizationIds` returns `null` and the tenant filter is
+ * omitted entirely.
+ */
+export async function assertKbKeepsBothOrganizationsForAnUnrestrictedAdmin(
+  db: BmsDb,
+): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const { organizationId } = await fixtureLocation(tx);
+    const [otherOrg] = await tx
+      .insert(organizations)
+      .values({ code: "E22_KB_THIRD_ORG", name: "E2.2 KB - third tenant" })
+      .returning({ id: organizations.id });
+    if (!otherOrg) {
+      throw new Error("failed to insert the third organization");
+    }
+    await seedTemplate(tx, {
+      organizationId,
+      code: "E22_KB_ADMIN_CODE",
+      version: 1,
+      status: "published",
+      alarms: [{ code: "A1", philosophy: { cause: "tenant one" } }],
+    });
+    await seedTemplate(tx, {
+      organizationId: otherOrg.id,
+      code: "E22_KB_ADMIN_CODE",
+      version: 1,
+      status: "published",
+      alarms: [{ code: "A1", philosophy: { cause: "tenant two" } }],
+    });
+
+    // `null` is the unrestricted-admin scope.
+    const { classes } = await new AlarmKbService(tx).list(null);
+    assert(
+      onlyOurClasses(classes, "E22_KB_ADMIN_CODE").length === 2,
+      "an admin reading every tenant must see both organizations' copies of one code",
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * Security review L1. The scope argument **is** the whole tenant control here —
+ * unlike `AlarmDetailsService`, where a falsy scope loses only the asset filter
+ * and the tenant predicate still holds off the alarm's own location. A truthiness
+ * test lets any falsy value take the unrestricted-admin branch on a `BYPASSRLS`
+ * pool. Only `null` may mean "every tenant".
+ */
+export async function assertKbTreatsANonArrayScopeAsEmpty(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const { organizationId } = await fixtureLocation(tx);
+    await seedTemplate(tx, {
+      organizationId,
+      code: "E22_KB_FALSY_SCOPE",
+      version: 1,
+      status: "published",
+      alarms: [{ code: "A1", philosophy: { cause: "must not be returned" } }],
+    });
+
+    // The type says `string[] | null`; this is what a refactor, a widened
+    // signature or a JS caller can still hand it.
+    const svc = new AlarmKbService(tx);
+    for (const scope of [undefined, "" as unknown, 0 as unknown]) {
+      const { classes } = await svc.list(scope as never);
+      assert(
+        classes.length === 0,
+        `a scope that is neither null nor an array must return nothing, got ${classes.length} for ${String(scope)}`,
+      );
+    }
+
+    tx.rollback();
+  });
+}
+
+/**
+ * Post-merge review finding 4. A philosophy whose only field is a `skill` that
+ * no longer resolves in `bms.alarm_skills` produced an entry with four null
+ * values — the KB drew the alarm code over an empty list. The gate must be the
+ * text that will actually render, not the code that may not resolve.
+ *
+ * Reachable because template content references the skill inside jsonb, so no
+ * foreign key stops a `bms.alarm_skills` row being re-coded after publish.
+ */
+export async function assertKbDropsAnAlarmWhoseOnlySkillDoesNotResolve(
+  db: BmsDb,
+): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const { organizationId } = await fixtureLocation(tx);
+    await seedTemplate(tx, {
+      organizationId,
+      code: "E22_KB_GHOST_SKILL",
+      version: 1,
+      status: "published",
+      alarms: [{ code: "GHOST", philosophy: { skill: "e22_kb_no_such_trade" } }],
+    });
+
+    const { classes } = await new AlarmKbService(tx).list([organizationId]);
+    assert(
+      onlyOurClasses(classes, "E22_KB_GHOST_SKILL").length === 0,
+      "an alarm whose only philosophy field is an unresolvable skill renders nothing, so it must not be listed",
+    );
+
+    tx.rollback();
+  });
+}
