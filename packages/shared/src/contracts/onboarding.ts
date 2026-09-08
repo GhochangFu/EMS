@@ -360,6 +360,13 @@ export const MAX_ONBOARDING_ASSET_POINTS = 5_000;
  * schema binds only the producers that parse it. Until then the first ground
  * carries this on its own: `bms.onboarding_sessions` measured `(0 rows)` on the
  * base this shipped from, so there is no stored draft to read back and fail.
+ *
+ * **Re-measure that count as `bms_fleet`, never as `bms_owner`.** The table is
+ * policied and `FORCE ROW LEVEL SECURITY` binds the owner, so a
+ * `select count(*)` as `bms_owner` with no tenant context returns `0` whether
+ * the table is empty or not — it reported `0` here while fourteen rows were
+ * present, which is a measurement that cannot fail and therefore says nothing.
+ * `bms_fleet` holds `BYPASSRLS` and is what this count was finally taken with.
  * The failure is also softer than the caps': `OnboardingValidateService.validate`
  * uses `safeParse` and turns each issue into a per-field wizard error, so an
  * over-long value already in storage is something the operator is shown and can
