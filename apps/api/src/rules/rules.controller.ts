@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   HttpStatus,
   Param,
   NotFoundException,
@@ -11,8 +12,10 @@ import {
   Post,
   Put,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { ZodError, z } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
@@ -22,6 +25,7 @@ import { ChannelsService } from "../notifications/channels.service";
 import { setRuleNotificationsBodySchema } from "../notifications/notifications.schema";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { EvaluateThrottle, throttleKeysFor } from "./evaluate-throttle";
 import {
   listRuleExecutionsQuerySchema,
   ruleDraftBodySchema,
@@ -41,6 +45,10 @@ export class RulesController {
     private readonly rules: RulesService,
     private readonly accessControl: AccessControlService,
     private readonly channels: ChannelsService,
+    // Last on purpose (`F3.47`): `rules-notifications.spec.ts` constructs this
+    // controller by hand and reads `ConstructorParameters<…>[0..2]`, so adding
+    // the throttle anywhere else would silently change what those mean.
+    private readonly throttle: EvaluateThrottle,
   ) {}
 
   /**
@@ -130,10 +138,66 @@ export class RulesController {
     }
   }
 
+  /**
+   * *Evaluate now* — one sweep of every enabled, published rule in every
+   * organization (ADR 0033 decision 2), bounded to one per 30 s per
+   * organization (`F3.47`, `evaluate-throttle.ts`).
+   *
+   * **The rate bound lives here, at the route, and nowhere else.** A second
+   * caller of `RulesService.evaluateEnabledRules` — a job, a second endpoint —
+   * bypasses it entirely, and `AlarmRaiseService` already writes
+   * `bms.rule_executions` unthrottled. This endpoint is bounded; the table is
+   * not.
+   *
+   * **The order of these four steps is the design, not habit.**
+   *
+   * 1. The role check stays first, so a `viewer` gets 403 and never 429. That
+   *    is also why the throttle is an injectable this body calls rather than a
+   *    guard: a guard runs before the body, would answer 429 to a caller who
+   *    may not press the button at all, and would let them observe another
+   *    organization's throttle state.
+   * 2. `readableOrganizationIds`, **not** `writableOrganizationIds` — the
+   *    obvious helper is a trap. It calls `assertMasterDataRole`, which
+   *    excludes `asset_group_admin`, a role `WRITE_MATRIX` gives
+   *    `configuration: true`. Reaching for it would 403 someone allowed to
+   *    press this.
+   * 3. The throttle, before anything expensive.
+   * 4. Only then the caller's asset scope and the sweep itself. A refused press
+   *    costs two `resolveDbUser` calls and one grant walk — not the full scope
+   *    resolution, the 289 inserts, the 289 updates, or the cross-org alarm
+   *    raises and notification dispatches inside the sweep.
+   *
+   * `Retry-After` is set but deliberately **not** in `main.ts`'s
+   * `exposedHeaders`: the SPA is a different origin and would read `null` from
+   * it, so the seconds are in the message body, where `apiErrorMessage` already
+   * unwraps them. Do not add one half of that pair without the other.
+   */
   @Post("evaluate")
   @HttpCode(HttpStatus.OK)
-  async evaluateEnabledRules(@CurrentUser() user: JwtPayload) {
+  async evaluateEnabledRules(
+    @CurrentUser() user: JwtPayload,
+    // `passthrough: true`: Nest still serialises the success body itself. Only
+    // the refusal touches `res`, and only to set one header — `HttpException`
+    // cannot carry one.
+    @Res({ passthrough: true }) res: Response,
+  ) {
     await this.accessControl.assertOperationsWriteRole(user, "configuration");
+
+    const decision = this.throttle.check(
+      throttleKeysFor(await this.accessControl.readableOrganizationIds(user)),
+      Date.now(),
+    );
+    if (!decision.allowed) {
+      const { retryAfterSeconds } = decision;
+      res.setHeader("Retry-After", String(retryAfterSeconds));
+      throw new HttpException(
+        `Rules were evaluated for this organization moments ago. Try again in ${retryAfterSeconds} ${
+          retryAfterSeconds === 1 ? "second" : "seconds"
+        }.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
     return this.rules.evaluateEnabledRules(
       user,
       await this.accessControl.readableAssetIds(user),
