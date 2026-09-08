@@ -45,8 +45,18 @@ const FIXTURE_ALARM_MESSAGE = "F3.10 storm-control event fixture";
  * see. PR 1's review added three more real-`WHERE` gates there: a row in the
  * other seeded organization under the same key, which no read may see (L1);
  * `failed` rows planted by hand, retried up to `MAX_EVENT_ATTEMPTS` and then
- * blocked (ruling Q9); and a `skipped_rate_limited` row that blocks the key
+ * blocked (ruling Q9); and a `skipped_rate_limited` row that blocked the key
  * like a `sent` one (rulings Q7 and Q9 together).
+ *
+ * **`F3.48` (ADR 0057 Amendment 2) replaced that last gate with four.** A step
+ * the hourly ceiling refuses now writes no row at all and is retried on a later
+ * tick (ruling Q1); a rate-limited row written before `F3.48` landed no longer
+ * blocks its key (ruling Q2); a refused *cleared* message still keeps its row,
+ * because it is dispatched once and never again (ruling Q-A); and
+ * `skipped_unconfigured` still blocks, which Amendment 2 §5 holds out as its
+ * own row and which is what keeps a read narrowed to `status = 'sent'` failing.
+ * This suite is where those four meet a real Postgres — the unit spec's fake
+ * applies no `WHERE` and cannot show a row being filtered out.
  *
  * Everything it writes, it removes.
  */
@@ -236,8 +246,9 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     //
     // ADR 0057 decision 10. The sweep asks the ledger before it sends a step
     // or a cleared message, and the unit spec's fake answers that read from a
-    // queue — so this is the only place `hasRecordedDelivery`'s WHERE (this
-    // channel, this organization, this key, any status) meets a real Postgres.
+    // queue — so this is the only place `eventDeliveryBlocked`'s WHERE (this
+    // channel, this organization, this key, any status but the rate-limited
+    // one since `F3.48`) meets a real Postgres.
     // The channel set comes through `loadEnabledChannelsByIds` and
     // `toChannelRow`, the way the sweep will build it, so that read's WHERE
     // is exercised here too.
@@ -375,12 +386,16 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       "still three rows under step 3's key — the ledger stops growing at the bound",
     );
 
-    // --- FG1: a non-`sent`, non-`failed` row consumes the key too ------------
+    // --- `F3.48` Q1: a ceiling-refused step writes no row, and is retried ----
     //
-    // Rulings Q7 and Q9 together: only `failed` is retried. The ceiling-of-1
-    // service records step 9 as `skipped_rate_limited` (this channel already
-    // holds sent rows this hour); the normal service then finds that row and
-    // answers from it. A read narrowed to `status = 'sent'` would send here.
+    // The whole row, end to end, against Postgres. The ceiling-of-1 service is
+    // a channel whose hour is full — the tail of the burst ruling Q7 measured
+    // (52 backlogged alarms, one step each, on a first severity mapping).
+    // Under ADR 0057 Amendment 2 that refusal leaves NOTHING in the ledger, so
+    // the key survives; the normal service is the next tick, after the
+    // trailing-hour count of `sent` rows has fallen back under the ceiling.
+    // Before `F3.48` the second dispatch was answered `skipped_deduped` from
+    // the refusal's own row and the step was lost for the life of the ledger.
     const stepNine: DispatchInput = { ...step, event: { kind: "escalation", step: 9 } };
     const stepNineKey = buildDedupeKey(stepNine);
     const limitedStep = await limited.dispatchToChannels([channel], stepNine);
@@ -388,17 +403,126 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       limitedStep[0]?.status === "skipped_rate_limited",
       `at the ceiling of 1 the step is rate-limited, got ${String(limitedStep[0]?.status)}`,
     );
+    assert(
+      (await countByKey(pool, channelId as string, first.organization_id, stepNineKey)) === 0,
+      "Q1: the ceiling wrote no row — that absence is what makes the retry possible",
+    );
+
     const sentBeforeNine = sent.length;
-    const afterLimited = await service.dispatchToChannels([channel], stepNine);
+    const retried = await service.dispatchToChannels([channel], stepNine);
     assert(
-      afterLimited[0]?.status === "skipped_deduped",
-      `a rate-limited step is answered from its row, got ${String(afterLimited[0]?.status)}`,
+      retried[0]?.status === "sent",
+      `the next tick retries the refused step, got ${String(retried[0]?.status)}`,
     );
-    assert(sent.length === sentBeforeNine, "the rate-limited step never reaches the transport");
     assert(
-      (await countByKey(pool, channelId as string, first.organization_id, stepNineKey)) === 1,
-      "one rate-limited row holds step 9's key and nothing was written after it",
+      sent.length === sentBeforeNine + 1,
+      `the retry reaches the transport exactly once, got ${sent.length - sentBeforeNine}`,
     );
+    assert(
+      (await statusesByKey(pool, channelId as string, first.organization_id, stepNineKey)).join(",") ===
+        "sent",
+      "one row holds step 9's key and it is the send, not a refusal",
+    );
+
+    // Q1 is the event path only, and this is the gate for that. It has to run
+    // BEFORE anything below plants a rate-limited row: the one row is the
+    // raise-path refusal asserted earlier in this suite, and the block above
+    // must not have added a second.
+    assert(
+      (await countDeliveries(pool, channelId as string, "skipped_rate_limited")) === 1,
+      "Q1 did not leak into the raise path: its ceiling row is still the only " +
+        "skipped_rate_limited row this suite has produced",
+    );
+
+    // --- `F3.48` Q2: a row written before this landed releases the key -------
+    //
+    // Q1 stops new ones being written; this is the one already in the ledger.
+    // Every key blocked by ruling Q7 is in exactly this state, which is why Q2
+    // exists — without it the row would close while the steps it was written
+    // about stayed lost.
+    const stepTen: DispatchInput = { ...step, event: { kind: "escalation", step: 10 } };
+    const stepTenKey = buildDedupeKey(stepTen);
+    await plantDeliveries(pool, {
+      ...planted,
+      status: "skipped_rate_limited",
+      dedupeKey: stepTenKey,
+    });
+    const sentBeforeTen = sent.length;
+    const released = await service.dispatchToChannels([channel], stepTen);
+    assert(
+      released[0]?.status === "sent",
+      `a rate-limited row no longer blocks the key, got ${String(released[0]?.status)}`,
+    );
+    assert(sent.length === sentBeforeTen + 1, "the released step reaches the transport once");
+    assert(
+      (await statusesByKey(pool, channelId as string, first.organization_id, stepTenKey)).join(",") ===
+        "skipped_rate_limited,sent",
+      "the legacy row is left where it is; the send is appended after it",
+    );
+    const releasedAgain = await service.dispatchToChannels([channel], stepTen);
+    assert(
+      releasedAgain[0]?.status === "skipped_deduped",
+      `and the sent row it left now answers the key, got ${String(releasedAgain[0]?.status)}`,
+    );
+
+    // --- FG1, kept: a non-`sent`, non-`failed`, non-rate-limited row blocks ---
+    //
+    // This is the assertion the old rate-limited block carried: a read narrowed
+    // to `status = 'sent'` would send here. Amendment 2 §5 holds
+    // `skipped_unconfigured` out of `F3.48` deliberately — a step refused while
+    // its channel had no transport configured is still never retried — so this
+    // block is both the surviving guard and the recorded shape of that
+    // follow-up row.
+    const stepEleven: DispatchInput = { ...step, event: { kind: "escalation", step: 11 } };
+    const stepElevenKey = buildDedupeKey(stepEleven);
+    await plantDeliveries(pool, {
+      ...planted,
+      status: "skipped_unconfigured",
+      dedupeKey: stepElevenKey,
+    });
+    const sentBeforeEleven = sent.length;
+    const unconfigured = await service.dispatchToChannels([channel], stepEleven);
+    assert(
+      unconfigured[0]?.status === "skipped_deduped",
+      `an unconfigured refusal still answers the key, got ${String(unconfigured[0]?.status)}`,
+    );
+    assert(sent.length === sentBeforeEleven, "it never reaches the transport");
+    assert(
+      (await countByKey(pool, channelId as string, first.organization_id, stepElevenKey)) === 1,
+      "and nothing was written after it",
+    );
+
+    // --- ruling Q9 still bounds the retry, with rate-limited rows in the way --
+    //
+    // Three `failed` rows block the key, unchanged. The three rate-limited rows
+    // are planted FIRST so that a `LIMIT 3` drawn from the unfiltered set could
+    // return them and miss the `failed` ones: excluding the status in the
+    // `WHERE` draws the sample from the blocking-eligible rows and still finds
+    // three.
+    //
+    // This state is NOT reachable in production — today's predicate blocks on
+    // the first non-`failed` row, so at most one rate-limited row can exist per
+    // event key, and after Q1 the escalation path writes none — so this is a
+    // discriminator, not a scenario. Its physical row order is a property of
+    // this database rather than of SQL, which is why the guaranteed gate on the
+    // same claim is the rendered-SQL case in `notifications.events.spec.ts`.
+    const stepTwelve: DispatchInput = { ...step, event: { kind: "escalation", step: 12 } };
+    const stepTwelveKey = buildDedupeKey(stepTwelve);
+    await plantDeliveries(
+      pool,
+      { ...planted, status: "skipped_rate_limited", dedupeKey: stepTwelveKey },
+      3,
+    );
+    await plantDeliveries(pool, { ...planted, dedupeKey: stepTwelveKey }, 3);
+    const sentBeforeTwelve = sent.length;
+    const bounded = await service.dispatchToChannels([channel], stepTwelve);
+    assert(
+      bounded[0]?.status === "skipped_deduped",
+      `three failed rows still block the key past the rate-limited ones, got ${String(
+        bounded[0]?.status,
+      )}`,
+    );
+    assert(sent.length === sentBeforeTwelve, "an exhausted key never reaches the transport");
 
     // Decision 9 / ruling Q5: the cleared message goes to whoever holds a
     // `sent` row for the alarm. The steps above are those rows — and the
@@ -407,6 +531,37 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     assert(
       recipients.length === 1 && recipients[0] === channelId,
       `the steps' channel is the cleared recipient, got [${recipients.join(",")}]`,
+    );
+
+    // --- `F3.48` Q-A: a ceiling-refused CLEARED message KEEPS its row --------
+    //
+    // Q1 is the escalation kind only. `notifyCleared` runs once, from the clear
+    // phase, and `loadActiveAlarms` filters `cleared_at IS NULL`, so the sweep
+    // never sees that alarm again — there is no next tick to retry a clear.
+    // Dropping its row would make the refusal invisible and buy nothing, so ADR
+    // 0041 decision 4's visible refusal is kept exactly where no retry replaces
+    // it.
+    //
+    // A different severity, because the key is `rule:alarm:severity[:suffix]`
+    // and the block below owns the `warning` cleared key.
+    const refusedClear: DispatchInput = {
+      ...step,
+      severity: "critical",
+      event: { kind: "cleared" },
+    };
+    const refusedClearKey = buildDedupeKey(refusedClear);
+    const sentBeforeRefusedClear = sent.length;
+    const clearAtCeiling = await limited.dispatchToChannels([channel], refusedClear);
+    assert(
+      clearAtCeiling[0]?.status === "skipped_rate_limited",
+      `the clear is rate-limited at the ceiling of 1, got ${String(clearAtCeiling[0]?.status)}`,
+    );
+    assert(sent.length === sentBeforeRefusedClear, "a refused clear never reaches the transport");
+    assert(
+      (await statusesByKey(pool, channelId as string, first.organization_id, refusedClearKey)).join(
+        ",",
+      ) === "skipped_rate_limited",
+      "Q-A: the clear's refusal IS written — it is the one event that is never retried",
     );
 
     const cleared: DispatchInput = { ...step, event: { kind: "cleared" } };
@@ -475,6 +630,22 @@ async function countByKey(
     [channelId, organizationId, dedupeKey],
   );
   return Number(res.rows[0]?.count ?? "0");
+}
+
+/** The statuses under one key on one channel in one organization, oldest first (`F3.48`). */
+async function statusesByKey(
+  pool: Pool,
+  channelId: string,
+  organizationId: string,
+  dedupeKey: string,
+): Promise<string[]> {
+  const res = await pool.query<{ status: string }>(
+    `SELECT status FROM bms.notification_deliveries
+      WHERE channel_id = $1 AND organization_id = $2 AND dedupe_key = $3
+      ORDER BY attempted_at`,
+    [channelId, organizationId, dedupeKey],
+  );
+  return res.rows.map((row) => row.status);
 }
 
 /** The id of a seeded organization other than `organizationId` — the L1 row's tenant. */
