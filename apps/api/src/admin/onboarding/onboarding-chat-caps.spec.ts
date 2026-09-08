@@ -1,6 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 
-import { MAX_ONBOARDING_RTUS } from "@bms/shared";
+import { MAX_ONBOARDING_POINT_KEYS, MAX_ONBOARDING_RTUS } from "@bms/shared";
 import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
@@ -26,11 +26,19 @@ const JWT: JwtPayload = {
 };
 
 /**
- * The turn that appends. `handleRuleBasedTurn` reaches its RTU branch on
+ * The turn that appends an RTU. `handleRuleBasedTurn` reaches its RTU branch on
  * `phase === "rtu"`, and the message text only picks the protocol — it is not
  * what decides whether an RTU is added.
  */
 const APPEND_TURN = "Add another RTU";
+
+/**
+ * The turn that appends a point key. It reaches the `point_keys` branch on the
+ * phase alone; the branch above it is skipped because the draft already has a
+ * location and an RTU, and `"add point key kw"` matches neither the
+ * existing-keys phrase nor the commit phrase.
+ */
+const POINT_KEY_TURN = "Add point key kw";
 
 /** One draft RTU, each with a distinct code so nothing is folded on the way in. */
 function rtuAt(index: number): NonNullable<OnboardingDraft["rtus"]>[number] {
@@ -44,22 +52,58 @@ function rtuAt(index: number): NonNullable<OnboardingDraft["rtus"]>[number] {
   };
 }
 
-function sessionRow(rtuCount: number) {
+/** One draft point key, each with a distinct code. */
+function pointKeyAt(index: number): NonNullable<OnboardingDraft["pointKeys"]>[number] {
+  return {
+    code: `pk_${index + 1}`,
+    name: `Point ${index + 1}`,
+    domain: "electrical",
+    unit: "kW",
+  };
+}
+
+const LOCATION: NonNullable<OnboardingDraft["location"]> = {
+  name: "Berhampur",
+  slug: "berhampur",
+  code: "BERHAMPUR",
+  type: "smoc_campus",
+  latitude: -25.7,
+  longitude: 28.2,
+};
+
+function sessionRow(draft: OnboardingDraft, currentPhase: string) {
   return {
     id: "s-1",
     organizationId: "org-1",
     status: "draft",
-    currentPhase: "rtu",
-    draft: {
-      location: { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", type: "smoc_campus" },
-      rtus: times(rtuCount, rtuAt),
-    },
+    currentPhase,
+    draft,
     messages: [],
     createdAt: new Date("2026-09-08T00:00:00Z"),
     updatedAt: new Date("2026-09-08T00:00:00Z"),
     committedAt: null,
     result: null,
   };
+}
+
+/** A session in the RTU phase holding `rtuCount` RTUs — the appending branch. */
+function rtuSession(rtuCount: number) {
+  return sessionRow({ location: LOCATION, rtus: times(rtuCount, rtuAt) }, "rtu");
+}
+
+/**
+ * A session in the point-keys phase. It carries a location and one RTU so the
+ * two branches above the point-keys branch fall through rather than answering.
+ */
+function pointKeySession(pointKeyCount: number) {
+  return sessionRow(
+    {
+      location: LOCATION,
+      rtus: [rtuAt(0)],
+      pointKeys: times(pointKeyCount, pointKeyAt),
+    },
+    "point_keys",
+  );
 }
 
 /** Everything the fake database was asked to do, so a write can be measured absent. */
@@ -117,13 +161,12 @@ const ORG = [{ code: "ESKOM", name: "Eskom" }];
  * `handleRuleBasedTurn`, and a stubbed chat service would assert the guard
  * against a patch the test itself wrote — which proves nothing about whether the
  * rule-based branch grows the array. `protocolService` and `catalogService` are
- * `{} as never`: `APPEND_TURN` names no protocol question and no existing-keys
- * phrase, so reaching either of them is itself a failure.
+ * `{} as never`: neither turn below names a protocol question or the
+ * existing-keys phrase, so reaching either of them is itself a failure.
  */
-function buildService(opts: { rtuCount: number; results?: unknown[][] }) {
+function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: unknown[][] }) {
   const record: Recorder = { updates: [], transactions: 0 };
-  const session = sessionRow(opts.rtuCount);
-  const db = fakeDb(opts.results ?? [[session], ORG], record);
+  const db = fakeDb(opts.results ?? [[opts.session], ORG], record);
   const accessControl = {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "admin" }),
     canManageOrganization: () => Promise.resolve(true),
@@ -144,7 +187,7 @@ function buildService(opts: { rtuCount: number; results?: unknown[][] }) {
     {} as never,
     {} as never,
   );
-  return { service, record, session };
+  return { service, record };
 }
 
 /** Runs `fn` with no OpenAI key, which is what `.env.example` ships. */
@@ -174,7 +217,8 @@ async function rejectionOf(run: Promise<unknown>, record: Recorder): Promise<unk
   const written = record.updates[0]?.draft as OnboardingDraft | undefined;
   throw new Error(
     "chat accepted the turn and persisted the over-cap draft: " +
-      `${written?.rtus?.length ?? 0} RTUs written, cap is ${MAX_ONBOARDING_RTUS}`,
+      `${written?.rtus?.length ?? 0} RTUs (cap ${MAX_ONBOARDING_RTUS}) and ` +
+      `${written?.pointKeys?.length ?? 0} point keys (cap ${MAX_ONBOARDING_POINT_KEYS}) written`,
   );
 }
 
@@ -203,11 +247,11 @@ function messageOf(error: unknown): string {
 export async function assertAChatTurnGrowsTheDraftByOne(): Promise<void> {
   await withoutOpenAi(async () => {
     const { service, record } = buildService({
-      rtuCount: MAX_ONBOARDING_RTUS - 1,
+      session: rtuSession(MAX_ONBOARDING_RTUS - 1),
       results: [
-        [sessionRow(MAX_ONBOARDING_RTUS - 1)],
+        [rtuSession(MAX_ONBOARDING_RTUS - 1)],
         ORG,
-        [sessionRow(MAX_ONBOARDING_RTUS)],
+        [rtuSession(MAX_ONBOARDING_RTUS)],
         ORG,
       ],
     });
@@ -253,11 +297,11 @@ export async function assertAnOverCapChatTurnIsRefusedAndWritesNothing(): Promis
     // guard this turn *succeeds* and the failure below is the persisted draft
     // rather than a database stub running out of rows.
     const { service, record } = buildService({
-      rtuCount: MAX_ONBOARDING_RTUS,
+      session: rtuSession(MAX_ONBOARDING_RTUS),
       results: [
-        [sessionRow(MAX_ONBOARDING_RTUS)],
+        [rtuSession(MAX_ONBOARDING_RTUS)],
         ORG,
-        [sessionRow(MAX_ONBOARDING_RTUS)],
+        [rtuSession(MAX_ONBOARDING_RTUS)],
         ORG,
       ],
     });
@@ -290,6 +334,53 @@ export async function assertAnOverCapChatTurnIsRefusedAndWritesNothing(): Promis
 }
 
 /**
+ * `F4.103` — the **second** appending branch, and a different cap.
+ *
+ * `rtus` is not the only array the rule-based turn concatenates onto:
+ * `patch.pointKeys = [...(draft.pointKeys ?? []), { code: "kw", … }]` does the
+ * same in the point-keys phase. Asserting only the RTU branch would leave that
+ * one covered by a sentence in a docblock, which is how this row's first pass
+ * missed a producer. It is also a different member of `CAPPED_DRAFT_ARRAYS`,
+ * with a different cap and a different label, so it exercises the loop rather
+ * than its first iteration.
+ *
+ * (`assets` and `assetPoints` assign single-element arrays and cannot grow, so
+ * there is nothing to gate for them here.)
+ */
+export async function assertAnOverCapPointKeyTurnIsRefused(): Promise<void> {
+  await withoutOpenAi(async () => {
+    const { service, record } = buildService({
+      session: pointKeySession(MAX_ONBOARDING_POINT_KEYS),
+      results: [
+        [pointKeySession(MAX_ONBOARDING_POINT_KEYS)],
+        ORG,
+        [pointKeySession(MAX_ONBOARDING_POINT_KEYS)],
+        ORG,
+      ],
+    });
+    const error = await rejectionOf(service.chat(JWT, "s-1", POINT_KEY_TURN), record);
+    assert(
+      error instanceof BadRequestException,
+      `an over-cap point-key turn is a bad request, got ${String(error)}`,
+    );
+
+    const message = messageOf(error);
+    const expected =
+      `The draft holds ${MAX_ONBOARDING_POINT_KEYS + 1} point keys, more than the ` +
+      `${MAX_ONBOARDING_POINT_KEYS} one onboarding session may commit; remove some and commit ` +
+      "the rest in a second session";
+    assert(
+      message === expected,
+      `the refusal names the point-key cap, not the RTU one, got "${message}"`,
+    );
+    assert(
+      record.updates.length === 0 && record.transactions === 0,
+      `a refused point-key turn writes nothing, got ${record.updates.length} update(s)`,
+    );
+  });
+}
+
+/**
  * `F4.103` — the refusal sits **below** the ADR 0022 decision 2 credential
  * check, which answers with a normal chat response rather than a 400.
  *
@@ -300,10 +391,7 @@ export async function assertAnOverCapChatTurnIsRefusedAndWritesNothing(): Promis
  */
 export async function assertTheCredentialNudgeStillAnswersFirst(): Promise<void> {
   await withoutOpenAi(async () => {
-    const { service, record } = buildService({
-      rtuCount: MAX_ONBOARDING_RTUS,
-      results: [[sessionRow(MAX_ONBOARDING_RTUS)], ORG],
-    });
+    const { service, record } = buildService({ session: rtuSession(MAX_ONBOARDING_RTUS) });
     const response = await service.chat(JWT, "s-1", "the password is hunter2");
     assert(
       response.assistantMessage.includes("Credentials never go through this chat"),
