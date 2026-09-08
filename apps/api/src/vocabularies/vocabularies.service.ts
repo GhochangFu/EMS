@@ -20,6 +20,7 @@ import type {
   VocabulariesResponse,
 } from "@bms/shared";
 
+import { MAX_ECHOED_CELL_CHARS } from "../admin/spreadsheet-guard";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 
 /**
@@ -307,11 +308,70 @@ export class VocabulariesService {
 
     // The rejected code is echoed so the caller can see what was wrong with
     // their input — but it is caller-supplied text, and Nest logs 4xx messages.
-    // Stripping control characters closes the log-injection line break (§4.3);
-    // the length is already bounded at 64 by the request schema.
+    // Stripping control characters closes the log-injection line break (§4.3).
+    //
+    // **`F4.104` — the length is cut here, and the sentence this replaces said
+    // it did not need to be.** It read "the length is already bounded at 64 by
+    // the request schema", and that named a mechanism that holds for some
+    // callers and not others. Ten call sites reach this method, in seven files,
+    // and every one of them *does* arrive bounded at 64 — so no unbounded value
+    // was ever echoed — but by four separate routes:
+    //
+    // - **A request body schema**, on `assets.service.ts:146`/`:227`,
+    //   `asset-templates.service.ts:193`/`:279`,
+    //   `alarm-enrichment.service.ts:76` and `asset-groups.service.ts:196`.
+    //   `rules.service.ts:866`/`:877` reach it this way too from `createRule`
+    //   (`:163`) and `previewRule` (`:265`), but not from every path — see the
+    //   fourth route.
+    // - **A schema re-applied to a row already stored**, which is not a request
+    //   schema and is not on the request at all. `onboarding-commit.service.ts`
+    //   `:181` is reached from `POST sessions/:id/commit`, a route that takes no
+    //   `@Body()`: what bounds `domain` is `onboardingDraftSchema`, run over the
+    //   *stored* draft by `OnboardingValidateService.validate` three statements
+    //   earlier, whose `readyToCommit` is false for an over-long code so the
+    //   call is never made. (`F4.104` added a second, earlier guard at the
+    //   workbook parse site, because that producer writes the draft without
+    //   parsing anything.) `dashboard-templates.service.ts:286` is the same
+    //   shape — `sectionTemplateContentSchema.parse(template.content)`.
+    // - **A parse of in-repo catalog source.** The stock import hands
+    //   `AssetTemplatesService.create` the OUTPUT of
+    //   `createAssetTemplateBodySchema.parse`, never the raw entry
+    //   (`asset-templates-stock.service.ts:184`).
+    // - **A column width and a foreign key, with no schema anywhere.**
+    //   `publishRule` (`rules.service.ts:364`) hands `validateRuleDraft` the
+    //   output of `ruleBodyFromRow(current)`, which reads `row.category` and
+    //   `row.severity` off the stored row and **casts** them
+    //   (`rule-mapping.ts:146`, `:156`). `updateRule` (`:224`) is the mixed
+    //   case: `mergeRuleDraft` takes each field from the patch when it is
+    //   present and from the row otherwise. What bounds those is
+    //   `automation_rules.category` / `.severity` being `varchar(64)`
+    //   (`packages/db/src/schema/alarms-schema.ts:196`, `:212`) — the same 64,
+    //   arrived at by a mechanism no schema participates in.
+    //
+    // What actually holds all four is that the five vocabulary code schemas in
+    // `packages/shared/src/contracts/operations.ts` are each
+    // `z.string().min(1).max(64)`, and that the columns they are written to were
+    // widened to match (ADR 0032's note on `alarms-schema.ts:60-64` is the
+    // reasoning). That is a property of every caller today, not of this method,
+    // and a caller added tomorrow inherits none of it — which is exactly the
+    // assumption the old sentence made and could not keep. So the cut below
+    // removes the dependency instead of restating it.
+    //
+    // `MAX_ECHOED_CELL_CHARS` is the same 64 `quoteCell` applies to sheet text,
+    // imported rather than restated. `quoteCell` itself is deliberately *not*
+    // used: it wraps in single quotes and this message uses double, and
+    // `asset-templates-stock.integration.spec.ts:317` reads that punctuation.
+    //
+    // The cut runs after the strip, so it bounds the string that is actually
+    // interpolated. Every code any assertion in this repo names is far under the
+    // bound, so all four of them — `asset-templates-stock.integration.spec.ts`
+    // `:317` and `:321`, and `vocabularies.service.integration.spec.ts:85` and
+    // `:197` — read the same bytes they always did.
     const safe = code.replace(/[^\x20-\x7e]/g, "");
+    const shown =
+      safe.length > MAX_ECHOED_CELL_CHARS ? `${safe.slice(0, MAX_ECHOED_CELL_CHARS)}…` : safe;
 
-    return `${field} "${safe}" is not a live value. Expected one of: ${available
+    return `${field} "${shown}" is not a live value. Expected one of: ${available
       .map((row) => row.code)
       .join(", ")}.`;
   }
