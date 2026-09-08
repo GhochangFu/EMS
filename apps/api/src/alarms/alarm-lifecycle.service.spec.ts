@@ -40,10 +40,17 @@ import {
  * one; `alarm-lifecycle-raise-retry.spec.ts` imports them rather than growing
  * this file past AGENTS.md §4.5's 1000-line cap, the way
  * `notifications.events.spec.ts` imports `fakeDb` and `input` from
- * `notifications.service.spec.ts`. The thirteen cases below are unchanged and
- * still green: with the evidence conjunct an empty ledger owes nobody, so a
- * default `fakeDeps` retries nothing — which also means **not one of them
- * gates the raise-retry phase**.
+ * `notifications.service.spec.ts`.
+ *
+ * **Twelve of the thirteen cases below are unchanged; the thirteenth is not,
+ * and saying "unchanged" would be a false sentence in this docblock.**
+ * `testUnmappedSeverityAndOrganizationlessRule` had one count widened from one
+ * warn to two: an org-less rule is now refused by two phases and each says so
+ * once. Everything else is untouched, because with owner ruling 3's evidence
+ * conjunct an empty ledger owes nobody and a default `fakeDeps` retries
+ * nothing — which also means **not one of these cases gates the raise-retry
+ * phase**. `alarm-lifecycle-raise-retry.spec.ts` is the whole of that gate, and
+ * its own docblock states the same correction.
  */
 
 export function assert(condition: boolean, message: string): void {

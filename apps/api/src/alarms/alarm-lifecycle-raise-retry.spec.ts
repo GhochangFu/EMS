@@ -38,7 +38,7 @@ import {
  * shape `notifications.events.spec.ts` already uses against
  * `notifications.service.spec.ts`.
  *
- * **Those thirteen cases gate NONE of this.** With owner ruling Q1's evidence
+ * **Those thirteen cases gate NONE of this.** With owner ruling 3's evidence
  * conjunct a channel with no row under the raise key is not owed, and
  * `fakeDeps` defaults its ledger to empty — so every one of them re-offers
  * nobody and would go on passing if this phase were deleted. A reader must not
@@ -233,7 +233,7 @@ async function testTheCapIsTheServicesConstant(): Promise<void> {
 }
 
 /**
- * R4 — owner ruling Q1's evidence conjunct, and it is the same-tick
+ * R4 — owner ruling 3's evidence conjunct, and it is the same-tick
  * double-send gate: a channel with NO row under the key has not been offered
  * the raise yet, so the sweep must not offer it a second time on the tick the
  * raise path is still dispatching it.
@@ -325,7 +325,7 @@ async function testAnAlarmClearingThisTickIsNotReoffered(): Promise<void> {
   );
 }
 
-/** R7 — owner ruling Q2: an acknowledged alarm is skipped, and contributes no ref. */
+/** R7 — owner ruling 4: an acknowledged alarm is skipped, and contributes no ref. */
 async function testAnAcknowledgedAlarmIsSkipped(): Promise<void> {
   const { deps, recorded } = fakeDeps({
     alarms: [

@@ -32,7 +32,7 @@ const BEFORE_THE_WATERMARK = new Date("2026-09-08T11:30:00.000Z");
  * (ADR 0041 Amendment 5, ADR 0057 Amendment 5).
  *
  * `channelsOwedTheRaise` must reproduce `NotificationsService.eventDeliveryBlocked`
- * exactly, applied to the raise key instead of an event key, plus ruling Q1's
+ * exactly, applied to the raise key instead of an event key, plus ruling 3's
  * evidence conjunct in front of it. Every case below names the mutation that
  * reddens it, and each was run — a case whose mutation was not measured is a
  * comment, not a gate.
@@ -93,7 +93,7 @@ export function runRaiseRetryTests(): void {
       rows: [],
       owed: false,
       why:
-        "ruling Q1: a channel with no row under the key has not been offered the raise yet — " +
+        "ruling 3: a channel with no row under the key has not been offered the raise yet — " +
         "dropping this conjunct re-offers it on the same tick the raise is dispatching",
     },
     {

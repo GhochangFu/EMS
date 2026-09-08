@@ -31,7 +31,7 @@ const FIXTURE_ALARM_MESSAGE = "F3.51 raise-retry ledger fixture";
  * included. That would kill the third of this row's three cases: a channel
  * whose only row under the raise key is a ceiling refusal would come back with
  * ZERO rows, `channelsOwedTheRaise` would read that as "no evidence" (owner
- * ruling Q1), and the raise would never be retried. The exclusions belong in
+ * ruling 3), and the raise would never be retried. The exclusions belong in
  * TypeScript here — this read takes no `LIMIT`, so there is no unordered sample
  * and `F3.48`'s argument for putting them in the SQL does not reach it.
  *
@@ -196,8 +196,12 @@ export async function runRaiseAttemptsTests(pool: Pool, db: Db): Promise<void> {
       `S1: attemptedAt reaches the predicate as a Date, got ${typeof row?.attemptedAt}`,
     );
 
-    // S5 — one query per tick, not one per alarm: the three `IN` lists take
-    // every ref at once. Mutation: reading only `refs[0]`.
+    // S5 — one query per BATCH, not one per alarm: the three `IN` lists take
+    // every ref in the batch at once, and two refs are one batch
+    // (`RAISE_ATTEMPT_BATCH_SIZE` is 500). Mutation: reading only `refs[0]`.
+    // That the refs are chunked at all, and that a failing batch costs only its
+    // own alarms, is `raise-attempts.spec.ts` B1–B3 — no database needed to see
+    // how many statements were issued.
     //
     // This is also where the lists' independence shows. Asking for both alarms
     // returns three rows, not two: alarm two's deliberately inconsistent row

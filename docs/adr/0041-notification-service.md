@@ -467,8 +467,7 @@ the two exits deliberately left alone are in ADR 0057 Amendment 4; this note
 exists only so a reader of ADR 0041 alone is not left with Amendment 3's
 sentence.
 
-## Amendment 5 — `F3.51`: decision 4 gains a fourth exception, and it is the
-first that is not an event (2026-09-09)
+## Amendment 5 — `F3.51`: decision 4 gains a fourth exception, and it is the first that is not an event (2026-09-09)
 
 A correction to Amendment 4 above, and to `dispatchToChannel`'s own header
 comment: "**The raise path is untouched** and records as it always has" was
@@ -537,3 +536,51 @@ per-tick read cost; `F3.52` owns splitting the hourly budget between the raise
 and event paths, and owns the retried message's lack of any age or staleness
 marker — deliberate here, since byte-identity with the original raise is what
 lets the ledger rows line up, and inherited rather than fixed by this row.
+
+### Amendment 5 §2 — the growth accounting counts rows, and a row that was not written counts for nothing (2026-09-09)
+
+The `F3.51` review's High finding, and it lands on the "Growth accounting"
+paragraph above. That paragraph is true of every row the ledger holds and says
+nothing about the case where the ledger holds none.
+
+`record()` catches its own INSERT failure, logs an error and returns the
+result. **Decision 1 is unchanged and is not what the review objected to**: a
+dispatch must not fail its caller, `dispatch()` is fire-and-forget from the
+raise path, and a rejection there would surface as an unhandled promise. What
+the review objected to is that the failure was invisible to the one caller that
+needs it. If writes fail while reads succeed, no row is ever written under the
+raise key — so `MAX_EVENT_ATTEMPTS` has nothing to count, `isOverHourlyLimit`
+has no `sent` row to count, and the raise-retry phase keeps seeing the same
+single original `failed` row and keeps re-offering it, twice a minute, for the
+life of the alarm, with no ledger trace of any of it.
+
+`record()` now reports whether the row landed. Every result of `dispatch()` and
+`dispatchToChannels()` is a `DispatchOutcome` — the `DeliveryResult` unchanged,
+plus `channelId` and `rowLost` — and the sweep keeps an in-process record of
+the `(alarm, channel, raise key)` triples whose insert threw and stops
+re-offering them. The reasoning, the cap and the eviction rule are in ADR 0057
+Amendment 5 §2; what belongs here is the shape and the two constraints it was
+built under.
+
+**`rowLost`, and deliberately not `written`.** The three exits above write no
+row **by design**, and a caller that read those as lost rows would stop
+re-offering a ceiling-refused raise — undoing `F3.48` on the raise path, which
+is the exception this very amendment adds. `rowLost` is true in exactly one
+case: an insert was attempted and it threw. The exits that conserve a key
+report `false`, because nothing was lost there.
+
+**The bound is in process, not in the ledger, and that is forced.** A bound
+that survived a restart would have to be a row, and a row is exactly what could
+not be written. A restart clears it and the retry resumes as if the losses had
+not happened — the treatment `PROCESS_STARTED_AT` already gives the
+unconfigured watermark.
+
+**Two placements this review also settled.** `MAX_EVENT_ATTEMPTS` and
+`offeredAgainWithoutAsking` moved out of `notifications.service.ts` into
+`notifications/dispatch-policy.ts`, with `DispatchOutcome`: the file stood at
+958 of AGENTS.md §4.5's 1000-line cap and what moved is the part that needs
+nothing from the class. There is deliberately **no re-export** — two import
+paths for one constant is the drift shape this repository keeps finding. And
+`dispatchToChannel`'s exits gained a `channelId` on every result, because
+`dispatchToChannels` drops channels from another organization (M2) and the
+results are therefore not index-aligned with the list a caller passed.

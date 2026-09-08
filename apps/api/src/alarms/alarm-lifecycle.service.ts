@@ -388,8 +388,10 @@ type RetryCandidate = {
  * instant the decision consults is `PROCESS_STARTED_AT` — a constant, not the
  * tick.
  *
- * Reads per tick: one ledger query, plus one channel query per distinct rule
- * with an eligible alarm (case R13 holds the memo).
+ * Reads per tick: `ceil(eligible / RAISE_ATTEMPT_BATCH_SIZE)` ledger
+ * statements — one before the `F3.51` review, chunked since, so a fleet under
+ * 500 open eligible alarms still pays exactly one — plus one channel query per
+ * distinct rule with an eligible alarm (case R13 holds the memo).
  */
 async function runRaiseRetryPhase(
   deps: AlarmLifecycleDeps,
@@ -402,8 +404,9 @@ async function runRaiseRetryPhase(
 
   const candidates: RetryCandidate[] = [];
   for (const alarm of input.activeAlarms) {
-    // Cleared this tick — see the header; and owner ruling Q2, an
-    // acknowledged alarm is skipped: somebody is already on it.
+    // Cleared this tick — see the header; and owner ruling 4 (ADR 0057
+    // Amendment 5's numbering, which this code follows), an acknowledged
+    // alarm is skipped: somebody is already on it.
     if (input.clearedIds.has(alarm.id) || alarm.acknowledgedAt !== null) {
       continue;
     }

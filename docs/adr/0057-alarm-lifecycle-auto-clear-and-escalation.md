@@ -684,8 +684,7 @@ H1 as unconditional exceptions, and after this they are conditional.
    kinds, and the escalation half is what kills the over-broad mutation "record
    on every event" — which the cleared half alone would pass.
 
-## Amendment 5 — `F3.51`: the sweep gains a third phase, `runRaiseRetryPhase`,
-between the clear and the escalation (2026-09-09)
+## Amendment 5 — `F3.51`: the sweep gains a third phase, `runRaiseRetryPhase`, between the clear and the escalation (2026-09-09)
 
 A raise notification that did not send was lost for the life of the alarm.
 Its outcome is recorded under the key `rule:alarm:severity`; the next
@@ -733,14 +732,20 @@ one exit this touches there; this amendment is the reasoning.
    no window to tune and nothing to expire, only the question of whether the
    raise has been offered to this channel at all.
 
-4. **An acknowledged alarm is skipped.** The reason is the message, not parity
-   with the escalation phase, which keeps sending steps to an acknowledged
-   alarm because a step is the organization's severity policy escalating
-   regardless of who is looking. The retry is not a step; it is the raise text
-   verbatim, and that text asserts a novelty — a new alarm, first told — the
-   alarm no longer has once somebody has acknowledged it. Re-sending the
-   original wording to an already-acknowledged alarm would be a lie about its
-   own freshness, not merely a redundant notification.
+4. **An acknowledged alarm is skipped.** The reason is the message itself. The
+   retry is the raise text verbatim, and that text asserts a novelty — a new
+   alarm, first told — the alarm no longer has once somebody has acknowledged
+   it. Re-sending the original wording to an already-acknowledged alarm would
+   be a lie about its own freshness, not merely a redundant notification.
+
+   **A correction to this amendment as first written** (`F3.51` review). It
+   justified the ruling by contrast: the escalation phase "keeps sending steps
+   to an acknowledged alarm because a step is the organization's severity
+   policy escalating regardless of who is looking". That is false.
+   `runEscalationPhase` skips on `acknowledgedAt !== null` at its first test,
+   and decision 6 above says in so many words that acknowledgement removes the
+   alarm from the selection. The two phases agree, there is no contrast to
+   draw, and the reason above stands without one.
 
 **Position, and it is load-bearing in both directions.** The phase runs after
 the clear phase and before the escalation phase. After the clear: an alarm
@@ -804,3 +809,82 @@ phase's own function. The warn is phase-wide, carrying the count of eligible
 alarms and the failure's cause, and no id list: the read covers every eligible
 alarm in one query, so a list of their ids is unbounded at even a few hundred
 open alarms.
+
+### Amendment 5 §2 — three corrections the `F3.51` review forced (2026-09-09)
+
+The review of the branch above found three defects. All three are fixed on the
+same branch, and each falsifies something this amendment or the code said, so
+each is recorded here rather than left for the next reader to discover.
+
+**1. A ledger row that did not land had no bound at all (High).**
+`NotificationsService.record()` catches its own INSERT failure, logs an error
+and returns the result — ADR 0041 decision 1, which is unchanged. But every
+bound this amendment leans on counts ROWS: `MAX_EVENT_ATTEMPTS` counts them
+under the key, and `isOverHourlyLimit` counts `sent` ones over a trailing hour.
+A ledger that refuses writes while serving reads therefore leaves the raise
+retry with nothing that can stop it: no row appears, `channelsOwedTheRaise`
+keeps seeing the same single original `failed` row, and the phase sends to that
+channel twice a minute for the life of the alarm with no trace of any of it.
+
+`record()` now reports whether its row landed. Every dispatch result carries
+`rowLost` and its `channelId` (`DispatchOutcome`), and the phase keeps an
+in-process `LostLedgerRows` of the `(alarm, channel, raise key)` triples whose
+insert threw, and does not re-offer them. The triple, not the pair: a raise key
+is `rule:alarm:severity` and the builder reads the ALARM's severity, so an
+alarm re-severitied under the sweep has a genuinely different key with
+genuinely no rows, and the pair alone would suppress a raise never offered.
+The memory is capped at 1000 entries and REFUSES rather than evicts — dropping
+an existing entry would silently un-blacklist a real loss — and it is reclaimed
+when an alarm leaves the active set.
+
+**The sweep's "no phase remembers anything between ticks" is now false, and the
+honest statement is narrower.** The ledger remains the only **cross-process**
+state. `LostLedgerRows` is in process: a restart empties it and the retry
+resumes as if the losses had not happened. That is forced rather than chosen —
+a bound that survived a restart would have to be a row, and a row is exactly
+what could not be written — and it is the treatment `PROCESS_STARTED_AT`
+already gives the unconfigured watermark (Amendment 3).
+
+**2. One tenant's alarm volume disabled the phase fleet-wide (Medium).**
+`loadRaiseAttempts` bound one `alarm_id` and one `dedupe_key` per eligible
+alarm in ONE statement — roughly two of Postgres' 65535 bind parameters per
+alarm, so the statement failed outright at roughly 32 700 eligible alarms.
+`loadActiveAlarms` spans every tenant and the phase's `catch` returned from the
+whole phase, so no tenant's raise was retried until the count dropped.
+
+The read is chunked at 500 refs (at most 1500 parameters, 2.3 % of the budget)
+and the failure handling moved from the phase to the statement. It returns the
+rows every batch that returned holds, the alarm ids of every batch that did
+not, and one reason per failed batch; the phase warns once with those counts
+and decides the alarms it has evidence for. **Two claims above are now narrower
+than they read:** the phase's reads per tick are `ceil(alarms / 500)` ledger
+statements rather than one, and the `EXPLAIN` figures recorded above were
+measured on the single statement and are therefore per BATCH — the 300-ref line
+is the shape a full batch approaches. The warn is still phase-wide and still
+carries no id list, for the reason given above, and `runEscalationPhase` still
+runs in the same tick.
+
+**3. A hung SMTP server held every phase for every tenant (Medium).**
+`createSender` passed no timeout, so nodemailer used its defaults: two minutes
+to connect and ten minutes of socket inactivity. The sweep awaits
+`dispatchToChannels` and `runSweepLoop` is sweep-then-sleep, so one silent SMTP
+server held that tick, its escalation phase, and every phase of every later
+tick, for every tenant. `connectionTimeout` and `greetingTimeout` are 5 s and
+`socketTimeout` 10 s, all well under the 30 s tick and the same order of bound
+`webhook.transport.ts` has carried since `F3.8`. **The exposure is not new to
+this row** — `notifyCleared` and the escalation phase have awaited that
+transport inside this sweep since `F3.10` — and **the bound is per SEND, not
+per tick**: `dispatchToChannels` loops its channels sequentially, so N email
+channels still serialise.
+
+**And four documentation claims, each false rather than merely loose.** Ruling
+4's contrast with the escalation phase is struck above and the reason it
+misstated is recorded there. `alarm-lifecycle.service.spec.ts` said its
+thirteen cases were "unchanged"; one was not, and both that file and its
+sibling now say which. `raise-retry.ts` justified its two parameters by runtime
+weight — "importing either would drag drizzle and Nest" — which is false:
+`notifications.config.ts` has zero imports and `dispatch-policy.ts` imports
+only types; the real reason is that a suite cannot move a constant.
+`notifications.service.ts` said "neither case reaches step 1", which
+contradicted the clause after it — an ordinary raise with `raised: false` does
+reach step 1, and that is where `F3.46`'s transition dedupe lives.

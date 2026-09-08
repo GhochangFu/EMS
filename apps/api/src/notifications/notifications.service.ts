@@ -92,11 +92,13 @@ export type { DispatchEvent } from "./dedupe-key";
  *
  * **An ORDINARY raise keeps its row at all three of those exits too** —
  * nothing re-offers it, so the row is the only evidence it was refused, which
- * is `F3.51`'s own premise. Neither case reaches step 1, and the difference
- * matters: the raise path's transition dedupe there writes nothing once a
- * refusal for that key is already recorded (`F3.46`), which is the
+ * is `F3.51`'s own premise. But not everywhere in this method, and the
+ * difference matters: an ordinary raise carrying `raised: false` reaches step
+ * 1 instead of any of them, and the transition dedupe there writes nothing
+ * once a refusal for that key is already recorded (`F3.46`) — the
  * most-executed refusal in the service. That is a separate case with its own
- * reason, not another exception to this one.
+ * reason, not another exception to this one. A CLEARED message carries an
+ * event, so it takes step 0 and never reaches step 1 at all.
  */
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */

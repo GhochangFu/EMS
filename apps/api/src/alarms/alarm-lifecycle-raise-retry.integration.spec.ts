@@ -23,6 +23,25 @@ import {
 import type { AlarmRaiseRule } from "./alarm-raise.service";
 
 /**
+ * The statuses under one channel's raise key, **sorted**, as one string.
+ *
+ * `deliveriesByKey` has no `ORDER BY` (`F3.51` review), and every row this
+ * suite plants shares an `attempted_at` inside the transaction — the default is
+ * `now()`, which in Postgres is the transaction's start instant — so no column
+ * disambiguates them and the driver may hand back `sent,failed` as readily as
+ * `failed,sent`. Comparing the unsorted join was a false-RED waiting to happen:
+ * the claim each assertion makes is WHICH statuses the key holds, never in
+ * which order they came back. Sorting states that, and it costs nothing —
+ * `failed,sent` is already the sorted form of the pair every case expects.
+ *
+ * The message renders go through the same helper, so a genuine failure prints
+ * the value that was actually compared.
+ */
+async function statusesUnderKey(db: BmsDb, channelId: string, dedupeKey: string): Promise<string> {
+  return [...(await deliveriesByKey(db, channelId, dedupeKey))].sort().join(",");
+}
+
+/**
  * `F3.51` — the alarm lifecycle sweep's raise-retry phase against a real
  * database (ADR 0041 Amendment 5, ADR 0057 Amendment 5).
  *
@@ -167,7 +186,7 @@ function sentFor(harness: Harness, alarmId: string): NotificationMessage[] {
  * that never ran at all.
  *
  * A third channel is joined to the rule AFTER the raise, and it is owner ruling
- * Q1's evidence conjunct on real rows: it holds nothing under the key, so it
+ * 3's evidence conjunct on real rows: it holds nothing under the key, so it
  * has never been offered the raise and the sweep must not offer it — the
  * same-tick double-send guard, seen from the operator action that produces it.
  */
@@ -195,14 +214,12 @@ export async function assertAFailedRaiseIsDeliveredByALaterSweepOnce(db: BmsDb):
       value: 150,
     });
     assert(
-      (await deliveriesByKey(tx, c1, alarm.dedupeKey)).join(",") === "failed",
-      `the raise left one failed row under its key, got [${(
-        await deliveriesByKey(tx, c1, alarm.dedupeKey)
-      ).join(",")}]`,
+      (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "failed",
+      `the raise left one failed row under its key, got [${(await statusesUnderKey(tx, c1, alarm.dedupeKey))}]`,
     );
 
     // An operator joins a second channel after the fact. It holds no row under
-    // the key, so ruling Q1 says it is not owed the raise.
+    // the key, so ruling 3 says it is not owed the raise.
     const [late] = await joinChannels(tx, rule.id, loc.organizationId, 1, 9);
     assert(late !== undefined, "the late-joined channel");
 
@@ -215,16 +232,12 @@ export async function assertAFailedRaiseIsDeliveredByALaterSweepOnce(db: BmsDb):
     const sending = buildHarness(tx);
     await sending.lifecycle.sweep(secondsAfter(60, t0));
     assert(
-      (await deliveriesByKey(tx, c1, alarm.dedupeKey)).join(",") === "failed,sent",
-      `the sweep re-offered the raise and it sent, under the ORIGINAL key; got [${(
-        await deliveriesByKey(tx, c1, alarm.dedupeKey)
-      ).join(",")}]`,
+      (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "failed,sent",
+      `the sweep re-offered the raise and it sent, under the ORIGINAL key; got [${(await statusesUnderKey(tx, c1, alarm.dedupeKey))}]`,
     );
     assert(
       (await deliveriesByKey(tx, late, alarm.dedupeKey)).length === 0,
-      `the channel with no evidence under the key is NOT offered the raise, got [${(
-        await deliveriesByKey(tx, late, alarm.dedupeKey)
-      ).join(",")}]`,
+      `the channel with no evidence under the key is NOT offered the raise, got [${(await statusesUnderKey(tx, late, alarm.dedupeKey))}]`,
     );
     const delivered = sentFor(sending, alarm.alarmId);
     assert(delivered.length === 1, `one message for this alarm, got ${delivered.length}`);
@@ -244,10 +257,8 @@ export async function assertAFailedRaiseIsDeliveredByALaterSweepOnce(db: BmsDb):
     // above, on this same fixture, dispatched.
     await sending.lifecycle.sweep(secondsAfter(120, t0));
     assert(
-      (await deliveriesByKey(tx, c1, alarm.dedupeKey)).join(",") === "failed,sent",
-      `a second sweep adds no row, got [${(await deliveriesByKey(tx, c1, alarm.dedupeKey)).join(
-        ",",
-      )}]`,
+      (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "failed,sent",
+      `a second sweep adds no row, got [${(await statusesUnderKey(tx, c1, alarm.dedupeKey))}]`,
     );
     assert(
       sentFor(sending, alarm.alarmId).length === 1,
@@ -310,10 +321,8 @@ export async function assertTheCeilingDoesNotBurnTheRetry(db: BmsDb): Promise<vo
     await refusing.lifecycle.sweep(secondsAfter(60, t0));
     await refusing.lifecycle.sweep(secondsAfter(90, t0));
     assert(
-      (await deliveriesByKey(tx, c1, alarm.dedupeKey)).join(",") === "failed",
-      `three ceiling-refused ticks write NO row — still just the original failure; got [${(
-        await deliveriesByKey(tx, c1, alarm.dedupeKey)
-      ).join(",")}]`,
+      (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "failed",
+      `three ceiling-refused ticks write NO row — still just the original failure; got [${(await statusesUnderKey(tx, c1, alarm.dedupeKey))}]`,
     );
     assert(
       sentFor(refusing, alarm.alarmId).length === 0,
@@ -325,10 +334,8 @@ export async function assertTheCeilingDoesNotBurnTheRetry(db: BmsDb): Promise<vo
     const sending = buildHarness(tx);
     await sending.lifecycle.sweep(secondsAfter(120, t0));
     assert(
-      (await deliveriesByKey(tx, c1, alarm.dedupeKey)).join(",") === "failed,sent",
-      `once the ceiling lifts the retry lands, got [${(
-        await deliveriesByKey(tx, c1, alarm.dedupeKey)
-      ).join(",")}]`,
+      (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "failed,sent",
+      `once the ceiling lifts the retry lands, got [${(await statusesUnderKey(tx, c1, alarm.dedupeKey))}]`,
     );
     assert(sentFor(sending, alarm.alarmId).length === 1, "exactly once");
 
@@ -367,8 +374,8 @@ export async function assertASentRaiseIsNeverReoffered(db: BmsDb): Promise<void>
       value: 150,
     });
     assert(
-      (await deliveriesByKey(tx, c1, alarm.dedupeKey)).join(",") === "sent" &&
-        (await deliveriesByKey(tx, c2, alarm.dedupeKey)).join(",") === "failed",
+      (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "sent" &&
+        (await statusesUnderKey(tx, c2, alarm.dedupeKey)) === "failed",
       "the raise landed on the first channel and failed on the second",
     );
     const [row] = await stateOf(tx, alarm.alarmId);
@@ -377,16 +384,12 @@ export async function assertASentRaiseIsNeverReoffered(db: BmsDb): Promise<void>
     const sending = buildHarness(tx);
     await sending.lifecycle.sweep(secondsAfter(60, t0));
     assert(
-      (await deliveriesByKey(tx, c2, alarm.dedupeKey)).join(",") === "failed,sent",
-      `the channel that was owed IS re-offered and sent, got [${(
-        await deliveriesByKey(tx, c2, alarm.dedupeKey)
-      ).join(",")}]`,
+      (await statusesUnderKey(tx, c2, alarm.dedupeKey)) === "failed,sent",
+      `the channel that was owed IS re-offered and sent, got [${(await statusesUnderKey(tx, c2, alarm.dedupeKey))}]`,
     );
     assert(
-      (await deliveriesByKey(tx, c1, alarm.dedupeKey)).join(",") === "sent",
-      `and the channel that already holds a sent row gets no second row, got [${(
-        await deliveriesByKey(tx, c1, alarm.dedupeKey)
-      ).join(",")}]`,
+      (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "sent",
+      `and the channel that already holds a sent row gets no second row, got [${(await statusesUnderKey(tx, c1, alarm.dedupeKey))}]`,
     );
 
     await sending.lifecycle.sweep(secondsAfter(120, t0));
