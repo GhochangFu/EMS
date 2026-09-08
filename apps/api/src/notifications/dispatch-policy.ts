@@ -67,12 +67,22 @@ import type { DeliveryResult } from "./notification-transport";
  * for nothing** (`F3.51` review, High). This constant bounds a retry only
  * while `record()`'s insert lands. If the ledger refuses writes while serving
  * reads, no row appears under the key, this count never reaches three, and the
- * raise retry re-offers the same channel every 30 s for the life of the alarm.
- * That hole is closed outside this constant, by `LostLedgerRows` in
- * `raise-retry.ts`: `record()` reports whether its row landed
- * ({@link DispatchOutcome}), and the sweep stops offering a triple whose row
- * did not. In process, not in the ledger — a bound that survived a restart
- * would have to be a row, and a row is what could not be written.
+ * dispatch is re-offered every 30 s for the life of the alarm.
+ *
+ * That is true of **both** paths the sweep re-offers on, and the hole is now
+ * closed on both: the raise retry under the raise key, and the escalation phase
+ * under each step's key (`F3.51` second review — the first closed the raise
+ * path only, and `runEscalationPhase` went on discarding its outcomes). It is
+ * closed outside this constant, by `LostLedgerRows` in `raise-retry.ts`:
+ * `record()` reports whether its row landed ({@link DispatchOutcome}), and each
+ * phase stops offering a triple whose row did not. The two memories share one
+ * class, one instance and one cap, and never one key — a lost step row must not
+ * silence the raise, and a lost raise row must not silence a step. In process,
+ * not in the ledger — a bound that survived a restart would have to be a row,
+ * and a row is what could not be written.
+ *
+ * A cleared message needs none of this: nothing re-offers it, so a lost row
+ * costs the evidence and no bound.
  */
 export const MAX_EVENT_ATTEMPTS = 3;
 

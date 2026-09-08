@@ -851,7 +851,12 @@ async function testTheCapIsReportedAndDegradesToTheOldBehaviour(): Promise<void>
     retries(recorded).length === 2,
     `a pair the cap refused is re-offered on the next tick, got ${retries(recorded).length}`,
   );
-  const capWarnings = recorded.warnings.filter((line) => line.includes("lost-row memory is full"));
+  // The raise-retry wording, not the bare substring: `runEscalationPhase`
+  // writes a line of the same shape from the same cap (`F3.51` second review),
+  // and this case must count only its own phase's.
+  const capWarnings = recorded.warnings.filter((line) =>
+    line.includes("raise-retry lost-row memory is full"),
+  );
   assert(
     capWarnings.length === 2,
     `one warn per tick, not one per pair, got ${JSON.stringify(recorded.warnings)}`,

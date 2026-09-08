@@ -66,8 +66,18 @@ export type RaiseAttemptRow = {
 export const LOST_LEDGER_ROW_CAP = 1_000;
 
 /**
- * `F3.51` review (High) — the (alarm, channel, raise key) triples whose
- * delivery row did **not** land, so the raise-retry phase stops offering them.
+ * `F3.51` review (High) — the (alarm, channel, dedupe key) triples whose
+ * delivery row did **not** land, so a phase that re-offers a dispatch on its
+ * own stops offering them.
+ *
+ * **Two phases, one instance, one cap** (`F3.51` second review). The
+ * raise-retry phase feeds it under an alarm's raise key and the escalation
+ * phase under each due step's own key; `dispatchRememberingLostRows` is the one
+ * call either makes. They share the cap as well as the class, so a fleet losing
+ * escalation rows can spend the slots the raise path would have used — the
+ * degradation below is then the same one, on both paths at once. Lives here,
+ * beside the raise predicate, because that is where it was first needed and
+ * moving it now would buy a reader nothing.
  *
  * **The hole this closes.** `NotificationsService.record()` catches its own
  * INSERT failure, logs an error and returns the result: ADR 0041 decision 1
@@ -86,11 +96,15 @@ export const LOST_LEDGER_ROW_CAP = 1_000;
  * survives a restart would have to be a row, and a row is exactly what could
  * not be written.
  *
- * **Keyed on the raise key, not just the pair.** A raise key is
- * `rule:alarm:severity` and `raiseRetryDispatchInput` reads the ALARM's
- * severity, so an alarm whose severity is edited under it acquires a different
- * key with no rows under it — a raise that has genuinely never been offered.
- * Keying on `(alarm, channel)` alone would suppress it (case P15).
+ * **Keyed on the dedupe key, not just the pair**, and it carries two distinct
+ * loads. A raise key is `rule:alarm:severity` and `raiseRetryDispatchInput`
+ * reads the ALARM's severity, so an alarm whose severity is edited under it
+ * acquires a different key with no rows under it — a raise that has genuinely
+ * never been offered. Keying on `(alarm, channel)` alone would suppress it
+ * (case P15). And a step's key adds an `:escalation:<n>` suffix, so the two
+ * phases' entries never collide on one alarm and one channel: a lost step row
+ * must not silence the raise, nor a lost raise row a step
+ * (`alarm-lifecycle-escalation-lost-rows.spec.ts` E1).
  *
  * **Capped, and it refuses rather than forgets.** Past
  * {@link LOST_LEDGER_ROW_CAP} triples `add` reports `false` and that pair falls

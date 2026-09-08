@@ -73,10 +73,13 @@ export type { DispatchEvent } from "./dedupe-key";
  * review, High). Not rejecting is decision 1 and stands; but `record()`'s
  * insert can fail while every read succeeds, and then NO row appears under the
  * key — so `MAX_EVENT_ATTEMPTS` has nothing to count, `isOverHourlyLimit` has
- * no `sent` row to count, and the one caller that re-offers a dispatch on its
- * own has nothing that can ever stop it. Every result therefore carries
- * `rowLost` (`DispatchOutcome`), and the raise-retry phase keeps the triples it
- * names out of the next tick's offer.
+ * no `sent` row to count, and the callers that re-offer a dispatch on their own
+ * have nothing that can ever stop them. Every result therefore carries
+ * `rowLost` (`DispatchOutcome`), and **both** re-offering phases of the alarm
+ * lifecycle sweep — the raise retry and the escalation, each under its own
+ * dedupe key — keep the triples it names out of the next tick's offer. The
+ * escalation phase discarded its outcomes until the second review; the first
+ * review's "the one caller" was already two.
  *
  * **Two kinds of dispatch answer yes, and since `F3.51` only one of them is an
  * event** (ADR 0041 Amendment 5). An escalation step is re-dispatched by
@@ -849,10 +852,11 @@ export class NotificationsService {
    * **It still never throws and never fails the caller** (ADR 0041 decision
    * 1). What changed is only that the failure stops being invisible: the
    * `logger.error` below is for an operator, and `rowLost` is for the alarm
-   * lifecycle sweep, which is the one caller that will offer this dispatch
-   * again on its own and would otherwise do so for ever — no row means no
-   * `MAX_EVENT_ATTEMPTS` to count and no `sent` row for `isOverHourlyLimit` to
-   * count either, so nothing in the ledger can stop it.
+   * lifecycle sweep, whose TWO re-offering phases — the raise retry and the
+   * escalation — would otherwise offer this dispatch again for ever. No row
+   * means no `MAX_EVENT_ATTEMPTS` to count and no `sent` row for
+   * `isOverHourlyLimit` to count either, so nothing in the ledger can stop
+   * either of them; each keeps its own memory, under its own dedupe key.
    */
   private async record(
     input: { ruleId: string | null; alarmId: string | null; organizationId: string },

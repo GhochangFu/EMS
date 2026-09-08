@@ -82,8 +82,11 @@ import { AlarmsGateway } from "./alarms.gateway";
  * `channelsOwedTheRaise`.
  *
  * **One exception, and it is deliberate** (`F3.51` review, High). This class
- * holds a {@link LostLedgerRows}: the (alarm, channel, raise key) triples whose
- * delivery row did NOT land. It is the only thing any phase remembers between
+ * holds a {@link LostLedgerRows}: the (alarm, channel, DEDUPE key) triples
+ * whose delivery row did NOT land. Both re-offering phases feed it and both
+ * read it — the raise retry under the alarm's raise key, the escalation under
+ * each step's own key (the second review; the first wired the raise path only).
+ * It is the only thing any phase remembers between
  * ticks, and this file used to say no phase remembered anything — that sentence
  * is false now. The ledger remains the only CROSS-PROCESS state: this memory is
  * in process, a restart empties it, and the retry then resumes as if the losses
@@ -168,11 +171,13 @@ export interface AlarmLifecycleDeps {
    */
   loadRaiseAttempts(refs: readonly RaiseKeyRef[]): Promise<RaiseAttemptsRead>;
   /**
-   * `F3.51` review (High): the (alarm, channel, raise key) triples whose
+   * `F3.51` review (High): the (alarm, channel, dedupe key) triples whose
    * delivery row did not land. **The one piece of state any phase keeps
    * between ticks**, and it is in process only — see
-   * {@link runRaiseRetryPhase} and {@link LostLedgerRows}. One instance per
-   * `AlarmLifecycleService`, and a fresh one per case in the spec.
+   * {@link dispatchRememberingLostRows} and {@link LostLedgerRows}. One
+   * instance per `AlarmLifecycleService`, shared by the raise-retry and
+   * escalation phases (their keys differ, so their entries never collide), and
+   * a fresh one per case in the spec.
    */
   lostLedgerRows: LostLedgerRows;
   dispatchToChannels: NotificationsService["dispatchToChannels"];
@@ -541,34 +546,19 @@ async function runRaiseRetryPhase(
         ),
         maxAttempts: MAX_EVENT_ATTEMPTS,
         processStartedAt: PROCESS_STARTED_AT,
-      })
-        // `F3.51` review (High). Every bound above counts ROWS —
-        // `MAX_EVENT_ATTEMPTS` counts them under the key, `isOverHourlyLimit`
-        // counts `sent` ones in the trailing hour — so a channel whose insert
-        // keeps throwing has no bound at all: the ledger never changes, the
-        // predicate keeps answering "owed", and this phase sends to it twice a
-        // minute for the life of the alarm with no trace of any of it.
-        .filter(
-          (channel) =>
-            !deps.lostLedgerRows.has(candidate.alarm.id, channel.id, candidate.ref.dedupeKey),
-        );
+      });
       if (owed.length === 0) {
         continue;
       }
-      const outcomes = await deps.dispatchToChannels(owed, candidate.input);
-      for (const outcome of outcomes) {
-        if (!outcome.rowLost) {
-          continue;
-        }
-        const remembered = deps.lostLedgerRows.add(
-          candidate.alarm.id,
-          outcome.channelId,
-          candidate.ref.dedupeKey,
-        );
-        if (!remembered) {
-          refusedByTheCap += 1;
-        }
-      }
+      // The lost-row filter and the remembering are one shared call — see
+      // {@link dispatchRememberingLostRows}. The key is the RAISE key, and it
+      // is the only key this phase ever hands it.
+      refusedByTheCap += await dispatchRememberingLostRows(deps, {
+        alarmId: candidate.alarm.id,
+        dedupeKey: candidate.ref.dedupeKey,
+        channels: owed,
+        input: candidate.input,
+      });
     } catch (err) {
       deps.logger.warn(
         `alarm lifecycle: raise retry for alarm ${candidate.alarm.id} rule ${candidate.rule.code} failed: ${reasonOf(err)}`,
@@ -586,6 +576,62 @@ async function runRaiseRetryPhase(
         `${refusedByTheCap} further lost row(s) this tick are not remembered and will be re-offered`,
     );
   }
+}
+
+/**
+ * `F3.51` second review (High) — offer a dispatch only to the channels whose
+ * row the ledger can still record, and remember the ones whose row did not
+ * land. Returns how many losses the cap refused, for the caller's one warn.
+ *
+ * **Shared by both re-offering phases, because both had the same hole.** Every
+ * bound the two phases lean on counts ROWS — `MAX_EVENT_ATTEMPTS` counts them
+ * under the key, `isOverHourlyLimit` counts `sent` ones in the trailing hour —
+ * so a channel whose insert keeps throwing has no bound at all: the ledger
+ * never changes, the predicate keeps answering "still owed", and the phase
+ * sends to that channel twice a minute for the life of the alarm with no trace
+ * of any of it. The first review closed that on the raise path only; the
+ * escalation phase discarded its outcomes and kept the loop.
+ *
+ * **`dedupeKey` is the caller's, and the two callers never share one.** The
+ * raise-retry phase passes the alarm's RAISE key (`rule:alarm:severity`) and
+ * the escalation phase passes the STEP's (`…:escalation:<n>`) — the same
+ * separation `dispatch-policy.ts` states for the row accounting, for the same
+ * reason: a lost step row says nothing about the raise, and the two ledger
+ * reads that bound them filter on their own key. Handing this the wrong key
+ * would silence a message that was never offered.
+ *
+ * The two callers share ONE {@link LostLedgerRows} instance, so they share its
+ * cap as well as its reclaim — see the class docblock.
+ */
+async function dispatchRememberingLostRows(
+  deps: AlarmLifecycleDeps,
+  a: {
+    alarmId: string;
+    dedupeKey: string;
+    channels: readonly NotificationChannelRow[];
+    input: DispatchInput;
+  },
+): Promise<number> {
+  const offered = a.channels.filter(
+    (channel) => !deps.lostLedgerRows.has(a.alarmId, channel.id, a.dedupeKey),
+  );
+  if (offered.length === 0) {
+    return 0;
+  }
+  let refusedByTheCap = 0;
+  for (const outcome of await deps.dispatchToChannels(offered, a.input)) {
+    // `rowLost` is true in exactly one case: an insert was attempted and it
+    // threw. An exit that writes no row BY DESIGN reports `false`, and treating
+    // those as losses would stop re-offering a ceiling-refused dispatch — the
+    // very thing `F3.48` ruling Q1 leaves unwritten so the next tick can ask.
+    if (!outcome.rowLost) {
+      continue;
+    }
+    if (!deps.lostLedgerRows.add(a.alarmId, outcome.channelId, a.dedupeKey)) {
+      refusedByTheCap += 1;
+    }
+  }
+  return refusedByTheCap;
 }
 
 type EscalationPhaseInput = {
@@ -607,6 +653,16 @@ type EscalationPhaseInput = {
  * A step's channels are loaded once per tick, however many alarms are due
  * for it: the id list is the cache key, so two steps naming the same
  * channels share one read too.
+ *
+ * **A step whose delivery row did not land is not re-offered** (`F3.51` second
+ * review, High). Decision 10's idempotency is a ledger read, so it can only
+ * answer from rows that exist: with a ledger that serves reads and refuses
+ * inserts, `eventDeliveryBlocked` finds nothing under the step's key, never
+ * blocks, and this phase re-sends the due step on every tick for the life of
+ * the alarm. The outcomes are therefore fed to the same
+ * {@link LostLedgerRows} the raise-retry phase uses — under the STEP's own
+ * dedupe key, never the alarm's raise key, because the two accountings are
+ * separate everywhere else too. See {@link dispatchRememberingLostRows}.
  */
 async function runEscalationPhase(
   deps: AlarmLifecycleDeps,
@@ -622,6 +678,12 @@ async function runEscalationPhase(
     }
     return pending;
   };
+
+  // Warned once per tick, not once per pair — `runRaiseRetryPhase`'s shape and
+  // its reason. The wording names THIS phase: both lines quote one shared cap,
+  // and an operator reading "the memory is full" has to know which accounting
+  // stopped remembering.
+  let refusedByTheCap = 0;
 
   for (const alarm of input.activeAlarms) {
     if (alarm.acknowledgedAt !== null || input.clearedIds.has(alarm.id)) {
@@ -656,13 +718,31 @@ async function runEscalationPhase(
         if (channels.length === 0) {
           continue;
         }
-        await deps.dispatchToChannels(channels, dispatchInput);
+        refusedByTheCap += await dispatchRememberingLostRows(deps, {
+          alarmId: alarm.id,
+          // The STEP's key, which is what `dispatchToChannels` will build from
+          // this same input and what `eventDeliveryBlocked` reads. Never the
+          // alarm's raise key: a lost raise row must not silence a step, and a
+          // lost step row must not silence the raise.
+          dedupeKey: buildDedupeKey(dispatchInput),
+          channels,
+          input: dispatchInput,
+        });
       } catch (err) {
         deps.logger.warn(
           `alarm lifecycle: escalation step ${stepNo} for alarm ${alarm.id} rule ${rule.code} failed: ${reasonOf(err)}`,
         );
       }
     }
+  }
+
+  if (refusedByTheCap > 0) {
+    // §9.6: counts and the cap, no ids — every one of these rows has already
+    // been reported individually by `record()`'s own `logger.error`.
+    deps.logger.warn(
+      `alarm lifecycle: escalation lost-row memory is full at ${deps.lostLedgerRows.cap} entries; ` +
+        `${refusedByTheCap} further lost row(s) this tick are not remembered and will be re-offered`,
+    );
   }
 }
 
