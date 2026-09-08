@@ -162,7 +162,19 @@ export class LostLedgerRows {
    * Drops every alarm outside `alarmIds` — the sweep passes the tick's active
    * set, so an alarm that cleared (or was never seen again) stops costing
    * memory. `cleared_at` is never unset and a re-raise is a new row with a new
-   * id, so an evicted alarm does not come back.
+   * id, so an evicted alarm does not come back. It covers BOTH phases' entries:
+   * they are keyed on the same alarm id, and the raise-retry phase's call frees
+   * a dead alarm's escalation entries too.
+   *
+   * **The reclaim is not guaranteed to run**, and the honest statement is that
+   * it is best-effort. It is called from one place — `runRaiseRetryPhase` — and
+   * `runLifecycleSweep` returns before every phase when `activeAlarms` is
+   * empty, which is the ordinary state of a quiet fleet. So the last tick that
+   * had any active alarm is the last one that reclaimed anything, and entries
+   * for alarms long since cleared can sit here until the next alarm is raised
+   * or the process restarts. That is bounded by {@link LOST_LEDGER_ROW_CAP} and
+   * is therefore stale memory rather than a leak — but the cap it eats into is
+   * shared with the entries that are still doing work.
    */
   retainAlarms(alarmIds: ReadonlySet<string>): void {
     for (const [alarmId, entries] of this.byAlarm) {
