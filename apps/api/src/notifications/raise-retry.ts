@@ -121,6 +121,13 @@ export class LostLedgerRows {
   add(alarmId: string, channelId: string, dedupeKey: string): boolean {
     const forAlarm = this.byAlarm.get(alarmId) ?? new Set<string>();
     const entry = pairKey(channelId, dedupeKey);
+    // Guards the COUNTER, not the `Set` — `Set.add` is already idempotent, but
+    // `entries` is not, and without this a re-add would inflate `size` and
+    // bring the cap on early. **No case exercises it**, and that is a fact
+    // about the caller rather than about this class: the sweep filters an owed
+    // channel out the moment it is in here, so a triple is never offered twice.
+    // It is kept so `add` stays correct if that filter ever moves, and named
+    // here so a reader does not go looking for the test that drives it.
     if (forAlarm.has(entry)) {
       return true;
     }

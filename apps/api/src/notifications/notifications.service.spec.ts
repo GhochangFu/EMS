@@ -716,6 +716,23 @@ export async function runNotificationsServiceTests(): Promise<void> {
       reads.skipExists === 0,
       `sendTest must not read the dedupe ledger, got ${reads.skipExists} reads`,
     );
+    // `F3.51` review: `record()` returns four fields now and `sendTest`
+    // declares two. TypeScript cannot see the difference — a returned value is
+    // not a fresh object literal, so no excess-property check fires — and the
+    // extra keys would ride out at RUNTIME. `rowLost` is an internal ledger
+    // fact and `channelId` is already on the controller's own response; neither
+    // belongs in this return. Asserted on the KEY SET, because that is the only
+    // thing typecheck cannot hold.
+    //
+    // **Mutation:** `return this.record(...)` at any of `sendTest`'s three
+    // exits → the key list is four, red. The `status` assertion above is the
+    // paired positive: this cannot pass on a method that returns nothing.
+    assert(
+      Object.keys(result).sort().join(",") === "error,status",
+      `sendTest returns its two declared fields and nothing else, got [${Object.keys(result)
+        .sort()
+        .join(",")}]`,
+    );
   }
 
   // --- the dedupe key ------------------------------------------------------

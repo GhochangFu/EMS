@@ -805,16 +805,20 @@ export class NotificationsService {
       overLimit = await this.isOverHourlyLimit(channel.id, organizationId);
     } catch (err) {
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
-      return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
-        status: "failed",
-        error: "rate-limit check failed",
-      });
+      return sendTestResult(
+        await this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
+          status: "failed",
+          error: "rate-limit check failed",
+        }),
+      );
     }
     if (overLimit) {
-      return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
-        status: "skipped_rate_limited",
-        error: null,
-      });
+      return sendTestResult(
+        await this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
+          status: "skipped_rate_limited",
+          error: null,
+        }),
+      );
     }
 
     const transport = this.transportFor(channel.kind);
@@ -833,7 +837,9 @@ export class NotificationsService {
     } catch (err) {
       result = { status: "failed", error: `transport threw: ${reasonOf(err)}` };
     }
-    return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, result);
+    return sendTestResult(
+      await this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, result),
+    );
   }
 
   /**
@@ -875,6 +881,26 @@ export class NotificationsService {
     return { ...result, channelId: channel.id, rowLost: false };
   }
 
+}
+
+/**
+ * `sendTest`'s two-field answer, narrowed from `record()`'s outcome at the
+ * source (`F3.51` review).
+ *
+ * `sendTest` declares two fields and `record()` now returns four. TypeScript
+ * accepts that — a returned value is not a fresh object literal, so no
+ * excess-property check fires — and the two extra keys would ride out at
+ * RUNTIME to whatever the caller does with them. `notifications.controller.ts`
+ * happens to rebuild its response field by field today, so nothing reached the
+ * wire; that is the controller's shape, not a promise, and `rowLost` is an
+ * internal ledger fact with no business on an API response either way. Narrowed
+ * here so the declared type and the object agree.
+ */
+function sendTestResult(outcome: DispatchOutcome): {
+  status: DeliveryResult["status"];
+  error: string | null;
+} {
+  return { status: outcome.status, error: outcome.error };
 }
 
 /**
