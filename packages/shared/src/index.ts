@@ -604,7 +604,7 @@ export type AssetPickerRow = z.infer<typeof E.assetPickerRowSchema>;
 export type NotificationDeliveryStatus = z.infer<typeof N.notificationDeliveryStatusSchema>;
 /** A configured destination. Carries `hasSecret`, never a secret (§9.6). */
 export type NotificationChannelDto = z.infer<typeof N.notificationChannelDtoSchema>;
-/** One row of the delivery ledger — every attempt, including every skip. */
+/** One row of the delivery ledger — every delivery decision, skips included. Since `F3.48` an escalation step the hourly ceiling refuses writes no row, so it can be retried (ADR 0057 Amendment 2). */
 export type NotificationDeliveryDto = z.infer<typeof N.notificationDeliveryDtoSchema>;
 /** Whether a transport can send at all, per kind. */
 export type NotificationReadinessDto = z.infer<typeof N.notificationReadinessDtoSchema>;

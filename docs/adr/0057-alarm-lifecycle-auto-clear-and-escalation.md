@@ -263,3 +263,135 @@ not what was built. All are recorded here; none re-opens a decision.
    An acknowledgement on the page needs a reason (the existing dialog).
 8. **The promotion follow-ups above are discharged** by the `chore(agents):`
    sweep that carries this amendment; `F3.28`'s rail is buildable.
+
+## Amendment 2 — `F3.48`: a ceiling-refused event is retried, and decision 10's blocking set loses one status (2026-09-08)
+
+Ruling Q7 above left a step refused by the hourly ceiling unretried and named
+`F3.48` as the retry. Building it falsified the fix `docs/BACKLOG.md` proposed,
+so the owner ruled twice on 2026-09-08. Decision 10 and ruling Q7 are amended
+in part; ruling Q9 and the raise path are untouched.
+
+1. **The proposed fix does not work, and that is a measurement.**
+   `eventDeliveryBlocked` blocks on
+   `rows.length >= MAX_EVENT_ATTEMPTS || rows.some((row) => row.status !== "failed")`
+   under `.limit(MAX_EVENT_ATTEMPTS)`. Dropping `skipped_rate_limited` from the
+   second arm alone leaves the first standing: the lifecycle sweep ticks every
+   30 s, so three rate-limited rows land within 90 seconds and block the key
+   for ever, while `isOverHourlyLimit` counts `sent` rows over a trailing hour
+   and needs up to an hour to clear. The row's option (a) would burn the three
+   attempts without ever reaching a tick at which the ceiling had lifted.
+
+2. **Ruling `F3.48`-Q1 — the ceiling writes no row for an escalation step.**
+   When `isOverHourlyLimit` refuses a dispatch carrying an *escalation* event,
+   `dispatchToChannel` returns `skipped_rate_limited` to its caller *without*
+   calling `record()`. Nothing is written, so the key is never spent and the
+   next tick retries until the ceiling lifts. This is the treatment security
+   review H1 already gave the branch two lines above — a failed rate-limit
+   *read* writes no row on the event path — extended from the read to the
+   ceiling itself, for the same stated reason: an event's key lasts the life of
+   the ledger and must not be spent on a row that records no delivery decision.
+   **The raise path keeps its row.** A raise key is per transition and the next
+   raise is a new alarm with a new key, so ADR 0041 decision 4's "a refusal
+   must be visible" continues to be served where its growth is bounded.
+
+   **The escalation kind, not every event — ruling `F3.48`-Q-A.** The first
+   draft of this amendment said "a dispatch carrying an event", and planning
+   the build showed that is wrong for the other kind. `notifyCleared` is called
+   only from the clear phase, for an alarm that cleared in that tick, and
+   `loadActiveAlarms` filters `cleared_at IS NULL` — so a cleared message is
+   dispatched once and the sweep never sees that alarm again. Under the blanket
+   form a ceiling-refused clear would get no send, no row, no retry and no log
+   line, which is worse than the state this row set out to fix: today it is at
+   least lost visibly. So the clear keeps its `skipped_rate_limited` row.
+   Decision 4's "a refusal must be visible" is traded away only where a retry
+   replaces it. This costs Q2 nothing — a rate-limited row on a `:cleared` key
+   blocks a read that is never issued a second time.
+
+   Making the cleared message retryable as well was offered and declined for
+   this row: it needs a new per-tick read over recently cleared alarms and a
+   retention window nobody has chosen, which is a decision rather than an
+   amendment.
+
+   The cost the owner accepted: a rate-limited escalation step is no longer
+   visible in the ledger as such — it appears when it lands as `sent`. A
+   channel held permanently over a misconfigured ceiling therefore retries
+   silently on that path, and the operator's signal for that is the raise
+   path's own `skipped_rate_limited` rows on the same channel.
+
+   **A second cost, named by the reviews rather than by the ruling.** The
+   retried step does not merely wait for the ceiling — it *competes* for it.
+   `isOverHourlyLimit` is one budget per `(channel, organization)` and the raise
+   path shares it. Before this row a refused step wrote its row and stopped
+   asking; now every due step asks on every 30 s tick until it lands, so a
+   backlog becomes a standing queue rather than a single burst. At the default
+   `NOTIFY_RATE_LIMIT_PER_HOUR` of 60 a 52-step backlog drains within the hour
+   and this is invisible; at a low ceiling it is not, and a new alarm's raise can
+   meet a full ceiling that the backlog is holding. The raise loses permanently
+   when that happens, and that part is **older than this row**: a refused raise
+   writes `skipped_rate_limited` under `<rule>:<alarm>:<severity>`, and the next
+   evaluation arrives with `raised: false` and `alarmId: null`, so it keys on
+   `<rule>:no-alarm:<severity>` and records a `skipped_deduped` row instead of
+   retrying. Neither the ordering nor the staleness of a long-deferred step is
+   settled here; both are filed as their own rows.
+
+3. **Ruling `F3.48`-Q2 — a `skipped_rate_limited` row no longer blocks an event
+   key.** Q1 stops new ones being written; Q2 releases the ones already there,
+   including every key blocked before this row landed — the 52 backlogged
+   alarms Q7 measured on the seeded stack. Without it `F3.48` would close while
+   the steps it was written about stayed lost.
+
+   **The status is excluded in SQL, not in the predicate**, and that is
+   load-bearing rather than a style choice. `eventDeliveryBlocked` reads with
+   `.limit(MAX_EVENT_ATTEMPTS)` and **no `ORDER BY`**, and its own comment
+   gives order-independence as the reason that is sound. Filtering the sampled
+   rows in TypeScript would break exactly that: a key holding three `failed`
+   rows and three rate-limited ones could return an unordered sample of three
+   rate-limited rows, leaving both arms false for a key that Q9 blocks. Adding
+   `status <> 'skipped_rate_limited'` to the `WHERE` draws the sample from the
+   blocking-eligible rows only, so both arms stay exact and the comment stays
+   true.
+
+   **No DDL, and that was measured rather than assumed.** `EXPLAIN` of the new
+   read on the running stack gives `Index Scan using
+   notification_deliveries_channel_key_idx`, with `Index Cond: (channel_id …
+   AND dedupe_key …)` and `Filter: (status <> 'skipped_rate_limited' AND
+   organization_id = …)` — the index still drives the read and the status is a
+   residual filter, beside the organization predicate that was already one.
+   `enable_seqscan` was off for the plan, because the local ledger holds no
+   rows and an unforced choice on an empty table would show nothing; what the
+   forced plan settles is that the index serves this predicate, which is the
+   claim being made.
+
+   That mixed state is **not reachable in production**, and the reason to
+   prefer the SQL form is not that it occurs. Today's predicate blocks on the
+   first non-`failed` row, so once one `skipped_rate_limited` row exists under
+   an event key nothing further is written under it — at most one such row can
+   exist, and after Q1 the escalation path writes none at all. The reason is
+   that the predicate must stay exact **by construction**, because the comment
+   at the head of the method is what the next reader will rely on when they
+   change the limit or add a status.
+
+   **One shape from before this row does gain an attempt, and that is intended.**
+   A key holding two `failed` rows and then a ceiling refusal held three rows, so
+   the old count arm blocked it at three. The new `WHERE` draws its sample from
+   the two `failed` rows, so the step gets the third real transport attempt
+   ruling Q9 always meant it to have. Q2 exists to release exactly this history.
+
+   No raise key is reachable by this read. An event key carries the
+   `:escalation:<n>` or `:cleared` suffix `buildDedupeKey` appends, so the two
+   key spaces are disjoint and `hasRecordedSkip` is not touched.
+
+4. **Ruling Q7 is superseded in part.** "A step refused by the hourly ceiling is
+   not retried in this row" was true of `F3.10` and is false from `F3.48`
+   onward. The rest of Q7 — that first mapping a severity sends the step to
+   every backlogged alarm of that severity at once — still holds and is still
+   the burst this row exists to survive. Ruling Q9 is unchanged: a `failed`
+   event delivery is retried at most `MAX_EVENT_ATTEMPTS` times per key per
+   channel, and every status other than `skipped_rate_limited` still blocks.
+
+5. **What this row deliberately does not fix.** `skipped_unconfigured` blocks an
+   event key by the same mechanism, so a step refused while its channel had no
+   transport configured is still never retried after an operator configures
+   one. That is the same defect on a different status, with a different
+   trigger and a different visibility argument, and it is filed as its own
+   `docs/BACKLOG.md` row rather than widened into this one.

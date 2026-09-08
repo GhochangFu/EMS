@@ -34,9 +34,11 @@
  * a cleared message for the same alarm is a different event from its raise, so
  * it gets a different key: `:escalation:<n>` or `:cleared` appended to the
  * raise key. The kind lives here and nowhere else — no column was added — and
- * `NotificationsService.hasRecordedDelivery` reads the key back before a step
+ * `NotificationsService.eventDeliveryBlocked` reads the key back before a step
  * or a clear is sent, which is what makes decision 10's "once per channel"
- * a ledger read instead of a timer. The suffix goes at the end so that the
+ * a ledger read instead of a timer. Since `F3.48` a step the hourly ceiling
+ * refused leaves no row under its key, so the key survives to be retried on a
+ * later tick — the absence is deliberate. The suffix goes at the end so that the
  * raise key is a strict prefix of every event key for that alarm and never
  * equal to one: the raise row is already in the ledger when the sweep asks
  * about step 1, and an equal key would make every step look already sent.

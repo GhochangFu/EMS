@@ -26,6 +26,15 @@ type NotificationDeliveriesPageProps = { user: AuthUser };
  * would hide. A filter exists, it starts at "all", and the empty state says
  * what an empty ledger means rather than looking like a loading failure.
  *
+ * **One attempt is deliberately absent since `F3.48`** (ADR 0057 Amendment 2,
+ * ruling Q1): an escalation step the hourly ceiling refuses writes no row at
+ * all, because that key has to survive for a later tick to retry it. So this
+ * screen shows fewer `skipped_rate_limited` rows than it used to, and the ones
+ * it shows come from the raise path, a test send, or a refused *cleared*
+ * message — which keeps its row, since a clear is dispatched once and never
+ * retried (ruling Q-A). A step held back by the ceiling appears here when it
+ * lands as `sent`.
+ *
  * **`E7.1d` adds the organization, as a column and as a filter.** The rows an
  * `admin` sees here span every tenant — `ChannelsService.listDeliveries`
  * filters by `writableOrganizationIds`, which is unrestricted for that role —
@@ -91,7 +100,7 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
       <PageHeader
         eyebrow="Administration"
         title="Notification Deliveries"
-        subtitle="Every attempt, including the ones that sent nothing"
+        subtitle="Every delivery decision, including the ones that sent nothing"
       />
 
       <SectionCard title="Recent attempts" bodyClassName="p-3 space-y-3">

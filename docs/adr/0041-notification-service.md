@@ -407,3 +407,41 @@ and PR #339 merged squashed as `64db1db`.
    `notification_deliveries_channel_key_idx (channel_id, dedupe_key) WHERE
    dedupe_key IS NOT NULL`, which serves both `hasRecordedSkip` and the event
    reads (ADR 0057 Amendment 1).
+
+## Amendment 3 — `F3.48`: decision 4 has a third exception, and it is a decision rather than a read (2026-09-08)
+
+**Status: Accepted — 2026-09-08.** Ruled by the repository owner at `F3.48`'s
+step-2 gate. This record is a pointer: the reasoning and the rulings live in
+**ADR 0057 Amendment 2**, and this amendment exists so that a reader of ADR
+0041 alone does not still believe decision 4 holds without exception.
+
+**Decision 4 — "Every attempt writes a `bms.notification_deliveries` row" — no
+longer holds on one path.** Since `F3.48`, when decision 5's per-channel hourly
+ceiling refuses an **escalation step**, `dispatchToChannel` returns
+`skipped_rate_limited` to its caller and writes nothing. The row would spend
+the event's dedupe key for the life of the ledger, and the alarm lifecycle
+sweep needs that key to survive so a later tick can retry the step once the
+ceiling's trailing hour has lifted. Without it, the tail of a first severity
+mapping's burst was lost outright — 52 backlogged alarms, measured on the
+seeded stack (ADR 0057 ruling Q7).
+
+Two boundaries, both deliberate:
+
+- **The raise path is unchanged** and still records its rate-limited rows. A
+  raise key is per transition and the next raise is a new alarm with a new key,
+  so decision 4's visibility is served where its growth is bounded.
+- **A refused *cleared* message keeps its row** (ADR 0057 ruling Q-A). It is
+  dispatched once, from the clear phase, and the sweep never sees that alarm
+  again — so there is no retry for the missing row to buy, and dropping it
+  would only make the refusal invisible.
+
+This is the third exception to decision 4 on the event path, not the first: ADR
+0057's plan D3 and its security review H1 already keep a failed ledger read and
+a failed rate-limit read out of the ledger, for the same reason. The `F3.10`
+build made those two; `F3.48` makes this one, and it differs from them in being
+a decision rather than a failed read.
+
+Decision 5 itself is untouched. The ceiling still refuses the send, still
+counts `sent` rows over a trailing hour, and `skipped_rate_limited` rows were
+never in that count — so no arithmetic moved and outbound volume stays bounded
+exactly as before.
