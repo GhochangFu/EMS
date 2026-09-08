@@ -149,10 +149,19 @@ export class OnboardingChatService {
 
     if (!draft.onboardingMeta?.useExistingPointKeys && (draft.pointKeys?.length ?? 0) === 0) {
       if (orgPointKeyCodes.length > 0) {
-        const preview =
-          orgPointKeyCodes.length > 8
-            ? `${orgPointKeyCodes.slice(0, 8).map((code) => `\`${code}\``).join(", ")}, …`
-            : orgPointKeyCodes.map((code) => `\`${code}\``).join(", ");
+        // `F4.105` site 5, and the one the owner overruled the plan on (ruling
+        // 5). This carried a bare literal `8` twice, closed by a bare `, …`
+        // that said nothing about how much was left; it now takes the same
+        // bound as the other four, so one message carries one number.
+        //
+        // **This list is a catalog read, not sheet text.** Unlike the other
+        // four sites the upload does not control its length — it is the
+        // organisation's own point-key catalog — so it is bounded for
+        // consistency and readability rather than because it amplifies.
+        const { shown, omitted } = echoedItems(orgPointKeyCodes);
+        const preview = [...shown.map((code) => `\`${code}\``), moreTail(omitted)]
+          .filter(Boolean)
+          .join(", ");
         lines.push(
           `\nYour organization already has point keys (${preview}). ` +
             "Say **use existing keys** or **confirm point keys** to continue.",

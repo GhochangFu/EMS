@@ -574,3 +574,91 @@ export function assertAssetsByRtuSummaryIsCapped(): void {
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// Site 5 — the point-key preview (owner ruling 5)
+// ---------------------------------------------------------------------------
+
+/** An organisation point key code — fixed width, so no code is a substring of another. */
+function pointKeyCode(index: number): string {
+  return `pk${String(index).padStart(2, "0")}`;
+}
+
+/**
+ * A draft that reaches the point-key branch: one complete MQTT RTU so the
+ * branch above it returns nothing, no `pointKeys`, and no
+ * `useExistingPointKeys`.
+ */
+function pointKeyDraft(): OnboardingDraft {
+  return { rtus: [completeRtu("Rtu-r000")], assets: [] };
+}
+
+/**
+ * Site 5. **A behaviour change, not a rename**, which is why it has its own
+ * assertion and its own mutation.
+ *
+ * This preview carried a bare literal `8` — `orgPointKeyCodes.length > 8` and
+ * `.slice(0, 8)` — closed by a bare `, …` that said nothing about how much was
+ * left. Owner ruling 5 overruled the plan's "keep 8" and moved it onto the
+ * shared bound, so all five lists in this message share one helper, one
+ * constant and one tail vocabulary.
+ *
+ * Unlike the other four this list is a **catalog read**, not sheet text: the
+ * upload does not control its length. It is bounded for consistency and
+ * readability, not because it is an amplification surface.
+ *
+ * **The nine-code case is the one that proves the constant actually moved**
+ * rather than the literal merely being renamed. Nine is over the old 8 and
+ * under the new 25, so the old code truncated it and the new one must not.
+ */
+export function assertPointKeyPreviewIsCapped(): void {
+  const service = chatService();
+
+  const thirty = Array.from({ length: 30 }, (_, index) => pointKeyCode(index));
+  const many = service.excelImportFollowUp(
+    pointKeyDraft(),
+    { locationName: "Berhampur", rtuCount: 1, assetCount: 0 },
+    thirty,
+    [],
+  );
+  assert(
+    many.assistantMessage.includes("already has point keys"),
+    "this case must reach the point-key preview, or site 5 goes unasserted",
+  );
+  const shown = thirty.filter((code) => many.assistantMessage.includes(`\`${code}\``));
+  assert(
+    shown.length === MAX_ECHOED_ITEMS,
+    `30 organisation point keys preview ${MAX_ECHOED_ITEMS}, got ${shown.length}`,
+  );
+  assert(
+    many.assistantMessage.includes("…and 5 more"),
+    `the preview states how many keys it left out, got "${many.assistantMessage}"`,
+  );
+  for (const [index, code] of thirty.entries()) {
+    assert(
+      many.assistantMessage.includes(code) === index < MAX_ECHOED_ITEMS,
+      `key ${code} must be ${index < MAX_ECHOED_ITEMS ? "previewed" : "omitted"}, and it is not`,
+    );
+  }
+
+  // The nine-code case: over the old literal, under the new constant.
+  const nine = Array.from({ length: 9 }, (_, index) => pointKeyCode(index));
+  const few = service.excelImportFollowUp(
+    pointKeyDraft(),
+    { locationName: "Berhampur", rtuCount: 1, assetCount: 0 },
+    nine,
+    [],
+  );
+  for (const code of nine) {
+    assert(
+      few.assistantMessage.includes(`\`${code}\``),
+      `all nine keys are previewed under the new bound, ${code} is missing`,
+    );
+  }
+  // No ellipsis of any kind: no cell in this fixture is cut either, so the old
+  // `, …` marker and the new tail are both forbidden here.
+  assert(
+    !few.assistantMessage.includes("…"),
+    `a list under the bound is previewed whole and unmarked, got "${few.assistantMessage}"`,
+  );
+}

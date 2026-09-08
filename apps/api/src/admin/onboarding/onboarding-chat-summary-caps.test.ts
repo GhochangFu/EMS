@@ -5,6 +5,7 @@ import {
   assertDisplayNameFixListIsCapped,
   assertEchoedItemsHelpersAreBounded,
   assertMqttTemplateBlocksAreCapped,
+  assertPointKeyPreviewIsCapped,
 } from "./onboarding-chat-summary-caps.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -23,5 +24,9 @@ describe("onboarding import summary — how many items it may echo (F4.105)", ()
 
   it("caps the RTU lines and spends one asset budget across the whole summary", () => {
     assertAssetsByRtuSummaryIsCapped();
+  });
+
+  it("previews the organisation's point keys against the same bound (owner ruling 5)", () => {
+    assertPointKeyPreviewIsCapped();
   });
 });
