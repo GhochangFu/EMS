@@ -84,11 +84,17 @@ export function quoteCell(text: string, max: number = MAX_ECHOED_CELL_CHARS): st
  * stays exact while the list under it stops being a data dump, so the operator
  * is never told a smaller number than they uploaded.
  *
- * **Measured, not guessed.** At `F4.103`'s caps — 100 RTUs, 500 assets, every
- * echo-bearing cell at its `F4.104` bound and 99 duplicate display names — the
- * assistant message was 85,242 characters from a 62 KB upload before this
- * bound, and ~12.8 KB after it. The filed row's own 13.16 MB figure is dead:
- * `workbookSectionCountProblem` refuses the 20,095-row workbook it came from.
+ * **Measured, not guessed — and the two measurement routes are kept apart,
+ * because they give different numbers.** At `F4.103`'s caps (100 RTUs, 500
+ * assets, 99 duplicate display names), a real **62,640-byte workbook** produced
+ * a **77,817**-character assistant message before this bound; the constructed
+ * drafts in `onboarding-chat-summary-caps.spec.ts`, which hold every
+ * echo-bearing cell at exactly its `F4.104` bound rather than merely long,
+ * produced **85,242**. Do not quote one route's byte count against the other's
+ * character count — that spec's docblock carries both, with the composition.
+ * After this bound the same drafts produce ~12.8 KB. The filed row's own
+ * 13.16 MB figure is dead either way: `workbookSectionCountProblem` refuses the
+ * 20,095-row workbook it came from.
  *
  * This is an `apps/api` constant and **not** a `packages/shared` one: no schema
  * reads it and no API response *type* depends on it, unlike `F4.103`'s section
