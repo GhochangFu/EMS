@@ -3583,6 +3583,65 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   ledger still has no retention policy.
 - **Unblocks:** nothing directly.
 
+### A bound on a schema binds only the producers that parse it (`F4.104`) — done
+- **Status:** done 2026-09-08. No ADR — the owner ruled the whole
+  `F4.103`–`F4.107` batch needs none: no dependency, no DDL, no §6 promotion.
+- **The row as filed was inverted.** It blamed `onboardingDraftSchema` for
+  bounding no string field and named `PATCH :id/draft` as the reachable route.
+  Measured: the API copy bounds **23 of its 24** string fields, and the
+  controller parses every `PATCH` body through it — so `PATCH` is the *bounded*
+  producer. The unbounded one is the **upload**, which runs `parseUpload` →
+  `toDraftPatch` → `mergeDraft` → the tenant-scoped update with nothing parsing
+  in between, which is why every `.max()` was inert there and why `F4.102`'s
+  `topic` and `protocol` bounds hold only because they sit **at the parse
+  site**. Only the shared *response* copy bounded nothing at all.
+- **What it cost.** Eleven workbook cells reached
+  `bms.onboarding_sessions.draft` at 32,767 characters each, from a ~50 KB
+  upload. A workbook built *exactly at* `F4.103`'s caps — 100 RTUs, 500 assets,
+  and so refused by nothing that shipped before it — was 166,490 bytes and
+  produced a **72.04 MB** draft in 201 ms. It does not crash; it stores, and
+  re-serves on every later read. `F4.103` bounded how many items a draft holds;
+  this bounds how large each one is, and neither implies the other. Separately,
+  a 32,767-character `password` cell reached the credential store at **8×** the
+  bound that path bypasses.
+- **The shape, and why it is not a schema parse.** Per-cell length bounds where
+  each cell is read, the shape `MAX_RTU_TOPIC_CHARS` already used three lines
+  away. A blanket parse of the upload's patch would have imported `.min(2)` and
+  two regexes and refused a workbook with one blank `code` cell wholesale —
+  where today the validator reports it as a fixable per-field error. Length is
+  the denial-of-service axis; completeness is not, and ADR 0011's partial-draft
+  shape depends on keeping them apart. The rule-based chat branch **slices**
+  instead of refusing, because a truncated name is visible in the wizard preview
+  and editable while a truncated MQTT topic silently subscribes elsewhere.
+- **Twenty-two of the twenty-four numbers are column widths.** Two are not:
+  `pointKeys.description` is 2000, taken from the sibling route for the same
+  `text` column whose other four fields already matched, so the onboarding copy
+  was the drifted one; and `rtus.config.host` is 255, from RFC 1035's
+  253-octet limit and the repository's own `varchar(255)` idiom, declared at the
+  parse site because no schema field can consume a value inside a `z.record`.
+- **What review changed.** Three gates returned no Critical, High or Medium
+  finding, and six fixes followed anyway. Two were regressions this work had
+  introduced: a slice that split a surrogate pair, turning a 200-emoji chat turn
+  into a 500 that Postgres refused at the `jsonb` write; and a truncation that
+  could collide on a globally unique column, now carrying a hash suffix. One was
+  a false green in this row's own drift gate.
+- **Three corrections, two of them the author's.** The plan claimed the commit
+  path reached the vocabulary check unparsed — it does not, because `commit`
+  validates thirty-one statements earlier, so that cut is defence in depth. The
+  surrogate fix was first specified as code-point slicing, which keeps 255 code
+  *points* — 400 code units for emoji — while the schema counts units, so it
+  would have made the draft fail its own contract on every read. And
+  `bms.onboarding_sessions` was reported as `(0 rows)` from an owner read, which
+  `FORCE ROW LEVEL SECURITY` makes return 0 whether or not rows exist; it
+  reported 0 with fourteen present.
+- **What was deliberately not fixed.** The `z.record(z.unknown())` value space
+  stays with `E8.5`; a blank `domain` cell still yields `""` and fails the
+  response contract's `.min(1)`, which is the completeness axis this row does
+  not own; and `location.code` keeps the plain cut because its uniqueness is
+  org-scoped. `F4.108` and `F4.109` carry what was found in passing.
+- **Unblocks:** `F4.107`, whose stated dependency assumption this row's shape
+  invalidates and which now says so.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.

@@ -792,6 +792,22 @@ Do not add top-level folders without updating this section.
   `draftPatch` (read as `.data ?? {}`, so one invented key discarded the
   operator's whole turn while the assistant still reported success). Count the
   producers first; strictness is only right where every one of them is a caller.
+
+  **The same count governs every other constraint on the schema, not only
+  strictness: a bound on a schema binds only the producers that parse it**
+  (`F4.104`, 2026-09-08). The onboarding draft schema bounded 23 of its 24
+  string fields, and a review of the schema alone would have called the surface
+  covered. Two of its four producers never parse it — the workbook upload runs
+  `parseUpload` → `toDraftPatch` → `mergeDraft` → the update with nothing in
+  between, and the rule-based chat branch builds its patch in code — so every
+  one of those 23 bounds was inert on the two paths that mattered. Eleven cells
+  reached `bms.onboarding_sessions.draft` at 32,767 characters each, and a
+  166 KB workbook that satisfied every guard then in the tree produced a 72 MB
+  stored draft. **Read a `.max()` as a claim about the parse, never about the
+  column**, and bound each unparsed producer where it writes. Where a value is
+  *derived* rather than supplied, bound the finished string and not its parts,
+  and check what the cut can collide with: a truncation onto a unique column
+  turns a per-field validation error into an uncaught constraint violation.
   Neither failure was visible to `pnpm test` — `_secrets` needs
   `CREDENTIAL_ENCRYPTION_KEY`, which CI does not set.
   Two traps: `.strict()` must precede `.refine()`, because a `ZodEffects` has
