@@ -1261,6 +1261,32 @@ is that the fix does not fire when it should not. `F4.38` stopped the simulator
 to watch tiles go stale, *and* ran it to confirm live assets still render
 normally — a staleness gate that marks healthy plant offline is its own defect.
 
+**A mutation proves an assertion only if it reddens *that* assertion. Run it and
+read which one failed — never that one did.** Grouping and order decide whether a
+mutation ever reaches its target, and a suite that goes red is not evidence the
+check you care about is alive.
+
+- `F4.105` planned eight mutations and **two of them proved nothing as written**.
+  Setting the item cap to `2` was meant to show the shipped template gains an
+  "and N more" tail; it reddened an earlier assertion in the same `it()` and
+  never reached it. Reverting a preview bound to its old literal was meant to
+  show the constant had moved; the case that would have shown it ran second.
+  Both were found by running them, not by reasoning about them.
+- In the same row, one exported assertion was a single `it()` with **six
+  sections**, so any mutation killed it at section 1 and sections 5 and 6 — a
+  purity check and a size ceiling — could not be reached by anything. Split an
+  assertion per claim, or the later claims are decoration.
+- And a comment there stated *"reordering the RTUs would mis-attribute every
+  asset, and nothing else here would notice."* Reversing them left that whole
+  function green; the guard was in a different file. **A claim about which test
+  guards a thing is as easy to get wrong as a claim about a measurement, and
+  nothing checks either** — so verify it the same way, by breaking the code and
+  reading the failure.
+
+This is the third instance in a fortnight: `F3.48`'s absence assertions that pass
+when the action never happens, `F3.50`'s shared fixture that hides a whole
+mutation class, and `F4.105`'s two mutations landing on the wrong assertion.
+
 ### 4.7 Authorization (ADR 0009/0010 master data · ADR 0017 operations)
 
 Five role gates exist and they are **not** interchangeable — this section

@@ -3687,6 +3687,47 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 - **Unblocks:** `F4.107`, whose stated dependency assumption this row's shape
   invalidates and which now says so.
 
+### A mutation proves an assertion only if it reddens that assertion (`F4.105`) — done
+- **Status:** done 2026-09-09.
+- **What shipped:** `MAX_ECHOED_ITEMS = 25` with `echoedItems()` and `moreTail()`
+  beside `quoteCell` in `apps/api/src/admin/spreadsheet-guard.ts`, applied at the
+  **six** list-rendering sites of the onboarding assistant message. `quoteCell`
+  had bounded how *long* each echoed cell may be since `F4.102`; nothing bounded
+  how *many*. The asset names take one budget of 25 across the whole summary
+  rather than 25 per RTU line, with a reserve so every rendered line that has
+  assets still names one — per-section on both axes was computed to leave ~51 KB
+  where the shared budget gives ~12.7 KB.
+- **Re-measured before it was planned, and the filed row did not survive it.**
+  The row's own fixture, 20,095 RTU rows in a 2.4 MB upload, is now **refused in
+  1,634 ms** by `F4.103`'s section caps, so its 13.16 MB message, 4,084 ms and
+  658 MB RSS are all unreachable. The worst an upload can still produce measured
+  **77,817 characters from a 62,640-byte upload** — 1.24× amplification, not the
+  ~7.5× implied. It stopped being an availability row and became a
+  message-quality one. Assets branch **84,945 → 12,718**; MQTT branch
+  **65,757 → 16,950**.
+- **The row named one site and the source had six.** The sixth,
+  `formatPointKeysForChat`, measured **613 keys / 18,006 characters** on a clean
+  seed with no attacker — about twice what the other five caps achieve — and the
+  rationale written to justify leaving it open was false on both clauses:
+  `listPointKeys` ignores its organization parameter because the catalog went
+  fleet-wide at `0057`, and the commit path does influence its length.
+- **The lesson, and why it is in §4.6.** Three separate tests here could not have
+  caught their own failure: two of eight planned mutations reddened an *earlier*
+  assertion and never reached their target; one exported assertion was a single
+  `it()` with six sections, so a purity check and a size ceiling were unreachable
+  by any mutation; and a comment named the wrong assertion as the guard, which
+  reversing the input proved by leaving the whole function green. **Run the
+  mutation and read which assertion failed — never that one did.** Third instance
+  in a fortnight, after `F3.48` and `F3.50`.
+- **The review found a defect this row created**, and the API layer found one the
+  suite could not. The capped MQTT template omitted exactly the RTU its own prose
+  said needed setup; and the "and N more" tail carried its unit at one of the two
+  sites that collide in a single reply.
+- **Not here:** the transcript cap on `onboarding_sessions.messages` stays
+  `E8.3`'s residual; the fleet-wide point-key catalog still grows without a
+  quota. `F4.110`, `F4.111` and `F4.112` carry what was found in passing.
+- **Unblocks:** nothing. No row lists `F4.105` in `Depends`.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
