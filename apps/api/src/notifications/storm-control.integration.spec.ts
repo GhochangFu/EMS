@@ -1,6 +1,5 @@
 import { loadEnabledChannelsByIds } from "./channel-reads";
 import { ChannelsService } from "./channels.service";
-import { runClearedRefusalRowTests } from "./cleared-refusal-rows.integration.spec";
 import { buildDedupeKey } from "./dedupe-key";
 import type {
   DeliveryResult,
@@ -742,24 +741,12 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       (await service.sentChannelIdsForAlarm(alarmId, first.organization_id)).length === 1,
       "several sent rows for one channel are still one recipient",
     );
-    // --- `F3.54`: a CLEARED message keeps its refusal row at both failed reads
-    //
-    // ADR 0057 Amendment 4 ruling 1. The assertions live in
-    // `cleared-refusal-rows.integration.spec.ts` and the fixture stays here:
-    // this file stood at 1000 of §4.5's cap, and §2's instruction for a file at
-    // that margin is extract before adding. That file's header carries what the
-    // blocks hold and why their read failure is synthesised.
-    await runClearedRefusalRowTests({
-      db,
-      channels,
-      transport,
-      sent,
-      channel,
-      step,
-      statusesByKey: (dedupeKey) =>
-        statusesByKey(pool, channelId as string, first.organization_id, dedupeKey),
-      assert,
-    });
+    // `F3.54`'s cleared-message refusal rows were written against this
+    // fixture and now live in their own suite,
+    // `cleared-refusal-rows.integration.spec.ts` — this file stood at 1000 of
+    // §4.5's cap, and a spec needs its own `.test` wrapper to be discovered
+    // at all (`tests/repo-invariants.test.ts`). That suite owns its own
+    // channel, alarm and cleanup.
 
     // The other direction of `loadEnabledChannelsByIds`: a disabled channel is
     // absent, not returned disabled.
