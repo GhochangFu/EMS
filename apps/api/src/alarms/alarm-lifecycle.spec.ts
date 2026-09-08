@@ -1,3 +1,4 @@
+import { buildDedupeKey } from "../notifications/dedupe-key";
 import {
   DEFAULT_CLEAR_HOLD_SECONDS,
   LIFECYCLE_TICK_MS,
@@ -8,6 +9,7 @@ import {
   dueSteps,
   escalationDispatchInput,
   escalationKey,
+  raiseRetryDispatchInput,
 } from "./alarm-lifecycle";
 
 /**
@@ -241,6 +243,64 @@ function testClearedDispatchInput(): void {
   );
 }
 
+/**
+ * `F3.51` — the re-offered raise's input (ADR 0041 Amendment 5, ADR 0057
+ * Amendment 5). The identity of this input with the ORIGINAL raise's is the
+ * whole mechanism, so every field is asserted rather than sampled.
+ */
+function testRaiseRetryDispatchInput(): void {
+  const input = raiseRetryDispatchInput(alarm, rule);
+  assert(input !== null, "a rule with an organization yields an input");
+  if (input === null) return;
+  assert(input.ruleId === "rule-1" && input.ruleCode === "RULE-1", "the rule's id and code");
+  assert(
+    input.organizationId === "org-rule",
+    `D12: the RULE's organization, as toDispatchInput stamped the original, got ${input.organizationId}`,
+  );
+  assert(input.alarmId === "alarm-1", "the alarm id, never null");
+  assert(
+    input.severity === "critical",
+    `the ALARM's severity, never the rule's: a rule edited mid-alarm would otherwise change the key and orphan the very rows the ledger read matched on; got ${String(input.severity)}`,
+  );
+  assert(
+    input.message === "Feeder overload: kw = 150 (gt 100)",
+    `the alarm's message VERBATIM — no prefix, no age, no staleness marker (F3.52 inherits that complaint); got "${input.message}"`,
+  );
+  // `raised: true` is load-bearing and is asserted rather than assumed. With
+  // `event: undefined` a `raised: false` input falls into `dispatchToChannel`
+  // step 1's transition dedupe, which writes a `skipped_deduped` row UNDER THE
+  // RAISE KEY — and `channelsOwedTheRaise`'s `some(status !== "failed")` arm
+  // would then block that key for the life of the alarm.
+  assert(input.raised === true, "raised: true — this is the alarm's own raise, re-offered");
+  assert(
+    input.event === undefined,
+    `no event: an event kind would append a suffix to the key and orphan the rows, got ${JSON.stringify(input.event)}`,
+  );
+  assert(input.reoffered === true, "reoffered: true — the property offeredAgainWithoutAsking reads");
+
+  // The key identity, against the literal form the ledger holds, not only
+  // against a second call of the same builder.
+  assert(
+    buildDedupeKey(input) === `${rule.id}:${alarm.id}:${alarm.severity}`,
+    `the ORIGINAL raise's key, rule:alarm:severity, got "${buildDedupeKey(input)}"`,
+  );
+  assert(
+    buildDedupeKey(input) ===
+      buildDedupeKey({
+        ruleId: rule.id,
+        alarmId: alarm.id,
+        severity: alarm.severity,
+        // How `toDispatchInput` builds it on the raise path: no event.
+      }),
+    "and it equals the key the raise path's own input produces",
+  );
+
+  assert(
+    raiseRetryDispatchInput(alarm, { ...rule, organizationId: null }) === null,
+    "a rule with no organization yields null — the caller warns and skips",
+  );
+}
+
 function testEscalationKey(): void {
   assert(
     escalationKey("org-1", "warning") === "org-1:warning",
@@ -254,5 +314,6 @@ export function runAlarmLifecycleTests(): void {
   testDueSteps();
   testEscalationDispatchInput();
   testClearedDispatchInput();
+  testRaiseRetryDispatchInput();
   testEscalationKey();
 }

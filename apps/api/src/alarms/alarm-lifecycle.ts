@@ -182,6 +182,59 @@ export function escalationDispatchInput(
   };
 }
 
+/**
+ * `F3.51` — the input that RE-OFFERS an alarm's original raise (ADR 0041
+ * Amendment 5, ADR 0057 Amendment 5), or `null` for a rule with no
+ * organization.
+ *
+ * **The identity of this input with the original raise's is the mechanism.**
+ * `toDispatchInput` built that one from the rule and the raise result; this
+ * rebuilds it from the rule and the ALARM, which holds the same severity and
+ * the same message by construction (`AlarmRaiser` writes what the raise
+ * returned). So `buildDedupeKey` produces the very key `rule:alarm:severity`
+ * the original attempt's ledger rows carry — which is what the sweep read them
+ * under, and what makes a `sent` row from this dispatch answer the same key the
+ * failure was recorded against.
+ *
+ * Every field is therefore a constraint, not a choice:
+ *
+ * - `severity` is the ALARM's, never `rule.severity`. An operator who re-bands
+ *   the rule mid-alarm would otherwise change the key and orphan the rows the
+ *   read matched on — the same guarantee `escalationDispatchInput` makes.
+ * - `message` is the alarm's VERBATIM. No prefix, no age, no staleness marker:
+ *   a marker would be a second message text under one key, and the complaint
+ *   that a re-offered raise reads as current is inherited by `F3.52`, not
+ *   fixed here.
+ * - **No `event`.** A kind would append `:escalation:<n>` or `:cleared` to the
+ *   key. This is not an event; it is the raise, offered again.
+ * - `raised: true`, and it is not decoration. With no event, a `false` here
+ *   would reach `dispatchToChannel`'s transition dedupe and write a
+ *   `skipped_deduped` row under the RAISE key, which `channelsOwedTheRaise`'s
+ *   "not failed" arm would then read as blocking for the life of the alarm.
+ * - `reoffered: true` — the one property that differs from the original, and it
+ *   never reaches the key or the subject. It tells `dispatchToChannel` that the
+ *   sweep will ask again, so a ceiling refusal writes no row
+ *   (`offeredAgainWithoutAsking`, ADR 0041 Amendment 5).
+ */
+export function raiseRetryDispatchInput(
+  alarm: LifecycleAlarm,
+  rule: LifecycleRule,
+): DispatchInput | null {
+  if (rule.organizationId === null) {
+    return null;
+  }
+  return {
+    ruleId: rule.id,
+    ruleCode: rule.code,
+    organizationId: rule.organizationId,
+    alarmId: alarm.id,
+    severity: alarm.severity,
+    message: alarm.message,
+    raised: true,
+    reoffered: true,
+  };
+}
+
 /** The cleared message's `DispatchInput` (decision 9, plan D12/D14), or `null` for a rule with no organization. */
 export function clearedDispatchInput(
   alarm: LifecycleAlarm,

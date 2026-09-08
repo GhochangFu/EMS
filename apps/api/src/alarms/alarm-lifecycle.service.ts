@@ -22,8 +22,15 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { loadEnabledChannelsByIds } from "../notifications/channel-reads";
 import { ChannelsService } from "../notifications/channels.service";
+import { buildDedupeKey } from "../notifications/dedupe-key";
 import type { NotificationChannelRow } from "../notifications/notification-transport";
-import { NotificationsService } from "../notifications/notifications.service";
+import { PROCESS_STARTED_AT } from "../notifications/notifications.config";
+import type { DispatchInput } from "../notifications/notifications.service";
+import { MAX_EVENT_ATTEMPTS, NotificationsService } from "../notifications/notifications.service";
+import { loadRaiseAttempts } from "../notifications/raise-attempts";
+import type { RaiseAttemptRow, RaiseKeyRef } from "../notifications/raise-retry";
+import { channelsOwedTheRaise } from "../notifications/raise-retry";
+import { shouldNotify } from "../rules/rule-actions";
 import type { LatestSampleLoader } from "../rules/rule-evaluation";
 import { compare } from "../rules/rule-evaluation";
 import { selectRuleRows } from "../rules/rule-reads";
@@ -42,6 +49,7 @@ import {
   dueSteps,
   escalationDispatchInput,
   escalationKey,
+  raiseRetryDispatchInput,
 } from "./alarm-lifecycle";
 import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
 import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
@@ -57,16 +65,20 @@ import { AlarmsGateway } from "./alarms.gateway";
  * writer of `cleared_at` and `normal_since` — `AlarmRaiser` stays the one
  * raiser (ADR 0033), and nothing else touches either stamp.
  *
- * **Two phases, one tick, no state but the rows.** The clear phase compares
- * every active alarm's rule against the latest fresh sample and stamps the
- * hold or the clear (`decideClear`); the escalation phase, over the alarms
- * still active after that and not acknowledged, sends each due step of the
- * organization's severity profile. Neither phase remembers anything between
- * ticks: the two stamps and the delivery ledger are the whole state, so a
- * restart loses nothing and a repeated tick sends nothing twice —
- * `dispatchToChannels` asks the ledger before every event (decision 10,
+ * **Three phases since `F3.51`, one tick, no state but the rows.** The clear
+ * phase compares every active alarm's rule against the latest fresh sample and
+ * stamps the hold or the clear (`decideClear`). The raise-retry phase
+ * (`runRaiseRetryPhase`, ADR 0041 Amendment 5, ADR 0057 Amendment 5) re-offers
+ * the ORIGINAL raise of a still-open alarm whose raise reached nobody, to
+ * exactly the channels the ledger says are still owed it. The escalation
+ * phase, over the alarms still active after the clear and not acknowledged,
+ * sends each due step of the organization's severity profile. No phase
+ * remembers anything between ticks: the two stamps and the delivery ledger are
+ * the whole state, so a restart loses nothing and a repeated tick sends nothing
+ * twice — `dispatchToChannels` asks the ledger before every event (decision 10,
  * plan D3), which is why the sweep re-dispatches every due step every tick
- * without a "sent" set of its own.
+ * without a "sent" set of its own, and the raise retry answers the same way
+ * from `channelsOwedTheRaise`.
  *
  * **Why `runLifecycleSweep` takes its dependencies.** Every read and write is
  * a function on {@link AlarmLifecycleDeps}, so the spec runs the eight cases
@@ -121,6 +133,23 @@ export interface AlarmLifecycleDeps {
   sentChannelIdsForAlarm(alarmId: string, organizationId: string): Promise<string[]>;
   /** The enabled channels among `ids`, as the transports see them. */
   loadChannels(ids: readonly string[]): Promise<NotificationChannelRow[]>;
+  /**
+   * `F3.51`: the channels joined to the rule, as the RAISE path loads them
+   * (`ChannelsService.loadForRule`) — the `rule_notifications` join filtered to
+   * `enabled = true`, in code order. The raise-retry phase re-offers the
+   * original raise, so "the rule's channels" must have one definition and it
+   * is `dispatch()`'s; a step's channels come from its profile and are a
+   * different list (`loadChannels` above).
+   */
+  loadRuleChannels(ruleId: string): Promise<NotificationChannelRow[]>;
+  /**
+   * `F3.51`: `loadRaiseAttempts` from `notifications/raise-attempts.ts` —
+   * every ledger row under these alarms' raise keys, in one query. A module
+   * function, not a service method: `notifications.service.ts` stands within a
+   * few dozen lines of AGENTS.md §4.5's cap and the read touches only
+   * `fleetDb`.
+   */
+  loadRaiseAttempts(refs: readonly RaiseKeyRef[]): Promise<RaiseAttemptRow[]>;
   dispatchToChannels: NotificationsService["dispatchToChannels"];
   /** After the clear has committed — never from inside the transaction. */
   broadcastCleared(alarm: AlarmListItem): void;
@@ -148,6 +177,7 @@ export async function runLifecycleSweep(deps: AlarmLifecycleDeps, now: Date): Pr
   ]);
 
   const clearedIds = await runClearPhase(deps, { activeAlarms, rulesById, loadSample, now });
+  await runRaiseRetryPhase(deps, { activeAlarms, rulesById, clearedIds });
   await runEscalationPhase(deps, { activeAlarms, rulesById, catalog, clearedIds, now });
 }
 
@@ -290,6 +320,171 @@ async function notifyCleared(
     deps.logger.warn(
       `alarm lifecycle: cleared message for alarm ${alarm.id} rule ${rule.code} failed: ${reasonOf(err)}`,
     );
+  }
+}
+
+type RaiseRetryPhaseInput = {
+  activeAlarms: ActiveAlarm[];
+  rulesById: Map<string, RuleRow>;
+  clearedIds: Set<string>;
+};
+
+/** One alarm the phase may re-offer, with the input and the ledger key already built. */
+type RetryCandidate = {
+  alarm: ActiveAlarm;
+  rule: RuleRow;
+  input: DispatchInput;
+  ref: RaiseKeyRef;
+};
+
+/**
+ * `F3.51` — the third phase (ADR 0041 Amendment 5, ADR 0057 Amendment 5).
+ *
+ * A raise notification that did not send was lost for the life of the alarm.
+ * Its outcome is recorded under the key `rule:alarm:severity`; the next
+ * evaluation of the same rule arrives with `raised: false` and `alarmId: null`,
+ * so `buildDedupeKey` produces a different key, the dispatch lands in the
+ * transition-dedupe branch, writes `skipped_deduped` and sends nothing. The
+ * alarm stays open, nobody is told, and the ledger row reads as a delay rather
+ * than as a loss. This phase re-offers the alarm's ORIGINAL raise — the same
+ * input, the same key, no event — to exactly the channels the ledger shows are
+ * still owed it.
+ *
+ * **Between the clear and the escalation, and it is both directions.** After
+ * the clear: an alarm cleared this tick has already had its "Cleared:" message,
+ * and re-offering its raise afterwards would tell people about a resolved alarm
+ * in the wrong order. Before the escalation: the two phases share one hourly
+ * budget per channel and organization and whichever dispatches first takes it,
+ * so an escalation backlog must not starve a new critical alarm's raise.
+ *
+ * **`now` is not a parameter, and its absence is the point.** The re-offered
+ * message is the alarm's own, verbatim, with no age and no staleness marker
+ * (that complaint is `F3.52`'s and is inherited, not fixed), and the only
+ * instant the decision consults is `PROCESS_STARTED_AT` — a constant, not the
+ * tick.
+ *
+ * Reads per tick: one ledger query, plus one channel query per distinct rule
+ * with an eligible alarm (case R13 holds the memo).
+ */
+async function runRaiseRetryPhase(
+  deps: AlarmLifecycleDeps,
+  input: RaiseRetryPhaseInput,
+): Promise<void> {
+  const candidates: RetryCandidate[] = [];
+  for (const alarm of input.activeAlarms) {
+    // Cleared this tick — see the header; and owner ruling Q2, an
+    // acknowledged alarm is skipped: somebody is already on it.
+    if (input.clearedIds.has(alarm.id) || alarm.acknowledgedAt !== null) {
+      continue;
+    }
+    const rule = input.rulesById.get(alarm.ruleId);
+    if (!rule) {
+      continue;
+    }
+    // NOT redundant with the evidence conjunct, in the one case that matters:
+    // a rule that WAS `notify` when the alarm was raised and has since been
+    // switched to `review` or `trace_only` has rows under the key, so it has
+    // evidence, and only this gate stops it being re-offered. Deliberately
+    // different from the escalation phase's ruling Q8 ("the rule's action is
+    // not consulted"): a step is the organization's severity policy, whereas
+    // the raise IS the action.
+    if (!shouldNotify(rule.action)) {
+      continue;
+    }
+    const dispatchInput = raiseRetryDispatchInput(alarm, rule);
+    if (dispatchInput === null) {
+      // §9.6: the rule code, the rule id and the alarm id — the line
+      // `notifyCleared` writes, never the alarm text.
+      deps.logger.warn(
+        `alarm lifecycle: rule ${rule.code} (${rule.id}) has no organization; alarm ${alarm.id} raise not re-offered`,
+      );
+      continue;
+    }
+    candidates.push({
+      alarm,
+      rule,
+      input: dispatchInput,
+      ref: {
+        alarmId: alarm.id,
+        // The RULE's organization, which is what every delivery row for this
+        // alarm was stamped with — never `alarm.organizationId`.
+        organizationId: dispatchInput.organizationId,
+        dedupeKey: buildDedupeKey(dispatchInput),
+      },
+    });
+  }
+  if (candidates.length === 0) {
+    return;
+  }
+
+  let rows: RaiseAttemptRow[];
+  try {
+    rows = await deps.loadRaiseAttempts(candidates.map((candidate) => candidate.ref));
+  } catch (err) {
+    // Warn and RETURN — never fall back to treating every channel as owed.
+    // Silence costs one tick; a blind re-offer costs a duplicate to every
+    // channel of every open alarm. The `return` is inside the phase, so
+    // `runEscalationPhase` still runs in the same tick (case R9 holds both
+    // halves).
+    //
+    // §9.6, and the shape is a correction to this item's plan: the read is
+    // phase-wide, so there is no one alarm id to name and a list of them is
+    // unbounded at a few hundred open alarms. The count and the cause are what
+    // a reader can act on; the per-alarm line below names ids because there it
+    // is one alarm.
+    deps.logger.warn(
+      `alarm lifecycle: raise-retry ledger read failed for ${candidates.length} alarm(s): ${reasonOf(err)}`,
+    );
+    return;
+  }
+
+  const rowsByAlarm = new Map<string, RaiseAttemptRow[]>();
+  for (const row of rows) {
+    const forAlarm = rowsByAlarm.get(row.alarmId) ?? [];
+    forAlarm.push(row);
+    rowsByAlarm.set(row.alarmId, forAlarm);
+  }
+
+  // One channel read per rule per tick, however many of its alarms are owed —
+  // `loadStepChannels`'s cache shape, keyed on the rule id.
+  const channelsByRule = new Map<string, Promise<NotificationChannelRow[]>>();
+  const loadRuleChannels = (ruleId: string): Promise<NotificationChannelRow[]> => {
+    let pending = channelsByRule.get(ruleId);
+    if (!pending) {
+      pending = deps.loadRuleChannels(ruleId);
+      channelsByRule.set(ruleId, pending);
+    }
+    return pending;
+  };
+
+  for (const candidate of candidates) {
+    // Caught per alarm, the escalation phase's shape: one bad alarm must not
+    // abort the tick, and the next tick retries this one.
+    try {
+      const channels = await loadRuleChannels(candidate.rule.id);
+      if (channels.length === 0) {
+        continue;
+      }
+      const owed = channelsOwedTheRaise({
+        channels,
+        // The organization is re-checked here rather than trusted to the
+        // read: the ledger query's three `IN` lists are independent, so a row
+        // for this alarm under another organization could reach the group.
+        rows: (rowsByAlarm.get(candidate.alarm.id) ?? []).filter(
+          (row) => row.organizationId === candidate.ref.organizationId,
+        ),
+        maxAttempts: MAX_EVENT_ATTEMPTS,
+        processStartedAt: PROCESS_STARTED_AT,
+      });
+      if (owed.length === 0) {
+        continue;
+      }
+      await deps.dispatchToChannels(owed, candidate.input);
+    } catch (err) {
+      deps.logger.warn(
+        `alarm lifecycle: raise retry for alarm ${candidate.alarm.id} rule ${candidate.rule.code} failed: ${reasonOf(err)}`,
+      );
+    }
   }
 }
 
@@ -459,6 +654,13 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
         (await loadEnabledChannelsByIds(this.fleetDb, ids)).map((row) =>
           this.channels.toChannelRow(row),
         ),
+      // `F3.51`: the raise path's own join, so "the rule's channels" has one
+      // definition. Both lines below are one expression each and neither adds
+      // a constructor parameter — `ChannelsService` and `fleetDb` are already
+      // here, which is what keeps `alarm-lifecycle.integration.spec.ts`'s
+      // `new AlarmLifecycleService(...)` compiling untouched.
+      loadRuleChannels: (ruleId) => this.channels.loadForRule(ruleId),
+      loadRaiseAttempts: (refs) => loadRaiseAttempts(this.fleetDb, refs),
       dispatchToChannels: (channels, input) => this.notifications.dispatchToChannels(channels, input),
       broadcastCleared: (alarm) => this.gateway.broadcastCleared(alarm),
       logger: this.logger,
