@@ -393,6 +393,13 @@ export async function runNotificationEventTests(): Promise<void> {
   // place, and what it kills here is a narrowing of the TypeScript predicate to
   // `status === "sent"` — not a narrowing of the SQL, which this file cannot
   // see and must not claim to hold. The SQL form of that claim is storm-control's.
+  //
+  // **`F3.50` leaves it in this table for the same reason**, one level down.
+  // That exclusion is conditional — it drops an unconfigured row only when the
+  // row predates `max(channel.updatedAt, PROCESS_STARTED_AT)` — and the fake
+  // applies no `WHERE`, so a queued row here stands for one the SQL KEPT. That
+  // is a real production state, not an artefact: the retry writes a fresh row
+  // every time, and a fresh row blocks.
   {
     assert(MAX_EVENT_ATTEMPTS === 3, `Q9 says three attempts, got ${MAX_EVENT_ATTEMPTS}`);
     const table: Array<{ ledger: string[]; want: "sent" | "skipped_deduped" }> = [
@@ -401,8 +408,11 @@ export async function runNotificationEventTests(): Promise<void> {
       { ledger: ["failed", "failed"], want: "sent" },
       { ledger: ["failed", "failed", "failed"], want: "skipped_deduped" },
       { ledger: ["failed", "sent"], want: "skipped_deduped" },
-      // Amendment 2 §5 holds `skipped_unconfigured` out of `F3.48` on purpose:
-      // a step refused while its channel had no transport is still not retried.
+      // `F3.50` did NOT make this row stale. It stands for an unconfigured
+      // refusal the SQL kept — one written since the channel was last edited
+      // and since this process started — which still blocks, and which is also
+      // the growth bound: the released key is re-offered, writes exactly one
+      // fresh row, and is blocked again at the next tick.
       { ledger: ["skipped_unconfigured"], want: "skipped_deduped" },
     ];
     for (const { ledger, want } of table) {

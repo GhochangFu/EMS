@@ -74,6 +74,39 @@ export function buildConfig(env: NodeJS.ProcessEnv): NotificationsConfig {
 export const notificationsConfig: NotificationsConfig = buildConfig(process.env);
 
 /**
+ * `F3.50` (ADR 0057 Amendment 3 ruling Q1) — the instant the environment
+ * snapshot above was taken, and the second half of the watermark that decides
+ * whether a `skipped_unconfigured` delivery row still answers an event key.
+ *
+ * **Why a process boundary is the right one, and not a hack.** Two of the five
+ * things that produce `skipped_unconfigured` are environment, not
+ * configuration: `SMTP_HOST` unset (which is why `transportFor` hands out
+ * `LogTransport`) and `CREDENTIAL_ENCRYPTION_KEY` unset or the wrong length
+ * (which is why a webhook's `secretState` reads `unreadable`). Neither has a
+ * row to stamp. And `ChannelsService.readiness()` computes both from facts
+ * frozen at module load, so **readiness cannot flip inside a process** —
+ * `EmailTransport` even decides its `sender` in its constructor. Process start
+ * is therefore not a proxy for a readiness change; it is the only boundary at
+ * which one is observable.
+ *
+ * The cost is bounded and one-directional: one retry, and one row, per stranded
+ * key per API restart.
+ *
+ * **It lives here, beside the snapshot whose age it records** — the largest
+ * single source of `skipped_unconfigured` is `smtp === null`, decided on the
+ * line above. It is deliberately NOT a field on `NotificationsConfig`:
+ * `buildConfig` is documented as a pure function of an environment object, and
+ * a `new Date()` inside it would give every spec that calls it a private
+ * watermark. It is deliberately not a Nest provider either — one `Date` needs
+ * no token, and importing the constant is what makes it testable.
+ *
+ * Strictly this is *module* load, not process start. A later import would only
+ * move it later, which releases more keys and blocks fewer — the bounded
+ * direction.
+ */
+export const PROCESS_STARTED_AT = new Date();
+
+/**
  * Nest injection token for {@link notificationsConfig}.
  *
  * A token rather than a constructor default: Nest reflects on constructor

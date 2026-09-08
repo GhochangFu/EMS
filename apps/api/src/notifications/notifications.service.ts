@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, gte, ne, sql } from "drizzle-orm";
+import { and, eq, gt, gte, ne, or, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import { notificationDeliveries } from "@bms/db";
@@ -14,7 +14,11 @@ import type {
   NotificationChannelRow,
   NotificationTransport,
 } from "./notification-transport";
-import { NOTIFICATIONS_CONFIG, type NotificationsConfig } from "./notifications.config";
+import {
+  NOTIFICATIONS_CONFIG,
+  PROCESS_STARTED_AT,
+  type NotificationsConfig,
+} from "./notifications.config";
 import { WebhookTransport } from "./webhook.transport";
 
 export type { DispatchEvent } from "./dedupe-key";
@@ -31,9 +35,11 @@ export type { DispatchEvent } from "./dedupe-key";
  * row for the alarm (`sentChannelIdsForAlarm`), so the caller supplies the
  * list. Both funnel into `dispatchToChannel`, and **both dedupes live inside
  * it** — the raise path's once-recorded refusal (`F3.46`) and the event's
- * ledger read (decision 10), which answers a key that holds any row but a
- * `failed` one, and a `failed` one too once there are `MAX_EVENT_ATTEMPTS`
- * of them (owner ruling Q9). `F3.8` refused a second entry point because it
+ * ledger read (decision 10), which answers a key that holds a `sent` or
+ * `skipped_deduped` row, a `failed` one too once there are
+ * `MAX_EVENT_ATTEMPTS` of them (owner ruling Q9), and a `skipped_unconfigured`
+ * one only until the channel is reconfigured or the process restarts (`F3.50`
+ * ruling Q1). `F3.8` refused a second entry point because it
  * would be a second place for the dedupe to be forgotten; the answer here is
  * that neither entry point holds a dedupe to forget.
  *
@@ -110,6 +116,15 @@ const MAX_ERROR_LENGTH = 1_000;
  * channel held permanently over a misconfigured ceiling retries for the life of
  * the alarm — writing nothing, sending nothing. ADR 0057 Amendment 2 §2 accepts
  * that; it is not an oversight in this constant.
+ *
+ * A step an unconfigured channel refused is retried too, since `F3.50`, and it
+ * IS bounded — by the second arm rather than by this one. Ruling Q1 keeps
+ * writing the row (an operator must see a configuration fault), and releases
+ * the key only once the row predates the channel's `updated_at` or the process
+ * start. The retry then writes ONE fresh row, which is newer than that
+ * watermark, so `eventDeliveryBlocked`'s `status !== "failed"` arm blocks the
+ * key at the very next tick. One row per key per restart; this count is never
+ * reached on that path.
  */
 export const MAX_EVENT_ATTEMPTS = 3;
 
@@ -237,24 +252,38 @@ export class NotificationsService {
   ): Promise<DeliveryResult> {
     // 0. `F3.10` — event idempotency (ADR 0057 decision 10), and it comes
     //    FIRST. An escalation step or a cleared message is sent once per
-    //    (channel, organization, dedupe key), for the life of the ledger; any
-    //    row but a `failed` or `skipped_rate_limited` one answers the key, a
-    //    `failed` one is retried until there are `MAX_EVENT_ATTEMPTS` of them
-    //    (owner ruling Q9), and a rate-limited one no longer answers it at all
-    //    (`F3.48` ruling Q2 — ruling Q7 said it did, and step 2 below no longer
-    //    writes one for a step). A blocked key is the record — nothing is
-    //    written. `raised` is
+    //    (channel, organization, dedupe key), for the life of the ledger; a
+    //    `sent` or `skipped_deduped` row answers the key, a `failed` one is
+    //    retried until there are `MAX_EVENT_ATTEMPTS` of them (owner ruling
+    //    Q9), a rate-limited one no longer answers it at all (`F3.48` ruling
+    //    Q2 — ruling Q7 said it did, and step 2 below no longer writes one for
+    //    a step), and an unconfigured one answers it only until the channel is
+    //    reconfigured or the process restarts (`F3.50` ruling Q1, the
+    //    `unconfiguredSince` watermark below). A blocked key is the record —
+    //    nothing is written. `raised` is
     //    not consulted on this path: an event is not a transition, and had
     //    the raise-path refusal below run first it would have written a
     //    `skipped_deduped` row under the event's key and made the event
     //    unsendable forever.
     if (input.event !== undefined) {
+      // `F3.50` ruling Q1 (ADR 0057 Amendment 3): the instant a
+      // `skipped_unconfigured` row stops being an answer and becomes history.
+      // The later of the two clocks that can have changed a channel's ability
+      // to send — its own `updated_at` (a URL, recipients, the kind, a
+      // re-saved secret) and the process boundary (`SMTP_HOST`,
+      // `CREDENTIAL_ENCRYPTION_KEY`, which no row records). One expression at
+      // its one call site: a `watermarkFor()` helper would only invite a test
+      // that passes while this line is never reached.
+      const unconfiguredSince = new Date(
+        Math.max(channel.updatedAt.getTime(), PROCESS_STARTED_AT.getTime()),
+      );
       let alreadyRecorded: boolean;
       try {
         alreadyRecorded = await this.eventDeliveryBlocked(
           channel.id,
           input.organizationId,
           dedupeKey,
+          unconfiguredSince,
         );
       } catch (err) {
         // Plan D3: no row and no send. Writing a row would poison this key for
@@ -468,14 +497,16 @@ export class NotificationsService {
    * answered this event's key — the event (an escalation step, a cleared
    * message) is not sent again (ADR 0057 decision 10; owner rulings Q7, Q9).
    *
-   * **Which rows consume the key.** Any row whose status is not `failed` and
-   * not `skipped_rate_limited` — `sent`, `skipped_deduped`,
-   * `skipped_unconfigured` — consumes it for the life of the ledger: the event
-   * was delivered, or a decision was taken not to deliver it, and a decision is
-   * not retried. A `failed` row is a transport that threw or refused, which is
-   * not a decision, so the event is retried on the next tick — up to
-   * `MAX_EVENT_ATTEMPTS` such rows, after which the key is blocked as if it had
-   * been answered (Q9).
+   * **Which rows consume the key.** A `sent` or `skipped_deduped` row consumes
+   * it for the life of the ledger: the event was delivered, or a decision was
+   * taken not to deliver it, and a decision is not retried. A `failed` row is a
+   * transport that threw or refused, which is not a decision, so the event is
+   * retried on the next tick — up to `MAX_EVENT_ATTEMPTS` such rows, after
+   * which the key is blocked as if it had been answered (Q9). Two statuses sit
+   * between those, each excluded in the `WHERE` below and each for its own
+   * reason: `skipped_rate_limited` never blocks (`F3.48` ruling Q2), and
+   * `skipped_unconfigured` blocks only while it is newer than the
+   * configuration that produced it (`F3.50` ruling Q1).
    *
    * **`skipped_rate_limited` is excluded in the `WHERE`, not here** (`F3.48`
    * ruling Q2, ADR 0057 Amendment 2). It was a blocking status under ruling Q7
@@ -483,6 +514,23 @@ export class NotificationsService {
    * refusing a step is a postponement rather than a decision. Ruling Q1 stops
    * new such rows being written on the escalation path; excluding the status
    * here releases the ones written before `F3.48` landed.
+   *
+   * **`skipped_unconfigured` is excluded conditionally** (`F3.50` ruling Q1,
+   * ADR 0057 Amendment 3), and the difference from `skipped_rate_limited` is
+   * the whole of that row. A ceiling refusal is a self-clearing postponement,
+   * so `F3.48` could stop writing it. An unconfigured channel is a
+   * **configuration fault an operator must see and fix**, so the row keeps
+   * being written and the ledger keeps saying so — it simply stops ANSWERING
+   * once it predates `unconfiguredSince`, the later of the channel's
+   * `updated_at` and `PROCESS_STARTED_AT`. The `caller` computes that; this
+   * read only applies it.
+   *
+   * **The growth that leaves is one row per key per process.** A released key
+   * is re-offered on the next tick; if the channel is still unconfigured, that
+   * tick writes ONE fresh row — which is newer than the watermark, so the
+   * second arm below (`status !== "failed"`) blocks the key immediately. The
+   * count arm is never reached on this path, and three *fresh* unconfigured
+   * rows under one key is not a reachable state.
    *
    * The exclusion has to be in the SQL for the next paragraph to stay true.
    * The read asks for at most `MAX_EVENT_ATTEMPTS` rows' `status`: fewer than
@@ -492,6 +540,15 @@ export class NotificationsService {
    * instead would break exactly that — an unordered sample of
    * `MAX_EVENT_ATTEMPTS` rows could come back all rate-limited and leave both
    * arms false for a key Q9 blocks.
+   *
+   * `F3.50` makes that argument load-bearing rather than precautionary.
+   * Amendment 2 §3 had to concede its mixed state was unreachable in
+   * production; this one is reachable, because one stale unconfigured row
+   * accumulates per restart. A key can legitimately hold one `sent` row and
+   * three stale `skipped_unconfigured` ones, and a TypeScript filter over an
+   * unordered sample of three could then return the three unconfigured rows,
+   * empty itself, leave both arms false — and **send an event that was already
+   * sent**.
    *
    * Same connection and the same reason as `isOverHourlyLimit`: a read with no
    * tenant transaction to run under — the sweep spans every tenant with no
@@ -509,6 +566,7 @@ export class NotificationsService {
     channelId: string,
     organizationId: string,
     dedupeKey: string,
+    unconfiguredSince: Date,
   ): Promise<boolean> {
     const rows = await this.fleetDb
       .select({ status: notificationDeliveries.status })
@@ -532,6 +590,29 @@ export class NotificationsService {
           // with the status as a residual filter — no DDL. That plan was
           // measured, not assumed; ADR 0057 Amendment 2 §3 records it.
           ne(notificationDeliveries.status, "skipped_rate_limited"),
+          // `F3.50` ruling Q1: a `skipped_unconfigured` row answers this key
+          // only while it is NEWER than the configuration that produced it.
+          // Beside the exclusion above rather than folded into it, because the
+          // two statuses leave for different reasons and on different terms: a
+          // rate-limited row never blocks again, an unconfigured one blocks
+          // until the operator moves the watermark past it.
+          //
+          // `or(ne, gt)` and not the literal `not(and(eq, lte))`. They are the
+          // same predicate — `status` and `attempted_at` are both `NOT NULL` —
+          // but the literal form renders `"status" = $n`, and
+          // `notifications.events.spec.ts` case 14 asserts that no equality on
+          // `status` appears here, because one would block every key that is
+          // not the named status. The twin costs nothing and leaves that
+          // assertion standing as a free gate on this clause too.
+          //
+          // **Scoped to this one status, never hoisted into the `and` above.**
+          // A watermark over the whole read would drop a `failed` row older
+          // than it out of the sample, and ruling Q9's three-attempt cap would
+          // silently reset on every channel edit.
+          or(
+            ne(notificationDeliveries.status, "skipped_unconfigured"),
+            gt(notificationDeliveries.attemptedAt, unconfiguredSince),
+          ),
         ),
       )
       .limit(MAX_EVENT_ATTEMPTS);
