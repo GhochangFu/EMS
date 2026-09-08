@@ -809,7 +809,10 @@ export class NotificationsService {
    * the read is a scan of the organization's rows. PR 2's migration
    * `0066_alarm_lifecycle.sql` adds `notification_deliveries_alarm_idx ON
    * (alarm_id) WHERE alarm_id IS NOT NULL` beside plan Q3's probe (`0038`'s
-   * rule: the reader adds the index), and the plan records it.
+   * rule: the reader adds the index), and the plan records it. `F3.51` is that
+   * index's second reader and measured the plan: `raise-attempts.ts`, which
+   * holds the RAISE key's read — outside this class, because the file is at
+   * §4.5's cap and the read needs nothing from it but `fleetDb`.
    *
    * Same connection and the same reason as `isOverHourlyLimit`: a sweep read
    * with no tenant transaction, so the organization is the `WHERE`. Unlike
