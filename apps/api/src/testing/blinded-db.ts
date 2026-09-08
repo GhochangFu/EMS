@@ -17,7 +17,8 @@ import type { BmsDb } from "@bms/db";
  * terminating a backend, on a role and a database other suites are using. This
  * is the cheaper induction, and it is sound for a reason the code already
  * relies on: **the four SELECTs in that service are told apart by their
- * projection** — `{count}` is the hourly ceiling, `{id}` the raise-path skip
+ * projection** — and `blindedReads()` below turns that from a claim into a
+ * gate — `{count}` is the hourly ceiling, `{id}` the raise-path skip
  * read, `{status}` the event ledger read, `{channelId}` the cleared
  * recipients — and those four shapes are disjoint. `notifications.service.
  * spec.ts`'s fake dispatches on exactly the same key. So blinding one shape
@@ -36,21 +37,41 @@ import type { BmsDb } from "@bms/db";
  * awaited, so it does not need to know the shape of the chain it is standing
  * in for — `.from().where().limit()` and `.from().where()` both work.
  */
-export function dbBlindTo(db: BmsDb, blindedShape: string): BmsDb {
+export function dbBlindTo(db: BmsDb, blindedShape: string): BlindedDb {
   const reason = `blinded-db: the select({ ${blindedShape} }) read is made to throw`;
   const realSelect = (db as unknown as { select: (p?: unknown) => unknown }).select.bind(db);
+  let blinded = 0;
 
-  return new Proxy(db as object, {
+  const proxy = new Proxy(db as object, {
     get(target, prop): unknown {
       if (prop === "select") {
-        return (projection?: Record<string, unknown>) =>
-          shapeOf(projection) === blindedShape ? rejectingBuilder(reason) : realSelect(projection);
+        return (projection?: Record<string, unknown>) => {
+          if (shapeOf(projection) !== blindedShape) return realSelect(projection);
+          blinded += 1;
+          return rejectingBuilder(reason);
+        };
       }
       const value = Reflect.get(target, prop, target) as unknown;
       return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(target) : value;
     },
   }) as unknown as BmsDb;
+
+  return { db: proxy, blindedReads: () => blinded };
 }
+
+/**
+ * The proxied database, and **how many reads it actually blinded**.
+ *
+ * The count is not a convenience: it is what makes the disjointness claim in
+ * the header a gate rather than a sentence. A caller asserts the number it
+ * expects, so a fifth `select` of the same shape appearing in the service under
+ * test — which would blind two reads and quietly change what the caller is
+ * proving — fails the assertion instead of passing under a stale comment.
+ *
+ * A shape that matches nothing needs no separate guard: the read then succeeds,
+ * and the caller's own positive assertion about the refusal goes red.
+ */
+export type BlindedDb = { db: BmsDb; blindedReads: () => number };
 
 /** A projection's identity: its keys, sorted, comma-joined. `""` for `select()`. */
 function shapeOf(projection?: Record<string, unknown>): string {

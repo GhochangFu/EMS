@@ -599,12 +599,21 @@ H1 as unconditional exceptions, and after this they are conditional.
    | H1 — failed ceiling read | no row, retried next tick | **row** | row (unchanged) |
    | The ceiling refusal (Q-A) | no row, retried next tick | row | row (unchanged) |
 
-   H1's line is now **textually identical** to the ceiling's twenty lines below
-   it, `input.event?.kind` and not `input.event.kind` even though the narrowing
-   would allow the latter. That identity is the row's closing complaint
-   answered: the three event-path exceptions now state one rule instead of two,
-   and the reason is one reason — the key must survive for the next tick to
-   retry the step.
+   All three exits now ask **the same question through the same call**,
+   `offeredAgainWithoutAsking(input.event)`. That is the row's closing complaint
+   answered: they state one rule instead of two, and the reason is one reason —
+   the key must survive for the next tick to retry the step.
+
+   **The predicate names the property, not the kind, and it is exhaustive**
+   (security review of this row). The first cut of this change tested
+   `event?.kind === "escalation"` inline at each exit, which is correct for the
+   two kinds `DispatchEvent` has and silently wrong for a third: a new *retried*
+   kind would fall to the `record()` branch and poison its own key for every
+   later tick, with the compiler reporting nothing. The predicate switches
+   exhaustively over the union, so a third kind is a missing return — a compile
+   error — rather than a behaviour change. What the exits turn on is whether the
+   sweep will offer that dispatch again on its own, which is why the function is
+   named for that and not for `escalation`.
 
 3. **Ruling 2 — two further no-row exits stay out of scope, and are named here
    so they are not re-filed as a gap.** `dispatchToChannels` refuses an event
@@ -635,9 +644,19 @@ H1 as unconditional exceptions, and after this they are conditional.
    alarm × channel) before giving up, where it previously returned at once.
    Bounded, on the failure path, inside a serial loop.
 
-   (c) Growth is one row per (alarm, channel), and it is self-bounding through
-   the exit in §3 even though no retry drives it. In production it is exactly
-   one.
+   (c) Growth is one row per (alarm, channel), and **in production it is exactly
+   one, because `notifyCleared` runs once** — `runClearPhase` calls it only for
+   the ids `writeAlarmState` actually committed, and `loadActiveAlarms` never
+   returns that alarm again.
+
+   That single dispatch is the bound at D3, and it has to be: §3's
+   already-answered exit needs `eventDeliveryBlocked` to **succeed**, and at D3
+   the failing read *is* that read, so a hypothetical re-offer would add a row
+   per tick with nothing stopping it. At H1 the picture is different — the
+   failing read is the ceiling's `{count}`, so the ledger read still runs and
+   three `failed` rows would trip `MAX_EVENT_ATTEMPTS`. An earlier draft of this
+   section gave §3's exit as the bound for both, which generalised one exit too
+   far.
 
    (d) **Ruling 3 — the row is written `failed`, a retriable-shaped status for a
    refusal that will never be retried.** Accepted. Nothing reads that key again:

@@ -54,18 +54,24 @@ export type { DispatchEvent } from "./dedupe-key";
  * an unhandled promise rather than in front of anyone; `dispatchToChannels` is
  * called from a sweep whose one warn line would hide which channel failed.
  * Every failure becomes a `failed` result and the promise resolves. It is
- * recorded as a row, with **three exceptions, and since `F3.54` all three say
- * the same thing**: an ESCALATION step writes no row when the ledger read
- * throws (plan D3), when the rate-limit read throws (review H1), or when the
- * hourly ceiling refuses it (`F3.48` ruling Q1). The first two are failed
- * reads and the third is a decision, but the reason is one reason — that key
- * must survive for the next tick to retry the step.
+ * recorded as a row, with **three exceptions, and since `F3.54` all three ask
+ * the same question** — `offeredAgainWithoutAsking` below. A dispatch that the
+ * sweep will re-offer on its own writes no row when the ledger read throws
+ * (plan D3), when the rate-limit read throws (review H1), or when the hourly
+ * ceiling refuses it (`F3.48` ruling Q1). The first two are failed reads and
+ * the third is a decision, but the reason is one reason: that key must survive
+ * for the next tick to retry the step.
  *
  * A CLEARED message is none of those cases. It is dispatched once from the
  * clear phase and never re-offered, so a missing row buys no retry and costs
  * the only evidence: it keeps its row at all three exits (ruling Q-A for the
- * ceiling, `F3.54` ADR 0057 Amendment 4 for the two reads). The raise path
- * keeps its row throughout.
+ * ceiling, `F3.54` ADR 0057 Amendment 4 for the two reads).
+ *
+ * **The raise path keeps its row at all three of those exits too** — but not
+ * everywhere in this method, and the difference matters. Its own transition
+ * dedupe in step 1 writes nothing once a refusal for that key is already
+ * recorded (`F3.46`), which is the most-executed refusal in the service. That
+ * is a fourth case with its own reason, not a fourth exception to this one.
  */
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */
@@ -142,6 +148,36 @@ const MAX_ERROR_LENGTH = 1_000;
  * the cost is two reads per tick per such key, which `F3.53` owns.
  */
 export const MAX_EVENT_ATTEMPTS = 3;
+
+/**
+ * `F3.54` — whether a dispatch this refusal belongs to will be **offered
+ * again** without anyone asking (ADR 0057 Amendment 4).
+ *
+ * This is the property the three event-path exceptions to ADR 0041 decision 4
+ * actually turn on, and naming it is the point. An escalation step is
+ * re-dispatched by `runEscalationPhase` on every 30 s tick until it lands, so
+ * writing no row IS its retry and a row would spend its key. A cleared message
+ * is dispatched once from the clear phase and `loadActiveAlarms` never returns
+ * that alarm again, so silence buys nothing and costs the only evidence. The
+ * raise path is not an event at all: its refusal is bounded by the transition,
+ * and the next raise is a new alarm with a new key.
+ *
+ * **Exhaustive on purpose** (security review, `F3.54`). The three call sites
+ * used to test `kind === "escalation"` inline, which is correct for today's two
+ * kinds and silently wrong for a third: a new retried kind would fall to the
+ * `record()` branch and poison its own key for every later tick, with the
+ * compiler reporting nothing. Here a third kind is a missing return, which is a
+ * compile error under `noImplicitReturns`.
+ */
+function offeredAgainWithoutAsking(event: DispatchEvent | undefined): boolean {
+  if (event === undefined) return false;
+  switch (event.kind) {
+    case "escalation":
+      return true;
+    case "cleared":
+      return false;
+  }
+}
 
 @Injectable()
 export class NotificationsService {
@@ -342,7 +378,7 @@ export class NotificationsService {
           status: "failed",
           error: "delivery ledger read failed",
         };
-        return input.event?.kind === "escalation"
+        return offeredAgainWithoutAsking(input.event)
           ? failedRead
           : this.record(input, channel, dedupeKey, failedRead);
       }
@@ -401,11 +437,11 @@ export class NotificationsService {
       // covered by this line because `input.event?.kind` is `undefined` there,
       // and `undefined !== "escalation"`.
       //
-      // This line is now TEXTUALLY IDENTICAL to the ceiling's `retriable` test
-      // twenty lines below. That was `F3.54`'s whole complaint: two adjacent
-      // exits discriminating differently — one on the presence of an event, one
-      // on its kind — with nothing in the code saying why.
-      return input.event?.kind === "escalation"
+      // This test is now the SAME CALL as the ceiling's `retriable` twenty
+      // lines below, and as step 0's. That was `F3.54`'s whole complaint: two
+      // adjacent exits discriminating differently — one on the presence of an
+      // event, one on its kind — with nothing in the code saying why.
+      return offeredAgainWithoutAsking(input.event)
         ? failed
         : this.record(input, channel, dedupeKey, failed);
     }
@@ -428,7 +464,7 @@ export class NotificationsService {
       //
       // The raise path keeps its row too: a raise key is per transition and the
       // next raise is a new alarm with a new key, so the growth is bounded.
-      const retriable = input.event?.kind === "escalation";
+      const retriable = offeredAgainWithoutAsking(input.event);
       return retriable ? limited : this.record(input, channel, dedupeKey, limited);
     }
 
