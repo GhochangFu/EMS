@@ -569,3 +569,117 @@ the row it is about — what changes is the read.
 
 8. **Not fixed here:** `F3.51`, `F3.52`, `F3.53` and `F3.54`, all filed by
    `F3.48`, and the ledger's retention (`F3.46` ruling 0).
+
+## Amendment 4 — `F3.54`: two failed reads keep a cleared message's refusal row (2026-09-08)
+
+Amends **decision 10** and **Amendment 2's ruling Q-A**. Unchanged: ruling Q9,
+Amendment 2's rulings Q1 and Q2, Amendment 3's ruling Q1, the whole escalation
+path and the whole raise path. **ADR 0041 needs its own amendment**, and not
+because decision 4 is eroded — it is served, since two more refusals become
+visible — but because Amendment 3 of that ADR names plan D3 and security review
+H1 as unconditional exceptions, and after this they are conditional.
+
+1. **What ruling Q-A established, and why it stopped one branch short.** Q-A's
+   argument is about the *cleared kind*, not about the ceiling: a clear is
+   dispatched once from the clear phase, `loadActiveAlarms` filters
+   `cleared_at IS NULL`, so there is no later tick to retry it and a missing row
+   buys nothing while costing the only evidence. `F3.48` wrote that argument
+   into the exit it happened to be changing and left two adjacent exits
+   discriminating on `input.event !== undefined`. Both predate `F3.48`, which
+   only made the inconsistency visible by naming the principle. Both emit a
+   `warn`, so this was never the fully silent shape.
+
+2. **Ruling 1 — both ternaries narrow to the kind.** Each becomes
+   `input.event?.kind === "escalation"`, so a refused *cleared* message writes
+   its `failed` row while an escalation step still writes nothing:
+
+   | Exit | escalation | cleared | raise |
+   |---|---|---|---|
+   | D3 — failed ledger read | no row, retried next tick | **row** | not reachable |
+   | H1 — failed ceiling read | no row, retried next tick | **row** | row (unchanged) |
+   | The ceiling refusal (Q-A) | no row, retried next tick | row | row (unchanged) |
+
+   All three exits now ask **the same question through the same call**,
+   `offeredAgainWithoutAsking(input.event)`. That is the row's closing complaint
+   answered: they state one rule instead of two, and the reason is one reason —
+   the key must survive for the next tick to retry the step.
+
+   **The predicate names the property, not the kind, and it is exhaustive**
+   (security review of this row). The first cut of this change tested
+   `event?.kind === "escalation"` inline at each exit, which is correct for the
+   two kinds `DispatchEvent` has and silently wrong for a third: a new *retried*
+   kind would fall to the `record()` branch and poison its own key for every
+   later tick, with the compiler reporting nothing. The predicate switches
+   exhaustively over the union, so a third kind is a missing return — a compile
+   error — rather than a behaviour change. What the exits turn on is whether the
+   sweep will offer that dispatch again on its own, which is why the function is
+   named for that and not for `escalation`.
+
+3. **Ruling 2 — two further no-row exits stay out of scope, and are named here
+   so they are not re-filed as a gap.** `dispatchToChannels` refuses an event
+   with no alarm id outright (review L2, returns `[]`) and drops a channel whose
+   organization is not the input's (review M2). Both write nothing and both
+   would apply to a cleared message. They refuse the **pairing**, before
+   `buildDedupeKey` has run, so there is no key for a row to be attributed
+   under — a different class from refusing a send — and neither is reachable
+   from `notifyCleared`, which always passes a real alarm id and sends only to
+   channels already holding a `sent` row for it.
+
+   A third exit belongs in this paragraph and is **correct as it stands**: when
+   the ledger read answers that the key is already taken, `dispatchToChannel`
+   returns `skipped_deduped` and writes nothing, for a clear as for a step. The
+   row that answered the key **is** the evidence, and a second row would restate
+   it — which is exactly what `F3.46` closed.
+
+4. **Accepted costs.**
+
+   (a) On a genuinely dead ledger the D3 path now emits its `warn` *and*
+   `record()`'s `logger.error` for the same event, because the insert runs on
+   the connection that just failed the read. The honest claim of this change is
+   therefore that the cleared path **attempts** the row. That is argued rather
+   than gated: an Effort-1 row does not buy a log-capture harness for a
+   consequence nothing branches on.
+
+   (b) On a total outage the clear phase now attempts one INSERT per (cleared
+   alarm × channel) before giving up, where it previously returned at once.
+   Bounded, on the failure path, inside a serial loop.
+
+   (c) Growth is one row per (alarm, channel), and **in production it is exactly
+   one, because `notifyCleared` runs once** — `runClearPhase` calls it only for
+   the ids `writeAlarmState` actually committed, and `loadActiveAlarms` never
+   returns that alarm again.
+
+   That single dispatch is the bound at D3, and it has to be: §3's
+   already-answered exit needs `eventDeliveryBlocked` to **succeed**, and at D3
+   the failing read *is* that read, so a hypothetical re-offer would add a row
+   per tick with nothing stopping it. At H1 the picture is different — the
+   failing read is the ceiling's `{count}`, so the ledger read still runs and
+   three `failed` rows would trip `MAX_EVENT_ATTEMPTS`. An earlier draft of this
+   section gave §3's exit as the bound for both, which generalised one exit too
+   far.
+
+   (d) **Ruling 3 — the row is written `failed`, a retriable-shaped status for a
+   refusal that will never be retried.** Accepted. Nothing reads that key again:
+   the dedupe key carries the alarm id, an alarm clears once
+   (`writeAlarmState` matches `cleared_at IS NULL`), and a re-raise is a new
+   alarm with a new key. So the mismatch is cosmetic, where a sixth terminal
+   status would be a migration, a contract change and every reader.
+
+   (e) The delivery DTO carries no `dedupeKey` and no event kind, so the
+   deliveries view cannot say a `failed` row was the *cleared* message.
+   `"delivery ledger read failed"` happens to be a unique discriminator now —
+   D3 is event-only, and escalation stops writing it — but
+   `"rate-limit check failed"` stays ambiguous between a raise and a clear. A
+   follow-up row carries it rather than widening this one.
+
+5. **Which layer holds which claim.** The unit spec holds that the insert is
+   **attempted**, both branches and both kinds — and it can, because its fake's
+   `failDeliveryReads` and `failInserts` are independent flags. The integration
+   spec holds that the row **lands in Postgres and reads back**, against the
+   real status CHECK and the real foreign keys. There the read failure is
+   synthesised by blinding one `select` projection, because inducing a real one
+   means revoking a grant or terminating a backend on a shared database; the
+   four projections in this service are disjoint, so blinding one fails exactly
+   one read while the INSERT goes to the real database. Each block asserts both
+   kinds, and the escalation half is what kills the over-broad mutation "record
+   on every event" — which the cleared half alone would pass.

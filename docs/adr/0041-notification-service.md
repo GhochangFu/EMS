@@ -445,3 +445,24 @@ Decision 5 itself is untouched. The ceiling still refuses the send, still
 counts `sent` rows over a trailing hour, and `skipped_rate_limited` rows were
 never in that count — so no arithmetic moved and outbound volume stays bounded
 exactly as before.
+
+## Amendment 4 — `F3.54`: the three event-path exceptions are all conditional now (2026-09-08)
+
+A correction to Amendment 3 above, which says of plan D3 and security review H1
+that they "already keep a failed ledger read and a failed rate-limit read out of
+the ledger". That was true when it was written and is not true now.
+
+Under **ADR 0057 Amendment 4** all three exceptions to decision 4 on the event
+path narrow to `event.kind === "escalation"`. A refused **cleared** message
+keeps its row at every one of them — the hourly ceiling (ruling Q-A, `F3.48`),
+the failed ledger read and the failed rate-limit read (`F3.54`) — because a
+clear is dispatched once and never re-offered, so a missing row buys no retry
+while costing the only evidence the refusal happened.
+
+**The count of exceptions stays three, and decision 4 is better served than
+before**, not further eroded: two refusals that were invisible for every event
+are now visible for the kind that will never be retried. **The raise path is
+untouched** and records as it always has. The reasoning, the accepted costs and
+the two exits deliberately left alone are in ADR 0057 Amendment 4; this note
+exists only so a reader of ADR 0041 alone is not left with Amendment 3's
+sentence.
