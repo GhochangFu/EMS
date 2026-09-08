@@ -261,6 +261,7 @@ export function completeRtu(name: string): NonNullable<OnboardingDraft["rtus"]>[
   };
 }
 
+/** An asset on RTU `rtuIndex`, its `code` and `name` the same string so a rendered line is searchable by either. */
 export function assetOf(
   rtuIndex: number,
   name: string,

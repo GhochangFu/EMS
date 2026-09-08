@@ -62,8 +62,10 @@ function assert(condition: boolean, message: string): void {
  * Its own file, and not the bottom of `onboarding-chat.service.spec.ts`,
  * because that file was at 958 of AGENTS.md §4.5's 1000 lines when this one
  * was split off — the same split `F4.104` needed for
- * `onboarding-excel-cell-bounds.spec.ts`. **It is now at 996, so the headroom
- * is four lines**: the next edit that adds to it has to split first.
+ * `onboarding-excel-cell-bounds.spec.ts`. This row took it to 995, and the
+ * review's one-line JSDoc on `assetOf` to **996**. **The headroom is four
+ * lines**: the next edit that adds to that file has to split it first, and
+ * this one is already the file the split went to.
  *
  * **The measurement this row is set on, because the filed row's numbers were
  * all dead.** The row claimed 20,095 RTU rows produce a 13.16 MB message;
@@ -75,15 +77,38 @@ function assert(condition: boolean, message: string): void {
  * | Route | Assets branch | MQTT branch |
  * |---|---|---|
  * | A real 62,640-byte workbook, 100 duplicate display names | **77,817** | **58,647** |
- * | The constructed drafts below, same caps, every cell at the bound | **85,242** | **66,072** |
+ * | The constructed drafts below, same caps, every cell at the bound | **84,945** | **65,757** |
+ * | The same drafts with this bound applied | **12,718** | **16,950** |
  *
- * The fixtures here measure a little higher because every cell is at its bound
- * rather than merely long; the workbook figures are the amplification ones —
- * 77,817 characters from 62,640 bytes is **1.24×**, where the row claimed
- * ~7.5×. Composition of the 77,817: 500 asset names ≈ 36 KB, 99 fix lines
- * ≈ 21 KB, 100 RTU lines ≈ 7 KB. A **blank** `rtu_name` buys no fix line —
- * `parseRtus` falls back to the unique code — only a **duplicate** does, which
- * is 99 of 100.
+ * The fixtures here measure higher than the workbook because every cell is at
+ * its bound rather than merely long; the workbook figures are the
+ * amplification ones — 77,817 characters from 62,640 bytes is **1.24×**, where
+ * the row claimed ~7.5×. A **blank** `rtu_name` buys no fix line (`parseRtus`
+ * falls back to the unique code); only a **duplicate** does, which is 99 of 100.
+ *
+ * **Composition of the 84,945, instrumented rather than estimated — the parts
+ * sum to the character.** The earlier figures in this docblock (500 asset names
+ * ≈ 36 KB, 99 fix lines ≈ 21 KB, 100 RTU lines ≈ 7 KB) accounted for only ~82 %
+ * of the total: they costed a 255-character cell at ~72 rendered characters
+ * when `quoteCell` produces **90** (`'` + 64 + `…' (+191 more characters)`),
+ * and they left out the line markup and the `", "` separators.
+ *
+ * | Part | Characters | Share |
+ * |---|---|---|
+ * | 500 asset names, with their separators (5 × 90 + 4 × 2 per line) | 45,800 | 53.9 % |
+ * | 99 fix bullets at 291 (three quoted cells and their markup) | 28,809 | 33.9 % |
+ * | 100 RTU-name halves at 98 (`- **` + 90 + `**: `) | 9,800 | 11.5 % |
+ * | Newlines, both block headers, the first line and the trailer | 536 | 0.6 % |
+ * | **Total** | **84,945** | **100 %** |
+ *
+ * Under the bound the same decomposition is 25 fix bullets 7,275 + 25 RTU-name
+ * halves 2,450 + 25 asset names 2,250 + tails 354 + the rest 389 = **12,718**.
+ * The workbook route's 77,817 is **not** decomposed here: its cells are long
+ * but not all at the bound, so its parts are its own.
+ *
+ * The **85,242** and **66,072** this table used to carry do not reproduce from
+ * the fixtures below and were replaced rather than adjusted. Nothing in the
+ * fixtures changed, so those two numbers were never reachable from them.
  *
  * **So this is not an availability row.** 77,817 characters in 46 ms crashes
  * nothing. It is a message-quality row — 500 asset names is not a summary —
@@ -407,10 +432,11 @@ export function assertMqttTemplateBlocksAreCapped(): void {
     );
   }
 
-  // Arithmetic, so the ceiling is not invented: header ~150 + 25 fix lines at
-  // ~290 ≈ 7.4 KB + prose ~200 + markers ~130 + 25 blocks at ~360 ≈ 9.1 KB +
-  // tail and trailer ~80 ≈ 17.1 KB. Measured 66,072 on the base, so this is
-  // red before the cap and has ~2.9 KB of headroom after it.
+  // Arithmetic, so the ceiling is not invented: header ~160 + 25 fix bullets at
+  // 291 = 7,275 + prose ~200 + markers ~130 + 25 blocks at ~360 ≈ 9.0 KB + tail
+  // and trailer ~80 ≈ 17.0 KB. Instrumented: **16,950** with the cap and
+  // **65,757** without it, so this is red before the cap and has ~3.0 KB of
+  // headroom after it. (This comment said 66,072, which did not reproduce.)
   assert(
     message.length < 20_000,
     `the MQTT branch must stay under 20,000 characters, got ${message.length}`,
@@ -723,8 +749,9 @@ export function assertSummaryTailsCarryNothingButACount(): void {
  *
  * The fixture is the worst message an upload can still produce: 100 RTUs and
  * 500 assets at `F4.103`'s section caps, every echo-bearing cell at its
- * `F4.104` bound, 99 duplicate display names. It measured **85,242** characters
- * before this row.
+ * `F4.104` bound, 99 duplicate display names. Instrumented at **84,945**
+ * characters without the bound and **12,718** with it; the file docblock has
+ * the decomposition, which sums to the character.
  */
 export function assertAssetsBranchStaysUnderItsCeiling(): void {
   const worst = chatService().excelImportFollowUp(

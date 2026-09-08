@@ -75,9 +75,11 @@ export function quoteCell(text: string, max: number = MAX_ECHOED_CELL_CHARS): st
  *
  * **What 25 sits above.** The shipped `template.xlsx` carries **2 RTU and 3
  * asset data rows**, so 25 is ~8× the happy path and the template's own import
- * summary gains no tail at any of its five sites. That is asserted, not
- * assumed: `assertAssetsByRtuSummaryIsCapped` drives the real template through
- * `parseUpload` and requires the reply to contain no tail anywhere.
+ * summary gains no tail at any of the summary's five sites. That is asserted,
+ * not assumed: `assertShippedTemplateElidesNothing` drives the real template
+ * through `parseUpload` and requires the reply to contain no tail anywhere.
+ * (This named `assertAssetsByRtuSummaryIsCapped` until review — that function
+ * calls no `parseUpload` and *requires* tails, so it was the wrong sibling.)
  *
  * **What it sits deliberately below.** The seeded estate is **99 assets**, and
  * a 100-RTU / 500-asset workbook is legal — those are `F4.103`'s section caps.
@@ -92,16 +94,21 @@ export function quoteCell(text: string, max: number = MAX_ECHOED_CELL_CHARS): st
  * a **77,817**-character assistant message before this bound; the constructed
  * drafts in `onboarding-chat-summary-caps.spec.ts`, which hold every
  * echo-bearing cell at exactly its `F4.104` bound rather than merely long,
- * produced **85,242**. Do not quote one route's byte count against the other's
- * character count — that spec's docblock carries both, with the composition.
- * After this bound the same drafts produce ~12.8 KB. The filed row's own
- * 13.16 MB figure is dead either way: `workbookSectionCountProblem` refuses the
- * 20,095-row workbook it came from.
+ * produce **84,945** on the assets branch and **65,757** on the MQTT one. Do
+ * not quote one route's byte count against the other's character count — that
+ * spec's docblock carries both, with the composition that closes to the
+ * character. After this bound the same drafts produce **12,718** and
+ * **16,950**. The filed row's own 13.16 MB figure is dead either way:
+ * `workbookSectionCountProblem` refuses the 20,095-row workbook it came from.
  *
  * This is an `apps/api` constant and **not** a `packages/shared` one: no schema
- * reads it and no API response *type* depends on it, unlike `F4.103`'s section
- * caps and `F4.104`'s `ONBOARDING_DRAFT_STRING_MAX`, which each had a second
- * copy in `packages/shared/src/contracts/` to stay in sync with.
+ * reads it and no API response *type* depends on it. `F4.103`'s section caps
+ * and `F4.104`'s `ONBOARDING_DRAFT_STRING_MAX` had to be **declared in**
+ * `packages/shared/src/contracts/` because the draft schema there parses
+ * against them. Each of those constants has exactly one declaration; the symbol
+ * with a second copy is `onboardingDraftSchema` (`packages/shared` and
+ * `apps/api/src/admin/onboarding/onboarding.schema.ts`), which is what those
+ * rows' `tests/` invariants exist to hold together and why this row needs none.
  */
 export const MAX_ECHOED_ITEMS = 25;
 

@@ -836,8 +836,10 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     // **The two caps share one budget on the asset axis, and that is the whole
     // point.** A per-section 25 on both would leave 25 lines × 25 names ≈
     // 51 KB; one budget of 25 asset names across the whole summary brings the
-    // worst message to ~12.8 KB, from 85,242 characters on the base. Owner
-    // ruling 3.
+    // worst message to **12,718** characters, from **84,945** without either
+    // bound. Both instrumented on the fixture in
+    // `onboarding-chat-summary-caps.spec.ts`, whose docblock decomposes them.
+    // Owner ruling 3.
     //
     // `shownRtus` is `slice(0, MAX_ECHOED_ITEMS)`, a **prefix**, so index `i`
     // here is still the original `rtuIndex` the `assetsByRtu` map is keyed on.
