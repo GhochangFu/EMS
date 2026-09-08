@@ -269,6 +269,14 @@ export type AlarmAffectedAssetDto = z.infer<typeof Op.alarmAffectedAssetDtoSchem
 export type AlarmEnrichmentDto = z.infer<typeof Op.alarmEnrichmentDtoSchema>;
 /** `GET /api/v1/alarms/:id/details` (ADR 0034 decision 5). */
 export type AlarmDetailsResponse = z.infer<typeof Op.alarmDetailsResponseSchema>;
+/** The asset class's authored philosophy, pinned to the version a rule was seeded from (`E2.2`, ADR 0059). */
+export type AlarmClassPhilosophy = z.infer<typeof Op.alarmClassPhilosophySchema>;
+/** One philosophy-bearing alarm entry in the browsable KB (`E2.2` PR 2). */
+export type AlarmKbAlarm = z.infer<typeof Op.alarmKbAlarmSchema>;
+/** One asset class in the browsable KB, at its current published version (ruling Q0a). */
+export type AlarmKbClass = z.infer<typeof Op.alarmKbClassSchema>;
+/** `GET /api/v1/alarm-kb` (`E2.2` PR 2, ADR 0059 decision 4). */
+export type AlarmKbResponse = z.infer<typeof Op.alarmKbResponseSchema>;
 // `AlarmEnrichmentUpsertBody` deliberately not here — it is a request type,
 // declared in `apps/api/src/alarms/enrichment.schema.ts` (AGENTS.md §3).
 

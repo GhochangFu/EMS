@@ -509,16 +509,20 @@ export const alarmEnrichmentDtoSchema = z.object({
  * present for an inactive skill too — retirement is `active = false`, and a
  * historic philosophy must stay legible.
  */
-export const alarmClassPhilosophySchema = z.object({
-  templateId: z.string(),
-  templateVersion: z.number(),
-  templateName: z.string(),
-  alarmCode: z.string(),
+const philosophyTextFields = {
   cause: z.string().nullable(),
   impact: z.string().nullable(),
   action: z.string().nullable(),
   skillCode: alarmSkillCodeSchema.nullable(),
   skillLabel: z.string().nullable(),
+} as const;
+
+export const alarmClassPhilosophySchema = z.object({
+  templateId: z.string(),
+  templateVersion: z.number(),
+  templateName: z.string(),
+  alarmCode: z.string(),
+  ...philosophyTextFields,
 });
 
 /**
@@ -566,6 +570,44 @@ export const alarmDetailsResponseSchema = z.object({
    * be a guess shown under a confident heading.
    */
   classPhilosophy: alarmClassPhilosophySchema.nullable(),
+});
+
+/**
+ * `GET /api/v1/alarm-kb` — the browsable alarm philosophy knowledge base
+ * (`E2.2` PR 2, ADR 0059 decision 4, ruling Q0).
+ *
+ * **One entry per asset class at its current published version** (ruling Q0a),
+ * which is the axis that makes this the opposite of `classPhilosophy` above:
+ * that block shows the version a live rule was *pinned* to and is `null` for
+ * almost every alarm today, while this list reads published templates directly
+ * and needs no provenance, no instantiation and no seeding. The two can
+ * therefore disagree, and each names its version so a reader can see which they
+ * are looking at (ADR 0059 decision 6).
+ *
+ * The four philosophy fields are declared **once** and shared with
+ * `alarmClassPhilosophySchema` — a second declaration is the drift ADR 0019's
+ * Bound-section rule exists to prevent.
+ */
+export const alarmKbAlarmSchema = z.object({
+  alarmCode: z.string(),
+  message: z.string().nullable(),
+  severity: z.string().nullable(),
+  ...philosophyTextFields,
+});
+
+export const alarmKbClassSchema = z.object({
+  templateId: z.string(),
+  templateCode: z.string(),
+  templateName: z.string(),
+  templateVersion: z.number(),
+  organizationId: z.string(),
+  domain: z.string(),
+  /** Only the entries that carry a philosophy — a bare threshold row is not knowledge. */
+  alarms: z.array(alarmKbAlarmSchema),
+});
+
+export const alarmKbResponseSchema = z.object({
+  classes: z.array(alarmKbClassSchema),
 });
 
 // `alarmEnrichmentUpsertBodySchema` (the `PUT .../enrichment` request body)
