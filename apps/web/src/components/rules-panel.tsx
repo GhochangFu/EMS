@@ -19,6 +19,7 @@ import {
 } from "../api/rules";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { labelFor, toneClass, toneFor } from "../lib/vocabulary";
+import { EvaluateRefusalNotice } from "./evaluate-refusal-notice";
 import { RuleBuilderPanel } from "./rule-builder-panel";
 import { RuleChannelsEditor } from "./rule-channels-editor";
 
@@ -244,6 +245,13 @@ export function RulesPanel() {
               </button>
             </div>
           </div>
+
+          {/* `F3.47`: the sweep is bounded to one per 30 s per organization, so
+              this button can now be refused with 429. Without this the mutation
+              had no error surface at all and a refused press did nothing,
+              silently, twice. Under the toolbar rather than inside its flex row
+              so a long sentence does not reflow the filters. */}
+          <EvaluateRefusalNotice error={evaluateM.error} />
 
           {rulesQ.isLoading ? (
             <p className="p-4 text-sm text-bms-muted">Loading rules...</p>
