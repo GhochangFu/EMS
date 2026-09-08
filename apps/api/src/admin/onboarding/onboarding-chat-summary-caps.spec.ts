@@ -701,9 +701,11 @@ export function assertAssetsByRtuSummaryIsCapped(): void {
  * Its own `it()` and not section 5 of the function above, because six sections
  * behind one `it()` gate only as far as the first one a mutation reddens. The
  * mutation that reaches this one is the plausible "improvement": have the
- * per-line asset tail name the first asset it left out — `…and 4 more (starting
- * with 'Asset-r000-a1')`. That is the cheapest way to reopen exactly the echo
- * this row closes, and it is invisible to a length ceiling.
+ * per-line asset tail name the first asset it left out. Run, not imagined —
+ * it produces `every tail is a count and its unit and nothing else, got "…and 4
+ * more (starting with 'Asset-r000-a1')"`. That is the cheapest way to reopen
+ * exactly the echo this row closes, and a length ceiling barely sees it: the
+ * same mutation puts the worst message at 15,393 against a 15,000 ceiling.
  *
  * `more characters` is `quoteCell`'s, not a tail's. Every cell in this fixture
  * is inside `MAX_ECHOED_CELL_CHARS`, so nothing is cut and that phrase must be
@@ -742,10 +744,11 @@ export function assertSummaryTailsCarryNothingButACount(): void {
  * Its own `it()` for the same reason as the function above, and this one had no
  * reaching mutation at all while it was section 6 — it sat behind five
  * assertions that every cap mutation reddens first. The one that reaches it is
- * **deleting the `displayNameFixes` cap**: 99 fix lines at ~290 characters put
- * this message at ~32 KB with every other cap still in place. Deleting the RTU
- * line cap also crosses the ceiling, but through a broken reserve — a negative
- * allowance renders empty asset lists — so it is the weaker of the two.
+ * **deleting the `displayNameFixes` cap**: 99 fix bullets at 291 characters put
+ * this message at **34,313** with every other cap still in place. Deleting the
+ * RTU line cap crosses it too, at **27,759**, but through a broken reserve — a
+ * negative allowance renders empty asset lists — so it is the weaker of the
+ * two. Both measured, not projected.
  *
  * The fixture is the worst message an upload can still produce: 100 RTUs and
  * 500 assets at `F4.103`'s section caps, every echo-bearing cell at its
