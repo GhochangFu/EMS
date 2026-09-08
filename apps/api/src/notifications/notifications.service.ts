@@ -19,6 +19,7 @@ import {
   PROCESS_STARTED_AT,
   type NotificationsConfig,
 } from "./notifications.config";
+import { unconfiguredWatermark } from "./raise-retry";
 import { WebhookTransport } from "./webhook.transport";
 
 export type { DispatchEvent } from "./dedupe-key";
@@ -54,24 +55,34 @@ export type { DispatchEvent } from "./dedupe-key";
  * an unhandled promise rather than in front of anyone; `dispatchToChannels` is
  * called from a sweep whose one warn line would hide which channel failed.
  * Every failure becomes a `failed` result and the promise resolves. It is
- * recorded as a row, with **three exceptions, and since `F3.54` all three ask
- * the same question** — `offeredAgainWithoutAsking` below. A dispatch that the
- * sweep will re-offer on its own writes no row when the ledger read throws
- * (plan D3), when the rate-limit read throws (review H1), or when the hourly
- * ceiling refuses it (`F3.48` ruling Q1). The first two are failed reads and
- * the third is a decision, but the reason is one reason: that key must survive
- * for the next tick to retry the step.
+ * recorded as a row, with **three exits that all ask one question** —
+ * `offeredAgainWithoutAsking` below, and since `F3.54` they ask it in one call
+ * rather than three inline tests. A dispatch that the sweep will re-offer on
+ * its own writes no row when the ledger read throws (plan D3), when the
+ * rate-limit read throws (review H1), or when the hourly ceiling refuses it
+ * (`F3.48` ruling Q1). The first two are failed reads and the third is a
+ * decision, but the reason is one reason: that key must survive for the next
+ * tick to retry the dispatch.
+ *
+ * **Two kinds of dispatch answer yes, and since `F3.51` only one of them is an
+ * event** (ADR 0041 Amendment 5). An escalation step is re-dispatched by
+ * `runEscalationPhase` on every 30 s tick. A raise carrying `reoffered` is
+ * re-dispatched by the same sweep's raise-retry phase, for an alarm whose
+ * original raise reached nobody — it is not an event, it carries no event
+ * suffix, and it is the fourth exception to decision 4.
  *
  * A CLEARED message is none of those cases. It is dispatched once from the
  * clear phase and never re-offered, so a missing row buys no retry and costs
  * the only evidence: it keeps its row at all three exits (ruling Q-A for the
  * ceiling, `F3.54` ADR 0057 Amendment 4 for the two reads).
  *
- * **The raise path keeps its row at all three of those exits too** — but not
- * everywhere in this method, and the difference matters. Its own transition
- * dedupe in step 1 writes nothing once a refusal for that key is already
- * recorded (`F3.46`), which is the most-executed refusal in the service. That
- * is a fourth case with its own reason, not a fourth exception to this one.
+ * **An ORDINARY raise keeps its row at all three of those exits too** —
+ * nothing re-offers it, so the row is the only evidence it was refused, which
+ * is `F3.51`'s own premise. Neither case reaches step 1, and the difference
+ * matters: the raise path's transition dedupe there writes nothing once a
+ * refusal for that key is already recorded (`F3.46`), which is the
+ * most-executed refusal in the service. That is a separate case with its own
+ * reason, not another exception to this one.
  */
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */
@@ -107,6 +118,20 @@ export type DispatchInput = {
    * in `dispatchToChannel`, not the raise path's refusal.
    */
   event?: DispatchEvent;
+  /**
+   * `F3.51` (ADR 0041 Amendment 5) — this is the alarm lifecycle sweep's
+   * raise-retry phase re-offering an alarm's ORIGINAL raise, which did not
+   * reach anybody. Set nowhere else.
+   *
+   * **It is not an event.** It does not reach `buildDedupeKey` and does not
+   * change `subjectFor`, so the key and the subject stay byte-identical to the
+   * original raise's — which is the whole mechanism, because the sweep decides
+   * who is owed by reading rows under that ORIGINAL key. A `:retry` suffix or a
+   * subject prefix would orphan every row it matched on (case E18 holds this).
+   *
+   * What it changes is one property: {@link offeredAgainWithoutAsking}.
+   */
+  reoffered?: true;
 };
 
 /** How much of a transport's failure text is stored. */
@@ -146,6 +171,16 @@ const MAX_ERROR_LENGTH = 1_000;
  * is NOT blocked again and the step is re-offered every tick until the ceiling
  * lifts. Nothing is written and nothing is sent, so the ledger does not grow —
  * the cost is two reads per tick per such key, which `F3.53` owns.
+ *
+ * **`F3.51` — an alarm's RAISE key now enters this same accounting** (ADR 0041
+ * Amendment 5, owner ruling 2). It reaches it through `channelsOwedTheRaise`
+ * rather than through `eventDeliveryBlocked`, but the predicate is the same
+ * one, so every paragraph above transfers unchanged: this many `failed` rows
+ * under the raise key stop the lifecycle sweep re-offering it on that channel,
+ * a ceiling-refused re-offer writes no row and spends nothing, and a
+ * `skipped_unconfigured` refusal is bounded by the "not failed" arm at one row
+ * per watermark move. The two accountings do not mix — `raiseAttempts` filters
+ * on the dedupe key, and a step's key is never the raise's.
  */
 export const MAX_EVENT_ATTEMPTS = 3;
 
@@ -159,19 +194,33 @@ export const MAX_EVENT_ATTEMPTS = 3;
  * writing no row IS its retry and a row would spend its key. A cleared message
  * is dispatched once from the clear phase and `loadActiveAlarms` never returns
  * that alarm again, so silence buys nothing and costs the only evidence. The
- * raise path is not an event at all: its refusal is bounded by the transition,
- * and the next raise is a new alarm with a new key.
+ * ORDINARY raise is not an event and nothing re-offers it: its refusal is
+ * bounded by the transition, the next raise is a new alarm with a new key, and
+ * the row is the only evidence anybody has that the message was refused.
+ *
+ * **`F3.51` (ADR 0041 Amendment 5) adds the fourth case, and it is the first
+ * that is not an event.** The alarm lifecycle sweep re-offers an alarm's
+ * original raise on every 30 s tick until it lands, so a dispatch carrying
+ * `reoffered` has exactly the escalation step's property and none of the
+ * cleared message's: writing no row IS its retry, and a row would spend one of
+ * its key's `MAX_EVENT_ATTEMPTS` on a refusal the next tick is meant to
+ * revisit. That the answer is now read off `reoffered` rather than off `event`
+ * is why `F3.54` named this function for the property instead of the kind —
+ * testing `kind === "escalation"` inline would have had to be revisited at
+ * three call sites here instead of one.
  *
  * **Exhaustive on purpose** (security review, `F3.54`). The three call sites
  * used to test `kind === "escalation"` inline, which is correct for today's two
  * kinds and silently wrong for a third: a new retried kind would fall to the
  * `record()` branch and poison its own key for every later tick, with the
  * compiler reporting nothing. Here a third kind is a missing return, which is a
- * compile error under `noImplicitReturns`.
+ * compile error under `noImplicitReturns`. The `event === undefined` branch is
+ * not a default and does not weaken that: it answers the two raise cases and
+ * every event kind still reaches the switch.
  */
-function offeredAgainWithoutAsking(event: DispatchEvent | undefined): boolean {
-  if (event === undefined) return false;
-  switch (event.kind) {
+function offeredAgainWithoutAsking(input: Pick<DispatchInput, "event" | "reoffered">): boolean {
+  if (input.event === undefined) return input.reoffered === true;
+  switch (input.event.kind) {
     case "escalation":
       return true;
     case "cleared":
@@ -202,9 +251,13 @@ export class NotificationsService {
 
   /**
    * Sends one alarm to every channel joined to its rule, and records a row for
-   * every attempt — including every skip. That is the raise path's rule and it
-   * is unchanged; the event path has three exceptions, and `dispatchToChannel`
-   * steps 0 and 2 carry them (D3, H1, and `F3.48` ruling Q1).
+   * every attempt — including every skip. That is the raise path's rule, and
+   * every input that arrives HERE still obeys it: this entry point serves a
+   * raise a rule evaluation just made, and nothing re-offers such a raise. The
+   * three exceptions live in `dispatchToChannel` steps 0 and 2 (D3, H1, and
+   * `F3.48` ruling Q1) and belong to a dispatch that will be offered again
+   * without anyone asking — an escalation step, or `F3.51`'s re-offered raise.
+   * Both reach the per-channel path through `dispatchToChannels`, never here.
    *
    * **A refusal is recorded once, not once per attempt** (`F3.46`). The first
    * `raised: false` dispatch writes the `skipped_deduped` row; every later one
@@ -322,9 +375,16 @@ export class NotificationsService {
       // The later of the two clocks that can have changed a channel's ability
       // to send — its own `updated_at` (a URL, recipients, the kind, a
       // re-saved secret) and the process boundary (`SMTP_HOST`,
-      // `CREDENTIAL_ENCRYPTION_KEY`, which no row records). One expression at
-      // its one call site: a `watermarkFor()` helper would only invite a test
-      // that passes while this line is never reached.
+      // `CREDENTIAL_ENCRYPTION_KEY`, which no row records).
+      //
+      // `F3.50` wrote this expression inline here and said a `watermarkFor()`
+      // helper "would only invite a test that passes while this line is never
+      // reached". There are two call sites now — this one and
+      // `channelsOwedTheRaise`, which must date a `skipped_unconfigured` row
+      // the same way or the raise retry and the event path would disagree about
+      // when a refusal stops answering — and two call sites are what justifies
+      // the helper. Both are driven: case 15 renders the parameters this read
+      // binds, and `raise-retry.spec.ts` P8/P9/P14 drive the other.
       //
       // Outside the `try` below on purpose, and security review asked. The
       // "never rejects" invariant is about `dispatch()`, the fire-and-forget
@@ -334,9 +394,7 @@ export class NotificationsService {
       // phase's per-step catch from security review M1). Moving it inside the
       // ledger-read `try` would buy nothing and would report a `TypeError`
       // here as "delivery ledger read failed", which is a lie.
-      const unconfiguredSince = new Date(
-        Math.max(channel.updatedAt.getTime(), PROCESS_STARTED_AT.getTime()),
-      );
+      const unconfiguredSince = unconfiguredWatermark(channel, PROCESS_STARTED_AT);
       let alreadyRecorded: boolean;
       try {
         alreadyRecorded = await this.eventDeliveryBlocked(
@@ -378,7 +436,7 @@ export class NotificationsService {
           status: "failed",
           error: "delivery ledger read failed",
         };
-        return offeredAgainWithoutAsking(input.event)
+        return offeredAgainWithoutAsking(input)
           ? failedRead
           : this.record(input, channel, dedupeKey, failedRead);
       }
@@ -432,16 +490,22 @@ export class NotificationsService {
       // conserve an attempt for and nothing to gain by staying silent — ruling
       // Q-A's argument, applied at the exit `F3.48` did not reach.
       //
-      // The raise path keeps its row too: that write is bounded by the
-      // transition, and the next raise is a new alarm with a new key. It stays
-      // covered by this line because `input.event?.kind` is `undefined` there,
-      // and `undefined !== "escalation"`.
+      // An ORDINARY raise keeps its row too: that write is bounded by the
+      // transition, and the next raise is a new alarm with a new key.
+      //
+      // A RE-OFFERED raise does not (`F3.51`, ADR 0041 Amendment 5). The
+      // lifecycle sweep asks again on its next tick, so a `failed` row here
+      // would spend one of the raise key's `MAX_EVENT_ATTEMPTS` on a read that
+      // never reached the transport — case 10's reason, at the same exit, for a
+      // dispatch that is not an event. The call below tells the two raises
+      // apart by `reoffered`; it can no longer be read as "everything without
+      // an event records".
       //
       // This test is now the SAME CALL as the ceiling's `retriable` twenty
       // lines below, and as step 0's. That was `F3.54`'s whole complaint: two
       // adjacent exits discriminating differently — one on the presence of an
       // event, one on its kind — with nothing in the code saying why.
-      return offeredAgainWithoutAsking(input.event)
+      return offeredAgainWithoutAsking(input)
         ? failed
         : this.record(input, channel, dedupeKey, failed);
     }
@@ -462,9 +526,18 @@ export class NotificationsService {
       // its row would make the refusal invisible and buy no retry, so the clear
       // keeps the visible refusal ADR 0041 decision 4 asks for.
       //
-      // The raise path keeps its row too: a raise key is per transition and the
-      // next raise is a new alarm with a new key, so the growth is bounded.
-      const retriable = offeredAgainWithoutAsking(input.event);
+      // An ORDINARY raise keeps its row too: a raise key is per transition and
+      // the next raise is a new alarm with a new key, so the growth is bounded.
+      //
+      // A RE-OFFERED raise does not, and this exit is what `F3.51` exists for
+      // (ADR 0041 Amendment 5). The sweep re-offers an undelivered raise every
+      // 30 s, so three refusals here would spend the key inside 90 seconds
+      // while `isOverHourlyLimit` counts `sent` rows over a trailing HOUR — the
+      // retry would burn out before the ceiling could lift. That is the
+      // premise `F3.48` measured and falsified, reproduced on the raise path,
+      // and the fix is `F3.48`'s unchanged: write nothing, and the next tick
+      // asks again.
+      const retriable = offeredAgainWithoutAsking(input);
       return retriable ? limited : this.record(input, channel, dedupeKey, limited);
     }
 
