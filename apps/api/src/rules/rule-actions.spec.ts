@@ -1,7 +1,7 @@
 import type { Logger } from "@nestjs/common";
 
 import type { AlarmRaiseResult } from "../alarms/alarm-raise.service";
-import type { DeliveryResult } from "../notifications/notification-transport";
+import type { DispatchOutcome } from "../notifications/dispatch-policy";
 import type { DispatchInput } from "../notifications/notifications.service";
 import { until, UntilTimeoutError } from "../testing/until";
 import { notifyOnRaise, shouldNotify, toDispatchInput, type NotifiableRule } from "./rule-actions";
@@ -40,7 +40,7 @@ function raise(overrides: Partial<AlarmRaiseResult> = {}): AlarmRaiseResult {
 
 /** A recording `{ dispatch }` and a recording `{ warn }` — the two things `notifyOnRaise` touches. */
 function fakeDeps(
-  behaviour: () => Promise<DeliveryResult[]> = () => Promise.resolve([]),
+  behaviour: () => Promise<DispatchOutcome[]> = () => Promise.resolve([]),
 ): { deps: Parameters<typeof notifyOnRaise>[0]; calls: DispatchInput[]; warns: string[] } {
   const calls: DispatchInput[] = [];
   const warns: string[] = [];
@@ -195,7 +195,7 @@ export async function assertNotifyOnRaiseIsFireAndForget(): Promise<void> {
 
   // --- never awaited: a dispatch that never settles does not hold the caller --
   {
-    const { deps, calls } = fakeDeps(() => new Promise<DeliveryResult[]>(() => undefined));
+    const { deps, calls } = fakeDeps(() => new Promise<DispatchOutcome[]>(() => undefined));
     const started = notifyOnRaise(deps, rule(), raise());
     assert(started === true && calls.length === 1, "a pending dispatch still returns at once");
   }
