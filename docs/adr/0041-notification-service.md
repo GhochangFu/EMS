@@ -557,10 +557,17 @@ life of the alarm, with no ledger trace of any of it.
 `record()` now reports whether the row landed. Every result of `dispatch()` and
 `dispatchToChannels()` is a `DispatchOutcome` — the `DeliveryResult` unchanged,
 plus `channelId` and `rowLost` — and the sweep keeps an in-process record of
-the `(alarm, channel, raise key)` triples whose insert threw and stops
+the `(alarm, channel, dedupe key)` triples whose insert threw and stops
 re-offering them. The reasoning, the cap and the eviction rule are in ADR 0057
 Amendment 5 §2; what belongs here is the shape and the two constraints it was
 built under.
+
+**"The one caller that needs it" was two, and this review only wired one.** The
+escalation phase re-offers a due step on every tick and discarded
+`dispatchToChannels`'s outcomes, so it had the identical unbounded loop. §3
+below closes it under the step's own key. The sentence above is left standing
+with this correction beside it because the reasoning it gives is unchanged —
+only its count of callers was wrong.
 
 **`rowLost`, and deliberately not `written`.** The three exits above write no
 row **by design**, and a caller that read those as lost rows would stop
@@ -571,9 +578,16 @@ report `false`, because nothing was lost there.
 
 **The bound is in process, not in the ledger, and that is forced.** A bound
 that survived a restart would have to be a row, and a row is exactly what could
-not be written. A restart clears it and the retry resumes as if the losses had
-not happened — the treatment `PROCESS_STARTED_AT` already gives the
+not be written — the treatment `PROCESS_STARTED_AT` already gives the
 unconfigured watermark.
+
+**What a restart costs is one extra send per remembered pair**, and the first
+wording of this paragraph ("the retry resumes as if the losses had not
+happened") read as though it cost nothing. It does not: the ledger still holds
+the same `failed` row, which still reads as "owed", so the first tick after a
+restart offers every remembered pair once more. Once, that is small. Under a
+restart LOOP it is unbounded — and a database refusing writes is exactly the
+condition in which this API may be crash-looping, so the two arrive together.
 
 **Two placements this review also settled.** `MAX_EVENT_ATTEMPTS` and
 `offeredAgainWithoutAsking` moved out of `notifications.service.ts` into
@@ -584,3 +598,53 @@ paths for one constant is the drift shape this repository keeps finding. And
 `dispatchToChannel`'s exits gained a `channelId` on every result, because
 `dispatchToChannels` drops channels from another organization (M2) and the
 results are therefore not index-aligned with the list a caller passed.
+
+### Amendment 5 §3 - the second review: the exception is unchanged, the row that carries it is bounded (2026-09-09)
+
+A second review of the same branch found one CI-breaking error and three
+defects. Two of them land on this ADR: the fourth exception to decision 4 is
+untouched, but two claims made around it were false.
+
+**1. Both re-offering paths now have the §2 accounting, not one (High).** §2
+above wired `rowLost` into the raise-retry phase only, and said "the one caller
+that re-offers a dispatch on its own". `runEscalationPhase` is the other, and it
+discarded the outcomes it was handed - so with a ledger serving reads and
+refusing inserts, `eventDeliveryBlocked` found nothing under the step's key,
+never blocked, `isOverHourlyLimit` counted no `sent` rows, and the due step was
+re-sent every 30 s for the life of the alarm with no trace of any of it. That is
+§2's own argument, unamended, applied to the phase §2 did not reach.
+
+Both phases now go through one helper and one `LostLedgerRows` instance, each
+under its **own** dedupe key: the raise key `rule:alarm:severity` for the retry,
+`...:escalation:<n>` for a step. The instance is shared and so is its cap, which
+is a real coupling - escalation losses can spend the slots the raise path would
+have used - and it is recorded here rather than left to be discovered. The keys
+are never shared: a lost step row must not silence the raise, nor a lost raise
+row a step.
+
+**2. A control character in a delivery error cost a row on demand (Medium).**
+`record()` stored the transport's failure text in
+`notification_deliveries.error`, which is `text`, and Postgres refuses `0x00` in
+a text parameter (measured against the real database: `invalid byte sequence for
+encoding "UTF8": 0x00`). `webhook.transport.ts`'s `readBounded` normalises a
+response excerpt with `.replace(/\s+/g, " ").trim()`, and neither `\s` nor
+`trim()` touches `U+0000` - so any endpoint answering 500 with a NUL in its body
+made the insert throw, `record()` report `rowLost`, and the sweep spend one of
+its 1000 in-process slots. Past the cap the pair is re-offered every tick for
+ever, dispatched sequentially.
+
+Every C0 and C1 control but tab, newline and carriage return is now stripped
+**where the error is recorded** - the one place any transport's text reaches the
+column, so the rule does not have to be repeated per transport. Two consequences
+are stated rather than implied: the stored text and the returned
+`DeliveryResult.error` now differ for one delivery, and only the stored one is
+sanitised, because only the column can refuse a byte.
+
+**3. Two documentation claims here were wrong, and both are corrected in
+place.** The exhaustiveness of `offeredAgainWithoutAsking` was credited to
+`noImplicitReturns`, which is set in no tsconfig in this repository; the guard
+does hold, as `TS2366` under `strictNullChecks` from `strict: true` in
+`tsconfig.base.json`. And `notifications.service.ts` said an ordinary raise
+keeps its row "at all three of those exits": it reaches two, because the first
+is inside `if (input.event !== undefined)` and an ordinary raise carries no
+event.

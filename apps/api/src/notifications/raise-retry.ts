@@ -89,12 +89,33 @@ export const LOST_LEDGER_ROW_CAP = 1_000;
  * sends twice a minute per owed channel for the life of the alarm, with no
  * ledger trace of any of it.
  *
+ * **One strike, and it is a consequence rather than a defect.** A single
+ * transient insert failure suppresses that triple for the life of the alarm or
+ * until the process restarts — even when the SEND failed too, so the message
+ * really is still owed. The ledger bound this replaces allows three attempts;
+ * this allows none. That follows directly from "refuse rather than forget"
+ * below: the class cannot distinguish a transient failure from a permanent one
+ * without asking the ledger, and the ledger is the thing that is not answering.
+ * A second chance would have to be a count, a count would have to be tuned, and
+ * a wrong tuning is the unbounded re-offer this exists to stop. Losing one
+ * message is the accepted cost of never sending one twice a minute for ever.
+ *
  * **In-process only, and that is deliberate.** The ledger stays the only
- * cross-process state: a restart empties this, and the retry resumes as if the
- * losses had not happened — the same treatment `PROCESS_STARTED_AT` already
- * gives the unconfigured watermark, and for the same reason. A bound that
- * survives a restart would have to be a row, and a row is exactly what could
- * not be written.
+ * cross-process state — the same treatment `PROCESS_STARTED_AT` already gives
+ * the unconfigured watermark, and for the same reason: a bound that survives a
+ * restart would have to be a row, and a row is exactly what could not be
+ * written.
+ *
+ * **A restart is not free, and "a restart loses nothing" would be false.** The
+ * memory is empty afterwards while the LEDGER still says the same thing it said
+ * before — the old `failed` row is still there and still reads as "owed" — so
+ * the first tick after a restart re-offers every pair that was remembered:
+ * exactly one extra send per pair. That is small once. It is not bounded under
+ * a restart LOOP, and a database refusing writes is precisely when the API may
+ * be crash-looping, so the two failures arrive together: every restart replays
+ * the whole remembered set. Nothing here bounds that; the ceiling
+ * (`isOverHourlyLimit`) is the only thing that does, and it counts `sent` rows
+ * that this ledger is not writing either.
  *
  * **Keyed on the dedupe key, not just the pair**, and it carries two distinct
  * loads. A raise key is `rule:alarm:severity` and `raiseRetryDispatchInput`
@@ -154,6 +175,12 @@ export class LostLedgerRows {
     return true;
   }
 
+  /**
+   * `true` when this exact triple is remembered — the phases' filter, asked
+   * once per candidate channel before anything is offered. The only reader;
+   * `add` reports its own outcome rather than being asked first, so a caller
+   * cannot check and forget to record.
+   */
   has(alarmId: string, channelId: string, dedupeKey: string): boolean {
     return this.byAlarm.get(alarmId)?.has(pairKey(channelId, dedupeKey)) ?? false;
   }

@@ -93,9 +93,13 @@ export type { DispatchEvent } from "./dedupe-key";
  * the only evidence: it keeps its row at all three exits (ruling Q-A for the
  * ceiling, `F3.54` ADR 0057 Amendment 4 for the two reads).
  *
- * **An ORDINARY raise keeps its row at all three of those exits too** —
+ * **An ORDINARY raise keeps its row at the two of those exits it can reach** —
  * nothing re-offers it, so the row is the only evidence it was refused, which
- * is `F3.51`'s own premise. But not everywhere in this method, and the
+ * is `F3.51`'s own premise. Two, not the three this paragraph claimed until the
+ * second review: the first exit is step 0's failed ledger read, which sits
+ * inside `if (input.event !== undefined)`, and a dispatch with no event never
+ * enters that branch. Its two are step 2's — the failed rate-limit read and the
+ * ceiling's refusal. But not everywhere in this method, and the
  * difference matters: an ordinary raise carrying `raised: false` reaches step
  * 1 instead of any of them, and the transition dedupe there writes nothing
  * once a refusal for that key is already recorded (`F3.46`) — the

@@ -70,9 +70,14 @@ export type EmailTransportDeps = {
  * - `connectionTimeout` and `greetingTimeout` bound two phases of opening the
  *   connection, and nothing after them.
  * - `dnsTimeout` was UNSET and defaults to 30 s — as long as the whole
- *   lifecycle tick — and resolution happens *before* the `connectionTimeout`
- *   timer is armed, so a name server that never answers was never bounded by
- *   any of the other three. It is set here for exactly that reason.
+ *   lifecycle tick. Resolution runs *before* the `connectionTimeout` timer is
+ *   armed on every branch of `SMTPConnection.connect` that opens a socket:
+ *   `shared.resolveHostname` is called first and `setupConnectionHandlers()`
+ *   runs inside its callback (`smtp-connection/index.js:265/291`, `:309/335`,
+ *   `:342/368`). The one branch that arms the timer first, `options.connection`
+ *   at `:243`, is a caller-supplied open socket and resolves no name at all —
+ *   and this transport passes neither `connection` nor `socket`. So a name
+ *   server that never answered was bounded by none of the other three.
  * - `socketTimeout` reaches the socket through `socket.setTimeout`, which is an
  *   **inactivity** timer: every byte received resets it. A server emitting one
  *   byte every 9 s never trips it and holds the send indefinitely, and
@@ -96,6 +101,12 @@ const DNS_TIMEOUT_MS = 5_000;
  * 30 s `LIFECYCLE_TICK_MS` — which is what the four constants above were
  * wrongly said to guarantee. A recipient cap would not have been needed even
  * had one been added: the deadline bounds the whole exchange, not each address.
+ *
+ * **It is smaller than the four above can add up to, deliberately.** 5 s of DNS
+ * plus 5 s to connect plus 5 s of greeting plus 10 s of socket inactivity is
+ * 25 s, and each `RCPT TO` renews the last of those, so in the worst case this
+ * deadline fires first and those constants are never reached. That is the
+ * intended order: they bound phases, this bounds the tick.
  *
  * **It bounds the caller, not the socket, and that distinction is the honest
  * part.** The abandoned `sendMail` is not cancelled — nodemailer has no

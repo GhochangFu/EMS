@@ -820,8 +820,15 @@ async function testTheMemoryIsReclaimedWhenAnAlarmLeaves(): Promise<void> {
  * happen is silence, so the tick warns with the cap and the count and no ids
  * (§9.6).
  *
- * **Mutation:** dropping the warn → red on the count. Evicting to make room →
- * red, because the pre-filled entry would be gone and its channel re-offered.
+ * **Mutation:** dropping the warn → red on `capWarnings.length`. Evicting to
+ * make room rather than refusing → red on BOTH counts, and for neither of the
+ * reasons this note gave until the second review. It said "the pre-filled entry
+ * would be gone and its channel re-offered": C2 is not in this fixture's
+ * `ruleChannels`, so it is never offered either way. What really happens is
+ * that the eviction lets C1's own entry in, so nothing is refused (no warn,
+ * `capWarnings.length === 0`) and C1 is filtered out of the second tick
+ * (`retries(recorded).length === 1`). The outcome the case asserted was right;
+ * the mechanism named for it was not.
  */
 async function testTheCapIsReportedAndDegradesToTheOldBehaviour(): Promise<void> {
   const lostLedgerRows = new LostLedgerRows(1);

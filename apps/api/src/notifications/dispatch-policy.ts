@@ -145,7 +145,15 @@ export type DispatchOutcome = DeliveryResult & {
  * kinds and silently wrong for a third: a new retried kind would fall to the
  * `record()` branch and poison its own key for every later tick, with the
  * compiler reporting nothing. Here a third kind is a missing return, which is a
- * compile error under `noImplicitReturns`. The `event === undefined` branch is
+ * compile error: `TS2366`, because the fall-through returns `undefined` and the
+ * declared `boolean` does not admit it under `strictNullChecks` — which
+ * `strict: true` in `tsconfig.base.json` turns on. **Not `noImplicitReturns`**,
+ * which this paragraph cited until the second review and which is set in no
+ * tsconfig in this repository. The guard holds; the flag it named does not
+ * exist here. (`F3.54` wrote that sentence and `F3.51` carried it over
+ * verbatim, which is how a wrong citation survives a review.)
+ *
+ * The `event === undefined` branch is
  * not a default and does not weaken that: it answers the two raise cases and
  * every event kind still reaches the switch.
  *

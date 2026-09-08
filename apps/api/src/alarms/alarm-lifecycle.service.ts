@@ -89,11 +89,17 @@ import { AlarmsGateway } from "./alarms.gateway";
  * It is the only thing any phase remembers between
  * ticks, and this file used to say no phase remembered anything — that sentence
  * is false now. The ledger remains the only CROSS-PROCESS state: this memory is
- * in process, a restart empties it, and the retry then resumes as if the losses
- * had not happened. That is the honest trade, and it is forced: a bound that
- * survived a restart would have to be a row, and a row is exactly what could
- * not be written. `PROCESS_STARTED_AT` already behaves this way for the
- * unconfigured watermark.
+ * in process and a restart empties it. That is the honest trade, and it is
+ * forced: a bound that survived a restart would have to be a row, and a row is
+ * exactly what could not be written. `PROCESS_STARTED_AT` already behaves this
+ * way for the unconfigured watermark.
+ *
+ * **What a restart costs is one extra send per remembered pair**, not nothing.
+ * The ledger still holds the same `failed` row it held before, so the first
+ * tick after a restart reads every one of those pairs as owed and offers them
+ * again. Under a restart LOOP — and a database refusing writes is exactly when
+ * this API may be crash-looping — that replay is unbounded. See
+ * {@link LostLedgerRows}.
  *
  * **Why `runLifecycleSweep` takes its dependencies.** Every read and write is
  * a function on {@link AlarmLifecycleDeps}, so the spec runs the eight cases
