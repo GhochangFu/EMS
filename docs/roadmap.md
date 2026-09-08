@@ -758,6 +758,12 @@ Process (`AGENTS.md` §10).
   > have since gone stale, corrected here rather than edited into the sentences
   > above — the same convention the `F2.5` bullet below uses.
   >
+  > **`E2.2` is no longer blocked on `E2.1`, and has since shipped**
+  > (*Unblocks*, above). `E2.1` closed on 2026-08-19 under ADR 0034, which
+  > unblocked `E2.2` the same day; the sentence above outlived that by three
+  > weeks. `E2.2` itself was delivered on 2026-09-08 under ADR 0059 — see its
+  > own section below. Three claims stale now, not two.
+  >
   > **`E1.3` is no longer blocked on `E1.1`** (*Unblocks*, above). The client's
   > 2026-08-22 answer retired that edge rather than delivering it: the go-live
   > score needs no model. `E1.3` shipped on 2026-08-30 under ADR 0050, and the
@@ -1742,8 +1748,10 @@ Process (`AGENTS.md` §10).
   `F4.44` no-matching-`<option>` trap entirely rather than needing to guard
   against it. `docs/BACKLOG.md`'s `E2.1` row is flipped to `✅`.
 - **Nothing still owed on `E2.1` itself.** `E2.2` (template alarm philosophy
-  knowledge base) lists `E1.7` (✅) and `E2.1` (✅) as its dependencies and is
-  now unblocked. `E2.3` (AI-assisted root-cause suggestions) also needs `E1.2`
+  knowledge base) listed `E1.7` (✅) and `E2.1` (✅) as its dependencies and was
+  unblocked from this day. **It shipped on 2026-09-08** under ADR 0059, three
+  weeks later — the delay was bookkeeping rather than engineering, and
+  `docs/BACKLOG.md` §1a records why. `E2.3` (AI-assisted root-cause suggestions) also needs `E1.2`
   (multi-variate anomaly detection), still `⬜`, so it stays blocked
   regardless.
 
@@ -3350,6 +3358,45 @@ scope rather than a promotion.
   255 bound still yield a 1.75 MB upload and a **13.16 MB** message. Cells are
   bounded; per-row counts are not. Accepted knowingly and filed as `F4.105`,
   with `F4.103`, `F4.104`, `F4.106` and `F4.107` beside it.
+
+### The alarm philosophy reaches the operator (`E2.2`, ADR 0059) — done
+
+- **Status:** merged 2026-09-08 — PR [#360](https://github.com/GhochangFu/EMS/pull/360)
+  (`814f079b`), PR [#361](https://github.com/GhochangFu/EMS/pull/361)
+  (`eed57e4d`), a `chore(agents):` correction PR
+  [#359](https://github.com/GhochangFu/EMS/pull/359) (`4ff59897`) that landed
+  *first*, and a post-merge fix PR
+  [#363](https://github.com/GhochangFu/EMS/pull/363) (`1507baee`).
+- **What shipped.** The four `content.alarms[].philosophy` fields three domain
+  packs have been authoring since `E5.1` finally reach the people the alarms are
+  for. A `classPhilosophy` block on the Alarm Details panel, resolved through the
+  provenance `E2.4` added in migration `0067`; and a browsable knowledge base at
+  `/alarm-kb`, one entry per published asset class, open to `viewer`. No table,
+  no migration, no dependency.
+- **The gate produced six rulings, asked one at a time, and two widened the
+  row.** Q0 read "KB" as *both* surfaces rather than the panel alone — declining
+  the recommendation — which moved the estimate from 3–4 to 6–8 and split the
+  work into two pull requests on one ADR. Q0b opened template content to
+  `viewer`, deliberately not `isMasterDataRole`.
+- **The measurement is why Q0 was right.** Of 290 `automation_rules` rows on the
+  dev database, **zero** carry provenance — every one predates migration `0067`
+  — so the panel block renders nothing for all 118 rule-linked alarms. The KB
+  reads published templates directly and shows **170 authored philosophy rows
+  across 21 classes in five domains** immediately. The two surfaces fail in
+  opposite conditions; the panel alone would have looked like a feature that
+  renders nothing.
+- **Notable:** the post-merge review found seven things, and two of them would
+  have closed the row on a page nobody could open. The KB had **no navigation
+  entry** — reachable only by typing its URL, which defeats Q0b end to end. And
+  its viewer test **could not fail**: it rendered the component directly while
+  the component carries no role branch, so wrapping the route in `AdminRoute`
+  would have locked every viewer out with the whole suite green. Both are now
+  held by invariants that read the construct rather than the component. A third
+  finding was a `DISTINCT ON (code)` that collapsed one asset class across
+  tenants — certain rather than hypothetical, because importing the same stock
+  catalog entry into two organizations writes the identical code.
+- **Unblocks:** nothing directly. `E2.3` (AI-assisted root-cause suggestions)
+  still needs `E1.2`.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
