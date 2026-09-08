@@ -6,7 +6,9 @@ import {
   alarmEnrichments,
   alarmSkills,
   alarms,
+  assetTemplates,
   automationRules,
+  organizations,
   pointValues,
   users,
 } from "@bms/db";
@@ -393,6 +395,329 @@ export async function assertDetailsFiltersAffectedAssetsByScope(db: BmsDb): Prom
     assert(
       details.enrichment?.affectedAssets.length === 0,
       `expected the out-of-scope affected asset to be filtered, got ${details.enrichment?.affectedAssets.length}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// E2.2 (ADR 0059) — the class philosophy on GET /api/v1/alarms/:id/details
+// ---------------------------------------------------------------------------
+
+/**
+ * One published template version carrying one philosophy-bearing alarm entry.
+ *
+ * Built in-transaction rather than read off the seed for the reason the file
+ * header gives, and for a second one specific to `E2.2`: on the dev database
+ * **0 of 290 `automation_rules` rows carry `source_template_id`** (plan §2), so
+ * there is nothing on the seed to read. Every assertion below that resolves a
+ * philosophy has to construct its own provenance.
+ */
+async function seedTemplateWithPhilosophy(
+  db: BmsDb,
+  args: {
+    organizationId: string;
+    code: string;
+    alarmCode: string;
+    skillCode: string | null;
+  },
+): Promise<{ templateId: string; version: number; templateName: string }> {
+  const templateName = `E2.2 integration template — ${args.code}`;
+  const [template] = await db
+    .insert(assetTemplates)
+    .values({
+      organizationId: args.organizationId,
+      code: args.code,
+      version: 1,
+      name: templateName,
+      assetType: "e22_test_machine",
+      domain: "electrical",
+      status: "published",
+      content: {
+        alarms: [
+          {
+            code: args.alarmCode,
+            message: "Bearing temperature high",
+            severity: "warning",
+            category: "safety",
+            philosophy: {
+              cause: "Lubrication starvation or a failing bearing race.",
+              impact: "Unplanned outage of the driven train within hours.",
+              action: "Reduce load, verify lubrication, schedule a bearing change.",
+              ...(args.skillCode === null ? {} : { skill: args.skillCode }),
+            },
+          },
+        ],
+      },
+    })
+    .returning({ id: assetTemplates.id, version: assetTemplates.version });
+  if (!template) {
+    throw new Error(`failed to insert test template ${args.code}`);
+  }
+  return { templateId: template.id, version: template.version, templateName };
+}
+
+/**
+ * An alarm whose rule carries `E2.4`'s provenance — the only path
+ * `classPhilosophy` resolves through (ADR 0059 decision 3).
+ *
+ * `sourceAlarmCode` is passed separately from the template's own entry code so
+ * one caller can point the rule at an entry the template does not declare,
+ * which is the "dropped in a later version" case decision 4 rules on.
+ */
+async function insertTestAlarmSeededFromTemplate(
+  db: BmsDb,
+  args: {
+    assetId: string;
+    organizationId: string;
+    code: string;
+    templateId: string;
+    templateVersion: number;
+    sourceAlarmCode: string;
+  },
+): Promise<string> {
+  const [rule] = await db
+    .insert(automationRules)
+    .values({
+      code: args.code,
+      name: `E2.2 integration test — ${args.code}`,
+      category: "safety",
+      ruleType: "threshold",
+      organizationId: args.organizationId,
+      assetId: args.assetId,
+      pointKey: "e21_test_point",
+      operator: "gte",
+      thresholdValue: 999_999,
+      severity: "warning",
+      sourceTemplateId: args.templateId,
+      sourceTemplateVersion: args.templateVersion,
+      sourceAlarmCode: args.sourceAlarmCode,
+    })
+    .returning({ id: automationRules.id });
+  if (!rule) {
+    throw new Error(`failed to insert seeded test rule ${args.code}`);
+  }
+  const [alarm] = await db
+    .insert(alarms)
+    .values({
+      organizationId: args.organizationId,
+      assetId: args.assetId,
+      ruleId: rule.id,
+      severity: "warning",
+      message: `E2.2 integration test alarm — ${args.code}`,
+    })
+    .returning({ id: alarms.id });
+  if (!alarm) {
+    throw new Error(`failed to insert seeded test alarm ${args.code}`);
+  }
+  return alarm.id;
+}
+
+/**
+ * The happy path: a rule seeded from a template alarm resolves that entry's
+ * philosophy, with `skill` rendered as its `bms.alarm_skills` label rather than
+ * its raw code (ADR 0059 decision 7).
+ */
+export async function assertDetailsReturnsClassPhilosophyForASeededRule(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const location = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E22", location);
+    const { organizationId } = location;
+    const alarmCode = "E22_TEST_HIGH_TEMP";
+    const { templateId, version, templateName } = await seedTemplateWithPhilosophy(tx, {
+      organizationId,
+      code: "E22_TEST_TPL_HAPPY",
+      alarmCode,
+      skillCode: "mechanical",
+    });
+    const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
+      assetId,
+      organizationId,
+      code: "E22_TEST_DETAILS_PHILOSOPHY",
+      templateId,
+      templateVersion: version,
+      sourceAlarmCode: alarmCode,
+    });
+
+    const details = await new AlarmDetailsService(tx).get(alarmId, null);
+    const philosophy = details.classPhilosophy;
+    assert(philosophy != null, "expected a classPhilosophy block for a template-seeded rule");
+    assert(
+      philosophy?.cause === "Lubrication starvation or a failing bearing race.",
+      `expected the template's cause, got ${philosophy?.cause}`,
+    );
+    assert(
+      philosophy?.impact === "Unplanned outage of the driven train within hours.",
+      `expected the template's impact, got ${philosophy?.impact}`,
+    );
+    assert(
+      philosophy?.action === "Reduce load, verify lubrication, schedule a bearing change.",
+      `expected the template's action, got ${philosophy?.action}`,
+    );
+    assert(
+      philosophy?.skillCode === "mechanical" && philosophy?.skillLabel === "Mechanical",
+      `expected the skill code resolved to its label, got ${philosophy?.skillCode}/${philosophy?.skillLabel}`,
+    );
+    assert(
+      philosophy?.templateId === templateId &&
+        philosophy?.templateVersion === version &&
+        philosophy?.templateName === templateName &&
+        philosophy?.alarmCode === alarmCode,
+      "the block must name the template, version and alarm entry it came from (ADR 0059 decision 6)",
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * The 290-row case measured in plan §2: a rule with no provenance resolves to
+ * `null`, and nothing else about the response moves. There is deliberately no
+ * fallback that matches on `point_key` — ADR 0059 decision 3 calls that a guess.
+ */
+export async function assertDetailsOmitsClassPhilosophyWhenProvenanceIsNull(
+  db: BmsDb,
+): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const [assetId] = await createFixtureAssets(tx, 1, "E22");
+    const alarmId = await insertTestAlarm(tx, assetId, "E22_TEST_DETAILS_NO_PROVENANCE");
+
+    const details = await new AlarmDetailsService(tx).get(alarmId, null);
+    assert(
+      details.classPhilosophy === null,
+      "a rule with no source_template_id must yield classPhilosophy === null",
+    );
+    assert(
+      details.thresholdValue === 999_999,
+      "the rest of the details response must be unaffected by the absent philosophy",
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * ADR 0059 decision 4: the pinned version no longer declares the entry the rule
+ * was seeded from. `null`, not a throw, and not another entry's philosophy.
+ */
+export async function assertDetailsOmitsClassPhilosophyWhenTheAlarmCodeIsAbsent(
+  db: BmsDb,
+): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const location = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E22", location);
+    const { organizationId } = location;
+    const { templateId, version } = await seedTemplateWithPhilosophy(tx, {
+      organizationId,
+      code: "E22_TEST_TPL_DROPPED",
+      alarmCode: "E22_TEST_STILL_DECLARED",
+      skillCode: "mechanical",
+    });
+    const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
+      assetId,
+      organizationId,
+      code: "E22_TEST_DETAILS_DROPPED_ENTRY",
+      templateId,
+      templateVersion: version,
+      // The entry this rule was seeded from is not in the template's content.
+      sourceAlarmCode: "E22_TEST_DROPPED_IN_A_LATER_VERSION",
+    });
+
+    const details = await new AlarmDetailsService(tx).get(alarmId, null);
+    assert(
+      details.classPhilosophy === null,
+      "an alarm code the pinned version does not declare must yield null, not another entry's philosophy",
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * ADR 0059 decision 9. `AlarmDetailsService` runs on `bms_fleet`, which is
+ * `BYPASSRLS`, so the organization predicate is hand-written and RLS will not
+ * catch its absence. **Delete the `eq(assetTemplates.organizationId, ...)` and
+ * this test must fail** — that is the whole point of it.
+ */
+export async function assertDetailsRefusesATemplateFromAnotherOrganization(
+  db: BmsDb,
+): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const location = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E22", location);
+    const { organizationId } = location;
+
+    const [otherOrg] = await tx
+      .insert(organizations)
+      .values({ code: "E22_TEST_OTHER_ORG", name: "E2.2 integration — other tenant" })
+      .returning({ id: organizations.id });
+    if (!otherOrg) {
+      throw new Error("failed to insert the other-tenant organization");
+    }
+
+    const alarmCode = "E22_TEST_CROSS_TENANT";
+    const { templateId, version } = await seedTemplateWithPhilosophy(tx, {
+      // The template belongs to the other tenant; the alarm does not.
+      organizationId: otherOrg.id,
+      code: "E22_TEST_TPL_OTHER_ORG",
+      alarmCode,
+      skillCode: "mechanical",
+    });
+    const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
+      assetId,
+      organizationId,
+      code: "E22_TEST_DETAILS_CROSS_TENANT",
+      templateId,
+      templateVersion: version,
+      sourceAlarmCode: alarmCode,
+    });
+
+    const details = await new AlarmDetailsService(tx).get(alarmId, null);
+    assert(
+      details.classPhilosophy === null,
+      "a template belonging to another organization must not be readable through an alarm id",
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * ADR 0059 decision 7: retiring a skill is `active = false`, never a delete, and
+ * a historic philosophy stays readable. A label lookup that filtered on `active`
+ * would blank the field for exactly the old alarms most likely to carry one.
+ */
+export async function assertDetailsResolvesAnInactiveSkillLabel(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const location = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "E22", location);
+    const { organizationId } = location;
+
+    await tx
+      .insert(alarmSkills)
+      .values({ code: "e22_test_retired", label: "Retired trade", active: false });
+
+    const alarmCode = "E22_TEST_RETIRED_SKILL";
+    const { templateId, version } = await seedTemplateWithPhilosophy(tx, {
+      organizationId,
+      code: "E22_TEST_TPL_RETIRED_SKILL",
+      alarmCode,
+      skillCode: "e22_test_retired",
+    });
+    const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
+      assetId,
+      organizationId,
+      code: "E22_TEST_DETAILS_RETIRED_SKILL",
+      templateId,
+      templateVersion: version,
+      sourceAlarmCode: alarmCode,
+    });
+
+    const details = await new AlarmDetailsService(tx).get(alarmId, null);
+    assert(
+      details.classPhilosophy?.skillLabel === "Retired trade",
+      `an inactive skill must still resolve its label, got ${details.classPhilosophy?.skillLabel}`,
     );
 
     tx.rollback();
