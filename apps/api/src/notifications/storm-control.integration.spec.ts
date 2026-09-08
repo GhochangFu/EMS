@@ -1,3 +1,4 @@
+import { dbBlindTo } from "../testing/blinded-db";
 import { loadEnabledChannelsByIds } from "./channel-reads";
 import { ChannelsService } from "./channels.service";
 import { buildDedupeKey } from "./dedupe-key";
@@ -741,6 +742,97 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       (await service.sentChannelIdsForAlarm(alarmId, first.organization_id)).length === 1,
       "several sent rows for one channel are still one recipient",
     );
+
+    // --- `F3.54`: a CLEARED message's refusal row really lands, at both reads -
+    //
+    // ADR 0057 Amendment 4 ruling 1. The unit spec holds that the insert is
+    // ATTEMPTED; these blocks hold the stronger claim it cannot — that the row
+    // reaches `bms.notification_deliveries` and reads back, against the real
+    // status CHECK, the real `organization_id NOT NULL` and the real `alarm_id`
+    // foreign key.
+    //
+    // **The read failure is synthesised, and that substitution is said here
+    // rather than only in the plan** (§4.6): inducing a real one against this
+    // database means revoking a grant or terminating a backend on a role other
+    // suites are using. `dbBlindTo` rejects exactly one `select` projection and
+    // delegates everything else — the INSERT included — to the real database,
+    // so the write path under test is never simulated. Its own header carries
+    // why that is sound.
+    //
+    // Each block asserts BOTH directions. The escalation half is what kills the
+    // over-broad mutation "record on every event", which the cleared half alone
+    // would pass.
+    //
+    // Distinct severities, because the key is `rule:alarm:severity[:suffix]`
+    // and the blocks above own `warning` and `critical`.
+    {
+      const blindService = (blindedShape: string): NotificationsService =>
+        new NotificationsService(
+          dbBlindTo(db, blindedShape),
+          channels,
+          transport as unknown as Deps[2],
+          transport as unknown as Deps[3],
+          transport as unknown as Deps[4],
+          buildConfig({ NOTIFY_RATE_LIMIT_PER_HOUR: "1000" }),
+        );
+
+      // D3 — blind `{ status }`, so only `eventDeliveryBlocked` throws.
+      const d3 = blindService("status");
+      const d3Clear: DispatchInput = { ...step, severity: "major", event: { kind: "cleared" } };
+      const d3Step: DispatchInput = { ...d3Clear, event: { kind: "escalation", step: 20 } };
+      const sentBeforeD3 = sent.length;
+      const d3ClearResult = await d3.dispatchToChannels([channel], d3Clear);
+      const d3StepResult = await d3.dispatchToChannels([channel], d3Step);
+      assert(
+        d3ClearResult[0]?.status === "failed" && d3StepResult[0]?.status === "failed",
+        `an unreadable ledger fails both kinds, got ${String(d3ClearResult[0]?.status)}/${String(
+          d3StepResult[0]?.status,
+        )}`,
+      );
+      assert(sent.length === sentBeforeD3, "a failed ledger read is never a send, either kind");
+      assert(
+        (
+          await statusesByKey(pool, channelId as string, first.organization_id, buildDedupeKey(d3Clear))
+        ).join(",") === "failed",
+        "F3.54 D3: the cleared message's refusal row is in Postgres",
+      );
+      assert(
+        (
+          await statusesByKey(pool, channelId as string, first.organization_id, buildDedupeKey(d3Step))
+        ).length === 0,
+        "F3.54 D3: the escalation step still writes nothing — its key survives for the next tick",
+      );
+
+      // H1 — blind `{ count }`, so `eventDeliveryBlocked` reads for real (a
+      // fresh key, so it does not block) and only `isOverHourlyLimit` throws.
+      const h1 = blindService("count");
+      const h1Clear: DispatchInput = { ...step, severity: "minor", event: { kind: "cleared" } };
+      const h1Step: DispatchInput = { ...h1Clear, event: { kind: "escalation", step: 21 } };
+      const sentBeforeH1 = sent.length;
+      const h1ClearResult = await h1.dispatchToChannels([channel], h1Clear);
+      const h1StepResult = await h1.dispatchToChannels([channel], h1Step);
+      assert(
+        h1ClearResult[0]?.error === "rate-limit check failed" &&
+          h1StepResult[0]?.error === "rate-limit check failed",
+        `an unreadable ceiling fails both kinds by name, got ${JSON.stringify([
+          h1ClearResult[0],
+          h1StepResult[0],
+        ])}`,
+      );
+      assert(sent.length === sentBeforeH1, "an unreadable ceiling is not a licence to send");
+      assert(
+        (
+          await statusesByKey(pool, channelId as string, first.organization_id, buildDedupeKey(h1Clear))
+        ).join(",") === "failed",
+        "F3.54 H1: the cleared message's refusal row is in Postgres",
+      );
+      assert(
+        (
+          await statusesByKey(pool, channelId as string, first.organization_id, buildDedupeKey(h1Step))
+        ).length === 0,
+        "F3.54 H1: the escalation step still writes nothing",
+      );
+    }
 
     // The other direction of `loadEnabledChannelsByIds`: a disabled channel is
     // absent, not returned disabled.

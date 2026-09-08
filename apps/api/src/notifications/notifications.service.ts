@@ -53,11 +53,19 @@ export type { DispatchEvent } from "./dedupe-key";
  * fire-and-forget from the alarm raise path, so a rejection would surface as
  * an unhandled promise rather than in front of anyone; `dispatchToChannels` is
  * called from a sweep whose one warn line would hide which channel failed.
- * Every failure becomes a `failed` result — recorded as a row, except the two
- * event-path reads that D3 and H1 keep out of the ledger — and the promise
- * resolves. `F3.48` adds a third exception, and it is a decision rather than a
- * read: the hourly ceiling writes no row when it refuses an escalation step,
- * because that key must survive to be retried (ruling Q1).
+ * Every failure becomes a `failed` result and the promise resolves. It is
+ * recorded as a row, with **three exceptions, and since `F3.54` all three say
+ * the same thing**: an ESCALATION step writes no row when the ledger read
+ * throws (plan D3), when the rate-limit read throws (review H1), or when the
+ * hourly ceiling refuses it (`F3.48` ruling Q1). The first two are failed
+ * reads and the third is a decision, but the reason is one reason — that key
+ * must survive for the next tick to retry the step.
+ *
+ * A CLEARED message is none of those cases. It is dispatched once from the
+ * clear phase and never re-offered, so a missing row buys no retry and costs
+ * the only evidence: it keeps its row at all three exits (ruling Q-A for the
+ * ceiling, `F3.54` ADR 0057 Amendment 4 for the two reads). The raise path
+ * keeps its row throughout.
  */
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */
@@ -302,18 +310,41 @@ export class NotificationsService {
           unconfiguredSince,
         );
       } catch (err) {
-        // Plan D3: no row and no send. Writing a row would poison this key for
+        // Plan D3, narrowed to the escalation kind by `F3.54` (ADR 0057
+        // Amendment 4 ruling 1).
+        //
+        // For a STEP: no row and no send. Writing one would poison this key for
         // every later tick — the read above would then answer "already sent"
         // from a row that records nothing was sent — and sending would risk
         // the duplicate the read exists to prevent. The next tick retries.
         // This is the opposite of the raise path's fallback in step 1, on
         // purpose: there, the write is bounded and a duplicate row is the
         // cost; here, the write would be permanent and silence is the cost.
+        //
+        // For a CLEARED message: the row IS written, and it is ruling Q-A's
+        // argument reaching the exit `F3.48` did not change. Every clause above
+        // is about a key a later tick comes back to, and a clear has no later
+        // tick — `notifyCleared` runs once from the clear phase and
+        // `loadActiveAlarms` filters `cleared_at IS NULL`, so the alarm leaves
+        // the sweep the moment it clears. Silence there buys no retry and costs
+        // the only evidence the refusal happened.
+        //
+        // The row is only ATTEMPTED, and that is the honest claim: this branch
+        // ran because the ledger read failed, and the insert below goes to the
+        // same connection. `record()` reports its own failure and returns the
+        // result either way, so this cannot reject.
+        //
         // §9.6: codes and a reason, never the alarm text or a recipient.
         this.logger.warn(
           `delivery ledger read failed for channel=${channel.code} rule=${input.ruleCode}: ${reasonOf(err)}`,
         );
-        return { status: "failed", error: "delivery ledger read failed" };
+        const failedRead: DeliveryResult = {
+          status: "failed",
+          error: "delivery ledger read failed",
+        };
+        return input.event?.kind === "escalation"
+          ? failedRead
+          : this.record(input, channel, dedupeKey, failedRead);
       }
       if (alreadyRecorded) {
         return { status: "skipped_deduped", error: null };
@@ -352,14 +383,31 @@ export class NotificationsService {
       // A ceiling that cannot be read is not a licence to send without one.
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
       const failed: DeliveryResult = { status: "failed", error: "rate-limit check failed" };
-      // Review H1: on the event path this row is NOT written, for step 0's
-      // reason. An event's key is for the life of the ledger, and a `failed`
-      // row here records a read that never reached the transport — it would
-      // spend one of the key's `MAX_EVENT_ATTEMPTS` (Q9), and before Q9 it
-      // blocked the key for ever. The raise path keeps its row: that write is
-      // bounded by the transition, and the next raise is a new alarm with a
-      // new key. The next tick retries the event.
-      return input.event !== undefined ? failed : this.record(input, channel, dedupeKey, failed);
+      // Review H1, narrowed to the escalation kind by `F3.54` (ADR 0057
+      // Amendment 4 ruling 1).
+      //
+      // On an ESCALATION step this row is NOT written, for step 0's reason. An
+      // event's key is for the life of the ledger, and a `failed` row here
+      // records a read that never reached the transport — it would spend one of
+      // the key's `MAX_EVENT_ATTEMPTS` (Q9), and before Q9 it blocked the key
+      // for ever. The next tick retries the step.
+      //
+      // A CLEARED message keeps its row, because there is no next tick to
+      // conserve an attempt for and nothing to gain by staying silent — ruling
+      // Q-A's argument, applied at the exit `F3.48` did not reach.
+      //
+      // The raise path keeps its row too: that write is bounded by the
+      // transition, and the next raise is a new alarm with a new key. It stays
+      // covered by this line because `input.event?.kind` is `undefined` there,
+      // and `undefined !== "escalation"`.
+      //
+      // This line is now TEXTUALLY IDENTICAL to the ceiling's `retriable` test
+      // twenty lines below. That was `F3.54`'s whole complaint: two adjacent
+      // exits discriminating differently — one on the presence of an event, one
+      // on its kind — with nothing in the code saying why.
+      return input.event?.kind === "escalation"
+        ? failed
+        : this.record(input, channel, dedupeKey, failed);
     }
     if (overLimit) {
       const limited: DeliveryResult = { status: "skipped_rate_limited", error: null };
