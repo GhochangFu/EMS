@@ -2,6 +2,8 @@ import type { AlarmListItem } from "@bms/shared";
 
 import type { NotificationChannelRow } from "../notifications/notification-transport";
 import type { DispatchInput } from "../notifications/notifications.service";
+import type { RaiseAttemptRow, RaiseKeyRef } from "../notifications/raise-retry";
+import { LostLedgerRows } from "../notifications/raise-retry";
 import type { RuleRow } from "../rules/rules.types";
 import {
   type EscalationCatalog,
@@ -32,23 +34,40 @@ import {
  * The `broadcastCleared` assertion U5 deferred here: no spec constructs
  * `AlarmsGateway` with a fake namespace, so the gateway call is asserted
  * through the deps fake (case 2), after the write and once per cleared row.
+ *
+ * **`F3.51` exports the fixture, not the cases.** `fakeDeps` and the rows
+ * below are the sweep's only fixture, and the raise-retry phase needs the same
+ * one; `alarm-lifecycle-raise-retry.spec.ts` imports them rather than growing
+ * this file past AGENTS.md §4.5's 1000-line cap, the way
+ * `notifications.events.spec.ts` imports `fakeDb` and `input` from
+ * `notifications.service.spec.ts`.
+ *
+ * **Twelve of the thirteen cases below are unchanged; the thirteenth is not,
+ * and saying "unchanged" would be a false sentence in this docblock.**
+ * `testUnmappedSeverityAndOrganizationlessRule` had one count widened from one
+ * warn to two: an org-less rule is now refused by two phases and each says so
+ * once. Everything else is untouched, because with owner ruling 3's evidence
+ * conjunct an empty ledger owes nobody and a default `fakeDeps` retries
+ * nothing — which also means **not one of these cases gates the raise-retry
+ * phase**. `alarm-lifecycle-raise-retry.spec.ts` is the whole of that gate, and
+ * its own docblock states the same correction.
  */
 
-function assert(condition: boolean, message: string): void {
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-const NOW = new Date("2026-09-06T12:00:00.000Z");
-const ORG_A = "11111111-1111-4111-8111-111111111111";
-const ORG_B = "22222222-2222-4222-8222-222222222222";
+export const NOW = new Date("2026-09-06T12:00:00.000Z");
+export const ORG_A = "11111111-1111-4111-8111-111111111111";
+export const ORG_B = "22222222-2222-4222-8222-222222222222";
 
-function secondsBefore(seconds: number, from: Date = NOW): Date {
+export function secondsBefore(seconds: number, from: Date = NOW): Date {
   return new Date(from.getTime() - seconds * 1000);
 }
 
-function alarmRow(overrides: Partial<LifecycleAlarm> = {}): LifecycleAlarm {
+export function alarmRow(overrides: Partial<LifecycleAlarm> = {}): LifecycleAlarm {
   return {
     id: "alarm-1",
     organizationId: ORG_A,
@@ -63,7 +82,7 @@ function alarmRow(overrides: Partial<LifecycleAlarm> = {}): LifecycleAlarm {
   };
 }
 
-function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
+export function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
   return {
     id: "rule-1",
     code: "RULE-1",
@@ -98,7 +117,7 @@ function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
   };
 }
 
-function channelRow(id: string, code: string): NotificationChannelRow {
+export function channelRow(id: string, code: string): NotificationChannelRow {
   return {
     id,
     code,
@@ -113,22 +132,26 @@ function channelRow(id: string, code: string): NotificationChannelRow {
   };
 }
 
-const C1 = channelRow("cccccccc-0000-4000-8000-000000000001", "c1");
-const C2 = channelRow("cccccccc-0000-4000-8000-000000000002", "c2");
+export const C1 = channelRow("cccccccc-0000-4000-8000-000000000001", "c1");
+export const C2 = channelRow("cccccccc-0000-4000-8000-000000000002", "c2");
 
 type Sample = { time: Date; value: number; unit: string | null } | null;
 
-type Recorded = {
+export type Recorded = {
   writes: { organizationId: string; updates: AlarmStateUpdate[] }[];
   dispatches: { channels: NotificationChannelRow[]; input: DispatchInput }[];
   broadcasts: AlarmListItem[];
   sentReads: { alarmId: string; organizationId: string }[];
   channelLoads: string[][];
+  /** `F3.51`: the refs of every `loadRaiseAttempts` call, one entry per call. */
+  raiseAttemptReads: RaiseKeyRef[][];
+  /** `F3.51`: every rule id `loadRuleChannels` was called with, in order — the memo's gate. */
+  ruleChannelLoads: string[];
   warnings: string[];
 };
 
 /** The catalogue with one profile mapped for `(ORG_A, warning)`: step 1 at 1 min → c1, step 2 at 5 min → c2. */
-function twoStepCatalog(organizationId = ORG_A, severity = "warning"): EscalationCatalog {
+export function twoStepCatalog(organizationId = ORG_A, severity = "warning"): EscalationCatalog {
   return {
     defaults: new Map([
       [
@@ -142,7 +165,7 @@ function twoStepCatalog(organizationId = ORG_A, severity = "warning"): Escalatio
   };
 }
 
-function fakeDeps(opts: {
+export function fakeDeps(opts: {
   alarms: LifecycleAlarm[];
   rules: RuleRow[];
   /** One sample for every `(asset, point)`, or a function of them. */
@@ -154,6 +177,22 @@ function fakeDeps(opts: {
   writeAlarmState?: AlarmLifecycleDeps["writeAlarmState"];
   /** Replaces the recording `loadChannels` — for the case where one read rejects. */
   loadChannels?: AlarmLifecycleDeps["loadChannels"];
+  /**
+   * `F3.51`: the ledger rows under the raise keys. Defaults to `[]`, and with
+   * the evidence conjunct that means nobody is owed — which is why the
+   * thirteen cases below did not change when the phase was added.
+   */
+  raiseAttempts?: RaiseAttemptRow[];
+  /** Replaces the recording `loadRaiseAttempts` — for the case where the read rejects. */
+  loadRaiseAttempts?: AlarmLifecycleDeps["loadRaiseAttempts"];
+  /** `F3.51`: the channels joined to a rule; defaults to both known rows for every rule. */
+  ruleChannels?: (ruleId: string) => NotificationChannelRow[];
+  /**
+   * `F3.51` review: the lost-row memory. Defaults to a FRESH instance per
+   * fixture — a case that needs it to survive two sweeps passes one in, and no
+   * case can be polluted by another's losses.
+   */
+  lostLedgerRows?: LostLedgerRows;
 }): { deps: AlarmLifecycleDeps; recorded: Recorded } {
   const recorded: Recorded = {
     writes: [],
@@ -161,6 +200,8 @@ function fakeDeps(opts: {
     broadcasts: [],
     sentReads: [],
     channelLoads: [],
+    raiseAttemptReads: [],
+    ruleChannelLoads: [],
     warnings: [],
   };
   const byId = new Map(opts.alarms.map((alarm) => [alarm.id, alarm]));
@@ -217,9 +258,35 @@ function fakeDeps(opts: {
       }
       return Promise.resolve(opts.channels ?? known.filter((row) => ids.includes(row.id)));
     },
+    loadRuleChannels: (ruleId) => {
+      recorded.ruleChannelLoads.push(ruleId);
+      return Promise.resolve(opts.ruleChannels ? opts.ruleChannels(ruleId) : known);
+    },
+    loadRaiseAttempts: (refs) => {
+      recorded.raiseAttemptReads.push([...refs]);
+      return opts.loadRaiseAttempts
+        ? opts.loadRaiseAttempts(refs)
+        : // Every batch returned: nothing unread, nothing to warn about. A case
+          // that needs a half-failed read supplies its own `loadRaiseAttempts`.
+          Promise.resolve({
+            rows: opts.raiseAttempts ?? [],
+            unread: new Set<string>(),
+            reasons: [],
+          });
+    },
+    lostLedgerRows: opts.lostLedgerRows ?? new LostLedgerRows(),
     dispatchToChannels: (channels, input) => {
       recorded.dispatches.push({ channels: [...channels], input });
-      return Promise.resolve(channels.map(() => ({ status: "sent" as const, error: null })));
+      return Promise.resolve(
+        channels.map((channel) => ({
+          status: "sent" as const,
+          error: null,
+          channelId: channel.id,
+          // The default fake's row always lands. A case that needs a lost row
+          // wraps this — R17 does.
+          rowLost: false,
+        })),
+      );
     },
     broadcastCleared: (alarm) => {
       recorded.broadcasts.push(alarm);
@@ -493,15 +560,23 @@ async function testUnmappedSeverityAndOrganizationlessRule(): Promise<void> {
   });
   await runLifecycleSweep(orgless.deps, NOW);
   assert(orgless.recorded.dispatches.length === 0, "a rule with no organization dispatches nothing");
+  // `F3.51` widened this count from one to two, and it is the only assertion
+  // in this file the third phase changed. Two phases now refuse this alarm for
+  // the same reason and each says so once: the raise retry cannot re-offer it
+  // and the escalation cannot step it. Both lines are §9.6-shaped, so the
+  // assertion is over every line rather than over the first.
   assert(
-    orgless.recorded.warnings.length === 1 &&
-      orgless.recorded.warnings[0]?.includes("rule-1") === true &&
-      orgless.recorded.warnings[0].includes("alarm-1"),
-    `one warn naming the rule and the alarm ids, got ${JSON.stringify(orgless.recorded.warnings)}`,
+    orgless.recorded.warnings.length === 2 &&
+      orgless.recorded.warnings.every(
+        (line) => line.includes("rule-1") && line.includes("alarm-1"),
+      ),
+    `one warn per refusing phase, each naming the rule and the alarm ids, got ${JSON.stringify(
+      orgless.recorded.warnings,
+    )}`,
   );
   assert(
-    orgless.recorded.warnings[0]?.includes("Feeder overload") === false,
-    "§9.6: the warn carries no alarm text",
+    orgless.recorded.warnings.every((line) => !line.includes("Feeder overload")),
+    "§9.6: the warns carry no alarm text",
   );
 
   // The clear itself is the ALARM's fact and still happens; only the message

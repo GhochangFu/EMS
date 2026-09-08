@@ -37,7 +37,89 @@ export type EmailTransportDeps = {
   /** Injected in tests so no socket is opened and no inbox is required. */
   sender: MailSender;
   config: NotificationsConfig;
+  /**
+   * The absolute bound on one `sendMail`, overridden only by a suite — a
+   * parameter is what a spec can move, and the real value is twenty seconds of
+   * waiting. See {@link SEND_DEADLINE_MS}.
+   */
+  deadlineMs: number;
 };
+
+/**
+ * `F3.51` review (Medium) — the four timers nodemailer applies to one SMTP
+ * connection, in milliseconds, and what each of them really bounds.
+ *
+ * Nodemailer's own defaults are two minutes to connect and **ten minutes** of
+ * socket inactivity. `NotificationsService.dispatchToChannel` awaits the
+ * transport, `runRaiseRetryPhase` and `runEscalationPhase` await the dispatch,
+ * and `runSweepLoop` is sweep-then-sleep — so a server that accepts the
+ * connection and then says nothing held the whole tick, the escalation phase
+ * of that tick, and every phase of every later tick, **for every tenant**.
+ * `webhook.transport.ts` has been bounded at 5 s since `F3.8`; these are the
+ * same order of bound on the other socket.
+ *
+ * **The exposure is not new to `F3.51`.** `notifyCleared` and the escalation
+ * phase have awaited this transport inside the same sweep since `F3.10`; the
+ * raise retry only adds a third phase to the same tick. It is fixed here
+ * because `F3.51`'s review is where it was found.
+ *
+ * **Three of these are not a deadline, and the second review's finding is that
+ * this docblock used to claim they were.** Measured against nodemailer 6.10.1
+ * as installed:
+ *
+ * - `connectionTimeout` and `greetingTimeout` bound two phases of opening the
+ *   connection, and nothing after them.
+ * - `dnsTimeout` was UNSET and defaults to 30 s — as long as the whole
+ *   lifecycle tick. Resolution runs *before* the `connectionTimeout` timer is
+ *   armed on every branch of `SMTPConnection.connect` that opens a socket:
+ *   `shared.resolveHostname` is called first and `setupConnectionHandlers()`
+ *   runs inside its callback (`smtp-connection/index.js:265/291`, `:309/335`,
+ *   `:342/368`). The one branch that arms the timer first, `options.connection`
+ *   at `:243`, is a caller-supplied open socket and resolves no name at all —
+ *   and this transport passes neither `connection` nor `socket`. So a name
+ *   server that never answered was bounded by none of the other three.
+ * - `socketTimeout` reaches the socket through `socket.setTimeout`, which is an
+ *   **inactivity** timer: every byte received resets it. A server emitting one
+ *   byte every 9 s never trips it and holds the send indefinitely, and
+ *   `readRecipients` caps nothing, so each `RCPT TO` of a long `config.to` gets
+ *   its own fresh window.
+ *
+ * {@link SEND_DEADLINE_MS} is the bound that does not have that shape.
+ */
+const CONNECTION_TIMEOUT_MS = 5_000;
+const GREETING_TIMEOUT_MS = 5_000;
+const SOCKET_TIMEOUT_MS = 10_000;
+const DNS_TIMEOUT_MS = 5_000;
+
+/**
+ * The absolute bound on one `sendMail`, in milliseconds — wall clock from the
+ * call to the answer, whatever the server does in between.
+ *
+ * This is the only one of the five that bounds the SWEEP. It covers name
+ * resolution, the connection, the greeting, every `RCPT TO` of a long recipient
+ * list and the `DATA` exchange together, so no single channel can outlive the
+ * 30 s `LIFECYCLE_TICK_MS` — which is what the four constants above were
+ * wrongly said to guarantee. A recipient cap would not have been needed even
+ * had one been added: the deadline bounds the whole exchange, not each address.
+ *
+ * **It is smaller than the four above can add up to, deliberately.** 5 s of DNS
+ * plus 5 s to connect plus 5 s of greeting plus 10 s of socket inactivity is
+ * 25 s, and each `RCPT TO` renews the last of those, so in the worst case this
+ * deadline fires first and those constants are never reached. That is the
+ * intended order: they bound phases, this bounds the tick.
+ *
+ * **It bounds the caller, not the socket, and that distinction is the honest
+ * part.** The abandoned `sendMail` is not cancelled — nodemailer has no
+ * per-message abort — so a dribbling server keeps that socket until one of its
+ * own timers fires, which the same dribble can defer. What the sweep gets back
+ * is its tick; what a hostile server keeps is one socket per send it can hold.
+ * Bounding that too would mean closing the transport under the send, which
+ * would take a pooled connection out from under any concurrent one.
+ *
+ * **One send, still, not one tick.** `dispatchToChannels` loops its channels
+ * sequentially, so N email channels serialise into N × this.
+ */
+const SEND_DEADLINE_MS = 20_000;
 
 /** The one place nodemailer is constructed from configuration. */
 export function createSender(smtp: SmtpConfig): MailSender {
@@ -45,6 +127,13 @@ export function createSender(smtp: SmtpConfig): MailSender {
     host: smtp.host,
     port: smtp.port,
     secure: smtp.secure,
+    // See the four constants above: without them nodemailer waits ten minutes
+    // on a silent socket and thirty seconds on a silent name server, inside a
+    // sweep that cannot start its next tick until this call returns.
+    connectionTimeout: CONNECTION_TIMEOUT_MS,
+    greetingTimeout: GREETING_TIMEOUT_MS,
+    socketTimeout: SOCKET_TIMEOUT_MS,
+    dnsTimeout: DNS_TIMEOUT_MS,
     // Only when a user is configured. An `auth` block with an undefined user
     // makes nodemailer attempt AUTH against servers that do not want it —
     // Mailpit among them.
@@ -60,10 +149,12 @@ export class EmailTransport implements NotificationTransport {
 
   private readonly logger = new Logger(EmailTransport.name);
   private readonly config: NotificationsConfig;
+  private readonly deadlineMs: number;
   private sender: MailSender | null;
 
   constructor(deps: Partial<EmailTransportDeps> = {}) {
     this.config = deps.config ?? notificationsConfig;
+    this.deadlineMs = deps.deadlineMs ?? SEND_DEADLINE_MS;
     this.sender =
       deps.sender ?? (this.config.smtp === null ? null : createSender(this.config.smtp));
   }
@@ -83,12 +174,15 @@ export class EmailTransport implements NotificationTransport {
     }
 
     try {
-      await this.sender.sendMail({
-        from: smtp.from,
-        to,
-        subject: message.subject,
-        text: message.body,
-      });
+      await withDeadline(
+        this.sender.sendMail({
+          from: smtp.from,
+          to,
+          subject: message.subject,
+          text: message.body,
+        }),
+        this.deadlineMs,
+      );
       return { status: "sent", error: null };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -103,6 +197,34 @@ export class EmailTransport implements NotificationTransport {
       return { status: "failed", error: `email send failed: ${safe}` };
     }
   }
+}
+
+/**
+ * Resolves with `pending`, or rejects at `ms` whatever `pending` is doing —
+ * {@link SEND_DEADLINE_MS}'s enforcement, and `webhook.transport.ts`'s shape on
+ * a client that takes no signal.
+ *
+ * `AbortSignal.timeout` rather than a bare `setTimeout`: its timer does not
+ * hold the event loop open, so a process shutting down between ticks is not
+ * kept alive by a send nobody is waiting for any more.
+ *
+ * The abandoned promise keeps a `catch` of its own. `Promise.race` has already
+ * settled by then, so its rejection would otherwise surface as an unhandled
+ * rejection minutes later, in a process that moved on several ticks ago.
+ */
+async function withDeadline<T>(pending: Promise<T>, ms: number): Promise<T> {
+  pending.catch(() => undefined);
+  const signal = AbortSignal.timeout(ms);
+  return Promise.race([
+    pending,
+    new Promise<never>((_resolve, reject) => {
+      signal.addEventListener(
+        "abort",
+        () => reject(new Error(`send timed out after ${ms}ms`)),
+        { once: true },
+      );
+    }),
+  ]);
 }
 
 /**

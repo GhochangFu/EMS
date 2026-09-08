@@ -7,6 +7,11 @@ import { notificationDeliveries } from "@bms/db";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { ChannelsService } from "./channels.service";
 import { buildDedupeKey, type DispatchEvent } from "./dedupe-key";
+import {
+  MAX_EVENT_ATTEMPTS,
+  type DispatchOutcome,
+  offeredAgainWithoutAsking,
+} from "./dispatch-policy";
 import { EmailTransport } from "./email.transport";
 import { LogTransport } from "./log.transport";
 import type {
@@ -19,6 +24,7 @@ import {
   PROCESS_STARTED_AT,
   type NotificationsConfig,
 } from "./notifications.config";
+import { unconfiguredWatermark } from "./raise-retry";
 import { WebhookTransport } from "./webhook.transport";
 
 export type { DispatchEvent } from "./dedupe-key";
@@ -54,24 +60,52 @@ export type { DispatchEvent } from "./dedupe-key";
  * an unhandled promise rather than in front of anyone; `dispatchToChannels` is
  * called from a sweep whose one warn line would hide which channel failed.
  * Every failure becomes a `failed` result and the promise resolves. It is
- * recorded as a row, with **three exceptions, and since `F3.54` all three ask
- * the same question** — `offeredAgainWithoutAsking` below. A dispatch that the
- * sweep will re-offer on its own writes no row when the ledger read throws
- * (plan D3), when the rate-limit read throws (review H1), or when the hourly
- * ceiling refuses it (`F3.48` ruling Q1). The first two are failed reads and
- * the third is a decision, but the reason is one reason: that key must survive
- * for the next tick to retry the step.
+ * recorded as a row, with **three exits that all ask one question** —
+ * `offeredAgainWithoutAsking`, in `dispatch-policy.ts` since the `F3.51`
+ * review, and since `F3.54` they ask it in one call rather than three inline
+ * tests. A dispatch that the sweep will re-offer on its own writes no row when
+ * the ledger read throws (plan D3), when the rate-limit read throws (review
+ * H1), or when the hourly ceiling refuses it (`F3.48` ruling Q1). The first two
+ * are failed reads and the third is a decision, but the reason is one reason:
+ * that key must survive for the next tick to retry the dispatch.
+ *
+ * **A row that could not be written is reported, not swallowed** (`F3.51`
+ * review, High). Not rejecting is decision 1 and stands; but `record()`'s
+ * insert can fail while every read succeeds, and then NO row appears under the
+ * key — so `MAX_EVENT_ATTEMPTS` has nothing to count, `isOverHourlyLimit` has
+ * no `sent` row to count, and the callers that re-offer a dispatch on their own
+ * have nothing that can ever stop them. Every result therefore carries
+ * `rowLost` (`DispatchOutcome`), and **both** re-offering phases of the alarm
+ * lifecycle sweep — the raise retry and the escalation, each under its own
+ * dedupe key — keep the triples it names out of the next tick's offer. The
+ * escalation phase discarded its outcomes until the second review; the first
+ * review's "the one caller" was already two.
+ *
+ * **Two kinds of dispatch answer yes, and since `F3.51` only one of them is an
+ * event** (ADR 0041 Amendment 5). An escalation step is re-dispatched by
+ * `runEscalationPhase` on every 30 s tick. A raise carrying `reoffered` is
+ * re-dispatched by the same sweep's raise-retry phase, for an alarm whose
+ * original raise reached nobody — it is not an event, it carries no event
+ * suffix, and it is the fourth exception to decision 4.
  *
  * A CLEARED message is none of those cases. It is dispatched once from the
  * clear phase and never re-offered, so a missing row buys no retry and costs
  * the only evidence: it keeps its row at all three exits (ruling Q-A for the
  * ceiling, `F3.54` ADR 0057 Amendment 4 for the two reads).
  *
- * **The raise path keeps its row at all three of those exits too** — but not
- * everywhere in this method, and the difference matters. Its own transition
- * dedupe in step 1 writes nothing once a refusal for that key is already
- * recorded (`F3.46`), which is the most-executed refusal in the service. That
- * is a fourth case with its own reason, not a fourth exception to this one.
+ * **An ORDINARY raise keeps its row at the two of those exits it can reach** —
+ * nothing re-offers it, so the row is the only evidence it was refused, which
+ * is `F3.51`'s own premise. Two, not the three this paragraph claimed until the
+ * second review: the first exit is step 0's failed ledger read, which sits
+ * inside `if (input.event !== undefined)`, and a dispatch with no event never
+ * enters that branch. Its two are step 2's — the failed rate-limit read and the
+ * ceiling's refusal. But not everywhere in this method, and the
+ * difference matters: an ordinary raise carrying `raised: false` reaches step
+ * 1 instead of any of them, and the transition dedupe there writes nothing
+ * once a refusal for that key is already recorded (`F3.46`) — the
+ * most-executed refusal in the service. That is a separate case with its own
+ * reason, not another exception to this one. A CLEARED message carries an
+ * event, so it takes step 0 and never reaches step 1 at all.
  */
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */
@@ -107,77 +141,44 @@ export type DispatchInput = {
    * in `dispatchToChannel`, not the raise path's refusal.
    */
   event?: DispatchEvent;
+  /**
+   * `F3.51` (ADR 0041 Amendment 5) — this is the alarm lifecycle sweep's
+   * raise-retry phase re-offering an alarm's ORIGINAL raise, which did not
+   * reach anybody. Set nowhere else.
+   *
+   * **It is not an event.** It does not reach `buildDedupeKey` and does not
+   * change `subjectFor`, so the key and the subject stay byte-identical to the
+   * original raise's — which is the whole mechanism, because the sweep decides
+   * who is owed by reading rows under that ORIGINAL key. A `:retry` suffix or a
+   * subject prefix would orphan every row it matched on (case E18 holds this).
+   *
+   * What it changes is one property: {@link offeredAgainWithoutAsking}.
+   */
+  reoffered?: true;
 };
 
 /** How much of a transport's failure text is stored. */
 const MAX_ERROR_LENGTH = 1_000;
 
 /**
- * `F3.10` (owner ruling Q9, 2026-09-06): how many `failed` rows an event's key
- * may hold on one channel before the event stops being retried.
+ * `F3.51` second review (Medium) — the characters a delivery error may not
+ * carry into `notification_deliveries.error`.
  *
- * A transport failure is not a decision. A webhook that timed out at 03:00
- * should be tried again on the next tick, where a deduped step should not —
- * but an unbounded retry would let one dead endpoint grow the ledger by a row
- * per tick for the life of the alarm. Three rows per key per channel is the
- * growth bound; `eventDeliveryBlocked` reads at most this many and blocks the
- * key once it finds them.
+ * Every C0 and C1 control but the three whitespace ones (`\t`, `\n`, `\r`),
+ * which Postgres accepts and every reader handles — an SMTP server's
+ * multi-line refusal stays readable, which is why the text is stored at all.
  *
- * A step the hourly ceiling refused is retried too, since `F3.48`, and it
- * never spends an attempt: ruling Q1 writes no row for it, so there is nothing
- * for this bound to count. **Nothing else bounds it either.** The ceiling's
- * trailing hour decides when a slot frees, not how long the retry runs, so a
- * channel held permanently over a misconfigured ceiling retries for the life of
- * the alarm — writing nothing, sending nothing. ADR 0057 Amendment 2 §2 accepts
- * that; it is not an oversight in this constant.
- *
- * A step an unconfigured channel refused is retried too, since `F3.50`, and it
- * IS bounded — by the second arm rather than by this one. Ruling Q1 keeps
- * writing the row (an operator must see a configuration fault), and releases
- * the key only once the row predates the channel's `updated_at` or the process
- * start. A retry that reaches a write then writes ONE fresh row, which is newer
- * than that watermark, so `eventDeliveryBlocked`'s `status !== "failed"` arm
- * blocks the key at the very next tick. **One row per key per WATERMARK MOVE**
- * — a process start or any channel PATCH, ruling Q2 — not per restart; this
- * count is never reached on that path.
- *
- * One carve-out, and it is where the two retries meet: if the hourly ceiling
- * refuses the released step, `F3.48` ruling Q1 writes no row at all, so the key
- * is NOT blocked again and the step is re-offered every tick until the ceiling
- * lifts. Nothing is written and nothing is sent, so the ledger does not grow —
- * the cost is two reads per tick per such key, which `F3.53` owns.
+ * **`U+0000` is the one that costs a row, and it is reachable from outside.**
+ * `webhook.transport.ts`'s `readBounded` normalises its excerpt with
+ * `.replace(/\s+/g, " ").trim()`, and `\s` matches no NUL and `trim()` strips
+ * none, so an endpoint answering 500 with one in its body reaches this insert
+ * with it. Postgres refuses the parameter (measured: `invalid byte sequence for
+ * encoding "UTF8": 0x00`), `record()` catches that, and the lost row spends one
+ * of `LOST_LEDGER_ROW_CAP`'s 1000 in-process slots. Past the cap the pair is
+ * re-offered every tick for the life of the alarm, dispatched sequentially — a
+ * caller-controlled byte must not be able to start that.
  */
-export const MAX_EVENT_ATTEMPTS = 3;
-
-/**
- * `F3.54` — whether a dispatch this refusal belongs to will be **offered
- * again** without anyone asking (ADR 0057 Amendment 4).
- *
- * This is the property the three event-path exceptions to ADR 0041 decision 4
- * actually turn on, and naming it is the point. An escalation step is
- * re-dispatched by `runEscalationPhase` on every 30 s tick until it lands, so
- * writing no row IS its retry and a row would spend its key. A cleared message
- * is dispatched once from the clear phase and `loadActiveAlarms` never returns
- * that alarm again, so silence buys nothing and costs the only evidence. The
- * raise path is not an event at all: its refusal is bounded by the transition,
- * and the next raise is a new alarm with a new key.
- *
- * **Exhaustive on purpose** (security review, `F3.54`). The three call sites
- * used to test `kind === "escalation"` inline, which is correct for today's two
- * kinds and silently wrong for a third: a new retried kind would fall to the
- * `record()` branch and poison its own key for every later tick, with the
- * compiler reporting nothing. Here a third kind is a missing return, which is a
- * compile error under `noImplicitReturns`.
- */
-function offeredAgainWithoutAsking(event: DispatchEvent | undefined): boolean {
-  if (event === undefined) return false;
-  switch (event.kind) {
-    case "escalation":
-      return true;
-    case "cleared":
-      return false;
-  }
-}
+const LEDGER_UNSAFE_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 
 @Injectable()
 export class NotificationsService {
@@ -202,9 +203,13 @@ export class NotificationsService {
 
   /**
    * Sends one alarm to every channel joined to its rule, and records a row for
-   * every attempt — including every skip. That is the raise path's rule and it
-   * is unchanged; the event path has three exceptions, and `dispatchToChannel`
-   * steps 0 and 2 carry them (D3, H1, and `F3.48` ruling Q1).
+   * every attempt — including every skip. That is the raise path's rule, and
+   * every input that arrives HERE still obeys it: this entry point serves a
+   * raise a rule evaluation just made, and nothing re-offers such a raise. The
+   * three exceptions live in `dispatchToChannel` steps 0 and 2 (D3, H1, and
+   * `F3.48` ruling Q1) and belong to a dispatch that will be offered again
+   * without anyone asking — an escalation step, or `F3.51`'s re-offered raise.
+   * Both reach the per-channel path through `dispatchToChannels`, never here.
    *
    * **A refusal is recorded once, not once per attempt** (`F3.46`). The first
    * `raised: false` dispatch writes the `skipped_deduped` row; every later one
@@ -220,7 +225,7 @@ export class NotificationsService {
    * NULL), and "this rule notifies nobody" is the state every rule is in the
    * moment migration 0038 runs.
    */
-  async dispatch(input: DispatchInput): Promise<DeliveryResult[]> {
+  async dispatch(input: DispatchInput): Promise<DispatchOutcome[]> {
     let channels: NotificationChannelRow[];
     try {
       channels = await this.channels.loadForRule(input.ruleId);
@@ -269,7 +274,7 @@ export class NotificationsService {
   async dispatchToChannels(
     channels: readonly NotificationChannelRow[],
     input: DispatchInput,
-  ): Promise<DeliveryResult[]> {
+  ): Promise<DispatchOutcome[]> {
     if (input.event !== undefined && input.alarmId === null) {
       this.logger.warn(
         `event=${input.event.kind} refused for rule=${input.ruleCode}: no alarm id, so the dedupe key would be shared by every alarm of the rule`,
@@ -288,7 +293,7 @@ export class NotificationsService {
     });
 
     const dedupeKey = buildDedupeKey(input);
-    const results: DeliveryResult[] = [];
+    const results: DispatchOutcome[] = [];
     for (const channel of kept) {
       const result = await this.dispatchToChannel(input, channel, dedupeKey);
       results.push(result);
@@ -300,7 +305,7 @@ export class NotificationsService {
     input: DispatchInput,
     channel: NotificationChannelRow,
     dedupeKey: string,
-  ): Promise<DeliveryResult> {
+  ): Promise<DispatchOutcome> {
     // 0. `F3.10` — event idempotency (ADR 0057 decision 10), and it comes
     //    FIRST. An escalation step or a cleared message is sent once per
     //    (channel, organization, dedupe key), for the life of the ledger; a
@@ -322,9 +327,16 @@ export class NotificationsService {
       // The later of the two clocks that can have changed a channel's ability
       // to send — its own `updated_at` (a URL, recipients, the kind, a
       // re-saved secret) and the process boundary (`SMTP_HOST`,
-      // `CREDENTIAL_ENCRYPTION_KEY`, which no row records). One expression at
-      // its one call site: a `watermarkFor()` helper would only invite a test
-      // that passes while this line is never reached.
+      // `CREDENTIAL_ENCRYPTION_KEY`, which no row records).
+      //
+      // `F3.50` wrote this expression inline here and said a `watermarkFor()`
+      // helper "would only invite a test that passes while this line is never
+      // reached". There are two call sites now — this one and
+      // `channelsOwedTheRaise`, which must date a `skipped_unconfigured` row
+      // the same way or the raise retry and the event path would disagree about
+      // when a refusal stops answering — and two call sites are what justifies
+      // the helper. Both are driven: case 15 renders the parameters this read
+      // binds, and `raise-retry.spec.ts` P8/P9/P14 drive the other.
       //
       // Outside the `try` below on purpose, and security review asked. The
       // "never rejects" invariant is about `dispatch()`, the fire-and-forget
@@ -334,9 +346,7 @@ export class NotificationsService {
       // phase's per-step catch from security review M1). Moving it inside the
       // ledger-read `try` would buy nothing and would report a `TypeError`
       // here as "delivery ledger read failed", which is a lie.
-      const unconfiguredSince = new Date(
-        Math.max(channel.updatedAt.getTime(), PROCESS_STARTED_AT.getTime()),
-      );
+      const unconfiguredSince = unconfiguredWatermark(channel, PROCESS_STARTED_AT);
       let alreadyRecorded: boolean;
       try {
         alreadyRecorded = await this.eventDeliveryBlocked(
@@ -378,12 +388,12 @@ export class NotificationsService {
           status: "failed",
           error: "delivery ledger read failed",
         };
-        return offeredAgainWithoutAsking(input.event)
-          ? failedRead
+        return offeredAgainWithoutAsking(input)
+          ? notRecorded(channel, failedRead)
           : this.record(input, channel, dedupeKey, failedRead);
       }
       if (alreadyRecorded) {
-        return { status: "skipped_deduped", error: null };
+        return notRecorded(channel, { status: "skipped_deduped", error: null });
       }
     } else if (!input.raised) {
       // 1. The transition dedupe. The skip is still RECORDED: "we chose not to
@@ -408,7 +418,9 @@ export class NotificationsService {
         );
         alreadyRecorded = false;
       }
-      return alreadyRecorded ? skip : this.record(input, channel, dedupeKey, skip);
+      return alreadyRecorded
+        ? notRecorded(channel, skip)
+        : this.record(input, channel, dedupeKey, skip);
     }
 
     // 2. The per-channel hourly ceiling.
@@ -432,17 +444,23 @@ export class NotificationsService {
       // conserve an attempt for and nothing to gain by staying silent — ruling
       // Q-A's argument, applied at the exit `F3.48` did not reach.
       //
-      // The raise path keeps its row too: that write is bounded by the
-      // transition, and the next raise is a new alarm with a new key. It stays
-      // covered by this line because `input.event?.kind` is `undefined` there,
-      // and `undefined !== "escalation"`.
+      // An ORDINARY raise keeps its row too: that write is bounded by the
+      // transition, and the next raise is a new alarm with a new key.
+      //
+      // A RE-OFFERED raise does not (`F3.51`, ADR 0041 Amendment 5). The
+      // lifecycle sweep asks again on its next tick, so a `failed` row here
+      // would spend one of the raise key's `MAX_EVENT_ATTEMPTS` on a read that
+      // never reached the transport — case 10's reason, at the same exit, for a
+      // dispatch that is not an event. The call below tells the two raises
+      // apart by `reoffered`; it can no longer be read as "everything without
+      // an event records".
       //
       // This test is now the SAME CALL as the ceiling's `retriable` twenty
       // lines below, and as step 0's. That was `F3.54`'s whole complaint: two
       // adjacent exits discriminating differently — one on the presence of an
       // event, one on its kind — with nothing in the code saying why.
-      return offeredAgainWithoutAsking(input.event)
-        ? failed
+      return offeredAgainWithoutAsking(input)
+        ? notRecorded(channel, failed)
         : this.record(input, channel, dedupeKey, failed);
     }
     if (overLimit) {
@@ -462,10 +480,21 @@ export class NotificationsService {
       // its row would make the refusal invisible and buy no retry, so the clear
       // keeps the visible refusal ADR 0041 decision 4 asks for.
       //
-      // The raise path keeps its row too: a raise key is per transition and the
-      // next raise is a new alarm with a new key, so the growth is bounded.
-      const retriable = offeredAgainWithoutAsking(input.event);
-      return retriable ? limited : this.record(input, channel, dedupeKey, limited);
+      // An ORDINARY raise keeps its row too: a raise key is per transition and
+      // the next raise is a new alarm with a new key, so the growth is bounded.
+      //
+      // A RE-OFFERED raise does not, and this exit is what `F3.51` exists for
+      // (ADR 0041 Amendment 5). The sweep re-offers an undelivered raise every
+      // 30 s, so three refusals here would spend the key inside 90 seconds
+      // while `isOverHourlyLimit` counts `sent` rows over a trailing HOUR — the
+      // retry would burn out before the ceiling could lift. That is the
+      // premise `F3.48` measured and falsified, reproduced on the raise path,
+      // and the fix is `F3.48`'s unchanged: write nothing, and the next tick
+      // asks again.
+      const retriable = offeredAgainWithoutAsking(input);
+      return retriable
+        ? notRecorded(channel, limited)
+        : this.record(input, channel, dedupeKey, limited);
     }
 
     // 3. Send. A transport that rejects is a `failed` delivery, never a
@@ -736,7 +765,10 @@ export class NotificationsService {
    * the read is a scan of the organization's rows. PR 2's migration
    * `0066_alarm_lifecycle.sql` adds `notification_deliveries_alarm_idx ON
    * (alarm_id) WHERE alarm_id IS NOT NULL` beside plan Q3's probe (`0038`'s
-   * rule: the reader adds the index), and the plan records it.
+   * rule: the reader adds the index), and the plan records it. `F3.51` is that
+   * index's second reader and measured the plan: `raise-attempts.ts`, which
+   * holds the RAISE key's read — outside this class, because the file is at
+   * §4.5's cap and the read needs nothing from it but `fleetDb`.
    *
    * Same connection and the same reason as `isOverHourlyLimit`: a sweep read
    * with no tenant transaction, so the organization is the `WHERE`. Unlike
@@ -800,16 +832,20 @@ export class NotificationsService {
       overLimit = await this.isOverHourlyLimit(channel.id, organizationId);
     } catch (err) {
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
-      return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
-        status: "failed",
-        error: "rate-limit check failed",
-      });
+      return sendTestResult(
+        await this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
+          status: "failed",
+          error: "rate-limit check failed",
+        }),
+      );
     }
     if (overLimit) {
-      return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
-        status: "skipped_rate_limited",
-        error: null,
-      });
+      return sendTestResult(
+        await this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, {
+          status: "skipped_rate_limited",
+          error: null,
+        }),
+      );
     }
 
     const transport = this.transportFor(channel.kind);
@@ -828,16 +864,30 @@ export class NotificationsService {
     } catch (err) {
       result = { status: "failed", error: `transport threw: ${reasonOf(err)}` };
     }
-    return this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, result);
+    return sendTestResult(
+      await this.record({ ruleId: null, alarmId: null, organizationId }, channel, null, result),
+    );
   }
 
-  /** Writes the ledger row and returns the result unchanged. */
+  /**
+   * Writes the ledger row and returns the result unchanged — plus, since the
+   * `F3.51` review, whether the row LANDED.
+   *
+   * **It still never throws and never fails the caller** (ADR 0041 decision
+   * 1). What changed is only that the failure stops being invisible: the
+   * `logger.error` below is for an operator, and `rowLost` is for the alarm
+   * lifecycle sweep, whose TWO re-offering phases — the raise retry and the
+   * escalation — would otherwise offer this dispatch again for ever. No row
+   * means no `MAX_EVENT_ATTEMPTS` to count and no `sent` row for
+   * `isOverHourlyLimit` to count either, so nothing in the ledger can stop
+   * either of them; each keeps its own memory, under its own dedupe key.
+   */
   private async record(
     input: { ruleId: string | null; alarmId: string | null; organizationId: string },
     channel: NotificationChannelRow,
     dedupeKey: string | null,
     result: DeliveryResult,
-  ): Promise<DeliveryResult> {
+  ): Promise<DispatchOutcome> {
     try {
       await this.fleetDb.insert(notificationDeliveries).values({
         organizationId: input.organizationId,
@@ -846,7 +896,7 @@ export class NotificationsService {
         channelId: channel.id,
         status: result.status,
         dedupeKey,
-        error: result.error === null ? null : truncate(result.error),
+        error: result.error === null ? null : storable(result.error),
       });
     } catch (err) {
       // The send may already have happened; losing the row is bad but failing
@@ -854,10 +904,45 @@ export class NotificationsService {
       this.logger.error(
         `delivery row not written for channel=${channel.code} status=${result.status}: ${reasonOf(err)}`,
       );
+      return { ...result, channelId: channel.id, rowLost: true };
     }
-    return result;
+    return { ...result, channelId: channel.id, rowLost: false };
   }
 
+}
+
+/**
+ * `sendTest`'s two-field answer, narrowed from `record()`'s outcome at the
+ * source (`F3.51` review).
+ *
+ * `sendTest` declares two fields and `record()` now returns four. TypeScript
+ * accepts that — a returned value is not a fresh object literal, so no
+ * excess-property check fires — and the two extra keys would ride out at
+ * RUNTIME to whatever the caller does with them. `notifications.controller.ts`
+ * happens to rebuild its response field by field today, so nothing reached the
+ * wire; that is the controller's shape, not a promise, and `rowLost` is an
+ * internal ledger fact with no business on an API response either way. Narrowed
+ * here so the declared type and the object agree.
+ */
+function sendTestResult(outcome: DispatchOutcome): {
+  status: DeliveryResult["status"];
+  error: string | null;
+} {
+  return { status: outcome.status, error: outcome.error };
+}
+
+/**
+ * An outcome for an exit that wrote no row **by design** — a deduped answer, or
+ * one of {@link offeredAgainWithoutAsking}'s three conserved refusals.
+ *
+ * `rowLost` is `false` here and that is not a white lie: nothing was lost. The
+ * flag means "an insert was attempted and threw", so that the raise retry stops
+ * offering a triple the ledger can never record — and a ceiling-refused
+ * re-offer, which writes nothing so the NEXT tick can ask again, must go on
+ * being offered (`F3.48` ruling Q1; `alarm-lifecycle.integration.spec.ts` I2).
+ */
+function notRecorded(channel: NotificationChannelRow, result: DeliveryResult): DispatchOutcome {
+  return { ...result, channelId: channel.id, rowLost: false };
 }
 
 /**
@@ -879,4 +964,23 @@ function reasonOf(err: unknown): string {
 
 function truncate(text: string): string {
   return text.length > MAX_ERROR_LENGTH ? `${text.slice(0, MAX_ERROR_LENGTH)}…` : text;
+}
+
+/**
+ * A transport's failure text as the ledger can hold it — see
+ * {@link LEDGER_UNSAFE_CHARACTERS}. Stripped before it is bounded, so the cut
+ * lands on text a reader can see.
+ *
+ * **The stored text and the returned `DeliveryResult.error` now differ for one
+ * delivery**, deliberately: the result is the transport's own words, going back
+ * to a caller that can hold them; the column is what a `text` parameter can
+ * carry. Only one of the two refuses a byte, and it is the one that costs a
+ * row.
+ *
+ * Here rather than in `readBounded`, because this is the one place any
+ * transport's text reaches the column — the rule in two files is the drift
+ * shape, and the email and log transports would be left out of the first one.
+ */
+function storable(text: string): string {
+  return truncate(text.replace(LEDGER_UNSAFE_CHARACTERS, ""));
 }

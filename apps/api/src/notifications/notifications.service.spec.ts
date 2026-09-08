@@ -547,6 +547,41 @@ export async function runNotificationsServiceTests(): Promise<void> {
     fake.failInserts(true);
     const results = await service.dispatch(input());
     assert(results[0]?.status === "sent", "the send happened and is reported");
+    // `F3.51` review (High): and the caller is TOLD the row did not land.
+    // Every bound on a retry counts rows — `MAX_EVENT_ATTEMPTS` under the key,
+    // `isOverHourlyLimit`'s trailing hour of `sent` ones — so a ledger that
+    // refuses writes while serving reads leaves the raise retry with nothing
+    // that can ever stop it. `rowLost` is the only channel that fact has out
+    // of here, because decision 1 forbids rejecting.
+    assert(
+      results[0]?.rowLost === true,
+      `a failed insert reports rowLost, got ${JSON.stringify(results[0])}`,
+    );
+    assert(
+      results[0]?.channelId === channelRow().id,
+      "and which channel it belongs to — the results are not index-aligned with the caller's list",
+    );
+  }
+  {
+    // The paired positive, on the same shape: an insert that LANDS reports
+    // `rowLost: false`. Without it the assertion above would pass a mutation
+    // that hard-coded `rowLost: true` everywhere and stopped the raise retry
+    // dead on its first tick.
+    const fake = fakeDb();
+    const webhook = fakeTransport("webhook", () =>
+      Promise.resolve({ status: "sent", error: null }),
+    );
+    const service = serviceWith({
+      db: fake.db,
+      channels: [channelRow()],
+      webhook: webhook.transport,
+    });
+    const results = await service.dispatch(input());
+    assert(fake.recorded.length === 1, `the row landed, got ${fake.recorded.length}`);
+    assert(
+      results[0]?.rowLost === false && results[0].status === "sent",
+      `a written row reports rowLost false, got ${JSON.stringify(results[0])}`,
+    );
   }
 
   // --- a rule with no channels --------------------------------------------
@@ -680,6 +715,23 @@ export async function runNotificationsServiceTests(): Promise<void> {
     assert(
       reads.skipExists === 0,
       `sendTest must not read the dedupe ledger, got ${reads.skipExists} reads`,
+    );
+    // `F3.51` review: `record()` returns four fields now and `sendTest`
+    // declares two. TypeScript cannot see the difference — a returned value is
+    // not a fresh object literal, so no excess-property check fires — and the
+    // extra keys would ride out at RUNTIME. `rowLost` is an internal ledger
+    // fact and `channelId` is already on the controller's own response; neither
+    // belongs in this return. Asserted on the KEY SET, because that is the only
+    // thing typecheck cannot hold.
+    //
+    // **Mutation:** `return this.record(...)` at any of `sendTest`'s three
+    // exits → the key list is four, red. The `status` assertion above is the
+    // paired positive: this cannot pass on a method that returns nothing.
+    assert(
+      Object.keys(result).sort().join(",") === "error,status",
+      `sendTest returns its two declared fields and nothing else, got [${Object.keys(result)
+        .sort()
+        .join(",")}]`,
     );
   }
 

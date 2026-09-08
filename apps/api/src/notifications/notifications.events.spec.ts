@@ -2,12 +2,9 @@ import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 import { buildDedupeKey } from "./dedupe-key";
+import { MAX_EVENT_ATTEMPTS } from "./dispatch-policy";
 import { PROCESS_STARTED_AT } from "./notifications.config";
-import {
-  MAX_EVENT_ATTEMPTS,
-  type DispatchEvent,
-  type DispatchInput,
-} from "./notifications.service";
+import type { DispatchEvent, DispatchInput } from "./notifications.service";
 import {
   ORG_ID,
   assert,
@@ -37,10 +34,20 @@ import {
  * the visible row (ruling Q-A). Case 14 asserts that ruling Q2's exclusion of
  * `skipped_rate_limited` is in the SQL rather than in the sampled rows.
  *
+ * **`F3.51` (ADR 0041 Amendment 5) adds E15–E18, and they are not about an
+ * event.** The file's subject is really `offeredAgainWithoutAsking` and the
+ * three exits that ask it — cases 6/6b, 7/7b and 10/10b are already paired that
+ * way — so the fourth arm belongs beside them even though a re-offered raise
+ * carries no `event`. E15 and E17 are the two exits a re-offered raise can
+ * reach; E16 and E17's second half are their regression twins on an ordinary
+ * raise, without which a change that silenced EVERY raise refusal would pass;
+ * E18 pins the key and the subject to the original raise's.
+ *
  * What this file does **not** hold: that the exclusion actually releases a key.
  * The fake answers each ledger read from a queue and applies no `WHERE`, so it
  * cannot show a row being filtered out. That claim lives in
- * `storm-control.integration.spec.ts`, against Postgres.
+ * `storm-control.integration.spec.ts`, against Postgres — and, for the raise
+ * key's own read, in `raise-attempts.integration.spec.ts`.
  */
 export async function runNotificationEventTests(): Promise<void> {
   const channelA = channelRow({ id: "aaaaaaaa-0000-0000-0000-000000000001", code: "a" });
@@ -744,6 +751,156 @@ export async function runNotificationEventTests(): Promise<void> {
     assert(
       boundTimes(edited.params).includes(future.getTime()),
       `F3.50: with a newly edited channel the watermark is its updated_at, got: ${JSON.stringify(edited.params)}`,
+    );
+  }
+
+  // --- E15. `F3.51`: a RE-OFFERED raise refused by the ceiling writes no row -
+  //
+  // ADR 0041 Amendment 5. The fourth exception to decision 4, and the first
+  // that is not an event — `offeredAgainWithoutAsking` is a property, not a
+  // kind, which is exactly why `F3.54` named it.
+  //
+  // Without this the retry is worse than the defect it fixes. The lifecycle
+  // sweep re-offers an undelivered raise every 30 s, so three ceiling refusals
+  // land inside 90 seconds and spend `MAX_EVENT_ATTEMPTS`, while
+  // `isOverHourlyLimit` counts `sent` rows over a trailing HOUR — the retry
+  // burns out before the ceiling can lift. That is `F3.48`'s measured finding,
+  // reproduced on the raise path, and its fix applies unchanged.
+  {
+    const { db, recorded, reads, setCount } = fakeDb();
+    const webhook = sendingWebhook();
+    const service = serviceWith({
+      db,
+      channels: [],
+      webhook: webhook.transport,
+      env: { NOTIFY_RATE_LIMIT_PER_HOUR: "1" },
+    });
+
+    setCount(1);
+    const results = await service.dispatchToChannels([channelRow()], input({ reoffered: true }));
+    assert(
+      results[0]?.status === "skipped_rate_limited",
+      `the result is unchanged — a refusal is still a refusal, got ${String(results[0]?.status)}`,
+    );
+    assert(webhook.sent.length === 0, "a rate-limited raise must not reach the transport");
+    assert(
+      recorded.length === 0,
+      `F3.51: a re-offered raise writes no row at the ceiling, got ${recorded.length}`,
+    );
+    // And it took the raise path to get there: `reoffered` is not an event, so
+    // neither ledger read ran and `buildDedupeKey` saw no suffix.
+    assert(
+      reads.deliveryExists === 0 && reads.skipExists === 0,
+      `a re-offered raise is not an event, got ${reads.deliveryExists}/${reads.skipExists} reads`,
+    );
+  }
+
+  // --- E16. An ORDINARY raise still records its ceiling refusal --------------
+  //
+  // The regression twin, and E15 alone would pass a change that silenced every
+  // raise refusal in the service. An ordinary raise is offered once, by the
+  // rule evaluation that raised the alarm; nothing re-offers it, so dropping
+  // its row would drop the only evidence — which is `F3.51`'s own premise.
+  {
+    const { db, recorded, setCount } = fakeDb();
+    const webhook = sendingWebhook();
+    const service = serviceWith({
+      db,
+      channels: [],
+      webhook: webhook.transport,
+      env: { NOTIFY_RATE_LIMIT_PER_HOUR: "1" },
+    });
+
+    setCount(1);
+    const results = await service.dispatchToChannels([channelRow()], input());
+    assert(
+      results[0]?.status === "skipped_rate_limited",
+      `an ordinary raise is refused the same way, got ${String(results[0]?.status)}`,
+    );
+    assert(
+      recorded.length === 1 && recorded[0]?.status === "skipped_rate_limited",
+      `decision 4: the ordinary raise's refusal IS recorded, got ${recorded.length} rows`,
+    );
+    assert(
+      recorded[0]?.dedupeKey === buildDedupeKey(input()),
+      `and under the raise key, got ${String(recorded[0]?.dedupeKey)}`,
+    );
+  }
+
+  // --- E17. The failed rate-limit READ, both ways ----------------------------
+  //
+  // Review H1's exit, reached by the same call. A re-offered raise writes
+  // nothing — a `failed` row here records a read that never reached the
+  // transport, and the next tick will ask again — while an ordinary raise keeps
+  // the `failed` row it has always written. Paired on purpose: the absence is
+  // only a gate because the second half proves the row is written when nobody
+  // re-offers the dispatch.
+  {
+    const { db, recorded, failRateLimitReads } = fakeDb();
+    const webhook = sendingWebhook();
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    failRateLimitReads(true);
+    const { result: retry, warnings } = await captureWarnings(() =>
+      service.dispatchToChannels([channelRow({ code: "ops-webhook" })], input({ reoffered: true })),
+    );
+    assert(
+      retry[0]?.status === "failed" && retry[0].error === "rate-limit check failed",
+      `an unreadable ceiling still fails the re-offer by name, got ${JSON.stringify(retry)}`,
+    );
+    assert(
+      recorded.length === 0,
+      `F3.51: no row on a failed ceiling read for a re-offered raise, got ${recorded.length}`,
+    );
+    assert(
+      warnings.length === 1 && (warnings[0] ?? "").includes("channel=ops-webhook"),
+      `one warn naming the channel, got ${JSON.stringify(warnings)}`,
+    );
+
+    const ordinary = await service.dispatchToChannels([channelRow()], input());
+    assert(
+      ordinary[0]?.status === "failed",
+      `an ordinary raise fails the same way, got ${String(ordinary[0]?.status)}`,
+    );
+    assert(
+      recorded.length === 1 && recorded[0]?.status === "failed",
+      `and it keeps its row — the bounded write the transition pays for, got ${recorded.length}`,
+    );
+  }
+
+  // --- E18. `reoffered` reaches neither the key nor the subject --------------
+  //
+  // The identity of a re-offered raise with the original one is the mechanism,
+  // not a convenience: the sweep decides who is owed by reading rows under the
+  // ORIGINAL key, so a `:retry` suffix would orphan every row it matched on,
+  // and a subject prefix would tell the operator this is a different alarm.
+  // This is the assertion that stops anyone "improving" the message later —
+  // the staleness complaint is `F3.52`'s, and it is inherited here, not fixed.
+  {
+    const { db, recorded } = fakeDb();
+    const webhook = sendingWebhook();
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    const original = input();
+    const reoffered = input({ reoffered: true });
+    assert(
+      buildDedupeKey(reoffered) === buildDedupeKey(original),
+      `the flag must not reach the key: ${buildDedupeKey(reoffered)} vs ${buildDedupeKey(original)}`,
+    );
+
+    const results = await service.dispatchToChannels([channelRow()], reoffered);
+    assert(results[0]?.status === "sent", `a re-offered raise sends, got ${String(results[0]?.status)}`);
+    assert(
+      recorded.length === 1 && recorded[0]?.dedupeKey === buildDedupeKey(original),
+      `the row it writes holds the raise's own key, got ${String(recorded[0]?.dedupeKey)}`,
+    );
+    assert(
+      webhook.sent[0]?.subject === `${original.severity as string}: ${original.ruleCode}`,
+      `the subject is the raise's, with no retry marker, got ${String(webhook.sent[0]?.subject)}`,
+    );
+    assert(
+      webhook.sent[0]?.body === original.message,
+      "and the body is the alarm's message, untouched",
     );
   }
 }

@@ -683,3 +683,315 @@ H1 as unconditional exceptions, and after this they are conditional.
    one read while the INSERT goes to the real database. Each block asserts both
    kinds, and the escalation half is what kills the over-broad mutation "record
    on every event" — which the cleared half alone would pass.
+
+## Amendment 5 — `F3.51`: the sweep gains a third phase, `runRaiseRetryPhase`, between the clear and the escalation (2026-09-09)
+
+A raise notification that did not send was lost for the life of the alarm.
+Its outcome is recorded under the key `rule:alarm:severity`; the next
+evaluation of the same rule arrives with `raised: false` and `alarmId: null`,
+so `buildDedupeKey` produces the different key `rule:no-alarm:severity`, the
+dispatch lands in the transition-dedupe branch (`F3.46`), writes
+`skipped_deduped`, and sends nothing. The alarm stays open, nobody is told, and
+the ledger row — `failed`, `skipped_unconfigured` or `skipped_rate_limited` —
+reads as a delay rather than as the loss it is. `runLifecycleSweep` gains a
+third phase, `runRaiseRetryPhase`, that re-offers a still-active alarm's
+**original** raise — the same `DispatchInput`, the same message, the same
+dedupe key, `event: undefined`, `reoffered: true` — to exactly the channels the
+ledger shows are still owed it. ADR 0041 Amendment 5 amends decision 4 for the
+one exit this touches there; this amendment is the reasoning.
+
+**The four owner rulings, in the order given, and what each bought.**
+
+1. **A retry path, not a terminal status.** The fix lives entirely inside the
+   existing 30 s sweep. No DDL, no new `notification_deliveries` status: a
+   sixth status would be a migration, a contract change and every reader of the
+   column, for a defect the sweep can fix by asking again.
+
+2. **The stop condition reuses `MAX_EVENT_ATTEMPTS`** — and the ruling's own
+   qualification is what makes it work — **the whole predicate**
+   `eventDeliveryBlocked` already applies, not a hand-rolled count. Hand-rolling
+   "no `sent` row and fewer than three rows" would make the unconfigured case a
+   60-second no-op: the original raise writes row 1, two 30 s retry ticks write
+   rows 2 and 3, the cap is spent inside a minute, and an operator configuring
+   SMTP an hour later changes nothing. That is `F3.48`'s falsified premise,
+   reproduced on the raise path, and `channelsOwedTheRaise` avoids it by
+   applying the two status exclusions before the two blocking arms, in the same
+   order, with the same operators: a `skipped_rate_limited` row never counts
+   toward the cap and never blocks by itself (`F3.48` ruling Q2); a
+   `skipped_unconfigured` row blocks only while it is newer than
+   `unconfiguredWatermark(channel, PROCESS_STARTED_AT)` (`F3.50` ruling Q1, now
+   one function called from both the event path and this read); `maxAttempts`
+   eligible rows, or any eligible row that is not `failed`, blocks as before.
+
+3. **A channel with zero rows under the raise key is not owed.** This is the
+   same-tick double-send guard, evaluated over every row for the channel before
+   the two exclusions are applied — a channel whose only rows are all
+   rate-limited or all stale-unconfigured has evidence and an empty eligible
+   set, and computing the evidence test after the exclusions would silently
+   kill both of those cases. It replaces any clock or grace constant: there is
+   no window to tune and nothing to expire, only the question of whether the
+   raise has been offered to this channel at all.
+
+4. **An acknowledged alarm is skipped.** The reason is the message itself. The
+   retry is the raise text verbatim, and that text asserts a novelty — a new
+   alarm, first told — the alarm no longer has once somebody has acknowledged
+   it. Re-sending the original wording to an already-acknowledged alarm would
+   be a lie about its own freshness, not merely a redundant notification.
+
+   **A correction to this amendment as first written** (`F3.51` review). It
+   justified the ruling by contrast: the escalation phase "keeps sending steps
+   to an acknowledged alarm because a step is the organization's severity
+   policy escalating regardless of who is looking". That is false.
+   `runEscalationPhase` skips on `acknowledgedAt !== null` at its first test,
+   and decision 6 above says in so many words that acknowledgement removes the
+   alarm from the selection. The two phases agree, there is no contrast to
+   draw, and the reason above stands without one.
+
+**Position, and it is load-bearing in both directions.** The phase runs after
+the clear phase and before the escalation phase. After the clear: an alarm
+that cleared this tick has already had its `cleared` message dispatched, and
+re-offering its raise afterwards would tell people about a resolved alarm in
+the wrong order — the phase skips every id in `clearedIds`. Before the
+escalation: the two phases share one hourly budget per `(channel,
+organization)` (`isOverHourlyLimit`), and whichever dispatches first takes it;
+putting the raise first means an escalation backlog cannot starve a new
+critical alarm's raise, which is exactly the starvation `F3.52` was filed
+against. The ordering is the only prioritisation this row ships — it does not
+split the budget, it only decides who asks for it first.
+
+**What ruling 3 narrows, stated honestly.** The evidence conjunct means a raise
+that never reached the ledger at all is never retried by this phase — a
+rejected ledger read at the raise's own dispatch time writes nothing, and
+`record()`'s own insert can fail independently of the read. Both leave zero
+rows under the key, and zero rows reads as "not yet offered", not as "owed".
+This is a real limit and not a rounding error: all three of the cases named
+against this backlog row — a `failed` transport, a `skipped_unconfigured`
+channel, a `skipped_rate_limited` refusal — do write a row, so nothing this
+row was asked to fix is dropped by the narrowing. A raise whose own row never
+landed is a different, older defect than the one this row closes.
+
+**The accepted cost.** A channel held over a misconfigured hourly ceiling for
+the life of an alarm is re-offered its raise on every tick, forever: two reads
+a tick — the ledger query and the channel query — nothing written, nothing
+sent, no ledger growth. This is the same cost Amendment 2 §2 above already
+accepted on the escalation path, reaching the raise path for the first time.
+`F3.53` owns the per-tick read cost; `F3.52` owns splitting the hourly budget
+between the raise and event paths, so the two phases stop contending for one
+number.
+
+**The inherited, unfixed complaint.** The retried message carries no age and
+no staleness marker — deliberately, not by oversight. Byte-identity with the
+original raise's `DispatchInput` is what lets `channelsOwedTheRaise` match the
+ledger rows the original dispatch wrote; a `:retry` suffix on the key or a
+prefix on the subject would orphan every row the phase is trying to read. This
+is `F3.52`'s second half, named here so it is not mistaken for an oversight of
+this row, and this row does not fix it.
+
+**Build corrections against the plan this row was gated on.** The ledger read
+that the phase needs — every delivery row under a set of alarms' raise keys,
+in one query — is a **module function**, `loadRaiseAttempts` in
+`apps/api/src/notifications/raise-attempts.ts`, not a `NotificationsService`
+method: that class stood within a few dozen lines of AGENTS.md §4.5's
+1000-line cap after ADR 0041 Amendment 5's changes, and the read needs nothing
+from the class but `fleetDb`. `AlarmLifecycleService` already held `fleetDb`
+and already called a sibling module (`loadEnabledChannelsByIds`) the same way,
+so the constructor is unchanged. `EXPLAIN (ANALYZE, BUFFERS)` against
+`notification_deliveries_alarm_idx ON (alarm_id) WHERE alarm_id IS NOT NULL`
+(migration `0066`), measured on 20 000 rows over 2 000 alarms, 2026-09-08:
+`Index Scan` at every list size tried — 1, 3, 50 and 300 refs — with no
+sequential scan at any of them, organization and dedupe key reaching the
+planner as residual filters; 300 refs cost 3.27 ms and 969 shared buffer hits.
+On a rejected ledger read the phase warns and returns, and never falls back to
+treating channels as owed — a blind re-offer would duplicate every open
+alarm's raise to every one of its channels — and `runEscalationPhase` still
+runs in the same tick, because the `return` is scoped to the raise-retry
+phase's own function. The warn is phase-wide, carrying the count of eligible
+alarms and the failure's cause, and no id list: the read covers every eligible
+alarm in one query, so a list of their ids is unbounded at even a few hundred
+open alarms.
+
+### Amendment 5 §2 — three corrections the `F3.51` review forced (2026-09-09)
+
+The review of the branch above found three defects. All three are fixed on the
+same branch, and each falsifies something this amendment or the code said, so
+each is recorded here rather than left for the next reader to discover.
+
+**1. A ledger row that did not land had no bound at all (High).**
+`NotificationsService.record()` catches its own INSERT failure, logs an error
+and returns the result — ADR 0041 decision 1, which is unchanged. But every
+bound this amendment leans on counts ROWS: `MAX_EVENT_ATTEMPTS` counts them
+under the key, and `isOverHourlyLimit` counts `sent` ones over a trailing hour.
+A ledger that refuses writes while serving reads therefore leaves the raise
+retry with nothing that can stop it: no row appears, `channelsOwedTheRaise`
+keeps seeing the same single original `failed` row, and the phase sends to that
+channel twice a minute for the life of the alarm with no trace of any of it.
+
+`record()` now reports whether its row landed. Every dispatch result carries
+`rowLost` and its `channelId` (`DispatchOutcome`), and the phase keeps an
+in-process `LostLedgerRows` of the `(alarm, channel, dedupe key)` triples whose
+insert threw, and does not re-offer them. The triple, not the pair: a raise key
+is `rule:alarm:severity` and the builder reads the ALARM's severity, so an
+alarm re-severitied under the sweep has a genuinely different key with
+genuinely no rows, and the pair alone would suppress a raise never offered.
+The memory is capped at 1000 entries and REFUSES rather than evicts — dropping
+an existing entry would silently un-blacklist a real loss.
+
+**Three narrowings this paragraph needs, all found by the second review (§3).**
+It says "the phase", and there are two — the escalation phase had the same
+loop and now feeds the same memory under each step's own key. It says the
+memory is "reclaimed when an alarm leaves the active set", and the reclaim is
+best-effort: `retainAlarms` is called from `runRaiseRetryPhase` alone, and
+`runLifecycleSweep` returns before every phase when no alarm is active, so a
+quiet fleet reclaims nothing until its next alarm. And the memory is **one
+strike** — a single transient insert failure suppresses that triple until the
+alarm clears or the process restarts, even where the send failed too, while the
+ledger bound it stands in for allows three attempts. That is a consequence of
+"refuse rather than forget", not a defect: telling a transient failure from a
+permanent one would mean asking the ledger, which is the thing that is not
+answering.
+
+**The sweep's "no phase remembers anything between ticks" is now false, and the
+honest statement is narrower.** The ledger remains the only **cross-process**
+state. `LostLedgerRows` is in process and a restart empties it. That is forced
+rather than chosen — a bound that survived a restart would have to be a row,
+and a row is exactly what could not be written — and it is the treatment
+`PROCESS_STARTED_AT` already gives the unconfigured watermark (Amendment 3).
+
+**A restart costs one extra send per remembered pair**, which the first wording
+("the retry resumes as if the losses had not happened") read as costing
+nothing. The ledger still holds the same `failed` row and it still reads as
+"owed", so the first tick after a restart offers every remembered pair again.
+Under a restart LOOP that is unbounded, and a database refusing writes is
+exactly when this API may be crash-looping — the two failures arrive together.
+**Decision 4 above still says "a restart loses nothing".** That was true of the
+sweep as designed, when the ledger and the two stamps were the only state; it
+is not true of the sweep as built, and this paragraph is the correction rather
+than an edit to the decision.
+
+**2. One tenant's alarm volume disabled the phase fleet-wide (Medium).**
+`loadRaiseAttempts` bound one `alarm_id` and one `dedupe_key` per eligible
+alarm in ONE statement — roughly two of Postgres' 65535 bind parameters per
+alarm, so the statement failed outright at roughly 32 700 eligible alarms.
+`loadActiveAlarms` spans every tenant and the phase's `catch` returned from the
+whole phase, so no tenant's raise was retried until the count dropped.
+
+The read is chunked at 500 refs (at most 1500 parameters, 2.3 % of the budget)
+and the failure handling moved from the phase to the statement. It returns the
+rows every batch that returned holds, the alarm ids of every batch that did
+not, and one reason per failed batch; the phase warns once with those counts
+and decides the alarms it has evidence for. **Two claims above are now narrower
+than they read:** the phase's reads per tick are `ceil(alarms / 500)` ledger
+statements rather than one, and the `EXPLAIN` figures recorded above were
+measured on the single statement and are therefore per BATCH — the 300-ref line
+is the shape a full batch approaches. The warn is still phase-wide and still
+carries no id list, for the reason given above, and `runEscalationPhase` still
+runs in the same tick.
+
+**3. A hung SMTP server held every phase for every tenant (Medium).**
+`createSender` passed no timeout, so nodemailer used its defaults: two minutes
+to connect and ten minutes of socket inactivity. The sweep awaits
+`dispatchToChannels` and `runSweepLoop` is sweep-then-sleep, so one silent SMTP
+server held that tick, its escalation phase, and every phase of every later
+tick, for every tenant. `connectionTimeout` and `greetingTimeout` are 5 s and
+`socketTimeout` 10 s. **The exposure is not new to this row** — `notifyCleared`
+and the escalation phase have awaited that transport inside this sweep since
+`F3.10` — and **the bound is per SEND, not per tick**: `dispatchToChannels`
+loops its channels sequentially, so N email channels still serialise.
+
+**"All well under the 30 s tick" was false, and §3 below replaces it.** None of
+those three constants bounds a send. Measured against nodemailer 6.10.1 as
+installed: `dnsTimeout` was unset and defaults to 30 s — as long as the whole
+tick — and `smtp-connection/index.js:228` hands it to the resolver, which runs
+*before* `setupConnectionHandlers` arms the 5 s `connectionTimeout`, on every
+branch of `connect` that opens a socket (`:265/291`, `:309/335`, `:342/368`);
+the one branch that arms the timer first (`:243`) takes a caller-supplied open
+connection and resolves nothing, and this transport supplies none.
+`socketTimeout` reaches the socket through `_socket.setTimeout` (`:723`,
+`:952`), which is an inactivity timer that every byte resets, so a server
+emitting one byte every 9 s never trips it; and `readRecipients` caps nothing,
+so each `RCPT TO` of a long `config.to` gets its own fresh window. `dnsTimeout`
+is now set and the awaited `sendMail` is raced against an absolute
+`SEND_DEADLINE_MS`, which is the only one of the five that bounds the sweep —
+at 20 s it is deliberately smaller than the other four can sum to, so in the
+worst case it fires before they are ever reached.
+
+**And four documentation claims, each false rather than merely loose.** Ruling
+4's contrast with the escalation phase is struck above and the reason it
+misstated is recorded there. `alarm-lifecycle.service.spec.ts` said its
+thirteen cases were "unchanged"; one was not, and both that file and its
+sibling now say which. `raise-retry.ts` justified its two parameters by runtime
+weight — "importing either would drag drizzle and Nest" — which is false:
+`notifications.config.ts` has zero imports and `dispatch-policy.ts` imports
+only types; the real reason is that a suite cannot move a constant.
+`notifications.service.ts` said "neither case reaches step 1", which
+contradicted the clause after it — an ordinary raise with `raised: false` does
+reach step 1, and that is where `F3.46`'s transition dedupe lives.
+
+### Amendment 5 §3 - four more corrections the second review forced (2026-09-09)
+
+The branch was reviewed again after §2 landed. One error was breaking CI, three
+were defects, and seven documentation claims were false. What follows is what
+changed in this ADR's territory; ADR 0041 Amendment 5 §3 carries the dispatch
+side of the same findings.
+
+**0. `pnpm typecheck:tests` was red, and no other gate could see it.**
+`dispatch()`'s return widened to `DispatchOutcome[]` in §2 and
+`rules/rule-actions.spec.ts` still declared `DeliveryResult[]` (TS2322).
+`tsconfig.build.json` excludes `**/*spec.ts` and vitest strips types with
+esbuild, so `pnpm build` and `pnpm test` were both green on a branch that could
+not compile its own tests. Recorded here because the lesson is about the gate,
+not the type: widening a return that a spec fakes is invisible to two of the
+three suites this repository runs.
+
+**1. The escalation phase had §2's defect and did not get §2's fix (High).**
+`runEscalationPhase` discarded `dispatchToChannels`'s outcomes. With the ledger
+serving reads and refusing inserts, `eventDeliveryBlocked` found no row under
+the step's key, never blocked, `isOverHourlyLimit` counted no `sent` rows, and
+the due step was re-sent on every 30 s tick for the life of the alarm with no
+ledger trace at all - decision 10's idempotency is a read, and a read can only
+answer from rows that exist.
+
+Both phases now share one helper and one `LostLedgerRows`, keyed on the dispatch
+each is re-offering: the raise key for the retry, `...:escalation:<n>` for a
+step. Never one key for both - a lost step row must not silence the raise, nor a
+lost raise row a step - and the separation is gated by
+`alarm-lifecycle-escalation-lost-rows.spec.ts` E1, which fills the memory with
+the raise key and asserts the step still goes. The instance and therefore the
+cap are shared; escalation losses can spend the raise path's slots, which is
+recorded rather than left to be found.
+
+**2. A control character in a transport error cost a lost row on demand
+(Medium).** The cap at 1000 entries is deliberately fillable, and past it the
+degradation is the unbounded per-tick re-offer this whole amendment exists to
+stop - dispatched sequentially, so under a slow transport one tick can outlast
+the 30 s period and stall the sweep for every tenant. The trigger was
+attacker-controllable: `readBounded`'s `.replace(/\s+/g, " ").trim()` does not
+remove `U+0000`, `notification_deliveries.error` is `text`, and Postgres refuses
+the parameter - measured against the real database as `invalid byte sequence for
+encoding "UTF8": 0x00`, with `rowLost` coming back `true`. Control characters
+are now stripped where the error is recorded (ADR 0041 Amendment 5 §3 item 2).
+
+**3. §2 item 3's SMTP bound was not a bound (Medium).** It claimed
+`connectionTimeout`, `greetingTimeout` and `socketTimeout` were "all well under
+the 30 s tick". Two of them bound only the opening of the connection, the third
+is an inactivity timer that a dribbling server resets for ever, and `dnsTimeout`
+- unset, defaulting to 30 s, and consulted before the connection timer is armed
+- was not among them at all. The corrected measurement is recorded against that
+paragraph above. `dnsTimeout` is now set and one absolute `SEND_DEADLINE_MS`
+races the awaited `sendMail`.
+
+**What the deadline does not fix, stated so it is not read as more than it is.**
+The abandoned send is not cancelled - nodemailer has no per-message abort - so a
+hostile server keeps that socket until one of its own timers fires. The sweep
+gets its tick back, which is the property the tick needs; the socket is not
+bounded, and closing the transport under the send would take a pooled connection
+out from under any concurrent one.
+
+**And the documentation claims.** `LostLedgerRows.has` had no JSDoc while every
+other member did (§4.1). `alarm-lifecycle-raise-retry.spec.ts` R19 named the
+wrong mechanism for its own mutation - an evicting cap does not redden it by
+re-offering C2, which is not in that fixture's channels, but by leaving nothing
+refused and nothing warned. The remaining five are corrections to sentences
+above, each made in place: the memory's one-strike behaviour, the best-effort
+reclaim, the two phases rather than one, the restart's true cost, and the SMTP
+bound.

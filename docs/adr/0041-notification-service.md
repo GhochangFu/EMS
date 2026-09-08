@@ -466,3 +466,185 @@ untouched** and records as it always has. The reasoning, the accepted costs and
 the two exits deliberately left alone are in ADR 0057 Amendment 4; this note
 exists only so a reader of ADR 0041 alone is not left with Amendment 3's
 sentence.
+
+## Amendment 5 — `F3.51`: decision 4 gains a fourth exception, and it is the first that is not an event (2026-09-09)
+
+A correction to Amendment 4 above, and to `dispatchToChannel`'s own header
+comment: "**The raise path is untouched** and records as it always has" was
+true for every raise before this row and is now false for one of them. The
+reasoning and the four owner rulings this row was built under are in ADR 0057
+Amendment 5; this note exists so a reader of ADR 0041 alone is not left with
+Amendment 4's sentence.
+
+**The property, not a fourth event kind.** `offeredAgainWithoutAsking`, the
+one call the three event-path exits already shared since `F3.54`, gains a
+fourth answer that reaches it through a different door. `DispatchInput` gains
+an optional `reoffered?: true`, set nowhere but the alarm lifecycle sweep's new
+raise-retry phase. The function's first line now reads
+`if (input.event === undefined) return input.reoffered === true;` before its
+exhaustive `switch` over `event.kind` — so a raise that nobody re-offers still
+answers `false` there exactly as before, and the `switch` beneath is untouched,
+still exhaustive, still a compile error under `noImplicitReturns` for a third
+event kind. `reoffered` never reaches `buildDedupeKey` and never changes
+`subjectFor`: it is not an event, and the three exits do not learn a new kind
+of dispatch, only a second way to reach the answer they already know how to
+give.
+
+**What the fourth exception is.** A raise's own outcome is recorded under the
+key `rule:alarm:severity`; nothing before this row ever asked for that key
+again; the alarm lifecycle sweep's raise-retry phase now does, every 30 s tick,
+for as long as the alarm stays open, unacknowledged, and its rule keeps
+notifying. A dispatch carrying `reoffered: true` therefore has exactly the
+escalation step's property — the sweep will ask again on its own — and none of
+the cleared message's, so it takes the same three no-row exits an escalation
+step takes: the failed ledger read (D3), the failed rate-limit read (H1), and
+the ceiling's own refusal (`F3.48` ruling Q1). Writing a row at any of those
+three would spend one of the raise key's `MAX_EVENT_ATTEMPTS` on a refusal the
+very next tick means to revisit, for the same reason `F3.48` gave for the
+escalation path: the sweep ticks faster than the ceiling's trailing hour can
+clear.
+
+**The original raise's row is untouched, and that sentence now needs to be
+read carefully.** The *first* raise — the one a rule evaluation dispatches
+with no `reoffered` flag — still records at all three exits exactly as
+Amendment 4 describes, because `input.reoffered` is unset there and the
+predicate still answers `false`. That row is not incidental; it is the only
+evidence the sweep's raise-retry phase has to work from, since the phase reads
+the ledger for the alarm's raise key before deciding who is still owed the
+message (ADR 0057 Amendment 5). A raise that never wrote a row — a rejected
+channel read, or a rejected `record()` insert — is never retried; the
+raise-retry phase reads evidence, it does not infer absence.
+
+**Growth accounting.** `MAX_EVENT_ATTEMPTS`'s bound on an event key now covers
+the raise key as well, reached through `channelsOwedTheRaise` rather than
+through `eventDeliveryBlocked`, but it is the same predicate, so the same
+paragraph applies unchanged: this many `failed` rows under a raise key stop the
+sweep re-offering it to that channel, a `skipped_rate_limited` row never counts
+toward the cap and never blocks, and a `skipped_unconfigured` row blocks only
+while it is newer than the unconfigured watermark (`F3.50` ruling Q1) — now
+computed by one shared helper, `unconfiguredWatermark`, called from both the
+event path and the raise-retry read. The two accountings never mix: the ledger
+read that feeds the raise-retry phase filters on the raise's own dedupe key,
+and a step's key always carries an `:escalation:<n>` or `:cleared` suffix.
+
+**The accepted cost, stated where ADR 0057 states it in full.** A channel held
+permanently over a misconfigured hourly ceiling is now re-offered a raise on
+every tick for the life of the alarm — two reads a tick, nothing written,
+nothing sent — the same cost Amendment 2 of ADR 0057 already accepted on the
+escalation path, reaching the raise path for the first time. `F3.53` owns the
+per-tick read cost; `F3.52` owns splitting the hourly budget between the raise
+and event paths, and owns the retried message's lack of any age or staleness
+marker — deliberate here, since byte-identity with the original raise is what
+lets the ledger rows line up, and inherited rather than fixed by this row.
+
+### Amendment 5 §2 — the growth accounting counts rows, and a row that was not written counts for nothing (2026-09-09)
+
+The `F3.51` review's High finding, and it lands on the "Growth accounting"
+paragraph above. That paragraph is true of every row the ledger holds and says
+nothing about the case where the ledger holds none.
+
+`record()` catches its own INSERT failure, logs an error and returns the
+result. **Decision 1 is unchanged and is not what the review objected to**: a
+dispatch must not fail its caller, `dispatch()` is fire-and-forget from the
+raise path, and a rejection there would surface as an unhandled promise. What
+the review objected to is that the failure was invisible to the one caller that
+needs it. If writes fail while reads succeed, no row is ever written under the
+raise key — so `MAX_EVENT_ATTEMPTS` has nothing to count, `isOverHourlyLimit`
+has no `sent` row to count, and the raise-retry phase keeps seeing the same
+single original `failed` row and keeps re-offering it, twice a minute, for the
+life of the alarm, with no ledger trace of any of it.
+
+`record()` now reports whether the row landed. Every result of `dispatch()` and
+`dispatchToChannels()` is a `DispatchOutcome` — the `DeliveryResult` unchanged,
+plus `channelId` and `rowLost` — and the sweep keeps an in-process record of
+the `(alarm, channel, dedupe key)` triples whose insert threw and stops
+re-offering them. The reasoning, the cap and the eviction rule are in ADR 0057
+Amendment 5 §2; what belongs here is the shape and the two constraints it was
+built under.
+
+**"The one caller that needs it" was two, and this review only wired one.** The
+escalation phase re-offers a due step on every tick and discarded
+`dispatchToChannels`'s outcomes, so it had the identical unbounded loop. §3
+below closes it under the step's own key. The sentence above is left standing
+with this correction beside it because the reasoning it gives is unchanged —
+only its count of callers was wrong.
+
+**`rowLost`, and deliberately not `written`.** The three exits above write no
+row **by design**, and a caller that read those as lost rows would stop
+re-offering a ceiling-refused raise — undoing `F3.48` on the raise path, which
+is the exception this very amendment adds. `rowLost` is true in exactly one
+case: an insert was attempted and it threw. The exits that conserve a key
+report `false`, because nothing was lost there.
+
+**The bound is in process, not in the ledger, and that is forced.** A bound
+that survived a restart would have to be a row, and a row is exactly what could
+not be written — the treatment `PROCESS_STARTED_AT` already gives the
+unconfigured watermark.
+
+**What a restart costs is one extra send per remembered pair**, and the first
+wording of this paragraph ("the retry resumes as if the losses had not
+happened") read as though it cost nothing. It does not: the ledger still holds
+the same `failed` row, which still reads as "owed", so the first tick after a
+restart offers every remembered pair once more. Once, that is small. Under a
+restart LOOP it is unbounded — and a database refusing writes is exactly the
+condition in which this API may be crash-looping, so the two arrive together.
+
+**Two placements this review also settled.** `MAX_EVENT_ATTEMPTS` and
+`offeredAgainWithoutAsking` moved out of `notifications.service.ts` into
+`notifications/dispatch-policy.ts`, with `DispatchOutcome`: the file stood at
+958 of AGENTS.md §4.5's 1000-line cap and what moved is the part that needs
+nothing from the class. There is deliberately **no re-export** — two import
+paths for one constant is the drift shape this repository keeps finding. And
+`dispatchToChannel`'s exits gained a `channelId` on every result, because
+`dispatchToChannels` drops channels from another organization (M2) and the
+results are therefore not index-aligned with the list a caller passed.
+
+### Amendment 5 §3 - the second review: the exception is unchanged, the row that carries it is bounded (2026-09-09)
+
+A second review of the same branch found one CI-breaking error and three
+defects. Two of them land on this ADR: the fourth exception to decision 4 is
+untouched, but two claims made around it were false.
+
+**1. Both re-offering paths now have the §2 accounting, not one (High).** §2
+above wired `rowLost` into the raise-retry phase only, and said "the one caller
+that re-offers a dispatch on its own". `runEscalationPhase` is the other, and it
+discarded the outcomes it was handed - so with a ledger serving reads and
+refusing inserts, `eventDeliveryBlocked` found nothing under the step's key,
+never blocked, `isOverHourlyLimit` counted no `sent` rows, and the due step was
+re-sent every 30 s for the life of the alarm with no trace of any of it. That is
+§2's own argument, unamended, applied to the phase §2 did not reach.
+
+Both phases now go through one helper and one `LostLedgerRows` instance, each
+under its **own** dedupe key: the raise key `rule:alarm:severity` for the retry,
+`...:escalation:<n>` for a step. The instance is shared and so is its cap, which
+is a real coupling - escalation losses can spend the slots the raise path would
+have used - and it is recorded here rather than left to be discovered. The keys
+are never shared: a lost step row must not silence the raise, nor a lost raise
+row a step.
+
+**2. A control character in a delivery error cost a row on demand (Medium).**
+`record()` stored the transport's failure text in
+`notification_deliveries.error`, which is `text`, and Postgres refuses `0x00` in
+a text parameter (measured against the real database: `invalid byte sequence for
+encoding "UTF8": 0x00`). `webhook.transport.ts`'s `readBounded` normalises a
+response excerpt with `.replace(/\s+/g, " ").trim()`, and neither `\s` nor
+`trim()` touches `U+0000` - so any endpoint answering 500 with a NUL in its body
+made the insert throw, `record()` report `rowLost`, and the sweep spend one of
+its 1000 in-process slots. Past the cap the pair is re-offered every tick for
+ever, dispatched sequentially.
+
+Every C0 and C1 control but tab, newline and carriage return is now stripped
+**where the error is recorded** - the one place any transport's text reaches the
+column, so the rule does not have to be repeated per transport. Two consequences
+are stated rather than implied: the stored text and the returned
+`DeliveryResult.error` now differ for one delivery, and only the stored one is
+sanitised, because only the column can refuse a byte.
+
+**3. Two documentation claims here were wrong, and both are corrected in
+place.** The exhaustiveness of `offeredAgainWithoutAsking` was credited to
+`noImplicitReturns`, which is set in no tsconfig in this repository; the guard
+does hold, as `TS2366` under `strictNullChecks` from `strict: true` in
+`tsconfig.base.json`. And `notifications.service.ts` said an ordinary raise
+keeps its row "at all three of those exits": it reaches two, because the first
+is inside `if (input.event !== undefined)` and an ordinary raise carries no
+event.

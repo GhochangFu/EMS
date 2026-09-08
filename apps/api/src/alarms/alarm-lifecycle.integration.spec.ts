@@ -58,23 +58,31 @@ import { AlarmsService } from "./alarms.service";
  * Every service is constructed with `new` (§4.6: no Nest module here). The
  * transport is the storm-control fake, so every send is a `sent` row and a
  * captured message.
+ *
+ * **`F3.51` exports the harness and the fixture helpers.**
+ * `alarm-lifecycle-raise-retry.integration.spec.ts` drives them for the sweep's
+ * third phase: with its three scenarios inline this file reached 978 of
+ * AGENTS.md §4.5's 1000-line cap, and the isolation, the severity code and the
+ * transaction shape are worth sharing rather than re-inventing. `buildHarness`
+ * gained two options for it — a transport that can refuse, and a rate ceiling —
+ * and both default to exactly what the three scenarios below always built.
  */
 
 /** No seeded alarm carries this code, so only the fixture's alarms escalate. */
-const SEVERITY = "f310_lifecycle";
+export const SEVERITY = "f310_lifecycle";
 
 const ACTOR: Pick<JwtPayload, "sub" | "email"> = {
   sub: "00000000-0000-4000-8000-00000000f310",
   email: "f3.10-lifecycle@bms.local",
 };
 
-function assert(condition: boolean, message: string): void {
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-async function withRollback(
+export async function withRollback(
   db: BmsDb,
   run: Parameters<BmsDb["transaction"]>[0],
 ): Promise<void> {
@@ -86,29 +94,59 @@ async function withRollback(
   });
 }
 
-function secondsAfter(seconds: number, from: Date): Date {
+export function secondsAfter(seconds: number, from: Date): Date {
   return new Date(from.getTime() + seconds * 1000);
 }
 
 type Deps = ConstructorParameters<typeof NotificationsService>;
 
-type Harness = {
+export type Harness = {
   lifecycle: AlarmLifecycleService;
   raiser: AlarmRaiser;
   alarmsService: AlarmsService;
-  /** Every message the fake transport was handed, in order. */
+  /** `F3.51`: the raise path's own entry point, for planting an alarm's ORIGINAL raise. */
+  notifications: NotificationsService;
+  /** Every message the fake transport was handed, in order — including one it then refused. */
   sent: NotificationMessage[];
   /** Every alarm id `broadcastCleared` was called with, in order. */
   clearedBroadcasts: string[];
 };
 
+/**
+ * `F3.51`'s two knobs. Both default to today's behaviour, so the three
+ * scenarios written for `F3.10` build the same harness they always did.
+ */
+export type HarnessOptions = {
+  /**
+   * `false` makes the transport THROW for that message, which
+   * `dispatchToChannel` step 3 records as `failed` — the undelivered raise this
+   * item exists to retry. The message is still pushed to `sent`, so the array
+   * keeps meaning "handed to the transport".
+   */
+  sendSucceeds?: (message: NotificationMessage) => boolean;
+  /**
+   * `isOverHourlyLimit` is `count >= ratePerHour`, so **0 refuses every
+   * dispatch on this harness, on an empty ledger, for ever**.
+   *
+   * It is set on the config object rather than through
+   * `buildConfig({ NOTIFY_RATE_LIMIT_PER_HOUR: "0" })`, and that is a
+   * correction to this item's plan: `buildConfig` keeps only a rate `> 0` and
+   * falls back to the 60/hour default at 0, so the plan's spelling would have
+   * built a harness that refuses nothing and an I2 that proves nothing.
+   */
+  ratePerHour?: number;
+};
+
 /** The services, all over the one transaction handle, with a recording gateway and transport. */
-function buildHarness(db: BmsDb): Harness {
+export function buildHarness(db: BmsDb, options: HarnessOptions = {}): Harness {
   const sent: NotificationMessage[] = [];
   const transport: NotificationTransport = {
     kind: "webhook",
     send: (message): Promise<DeliveryResult> => {
       sent.push(message);
+      if (options.sendSucceeds && !options.sendSucceeds(message)) {
+        return Promise.reject(new Error("F3.51 fixture transport refused"));
+      }
       return Promise.resolve({ status: "sent", error: null });
     },
   };
@@ -126,7 +164,10 @@ function buildHarness(db: BmsDb): Harness {
     transport as unknown as Deps[4],
     // The ceiling is not what this asserts; the seeded database is busy
     // enough that the default could turn a step into `skipped_rate_limited`.
-    buildConfig({ NOTIFY_RATE_LIMIT_PER_HOUR: "1000" }),
+    {
+      ...buildConfig({ NOTIFY_RATE_LIMIT_PER_HOUR: "1000" }),
+      ...(options.ratePerHour === undefined ? {} : { ratePerHour: options.ratePerHour }),
+    },
   );
   const clearedBroadcasts: string[] = [];
   const gateway = {
@@ -141,19 +182,20 @@ function buildHarness(db: BmsDb): Harness {
     lifecycle: new AlarmLifecycleService(db, db, notifications, channels, gateway),
     raiser: new AlarmRaiser(db, gateway),
     alarmsService: new AlarmsService(db, db, gateway),
+    notifications,
     sent,
     clearedBroadcasts,
   };
 }
 
-async function insertFixtureSeverity(db: BmsDb): Promise<void> {
+export async function insertFixtureSeverity(db: BmsDb): Promise<void> {
   await db
     .insert(alarmSeverities)
     .values({ code: SEVERITY, label: "F3.10 lifecycle", tone: "warning", rank: 27 })
     .onConflictDoNothing();
 }
 
-async function insertFixtureRule(
+export async function insertFixtureRule(
   db: BmsDb,
   args: {
     assetId: string;
@@ -161,6 +203,14 @@ async function insertFixtureRule(
     pointKey: string;
     thresholdValue: number;
     clearHoldSeconds: number | null;
+    /**
+     * `F3.51`: the stored `action`. The column defaults to `{}`, which
+     * `asAction` narrows to `trace_only`, so a fixture rule notifies NOBODY
+     * unless this is set — and the raise-retry phase consults `shouldNotify`.
+     * Left unset for the three `F3.10` scenarios, whose phases do not read it
+     * (ruling Q8), so their fixture is byte-identical to what it was.
+     */
+    action?: Record<string, unknown>;
   },
 ): Promise<AlarmRaiseRule> {
   const code = `F310_${randomUUID().slice(0, 8)}`;
@@ -179,6 +229,7 @@ async function insertFixtureRule(
       thresholdValue: args.thresholdValue,
       severity: SEVERITY,
       clearHoldSeconds: args.clearHoldSeconds,
+      ...(args.action === undefined ? {} : { action: args.action }),
     })
     .returning({ id: automationRules.id });
   if (!row) {
@@ -228,14 +279,14 @@ async function raise(
   return { id: alarmId, raisedAt: (row as AlarmState).raisedAt };
 }
 
-type AlarmState = {
+export type AlarmState = {
   raisedAt: Date;
   acknowledgedAt: Date | null;
   clearedAt: Date | null;
   normalSince: Date | null;
 };
 
-async function stateOf(db: BmsDb, alarmId: string): Promise<AlarmState[]> {
+export async function stateOf(db: BmsDb, alarmId: string): Promise<AlarmState[]> {
   return db
     .select({
       raisedAt: alarms.raisedAt,
@@ -276,7 +327,7 @@ function sameInstant(a: Date | null, b: Date | null): boolean {
 }
 
 /** Rows on one channel under one dedupe key, with their statuses. */
-async function deliveriesByKey(
+export async function deliveriesByKey(
   db: BmsDb,
   channelId: string,
   dedupeKey: string,
