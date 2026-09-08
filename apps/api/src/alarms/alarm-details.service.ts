@@ -244,12 +244,19 @@ export class AlarmDetailsService {
       // An entry whose philosophy carries no text at all is `null`, not a
       // heading over four blank fields — the panel shows a class philosophy or
       // it shows nothing.
+      //
+      // Gated on `skillLabel`, not `skillCode`: an entry whose only field is a
+      // skill that no longer resolves in `bms.alarm_skills` renders four blank
+      // values, so it would draw the heading and its "Authored on …" caption
+      // over an empty list. Template content holds the skill inside jsonb, so
+      // no foreign key stops that row being re-coded after publish. Post-merge
+      // review finding 4.
       classPhilosophy:
         row.classTemplateId !== null &&
         row.classTemplateVersion !== null &&
         row.classTemplateName !== null &&
         row.classAlarmCode !== null &&
-        (cause !== null || impact !== null || action !== null || skillCode !== null)
+        (cause !== null || impact !== null || action !== null || skillLabel !== null)
           ? {
               templateId: row.classTemplateId,
               templateVersion: row.classTemplateVersion,

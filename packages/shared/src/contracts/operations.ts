@@ -601,7 +601,8 @@ export const alarmKbClassSchema = z.object({
   templateName: z.string(),
   templateVersion: z.number(),
   organizationId: z.string(),
-  domain: z.string(),
+  /** The plant axis, from the same vocabulary every other domain field uses (§4.8). */
+  domain: assetDomainCodeSchema,
   /** Only the entries that carry a philosophy — a bare threshold row is not knowledge. */
   alarms: z.array(alarmKbAlarmSchema),
 });

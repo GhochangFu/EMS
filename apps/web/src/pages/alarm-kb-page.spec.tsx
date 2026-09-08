@@ -13,12 +13,18 @@ import { AlarmKbPage } from "./alarm-kb-page";
 /**
  * `E2.2` PR 2 (ADR 0059 decision 4) — the browsable alarm philosophy KB page.
  *
- * The claim worth the most here is `rendersForAViewer`. Ruling **Q0b** put
- * `viewer` inside this surface deliberately, against the master-data gate the
- * template authoring screen uses, and a page that quietly refused them would
- * fail as an empty list rather than as a denial — invisible from the outside.
- * `tests/e2.2-alarm-kb-route-gate.test.ts` holds the API half of that ruling;
- * this holds the page half.
+ * **`rendersForAViewer` does NOT hold ruling Q0b, and this comment used to say
+ * it did.** The post-merge review was right: the spec renders `AlarmKbPage`
+ * directly and that component carries no role branch, so the assertion is
+ * invariant under every change that could break the ruling — wrapping the route
+ * in `AdminRoute` locks a viewer out while this file stays green. It is worth
+ * keeping as a rendering test, and it is worth being honest that it is only
+ * that.
+ *
+ * What holds Q0b is `tests/e2.2-alarm-kb-route-gate.test.ts`, on both sides:
+ * the controller's missing role gate, and the shape of the `/alarm-kb` route in
+ * `app.tsx`. It also holds the reachability the review found missing — a page
+ * a viewer may open but cannot find is Q0b delivered in name only.
  */
 
 const viewer = {

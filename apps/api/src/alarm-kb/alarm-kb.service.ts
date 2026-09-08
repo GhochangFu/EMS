@@ -32,20 +32,41 @@ export class AlarmKbService {
    * the failure direction has to be closed, not open.
    */
   async list(organizationIds: string[] | null): Promise<AlarmKbResponse> {
-    if (organizationIds && organizationIds.length === 0) {
+    // `null` — and ONLY `null` — is the unrestricted-admin scope. A truthiness
+    // test would let `undefined`, or anything else falsy a future caller or a
+    // widened signature hands in, take the same branch and drop the tenant
+    // filter on a `BYPASSRLS` pool. Unlike `AlarmDetailsService`, where a falsy
+    // scope loses only the asset filter and the tenant predicate still holds off
+    // the alarm's own location, this argument IS the whole tenant control
+    // (ADR 0059 decision 9). Post-merge security review L1.
+    const scope: string[] | null = organizationIds === null
+      ? null
+      : Array.isArray(organizationIds)
+        ? organizationIds
+        : [];
+    if (scope !== null && scope.length === 0) {
       return { classes: [] };
     }
 
-    // Ruling Q0a: one row per template `code`, at the highest published
-    // version. `DISTINCT ON` rather than a correlated MAX subquery — the
-    // ordering is the selection here, and it reads as the rule it implements.
+    // Ruling Q0a: one row per template `code` **per organization**, at that
+    // organization's highest published version. `DISTINCT ON` rather than a
+    // correlated MAX subquery — the ordering is the selection here, and it reads
+    // as the rule it implements.
+    //
+    // The key is `(organization_id, code)` and not `code`, because that is the
+    // table's own identity (`asset_templates` is unique on
+    // `(organization_id, code, version)`). Keyed on `code` alone this collapsed
+    // two tenants' copies of one class into a single row and silently dropped
+    // the other — and the collision is guaranteed rather than hypothetical,
+    // since importing the same stock catalog entry into two organizations
+    // writes the identical code. Post-merge review finding 1.
     //
     // Only philosophy-bearing entries cross the wire: `jsonb_path_query_array`
     // filters in the database, so a template whose alarms are all bare
     // threshold rows contributes an empty array instead of its whole `content`
     // column, which is bounded at 256 KiB.
     const rows = await this.db
-      .selectDistinctOn([assetTemplates.code], {
+      .selectDistinctOn([assetTemplates.organizationId, assetTemplates.code], {
         templateId: assetTemplates.id,
         templateCode: assetTemplates.code,
         templateName: assetTemplates.name,
@@ -61,12 +82,18 @@ export class AlarmKbService {
       .where(
         and(
           eq(assetTemplates.status, "published"),
-          ...(organizationIds
-            ? [inArray(assetTemplates.organizationId, organizationIds)]
-            : []),
+          ...(scope === null ? [] : [inArray(assetTemplates.organizationId, scope)]),
         ),
       )
-      .orderBy(asc(assetTemplates.code), desc(assetTemplates.version));
+      .orderBy(
+        asc(assetTemplates.organizationId),
+        asc(assetTemplates.code),
+        desc(assetTemplates.version),
+        // A tiebreaker, because two organizations can hold the same code at the
+        // same version and `version DESC` alone then leaves the winner
+        // arbitrary between runs.
+        asc(assetTemplates.id),
+      );
 
     // One read of the whole vocabulary rather than a lookup per alarm: the
     // table is five rows on the seed, and every class shares it. No `active`
@@ -118,7 +145,13 @@ export class AlarmKbService {
     const impact = text(philosophy.impact);
     const action = text(philosophy.action);
     const skillCode = text(philosophy.skill);
-    if (cause === null && impact === null && action === null && skillCode === null) {
+    const skillLabel = skillCode === null ? null : (skills.get(skillCode) ?? null);
+    // Gated on the LABEL, not the code: an entry whose only field is a skill
+    // that no longer resolves renders four blank values, so it would draw its
+    // alarm code over an empty list. Template content references the skill
+    // inside jsonb, so no foreign key stops a `bms.alarm_skills` row being
+    // re-coded after publish. Post-merge review finding 4.
+    if (cause === null && impact === null && action === null && skillLabel === null) {
       return null;
     }
     return {
@@ -129,7 +162,7 @@ export class AlarmKbService {
       impact,
       action,
       skillCode,
-      skillLabel: skillCode === null ? null : (skills.get(skillCode) ?? null),
+      skillLabel,
     };
   }
 }

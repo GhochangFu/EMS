@@ -32,6 +32,11 @@ type AlarmKbPageProps = {
  * shows the **current published** version while the alarm panel shows the one a
  * rule was **pinned** to. They can legitimately disagree, and a reader has to be
  * able to tell which they are looking at.
+ *
+ * **The eyebrow is descriptive rather than an `R.*` renderer id**, and that is
+ * AGENTS.md §5 rather than a preference: `ESKOM_SMOC.html` defines no `R.kb`,
+ * and inventing one would name a mockup surface that does not exist. The
+ * closest original renderer is `R.alm`, the Alarm Centre this page sits beside.
  */
 export function AlarmKbPage({ user }: AlarmKbPageProps) {
   const [search, setSearch] = useState("");
@@ -77,7 +82,7 @@ export function AlarmKbPage({ user }: AlarmKbPageProps) {
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         <PageHeader
-          eyebrow="R.kb"
+          eyebrow="Operations"
           title="Alarm philosophy"
           subtitle="Authored on published asset templates · read-only · the same text an alarm shows when its rule was seeded from one"
         />

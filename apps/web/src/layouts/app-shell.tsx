@@ -22,6 +22,7 @@ const moduleGroups = [
     items: [
       { label: "Dashboard", path: "/" },
       { label: "Alarm Centre", path: "/alarms" },
+      { label: "Alarm Philosophy", path: "/alarm-kb" },
       { label: "Dashboards", path: "/dashboards" },
       { label: "Sites Map", path: "/map" },
       { label: "Electrical SLD", path: "/sld" },
