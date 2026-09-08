@@ -3359,6 +3359,62 @@ scope rather than a promotion.
   bounded; per-row counts are not. Accepted knowingly and filed as `F4.105`,
   with `F4.103`, `F4.104`, `F4.106` and `F4.107` beside it.
 
+### A read bound is not a limit, and the fourth producer was the default one (`F4.103`) — done
+
+`F4.103` closed 2026-09-08 in one pull request
+[#362](https://github.com/GhochangFu/EMS/pull/362) (`330d9a8c`), no ADR owed —
+the owner ruled the whole `F4.103`–`F4.107` batch closes on rulings recorded in
+each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
+
+- **What the gap was.** `SHEET_ROWS_BOUND` (20,102) bounds what `XLSX.read`
+  *materialises*; it is not a limit on what the draft may hold. A sheet one row
+  under it parsed to 20,090 assets, those reached
+  `bms.onboarding_sessions.draft` as jsonb, and `OnboardingCommitService` then
+  walked them one statement at a time inside a single `withTenant` transaction.
+- **The caps, derived rather than invented:** 100 RTUs, 500 assets, 500 point
+  keys, 5,000 asset points. The shipped template holds 2 RTU and 3 asset data
+  rows and the seeded estate is **99** assets, so the ceilings sit ~5× and 166×
+  above the lists this system itself produces — the `MAX_TABLE_COLUMNS` idiom of
+  leaving headroom rather than tightening onto the current maximum. Worst case
+  falls from ~40,000 sequential statements to **6,700**.
+- **The row scoped three enforcement points and the source needed four.**
+  `handleRuleBasedTurn` — the deterministic branch ADR 0011 ships when no
+  OpenAI key is set, and therefore the **default** path — builds its patch in
+  code, never calls `safeParse`, and appends to `rtus` and `pointKeys`. Two
+  reviewers found it independently. A third argued `mergeDraft` replaces the
+  arrays wholesale so patches cannot accumulate; that is true of a `PATCH
+  /draft` body and false here, because the concatenation happens **upstream, in
+  the patch builder**. Settled by measurement, not by argument: a spec drives
+  the real chat service and watches 99 RTUs become 100 in the written payload.
+- **The generalisable lesson: count the producers, not the routes.** `F4.102`
+  learned to count interpolation sites from the source rather than from a green
+  suite. This row is the same failure one level up — an enumeration of *writers*
+  that stopped at three because the fourth reaches the same store through a
+  different door, and the door it uses is the one that is open by default.
+- **The row's own numbers were wrong in four ways**, each corrected by
+  measurement: the 40,000 figure omits ~20,090 uncached per-asset domain selects
+  *and* attributes the shape to a route that cannot produce it (`toDraftPatch`
+  writes no point keys and no asset points); `SHEET_ROWS_BOUND` and
+  `MAX_HEADER_COLUMNS` originate in `F2.7`/`F4.101`, not `F4.102`; the seeded
+  estate is 99 assets across two seed files, not the 51 a `grep -c` suggests;
+  and four docblock claims the reviews measured false were corrected rather than
+  left standing — one of them asserting a test stayed green under a mutation
+  that in fact reddens it.
+- **Also here.** The per-asset plant-domain check is de-duplicated to one call
+  per distinct domain (4 calls before, 2 after, on 6 assets across 2 domains),
+  and a source-scanning drift gate holds both `onboardingDraftSchema` copies to
+  the same constants — bounding one and not the other typechecks and passes both
+  suites silently, which under ADR 0030 is a contract the client would reject.
+- **Verification.** Full suite 430 files / 2,353 tests green; database measured
+  `(0 rows)` before and after with no schema change; six API claims on a pinned
+  image with zero screenshots, including the regression direction — the API's
+  own `template.xlsx` re-uploaded still returns 200.
+- **A deployment near-miss worth keeping.** The first API image silently
+  contained `main` despite an absolute `-f` and an absolute worktree context;
+  only a grep of the served artefact caught it, and `--no-cache` was required.
+  Every API claim would otherwise have been verified against code that did not
+  contain the feature, and reported as passing.
+
 ### The alarm philosophy reaches the operator (`E2.2`, ADR 0059) — done
 
 - **Status:** merged 2026-09-08 — PR [#360](https://github.com/GhochangFu/EMS/pull/360)
