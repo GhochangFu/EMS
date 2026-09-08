@@ -2,6 +2,7 @@ import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 import { buildDedupeKey } from "./dedupe-key";
+import { PROCESS_STARTED_AT } from "./notifications.config";
 import {
   MAX_EVENT_ATTEMPTS,
   type DispatchEvent,
@@ -552,6 +553,83 @@ export async function runNotificationEventTests(): Promise<void> {
     assert(
       !/"status"\s*=\s*\$\d+/.test(rendered.sql),
       `Q2: an equality on status would block every key that is NOT rate-limited, got: ${rendered.sql}`,
+    );
+  }
+
+  // --- 15. `F3.50`: the unconfigured exclusion, and the later of two clocks -
+  //
+  // ADR 0057 Amendment 3 ruling Q1. A `skipped_unconfigured` row answers an
+  // event key only while it is NEWER than
+  // `max(channel.updatedAt, PROCESS_STARTED_AT)`; an older one is drawn out of
+  // the sample in SQL, so the step is offered again once the configuration
+  // that refused it has moved.
+  //
+  // Written as `or(ne(status, …), gt(attempted_at, …))` and not as the literal
+  // `NOT (status = … AND attempted_at <= …)`: the second renders
+  // `"status" = $n`, which reddens case 14's third assertion above. The two are
+  // the same predicate — both columns are `NOT NULL` — so the De Morgan twin
+  // costs nothing and keeps case 14 as a free gate on this clause's shape too.
+  //
+  // **Scoped to one status against a timestamp, never a watermark over the
+  // whole read.** Hoisting the `gt(...)` out of the `or` would drop a `failed`
+  // row older than the watermark out of the sample, and ruling Q9's
+  // three-attempt cap would reset on every channel edit. That mutation is
+  // caught in `storm-control.integration.spec.ts`, where the `WHERE` is real.
+  //
+  // **What no suite in this repository can hold:** the `PROCESS_STARTED_AT`
+  // half itself. It is one constant fixed at module load, one value per run,
+  // and no test can restart the API. 15c below proves the watermark USES it;
+  // that a restart releases a stranded key is a live-stack item (plan §7 step
+  // 5), recorded there and not gated here.
+  {
+    const past = new Date("2020-01-01T00:00:00.000Z");
+    const future = new Date("2099-01-01T00:00:00.000Z");
+    const boundTimes = (rows: readonly unknown[]): number[] =>
+      rows
+        .map((p) => (p instanceof Date ? p.getTime() : new Date(String(p)).getTime()))
+        .filter((t) => Number.isFinite(t));
+
+    const { db, deliveryConditions, setDeliveryRecorded } = fakeDb();
+    const service = serviceWith({ db, channels: [], webhook: sendingWebhook().transport });
+
+    setDeliveryRecorded([]);
+    await service.dispatchToChannels(
+      [channelRow({ updatedAt: past })],
+      eventInput({ kind: "escalation", step: 1 }),
+    );
+    setDeliveryRecorded([]);
+    await service.dispatchToChannels(
+      [channelRow({ updatedAt: future })],
+      eventInput({ kind: "escalation", step: 2 }),
+    );
+    assert(deliveryConditions.length === 2, `two event reads, got ${deliveryConditions.length}`);
+
+    const stale = new PgDialect().sqlToQuery(deliveryConditions[0] as SQL);
+    const edited = new PgDialect().sqlToQuery(deliveryConditions[1] as SQL);
+
+    // 15a — the clause exists, and points the right way. Dropping the `gt(...)`
+    // disjunct, or inverting it to `lt`/`lte`, reddens only this one.
+    assert(
+      /"attempted_at"\s*>\s*\$\d+/.test(stale.sql),
+      `F3.50: the read must keep only unconfigured rows NEWER than the watermark, got: ${stale.sql}`,
+    );
+    // 15b — and it is scoped to the one status.
+    assert(
+      stale.params.includes("skipped_unconfigured"),
+      `F3.50: the excluded status is bound as a parameter, got: ${JSON.stringify(stale.params)}`,
+    );
+
+    // 15c — a channel nobody has edited since boot uses PROCESS_STARTED_AT.
+    // Replacing `Math.max(...)` with `channel.updatedAt.getTime()` reddens this.
+    assert(
+      boundTimes(stale.params).includes(PROCESS_STARTED_AT.getTime()),
+      `F3.50: with an old channel the watermark is PROCESS_STARTED_AT (${PROCESS_STARTED_AT.toISOString()}), got: ${JSON.stringify(stale.params)}`,
+    );
+    // 15d — and a channel edited later uses its own `updated_at`. Replacing
+    // `Math.max(...)` with `PROCESS_STARTED_AT.getTime()` reddens this.
+    assert(
+      boundTimes(edited.params).includes(future.getTime()),
+      `F3.50: with a newly edited channel the watermark is its updated_at, got: ${JSON.stringify(edited.params)}`,
     );
   }
 }
