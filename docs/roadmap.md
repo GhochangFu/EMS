@@ -3728,6 +3728,49 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   quota. `F4.110`, `F4.111` and `F4.112` carry what was found in passing.
 - **Unblocks:** nothing. No row lists `F4.105` in `Depends`.
 
+### A raise notification that did not send is retried (`F3.51`, ADR 0041 Amendment 5, ADR 0057 Amendment 5) — done
+- **Status:** merged 2026-09-09 — PR
+  [#377](https://github.com/GhochangFu/EMS/pull/377) (`16dc9e89`).
+- **The defect.** A raise records its outcome under `rule:alarm:severity`; the
+  next evaluation arrives with `raised: false` and `alarmId: null`, so
+  `buildDedupeKey` gives it the different key `rule:no-alarm:severity`, the
+  dispatch lands in `F3.46`'s transition-dedupe branch, writes
+  `skipped_deduped`, and sends nothing — whatever the original outcome had
+  been (`failed`, `skipped_unconfigured`, `skipped_rate_limited`). The alarm
+  stays open and the ledger row reads as a throttle rather than as a loss.
+- **What shipped.** `runLifecycleSweep` gains a third phase,
+  `runRaiseRetryPhase`, between the clear and escalation phases, re-offering a
+  still-active unacknowledged alarm's original raise — same message, same
+  dedupe key — to the channels `channelsOwedTheRaise` shows are still owed it.
+- **Six owner rulings.** A retry path, not a sixth terminal status. The stop
+  condition reuses `MAX_EVENT_ATTEMPTS` **and `eventDeliveryBlocked`'s whole
+  predicate**, not a hand-rolled count — a hand-rolled one would spend the cap
+  in 90 seconds on the unconfigured case, `F3.48`'s falsified premise
+  reproduced on the raise path. A channel with **zero** rows under the raise
+  key is not owed — the same-tick double-send guard, replacing any clock or
+  grace constant. An acknowledged alarm is skipped, because the retry is the
+  raise text verbatim. All three security findings were fixed on the branch
+  rather than filed. `record()` now reports whether its row landed, and the
+  phases keep a bounded in-process spent-set of the triples an insert failure
+  hid from the ledger.
+- **Three review passes before those fixes, three on the delta.** The first
+  found a failed ledger insert made the retry unbounded and un-ceilinged,
+  because neither bound above counts a row that was never written. The second
+  found the fix incomplete — `runEscalationPhase` discarded the same signal,
+  leaving the identical loop open on its sibling caller.
+- **CI was red while three local gates said green, and that is the lesson to
+  keep.** `dispatch()`'s return widened to `DispatchOutcome[]` and
+  `rules/rule-actions.spec.ts` still declared `DeliveryResult[]`. `pnpm build`
+  excludes `*.spec.ts` via `tsconfig.build.json`, `pnpm test` strips types
+  with esbuild, and `pnpm typecheck` never looks at a spec file. Only `pnpm
+  typecheck:tests`'s `apps/api` `tsc` leg caught it — and running that leg
+  alone is the complete enumeration of what was missed.
+- **Eleven false documentation claims** were corrected across both amendments
+  and five source files, including an amendment that justified a ruling
+  against a behaviour the code does not have.
+- **What was deliberately not fixed.** `F3.52` and `F3.53` are untouched.
+- **Unblocks:** nothing directly.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
