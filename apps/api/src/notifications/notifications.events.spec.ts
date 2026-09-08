@@ -190,6 +190,63 @@ export async function runNotificationEventTests(): Promise<void> {
     assert(!warned.includes(step.message), "§9.6: the warn never carries the alarm text");
   }
 
+  // --- 6b. `F3.54`: the same failed read, for a CLEARED message, writes a row
+  //
+  // ADR 0057 Amendment 4 ruling 1. Case 6's argument — "the write would be
+  // permanent and silence is the cost" — is an argument about a key a later
+  // tick will come back to. A clear has no later tick: `notifyCleared` runs
+  // once from the clear phase and `loadActiveAlarms` filters
+  // `cleared_at IS NULL`, so the alarm leaves the sweep's selection the moment
+  // it clears. Writing nothing there buys no retry and costs the only evidence
+  // the refusal happened, which is exactly what ruling Q-A refused to accept at
+  // the ceiling exit twenty lines below.
+  //
+  // **What this holds is that the insert is ATTEMPTED, not that a row exists.**
+  // This branch fires because the ledger read failed, and `record()`'s insert
+  // runs on the same connection and swallows its own failure. The fake makes
+  // that distinction available on purpose: `failDeliveryReads` and
+  // `failInserts` are independent flags, and `recorded` is the insert spy. The
+  // row really landing in Postgres is `storm-control.integration.spec.ts`'s
+  // claim, not this one.
+  //
+  // Deliberately NOT written here: the both-flags variant asserting "the
+  // result is still failed and nothing rejects". It passes identically when
+  // `record()` is never called — the `F3.48` shape, an absence that cannot
+  // prove an action.
+  {
+    const { db, recorded, reads, failDeliveryReads } = fakeDb();
+    const webhook = sendingWebhook();
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    failDeliveryReads(true);
+    const cleared = eventInput({ kind: "cleared" });
+    const { result: results, warnings } = await captureWarnings(() =>
+      service.dispatchToChannels([channelRow({ code: "ops-webhook" })], cleared),
+    );
+    assert(reads.deliveryExists === 1, `the read was attempted, got ${reads.deliveryExists}`);
+    // The RESULT is unchanged by this row — only the ledger write is added.
+    assert(
+      results.length === 1 &&
+        results[0]?.status === "failed" &&
+        results[0].error === "delivery ledger read failed",
+      `an unreadable ledger still fails the clear by name, got ${JSON.stringify(results)}`,
+    );
+    assert(
+      recorded.length === 1,
+      `F3.54: a refused CLEARED message must attempt its row, got ${recorded.length}`,
+    );
+    assert(
+      recorded[0]?.status === "failed" && recorded[0]?.error === "delivery ledger read failed",
+      `the row carries the refusal and its reason, got ${JSON.stringify(recorded[0])}`,
+    );
+    assert(
+      String(recorded[0]?.dedupeKey).endsWith(":cleared"),
+      `the row is filed under the cleared key, got ${String(recorded[0]?.dedupeKey)}`,
+    );
+    assert(webhook.sent.length === 0, "a failed event read must never become a send");
+    assert(warnings.length === 1, `still exactly one warn line, got ${warnings.length}`);
+  }
+
   // --- 7. `F3.48` Q1: the ceiling writes no row for a step, and the next
   //        tick retries ----------------------------------------------------
   //
@@ -357,6 +414,53 @@ export async function runNotificationEventTests(): Promise<void> {
       warnings.length === 1 && (warnings[0] ?? "").includes("channel=ops-webhook"),
       `one warn naming the channel, got ${JSON.stringify(warnings)}`,
     );
+  }
+
+  // --- 10b. `F3.54`: the same failed ceiling read, for a CLEARED message ----
+  //
+  // Ruling 1 again, at the second of the two exits. Case 10's reason for
+  // writing nothing — a `failed` row would spend one of the key's
+  // `MAX_EVENT_ATTEMPTS` on a read that never reached the transport — is about
+  // attempts a later tick will use. A clear has no later tick, so there is no
+  // attempt to conserve and nothing to gain by staying silent.
+  //
+  // After this, the line above is textually identical to the ceiling's
+  // `input.event?.kind === "escalation"` twenty lines below it, which is the
+  // inconsistency `F3.54` was filed about: two adjacent exits that
+  // discriminated differently, with nothing in the code saying why.
+  {
+    const { db, recorded, reads, failRateLimitReads } = fakeDb();
+    const webhook = sendingWebhook();
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    failRateLimitReads(true);
+    const { result: results, warnings } = await captureWarnings(() =>
+      service.dispatchToChannels(
+        [channelRow({ code: "ops-webhook" })],
+        eventInput({ kind: "cleared" }),
+      ),
+    );
+    assert(
+      reads.deliveryExists === 1 && reads.rateLimit === 1,
+      `the ledger and then the ceiling were asked, got ${reads.deliveryExists}/${reads.rateLimit}`,
+    );
+    assert(
+      results.length === 1 &&
+        results[0]?.status === "failed" &&
+        results[0].error === "rate-limit check failed",
+      `an unreadable ceiling still fails the clear by name, got ${JSON.stringify(results)}`,
+    );
+    assert(
+      recorded.length === 1,
+      `F3.54: a ceiling read that fails a CLEARED message must attempt its row, got ${recorded.length}`,
+    );
+    assert(
+      recorded[0]?.status === "failed" &&
+        String(recorded[0]?.dedupeKey).endsWith(":cleared"),
+      `the row is a failed one under the cleared key, got ${JSON.stringify(recorded[0])}`,
+    );
+    assert(webhook.sent.length === 0, "an unreadable ceiling is not a licence to send");
+    assert(warnings.length === 1, `still exactly one warn line, got ${warnings.length}`);
   }
   {
     // The other direction: the raise path keeps its `failed` row.
