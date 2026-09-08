@@ -57,6 +57,48 @@ function dbCounting(count: number): Ctor[0] {
   } as unknown as Ctor[0];
 }
 
+/**
+ * `F3.50` — a db that lets `update()` through and hands back the values it
+ * `set`s.
+ *
+ * One `select` shape serves both reads on that path: `loadExistingForWrite`
+ * takes `organizationId` (`null` routes the write onto `fleetDb` rather than
+ * `withTenant`) and `audit`'s actor read takes `id`. `insert` swallows the
+ * audit row.
+ */
+function dbCapturingUpdate(onSet: (values: Record<string, unknown>) => void): Ctor[0] {
+  const updated = {
+    id: CHANNEL_ID,
+    organizationId: null,
+    code: "ops-email",
+    name: "renamed",
+    kind: "email",
+    config: {},
+    enabled: true,
+    secretCiphertext: null,
+    secretIv: null,
+    secretKeyVersion: null,
+    createdAt: new Date("2020-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2020-01-01T00:00:00.000Z"),
+  };
+  return {
+    select: () => ({
+      from: () => ({
+        where: () => ({ limit: () => Promise.resolve([{ organizationId: null, id: "u1" }]) }),
+      }),
+    }),
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        onSet(values);
+        return { where: () => ({ returning: () => Promise.resolve([updated]) }) };
+      },
+    }),
+    insert: () => ({ values: () => Promise.resolve(undefined) }),
+  } as unknown as Ctor[0];
+}
+
+const CHANNEL_ID = "33333333-3333-3333-3333-333333333333";
+
 /** The actor every audited write now takes — a global admin, so
  * `canManageNotificationChannel` allows every organization including `null`. */
 const ACTOR = { sub: "u1", email: "admin@bms.local", name: "Admin", role: "admin" } as JwtPayload;
@@ -249,5 +291,55 @@ export async function runChannelsServiceTests(): Promise<void> {
       if (key === undefined) delete process.env.CREDENTIAL_ENCRYPTION_KEY;
       else process.env.CREDENTIAL_ENCRYPTION_KEY = key;
     }
+  }
+
+  // --- F3.50: the two halves of the channel's release watermark ------------
+  //
+  // ADR 0057 Amendment 3 ruling Q1 dates a `skipped_unconfigured` delivery row
+  // against `max(channel.updatedAt, PROCESS_STARTED_AT)`. Both assertions below
+  // guard the `channel.updatedAt` half, and neither is guarded anywhere else.
+  {
+    // The stored value, not a fresh one. `updatedAt: new Date()` in
+    // `toChannelRow`'s `base` compiles, type-checks and passes every other
+    // test in this repo — and it would make EVERY unconfigured row stale, so
+    // no event key would ever block again and the sweep would write one row
+    // per tick for ever. This is the cheapest place that catches it.
+    const storedAt = new Date("2020-05-04T03:02:01.000Z");
+    const row = makeChannels(dbCounting(0)).toChannelRow({
+      id: "c1",
+      organizationId: null,
+      code: "ops-webhook",
+      name: "Ops",
+      kind: "webhook",
+      config: {},
+      enabled: true,
+      secretCiphertext: null,
+      secretIv: null,
+      updatedAt: storedAt,
+    });
+    assert(
+      row.updatedAt instanceof Date && row.updatedAt.getTime() === storedAt.getTime(),
+      `toChannelRow must carry the STORED updated_at, got ${String(row.updatedAt)}`,
+    );
+
+    // And every PATCH must move it, because that write is the operator's whole
+    // release path: fix the URL, and the next tick retries the step that was
+    // refused while there was none. Nothing held this line before `F3.50` —
+    // deleting it broke no test, and after `F3.50` its loss is silent.
+    //
+    // Ruling Q2: `update()` stamps `updatedAt` UNCONDITIONALLY, before it looks
+    // at any field, so a rename releases the channel's stranded keys too. That
+    // is an accepted cost (Amendment 3 §6(a)), which is why this asserts on a
+    // body that carries nothing but `name`.
+    let capturedUpdatedAt: unknown = "update() was never reached";
+    await makeChannels(
+      dbCapturingUpdate((values) => {
+        capturedUpdatedAt = values.updatedAt;
+      }),
+    ).update(ACTOR, CHANNEL_ID, { name: "renamed" });
+    assert(
+      capturedUpdatedAt instanceof Date,
+      `every PATCH must set updated_at — it is F3.50's release trigger; got ${String(capturedUpdatedAt)}`,
+    );
   }
 }

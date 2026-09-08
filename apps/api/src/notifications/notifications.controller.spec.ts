@@ -63,6 +63,7 @@ const channelRow: NotificationChannelRow = {
   secret: "s".repeat(16),
   secretState: "ready",
   enabled: true,
+  updatedAt: new Date("2020-01-01T00:00:00.000Z"),
 };
 
 type Ctor = ConstructorParameters<typeof NotificationsController>;
@@ -166,6 +167,13 @@ function realGateController(
                   secretCiphertext: null,
                   secretIv: null,
                   secretKeyVersion: null,
+                  // `F3.50`: this literal is behind `as unknown as BmsDb`, so
+                  // `pnpm typecheck` says nothing when a column
+                  // `toChannelRow` now reads is missing. Left out, the row
+                  // would carry `updatedAt: undefined` and this spec would
+                  // still pass, because `sendTest` never reads it. The
+                  // compiler is not the enumeration.
+                  updatedAt: new Date("2020-01-01T00:00:00.000Z"),
                 },
               ]),
           }),

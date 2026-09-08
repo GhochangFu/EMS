@@ -395,3 +395,177 @@ in part; ruling Q9 and the raise path are untouched.
    one. That is the same defect on a different status, with a different
    trigger and a different visibility argument, and it is filed as its own
    `docs/BACKLOG.md` row rather than widened into this one.
+
+## Amendment 3 — `F3.50`: an unconfigured refusal stops answering once the configuration moves (2026-09-08)
+
+Amends **decision 10** and **Amendment 2 §5**. Ruling Q9, Amendment 2's rulings
+Q1/Q2/Q-A and the whole raise path are unchanged. ADR 0041 needs no amendment of
+its own: decision 4 asks that a refusal be visible, and this row keeps writing
+the row it is about — what changes is the read.
+
+1. **What Amendment 2 §5 held out, and why it needed a different fix.** A
+   ceiling refusal is a self-clearing postponement, so `F3.48` could simply stop
+   writing it. An unconfigured channel is a **configuration fault an operator
+   must see and fix**, so the row is the signal and deleting it would hide the
+   problem. `F3.50` therefore does not touch the write at all. It changes when
+   the row stops being an **answer**.
+
+2. **Ruling Q1 — the watermark is `max(channel.updatedAt, PROCESS_STARTED_AT)`.**
+   A `skipped_unconfigured` row answers an event key only while it is newer than
+   that instant.
+
+   Five sites produce the status, and they do not split cleanly into
+   "configuration" and "environment" — the last one spans both:
+
+   | Site | Cause | Cleared by | Watermark half |
+   |---|---|---|---|
+   | `webhook.transport.ts` | no `config.url` | PATCH `config` | `channel.updatedAt` |
+   | `email.transport.ts` | no recipients in `config` | PATCH `config` | `channel.updatedAt` |
+   | `log.transport.ts` via `transportFor`'s fallback | the `kind` has no transport | PATCH `kind`, or a code change | `channel.updatedAt`, or a restart |
+   | `log.transport.ts` via `transportFor`'s `smtp === null` branch, and `email.transport.ts`'s defensive twin | `SMTP_HOST` unset | set the variable, restart | `PROCESS_STARTED_AT` |
+   | `webhook.transport.ts`, `secretState: "unreadable"` | the key is unset, **or** it is the wrong or a rotated key, **or** the row is corrupt | a restart **or** re-saving the secret | both halves |
+
+   **Why the process boundary is principled and not a hack.** Two of those
+   causes have no row to stamp, and **readiness cannot flip inside a process** —
+   so process start is not a proxy for a readiness change; it is the only
+   boundary at which one is observable. `ChannelsService.readiness()` is the
+   method that computes it, *not* `NotificationsService.readiness`, which
+   `docs/BACKLOG.md`'s `F3.50` row misnamed.
+
+   That stability has two different sources, and an earlier draft of this
+   amendment collapsed them. `notificationsConfig` genuinely is frozen — it is
+   `buildConfig(process.env)` evaluated at module load, and `EmailTransport`
+   goes further and decides its sender in its constructor. But
+   `CredentialCryptoService.isConfigured()` reads `process.env` on **every**
+   call; it is not a snapshot. What holds it still is that a running process's
+   environment does not change. The ruling is unaffected — the conclusion is the
+   same either way — but the justification had to stop claiming a cache that
+   does not exist.
+
+   The accepted cost is bounded and one-directional: one retry, and one row, per
+   stranded key per watermark move.
+
+3. **The exclusion is in the SQL `WHERE`, scoped to one status against a
+   timestamp.** Amendment 2 §3's argument transfers verbatim — the read takes
+   `MAX_EVENT_ATTEMPTS` rows with no `ORDER BY`, and order-independence is what
+   makes both arms exact — and here it is **stronger than it was for `F3.48`**.
+   Amendment 2 §3 had to concede that its mixed state was unreachable in
+   production. This one is reachable: one stale row accumulates per restart, so
+   a key can legitimately hold one `sent` row and three stale
+   `skipped_unconfigured` ones. A TypeScript filter over an unordered sample of
+   three could then return the three unconfigured rows, empty itself, leave both
+   arms false — and **send an event that was already sent**.
+
+   Written as `or(ne(status, 'skipped_unconfigured'), gt(attempted_at, …))`, not
+   as the literal `NOT (status = … AND attempted_at <= …)`. They are the same
+   predicate, both columns being `NOT NULL`, but the literal form renders
+   `"status" = $n` and reddens Amendment 2's own SQL-shape gate
+   (`notifications.events.spec.ts` case 14), which exists to stop an equality on
+   `status` blocking every key that is *not* the named status. The twin costs
+   nothing and leaves case 14 standing as a free gate on this clause too.
+
+   **It must not be hoisted into the top-level `and`.** A watermark over the
+   whole read would drop a `failed` row older than it out of the sample, and
+   ruling Q9's three-attempt cap would silently reset every time an operator
+   edited a channel. `storm-control.integration.spec.ts` plants three back-dated
+   `failed` rows for exactly that mutation; rows planted at `now()` would have
+   survived it.
+
+4. **No DDL, measured rather than assumed.** With `SET enable_seqscan = off` —
+   stated for Amendment 2's own reason, that the local ledger is nearly empty and
+   an unforced choice would show nothing — the read plans as:
+
+   ```
+   Limit
+     ->  Index Scan using notification_deliveries_channel_key_idx on notification_deliveries
+           Index Cond: ((channel_id = …) AND ((dedupe_key)::text = …))
+           Filter: (((status)::text <> 'skipped_rate_limited') AND (organization_id = …)
+                    AND (((status)::text <> 'skipped_unconfigured') OR (attempted_at > …)))
+   ```
+
+   The equality on `dedupe_key` proves migration `0066`'s partial predicate, so
+   the index still drives the read and the new clause is a residual filter beside
+   the organization predicate that was already one.
+
+5. **The growth bound, and it is reached by the other arm.** The planning note
+   for this row said three fresh rows would hit `MAX_EVENT_ATTEMPTS`. They never
+   do. `skipped_unconfigured` is not `failed`, so
+   `rows.some(row => row.status !== "failed")` blocks on the very first fresh
+   row: a released key is re-offered on the next tick, that tick writes **one**
+   row, and the key is blocked again. Three *fresh* unconfigured rows under one
+   key is not a reachable state — no test asserts on one.
+
+   Two corrections to how that bound was first written, both found in review.
+
+   **It is one row per key per WATERMARK MOVE, not per restart.** §6(a) already
+   says any PATCH moves the watermark, so two renames inside one process give
+   two fresh rows per stranded key in that process. As first written §5
+   contradicted §6(a).
+
+   **And "blocked again" has one carve-out, where this row's retry meets
+   `F3.48`'s.** The hourly ceiling is checked *after* the event-dedupe read, and
+   since Amendment 2 ruling Q1 a ceiling-refused escalation step writes no row
+   at all. So a released key that meets a closed ceiling is not blocked again:
+   it is re-offered every tick until the trailing hour drains. The growth bound
+   is unharmed — nothing is written — and nothing extra is sent. The cost is two
+   ledger reads per tick per such key, which is `F3.53`'s subject, and it is
+   reachable at exactly the shape ruling Q7 measured: an operator fixes a
+   channel, ~52 stranded keys release into one tick, and those above
+   `ratePerHour` spin until the hour drains.
+
+6. **Accepted costs and residuals.**
+
+   (a) **Ruling Q2 — any PATCH releases the channel's stranded keys, a rename
+   included.** `ChannelsService.update` stamps `updated_at` unconditionally,
+   before it examines a single field, so renaming a channel or toggling
+   `enabled` off and on moves the watermark. At ruling Q7's measured shape — 52
+   backlogged alarms — a rename produces up to 52 retries and 52 fresh rows
+   inside one 30-second tick, competing for the single hourly budget `F3.52` was
+   filed about. Accepted rather than narrowed: without column-level change
+   tracking `update()` cannot tell a configuration write from a rename, and the
+   error direction is toward delivery.
+
+   That 52-key figure is for **one** organization. A fleet-managed global
+   channel (`organization_id IS NULL`, decision 7 of ADR 0041) is a legitimate
+   escalation target for every tenant and carries **one** `updated_at`, while
+   `isOverHourlyLimit` has been scoped per `(channel, organization)` since
+   `E7.1c`. So one PATCH to a global channel releases every tenant's stranded
+   keys at the same instant, and aggregate egress to that single endpoint is
+   `N_organizations × ratePerHour` rather than `ratePerHour`. The trigger is
+   correctly gated — `AccessControlService.canManageNotificationChannel` returns
+   `false` for an `organization_admin` when the channel's organization is
+   `null`, so only a global `admin` can move that watermark — and the
+   per-tenant ceiling split predates this row. Recorded here because §6(a)'s
+   single-tenant figure would otherwise understate it; the contention itself is
+   `F3.52`'s.
+
+   (b) **The watermark is an API-clock value compared against DB-clock rows.**
+   `updated_at` is `new Date()` in the API process for every channel that has
+   ever been PATCHed, `PROCESS_STARTED_AT` is Node's, and `attempted_at` is
+   always Postgres's `defaultNow()`. Both skew directions are bounded and neither
+   is reachable at realistic skew: an API clock far enough behind leaves a key
+   blocked, and one far enough ahead excludes fresh rows too and weakens §5's
+   bound. The integration suite binds a JavaScript `Date` rather than writing
+   `now()`, and says in its comment that a suite on one machine cannot reproduce
+   the skew and should not pretend to.
+
+   (c) **There is no `ON UPDATE` trigger on `notification_channels.updated_at`,**
+   so a DBA editing `config` directly in psql does not release the key until the
+   next restart. The API is the only supported write path; a trigger would be DDL
+   for a path this product does not use.
+
+   (d) A key holding stale unconfigured rows and fewer than `MAX_EVENT_ATTEMPTS`
+   `failed` ones gains a real transport attempt. That is the intended effect, and
+   it is the same one Amendment 2 §3 recorded for `skipped_rate_limited`.
+
+7. **Inert for `kind: "cleared"`, and said rather than special-cased.** The read
+   is shared by both event kinds, but `notifyCleared` runs once from the clear
+   phase and `loadActiveAlarms` filters `cleared_at IS NULL`, so no cleared key
+   is ever read a second time and no release can be observed on that path. This
+   is the read half of the asymmetry ruling Q-A created on the write half: Q-A
+   special-cased the *write* because a clear had something to lose — its only
+   visible row — while the read has nothing to gain from a special case, so it
+   gets none.
+
+8. **Not fixed here:** `F3.51`, `F3.52`, `F3.53` and `F3.54`, all filed by
+   `F3.48`, and the ledger's retention (`F3.46` ruling 0).

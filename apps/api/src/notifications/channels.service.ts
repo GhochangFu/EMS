@@ -888,6 +888,7 @@ export class ChannelsService {
         enabled: notificationChannels.enabled,
         secretCiphertext: notificationChannels.secretCiphertext,
         secretIv: notificationChannels.secretIv,
+        updatedAt: notificationChannels.updatedAt,
       })
       .from(ruleNotifications)
       .innerJoin(notificationChannels, eq(ruleNotifications.channelId, notificationChannels.id))
@@ -913,6 +914,7 @@ export class ChannelsService {
     enabled: boolean;
     secretCiphertext: Buffer | null;
     secretIv: Buffer | null;
+    updatedAt: Date;
   }): NotificationChannelRow {
     const base = {
       id: row.id,
@@ -922,6 +924,7 @@ export class ChannelsService {
       kind: row.kind,
       config: (row.config ?? {}) as Record<string, unknown>,
       enabled: row.enabled,
+      updatedAt: row.updatedAt,
     };
 
     if (row.secretCiphertext === null || row.secretIv === null) {

@@ -52,6 +52,7 @@ export async function loadEnabledChannelsByIds(
       enabled: notificationChannels.enabled,
       secretCiphertext: notificationChannels.secretCiphertext,
       secretIv: notificationChannels.secretIv,
+      updatedAt: notificationChannels.updatedAt,
     })
     .from(notificationChannels)
     .where(and(inArray(notificationChannels.id, [...ids]), eq(notificationChannels.enabled, true)))

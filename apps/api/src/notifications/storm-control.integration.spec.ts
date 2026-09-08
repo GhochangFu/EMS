@@ -53,10 +53,20 @@ const FIXTURE_ALARM_MESSAGE = "F3.10 storm-control event fixture";
  * tick (ruling Q1); a rate-limited row written before `F3.48` landed no longer
  * blocks its key (ruling Q2); a refused *cleared* message still keeps its row,
  * because it is dispatched once and never again (ruling Q-A); and
- * `skipped_unconfigured` still blocks, which Amendment 2 §5 holds out as its
- * own row and which is what keeps a read narrowed to `status = 'sent'` failing.
+ * `skipped_unconfigured` still blocks, which is what keeps a read narrowed to
+ * `status = 'sent'` failing.
  * This suite is where those four meet a real Postgres — the unit spec's fake
  * applies no `WHERE` and cannot show a row being filtered out.
+ *
+ * **`F3.50` (ADR 0057 Amendment 3) then split that last one in two.** An
+ * unconfigured refusal blocks its key only while it is NEWER than
+ * `max(channel.updatedAt, PROCESS_STARTED_AT)`: FG1's row is planted at `now()`
+ * and still blocks, a back-dated one releases the key and the step sends, an
+ * operator's edit to the channel releases a fresh one, and three back-dated
+ * `failed` rows still spend ruling Q9's three attempts — which is what
+ * distinguishes a conjunct scoped to one status from a watermark over the whole
+ * read. The half no suite here can hold is the process boundary: one constant
+ * fixed at module load, and no test can restart the API.
  *
  * Everything it writes, it removes.
  */
@@ -474,14 +484,36 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       `and the sent row it left now answers the key, got ${String(releasedAgain[0]?.status)}`,
     );
 
-    // --- FG1, kept: a non-`sent`, non-`failed`, non-rate-limited row blocks ---
+    // --- FG1, kept: a FRESH non-`sent`, non-`failed` row blocks --------------
     //
     // This is the assertion the old rate-limited block carried: a read narrowed
-    // to `status = 'sent'` would send here. Amendment 2 §5 holds
-    // `skipped_unconfigured` out of `F3.48` deliberately — a step refused while
-    // its channel had no transport configured is still never retried — so this
-    // block is both the surviving guard and the recorded shape of that
-    // follow-up row.
+    // to `status = 'sent'` would send here.
+    //
+    // **`F3.50` did not weaken it — it gave it a second meaning.** The row is
+    // planted at `now()`, which is after this suite created its channel and
+    // therefore after `max(channel.updatedAt, PROCESS_STARTED_AT)`, so ruling
+    // Q1's exclusion does not reach it and it still answers the key. That is
+    // also the growth bound: a released key is re-offered on the next tick,
+    // that tick writes ONE fresh row, and a fresh row blocks. One row per key
+    // per watermark move, and three fresh unconfigured rows under one key is
+    // not a reachable state — no block here asserts on one. (If the hourly
+    // ceiling refuses the retry, `F3.48` ruling Q1 writes nothing and the key
+    // stays released; the `service` these blocks use has a ceiling of 1000 —
+    // the ceiling-1 service built further down is a different one — so that
+    // path is not exercised here.)
+    //
+    // **One mutation dies here, not two, and this was measured rather than
+    // reasoned.** Copying `F3.48`'s form — a bare
+    // `ne(status, "skipped_unconfigured")` with no timestamp — sends, and this
+    // block reddens.
+    //
+    // `updatedAt: new Date()` in `ChannelsService.toChannelRow` does **not**
+    // die here: this whole suite builds `channel` once, before any fixture row
+    // is planted, so that mutation only moves the watermark to an instant that
+    // is still earlier than every freshly planted row, and every block below
+    // keeps its answer. It was run; the suite stayed green. `channels.service.
+    // spec.ts` is the ONLY gate on that mutation — do not delete it believing
+    // this suite covers it.
     const stepEleven: DispatchInput = { ...step, event: { kind: "escalation", step: 11 } };
     const stepElevenKey = buildDedupeKey(stepEleven);
     await plantDeliveries(pool, {
@@ -500,6 +532,119 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       (await countByKey(pool, channelId as string, first.organization_id, stepElevenKey)) === 1,
       "and nothing was written after it",
     );
+
+    // --- `F3.50` ruling Q1: a STALE unconfigured row releases the key -------
+    //
+    // ADR 0057 Amendment 3. The same channel, the same key, the same status as
+    // FG1 above — and the opposite answer, because this row predates
+    // `max(channel.updatedAt, PROCESS_STARTED_AT)`. The refusal is left where
+    // it is: an unconfigured channel is a configuration fault an operator must
+    // see, so the ledger keeps saying so and the send is appended after it.
+    //
+    // Removing the `or(...)` conjunct from `eventDeliveryBlocked` makes this
+    // `skipped_deduped`.
+    const stepThirteen: DispatchInput = { ...step, event: { kind: "escalation", step: 13 } };
+    const stepThirteenKey = buildDedupeKey(stepThirteen);
+    await plantDeliveries(pool, {
+      ...planted,
+      status: "skipped_unconfigured",
+      dedupeKey: stepThirteenKey,
+      attemptedAt: new Date(Date.now() - 60 * 60 * 1000),
+    });
+    const sentBeforeThirteen = sent.length;
+    const releasedByAge = await service.dispatchToChannels([channel], stepThirteen);
+    assert(
+      releasedByAge[0]?.status === "sent",
+      `a stale unconfigured row no longer answers the key, got ${String(releasedByAge[0]?.status)}`,
+    );
+    assert(
+      sent.length === sentBeforeThirteen + 1,
+      `and the step really reached the transport, got ${sent.length - sentBeforeThirteen} sends`,
+    );
+    assert(
+      (
+        await statusesByKey(pool, channelId as string, first.organization_id, stepThirteenKey)
+      ).join(",") === "skipped_unconfigured,sent",
+      "the refusal stays visible and the send is appended after it",
+    );
+
+    // --- the operator's own story: a channel write releases the key ---------
+    //
+    // Ruling Q2's cost, seen from the other side. A row written since this
+    // process started blocks — and then the channel is edited, the sweep
+    // re-reads it the way `AlarmLifecycleService` does (through
+    // `loadEnabledChannelsByIds` and `toChannelRow`), and the next dispatch
+    // sends.
+    //
+    // **This is the only assertion that proves `updated_at` travels the sweep's
+    // path and carries a real value.** The compiler forces the KEY into
+    // `loadEnabledChannelsByIds`'s projection; nothing but this forces it to be
+    // the column. Any mutation that makes the watermark a constant dies here.
+    //
+    // `updated_at` is set from a bound JavaScript `Date` rather than `now()`:
+    // production's writer is `ChannelsService.update`, which stamps Node's
+    // clock (plan C2).
+    const stepFourteen: DispatchInput = { ...step, event: { kind: "escalation", step: 14 } };
+    const stepFourteenKey = buildDedupeKey(stepFourteen);
+    await plantDeliveries(pool, {
+      ...planted,
+      status: "skipped_unconfigured",
+      dedupeKey: stepFourteenKey,
+    });
+    const sentBeforeFourteen = sent.length;
+    const stillBlocked = await service.dispatchToChannels([channel], stepFourteen);
+    assert(
+      stillBlocked[0]?.status === "skipped_deduped",
+      `a fresh unconfigured row blocks until the channel moves, got ${String(
+        stillBlocked[0]?.status,
+      )}`,
+    );
+    assert(sent.length === sentBeforeFourteen, "and it never reaches the transport");
+
+    await pool.query(`UPDATE bms.notification_channels SET updated_at = $1 WHERE id = $2`, [
+      new Date(Date.now() + 1000),
+      channelId,
+    ]);
+    const reread = await loadEnabledChannelsByIds(db, [channelId as string]);
+    const editedChannel = channels.toChannelRow(reread[0] as (typeof reread)[number]);
+    const afterEdit = await service.dispatchToChannels([editedChannel], stepFourteen);
+    assert(
+      afterEdit[0]?.status === "sent",
+      `configuring the channel releases the stranded key, got ${String(afterEdit[0]?.status)}`,
+    );
+    assert(
+      sent.length === sentBeforeFourteen + 1,
+      `and the step reached the transport, got ${sent.length - sentBeforeFourteen} sends`,
+    );
+
+    // --- the exclusion is scoped to ONE status, not a watermark on the read --
+    //
+    // Three `failed` rows, all older than the watermark. They must still count
+    // toward ruling Q9's cap: hoisting `gt(attempted_at, unconfiguredSince)`
+    // out of the `or` and into the top-level `and` would drop all three out of
+    // the sample, and Q9's three-attempt bound would reset every time an
+    // operator edited a channel.
+    //
+    // Back-dating them is what makes this discriminating — rows planted at
+    // `now()` survive a whole-read watermark too, so the mutation would live.
+    const stepFifteen: DispatchInput = { ...step, event: { kind: "escalation", step: 15 } };
+    const stepFifteenKey = buildDedupeKey(stepFifteen);
+    await plantDeliveries(
+      pool,
+      {
+        ...planted,
+        dedupeKey: stepFifteenKey,
+        attemptedAt: new Date(Date.now() - 60 * 60 * 1000),
+      },
+      3,
+    );
+    const sentBeforeFifteen = sent.length;
+    const stillBounded = await service.dispatchToChannels([channel], stepFifteen);
+    assert(
+      stillBounded[0]?.status === "skipped_deduped",
+      `an old failed row still spends an attempt, got ${String(stillBounded[0]?.status)}`,
+    );
+    assert(sent.length === sentBeforeFifteen, "an exhausted key never reaches the transport");
 
     // --- ruling Q9 still bounds the retry, with rate-limited rows in the way --
     //
@@ -673,6 +818,14 @@ async function otherOrganization(pool: Pool, organizationId: string): Promise<st
  * read past. `attempted_at` defaults to now, as a real row's would; `error`
  * is set on a `failed` row only, as `record()` would leave it. Removed by
  * `cleanup` through the channel and the fixture alarm.
+ *
+ * **`row.attemptedAt` back-dates them (`F3.50`).** Bound as a JavaScript
+ * `Date`, which is an API-clock value — the clock the watermark it is compared
+ * against comes from. Production pairs the two clocks the other way round:
+ * `attempted_at` is `defaultNow()`, the DATABASE's, while
+ * `max(channel.updatedAt, PROCESS_STARTED_AT)` is always Node's. A suite on one
+ * machine cannot reproduce skew between them and should not pretend to; the
+ * residual is recorded in ADR 0057 Amendment 3 §6(b) instead.
  */
 async function plantDeliveries(
   pool: Pool,
@@ -683,16 +836,27 @@ async function plantDeliveries(
     channelId: string;
     status: string;
     dedupeKey: string;
+    attemptedAt?: Date;
   },
   count = 1,
 ): Promise<void> {
   await pool.query(
     `INSERT INTO bms.notification_deliveries
-       (organization_id, rule_id, alarm_id, channel_id, status, dedupe_key, error)
+       (organization_id, rule_id, alarm_id, channel_id, status, dedupe_key, error, attempted_at)
      SELECT $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::text, $6::text,
-            CASE WHEN $5::text = 'failed' THEN 'planted by storm-control.integration.spec.ts' END
+            CASE WHEN $5::text = 'failed' THEN 'planted by storm-control.integration.spec.ts' END,
+            COALESCE($8::timestamptz, now())
        FROM generate_series(1, $7::int)`,
-    [row.organizationId, row.ruleId, row.alarmId, row.channelId, row.status, row.dedupeKey, count],
+    [
+      row.organizationId,
+      row.ruleId,
+      row.alarmId,
+      row.channelId,
+      row.status,
+      row.dedupeKey,
+      count,
+      row.attemptedAt ?? null,
+    ],
   );
 }
 
