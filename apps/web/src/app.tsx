@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { useEffect } from "react";
 
 import { fetchCurrentUser } from "./api/login";
+import { AlarmKbPage } from "./pages/alarm-kb-page";
 import { AlarmsPage } from "./pages/alarms-page";
 import { DashboardPage } from "./pages/dashboard-page";
 import { DashboardsPage } from "./pages/dashboards-page";
@@ -134,6 +135,23 @@ export function App() {
         element={
           accessToken && user ? (
             <AlarmsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/*
+        `E2.2` / ADR 0059 ruling Q0b — a plain authenticated route, NOT an
+        `AdminRoute`. Anyone who can see alarms may read the philosophy behind
+        them, `viewer` included; the master-data gate on the template authoring
+        screen is exactly why the operator and the technician could not before.
+        `tests/e2.2-alarm-kb-route-gate.test.ts` holds the API half of that.
+      */}
+      <Route
+        path="/alarm-kb"
+        element={
+          accessToken && user ? (
+            <AlarmKbPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )
