@@ -1,7 +1,8 @@
 import { buildDedupeKey } from "../notifications/dedupe-key";
 import { PROCESS_STARTED_AT } from "../notifications/notifications.config";
-import { MAX_EVENT_ATTEMPTS } from "../notifications/notifications.service";
+import { MAX_EVENT_ATTEMPTS } from "../notifications/dispatch-policy";
 import type { RaiseAttemptRow } from "../notifications/raise-retry";
+import { LostLedgerRows } from "../notifications/raise-retry";
 import { runLifecycleSweep } from "./alarm-lifecycle.service";
 import {
   C1,
@@ -711,6 +712,159 @@ async function testAFailedBatchCostsOnlyItsOwnAlarms(): Promise<void> {
   assert(!warning.includes("Feeder overload"), "§9.6: the warn carries no alarm text");
 }
 
+/**
+ * R17 (`F3.51` review, High) — a delivery row that did not land stops the
+ * retry re-offering that channel.
+ *
+ * `record()` catches its own INSERT failure, logs and returns the result: ADR
+ * 0041 decision 1 says a dispatch never fails its caller. If writes fail while
+ * reads succeed, nothing is ever written under the raise key — so
+ * `MAX_EVENT_ATTEMPTS` (it counts rows) and `isOverHourlyLimit` (it counts
+ * `sent` rows) can never engage, `channelsOwedTheRaise` keeps seeing the same
+ * single original `failed` row, and the phase sends to that channel twice a
+ * minute for the life of the alarm with no ledger trace of any of it.
+ *
+ * Two ticks on one fixture. C1's row is lost, C2's lands. The absence — C1 is
+ * not offered on tick two — is paired on the same fixture with the positive
+ * that C2 IS, which is what makes the case a gate: an absence alone would pass
+ * a phase that had stopped re-offering anything at all, and R8 exists precisely
+ * because re-offering on every tick is the behaviour.
+ *
+ * **Mutation:** dropping the `lostLedgerRows.has` filter → C1 rides on tick
+ * two, red on the channel list. Recording the loss under `(alarm, channel)`
+ * without the key → not caught here; `raise-retry.spec.ts` P15 is that gate.
+ */
+async function testALostLedgerRowStopsTheReoffer(): Promise<void> {
+  const lostLedgerRows = new LostLedgerRows();
+  const { deps, recorded } = fakeDeps({
+    alarms: [alarmRow()],
+    rules: [ruleRow()],
+    sample: freshMatching,
+    raiseAttempts: [attempt(C1.id, "failed"), attempt(C2.id, "failed")],
+    lostLedgerRows,
+  });
+  const inner = deps.dispatchToChannels.bind(deps);
+  deps.dispatchToChannels = async (channels, input) => {
+    const outcomes = await inner(channels, input);
+    // The ledger accepts C2's row and refuses C1's — the failure mode this
+    // case exists for, where the reads keep working.
+    return outcomes.map((outcome) => ({ ...outcome, rowLost: outcome.channelId === C1.id }));
+  };
+
+  await runLifecycleSweep(deps, NOW);
+  const first = retries(recorded);
+  assert(
+    first.length === 1 && channelCodes(first[0]) === "c1,c2",
+    `both channels are offered on the first tick, got [${channelCodes(first[0])}]`,
+  );
+
+  await runLifecycleSweep(deps, NOW);
+  const second = retries(recorded).slice(1);
+  assert(
+    second.length === 1 && channelCodes(second[0]) === "c2",
+    `the channel whose row was lost is not offered again; the one whose row landed is, got [${channelCodes(
+      second[0],
+    )}]`,
+  );
+  assert(
+    lostLedgerRows.size === 1,
+    `exactly one triple is remembered, got ${lostLedgerRows.size}`,
+  );
+  assert(
+    lostLedgerRows.has("alarm-1", C1.id, RAISE_KEY),
+    "and it is remembered under the alarm's own raise key",
+  );
+}
+
+/**
+ * R18 (`F3.51` review, High) — the memory is reclaimed when the alarm leaves
+ * the active set, and only then.
+ *
+ * `loadActiveAlarms` filters `cleared_at IS NULL`, so a cleared alarm never
+ * comes back and its entries are dead weight. The paired positive is in the
+ * same case and on the same memory: the alarm still active keeps its entry, so
+ * a `retainAlarms` that cleared everything would redden here rather than pass.
+ *
+ * **Mutation:** dropping the `retainAlarms` call → the first assertion goes to
+ * 2, red. Evicting the whole map → the second reddens.
+ */
+async function testTheMemoryIsReclaimedWhenAnAlarmLeaves(): Promise<void> {
+  const lostLedgerRows = new LostLedgerRows();
+  lostLedgerRows.add("alarm-1", C1.id, RAISE_KEY);
+  lostLedgerRows.add("alarm-gone", C1.id, "rule-1:alarm-gone:warning");
+
+  const { deps } = fakeDeps({
+    alarms: [alarmRow()],
+    rules: [ruleRow()],
+    sample: freshMatching,
+    lostLedgerRows,
+  });
+  await runLifecycleSweep(deps, NOW);
+
+  assert(
+    lostLedgerRows.size === 1,
+    `the alarm no longer in the active set is evicted, got ${lostLedgerRows.size}`,
+  );
+  assert(
+    lostLedgerRows.has("alarm-1", C1.id, RAISE_KEY),
+    "and the alarm still open keeps its entry",
+  );
+}
+
+/**
+ * R19 (`F3.51` review, High) — at the cap the sweep says so, once, and the
+ * refused pair falls back to being re-offered.
+ *
+ * The degradation is deliberate: refusing a new entry is preferred to evicting
+ * an existing one, which would silently un-blacklist a real loss. What must not
+ * happen is silence, so the tick warns with the cap and the count and no ids
+ * (§9.6).
+ *
+ * **Mutation:** dropping the warn → red on the count. Evicting to make room →
+ * red, because the pre-filled entry would be gone and its channel re-offered.
+ */
+async function testTheCapIsReportedAndDegradesToTheOldBehaviour(): Promise<void> {
+  const lostLedgerRows = new LostLedgerRows(1);
+  // The one entry the cap allows belongs to an alarm that is still ACTIVE —
+  // otherwise `retainAlarms` frees it on the first tick and the cap is never
+  // reached, which is how this case first failed.
+  lostLedgerRows.add("alarm-1", C2.id, RAISE_KEY);
+
+  const { deps, recorded } = fakeDeps({
+    alarms: [alarmRow()],
+    rules: [ruleRow()],
+    sample: freshMatching,
+    raiseAttempts: [attempt(C1.id, "failed")],
+    ruleChannels: () => [C1],
+    lostLedgerRows,
+  });
+  const inner = deps.dispatchToChannels.bind(deps);
+  deps.dispatchToChannels = async (channels, input) => {
+    const outcomes = await inner(channels, input);
+    return outcomes.map((outcome) => ({ ...outcome, rowLost: true }));
+  };
+
+  await runLifecycleSweep(deps, NOW);
+  await runLifecycleSweep(deps, NOW);
+
+  assert(
+    retries(recorded).length === 2,
+    `a pair the cap refused is re-offered on the next tick, got ${retries(recorded).length}`,
+  );
+  const capWarnings = recorded.warnings.filter((line) => line.includes("lost-row memory is full"));
+  assert(
+    capWarnings.length === 2,
+    `one warn per tick, not one per pair, got ${JSON.stringify(recorded.warnings)}`,
+  );
+  const warning = capWarnings[0] ?? "";
+  assert(
+    warning.includes("1 entries") && warning.includes("1 further lost row"),
+    `the warn carries the cap and the count, got "${warning}"`,
+  );
+  assert(!warning.includes("alarm-1"), "§9.6: and no ids — the cap is a fleet state, not an alarm's");
+  assert(!warning.includes("Feeder overload"), "§9.6: and no alarm text");
+}
+
 export async function runAlarmLifecycleRaiseRetryTests(): Promise<void> {
   await testTheOriginalRaiseIsOfferedAgain();
   await testASentRowBlocksThatChannelOnly();
@@ -728,4 +882,7 @@ export async function runAlarmLifecycleRaiseRetryTests(): Promise<void> {
   await testNoEligibleAlarmMeansNoLedgerRead();
   await testOneAlarmFailingDoesNotStopTheNext();
   await testAFailedBatchCostsOnlyItsOwnAlarms();
+  await testALostLedgerRowStopsTheReoffer();
+  await testTheMemoryIsReclaimedWhenAnAlarmLeaves();
+  await testTheCapIsReportedAndDegradesToTheOldBehaviour();
 }

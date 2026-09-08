@@ -3,6 +3,7 @@ import type { AlarmListItem } from "@bms/shared";
 import type { NotificationChannelRow } from "../notifications/notification-transport";
 import type { DispatchInput } from "../notifications/notifications.service";
 import type { RaiseAttemptRow, RaiseKeyRef } from "../notifications/raise-retry";
+import { LostLedgerRows } from "../notifications/raise-retry";
 import type { RuleRow } from "../rules/rules.types";
 import {
   type EscalationCatalog,
@@ -179,6 +180,12 @@ export function fakeDeps(opts: {
   loadRaiseAttempts?: AlarmLifecycleDeps["loadRaiseAttempts"];
   /** `F3.51`: the channels joined to a rule; defaults to both known rows for every rule. */
   ruleChannels?: (ruleId: string) => NotificationChannelRow[];
+  /**
+   * `F3.51` review: the lost-row memory. Defaults to a FRESH instance per
+   * fixture — a case that needs it to survive two sweeps passes one in, and no
+   * case can be polluted by another's losses.
+   */
+  lostLedgerRows?: LostLedgerRows;
 }): { deps: AlarmLifecycleDeps; recorded: Recorded } {
   const recorded: Recorded = {
     writes: [],
@@ -260,9 +267,19 @@ export function fakeDeps(opts: {
             reasons: [],
           });
     },
+    lostLedgerRows: opts.lostLedgerRows ?? new LostLedgerRows(),
     dispatchToChannels: (channels, input) => {
       recorded.dispatches.push({ channels: [...channels], input });
-      return Promise.resolve(channels.map(() => ({ status: "sent" as const, error: null })));
+      return Promise.resolve(
+        channels.map((channel) => ({
+          status: "sent" as const,
+          error: null,
+          channelId: channel.id,
+          // The default fake's row always lands. A case that needs a lost row
+          // wraps this — R17 does.
+          rowLost: false,
+        })),
+      );
     },
     broadcastCleared: (alarm) => {
       recorded.broadcasts.push(alarm);

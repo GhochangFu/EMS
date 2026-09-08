@@ -1,5 +1,6 @@
 import type { NotificationChannelRow } from "./notification-transport";
 import {
+  LostLedgerRows,
   channelsOwedTheRaise,
   unconfiguredWatermark,
   type RaiseAttemptRow,
@@ -252,5 +253,66 @@ export function runRaiseRetryTests(): void {
       edited.getTime() === AFTER_THE_WATERMARK.getTime(),
       `P14: a channel edited after boot uses its own updated_at, got ${edited.toISOString()}`,
     );
+  }
+
+  // --- P15: the lost-row memory keys on the KEY as well as the pair ----------
+  //
+  // `F3.51` review (High). A raise key is `rule:alarm:severity`, and
+  // `raiseRetryDispatchInput` reads the ALARM's severity, so an alarm whose
+  // severity is edited under it acquires a genuinely different key with
+  // genuinely no rows under it. Keying the memory on `(alarm, channel)` alone
+  // would then suppress a raise that has never been offered at all.
+  //
+  // **Mutation:** dropping `dedupeKey` from the key → the second `has` returns
+  // `true` and the case reddens. The first `has` is its paired positive: the
+  // same pair under the SAME key IS remembered, so the case cannot pass on a
+  // `has` that always answers `false`.
+  {
+    const lost = new LostLedgerRows();
+    assert(lost.add(ALARM_ID, C1, "rule-1:alarm-1:warning"), "P15: the first entry is recorded");
+    assert(
+      lost.has(ALARM_ID, C1, "rule-1:alarm-1:warning"),
+      "P15: the pair is remembered under the key it was lost on",
+    );
+    assert(
+      !lost.has(ALARM_ID, C1, "rule-1:alarm-1:critical"),
+      "P15: and not under a different key — a re-severitied alarm has never been offered",
+    );
+    assert(!lost.has(ALARM_ID, C2, "rule-1:alarm-1:warning"), "P15: nor on another channel");
+  }
+
+  // --- P16: the memory is capped, and refuses rather than forgets -------------
+  //
+  // At the cap `add` reports `false` and the pair falls back to today's
+  // behaviour — the retry keeps re-offering it. That is the honest
+  // degradation, and it is deliberately preferred to evicting an existing
+  // entry, which would silently un-blacklist a real loss.
+  //
+  // **Mutation:** an unbounded `Map` → `size` exceeds the cap and the first
+  // assertion reddens. Dropping the entry instead of refusing → the last
+  // assertion reddens, because the first pair would no longer be remembered.
+  {
+    const lost = new LostLedgerRows(2);
+    assert(lost.add("a1", C1, "k") && lost.add("a2", C1, "k"), "P16: the first two fit");
+    assert(!lost.add("a3", C1, "k"), "P16: the third is refused at the cap");
+    assert(lost.size === 2, `P16: and the map does not grow past it, got ${lost.size}`);
+    assert(!lost.has("a3", C1, "k"), "P16: the refused pair is not remembered");
+    assert(lost.has("a1", C1, "k"), "P16: and the pair already there is not forgotten for it");
+  }
+
+  // --- P17: an alarm that leaves the active set is evicted --------------------
+  //
+  // The paired positive is in the same case: the alarm still active keeps its
+  // entry, so the case cannot pass on a `retainAlarms` that clears everything.
+  //
+  // **Mutation:** no eviction at all → `size` stays 2 and the first assertion
+  // reddens. Evicting the whole map → the second reddens.
+  {
+    const lost = new LostLedgerRows();
+    lost.add("still-open", C1, "k");
+    lost.add("cleared", C1, "k");
+    lost.retainAlarms(new Set(["still-open"]));
+    assert(lost.size === 1, `P17: the cleared alarm's entry is evicted, got ${lost.size}`);
+    assert(lost.has("still-open", C1, "k"), "P17: the still-active alarm keeps its entry");
   }
 }

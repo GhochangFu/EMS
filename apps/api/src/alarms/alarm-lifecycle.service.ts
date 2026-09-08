@@ -26,11 +26,12 @@ import { buildDedupeKey } from "../notifications/dedupe-key";
 import type { NotificationChannelRow } from "../notifications/notification-transport";
 import { PROCESS_STARTED_AT } from "../notifications/notifications.config";
 import type { DispatchInput } from "../notifications/notifications.service";
-import { MAX_EVENT_ATTEMPTS, NotificationsService } from "../notifications/notifications.service";
+import { MAX_EVENT_ATTEMPTS } from "../notifications/dispatch-policy";
+import { NotificationsService } from "../notifications/notifications.service";
 import type { RaiseAttemptsRead } from "../notifications/raise-attempts";
 import { loadRaiseAttempts } from "../notifications/raise-attempts";
 import type { RaiseAttemptRow, RaiseKeyRef } from "../notifications/raise-retry";
-import { channelsOwedTheRaise } from "../notifications/raise-retry";
+import { LostLedgerRows, channelsOwedTheRaise } from "../notifications/raise-retry";
 import { shouldNotify } from "../rules/rule-actions";
 import type { LatestSampleLoader } from "../rules/rule-evaluation";
 import { compare } from "../rules/rule-evaluation";
@@ -66,20 +67,30 @@ import { AlarmsGateway } from "./alarms.gateway";
  * writer of `cleared_at` and `normal_since` — `AlarmRaiser` stays the one
  * raiser (ADR 0033), and nothing else touches either stamp.
  *
- * **Three phases since `F3.51`, one tick, no state but the rows.** The clear
- * phase compares every active alarm's rule against the latest fresh sample and
- * stamps the hold or the clear (`decideClear`). The raise-retry phase
- * (`runRaiseRetryPhase`, ADR 0041 Amendment 5, ADR 0057 Amendment 5) re-offers
- * the ORIGINAL raise of a still-open alarm whose raise reached nobody, to
- * exactly the channels the ledger says are still owed it. The escalation
- * phase, over the alarms still active after the clear and not acknowledged,
- * sends each due step of the organization's severity profile. No phase
- * remembers anything between ticks: the two stamps and the delivery ledger are
- * the whole state, so a restart loses nothing and a repeated tick sends nothing
- * twice — `dispatchToChannels` asks the ledger before every event (decision 10,
- * plan D3), which is why the sweep re-dispatches every due step every tick
- * without a "sent" set of its own, and the raise retry answers the same way
- * from `channelsOwedTheRaise`.
+ * **Three phases since `F3.51`, one tick.** The clear phase compares every
+ * active alarm's rule against the latest fresh sample and stamps the hold or
+ * the clear (`decideClear`). The raise-retry phase (`runRaiseRetryPhase`, ADR
+ * 0041 Amendment 5, ADR 0057 Amendment 5) re-offers the ORIGINAL raise of a
+ * still-open alarm whose raise reached nobody, to exactly the channels the
+ * ledger says are still owed it. The escalation phase, over the alarms still
+ * active after the clear and not acknowledged, sends each due step of the
+ * organization's severity profile. The two stamps and the delivery ledger are
+ * the state, so a repeated tick sends nothing twice —
+ * `dispatchToChannels` asks the ledger before every event (decision 10, plan
+ * D3), which is why the sweep re-dispatches every due step every tick without a
+ * "sent" set of its own, and the raise retry answers the same way from
+ * `channelsOwedTheRaise`.
+ *
+ * **One exception, and it is deliberate** (`F3.51` review, High). This class
+ * holds a {@link LostLedgerRows}: the (alarm, channel, raise key) triples whose
+ * delivery row did NOT land. It is the only thing any phase remembers between
+ * ticks, and this file used to say no phase remembered anything — that sentence
+ * is false now. The ledger remains the only CROSS-PROCESS state: this memory is
+ * in process, a restart empties it, and the retry then resumes as if the losses
+ * had not happened. That is the honest trade, and it is forced: a bound that
+ * survived a restart would have to be a row, and a row is exactly what could
+ * not be written. `PROCESS_STARTED_AT` already behaves this way for the
+ * unconfigured watermark.
  *
  * **Why `runLifecycleSweep` takes its dependencies.** Every read and write is
  * a function on {@link AlarmLifecycleDeps}, so the spec runs the eight cases
@@ -156,6 +167,14 @@ export interface AlarmLifecycleDeps {
    * those.
    */
   loadRaiseAttempts(refs: readonly RaiseKeyRef[]): Promise<RaiseAttemptsRead>;
+  /**
+   * `F3.51` review (High): the (alarm, channel, raise key) triples whose
+   * delivery row did not land. **The one piece of state any phase keeps
+   * between ticks**, and it is in process only — see
+   * {@link runRaiseRetryPhase} and {@link LostLedgerRows}. One instance per
+   * `AlarmLifecycleService`, and a fresh one per case in the spec.
+   */
+  lostLedgerRows: LostLedgerRows;
   dispatchToChannels: NotificationsService["dispatchToChannels"];
   /** After the clear has committed — never from inside the transaction. */
   broadcastCleared(alarm: AlarmListItem): void;
@@ -376,6 +395,11 @@ async function runRaiseRetryPhase(
   deps: AlarmLifecycleDeps,
   input: RaiseRetryPhaseInput,
 ): Promise<void> {
+  // Reclaim first, over the WHOLE active set rather than the eligible list: an
+  // acknowledged or non-notifying alarm is still open, and evicting it here
+  // would forget a real loss the moment somebody acknowledged the alarm.
+  deps.lostLedgerRows.retainAlarms(new Set(input.activeAlarms.map((alarm) => alarm.id)));
+
   const candidates: RetryCandidate[] = [];
   for (const alarm of input.activeAlarms) {
     // Cleared this tick — see the header; and owner ruling Q2, an
@@ -477,6 +501,10 @@ async function runRaiseRetryPhase(
     return pending;
   };
 
+  // Warned once per tick below, not once per pair: at the cap the fleet is in
+  // one state, and one line saying so is what an operator can act on.
+  let refusedByTheCap = 0;
+
   for (const candidate of candidates) {
     // This alarm's batch did not return, so the phase decides nothing about
     // it and does not pay a channel read to find that out.
@@ -510,16 +538,50 @@ async function runRaiseRetryPhase(
         ),
         maxAttempts: MAX_EVENT_ATTEMPTS,
         processStartedAt: PROCESS_STARTED_AT,
-      });
+      })
+        // `F3.51` review (High). Every bound above counts ROWS —
+        // `MAX_EVENT_ATTEMPTS` counts them under the key, `isOverHourlyLimit`
+        // counts `sent` ones in the trailing hour — so a channel whose insert
+        // keeps throwing has no bound at all: the ledger never changes, the
+        // predicate keeps answering "owed", and this phase sends to it twice a
+        // minute for the life of the alarm with no trace of any of it.
+        .filter(
+          (channel) =>
+            !deps.lostLedgerRows.has(candidate.alarm.id, channel.id, candidate.ref.dedupeKey),
+        );
       if (owed.length === 0) {
         continue;
       }
-      await deps.dispatchToChannels(owed, candidate.input);
+      const outcomes = await deps.dispatchToChannels(owed, candidate.input);
+      for (const outcome of outcomes) {
+        if (!outcome.rowLost) {
+          continue;
+        }
+        const remembered = deps.lostLedgerRows.add(
+          candidate.alarm.id,
+          outcome.channelId,
+          candidate.ref.dedupeKey,
+        );
+        if (!remembered) {
+          refusedByTheCap += 1;
+        }
+      }
     } catch (err) {
       deps.logger.warn(
         `alarm lifecycle: raise retry for alarm ${candidate.alarm.id} rule ${candidate.rule.code} failed: ${reasonOf(err)}`,
       );
     }
+  }
+
+  if (refusedByTheCap > 0) {
+    // §9.6: counts and the cap, no ids. Each of these rows has already been
+    // reported individually by `record()`'s own `logger.error`; this line says
+    // the sweep has stopped being able to remember them, so those channels go
+    // back to being re-offered every tick.
+    deps.logger.warn(
+      `alarm lifecycle: raise-retry lost-row memory is full at ${deps.lostLedgerRows.cap} entries; ` +
+        `${refusedByTheCap} further lost row(s) this tick are not remembered and will be re-offered`,
+    );
   }
 }
 
@@ -644,6 +706,13 @@ export async function runLifecycleLoop(
 export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AlarmLifecycleService.name);
   private readonly abortController = new AbortController();
+  /**
+   * `F3.51` review (High) — one per service instance, because `deps()` is
+   * rebuilt on every sweep and this is the one thing that must outlive a tick.
+   * A module-level singleton would be shared by two instances and, worse,
+   * would carry state between spec cases.
+   */
+  private readonly lostLedgerRows = new LostLedgerRows();
 
   constructor(
     // The alarm state writes and the sample read. `withTenant` sets the
@@ -696,6 +765,9 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
       // `new AlarmLifecycleService(...)` compiling untouched.
       loadRuleChannels: (ruleId) => this.channels.loadForRule(ruleId),
       loadRaiseAttempts: (refs) => loadRaiseAttempts(this.fleetDb, refs),
+      // The instance field, never a new one per sweep: `deps()` is called on
+      // every tick and this must survive between them.
+      lostLedgerRows: this.lostLedgerRows,
       dispatchToChannels: (channels, input) => this.notifications.dispatchToChannels(channels, input),
       broadcastCleared: (alarm) => this.gateway.broadcastCleared(alarm),
       logger: this.logger,

@@ -2,12 +2,9 @@ import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 
 import { buildDedupeKey } from "./dedupe-key";
+import { MAX_EVENT_ATTEMPTS } from "./dispatch-policy";
 import { PROCESS_STARTED_AT } from "./notifications.config";
-import {
-  MAX_EVENT_ATTEMPTS,
-  type DispatchEvent,
-  type DispatchInput,
-} from "./notifications.service";
+import type { DispatchEvent, DispatchInput } from "./notifications.service";
 import {
   ORG_ID,
   assert,
