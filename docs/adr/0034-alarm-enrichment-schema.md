@@ -201,3 +201,38 @@ None — no new npm package.
   update the status line.
 - `docs/BACKLOG.md` §5 — add a row for this ADR.
 - `docs/roadmap.md` — mirror `E2.1`'s progress once built.
+
+## Amendment 1 — the premise in §Context is false since migration `0067` (2026-09-08)
+
+Filed while closing `E2.2` (ADR 0059), whose post-merge compliance review found
+it. **The conclusion this ADR reached is unchanged. Its stated reason is not.**
+
+§Context and decision 6 both argue that a template cannot carry the three
+instance-only enrichment fields — affected assets, energy/water/production
+impact, ETR — partly from this:
+
+> So `automation_rules` carries no link back to a template alarm, and this ADR
+> cannot assume one when deciding how an alarm's enrichment gets populated.
+
+**That was true when it was written and has been false since 2026-09-07.**
+`E2.4` (ADR 0058, migration `0067`) added `source_template_id`,
+`source_template_version`, `source_alarm_code` and `seeded_baseline` to
+`bms.automation_rules`. A seeded rule now names the exact `TemplateAlarm` it came
+from, and `E2.2` reads precisely that link to resolve a class philosophy onto a
+live alarm.
+
+**The three fields still stay off the template contract, permanently.** The
+reason is the boundary, not the plumbing: a philosophy describes an **asset
+class**, and a class cannot carry one instance's affected assets, its measured
+impact, or its estimated time to repair. No amount of provenance changes that.
+Do not add them.
+
+**Why an amendment rather than an edit.** The original sentences are the record
+of what was known in August, and `E2.2` had to work around the stale claim
+rather than discover it — which is the cost this convention exists to prevent
+repeating. AGENTS.md §2 and §6 carried the same falsified sentence; §6 was
+corrected in PR [#359](https://github.com/GhochangFu/EMS/pull/359) and §2 in the
+`E2.2` closure sweep.
+
+**Nothing in the Decision section changes**, and no code moves. This amendment
+is a correction to the argument only.
