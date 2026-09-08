@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { asc, eq, is, TransactionRollbackError } from "drizzle-orm";
 
@@ -7,7 +9,6 @@ import {
   alarmSkills,
   alarms,
   assetTemplates,
-  assets,
   automationRules,
   organizations,
   pointValues,
@@ -469,17 +470,26 @@ async function seedTemplateWithPhilosophy(
   return { templateId: template.id, version: template.version, templateName, alarm };
 }
 
-/** The real code of a fixture asset — `seededRuleValues` derives the rule code from it. */
-async function fixtureAssetCode(db: BmsDb, assetId: string): Promise<string> {
-  const [row] = await db
-    .select({ code: assets.code })
-    .from(assets)
-    .where(eq(assets.id, assetId))
-    .limit(1);
-  if (!row) {
-    throw new Error(`no fixture asset ${assetId}`);
-  }
-  return row.code;
+/**
+ * A unique asset code for `seededRuleValues` to derive the rule code from.
+ *
+ * **Synthetic, not the fixture asset's real code, and CI is why.** The first
+ * version of this helper selected `assets.code` by id — safe in itself, since
+ * the id came from `createFixtureAssets` inside this very transaction — but
+ * `tests/integration-fixture-isolation.test.ts` scans the source of every
+ * rollback-isolated spec for a direct read of the assets table and cannot tell
+ * a scoped one from a `LIMIT 1` off the seed. It failed the build, correctly by
+ * its own rule — and it would flag this comment too if it named the pattern
+ * literally, which is why it does not.
+ *
+ * Nothing under test depends on the two agreeing: `assetCode` reaches
+ * `seededRuleValues` only through `seededRuleCode(assetCode, alarm.code)`, and
+ * the join this suite exercises is `source_template_id` + `source_alarm_code`.
+ * What the code must be is **unique**, so one transaction's rules cannot
+ * collide with another's.
+ */
+function syntheticAssetCode(): string {
+  return `FIXTURE-E22-${randomUUID()}`;
 }
 
 /**
@@ -563,7 +573,7 @@ export async function assertDetailsReturnsClassPhilosophyForASeededRule(db: BmsD
     });
     const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
       assetId,
-      assetCode: await fixtureAssetCode(tx, assetId),
+      assetCode: syntheticAssetCode(),
       organizationId,
       templateId,
       templateVersion: version,
@@ -646,7 +656,7 @@ export async function assertDetailsOmitsClassPhilosophyWhenTheAlarmCodeIsAbsent(
     });
     const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
       assetId,
-      assetCode: await fixtureAssetCode(tx, assetId),
+      assetCode: syntheticAssetCode(),
       organizationId,
       templateId,
       templateVersion: version,
@@ -697,7 +707,7 @@ export async function assertDetailsRefusesATemplateFromAnotherOrganization(
     });
     const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
       assetId,
-      assetCode: await fixtureAssetCode(tx, assetId),
+      assetCode: syntheticAssetCode(),
       organizationId,
       templateId,
       templateVersion: version,
@@ -738,7 +748,7 @@ export async function assertDetailsResolvesAnInactiveSkillLabel(db: BmsDb): Prom
     });
     const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
       assetId,
-      assetCode: await fixtureAssetCode(tx, assetId),
+      assetCode: syntheticAssetCode(),
       organizationId,
       templateId,
       templateVersion: version,
