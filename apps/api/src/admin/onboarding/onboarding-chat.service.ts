@@ -1,6 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 
+// F4.104: the length of every draft string field, declared once beside the
+// shared contract's copy of the draft schema and imported here as a value.
+// `@bms/shared` and not `@bms/shared/contracts` — apps/api compiles with
+// moduleResolution "node" and ignores the exports map (ADR 0030 Amendment 2).
+import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type {
   OnboardingAutoOpenReason,
   OnboardingChatMessage,
@@ -12,6 +17,7 @@ import type {
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { quoteCell } from "../spreadsheet-guard";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
+import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import {
   attachEncryptedCredentials,
@@ -302,9 +308,88 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     }
 
     if (phase === "location" || !draft.location?.name) {
-      const name = message.trim();
-      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-      const code = name.toUpperCase().replace(/[^A-Z0-9]+/g, "_").slice(0, 64);
+      // F4.104 — **this branch is the draft's default producer, not a
+      // fallback.** `.env.example` ships `OPENAI_API_KEY=` empty, so
+      // `handleTurn` reaches here on every turn of an ordinary deployment. And
+      // unlike `handleOpenAiTurn` above, which passes the model's patch through
+      // `onboardingDraftSchema.safeParse`, this method assembles its patch in
+      // code and parses nothing: a bound on the schema binds only the producers
+      // that parse it, and this is not one of them. Three sites derive a draft
+      // string from the chat message — here, `assets[].code`/`siteName` below,
+      // and `defaultConfig`'s `topic` — and each is cut to the same imported
+      // bound the schema carries. `code` was already `.slice(0, 64)`; the
+      // pattern was right and incomplete, and the literal is now derived
+      // (§4.8).
+      //
+      // The cut itself is `cutToBound`, not `.slice()` — `.slice()` counts
+      // UTF-16 code units and can halve a surrogate pair, which Postgres refuses
+      // in `jsonb` — and the two globally unique identifiers among the five,
+      // `location.slug` and `assets[].code`, take `cutToBoundWithHashSuffix` so
+      // that a cut cannot manufacture a cross-tenant collision. Both are
+      // recorded in full on those two functions.
+      //
+      // **Sliced, not refused — the opposite of what the workbook upload does
+      // one file away, and deliberately so.** `cellLengthProblem` refuses an
+      // over-long cell because a workbook amplifies: one 5 MiB upload declares
+      // thousands of 32,767-character cells, and a silently shortened asset code
+      // commits plant under a name nobody chose. A chat turn amplifies nothing —
+      // `chatBodySchema` caps `message` at 8,000 characters and one turn yields
+      // one string — so length here is not the denial-of-service axis, and a 400
+      // would replace today's graceful per-field validation error with a dead
+      // end in the middle of a conversation. What makes the cut safe is that the
+      // operator **sees** it: the wizard's draft preview shows the shortened
+      // name and lets them edit it.
+      //
+      // That visibility is exactly what the workbook's `topic` cell lacks, which
+      // is why `parseRtus` refuses it rather than cutting it. `config.topic`
+      // *here* is a third case again: the operator types it in this session and
+      // `mqttSetupTemplate` prints it back, and `bms.rtus.mqtt_topic` is
+      // `varchar(255)`, so an over-length topic could never commit anyway.
+      //
+      // The most damaging of the three is not the long one. See the `assets`
+      // branch: a 56-character location name — legal at every bound — produced
+      // an asset code past 64 that `OnboardingValidateService` then refused, so
+      // `readyToCommit` could never become true.
+      // `cutToBound`, never a bare `.slice()`: `name` is arbitrary Unicode from
+      // the request body, and a cut through the middle of a surrogate pair
+      // produces a lone half that Postgres refuses in `jsonb` — a 500 from a
+      // body no schema rejects. The full account is on `cutToBound`.
+      //
+      // `slug` is additionally **hash-suffixed when the cut fires** (owner
+      // ruling 6): `bms.locations.slug` is globally unique —
+      // `locations_slug_unique`, `0010_phase5_location_access.sql:16`, never
+      // dropped — and the commit has no `onConflict`, so a plain cut turns two
+      // tenants sharing a 64-character slugified prefix into an uncaught unique
+      // violation: a 500, and an oracle that some other organisation holds that
+      // slug.
+      //
+      // **`code` is deliberately left on the plain cut.** Ruling 6 names `slug`
+      // and `assets[].code`, and `location.code`'s uniqueness is a *different*
+      // constraint: `0016` dropped `locations_code_unique` for the org-scoped
+      // `locations_org_code_idx`, so the collision it can still produce is
+      // between two locations of the **same** organisation, which is neither a
+      // cross-tenant oracle nor something this row was scoped to change. It is a
+      // residual, not a closed hole; do not read the `slug` suffix as covering
+      // it.
+      //
+      // Neither derivation strictly needs the surrogate-safe cut — each
+      // `replace` runs *before* it and maps every non-`[a-z0-9]` /
+      // non-`[A-Z0-9]` unit, surrogate halves included, to a separator — but
+      // both go through it anyway, so reordering the two steps cannot
+      // reintroduce the split.
+      const name = cutToBound(message.trim(), ONBOARDING_DRAFT_STRING_MAX["location.name"]);
+      const slug = cutToBoundWithHashSuffix(
+        name
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, ""),
+        ONBOARDING_DRAFT_STRING_MAX["location.slug"],
+        "lower",
+      );
+      const code = cutToBound(
+        name.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
+        ONBOARDING_DRAFT_STRING_MAX["location.code"],
+      );
       patch.location = {
         name,
         slug: slug || "location",
@@ -373,13 +458,43 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     }
 
     if (phase === "assets" || !draft.assets?.length) {
+      // F4.104, and the one site here that was a live functional bug rather
+      // than only an unbounded string. `site` is the **stored** location name,
+      // so it reaches this branch from any producer and from any draft written
+      // before those producers were bounded; `-ASSET-1` then adds eight
+      // characters to it. A location name of 57 characters — legal against
+      // every bound in this file — produced a 65-character asset code, which
+      // `draftAssetSchema.code.max(64)` refuses when
+      // `OnboardingValidateService.validate` re-parses the stored draft. The
+      // turn still answered 200, and the operator was left with a permanent
+      // validation error and no chat instruction that could clear it.
+      //
+      // Cut the finished code, not `site`: cutting the name to 64 first and
+      // then appending the suffix gives 64 + 8 = 72 and fails the same way.
+      //
+      // **Hash-suffixed when the cut fires** (owner ruling 6).
+      // `bms.assets.code` carries `assets_code_unique` from
+      // `0000_sprint1_foundation.sql:18` — global, across every tenant — and
+      // `OnboardingCommitService` inserts with no `onConflict`, so two long
+      // location names agreeing on their first characters would give the second
+      // organisation an uncaught unique violation. The suffix costs the trailing
+      // `-ASSET-1` marker on a code that had to be cut, which is the trade the
+      // ruling makes: a code an operator can still recognise by its prefix and
+      // that no other tenant can already hold.
+      //
+      // `siteName` takes the plain surrogate-safe cut: `bms.assets.site_name` is
+      // not unique, so there is nothing for a hash to protect.
       const site = draft.location?.name ?? orgName;
       patch.assets = [
         {
           rtuIndex: 0,
-          code: `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`,
+          code: cutToBoundWithHashSuffix(
+            `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`,
+            ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+            "upper",
+          ),
           name: "Primary Device",
-          siteName: site,
+          siteName: cutToBound(site, ONBOARDING_DRAFT_STRING_MAX["assets.siteName"]),
           domain: "electrical",
         },
       ];
@@ -467,10 +582,31 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     const topicMatch = message.match(/topic[:\s]+(\S+)/i);
     if (protocol === "mqtt") {
       return {
+        // `host` and `port` are environment or literal and `tls` is a constant;
+        // `topic` is the only field of this record the chat message supplies,
+        // and `\S+` will take all 8,000 characters `chatBodySchema` allows.
+        //
+        // F4.104 — cut, where the same value on the *upload* is refused
+        // (`parseRtus`) and where `mqttSetupTemplate` falls back to the
+        // `your/topic/here` placeholder rather than echo it. Three treatments of
+        // one field, and each is the right one for its route: the workbook cell
+        // is never shown back, so a cut topic silently subscribes somewhere
+        // nobody asked for; the paste-back block *is* copied and edited, so a
+        // cut value there would be pasted back as a real topic. This value is
+        // typed in the same session and the wizard shows it in the draft
+        // preview, so the operator sees what was kept and can correct it. The
+        // placeholder path stays reachable regardless — it also fires for `""`,
+        // for `"-"` and for a legacy draft written before this bound.
+        //
+        // Not the schema's job either: `config` is `z.record(z.unknown())` in
+        // both copies, so `onboardingDraftSchema` cannot see this field however
+        // it is parsed. `bms.rtus.mqtt_topic` is `varchar(255)`, which is where
+        // `MAX_RTU_TOPIC_CHARS` comes from — an over-long topic could never
+        // commit, it could only sit in the draft and fail late.
         host: process.env.MQTT_HOST ?? "phe.thinkiot.co.in",
         port: Number(process.env.MQTT_PORT ?? 8883),
         tls: true,
-        topic: topicMatch?.[1] ?? "",
+        topic: cutToBound(topicMatch?.[1] ?? "", MAX_RTU_TOPIC_CHARS),
       };
     }
     if (protocol === "modbus_tcp") {

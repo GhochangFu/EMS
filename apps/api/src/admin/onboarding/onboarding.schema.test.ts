@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runDraftCountCapTests,
   runDraftStaysPermissiveTests,
+  runDraftStringBoundTests,
   runOnboardingSchemaTests,
 } from "./onboarding.schema.spec";
 
@@ -18,5 +19,9 @@ describe("onboarding.schema", () => {
 
   it("caps the four draft arrays and refuses one item over each (F4.103)", () => {
     runDraftCountCapTests();
+  });
+
+  it("bounds every draft string field at its column width, length only (F4.104)", () => {
+    runDraftStringBoundTests();
   });
 });
