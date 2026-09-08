@@ -106,10 +106,17 @@ export const MAX_ECHOED_ITEMS = 25;
 /**
  * The leading {@link MAX_ECHOED_ITEMS} of `items`, and how many were left.
  *
- * A **prefix**, never a sample: every caller keys something off the position an
- * item held in the input — `formatAssetsByRtuSummary` keys its whole asset map
- * off the RTU's index — so reordering or filtering before this call silently
- * mis-attributes the result.
+ * A **prefix of whatever order the caller passes**, never a sample. Whether the
+ * caller may reorder before calling is the caller's question and the two answer
+ * it differently, so neither may be copied onto the other:
+ *
+ * - `formatAssetsByRtuSummary` **must not**. It keys its whole asset map off
+ *   the RTU's index, so a reorder or a filter there silently attributes every
+ *   asset to the wrong RTU;
+ * - `mqttSetupTemplate` **deliberately does**, sorting the RTUs that still need
+ *   setup to the front. Nothing in the block it renders keys off position, and
+ *   without the sort a leading-25 cut can drop the only RTU the message is
+ *   about.
  */
 export function echoedItems<T>(
   items: readonly T[],

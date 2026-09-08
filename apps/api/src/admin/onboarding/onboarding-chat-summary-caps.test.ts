@@ -5,6 +5,7 @@ import {
   assertDisplayNameFixListIsCapped,
   assertEchoedItemsHelpersAreBounded,
   assertMqttTemplateBlocksAreCapped,
+  assertMqttTemplateKeepsTheRtusItsProseCounts,
   assertPointKeyPreviewIsCapped,
   assertShippedTemplateElidesNothing,
 } from "./onboarding-chat-summary-caps.spec";
@@ -21,6 +22,13 @@ describe("onboarding import summary — how many items it may echo (F4.105)", ()
 
   it("caps the MQTT paste-back blocks, with the tail outside the copy markers", () => {
     assertMqttTemplateBlocksAreCapped();
+  });
+
+  // The cap must not drop the RTUs the prose above it counts — the template's
+  // filter is wider than `mqttIncomplete`, so a leading cut alone can elide the
+  // only RTU the message is about.
+  it("sorts the RTUs that still need setup to the front of the capped template", () => {
+    assertMqttTemplateKeepsTheRtusItsProseCounts();
   });
 
   it("caps the RTU lines and spends one asset budget across the whole summary", () => {

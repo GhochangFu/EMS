@@ -47,6 +47,28 @@ export type ChatTurnResult = {
   // still accepts credentials — `POST :id/credentials` is its only caller now.
 };
 
+type DraftRtu = NonNullable<OnboardingDraft["rtus"]>[number];
+
+/** An RTU the ingest pipeline is meant to read from — the MQTT setup template's own predicate. */
+function isEnabledMqttRtu(rtu: DraftRtu): boolean {
+  return rtu.protocol === "mqtt" && rtu.ingestEnabled === true;
+}
+
+/**
+ * An enabled MQTT RTU that cannot ingest yet — no credential, or no usable
+ * topic. This is the **narrower** predicate: the count in the prose comes from
+ * it, while the paste-back template renders every enabled MQTT RTU.
+ *
+ * Declared once and read from both places on purpose. The divergence is
+ * pre-existing and deliberate (owner ruling 4 leaves the template's contents
+ * alone), but with `F4.105`'s cap in front of it the template has to know which
+ * of its RTUs the prose is counting, so that a leading-25 cut keeps them.
+ */
+function needsMqttSetup(rtu: DraftRtu): boolean {
+  const topic = String(rtu.config.topic ?? "").trim();
+  return isEnabledMqttRtu(rtu) && (!rtu.credentialsSet || topic === "" || topic === "-");
+}
+
 /** Conversational onboarding bot with OpenAI or rule-based fallback. */
 @Injectable()
 export class OnboardingChatService {
@@ -120,14 +142,7 @@ export class OnboardingChatService {
       );
     }
 
-    const mqttIncomplete = (draft.rtus ?? []).filter(
-      (rtu) =>
-        rtu.protocol === "mqtt" &&
-        rtu.ingestEnabled &&
-        (!rtu.credentialsSet ||
-          !String(rtu.config.topic ?? "").trim() ||
-          String(rtu.config.topic).trim() === "-"),
-    );
+    const mqttIncomplete = (draft.rtus ?? []).filter(needsMqttSetup);
 
     if (mqttIncomplete.length > 0) {
       lines.push(
@@ -696,9 +711,7 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
   }
 
   private mqttSetupTemplate(draft: OnboardingDraft): string {
-    const mqttRtus = (draft.rtus ?? []).filter(
-      (rtu) => rtu.protocol === "mqtt" && rtu.ingestEnabled,
-    );
+    const mqttRtus = (draft.rtus ?? []).filter(isEnabledMqttRtu);
     if (mqttRtus.length === 0) {
       return "";
     }
@@ -712,13 +725,35 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     // the three originals on `topic: ""`. Pre-existing, filed as its own row,
     // and deliberately not fixed here (owner ruling 4).
     //
-    // **The tail counts omissions from this list, never from
-    // `mqttIncomplete`.** The two filter on different predicates — that one
-    // also requires a missing credential or an unusable topic — so the prose
-    // above can honestly say "still required for 100 RTU(s)" over 25 blocks. A
-    // tail derived from the prose's number would be wrong. Also pre-existing,
-    // also not this row's to fix.
-    const { shown, omitted } = echoedItems(mqttRtus);
+    // **The two predicates diverge, and the cap turned that from untidy into an
+    // elision — so this list is sorted, not filtered.** `mqttIncomplete`, which
+    // the prose above counts, is strictly narrower than this one: it also
+    // requires a missing credential or an unusable topic. Before the cap every
+    // enabled MQTT RTU printed, so the ones the prose meant were always among
+    // them. A leading-25 cut alone does not keep that promise — measured here:
+    // 30 enabled MQTT RTUs of which only the last lacked a topic produced
+    // "**MQTT setup still required** for 1 RTU(s)", 25 paste-back blocks for
+    // RTUs that needed nothing, and the one that did need work **nowhere in the
+    // message**.
+    //
+    // Sorting the incomplete ones to the front repairs exactly what the cap
+    // broke. Filtering to `mqttIncomplete` would also change *which* RTUs the
+    // template contains, and that divergence is pre-existing and deliberate
+    // (owner ruling 4 leaves the template's contents and its instruction text
+    // alone). A reorder is safe **here and only here**: nothing in the block
+    // below keys off position, unlike `formatAssetsByRtuSummary` where the
+    // index *is* the asset map's key. `Array.prototype.sort` is stable
+    // (ES2019), so the complete RTUs keep their input order behind the
+    // incomplete ones.
+    //
+    // **The tail still counts omissions from this list, never from
+    // `mqttIncomplete`.** The prose can honestly say "still required for 100
+    // RTU(s)" over 25 blocks; a tail derived from the prose's number would be
+    // wrong.
+    const setupOrder = [...mqttRtus].sort(
+      (left, right) => Number(needsMqttSetup(right)) - Number(needsMqttSetup(left)),
+    );
+    const { shown, omitted } = echoedItems(setupOrder);
     const blocks = shown.map((rtu) => {
       const existingTopic = String(rtu.config.topic ?? rtu.config.mqttTopic ?? "").trim();
       // `topic:` is the one echo site `quoteCell` cannot cover — the operator

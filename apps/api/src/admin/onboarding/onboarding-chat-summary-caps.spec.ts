@@ -224,6 +224,16 @@ function worstRtu(index: number, credentialsSet: boolean): NonNullable<Onboardin
   };
 }
 
+/**
+ * The same RTU with no topic at all: enabled, credentialed, and still unable to
+ * ingest. This is an RTU `mqttIncomplete` counts and the template's own
+ * `protocol === "mqtt" && ingestEnabled` filter cannot distinguish.
+ */
+function topiclessRtu(index: number): NonNullable<OnboardingDraft["rtus"]>[number] {
+  const rtu = worstRtu(index, true);
+  return { ...rtu, config: { ...rtu.config, topic: "" } };
+}
+
 /** The `slot`-th asset of RTU `index`, its name at the bound. */
 function worstAsset(index: number, slot: number): NonNullable<OnboardingDraft["assets"]>[number] {
   const tag = `Asset-r${String(index).padStart(3, "0")}-a${slot}-`;
@@ -375,6 +385,79 @@ export function assertMqttTemplateBlocksAreCapped(): void {
   assert(
     message.length < 20_000,
     `the MQTT branch must stay under 20,000 characters, got ${message.length}`,
+  );
+}
+
+/**
+ * The cap must not elide the RTUs the prose above it is counting.
+ *
+ * **A regression this row introduced, caught in review and fixed here.** The
+ * template's filter (`protocol === "mqtt" && ingestEnabled`) is strictly wider
+ * than `mqttIncomplete` (which also requires a missing credential or an
+ * unusable topic). Before the cap that only made the numbers read oddly: every
+ * enabled MQTT RTU printed, so the ones the prose meant were always among them.
+ * A leading-25 cut turned it into an elision. Measured on the broken version
+ * with the fixture below: prose `**MQTT setup still required** for 1 RTU(s)`,
+ * 25 paste-back blocks for RTUs that needed nothing, `…and 5 more`, and the one
+ * RTU that did need work **absent from the message**.
+ *
+ * The fix is a stable sort of the incomplete RTUs to the front, not a filter —
+ * filtering would change *which* RTUs the template contains, which is the
+ * pre-existing divergence owner ruling 4 leaves alone.
+ *
+ * So the presence expectation here is deliberately **not** `index < 25`: RTU 29
+ * is printed and RTUs 24–28 are not.
+ */
+export function assertMqttTemplateKeepsTheRtusItsProseCounts(): void {
+  const rtus = [
+    ...Array.from({ length: 29 }, (_, index) => worstRtu(index, true)),
+    topiclessRtu(29),
+  ];
+  const followUp = chatService().excelImportFollowUp(
+    { rtus, assets: [], onboardingMeta: { useExistingPointKeys: true } },
+    { locationName: WORST_LOCATION, rtuCount: rtus.length, assetCount: 0 },
+    [],
+    [],
+  );
+  const message = followUp.assistantMessage;
+  assert(
+    message.includes("**MQTT setup still required** for 1 RTU(s)."),
+    "exactly one of these RTUs needs setup, or this case is not the one that regressed",
+  );
+  const blocks = (message.match(/RTU: /g) ?? []).length;
+  assert(
+    blocks === MAX_ECHOED_ITEMS,
+    `30 enabled MQTT RTUs still render ${MAX_ECHOED_ITEMS} blocks, got ${blocks}`,
+  );
+
+  // The whole point: the RTU the prose counts is in the message.
+  assert(
+    message.includes(rtuTag(29)),
+    "the one RTU that needs setup must be in the message the prose counts it in — " +
+      "without the sort it is the 30th of a list cut at 25 and appears nowhere",
+  );
+  // ...and first, because an operator reading a 25-block template acts on the
+  // top of it. Position, not mere presence.
+  const firstBlock = message.split("\n").find((line) => line.startsWith("RTU: ")) ?? "";
+  assert(
+    firstBlock.includes(rtuTag(29)),
+    `the RTUs that need setup sort to the front, got "${firstBlock.slice(0, 40)}"`,
+  );
+  // The sort is stable, so the complete RTUs keep their input order behind it:
+  // 29, then 0..23. 24..28 are the five that fall off.
+  for (const [index] of rtus.entries()) {
+    const present = message.includes(rtuTag(index));
+    const expected = index === 29 || index < MAX_ECHOED_ITEMS - 1;
+    assert(
+      present === expected,
+      `RTU ${index} must be ${expected ? "printed" : "omitted"} under a stable incomplete-first sort, and it is not`,
+    );
+  }
+  const lines = message.split("\n");
+  const endCopy = lines.findIndex((line) => line.includes("END COPY"));
+  assert(
+    /^…and 5 more$/.test(lines[endCopy + 1] as string),
+    `the tail counts the template's own omissions, got "${lines[endCopy + 1]}"`,
   );
 }
 
