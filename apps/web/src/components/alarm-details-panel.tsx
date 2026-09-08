@@ -258,6 +258,54 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
 
             <p className="text-sm">{details.message}</p>
 
+            {/*
+              E2.2 / ADR 0059. Above the enrichment, and visibly a different
+              kind of thing: this is what engineering decided about the asset
+              **class**, the block below is what an operator recorded about
+              **this** alarm (ADR 0034 §Context). The labels are deliberately
+              not the enrichment's — "Likely cause" beside "Root cause",
+              "Typical impact" beside "Impact" — because two identical headings
+              carrying different text is how that distinction stops being
+              visible, and decision 5 asks for the labelling explicitly.
+
+              Absent, not empty, when there is no provenance: that is nearly
+              every alarm today (0 of 290 rules carry it), and a permanent row
+              of dashes would be dead space on the densest panel in the app.
+            */}
+            {details.classPhilosophy ? (
+              <section
+                aria-label="Class philosophy"
+                className="rounded border border-sky-200 bg-sky-50/60 px-3 py-2"
+              >
+                <h3 className="text-xs font-semibold text-bms-ink">Class philosophy</h3>
+                <p className="mt-0.5 text-[11px] text-bms-muted">
+                  Authored on {details.classPhilosophy.templateName} v
+                  {details.classPhilosophy.templateVersion} — it describes this asset class,
+                  not this alarm.
+                </p>
+                <dl className="mt-2 space-y-1.5 text-xs">
+                  {(
+                    [
+                      ["Likely cause", details.classPhilosophy.cause],
+                      ["Typical impact", details.classPhilosophy.impact],
+                      ["Recommended action", details.classPhilosophy.action],
+                      // The resolved label, never the raw code — and it is
+                      // present even for a retired skill, because the API
+                      // resolves it without an `active` filter.
+                      ["Skill required", details.classPhilosophy.skillLabel],
+                    ] as const
+                  )
+                    .filter(([, value]) => value !== null)
+                    .map(([label, value]) => (
+                      <div key={label}>
+                        <dt className="font-semibold text-bms-ink">{label}</dt>
+                        <dd className="text-bms-muted">{value}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </section>
+            ) : null}
+
             {readOnly ? (
               details.enrichment ? (
                 <dl className="space-y-2 text-xs">
