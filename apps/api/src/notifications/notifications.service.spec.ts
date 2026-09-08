@@ -40,6 +40,11 @@ export function channelRow(overrides: Partial<NotificationChannelRow> = {}): Not
     secret: null,
     secretState: "none",
     enabled: true,
+    // `F3.50`: an OLD default on purpose. A channel nobody has edited since
+    // this process started has `PROCESS_STARTED_AT` as its watermark, which is
+    // the realistic production default and the one block 15 discriminates
+    // against by overriding this.
+    updatedAt: new Date("2020-01-01T00:00:00.000Z"),
     ...overrides,
   };
 }

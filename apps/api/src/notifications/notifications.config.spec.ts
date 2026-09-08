@@ -115,6 +115,7 @@ export async function runLogTransportTests(): Promise<void> {
         secret: "super-secret-hmac-key",
         secretState: "ready",
         enabled: true,
+        updatedAt: new Date("2020-01-01T00:00:00.000Z"),
       },
     });
 

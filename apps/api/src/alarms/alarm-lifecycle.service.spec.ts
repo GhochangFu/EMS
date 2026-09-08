@@ -109,6 +109,7 @@ function channelRow(id: string, code: string): NotificationChannelRow {
     secret: null,
     secretState: "none",
     enabled: true,
+    updatedAt: new Date("2020-01-01T00:00:00.000Z"),
   };
 }
 

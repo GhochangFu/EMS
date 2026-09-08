@@ -62,6 +62,32 @@ export type NotificationChannelRow = {
    */
   secretState: "none" | "ready" | "unreadable";
   enabled: boolean;
+  /**
+   * `F3.50` (ADR 0057 Amendment 3 ruling Q1) — `bms.notification_channels`'s
+   * own `updated_at`, carried through so `dispatchToChannel` can DATE a
+   * `skipped_unconfigured` delivery row against the configuration that
+   * produced it.
+   *
+   * Decision 10 reads an event's key once and treats any non-`failed`,
+   * non-`skipped_rate_limited` row as the answer, so a step refused while its
+   * channel had no URL, no recipients, no readable secret or no transport at
+   * all was never sent again — configuring one afterwards changed nothing.
+   * The row still gets written, because an unconfigured channel is a
+   * configuration fault an operator must see; what `F3.50` changes is that it
+   * stops ANSWERING once it predates
+   * `max(channel.updatedAt, PROCESS_STARTED_AT)`. This field is the first half
+   * of that watermark; `notifications.config.ts` holds the second.
+   *
+   * **Carried, never invented.** `ChannelsService.toChannelRow` must copy the
+   * stored value — a `new Date()` there would make every unconfigured row
+   * stale, so no key would block and the sweep would write one row per tick
+   * for ever. `channels.service.spec.ts` holds that.
+   *
+   * **Not part of any DTO.** `NotificationChannelDto` is built by `toDto` from
+   * the raw database row on a separate path; this type is internal to
+   * `apps/api/src/notifications/` and never reaches a response.
+   */
+  updatedAt: Date;
 };
 
 /**
