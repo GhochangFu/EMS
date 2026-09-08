@@ -1,8 +1,12 @@
-import type { OnboardingDraft } from "@bms/shared";
+import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
+import type { OnboardingDraft, OnboardingPhase } from "@bms/shared";
 
 import { MAX_ECHOED_CELL_CHARS } from "../spreadsheet-guard";
 import { OnboardingChatService } from "./onboarding-chat.service";
+import type { ChatTurnResult } from "./onboarding-chat.service";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
+import { OnboardingValidateService } from "./onboarding-validate.service";
+import { onboardingDraftSchema } from "./onboarding.schema";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -354,5 +358,375 @@ export function assertAssetsByRtuSummaryIsIndexedNotRescanned(): void {
   assert(
     elapsedMs < 750,
     `${count} RTUs × ${count} assets must not cost a quadratic walk, took ${elapsedMs.toFixed(0)} ms`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// F4.104 — `handleRuleBasedTurn`, the draft's default producer
+// ---------------------------------------------------------------------------
+
+/**
+ * The rule-based branch with a **real** validator behind it.
+ *
+ * `finalizeTurn` calls `validateService.validate`, so that one cannot be a stub
+ * — and it is the service that re-parses the merged draft through
+ * `onboardingDraftSchema`, i.e. the thing that turns an over-long derived string
+ * into the operator's permanent validation error. The other three are untouched
+ * on every path below: `crypto` only inside `mergeDraft`, and `catalogService`
+ * and `protocolService` only when an `organizationId` is passed.
+ */
+function ruleBasedChatService(): OnboardingChatService {
+  return new OnboardingChatService(
+    new OnboardingValidateService(),
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+}
+
+/**
+ * Drives the **real** `handleTurn` into its rule-based branch.
+ *
+ * Two ways this call silently measures the wrong code, both of them green:
+ *
+ * 1. `handleTurn:204` takes the OpenAI branch whenever `OPENAI_API_KEY` is set
+ *    in the environment running the suite. That branch **does** parse
+ *    `onboardingDraftSchema`, so every assertion below would pass while
+ *    asserting nothing about the branch this row is about. The key is removed
+ *    for the call and restored after it, and each case also pins a value only
+ *    the rule-based branch produces.
+ * 2. `organizationId` is left undefined. With one, a message mentioning a
+ *    protocol *and* a question word is answered by `protocolService` before the
+ *    dispatch below is reached.
+ */
+async function ruleBasedTurn(
+  message: string,
+  draft: OnboardingDraft,
+  phase: OnboardingPhase,
+): Promise<ChatTurnResult> {
+  const savedKey = process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    return await ruleBasedChatService().handleTurn(message, draft, phase, "Ion Exchange");
+  } finally {
+    if (savedKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = savedKey;
+    }
+  }
+}
+
+/**
+ * `assert` above is a plain check rather than a TypeScript assertion function,
+ * so it cannot narrow away an `undefined`. This one does both jobs: it is where
+ * each case below states which branch it had to reach, and it hands back the
+ * value the rest of the case asserts on.
+ */
+function requiredItem<T>(value: T | undefined, message: string): T {
+  if (value === undefined) {
+    throw new Error(message);
+  }
+  return value;
+}
+
+/** A stored location, as the `assets` and `rtu` branches read it back. */
+function locationNamed(name: string): NonNullable<OnboardingDraft["location"]> {
+  return {
+    name,
+    slug: "site",
+    code: "SITE",
+    type: "smoc_campus",
+    latitude: -25.7,
+    longitude: 28.2,
+  };
+}
+
+/**
+ * A draft that reaches the `assets` branch: `handleRuleBasedTurn` returns from
+ * the first branch that matches, so the location, RTU and point-key branches
+ * above it all have to be satisfied first.
+ */
+function draftBeforeAssets(locationName: string): OnboardingDraft {
+  return {
+    location: locationNamed(locationName),
+    rtus: [
+      {
+        code: "RTU-1",
+        displayName: "RTU 1",
+        protocol: "mqtt",
+        config: { host: "broker", port: 8883, tls: true, topic: "plant/rtu-1" },
+        credentialsSet: true,
+        ingestEnabled: true,
+      },
+    ],
+    pointKeys: [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }],
+  };
+}
+
+/**
+ * A location name that is **legal at every bound** — 95 characters, well inside
+ * `location.name`'s 255 — and still overflows `assets[].code`, because that code
+ * is the name plus nine characters. This is the case that makes the row a
+ * functional bug and not only a length axis.
+ */
+const LEGAL_LOCATION_NAME = "Berhampur Water Treatment Plant ".repeat(3).trim();
+
+/** What the `assets` branch builds its code from, before any cut. */
+function assetCodeFor(site: string): string {
+  return `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`;
+}
+
+/**
+ * `handleRuleBasedTurn` derives four schema-bound draft strings from the chat
+ * message and from the stored location, and bounds none of them before `F4.104`
+ * — `location.name`, `location.slug`, `assets[].code` and `assets[].siteName`.
+ *
+ * **The assertion is the schema itself.** Each case parses the produced patch
+ * through `onboardingDraftSchema` — the same object
+ * `OnboardingValidateService.validate` re-parses the stored draft with, and the
+ * same one `handleOpenAiTurn` applies to the model's patch and this branch
+ * applies to nothing. Asserting against the schema rather than against `255` and
+ * `64` means this spec cannot drift from `ONBOARDING_DRAFT_STRING_MAX` when a
+ * number there changes.
+ *
+ * A schema parse only proves the direction it can fail in, so each case also
+ * asserts the **oracle is live**: the same patch carrying the *uncut* value is
+ * refused by the same parse, on the path naming that field. Without it a slice
+ * removed from the service would leave this function green — the parse would
+ * simply be testing a value nothing had lengthened.
+ *
+ * Both directions on the length, too: a 95-character location name and a
+ * 21-character chat message come back **unchanged**, so a cut that is too
+ * aggressive reddens here as well as one that is missing.
+ *
+ * `config.topic` is the fifth derived string and it is **not** here — the schema
+ * cannot see it. `assertRuleBasedTurnBoundsMqttTopic` holds it.
+ */
+export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<void> {
+  // --- the location branch: an 8,000-character name is what `chatBodySchema`
+  // --- allows, and the whole message becomes `location.name` -----------------
+  const longMessage = "b".repeat(600);
+  assert(
+    longMessage.length > ONBOARDING_DRAFT_STRING_MAX["location.name"],
+    "this case must send a message past the bound, or it asserts nothing",
+  );
+  const long = await ruleBasedTurn(longMessage, {}, "location");
+  const longLocation = requiredItem(
+    long.draftPatch.location,
+    "this case must reach the rule-based location branch, or it measures the OpenAI one",
+  );
+  assert(
+    longLocation.type === "smoc_campus",
+    "only the rule-based branch defaults the location type — this patch came from elsewhere",
+  );
+  assert(
+    longLocation.name.length === ONBOARDING_DRAFT_STRING_MAX["location.name"],
+    `location.name is cut to its bound, got ${longLocation.name.length} characters`,
+  );
+  assert(
+    longLocation.slug.length === ONBOARDING_DRAFT_STRING_MAX["location.slug"],
+    // The site that made this row worth writing: `code` three lines away was
+    // already `.slice(0, 64)` and `slug`, derived from the same name, was not.
+    `location.slug is cut to its bound, got ${longLocation.slug.length} characters`,
+  );
+  assert(
+    longLocation.code.length === ONBOARDING_DRAFT_STRING_MAX["location.code"],
+    `location.code is cut to its bound, got ${longLocation.code.length} characters`,
+  );
+  const longParsed = onboardingDraftSchema.safeParse(long.draftPatch);
+  assert(
+    longParsed.success,
+    `the patch this branch produces must satisfy the draft schema: ${JSON.stringify(
+      longParsed.error?.issues.map((issue) => issue.path.join(".")),
+    )}`,
+  );
+  // The oracle is live: the same patch, uncut, is refused on those paths.
+  const uncutLocation = onboardingDraftSchema.safeParse({
+    location: { ...longLocation, name: longMessage, slug: "b".repeat(600) },
+  });
+  assert(
+    !uncutLocation.success,
+    "the schema must refuse the uncut name and slug, or this parse proves nothing",
+  );
+  const uncutPaths = (uncutLocation.error?.issues ?? []).map((issue) => issue.path.join("."));
+  assert(
+    uncutPaths.includes("location.name") && uncutPaths.includes("location.slug"),
+    `the refusal names both fields, got ${JSON.stringify(uncutPaths)}`,
+  );
+
+  // --- the other direction: an ordinary location name survives whole ---------
+  const ordinaryMessage = "Berhampur Water Works";
+  const ordinary = await ruleBasedTurn(ordinaryMessage, {}, "location");
+  assert(
+    ordinary.draftPatch.location?.name === ordinaryMessage,
+    `a name inside the bound is stored whole, got "${ordinary.draftPatch.location?.name}"`,
+  );
+  assert(
+    ordinary.draftPatch.location?.slug === "berhampur-water-works",
+    `the slug is unchanged for an ordinary name, got "${ordinary.draftPatch.location?.slug}"`,
+  );
+
+  // --- the assets branch, from a location name that is legal everywhere ------
+  // 95 characters + `-ASSET-1` = 104, which `draftAssetSchema.code.max(64)`
+  // refuses. The turn answered 200 and the operator was left with a validation
+  // error no chat instruction could clear.
+  assert(
+    LEGAL_LOCATION_NAME.length <= ONBOARDING_DRAFT_STRING_MAX["location.name"] &&
+      assetCodeFor(LEGAL_LOCATION_NAME).length > ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+    "this case needs a location name that is legal and still overflows the asset code",
+  );
+  const legalSite = await ruleBasedTurn("One asset", draftBeforeAssets(LEGAL_LOCATION_NAME), "assets");
+  const legalAsset = requiredItem(
+    legalSite.draftPatch.assets?.[0],
+    "this case must reach the rule-based assets branch, or it measures the OpenAI one",
+  );
+  assert(
+    legalAsset.name === "Primary Device",
+    "only the rule-based branch names the asset — this patch came from elsewhere",
+  );
+  assert(
+    legalAsset.code.length === ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+    `assets[].code is cut to its bound, got ${legalAsset.code.length} characters`,
+  );
+  assert(
+    legalAsset.code === assetCodeFor(LEGAL_LOCATION_NAME).slice(0, legalAsset.code.length),
+    // Cut the finished code, not the site: slicing the site first and then
+    // appending `-ASSET-1` gives 64 + 8 and fails the same way.
+    `the code keeps its leading characters, got "${legalAsset.code}"`,
+  );
+  assert(
+    legalAsset.siteName === LEGAL_LOCATION_NAME,
+    "a site name inside its own bound is stored whole",
+  );
+  const legalParsed = onboardingDraftSchema.safeParse(legalSite.draftPatch);
+  assert(
+    legalParsed.success,
+    `a legal location name must not produce a draft the validator refuses: ${JSON.stringify(
+      legalParsed.error?.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+    )}`,
+  );
+  const uncutCode = onboardingDraftSchema.safeParse({
+    assets: [{ ...legalAsset, code: assetCodeFor(LEGAL_LOCATION_NAME) }],
+  });
+  assert(
+    !uncutCode.success &&
+      (uncutCode.error?.issues ?? []).some((issue) => issue.path.join(".") === "assets.0.code"),
+    "the schema must refuse the uncut asset code, or this parse proves nothing",
+  );
+
+  // --- the assets branch, from a stored name written before any bound --------
+  // `site` is the stored location name, so it reaches here from every producer
+  // and from every draft saved before those producers were bounded.
+  const storedName = "S".repeat(600);
+  const storedSite = await ruleBasedTurn("One asset", draftBeforeAssets(storedName), "assets");
+  const storedAsset = requiredItem(
+    storedSite.draftPatch.assets?.[0],
+    "this case must reach the rule-based assets branch, or it measures the OpenAI one",
+  );
+  assert(
+    storedAsset.name === "Primary Device",
+    "only the rule-based branch names the asset — this patch came from elsewhere",
+  );
+  assert(
+    storedAsset.siteName.length === ONBOARDING_DRAFT_STRING_MAX["assets.siteName"],
+    `assets[].siteName is cut to its bound, got ${storedAsset.siteName.length} characters`,
+  );
+  assert(
+    storedAsset.code.length === ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+    `assets[].code is cut to its bound, got ${storedAsset.code.length} characters`,
+  );
+  const storedParsed = onboardingDraftSchema.safeParse(storedSite.draftPatch);
+  assert(
+    storedParsed.success,
+    `the patch this branch produces must satisfy the draft schema: ${JSON.stringify(
+      storedParsed.error?.issues.map((issue) => issue.path.join(".")),
+    )}`,
+  );
+  const uncutSiteName = onboardingDraftSchema.safeParse({
+    assets: [{ ...storedAsset, siteName: storedName }],
+  });
+  assert(
+    !uncutSiteName.success &&
+      (uncutSiteName.error?.issues ?? []).some(
+        (issue) => issue.path.join(".") === "assets.0.siteName",
+      ),
+    "the schema must refuse the uncut site name, or this parse proves nothing",
+  );
+}
+
+/**
+ * The fifth string the rule-based branch derives from the message —
+ * `defaultConfig`'s `topic`, which takes `\S+` out of a message
+ * `chatBodySchema` allows 8,000 characters of.
+ *
+ * **Its oracle cannot be the draft schema, and that is a property of the schema
+ * rather than of this test.** `config` is `z.record(z.unknown())` in both
+ * copies — owner ruling 3 keeps it there, with the rest of the `z.record` axis,
+ * for `E8.5` — so `onboardingDraftSchema` structurally cannot see any field
+ * inside it, at any length. The bound is `MAX_RTU_TOPIC_CHARS`, the same one
+ * `parseRtus` refuses the workbook's `topic` cell on, and it comes from
+ * `bms.rtus.mqtt_topic` being `varchar(255)`. The last assertion below states
+ * that limit executably: if the schema ever does start seeing `config.topic`,
+ * it reddens and this function should switch to the parse.
+ */
+export async function assertRuleBasedTurnBoundsMqttTopic(): Promise<void> {
+  const rawTopic = "t".repeat(600);
+  assert(
+    rawTopic.length > MAX_RTU_TOPIC_CHARS,
+    "this case must send a topic past the bound, or it asserts nothing",
+  );
+  // Phase `rtu` with a location already stored: the branch above returns first
+  // on `phase === "location" || !draft.location?.name`.
+  const turn = await ruleBasedTurn(
+    `topic: ${rawTopic}`,
+    { location: locationNamed("Berhampur") },
+    "rtu",
+  );
+  const rtu = requiredItem(
+    turn.draftPatch.rtus?.[0],
+    "this case must reach the rule-based RTU branch, or it measures the OpenAI one",
+  );
+  assert(
+    rtu.code === "RTU-1",
+    `only the rule-based branch numbers the RTU code, got "${rtu.code}"`,
+  );
+  assert(
+    rtu.protocol === "mqtt",
+    `only the MQTT config carries a topic, got protocol "${rtu.protocol}"`,
+  );
+  const topic = String(rtu.config?.topic ?? "");
+  assert(
+    topic.length === MAX_RTU_TOPIC_CHARS,
+    `config.topic is cut to its bound, got ${topic.length} characters`,
+  );
+  assert(
+    topic === rawTopic.slice(0, MAX_RTU_TOPIC_CHARS),
+    "the topic keeps its leading characters",
+  );
+
+  // The other direction: a real topic is stored exactly as typed, because
+  // `mqttSetupTemplate` prints it back for the operator to edit.
+  const ordinary = await ruleBasedTurn(
+    "topic: plant/rtu-1/data",
+    { location: locationNamed("Berhampur") },
+    "rtu",
+  );
+  assert(
+    String(ordinary.draftPatch.rtus?.[0]?.config?.topic ?? "") === "plant/rtu-1/data",
+    `a topic inside the bound is stored whole, got "${String(
+      ordinary.draftPatch.rtus?.[0]?.config?.topic ?? "",
+    )}"`,
+  );
+
+  // The stated limit, executable: the schema accepts the uncut topic, so it is
+  // not the oracle for this field and cannot be made into one by asserting harder.
+  const uncut = onboardingDraftSchema.safeParse({
+    rtus: [{ ...rtu, config: { ...rtu.config, topic: rawTopic } }],
+  });
+  assert(
+    uncut.success,
+    "config is z.record(z.unknown()) in both copies — if the schema now refuses an " +
+      "over-long topic, this function should assert through it instead of through the length",
   );
 }
