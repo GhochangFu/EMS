@@ -3200,8 +3200,13 @@ the point-identity gap as its acceptance detail.
   row, an acknowledgement inside the step window leaving no step row while
   the unacknowledged sibling got step 1, the first mapping's 52-alarm burst
   bounded once per key, and the four page states on the served bundle.
-- **Residual:** `F3.48` — a step refused by the hourly ceiling is never
-  retried (ruling Q7). `F3.28`'s Active Alarms rail is now buildable.
+- **Residual — discharged 2026-09-08 by `F3.48`.** Ruling Q7's "a step refused
+  by the hourly ceiling is never retried" held for `F3.10` and no longer holds:
+  the refusal now writes no row, so the key survives and the next 30 s tick
+  retries until the ceiling lifts, and a rate-limited row written earlier no
+  longer blocks its key — which is what released the 52 stranded alarms Q7
+  measured. See ADR 0057 Amendment 2. `F3.28`'s Active Alarms rail is
+  buildable.
 
 ### The telemetry import reads a sheet by its absolute position (`F4.100`) — done
 
@@ -3453,6 +3458,72 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   catalog entry into two organizations writes the identical code.
 - **Unblocks:** nothing directly. `E2.3` (AI-assisted root-cause suggestions)
   still needs `E1.2`.
+
+### The step the ceiling refused is retried (`F3.48`, ADR 0057 Amendment 2) — done
+
+- **Status:** merged 2026-09-08 — PR
+  [#366](https://github.com/GhochangFu/EMS/pull/366) (`a0ec8f42`), plus a
+  post-merge fix PR [#367](https://github.com/GhochangFu/EMS/pull/367).
+- **The row's own proposed fix was measured wrong, and that is the finding.**
+  `docs/BACKLOG.md` offered "drop `skipped_rate_limited` from the blocking
+  statuses" as the no-DDL option. `eventDeliveryBlocked` blocks on two arms —
+  `rows.length >= MAX_EVENT_ATTEMPTS` and "any row that is not `failed`" — under
+  a `LIMIT` of three. Dropping the status from the second arm leaves the first
+  standing, and the lifecycle sweep ticks every 30 s, so three rate-limited rows
+  land inside 90 seconds and block the key for ever, while the ceiling counts
+  `sent` rows over a trailing **hour**. The option would have burned the three
+  attempts without ever reaching a tick at which the ceiling had lifted.
+- **What shipped.** Three owner rulings. **Q1**: the ceiling writes no row when
+  it refuses an escalation step, so the key is never spent and the next tick
+  retries — the treatment security review H1 had already given a failed
+  rate-limit *read*, extended from the read to the ceiling. Nothing else was
+  needed: the escalation phase already re-dispatches every due step every tick
+  and ignores the results, so writing nothing **is** the retry. **Q2**: a
+  `skipped_rate_limited` row no longer blocks an event key, which released the
+  52 backlogged alarms ruling Q7 had measured and stranded. **Q-A**: the
+  escalation kind only.
+- **Q-A came out of planning, and it is why the row is not one condition.** The
+  amendment first said "a dispatch carrying an event", which covers the cleared
+  message too — and a clear is dispatched once, from the clear phase, after
+  which the alarm leaves the sweep's selection entirely. Under the blanket form
+  a ceiling-refused clear would have got no send, no row, no retry and no log
+  line: worse than the defect the row set out to fix, where it was at least lost
+  visibly. The clear keeps its refusal row.
+- **The exclusion is in the SQL, not in the sampled rows,** because the read
+  takes three rows with no `ORDER BY` and its own comment gives
+  order-independence as the reason that is sound. A filter over an unordered
+  sample could return three rate-limited rows and leave both arms false for a
+  key the three-attempt bound blocks.
+- **Verification.** Seven mutation checks, each reddening a named assertion at
+  the unit layer, against Postgres, or both. The index claim — stated three
+  times and gated nowhere — became a measured `EXPLAIN`. The browser layer is
+  N/A and says why: the only user-visible effects are absences, and SQL proves
+  an absence better than a screenshot.
+- **And the post-merge review found the retry itself had no gate.** The row
+  shipped claiming three tests held "the sweep retries a ceiling-refused step"
+  in composition. The third held nothing: the only place in the repository that
+  ran two ticks over one alarm asserted only *absences* — no second row, no
+  second send — which pass whether the sweep re-offers a due step or never
+  dispatches again. Ruling Q1's one distinguishing consequence, the second
+  offer, was asserted nowhere. A second-tick unit case now holds it, and the
+  measurement of how little the old claim covered is that the mutation killing
+  it leaves all 40 other alarm tests green, the integration second-tick
+  assertions included. Three pre-merge review gates had not caught it, because
+  each read one axis; the whole-change look did.
+- **What was deliberately not fixed.** `skipped_unconfigured` blocks an event
+  key by the same mechanism. The retry competes with the raise path for one
+  hourly budget, with no staleness bound on a long-deferred step. The ceiling
+  read is an un-memoized aggregate now issued once per due step per tick. And a
+  raise notification that did not send is never retried, **whatever the
+  reason** — that one is older than this row, because the loss is caused by the
+  dedupe key changing rather than by the status: the outcome is recorded against
+  the alarm, and the next evaluation arrives with no alarm id and keys on
+  `no-alarm`. Ruling Q-A's own principle is also applied to only one of three
+  branches. Five rows carry them, and two were filed with the wrong scope until
+  the post-merge review corrected them — one would have produced a fix covering
+  one case in three, and the other proposed a memo that would have removed the
+  hourly ceiling for the tick that used it.
+- **Unblocks:** nothing directly.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
