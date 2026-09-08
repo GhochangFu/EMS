@@ -6,6 +6,7 @@ import type { OnboardingDraft } from "@bms/shared";
 import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
 import { MAX_HEADER_COLUMNS, SHEET_ROWS_BOUND } from "../telemetry-import/telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
+import { workbookSectionCountProblem } from "./onboarding-draft-caps";
 import { onboardingProtocolSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
@@ -320,6 +321,36 @@ export class OnboardingExcelService {
 
     if (locationRows.length < 2) {
       throw new BadRequestException("LOCATION section requires a header row and one data row");
+    }
+
+    // `F4.103` — the semantic count cap, and it is **not** a second reading
+    // bound. This runs after `sheet_to_json` has already densified the sheet, so
+    // it bounds nothing about the read: `SHEET_ROWS_BOUND` and
+    // `MAX_HEADER_COLUMNS` do that, and this file has applied both since
+    // `F4.102`. What it bounds is the work *after* the read — `parseRtus` and
+    // `parseAssets` walking one row at a time, the jsonb the draft write then
+    // carries, the message `excelImportFollowUp` builds from it, and the
+    // sequential round trips `OnboardingCommitService.commit` would later hold
+    // open inside one `withTenant` transaction. The four caps and the arithmetic
+    // they bound are declared once, in `packages/shared/src/contracts/onboarding.ts`.
+    //
+    // `length - 1` drops the header row and is **exact, not an
+    // over-approximation**: `parseRtus` and `parseAssets` are both
+    // `rows.slice(1).map(...)` with no filtering, and `sectionRows` has already
+    // stopped at the first blank row or the next marker. `Math.max(0, …)`
+    // because `sectionRows` returns `[]` for a marker that is not there at all.
+    //
+    // `RTUS` before `ASSETS` is the order of the sections in the sheet, so a
+    // workbook breaching both caps is told about the first one an operator
+    // scrolls to (owner answer 2). Nothing else holds that order.
+    for (const [section, sectionRows] of [
+      ["RTUS", rtuRows],
+      ["ASSETS", assetRows],
+    ] as const) {
+      const countProblem = workbookSectionCountProblem(section, Math.max(0, sectionRows.length - 1));
+      if (countProblem !== null) {
+        throw new BadRequestException(countProblem);
+      }
     }
 
     const location = this.parseLocation(locationRows);

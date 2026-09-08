@@ -30,6 +30,7 @@ import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { distinctAssetDomains, draftCountProblem } from "./onboarding-draft-caps";
 import {
   conflictingPointKeyDeclaration,
   pointKeyConflictMessage,
@@ -101,6 +102,51 @@ export class OnboardingCommitService {
     }
 
     const draft = session.draft as OnboardingDraft;
+
+    // `F4.103` — the count caps, on the stored draft, at the last point before
+    // the work is done. This is the last of the four enforcement points — the
+    // schema `.max()`, `parseUpload`, `OnboardingService.chat` and here — and
+    // the only one a draft assembled before this shipped has to pass.
+    //
+    // **The placement is the decision, and one line lower it would be dead
+    // code.** The ruling asks for the refusal before the transaction opens,
+    // which the two lines below also satisfy — but `onboardingDraftSchema` now
+    // carries `.max()`, so `OnboardingValidateService.validate` already fails an
+    // over-cap draft, `readyToCommit` is false, and the throw below it answers
+    // first with `"Draft is not ready to commit"`. Anything after that line is
+    // unreachable. Here the check is live, the operator is told which array is
+    // too long and by how much, and `validate`'s own per-item `safeParse` loops
+    // are spared a walk over the oversized array.
+    //
+    // `onboarding-commit-caps.spec` holds this ordering with **three**
+    // assertions, and the reason the third is there is not the one an earlier
+    // version of this comment gave. Moving the block below `validate` does not
+    // stay green on the sentence: it fails first on the assertion that the
+    // message names the array, with `got "Draft is not ready to commit"`. What
+    // the `validateCalls() === 0` assertion adds is the case the two message
+    // assertions cannot see — a refactor that *calls* `validate` (for
+    // `suggestedPhase`, say) and still throws the count sentence. That keeps
+    // both message assertions green while spending exactly the per-item walk
+    // this placement exists to avoid, and only the call count goes red.
+    //
+    // Below the two access gates on purpose: an over-cap draft outside the
+    // caller's scope must still be answered by the scope refusal, not told that
+    // the session exists and how large its estate is.
+    //
+    // `?? {}` because `packages/db/src/schema/bms-schema.ts:547` is
+    // `jsonb("draft").notNull().default({})`: `NOT NULL` rules out SQL NULL and
+    // says nothing about the JSON scalar `null`, which is a legal jsonb value.
+    // It reaches here as `null` in spite of the cast, and `validate` turns it
+    // into the same 400 it always did. Without the `?? {}` this line reads
+    // `.length` off `null` and answers a 500 instead —
+    // `assertANullDraftIsStillTheValidationRefusal` is what measures that. The
+    // caps themselves are declared once, in
+    // `packages/shared/src/contracts/onboarding.ts`.
+    const countProblem = draftCountProblem(draft ?? {});
+    if (countProblem !== null) {
+      throw new BadRequestException(countProblem);
+    }
+
     const validation = this.validateService.validate(draft);
     if (!validation.readyToCommit) {
       throw new BadRequestException({
@@ -118,8 +164,21 @@ export class OnboardingCommitService {
     // constraint name. This is also the path an uploaded spreadsheet reaches —
     // `onboarding-excel.service.ts` reads the `domain` cell verbatim — so it is
     // the most likely source of an unknown code in the whole API.
-    for (const assetDraft of draft.assets ?? []) {
-      await this.vocabularies.assertAssetDomain(assetDraft.domain);
+    //
+    // `F4.103` — one read per *distinct* domain, not one per asset. The check is
+    // the same check, in the same place, for the same reason, and it refuses
+    // with the same message; what changes is how many times it asks.
+    // `VocabulariesService.assertAssetDomain` is an uncached `SELECT … LIMIT 1`
+    // with no batching, so an estate of 500 assets sharing one domain sent 500
+    // identical queries, sequentially, before the transaction opened. The count
+    // is now bounded by the `bms.asset_domains` vocabulary — the distinct valid
+    // codes present, plus the unknown one that stops the loop — rather than by
+    // the operator's sheet. `distinctAssetDomains` keeps first-appearance order,
+    // so the code an operator is sent to repair is still the one the per-asset
+    // loop named. `F4.102` indexed `formatAssetsByRtuSummary` once for exactly
+    // this reason.
+    for (const domain of distinctAssetDomains(draft.assets ?? [])) {
+      await this.vocabularies.assertAssetDomain(domain);
     }
 
     return withTenant(this.tenantDb, session.organizationId, async (tx) => {
