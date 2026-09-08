@@ -6,6 +6,7 @@ import type { RuleRow } from "../rules/rules.types";
 import {
   type EscalationCatalog,
   type LifecycleAlarm,
+  LIFECYCLE_TICK_MS,
   escalationKey,
 } from "./alarm-lifecycle";
 import {
@@ -381,6 +382,65 @@ async function testDueStepIsDispatchedToItsChannels(): Promise<void> {
   assert(review.recorded.dispatches.length === 1, "escalation ignores the rule's action (Q8)");
 }
 
+/**
+ * 4b. `F3.48`: a due step is re-offered on **every** tick, not only the tick it
+ * became due on.
+ *
+ * This is the leg `F3.48` rests on and shipped without. Ruling Q1 (ADR 0057
+ * Amendment 2) makes a ceiling-refused step retry by writing no ledger row, so
+ * the key survives — but "the key survives" only delivers a retry if the sweep
+ * offers the step again. Nothing asserted that. The post-merge review found the
+ * gap: `alarm-lifecycle.integration.spec.ts`'s second tick asserts only
+ * ABSENCES — no second row, no second send — which pass identically whether the
+ * sweep re-dispatches and the ledger dedupes it, or the sweep never dispatches
+ * at all. It is the only place in the repository that ran two ticks over one
+ * alarm, so the retry had no gate anywhere.
+ *
+ * A unit case rather than an integration one, and deliberately: the claim is
+ * about `runEscalationPhase`'s offer, not about the ledger, and
+ * `isOverHourlyLimit` reads the wall clock rather than the tick's instant —
+ * which is what made this awkward to state against Postgres and is why it was
+ * skipped. Here the fake records every dispatch and two ticks cost nothing.
+ *
+ * The mutation this kills: any guard that offers a step only while it is
+ * freshly due — for example skipping a step more than one tick overdue.
+ * `dueSteps` itself stays green under that change, because it is `elapsed >=
+ * afterMinutes` and never stops being true.
+ */
+async function testADueStepIsReofferedOnEveryTick(): Promise<void> {
+  const { deps, recorded } = fakeDeps({
+    alarms: [alarmRow({ raisedAt: secondsBefore(61) })],
+    rules: [ruleRow()],
+    sample: freshMatching,
+    catalog: twoStepCatalog(),
+  });
+
+  await runLifecycleSweep(deps, NOW);
+  assert(recorded.dispatches.length === 1, `the first tick offers step 1, got ${recorded.dispatches.length}`);
+
+  // One tick later. The alarm is unchanged — still active, still
+  // unacknowledged — which is the state a ceiling-refused step leaves behind,
+  // because ruling Q1 writes no row for it.
+  await runLifecycleSweep(deps, new Date(NOW.getTime() + LIFECYCLE_TICK_MS));
+  assert(
+    recorded.dispatches.length === 2,
+    `F3.48: the same due step is offered again on the next tick — that offer IS the ` +
+      `retry — got ${recorded.dispatches.length} dispatches`,
+  );
+  const second = recorded.dispatches[1];
+  assert(
+    second?.input.event?.kind === "escalation" && second.input.event.step === 1,
+    `and it is the same step, got ${JSON.stringify(second?.input.event)}`,
+  );
+
+  // Still only step 1: step 2 is due at 5 min and this tick is at 91 s. A
+  // second dispatch of step 1 must not be read as the clock having moved on.
+  assert(
+    recorded.dispatches.every((d) => d.input.event?.kind === "escalation" && d.input.event.step === 1),
+    "no step became due that was not due before",
+  );
+}
+
 /** 5. Acknowledged, or cleared this very tick: no escalation. */
 async function testAcknowledgedOrJustClearedAlarmsDoNotEscalate(): Promise<void> {
   const acknowledged = fakeDeps({
@@ -653,6 +713,7 @@ export async function runAlarmLifecycleServiceTests(): Promise<void> {
   await testHoldElapsedClearsBroadcastsAndNotifiesSentChannels();
   await testStaleSampleChangesNothing();
   await testDueStepIsDispatchedToItsChannels();
+  await testADueStepIsReofferedOnEveryTick();
   await testAcknowledgedOrJustClearedAlarmsDoNotEscalate();
   await testUnmappedSeverityAndOrganizationlessRule();
   await testOneOrganizationFailingDoesNotStopTheOther();
