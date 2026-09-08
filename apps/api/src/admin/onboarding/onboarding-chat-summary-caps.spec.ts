@@ -781,7 +781,9 @@ export function assertAssetsBranchStaysUnderItsCeiling(): void {
  * elided on the happy path.
  *
  * 2 RTUs and 3 assets are both far under 25, so the shipped template's own
- * import summary carries no tail at any of the five sites. Driven through the
+ * import summary carries no tail at any of **the summary's** five sites — site
+ * 6 is a later turn of the conversation and no upload reaches it, which is why
+ * the number here is five and not the enumeration's six. Driven through the
  * real `parseUpload`, so it cannot drift from the workbook the service
  * generates — `assertTemplateRoundTripsUnchanged` gates the parse side of the
  * same file.
