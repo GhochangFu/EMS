@@ -3581,6 +3581,51 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   `F3.48` writes no row for that.
 - **What was deliberately not fixed.** `F3.51`–`F3.54` are untouched, and the
   ledger still has no retention policy.
+
+### A cleared message's refusal is recorded at every exit (`F3.54`, ADR 0057 Amendment 4) — done
+
+- **Status:** merged 2026-09-08 — PR
+  [#372](https://github.com/GhochangFu/EMS/pull/372) (`2284a30b`).
+- **The defect.** Ruling Q-A said a cleared message must keep a visible refusal
+  row: it is dispatched once from the clear phase, `loadActiveAlarms` filters
+  `cleared_at IS NULL`, so there is no later tick and a missing row buys no
+  retry while costing the only evidence. `F3.48` wrote that into the exit it
+  was changing and left two adjacent exits — the failed ledger read and the
+  failed rate-limit read — still discriminating on whether an event was present
+  at all. Both predate `F3.48`, which only made the inconsistency visible.
+- **Two ternaries, and then a third change the security review asked for.**
+  Testing `kind === "escalation"` inline is right for the two kinds that exist
+  and silently wrong for a third: a new *retried* kind would take the recording
+  branch and poison its own key for every later tick, with the compiler silent.
+  All three exits now call one exhaustive predicate named for the property they
+  turn on — whether the sweep re-offers the dispatch on its own. Measured: a
+  third kind on `DispatchEvent` produces `TS2366` at that function.
+- **The row's count of two was checked, not trusted.** Every `return` in
+  `dispatchToChannel` was enumerated. There is no third — and the one other
+  rowless event exit is correct as it stands, because when the ledger says the
+  key is already answered, the row that answered it *is* the evidence and a
+  second would restate what `F3.46` closed.
+- **Verification, and what it cost to make honest.** The unit cases assert a
+  positive (`recorded.length === 1`), never an absence. The integration suite
+  holds the stronger claim — the row lands in Postgres — with its read failure
+  synthesised by blinding one `select` projection, since inducing a real one
+  means revoking a grant on a shared database. That helper's soundness rests on
+  the service's four projections being disjoint, which was prose until the
+  compliance review said so; it now counts what it blinded and each block
+  asserts the count.
+- **Three sentences in this change were false, and review caught all three.**
+  The service header claimed the raise path keeps its row "throughout" when its
+  own `F3.46` dedupe writes nothing; the amendment claimed two lines were
+  "textually identical" when only the predicate was; and the amendment's growth
+  bound named the already-answered exit for both branches, which needs the
+  ledger read to succeed — true at H1, but at D3 that read *is* the failing one.
+- **And CI caught a fourth.** The extracted spec was argued to be covered
+  because another spec called it. `tests/repo-invariants.test.ts` disagreed:
+  Vitest discovers only `.test` files and excludes `.spec` files from coverage,
+  so a spec nothing discovers is invisible to the runner and the coverage gate
+  alike. The suite now owns its own wrapper, channel, alarm and cleanup — which
+  is the better shape anyway, since it no longer reserves severities around
+  another suite's fixture.
 - **Unblocks:** nothing directly.
 
 ### A bound on a schema binds only the producers that parse it (`F4.104`) — done
