@@ -1,6 +1,6 @@
-import { EmailTransport, readRecipients, type MailSender } from "./email.transport";
+import { EmailTransport, createSender, readRecipients, type MailSender } from "./email.transport";
 import type { NotificationChannelRow, NotificationMessage } from "./notification-transport";
-import { buildConfig } from "./notifications.config";
+import { buildConfig, type SmtpConfig } from "./notifications.config";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -148,6 +148,42 @@ export async function runEmailTransportTests(): Promise<void> {
       (result.error ?? "").length < 700,
       `the error must be bounded, got ${(result.error ?? "").length} characters`,
     );
+  }
+
+  // --- the transport is bounded -------------------------------------------
+  //
+  // `F3.51` review (Medium). `createSender` passed no timeout, and nodemailer
+  // defaults `socketTimeout` to ten minutes. `NotificationsService.dispatch`
+  // awaits the transport, `runRaiseRetryPhase` and `runEscalationPhase` await
+  // the dispatch inside the sweep, and the sweep is sweep-then-sleep — so one
+  // SMTP server that accepts a connection and never answers held that tick,
+  // and every later tick, for every tenant. `webhook.transport.ts` has been
+  // bounded at 5 s since `F3.8`; this is the same bound on the other socket.
+  //
+  // Asserted on the options nodemailer records rather than against a real
+  // hung server: `Mail.options` is the object `createTransport` was given, so
+  // this is the value the SMTP connection is built with, and no socket is
+  // opened to read it.
+  {
+    const smtp = buildConfig(CONFIGURED).smtp;
+    assert(smtp !== null, "the fixture configures SMTP");
+    const options =
+      (createSender(smtp as SmtpConfig) as unknown as { options?: Record<string, unknown> })
+        .options ?? {};
+    for (const key of ["connectionTimeout", "greetingTimeout", "socketTimeout"] as const) {
+      const value = options[key];
+      assert(
+        typeof value === "number" && value > 0,
+        `createSender must bound ${key}, got ${JSON.stringify(value)}`,
+      );
+      // The lifecycle sweep ticks every 30 s (`LIFECYCLE_TICK_MS`). A single
+      // bound at or above the tick would let one channel hold a whole tick,
+      // which is the defect. Bounded here, not just "set".
+      assert(
+        (value as number) <= 10_000,
+        `${key} must stay well under the 30 s lifecycle tick, got ${String(value)}`,
+      );
+    }
   }
 
   // --- the recipient reader -----------------------------------------------

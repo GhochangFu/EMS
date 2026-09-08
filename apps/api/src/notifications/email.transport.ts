@@ -39,12 +39,47 @@ export type EmailTransportDeps = {
   config: NotificationsConfig;
 };
 
+/**
+ * `F3.51` review (Medium) — how long one SMTP send may take before the
+ * transport gives up, in milliseconds.
+ *
+ * Nodemailer's own defaults are two minutes to connect and **ten minutes** of
+ * socket inactivity. `NotificationsService.dispatchToChannel` awaits the
+ * transport, `runRaiseRetryPhase` and `runEscalationPhase` await the dispatch,
+ * and `runSweepLoop` is sweep-then-sleep — so a server that accepts the
+ * connection and then says nothing held the whole tick, the escalation phase
+ * of that tick, and every phase of every later tick, **for every tenant**.
+ * `webhook.transport.ts` has been bounded at 5 s since `F3.8`; this is the
+ * same bound on the other socket.
+ *
+ * **The exposure is not new to `F3.51`.** `notifyCleared` and the escalation
+ * phase have awaited this transport inside the same sweep since `F3.10`; the
+ * raise retry only adds a third phase to the same tick. It is fixed here
+ * because `F3.51`'s review is where it was found.
+ *
+ * **What the bound is, honestly.** It bounds ONE send. `dispatchToChannels`
+ * loops its channels sequentially, so N email channels still serialise into
+ * N × this — the tick is not bounded by these constants, one channel is. The
+ * values are chosen so that no single channel can outlive the 30 s
+ * `LIFECYCLE_TICK_MS`: 5 s to open the TCP connection, 5 s for the server's
+ * greeting, 10 s of socket inactivity thereafter.
+ */
+const CONNECTION_TIMEOUT_MS = 5_000;
+const GREETING_TIMEOUT_MS = 5_000;
+const SOCKET_TIMEOUT_MS = 10_000;
+
 /** The one place nodemailer is constructed from configuration. */
 export function createSender(smtp: SmtpConfig): MailSender {
   return createTransport({
     host: smtp.host,
     port: smtp.port,
     secure: smtp.secure,
+    // See the three constants above: without them nodemailer waits ten
+    // minutes on a silent socket, inside a sweep that cannot start its next
+    // tick until this call returns.
+    connectionTimeout: CONNECTION_TIMEOUT_MS,
+    greetingTimeout: GREETING_TIMEOUT_MS,
+    socketTimeout: SOCKET_TIMEOUT_MS,
     // Only when a user is configured. An `auth` block with an undefined user
     // makes nodemailer attempt AUTH against servers that do not want it —
     // Mailpit among them.
