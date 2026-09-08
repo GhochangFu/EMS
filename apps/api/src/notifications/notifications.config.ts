@@ -83,14 +83,20 @@ export const notificationsConfig: NotificationsConfig = buildConfig(process.env)
  * configuration: `SMTP_HOST` unset (which is why `transportFor` hands out
  * `LogTransport`) and `CREDENTIAL_ENCRYPTION_KEY` unset or the wrong length
  * (which is why a webhook's `secretState` reads `unreadable`). Neither has a
- * row to stamp. And `ChannelsService.readiness()` computes both from facts
- * frozen at module load, so **readiness cannot flip inside a process** —
- * `EmailTransport` even decides its `sender` in its constructor. Process start
- * is therefore not a proxy for a readiness change; it is the only boundary at
+ * row to stamp. And **readiness cannot flip inside a process**, so process
+ * start is not a proxy for a readiness change — it is the only boundary at
  * which one is observable.
  *
+ * That stability has two different sources, and the distinction is worth
+ * keeping straight. `notificationsConfig` really is frozen: it is
+ * `buildConfig(process.env)` evaluated on the line above, and `EmailTransport`
+ * goes further and decides its `sender` in its constructor. But
+ * `CredentialCryptoService.isConfigured()` reads `process.env` on **every**
+ * call — it is not a snapshot. What holds it still is that a running process's
+ * environment does not change, not that anything cached it.
+ *
  * The cost is bounded and one-directional: one retry, and one row, per stranded
- * key per API restart.
+ * key per watermark move.
  *
  * **It lives here, beside the snapshot whose age it records** — the largest
  * single source of `skipped_unconfigured` is `smtp === null`, decided on the

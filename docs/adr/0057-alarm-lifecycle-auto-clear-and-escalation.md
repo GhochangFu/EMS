@@ -426,16 +426,24 @@ the row it is about — what changes is the read.
    | `webhook.transport.ts`, `secretState: "unreadable"` | the key is unset, **or** it is the wrong or a rotated key, **or** the row is corrupt | a restart **or** re-saving the secret | both halves |
 
    **Why the process boundary is principled and not a hack.** Two of those
-   causes have no row to stamp, and `ChannelsService.readiness()` — *not*
-   `NotificationsService.readiness`, which `docs/BACKLOG.md`'s `F3.50` row
-   misnamed — computes both from facts frozen at module load
-   (`notificationsConfig`, `CredentialCryptoService.isConfigured()`). So
-   **readiness cannot flip inside a process**; `EmailTransport` even decides its
-   sender in its constructor. Process start is not a proxy for a readiness
-   change — it is the only boundary at which one is observable.
+   causes have no row to stamp, and **readiness cannot flip inside a process** —
+   so process start is not a proxy for a readiness change; it is the only
+   boundary at which one is observable. `ChannelsService.readiness()` is the
+   method that computes it, *not* `NotificationsService.readiness`, which
+   `docs/BACKLOG.md`'s `F3.50` row misnamed.
+
+   That stability has two different sources, and an earlier draft of this
+   amendment collapsed them. `notificationsConfig` genuinely is frozen — it is
+   `buildConfig(process.env)` evaluated at module load, and `EmailTransport`
+   goes further and decides its sender in its constructor. But
+   `CredentialCryptoService.isConfigured()` reads `process.env` on **every**
+   call; it is not a snapshot. What holds it still is that a running process's
+   environment does not change. The ruling is unaffected — the conclusion is the
+   same either way — but the justification had to stop claiming a cache that
+   does not exist.
 
    The accepted cost is bounded and one-directional: one retry, and one row, per
-   stranded key per API restart.
+   stranded key per watermark move.
 
 3. **The exclusion is in the SQL `WHERE`, scoped to one status against a
    timestamp.** Amendment 2 §3's argument transfers verbatim — the read takes
@@ -484,9 +492,26 @@ the row it is about — what changes is the read.
    do. `skipped_unconfigured` is not `failed`, so
    `rows.some(row => row.status !== "failed")` blocks on the very first fresh
    row: a released key is re-offered on the next tick, that tick writes **one**
-   row, and the key is blocked again immediately. One row per key per process,
-   and three *fresh* unconfigured rows under one key is not a reachable state —
-   no test asserts on one.
+   row, and the key is blocked again. Three *fresh* unconfigured rows under one
+   key is not a reachable state — no test asserts on one.
+
+   Two corrections to how that bound was first written, both found in review.
+
+   **It is one row per key per WATERMARK MOVE, not per restart.** §6(a) already
+   says any PATCH moves the watermark, so two renames inside one process give
+   two fresh rows per stranded key in that process. As first written §5
+   contradicted §6(a).
+
+   **And "blocked again" has one carve-out, where this row's retry meets
+   `F3.48`'s.** The hourly ceiling is checked *after* the event-dedupe read, and
+   since Amendment 2 ruling Q1 a ceiling-refused escalation step writes no row
+   at all. So a released key that meets a closed ceiling is not blocked again:
+   it is re-offered every tick until the trailing hour drains. The growth bound
+   is unharmed — nothing is written — and nothing extra is sent. The cost is two
+   ledger reads per tick per such key, which is `F3.53`'s subject, and it is
+   reachable at exactly the shape ruling Q7 measured: an operator fixes a
+   channel, ~52 stranded keys release into one tick, and those above
+   `ratePerHour` spin until the hour drains.
 
 6. **Accepted costs and residuals.**
 
@@ -499,6 +524,20 @@ the row it is about — what changes is the read.
    filed about. Accepted rather than narrowed: without column-level change
    tracking `update()` cannot tell a configuration write from a rename, and the
    error direction is toward delivery.
+
+   That 52-key figure is for **one** organization. A fleet-managed global
+   channel (`organization_id IS NULL`, decision 7 of ADR 0041) is a legitimate
+   escalation target for every tenant and carries **one** `updated_at`, while
+   `isOverHourlyLimit` has been scoped per `(channel, organization)` since
+   `E7.1c`. So one PATCH to a global channel releases every tenant's stranded
+   keys at the same instant, and aggregate egress to that single endpoint is
+   `N_organizations × ratePerHour` rather than `ratePerHour`. The trigger is
+   correctly gated — `AccessControlService.canManageNotificationChannel` returns
+   `false` for an `organization_admin` when the channel's organization is
+   `null`, so only a global `admin` can move that watermark — and the
+   per-tenant ceiling split predates this row. Recorded here because §6(a)'s
+   single-tenant figure would otherwise understate it; the contention itself is
+   `F3.52`'s.
 
    (b) **The watermark is an API-clock value compared against DB-clock rows.**
    `updated_at` is `new Date()` in the API process for every channel that has

@@ -121,10 +121,17 @@ const MAX_ERROR_LENGTH = 1_000;
  * IS bounded — by the second arm rather than by this one. Ruling Q1 keeps
  * writing the row (an operator must see a configuration fault), and releases
  * the key only once the row predates the channel's `updated_at` or the process
- * start. The retry then writes ONE fresh row, which is newer than that
- * watermark, so `eventDeliveryBlocked`'s `status !== "failed"` arm blocks the
- * key at the very next tick. One row per key per restart; this count is never
- * reached on that path.
+ * start. A retry that reaches a write then writes ONE fresh row, which is newer
+ * than that watermark, so `eventDeliveryBlocked`'s `status !== "failed"` arm
+ * blocks the key at the very next tick. **One row per key per WATERMARK MOVE**
+ * — a process start or any channel PATCH, ruling Q2 — not per restart; this
+ * count is never reached on that path.
+ *
+ * One carve-out, and it is where the two retries meet: if the hourly ceiling
+ * refuses the released step, `F3.48` ruling Q1 writes no row at all, so the key
+ * is NOT blocked again and the step is re-offered every tick until the ceiling
+ * lifts. Nothing is written and nothing is sent, so the ledger does not grow —
+ * the cost is two reads per tick per such key, which `F3.53` owns.
  */
 export const MAX_EVENT_ATTEMPTS = 3;
 
@@ -274,6 +281,15 @@ export class NotificationsService {
       // `CREDENTIAL_ENCRYPTION_KEY`, which no row records). One expression at
       // its one call site: a `watermarkFor()` helper would only invite a test
       // that passes while this line is never reached.
+      //
+      // Outside the `try` below on purpose, and security review asked. The
+      // "never rejects" invariant is about `dispatch()`, the fire-and-forget
+      // raise path — which cannot reach this line at all, because it is inside
+      // `input.event !== undefined`. Both callers that CAN reach it wrap their
+      // dispatch in a `try` of their own (`notifyCleared`, and the escalation
+      // phase's per-step catch from security review M1). Moving it inside the
+      // ledger-read `try` would buy nothing and would report a `TypeError`
+      // here as "delivery ledger read failed", which is a lie.
       const unconfiguredSince = new Date(
         Math.max(channel.updatedAt.getTime(), PROCESS_STARTED_AT.getTime()),
       );
@@ -525,12 +541,18 @@ export class NotificationsService {
    * `updated_at` and `PROCESS_STARTED_AT`. The `caller` computes that; this
    * read only applies it.
    *
-   * **The growth that leaves is one row per key per process.** A released key
-   * is re-offered on the next tick; if the channel is still unconfigured, that
-   * tick writes ONE fresh row — which is newer than the watermark, so the
-   * second arm below (`status !== "failed"`) blocks the key immediately. The
-   * count arm is never reached on this path, and three *fresh* unconfigured
-   * rows under one key is not a reachable state.
+   * **The growth that leaves is one row per key per watermark move** — a
+   * process start or any channel PATCH (ruling Q2), not one per restart. A
+   * released key is re-offered on the next tick; if the channel is still
+   * unconfigured, that tick writes ONE fresh row — which is newer than the
+   * watermark, so the second arm below (`status !== "failed"`) blocks the key
+   * immediately. The count arm is never reached on this path, and three
+   * *fresh* unconfigured rows under one key is not a reachable state.
+   *
+   * **Unless the hourly ceiling refuses the retry**, in which case `F3.48`
+   * ruling Q1 writes nothing and the key stays released, re-offered every tick
+   * until the ceiling lifts. That costs two reads a tick and grows the ledger
+   * not at all.
    *
    * The exclusion has to be in the SQL for the next paragraph to stay true.
    * The read asks for at most `MAX_EVENT_ATTEMPTS` rows' `status`: fewer than

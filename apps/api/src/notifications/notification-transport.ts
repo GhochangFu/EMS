@@ -84,8 +84,11 @@ export type NotificationChannelRow = {
    * for ever. `channels.service.spec.ts` holds that.
    *
    * **Not part of any DTO.** `NotificationChannelDto` is built by `toDto` from
-   * the raw database row on a separate path; this type is internal to
-   * `apps/api/src/notifications/` and never reaches a response.
+   * the raw database row on a separate path, so nothing here reaches a
+   * response. The type itself is not confined to this directory —
+   * `alarms/alarm-lifecycle.service.ts` imports it for the sweep's
+   * `loadChannels` — so a new producer outside `notifications/` is possible;
+   * it must project `updated_at` rather than invent one.
    */
   updatedAt: Date;
 };

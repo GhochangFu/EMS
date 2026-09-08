@@ -35,6 +35,15 @@ type NotificationDeliveriesPageProps = { user: AuthUser };
  * retried (ruling Q-A). A step held back by the ceiling appears here when it
  * lands as `sent`.
  *
+ * **And since `F3.50` a `skipped_unconfigured` row can be followed by a `sent`
+ * one under the same key** (ADR 0057 Amendment 3, ruling Q1). That refusal used
+ * to be final: a step refused while its channel had no URL, no recipients or no
+ * readable secret was never sent again. It now stops answering the key once the
+ * channel is reconfigured or the API restarts, so the ledger reads as the
+ * history it is — the refusal stays visible, and the later delivery is appended
+ * after it. Nothing about this screen changed; what changed is which rows
+ * arrive.
+ *
  * **`E7.1d` adds the organization, as a column and as a filter.** The rows an
  * `admin` sees here span every tenant — `ChannelsService.listDeliveries`
  * filters by `writableOrganizationIds`, which is unrestricted for that role —

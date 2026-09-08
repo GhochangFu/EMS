@@ -495,14 +495,24 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     // Q1's exclusion does not reach it and it still answers the key. That is
     // also the growth bound: a released key is re-offered on the next tick,
     // that tick writes ONE fresh row, and a fresh row blocks. One row per key
-    // per restart, and three fresh unconfigured rows under one key is not a
-    // reachable state — no block here asserts on one.
+    // per watermark move, and three fresh unconfigured rows under one key is
+    // not a reachable state — no block here asserts on one. (If the hourly
+    // ceiling refuses the retry, `F3.48` ruling Q1 writes nothing and the key
+    // stays released; this suite's ceiling is 1000, so that path is not
+    // exercised here.)
     //
-    // Two mutations die here. Copying `F3.48`'s form — a bare
-    // `ne(status, "skipped_unconfigured")` with no timestamp — sends. So does
-    // `updatedAt: new Date()` in `ChannelsService.toChannelRow`, which would
-    // make every unconfigured row stale; `channels.service.spec.ts` catches
-    // that one more cheaply, and this is its integration-level twin.
+    // **One mutation dies here, not two, and this was measured rather than
+    // reasoned.** Copying `F3.48`'s form — a bare
+    // `ne(status, "skipped_unconfigured")` with no timestamp — sends, and this
+    // block reddens.
+    //
+    // `updatedAt: new Date()` in `ChannelsService.toChannelRow` does **not**
+    // die here: this whole suite builds `channel` once, before any fixture row
+    // is planted, so that mutation only moves the watermark to an instant that
+    // is still earlier than every freshly planted row, and every block below
+    // keeps its answer. It was run; the suite stayed green. `channels.service.
+    // spec.ts` is the ONLY gate on that mutation — do not delete it believing
+    // this suite covers it.
     const stepEleven: DispatchInput = { ...step, event: { kind: "escalation", step: 11 } };
     const stepElevenKey = buildDedupeKey(stepEleven);
     await plantDeliveries(pool, {
