@@ -498,8 +498,9 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     // per watermark move, and three fresh unconfigured rows under one key is
     // not a reachable state — no block here asserts on one. (If the hourly
     // ceiling refuses the retry, `F3.48` ruling Q1 writes nothing and the key
-    // stays released; this suite's ceiling is 1000, so that path is not
-    // exercised here.)
+    // stays released; the `service` these blocks use has a ceiling of 1000 —
+    // the ceiling-1 service built further down is a different one — so that
+    // path is not exercised here.)
     //
     // **One mutation dies here, not two, and this was measured rather than
     // reasoned.** Copying `F3.48`'s form — a bare
