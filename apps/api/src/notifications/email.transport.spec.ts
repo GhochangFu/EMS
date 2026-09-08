@@ -1,5 +1,10 @@
+import { until } from "../testing/until";
 import { EmailTransport, createSender, readRecipients, type MailSender } from "./email.transport";
-import type { NotificationChannelRow, NotificationMessage } from "./notification-transport";
+import type {
+  DeliveryResult,
+  NotificationChannelRow,
+  NotificationMessage,
+} from "./notification-transport";
 import { buildConfig, type SmtpConfig } from "./notifications.config";
 
 function assert(condition: boolean, message: string): void {
@@ -170,7 +175,17 @@ export async function runEmailTransportTests(): Promise<void> {
     const options =
       (createSender(smtp as SmtpConfig) as unknown as { options?: Record<string, unknown> })
         .options ?? {};
-    for (const key of ["connectionTimeout", "greetingTimeout", "socketTimeout"] as const) {
+    // `dnsTimeout` joined the three after the second review: nodemailer
+    // defaults it to 30 s and resolves the host BEFORE the 5 s
+    // `connectionTimeout` timer is armed, so a name server that never answers
+    // held the send for the whole lifecycle tick with none of the other three
+    // ever starting.
+    for (const key of [
+      "connectionTimeout",
+      "greetingTimeout",
+      "socketTimeout",
+      "dnsTimeout",
+    ] as const) {
       const value = options[key];
       assert(
         typeof value === "number" && value > 0,
@@ -184,6 +199,55 @@ export async function runEmailTransportTests(): Promise<void> {
         `${key} must stay well under the 30 s lifecycle tick, got ${String(value)}`,
       );
     }
+  }
+
+  // --- a hung server does not hold the sweep -------------------------------
+  //
+  // `F3.51` second review (Medium). The four constants above bound the
+  // CONNECTION, and the docblock that said no single channel can outlive the
+  // 30 s tick was false: `socketTimeout` reaches the socket through
+  // `socket.setTimeout`, which is an INACTIVITY timer that every byte resets, so
+  // a server emitting one byte every 9 s holds `sendMail` for ever, and each
+  // `RCPT TO` of a 100-address `config.to` gets its own window. The sweep awaits
+  // the dispatch and `runSweepLoop` is sweep-then-sleep, so that one channel
+  // holds every phase of every later tick, for every tenant. Only an absolute
+  // deadline bounds it, and it bounds the whole exchange rather than each
+  // recipient.
+  //
+  // The deadline is a dependency for the reason `raise-retry.ts` gives for its
+  // two parameters: a suite cannot move a constant, and the real bound is
+  // twenty seconds of waiting.
+  //
+  // **Mutation:** drop the race in `send` and `until` throws `UntilTimeoutError`
+  // naming this claim, rather than the runner timing out on an anonymous hang.
+  {
+    const never: MailSender = { sendMail: () => new Promise<never>(() => undefined) };
+    const transport = new EmailTransport({
+      sender: never,
+      config: buildConfig(CONFIGURED),
+      deadlineMs: 50,
+    });
+
+    let outcome: DeliveryResult | undefined;
+    void transport.send(message()).then((result) => {
+      outcome = result;
+    });
+    await until(() => outcome !== undefined, {
+      timeoutMs: 1_000,
+      label: "a send that never settles is refused by its own deadline",
+    });
+
+    assert(outcome?.status === "failed", `a hung send is a failure, got ${String(outcome?.status)}`);
+    assert(
+      (outcome?.error ?? "").includes("timed out"),
+      `the failure says what happened, got ${String(outcome?.error)}`,
+    );
+    // §9.6, and the same redaction every other failure here gets: the count,
+    // never the addresses.
+    assert(
+      !(outcome?.error ?? "").includes(RECIPIENT),
+      `a timed-out send names no recipient, got ${String(outcome?.error)}`,
+    );
   }
 
   // --- the recipient reader -----------------------------------------------
