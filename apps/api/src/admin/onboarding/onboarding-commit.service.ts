@@ -104,7 +104,8 @@ export class OnboardingCommitService {
     const draft = session.draft as OnboardingDraft;
 
     // `F4.103` — the count caps, on the stored draft, at the last point before
-    // the work is done. This is the third of the three enforcement points and
+    // the work is done. This is the last of the four enforcement points — the
+    // schema `.max()`, `parseUpload`, `OnboardingService.chat` and here — and
     // the only one a draft assembled before this shipped has to pass.
     //
     // **The placement is the decision, and one line lower it would be dead
@@ -115,18 +116,31 @@ export class OnboardingCommitService {
     // first with `"Draft is not ready to commit"`. Anything after that line is
     // unreachable. Here the check is live, the operator is told which array is
     // too long and by how much, and `validate`'s own per-item `safeParse` loops
-    // are spared a walk over the oversized array. `onboarding-commit-caps.spec`
-    // asserts the ordering by call count, not by the sentence, because the
-    // sentence alone stays green with the check moved below `validate`.
+    // are spared a walk over the oversized array.
+    //
+    // `onboarding-commit-caps.spec` holds this ordering with **three**
+    // assertions, and the reason the third is there is not the one an earlier
+    // version of this comment gave. Moving the block below `validate` does not
+    // stay green on the sentence: it fails first on the assertion that the
+    // message names the array, with `got "Draft is not ready to commit"`. What
+    // the `validateCalls() === 0` assertion adds is the case the two message
+    // assertions cannot see — a refactor that *calls* `validate` (for
+    // `suggestedPhase`, say) and still throws the count sentence. That keeps
+    // both message assertions green while spending exactly the per-item walk
+    // this placement exists to avoid, and only the call count goes red.
     //
     // Below the two access gates on purpose: an over-cap draft outside the
     // caller's scope must still be answered by the scope refusal, not told that
     // the session exists and how large its estate is.
     //
-    // `?? {}` because `draft` is a `jsonb NOT NULL` column, which still permits
-    // the JSON value `null` — that reaches here as `null` in spite of the cast,
-    // and `validate` turns it into the same 400 it always did. The caps
-    // themselves are declared once, in
+    // `?? {}` because `packages/db/src/schema/bms-schema.ts:547` is
+    // `jsonb("draft").notNull().default({})`: `NOT NULL` rules out SQL NULL and
+    // says nothing about the JSON scalar `null`, which is a legal jsonb value.
+    // It reaches here as `null` in spite of the cast, and `validate` turns it
+    // into the same 400 it always did. Without the `?? {}` this line reads
+    // `.length` off `null` and answers a 500 instead —
+    // `assertANullDraftIsStillTheValidationRefusal` is what measures that. The
+    // caps themselves are declared once, in
     // `packages/shared/src/contracts/onboarding.ts`.
     const countProblem = draftCountProblem(draft ?? {});
     if (countProblem !== null) {

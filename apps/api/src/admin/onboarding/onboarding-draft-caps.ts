@@ -3,12 +3,14 @@
  * more items than one session may commit, and the domain list that stops the
  * pre-commit vocabulary check from scaling with the sheet.
  *
- * **Why one module rather than the sentences at their two call sites.** The
- * caps are enforced at three points — `onboardingDraftSchema`'s `.max()` (both
- * copies), `OnboardingExcelService.parseUpload`, and
- * `OnboardingCommitService.commit` — and the last two answer with a sentence a
- * human reads. Written where they fire, the workbook refusal and the draft
- * refusal would sit in different files and could drift into two different
+ * **Why one module rather than the sentences at their call sites.** The caps are
+ * enforced at four points — `onboardingDraftSchema`'s `.max()` (both copies),
+ * `OnboardingExcelService.parseUpload`, `OnboardingService.chat` and
+ * `OnboardingCommitService.commit` — and the last three answer with a sentence a
+ * human reads. (The fourth was added by this row's review: the rule-based chat
+ * branch parses no schema and appends, so nothing else reached it. See
+ * `draftCountProblem` below.) Written where they fire, the workbook refusal and
+ * the draft refusal would sit in different files and could drift into different
  * accounts of the same limit. `spreadsheet-guard.ts` is the precedent: a guard
  * shared by two upload paths gets its own module.
  *
@@ -104,10 +106,28 @@ const CAPPED_DRAFT_ARRAYS: readonly CappedDraftArray[] = [
  * The sentence that refuses a stored draft holding more items than one session
  * may commit, or `null` when it may.
  *
- * This is the check that answers for the two producers no workbook can reach:
- * `PATCH :id/draft` and the model's `draftPatch` are the only routes that write
- * `pointKeys` or `assetPoints` at all (`toDraftPatch` writes `location`, `rtus`,
- * `assets` and `onboardingMeta`, and nothing else).
+ * This is the check that answers for the producers no workbook can reach. **A
+ * workbook produces neither `pointKeys` nor `assetPoints`** — `toDraftPatch`
+ * writes `location`, `rtus`, `assets` and `onboardingMeta`, and nothing else —
+ * and **three** other producers do:
+ *
+ * 1. `PATCH :id/draft`, whose body is parsed by `patchDraftBodySchema`, so the
+ *    schema `.max()` refuses it at the controller.
+ * 2. The model's `draftPatch`, parsed by `onboardingDraftSchema.safeParse` in
+ *    `handleOpenAiTurn`. Over-cap, the patch fails the parse and `.data ?? {}`
+ *    discards it — see the ruling recorded on that schema.
+ * 3. **`handleRuleBasedTurn`, which the schema `.max()` does not reach at all.**
+ *    It assembles its patch in code and never parses the schema — the
+ *    `safeParse` above it guards the model branch alone — and two of its
+ *    branches concatenate onto the stored draft rather than replace it
+ *    (`patch.rtus`, `patch.pointKeys`), so the draft grows by one item per turn.
+ *    Nothing bounded that until `OnboardingService.chat` was made to call this
+ *    function on the merged draft before its write. It is the default branch,
+ *    not a fallback: `.env.example` ships `OPENAI_API_KEY=` empty.
+ *
+ * An earlier version of this docblock named only the first two, and that
+ * sentence is why the third shipped unguarded. It is corrected here rather than
+ * deleted, so the next reader inherits the correction and not just the list.
  *
  * A missing array is not an empty one being refused — an onboarding draft is
  * legitimately partial until it commits, so `undefined` counts as zero.

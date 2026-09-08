@@ -151,9 +151,12 @@ export const onboardingDraftMetaSchema = z.object({
  *                                                                      6,700
  * ```
  *
- * plus the location insert and the closing session update — and, before the
- * transaction opens, one `bms.asset_domains` select per *distinct* domain the
- * draft names, which is bounded by that vocabulary rather than by the sheet.
+ * plus the location insert, the closing session update, an `organizations`
+ * select and two `MasterDataAuditService.write` calls in the same transaction —
+ * and, before the transaction opens, one `bms.asset_domains` select per
+ * *distinct* domain the draft names, which is bounded by that vocabulary rather
+ * than by the sheet. Those four fixed statements do not move with the caps, so
+ * the 6,700 is unaffected by them.
  *
  * ## Why these numbers — each anchor measured, not restated
  *
@@ -168,10 +171,13 @@ export const onboardingDraftMetaSchema = z.object({
  *   `buildEskomAssetCatalog` with the RSMOC block `seed.ts` builds: 51 entries
  *   from its own list (39 written out plus a twelve-entry `Array.from` block)
  *   and 48 from `demoAssetsForRsmoc` (6 entries across 8 RSMOC provinces). A
- *   `grep -c "code:"` over `packages/db/src/eskom-assets-seed.ts` reports 51,
- *   and that it matches the base list's length is a coincidence — it misses the
- *   RSMOC entries and the generated block and counts two type declarations.
- *   500 assets is therefore about 5× that estate, in one session.
+ *   `grep -c "code:"` over `packages/db/src/eskom-assets-seed.ts` also reports
+ *   51, and that the two numbers agree is a coincidence: those 51 *lines* are
+ *   39 written-out base entries, one `Array.from` line standing for twelve, six
+ *   `demoAssetsForRsmoc` lines standing for forty-eight, two type declarations
+ *   and three lines inside `seedEskomAssets`. Counting entries rather than lines
+ *   is what gives 99. 500 assets is therefore about 5× that estate, in one
+ *   session.
  *   (`eskom-assets-seed.ts` is not the only asset seed: `phe-pilot-seed.ts`
  *   inserts more, from a data file outside this repository.)
  * - **Point keys and asset points have no template anchor and are not given a
@@ -218,6 +224,19 @@ export const MAX_ONBOARDING_ASSET_POINTS = 5_000;
  * upload path does not parse this schema at all.
  *
  * `.max()` moves no inferred type — `OnboardingDraft` is unchanged.
+ *
+ * **The caps stay on this copy too, and the residual is stated rather than
+ * implied** (owner ruling, 2026-09-08). This is the *response* contract: it is
+ * embedded in `onboardingSessionDtoSchema.draft` and
+ * `onboardingValidateResponseDtoSchema.preview`, and ADR 0030 decision 5 has
+ * `apps/web/src/api/admin/onboarding.ts` parse it at runtime. So a draft already
+ * in storage that is over a cap would make the server's own reply fail its own
+ * contract — throwing in dev and test, logging and passing in production. That
+ * is accepted knowingly, on two measured grounds: every producer that can write
+ * one of these arrays is now capped, and `bms.onboarding_sessions` held
+ * `(0 rows)` when this shipped, so no such draft exists to be read back. Do not
+ * "fix" it by taking `.max()` off this copy — bounding the write path alone is
+ * the drift `tests/f4.103-draft-count-caps.test.ts` exists to refuse.
  */
 export const onboardingDraftSchema = z.object({
   location: onboardingDraftLocationSchema.optional(),

@@ -151,15 +151,32 @@ function overCapDraft(): OnboardingDraft {
  * `F4.103` — an over-cap stored draft is refused by the count check, and the
  * check runs **before** `validate`.
  *
- * **The ordering assertion is the one that matters, not the message.** The
- * ruling asks for the refusal "before the transaction opens", and that admits a
- * placement which is dead code: with the API schema's `.max()`,
- * `OnboardingValidateService.validate` already fails this draft, so `commit`
- * throws `"Draft is not ready to commit"` and anything below that line is
- * unreachable. The first block below pins that hazard as a measured fact rather
- * than a claim in a docblock — the real validate service, no database, no stub
- * — and the `validateCalls() === 0` assertion is what keeps a later refactor
- * from moving the check under it and staying green on the sentence alone.
+ * **The hazard this pins.** The ruling asks for the refusal "before the
+ * transaction opens", and that admits a placement which is dead code: with the
+ * API schema's `.max()`, `OnboardingValidateService.validate` already fails this
+ * draft, so `commit` throws `"Draft is not ready to commit"` and anything below
+ * that line is unreachable. The first block below pins that as a measured fact
+ * rather than a claim in a docblock — the real validate service, no database, no
+ * stub.
+ *
+ * **Three assertions hold the ordering, and each covers a different move.**
+ * Measured, not asserted in prose: with the check moved below `validate`, the
+ * run fails first on the assertion that the message names the array, with
+ * `got "Draft is not ready to commit"`, and the call-count assertion is never
+ * reached. So the message assertions are not the weak half — they already catch
+ * that move.
+ *
+ * 1. The message names the array, the count it found and the cap it applied.
+ *    Red as soon as the check moves anywhere below `validate`.
+ * 2. The message is **not** `"Draft is not ready to commit"`. Red on the same
+ *    move, and it is the one that says *which* gate answered rather than only
+ *    that the answer was wrong.
+ * 3. `validate` was called **zero** times. This is the only assertion that
+ *    survives the move the other two cannot see: a refactor that calls
+ *    `validate` for something other than its verdict — `suggestedPhase`, say —
+ *    and still throws the count sentence. Both message assertions stay green,
+ *    the per-item `safeParse` walk this placement exists to avoid is spent
+ *    anyway, and only the call count reports it.
  */
 export async function assertOverCapDraftIsRefusedBeforeValidate(): Promise<void> {
   // The stub's `readyToCommit: false` is not invented. This is what the real
@@ -303,5 +320,36 @@ export async function assertDeduplicationKeepsTheFirstOffender(): Promise<void> 
   assert(
     JSON.stringify(domainCalls) === JSON.stringify(["electrical", "bogus-a"]),
     `the check stops at the first unknown code and asks nothing twice, got ${JSON.stringify(domainCalls)}`,
+  );
+}
+
+/**
+ * `F4.103` — a stored draft holding the JSON value `null` reaches the count
+ * check, and the `?? {}` there is what keeps it a 400 rather than a crash.
+ *
+ * `packages/db/src/schema/bms-schema.ts:547` is
+ * `jsonb("draft").notNull().default({})`: `NOT NULL` rules out SQL NULL, and
+ * says nothing at all about the JSON scalar `null`, which is a perfectly legal
+ * jsonb value. It arrives here as `null` in spite of the `as OnboardingDraft`
+ * cast, and without the `?? {}` the count check would read `.length` off it and
+ * answer a `TypeError` — a 500 — where the answer has always been "the draft is
+ * not ready". The `?? {}` was written with that reasoning and nothing measured
+ * it; this is the case that does.
+ */
+export async function assertANullDraftIsStillTheValidationRefusal(): Promise<void> {
+  const { service, validateCalls } = buildService({ draft: null, readyToCommit: false });
+  const error = await rejectionOf(service.commit(JWT, "s-1"));
+  assert(
+    error instanceof BadRequestException,
+    `a null draft is a bad request, not a crash, got ${String(error)}`,
+  );
+  const message = messageOf(error);
+  assert(
+    message === "Draft is not ready to commit",
+    `an empty draft is answered by the validation gate, not the count check, got "${message}"`,
+  );
+  assert(
+    validateCalls() === 1,
+    `the count check passed a null draft through to validate, which ran ${validateCalls()} time(s)`,
   );
 }

@@ -148,6 +148,18 @@ export const onboardingDraftMetaSchema = z
  * where the bound has to be for a draft assembled by any of the three
  * producers above. The caps themselves and their derivation are declared once,
  * in `packages/shared/src/contracts/onboarding.ts`.
+ *
+ * **The caps re-arm producer 3's silent discard on a new axis, and that is
+ * ruled acceptable for that producer only.** An over-cap `draftPatch` from the
+ * model now fails `safeParse`, becomes `{}` through `.data ?? {}`, and the whole
+ * turn is dropped while the assistant still answers "I've updated the draft" —
+ * exactly the failure this docblock names above, now reachable by count as well
+ * as by an invented key. It stands: a model emitting more than 100 RTUs in one
+ * turn is already malfunctioning, and a discarded over-cap patch is the refusal
+ * you want. Producer 1 answers a 400 at the controller, and the rule-based chat
+ * branch — which never parses this schema at all — is refused by
+ * `draftCountProblem` in `OnboardingService.chat`, so neither of those two turns
+ * into a quiet drop. Do not generalise this ruling to them.
  */
 export const onboardingDraftSchema = z
   .object({

@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertANullDraftIsStillTheValidationRefusal,
   assertDeduplicationKeepsTheFirstOffender,
   assertDomainCheckIsDeduplicated,
   assertOverCapDraftIsRefusedBeforeValidate,
@@ -29,5 +30,9 @@ describe("onboarding commit count caps (F4.103)", () => {
 
   it("keeps first-appearance order, so the first unknown domain is the one reported", async () => {
     await assertDeduplicationKeepsTheFirstOffender();
+  });
+
+  it("answers a null stored draft with the validation refusal, not a crash", async () => {
+    await assertANullDraftIsStillTheValidationRefusal();
   });
 });
