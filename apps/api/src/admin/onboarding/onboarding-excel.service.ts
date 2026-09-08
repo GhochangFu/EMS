@@ -487,9 +487,18 @@ export class OnboardingExcelService {
    *
    * The sentence, the axis it bounds and the reason it refuses rather than cuts
    * are all recorded on {@link cellLengthProblem}. This wrapper exists so that
-   * the thirteen call sites read as one line each: eleven cells that reach the
-   * draft, plus the two credential columns that reach
-   * `CredentialCryptoService` instead.
+   * the call sites read as one line each.
+   *
+   * **Twelve calls cover thirteen columns**, and the mismatch is deliberate.
+   * Eleven are one cell each, and every one of those reaches the draft. The
+   * twelfth covers `username` and `password` together — the two columns that
+   * reach `CredentialCryptoService` rather than the draft — and it names them
+   * with the single literal `"username or password"` because a refusal that
+   * said which of the two was long would tell an uploader whether a password
+   * had been set on that row (owner ruling, `F4.104`). `tests/f4.104-draft-string-bounds.test.ts`
+   * asserts that composite is present and that neither cell is named alone, so
+   * splitting this call back into two is refused by a test rather than by a
+   * comment.
    */
   private refuseIfTooLong(
     section: OnboardingWorkbookCellSection,
