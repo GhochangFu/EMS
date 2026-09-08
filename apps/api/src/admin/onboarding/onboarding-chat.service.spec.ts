@@ -116,16 +116,18 @@ function hostileDraft(overrides: Partial<OnboardingDraft> = {}): OnboardingDraft
  * `quoteCell` ships anyway (owner ruling 3) because a 5 MiB workbook may still
  * declare tens of MiB inflated, i.e. thousands of maximum-length cells.
  *
- * **What that residual is, now that it has been measured.** Through the
- * compiled services on this branch: a **1.75 MB** upload of 20,095 RTU rows —
- * one row under the sheet bound, every `topic` at exactly the 255-character
- * bound and every display name a duplicate, so each row also buys a
- * `displayNameFixes` line — parses in 4.1 s and produces a **13.16 MB**
- * `assistantMessage` at 658 MB RSS, which `OnboardingService.uploadExcel` then
- * appends to the session's stored message history. Every *cell* on that message
- * is bounded; the *counts* are not, because nothing caps the number of RTU rows
- * a workbook may declare. Closing that needs a semantic row cap and a per-line
- * cap on the summary, both filed as their own rows — deliberately not this one.
+ * **Every figure that paragraph asserted is now false, and `F4.105` corrected
+ * it.** It described a 1.75 MB upload of 20,095 RTU rows parsing in 4.1 s into
+ * a 13.16 MB `assistantMessage` at 658 MB RSS. That fixture is **refused**:
+ * `F4.103`'s `workbookSectionCountProblem` answers it in 1,634 ms, before
+ * `excelImportFollowUp` runs at all. The worst message still reachable is
+ * **77,817 characters from a 62,640-byte upload**, 46 ms and 399 MB RSS — a
+ * **1.24×** amplification rather than the ~7.5× that paragraph implied. The
+ * *counts* were still unbounded, and the file that now holds that axis, with
+ * the measured composition and the five sites it binds, is
+ * `onboarding-chat-summary-caps.spec.ts`. What is left is no longer an
+ * availability residual but message quality and the growth of the stored
+ * transcript — `E8.3`'s stated open residual, and not this file's.
  *
  * The three sub-cases exist because `excelImportFollowUp` returns from the
  * first branch that matches. One call cannot reach both `mqttSetupTemplate` and
@@ -363,19 +365,15 @@ export function assertAssetsByRtuSummaryIsIndexedNotRescanned(): void {
     big.assistantMessage.includes("Assets by RTU"),
     "this sub-case must reach the assets summary, or it measures the wrong branch",
   );
-  // `F4.105` capped this. It used to read `=== count` with the message "every
-  // RTU still gets its line — a cheaper summary that lists fewer is not the
-  // same summary", which is now the opposite of the intended behaviour: the
-  // summary lists `MAX_ECHOED_ITEMS` and states how many it left out, while the
-  // headline `**10050** RTU(s)` keeps the number exact.
+  // `F4.105` capped this. It read `=== count`, with a message — "a cheaper
+  // summary that lists fewer is not the same summary" — that is now the
+  // opposite of the intended behaviour: the list is capped and states what it
+  // omitted, while the headline `**10050** RTU(s)` keeps the number exact.
   //
-  // **The cost claim is unchanged, and that is the point of leaving the fixture
-  // at 10,050.** `assetScans <= 1` still holds and is still meaningful because
-  // the index is built over **all** assets *before* the RTU slice — a rewrite
-  // that "simplified" the function by slicing the RTUs first and filtering the
-  // assets per rendered RTU would make 25 scans and redden the next assertion.
-  // The clock ceiling survives with room to spare, since only the rendering
-  // shrank.
+  // **The cost claim is unchanged, which is why the fixture stays at 10,050.**
+  // `assetScans <= 1` still holds because the index is built over **all**
+  // assets *before* the RTU slice; a rewrite that sliced first and filtered the
+  // assets per rendered RTU would make 25 scans and redden it.
   const renderedLines = big.assistantMessage.split("\n").filter((line) => line.startsWith("- **"));
   assert(
     renderedLines.length === MAX_ECHOED_ITEMS,

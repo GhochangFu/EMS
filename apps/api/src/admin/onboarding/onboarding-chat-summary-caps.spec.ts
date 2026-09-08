@@ -51,6 +51,31 @@ function assert(condition: boolean, message: string): void {
  * Its own file, and not the bottom of `onboarding-chat.service.spec.ts`,
  * because that file is at 958 of AGENTS.md §4.5's 1000 lines — the same split
  * `F4.104` needed for `onboarding-excel-cell-bounds.spec.ts`.
+ *
+ * **The measurement this row is set on, because the filed row's numbers were
+ * all dead.** The row claimed 20,095 RTU rows produce a 13.16 MB message;
+ * `F4.103`'s `workbookSectionCountProblem` refuses that workbook in 1,634 ms.
+ * Re-measured on the base through the real `parseUpload` → `toDraftPatch` →
+ * `mergeDraft` → `excelImportFollowUp` chain, at exactly `F4.103`'s section
+ * caps with every echo-bearing cell at its `F4.104` bound:
+ *
+ * | Route | Assets branch | MQTT branch |
+ * |---|---|---|
+ * | A real 62,640-byte workbook, 100 duplicate display names | **77,817** | **58,647** |
+ * | The constructed drafts below, same caps, every cell at the bound | **85,242** | **66,072** |
+ *
+ * The fixtures here measure a little higher because every cell is at its bound
+ * rather than merely long; the workbook figures are the amplification ones —
+ * 77,817 characters from 62,640 bytes is **1.24×**, where the row claimed
+ * ~7.5×. Composition of the 77,817: 500 asset names ≈ 36 KB, 99 fix lines
+ * ≈ 21 KB, 100 RTU lines ≈ 7 KB. A **blank** `rtu_name` buys no fix line —
+ * `parseRtus` falls back to the unique code — only a **duplicate** does, which
+ * is 99 of 100.
+ *
+ * **So this is not an availability row.** 77,817 characters in 46 ms crashes
+ * nothing. It is a message-quality row — 500 asset names is not a summary —
+ * and a bound on how fast one session's stored transcript grows. The transcript
+ * itself still has no cap and that is `E8.3`'s open residual, not this row's.
  */
 export function assertEchoedItemsHelpersAreBounded(): void {
   const thirty = Array.from({ length: 30 }, (_, index) => `item-${index}`);
