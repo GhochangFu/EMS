@@ -1,7 +1,8 @@
 /**
- * Two guards every spreadsheet upload runs before it costs anything, shared by
- * the `F1.9` telemetry importer and the `F2.7` mapping sheet (PR 2 security
- * review, H1 and H2).
+ * What a spreadsheet upload may cost before it has done anything, and what the
+ * message answering it may repeat back. Shared by the `F1.9` telemetry
+ * importer and the `F2.7` mapping sheet (PR 2 security review, H1 and H2), and
+ * since `F4.105` by the onboarding import summary.
  *
  * **Why a size cap on the upload is not a bound on the work.** AGENTS.md §4.3
  * says so in as many words, and the review measured it: a 4.8 MB workbook of
@@ -13,10 +14,26 @@
  * 1.2 GiB took the process to 2.5 GB RSS before a single row was read: the
  * `sheetRows` option bounds row materialisation, not string-table inflation.
  *
- * So: {@link quoteCell} bounds what a message may echo, and
- * {@link zipInflationProblem} bounds what a zip may declare it will inflate to,
- * read from the central directory *before* `XLSX.read` inflates anything. Both
- * are pure and dependency-free.
+ * So there are three, on three separate axes, and the first two are pre-read
+ * guards while the last two are formatters applied at the echo site:
+ *
+ * - {@link zipInflationProblem} bounds what a zip may declare it will inflate
+ *   to, read from the central directory *before* `XLSX.read` inflates
+ *   anything;
+ * - {@link quoteCell} bounds **how long** each echoed cell may be;
+ * - {@link echoedItems} with {@link moreTail} bounds **how many** items a
+ *   message may list. That is the count axis of the same problem: every cell
+ *   on a 500-line list can be inside {@link MAX_ECHOED_CELL_CHARS} and the list
+ *   still be a data dump rather than a summary.
+ *
+ * **The count bound has exactly one caller today**, the onboarding import
+ * summary in `onboarding-chat.service.ts` — five sites in one message, all
+ * enumerated in `onboarding-chat-summary-caps.spec.ts`. Neither the `F1.9`
+ * telemetry importer nor the `F2.7` mapping sheet honours it; they apply
+ * `quoteCell` and their own row bounds. Do not read "declared here" as
+ * "applied everywhere".
+ *
+ * All of them are pure and dependency-free.
  */
 
 /** The longest run of cell text an error message may echo. `row`/`column`/`code` identify the cell; the text is a hint. */
@@ -46,6 +63,75 @@ export function quoteCell(text: string, max: number = MAX_ECHOED_CELL_CHARS): st
     return `'${text}'`;
   }
   return `'${text.slice(0, max)}…' (+${text.length - max} more characters)`;
+}
+
+/**
+ * The most items one list in a message may name. {@link MAX_ECHOED_CELL_CHARS}
+ * is its sibling on the other axis — that one bounds how long each item is,
+ * this one bounds how many there are — and the two have to be read together,
+ * because either alone leaves the product unbounded.
+ *
+ * **What 25 sits above.** The shipped `template.xlsx` carries **2 RTU and 3
+ * asset data rows**, so 25 is ~8× the happy path and the template's own import
+ * summary gains no tail at any of its five sites. That is asserted, not
+ * assumed: `assertAssetsByRtuSummaryIsCapped` drives the real template through
+ * `parseUpload` and requires the reply to contain no tail anywhere.
+ *
+ * **What it sits deliberately below.** The seeded estate is **99 assets**, and
+ * a 100-RTU / 500-asset workbook is legal — those are `F4.103`'s section caps.
+ * Unlike `F4.103`'s counts this is a **display** bound and not an
+ * **acceptance** bound: eliding is the point. The headline `**500** asset(s)`
+ * stays exact while the list under it stops being a data dump, so the operator
+ * is never told a smaller number than they uploaded.
+ *
+ * **Measured, not guessed.** At `F4.103`'s caps — 100 RTUs, 500 assets, every
+ * echo-bearing cell at its `F4.104` bound and 99 duplicate display names — the
+ * assistant message was 85,242 characters from a 62 KB upload before this
+ * bound, and ~12.8 KB after it. The filed row's own 13.16 MB figure is dead:
+ * `workbookSectionCountProblem` refuses the 20,095-row workbook it came from.
+ *
+ * This is an `apps/api` constant and **not** a `packages/shared` one: no schema
+ * reads it and no API response *type* depends on it, unlike `F4.103`'s section
+ * caps and `F4.104`'s `ONBOARDING_DRAFT_STRING_MAX`, which each had a second
+ * copy in `packages/shared/src/contracts/` to stay in sync with.
+ */
+export const MAX_ECHOED_ITEMS = 25;
+
+/**
+ * The leading {@link MAX_ECHOED_ITEMS} of `items`, and how many were left.
+ *
+ * A **prefix**, never a sample: every caller keys something off the position an
+ * item held in the input — `formatAssetsByRtuSummary` keys its whole asset map
+ * off the RTU's index — so reordering or filtering before this call silently
+ * mis-attributes the result.
+ */
+export function echoedItems<T>(
+  items: readonly T[],
+  max: number = MAX_ECHOED_ITEMS,
+): { shown: readonly T[]; omitted: number } {
+  if (items.length <= max) {
+    return { shown: items, omitted: 0 };
+  }
+  return { shown: items.slice(0, max), omitted: items.length - max };
+}
+
+/**
+ * The line that closes a cut list: `…and 12 more`, or `""` when nothing was
+ * omitted so a list at the cap gains no tail.
+ *
+ * **A count and nothing else** (AGENTS.md §4.3). It takes a number rather than
+ * the omitted items precisely so that no item can be interpolated here — the
+ * caller has already been through {@link quoteCell} for the items it does
+ * show, and an "N more (starting with 'x')" improvement would reopen the echo
+ * this exists to close.
+ *
+ * The wording avoids `more characters`, which is `quoteCell`'s. Specs count
+ * occurrences of that phrase on one line to prove two separate cells were each
+ * cut, and a tail carrying it would make those counts pass for the wrong
+ * reason. `…` is `quoteCell`'s ellipsis, so one message carries one vocabulary.
+ */
+export function moreTail(omitted: number): string {
+  return omitted > 0 ? `…and ${omitted} more` : "";
 }
 
 const LOCAL_HEADER_SIGNATURE = 0x04034b50;

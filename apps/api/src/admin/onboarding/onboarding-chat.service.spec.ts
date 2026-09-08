@@ -27,8 +27,13 @@ function longCell(fill: string): string {
  * of the four injected services — verified against the method, which is why
  * empty stubs are enough. `onboarding-credentials.spec.ts` is the precedent for
  * this style.
+ *
+ * Exported, with the three fixture builders below, for
+ * `onboarding-chat-summary-caps.spec.ts` — the same suite split at AGENTS.md
+ * §4.5's line ceiling. A copy there would give the two files two different
+ * services and only one of them would still be the one this file describes.
  */
-function chatService(): OnboardingChatService {
+export function chatService(): OnboardingChatService {
   return new OnboardingChatService({} as never, {} as never, {} as never, {} as never);
 }
 
@@ -233,7 +238,7 @@ export function assertExcelImportFollowUpBoundsEchoedText(): void {
 }
 
 /** An RTU with nothing left to complete, so `excelImportFollowUp` walks past the MQTT branch. */
-function completeRtu(name: string): NonNullable<OnboardingDraft["rtus"]>[number] {
+export function completeRtu(name: string): NonNullable<OnboardingDraft["rtus"]>[number] {
   return {
     code: name,
     displayName: name,
@@ -244,12 +249,15 @@ function completeRtu(name: string): NonNullable<OnboardingDraft["rtus"]>[number]
   };
 }
 
-function assetOf(rtuIndex: number, name: string): NonNullable<OnboardingDraft["assets"]>[number] {
+export function assetOf(
+  rtuIndex: number,
+  name: string,
+): NonNullable<OnboardingDraft["assets"]>[number] {
   return { rtuIndex, code: name, name, siteName: "Berhampur", domain: "electrical" };
 }
 
 /** The draft shape that reaches `formatAssetsByRtuSummary` — every earlier branch satisfied. */
-function summaryDraftOf(
+export function summaryDraftOf(
   rtus: NonNullable<OnboardingDraft["rtus"]>,
   assets: NonNullable<OnboardingDraft["assets"]>,
 ): OnboardingDraft {
