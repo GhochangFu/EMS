@@ -29,6 +29,7 @@ import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
+import { draftCountProblem } from "./onboarding-draft-caps";
 import type { SetCredentialsBody } from "./onboarding.schema";
 import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
@@ -238,6 +239,36 @@ export class OnboardingService {
     );
 
     const mergedDraft = this.chatService.mergeDraft(session.draft, turn.draftPatch);
+
+    // `F4.103` — the chat patch builder is the **fourth** draft producer, and
+    // the one the first pass of this row missed.
+    //
+    // `handleRuleBasedTurn` is not a fallback: `.env.example` ships
+    // `OPENAI_API_KEY=` empty, so it is the branch that runs by default. It
+    // assembles its patch in code and never reaches
+    // `onboardingDraftSchema.safeParse` — that call guards the *model* branch
+    // alone — and two of its branches concatenate rather than replace
+    // (`patch.rtus = [...(draft.rtus ?? []), …]`, and the same shape for
+    // `pointKeys`). `mergeDraft` then takes `patch.rtus ?? base.rtus`, which
+    // replaces the stored array wholesale and is exactly why a `PATCH :id/draft`
+    // body cannot accumulate — but here the growth already happened upstream, so
+    // the replacement faithfully stores an array one longer than the one before
+    // it. One turn, one more RTU, no ceiling.
+    //
+    // Refused rather than truncated, and refused **before** the write below, so
+    // the session is left exactly as it was: draft, phase and message history
+    // unchanged. The turn is lost; the session is not. An operator cannot add a
+    // 101st RTU by chat, which is the intent.
+    //
+    // Counted on the **merged** draft, so a session that is somehow already over
+    // a cap refuses every turn — the RTU branch appends whatever the message
+    // says. `PATCH :id/draft` replaces the arrays wholesale and is the way back
+    // out. Below the access gates and below the ADR 0022 credential nudge, both
+    // of which answer first on purpose.
+    const countProblem = draftCountProblem(mergedDraft as OnboardingDraft);
+    if (countProblem !== null) {
+      throw new BadRequestException(countProblem);
+    }
 
     // H2 from the 2026-08-10 review: only the *user* turn was inspected. On the
     // OpenAI path `assistantMessage` is model output, so a model echoing back a
