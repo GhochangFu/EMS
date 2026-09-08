@@ -1,3 +1,6 @@
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+
 import { buildDedupeKey } from "./dedupe-key";
 import {
   MAX_EVENT_ATTEMPTS,
@@ -25,6 +28,18 @@ import {
  * database, the builders and the warn capture are that file's exports. No
  * socket, no Postgres — the real `WHERE` of every read is proven in
  * `storm-control.integration.spec.ts`.
+ *
+ * **`F3.48` (ADR 0057 Amendment 2) rewrote three of these cases.** Case 7 is
+ * now the retry: the ceiling writes no row for an escalation step, so the key
+ * survives and a later tick sends it (ruling Q1). Case 7b is its boundary —
+ * a *cleared* message is dispatched once and never again, so its refusal keeps
+ * the visible row (ruling Q-A). Case 14 asserts that ruling Q2's exclusion of
+ * `skipped_rate_limited` is in the SQL rather than in the sampled rows.
+ *
+ * What this file does **not** hold: that the exclusion actually releases a key.
+ * The fake answers each ledger read from a queue and applies no `WHERE`, so it
+ * cannot show a row being filtered out. That claim lives in
+ * `storm-control.integration.spec.ts`, against Postgres.
  */
 export async function runNotificationEventTests(): Promise<void> {
   const channelA = channelRow({ id: "aaaaaaaa-0000-0000-0000-000000000001", code: "a" });
@@ -174,11 +189,69 @@ export async function runNotificationEventTests(): Promise<void> {
     assert(!warned.includes(step.message), "§9.6: the warn never carries the alarm text");
   }
 
-  // --- 7. An event still meets the hourly ceiling ---------------------------
+  // --- 7. `F3.48` Q1: the ceiling writes no row for a step, and the next
+  //        tick retries ----------------------------------------------------
   //
-  // ADR 0041 decision 7 applies to every send; a step is a send. Recorded as
-  // `skipped_rate_limited` under the event's key — which, by owner ruling Q7,
-  // is then in the ledger and answers every later tick.
+  // ADR 0041 decision 7 still applies to every send, and a step is a send, so
+  // the RESULT is unchanged. What changes is the ledger: nothing is written
+  // (ADR 0057 Amendment 2, ruling Q1), so the key is not spent, and the sweep
+  // — which re-dispatches every due step every tick and ignores the results —
+  // gets its send once `isOverHourlyLimit`'s trailing-hour count of `sent`
+  // rows has fallen back under the ceiling. Before this, the tail of a first
+  // mapping's burst was lost for the life of the ledger (ruling Q7, 52 alarms
+  // measured on the stack).
+  {
+    const { db, recorded, reads, setCount, setDeliveryRecorded } = fakeDb();
+    const webhook = sendingWebhook();
+    const service = serviceWith({
+      db,
+      channels: [],
+      webhook: webhook.transport,
+      env: { NOTIFY_RATE_LIMIT_PER_HOUR: "1" },
+    });
+    const step = eventInput({ kind: "escalation", step: 1 });
+
+    setDeliveryRecorded([], []);
+    setCount(1);
+    const refused = await service.dispatchToChannels([channelRow()], step);
+    assert(
+      refused[0]?.status === "skipped_rate_limited",
+      `at the ceiling a step still skips, got ${String(refused[0]?.status)}`,
+    );
+    assert(refused[0]?.error === null, "a ceiling refusal is not an error");
+    assert(webhook.sent.length === 0, "the rate-limited step must not reach the transport");
+    assert(
+      recorded.length === 0,
+      `Q1: the ceiling writes no row on the escalation path, got ${recorded.length}`,
+    );
+
+    // The ceiling lifts by itself: it counts `sent` rows over a trailing hour.
+    setCount(0);
+    const retry = await service.dispatchToChannels([channelRow()], step);
+    assert(
+      retry[0]?.status === "sent",
+      `the next tick retries the refused step, got ${String(retry[0]?.status)}`,
+    );
+    assert(webhook.sent.length === 1, "the retry reaches the transport exactly once");
+    assert(
+      recorded.length === 1 &&
+        recorded[0]?.status === "sent" &&
+        recorded[0].dedupeKey.endsWith(":escalation:1"),
+      "only the send is recorded, under the event's key",
+    );
+    assert(
+      reads.deliveryExists === 2,
+      `the key was read on both ticks, got ${reads.deliveryExists}`,
+    );
+  }
+
+  // --- 7b. Q-A: a ceiling-refused CLEARED message KEEPS its row ------------
+  //
+  // `notifyCleared` runs once, from the clear phase, and `loadActiveAlarms`
+  // filters `cleared_at IS NULL` — the sweep never sees that alarm again, so
+  // there is no tick to retry it. Dropping the row would make the refusal
+  // invisible and buy nothing, so ADR 0041 decision 4's visible refusal is
+  // kept exactly where no retry replaces it (ADR 0057 Amendment 2, Q-A).
   {
     const { db, recorded, setCount, setDeliveryRecorded } = fakeDb();
     const webhook = sendingWebhook();
@@ -191,20 +264,17 @@ export async function runNotificationEventTests(): Promise<void> {
 
     setDeliveryRecorded([]);
     setCount(1);
-    const results = await service.dispatchToChannels(
-      [channelRow()],
-      eventInput({ kind: "escalation", step: 1 }),
-    );
+    const results = await service.dispatchToChannels([channelRow()], eventInput({ kind: "cleared" }));
     assert(
       results[0]?.status === "skipped_rate_limited",
-      `at the ceiling an event skips, got ${String(results[0]?.status)}`,
+      `at the ceiling a clear skips, got ${String(results[0]?.status)}`,
     );
-    assert(webhook.sent.length === 0, "the rate-limited step must not reach the transport");
+    assert(webhook.sent.length === 0, "the rate-limited clear must not reach the transport");
     assert(
       recorded.length === 1 &&
         recorded[0]?.status === "skipped_rate_limited" &&
-        recorded[0].dedupeKey.endsWith(":escalation:1"),
-      "the rate-limited skip is recorded under the event's key",
+        recorded[0].dedupeKey.endsWith(":cleared"),
+      `Q-A: the clear's refusal IS recorded, got ${recorded.length} rows`,
     );
   }
 
@@ -306,11 +376,20 @@ export async function runNotificationEventTests(): Promise<void> {
   //
   // A transport failure is not a decision, so the next tick tries again — but
   // a dead endpoint must not grow the ledger by a row per tick for the life
-  // of the alarm, so the key is blocked at `MAX_EVENT_ATTEMPTS` rows. Any
-  // other status consumed the key the moment it was written (Q7 for the
-  // rate-limited step). The fake slices the queued rows to the `LIMIT` the
-  // service asks for, so the three-`failed` case also proves the read asks
-  // for at least three rows.
+  // of the alarm, so the key is blocked at `MAX_EVENT_ATTEMPTS` rows. Every
+  // status except `failed` and — since `F3.48` — `skipped_rate_limited`
+  // consumed the key the moment it was written. The fake slices the queued
+  // rows to the `LIMIT` the service asks for, so the three-`failed` case also
+  // proves the read asks for at least three rows.
+  //
+  // **`skipped_rate_limited` is deliberately not in this table.** The fake
+  // answers the read from a queue and cannot apply a `WHERE`, and ruling Q2
+  // excludes that status IN THE SQL — so a queued rate-limited row would still
+  // come back here and still block, and the case would pass while asserting
+  // the opposite of production. Its two honest homes are block 14 below (the
+  // read really names the exclusion) and `storm-control.integration.spec.ts`
+  // (the exclusion really releases the key). `skipped_unconfigured` takes its
+  // place, and is what keeps a read narrowed to `status = 'sent'` failing.
   {
     assert(MAX_EVENT_ATTEMPTS === 3, `Q9 says three attempts, got ${MAX_EVENT_ATTEMPTS}`);
     const table: Array<{ ledger: string[]; want: "sent" | "skipped_deduped" }> = [
@@ -319,7 +398,9 @@ export async function runNotificationEventTests(): Promise<void> {
       { ledger: ["failed", "failed"], want: "sent" },
       { ledger: ["failed", "failed", "failed"], want: "skipped_deduped" },
       { ledger: ["failed", "sent"], want: "skipped_deduped" },
-      { ledger: ["skipped_rate_limited"], want: "skipped_deduped" },
+      // Amendment 2 §5 holds `skipped_unconfigured` out of `F3.48` on purpose:
+      // a step refused while its channel had no transport is still not retried.
+      { ledger: ["skipped_unconfigured"], want: "skipped_deduped" },
     ];
     for (const { ledger, want } of table) {
       const { db, recorded, reads, deliveryLimits, setDeliveryRecorded } = fakeDb();
@@ -434,6 +515,41 @@ export async function runNotificationEventTests(): Promise<void> {
     assert(
       warnings.length === 1 && warned.includes("rule=RULE-1") && warned.includes("escalation"),
       `one warn naming the rule code and the event kind, got ${JSON.stringify(warnings)}`,
+    );
+  }
+
+  // --- 14. `F3.48` Q2: the exclusion is in the SQL, not in the sampled rows -
+  //
+  // `eventDeliveryBlocked` takes `MAX_EVENT_ATTEMPTS` rows with no `ORDER BY`,
+  // and its own comment gives order-independence as the reason that is sound.
+  // Filtering the sample in TypeScript would break exactly that: a key holding
+  // three `failed` rows and three rate-limited ones could return three
+  // rate-limited ones and leave both arms false for a key ruling Q9 blocks.
+  //
+  // A fake cannot see a `WHERE`, so this renders one instead. `sqlToQuery` is
+  // the same conversion drizzle's own `PgSession` runs before handing the query
+  // to `pg`, so this is the text the database will see — the idiom, and the
+  // argument, are `asset-health/health-rollup-sql.spec.ts`'s.
+  {
+    const { db, deliveryConditions, setDeliveryRecorded } = fakeDb();
+    const webhook = sendingWebhook();
+    const service = serviceWith({ db, channels: [], webhook: webhook.transport });
+
+    setDeliveryRecorded([]);
+    await service.dispatchToChannels([channelRow()], eventInput({ kind: "escalation", step: 1 }));
+    assert(deliveryConditions.length === 1, `the event read ran once, got ${deliveryConditions.length}`);
+    const rendered = new PgDialect().sqlToQuery(deliveryConditions[0] as SQL);
+    assert(
+      /"status"\s*<>\s*\$\d+/.test(rendered.sql),
+      `Q2: the event read must exclude a status in SQL, got: ${rendered.sql}`,
+    );
+    assert(
+      rendered.params.includes("skipped_rate_limited"),
+      `Q2: the excluded status is bound as a parameter, got: ${JSON.stringify(rendered.params)}`,
+    );
+    assert(
+      !/"status"\s*=\s*\$\d+/.test(rendered.sql),
+      `Q2: an equality on status would block every key that is NOT rate-limited, got: ${rendered.sql}`,
     );
   }
 }

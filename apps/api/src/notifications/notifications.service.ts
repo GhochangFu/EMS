@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, ne, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import { notificationDeliveries } from "@bms/db";
@@ -49,7 +49,9 @@ export type { DispatchEvent } from "./dedupe-key";
  * called from a sweep whose one warn line would hide which channel failed.
  * Every failure becomes a `failed` result — recorded as a row, except the two
  * event-path reads that D3 and H1 keep out of the ledger — and the promise
- * resolves.
+ * resolves. `F3.48` adds a third exception, and it is a decision rather than a
+ * read: the hourly ceiling writes no row when it refuses an escalation step,
+ * because that key must survive to be retried (ruling Q1).
  */
 
 /** What a caller knows at the moment a rule raised (or did not raise) an alarm. */
@@ -95,11 +97,15 @@ const MAX_ERROR_LENGTH = 1_000;
  * may hold on one channel before the event stops being retried.
  *
  * A transport failure is not a decision. A webhook that timed out at 03:00
- * should be tried again on the next tick, where a rate-limited or deduped step
- * should not (Q7) — but an unbounded retry would let one dead endpoint grow
- * the ledger by a row per tick for the life of the alarm. Three rows per key
- * per channel is the growth bound; `eventDeliveryBlocked` reads at most this
- * many and blocks the key once it finds them.
+ * should be tried again on the next tick, where a deduped step should not —
+ * but an unbounded retry would let one dead endpoint grow the ledger by a row
+ * per tick for the life of the alarm. Three rows per key per channel is the
+ * growth bound; `eventDeliveryBlocked` reads at most this many and blocks the
+ * key once it finds them.
+ *
+ * A step the hourly ceiling refused is retried too, since `F3.48`, and it
+ * never spends an attempt: ruling Q1 writes no row for it, so there is nothing
+ * for this bound to count. Its own bound is the ceiling's trailing hour.
  */
 export const MAX_EVENT_ATTEMPTS = 3;
 
@@ -126,7 +132,9 @@ export class NotificationsService {
 
   /**
    * Sends one alarm to every channel joined to its rule, and records a row for
-   * every attempt — including every skip.
+   * every attempt — including every skip. That is the raise path's rule and it
+   * is unchanged; the event path has three exceptions, and `dispatchToChannel`
+   * steps 0 and 2 carry them (D3, H1, and `F3.48` ruling Q1).
    *
    * **A refusal is recorded once, not once per attempt** (`F3.46`). The first
    * `raised: false` dispatch writes the `skipped_deduped` row; every later one
@@ -226,10 +234,12 @@ export class NotificationsService {
     // 0. `F3.10` — event idempotency (ADR 0057 decision 10), and it comes
     //    FIRST. An escalation step or a cleared message is sent once per
     //    (channel, organization, dedupe key), for the life of the ledger; any
-    //    row but a `failed` one answers the key, so a `skipped_rate_limited`
-    //    step stays answered too (owner ruling Q7), and a `failed` one is
-    //    retried until there are `MAX_EVENT_ATTEMPTS` of them (owner ruling
-    //    Q9). A blocked key is the record — nothing is written. `raised` is
+    //    row but a `failed` or `skipped_rate_limited` one answers the key, a
+    //    `failed` one is retried until there are `MAX_EVENT_ATTEMPTS` of them
+    //    (owner ruling Q9), and a rate-limited one no longer answers it at all
+    //    (`F3.48` ruling Q2 — ruling Q7 said it did, and step 2 below no longer
+    //    writes one for a step). A blocked key is the record — nothing is
+    //    written. `raised` is
     //    not consulted on this path: an event is not a transition, and had
     //    the raise-path refusal below run first it would have written a
     //    `skipped_deduped` row under the event's key and made the event
@@ -303,10 +313,26 @@ export class NotificationsService {
       return input.event !== undefined ? failed : this.record(input, channel, dedupeKey, failed);
     }
     if (overLimit) {
-      return this.record(input, channel, dedupeKey, {
-        status: "skipped_rate_limited",
-        error: null,
-      });
+      const limited: DeliveryResult = { status: "skipped_rate_limited", error: null };
+      // `F3.48` ruling Q1 (ADR 0057 Amendment 2): on the ESCALATION path this
+      // row is NOT written — the same treatment, and the same reason, as the
+      // failed rate-limit read two lines above (H1). An event's key lasts the
+      // life of the ledger, so a row here would spend it on a refusal the next
+      // tick is meant to revisit: `isOverHourlyLimit` counts `sent` rows over a
+      // trailing hour and lifts by itself, and `runEscalationPhase`
+      // re-dispatches every due step every tick and ignores the results.
+      // Writing nothing IS the retry — no caller knows about this.
+      //
+      // `escalation`, not every event (ruling Q-A): `notifyCleared` runs once,
+      // from the clear phase, and `loadActiveAlarms` filters `cleared_at IS
+      // NULL`, so a cleared message is never dispatched a second time. Dropping
+      // its row would make the refusal invisible and buy no retry, so the clear
+      // keeps the visible refusal ADR 0041 decision 4 asks for.
+      //
+      // The raise path keeps its row too: a raise key is per transition and the
+      // next raise is a new alarm with a new key, so the growth is bounded.
+      const retriable = input.event?.kind === "escalation";
+      return retriable ? limited : this.record(input, channel, dedupeKey, limited);
     }
 
     // 3. Send. A transport that rejects is a `failed` delivery, never a
@@ -438,17 +464,30 @@ export class NotificationsService {
    * answered this event's key — the event (an escalation step, a cleared
    * message) is not sent again (ADR 0057 decision 10; owner rulings Q7, Q9).
    *
-   * **Which rows consume the key.** Any row whose status is not `failed` —
-   * `sent`, `skipped_deduped`, `skipped_rate_limited`, `skipped_unconfigured`
-   * — consumes it for the life of the ledger: the event was delivered, or a
-   * decision was taken not to deliver it, and a decision is not retried (Q7:
-   * a rate-limited step stays answered). A `failed` row is a transport that
-   * threw or refused, which is not a decision, so the event is retried on the
-   * next tick — up to `MAX_EVENT_ATTEMPTS` such rows, after which the key is
-   * blocked as if it had been answered (Q9). So the read asks for at most
-   * `MAX_EVENT_ATTEMPTS` rows' `status`: fewer than that and every row under
-   * the key was seen, so "any non-`failed`" is exact; that many and the key
-   * is blocked whatever they hold, so no order is needed.
+   * **Which rows consume the key.** Any row whose status is not `failed` and
+   * not `skipped_rate_limited` — `sent`, `skipped_deduped`,
+   * `skipped_unconfigured` — consumes it for the life of the ledger: the event
+   * was delivered, or a decision was taken not to deliver it, and a decision is
+   * not retried. A `failed` row is a transport that threw or refused, which is
+   * not a decision, so the event is retried on the next tick — up to
+   * `MAX_EVENT_ATTEMPTS` such rows, after which the key is blocked as if it had
+   * been answered (Q9).
+   *
+   * **`skipped_rate_limited` is excluded in the `WHERE`, not here** (`F3.48`
+   * ruling Q2, ADR 0057 Amendment 2). It was a blocking status under ruling Q7
+   * and is not one now: the ceiling is a rolling hour that lifts by itself, so
+   * refusing a step is a postponement rather than a decision. Ruling Q1 stops
+   * new such rows being written on the escalation path; excluding the status
+   * here releases the ones written before `F3.48` landed.
+   *
+   * The exclusion has to be in the SQL for the next paragraph to stay true.
+   * The read asks for at most `MAX_EVENT_ATTEMPTS` rows' `status`: fewer than
+   * that and every blocking-eligible row under the key was seen, so "any
+   * non-`failed`" is exact; that many and the key is blocked whatever they
+   * hold, so no order is needed. Filtering the sampled rows in TypeScript
+   * instead would break exactly that — an unordered sample of
+   * `MAX_EVENT_ATTEMPTS` rows could come back all rate-limited and leave both
+   * arms false for a key Q9 blocks.
    *
    * Same connection and the same reason as `isOverHourlyLimit`: a read with no
    * tenant transaction to run under — the sweep spans every tenant with no
@@ -475,6 +514,19 @@ export class NotificationsService {
           eq(notificationDeliveries.channelId, channelId),
           eq(notificationDeliveries.organizationId, organizationId),
           eq(notificationDeliveries.dedupeKey, dedupeKey),
+          // `F3.48` ruling Q2: a `skipped_rate_limited` row no longer blocks —
+          // Q1 stops new ones being written, and this releases the ones already
+          // there, including every key blocked before `F3.48` landed.
+          //
+          // Excluded HERE and not from `rows` below, and that is load-bearing:
+          // the read takes `MAX_EVENT_ATTEMPTS` rows with no `ORDER BY`, and
+          // the comment above gives order-independence as the reason that is
+          // sound. Drawing the sample from the blocking-eligible rows only
+          // keeps both arms exact; a filter over an unordered sample would not.
+          // `status` is NOT NULL, so `<>` drops nothing else, and
+          // `notification_deliveries_channel_key_idx` still serves the read
+          // with the status as a residual filter — no DDL.
+          ne(notificationDeliveries.status, "skipped_rate_limited"),
         ),
       )
       .limit(MAX_EVENT_ATTEMPTS);

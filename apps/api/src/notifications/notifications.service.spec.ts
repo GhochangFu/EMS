@@ -97,6 +97,13 @@ type Recorded = {
  * The `{ status }` queue holds one **row list** per read, and the fake honours
  * the `LIMIT` it is given by slicing that list — so the Q9 bound's "three
  * `failed` rows block" case only passes if the service really asks for three.
+ *
+ * **`F3.48`: the `{ status }` branch also records the condition it was given**,
+ * and only that branch. It still cannot *apply* a `WHERE` — nothing above
+ * changes — but ruling Q2's exclusion of `skipped_rate_limited` has to be IN
+ * the SQL to be sound, and a rendered condition is the only thing a fake can
+ * honestly check. What the exclusion *does* is proven against Postgres in
+ * `storm-control.integration.spec.ts`, like every other `WHERE` here.
  */
 export function fakeDb(sentInLastHour = 0): {
   db: ConstructorParameters<typeof NotificationsService>[0];
@@ -105,6 +112,8 @@ export function fakeDb(sentInLastHour = 0): {
   reads: { rateLimit: number; skipExists: number; deliveryExists: number; sentChannels: number };
   /** The `LIMIT` each `{ status }` read asked for, in read order. */
   deliveryLimits: number[];
+  /** The `WHERE` each `{ status }` read was given, in read order — `F3.48` Q2's SQL assertion. */
+  deliveryConditions: unknown[];
   setCount: (n: number) => void;
   failRateLimitReads: (fail: boolean) => void;
   /** Answers for the next `{ id }` (skip) existence reads, in dispatch order. Empty = `false`. */
@@ -120,6 +129,7 @@ export function fakeDb(sentInLastHour = 0): {
   const recorded: Recorded[] = [];
   const reads = { rateLimit: 0, skipExists: 0, deliveryExists: 0, sentChannels: 0 };
   const deliveryLimits: number[] = [];
+  const deliveryConditions: unknown[] = [];
   const skipQueue: boolean[] = [];
   const deliveryQueue: string[][] = [];
   const sentChannels: string[] = [];
@@ -159,10 +169,11 @@ export function fakeDb(sentInLastHour = 0): {
       if (shape === "status") {
         return {
           from: () => ({
-            where: () => ({
+            where: (condition: unknown) => ({
               limit: (n: number) => {
                 reads.deliveryExists += 1;
                 deliveryLimits.push(n);
+                deliveryConditions.push(condition);
                 if (deliveryReadsFail) return Promise.reject(new Error("ledger unavailable"));
                 const statuses = deliveryQueue.shift() ?? [];
                 return Promise.resolve(statuses.slice(0, n).map((status) => ({ status })));
@@ -204,6 +215,7 @@ export function fakeDb(sentInLastHour = 0): {
     recorded,
     reads,
     deliveryLimits,
+    deliveryConditions,
     setCount: (n) => {
       count = n;
     },
