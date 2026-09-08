@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { LoggerModule } from "nestjs-pino";
 
+import { AlarmKbModule } from "./alarm-kb/alarm-kb.module";
 import { AlarmsModule } from "./alarms/alarms.module";
 import { AdminModule } from "./admin/admin.module";
 import { AssetsModule } from "./assets/assets.module";
@@ -34,6 +35,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     TelemetryModule,
     DashboardModule,
     DashboardBuilderModule,
+    AlarmKbModule,
     AlarmsModule,
     CalcModule,
     AssetHealthModule,
