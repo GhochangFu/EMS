@@ -600,6 +600,9 @@ export class RulesService {
    * admin would. Only the *returned* trace list is filtered to the caller's
    * `assetIds` — matching how the streaming path (`AlarmEngineService`) has
    * always raised without regard to who is watching.
+   *
+   * **The rate bound is at the route, not here** (`F3.47`,
+   * `rules.controller.ts`): a second caller of this method bypasses it.
    */
   async evaluateEnabledRules(
     actor: Pick<JwtPayload, "sub" | "email">,

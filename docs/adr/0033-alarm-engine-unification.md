@@ -161,6 +161,17 @@ None — no new npm package.
   an open DoS, and no rate limiting exists anywhere in `apps/api` to bound it
   either way (`F4.17`). Not fixed here — flagged for whoever picks up
   `F4.17` or a follow-up on this endpoint specifically.
+  *Discharged 2026-09-09 by `F3.47`, the follow-up on this endpoint: the route
+  now refuses a press with 429 when the caller's organization swept less than
+  30 s ago (`LIFECYCLE_TICK_MS`), keyed on `readableOrganizationIds` and held
+  in process memory. Three things this does NOT do, and they are the reason
+  `F4.17` stays open. It bounds **this route**, not the table:
+  `AlarmRaiseService` writes `bms.rule_executions` on the streaming path and is
+  unthrottled, and `POST /rules/preview` still writes an audit row per call.
+  It bounds **per organization**, so K organizations each holding a
+  `configuration`-role user can still drive K sweeps per 30 s. And it is one
+  bespoke route throttle — not `ThrottlerModule`, not middleware, no new
+  dependency — so `apps/api` still has no general rate limiting.*
 - Decision 3's "only on a raise" applies to the *streaming* engine
   (`AlarmEngineService`, which had no trace mechanism before F3.6). The
   on-demand evaluator's own every-evaluation trace — matched or not, the
