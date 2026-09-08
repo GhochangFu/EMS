@@ -1,5 +1,7 @@
 import type { RejectedRowDto, TelemetryImportCommitDto, TelemetryImportPreviewDto } from "@bms/shared";
 
+import { oversizeUploadMessage } from "./oversize-upload";
+
 export type GroupedRejection = { reason: string; rowNumbers: number[] };
 
 /**
@@ -58,17 +60,21 @@ export function summarizeCommit(dto: TelemetryImportCommitDto): string {
 /**
  * Turns a non-OK upload response into a message worth showing an operator.
  *
- * A 413 is special-cased: `FileInterceptor`'s own `limits.fileSize` rejects
- * an oversize upload at the Multer layer, before the controller or any Zod
- * validation runs, so its body is not this app's usual JSON error shape —
- * showing it raw would be a framework error page, not a sentence about the
- * 5 MB cap. Every other status passes its body text through unchanged (it
- * is one of this app's own `BadRequestException`/`ForbiddenException`
- * messages), falling back to a generic line only when the body is empty.
+ * **The 413 branch adds the 5 MB figure. It does not rescue a framework error
+ * page** — this docblock said the latter until `F4.106` measured it. Nest maps
+ * multer's `LIMIT_FILE_SIZE` to `PayloadTooLargeException`, so the body IS this
+ * app's ordinary envelope and an unwrapper alone would already yield
+ * `File too large`: a refusal that names no limit. The sentence and the full
+ * reasoning live in `oversizeUploadMessage`, which is the only copy of both.
+ *
+ * Every other status passes its body text through unchanged (it is one of this
+ * app's own `BadRequestException`/`ForbiddenException` messages), falling back
+ * to a generic line only when the body is empty.
  */
 export function describeImportUploadError(status: number, bodyText: string): string {
-  if (status === 413) {
-    return "File is too large — the limit is 5 MB.";
+  const oversize = oversizeUploadMessage(status);
+  if (oversize !== null) {
+    return oversize;
   }
   return bodyText.trim() || `Import failed (${status}).`;
 }

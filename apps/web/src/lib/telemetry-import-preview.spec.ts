@@ -128,11 +128,18 @@ export function runSummarizeCommitTests(): void {
 }
 
 /**
- * Coverage for `describeImportUploadError` (FG4) — a 413 never reaches this
- * repo's usual JSON-body error path (`FileInterceptor`'s own `fileSize`
- * limit rejects an oversize upload at the Multer layer, before any handler
- * or Zod validation runs), so its body is not the app's usual JSON error
- * shape and needs its own friendly message rather than showing the raw text.
+ * Coverage for `describeImportUploadError` (FG4).
+ *
+ * **`F4.106` corrected this docblock; it used to claim the opposite.** A 413
+ * from `FileInterceptor`'s `fileSize` limit *does* reach the app's usual JSON
+ * error path: Nest maps multer's `LIMIT_FILE_SIZE` to
+ * `PayloadTooLargeException`, so the body is the ordinary envelope and an
+ * unwrapper alone would yield `File too large`. The friendly message exists to
+ * add the 5 MB figure that message does not carry.
+ *
+ * That makes the `<html>` case below real rather than hypothetical: it is a
+ * reverse proxy's own 413 (nginx `client_max_body_size`), which never reaches
+ * Nest at all.
  */
 export function runDescribeImportUploadErrorTests(): void {
   assert(
@@ -140,8 +147,9 @@ export function runDescribeImportUploadErrorTests(): void {
     `unexpected 413 message: "${describeImportUploadError(413, "")}"`,
   );
 
-  // Even if a 413 body happens to carry text, the friendly message wins —
-  // that text is not this app's JSON error shape and should not be shown.
+  // A 413 body that carries text loses to the friendly message anyway. This
+  // one is a proxy page; the Nest envelope would say `File too large`, which
+  // names no limit. Neither is what the operator needs to read.
   assert(
     describeImportUploadError(413, "<html>Request Entity Too Large</html>") ===
       "File is too large — the limit is 5 MB.",

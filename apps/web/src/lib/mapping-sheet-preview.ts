@@ -7,6 +7,8 @@ import type {
   MappingSheetPreviewDto,
 } from "@bms/shared";
 
+import { oversizeUploadMessage } from "./oversize-upload";
+
 /**
  * `F2.7` / ADR 0056 decisions 6 and 7 — the pure rules behind the mapping-sheet
  * panel: what each error code is called in front of an operator, what a preview
@@ -70,9 +72,19 @@ function countOf(count: number, noun: string): string {
  * - a Zod `flatten()` — a missing or misspelt `locationId`, refused by
  *   `mappingSheetQuerySchema` before the file is read. Valid JSON, not this
  *   DTO, so it falls through to the raw body rather than being mis-labelled;
- * - a framework error page — Multer's own 413, raised before the controller
- *   runs, which is why 413 is special-cased the way `describeImportUploadError`
- *   special-cases it for `F1.9`.
+ * - a 413, which `oversizeUploadMessage` answers. **Not a framework error
+ *   page** — this clause said that until `F4.106` measured it. Nest maps
+ *   multer's `LIMIT_FILE_SIZE` to `PayloadTooLargeException`, so the body is
+ *   the ordinary envelope; the special case exists to add the 5 MB figure that
+ *   `File too large` does not carry. A reverse proxy's own HTML 413 lands here
+ *   too and gets the same sentence.
+ *
+ * The 413 check runs **after** the DTO parse, so the API's own `file_too_large`
+ * still wins and keeps its label. That one is a **400**, not a 413:
+ * `parseMappingSheet` refuses the buffer itself with a message naming the
+ * actual byte count and the limit, and refuses a zip that *declares* an
+ * oversized inflation under the same code. Both say more than this sentence
+ * does, and neither reaches the 413 branch.
  *
  * It never throws: a panel that cannot render the refusal is worse than one
  * that renders it plainly.
@@ -82,8 +94,9 @@ export function describeMappingSheetUploadError(status: number, bodyText: string
   if (parsed) {
     return `${MAPPING_SHEET_ERROR_LABELS[parsed.code]} — ${parsed.message}`;
   }
-  if (status === 413) {
-    return "File is too large — the limit is 5 MB.";
+  const oversize = oversizeUploadMessage(status);
+  if (oversize !== null) {
+    return oversize;
   }
   return bodyText.trim() || `Mapping sheet upload failed (${status}).`;
 }
