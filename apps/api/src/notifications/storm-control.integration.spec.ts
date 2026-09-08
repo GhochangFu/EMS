@@ -398,6 +398,14 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
     // the refusal's own row and the step was lost for the life of the ledger.
     const stepNine: DispatchInput = { ...step, event: { kind: "escalation", step: 9 } };
     const stepNineKey = buildDedupeKey(stepNine);
+    // Captured before the refusal, so the leak check below is a DELTA rather
+    // than a suite-global absolute: an absolute would break — and would blame
+    // Q1 — the moment a block above it plants such a row.
+    const rateLimitedBefore = await countDeliveries(
+      pool,
+      channelId as string,
+      "skipped_rate_limited",
+    );
     const limitedStep = await limited.dispatchToChannels([channel], stepNine);
     assert(
       limitedStep[0]?.status === "skipped_rate_limited",
@@ -424,14 +432,15 @@ export async function runStormControlTests(pool: Pool, db: Db): Promise<void> {
       "one row holds step 9's key and it is the send, not a refusal",
     );
 
-    // Q1 is the event path only, and this is the gate for that. It has to run
-    // BEFORE anything below plants a rate-limited row: the one row is the
-    // raise-path refusal asserted earlier in this suite, and the block above
-    // must not have added a second.
+    // Q1 is the event path only, and this is the gate for that. `countByKey`
+    // above cannot hold it alone: a mutation that recorded the refusal under a
+    // different — or NULL — dedupe key would leave that count at 0 and pass.
+    // A channel-wide delta of zero catches it wherever the row landed.
     assert(
-      (await countDeliveries(pool, channelId as string, "skipped_rate_limited")) === 1,
-      "Q1 did not leak into the raise path: its ceiling row is still the only " +
-        "skipped_rate_limited row this suite has produced",
+      (await countDeliveries(pool, channelId as string, "skipped_rate_limited")) ===
+        rateLimitedBefore,
+      "Q1 did not leak into the raise path, and wrote no row under any other key: " +
+        `the channel's rate-limited count moved from ${rateLimitedBefore}`,
     );
 
     // --- `F3.48` Q2: a row written before this landed releases the key -------

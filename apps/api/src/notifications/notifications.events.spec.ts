@@ -389,7 +389,9 @@ export async function runNotificationEventTests(): Promise<void> {
   // the opposite of production. Its two honest homes are block 14 below (the
   // read really names the exclusion) and `storm-control.integration.spec.ts`
   // (the exclusion really releases the key). `skipped_unconfigured` takes its
-  // place, and is what keeps a read narrowed to `status = 'sent'` failing.
+  // place, and what it kills here is a narrowing of the TypeScript predicate to
+  // `status === "sent"` — not a narrowing of the SQL, which this file cannot
+  // see and must not claim to hold. The SQL form of that claim is storm-control's.
   {
     assert(MAX_EVENT_ATTEMPTS === 3, `Q9 says three attempts, got ${MAX_EVENT_ATTEMPTS}`);
     const table: Array<{ ledger: string[]; want: "sent" | "skipped_deduped" }> = [

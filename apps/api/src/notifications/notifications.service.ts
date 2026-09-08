@@ -105,7 +105,11 @@ const MAX_ERROR_LENGTH = 1_000;
  *
  * A step the hourly ceiling refused is retried too, since `F3.48`, and it
  * never spends an attempt: ruling Q1 writes no row for it, so there is nothing
- * for this bound to count. Its own bound is the ceiling's trailing hour.
+ * for this bound to count. **Nothing else bounds it either.** The ceiling's
+ * trailing hour decides when a slot frees, not how long the retry runs, so a
+ * channel held permanently over a misconfigured ceiling retries for the life of
+ * the alarm — writing nothing, sending nothing. ADR 0057 Amendment 2 §2 accepts
+ * that; it is not an oversight in this constant.
  */
 export const MAX_EVENT_ATTEMPTS = 3;
 
@@ -525,7 +529,8 @@ export class NotificationsService {
           // keeps both arms exact; a filter over an unordered sample would not.
           // `status` is NOT NULL, so `<>` drops nothing else, and
           // `notification_deliveries_channel_key_idx` still serves the read
-          // with the status as a residual filter — no DDL.
+          // with the status as a residual filter — no DDL. That plan was
+          // measured, not assumed; ADR 0057 Amendment 2 §3 records it.
           ne(notificationDeliveries.status, "skipped_rate_limited"),
         ),
       )

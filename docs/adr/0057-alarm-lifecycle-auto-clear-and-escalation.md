@@ -318,6 +318,22 @@ in part; ruling Q9 and the raise path are untouched.
    silently on that path, and the operator's signal for that is the raise
    path's own `skipped_rate_limited` rows on the same channel.
 
+   **A second cost, named by the reviews rather than by the ruling.** The
+   retried step does not merely wait for the ceiling — it *competes* for it.
+   `isOverHourlyLimit` is one budget per `(channel, organization)` and the raise
+   path shares it. Before this row a refused step wrote its row and stopped
+   asking; now every due step asks on every 30 s tick until it lands, so a
+   backlog becomes a standing queue rather than a single burst. At the default
+   `NOTIFY_RATE_LIMIT_PER_HOUR` of 60 a 52-step backlog drains within the hour
+   and this is invisible; at a low ceiling it is not, and a new alarm's raise can
+   meet a full ceiling that the backlog is holding. The raise loses permanently
+   when that happens, and that part is **older than this row**: a refused raise
+   writes `skipped_rate_limited` under `<rule>:<alarm>:<severity>`, and the next
+   evaluation arrives with `raised: false` and `alarmId: null`, so it keys on
+   `<rule>:no-alarm:<severity>` and records a `skipped_deduped` row instead of
+   retrying. Neither the ordering nor the staleness of a long-deferred step is
+   settled here; both are filed as their own rows.
+
 3. **Ruling `F3.48`-Q2 — a `skipped_rate_limited` row no longer blocks an event
    key.** Q1 stops new ones being written; Q2 releases the ones already there,
    including every key blocked before this row landed — the 52 backlogged
@@ -333,8 +349,18 @@ in part; ruling Q9 and the raise path are untouched.
    rate-limited rows, leaving both arms false for a key that Q9 blocks. Adding
    `status <> 'skipped_rate_limited'` to the `WHERE` draws the sample from the
    blocking-eligible rows only, so both arms stay exact and the comment stays
-   true. `notification_deliveries_channel_key_idx` still serves the read; the
-   status is a residual filter over a handful of rows and no DDL is added.
+   true.
+
+   **No DDL, and that was measured rather than assumed.** `EXPLAIN` of the new
+   read on the running stack gives `Index Scan using
+   notification_deliveries_channel_key_idx`, with `Index Cond: (channel_id …
+   AND dedupe_key …)` and `Filter: (status <> 'skipped_rate_limited' AND
+   organization_id = …)` — the index still drives the read and the status is a
+   residual filter, beside the organization predicate that was already one.
+   `enable_seqscan` was off for the plan, because the local ledger holds no
+   rows and an unforced choice on an empty table would show nothing; what the
+   forced plan settles is that the index serves this predicate, which is the
+   claim being made.
 
    That mixed state is **not reachable in production**, and the reason to
    prefer the SQL form is not that it occurs. Today's predicate blocks on the
@@ -344,6 +370,12 @@ in part; ruling Q9 and the raise path are untouched.
    that the predicate must stay exact **by construction**, because the comment
    at the head of the method is what the next reader will rely on when they
    change the limit or add a status.
+
+   **One shape from before this row does gain an attempt, and that is intended.**
+   A key holding two `failed` rows and then a ceiling refusal held three rows, so
+   the old count arm blocked it at three. The new `WHERE` draws its sample from
+   the two `failed` rows, so the step gets the third real transport attempt
+   ruling Q9 always meant it to have. Q2 exists to release exactly this history.
 
    No raise key is reachable by this read. An event key carries the
    `:escalation:<n>` or `:cleared` suffix `buildDedupeKey` appends, so the two
