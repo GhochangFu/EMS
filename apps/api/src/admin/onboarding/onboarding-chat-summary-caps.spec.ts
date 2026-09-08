@@ -420,8 +420,8 @@ export function assertMqttTemplateBlocksAreCapped(): void {
   assert(endCopy >= 0, "this case must render the END COPY marker, or the position is unassertable");
   const tail = lines[endCopy + 1] as string;
   assert(
-    /^…and 75 more$/.test(tail),
-    `the line after END COPY states what was omitted, got "${tail}"`,
+    /^…and 75 more RTUs$/.test(tail),
+    `the line after END COPY states what was omitted, and in what unit, got "${tail}"`,
   );
 
   for (const [index] of rtus.entries()) {
@@ -511,8 +511,8 @@ export function assertMqttTemplateKeepsTheRtusItsProseCounts(): void {
   const lines = message.split("\n");
   const endCopy = lines.findIndex((line) => line.includes("END COPY"));
   assert(
-    /^…and 5 more$/.test(lines[endCopy + 1] as string),
-    `the tail counts the template's own omissions, got "${lines[endCopy + 1]}"`,
+    /^…and 5 more RTUs$/.test(lines[endCopy + 1] as string),
+    `the tail counts the template's own omissions, in its own unit, got "${lines[endCopy + 1]}"`,
   );
 }
 

@@ -804,7 +804,14 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       // **Outside the markers, deliberately.** Inside them the operator copies
       // it, edits around it and pastes it back, and it would reach
       // `defaultConfig`'s parser as if it were part of the template.
-      moreTail(omitted),
+      //
+      // Named, for the same reason the assets summary names its own RTU tail:
+      // this message also carries the display-name fix list, whose tail counts
+      // *fixes*. Two bare `…and N more` lines in one reply, counting different
+      // things, is what the noun exists to prevent. The API-layer check for
+      // this row asserted the noun here and found it missing, because the
+      // first pass added it only at the site the review quoted.
+      moreTail(omitted, "RTUs"),
     ]
       .filter(Boolean)
       .join("\n");
