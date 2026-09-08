@@ -466,3 +466,74 @@ untouched** and records as it always has. The reasoning, the accepted costs and
 the two exits deliberately left alone are in ADR 0057 Amendment 4; this note
 exists only so a reader of ADR 0041 alone is not left with Amendment 3's
 sentence.
+
+## Amendment 5 — `F3.51`: decision 4 gains a fourth exception, and it is the
+first that is not an event (2026-09-09)
+
+A correction to Amendment 4 above, and to `dispatchToChannel`'s own header
+comment: "**The raise path is untouched** and records as it always has" was
+true for every raise before this row and is now false for one of them. The
+reasoning and the four owner rulings this row was built under are in ADR 0057
+Amendment 5; this note exists so a reader of ADR 0041 alone is not left with
+Amendment 4's sentence.
+
+**The property, not a fourth event kind.** `offeredAgainWithoutAsking`, the
+one call the three event-path exits already shared since `F3.54`, gains a
+fourth answer that reaches it through a different door. `DispatchInput` gains
+an optional `reoffered?: true`, set nowhere but the alarm lifecycle sweep's new
+raise-retry phase. The function's first line now reads
+`if (input.event === undefined) return input.reoffered === true;` before its
+exhaustive `switch` over `event.kind` — so a raise that nobody re-offers still
+answers `false` there exactly as before, and the `switch` beneath is untouched,
+still exhaustive, still a compile error under `noImplicitReturns` for a third
+event kind. `reoffered` never reaches `buildDedupeKey` and never changes
+`subjectFor`: it is not an event, and the three exits do not learn a new kind
+of dispatch, only a second way to reach the answer they already know how to
+give.
+
+**What the fourth exception is.** A raise's own outcome is recorded under the
+key `rule:alarm:severity`; nothing before this row ever asked for that key
+again; the alarm lifecycle sweep's raise-retry phase now does, every 30 s tick,
+for as long as the alarm stays open, unacknowledged, and its rule keeps
+notifying. A dispatch carrying `reoffered: true` therefore has exactly the
+escalation step's property — the sweep will ask again on its own — and none of
+the cleared message's, so it takes the same three no-row exits an escalation
+step takes: the failed ledger read (D3), the failed rate-limit read (H1), and
+the ceiling's own refusal (`F3.48` ruling Q1). Writing a row at any of those
+three would spend one of the raise key's `MAX_EVENT_ATTEMPTS` on a refusal the
+very next tick means to revisit, for the same reason `F3.48` gave for the
+escalation path: the sweep ticks faster than the ceiling's trailing hour can
+clear.
+
+**The original raise's row is untouched, and that sentence now needs to be
+read carefully.** The *first* raise — the one a rule evaluation dispatches
+with no `reoffered` flag — still records at all three exits exactly as
+Amendment 4 describes, because `input.reoffered` is unset there and the
+predicate still answers `false`. That row is not incidental; it is the only
+evidence the sweep's raise-retry phase has to work from, since the phase reads
+the ledger for the alarm's raise key before deciding who is still owed the
+message (ADR 0057 Amendment 5). A raise that never wrote a row — a rejected
+channel read, or a rejected `record()` insert — is never retried; the
+raise-retry phase reads evidence, it does not infer absence.
+
+**Growth accounting.** `MAX_EVENT_ATTEMPTS`'s bound on an event key now covers
+the raise key as well, reached through `channelsOwedTheRaise` rather than
+through `eventDeliveryBlocked`, but it is the same predicate, so the same
+paragraph applies unchanged: this many `failed` rows under a raise key stop the
+sweep re-offering it to that channel, a `skipped_rate_limited` row never counts
+toward the cap and never blocks, and a `skipped_unconfigured` row blocks only
+while it is newer than the unconfigured watermark (`F3.50` ruling Q1) — now
+computed by one shared helper, `unconfiguredWatermark`, called from both the
+event path and the raise-retry read. The two accountings never mix: the ledger
+read that feeds the raise-retry phase filters on the raise's own dedupe key,
+and a step's key always carries an `:escalation:<n>` or `:cleared` suffix.
+
+**The accepted cost, stated where ADR 0057 states it in full.** A channel held
+permanently over a misconfigured hourly ceiling is now re-offered a raise on
+every tick for the life of the alarm — two reads a tick, nothing written,
+nothing sent — the same cost Amendment 2 of ADR 0057 already accepted on the
+escalation path, reaching the raise path for the first time. `F3.53` owns the
+per-tick read cost; `F3.52` owns splitting the hourly budget between the raise
+and event paths, and owns the retried message's lack of any age or staleness
+marker — deliberate here, since byte-identity with the original raise is what
+lets the ledger rows line up, and inherited rather than fixed by this row.

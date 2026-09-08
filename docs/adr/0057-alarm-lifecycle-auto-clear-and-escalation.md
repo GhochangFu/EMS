@@ -683,3 +683,124 @@ H1 as unconditional exceptions, and after this they are conditional.
    one read while the INSERT goes to the real database. Each block asserts both
    kinds, and the escalation half is what kills the over-broad mutation "record
    on every event" — which the cleared half alone would pass.
+
+## Amendment 5 — `F3.51`: the sweep gains a third phase, `runRaiseRetryPhase`,
+between the clear and the escalation (2026-09-09)
+
+A raise notification that did not send was lost for the life of the alarm.
+Its outcome is recorded under the key `rule:alarm:severity`; the next
+evaluation of the same rule arrives with `raised: false` and `alarmId: null`,
+so `buildDedupeKey` produces the different key `rule:no-alarm:severity`, the
+dispatch lands in the transition-dedupe branch (`F3.46`), writes
+`skipped_deduped`, and sends nothing. The alarm stays open, nobody is told, and
+the ledger row — `failed`, `skipped_unconfigured` or `skipped_rate_limited` —
+reads as a delay rather than as the loss it is. `runLifecycleSweep` gains a
+third phase, `runRaiseRetryPhase`, that re-offers a still-active alarm's
+**original** raise — the same `DispatchInput`, the same message, the same
+dedupe key, `event: undefined`, `reoffered: true` — to exactly the channels the
+ledger shows are still owed it. ADR 0041 Amendment 5 amends decision 4 for the
+one exit this touches there; this amendment is the reasoning.
+
+**The four owner rulings, in the order given, and what each bought.**
+
+1. **A retry path, not a terminal status.** The fix lives entirely inside the
+   existing 30 s sweep. No DDL, no new `notification_deliveries` status: a
+   sixth status would be a migration, a contract change and every reader of the
+   column, for a defect the sweep can fix by asking again.
+
+2. **The stop condition reuses `MAX_EVENT_ATTEMPTS`** — and the ruling's own
+   qualification is what makes it work — **the whole predicate**
+   `eventDeliveryBlocked` already applies, not a hand-rolled count. Hand-rolling
+   "no `sent` row and fewer than three rows" would make the unconfigured case a
+   60-second no-op: the original raise writes row 1, two 30 s retry ticks write
+   rows 2 and 3, the cap is spent inside a minute, and an operator configuring
+   SMTP an hour later changes nothing. That is `F3.48`'s falsified premise,
+   reproduced on the raise path, and `channelsOwedTheRaise` avoids it by
+   applying the two status exclusions before the two blocking arms, in the same
+   order, with the same operators: a `skipped_rate_limited` row never counts
+   toward the cap and never blocks by itself (`F3.48` ruling Q2); a
+   `skipped_unconfigured` row blocks only while it is newer than
+   `unconfiguredWatermark(channel, PROCESS_STARTED_AT)` (`F3.50` ruling Q1, now
+   one function called from both the event path and this read); `maxAttempts`
+   eligible rows, or any eligible row that is not `failed`, blocks as before.
+
+3. **A channel with zero rows under the raise key is not owed.** This is the
+   same-tick double-send guard, evaluated over every row for the channel before
+   the two exclusions are applied — a channel whose only rows are all
+   rate-limited or all stale-unconfigured has evidence and an empty eligible
+   set, and computing the evidence test after the exclusions would silently
+   kill both of those cases. It replaces any clock or grace constant: there is
+   no window to tune and nothing to expire, only the question of whether the
+   raise has been offered to this channel at all.
+
+4. **An acknowledged alarm is skipped.** The reason is the message, not parity
+   with the escalation phase, which keeps sending steps to an acknowledged
+   alarm because a step is the organization's severity policy escalating
+   regardless of who is looking. The retry is not a step; it is the raise text
+   verbatim, and that text asserts a novelty — a new alarm, first told — the
+   alarm no longer has once somebody has acknowledged it. Re-sending the
+   original wording to an already-acknowledged alarm would be a lie about its
+   own freshness, not merely a redundant notification.
+
+**Position, and it is load-bearing in both directions.** The phase runs after
+the clear phase and before the escalation phase. After the clear: an alarm
+that cleared this tick has already had its `cleared` message dispatched, and
+re-offering its raise afterwards would tell people about a resolved alarm in
+the wrong order — the phase skips every id in `clearedIds`. Before the
+escalation: the two phases share one hourly budget per `(channel,
+organization)` (`isOverHourlyLimit`), and whichever dispatches first takes it;
+putting the raise first means an escalation backlog cannot starve a new
+critical alarm's raise, which is exactly the starvation `F3.52` was filed
+against. The ordering is the only prioritisation this row ships — it does not
+split the budget, it only decides who asks for it first.
+
+**What ruling 3 narrows, stated honestly.** The evidence conjunct means a raise
+that never reached the ledger at all is never retried by this phase — a
+rejected ledger read at the raise's own dispatch time writes nothing, and
+`record()`'s own insert can fail independently of the read. Both leave zero
+rows under the key, and zero rows reads as "not yet offered", not as "owed".
+This is a real limit and not a rounding error: all three of the cases named
+against this backlog row — a `failed` transport, a `skipped_unconfigured`
+channel, a `skipped_rate_limited` refusal — do write a row, so nothing this
+row was asked to fix is dropped by the narrowing. A raise whose own row never
+landed is a different, older defect than the one this row closes.
+
+**The accepted cost.** A channel held over a misconfigured hourly ceiling for
+the life of an alarm is re-offered its raise on every tick, forever: two reads
+a tick — the ledger query and the channel query — nothing written, nothing
+sent, no ledger growth. This is the same cost Amendment 2 §2 above already
+accepted on the escalation path, reaching the raise path for the first time.
+`F3.53` owns the per-tick read cost; `F3.52` owns splitting the hourly budget
+between the raise and event paths, so the two phases stop contending for one
+number.
+
+**The inherited, unfixed complaint.** The retried message carries no age and
+no staleness marker — deliberately, not by oversight. Byte-identity with the
+original raise's `DispatchInput` is what lets `channelsOwedTheRaise` match the
+ledger rows the original dispatch wrote; a `:retry` suffix on the key or a
+prefix on the subject would orphan every row the phase is trying to read. This
+is `F3.52`'s second half, named here so it is not mistaken for an oversight of
+this row, and this row does not fix it.
+
+**Build corrections against the plan this row was gated on.** The ledger read
+that the phase needs — every delivery row under a set of alarms' raise keys,
+in one query — is a **module function**, `loadRaiseAttempts` in
+`apps/api/src/notifications/raise-attempts.ts`, not a `NotificationsService`
+method: that class stood within a few dozen lines of AGENTS.md §4.5's
+1000-line cap after ADR 0041 Amendment 5's changes, and the read needs nothing
+from the class but `fleetDb`. `AlarmLifecycleService` already held `fleetDb`
+and already called a sibling module (`loadEnabledChannelsByIds`) the same way,
+so the constructor is unchanged. `EXPLAIN (ANALYZE, BUFFERS)` against
+`notification_deliveries_alarm_idx ON (alarm_id) WHERE alarm_id IS NOT NULL`
+(migration `0066`), measured on 20 000 rows over 2 000 alarms, 2026-09-08:
+`Index Scan` at every list size tried — 1, 3, 50 and 300 refs — with no
+sequential scan at any of them, organization and dedupe key reaching the
+planner as residual filters; 300 refs cost 3.27 ms and 969 shared buffer hits.
+On a rejected ledger read the phase warns and returns, and never falls back to
+treating channels as owed — a blind re-offer would duplicate every open
+alarm's raise to every one of its channels — and `runEscalationPhase` still
+runs in the same tick, because the `return` is scoped to the raise-retry
+phase's own function. The warn is phase-wide, carrying the count of eligible
+alarms and the failure's cause, and no id list: the read covers every eligible
+alarm in one query, so a list of their ids is unbounded at even a few hundred
+open alarms.
