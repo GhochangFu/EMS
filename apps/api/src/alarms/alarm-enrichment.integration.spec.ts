@@ -7,6 +7,7 @@ import {
   alarmSkills,
   alarms,
   assetTemplates,
+  assets,
   automationRules,
   organizations,
   pointValues,
@@ -16,6 +17,10 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { AlarmDetailsService } from "./alarm-details.service";
+import {
+  seededRuleValues,
+  type TemplateAlarm,
+} from "../admin/asset-templates/template-alarm-rules";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
@@ -422,8 +427,29 @@ async function seedTemplateWithPhilosophy(
     alarmCode: string;
     skillCode: string | null;
   },
-): Promise<{ templateId: string; version: number; templateName: string }> {
+): Promise<{
+  templateId: string;
+  version: number;
+  templateName: string;
+  alarm: TemplateAlarm;
+}> {
   const templateName = `E2.2 integration template — ${args.code}`;
+  // The same object goes into the template's content AND into
+  // `seededRuleValues` below, so the fixture cannot drift from itself.
+  const alarm = {
+    code: args.alarmCode,
+    pointKey: "e21_test_point",
+    message: "Bearing temperature high",
+    severity: "warning",
+    category: "safety",
+    philosophy: {
+      cause: "Lubrication starvation or a failing bearing race.",
+      impact: "Unplanned outage of the driven train within hours.",
+      action: "Reduce load, verify lubrication, schedule a bearing change.",
+      ...(args.skillCode === null ? {} : { skill: args.skillCode }),
+    },
+  } as unknown as TemplateAlarm;
+
   const [template] = await db
     .insert(assetTemplates)
     .values({
@@ -434,69 +460,73 @@ async function seedTemplateWithPhilosophy(
       assetType: "e22_test_machine",
       domain: "electrical",
       status: "published",
-      content: {
-        alarms: [
-          {
-            code: args.alarmCode,
-            message: "Bearing temperature high",
-            severity: "warning",
-            category: "safety",
-            philosophy: {
-              cause: "Lubrication starvation or a failing bearing race.",
-              impact: "Unplanned outage of the driven train within hours.",
-              action: "Reduce load, verify lubrication, schedule a bearing change.",
-              ...(args.skillCode === null ? {} : { skill: args.skillCode }),
-            },
-          },
-        ],
-      },
+      content: { alarms: [alarm] },
     })
     .returning({ id: assetTemplates.id, version: assetTemplates.version });
   if (!template) {
     throw new Error(`failed to insert test template ${args.code}`);
   }
-  return { templateId: template.id, version: template.version, templateName };
+  return { templateId: template.id, version: template.version, templateName, alarm };
+}
+
+/** The real code of a fixture asset — `seededRuleValues` derives the rule code from it. */
+async function fixtureAssetCode(db: BmsDb, assetId: string): Promise<string> {
+  const [row] = await db
+    .select({ code: assets.code })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .limit(1);
+  if (!row) {
+    throw new Error(`no fixture asset ${assetId}`);
+  }
+  return row.code;
 }
 
 /**
  * An alarm whose rule carries `E2.4`'s provenance — the only path
  * `classPhilosophy` resolves through (ADR 0059 decision 3).
  *
- * `sourceAlarmCode` is passed separately from the template's own entry code so
- * one caller can point the rule at an entry the template does not declare,
- * which is the "dropped in a later version" case decision 4 rules on.
+ * **The row is built by `seededRuleValues`, the production function
+ * `AssetTemplateInstantiationService.instantiate` calls, not by hand.** That is
+ * the point of this helper. Hand-stamping `source_template_id` /
+ * `source_alarm_code` here would test the join against a fixture's idea of
+ * provenance rather than against the one instantiation actually writes: if that
+ * function ever transformed the code — cased it, prefixed it, ran it through
+ * `seededRuleCode` — a hand-written fixture would stay green while the panel
+ * showed nothing. Routing through it means a change there breaks this test,
+ * which is the coupling worth having.
+ *
+ * `alarm` is passed in rather than taken from the template so one caller can
+ * point the rule at an entry the template does not declare — the "dropped in a
+ * later version" case decision 4 rules on.
  */
 async function insertTestAlarmSeededFromTemplate(
   db: BmsDb,
   args: {
     assetId: string;
+    assetCode: string;
     organizationId: string;
-    code: string;
     templateId: string;
     templateVersion: number;
-    sourceAlarmCode: string;
+    alarm: TemplateAlarm;
   },
 ): Promise<string> {
   const [rule] = await db
     .insert(automationRules)
-    .values({
-      code: args.code,
-      name: `E2.2 integration test — ${args.code}`,
-      category: "safety",
-      ruleType: "threshold",
-      organizationId: args.organizationId,
-      assetId: args.assetId,
-      pointKey: "e21_test_point",
-      operator: "gte",
-      thresholdValue: 999_999,
-      severity: "warning",
-      sourceTemplateId: args.templateId,
-      sourceTemplateVersion: args.templateVersion,
-      sourceAlarmCode: args.sourceAlarmCode,
-    })
+    .values(
+      seededRuleValues({
+        alarm: args.alarm,
+        assetId: args.assetId,
+        assetCode: args.assetCode,
+        organizationId: args.organizationId,
+        template: { id: args.templateId, version: args.templateVersion },
+        unit: null,
+        now: new Date(),
+      }),
+    )
     .returning({ id: automationRules.id });
   if (!rule) {
-    throw new Error(`failed to insert seeded test rule ${args.code}`);
+    throw new Error(`failed to insert seeded test rule for ${args.assetCode}`);
   }
   const [alarm] = await db
     .insert(alarms)
@@ -505,11 +535,11 @@ async function insertTestAlarmSeededFromTemplate(
       assetId: args.assetId,
       ruleId: rule.id,
       severity: "warning",
-      message: `E2.2 integration test alarm — ${args.code}`,
+      message: `E2.2 integration test alarm — ${args.assetCode}`,
     })
     .returning({ id: alarms.id });
   if (!alarm) {
-    throw new Error(`failed to insert seeded test alarm ${args.code}`);
+    throw new Error(`failed to insert seeded test alarm for ${args.assetCode}`);
   }
   return alarm.id;
 }
@@ -525,7 +555,7 @@ export async function assertDetailsReturnsClassPhilosophyForASeededRule(db: BmsD
     const [assetId] = await createFixtureAssets(tx, 1, "E22", location);
     const { organizationId } = location;
     const alarmCode = "E22_TEST_HIGH_TEMP";
-    const { templateId, version, templateName } = await seedTemplateWithPhilosophy(tx, {
+    const { templateId, version, templateName, alarm } = await seedTemplateWithPhilosophy(tx, {
       organizationId,
       code: "E22_TEST_TPL_HAPPY",
       alarmCode,
@@ -533,11 +563,11 @@ export async function assertDetailsReturnsClassPhilosophyForASeededRule(db: BmsD
     });
     const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
       assetId,
+      assetCode: await fixtureAssetCode(tx, assetId),
       organizationId,
-      code: "E22_TEST_DETAILS_PHILOSOPHY",
       templateId,
       templateVersion: version,
-      sourceAlarmCode: alarmCode,
+      alarm,
     });
 
     const details = await new AlarmDetailsService(tx).get(alarmId, null);
@@ -608,7 +638,7 @@ export async function assertDetailsOmitsClassPhilosophyWhenTheAlarmCodeIsAbsent(
     const location = await fixtureLocation(tx);
     const [assetId] = await createFixtureAssets(tx, 1, "E22", location);
     const { organizationId } = location;
-    const { templateId, version } = await seedTemplateWithPhilosophy(tx, {
+    const { templateId, version, alarm } = await seedTemplateWithPhilosophy(tx, {
       organizationId,
       code: "E22_TEST_TPL_DROPPED",
       alarmCode: "E22_TEST_STILL_DECLARED",
@@ -616,12 +646,13 @@ export async function assertDetailsOmitsClassPhilosophyWhenTheAlarmCodeIsAbsent(
     });
     const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
       assetId,
+      assetCode: await fixtureAssetCode(tx, assetId),
       organizationId,
-      code: "E22_TEST_DETAILS_DROPPED_ENTRY",
       templateId,
       templateVersion: version,
-      // The entry this rule was seeded from is not in the template's content.
-      sourceAlarmCode: "E22_TEST_DROPPED_IN_A_LATER_VERSION",
+      // Seeded from an entry the template's content does not declare — what a
+      // later version dropping the row leaves behind on an already-seeded rule.
+      alarm: { ...alarm, code: "E22_TEST_DROPPED_IN_A_LATER_VERSION" },
     });
 
     const details = await new AlarmDetailsService(tx).get(alarmId, null);
@@ -657,7 +688,7 @@ export async function assertDetailsRefusesATemplateFromAnotherOrganization(
     }
 
     const alarmCode = "E22_TEST_CROSS_TENANT";
-    const { templateId, version } = await seedTemplateWithPhilosophy(tx, {
+    const { templateId, version, alarm } = await seedTemplateWithPhilosophy(tx, {
       // The template belongs to the other tenant; the alarm does not.
       organizationId: otherOrg.id,
       code: "E22_TEST_TPL_OTHER_ORG",
@@ -666,11 +697,11 @@ export async function assertDetailsRefusesATemplateFromAnotherOrganization(
     });
     const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
       assetId,
+      assetCode: await fixtureAssetCode(tx, assetId),
       organizationId,
-      code: "E22_TEST_DETAILS_CROSS_TENANT",
       templateId,
       templateVersion: version,
-      sourceAlarmCode: alarmCode,
+      alarm,
     });
 
     const details = await new AlarmDetailsService(tx).get(alarmId, null);
@@ -699,7 +730,7 @@ export async function assertDetailsResolvesAnInactiveSkillLabel(db: BmsDb): Prom
       .values({ code: "e22_test_retired", label: "Retired trade", active: false });
 
     const alarmCode = "E22_TEST_RETIRED_SKILL";
-    const { templateId, version } = await seedTemplateWithPhilosophy(tx, {
+    const { templateId, version, alarm } = await seedTemplateWithPhilosophy(tx, {
       organizationId,
       code: "E22_TEST_TPL_RETIRED_SKILL",
       alarmCode,
@@ -707,11 +738,11 @@ export async function assertDetailsResolvesAnInactiveSkillLabel(db: BmsDb): Prom
     });
     const alarmId = await insertTestAlarmSeededFromTemplate(tx, {
       assetId,
+      assetCode: await fixtureAssetCode(tx, assetId),
       organizationId,
-      code: "E22_TEST_DETAILS_RETIRED_SKILL",
       templateId,
       templateVersion: version,
-      sourceAlarmCode: alarmCode,
+      alarm,
     });
 
     const details = await new AlarmDetailsService(tx).get(alarmId, null);
