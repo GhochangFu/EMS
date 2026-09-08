@@ -252,7 +252,13 @@ export function fakeDeps(opts: {
       recorded.raiseAttemptReads.push([...refs]);
       return opts.loadRaiseAttempts
         ? opts.loadRaiseAttempts(refs)
-        : Promise.resolve(opts.raiseAttempts ?? []);
+        : // Every batch returned: nothing unread, nothing to warn about. A case
+          // that needs a half-failed read supplies its own `loadRaiseAttempts`.
+          Promise.resolve({
+            rows: opts.raiseAttempts ?? [],
+            unread: new Set<string>(),
+            reasons: [],
+          });
     },
     dispatchToChannels: (channels, input) => {
       recorded.dispatches.push({ channels: [...channels], input });

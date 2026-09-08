@@ -80,10 +80,10 @@ export async function runRaiseAttemptsTests(pool: Pool, db: Db): Promise<void> {
     // delta over this — an absolute count would break the moment another
     // session's suite touches the table, and would blame this read for it.
     assert(
-      (await loadRaiseAttempts(db, [ref])).length === 0,
+      (await loadRaiseAttempts(db, [ref])).rows.length === 0,
       "the fixture's raise key holds no rows before this suite plants any",
     );
-    assert((await loadRaiseAttempts(db, [])).length === 0, "empty refs read nothing");
+    assert((await loadRaiseAttempts(db, [])).rows.length === 0, "empty refs read nothing");
 
     await plantDelivery(pool, {
       organizationId,
@@ -124,7 +124,7 @@ export async function runRaiseAttemptsTests(pool: Pool, db: Db): Promise<void> {
       dedupeKey: raiseKey,
     });
 
-    const rows = await loadRaiseAttempts(db, [ref]);
+    const { rows } = await loadRaiseAttempts(db, [ref]);
 
     // The three planted intruders carry three DIFFERENT statuses, and the
     // absence assertions name the status rather than counting. That is what
@@ -149,7 +149,7 @@ export async function runRaiseAttemptsTests(pool: Pool, db: Db): Promise<void> {
     // The positive twin, on the same fixture: the row IS there, and reading for
     // its own organization returns it. Without this the absence above would
     // pass on a read that returned nothing at all.
-    const foreign = await loadRaiseAttempts(db, [
+    const { rows: foreign } = await loadRaiseAttempts(db, [
       { alarmId: alarmOne, organizationId: otherOrganizationId, dedupeKey: raiseKey },
     ]);
     assert(
@@ -213,13 +213,13 @@ export async function runRaiseAttemptsTests(pool: Pool, db: Db): Promise<void> {
       status: "failed",
       dedupeKey: secondRaiseKey,
     });
-    const both = await loadRaiseAttempts(db, [
+    const { rows: both } = await loadRaiseAttempts(db, [
       ref,
       { alarmId: alarmTwo, organizationId, dedupeKey: secondRaiseKey },
     ]);
     assert(
       both.length === 3,
-      `S5: both refs are read in one query, got ${both.length}: [${both
+      `S5: both refs are read in one statement (both fit one batch), got ${both.length}: [${both
         .map((r) => r.status)
         .join(",")}]`,
     );

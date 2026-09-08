@@ -27,6 +27,7 @@ import type { NotificationChannelRow } from "../notifications/notification-trans
 import { PROCESS_STARTED_AT } from "../notifications/notifications.config";
 import type { DispatchInput } from "../notifications/notifications.service";
 import { MAX_EVENT_ATTEMPTS, NotificationsService } from "../notifications/notifications.service";
+import type { RaiseAttemptsRead } from "../notifications/raise-attempts";
 import { loadRaiseAttempts } from "../notifications/raise-attempts";
 import type { RaiseAttemptRow, RaiseKeyRef } from "../notifications/raise-retry";
 import { channelsOwedTheRaise } from "../notifications/raise-retry";
@@ -144,12 +145,17 @@ export interface AlarmLifecycleDeps {
   loadRuleChannels(ruleId: string): Promise<NotificationChannelRow[]>;
   /**
    * `F3.51`: `loadRaiseAttempts` from `notifications/raise-attempts.ts` —
-   * every ledger row under these alarms' raise keys, in one query. A module
-   * function, not a service method: `notifications.service.ts` stands within a
-   * few dozen lines of AGENTS.md §4.5's cap and the read touches only
-   * `fleetDb`.
+   * every ledger row under these alarms' raise keys, in one query per batch of
+   * `RAISE_ATTEMPT_BATCH_SIZE` alarms. A module function, not a service
+   * method: `notifications.service.ts` stands within a few dozen lines of
+   * AGENTS.md §4.5's cap and the read touches only `fleetDb`.
+   *
+   * It returns a {@link RaiseAttemptsRead} rather than the rows, because a
+   * batch can fail on its own (`F3.51` review, Medium): `unread` names the
+   * alarms whose evidence was never read, and this phase decides nothing about
+   * those.
    */
-  loadRaiseAttempts(refs: readonly RaiseKeyRef[]): Promise<RaiseAttemptRow[]>;
+  loadRaiseAttempts(refs: readonly RaiseKeyRef[]): Promise<RaiseAttemptsRead>;
   dispatchToChannels: NotificationsService["dispatchToChannels"];
   /** After the clear has committed — never from inside the transaction. */
   broadcastCleared(alarm: AlarmListItem): void;
@@ -417,9 +423,9 @@ async function runRaiseRetryPhase(
     return;
   }
 
-  let rows: RaiseAttemptRow[];
+  let read: RaiseAttemptsRead;
   try {
-    rows = await deps.loadRaiseAttempts(candidates.map((candidate) => candidate.ref));
+    read = await deps.loadRaiseAttempts(candidates.map((candidate) => candidate.ref));
   } catch (err) {
     // Warn and RETURN — never fall back to treating every channel as owed.
     // Silence costs one tick; a blind re-offer costs a duplicate to every
@@ -438,8 +444,22 @@ async function runRaiseRetryPhase(
     return;
   }
 
+  // One BATCH of the read failed, not the whole of it (`F3.51` review,
+  // Medium). The read is chunked at `RAISE_ATTEMPT_BATCH_SIZE`, so a statement
+  // that fails costs only the alarms it bound: the rest of the fleet's rows
+  // came back and are decided below, and the alarms in `read.unread` are
+  // skipped exactly as a phase-wide failure would have skipped everything —
+  // never treated as owed, for the reason above. §9.6: counts and the first
+  // cause, no alarm id list (it is unbounded) and no alarm text.
+  if (read.reasons.length > 0) {
+    deps.logger.warn(
+      `alarm lifecycle: raise-retry ledger read failed for ${read.reasons.length} batch(es), ` +
+        `${read.unread.size} of ${candidates.length} alarm(s) not decided this tick: ${read.reasons[0] ?? ""}`,
+    );
+  }
+
   const rowsByAlarm = new Map<string, RaiseAttemptRow[]>();
-  for (const row of rows) {
+  for (const row of read.rows) {
     const forAlarm = rowsByAlarm.get(row.alarmId) ?? [];
     forAlarm.push(row);
     rowsByAlarm.set(row.alarmId, forAlarm);
@@ -458,6 +478,21 @@ async function runRaiseRetryPhase(
   };
 
   for (const candidate of candidates) {
+    // This alarm's batch did not return, so the phase decides nothing about
+    // it and does not pay a channel read to find that out.
+    //
+    // **It is not what stops a blind re-offer, and saying so would be a false
+    // claim.** An unread alarm's rows are in the batch that failed, so its
+    // group below is empty, and ruling 3's evidence conjunct already reads an
+    // empty group as "not owed" — the safe answer, and the same one a
+    // phase-wide failure gives. What this line buys is the read: without it
+    // every undecidable alarm still costs one `loadRuleChannels` per rule that
+    // has no decidable alarm, which is the cost R9 refuses for the phase-wide
+    // case and R16 refuses for the per-batch one. It is also the line that
+    // keeps the intent explicit if the conjunct is ever revisited.
+    if (read.unread.has(candidate.alarm.id)) {
+      continue;
+    }
     // Caught per alarm, the escalation phase's shape: one bad alarm must not
     // abort the tick, and the next tick retries this one.
     try {

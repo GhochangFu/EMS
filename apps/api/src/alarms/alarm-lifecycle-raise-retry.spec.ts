@@ -635,6 +635,82 @@ async function testOneAlarmFailingDoesNotStopTheNext(): Promise<void> {
   assert(!warning.includes("Feeder overload"), "§9.6: and no alarm text");
 }
 
+/**
+ * R16 (`F3.51` review, Medium) — one BATCH of the ledger read failed, not the
+ * whole of it. The read is chunked at `RAISE_ATTEMPT_BATCH_SIZE`, so a
+ * statement that dies takes only the alarms it bound; before the chunking, the
+ * phase's `catch` returned from the whole phase and one tenant's alarm volume
+ * disabled raise retry fleet-wide.
+ *
+ * The absence — `alarm-1`, in the failed batch, is not re-offered — is paired
+ * on the SAME fixture with two positives that prove the phase did not simply
+ * stop: `alarm-2`, in the batch that returned, IS re-offered, and the
+ * escalation phase still dispatches its due step in the same tick.
+ *
+ * **What the `read.unread` skip really costs, stated exactly.** It is not what
+ * stops the blind re-offer: an unread alarm's rows are in the failed batch, so
+ * its group is empty and ruling 3's evidence conjunct already answers "not
+ * owed". What the skip buys is the channel read — the assertion on
+ * `ruleChannelLoads` below is its only gate, which is why the two alarms sit on
+ * two DIFFERENT rules here. R9 makes the same claim for the phase-wide failure.
+ *
+ * **Mutations:** `if (read.reasons.length > 0) return;` (the old per-phase
+ * shape) → `alarm-2` is not re-offered, red. Dropping the `read.unread` skip →
+ * `rule-2`'s channels are read for an alarm nothing can be decided about, red
+ * on `ruleChannelLoads`.
+ */
+async function testAFailedBatchCostsOnlyItsOwnAlarms(): Promise<void> {
+  const { deps, recorded } = fakeDeps({
+    alarms: [
+      alarmRow({ id: "alarm-1", ruleId: "rule-2", raisedAt: secondsBefore(61) }),
+      alarmRow({ id: "alarm-2", raisedAt: secondsBefore(61) }),
+    ],
+    rules: [ruleRow(), ruleRow({ id: "rule-2", code: "RULE-2" })],
+    sample: freshMatching,
+    catalog: twoStepCatalog(),
+    ruleChannels: () => [C1],
+    // The batch holding `alarm-1` failed; the batch holding `alarm-2`
+    // returned its row.
+    loadRaiseAttempts: () =>
+      Promise.resolve({
+        rows: [attempt(C1.id, "failed", { alarmId: "alarm-2" })],
+        unread: new Set(["alarm-1"]),
+        reasons: ["too many bind parameters"],
+      }),
+  });
+  await runLifecycleSweep(deps, NOW);
+
+  const sent = retries(recorded);
+  assert(
+    sent.length === 1 && sent[0]?.input.alarmId === "alarm-2",
+    `only the alarm whose batch returned is re-offered, got ${JSON.stringify(
+      sent.map((entry) => entry.input.alarmId),
+    )}`,
+  );
+  assert(
+    recorded.ruleChannelLoads.join(",") === "rule-1",
+    `no channel read is spent on the rule whose only alarm is undecidable, got [${recorded.ruleChannelLoads.join(
+      ",",
+    )}]`,
+  );
+  const steps = recorded.dispatches.filter((entry) => entry.input.event?.kind === "escalation");
+  assert(
+    steps.length === 2,
+    `the escalation phase still runs for both alarms in the same tick, got ${steps.length}`,
+  );
+  assert(recorded.warnings.length === 1, `one warn, got ${JSON.stringify(recorded.warnings)}`);
+  const warning = recorded.warnings[0] ?? "";
+  assert(
+    warning.includes("1 batch(es)") && warning.includes("too many bind parameters"),
+    `the warn carries the batch count and the cause, got "${warning}"`,
+  );
+  assert(
+    warning.includes("1 of 2 alarm(s)"),
+    `and how much of the tick was lost, got "${warning}"`,
+  );
+  assert(!warning.includes("Feeder overload"), "§9.6: the warn carries no alarm text");
+}
+
 export async function runAlarmLifecycleRaiseRetryTests(): Promise<void> {
   await testTheOriginalRaiseIsOfferedAgain();
   await testASentRowBlocksThatChannelOnly();
@@ -651,4 +727,5 @@ export async function runAlarmLifecycleRaiseRetryTests(): Promise<void> {
   await testRuleChannelsAreReadOncePerRulePerTick();
   await testNoEligibleAlarmMeansNoLedgerRead();
   await testOneAlarmFailingDoesNotStopTheNext();
+  await testAFailedBatchCostsOnlyItsOwnAlarms();
 }
