@@ -129,22 +129,34 @@ export function echoedItems<T>(
 }
 
 /**
- * The line that closes a cut list: `…and 12 more`, or `""` when nothing was
- * omitted so a list at the cap gains no tail.
+ * The line that closes a cut list: `…and 12 more`, `…and 12 more RTUs` when the
+ * caller names the unit, or `""` when nothing was omitted so a list at the cap
+ * gains no tail.
  *
- * **A count and nothing else** (AGENTS.md §4.3). It takes a number rather than
- * the omitted items precisely so that no item can be interpolated here — the
- * caller has already been through {@link quoteCell} for the items it does
- * show, and an "N more (starting with 'x')" improvement would reopen the echo
- * this exists to close.
+ * **A count and nothing else from the data** (AGENTS.md §4.3). It takes a
+ * number rather than the omitted items precisely so that no item can be
+ * interpolated here — the caller has already been through {@link quoteCell} for
+ * the items it does show, and an "N more (starting with 'x')" improvement would
+ * reopen the echo this exists to close.
+ *
+ * `noun` does not weaken that, and it must not be allowed to: it exists because
+ * `formatAssetsByRtuSummary` renders an RTU tail and an asset tail in the same
+ * block, where two bare `…and N more` lines read as the same thing. It is a
+ * **caller-side literal** — `"RTUs"`, written out at the call site — and never
+ * a value derived from an item. The type cannot enforce that; this sentence is
+ * the guard, and `assertEchoedItemsHelpersAreBounded` asserts the shape a
+ * literal produces.
  *
  * The wording avoids `more characters`, which is `quoteCell`'s. Specs count
  * occurrences of that phrase on one line to prove two separate cells were each
  * cut, and a tail carrying it would make those counts pass for the wrong
  * reason. `…` is `quoteCell`'s ellipsis, so one message carries one vocabulary.
  */
-export function moreTail(omitted: number): string {
-  return omitted > 0 ? `…and ${omitted} more` : "";
+export function moreTail(omitted: number, noun?: string): string {
+  if (omitted <= 0) {
+    return "";
+  }
+  return noun ? `…and ${omitted} more ${noun}` : `…and ${omitted} more`;
 }
 
 const LOCAL_HEADER_SIGNATURE = 0x04034b50;

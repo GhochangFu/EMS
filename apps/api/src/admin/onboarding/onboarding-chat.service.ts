@@ -873,8 +873,14 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
     // from this line cap rather than from the asset budget. The headline
     // `**500** asset(s)` is what keeps the message honest about it — the count
     // stays exact while the list stops being a data dump.
+    //
+    // This is the one tail that names its unit, and the reason is local: it is
+    // the only place where two tails counting **different things** share a
+    // block. `…and 4 more` sits inline on a line and counts that RTU's assets;
+    // this one closes the list and counts RTUs. The noun is a literal here and
+    // never a value from an item — see `moreTail`.
     if (omittedRtus > 0) {
-      lines.push(moreTail(omittedRtus));
+      lines.push(moreTail(omittedRtus, "RTUs"));
     }
     return `**Assets by RTU:**\n${lines.join("\n")}`;
   }

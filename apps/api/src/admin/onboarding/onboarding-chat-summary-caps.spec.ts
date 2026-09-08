@@ -110,6 +110,18 @@ export function assertEchoedItemsHelpersAreBounded(): void {
 
   assert(moreTail(5) === "…and 5 more", `the tail states the count, got "${moreTail(5)}"`);
 
+  // The unit word, where a caller renders two tails counting different things
+  // in one block. A **literal at the call site** — never a value from an item;
+  // the type cannot say so, which is why `moreTail`'s docblock does.
+  assert(
+    moreTail(5, "RTUs") === "…and 5 more RTUs",
+    `a named tail states the count and its unit, got "${moreTail(5, "RTUs")}"`,
+  );
+  assert(
+    moreTail(0, "RTUs") === "",
+    `a named tail is still empty at zero, got "${moreTail(0, "RTUs")}"`,
+  );
+
   // --- tail purity ---------------------------------------------------------
   // `moreTail` takes a number, not an item, so the type system carries half of
   // this. Asserted anyway, because the tail wording is what a future edit will
@@ -119,6 +131,10 @@ export function assertEchoedItemsHelpersAreBounded(): void {
     assert(
       /^…and \d+ more$/.test(moreTail(omitted)),
       `the tail carries a count and nothing else, got "${moreTail(omitted)}"`,
+    );
+    assert(
+      /^…and \d+ more RTUs$/.test(moreTail(omitted, "RTUs")),
+      `a named tail carries a count and the literal unit, got "${moreTail(omitted, "RTUs")}"`,
     );
   }
 
@@ -526,8 +542,11 @@ export function assertAssetsByRtuSummaryIsCapped(): void {
     `100 RTUs render ${MAX_ECHOED_ITEMS} lines, got ${hundredLines.bullets.length}`,
   );
   assert(
-    /^…and 75 more$/.test(hundredLines.after),
-    `the line after the last RTU states what was omitted, got "${hundredLines.after}"`,
+    // Named, unlike the other tails: this one closes the block that the inline
+    // `…and 4 more` asset tails sit in, and two bare counts of different things
+    // in one block read as the same thing.
+    /^…and 75 more RTUs$/.test(hundredLines.after),
+    `the line after the last RTU states what was omitted, and of what, got "${hundredLines.after}"`,
   );
 
   // --- 2. one asset budget across the whole summary -------------------------
@@ -601,7 +620,10 @@ export function assertAssetsByRtuSummaryIsCapped(): void {
     "no cell in this fixture is cut, so the message must carry no cut marker at all",
   );
   for (const tail of hundred.assistantMessage.match(/…and [^\n,]*/g) ?? []) {
-    assert(/^…and \d+ more$/.test(tail), `every tail is a count and nothing else, got "${tail}"`);
+    assert(
+      /^…and \d+ more( RTUs)?$/.test(tail),
+      `every tail is a count and its unit and nothing else, got "${tail}"`,
+    );
   }
 
   // --- 6. the branch's length ceiling ---------------------------------------

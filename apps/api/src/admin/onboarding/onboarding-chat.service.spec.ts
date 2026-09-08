@@ -380,7 +380,7 @@ export function assertAssetsByRtuSummaryIsIndexedNotRescanned(): void {
     `the summary lists ${MAX_ECHOED_ITEMS} RTU lines however many were imported, got ${renderedLines.length}`,
   );
   assert(
-    big.assistantMessage.includes(`…and ${count - MAX_ECHOED_ITEMS} more`),
+    big.assistantMessage.includes(`…and ${count - MAX_ECHOED_ITEMS} more RTUs`),
     // Derived, never a literal: the fixture size and the cap must both be able
     // to change without this assertion quietly describing a message the code
     // no longer produces.
