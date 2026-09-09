@@ -331,8 +331,17 @@ export class VocabulariesService {
     //   earlier, whose `readyToCommit` is false for an over-long code so the
     //   call is never made. (`F4.104` added a second, earlier guard at the
     //   workbook parse site, because that producer writes the draft without
-    //   parsing anything.) `dashboard-templates.service.ts:286` is the same
-    //   shape — `sectionTemplateContentSchema.parse(template.content)`.
+    //   parsing anything.) `DashboardTemplatesService.publish` is the same
+    //   shape. `F4.108` changed how it is spelled: it used to read
+    //   `sectionTemplateContentSchema.parse(template.content)` and now reads
+    //   `parseStoredContract(sectionTemplateContentSchema, template.content,
+    //   "dashboard_templates.publish.content")`, because ADR 0060 ruling 2
+    //   routes every parse of a stored row through an explicit 500 rather than
+    //   letting the global `ZodErrorFilter` report the server's own corrupt row
+    //   as the caller's 400. What bounds `domain` there is unchanged — it is
+    //   still the schema re-applied to a row already stored — so this route
+    //   holds exactly as before; only the failure *type* moved. Named by method
+    //   rather than by line, which the `F4.108` scanner learned the hard way.
     // - **A parse of in-repo catalog source.** The stock import hands
     //   `AssetTemplatesService.create` the OUTPUT of
     //   `createAssetTemplateBodySchema.parse`, never the raw entry

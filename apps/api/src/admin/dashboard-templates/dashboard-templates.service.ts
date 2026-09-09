@@ -35,6 +35,11 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+// `F4.108` / ADR 0060 ruling 2 — every parse below reads a `content` column or
+// assembles a DTO out of one, so a failure means a stored row broke its
+// contract. That is a server fault, and it has to say so explicitly or the
+// global `ZodErrorFilter` would report it as the caller's bad request.
+import { parseStoredContract } from "../../common/parse-stored-contract";
 import { METRIC_CATALOG_PARAMS_WRITE } from "../../dashboard-builder/dashboards.schema";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
@@ -138,7 +143,18 @@ export class DashboardTemplatesService {
     await this.assertCanAuthor(jwt, body.organizationId);
     await this.assertSection(body.section);
 
-    const content = body.content ?? sectionTemplateContentSchema.parse({ widgets: [] });
+    // The only one of the eight that reads no row: it parses a constant literal
+    // to build the empty default in the schema's own shape. It is here for the
+    // same reason as its siblings — a failure would mean this file's idea of an
+    // empty content no longer matches the contract, which is the server's
+    // mistake and never the caller's.
+    const content =
+      body.content ??
+      parseStoredContract(
+        sectionTemplateContentSchema,
+        { widgets: [] },
+        "dashboard_templates.create.empty_content",
+      );
     // A draft may be incomplete, so only the shape is checked here. The whole
     // stored object is re-proved at publish — see `publish`.
     this.assertContentFits(content);
@@ -272,7 +288,11 @@ export class DashboardTemplatesService {
     await this.assertCanAuthor(jwt, template.organizationId);
     this.assertTransition(template, "published");
 
-    const content = sectionTemplateContentSchema.parse(template.content);
+    const content = parseStoredContract(
+      sectionTemplateContentSchema,
+      template.content,
+      "dashboard_templates.publish.content",
+    );
     if (content.widgets.length === 0) {
       throw new BadRequestException(
         "A template with no widgets would instantiate an empty dashboard",
@@ -646,7 +666,7 @@ export class DashboardTemplatesService {
   }
 
   map(template: TemplateRow): DashboardTemplateDto {
-    return dashboardTemplateDtoSchema.parse({
+    const dto = {
       id: template.id,
       organizationId: template.organizationId,
       code: template.code,
@@ -655,7 +675,11 @@ export class DashboardTemplatesService {
       section: template.section,
       description: template.description,
       status: template.status,
-      content: sectionTemplateContentSchema.parse(template.content),
+      content: parseStoredContract(
+        sectionTemplateContentSchema,
+        template.content,
+        "dashboard_templates.map.content",
+      ),
       publishedAt: template.publishedAt?.toISOString() ?? null,
       archivedAt: template.archivedAt?.toISOString() ?? null,
       stockCode: template.stockCode,
@@ -663,11 +687,16 @@ export class DashboardTemplatesService {
       createdBy: template.createdBy,
       createdAt: template.createdAt.toISOString(),
       updatedAt: template.updatedAt.toISOString(),
-    });
+    };
+    return parseStoredContract(dashboardTemplateDtoSchema, dto, "dashboard_templates.map.dto");
   }
 
   private mapSummary(template: TemplateRow): DashboardTemplateSummaryDto {
-    const content = sectionTemplateContentSchema.parse(template.content);
+    const content = parseStoredContract(
+      sectionTemplateContentSchema,
+      template.content,
+      "dashboard_templates.map_summary.content",
+    );
     return {
       id: template.id,
       organizationId: template.organizationId,

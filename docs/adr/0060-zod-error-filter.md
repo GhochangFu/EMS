@@ -178,6 +178,136 @@ so the choice is visible, not because it was open.
   break: **a `.parse()` on data this application stored belongs behind an
   explicit server fault, not behind the filter.**
 
+## Amendment 1 — the service set is eight, not ten (2026-09-09)
+
+Recorded before any source moved, at `F4.108`'s build start. **No ruling
+changes**: ruling 2 said fix the stored-data parses before registering the
+filter, and that is as true of eight as of ten. What was wrong is the list, in
+two of its entries, and both errors were mine.
+
+**`vocabularies/vocabularies.service.ts:335` is not a call site.** It is prose
+inside a docblock that discusses parse sites by name. The script that produced
+§Context's table matched `.parse(` in comment text. Re-measured with comments and
+string literals blanked by a character scanner — so a `//` inside a string and a
+quote inside a comment are both handled — the totals move by one:
+
+| | §Context said | Measured with comments stripped |
+|---|---|---|
+| Throwing zod `.parse(` calls | 157 | **156** |
+| …inside a `try` | 102 | 102 |
+| …unguarded | 55 | **54** |
+| …in a controller | 45 | **45** — unchanged |
+| …in a service | 10 | **9** |
+| `idParamSchema.parse(` unguarded | 44 across 12 controllers | **44 across 12** — unchanged |
+
+**The row's own headline is therefore untouched.** `F4.108` is still 44
+unguarded `idParamSchema` sites across 12 controllers.
+
+**`admin/asset-templates/asset-templates-stock.service.ts:183` is client input,
+and must not be converted.** `createAssetTemplateBodySchema.parse({ ...body,
+organizationId })` stands on a request path: `importStock`
+(`asset-templates.controller.ts:114`) wraps `await this.stock.import(...)` in a
+`try` whose `catch` already maps a `ZodError` to
+`BadRequestException(err.flatten())`. Turning it into a server fault would
+convert a correct 400 into a 500 — the exact inversion this ADR exists to
+prevent, pointed the other way.
+
+**The source had already written this down.** The docblock above that parse
+states it: *"Eight other service sites parse with no `try`/`catch` around them —
+measured … Every one of them parses STORED or CONSTRUCTED data — a row's
+`content`, a DTO being assembled — and none parses caller input. That, not the
+bare throw, is the real distinction: this parse stands on a request path, so its
+failure is an answer the caller is owed and the controller maps it; there a
+failure is an invariant break with no answer to give."* It enumerates the eight,
+and its count agrees with the corrected measurement exactly.
+
+**The eight sites ruling 2 covers:**
+
+```
+admin/asset-templates/asset-templates-stock.service.ts:83                  stockAssetTemplateDtoSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:141               sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:275               sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:649               dashboardTemplateDtoSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:658               sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:670               sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates-instantiate.service.ts:175   sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates-instantiate.service.ts:553   dashboardDtoSchema.parse
+```
+
+`:83`'s caller `listStock` has no `catch`, so its `ZodError` reaches Nest's
+default handler as a 500 today. Making it an explicit server fault keeps the
+status and gives the body a reason.
+
+**A third correction, measured during the build and belonging to this
+amendment rather than to a later one.** The sentence that stood here said that
+500's message is "the JSON of `issues`". It is not, and the claim came from a
+comment in `asset-templates-stock.service.ts` that I quoted without checking.
+`BaseExceptionFilter.handleUnknownError`
+(`@nestjs/core/exceptions/base-exception-filter.js:34`) emits
+`{statusCode: 500, message: MESSAGES.UNKNOWN_EXCEPTION_MESSAGE}` for anything
+that is not an `HttpException` or an `http-errors` error — a bare `ZodError` is
+neither — and passes `exception.message` to `logger.error` separately. So the
+`issues` JSON reaches the **log**, never the response.
+
+That makes the observable change at the eight **larger** than §Decision item 1
+claims, not smaller. The status is unchanged at 500, but the body moves from
+Nest's generic `{"statusCode":500,"message":"Internal server error"}` to one
+naming the context the parse was given. That is a real, testable difference, so
+the commit that converts the eight has a gate rather than only a rationale. The
+same false sentence has been removed from the service comment it came from.
+
+**And "they answer 500 before and after" is itself false, which the security
+review found and which understates this row rather than overstating it.** It
+holds only for a site whose caller has no `catch`. Five of the eight are reached
+from inside a controller `try` that maps **any** escaping `ZodError` to
+`BadRequestException(err.flatten())` — `dashboard-templates.controller.ts:64-79`
+wraps `list()`, and `list()` reaches `mapSummary`, which parsed `template.content`
+off the stored row. So **before this diff a corrupt `content` answered 400
+carrying `flatten()` of a stored value**, and the same held for `create`,
+`update`, `importStock` and the instantiate route.
+
+AGENTS.md's API-contracts rule says a Zod issue carries the received value:
+`unrecognized_keys` names the row's keys and `invalid_enum_value` echoes the
+row's value. So those five sites were a **stored-data echo to the client**, and
+ruling 2 closes it. The eight conversions are not cosmetic and not merely a
+relabelling — that is what the sentence as written invited a reader to think.
+
+**What this costs the invariant in §Verification.** "No throwing `.parse(`
+outside a `try` in a service" is now false as stated, because `:183` is one and
+is correct. The assertion must allow it by name with the reason, and it must
+strip comments — this amendment exists because a measurement did not.
+
+**A fourth correction, and it is to §Context's last paragraph rather than to its
+table.** §Context says `idParamSchema` is declared **three times** and
+§Consequences repeats it as "three declarations stay three". It is declared
+**seven** times, all `z.string().uuid()`:
+
+```
+apps/api/src/admin/admin.schema.ts:6                              (the exported one)
+apps/api/src/dashboard-builder/dashboard-builder.controller.ts:33
+apps/api/src/maintenance/maintenance.controller.ts:29
+apps/api/src/notifications/escalation-profiles.controller.ts:31
+apps/api/src/notifications/notifications.controller.ts:32
+apps/api/src/rules/rules.controller.ts:39
+apps/api/src/work-orders/work-orders.controller.ts:29
+```
+
+So the §4.8 split is **six local re-declarations of one exported schema**, not
+two. This ADR still declines to collapse them and the branch collapses none —
+the scope is unchanged. What changes is what a later row inherits: told to
+"collapse the three", it would fix three, leave four, and believe it had
+finished.
+
+**Three of this ADR's measurements have now been corrected, and all three were
+mine.** A regex that matched inside comments; a site classified as stored data
+that stands on a request path; and a grep narrow enough to miss four of seven
+declarations. The first two were caught by reading the source before the build,
+the third by the compliance review. The pattern is not carelessness about any
+one number — it is that a count written into a document reads as settled
+afterwards, and nothing re-runs it. AGENTS.md §4.6 already says a correction is
+a claim; the harder half is that **the original count is a claim too, and an ADR
+is exactly the artefact where it stops looking like one.**
+
 ## Verification this ADR expects
 
 - The 44 unguarded controller sites answer 400 with a `formErrors` body on a
