@@ -15,6 +15,7 @@ import {
   hourlyCeiling,
   offeredAgainWithoutAsking,
 } from "./dispatch-policy";
+import { notRecorded, sendTestResult, subjectFor } from "./dispatch-shapes";
 import { EmailTransport } from "./email.transport";
 import { reasonOf, storable } from "./ledger-text";
 import { LogTransport } from "./log.transport";
@@ -949,51 +950,4 @@ export class NotificationsService {
     return { ...result, channelId: channel.id, rowLost: false };
   }
 
-}
-
-/**
- * `sendTest`'s two-field answer, narrowed from `record()`'s outcome at the
- * source (`F3.51` review).
- *
- * `sendTest` declares two fields and `record()` now returns four. TypeScript
- * accepts that — a returned value is not a fresh object literal, so no
- * excess-property check fires — and the two extra keys would ride out at
- * RUNTIME to whatever the caller does with them. `notifications.controller.ts`
- * happens to rebuild its response field by field today, so nothing reached the
- * wire; that is the controller's shape, not a promise, and `rowLost` is an
- * internal ledger fact with no business on an API response either way. Narrowed
- * here so the declared type and the object agree.
- */
-function sendTestResult(outcome: DispatchOutcome): {
-  status: DeliveryResult["status"];
-  error: string | null;
-} {
-  return { status: outcome.status, error: outcome.error };
-}
-
-/**
- * An outcome for an exit that wrote no row **by design** — a deduped answer, or
- * one of {@link offeredAgainWithoutAsking}'s three conserved refusals.
- *
- * `rowLost` is `false` here and that is not a white lie: nothing was lost. The
- * flag means "an insert was attempted and threw", so that the raise retry stops
- * offering a triple the ledger can never record — and a ceiling-refused
- * re-offer, which writes nothing so the NEXT tick can ask again, must go on
- * being offered (`F3.48` ruling Q1; `alarm-lifecycle.integration.spec.ts` I2).
- */
-function notRecorded(channel: NotificationChannelRow, result: DeliveryResult): DispatchOutcome {
-  return { ...result, channelId: channel.id, rowLost: false };
-}
-
-/**
- * The subject line, by event (plan D14): a raise is `severity: RULE`, a step
- * is `escalation n · severity: RULE`, a clear is `cleared · severity: RULE`.
- * String composition, no template — the body stays the caller's message.
- */
-function subjectFor(input: DispatchInput): string {
-  const base = `${input.severity ?? "alarm"}: ${input.ruleCode}`;
-  if (input.event === undefined) return base;
-  return input.event.kind === "escalation"
-    ? `escalation ${input.event.step} · ${base}`
-    : `cleared · ${base}`;
 }
