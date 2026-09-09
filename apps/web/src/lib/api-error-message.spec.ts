@@ -151,13 +151,17 @@ export function runZodFlattenFormErrorTests(): void {
 }
 
 /**
- * `F4.106` C3 — the new branch regresses no existing caller.
+ * `F4.106` C3 — the new branch regresses no existing caller, half one.
  *
- * 22 components import this function, and the argument that the change is safe
- * for all of them is entirely about **where** the branch sits: last, so every
- * body that already produced a sentence still does. That is a claim about other
- * people's screens, so it is asserted rather than written in a comment — moving
- * the branch above the `message` branch reddens this and nothing else.
+ * 24 modules import this function (measured on this branch: twelve pages, ten
+ * components, `api/admin/onboarding.ts` and `lib/onboarding-upload-error.ts`),
+ * and the argument that the change is safe for all of them is entirely about
+ * **where** the branch sits: last, so every body that already produced a
+ * sentence still does. That is a claim about other people's screens, so it is
+ * asserted rather than written in a comment.
+ *
+ * This half holds the `message` branch: moving the flatten branch above it
+ * reddens here.
  */
 export function runEnvelopeMessageWinsOverFieldErrorsTests(): void {
   const shown = apiErrorMessage(
@@ -168,6 +172,32 @@ export function runEnvelopeMessageWinsOverFieldErrorsTests(): void {
   // Equality, so "and does not name the field" needs no second assertion —
   // see `runZodFlattenFieldErrorTests` for why the loop is left out here.
   assert(shown === "Validation failed", `the envelope message must still win, got "${shown}"`);
+}
+
+/**
+ * `F4.106` C3b — the same claim, half two: the `error` branch.
+ *
+ * **Added by the review pass, because half of C3's claim was asserted by
+ * nothing.** "Everything above still wins" names two branches, and no fixture
+ * in this repository carried both `error` and `fieldErrors` — so moving the
+ * flatten branch above the `error` branch (and only that far) left the whole
+ * `apps/web` suite green. A docblock claim with no assertion behind it is the
+ * shape §4.6 exists to keep out, and this row's own comment was making it.
+ *
+ * The body is the `error`-only envelope `runFallbackTests` already uses, with a
+ * `fieldErrors` key added — so the two branches are both live and the order
+ * between them is what decides the output.
+ *
+ * Re-measured in this pass with the branch moved above `error` and no further:
+ * this is the only `apiErrorMessage` assertion in the project that goes red,
+ * and the C3 case above stays green. That is why the two are separate `it()`s —
+ * as one function the second `assert` would never have run.
+ */
+export function runEnvelopeErrorWinsOverFieldErrorsTests(): void {
+  const shown = apiErrorMessage(
+    new Error('{"error":"Bad Request","fieldErrors":{"code":["Required"]}}'),
+  );
+  assert(shown === "Bad Request", `the envelope error must still win, got "${shown}"`);
 }
 
 /**

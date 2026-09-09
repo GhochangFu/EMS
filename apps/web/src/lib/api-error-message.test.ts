@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runArrayMessageTests,
   runEmptyZodFlattenTests,
+  runEnvelopeErrorWinsOverFieldErrorsTests,
   runEnvelopeMessageWinsOverFieldErrorsTests,
   runFallbackTests,
   runNestEnvelopeTests,
@@ -42,6 +43,14 @@ describe("api error message", () => {
 
   it("still prefers the envelope message when both shapes are present", () => {
     runEnvelopeMessageWinsOverFieldErrorsTests();
+  });
+
+  // The other half of the same claim. Split into its own `it()` because a
+  // mutation that moves the flatten branch above `error` alone must redden this
+  // one and leave the case above green — which is only readable if they are
+  // separate.
+  it("still prefers the envelope error when both shapes are present", () => {
+    runEnvelopeErrorWinsOverFieldErrorsTests();
   });
 
   it("shows the server's body when a flatten carries nothing usable", () => {

@@ -67,9 +67,21 @@ export function summarizeCommit(dto: TelemetryImportCommitDto): string {
  * `File too large`: a refusal that names no limit. The sentence and the full
  * reasoning live in `oversizeUploadMessage`, which is the only copy of both.
  *
- * Every other status passes its body text through unchanged (it is one of this
- * app's own `BadRequestException`/`ForbiddenException` messages), falling back
- * to a generic line only when the body is empty.
+ * **Every other status returns the response body raw**, falling back to a
+ * generic line only when the body is empty — and "raw" means the wire
+ * *envelope*, not the sentence inside it. A first correction of this docblock
+ * said the body was "one of this app's own `BadRequestException` messages",
+ * which is the same mistake in a new place: `telemetry-import.controller.ts`
+ * throws `new BadRequestException("Import file is required")`, so the body is
+ * `{"message":"Import file is required","error":"Bad Request","statusCode":400}`
+ * and this function hands that JSON object back character for character. Its
+ * `parseOptions` throws `err.flatten()`, which returns raw the same way. The 413
+ * body is an envelope too; the difference is only that the 413 branch replaces
+ * it.
+ *
+ * `F4.106` did not change that. Unwrapping this sibling belongs to the row filed
+ * for the ~30 raw-body sites on the other admin pages (owner ruling 1), and this
+ * file was explicitly out of scope.
  */
 export function describeImportUploadError(status: number, bodyText: string): string {
   const oversize = oversizeUploadMessage(status);

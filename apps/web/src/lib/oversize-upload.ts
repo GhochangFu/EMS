@@ -18,9 +18,24 @@
  * to **add the 5 MB figure**, which multer's own message does not carry: a
  * refusal that names no limit leaves the operator guessing what would fit.
  *
- * The branch is robust to a body that is not that envelope anyway. A reverse
- * proxy in front of the API — nginx's `client_max_body_size` — answers 413 with
- * its own HTML page, which never reaches Nest at all.
+ * The branch is robust to a body that is not that envelope anyway — but the
+ * topology that produces one is named here rather than assumed, because the
+ * first version of this docblock asserted it as ambient fact and it is not.
+ *
+ * **This repository ships no proxy in front of the API.** Its only nginx is
+ * `apps/web/nginx.conf`, which serves the SPA's static files (`try_files … /
+ * index.html`) and does not proxy `/api`; the SPA calls the API on a separate
+ * origin, `VITE_API_URL`. `client_max_body_size` appears in no file in this
+ * repository. A TLS reverse proxy is *externally supplied* and optional —
+ * `docs/windows-vm-docker-deploy.md` says the committed compose file "does not
+ * include the TLS reverse proxy itself" and that the routing "must therefore be
+ * supplied by the VM/IIS/nginx/Caddy/Azure Application Gateway layer in front of
+ * the containers", and it writes the public API URL as conditional ("*if* the
+ * reverse proxy routes `/api`").
+ *
+ * So an HTML 413 from a `client_max_body_size` is what such a deployment
+ * *would* answer with, before the request reaches Nest at all. It is a body
+ * this branch handles, not one this repository is known to produce.
  *
  * ## Two things this sentence does not do, recorded rather than fixed
  *

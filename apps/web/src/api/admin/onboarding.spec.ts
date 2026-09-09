@@ -111,6 +111,34 @@ export async function aFourOhOneFromTheTemplateDownloadClearsTheSession(): Promi
 }
 
 /**
+ * A3b — a 403 from the template download KEEPS the session.
+ *
+ * The mirror of A2, added in the review pass that noticed the download had the
+ * 401 half of the gate and not the 403 half. The upload had both, so the
+ * narrowing `F4.52` made was asserted on one of the two new
+ * `clearSessionOnAuthFailure` call sites and not on the other — and this is the
+ * path a scope refusal actually takes: A6 below is a real 403 from this same
+ * function.
+ *
+ * It gates this path and not A2's. Measured: replacing this function's
+ * `clearSessionOnAuthFailure(res)` with an unconditional clear reddens this
+ * case alone — A3 above stays green because it still clears on its 401, and A2
+ * stays green because the upload is a different call site.
+ */
+export async function aFourOhThreeFromTheTemplateDownloadKeepsTheSession(): Promise<void> {
+  signIn();
+  stubFetch(
+    403,
+    '{"message":"Template is outside your access scope","error":"Forbidden","statusCode":403}',
+  );
+
+  await rejectionMessage(downloadOnboardingTemplate());
+
+  expect(useAuthStore.getState().accessToken).toBe(TOKEN);
+  expect(useAuthStore.getState().user?.email).toBe("admin@bms.local");
+}
+
+/**
  * A4 — an oversize upload rejects with the 5 MB sentence.
  *
  * The body is what the running stack returns: Nest maps multer's

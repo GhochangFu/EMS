@@ -76,15 +76,18 @@ function countOf(count: number, noun: string): string {
  *   page** — this clause said that until `F4.106` measured it. Nest maps
  *   multer's `LIMIT_FILE_SIZE` to `PayloadTooLargeException`, so the body is
  *   the ordinary envelope; the special case exists to add the 5 MB figure that
- *   `File too large` does not carry. A reverse proxy's own HTML 413 lands here
- *   too and gets the same sentence.
+ *   `File too large` does not carry. An HTML 413 from a reverse proxy would
+ *   land here too and get the same sentence — *would*, because this repository
+ *   ships no proxy in front of the API; see `oversizeUploadMessage`, which
+ *   names the topology.
  *
- * The 413 check runs **after** the DTO parse, so the API's own `file_too_large`
- * still wins and keeps its label. That one is a **400**, not a 413:
- * `parseMappingSheet` refuses the buffer itself with a message naming the
- * actual byte count and the limit, and refuses a zip that *declares* an
- * oversized inflation under the same code. Both say more than this sentence
- * does, and neither reaches the 413 branch.
+ * The 413 check runs **after** the DTO parse. That ordering is defensive rather
+ * than load-bearing: the API's own `file_too_large` is a **400**, not a 413, so
+ * it never reaches the 413 branch at all. `parseMappingSheet` refuses the
+ * buffer itself with a message naming the actual byte count and the limit, and
+ * refuses a zip that *declares* an oversized inflation under the same code.
+ * Both say more than this sentence does, and the DTO parse is what keeps their
+ * label.
  *
  * It never throws: a panel that cannot render the refusal is worse than one
  * that renders it plainly.

@@ -12,7 +12,10 @@ import { oversizeUploadMessage } from "./oversize-upload";
  * ## The order, and why each step has to be where it is
  *
  * 1. `oversizeUploadMessage` first, so a 413 gets the 5 MB figure whatever its
- *    body is — Nest's envelope and a reverse proxy's HTML page both land here.
+ *    body is — Nest's envelope, and the HTML page an externally supplied
+ *    reverse proxy would answer with. That second topology is named rather than
+ *    assumed in `oversizeUploadMessage`; this repository ships no proxy in
+ *    front of the API.
  * 2. An empty body next, because `apiErrorMessage("")` answers
  *    `The request failed.`, which loses the status. `Upload failed (500).`
  *    keeps the one fact a blank refusal carries.

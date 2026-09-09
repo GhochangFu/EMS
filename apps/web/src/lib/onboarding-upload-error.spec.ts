@@ -18,9 +18,13 @@ import { describeOnboardingUploadError } from "./onboarding-upload-error";
 /**
  * U1 — a 413 gets the 5 MB figure whatever its body is.
  *
- * Both bodies are real: the first is multer's refusal read through Nest with an
- * empty passthrough, the second is a reverse proxy answering
- * `client_max_body_size` before the request reaches the API at all.
+ * The first body is multer's refusal read through Nest with an empty
+ * passthrough. The second is the *other* topology: what a reverse proxy in
+ * front of the API would answer `client_max_body_size` with, before the request
+ * reaches the API at all. This repository ships no such proxy — its only nginx
+ * serves static SPA files and does not proxy `/api` — so that body is a
+ * deployment this branch has to survive rather than one the repo produces.
+ * `oversizeUploadMessage` carries the evidence.
  */
 export function aPayloadTooLargeAlwaysNamesTheLimit(): void {
   for (const body of ["", "<html><body>413 Request Entity Too Large</body></html>"]) {

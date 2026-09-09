@@ -51,12 +51,19 @@ import { OnboardingChatPage } from "./onboarding-chat-page";
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 
-const USER = {
+/**
+ * Annotated, not cast. `AuthUser` is exactly these four fields and `"admin"` is
+ * in `userRoleSchema`, so `as unknown as AuthUser` was the `any` escape hatch
+ * under another name — it would have kept compiling if a field were added or
+ * renamed. The sibling `api/admin/onboarding.spec.ts` passes the same literal
+ * uncast to `setSession`.
+ */
+const USER: AuthUser = {
   id: "u1",
   email: "admin@bms.local",
   displayName: "Admin",
   role: "admin",
-} as unknown as AuthUser;
+};
 
 const SESSION: OnboardingSessionDto = {
   id: "session-1",
@@ -212,7 +219,17 @@ export async function aRefusedStartShowsASentenceNotAZodFlatten(): Promise<void>
   expectNoEnvelopeLeak(banner);
 }
 
-/** P2 — a refused **chat turn** shows the server's sentence and leaks no envelope. */
+/**
+ * P2 — a refused **chat turn** shows the server's sentence and leaks no envelope.
+ *
+ * **The sentence in the fixture is a stand-in; the status and the shape are the
+ * wire case.** `OnboardingService.chat` throws `new BadRequestException(…)` on
+ * an over-cap draft, so the body really is the 400 envelope this asserts
+ * against — but the words the server sends are `The draft holds N RTUs, more
+ * than the 100 one onboarding session may commit; remove some and commit the
+ * rest in a second session` (`onboarding-draft-caps.ts`). Shortened here so the
+ * assertion reads, and recorded so it is not inherited as verbatim.
+ */
 export async function aRefusedChatTurnShowsTheServersSentence(): Promise<void> {
   stubStart();
   vi.spyOn(api, "sendOnboardingChat").mockRejectedValue(
@@ -261,6 +278,14 @@ export async function aRefusedCommitShowsTheReason(): Promise<void> {
  *
  * The page's own comment names the 503 from an unset `CREDENTIAL_ENCRYPTION_KEY`
  * as the common case here, so that is the fixture.
+ *
+ * **The sentence is a stand-in; the status and the shape are the wire case.**
+ * `OnboardingService.setCredentials` throws `ServiceUnavailableException`, so
+ * the body really is this 503 envelope — but its words are
+ * `CREDENTIAL_ENCRYPTION_KEY is not configured, so credentials cannot be stored
+ * encrypted. Refusing rather than reporting a success that stored nothing.`
+ * (`onboarding.service.ts`). Recorded so the short version is not inherited as
+ * verbatim.
  */
 export async function aRefusedCredentialSaveShowsTheReason(): Promise<void> {
   stubStart(SESSION_WITH_RTU);
@@ -287,8 +312,20 @@ export async function aRefusedCredentialSaveShowsTheReason(): Promise<void> {
  *
  * `validateMutation` has never had an `onError`, so today a refused validation
  * is silence: the drawer's Validate button settles and nothing changes on
- * screen. Presence alone is the live claim here, because the defect is that
- * there is no banner rather than that the banner is wrong.
+ * screen. The defect is that there is no banner rather than that the banner is
+ * wrong, so presence is the claim this case was filed for.
+ *
+ * **Presence is not the only live claim, and saying it was understated the
+ * case.** Two different mutations reach this test and each reddens a different
+ * half, both measured rather than reasoned:
+ *
+ * - delete the `onError` again → `findTheOnlyAlert` fails with
+ *   `Unable to find role="alert"`, which is the presence half;
+ * - keep the `onError` and revert it to `setChatError(err.message)` → presence
+ *   stays green, because the raw envelope contains the sentence, and
+ *   `expectNoEnvelopeLeak` is what goes red on `statusCode`.
+ *
+ * So the leak half is load-bearing here exactly as it is in P2, P3 and P4.
  */
 export async function aFailedValidateShowsSomethingAtAll(): Promise<void> {
   stubStart();

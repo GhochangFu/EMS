@@ -4,6 +4,7 @@ import {
   aBlankTemplateRefusalKeepsTheStatusLine,
   aFourOhOneFromTheTemplateDownloadClearsTheSession,
   aFourOhOneFromTheUploadClearsTheSession,
+  aFourOhThreeFromTheTemplateDownloadKeepsTheSession,
   aFourOhThreeFromTheUploadKeepsTheSession,
   anOversizeUploadNamesTheLimit,
   aRefusedTemplateDownloadRejectsWithTheSentence,
@@ -31,6 +32,10 @@ describe("F4.106 onboarding api client", () => {
 
   it("clears the session when the template download is refused with a 401", async () => {
     await aFourOhOneFromTheTemplateDownloadClearsTheSession();
+  });
+
+  it("keeps the session when the template download is refused with a 403", async () => {
+    await aFourOhThreeFromTheTemplateDownloadKeepsTheSession();
   });
 
   it("names the 5 MB limit when the upload is too large", async () => {

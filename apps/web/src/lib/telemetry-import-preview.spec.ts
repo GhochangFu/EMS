@@ -137,9 +137,13 @@ export function runSummarizeCommitTests(): void {
  * unwrapper alone would yield `File too large`. The friendly message exists to
  * add the 5 MB figure that message does not carry.
  *
- * That makes the `<html>` case below real rather than hypothetical: it is a
- * reverse proxy's own 413 (nginx `client_max_body_size`), which never reaches
- * Nest at all.
+ * That leaves the `<html>` case below as the *other* topology rather than as
+ * this one's body: an HTML 413 is what a reverse proxy in front of the API
+ * answers `client_max_body_size` with, before the request reaches Nest. This
+ * repository ships no such proxy — `apps/web/nginx.conf` serves static SPA
+ * files and does not proxy `/api` — so the case is a deployment this code has
+ * to survive, not one the repo is known to produce. `oversizeUploadMessage`
+ * carries the evidence for that.
  */
 export function runDescribeImportUploadErrorTests(): void {
   assert(
