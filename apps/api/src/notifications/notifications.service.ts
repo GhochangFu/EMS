@@ -13,6 +13,7 @@ import {
   offeredAgainWithoutAsking,
 } from "./dispatch-policy";
 import { EmailTransport } from "./email.transport";
+import { reasonOf, storable } from "./ledger-text";
 import { LogTransport } from "./log.transport";
 import type {
   DeliveryResult,
@@ -156,29 +157,6 @@ export type DispatchInput = {
    */
   reoffered?: true;
 };
-
-/** How much of a transport's failure text is stored. */
-const MAX_ERROR_LENGTH = 1_000;
-
-/**
- * `F3.51` second review (Medium) — the characters a delivery error may not
- * carry into `notification_deliveries.error`.
- *
- * Every C0 and C1 control but the three whitespace ones (`\t`, `\n`, `\r`),
- * which Postgres accepts and every reader handles — an SMTP server's
- * multi-line refusal stays readable, which is why the text is stored at all.
- *
- * **`U+0000` is the one that costs a row, and it is reachable from outside.**
- * `webhook.transport.ts`'s `readBounded` normalises its excerpt with
- * `.replace(/\s+/g, " ").trim()`, and `\s` matches no NUL and `trim()` strips
- * none, so an endpoint answering 500 with one in its body reaches this insert
- * with it. Postgres refuses the parameter (measured: `invalid byte sequence for
- * encoding "UTF8": 0x00`), `record()` catches that, and the lost row spends one
- * of `LOST_LEDGER_ROW_CAP`'s 1000 in-process slots. Past the cap the pair is
- * re-offered every tick for the life of the alarm, dispatched sequentially — a
- * caller-controlled byte must not be able to start that.
- */
-const LEDGER_UNSAFE_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 
 @Injectable()
 export class NotificationsService {
@@ -956,31 +934,4 @@ function subjectFor(input: DispatchInput): string {
   return input.event.kind === "escalation"
     ? `escalation ${input.event.step} · ${base}`
     : `cleared · ${base}`;
-}
-
-function reasonOf(err: unknown): string {
-  return truncate(err instanceof Error ? err.message : String(err));
-}
-
-function truncate(text: string): string {
-  return text.length > MAX_ERROR_LENGTH ? `${text.slice(0, MAX_ERROR_LENGTH)}…` : text;
-}
-
-/**
- * A transport's failure text as the ledger can hold it — see
- * {@link LEDGER_UNSAFE_CHARACTERS}. Stripped before it is bounded, so the cut
- * lands on text a reader can see.
- *
- * **The stored text and the returned `DeliveryResult.error` now differ for one
- * delivery**, deliberately: the result is the transport's own words, going back
- * to a caller that can hold them; the column is what a `text` parameter can
- * carry. Only one of the two refuses a byte, and it is the one that costs a
- * row.
- *
- * Here rather than in `readBounded`, because this is the one place any
- * transport's text reaches the column — the rule in two files is the drift
- * shape, and the email and log transports would be left out of the first one.
- */
-function storable(text: string): string {
-  return truncate(text.replace(LEDGER_UNSAFE_CHARACTERS, ""));
 }
