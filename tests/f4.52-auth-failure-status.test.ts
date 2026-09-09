@@ -110,16 +110,14 @@ describe("F4.52 — authentication failures stay 401", () => {
       )
       .map((f) => relative(repoRoot, f).split(sep).join("/"));
 
-    // Positive control, and it earns its place the moment an allowlist exists:
-    // a broken walk finds nothing, and "nothing minus the allowed set" is
-    // empty, so the assertion below would pass over a scan of zero files.
-    expect(
-      found.slice().sort(),
-      "the two globals F4.108 registered were not found. Either they were removed — in " +
-        "which case 44 controller sites are back to answering 500 and ADR 0060 is undone — " +
-        "or this walk is broken and the assertion below proves nothing.",
-    ).toEqual([...ALLOWED_GLOBALS].sort());
-
+    // **Order matters, and review found it backwards.** The positive control
+    // used to fire first, so an *added* global — the failure this rule exists
+    // for — was reported as "the two globals were not found … Either they were
+    // removed", the wrong diagnosis, and the tailored message below was
+    // unreachable. The real check runs first now. The control still earns its
+    // place behind it: a broken walk finds nothing, "nothing minus the allowed
+    // set" is empty, and the assertion above would pass over a scan of zero
+    // files.
     const offenders = found.filter((f) => !ALLOWED_GLOBALS.has(f));
 
     expect(
@@ -129,6 +127,13 @@ describe("F4.52 — authentication failures stay 401", () => {
         "jwt-auth.guard.ts, which is the only file the sibling check reads. Confirm " +
         "it cannot produce a 403 for a token problem, then allow it explicitly here.",
     ).toEqual([]);
+
+    expect(
+      found.slice().sort(),
+      "the two globals F4.108 registered were not found. Either they were removed — in " +
+        "which case 44 controller sites are back to answering 500 and ADR 0060 is undone — " +
+        "or this walk is broken and the assertion above proves nothing.",
+    ).toEqual([...ALLOWED_GLOBALS].sort());
   });
 
   /**
@@ -138,14 +143,26 @@ describe("F4.52 — authentication failures stay 401", () => {
    * Widened to `@Catch()` it would see every exception, `UnauthorizedException`
    * included, and the sibling check above reads only `jwt-auth.guard.ts` — so
    * nothing else in this repository would notice.
+   *
+   * **The pattern is anchored to the decorator's position, and review is why.**
+   * A bare `/@Catch\(ZodError\)/` over the whole source was satisfied by the
+   * filter's own docblock, which contains the heading ``## Why `@Catch(ZodError)`
+   * is narrow on purpose``. Mutating the decorator to `@Catch()` left this
+   * `it()` **green** — measured on a mutated copy — in the very file that grants
+   * the global its allowance. A file that documents the rule it is checked
+   * against cannot be checked by a substring; requiring the decorator to be
+   * followed by the class declaration puts the match on code.
    */
   it("the allowlisted ZodErrorFilter catches only ZodError and answers only 400", () => {
     const source = readFileSync(join(repoRoot, FILTER), "utf8");
 
     expect(
-      /@Catch\(ZodError\)/.test(source),
-      "zod-error.filter.ts must stay @Catch(ZodError). @Catch() with no argument catches " +
-        "every exception, including the 401 the JWT guard throws.",
+      /@Catch\(ZodError\)\s*\r?\nexport class ZodErrorFilter\b/.test(source),
+      "zod-error.filter.ts must stay @Catch(ZodError) on the ZodErrorFilter declaration. " +
+        "@Catch() with no argument catches every exception, including the 401 the JWT guard " +
+        "throws. The pattern is anchored to the class declaration on purpose — the file's own " +
+        "docblock quotes `@Catch(ZodError)` in prose, so an unanchored match passes over a " +
+        "mutated decorator.",
     ).toBe(true);
 
     // Case-insensitive on purpose: the spelling this file would actually grow

@@ -6,7 +6,8 @@ import {
   assertANonHttpHostRethrowsTheOriginalError,
   assertMainRegistersTheFilterGlobally,
   assertTheBodyIsTheFlattenedErrorAndNothingElse,
-  assertTheFilterCatchesZodErrorAndNotTheStoredContractFault,
+  assertTheFilterCatchesZodError,
+  assertTheFilterDoesNotCatchTheStoredContractFault,
   assertZodIsOneClassForTheResolutionTheApiRunsUnder,
 } from "./zod-error.filter.spec";
 
@@ -28,8 +29,16 @@ describe("ADR 0060 — one ZodError filter answers a malformed parameter", () =>
     assertANonHttpHostRethrowsTheOriginalError();
   });
 
-  it("catches ZodError and not the server fault parseStoredContract raises", () => {
-    assertTheFilterCatchesZodErrorAndNotTheStoredContractFault();
+  // Two `it()`s, not one with two assertions: `@Catch()` empties the caught set,
+  // so it reddens the first and the second would never run — the mutation could
+  // not reach the assertion holding its claim (§4.6). `@Catch(Error)` is the
+  // second one's mutation.
+  it("catches ZodError", () => {
+    assertTheFilterCatchesZodError();
+  });
+
+  it("does not catch the server fault parseStoredContract raises", () => {
+    assertTheFilterDoesNotCatchTheStoredContractFault();
   });
 
   it("resolves one zod class for the CommonJS resolution the API runs under", () => {

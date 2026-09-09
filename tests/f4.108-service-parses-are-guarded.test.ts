@@ -15,6 +15,36 @@ import { describe, expect, it } from "vitest";
  * 400 telling a caller that the server's own corrupt row is their bad request.
  * Nothing in the type system says that; this file does.
  *
+ * ## What this scans — every non-test `.ts`, not only `*.service.ts`
+ *
+ * It scanned `*.service.ts` for `.parse(` when it was written, and review named
+ * the hole. **The filter is registered globally, so it catches a `ZodError`
+ * raised anywhere in the process.** A stored-data parse added to a mapper, a
+ * repository, a plain helper module or a controller — or spelled
+ * `.parseAsync(` — became a silent 400 with nothing here reddening. The narrow
+ * rule matched the eight sites ADR 0060 moved, not the surface the filter
+ * actually covers. So: every non-test `.ts` under `apps/api/src`, and both
+ * spellings.
+ *
+ * The widening pulls in `apps/api/src/testing/` and every other non-domain
+ * module, and that is deliberate rather than overreach — those compile into the
+ * same process and a `ZodError` from one reaches the same filter.
+ *
+ * **Controllers are excused as a class, with the reason.** A controller parse
+ * validates what the client sent — that is what a controller *is* — so 400 is
+ * the honest answer there, and the global filter is what supplies it. 45 of the
+ * 46 unguarded sites in the tree are controller sites and every one of them is
+ * correct; excusing them by file suffix rather than listing 45 entries keeps the
+ * rule readable. A blanket exclusion needs its own control, because an
+ * over-broad one empties the list in silence, so the assertions below pin both
+ * that the walk still reaches controllers and that it has not swallowed the one
+ * non-controller site.
+ *
+ * **This widening changes no outcome today.** Two censuses run independently at
+ * review time found no unguarded stored-data parse outside the one allowlisted
+ * site, and the tree holds zero `.parseAsync(` calls. It is hardening, and only
+ * a mutation demonstrates it landed.
+ *
  * Assertions are **inline**, which is §4.6's carve-out for the top-level
  * `tests/` directory. The root `vitest.config.ts` `repo` project globs
  * `tests/**\/*.test.ts`, and this file is listed by hand in the root
@@ -51,8 +81,8 @@ const INSTANTIATE_SERVICE =
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
 /**
- * The one unguarded parse in a service that is **correct**, allowlisted by name
- * with its reason — ADR 0060 Amendment 1.
+ * The one unguarded parse outside a controller that is **correct**, allowlisted
+ * by name with its reason — ADR 0060 Amendment 1.
  *
  * `createAssetTemplateBodySchema.parse({ ...body, organizationId })` in
  * `AssetTemplatesStockService.import` stands on a **request path**:
@@ -98,9 +128,34 @@ const NON_ZOD_RECEIVERS = new Set(["JSON", "Date", "Number", "Math"]);
  * so it matches whichever alternative starts first at each position and gets
  * `"http://x"` wrong in one direction and `/* a "quote" *\/` wrong in the other.
  *
- * What it still cannot see: a `/` that opens a **regex literal** containing a
- * quote or a `//`. No service in this tree writes one, and a wrong answer there
- * would over-report rather than under-report.
+ * What it still cannot see: a `/` that opens a **regex literal**. The sentence
+ * that stood here claimed a wrong answer "would over-report rather than
+ * under-report". That is a guarantee this code cannot give, and review measured
+ * it: the blind spot fails in **both** directions, and the dangerous one is the
+ * silent one. A regex literal is not blanked, so its braces are counted by
+ * `tryBlockRanges` below:
+ *
+ * - **An unmatched `}`** — `/\}/`, or `/\{[^}]*\}/`, whose `[^}]` and `\}` are
+ *   two closers against one opener — drops the depth to zero early, so a `try`
+ *   range ends before its real closing brace and a genuinely guarded parse after
+ *   it is reported. **Over-reports**, which is loud and gets read.
+ * - **An unmatched `{`** — `/[{]/`, say — extends the range past the closing
+ *   brace, so a later real unguarded parse falls inside it and looks guarded.
+ *   **Under-reports**, silently, which is the exact failure this file exists to
+ *   prevent.
+ *
+ * Only a regex inside a `try` body can do either, and only within its own file:
+ * ranges and offenders are both computed per file.
+ *
+ * **Re-measured after the scan widened, and it is no longer vacuous.** Across
+ * the 64 `*.service.ts` files there were no brace-bearing regex literals at all.
+ * Across every non-test `.ts` there is one:
+ * `admin/asset-points/mapping-sheet-rows.ts` declares `const BRACED =
+ * /\{[^}]*\}/`, which leaves that file at 90 `{` against 91 `}` — the
+ * over-report direction. It is harmless today, because the declaration is
+ * top-level and well before that file's only `try`, and the file holds no
+ * `.parse(` at all. "Harmless today" is not a property to leave in prose, so the
+ * brace-balance `it()` below gates the condition that makes it harmless.
  *
  * `blankStrings` is `false` for the one caller that is *looking for* string
  * literals — the context-literal census below reads
@@ -196,10 +251,21 @@ function tryBlockRanges(code: string): Array<[number, number]> {
   return ranges;
 }
 
-/** `receiver.parse(` — a dotted receiver, not preceded by another identifier char. */
-const PARSE_CALL = /(?<![.\w$])([A-Za-z_$][\w$]*(?:\.[\w$]+)*)\.parse\(/g;
+/**
+ * `receiver.parse(` or `receiver.parseAsync(` — a dotted receiver, not preceded
+ * by another identifier char.
+ *
+ * `parseAsync` is zod's second entry point and throws the same `ZodError`. The
+ * tree holds none today, so nothing in the offender list changes; the fixture
+ * assertion below is what actually holds this half of the pattern.
+ */
+const PARSE_CALL = /(?<![.\w$])([A-Za-z_$][\w$]*(?:\.[\w$]+)*)\.parse(?:Async)?\(/g;
 
-function serviceFiles(): string[] {
+/** The suffix the class-wide controller allowance keys on — see the header. */
+const CONTROLLER_SUFFIX = ".controller.ts";
+
+/** Every non-test `.ts` under `apps/api/src`, sorted. */
+function scannedFiles(): string[] {
   const found: string[] = [];
   const pending: string[] = [API_SRC];
   while (pending.length > 0) {
@@ -208,16 +274,29 @@ function serviceFiles(): string[] {
     for (const entry of readdirSync(join(repoRoot, current), { withFileTypes: true })) {
       const rel = `${current}/${entry.name}`;
       if (entry.isDirectory()) pending.push(rel);
-      else if (entry.name.endsWith(".service.ts")) found.push(rel);
+      else if (entry.name.endsWith(".ts") && !/\.(spec|test)\.ts$/.test(entry.name)) found.push(rel);
     }
   }
   return found.sort();
 }
 
-/** Every `.parse(` outside a `try`, in a service, whose receiver could be zod. */
-function unguardedZodParses(): string[] {
-  const offenders: string[] = [];
-  for (const rel of serviceFiles()) {
+/** One unguarded call site: the file it is in, and the key the allowlist uses. */
+interface ParseSite {
+  readonly file: string;
+  /** `<file> <receiver>` — keyed by receiver, never by line. See {@link ALLOWED_SITE}. */
+  readonly site: string;
+}
+
+/**
+ * Every `.parse(`/`.parseAsync(` outside a `try` whose receiver could be zod,
+ * across every scanned file — **controllers included**.
+ *
+ * The controller allowance is applied by the caller rather than here, so the
+ * excused set stays visible and can be asserted against.
+ */
+function unguardedZodParses(): ParseSite[] {
+  const offenders: ParseSite[] = [];
+  for (const rel of scannedFiles()) {
     const code = blankCommentsAndStrings(read(rel));
     const ranges = tryBlockRanges(code);
     PARSE_CALL.lastIndex = 0;
@@ -230,12 +309,12 @@ function unguardedZodParses(): string[] {
       const index = match.index;
       const guarded = ranges.some(([from, to]) => index >= from && index < to);
       if (!guarded && !NON_ZOD_RECEIVERS.has(owner)) {
-        offenders.push(`${rel} ${receiver}`);
+        offenders.push({ file: rel, site: `${rel} ${receiver}` });
       }
       match = PARSE_CALL.exec(code);
     }
   }
-  return offenders.sort();
+  return offenders.sort((a, b) => a.site.localeCompare(b.site));
 }
 
 describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError filter", () => {
@@ -251,6 +330,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       `// schemaB.parse( inside a line comment`,
       `/* schemaC.parse( and an unmatched " quote */`,
       `const d = schemaD.parse(value);`,
+      `const e = await schemaE.parseAsync(value);`,
+      `// schemaF.parseAsync( inside a line comment`,
     ].join("\n");
     const blanked = blankCommentsAndStrings(fixture);
 
@@ -259,50 +340,139 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
     );
     expect(blanked.split("\n").length).toBe(fixture.split("\n").length);
 
+    // `schemaE` is the only live assertion `parseAsync` has: the tree holds no
+    // `.parseAsync(` call, so dropping it from PARSE_CALL would change no
+    // offender list and nothing else here would notice.
     const seen = [...blanked.matchAll(PARSE_CALL)].map((m) => m[1]);
     expect(
       seen,
-      "only the real call survives: a `//` inside a string must not open a comment, and a " +
-        "quote inside a comment must not open a string",
-    ).toEqual(["schemaD"]);
+      "only the real calls survive, and both zod spellings are matched: a `//` inside a string " +
+        "must not open a comment, a quote inside a comment must not open a string, and " +
+        "`.parseAsync(` throws the same ZodError as `.parse(`",
+    ).toEqual(["schemaD", "schemaE"]);
   });
 
   /**
    * The rule itself. ADR 0060 §Verification: *"an assertion pins that **no**
    * throwing `.parse(` sits outside a `try` in a service, so a later service
    * parse added without a server-fault wrapper reddens rather than silently
-   * becoming a 400."*
+   * becoming a 400."* Widened past "in a service" on review — see the header.
    *
-   * The allowlisted site is asserted **present** first. Without that the
-   * absence half is satisfied by a scanner that found nothing at all — and a
-   * scanner that finds nothing is exactly what a bad walk, a bad blanking pass
-   * or a bad `try` tracker all produce.
+   * Four assertions, in the order a failure is most usefully read:
+   *
+   * 1. **Two file-count floors.** The total one is the walk's control now that
+   *    it covers 298 files; the `*.service.ts` one is kept because it is the
+   *    floor the original rule was written against, and a walk that silently
+   *    stopped descending into the domain modules would still clear a total.
+   * 2. **The controller rule is doing work.** 45 unguarded sites live in
+   *    controllers, so a walk or a regex that no longer reaches beyond services
+   *    would excuse nothing — and since the excused set never appears in the
+   *    result, the whole widening would revert in silence. This is the only
+   *    assertion that fails if `scannedFiles` regresses to `*.service.ts`.
+   * 3. **The allowlisted site is present exactly once.** Present, because the
+   *    absence half below is satisfied by a scanner that found nothing at all,
+   *    and a scanner that finds nothing is what a bad walk, a bad blanking pass
+   *    and a bad `try` tracker all produce. Exactly once, because the key is
+   *    `<file> <receiver>`: a *second* `createAssetTemplateBodySchema.parse(`
+   *    added to the stock service on a non-request path produces the identical
+   *    string and `Set.has` would drop both.
+   * 4. **The absence half.**
    */
-  it("leaves exactly one unguarded service parse, the allowlisted client-input one", () => {
-    const files = serviceFiles();
+  it("leaves exactly one unguarded non-controller parse, the allowlisted client-input one", () => {
+    const files = scannedFiles();
     expect(
       files.length,
-      "the walk over apps/api/src found almost no *.service.ts — it is broken, and an empty " +
+      "the walk over apps/api/src found almost no non-test .ts — it is broken, and an empty " +
         "offender list below would mean nothing",
+    ).toBeGreaterThanOrEqual(250);
+    expect(
+      files.filter((rel) => rel.endsWith(".service.ts")).length,
+      "the walk no longer reaches the *.service.ts files, which is where ADR 0060 moved all " +
+        "eight stored-data parses",
     ).toBeGreaterThanOrEqual(50);
 
-    const offenders = unguardedZodParses();
+    const all = unguardedZodParses();
+    const excusedAsControllers = all.filter((entry) => entry.file.endsWith(CONTROLLER_SUFFIX));
+    const considered = all
+      .filter((entry) => !entry.file.endsWith(CONTROLLER_SUFFIX))
+      .map((entry) => entry.site);
 
     expect(
-      offenders,
-      "the allowlisted client-input parse in AssetTemplatesStockService.import was not found. " +
-        "Either it was converted to a server fault — which would turn its correct 400 into a " +
-        "500, and ADR 0060 Amendment 1 forbids it — or this scanner is broken and the absence " +
-        "assertion below proves nothing.",
-    ).toContain(ALLOWED_SITE);
+      excusedAsControllers.length,
+      "the class-wide controller allowance excused almost nothing, so this scan is not " +
+        "reaching controllers at all. That is what a walk narrowed back to *.service.ts looks " +
+        "like — and it would revert the widening without changing a single line of the result " +
+        "below, because controller sites never appear there.",
+    ).toBeGreaterThanOrEqual(40);
 
     expect(
-      offenders.filter((site) => !ALLOWED.has(site)),
-      "a zod .parse() sits outside a try in a service. The global ZodErrorFilter answers 400 " +
-        "for every ZodError that escapes, so this one now tells the caller that the server's " +
-        "own stored row is their bad request. If it parses data this application stored, wrap " +
-        "it in parseStoredContract (apps/api/src/common/parse-stored-contract.ts). If it " +
-        "parses caller input on a request path, add it to ALLOWED with the reason.",
+      considered.filter((site) => site === ALLOWED_SITE).length,
+      "the allowlisted client-input parse in AssetTemplatesStockService.import must appear " +
+        "exactly once. Zero: either it was converted to a server fault — which would turn its " +
+        "correct 400 into a 500, and ADR 0060 Amendment 1 forbids it — or this scanner is " +
+        "broken and the absence assertion below proves nothing. Two: a second parse with the " +
+        "same receiver was added to that file, and ALLOWED would silently excuse it too. Give " +
+        "it its own allowlist entry or wrap it in parseStoredContract.",
+    ).toBe(1);
+
+    expect(
+      considered.filter((site) => !ALLOWED.has(site)),
+      "a zod .parse()/.parseAsync() sits outside a try, in a file that is not a controller. " +
+        "The global ZodErrorFilter answers 400 for every ZodError that escapes anywhere in " +
+        "this process, so this one now tells the caller that the server's own stored row is " +
+        "their bad request. If it parses data this application stored, wrap it in " +
+        "parseStoredContract (apps/api/src/common/parse-stored-contract.ts). If it parses " +
+        "caller input on a request path, add it to ALLOWED with the reason.",
+    ).toEqual([]);
+  });
+
+  /**
+   * The soundness condition for the blanker's one blind spot — a regex literal,
+   * whose braces it cannot see.
+   *
+   * `tryBlockRanges` finds a `try` body by counting braces in the blanked
+   * source, so an unmatched brace inside a regex literal moves the range: an
+   * extra `}` ends it early (over-reports), an extra `{` extends it past the
+   * real closing brace (**under-reports**, silently, which is the failure this
+   * whole file exists to prevent). Both are stated in
+   * `blankCommentsAndStrings`'s docblock.
+   *
+   * Ranges and offenders are computed **per file**, so the condition that makes
+   * an imbalance harmless is exactly this: the file holds no parse call. That is
+   * a rule rather than an allowlist, and it stays true on its own — the moment
+   * `mapping-sheet-rows.ts` (the one imbalanced file today, 90 `{` against 91
+   * `}` from `const BRACED = /\{[^}]*\}/`) grows a `.parse(`, this reddens and a
+   * human classifies it.
+   *
+   * **Necessary, not sufficient**, and the failure message says so: `/}{/ ` is
+   * count-balanced and order-wrong. A count is what a test can cheaply hold; a
+   * reader who hits this should check the ordering too.
+   */
+  it("no scanned file has both a parse call and braces the blanker cannot balance", () => {
+    const files = scannedFiles();
+    expect(
+      files.length,
+      "the walk is broken, so an empty list below would mean nothing",
+    ).toBeGreaterThanOrEqual(250);
+
+    const unsound = files.flatMap((rel) => {
+      const code = blankCommentsAndStrings(read(rel));
+      const open = (code.match(/\{/g) ?? []).length;
+      const close = (code.match(/\}/g) ?? []).length;
+      if (open === close) return [];
+      if ((code.match(PARSE_CALL) ?? []).length === 0) return [];
+      return [`${rel} (${open} { against ${close} })`];
+    });
+
+    expect(
+      unsound,
+      "a file holds a parse call AND braces that do not balance after comments and strings " +
+        "are blanked. The blanker cannot see a regex literal, so its braces are counted as " +
+        "code: an unmatched `{` extends a try range past its closing brace and hides a real " +
+        "unguarded parse, which the rule above would then report as clean. Rewrite the regex " +
+        "with balanced braces (`/[{]/` becomes `new RegExp(\"\\\\{\")`), or teach " +
+        "blankCommentsAndStrings to skip regex literals. Note this count check is necessary " +
+        "and not sufficient — a `/}{/ ` balances by count and still mis-orders the range.",
     ).toEqual([]);
   });
 

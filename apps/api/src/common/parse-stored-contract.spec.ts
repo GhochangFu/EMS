@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Logger } from "@nestjs/common";
 import { expect, vi } from "vitest";
-import { ZodError, z } from "zod";
+import { z } from "zod";
 
 import { parseStoredContract } from "./parse-stored-contract";
 
@@ -52,6 +52,13 @@ export function assertAValidStoredValueIsReturned(): void {
  * the **type** is. `ZodErrorFilter` catches `ZodError` and answers 400; an
  * `HttpException` carrying 500 passes through it untouched. That is why this
  * commit has to land first.
+ *
+ * **A `thrown instanceof ZodError === false` check stood here and was removed on
+ * review** (§4.6 decoration). `HttpException` and `ZodError` are disjoint
+ * prototype chains — `ZodError` extends `Error` directly — so nothing can be an
+ * instance of both, and that assertion could not fail while the
+ * `toBeInstanceOf(HttpException)` above it passed. Its reason moved into that
+ * line's message, which is where the claim actually lives.
  */
 export function assertAContractViolationThrowsAServerFaultAndNotAZodError(): void {
   let thrown: unknown;
@@ -60,12 +67,12 @@ export function assertAContractViolationThrowsAServerFaultAndNotAZodError(): voi
   } catch (err) {
     thrown = err;
   }
-  expect(thrown, "a corrupt stored row must throw").toBeInstanceOf(HttpException);
   expect(
-    thrown instanceof ZodError,
-    "a bare ZodError here would be reclassified as a 400 by ZodErrorFilter — ADR 0060 " +
-      "ruling 2 exists to stop exactly that",
-  ).toBe(false);
+    thrown,
+    "a corrupt stored row must throw an HttpException. A bare ZodError — which is not an " +
+      "HttpException — would be reclassified as a 400 by ZodErrorFilter, and ADR 0060 ruling 2 " +
+      "exists to stop exactly that.",
+  ).toBeInstanceOf(HttpException);
   expect((thrown as HttpException).getStatus()).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
 }
 
