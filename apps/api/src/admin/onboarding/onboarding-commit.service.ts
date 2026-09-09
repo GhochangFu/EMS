@@ -30,6 +30,7 @@ import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
 import { distinctAssetDomains, draftCountProblem } from "./onboarding-draft-caps";
 import {
   conflictingPointKeyDeclaration,
@@ -181,6 +182,24 @@ export class OnboardingCommitService {
       await this.vocabularies.assertAssetDomain(domain);
     }
 
+    // `F4.109` — the six inserts below carry **no** `onConflict`, by owner
+    // ruling 1: a duplicate is refused, never merged into an existing row. What
+    // changes here is only the answer. Before this, `23505` reached Nest's
+    // default handler and became `500 {"statusCode":500,"message":"Internal
+    // server error"}`, so a `location.code` an operator can type twice was
+    // reported as a server fault and named nothing.
+    //
+    // The catch is `.catch` on the returned promise rather than a `try` around
+    // the block on purpose: the transaction body is 250 lines and wrapping it
+    // would reindent all of them, hiding a two-line change in a diff nobody can
+    // read. Drizzle rolls the transaction back and re-throws the driver's own
+    // error object, so `code` and `constraint` survive to here.
+    //
+    // `translateCommitUniqueConflict` is narrow on both axes — SQLSTATE
+    // `23505` **and** a constraint the map holds — and returns anything else
+    // unchanged, which is why the `throw` re-throws the original error object
+    // with its stack intact. An unmapped constraint, a foreign-key violation
+    // and a dropped connection all still answer exactly as they did.
     return withTenant(this.tenantDb, session.organizationId, async (tx) => {
       const loc = draft.location!;
       const [locationRow] = await tx
@@ -435,6 +454,11 @@ export class OnboardingCommitService {
         sessionId,
         ...result,
       };
+    }).catch((err: unknown) => {
+      // `F4.109` — `.catch` rather than a `try`, and narrow on both SQLSTATE and
+      // constraint name. Both choices are justified in full at the head of
+      // `commit()` above; `onboarding-commit-conflict.ts` holds the map.
+      throw translateCommitUniqueConflict(err);
     });
   }
 

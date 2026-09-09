@@ -1,8 +1,10 @@
+import { BadRequestException } from "@nestjs/common";
 import { expect } from "vitest";
 import pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import type { OnboardingCommitService } from "./onboarding-commit.service";
 
 /**
@@ -166,4 +168,104 @@ export async function assertCommitRefusesAContradictingPointKey(
     locationRows.length,
     "the location inserted before the point-key loop rolled back with it",
   ).toBe(0);
+}
+
+/** What the `F4.109` duplicate-value refusal needs. */
+export type CommitDuplicateFixtures = {
+  commitSvc: OnboardingCommitService;
+  ownerPool: pg.Pool;
+  /** A commit-ready draft whose `location.code` a seeded row already holds. */
+  sessionId: string;
+  organizationId: string;
+  /** The code carried by both the seeded row and the draft. */
+  locationCode: string;
+};
+
+/**
+ * `F4.109` — a duplicate value is a per-field `400`, measured through a real
+ * transaction rather than a stubbed one.
+ *
+ * `onboarding-commit-conflict.spec.ts` proves the map, the narrowing and the
+ * wiring with a hand-built driver error. **What only a real database can show
+ * is the link that spec fakes**: that Postgres raises `23505` naming
+ * `locations_org_code_idx` for this insert, that drizzle rolls the transaction
+ * back and re-throws the driver's own error object rather than wrapping it, and
+ * that `code` and `constraint` are therefore still readable by the time
+ * `translateCommitUniqueConflict` sees it. Every one of those three could break
+ * without a unit test noticing.
+ *
+ * The seeded row is written by the fixture, not by a sibling test, so this case
+ * does not depend on the order the file's `it()`s run in.
+ *
+ * **This case shipped with four `expect`s and now has two, because review and
+ * then a live probe showed the other two could not fail.** `expect` throws, so
+ * only the first failure runs, and both dead ones sat below a body equality
+ * against a static literal.
+ *
+ * - `getStatus() === 400` cannot fail at any position. `BadRequestException` is
+ *   400 by construction, and the equality above has already established the
+ *   type.
+ * - `!body.includes(locationCode)` — an echo check — was dead by construction
+ *   too: the body is compared to `conflict.message`, a fixed string, while
+ *   `locationCode` carries a per-run suffix, so any edit that could put the
+ *   value in the body changes the body and the equality reddens first.
+ *   Reordering it was the obvious repair and it **still** did not fire under the
+ *   mutation that appends `err.detail` to the message. The reason is worth
+ *   keeping: Postgres's `BuildIndexValueDescription` returns NULL when RLS is
+ *   enabled on the relation, so on `bms.locations` the value never reaches the
+ *   driver at all. Probed as `bms_owner`, `err.detail` is `undefined`; as
+ *   `bms_fleet` (`BYPASSRLS`) the same insert yields the full key. There is no
+ *   value here to echo, so no assertion here can hold the §4.3 rule.
+ *
+ * What is left is stronger than either, and it is worth being exact about how
+ * far. Equality to a fixed body forbids every **addition** — `detail`,
+ * `constraint`, `table`, `schema`, the driver's message — and every substituted
+ * **message**. It reddens under the load-bearing mutation, removing the `.catch`
+ * from `commit`, which leaves a raw driver error here; measured, the failure
+ * reads `expected 'not a BadRequestException: error: dup…'`.
+ *
+ * It does **not** hold a substituted *field*. A translation that ignored the
+ * entry it looked up and hard-coded `location` would leave this case green,
+ * because `location` is the field under test. That mutation belongs to
+ * `assertEveryMappedConstraintBecomesItsOwnFieldError` in the unit spec, which
+ * walks all nine. The §4.3 sentinels live there too, where a synthetic error can
+ * carry the `detail` this path withholds.
+ */
+export async function assertCommitAnswersADuplicateLocationCodeWithAFieldError(
+  ctx: CommitDuplicateFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { commitSvc, ownerPool, sessionId, organizationId, locationCode } = ctx;
+
+  const conflict = COMMIT_UNIQUE_CONFLICTS.get("locations_org_code_idx");
+  if (!conflict) {
+    throw new Error("F4.109: locations_org_code_idx is not in COMMIT_UNIQUE_CONFLICTS");
+  }
+
+  let raised: unknown;
+  try {
+    await commitSvc.commit(jwt, sessionId);
+  } catch (error) {
+    raised = error;
+  }
+
+  // One string from whatever was raised, so a raw driver error is compared as
+  // readily as a refusal. A `pg` error's `code`, `constraint`, `table` and
+  // `schema` are own enumerable properties, so `JSON.stringify` reaches them and
+  // the equality below refuses them all.
+  const answered =
+    raised instanceof BadRequestException
+      ? JSON.stringify(raised.getResponse())
+      : `not a BadRequestException: ${String(raised)} ${JSON.stringify(raised)}`;
+
+  expect(
+    answered,
+    "a duplicate location code is answered as a per-field 400, not a 500",
+  ).toBe(JSON.stringify({ formErrors: [], fieldErrors: { location: [conflict.message] } }));
+
+  const { rows } = await ownerPool.query<{ id: string }>(
+    `SELECT id FROM bms.locations WHERE code = $1 AND organization_id = $2`,
+    [locationCode, organizationId],
+  );
+  expect(rows.length, "the refused commit wrote no second location and rolled back").toBe(1);
 }
