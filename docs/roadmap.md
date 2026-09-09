@@ -3904,6 +3904,66 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   that Amendment 6 leaves untouched.
 - **Unblocks:** nothing directly.
 
+### The escalation retry gets its own budget, and a step too late to send is abandoned (`F3.52`, ADR 0041 Amendment 6, ADR 0057 Amendment 7) — done
+- **Status:** merged 2026-09-09 — PR
+  [#390](https://github.com/GhochangFu/EMS/pull/390) (`492afa04`). Nine owner
+  rulings, twelve commits, four review passes.
+- **Two changes.** The per-channel hourly ceiling became one query returning two
+  counts: a raise is refused at `allSent >= ratePerHour`, while an escalation
+  step, a cleared message or a *Send test* is refused at that **or** at
+  `reservedSent >= floor(ratePerHour * 0.8)` — so events can never occupy more
+  than 48 of the default 60 and twelve slots stay reachable by a raise alone.
+  And a due escalation step more than `NOTIFY_STEP_MAX_LATENESS_MINUTES` (60)
+  past `raised_at + after_minutes` is abandoned rather than sent late, recorded
+  as the new sixth delivery status `skipped_stale` (migration `0068`), which
+  blocks that step's key through `eventDeliveryBlocked`'s existing not-`failed`
+  arm with no new retry logic.
+- **The row was filed on a premise that had already expired.** It said a
+  ceiling-refused raise is "then lost outright". `F3.51` merged the day after it
+  was written, and a `skipped_rate_limited` row counts as *evidence* in
+  `channelsOwedTheRaise` while being *excluded* from the eligible set — so the
+  channel comes back owed and the sweep re-offers every 30 s. The harm is a
+  delay. The owner kept the fix in scope knowing that.
+- **The security review found the reserve doing the opposite of its purpose.**
+  The count was unfiltered, so raises were charged against the reduced limit
+  too: forty-eight sent *raises* an hour refused every step, every cleared
+  message and every test send on that channel while raises went on to 60. The
+  reserve was taking from the path it exists to protect — and a step held that
+  long is exactly the step this row's own age cut-off then abandons, so the two
+  halves compounded a late delivery into no delivery. The filter that fixes it
+  is **structural**, `%:%:%:%`: a raise key has three segments and every event
+  key appends one, so a future `DispatchEvent` kind is covered by construction,
+  where a list of `:escalation:`/`:cleared` suffixes would fail **open**.
+- **A ruling was taken on a false premise, and the record says so.** Moving the
+  `skipped_stale` exit below the ceiling was proposed on the grounds that a
+  budget-starved step could then never be abandoned for age it spent waiting.
+  A correctness pass traced otherwise: `stepIsTooLate` recomputes each tick from
+  a fixed `raised_at` against an increasing `now`, so once stale a step stays
+  stale and is abandoned the moment the ceiling frees. **The end state is
+  identical in both orders**; the position buys only the reason an operator
+  reads meanwhile. Both amendments record it as believed-and-acted-on rather
+  than quietly reworded.
+- **The migration had been verified against bytes nobody ran.** The applied row
+  hashed `d452088a…` while the committed file hashes `b257bb67…` — a draft of
+  `0068` had taken the journal stamp, and drizzle applies a file only on a
+  strictly-lower stamp, so the real bytes would never have executed there. A
+  green readback proved a file nobody had run. Repaired by re-stamping the stray
+  row one millisecond earlier, never deleting it.
+- **The vocabulary is restated in fifteen places across eight files**, and the
+  census was wrong three times running — one, then three, then thirteen. The
+  last miss has a cause worth keeping: the `git grep` used `apps/**/*.ts`, which
+  does not match `.tsx`, and hid the deliveries page's only "every status
+  renders" fixture. **The glob is as much a claim as the count.**
+- **Verified to the browser layer** on `api` and `web` rebuilt `--no-cache` from
+  the branch: the pill renders `border-amber-200 bg-amber-100 text-amber-900`,
+  not the grey `default:` fallback — the one claim no test could hold, because
+  all three status switches carry a `default:` and a missing case compiles
+  clean. Full suite 456 files / 2497 tests.
+- **Unblocks:** `F3.53` (the same ceiling read's per-tick cost, now a two-count
+  aggregate). Filed `F3.57` for the retried-raise staleness marker that ruling 1
+  deferred to protect Amendment 5's byte-identity.
+
+
 ### A draft nested past ten levels is refused, and one already stored is repairable (`F4.115`) — done
 - **Status:** merged 2026-09-09 — PR
   [#388](https://github.com/GhochangFu/EMS/pull/388) (`5770de96`), filed in
