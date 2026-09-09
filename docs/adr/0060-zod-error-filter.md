@@ -256,6 +256,22 @@ naming the context the parse was given. That is a real, testable difference, so
 the commit that converts the eight has a gate rather than only a rationale. The
 same false sentence has been removed from the service comment it came from.
 
+**And "they answer 500 before and after" is itself false, which the security
+review found and which understates this row rather than overstating it.** It
+holds only for a site whose caller has no `catch`. Five of the eight are reached
+from inside a controller `try` that maps **any** escaping `ZodError` to
+`BadRequestException(err.flatten())` — `dashboard-templates.controller.ts:64-79`
+wraps `list()`, and `list()` reaches `mapSummary`, which parsed `template.content`
+off the stored row. So **before this diff a corrupt `content` answered 400
+carrying `flatten()` of a stored value**, and the same held for `create`,
+`update`, `importStock` and the instantiate route.
+
+AGENTS.md's API-contracts rule says a Zod issue carries the received value:
+`unrecognized_keys` names the row's keys and `invalid_enum_value` echoes the
+row's value. So those five sites were a **stored-data echo to the client**, and
+ruling 2 closes it. The eight conversions are not cosmetic and not merely a
+relabelling — that is what the sentence as written invited a reader to think.
+
 **What this costs the invariant in §Verification.** "No throwing `.parse(`
 outside a `try` in a service" is now false as stated, because `:183` is one and
 is correct. The assertion must allow it by name with the reason, and it must
