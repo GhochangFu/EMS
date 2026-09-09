@@ -971,28 +971,45 @@ replaced a clock constant with a structural condition and this keeps that
 precedent rather than reintroducing one.
 
 `dispatchToChannels` takes it as an **optional** argument, so a caller that
-does not pass one reads the ledger exactly as it does today. Three of the four
-callers do not pass one, and each omission is a decision:
+does not pass one reads the ledger exactly as it does today. It has **three**
+production callers, one passes the memo and two do not, and each omission is a
+decision:
 
-- **`dispatchRememberingLostRows` passes it** — the single call site shared by
-  the raise-retry and escalation phases, which is where all of the measured
-  spin is.
-- **`notifyCleared` does not.** A cleared message is dispatched once, from the
-  clear phase, and `loadActiveAlarms` never selects that alarm again. It has no
-  next tick to be postponed to, so the aged-out edge in §2 would cost the clear
-  itself — the silent-loss shape ADR 0057 Amendment 2 ruling Q-A refused.
-- **`sendTest` does not.** It never spins, and a cached refusal would mean an
-  operator who fixes a ceiling and presses *Send test* again is refused from
-  memory rather than from the ledger.
-- **`dispatch()`, the fire-and-forget raise path, does not.** It runs
-  concurrently with the sweep and outside it; it was the row's stated reason
-  for doubting a service-level memo, and threading the window from the sweep
-  removes the question rather than answering it.
+- **`dispatchRememberingLostRows` passes it** (`alarm-lifecycle-phases.ts:511`)
+  — the single call site shared by the raise-retry and escalation phases, which
+  is where all of the measured spin is.
+- **`notifyCleared` does not** (`alarm-lifecycle-phases.ts:237`). A cleared
+  message is dispatched once, from the clear phase, and `loadActiveAlarms`
+  never selects that alarm again. It has no next tick to be postponed to, so
+  the aged-out edge in §2 would cost the clear itself — the silent-loss shape
+  ADR 0057 Amendment 2 ruling Q-A refused.
+- **`dispatch()`, the fire-and-forget raise path, does not**
+  (`notifications.service.ts:223`). It runs concurrently with the sweep and
+  outside it; it was the row's stated reason for doubting a service-level memo,
+  and threading the window from the sweep removes the question rather than
+  answering it.
 
-`DispatchInput` is local to `apps/api` (`notifications.service.ts`), not a
+**`sendTest` is not one of them, and this section said it was.** Corrected in
+place on Amendment 6 §1's precedent rather than quietly reworded: `sendTest`
+calls `isOverHourlyLimit` **directly** (`notifications.service.ts:902`) and
+never enters `dispatchToChannels` at all, so it cannot see a memo on either
+reading and the ruling's behaviour is unchanged. The count of four callers was
+wrong, and the correction is recorded because a closure record or a docblock
+that copied the sentence would carry the error forward.
+
+**The adapter is the edit that makes any of this reach production, and this
+section omitted it.** `AlarmLifecycleDeps.dispatchToChannels` is typed
+`NotificationsService["dispatchToChannels"]`, so it widens with the method —
+but the adapter that satisfies it, `alarm-lifecycle.service.ts:320`, is written
+`(channels, input) => this.notifications.dispatchToChannels(channels, input)`
+and **drops a third argument**. Left alone, the memo is created, threaded
+through both phases, and never delivered — while every sweep spec stays green,
+because they replace `deps.dispatchToChannels` with their own fake. The build
+edits that line and gates it against a real database, since no fake-deps test
+can reach it.
+
+`DispatchInput` is local to `apps/api` (`notifications.service.ts:118`), not a
 `packages/shared` contract, so nothing here is ADR 0030 contract drift.
-`AlarmLifecycleDeps.dispatchToChannels` is typed
-`NotificationsService["dispatchToChannels"]` and widens with the method.
 
 ### What this does not change
 
@@ -1012,3 +1029,19 @@ the service, on the `dispatch-policy.ts` precedent; the service itself may gain
 only the parameter and the consultation. If that does not fit, the build
 extracts before it adds, as `F3.52` did twice — it does not spend the last
 eighteen lines and call the file legal.
+
+**Measured at the plan, and it does not fit: the parameter and the consultation
+alone cost +14, landing the file at 996 of 1000.** The owner ruled the
+extraction at the plan gate: `hasRecordedSkip` and `eventDeliveryBlocked` — the
+two dedupe-key ledger reads, each `fleetDb`-only and needing nothing from the
+class — move to a module beside the service, which the service's own comment at
+`:833` already gives as the rule for a read it kept out. The service lands near
+805 before the memo is added.
+
+**The move gate is weaker than `F3.52`'s and the amendment says so rather than
+asking for a byte-identity it cannot have.** After `F3.52` nothing is left at
+module level in that file; every remaining candidate is a method on
+`this.fleetDb`. The achievable claim is *identical apart from indentation, the
+signature line, and `this.fleetDb` → `db`*, checked with `diff -w` against the
+base commit's bytes — not "byte-identical apart from `export`", which held for
+`ledger-text.ts` and `dispatch-shapes.ts` and does not hold here.
