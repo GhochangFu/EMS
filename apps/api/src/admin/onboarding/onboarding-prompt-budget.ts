@@ -107,6 +107,81 @@ export const PROMPT_STRING_MAX = 255;
 export const PROMPT_OMITTED_MARKER = "[omitted: over prompt budget]";
 
 /**
+ * The sentence the system prompt owes the model once a value it is shown can be
+ * a marker (decision 6).
+ *
+ * **Declared here and interpolated here**, next to the marker it names, because
+ * the two are one statement: change the marker and this sentence follows it in
+ * the same edit. `onboarding-chat.service.ts` embeds this constant and
+ * `onboarding-prompt-budget.spec.ts` imports it, so the text exists once (§4.8).
+ * `DRAFT_TOO_DEEP_MESSAGE` in `onboarding.schema.ts` is the in-family precedent:
+ * the sentence lives in production beside the bound it explains, and the test
+ * imports it rather than restating it.
+ *
+ * **Why the model is told at all.** Stage 1 puts a *string* where
+ * `draftRtuSchema.config` is `z.record(z.unknown())`, so the draft context shows
+ * the model a shape the draft schema refuses. A `draftPatch` echoing
+ * `config: "[omitted: over prompt budget]"` fails
+ * `onboardingDraftSchema.safeParse`, becomes `{}` through `.data ?? {}` and the
+ * whole turn is discarded while the assistant still answers that it updated the
+ * draft — the producer-3 silent discard `onboarding.schema.ts` rules acceptable,
+ * reached by a new route.
+ *
+ * **And why the sentence is not the control.** An instruction is a request, not
+ * a guarantee, and the worse case passes the parse rather than failing it: the
+ * same marker on `pointKeys[].description` is a valid string, so `mergeDraft`
+ * would replace the operator's prose with a system literal and commit it. That
+ * case is refused by `carriesPromptMarker` below, in code. This sentence stays
+ * because it is what stops the turn being lost in the first place.
+ */
+export const PROMPT_MARKER_SENTENCE = `A value shown as ${PROMPT_OMITTED_MARKER} was withheld; do not copy it into draftPatch.`;
+
+/**
+ * True when any leaf of `value` is the marker — the guard on the way back in.
+ *
+ * **The prompt sentence above asks; this refuses.** `handleOpenAiTurn` calls it
+ * on the model's `draftPatch` *before* `onboardingDraftSchema.safeParse` and
+ * treats a patch that carries the marker as empty, because the parse cannot be
+ * relied on to catch it:
+ *
+ * - `rtus[].config` and the three `meta` records are `z.record(z.unknown())`, so
+ *   an echoed marker there is a string where an object is required and the parse
+ *   already refuses it — that turn is discarded today.
+ * - `pointKeys[].description` is `z.string()`, so an echoed marker there
+ *   **passes**. `mergeDraft` replaces `pointKeys` wholesale, so the operator's
+ *   own prose would be overwritten by a system literal and then committed. The
+ *   same mechanism reaches `rtus[].config`, the field that decides where ingest
+ *   reads from.
+ *
+ * So the two cases get the same answer — an empty patch — rather than one being
+ * refused and the other stored. It is a **whole-patch** refusal and not a
+ * per-leaf strip, deliberately: dropping the offending key would let
+ * `draftRtuSchema.config`'s `.default({})` write an empty config over a real one,
+ * which is the corruption this exists to prevent.
+ *
+ * Exact equality, not a substring test. What the model echoes back is the value
+ * it was shown, and widening the refusal to any reply that quotes the marker
+ * inside a sentence would drop turns the plan's §8 never ruled on.
+ *
+ * `rebuildDeep`'s leaf visitor and not a walk of its own (§4.8, and
+ * `tests/f4.115-iterative-draft-walkers.test.ts` gates it). The rebuilt copy is
+ * discarded — the visitor declines every leaf and only records — which costs one
+ * shallow rebuild of a model reply and keeps the walk iterative: a `draftPatch`
+ * is `JSON.parse` of whatever the model returned, so its depth is not this
+ * repository's to choose.
+ */
+export function carriesPromptMarker(value: unknown): boolean {
+  let found = false;
+  rebuildDeep(value, isJsonContainer, undefined, (leaf) => {
+    if (leaf === PROMPT_OMITTED_MARKER) {
+      found = true;
+    }
+    return null;
+  });
+  return found;
+}
+
+/**
  * Stage 1 — every `config` and `meta` becomes the marker, at any depth.
  *
  * The four free-form records (`rtus[].config`, `rtus[].meta`, `assets[].meta`,
@@ -165,12 +240,30 @@ export function shedOverLongStrings(value: unknown): unknown {
  *
  * 1. `redactDraftForLlm` — already iterative, so a deep stored draft survives it.
  * 2. If it nests past `MAX_ONBOARDING_DRAFT_DEPTH`, shed the records **before**
- *    the first `stringify`. `JSON.stringify` is recursive and throws a
- *    `RangeError` somewhere above four thousand levels; inside
- *    `handleOpenAiTurn`'s `try` that error is swallowed by a bare `catch {}` and
- *    the turn degrades to rule-based with no log line. So the measurement itself
- *    is what fails on the draft that most needs measuring. A budget you cannot
+ *    the first `stringify`.
+ *
+ *    *Why a pre-check exists at all:* `JSON.stringify` is recursive and throws a
+ *    `RangeError` a few thousand levels down (4,173 in `bms-api-1`), and inside
+ *    `handleOpenAiTurn`'s `try` that error is swallowed by a bare `catch {}`, so
+ *    the turn degrades to rule-based with no log line. The measurement itself is
+ *    what fails on the draft that most needs measuring, and a budget you cannot
  *    measure on the input is not a budget.
+ *
+ *    *Why the threshold is 10 and not that number:* the serialiser's ceiling is
+ *    what makes a pre-check necessary; it does not set where the pre-check
+ *    fires. Past `MAX_ONBOARDING_DRAFT_DEPTH` the draft is already invalid by its
+ *    own schema — `onboarding.schema.ts` refuses a patch at the same bound and
+ *    `OnboardingValidateService` reports it on the stored draft — and the four
+ *    free-form records are the only fields that can carry that depth, so on such
+ *    a draft shedding them costs nothing that is not already refused. A second
+ *    number here would be a second thing to keep true (§4.8).
+ *
+ *    *What it costs, stated rather than left to be found:* an 11-deep 2 KB draft
+ *    is legally stored — the depth refusal is a `safeParse` that does not throw,
+ *    and ruling 2b keeps such a session readable — and it loses all four records
+ *    from the prompt although it was never over budget. That is the price of
+ *    measuring depth with the walker instead of the ruler, and it is paid by a
+ *    draft the wizard is already showing a depth error for.
  * 3. Serialise. Under the budget, forward it whole — that is the ordinary
  *    session, and `assertAnUnderBudgetDraftIsForwardedIntact` is the half of the
  *    pair that says the shed does not fire when it should not.

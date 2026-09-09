@@ -2,8 +2,10 @@ import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
 import { OnboardingChatService } from "./onboarding-chat.service";
+import type { ChatTurnResult } from "./onboarding-chat.service";
 import {
   PROMPT_DRAFT_BUDGET_BYTES,
+  PROMPT_MARKER_SENTENCE,
   PROMPT_OMITTED_MARKER,
   PROMPT_STRING_MAX,
   serialiseDraftForPrompt,
@@ -172,10 +174,19 @@ export function assertAnUnderBudgetDraftIsForwardedIntact(): void {
  * The four are the draft's only `z.record(z.unknown())` fields
  * (`onboarding.schema.ts`), so they are the only ones holding data no code in
  * this repository can name: whatever a caller or the model wrote. Ruling 2 sheds
- * those before any code, name or protocol, and there is one assert per record
- * rather than one over all four — dropping `"meta"` from the shed's key set
- * leaves `config` shed and reddens exactly three, which is a different defect
- * from stage 1 not running at all.
+ * those before any code, name or protocol.
+ *
+ * **One assert per record, and what that buys is *which* one reddens.** `assert`
+ * throws, so only the first failing assert in this function ever runs — a
+ * sentence claiming several redden together describes something that cannot
+ * happen, and `F4.107`'s review measured this one against the compiled module.
+ * Dropping `"meta"` from the shed's key set reddens the `rtus[].meta` assert
+ * while the `rtus[].config` assert above it stays green; skipping stage 1
+ * altogether reddens the `rtus[].config` assert instead, because stage 2 then
+ * sheds `config.blob` as an over-long string and leaves `config` an object
+ * rather than the marker. Two different defects, two different asserts, and the
+ * one that reddens is what tells them apart — collapsed into a single assert
+ * over all four records, both would read the same.
  */
 export function assertOverBudgetShedsTheFourRecordsFirst(): void {
   const draft = {
@@ -381,6 +392,15 @@ export function assertShedOverLongStringsIsIterative(): void {
  * would be in the serialiser.
  *
  * Messages are string literals, for the reason above.
+ *
+ * **Two asserts, because the leaf alone pins less than its message says.**
+ * `F4.107`'s review measured it: an identity implementation (`v => v`) returns
+ * the source, whose bottom is `"leaf"`, and passes the leaf assert. What that
+ * assert really pins is "did not throw", which *is* the claim a recursive
+ * rewrite reddens — so it was never a false green — but "and rebuilt" was
+ * unasserted. The identity assert is what carries that half.
+ * `assertShedOverLongStringsIsIterative` needs no such pair: its marker at the
+ * bottom cannot appear unless the walk arrived and wrote it.
  */
 export function assertShedFreeFormRecordsIsIterative(): void {
   const deep = chain(DEEP, "leaf");
@@ -389,7 +409,11 @@ export function assertShedFreeFormRecordsIsIterative(): void {
 
   assert(
     leafOf(shed) === "leaf",
-    "the bottom of a 20,000-deep chain must be reached and rebuilt, so the walk was iterative",
+    "the bottom of a 20,000-deep chain must be reached, so the walk did not throw out of it",
+  );
+  assert(
+    shed !== deep,
+    "and the chain must be rebuilt rather than returned — an identity shed passes the leaf assert above",
   );
 }
 
@@ -530,8 +554,184 @@ export function assertAResidualOverBudgetPayloadIsValidJson(): void {
   );
 }
 
-/** The sentence the prompt owes the model once a value can be a marker (decision 6). */
-export const PROMPT_MARKER_SENTENCE = `A value shown as ${PROMPT_OMITTED_MARKER} was withheld; do not copy it into draftPatch.`;
+/**
+ * A draft small enough that nothing about the turn below is about the budget.
+ *
+ * `satisfies OnboardingDraft` rather than a cast: the location fields are what
+ * `draftLocationSchema` requires, so a field renamed there reddens the compile
+ * rather than the assertion.
+ */
+function smallDraft(): OnboardingDraft {
+  return {
+    location: {
+      name: "Berhampur",
+      code: "BERHAMPUR",
+      slug: "berhampur",
+      type: "smoc_campus" as const,
+      latitude: 22.3159,
+      longitude: 87.3222,
+    },
+  } satisfies OnboardingDraft;
+}
+
+/**
+ * Runs one turn through the OpenAI branch with `reply` as the model's answer,
+ * and restores both the key and the mock's reply afterwards.
+ *
+ * Three things the call has to line up, each of which silently sends the turn
+ * somewhere else: `OPENAI_API_KEY` set for the call and restored after (the
+ * inverse of the rule-based helper in `onboarding-chat.service.spec.ts`), no
+ * `organizationId`, and a message matching neither of the two protocol regexes,
+ * or `protocolService` answers before the OpenAI branch is reached.
+ */
+async function openAiTurn(
+  captured: { requests: unknown[]; reply: string },
+  reply: string,
+  draft: OnboardingDraft,
+): Promise<ChatTurnResult> {
+  captured.requests.length = 0;
+  const savedReply = captured.reply;
+  const savedKey = process.env.OPENAI_API_KEY;
+  captured.reply = reply;
+  process.env.OPENAI_API_KEY = "not-a-real-key";
+  try {
+    const service = new OnboardingChatService(
+      new OnboardingValidateService(),
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return await service.handleTurn("Tell me about the site", draft, "point_keys", "Ion Exchange");
+  } finally {
+    captured.reply = savedReply;
+    if (savedKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = savedKey;
+    }
+  }
+}
+
+/** A model reply whose `draftPatch` carries `description` and nothing else unusual. */
+function replyWithDescription(description: string): string {
+  return JSON.stringify({
+    assistantMessage: "I've updated the point keys.",
+    draftPatch: {
+      pointKeys: [
+        { code: "electrical.feeder.metric.0", name: "Feeder metric 0", description },
+      ],
+    },
+    currentPhase: "point_keys",
+  });
+}
+
+/** The other half: a reply whose `draftPatch` carries an RTU `config`. */
+function replyWithRtuConfig(config: unknown): string {
+  return JSON.stringify({
+    assistantMessage: "I've updated the RTU.",
+    draftPatch: {
+      rtus: [
+        { code: "BERHAMPUR-RTU-1", displayName: "Berhampur RTU 1", protocol: "mqtt", config },
+      ],
+    },
+    currentPhase: "rtu",
+  });
+}
+
+/**
+ * **A `draftPatch` that echoes the marker is refused in code, not only asked
+ * against in the prompt** (`F4.107` review, L1).
+ *
+ * The prompt sentence is an instruction, and the case it was written for is the
+ * *harmless* one: an echoed `config: "[omitted…]"` is a string where
+ * `z.record(z.unknown())` is required, so `safeParse` refuses it and the turn is
+ * discarded. The case it does not cover is the one that corrupts the draft — the
+ * same marker on `pointKeys[].description` is a valid string, measured against
+ * the compiled schema: `safeParse` **succeeds**, and `mergeDraft` replaces
+ * `pointKeys` wholesale, so the operator's prose is overwritten by a system
+ * literal and committed.
+ *
+ * Three asserts and their order is the point:
+ *
+ * 1. **The clean patch comes through.** Without it every claim below is
+ *    satisfied by a guard that refuses everything, and by a fixture that was
+ *    failing `safeParse` for some unrelated reason. It is also what proves the
+ *    OpenAI branch ran at all: the bare `catch {}` in `handleTurn` turns any
+ *    throw into a rule-based answer whose `draftPatch` is `{}` — which is
+ *    exactly what the refusal below looks like.
+ * 2. **The echoed patch carries no `pointKeys`.**
+ * 3. **And nothing else either** — the refusal is the whole patch, because
+ *    dropping only the offending key would let `draftRtuSchema.config`'s
+ *    `.default({})` write an empty config over a real one.
+ *
+ * Then the same pair on `rtus[].config`, which is the case that was *already*
+ * discarded — a string where `z.record(z.unknown())` is required. It is asserted
+ * because the sentence the guard is written under says the two cases now get the
+ * same answer, and that is a claim about this one as much as the other; the
+ * mechanism moved from the parse to the guard, and only an assertion says the
+ * answer did not move with it.
+ */
+export async function assertAnEchoedMarkerPatchIsRefused(captured: {
+  requests: unknown[];
+  reply: string;
+}): Promise<void> {
+  const clean = await openAiTurn(
+    captured,
+    replyWithDescription("Measured at the feeder panel."),
+    smallDraft(),
+  );
+
+  assert(
+    captured.requests.length === 1,
+    "the OpenAI branch must have run — a rule-based answer carries an empty patch and would pass the refusal below for the wrong reason",
+  );
+  assert(
+    clean.draftPatch.pointKeys?.[0]?.description === "Measured at the feeder panel.",
+    "an ordinary description must reach the draft patch, or the refusal below proves nothing",
+  );
+
+  const echoed = await openAiTurn(
+    captured,
+    replyWithDescription(PROMPT_OMITTED_MARKER),
+    smallDraft(),
+  );
+
+  assert(
+    captured.requests.length === 1,
+    "the OpenAI branch must have run for the echoed patch too",
+  );
+  assert(
+    echoed.draftPatch.pointKeys === undefined,
+    "a description echoing the marker passes safeParse — the patch must be refused before it",
+  );
+  assert(
+    Object.keys(echoed.draftPatch).length === 0,
+    "and the whole patch is refused, not the offending leaf: a stripped key lets .default({}) blank a config",
+  );
+
+  const realConfig = await openAiTurn(
+    captured,
+    replyWithRtuConfig({ host: "phe.thinkiot.co.in", port: 8883 }),
+    smallDraft(),
+  );
+
+  assert(
+    (realConfig.draftPatch.rtus?.[0]?.config as { host?: string } | undefined)?.host ===
+      "phe.thinkiot.co.in",
+    "an ordinary RTU config must reach the draft patch, or the config case below proves nothing either",
+  );
+
+  const echoedConfig = await openAiTurn(
+    captured,
+    replyWithRtuConfig(PROMPT_OMITTED_MARKER),
+    smallDraft(),
+  );
+
+  assert(
+    Object.keys(echoedConfig.draftPatch).length === 0,
+    "a config echoing the marker must answer the same empty patch — through the guard now, where safeParse refused it before",
+  );
+}
 
 /**
  * The measurement on what the OpenAI call is actually handed.
