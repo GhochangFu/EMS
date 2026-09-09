@@ -42,6 +42,38 @@ import { ZodError } from "zod";
  * `admin/` holds five of the eight sites today and would be wrong the first
  * time a sixth module needs it — so the two files ADR 0060 adds (this and
  * `zod-error.filter.ts`) open one.
+ *
+ * ## Writing a spec against this helper: reach `@bms/shared` through `createRequire`
+ *
+ * **Under Vitest this helper degrades silently, and a spec that asserts what it
+ * observes would encode the inverse of ruling 2 with the suite green.** All
+ * eight sites parse a schema declared in `packages/shared/src/contracts/`,
+ * while the `err instanceof ZodError` below resolves `zod` from `apps/api`.
+ * Measured both ways rather than reasoned about:
+ *
+ * | resolution | a `@bms/shared` schema's error `instanceof` the `ZodError` this file imports |
+ * |---|---|
+ * | Vitest / Vite (a static `import` in a spec) | **false** |
+ * | CommonJS `require`, which is how `apps/api` runs | **true** |
+ *
+ * `packages/shared` publishes `dist/index.js` for both the `import` and the
+ * `require` condition, so under Vite the shared package is CommonJS and picks
+ * up `zod/index.cjs` while a spec's own `import "zod"` picks up the ESM build —
+ * one physical package, two module instances, the classic dual-package hazard.
+ * `apps/api` compiles to CommonJS and runs as `node dist/main.js`, where both
+ * sides resolve `zod/index.cjs` and the identity holds.
+ *
+ * **The consequence for a spec author**: driven under Vitest through a static
+ * `import { someSchema } from "@bms/shared"`, this helper takes the
+ * `!(err instanceof ZodError)` branch and re-throws the bare `ZodError` instead
+ * of raising the 500 — which `ZodErrorFilter` would then answer **400**. An
+ * author asserting the observed 400 would write ruling 2 down backwards. So a
+ * spec exercising this helper against a `@bms/shared` schema must reach that
+ * schema through `createRequire(join(repoRoot(), "apps/api/package.json"))`,
+ * never a static import: that asks the question production asks.
+ * `zod-error.filter.spec.ts`'s
+ * `assertZodIsOneClassForTheResolutionTheApiRunsUnder` is the gate on the
+ * identity itself, and carries the same table.
  */
 
 /**

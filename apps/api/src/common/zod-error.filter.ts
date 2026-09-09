@@ -61,8 +61,24 @@ export class ZodErrorFilter implements ExceptionFilter<ZodError> {
     // A global filter is consulted for every execution context, and this
     // application runs a Socket.IO adapter alongside HTTP. `switchToHttp()` on
     // a ws host yields a client, not a response, so `.status(…)` would throw a
-    // TypeError that replaces the original error with a worse one. Re-throwing
-    // hands the gateway's own error handling back what it was given.
+    // TypeError that replaces the original error with a worse one.
+    //
+    // **What re-throwing does NOT do**, corrected here because the sentence
+    // this replaces claimed it: it does not hand the error to
+    // `BaseWsExceptionFilter`. `ExceptionsHandler.invokeCustomFilters` calls
+    // `filter.func(exception, host)` without wrapping it in a `try`, so a throw
+    // from here propagates out of `WsProxy` as a rejected promise rather than
+    // reaching the gateway's own error handling. Re-throwing is the least-bad
+    // branch — it preserves the original error instead of burying it under a
+    // TypeError — not a handoff.
+    //
+    // **The precondition, recorded because it is what makes that acceptable:**
+    // this branch is unreachable today. `apps/api/src` declares no
+    // `@SubscribeMessage` handler — `alarms.gateway.ts` and
+    // `telemetry.gateway.ts` only emit — so no client payload is parsed in a ws
+    // context and no `ZodError` can arise in one. The first handler that parses
+    // a client payload must not inherit this silently: it needs a ws-aware
+    // answer here, or a `try` of its own.
     if (host.getType() !== "http") {
       throw exception;
     }
