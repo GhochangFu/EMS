@@ -3904,6 +3904,47 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   that Amendment 6 leaves untouched.
 - **Unblocks:** nothing directly.
 
+### A draft nested past ten levels is refused, and one already stored is repairable (`F4.115`) — done
+- **Status:** merged 2026-09-09 — PR
+  [#388](https://github.com/GhochangFu/EMS/pull/388) (`5770de96`), filed in
+  [#385](https://github.com/GhochangFu/EMS/pull/385) (`edd2808c`).
+- **The defect.** `redactDraftForClient` is on the path of every
+  `GET /sessions/:id`, `validate`, `chat` and `mapSession`. It began with
+  `structuredClone` and then walked the draft with a recursive `scrubSecrets`.
+  `JSON.parse` is iterative in V8 and neither of those is, while
+  `z.record(z.unknown())` inspects keys at depth 1 and never descends — so the
+  draft's four free-form fields accepted any nesting depth. Measured inside
+  `bms-api-1` on node v20.20.2: a **12,082-byte** body nesting `rtus[0].config`
+  2,000 deep passed zod, passed `mergeDraft`, **stored**, and then made every
+  later read throw. The repair `PATCH` threw too, because `mergeDraft` clones
+  the *stored* draft before it replaces anything. There was no route back
+  through the API.
+- **The fix.** `MAX_ONBOARDING_DRAFT_DEPTH = 10`, derived from a measured floor
+  of 5 — the deepest shape any shipped producer writes, `draft → rtus →
+  rtus[i] → config → config.host` — with the ~2,000 clone failure, the 4,173
+  response-serialiser failure and the ~6,000 jsonb-write failure recorded
+  beside it for contrast. The refusal sits on `onboardingDraftSchema` rather
+  than the `patchDraftBodySchema` wrapper, which is what covers the model's
+  `draftPatch`; a stored deep draft stays readable because
+  `OnboardingValidateService.validate` is a non-throwing `safeParse`. One
+  `rebuildDeep` traversal now serves both `cloneJson` and `scrubSecrets`, with
+  two deliberately different container predicates.
+- **Three `structuredClone` sites, not two.** The third,
+  `attachEncryptedCredentials`, was masked by `mergeDraft` cloning first — so a
+  two-site fix would have left `POST :id/credentials` answering 500 while every
+  route the ruling named answered 200. It has its own assertion, and the repo
+  invariant enumerates the directory rather than listing three paths.
+- **What the row taught.** `F4.107` classified itself as "a cost and disclosure
+  question rather than an availability one", and that sentence was the false
+  one. AGENTS.md §4.6 now records that a row's statement of what it is *not* is
+  a claim like any other. The build also measured that a 5,000-deep fixture does
+  **not** overflow a recursive `scrubSecrets` under vitest's worker stack, so
+  the mutation the plan specified would have left the suite green with the
+  defect fully present; every fixture is 20,000.
+- **Unblocks:** nothing directly. Leaves `F4.116` — key count is bounded by
+  nothing on the four `z.record(z.unknown())` fields, and `location.meta`
+  accumulates because `mergeDraft` merges `location` field-wise.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.

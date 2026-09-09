@@ -1315,6 +1315,19 @@ pulls it back into the program. That is four rows running — `F4.103` to
 `F4.106` — in which every false statement a review caught was in prose rather
 than in code.
 
+**A row's statement of what it is _not_ is a claim, and nothing checks it.** A
+backlog row that classifies itself — "a cost question rather than an
+availability one", "cosmetic", "pre-existing" — has usually been read more
+carefully than that sentence was written, and the sentence is what decides how
+the row is scheduled and how hard it is verified. `F4.107` said it was "a cost
+and disclosure question rather than an availability one". Re-measuring found a
+12 KB `PATCH` that stored an onboarding session which then answered 500 on
+every read *and* on the `PATCH` that would repair it, with no route back through
+the API — the availability defect the row denied having, split out as `F4.115`
+and shipped first. Measure the classification the same way you measure the
+defect: it costs one probe, and it is the claim that decides whether anyone
+looks.
+
 ### 4.7 Authorization (ADR 0009/0010 master data · ADR 0017 operations)
 
 Five role gates exist and they are **not** interchangeable — this section
