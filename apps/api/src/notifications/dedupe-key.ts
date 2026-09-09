@@ -18,7 +18,8 @@
  * condition still holds stays the same row, so it stays the same key.
  *
  * **Since `F3.46` the key has a reader, not only a writer.** Before a refusal
- * is recorded, `NotificationsService.hasRecordedSkip` looks this key up on the
+ * is recorded, `hasRecordedSkip` (`ledger-reads.ts`, moved out of the service by `F3.53`)
+ * looks this key up on the
  * channel and writes the row only if no `skipped_deduped` row holds it yet, so
  * an unchanged plant stops growing the ledger one row per press.
  *
@@ -34,7 +35,8 @@
  * a cleared message for the same alarm is a different event from its raise, so
  * it gets a different key: `:escalation:<n>` or `:cleared` appended to the
  * raise key. The kind lives here and nowhere else — no column was added — and
- * `NotificationsService.eventDeliveryBlocked` reads the key back before a step
+ * `eventDeliveryBlocked` (`ledger-reads.ts`, moved with it) reads the key back
+ * before a step
  * or a clear is sent, which is what makes decision 10's "once per channel"
  * a ledger read instead of a timer. Since `F3.48` a step the hourly ceiling
  * refused leaves no row under its key, so the key survives to be retried on a
