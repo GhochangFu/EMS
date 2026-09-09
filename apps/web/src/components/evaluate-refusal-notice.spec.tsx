@@ -19,8 +19,7 @@ import { EvaluateRefusalNotice } from "./evaluate-refusal-notice";
  */
 const REFUSAL_BODY = JSON.stringify({
   statusCode: 429,
-  message:
-    "Rules were evaluated for this organization moments ago. Try again in 12 seconds.",
+  message: "Rules were evaluated moments ago. Try again in 12 seconds.",
 });
 
 /**

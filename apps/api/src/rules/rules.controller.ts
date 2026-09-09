@@ -190,8 +190,16 @@ export class RulesController {
     if (!decision.allowed) {
       const { retryAfterSeconds } = decision;
       res.setHeader("Retry-After", String(retryAfterSeconds));
+      // Scope-neutral on purpose. The bucket is the caller's organization only
+      // when they hold one; a global admin and a grantless caller are keyed
+      // otherwise (`evaluate-throttle.ts`), so naming the organization here
+      // would be false for them — and §9.6 keeps the id itself out regardless.
+      // The seconds are in the body because `Retry-After` is set but not
+      // exposed across the origin: this sentence is the operator's only channel
+      // for the wait, which is why `evaluate-throttle-route.spec.ts` gates the
+      // number in it against the number in the header.
       throw new HttpException(
-        `Rules were evaluated for this organization moments ago. Try again in ${retryAfterSeconds} ${
+        `Rules were evaluated moments ago. Try again in ${retryAfterSeconds} ${
           retryAfterSeconds === 1 ? "second" : "seconds"
         }.`,
         HttpStatus.TOO_MANY_REQUESTS,

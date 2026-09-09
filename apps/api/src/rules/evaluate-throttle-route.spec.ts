@@ -26,6 +26,26 @@ async function rejects(
   throw new Error(`${why}: it did not throw`);
 }
 
+/** `rejects`, but handing back the refusal so its **body** can be read. The
+ * message is not decoration: `Retry-After` is set and deliberately not exposed
+ * across the origin, so the sentence is the only place an operator learns the
+ * wait. */
+async function refusalFrom(run: () => Promise<unknown>, why: string): Promise<HttpException> {
+  try {
+    await run();
+  } catch (err) {
+    assert(isTooManyRequests(err), `${why}: threw ${String(err)}`);
+    return err as HttpException;
+  }
+  throw new Error(`${why}: it did not throw`);
+}
+
+/** The digits the refusal names, as they appear. A message that names no
+ * number, or two, is a message an operator cannot act on. */
+function secondsNamedIn(message: string): string[] {
+  return message.match(/[0-9]+/g) ?? [];
+}
+
 type Ctor = ConstructorParameters<typeof RulesController>;
 
 const isTooManyRequests = (err: unknown): boolean =>
@@ -46,6 +66,9 @@ function freshOrganizationId(): string {
 type Harness = {
   controller: RulesController;
   res: Response;
+  /** The real throttle the controller holds, exposed so a block can move the
+   * window rather than the clock — the controller reads `Date.now()` itself. */
+  throttle: EvaluateThrottle;
   headers: Array<[string, string]>;
   counts: {
     sweeps: number;
@@ -125,6 +148,7 @@ function controllerWith(options: { writeAllowed?: boolean } = {}): Harness {
   return {
     controller: new RulesController(rules, accessControl, channels, throttle),
     res,
+    throttle,
     headers,
     counts,
     checkedKeys,
@@ -171,14 +195,20 @@ export async function runEvaluateThrottleRouteTests(): Promise<void> {
     );
   }
 
-  // --- 14. the refusal says how long to wait -------------------------------
+  // --- 14. the refusal says how long to wait, in BOTH channels -------------
+  //
+  // The header and the body are gated against each other, because the header
+  // alone gates nothing an operator sees: ruling 4 sets `Retry-After` and
+  // deliberately keeps it OUT of `main.ts`'s `exposedHeaders`, and the SPA is a
+  // different origin — so it reads `null` from the header and takes the wait
+  // from the sentence. Dropping `${retryAfterSeconds}` from that sentence left
+  // every assertion in this file green.
   {
     const { controller, res, headers } = controllerWith();
 
     await controller.evaluateEnabledRules(ADMIN_USER, res);
-    await rejects(
+    const refused = await refusalFrom(
       () => controller.evaluateEnabledRules(ADMIN_USER, res),
-      isTooManyRequests,
       "a second press inside the window",
     );
 
@@ -192,6 +222,49 @@ export async function runEvaluateThrottleRouteTests(): Promise<void> {
     assert(
       Number(value) >= 1 && Number(value) <= 30,
       `Retry-After is seconds, not milliseconds, got ${value}`,
+    );
+
+    const named = secondsNamedIn(refused.message);
+    assert(
+      named.length === 1,
+      `the refusal must name the wait exactly once, and it is the only channel the SPA can read — got ${JSON.stringify(refused.message)}`,
+    );
+    assert(
+      named[0] === value,
+      `the body says ${named[0]} and the header says ${value}: the operator waits one number and the client honours the other`,
+    );
+  }
+
+  // --- 18. the last second of the window is singular ------------------------
+  //
+  // `retryAfterSeconds === 1` was produced by nothing here, so `"second"` was
+  // unreached and an always-plural message would have read "1 seconds" in
+  // production with every assertion green.
+  //
+  // The controller reads `Date.now()` itself — deliberately, D5 puts the clock
+  // at the caller — so the window is moved instead: stamping the real throttle
+  // 29 001 ms in the past leaves 999 ms of it, and any delay shorter than that
+  // yields exactly 1. A longer one fails as "it did not throw", never as a
+  // wrong number.
+  {
+    const { controller, res, headers, throttle, organizationId } = controllerWith();
+
+    throttle.check([organizationId], Date.now() - 29_001);
+
+    const refused = await refusalFrom(
+      () => controller.evaluateEnabledRules(ADMIN_USER, res),
+      "a press in the last second of the window",
+    );
+
+    const [, value] = headers.filter(([name]) => name.toLowerCase() === "retry-after")[0];
+    assert(value === "1", `the last second of the window asks for 1, got ${value}`);
+    assert(
+      refused.message.includes("1 second."),
+      `one second is singular, got ${JSON.stringify(refused.message)}`,
+    );
+    assert(
+      !refused.message.includes("seconds"),
+      `"1 seconds" — the plural branch ran for a wait of one, got ${JSON.stringify(refused.message)}`,
     );
   }
 
