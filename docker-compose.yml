@@ -60,7 +60,11 @@ services:
       retries: 10
 
   keycloak:
-    profiles: ["core", "identity", "pilot", "phe"]
+    # `realtime-smoke` joined this list on 2026-09-09 with `F3.47`: that
+    # profile's `api-replica` now verifies tokens against this realm's JWKS
+    # instead of falling back to local mode on a committed secret, so the
+    # realm has to be up wherever the replica is.
+    profiles: ["core", "identity", "pilot", "phe", "realtime-smoke"]
     image: quay.io/keycloak/keycloak:24.0
     command: ["start-dev", "--import-realm"]
     environment:
@@ -176,20 +180,24 @@ services:
     # with `VITE_API_URL: http://localhost:4000`, so browser presses go to `api`
     # only and the bound holds for them.
     #
-    # An HTTP caller is another matter, and this is not "harmless as wired".
-    # This service publishes 4001, points at the same database, and sets neither
-    # AUTH_MODE nor OIDC_ISSUER — so `resolveAuthMode`
-    # (apps/api/src/auth/auth-mode.ts) answers `local` here, local login stays
-    # enabled, and JWT_SECRET is committed in this service's own environment
-    # below. As configured in this file a request to localhost:4001 therefore
-    # reaches `POST /api/v1/rules/evaluate` on a second process, and while the
-    # `realtime-smoke` profile is up the real ceiling for anything that is not
-    # the SPA is two sweeps per bucket per 30 s — one per process, and neither
-    # process can see the other's Map. Bring another replica up under any
-    # profile and it is three, on the same terms.
-    # Changing this service's auth configuration is a separate decision;
-    # this comment records the exposure rather than implying it away. Same
-    # warning as on `api` above.
+    # An HTTP caller is another matter. This service publishes 4001 and points
+    # at the same database, so a request to localhost:4001 reaches
+    # `POST /api/v1/rules/evaluate` on a second process holding its own empty
+    # `Map`. While the `realtime-smoke` profile is up, the real ceiling for
+    # anything that is not the SPA is therefore TWO sweeps per bucket per 30 s
+    # — one per process, and neither process can see the other's Map. Bring
+    # another replica up under any profile and it is three, on the same terms.
+    # That is inherent to a second process and is the reason the throttle's
+    # docblock says the bound is per process.
+    #
+    # It used to be worse. This service set neither AUTH_MODE nor OIDC_ISSUER,
+    # so `resolveAuthMode` (apps/api/src/auth/auth-mode.ts) answered `local`
+    # here: local login stayed enabled and the gate was the JWT_SECRET
+    # committed in this file, not Keycloak — on a published port, against the
+    # real database, for the whole authenticated route inventory rather than
+    # this one route. Raised 2026-09-09 by `F3.47`'s security review and fixed
+    # below by giving the replica the same OIDC configuration as `api`. A
+    # second process is a throttle question; an unauthenticated one was not.
     profiles: ["realtime-smoke"]
     build:
       context: .
@@ -205,6 +213,14 @@ services:
       LOG_LEVEL: info
       ENERGY_TARIFF_ZAR_PER_KWH: 2.15
       REDIS_URL: redis://redis:6379
+      # Identical to `api` above, and not optional. Without these three
+      # `resolveAuthMode` falls back to `local`, and the JWT_SECRET two lines
+      # up — committed, in this file — becomes the only gate on a published
+      # port. The replica exists to give the sweep a second process, not a
+      # second front door.
+      AUTH_MODE: oidc
+      OIDC_ISSUER: http://localhost:8080/realms/bms
+      OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
     ports:
       - "4001:4001"
     depends_on:
@@ -212,6 +228,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Added with AUTH_MODE above: the replica now verifies against the
+      # realm's JWKS, so it needs the same dependency `api` declares.
+      keycloak:
+        condition: service_started
       migrate:
         condition: service_completed_successfully
 
