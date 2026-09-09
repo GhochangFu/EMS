@@ -1297,6 +1297,24 @@ This is the third instance in a fortnight: `F3.48`'s absence assertions that pas
 when the action never happens, `F3.50`'s shared fixture that hides a whole
 mutation class, and `F4.105`'s two mutations landing on the wrong assertion.
 
+**A correction is a claim too, and it is the one you are least likely to check.**
+`F4.106` rewrote four docblocks whose premise it had *measured* false — they
+called Nest's multer 413 "a framework error page" when `transformException`
+maps `LIMIT_FILE_SIZE` to `PayloadTooLargeException`, so the body is the
+ordinary envelope. One of the replacements then asserted that every *other*
+status "passes its body text through unchanged (it is one of this app's own
+messages)", which is false in exactly the same way: that controller's
+`BadRequestException("Import file is required")` also reaches the wire as an
+envelope, and the function returns the JSON verbatim. The measurement that
+exposes the first claim does not transfer to the sentence written in its place,
+but it feels as though it does — so a rewritten comment needs the same run the
+original one failed. In the same row a report claimed `apps/web`'s `.spec.ts`
+files are "type-checked by nothing"; a deliberate `TS2322` in one of them is
+reported, because `exclude` drops a file from the *root* set while its wrapper
+pulls it back into the program. That is four rows running — `F4.103` to
+`F4.106` — in which every false statement a review caught was in prose rather
+than in code.
+
 ### 4.7 Authorization (ADR 0009/0010 master data · ADR 0017 operations)
 
 Five role gates exist and they are **not** interchangeable — this section
