@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -165,6 +165,48 @@ function stubStart(session: OnboardingSessionDto = SESSION): void {
 }
 
 /**
+ * Waits for **proof that `startMutation` settled** — not for the page to paint.
+ *
+ * Four cases below act on a control whose handler is a no-op until `session` is
+ * set, and until this existed they waited on a render that does not prove that.
+ * P6 was the sharp one: `findByPlaceholderText(/Type a message/)` resolves on
+ * the very first check, because the textarea renders unconditionally and only
+ * its `disabled` depends on `session`. The hidden file input carries no
+ * `disabled` at all and the change handler's guard is `if (!file || !session)
+ * return`, so an early upload is a **silent** no-op — nothing is called, nothing
+ * refuses, and the case asserts nothing while looking like it did.
+ *
+ * `Upload Excel` is the proof because its `disabled` is exactly `!session ||
+ * uploadBusy`, and `uploadBusy` is false until an upload starts. Enabled
+ * therefore means `session !== null` and nothing weaker.
+ *
+ * **Which cases it gates, measured rather than assumed.** With
+ * `createOnboardingSession` delayed 1500 ms and this function neutralised to a
+ * no-op, exactly four go red — P2, P3, P5 and P6, each
+ * `TestingLibraryElementError: Unable to find role="alert"` at about 5.2 s.
+ * P1, P4 and P7 stay green: P1's session never lands and must not wait here at
+ * all; P4's `Add credentials` button renders only when `session.draft.rtus` is
+ * non-empty, so finding it already proves the session landed; P7's
+ * `Excel template` button has no `disabled` and its handler reads no `session`.
+ * With this function restored and the same delay in place, all seven pass.
+ *
+ * **It is a hazard fix and it is not the cause of the intermittent failure a
+ * review of `8b120bde` saw.** That one reported `The request failed.` as P6's
+ * banner text. This hazard cannot produce it: the run above logged
+ * `CHANGE|file=true|session=false` with no error sink reached at all, so the
+ * failure it causes is a *missing* banner, never a wrong one. The flake did not
+ * reproduce in 38 instrumented executions of P6 under two-way contention (30
+ * page-only runs plus 8 full-project runs at default worker count), and every
+ * one of those 38 logged `session=true` at the change event. Its cause is open;
+ * see this row's report.
+ */
+async function waitForSessionToLand(): Promise<void> {
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Upload Excel" })).toBeEnabled();
+  });
+}
+
+/**
  * The one banner on screen.
  *
  * Both banners carry `role="alert"` and both can be present at once, so this
@@ -240,7 +282,8 @@ export async function aRefusedChatTurnShowsTheServersSentence(): Promise<void> {
   );
   renderPage();
 
-  const box = await screen.findByPlaceholderText(/Type a message/);
+  await waitForSessionToLand();
+  const box = screen.getByPlaceholderText(/Type a message/);
   await userEvent.type(box, "add another RTU");
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
@@ -265,6 +308,7 @@ export async function aRefusedCommitShowsTheReason(): Promise<void> {
   );
   renderPage();
 
+  await waitForSessionToLand();
   await openPreview();
   await userEvent.click(await screen.findByRole("button", { name: "Commit" }));
 
@@ -337,6 +381,7 @@ export async function aFailedValidateShowsSomethingAtAll(): Promise<void> {
   );
   renderPage();
 
+  await waitForSessionToLand();
   await openPreview();
   await userEvent.click(await screen.findByRole("button", { name: "Validate" }));
 
@@ -359,7 +404,7 @@ export async function aFailedUploadReachesTheChatBanner(): Promise<void> {
   );
   const container = renderPage();
 
-  await screen.findByPlaceholderText(/Type a message/);
+  await waitForSessionToLand();
   const input = container.querySelector('input[type="file"]');
   expect(input, "the wizard's hidden file input").not.toBeNull();
   await userEvent.upload(
