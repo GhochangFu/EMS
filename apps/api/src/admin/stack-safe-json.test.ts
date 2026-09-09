@@ -7,6 +7,7 @@ import {
   assertCloneJsonReturnsANonJsonObjectByReference,
   assertExceedsDepthCountsFromTheRoot,
   assertExceedsDepthIsIterative,
+  assertRebuildDeepOffersEveryLeafToTheLeafVisitor,
 } from "./stack-safe-json.spec";
 
 /**
@@ -40,5 +41,9 @@ describe("stack-safe JSON walkers (F4.115)", () => {
 
   it("carries a Date or a Map across by reference instead of rebuilding it", () => {
     assertCloneJsonReturnsANonJsonObjectByReference();
+  });
+
+  it("offers every leaf in both branches to the optional leaf visitor (F4.107)", () => {
+    assertRebuildDeepOffersEveryLeafToTheLeafVisitor();
   });
 });

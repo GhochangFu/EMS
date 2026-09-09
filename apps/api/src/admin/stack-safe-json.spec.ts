@@ -1,4 +1,4 @@
-import { cloneJson, exceedsDepth } from "./stack-safe-json";
+import { cloneJson, exceedsDepth, isJsonContainer, rebuildDeep } from "./stack-safe-json";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -249,4 +249,102 @@ export function assertCloneJsonReturnsANonJsonObjectByReference(): void {
     "a Map is not a JSON container either, so it is carried across the same way",
   );
   assert(clone.rtus[0].config !== source.rtus[0].config, "the plain object around them is copied");
+}
+
+/**
+ * **The second visitor, and the half of the walk it owns: every leaf, in both
+ * branches.**
+ *
+ * `KeyVisitor` sees an object key and runs before the value under it is read,
+ * so it cannot decide anything about a *value* — "this string is longer than
+ * 255 characters" is invisible to it. `F4.107` needs exactly that decision, and
+ * the choice was one shared parameter here or a fourth traversal in the
+ * onboarding module. §4.8 says the parameter.
+ *
+ * Four properties, and each one is a separate `assert` because each has its own
+ * mutation:
+ *
+ * 1. **Both branches consult it.** An object's value and an array's element are
+ *    both leaves. Dropping either call leaves the other green.
+ * 2. **`null` declines**, and the source's value is carried across unchanged —
+ *    the same "declined" protocol `KeyVisitor` uses.
+ * 3. **Containers are never offered.** The visitor decides about leaves; a walk
+ *    that offered it an object would let a caller replace a subtree it never
+ *    asked about, and `shedOverLongStrings` would then see `[object Object]`
+ *    questions it has no answer for.
+ * 4. **A key the key visitor already replaced is not offered**, so the two
+ *    visitors cannot both act on one position. Running the leaf visitor first
+ *    would also read the source's value, which is the getter the key visitor's
+ *    ordering exists to avoid.
+ *
+ * And one that is not a property of the walk but of its implementation:
+ * `{ value: undefined }` is a **replacement**, not a decline. Written
+ * `visitLeaf?.(child)?.value ?? child` the two collapse, and every assertion
+ * above still passes.
+ */
+export function assertRebuildDeepOffersEveryLeafToTheLeafVisitor(): void {
+  const source = { a: "x", list: ["y", { b: "z" }], when: 1 };
+
+  const upper = rebuildDeep(source, isJsonContainer, undefined, (value) =>
+    typeof value === "string" ? { value: "L" } : null,
+  ) as { a: string; list: [string, { b: string }]; when: number };
+
+  assert(upper.a === "L", "an object's own string value must be offered to the leaf visitor");
+  assert(upper.list[0] === "L", "an array element is a leaf too, and must be offered");
+  assert(
+    upper.list[1].b === "L",
+    "a string nested under an array element must be offered — the walk carries the visitor down",
+  );
+  assert(upper.when === 1, "a value the visitor declined must be carried across unchanged");
+
+  const seen: unknown[] = [];
+  const untouched = rebuildDeep(source, isJsonContainer, undefined, (value) => {
+    seen.push(value);
+    return null;
+  }) as typeof source;
+
+  assert(untouched.a === "x", "a visitor answering null must leave the source's value in place");
+  assert(seen.includes(1), "a number is a leaf and must be offered, not only a string");
+  assert(
+    seen.every((value) => !isJsonContainer(value)),
+    `no container may be offered to the leaf visitor, got: ${seen.filter((v) => isJsonContainer(v)).length} of them`,
+  );
+  assert(seen.length === 4, `every leaf exactly once — 4 expected, saw ${seen.length}`);
+
+  const offered: unknown[] = [];
+  const scrubbed = rebuildDeep(
+    { secret: "hunter2", keep: "plain" },
+    isJsonContainer,
+    (key) => (key === "secret" ? { value: "[REDACTED]" } : null),
+    (value) => {
+      offered.push(value);
+      return { value: "L" };
+    },
+  ) as { secret: string; keep: string };
+
+  assert(
+    !offered.includes("hunter2"),
+    "a value under a key the key visitor replaced must never be offered to the leaf visitor",
+  );
+  assert(
+    scrubbed.secret === "[REDACTED]",
+    "the key visitor still wins — its replacement is not overwritten by the leaf visitor",
+  );
+  assert(scrubbed.keep === "L", "and a key it declined is still offered as usual");
+
+  const replaced = rebuildDeep({ a: "x" }, isJsonContainer, undefined, () => ({
+    value: undefined,
+  })) as Record<string, unknown>;
+
+  assert(
+    Object.prototype.hasOwnProperty.call(replaced, "a"),
+    "a leaf replaced by undefined keeps its key — the value was replaced, not deleted",
+  );
+  assert(
+    replaced.a === undefined,
+    "{ value: undefined } is a replacement, not a decline: `?.value ?? child` collapses the two",
+  );
+
+  const cloned = cloneJson({ a: "x" });
+  assert(cloned.a === "x", "the default path — no leaf visitor at all — must copy the value");
 }
