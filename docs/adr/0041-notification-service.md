@@ -765,24 +765,38 @@ is the one that makes this the honest choice:
    `notification-channels.spec.ts` are the only gate on all three**, and a
    missing case is therefore a silent grey row rather than a red build.
 
-   The same undercount applies to the prose, and it was made twice. This note
-   first said **one** sentence calls the set five, then **three**. Counted from
-   the branch base with `git grep`, it is **thirteen sentences across seven
-   files**: three in `packages/shared/src/contracts/notifications.ts` (the
-   opening line, the skips enumeration, and the "refuses a sixth value"
-   pointer), one on the exported type in `packages/shared/src/index.ts:603`,
-   one in `apps/api/src/notifications/notification-transport.ts:15`, two in
-   `apps/web/src/lib/notification-channels.ts` (`:260`, `:284`), two more in
-   its spec (`:92`, `:101`), three in
-   `tests/f3.8-notification-schema.integration.test.ts` (a docblock item and
-   two `it()` names), and one in
-   `packages/db/src/schema/alarms-schema.ts:359-360`.
+   The same undercount applies to the prose, and **this note got the count
+   wrong three times in a row** — one, then three, then thirteen. Measured from
+   the branch base, it is **fifteen sites across eight files**:
 
-   **The barrel one was found by no review pass and by neither implementer** —
-   it is a docblock on the exported type itself, the sentence a consumer of
-   `@bms/shared` reads. Count echo sites from the source with a search, never
-   from the sites a row or a plan happens to name: `F4.102` and `F4.105` each
-   ended the same way, and this row makes three.
+   | file | sites |
+   |---|---|
+   | `packages/shared/src/contracts/notifications.ts` | 3 — the opening line, the skips enumeration, the "refuses a sixth value" pointer |
+   | `tests/f3.8-notification-schema.integration.test.ts` | 3 — a docblock item and two `it()` names |
+   | `apps/web/src/lib/notification-channels.ts` | 2 — `:260`, `:284` |
+   | `apps/web/src/lib/notification-channels.test.ts` | 2 — `:92`, `:101` |
+   | `apps/web/src/pages/admin/notification-deliveries-page.*` | 2 — the `ALL_FIVE` fixture and the `it()` that renders it |
+   | `packages/shared/src/index.ts` | 1 — the docblock on the exported type |
+   | `apps/api/src/notifications/notification-transport.ts` | 1 |
+   | `packages/db/src/schema/alarms-schema.ts` | 1 |
+
+   **Two of the fifteen were found by no review pass and by neither
+   implementer**, and each names a different failure. The barrel docblock at
+   `packages/shared/src/index.ts:603` is the sentence a consumer of
+   `@bms/shared` reads — missed because nobody looked outside the contract file.
+   The `ALL_FIVE` fixture was missed because **the census `git grep` used
+   `apps/**/*.ts`, which does not match `.tsx`.** A search that silently
+   excludes a file extension reports a clean sweep of the files it happened to
+   look at; the glob is as much a claim as the count.
+
+   `ALL_FIVE` is the one that mattered beyond prose: it is the deliveries
+   page's only "every status renders" fixture, so a name-only correction would
+   have left a test asserting six statuses over five rows.
+
+   **The durable rule, and this row is the third to pay for it** (`F4.102`,
+   `F4.105`): count echo sites from the source with a search, never from the
+   sites a row or a plan happens to name — and check the search's own glob
+   before trusting that it found none.
 3. **A non-`failed` row blocks its key through `eventDeliveryBlocked`'s existing
    arm**, so the abandoned step is never re-offered without a line of new retry
    logic. `failed` would have been wrong on behaviour rather than merely on
