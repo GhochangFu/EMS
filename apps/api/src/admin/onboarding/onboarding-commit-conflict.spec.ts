@@ -44,16 +44,19 @@ const REACHABLE_CONSTRAINTS = [
 ];
 
 /**
- * The words that carry the cross-tenant inference, not only the obvious one.
+ * The words a message reaches for when it names where the colliding row lives.
  *
- * **This is a word list, not a semantic check, and reading it as one is the
- * §4.6 trap.** "already used by another site" leaks the same fact as "already
- * used in another organization" and a check for `organization` alone passes it,
- * which is why `another`, `other`, `elsewhere` and `tenant` are here too. A
- * sentence that leaks the inference in words none of these cover still passes;
- * what this gates is the class of edit that reaches for the obvious phrasing.
+ * **This is a word list, not a semantic check, and the assertion below is named
+ * for what it measures rather than for what one would like it to mean.** A
+ * check for `organization` alone would pass "already used by another site",
+ * which leaks the same fact — hence `another`, `other`, `elsewhere`, `tenant`
+ * and the locus nouns. A sentence that leaks the inference in words none of
+ * these cover still passes: "that slug belongs to a site you cannot see" is
+ * caught by `site` and `belongs`, but a phrasing avoiding every entry here is
+ * not. What this gates is the class of edit that reaches for the obvious
+ * wording; the semantic claim is held by review, not by this.
  */
-const CROSS_TENANT_LEAK_WORDS = [
+const CROSS_TENANT_LOCUS_WORDS = [
   "another",
   "other",
   "elsewhere",
@@ -61,6 +64,10 @@ const CROSS_TENANT_LEAK_WORDS = [
   "organization",
   "organisation",
   "someone else",
+  "site",
+  "owner",
+  "customer",
+  "belongs",
 ];
 
 type DriverErrorFields = {
@@ -259,8 +266,8 @@ export function assertEveryMappedConstraintBecomesItsOwnFieldError(): void {
 }
 
 /**
- * `F4.109` — a refusal from a constraint with no `organization_id` in its key
- * never implies that another organization exists.
+ * `F4.109` — no message on a constraint with no `organization_id` in its key
+ * uses the obvious cross-tenant phrasing.
  *
  * The cross-tenant case is real and was reproduced against the deployment: an
  * insert for PHEWB was refused by a slug ESKOM holds. "That slug is already
@@ -273,23 +280,26 @@ export function assertEveryMappedConstraintBecomesItsOwnFieldError(): void {
  * 65 and 67) and refuse across organizations exactly as `locations_slug_unique`
  * does.
  *
- * Read the word list's own docblock before trusting this: it gates a class of
- * phrasing, not the semantics.
+ * **Named for what it measures.** The mutation is a message that says "already
+ * used in another organization"; what reddens is a word match, so a phrasing
+ * that leaks the same inference in other words is not covered. The semantic
+ * rule — a global refusal must not imply a second tenant exists — is held by
+ * review. Do not read a green run here as that rule having been checked.
  */
-export function assertACrossTenantMessageNeverImpliesAnotherOrganization(): void {
+export function assertNoGlobalMessageUsesTheObviousCrossTenantPhrasing(): void {
   const leaks: string[] = [];
   for (const [constraint, conflict] of COMMIT_UNIQUE_CONFLICTS) {
     if (conflict.scope !== "global") {
       continue;
     }
     const body = bodyOf(translateCommitUniqueConflict(pgUniqueViolation(constraint))).toLowerCase();
-    for (const word of CROSS_TENANT_LEAK_WORDS) {
+    for (const word of CROSS_TENANT_LOCUS_WORDS) {
       if (body.includes(word)) {
         leaks.push(`${constraint} says "${word}"`);
       }
     }
   }
-  assert(leaks.length === 0, `a global constraint must not imply a second tenant: ${leaks.join(", ")}`);
+  assert(leaks.length === 0, `a global constraint must not name where the row lives: ${leaks.join(", ")}`);
 }
 
 /**

@@ -289,6 +289,8 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
   });
 
   afterAll(async () => {
+    // `F4.109` — set by the sweep below, reported after every delete has run.
+    let dupeProbeRowMissing = false;
     // children first, on the BYPASSRLS fleet connection. Delete by the ids the
     // commit returned; the session row is removed by its own id regardless.
     if (ownerPool) {
@@ -411,11 +413,11 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       }
       // After the asset_points above, which reference it (migration `0057`).
       await ownerPool.query(`DELETE FROM bms.point_keys WHERE code = $1`, [DUPE_POINT_KEY_CODE]);
-      if (dupeLocationId && dupeLocationIds.length === 0) {
-        throw new Error(
-          `F4.109: the seeded probe location ${DUPE_LOCATION_CODE} was not found for cleanup`,
-        );
-      }
+      // Recorded, **not thrown here**. A throw at this point aborts the rest of
+      // `afterAll` — including `removeSharedPointKey()` below — and a stray
+      // `bms.point_keys` row is exactly what makes a later `compose up` fail its
+      // seed count with no cause. The report happens after every delete has run.
+      dupeProbeRowMissing = dupeLocationId !== "" && dupeLocationIds.length === 0;
     }
     // Last, because the asset_points above reference it (migration `0057`).
     // This row is inserted in `beforeAll`, not by a commit, so no `committed`
@@ -426,6 +428,13 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
     await Promise.all(
       [ownerPool, authPool, tenantPool, fleetPool].filter(Boolean).map((p) => p.end()),
     );
+    // Last of all, so raising it cannot cost any of the deletes above.
+    if (dupeProbeRowMissing) {
+      throw new Error(
+        `F4.109: the seeded probe location ${DUPE_LOCATION_CODE} was gone before cleanup — ` +
+          "something else removed it, and the duplicate-code case measured nothing",
+      );
+    }
   });
 
   it("stamps the session org on the location, point keys, RTUs, assets and asset points", async () => {

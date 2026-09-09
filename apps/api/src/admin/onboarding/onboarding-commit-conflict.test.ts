@@ -2,11 +2,11 @@ import { describe, it } from "vitest";
 
 import {
   assertACommitCollisionIsAFieldErrorNotAServerFault,
-  assertACrossTenantMessageNeverImpliesAnotherOrganization,
   assertADifferentSqlstatePassesThrough,
   assertAMappedConstraintWithoutASqlstatePassesThrough,
   assertAnUnmappedConstraintPassesThrough,
   assertEveryMappedConstraintBecomesItsOwnFieldError,
+  assertNoGlobalMessageUsesTheObviousCrossTenantPhrasing,
   assertNothingFromTheDriverErrorReachesTheClient,
   assertTheMapCoversEveryReachableUniqueConstraint,
 } from "./onboarding-commit-conflict.spec";
@@ -31,8 +31,10 @@ describe("onboarding commit unique-constraint conflicts (F4.109)", () => {
     assertEveryMappedConstraintBecomesItsOwnFieldError();
   });
 
-  it("never implies a second organization on a constraint with no organization in its key", () => {
-    assertACrossTenantMessageNeverImpliesAnotherOrganization();
+  // Word-list check, not a semantic one — the spec's docblock says what it does
+  // and does not cover.
+  it("keeps the obvious cross-tenant phrasing out of every global message", () => {
+    assertNoGlobalMessageUsesTheObviousCrossTenantPhrasing();
   });
 
   it("echoes no part of the driver's error back to the client", () => {
