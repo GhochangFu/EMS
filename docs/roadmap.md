@@ -3728,6 +3728,56 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   quota. `F4.110`, `F4.111` and `F4.112` carry what was found in passing.
 - **Unblocks:** nothing. No row lists `F4.105` in `Depends`.
 
+### A correction is a claim too (`F4.106`) — done
+- **Status:** done 2026-09-09 — PR
+  [#381](https://github.com/GhochangFu/EMS/pull/381) (`cd437299`).
+- **What shipped:** the onboarding wizard presents every server refusal as a
+  sentence. Five `err.message` reads move to `apiErrorMessage`; that shared
+  unwrapper learns the one body shape it did not handle; the 413 "file is too
+  large" sentence is extracted to `oversize-upload.ts` instead of copied a third
+  time; `validateMutation` gains the `onError` it never had; the template
+  download gains the `.catch` it never had; and both `uploadOnboardingExcel` and
+  `downloadOnboardingTemplate` gain the `clearSessionOnAuthFailure` call their
+  telemetry siblings have had since `F1.9`.
+- **The row named one defect and the source had seven surfaces**, two of which
+  rendered nothing at all rather than rendering badly. Silence is a different
+  defect from ugliness and needed its own assertion.
+- **The row's description is wrong for four of the seven, and that decided the
+  shape of the fix.** Those routes throw `err.flatten()`;
+  `HttpException.createBody` returns an object argument verbatim and this API
+  registers no global filter, so the body carries no `message`, no `error` and
+  no `statusCode`. There was no envelope to unwrap, so the obvious fix would
+  have changed nothing for them — which is why the shared helper had to learn
+  the shape rather than the page merely calling it.
+- **The precedent the row named was documented on a false premise.** Nest maps
+  multer's `LIMIT_FILE_SIZE` to `PayloadTooLargeException`, so the 413 body is
+  the ordinary envelope, not "a framework error page" as four docblocks said.
+  The special case survives for a different reason: multer's message carries no
+  size figure.
+- **The lesson, now in AGENTS.md §4.6.** One of those four corrections was
+  itself false in the same class. The measurement that exposes a wrong sentence
+  does not transfer to the sentence written in its place, though it feels as
+  though it does. Four rows running — `F4.103` to `F4.106` — every false
+  statement a review caught was in prose, not in code.
+- **Three reviewers independently found the same overclaim**: the new clause's
+  comment said "a change for none", when `err.flatten()` is thrown at ~70 sites
+  across 25 controllers and 24 modules read the helper. This onboarding-scoped
+  row therefore improves rendered refusals repo-wide while editing none of those
+  files — measured non-increasing, never longer than the raw body it replaces.
+- **One thing is open and is recorded as open.** The page suite failed once in
+  five full `apps/web` runs. A real structural weakness was found and fixed, and
+  it is provably *not* the cause — a delayed session yields a missing banner,
+  not the observed string. Not reproduced in 50+ executions; ten consecutive
+  green runs is the stability evidence, not a claim it is solved.
+- **Verified:** five browser and wire claims, all passing, zero screenshots,
+  against a dev server proven to be serving this work. The three wire bodies
+  match the page-spec fixtures byte for byte, which is what stops five of those
+  fixtures being vacuous. Database, cold start and API code are N/A and named.
+- **Not here:** the ~30 identical sites on twelve other admin pages (`F4.113`,
+  which must first decide whether the fix belongs at the `adminFetch`
+  chokepoint), and the unbounded rendered refusal length (`F4.114`).
+- **Unblocks:** nothing. No row lists `F4.106` in `Depends`.
+
 ### A raise notification that did not send is retried (`F3.51`, ADR 0041 Amendment 5, ADR 0057 Amendment 5) — done
 - **Status:** merged 2026-09-09 — PR
   [#377](https://github.com/GhochangFu/EMS/pull/377) (`16dc9e89`).
