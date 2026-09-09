@@ -44,10 +44,14 @@ import { exceedsDepth, isJsonContainer, rebuildDeep } from "../stack-safe-json";
  *   at-caps upload with realistic cells plus one whole body of mappings — about
  *   180 KB — still forwards whole.
  * - *Ceilings, for contrast, and both are per turn.* **651,960 B** is the
- *   producer-reachable maximum: an at-caps upload with every cell at its column
- *   width (448,100 B) plus one body of max-width point keys (40 of them, 2,539 B
- *   each) and one of max-width asset points (238, 427 B each). The bound sits
- *   2.49× below it. The other ceiling is the model's context window — 128k
+ *   producer-reachable maximum, and it is the measured total rather than the sum
+ *   of the parts below: an at-caps upload with every cell at its column width
+ *   (448,100 B) plus one 102,400-byte body of max-width point keys and one of
+ *   max-width asset points. 40 point keys fit one body and 238 asset points do —
+ *   239 when the `assetIndex` stays a single digit, which is the count the plan
+ *   records; one of each costs 2,539 B and 427 B at a one-digit index and a
+ *   little more as the index grows. The bound sits 2.49× below the total. The
+ *   other ceiling is the model's context window — 128k
  *   tokens for the default `gpt-4o-mini`, roughly 350–450 KB of JSON, a property
  *   of `OPENAI_MODEL` that nothing asserts — above which OpenAI refuses the
  *   request and the bare `catch {}` at `onboarding-chat.service.ts` degrades the

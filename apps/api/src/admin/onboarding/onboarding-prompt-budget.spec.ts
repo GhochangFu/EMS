@@ -1,5 +1,7 @@
 import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
+import type { OnboardingDraft } from "@bms/shared";
 
+import { OnboardingChatService } from "./onboarding-chat.service";
 import {
   PROMPT_DRAFT_BUDGET_BYTES,
   PROMPT_OMITTED_MARKER,
@@ -9,6 +11,7 @@ import {
   shedOverLongStrings,
 } from "./onboarding-prompt-budget";
 import { redactDraftForLlm } from "./onboarding-redaction";
+import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -524,5 +527,95 @@ export function assertAResidualOverBudgetPayloadIsValidJson(): void {
   assert(
     bytes(out) > PROMPT_DRAFT_BUDGET_BYTES,
     "the residual must really be over budget, or this case is about an ordinary draft",
+  );
+}
+
+/** The sentence the prompt owes the model once a value can be a marker (decision 6). */
+export const PROMPT_MARKER_SENTENCE = `A value shown as ${PROMPT_OMITTED_MARKER} was withheld; do not copy it into draftPatch.`;
+
+/**
+ * The measurement on what the OpenAI call is actually handed.
+ *
+ * Everything above measures the function. This measures the **forward**: the
+ * `openai` client is mocked in the `.test.ts` wrapper (the repo's first
+ * `vi.mock`, decision 5) and hands back the request object `create()` received,
+ * so the assertion is on the bytes that would leave the process rather than on
+ * a function that feeds them.
+ *
+ * **`requests.length === 1` comes first and it is not a formality.** The bare
+ * `catch {}` around `handleOpenAiTurn` turns any wrong mock shape into a green
+ * rule-based answer, so without this assert every claim below could be measuring
+ * a branch that never ran.
+ *
+ * Three things the call has to line up, each of which silently sends the turn
+ * somewhere else: `OPENAI_API_KEY` set for the call and restored after (the
+ * inverse of the rule-based helper in `onboarding-chat.service.spec.ts`), no
+ * `organizationId`, and a message matching neither of the two protocol regexes,
+ * or `protocolService` answers before the OpenAI branch is reached.
+ */
+export async function assertOpenAiTurnForwardsABoundedPrompt(requests: unknown[]): Promise<void> {
+  const draft = {
+    location: {
+      name: "Berhampur",
+      code: "BERHAMPUR",
+      slug: "berhampur",
+      type: "smoc_campus" as const,
+      latitude: 22.3159,
+      longitude: 87.3222,
+      meta: { blob: "B".repeat(300_000) },
+    },
+    rtus: [
+      {
+        code: "BERHAMPUR-RTU-1",
+        displayName: "Berhampur RTU 1",
+        protocol: "mqtt" as const,
+        config: { host: "phe.thinkiot.co.in", port: 8883 },
+      },
+    ],
+  } satisfies OnboardingDraft;
+
+  requests.length = 0;
+  const savedKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = "not-a-real-key";
+  try {
+    const service = new OnboardingChatService(
+      new OnboardingValidateService(),
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await service.handleTurn("Tell me about the site", draft, "location", "Ion Exchange");
+  } finally {
+    if (savedKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = savedKey;
+    }
+  }
+
+  assert(
+    requests.length === 1,
+    "the OpenAI branch must have run — the catch around it turns a wrong mock into a green rule-based answer",
+  );
+
+  const request = requests[0] as { messages?: { role?: string; content?: string }[] };
+  const system = request.messages?.[0]?.content ?? "";
+  const prefix = "Draft context (redacted): ";
+  const at = system.indexOf(prefix);
+
+  assert(at >= 0, "the system prompt must still carry the draft context");
+  assert(
+    system.includes(PROMPT_MARKER_SENTENCE),
+    "the prompt must tell the model what a marker means, or a model echoing one drops the whole turn",
+  );
+
+  const forwarded = system.slice(at + prefix.length);
+  const shed = parse(forwarded);
+
+  assert(shed.location?.meta === PROMPT_OMITTED_MARKER, "the forwarded draft's record must be shed");
+  assert(shed.location?.name === "Berhampur", "and its name must survive");
+  assert(
+    bytes(forwarded) <= PROMPT_DRAFT_BUDGET_BYTES,
+    "the JSON embedded in the prompt must be within the budget",
   );
 }

@@ -23,11 +23,15 @@ import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
+// F4.107: the draft goes into the prompt through this, not through
+// `redactDraftForLlm` directly — the redaction says nothing about size, and
+// nothing measured the serialised draft before this row. The module owns the
+// budget, the two shed passes and the marker.
 import {
-  attachEncryptedCredentials,
-  reconcileSecrets,
-  redactDraftForLlm,
-} from "./onboarding-redaction";
+  PROMPT_OMITTED_MARKER,
+  serialiseDraftForPrompt,
+} from "./onboarding-prompt-budget";
+import { attachEncryptedCredentials, reconcileSecrets } from "./onboarding-redaction";
 import { onboardingDraftSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingProtocolService } from "./onboarding-protocol.service";
@@ -291,7 +295,8 @@ Current phase: ${phase}. Return JSON with keys: assistantMessage, draftPatch (pa
 Phases: location, rtu, point_keys, assets, mappings, review.
 Protocols: mqtt, modbus_tcp, bacnet, opc_ua, snmp, rest_poller, simulator, catalog.
 Never include password or secret values in assistantMessage. Credentials are NEVER collected through this chat — if the user offers one, tell them to use the Credentials field on the RTU step. Never set credential values in draftPatch.
-Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
+A value shown as ${PROMPT_OMITTED_MARKER} was withheld; do not copy it into draftPatch.
+Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
 
     const completion = await client.chat.completions.create({
       model,
