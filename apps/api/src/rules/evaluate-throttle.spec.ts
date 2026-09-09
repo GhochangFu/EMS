@@ -40,9 +40,15 @@ function assert(condition: boolean, message: string): void {
 const T = 1_700_000_000_000;
 
 /**
- * A distinct organization id per block, so no block can be reddened by another
- * block's stamp. That is what lets a mutation be attributed to the assertion
- * that owns its claim rather than to whichever one happens to run first.
+ * A distinct organization id per call.
+ *
+ * These do **not** keep one block from reddening another — every block builds
+ * its own `EvaluateThrottle`, so no stamp has ever crossed a block boundary,
+ * and attribution is what the one-`it()`-per-block split above buys. What they
+ * do is real but narrower: inside the blocks that need two organizations at
+ * once — `keepsOneWindowPerOrganization` and
+ * `consumesEveryBucketAMultiOrganizationCallerBelongsTo` — the two must differ,
+ * or both blocks pass against a throttle that ignores the key entirely.
  */
 let organizationsIssued = 0;
 function freshOrganizationId(): string {

@@ -5,10 +5,16 @@ import { apiErrorMessage } from "../lib/api-error-message";
  *
  * ## Why this is a component and not three lines inside the panel
  *
- * `rules-panel.tsx` is 400 lines and is rendered by exactly one test, for a
- * different reason. Inline, this markup would be reachable by nothing — the
- * reason §4.3 gives for pulling a `*.serialise.ts` out of a service. Here it is
+ * `rules-panel.tsx` is 498 lines and is rendered by two tests, neither written
+ * for this. Inline, this markup would be reachable by nothing — the reason §4.3
+ * gives for pulling a `*.serialise.ts` out of a service. Here it is
  * presentational, takes one prop, and has three assertions on it.
+ *
+ * Those three prove the component and **not** that anything renders it: this
+ * had one call site, and deleting it left every suite green. The wiring is
+ * asserted through the panel itself, by
+ * `showsTheEvaluateRefusalWhereTheOperatorPressed` in
+ * `rule-channels-editor.spec.tsx`. Move the call site and that is what fails.
  *
  * ## Why `apiErrorMessage` and not `String(error)`
  *

@@ -10,11 +10,14 @@ import { RulesController } from "./rules.controller";
  * `F3.47` — the throttle at the route, and where it sits in the handler.
  *
  * The ordering is the point, not decoration. A refused press costs
- * `resolveDbUser` twice and one grant walk; it must not cost the caller's full
- * asset-scope resolution, the 289 inserts, the 289 updates, or the cross-org
- * alarm raises and notification dispatches inside the sweep. And it must not
- * displace the 403: a viewer gets *Forbidden*, never *Too Many Requests*, which
- * is why this is an injectable the handler calls rather than a guard.
+ * `resolveDbUser` twice and **at most one** grant walk — a global admin walks
+ * zero, because `readableOrganizationIds` returns from its `role === "admin"`
+ * branch before the loop over read scope sources. It must not cost the caller's
+ * full asset-scope resolution, the 289 inserts, the 289 updates, or the
+ * cross-org alarm raises and notification dispatches inside the sweep. And it
+ * must not displace the 403: a viewer gets *Forbidden*, never *Too Many
+ * Requests*, which is why this is an injectable the handler calls rather than a
+ * guard.
  *
  * **One exported function per claim, and one `it()` per function.** These ran
  * as five numbered blocks inside a single `it()`; `assert` throws, so the first
@@ -78,7 +81,11 @@ const ADMIN_USER = { sub: "u1", email: "admin@bms.local" } as unknown as JwtPayl
  * per user, so this one is refused by the first one's press. */
 const COLLEAGUE = { sub: "u2", email: "wc-hvac-admin@bms.local" } as unknown as JwtPayload;
 
-/** A distinct organization per block, so no block inherits another's stamp. */
+/** A distinct organization per harness. Not what keeps one block from
+ * reddening another — every `controllerWith` builds its own `EvaluateThrottle`,
+ * so no stamp crosses a harness, let alone a block. It is here so that
+ * `keysOnTheOrganizationTheSafeHelperReturned` compares the keys against an id
+ * that could only have come from this harness's `readableOrganizationIds`. */
 let organizationsIssued = 0;
 function freshOrganizationId(): string {
   organizationsIssued += 1;

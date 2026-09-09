@@ -140,8 +140,11 @@ export class RulesController {
 
   /**
    * *Evaluate now* — one sweep of every enabled, published rule in every
-   * organization (ADR 0033 decision 2), bounded to one per 30 s per
-   * organization (`F3.47`, `evaluate-throttle.ts`).
+   * organization (ADR 0033 decision 2), bounded to one per 30 s per throttle
+   * bucket (`F3.47`, `evaluate-throttle.ts`): the caller's organizations, or
+   * one of two stand-ins when they have none. The resulting ceiling is K + 1 +
+   * G sweeps per 30 s per API process, and `evaluate-throttle.ts` states it in
+   * full — it is not a fleet-wide bound and must not be described as one.
    *
    * **The rate bound lives here, at the route, and nowhere else.** A second
    * caller of `RulesService.evaluateEnabledRules` — a job, a second endpoint —
@@ -163,9 +166,12 @@ export class RulesController {
    *    press this.
    * 3. The throttle, before anything expensive.
    * 4. Only then the caller's asset scope and the sweep itself. A refused press
-   *    costs two `resolveDbUser` calls and one grant walk — not the full scope
-   *    resolution, the 289 inserts, the 289 updates, or the cross-org alarm
-   *    raises and notification dispatches inside the sweep.
+   *    costs two `resolveDbUser` calls and **at most one** grant walk — a
+   *    global admin walks zero, because `readableOrganizationIds` returns
+   *    `null` from its `role === "admin"` branch before the loop over read
+   *    scope sources. It costs neither the full scope resolution, the 289
+   *    inserts, the 289 updates, nor the cross-org alarm raises and
+   *    notification dispatches inside the sweep.
    *
    * `Retry-After` is set but deliberately **not** in `main.ts`'s
    * `exposedHeaders`: the SPA is a different origin and would read `null` from

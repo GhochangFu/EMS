@@ -2,7 +2,8 @@ import { Injectable } from "@nestjs/common";
 
 /**
  * The minimum interval between two `POST /api/v1/rules/evaluate` sweeps in one
- * organization (`F3.47`, plan D2).
+ * throttle bucket — an organization, or one of the two stand-ins below for a
+ * caller that has none (`F3.47`, plan D2).
  *
  * 30 000 ms is `LIFECYCLE_TICK_MS` (`../alarms/alarm-lifecycle.ts`) — the
  * on-demand endpoint must not outpace the automatic sweep it imitates. The
@@ -79,7 +80,8 @@ export function throttleKeysFor(
 }
 
 /**
- * A per-organization minimum interval on the evaluate-now sweep (`F3.47`).
+ * A minimum interval on the evaluate-now sweep: one window per organization,
+ * and one for each caller that has none (`F3.47`).
  *
  * ## Why
  *
@@ -126,9 +128,29 @@ export function throttleKeysFor(
  * bypass the bound, and a failing sweep still writes rows before it throws.
  *
  * **This bounds one route, not the table.** `AlarmRaiseService` is the other
- * writer of `bms.rule_executions` and is unthrottled, and per-organization
- * keying means K organizations holding a `configuration`-role user can drive K
- * sweeps per interval.
+ * writer of `bms.rule_executions` and is unthrottled, and `POST /rules/preview`
+ * still writes an audit row per call.
+ *
+ * ## The bound, stated exactly
+ *
+ * **K + 1 + G full cross-organization sweeps per interval, per API process:**
+ * one per organization holding a granted `configuration`-role user (K), one
+ * shared by every global admin, and one per grantless `configuration`-role
+ * principal (G). Every one of those is a whole ~289-rule sweep — ADR 0033
+ * decision 2 makes the sweep ignore the caller's scope, so a caller with no
+ * grants at all still drives a full one.
+ *
+ * This shipped saying "K organizations can drive K sweeps", and that was
+ * already wrong before the buckets were split: the stand-in bucket was always
+ * its own, and a global admin's press stamps no organization key.
+ *
+ * **Per API process.** The state is a `Map` in this process's memory, so N
+ * processes serving this route give N times the bound and nothing in this
+ * repository detects it. `docker-compose.yml` runs one `api` container with no
+ * `deploy.replicas`, and its `api-replica` service is on its own port under a
+ * separate profile with no load balancer in front, so the bound holds as
+ * deployed today. The note lives on both of those services as well, because
+ * that is where someone adding a replica would meet it.
  */
 @Injectable()
 export class EvaluateThrottle {

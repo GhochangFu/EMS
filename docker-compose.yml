@@ -105,6 +105,14 @@ services:
         condition: service_healthy
 
   api:
+    # ONE process, and one route depends on that. `F3.47` bounds
+    # `POST /api/v1/rules/evaluate` with a `Map` in this container's memory
+    # (`apps/api/src/rules/evaluate-throttle.ts`) — one full ~289-rule sweep per
+    # 30 s per bucket. Adding `deploy.replicas`, or putting a load balancer in
+    # front of more than one API process, multiplies that ceiling by the process
+    # count, and nothing in this repository can detect it: each process holds
+    # its own Map and they never talk. Moving the state to Redis (already a
+    # service here) is the fix if that day comes. See also `api-replica` below.
     profiles: ["core", "pilot", "phe"]
     build:
       context: .
@@ -163,6 +171,11 @@ services:
         condition: service_completed_successfully
 
   api-replica:
+    # A SECOND API process, and therefore a second `F3.47` evaluate-throttle
+    # `Map`. Harmless as wired: it listens on 4001, no load balancer fronts the
+    # pair, and the SPA is built against `http://localhost:4000` — so presses
+    # reach `api` only and the bound holds. Route evaluate presses to both and
+    # the ceiling doubles, silently. Same warning as on `api` above.
     profiles: ["realtime-smoke"]
     build:
       context: .
