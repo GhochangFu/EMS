@@ -1113,3 +1113,168 @@ module level in that file; every remaining candidate is a method on
 signature line, and `this.fleetDb` → `db`*, checked with `diff -w` against the
 base commit's bytes — not "byte-identical apart from `export`", which held for
 `ledger-text.ts` and `dispatch-shapes.ts` and does not hold here.
+
+## Amendment 8 — `F3.56`: the delivery ledger names the event kind, and it is derived from the key rather than stored (2026-09-10)
+
+**What the row asked.** `NotificationDeliveryDto` carries ten fields and neither
+the dedupe key nor the kind, so an operator reading a `failed` row cannot say
+whether it was a raise, an escalation step or the cleared message. `F3.54` made
+that matter more: a refused clear now writes a `failed` row that reads exactly
+like a transport failure the sweep will retry three times, and it will never be
+retried at all.
+
+**Owner ruling 1 (2026-09-10): a kind-only enum, derived server-side.**
+`notificationDeliveryDtoSchema` gains one flat field, `event`, from a closed set
+of five. The raw dedupe key is not exposed and no column is added.
+
+**One correction to the row's own text before anything else.** It says
+`rate-limit check failed` "stays ambiguous between a raise and a clear". That
+string is written at **two** sites — `notifications.service.ts:458` on the
+dispatch path and `:759` in `sendTest` — so it is ambiguous **three** ways, not
+two, and the third is the one no event kind would name.
+
+### The two options that were not taken, and why
+
+**The terminal status was already declined** (`F3.54` ruling 3) and this
+amendment does not re-open it. One half of that ruling's cost argument has since
+expired: `F3.52` shipped exactly "a migration plus a contract change plus every
+reader" as `skipped_stale` (migration `0068`), so the cost is now known rather
+than feared. The other half stands and is the load-bearing one — a status says
+what happened to the attempt, and the kind says what the attempt was *for*.
+Those are different questions and one column cannot answer both without the
+product of the two sets.
+
+**The raw key was declined on two grounds, both measured.**
+
+*Nobody outside `apps/api` reads it.* `git grep -ln "dedupeKey\|dedupe_key"`
+outside that tree returns documentation only — `AGENTS.md`, `docs/BACKLOG.md`,
+two ADRs and five plans — and no source. Exposing the key would therefore create
+the **first** client of a grammar that is already load-bearing for two unrelated
+purposes: Amendment 5's byte-identity between a raise and its re-offer, and
+`RESERVED_KEY_PATTERN`'s segment-count invariant, which is compiled into SQL. A
+browser that parses the key becomes a second reader of an invariant that exists
+to make ledger rows line up.
+
+*The two options are not information-neutral.* `NotificationDeliveryDto` carries
+no severity today. The raw key carries a rule uuid, an alarm uuid **and** the
+severity, and would put all three on the wire past the redaction
+`ChannelsService.listDeliveries` performs in SQL rather than in its `.map()`,
+precisely so a tenant's row never leaves Postgres carrying detail it should not.
+A derived kind adds no identifier at all.
+
+### Where the grammar is parsed
+
+In `apps/api/src/notifications/dedupe-key.ts`, beside `buildDedupeKey`, as a new
+exported function. The pairing is the point: a key format whose writer and
+reader sit in one file can be gated by a round-trip spec over every
+`DispatchEvent` shape, where a format read in a second module is a claim about a
+file the reader never opens.
+
+### The parse is total, and the proof is an enumeration of writers
+
+`bms.notification_deliveries` has exactly one production insert —
+`NotificationsService.record()` (`notifications.service.ts:813`). It has nine
+call sites. **Six** are on the dispatch path and pass `buildDedupeKey(...)`,
+which returns `string`; all six carry a `DispatchInput`, whose `ruleId` is
+`string` and not nullable. **Three** are in `sendTest` and pass the literal
+`null`, with `ruleId: null`. No seed and no migration inserts a row — checked
+with `git grep -n "notification_deliveries" -- packages/db`, which matches only
+the Drizzle journal, the table declaration and its comments. So for every row
+this codebase has ever written:
+
+> `dedupe_key IS NULL` ⟺ `rule_id IS NULL` ⟺ the row is a send test.
+
+**A live count was run and is deliberately not offered as evidence.** The shared
+stack's ledger holds zero rows, so
+`SELECT count(*) … WHERE dedupe_key IS NULL AND rule_id IS NOT NULL` returning
+`0` separates nothing. The claim above rests on the source enumeration, and the
+amendment says which of the two it is standing on.
+
+**`no-alarm` in a key does not mean "test", and that is the inversion a later
+reader will make.** `F3.46`'s transition refusal writes
+`<ruleId>:no-alarm:<severity>` with a null `alarm_id`, and a
+`skipped_unconfigured` row can predate any alarm. Both are raises. Only a NULL
+key is a test.
+
+### The algorithm, and why it is not a segment count
+
+Given a row's `dedupeKey`, `ruleId` and `alarmId`:
+
+1. `dedupeKey === null` → `test`.
+2. `ruleId === null` with a non-null key → `unknown` (a shape no writer above
+   produces).
+3. Strip the prefix the row itself determines: `${ruleId}:${alarmId ?? "no-alarm"}:`.
+   A key that does not start with it → `unknown`.
+4. On the remainder — which is the severity plus at most one suffix — match
+   `:cleared` at the end → `cleared`; `:escalation:<digits>` at the end →
+   `escalation`; otherwise → `raise`.
+
+**Counting colons would be wrong, and so would matching the suffix alone.**
+`bms.alarm_severities.code` is `varchar(64)` PRIMARY KEY with **no format
+CHECK** — the vocabulary is open by design (migration `0030`, ADR 0032). A
+severity code containing a colon defeats a segment count; a severity code
+literally named `cleared` defeats a bare `/:cleared$/`, because
+`rule:alarm:cleared` is a *raise* of a `cleared`-severity alarm. Stripping the
+prefix the row supplies removes both, because the two uuids are known values
+rather than parsed ones.
+
+**Two residual limits, named rather than claimed away.**
+
+- A severity code whose own text *ends* in `:cleared` or `:escalation:<digits>`
+  is still read as that event. The three seeded codes are `info`, `warning` and
+  `critical`; a format CHECK on the code belongs to ADR 0032, not here.
+- `buildDedupeKey` clamps at 255 characters and cuts the **tail**, so a key long
+  enough to lose its suffix reads as a raise. Two uuids, a 64-character severity
+  and the longest suffix reach 152, so this needs a rule id that is not a uuid.
+
+### Why the set has five members
+
+Four name the four things a row can be. **`unknown` is unreachable from the
+writers enumerated above** and exists so the function is total without lying: a
+row whose key does not start with its own rule and alarm was not written by this
+code, and calling it a raise would be a claim about a row nothing here produced.
+It is driven **directly through the parse function** by that function's own
+spec, so it is a measured case rather than dead prose.
+
+### Three things this amendment does not do
+
+- **Staleness is not in the key and is not derived here.** `F3.52` deliberately
+  keeps `stale` out of `buildDedupeKey` so that rows earlier ticks wrote under a
+  step's key still match. A stale step is an `escalation` event whose `status`
+  is `skipped_stale`, and the DTO already carries the status.
+- **A retry carries no mark.** A re-offered raise is byte-identical to its
+  original by Amendment 5, dedupe key included, so `event` reads `raise` for
+  both. That is open row `F3.57`, not a gap in this one.
+- **`error` stays null on `sent` and `skipped_deduped` rows.** `event` narrows
+  what a `failed` row was *for*; it does not give a successful row prose it
+  never had.
+
+### ADR 0057 decision 9 is unchanged
+
+Decision 9 says the kind "lives in the dedupe key, not in a new column", and
+that stays exactly true. `event` is a projection computed in the read query's
+`.map()`, never a stored value. Nothing on the write path changes and
+`notification_deliveries` keeps its shape — which is also why
+`tests/adr-0041-notification-invariants.test.ts` must **not** grow a mirror for
+the new enum: it compares `notificationDeliveryStatusSchema` against
+`notification_deliveries_status_check`, and the event set has no CHECK to
+compare against. One enum is closed by the database; the other is closed by a
+function.
+
+### Surfaces
+
+- `packages/shared/src/contracts/notifications.ts` — a new
+  `notificationDeliveryEventSchema` beside the status enum, and one **flat**
+  field on `notificationDeliveryDtoSchema`. Flat because
+  `tests/adr-0030-contract-derivation.test.ts` bounds that schema with
+  `[\s\S]*?\n\}\);`, which terminates at the object's own close.
+- `apps/api/src/notifications/dedupe-key.ts` — the parse, plus its round-trip
+  spec against `buildDedupeKey`.
+- `apps/api/src/notifications/channels.service.ts` — the `select` gains
+  `dedupeKey`, the `.map()` gains the derived value. The key itself is consumed
+  in that `.map()` and never returned.
+- `apps/web/src/pages/admin/notification-deliveries-page.tsx` — one column
+  between **Status** and **Detail**; its spec's `ALL_SIX` fixture gains the
+  field.
+
+No migration, no dependency, no change to any write path.
