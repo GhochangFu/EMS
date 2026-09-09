@@ -1,5 +1,6 @@
 import type {
   NotificationChannelDto,
+  NotificationDeliveryEvent,
   NotificationDeliveryStatus,
   NotificationTestResult,
   UserRole,
@@ -277,6 +278,36 @@ export function deliveryStatusLabel(status: NotificationDeliveryStatus): string 
       // is unreachable today. It exists because `F3.9` may add a status before
       // it adds a label, and an unlabelled row must still render.
       return status;
+  }
+}
+
+/**
+ * `F3.56` — the delivery's lifecycle event, in words (ADR 0041 Amendment 8).
+ *
+ * A category, not an outcome — it says what the attempt was FOR (a raise, an
+ * escalation step, a cleared message, a send test), where the Status column
+ * already says how the attempt ended. Rendered as plain text, never a
+ * `StatusPill`: a pill's tone reads as "how did this end", and two pills on
+ * one row would compete for that same meaning.
+ *
+ * `Unknown` is Amendment 8's own word for a row this codebase never writes —
+ * see `notificationDeliveryEventSchema`'s comment on why the case still has
+ * to exist.
+ */
+export function deliveryEventLabel(event: NotificationDeliveryEvent): string {
+  switch (event) {
+    case "raise":
+      return "Raise";
+    case "escalation":
+      return "Escalation";
+    case "cleared":
+      return "Cleared";
+    case "test":
+      return "Test";
+    case "unknown":
+      return "Unknown";
+    default:
+      return event;
   }
 }
 
