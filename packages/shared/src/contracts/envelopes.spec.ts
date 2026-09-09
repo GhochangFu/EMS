@@ -1,8 +1,10 @@
 import {
+  notificationDeliveriesResponseSchema,
   pointAggregateBucketSchema,
   pointAggregateResponseSchema,
   pointAggregateStatsSchema,
 } from "./envelopes";
+import { notificationDeliveryStatusSchema } from "./notifications";
 
 /**
  * `F3.35` Stage A — the point-aggregate response contract (ADR 0048 decision 3).
@@ -162,5 +164,58 @@ export function runPointAggregateBucketSecondsTests(): void {
     pointAggregateResponseSchema,
     { ...response, bucketSeconds: 90.5 },
     "a fractional bucket width must be refused — the four widths are whole seconds",
+  );
+}
+
+/**
+ * `F3.52` — the deliveries envelope admits every status the database does.
+ *
+ * **This is the one gate on the web client's own Zod parse.**
+ * `apps/web/src/api/notifications.ts:168` runs
+ * `checkResponse(notificationDeliveriesResponseSchema, …)` on the real
+ * response, so a status the envelope refuses becomes a thrown error and an
+ * empty page rather than an unlabelled row. The deliveries page's jsdom test
+ * cannot see that: it stubs `fetchNotificationDeliveries`, which is the
+ * function that does the parsing.
+ *
+ * Every value is driven from `notificationDeliveryStatusSchema.options` rather
+ * than from a list written here, so a seventh status added to the contract is
+ * covered the day it lands instead of the day someone remembers this file.
+ */
+export function runNotificationDeliveryStatusEnvelopeTests(): void {
+  const row = {
+    id: "d1",
+    organizationId: "00000000-0000-4000-8000-000000000001",
+    ruleId: null,
+    ruleCode: null,
+    alarmId: null,
+    channelId: "00000000-0000-4000-8000-0000000000c1",
+    channelCode: "ops-webhook",
+    status: "sent",
+    attemptedAt: "2026-09-09T10:00:00.000Z",
+    error: null,
+  };
+
+  for (const status of notificationDeliveryStatusSchema.options) {
+    expectAccepts(
+      notificationDeliveriesResponseSchema,
+      { items: [{ ...row, status }] },
+      `status ${status} must survive the envelope the web client parses with`,
+    );
+  }
+
+  // `skipped_stale` is named explicitly as well as driven from the enum: the
+  // loop above passes vacuously if the enum ever loses the value, and the whole
+  // point of this case is that losing it breaks the page.
+  expectAccepts(
+    notificationDeliveriesResponseSchema,
+    { items: [{ ...row, status: "skipped_stale" }] },
+    "`skipped_stale` must survive the envelope (`F3.52`)",
+  );
+
+  expectRejects(
+    notificationDeliveriesResponseSchema,
+    { items: [{ ...row, status: "skipped_invented" }] },
+    "a status outside the contract must be refused, or the enum gates nothing",
   );
 }
