@@ -30,6 +30,14 @@ import {
   maintenancePrioritySchema,
 } from "../../maintenance/maintenance.schema";
 import { categorySchema, operatorSchema, severitySchema } from "../../rules/rules.schema";
+// `F4.115`: the iterative depth walk used to be file-private here. The
+// onboarding draft needed the identical walk for the identical reason, so the
+// function moved to `admin/stack-safe-json.ts` and both surfaces import it
+// (§4.8). **`MAX_CONTENT_DEPTH` below did not move**, because the walker is the
+// shared vocabulary and the bound is not: 12 is derived from how deep an
+// authored template `content` actually nests, and the draft's bound is derived
+// from a different shape and is a different number.
+import { exceedsDepth } from "../stack-safe-json";
 
 /** ADR 0034 (`E2.1`): a code into `bms.alarm_skills`. Declared once and
  * re-exported, matching how `severitySchema` binds to the rule vocabulary. */
@@ -95,31 +103,6 @@ export const MAX_CONTENT_BYTES = 256 * 1024;
  * (`kpis` → entry → `pointKeys` → string); twelve is room to spare.
  */
 const MAX_CONTENT_DEPTH = 12;
-
-/** Iterative — a recursive depth check would be the very bug it looks for. */
-function exceedsDepth(value: unknown, limit: number): boolean {
-  const stack: { node: unknown; depth: number }[] = [{ node: value, depth: 1 }];
-  while (stack.length > 0) {
-    const frame = stack.pop();
-    if (!frame) {
-      break;
-    }
-    if (frame.depth > limit) {
-      return true;
-    }
-    const { node, depth } = frame;
-    if (Array.isArray(node)) {
-      for (const child of node) {
-        stack.push({ node: child, depth: depth + 1 });
-      }
-    } else if (node !== null && typeof node === "object") {
-      for (const child of Object.values(node)) {
-        stack.push({ node: child, depth: depth + 1 });
-      }
-    }
-  }
-  return false;
-}
 
 /**
  * Keys that are never legitimate content sections or view names, and that turn
