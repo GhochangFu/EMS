@@ -235,8 +235,26 @@ admin/dashboard-templates/dashboard-templates-instantiate.service.ts:553   dashb
 ```
 
 `:83`'s caller `listStock` has no `catch`, so its `ZodError` reaches Nest's
-default handler as a 500 today whose message is the JSON of `issues`. Making it
-an explicit server fault keeps the status and fixes the body.
+default handler as a 500 today. Making it an explicit server fault keeps the
+status and gives the body a reason.
+
+**A third correction, measured during the build and belonging to this
+amendment rather than to a later one.** The sentence that stood here said that
+500's message is "the JSON of `issues`". It is not, and the claim came from a
+comment in `asset-templates-stock.service.ts` that I quoted without checking.
+`BaseExceptionFilter.handleUnknownError`
+(`@nestjs/core/exceptions/base-exception-filter.js:34`) emits
+`{statusCode: 500, message: MESSAGES.UNKNOWN_EXCEPTION_MESSAGE}` for anything
+that is not an `HttpException` or an `http-errors` error — a bare `ZodError` is
+neither — and passes `exception.message` to `logger.error` separately. So the
+`issues` JSON reaches the **log**, never the response.
+
+That makes the observable change at the eight **larger** than §Decision item 1
+claims, not smaller. The status is unchanged at 500, but the body moves from
+Nest's generic `{"statusCode":500,"message":"Internal server error"}` to one
+naming the context the parse was given. That is a real, testable difference, so
+the commit that converts the eight has a gate rather than only a rationale. The
+same false sentence has been removed from the service comment it came from.
 
 **What this costs the invariant in §Verification.** "No throwing `.parse(`
 outside a `try` in a service" is now false as stated, because `:183` is one and
