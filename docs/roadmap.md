@@ -3863,6 +3863,46 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   Fixed on the branch; `keycloak` joined the `realtime-smoke` profile with it.
 - **Unblocks:** nothing directly.
 
+### A cleared message that reaches nobody says so (`F3.55`, ADR 0057 Amendment 6) — done
+- **Status:** merged 2026-09-09 — PR
+  [#383](https://github.com/GhochangFu/EMS/pull/383) (`973e9e09`).
+- **The defect.** `notifyCleared` read twice and returned early after each,
+  neither sending, recording nor logging anything — the fully silent shape
+  ruling Q-A calls worse than the defect `F3.48` set out to fix. Both returns
+  sit one layer above `dispatchToChannel`, so `F3.54`'s two ternaries never
+  reached them.
+- **The owner ruling: a `warn` at both returns, no delivery row at either.**
+  The reason differs at each. At the first, `sentChannelIdsForAlarm` answers
+  empty — no channel holds a `sent` row for the alarm — so there is no channel
+  a row could be attributed to. At the second, `loadEnabledChannelsByIds`
+  answers empty over a non-empty set of ids — every channel is disabled now —
+  so a row would record an attempt never made, and the ledger's whole value is
+  that "no notification arrived" and "no notification was attempted" stay
+  different answers. Neither is a refusal, the same distinction `F3.54`
+  ruling 2 drew for `dispatchToChannels`'s two pre-check exits, which stay out
+  of scope. The two warns are distinguishable and carry only the alarm id and
+  the rule code (§9.6).
+- **Review found no correctness defect — a comment and an assertion, both
+  measured wrong.** The first warn's comment read the empty answer as only
+  "the raise was offered and left no `sent` row". A rule with no
+  `rule_notifications` join has no channels at all, so its raise is offered to
+  nobody and writes no delivery row, and every clear of it reaches this
+  return — not the rare case: no seed writes `rule_notifications`, and
+  `asset-templates-instantiate.service.ts` deliberately does not write one at
+  instantiation either, so on a seeded or template-built database this is the
+  usual line. The comment and the amendment now give both readings. Separately,
+  the §9.6 recipient-code guard, `!includes(`${code} `) && !endsWith(code)`,
+  answered "no leak" against a line ending `is disabled c1,c2` — the
+  comma-joined shape a future author would write — where the plain
+  `!includes(code)` catches it; the guard is the plain form now. Neither
+  finding changed a warn string or a delivery outcome.
+- **Not fixed, named so it is not re-filed.** A *partially* disabled recipient
+  set still dispatches to the enabled channels and warns nothing — only the
+  wholly-empty case speaks. The escalation phase has an analogous silent
+  `continue` over an empty channel list (`alarm-lifecycle.service.ts:747`)
+  that Amendment 6 leaves untouched.
+- **Unblocks:** nothing directly.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
