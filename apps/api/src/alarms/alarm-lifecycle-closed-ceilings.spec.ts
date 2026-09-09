@@ -33,8 +33,17 @@ import {
  * re-offering phases, dead when the tick ends, and never handed to the clear
  * phase's cleared message.
  *
- * **L1 is the only case in this repository that drives the real
- * `NotificationsService` from the real sweep.** Its `deps.dispatchToChannels`
+ * **L1 is the only case that drives the real `NotificationsService` from the
+ * real sweep WITHOUT a database** — and the qualifier is the whole of it. The
+ * unqualified sentence stood here until the `F3.53` post-merge review measured
+ * it: `alarm-lifecycle.integration.spec.ts`'s `buildHarness` constructs a real
+ * `NotificationsService` and a real `AlarmLifecycleService`, and that file
+ * alone sweeps through them 18 times, as does
+ * `alarm-lifecycle-raise-retry.integration.spec.ts`. I1 below does the same
+ * thing more completely, through the production adapter — which the paragraph
+ * after next says outright, so the claim contradicted its own neighbour. A
+ * sentence naming which test guards a thing is a claim like any other. Its
+ * `deps.dispatchToChannels`
  * is the service's own method rather than a recording fake, so the tick's memo
  * reaches the ledger read it was built for and the saving is counted in
  * `fakeDb().reads.rateLimit` — the same counter `dispatch-closed-ceilings.spec.ts`

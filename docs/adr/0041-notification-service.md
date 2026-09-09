@@ -936,6 +936,32 @@ the read once and are blocked by their own row on the next tick. A step
 `F3.48` ruling Q1 deliberately writes no row so that the next tick can ask.
 Three channels on one step cost three reads.
 
+**The deployed run, recorded here because nothing else in the repository held
+it.** `AGENTS.md` §2 states "126 dispatches a tick issued 3 ceiling reads
+instead of 126" and the figure appeared only in a pull-request body until the
+post-merge review pointed out that no committed document derived it. The
+measurement: an `api` image built `--no-cache` from the `F3.53` branch, run
+against an isolated copy of the development database — 42 open `critical`
+alarms in one organization, one escalation step at one minute, **three**
+channels on that step, and `NOTIFY_RATE_LIMIT_PER_HOUR=1`, which makes the
+reserved ceiling `floor(1 × 0.8) = 0` so every step is refused at the ceiling
+before any transport. Nine consecutive ticks of the Postgres statement log, at
+`log_min_duration_statement = 0` scoped to that database:
+
+```
+18:36:16  dispatches=126  ceiling_reads=3
+18:36:47  dispatches=126  ceiling_reads=3
+18:37:18  dispatches=126  ceiling_reads=3
+18:38:51  dispatches=126  ceiling_reads=3
+```
+
+42 alarms × 3 channels = 126 dispatches, and **3** ceiling reads — one per
+channel, per tick. The dispatch count is the *un-memoised* event-idempotency
+read, which is what makes the 3 a reduction rather than an absence of work; the
+ledger held 0 rows throughout, because `F3.48` ruling Q1 writes none for a
+ceiling refusal. The emitted JavaScript was grepped first: the memo is
+constructed in `runLifecycleSweep` and the adapter forwards all three arguments.
+
 That result decides the shape. The row states the two answers are asymmetric —
 a cached `false` over-sends permanently, a cached `true` can only postpone —
 and worries that the safe half is the less useful one. **The measurement
@@ -1040,7 +1066,8 @@ that copied the sentence would carry the error forward.
 **The adapter is the edit that makes any of this reach production, and this
 section omitted it.** `AlarmLifecycleDeps.dispatchToChannels` is typed
 `NotificationsService["dispatchToChannels"]`, so it widens with the method —
-but the adapter that satisfies it, `alarm-lifecycle.service.ts:320`, is written
+but the adapter that satisfies it, the `dispatchToChannels` arrow in
+`alarm-lifecycle.service.ts`'s `deps()`, is written
 `(channels, input) => this.notifications.dispatchToChannels(channels, input)`
 and **drops a third argument**. Left alone, the memo is created, threaded
 through both phases, and never delivered — while every sweep spec stays green,
@@ -1075,7 +1102,8 @@ alone cost +14, landing the file at 996 of 1000.** The owner ruled the
 extraction at the plan gate: `hasRecordedSkip` and `eventDeliveryBlocked` — the
 two dedupe-key ledger reads, each `fleetDb`-only and needing nothing from the
 class — move to a module beside the service, which the service's own comment at
-`:833` already gives as the rule for a read it kept out. The service lands near
+its `sentChannelIdsForAlarm` docblock already gives as the rule for a read it
+kept out. The service lands near
 805 before the memo is added.
 
 **The move gate is weaker than `F3.52`'s and the amendment says so rather than

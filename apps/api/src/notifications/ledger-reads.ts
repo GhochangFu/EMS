@@ -13,8 +13,19 @@ import { MAX_EVENT_ATTEMPTS } from "./dispatch-policy";
  * **A move, not a design.** `notifications.service.ts` sat at 982 of AGENTS.md
  * §4.5's 1000-line cap with a 14-line addition still to land, so the owner
  * ruled at the plan gate that these two come out first. Every line below is
- * byte-identical to its version at `7710e7b6` apart from the three deviations
- * listed below — the commit's gate is that diff, not a green suite.
+ * **identical to its version at `7710e7b6` apart from indentation, the
+ * signature line, and `this.fleetDb` → `db`, checked with `diff -w`** — the
+ * commit's gate is that diff, not a green suite.
+ *
+ * **`diff -w`, and the word is load-bearing.** This paragraph claimed plain
+ * byte-identity until the `F3.53` post-merge review ran the plain `diff`: it
+ * reports `1,19c1,20` for `hasRecordedSkip`, every line changed, because a
+ * method body at four spaces became a function body at two. The claim was
+ * unfalsifiable-looking and in fact false, in a docblock that names itself as
+ * the gate — so a reviewer running the diff the sentence described would have
+ * seen 19 changed lines and been unable to tell a move from a rewrite, which is
+ * the one distinction the gate exists to make. ADR 0041 Amendment 7's closing
+ * section states the honest form and this now matches it.
  * `dispatch-shapes.ts`, `dispatch-policy.ts` and `ledger-text.ts` beside this
  * file are the same precedent, carved out of the same class for the same
  * reason.
@@ -28,12 +39,17 @@ import { MAX_EVENT_ATTEMPTS } from "./dispatch-policy";
  * nothing from it but `fleetDb`" — applied to the two reads that already met
  * it, rather than to the one the service kept.
  *
- * **Three deliberate deviations from the original bytes:**
+ * **Three deliberate deviations from the original bytes, plus the whitespace
+ * `diff -w` absorbs:**
  * 1. The signature line of each function: `private async <name>(...)` became
- *    `export async function <name>(db: BmsDb, ...)`, `db` first.
+ *    `export async function <name>(db: BmsDb, ...)`, `db` first — which is also
+ *    the class-method shape becoming a free function, since there is no class
+ *    here to be private to. (These were listed as two deviations; they are one
+ *    line and one change.)
  * 2. Every `this.fleetDb` became `db` — two call sites, one per function.
- * 3. The `private async` / class-method shape became a free `export async
- *    function` — there is no class here to be private to.
+ * 3. **Indentation**: each body lost two spaces of class nesting. It changes
+ *    every line and no token, which is why the gate is `diff -w` and why
+ *    omitting this from the list made the paragraph above false.
  *
  * Both functions keep their full docblocks intact, including the internal
  * cross-reference between them (`hasRecordedSkip`'s `{ id }` projection vs.

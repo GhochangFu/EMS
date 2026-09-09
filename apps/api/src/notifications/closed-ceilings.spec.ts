@@ -206,10 +206,18 @@ export async function testTheOrganizationIsPartOfTheKey(): Promise<void> {
 /**
  * C5 — the CHANNEL is part of the key.
  *
- * The ceiling is per channel: `ratePerHour` is a column on
- * `bms.notification_channels` and the read counts that channel's rows. One
- * refused webhook must not silence the email channel beside it, which is the
- * shape a step with three channels takes on every tick.
+ * The ceiling counts **this channel's** `sent` rows in the trailing hour
+ * against one fleet-wide `NOTIFY_RATE_LIMIT_PER_HOUR`
+ * (`NotificationsConfig.ratePerHour`). One refused webhook must not silence the
+ * email channel beside it, which is the shape a step with three channels takes
+ * on every tick.
+ *
+ * **The reason above was invented and the `F3.53` post-merge review caught it.**
+ * This said `ratePerHour` was "a column on `bms.notification_channels`". There
+ * is no such column and no such field on `NotificationChannelRow` — the rate is
+ * one configured value for the whole fleet, and only the COUNT is per channel.
+ * The conclusion held; the reason did not, in a docblock whose neighbour C4
+ * exists to warn against exactly that.
  *
  * **Mutation:** `channelId` dropped from the key → the second channel returns
  * `true` with `calls === 1`, red here alone.
