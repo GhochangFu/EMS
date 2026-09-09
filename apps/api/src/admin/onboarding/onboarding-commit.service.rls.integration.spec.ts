@@ -1,8 +1,10 @@
+import { BadRequestException } from "@nestjs/common";
 import { expect } from "vitest";
 import pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import type { OnboardingCommitService } from "./onboarding-commit.service";
 
 /**
@@ -166,4 +168,81 @@ export async function assertCommitRefusesAContradictingPointKey(
     locationRows.length,
     "the location inserted before the point-key loop rolled back with it",
   ).toBe(0);
+}
+
+/** What the `F4.109` duplicate-value refusal needs. */
+export type CommitDuplicateFixtures = {
+  commitSvc: OnboardingCommitService;
+  ownerPool: pg.Pool;
+  /** A commit-ready draft whose `location.code` a seeded row already holds. */
+  sessionId: string;
+  organizationId: string;
+  /** The code carried by both the seeded row and the draft. */
+  locationCode: string;
+};
+
+/**
+ * `F4.109` — a duplicate value is a per-field `400`, measured through a real
+ * transaction rather than a stubbed one.
+ *
+ * `onboarding-commit-conflict.spec.ts` proves the map, the narrowing and the
+ * wiring with a hand-built driver error. **What only a real database can show
+ * is the link that spec fakes**: that Postgres raises `23505` naming
+ * `locations_org_code_idx` for this insert, that drizzle rolls the transaction
+ * back and re-throws the driver's own error object rather than wrapping it, and
+ * that `code` and `constraint` are therefore still readable by the time
+ * `translateCommitUniqueConflict` sees it. Every one of those three could break
+ * without a unit test noticing.
+ *
+ * The seeded row is written by the fixture, not by a sibling test, so this case
+ * does not depend on the order the file's `it()`s run in.
+ *
+ * The body assertion is first because it is the one the load-bearing mutation
+ * targets — removing the `.catch` from `commit` leaves a raw driver error here,
+ * which is exactly the `500` the row was filed for.
+ */
+export async function assertCommitAnswersADuplicateLocationCodeWithAFieldError(
+  ctx: CommitDuplicateFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { commitSvc, ownerPool, sessionId, organizationId, locationCode } = ctx;
+
+  const conflict = COMMIT_UNIQUE_CONFLICTS.get("locations_org_code_idx");
+  if (!conflict) {
+    throw new Error("F4.109: locations_org_code_idx is not in COMMIT_UNIQUE_CONFLICTS");
+  }
+
+  let raised: unknown;
+  try {
+    await commitSvc.commit(jwt, sessionId);
+  } catch (error) {
+    raised = error;
+  }
+
+  expect(
+    raised instanceof BadRequestException
+      ? JSON.stringify(raised.getResponse())
+      : `not a BadRequestException: ${String(raised)}`,
+    "a duplicate location code is answered as a per-field 400, not a 500",
+  ).toBe(JSON.stringify({ formErrors: [], fieldErrors: { location: [conflict.message] } }));
+
+  expect(
+    (raised as BadRequestException).getStatus(),
+    "the status is 400 — a duplicate an operator typed is not a server fault",
+  ).toBe(400);
+
+  // §4.3 — `err.detail` is `Key (organization_id, code)=(…) already exists.`,
+  // and on a global constraint that value belongs to a row the caller cannot
+  // read. Checked here as well as in the unit spec because this is the only
+  // place the real `detail` string exists.
+  expect(
+    JSON.stringify((raised as BadRequestException).getResponse()).includes(locationCode),
+    "the refusal must not echo the value the driver reported",
+  ).toBe(false);
+
+  const { rows } = await ownerPool.query<{ id: string }>(
+    `SELECT id FROM bms.locations WHERE code = $1 AND organization_id = $2`,
+    [locationCode, organizationId],
+  );
+  expect(rows.length, "the refused commit wrote no second location and rolled back").toBe(1);
 }

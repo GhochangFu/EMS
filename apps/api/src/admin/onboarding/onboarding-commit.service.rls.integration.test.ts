@@ -14,9 +14,11 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import {
+  assertCommitAnswersADuplicateLocationCodeWithAFieldError,
   assertCommitRefusesAContradictingPointKey,
   assertCommitStampsOrgOnEveryTenantRow,
   type CommitConflictFixtures,
+  type CommitDuplicateFixtures,
   type CommitIds,
   type CommitRlsFixtures,
 } from "./onboarding-commit.service.rls.integration.spec";
@@ -63,6 +65,19 @@ const CONFLICT_LOCATION_SLUG = `e71b-obx-${RUN}`;
 const CONFLICT_RTU_CODE = `E71B-OBX-RTU-${RUN}`;
 const CONFLICT_ASSET_CODE = `E71B-OBX-AS-${RUN}`;
 const SHARED_POINT_KEY_CODE = `E71B_OBX_SHARED_${RUN}`;
+
+// `F4.109` — a third draft, on its own codes again. Its `location.code` is one
+// the fixture writes into this organization before the run, so the very first
+// insert the commit transaction makes raises `23505` on
+// `locations_org_code_idx`. The **slug** differs on purpose: a shared slug
+// would raise `locations_slug_unique` instead and the case would silently
+// measure the wrong constraint.
+const DUPE_LOCATION_CODE = `E71B-OBD-${RUN}`;
+const DUPE_SEEDED_LOCATION_SLUG = `e71b-obd-seed-${RUN}`;
+const DUPE_DRAFT_LOCATION_SLUG = `e71b-obd-draft-${RUN}`;
+const DUPE_RTU_CODE = `E71B-OBD-RTU-${RUN}`;
+const DUPE_ASSET_CODE = `E71B-OBD-AS-${RUN}`;
+const DUPE_POINT_KEY_CODE = `E71B_OBD_PK_${RUN}`;
 
 /** The distinct codes one draft writes, so two drafts never collide. */
 type DraftCodes = {
@@ -140,6 +155,15 @@ const CONFLICT_CODES: DraftCodes = {
   pointKeyUnit: "kW",
 };
 
+const DUPE_CODES: DraftCodes = {
+  locationCode: DUPE_LOCATION_CODE,
+  locationSlug: DUPE_DRAFT_LOCATION_SLUG,
+  rtuCode: DUPE_RTU_CODE,
+  assetCode: DUPE_ASSET_CODE,
+  pointKeyCode: DUPE_POINT_KEY_CODE,
+  pointKeyUnit: "kW",
+};
+
 describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under real RLS", () => {
   let ownerPool: pg.Pool;
   let authPool: pg.Pool;
@@ -147,8 +171,11 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
   let fleetPool: pg.Pool;
   let ctx: CommitRlsFixtures;
   let conflictCtx: CommitConflictFixtures;
+  let dupeCtx: CommitDuplicateFixtures;
   let sessionId = "";
   let conflictSessionId = "";
+  let dupeSessionId = "";
+  let dupeLocationId = "";
   let removeSharedPointKey: (() => Promise<void>) | undefined;
   let committed: CommitIds | undefined;
 
@@ -216,6 +243,19 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
 
     sessionId = await seedSession(commitReadyDraft(domain, STAMPING_CODES));
     conflictSessionId = await seedSession(commitReadyDraft(domain, CONFLICT_CODES));
+    dupeSessionId = await seedSession(commitReadyDraft(domain, DUPE_CODES));
+
+    // `F4.109` — the row the third draft's `location.code` collides with.
+    // Written here rather than by a sibling test so the case carries no
+    // ordering dependency, and on `ownerPool` (BYPASSRLS) so it needs no GUC.
+    const dupeLocation = await ownerPool.query<{ id: string }>(
+      `INSERT INTO bms.locations
+         (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $3, 'F4.109 duplicate-code probe', 'smoc_campus', 0, 0)
+       RETURNING id`,
+      [organizationId, DUPE_LOCATION_CODE, DUPE_SEEDED_LOCATION_SLUG],
+    );
+    dupeLocationId = dupeLocation.rows[0].id;
 
     // The catalog row the second draft contradicts. `registerFixturePointKeys`
     // writes `(code, name, active)` only, so the unit is NULL — Amendment 1
@@ -238,6 +278,13 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       sessionId: conflictSessionId,
       pointKeyCode: SHARED_POINT_KEY_CODE,
       locationCode: CONFLICT_LOCATION_CODE,
+    };
+    dupeCtx = {
+      commitSvc,
+      ownerPool,
+      sessionId: dupeSessionId,
+      organizationId,
+      locationCode: DUPE_LOCATION_CODE,
     };
   });
 
@@ -264,7 +311,7 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       }
       // Both sessions, unconditionally: the conflict draft never commits, so it
       // leaves nothing but its own row, and `committed` says nothing about it.
-      const sessionIds = [sessionId, conflictSessionId].filter(Boolean);
+      const sessionIds = [sessionId, conflictSessionId, dupeSessionId].filter(Boolean);
       if (sessionIds.length > 0) {
         await ownerPool.query(`DELETE FROM bms.onboarding_sessions WHERE id = ANY($1)`, [
           sessionIds,
@@ -318,6 +365,58 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
         await ownerPool.query(`DELETE FROM bms.locations WHERE id = ANY($1)`, [strayLocationIds]);
       }
     }
+    // `F4.109` — the same shape again for the duplicate-code draft, and for the
+    // same reason: on a green run it commits nothing and these delete nothing,
+    // but a regression that lets the duplicate through writes a whole estate
+    // into PHEWB under `E71B-OBD*` codes and no returned id names it. The
+    // locations sweep is by `code`, which matches the seeded probe row **and**
+    // any stray the commit wrote — both must go, and the seeded one is the row
+    // this case exists to collide with, so it is never left behind.
+    if (ownerPool) {
+      const dupeAssets = await ownerPool.query<{ id: string }>(
+        `SELECT id FROM bms.assets WHERE code = $1`,
+        [DUPE_ASSET_CODE],
+      );
+      const dupeAssetIds = dupeAssets.rows.map((r) => r.id);
+      if (dupeAssetIds.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.asset_points WHERE asset_id = ANY($1)`, [
+          dupeAssetIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.asset_group_members WHERE asset_id = ANY($1)`, [
+          dupeAssetIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [dupeAssetIds]);
+      }
+      const dupeRtus = await ownerPool.query<{ id: string }>(
+        `SELECT id FROM bms.rtus WHERE code = $1`,
+        [DUPE_RTU_CODE],
+      );
+      const dupeRtuIds = dupeRtus.rows.map((r) => r.id);
+      if (dupeRtuIds.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.rtu_connection_configs WHERE rtu_id = ANY($1)`, [
+          dupeRtuIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.rtus WHERE id = ANY($1)`, [dupeRtuIds]);
+      }
+      const dupeLocations = await ownerPool.query<{ id: string }>(
+        `SELECT id FROM bms.locations WHERE code = $1`,
+        [DUPE_LOCATION_CODE],
+      );
+      const dupeLocationIds = dupeLocations.rows.map((r) => r.id);
+      if (dupeLocationIds.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1)`, [
+          dupeLocationIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.locations WHERE id = ANY($1)`, [dupeLocationIds]);
+      }
+      // After the asset_points above, which reference it (migration `0057`).
+      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code = $1`, [DUPE_POINT_KEY_CODE]);
+      if (dupeLocationId && dupeLocationIds.length === 0) {
+        throw new Error(
+          `F4.109: the seeded probe location ${DUPE_LOCATION_CODE} was not found for cleanup`,
+        );
+      }
+    }
     // Last, because the asset_points above reference it (migration `0057`).
     // This row is inserted in `beforeAll`, not by a commit, so no `committed`
     // id would ever reach it.
@@ -335,5 +434,9 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
 
   it("refuses a draft that contradicts a point key the whole fleet shares", async () => {
     await assertCommitRefusesAContradictingPointKey(conflictCtx, jwt);
+  });
+
+  it("answers a duplicate location code with a per-field 400 rather than a 500 (F4.109)", async () => {
+    await assertCommitAnswersADuplicateLocationCodeWithAFieldError(dupeCtx, jwt);
   });
 });
