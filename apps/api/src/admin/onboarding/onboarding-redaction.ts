@@ -1,5 +1,7 @@
 import type { OnboardingDraft } from "@bms/shared";
 
+import { cloneJson } from "../stack-safe-json";
+
 /**
  * Draft redaction and the internal encrypted-credential store (ADR 0022).
  *
@@ -194,12 +196,20 @@ export function rtuSecretKey(draft: unknown, rtuIndex: number): string | null {
   return rtuCodeAt(draft, rtuIndex);
 }
 
-/** Removes internal secret blobs before sending draft to client or LLM. */
+/**
+ * Removes internal secret blobs before sending draft to client or LLM.
+ *
+ * `F4.115`: `cloneJson`, not `structuredClone`. This function is on the path of
+ * every `GET /sessions/:id`, `validate`, `chat` and `mapSession`, so a stored
+ * draft it cannot read is a session that answers 500 on every route — including
+ * the `PATCH :id/draft` that would repair it. A draft nested about 2,000 deep
+ * costs a caller 12 KB and did exactly that.
+ */
 export function redactDraftForClient(draft: unknown): OnboardingDraft {
   if (typeof draft !== "object" || draft === null) {
     return {};
   }
-  const copy = structuredClone(draft) as DraftWithSecrets;
+  const copy = cloneJson(draft) as DraftWithSecrets;
   delete copy._secrets;
   if (copy.location) {
     copy.location = scrubMeta(copy.location);
@@ -239,32 +249,121 @@ export function redactDraftForLlm(draft: unknown): OnboardingDraft {
   return scrubSecrets(client) as OnboardingDraft;
 }
 
+/**
+ * Replaces every value under a secret-looking key with `[REDACTED]`, copying
+ * everything else.
+ *
+ * **Iterative since `F4.115`, and for the same reason the clone above is.**
+ * `rtus[].config` and the three `meta` records are `z.record(z.unknown())`, so
+ * their contents are whatever a caller or the model wrote; the recursive form
+ * of this function overflowed the stack on a stored draft nested a couple of
+ * thousand deep, which is a `RangeError` and so a 500 rather than a response.
+ *
+ * The semantics are unchanged: an object key that satisfies `isSecretKey`
+ * becomes the placeholder and is **not** descended into, everything else is
+ * copied, and arrays keep their indices so no index is ever tested against
+ * `isSecretKey`.
+ *
+ * **One thing did change, and it is a fix rather than a regression.** The
+ * previous `out[key] = …` invoked `Object.prototype`'s `__proto__` accessor, so
+ * an own `__proto__` inside a scrubbed subtree vanished into the copy's
+ * prototype and left the API-side copy reparented onto a caller-shaped object.
+ * `Object.defineProperty` keeps it as data. Nothing downstream is polluted by
+ * that: the output is `JSON.stringify`d onto the wire, and the web's own
+ * `z.record` parse drops the key again on arrival.
+ */
 function scrubSecrets(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(scrubSecrets);
+  if (!isContainer(value)) {
+    return value;
   }
-  if (typeof value === "object" && value !== null) {
-    const out: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value)) {
+
+  const root: Record<string, unknown> | unknown[] = Array.isArray(value) ? [] : {};
+  const stack: { source: Record<string, unknown> | unknown[]; target: object }[] = [
+    { source: value, target: root },
+  ];
+
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) {
+      break;
+    }
+    const { source, target } = frame;
+    if (Array.isArray(source)) {
+      const out = target as unknown[];
+      for (let index = 0; index < source.length; index += 1) {
+        const child = source[index];
+        if (isContainer(child)) {
+          const shell: Record<string, unknown> | unknown[] = Array.isArray(child) ? [] : {};
+          out[index] = shell;
+          stack.push({ source: child, target: shell });
+        } else {
+          out[index] = child;
+        }
+      }
+      continue;
+    }
+    // One loop over the source's own key order, so the copy's key order is
+    // fixed here and never depends on the stack's LIFO order —
+    // `runOnboardingRedactionTests` asserts over `JSON.stringify` of this
+    // output, and the jsonb text is the same serialisation.
+    for (const key of Object.keys(source)) {
       if (isSecretKey(key)) {
-        out[key] = "[REDACTED]";
+        defineOwn(target, key, "[REDACTED]");
+        continue;
+      }
+      const child = source[key];
+      if (isContainer(child)) {
+        const shell: Record<string, unknown> | unknown[] = Array.isArray(child) ? [] : {};
+        defineOwn(target, key, shell);
+        stack.push({ source: child, target: shell });
       } else {
-        out[key] = scrubSecrets(val);
+        defineOwn(target, key, child);
       }
     }
-    return out;
   }
-  return value;
+
+  return root;
 }
 
-/** Merges pending credentials into internal _secrets store. */
+/**
+ * Any non-null object — the recursive form's own test, unchanged.
+ *
+ * Deliberately **not** `stack-safe-json.ts`'s narrower `isJsonContainer`, which
+ * checks the prototype and so returns a `Date` or a `Map` by reference. This
+ * one descends into those and rebuilds them as plain objects, exactly as
+ * `Object.entries` recursion did before. Nothing here is meant to change what
+ * the scrub produces; only how it walks.
+ */
+function isContainer(value: unknown): value is Record<string, unknown> | unknown[] {
+  return typeof value === "object" && value !== null;
+}
+
+/** `setBlob` for arbitrary values — assigns without invoking a setter. */
+function defineOwn(target: object, key: string, value: unknown): void {
+  Object.defineProperty(target, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
+}
+
+/**
+ * Merges pending credentials into internal _secrets store.
+ *
+ * `F4.115`: the third `structuredClone` site, and the one that was **masked**.
+ * `mergeDraft` clones before it ever reaches here, so on a deep stored draft
+ * `POST :id/credentials` died there first — fixing the other two sites and
+ * leaving this one would have made every route ruling 2b names answer 200 while
+ * this one still answered 500.
+ */
 export function attachEncryptedCredentials(
   draft: DraftWithSecrets,
   rtuIndex: number,
   ciphertext: Buffer,
   iv: Buffer,
 ): DraftWithSecrets {
-  const next = structuredClone(draft) as DraftWithSecrets;
+  const next = cloneJson(draft);
   const key = rtuCodeAt(next, rtuIndex);
   if (key === null) {
     // Fail closed: storing under a positional key is what M4 was.
