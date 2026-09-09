@@ -600,7 +600,7 @@ export type AssetPickerRow = z.infer<typeof E.assetPickerRowSchema>;
 // ---------------------------------------------------------------------------
 // Notifications (`F3.8`, ADR 0041)
 // ---------------------------------------------------------------------------
-/** The five outcomes of one dispatch attempt, three of them skips. */
+/** The six outcomes of one dispatch attempt, four of them skips (`skipped_stale` since `F3.52`). */
 export type NotificationDeliveryStatus = z.infer<typeof N.notificationDeliveryStatusSchema>;
 /** A configured destination. Carries `hasSecret`, never a secret (§9.6). */
 export type NotificationChannelDto = z.infer<typeof N.notificationChannelDtoSchema>;

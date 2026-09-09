@@ -12,7 +12,7 @@ import type { NotificationDeliveryStatus } from "@bms/shared";
  */
 
 /**
- * The five outcomes, taken from the response contract rather than restated.
+ * The six outcomes, taken from the response contract rather than restated.
  *
  * `packages/shared/src/contracts/notifications.ts` owns the list and
  * `notification_deliveries_status_check` enforces it in Postgres. A local

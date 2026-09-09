@@ -22,17 +22,31 @@ import { z } from "zod";
  */
 
 /**
- * The five outcomes of one dispatch attempt.
+ * The six outcomes of one dispatch attempt.
  *
- * Three of them are skips, and they are separate values rather than one
+ * Four of them are skips, and they are separate values rather than one
  * `skipped` because they answer different operator questions: nothing is
- * configured, the same transition already notified, or the channel is over its
- * hourly ceiling (ADR 0041 decisions 4 and 7). Collapsing them would make the
+ * configured, the same transition already notified, the channel is over its
+ * hourly ceiling, or the step was abandoned as too late to send (ADR 0041
+ * decisions 4 and 7, and Amendment 6 ruling 5). Collapsing them would make the
  * deliveries view say "skipped" and leave the operator to guess why.
  *
- * Keep this list identical to `notification_deliveries_status_check` in
- * migration 0038. The database refuses a sixth value; this refuses it one layer
- * earlier, with a message a client can read.
+ * **What `skipped_stale` answers that no other value can.** The step was due,
+ * nobody was told, and the reason is *age* — the step is further past its due
+ * instant than the step-lateness budget Amendment 6 ruling 6 sets
+ * (`STEP_MAX_LATENESS` there, 60 minutes by default) — rather than
+ * configuration (`skipped_unconfigured`), an
+ * earlier notification of the same transition (`skipped_deduped`) or the hourly
+ * ceiling (`skipped_rate_limited`). Those three all describe a step that may yet
+ * be sent; this one is the record that it never will be. `failed` would say the
+ * transport was tried and refused, which is not what happened.
+ *
+ * Keep this list identical to `notification_deliveries_status_check` as the
+ * NEWEST migration to declare it leaves it — migration `0038` created it with
+ * five values and `0068` widened it to these six; `0038` is frozen, so it is no
+ * longer the list to read. The database refuses a seventh value; this refuses it
+ * one layer earlier, with a message a client can read.
+ * `tests/adr-0041-notification-invariants.test.ts` compares the two.
  */
 export const notificationDeliveryStatusSchema = z.enum([
   "sent",
@@ -40,6 +54,7 @@ export const notificationDeliveryStatusSchema = z.enum([
   "skipped_unconfigured",
   "skipped_deduped",
   "skipped_rate_limited",
+  "skipped_stale",
 ]);
 
 /** One configured destination. */

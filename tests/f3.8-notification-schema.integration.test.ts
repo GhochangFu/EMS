@@ -27,10 +27,17 @@ import {
  * 1. The kind vocabulary is seeded **by the migration**, before `pnpm db:seed`
  *    runs. That is the F3.6 fresh-database trap in reverse — the migration
  *    seeds only a table that joins nothing, so it works on an empty database.
- * 2. `notification_deliveries_status_check` refuses a sixth status. The closed
- *    set is the reason the status column is a CHECK while `kind` is a lookup
- *    table (plan D3); if the constraint is missing, that asymmetry is a comment
- *    rather than a rule.
+ * 2. `notification_deliveries_status_check` refuses any status outside the
+ *    closed set. The closed set is the reason the status column is a CHECK
+ *    while `kind` is a lookup table (plan D3); if the constraint is missing,
+ *    that asymmetry is a comment rather than a rule.
+ *
+ *    **The set is six since `F3.52`**, not the five this note said until then:
+ *    migration `0068` widened `0038`'s list with `skipped_stale`. The number is
+ *    written here and in the two `it()` names below because a set that grows
+ *    silently is how the CHECK and the contract drift apart — and the case that
+ *    inserts each value is the only place in a committed test where the
+ *    database is asked whether it accepts `skipped_stale` at all.
  * 3. `notification_channels.kind` really is a foreign key into the vocabulary,
  *    so an unknown kind is refused at write time rather than discovered when a
  *    transport lookup returns nothing.
@@ -134,7 +141,7 @@ describe.skipIf(!connectionString)("F3.8 notification schema", () => {
     ).rejects.toThrow(/notification_channels_secret_complete_check/);
   });
 
-  it("refuses a delivery status outside the five (plan D3)", async () => {
+  it("refuses a delivery status outside the six (plan D3)", async () => {
     if (!pool) throw new Error("pool not initialised");
     await expect(
       pool.query(
@@ -145,17 +152,24 @@ describe.skipIf(!connectionString)("F3.8 notification schema", () => {
     ).rejects.toThrow(/notification_deliveries_status_check/);
   });
 
-  it("accepts every one of the five, skips included", async () => {
+  it("accepts every one of the six, skips included", async () => {
     if (!pool) throw new Error("pool not initialised");
     // The skips are the half worth asserting: ADR 0041 decision 4 records a row
     // for an attempt that sent nothing, because "no notification arrived" and
     // "no notification was attempted" are different answers to an operator.
+    //
+    // `F3.52` added the sixth. This loop is the ONLY committed assertion that
+    // the database accepts `skipped_stale` — the contract-versus-CHECK
+    // invariant in `tests/adr-0041-notification-invariants.test.ts` compares
+    // two pieces of TEXT and would pass just as happily against a database
+    // where migration `0068` had never run.
     const statuses = [
       "sent",
       "failed",
       "skipped_unconfigured",
       "skipped_deduped",
       "skipped_rate_limited",
+      "skipped_stale",
     ];
     for (const status of statuses) {
       await pool.query(
