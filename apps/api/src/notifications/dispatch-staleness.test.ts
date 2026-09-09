@@ -3,8 +3,9 @@ import { describe, it } from "vitest";
 import {
   testAReofferedRaiseIsNeverAbandoned,
   testAStaleStepRecordsOneRowAndSendsNothing,
+  testAStepOverTheReserveIsRefusedRatherThanAbandoned,
   testAnAlreadyAnsweredStepWritesNoStaleRow,
-  testTheAgeIsDecidedBeforeTheCeiling,
+  testTheCeilingAnswersBeforeTheAge,
 } from "./dispatch-staleness.spec";
 
 /**
@@ -22,11 +23,15 @@ describe("F3.52 the skipped_stale exit", () => {
     await testAnAlreadyAnsweredStepWritesNoStaleRow();
   });
 
-  it("decides the age before the hourly ceiling, and never reads it", async () => {
-    await testTheAgeIsDecidedBeforeTheCeiling();
+  it("lets the hourly ceiling answer first, so budget never ages a step out", async () => {
+    await testTheCeilingAnswersBeforeTheAge();
   });
 
   it("abandons the step and never the re-offered raise beside it", async () => {
     await testAReofferedRaiseIsNeverAbandoned();
+  });
+
+  it("refuses a late step over the reserve rather than abandoning it", async () => {
+    await testAStepOverTheReserveIsRefusedRatherThanAbandoned();
   });
 });

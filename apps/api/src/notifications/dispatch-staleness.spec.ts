@@ -15,15 +15,31 @@ import {
  *
  * `alarm-lifecycle-escalation-staleness.spec.ts` holds the phase's half: that
  * the input is marked. This file holds the exit's: that a marked input records
- * one row, under the step's own key, before the ceiling and after the ledger
- * read.
+ * one row, under the step's own key, **after** the ledger read and **after**
+ * the ceiling.
  *
- * **The position is the whole subject, and two neighbouring placements are
+ * **The position is the whole subject, and both neighbouring placements are
  * wrong without being compile errors.** Before the `alreadyRecorded` check the
  * exit would write a row for a step already sent — the phase re-dispatches
  * every due step every tick, and the ledger read is what makes that idempotent
- * (S6). After the ceiling it would report an age as a rate limit (S7). Neither
- * is visible in S5 alone, which is why S5 is not the gate.
+ * (S6). Before the CEILING it would abandon a step for age it spent waiting on
+ * budget (S7), which is the interaction the `F3.52` security review measured:
+ * the reserve makes raises consume the event budget, so a channel busy with
+ * raises refuses every step, and the old order then gave up on each one at 60
+ * minutes — converting a late delivery into no delivery at all. Owner ruling 7
+ * moved it below the ceiling, and **S7 asserts the opposite of what it
+ * asserted when it was written.**
+ *
+ * S5 and S7 are the pair that pins the order: S5 holds the age deciding under a
+ * ceiling the step passes, S7 holds the ceiling deciding first when it does
+ * not. Neither alone is the gate.
+ *
+ * **S9 is the interaction the correctness review found missing**, and it is the
+ * one the field actually reaches: a step over the RESERVED limit while the full
+ * ceiling still has headroom. S7 gets there by exhausting the whole ceiling at a
+ * rate of 1, which any ordering of the two exits would refuse; S9 is the state
+ * only the reserve can produce, and owner ruling 8 is what made it reachable
+ * without a raise backlog behind it.
  *
  * **Its own file, and one `it()` per case.** `dispatch-budget.spec.ts`'s
  * subject is the ceiling's two budgets; this is a different exit and a
@@ -118,20 +134,36 @@ export async function testAnAlreadyAnsweredStepWritesNoStaleRow(): Promise<void>
 }
 
 /**
- * S7 — over every ceiling, a stale step still reads as stale.
+ * S7 — a step the CEILING refused is never abandoned for the age it spent
+ * waiting on budget.
  *
- * The exit is before the ceiling. At a rate of 1 the reserved event limit is
- * `floor(1 * 0.8) = 0`, so five `sent` rows are over both limits and the
- * ceiling would refuse this step if it were ever asked. It is not asked at all,
- * and `reads.rateLimit === 0` is what asserts that directly: an exit placed
- * after the ceiling would report the age as a rate limit, which reads in the UI
- * as "try again later" for a step that will never be tried again.
+ * **This case asserted the exact opposite until owner ruling 7**, and the
+ * inversion is the point rather than a detail. The exit used to sit before the
+ * ceiling so that an age was never reported as a rate limit.
  *
- * **Mutation:** the exit moved below the `overLimit` block → the status
- * assertion reddens; moved below the ceiling READ but above the block → only
- * the `reads.rateLimit` assertion reddens.
+ * **What the move buys is the REASON, not the message.** The argument for it
+ * was that a step refused by the budget could then never be abandoned for age
+ * it spent waiting — and a correctness pass falsified that before it was
+ * committed. `stepIsTooLate` recomputes each tick from a fixed `raised_at` and
+ * an increasing `now`, so once a step is stale it stays stale: the moment the
+ * ceiling frees, control reaches the exit and the step is abandoned after all.
+ * The end state is identical in both orders. What differs is what an operator
+ * reads meanwhile — `skipped_rate_limited` is true and self-clearing while the
+ * channel is over budget, where `skipped_stale` would be terminal and premature.
+ * Ruling 8's two-count ceiling is what actually reduces the loss, by stopping
+ * raises consuming the event budget in the first place.
+ *
+ * So the ceiling answers first. At a rate of 1 the reserved limit is
+ * `floor(1 * 0.8) = 0`, so five `sent` rows are over both limits: the step gets
+ * `skipped_rate_limited`, writes **no row** (`F3.48` ruling Q1), and the next
+ * tick asks again. S5 holds the other side — the age deciding under a ceiling
+ * the step passes.
+ *
+ * **Mutation:** the exit moved back above the `overLimit` block → every
+ * assertion here reddens, and S5 stays green. The pair is what pins the order;
+ * neither alone does.
  */
-export async function testTheAgeIsDecidedBeforeTheCeiling(): Promise<void> {
+export async function testTheCeilingAnswersBeforeTheAge(): Promise<void> {
   const { db, recorded, reads, setCount } = fakeDb();
   const webhook = sendingWebhook();
   const service = serviceWith({
@@ -145,16 +177,22 @@ export async function testTheAgeIsDecidedBeforeTheCeiling(): Promise<void> {
   const results = await service.dispatchToChannels([channelRow()], staleStep());
 
   assert(
-    results[0]?.status === "skipped_stale",
-    `S7: age, not rate — got ${String(results[0]?.status)}`,
+    results[0]?.status === "skipped_rate_limited",
+    `S7: budget answers before age — got ${String(results[0]?.status)}`,
   );
   assert(
-    recorded.length === 1 && recorded[0]?.status === "skipped_stale",
-    `S7: and the row says so too, got ${recorded.map((row) => row.status).join(",")}`,
+    recorded.length === 0,
+    `S7: and it writes no row, so the next tick retries (F3.48 Q1) — got ${recorded
+      .map((row) => row.status)
+      .join(",")}`,
   );
   assert(
-    reads.rateLimit === 0,
-    `S7: the ceiling is never even read for an abandoned step, got ${reads.rateLimit} read(s)`,
+    reads.rateLimit === 1,
+    `S7: the ceiling IS read for a stale step, got ${reads.rateLimit} read(s)`,
+  );
+  assert(
+    webhook.sent.length === 0,
+    "S7: a refused step still reaches no transport",
   );
 }
 
@@ -213,4 +251,65 @@ export async function testAReofferedRaiseIsNeverAbandoned(): Promise<void> {
     raiseRow !== undefined && !raiseRow.dedupeKey.includes(":escalation"),
     `S8: the raise's row is under the unsuffixed raise key, got "${String(raiseRow?.dedupeKey)}"`,
   );
+}
+
+/**
+ * S9 — a step 61 minutes past due, refused by the RESERVED limit alone: the
+ * status recorded is `skipped_rate_limited`, and no row is written.
+ *
+ * The interaction case the `F3.52` correctness review found missing. S7 reaches
+ * the ceiling by exhausting it outright — a rate of 1 with five sent rows is
+ * over the full limit and the reserved one — so it cannot tell an ordering that
+ * consults the FULL ceiling first from one that consults both. Here the full
+ * ceiling has twelve slots left and only the reserve refuses: the trailing hour
+ * holds 48 rows written by dispatches that charged the reserved budget, against
+ * a rate of 60 (`floor(60 * 0.8) = 48`). Owner ruling 8 is what makes this state
+ * reachable at all — before it, the same refusal came from any 48 rows, raises
+ * included, which is the starvation the review measured.
+ *
+ * The lateness is the sweep's, carried on the input: `stale: true` is what
+ * `runEscalationPhase` sets on a step whose `raisedAt` is more than the age
+ * budget behind `now`, and the exit under test cannot see a clock.
+ *
+ * **The absent row is the half that matters most.** `skipped_stale` blocks the
+ * step's key for the life of the ledger — `eventDeliveryBlocked`'s "not
+ * `failed`" arm — so a stale step abandoned for budget it spent WAITING would
+ * never be tried again. Writing nothing is what leaves the key free for the next
+ * tick, when the trailing hour has moved on (`F3.48` ruling Q1).
+ *
+ * **Mutation:** the `skipped_stale` exit moved back above the `overLimit` block
+ * → red here, on both the status and the row count, and red in S7. The
+ * RESERVED arm of the ceiling removed → also red here, and green in S7, because
+ * the full ceiling still refuses there. That second mutation is why this case
+ * belongs beside the budget cases as well as the placement ones.
+ */
+export async function testAStepOverTheReserveIsRefusedRatherThanAbandoned(): Promise<void> {
+  const { db, recorded, reads, setCount } = fakeDb();
+  const webhook = sendingWebhook();
+  const service = serviceWith({
+    db,
+    channels: [],
+    webhook: webhook.transport,
+    env: { NOTIFY_RATE_LIMIT_PER_HOUR: "60" },
+  });
+
+  setCount(48, 48);
+  const results = await service.dispatchToChannels([channelRow()], staleStep());
+
+  assert(
+    results[0]?.status === "skipped_rate_limited",
+    `S9: the reserve answers before the age, got ${String(results[0]?.status)}`,
+  );
+  assert(results[0]?.error === null, "S9: a ceiling refusal is not an error");
+  assert(
+    recorded.length === 0,
+    `S9: and it writes NO row, so the step's key survives for the next tick — got ${recorded
+      .map((row) => row.status)
+      .join(",")}`,
+  );
+  assert(
+    reads.rateLimit === 1,
+    `S9: the ceiling IS read for a stale step, got ${reads.rateLimit} read(s)`,
+  );
+  assert(webhook.sent.length === 0, "S9: a refused step still reaches no transport");
 }

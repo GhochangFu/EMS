@@ -50,7 +50,9 @@ export function sendTestResult(outcome: DispatchOutcome): {
 
 /**
  * An outcome for an exit that wrote no row **by design** — a deduped answer, or
- * one of {@link offeredAgainWithoutAsking}'s three conserved refusals.
+ * one of `offeredAgainWithoutAsking`'s three conserved refusals (that function
+ * lives in `dispatch-policy.ts`; named in prose rather than `{@link}`ed,
+ * because this module does not import it).
  *
  * `rowLost` is `false` here and that is not a white lie: nothing was lost. The
  * flag means "an insert was attempted and threw", so that the raise retry stops

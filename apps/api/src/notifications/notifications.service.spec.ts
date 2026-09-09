@@ -84,8 +84,8 @@ type Recorded = {
  *
  * **The SELECTs are told apart by their projection, not by their `WHERE`.**
  * Drizzle hands the fake an opaque SQL object for the `WHERE`, so it can see
- * nothing of it: the rate-limit read asks for `{ count }` and ends at
- * `.where()`; `hasRecordedSkip` asks for `{ id }` and adds `.limit(1)`;
+ * nothing of it: the rate-limit read asks for `{ allSent, reservedSent }` and
+ * ends at `.where()`; `hasRecordedSkip` asks for `{ id }` and adds `.limit(1)`;
  * `F3.10`'s `eventDeliveryBlocked` asks for `{ status }` and adds
  * `.limit(MAX_EVENT_ATTEMPTS)`; `sentChannelIdsForAlarm` asks for
  * `{ channelId }` and ends at `.where()`. Each projection has its own queue and
@@ -119,7 +119,23 @@ export function fakeDb(sentInLastHour = 0): {
   deliveryLimits: number[];
   /** The `WHERE` each `{ status }` read was given, in read order — `F3.48` Q2's SQL assertion. */
   deliveryConditions: unknown[];
-  setCount: (n: number) => void;
+  /**
+   * The PROJECTION each ceiling read was given, in read order — ruling 8's SQL
+   * assertion. The reserved count is a `FILTER` aggregate, so unlike every other
+   * read here the clause that decides which rows it counts is in the projection
+   * rather than in the `WHERE`. `dispatch-budget.spec.ts` renders it.
+   */
+  rateLimitProjections: unknown[];
+  /**
+   * The two numbers the ceiling read answers with: every `sent` row in the
+   * trailing hour, and the subset of them a dispatch that charged the RESERVED
+   * budget wrote (`F3.52` owner ruling 8).
+   *
+   * `reserved` defaults to `all`, which is the pre-ruling-8 behaviour exactly —
+   * one count answering both limits — so every case that calls `setCount(n)`
+   * still means what it meant. A case about the reserve gives both.
+   */
+  setCount: (n: number, reserved?: number) => void;
   failRateLimitReads: (fail: boolean) => void;
   /** Answers for the next `{ id }` (skip) existence reads, in dispatch order. Empty = `false`. */
   setSkipRecorded: (...values: boolean[]) => void;
@@ -138,7 +154,9 @@ export function fakeDb(sentInLastHour = 0): {
   const skipQueue: boolean[] = [];
   const deliveryQueue: string[][] = [];
   const sentChannels: string[] = [];
+  const rateLimitProjections: unknown[] = [];
   let count = sentInLastHour;
+  let reservedCount = sentInLastHour;
   let insertsFail = false;
   let rateLimitReadsFail = false;
   let skipReadsFail = false;
@@ -147,13 +165,14 @@ export function fakeDb(sentInLastHour = 0): {
   const db = {
     select: (projection: Record<string, unknown>) => {
       const shape = Object.keys(projection).sort().join(",");
-      if (shape === "count") {
+      if (shape === "allSent,reservedSent") {
+        rateLimitProjections.push(projection);
         return {
           from: () => ({
             where: () => {
               reads.rateLimit += 1;
               if (rateLimitReadsFail) return Promise.reject(new Error("ledger unavailable"));
-              return Promise.resolve([{ count }]);
+              return Promise.resolve([{ allSent: count, reservedSent: reservedCount }]);
             },
           }),
         };
@@ -221,8 +240,10 @@ export function fakeDb(sentInLastHour = 0): {
     reads,
     deliveryLimits,
     deliveryConditions,
-    setCount: (n) => {
+    rateLimitProjections,
+    setCount: (n, reserved = n) => {
       count = n;
+      reservedCount = reserved;
     },
     failRateLimitReads: (fail) => {
       rateLimitReadsFail = fail;

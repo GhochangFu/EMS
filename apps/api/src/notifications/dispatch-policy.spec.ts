@@ -1,4 +1,5 @@
-import { EVENT_SHARE, budgetFor, hourlyCeiling } from "./dispatch-policy";
+import { buildDedupeKey } from "./dedupe-key";
+import { EVENT_SHARE, RESERVED_KEY_PATTERN, budgetFor, hourlyCeiling } from "./dispatch-policy";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -10,18 +11,25 @@ function assert(condition: boolean, message: string): void {
  * `F3.52` — the two limits ADR 0041 Amendment 6 §1 puts behind decision 7's
  * single count (owner rulings 3 and 4).
  *
- * `isOverHourlyLimit` still runs ONE `count(*)`. What Amendment 6 changed is
- * only what that count is compared against: the raise path keeps the whole
- * `ratePerHour`, and the event path — an escalation step or a cleared message
- * — stops at `Math.floor(ratePerHour * EVENT_SHARE)`, so the last slots of
- * every hour stay reachable by a raise alone.
+ * `isOverHourlyLimit` runs ONE query. What Amendment 6 added is a second limit
+ * over it: the raise path keeps the whole `ratePerHour`, and the event path — an
+ * escalation step or a cleared message — stops at
+ * `Math.floor(ratePerHour * EVENT_SHARE)`, so the last slots of every hour stay
+ * reachable by a raise alone.
+ *
+ * **Owner ruling 8 gave the second limit its own number** to be compared
+ * against: the query returns the trailing hour's `sent` rows AND the subset of
+ * them written by dispatches that charged the reserved budget, so a backlog of
+ * raises can no longer spend the event share. The pure half of that ruling is
+ * {@link RESERVED_KEY_PATTERN} and the key shape it depends on, which is the
+ * last case in this file; the wiring half is `dispatch-budget.spec.ts`.
  *
  * **One exported function per claim, and one `it()` per function** in the
  * sibling `.test.ts`. `assert` throws, so a suite that puts every claim in one
  * `it()` reddens at the FIRST failing block and never runs the block that owns
  * the claim — the shape this repository has been burned by (AGENTS.md §4.6: a
- * mutation must redden THAT assertion). Seven mutations are named below, and
- * each names the one case that kills it.
+ * mutation must redden THAT assertion). Every case below names the mutations it
+ * kills, and each of those names the one case that kills it.
  *
  * The service-level half of the same rulings — which budget each of the three
  * call sites asks for — is `dispatch-budget.spec.ts`. Nothing here touches a
@@ -147,4 +155,64 @@ export function testAClearedMessageIsOnTheReservedBudgetToo(): void {
 export function testAReofferedRaiseKeepsTheFullBudget(): void {
   const budget = budgetFor({ reoffered: true });
   assert(budget === "full", `a re-offered raise is still a raise, got ${budget}`);
+}
+
+/**
+ * Owner ruling 8's pure half: an EVENT key carries a segment a raise key does
+ * not, and {@link RESERVED_KEY_PATTERN} asks for exactly that segment.
+ *
+ * The reserved count must match the rows written by dispatches that CHARGED the
+ * reserved budget — every event, because {@link budgetFor} answers `"reserved"`
+ * for every event, and a test send, which writes no key at all. The ledger has
+ * no column saying which budget a row charged, so the key shape is what the
+ * `FILTER` reads, and this case is what pins that shape: a raise key is
+ * `rule:alarm:severity` and every event key appends to it.
+ *
+ * The pattern needs one colon MORE than a raise key has, which is the same
+ * number as a raise key's segments — so `LIKE '%:%:%:%'` matches an escalation
+ * key and a cleared key and never a bare raise key. Stated as that relation
+ * rather than as the literal, because the literal alone would be a restatement
+ * of the constant.
+ *
+ * **Mutations:** the pattern shortened to `'%:%:%'` → red here, and a raise row
+ * would then fill the reserve — the defect ruling 8 removed, arriving from the
+ * SQL side. A suffix moved to the FRONT of the key in `buildDedupeKey` (the
+ * "escalation:1:rule:alarm:severity" shape) leaves the counts intact and is not
+ * killed here; nothing else about it would work either, and `dedupe-key.spec.ts`
+ * holds the prefix rule.
+ *
+ * **What this does NOT gate:** LIKE's own semantics. No case in this repository
+ * runs the pattern over a string in TypeScript, because a matcher written here
+ * would only agree with itself. `storm-control.integration.spec.ts` is where the
+ * `WHERE` clauses of this service meet real rows; it RAN green against Postgres
+ * with the new aggregate, so the statement is valid SQL and the ceiling read
+ * executes — but this unit added no case there, so WHICH rows the pattern
+ * selects is still unmeasured against a database.
+ */
+export function testAnEventKeyCarriesTheSegmentTheReservedFilterAsksFor(): void {
+  const raise = { ruleId: "rule-1", alarmId: "alarm-1", severity: "critical" };
+  const segments = (key: string): number => key.split(":").length;
+
+  assert(
+    segments(buildDedupeKey(raise)) === 3,
+    `a raise key is rule:alarm:severity, got ${buildDedupeKey(raise)}`,
+  );
+  assert(
+    segments(buildDedupeKey({ ...raise, event: { kind: "escalation", step: 1 } })) === 5,
+    `a step key appends :escalation:<n>, got ${buildDedupeKey({
+      ...raise,
+      event: { kind: "escalation", step: 1 },
+    })}`,
+  );
+  assert(
+    segments(buildDedupeKey({ ...raise, event: { kind: "cleared" } })) === 4,
+    `a cleared key appends :cleared, got ${buildDedupeKey({
+      ...raise,
+      event: { kind: "cleared" },
+    })}`,
+  );
+  assert(
+    RESERVED_KEY_PATTERN.split(":").length - 1 === segments(buildDedupeKey(raise)),
+    `the pattern must demand one colon more than a raise key has, got ${RESERVED_KEY_PATTERN}`,
+  );
 }

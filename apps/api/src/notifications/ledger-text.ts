@@ -44,6 +44,7 @@ const MAX_ERROR_LENGTH = 1_000;
  */
 const LEDGER_UNSAFE_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 
+/** An error's message, bounded to what the ledger column can hold (§4.1). */
 export function reasonOf(err: unknown): string {
   return truncate(err instanceof Error ? err.message : String(err));
 }

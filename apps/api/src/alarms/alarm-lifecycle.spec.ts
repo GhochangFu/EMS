@@ -1,4 +1,5 @@
 import { buildDedupeKey } from "../notifications/dedupe-key";
+import { subjectFor } from "../notifications/dispatch-shapes";
 import {
   DEFAULT_CLEAR_HOLD_SECONDS,
   LIFECYCLE_TICK_MS,
@@ -458,13 +459,17 @@ export function testTheStaleFlagRidesOnTheEvent(): void {
  * **Mutation:** `buildDedupeKey` pushing the flag (a `":stale"` part, or the
  * event JSON-stringified into the key) → red here.
  *
- * **The subject half of this claim is NOT written, and the reason is that it
- * is not observable.** `subjectFor` is module-private in
- * `notifications.service.ts`, and a stale input returns at the
- * `skipped_stale` exit BEFORE step 3 builds a subject — so no stale subject
- * exists anywhere to compare. `dispatch-staleness.spec.ts` S5 asserts the
- * transport is never reached, which is the same property stated where it can
- * be measured.
+ * **The subject half is written here too, and it was not writable when this
+ * docblock was first drafted.** `subjectFor` was module-private in
+ * `notifications.service.ts` then, so the claim was recorded as unobservable —
+ * and this branch's own second extraction (`dispatch-shapes.ts`) exported it a
+ * few commits later, which made the comment false and the assertion cheap. The
+ * vacuity reason still holds for the RUNTIME path: a stale input returns at the
+ * `skipped_stale` exit before step 3 ever builds a subject, so nothing in
+ * production compares the two. That is exactly why the assertion belongs on
+ * `subjectFor` directly — it is the forward guard on ADR 0057 Amendment 7's
+ * "must not reach `buildDedupeKey` or the message subject", and the half of
+ * that sentence nothing else gates.
  */
 export function testTheStaleFlagStaysOutOfTheDedupeKey(): void {
   const stale = escalationDispatchInput(alarm, rule, 1, NOW, true);
@@ -478,6 +483,19 @@ export function testTheStaleFlagStaysOutOfTheDedupeKey(): void {
   assert(
     buildDedupeKey(stale) === "rule-1:alarm-1:critical:escalation:1",
     `and it is the literal form the ledger already holds, got "${buildDedupeKey(stale)}"`,
+  );
+
+  // The subject half of ADR 0057 Amendment 7's sentence. `subjectFor` is
+  // exported from `dispatch-shapes.ts` since this branch's second extraction.
+  // Mutation: `subjectFor` interpolating the flag — a `" (stale)"` suffix, or
+  // the event spread into the string — reddens here and nowhere else.
+  assert(
+    subjectFor(stale) === subjectFor(fresh),
+    `the subject is the same with and without the flag, got "${subjectFor(stale)}" and "${subjectFor(fresh)}"`,
+  );
+  assert(
+    subjectFor(stale) === "escalation 1 · critical: RULE-1",
+    `and it is the escalation form plan D14 states, got "${subjectFor(stale)}"`,
   );
 }
 

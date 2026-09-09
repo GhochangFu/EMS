@@ -67,7 +67,32 @@ const DEFAULT_STEP_MAX_LATENESS_MINUTES = 60;
  * reason, and the consequence there is the sharper one: a `NaN` bound compares
  * false against every comparison, so a typo would not relax the escalation
  * cut-off — it would remove it, and every late step would go on sending.
+ *
+ * **That guard was on the wrong value until the `F3.52` security review.** It
+ * tested the parsed MINUTES and then multiplied by `60_000`, so a value at or
+ * above roughly `1.5e304` passed `Number.isFinite` and overflowed to
+ * `Infinity` in the product — measured: `1e308`, `9e303` and `1.5e304` all
+ * produced `Infinity`, and `stepIsTooLate` then returns `false` against every
+ * comparison. The `NaN` door was shut while the door beside it, into the same
+ * room, stood open. {@link latenessMs} validates the product, which is the
+ * value anything downstream actually uses.
  */
+
+/**
+ * Minutes from the environment as a millisecond bound, or the default.
+ *
+ * **Validates the product, not the input.** Both checks are load-bearing and
+ * neither implies the other: the input check rejects `NaN`, a negative and a
+ * zero, and the product check rejects the overflow a finite input can still
+ * reach. A bound of `Infinity` is not a long grace period — it is the cut-off
+ * removed, silently and with no log line.
+ */
+function latenessMs(minutes: number): number {
+  const chosen =
+    Number.isFinite(minutes) && minutes > 0 ? minutes : DEFAULT_STEP_MAX_LATENESS_MINUTES;
+  const ms = chosen * 60_000;
+  return Number.isFinite(ms) ? ms : DEFAULT_STEP_MAX_LATENESS_MINUTES * 60_000;
+}
 export function buildConfig(env: NodeJS.ProcessEnv): NotificationsConfig {
   const parsedPort = Number(env.SMTP_PORT);
   const parsedRate = Number(env.NOTIFY_RATE_LIMIT_PER_HOUR);
@@ -87,10 +112,7 @@ export function buildConfig(env: NodeJS.ProcessEnv): NotificationsConfig {
     webhookAllowInsecure: env.NOTIFY_WEBHOOK_ALLOW_INSECURE === "true",
     ratePerHour:
       Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : DEFAULT_RATE_PER_HOUR,
-    stepMaxLatenessMs:
-      (Number.isFinite(parsedLateness) && parsedLateness > 0
-        ? parsedLateness
-        : DEFAULT_STEP_MAX_LATENESS_MINUTES) * 60_000,
+    stepMaxLatenessMs: latenessMs(parsedLateness),
   };
 }
 

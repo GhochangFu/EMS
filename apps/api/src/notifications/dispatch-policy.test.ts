@@ -6,6 +6,7 @@ import {
   testAReofferedRaiseKeepsTheFullBudget,
   testAReservedCeilingRoundsDownToZeroAtARateOfOne,
   testAnEscalationStepIsOnTheReservedBudget,
+  testAnEventKeyCarriesTheSegmentTheReservedFilterAsksFor,
   testTheEventPathStopsAtFourFifthsOfTheCeiling,
   testTheRaisePathKeepsTheWholeCeiling,
 } from "./dispatch-policy.spec";
@@ -14,8 +15,8 @@ import {
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014).
  *
  * One `it()` per claim, deliberately: `assert` throws, so a single `it()` over
- * all seven would stop at the first failure and a mutation could never be shown
- * to redden the case that owns it.
+ * all of them would stop at the first failure and a mutation could never be
+ * shown to redden the case that owns it.
  */
 describe("F3.52 dispatch policy: the hourly ceiling's two budgets", () => {
   it("keeps the whole ceiling for the raise path", () => {
@@ -44,5 +45,9 @@ describe("F3.52 dispatch policy: the hourly ceiling's two budgets", () => {
 
   it("keeps a re-offered raise on the full budget", () => {
     testAReofferedRaiseKeepsTheFullBudget();
+  });
+
+  it("gives an event key the segment the reserved filter asks for", () => {
+    testAnEventKeyCarriesTheSegmentTheReservedFilterAsksFor();
   });
 });

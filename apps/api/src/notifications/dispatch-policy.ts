@@ -205,10 +205,16 @@ export const EVENT_SHARE = 0.8;
  * `F3.52` — the ceiling a given budget may reach, out of a channel's
  * configured `ratePerHour` (ADR 0041 Amendment 6 §1).
  *
- * One count, two limits: `isOverHourlyLimit` runs the same single `count(*)`
- * of `sent` rows in the trailing hour it always has, and only the number it is
- * compared against changes. There is no second query, no new column and no
- * schema change.
+ * One query, two limits — and since owner ruling 8, two counts to compare them
+ * against: `isOverHourlyLimit` returns the trailing hour's `sent` rows and, from
+ * the same round trip, the subset of them {@link RESERVED_KEY_PATTERN} matches.
+ * The full limit is measured against the first and the reserved limit against
+ * the second. There is no second query, no new column and no schema change.
+ *
+ * **Both limits still apply to a reserved dispatch**, so the channel's hourly
+ * total is still `ratePerHour`. Ruling 8 reallocates one fixed budget between
+ * two callers; it does not create a second one, and an event that passed the
+ * reserved limit is still refused by the full one.
  *
  * **`Math.floor`, and it is load-bearing at the extreme.** `floor(1 * 0.8)` is
  * `0`, so a channel throttled to one message an hour sends raises only — no
@@ -247,3 +253,54 @@ export function hourlyCeiling(budget: CeilingBudget, ratePerHour: number): numbe
 export function budgetFor(input: { event?: DispatchEvent; reoffered?: true }): CeilingBudget {
   return input.event === undefined ? "full" : "reserved";
 }
+
+/**
+ * `F3.52` security review, owner ruling 8 — the `LIKE` pattern that finds, in
+ * the ledger, the rows a RESERVED dispatch wrote.
+ *
+ * **The invariant, and the reason this constant exists: the rows counted
+ * against the reserved limit are exactly the rows written by dispatches that
+ * CHARGED the reserved limit.** {@link budgetFor} charges the reserve for every
+ * event and `sendTest` asks for it by name, so the ledger-side test has to find
+ * an escalation row, a cleared row AND a test-send row. Miss any of the three
+ * and the limit stops measuring what it charges: miss the test send, and a burst
+ * of manual tests fills the FULL ceiling, eats the raise headroom, and never
+ * trips the reserved limit at all.
+ *
+ * Before ruling 8 there was no such test. One unfiltered `count(*)` was compared
+ * against both limits, so the rows a RAISE wrote spent the event share: at the
+ * default 60, forty-eight sent raises refused every escalation step, cleared
+ * message and test send on the channel while raises went on sending to 60. That
+ * is the reserve pointing exactly the wrong way — it exists to keep the last
+ * slots reachable BY a raise, not to spend them ON one — and it is what made a
+ * step sit long enough for the §2 age budget to abandon it.
+ *
+ * **What the pattern reads.** The ledger has no column naming the budget a row
+ * charged, and adding one would be a schema change for a fact the dedupe key
+ * already carries: `buildDedupeKey` writes `rule:alarm:severity` for a raise and
+ * appends `:escalation:<n>` or `:cleared` for an event, and `record()` writes
+ * `NULL` for a send test, which has no rule and no alarm to key on. So the
+ * reserved rows are the NULL keys plus the keys with a fourth segment — three
+ * colons — which is what `'%:%:%:%'` asks for.
+ *
+ * **Structural, not a list of suffixes**, and that is the choice worth reading.
+ * `LIKE '%:escalation:%' OR LIKE '%:cleared'` would read the same today and fail
+ * OPEN tomorrow: a third `DispatchEvent` kind gets `"reserved"` from
+ * {@link budgetFor} the moment it exists, its rows would match neither literal,
+ * and events would quietly exceed the reserve with the compiler silent. Any new
+ * suffix adds a segment, so the pattern covers it by construction.
+ *
+ * **The one assumption, and it fails safe.** A raise key stays at three segments
+ * only while no part of it contains a colon. The rule and alarm ids are uuids;
+ * the severity is a code from `bms.alarm_severities`, whose `code varchar(64)`
+ * has no format CHECK (migration `0030`), so an operator-added level called
+ * `plant:critical` would give raise rows a fourth segment. They would then count
+ * as reserved, events would reach the reserved limit sooner, and the raise path
+ * would keep the whole ceiling — the reserve gets stronger, never weaker, and
+ * nothing exceeds `ratePerHour`. The three shipped codes are `info`, `warning`
+ * and `critical`.
+ *
+ * Bound as a parameter by drizzle's `like()`, never interpolated, so the `%`
+ * characters cannot reach the statement as text.
+ */
+export const RESERVED_KEY_PATTERN = "%:%:%:%";

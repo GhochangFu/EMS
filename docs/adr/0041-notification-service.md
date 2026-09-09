@@ -675,23 +675,42 @@ fixes are "ADR 0041 decision 5 territory". The per-channel hourly ceiling is
 **decision 7**, storm control's second bullet. Decision 5 is the unconfigured
 channel's recorded skip.
 
-### 1. Decision 7's ceiling is one count against two limits (rulings 3 and 4)
+### 1. Decision 7's ceiling is one query, two counts and two limits (rulings 3, 4 and 8)
 
 `isOverHourlyLimit` counts `sent` rows in the trailing hour and compares that
 count to `ratePerHour`. It gains a third argument — **the budget to charge
 against, not the kind asking**, and this sentence said "kind" until the build
 measured why it cannot: `sendTest` is neither a raise nor an event, so a
 parameter called `kind` would make that call site a false claim in code. The
-type is `CeilingBudget = "full" | "reserved"` and the count itself is
-unchanged — what changes is only what it is compared against:
+type is `CeilingBudget = "full" | "reserved"`. One query returns **two**
+numbers, and each budget reads the pair differently:
 
-- **the raise path keeps the whole ceiling**, `ratePerHour`;
-- **the event path — an escalation step or a cleared message — stops at
-  `Math.floor(ratePerHour * EVENT_SHARE)`**, with `EVENT_SHARE` at `0.8`.
+- **the raise path keeps the whole ceiling** — refused when `allSent >=
+  ratePerHour`;
+- **the reserved path — an escalation step, a cleared message or a `sendTest` —
+  is refused when `allSent >= ratePerHour` **or** `reservedSent >=
+  Math.floor(ratePerHour * EVENT_SHARE)`**, with `EVENT_SHARE` at `0.8`.
 
-At the default 60 an hour, events stop at 48 and twelve slots stay reachable by
-a raise alone. There is no second query, no new column and no schema change:
-one count, two limits.
+At the default 60 an hour, events can never occupy more than 48 of the 60, so
+twelve slots stay reachable by a raise alone. Still one round trip and no schema
+change: a `FILTER` aggregate beside the existing count.
+
+**This said "one count, two limits" and shipped that way, and it was
+backwards** (`F3.52` security review, Medium; owner ruling 8). An unfiltered
+count charges a RAISE against the reduced limit too, so forty-eight sent
+*raises* refused every step, every cleared message and every test send on that
+channel while raises went on to 60. The reserve was taking from the path it was
+meant to protect — and a step held that long is exactly the step §2's age
+cut-off then abandons, so the two halves of this row compounded into a loss
+where there had been a late delivery.
+
+**The invariant that makes the second count correct, and it is not "events":**
+*the rows counted against the reserved limit are exactly the rows written by
+dispatches that CHARGED the reserved limit.* A `sendTest` charges it (ruling 4)
+and therefore must be counted in it, or a burst of tests would fill the full
+ceiling and eat the raise headroom without ever tripping the reserved one. A
+raise's dedupe key carries no suffix; an escalation key ends `:escalation:<n>`,
+a cleared key ends `:cleared`, and a test send writes no key at all.
 
 **`sendTest` meets the reduced event limit** (ruling 4). It is the third caller
 of this ceiling and is neither a raise nor an event — an operator pressing *Send
@@ -747,8 +766,22 @@ is the one that makes this the honest choice:
    sixth value; this refuses it one layer earlier", is corrected in the same
    edit.** Migration `0068` widens
    `notification_deliveries_status_check` from migration `0038`. The schema
-   comment at `packages/db/src/schema/alarms-schema.ts:359-360` restates the list
+   comment at `packages/db/src/schema/alarms-schema.ts:359-362` restates the list
    and is corrected too.
+
+   **`0068`'s own header says its widening was "MEASURED" against the running
+   database, and the first measurement ran on different bytes.** The migration
+   review found the applied row hashing `d452088a…` while the committed file
+   hashes `b257bb67…` — a DRAFT of `0068` had run, and because drizzle applies a
+   file only when the last stamp is *strictly* lower than the journal's, an
+   equal stamp meant the committed bytes would never have run on that database
+   at all. The DDL was identical, so nothing was wrong in the schema; what was
+   wrong is that a green readback proved a file nobody had executed. Repaired by
+   hand on the dev database — the stray row re-stamped one millisecond earlier,
+   never deleted, since lowering the maximum re-runs everything above it — and
+   `pnpm db:migrate` then applied the committed bytes, whose hash is now the
+   newest row. `0068` is frozen by the pre-commit hook, so this note is the
+   correction rather than an edit to the header.
 2. `apps/web/src/lib/notification-channels.ts` holds **three** switches over
    the status — the row label, the tone, and the *Send test* message — so this
    row has an `apps/web` surface and owes a browser layer. A test send carries
@@ -811,6 +844,27 @@ suffix, and excludes only `skipped_rate_limited` and a stale
 `skipped_unconfigured` — so a `skipped_stale` row reaching a **raise** key would
 block that raise for ever. Ruling 1 keeps the raise path untouched and no such
 row should ever exist; the build gates that rather than trusting it.
+
+**Where the exit sits, and what that does *not* buy** (ruling 9). It is the last
+pre-check in `dispatchToChannel`: after the ledger read, and **after** the hourly
+ceiling. It sat before the ceiling until the security review, and the argument
+for moving it was that a step refused by the budget would then never be
+abandoned for age it spent waiting. **That argument is false and is recorded
+here rather than in a comment, because it was believed for a while.** A
+correctness pass traced it: `stepIsTooLate` recomputes each tick from a fixed
+`raised_at` and an increasing `now`, so once a step is stale it stays stale — the
+moment the ceiling frees, control reaches the exit and the step is abandoned
+after all. **The end state is identical either way; the move changes only which
+reason an operator reads while the channel is over budget**, and that is the
+whole of its justification: `skipped_rate_limited` is true and self-clearing
+while it is true, and `skipped_stale` is written at the moment the step could
+actually have been sent and was too old. What actually reduces the loss is
+ruling 8 in §1 — stopping raises from consuming the event budget in the first
+place.
+
+Before the ledger read is wrong for its own unrelated reason: it would write a
+row for a step already sent, because the phase re-dispatches every due step
+every tick and the ledger read is what makes that idempotent.
 
 ### What this does not change
 

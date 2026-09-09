@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, gt, gte, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, gte, isNull, like, ne, or, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import { notificationDeliveries } from "@bms/db";
@@ -9,6 +9,7 @@ import { ChannelsService } from "./channels.service";
 import { buildDedupeKey, type DispatchEvent } from "./dedupe-key";
 import {
   MAX_EVENT_ATTEMPTS,
+  RESERVED_KEY_PATTERN,
   type CeilingBudget,
   type DispatchOutcome,
   budgetFor,
@@ -378,22 +379,6 @@ export class NotificationsService {
         return notRecorded(channel, { status: "skipped_deduped", error: null });
       }
 
-      // `F3.52` — the step is too late to send (ADR 0041 Amendment 6 §2). The POSITION is
-      // load-bearing and neither wrong neighbour is a compile error. BEFORE the `alreadyRecorded`
-      // return it would write a row for a step already sent — the phase re-dispatches every due
-      // step every tick, and the ledger read is what makes that idempotent (S6). AFTER the ceiling
-      // it would report an age as a rate limit (S7). INSIDE `input.event !== undefined` is ruling
-      // 1's structural gate: a raise and a re-offered raise cannot reach this line, and `stale`
-      // lives only on the escalation variant — a `skipped_stale` row under a RAISE key would block
-      // that raise for ever, since `channelsOwedTheRaise` excludes only `skipped_rate_limited` and
-      // a stale `skipped_unconfigured`. Case S8, a pair on one fixture, gates that, not this
-      // paragraph. The row IS written where `F3.48`'s ceiling exception writes none: an
-      // abandonment is a decision, not a postponement — nothing lifts by itself,
-      // `eventDeliveryBlocked`'s "not `failed`" arm is MEANT to block the key for ever, and the row
-      // is the only evidence. `offeredAgainWithoutAsking` asks another question: not consulted.
-      if (input.event.kind === "escalation" && input.event.stale === true) {
-        return this.record(input, channel, dedupeKey, { status: "skipped_stale", error: null });
-      }
     } else if (!input.raised) {
       // 1. The transition dedupe. The skip is still RECORDED: "we chose not to
       //    send" and "nothing happened" must not look the same in the ledger
@@ -503,6 +488,47 @@ export class NotificationsService {
         : this.record(input, channel, dedupeKey, limited);
     }
 
+    // 2b. `F3.52` — the step is too late to send (ADR 0041 Amendment 6 §2,
+    //     owner ruling 9). Last of the pre-checks: after the ledger read, and
+    //     after the ceiling.
+    //
+    //     **Being after the ceiling buys the REASON, not the message, and the
+    //     comment here claimed otherwise until a correctness pass ran it.** It
+    //     said a step refused by the budget could never then be abandoned for
+    //     age it spent waiting. False: `stepIsTooLate` recomputes each tick
+    //     from a fixed `raised_at` and an increasing `now`, so once stale a
+    //     step stays stale — the moment the ceiling frees, control reaches this
+    //     line and the step is abandoned anyway. The end state is the same in
+    //     both orders. What differs is what an operator reads meanwhile:
+    //     `skipped_rate_limited` is true and self-clearing while the channel is
+    //     over budget, where `skipped_stale` would be terminal and premature.
+    //     What actually reduces the loss is ruling 8's two-count ceiling above,
+    //     which stops raises consuming the event budget at all. S7 and S9 gate
+    //     this order; S5 gates the age deciding under a ceiling the step passes.
+    //
+    //     BEFORE the `alreadyRecorded` return is still wrong for its own
+    //     reason: it would write a row for a step already sent, because the
+    //     phase re-dispatches every due step every tick and the ledger read is
+    //     what makes that idempotent (S6).
+    //
+    //     `input.event?.kind` re-narrows because the `if` block above has
+    //     closed. That is ruling 1's structural gate all the same: `stale`
+    //     lives only on the escalation variant, so a raise and a re-offered
+    //     raise cannot carry it. A `skipped_stale` row under a RAISE key would
+    //     block that raise for ever — `channelsOwedTheRaise` excludes only
+    //     `skipped_rate_limited` and a stale `skipped_unconfigured`. Case S8, a
+    //     pair on one fixture, is the gate; this paragraph is not.
+    //
+    //     The row IS written where the ceiling exception writes none: an
+    //     abandonment is a decision, not a postponement — nothing lifts by
+    //     itself, `eventDeliveryBlocked`'s "not `failed`" arm is MEANT to block
+    //     the key for ever, and the row is the only evidence an operator gets.
+    //     `offeredAgainWithoutAsking` answers a different question and is not
+    //     consulted.
+    if (input.event?.kind === "escalation" && input.event.stale === true) {
+      return this.record(input, channel, dedupeKey, { status: "skipped_stale", error: null });
+    }
+
     // 3. Send. A transport that rejects is a `failed` delivery, never a
     //    rejection out of `dispatch` (decision 1).
     const transport = this.transportFor(channel.kind);
@@ -561,30 +587,24 @@ export class NotificationsService {
    * there is no `withTenant` GUC to run it under — the `WHERE` clause is now
    * what does the org filtering, not the connection.
    *
-   * **`F3.52`: one count, two limits** (ADR 0041 Amendment 6 §1, ruling 3).
-   * The query below is unchanged — the same single `count(*)` of `sent` rows in
-   * the trailing hour. What `budget` changes is only what that count is
-   * compared against: a raise keeps the whole `ratePerHour`, and an event or a
-   * manual test stops at `hourlyCeiling`'s reserved share, so the last slots of
-   * every hour stay reachable by a raise alone. No second query, no new column,
-   * no schema change.
+   * **`F3.52`: one query, two limits** (ADR 0041 Amendment 6 §1, rulings 3 and
+   * 8). A raise keeps the whole `ratePerHour`; an event or a manual test must
+   * ALSO stay under `hourlyCeiling`'s reserved share, so the last slots of every
+   * hour stay reachable by a raise alone. One round trip, no new column, no
+   * schema change.
    *
-   * **The COUNT itself is not filtered by budget, and that is deliberate.**
-   * Filtering it to match the budget would give the two paths two independent
-   * pools, and one hour would then deliver `ratePerHour` raises PLUS
-   * `floor(ratePerHour * EVENT_SHARE)` events — 108 against a configured 60 —
-   * so the channel would exceed the very ceiling decision 7 exists to impose.
-   * Amendment 6 reallocates ONE fixed budget between two callers; it does not
-   * create a second one. One pool, filled by every `sent` row whatever produced
-   * it, and two heights at which callers stop drawing from it.
+   * **Two numbers, and each limit reads its own** (ruling 8, the security
+   * review's finding). `allSent` is every `sent` row; `reservedSent` is the
+   * subset {@link RESERVED_KEY_PATTERN} matches — the rows a dispatch that
+   * CHARGED the reserved budget wrote. That constant's docblock holds the
+   * invariant, why the pattern is structural, and the defect this replaced: one
+   * unfiltered count compared against both limits let 48 sent RAISES refuse
+   * every step, clear and test on the channel while raises sent on to 60.
    *
-   * That "one pool" claim is not gated by a unit case and cannot be: the fake
-   * database's count is a settable fixture rather than something derived from
-   * the rows it recorded, so no unit case can show an event's send consuming a
-   * slot a later raise would have seen. What IS gated there is the "no second
-   * query" half — `dispatch-budget.spec.ts` asserts one ceiling read per
-   * dispatch across the raise/step pair. The pool itself rests on the `WHERE`
-   * below, which `F3.52` did not change.
+   * **The full arm is tested first and applies to BOTH budgets**, so the hourly
+   * total is still `ratePerHour` and the two limits are not two pools. An event
+   * is refused when either number is at its limit; a raise, only by the first.
+   * `dispatch-budget.spec.ts` N4 is that claim, on a mixed count.
    */
   private async isOverHourlyLimit(
     channelId: string,
@@ -592,8 +612,15 @@ export class NotificationsService {
     budget: CeilingBudget,
   ): Promise<boolean> {
     const since = new Date(Date.now() - 60 * 60 * 1000);
+    const chargedTheReserve = or(
+      isNull(notificationDeliveries.dedupeKey),
+      like(notificationDeliveries.dedupeKey, RESERVED_KEY_PATTERN),
+    );
     const rows = await this.fleetDb
-      .select({ count: sql<number>`count(*)::int` })
+      .select({
+        allSent: sql<number>`count(*)::int`,
+        reservedSent: sql<number>`count(*) FILTER (WHERE ${chargedTheReserve})::int`,
+      })
       .from(notificationDeliveries)
       .where(
         and(
@@ -603,7 +630,9 @@ export class NotificationsService {
           gte(notificationDeliveries.attemptedAt, since),
         ),
       );
-    return (rows[0]?.count ?? 0) >= hourlyCeiling(budget, this.config.ratePerHour);
+    if ((rows[0]?.allSent ?? 0) >= hourlyCeiling("full", this.config.ratePerHour)) return true;
+    if (budget === "full") return false;
+    return (rows[0]?.reservedSent ?? 0) >= hourlyCeiling("reserved", this.config.ratePerHour);
   }
 
   /**

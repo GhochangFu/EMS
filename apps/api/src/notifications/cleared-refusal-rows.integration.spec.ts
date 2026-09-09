@@ -189,11 +189,17 @@ export async function runClearedRefusalRowTests(pool: Pool, db: BmsDb): Promise<
       );
     }
 
-    // --- H1: blind `{ count }`, so the ledger read runs for real and only ---
-    //     `isOverHourlyLimit` throws. The key is fresh, so the real read does
-    //     not block and step 2 is reached.
+    // --- H1: blind `{ allSent, reservedSent }`, so the ledger read runs for --
+    //     real and only `isOverHourlyLimit` throws. The key is fresh, so the
+    //     real read does not block and step 2 is reached.
+    //
+    //     The shape was `{ count }` until `F3.52` owner ruling 8 gave the
+    //     ceiling a second number to compare the reserved limit against. This
+    //     literal is the read's identity, so it moves with the projection —
+    //     `blindedReads() === 2` below is what catches it if it does not, and
+    //     it did.
     {
-      const h1 = blindService("count");
+      const h1 = blindService("allSent,reservedSent");
       const clear: DispatchInput = { ...base, severity: "minor" };
       const escalation: DispatchInput = { ...clear, event: { kind: "escalation", step: 21 } };
 
