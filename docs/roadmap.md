@@ -3899,7 +3899,8 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 - **Not fixed, named so it is not re-filed.** A *partially* disabled recipient
   set still dispatches to the enabled channels and warns nothing — only the
   wholly-empty case speaks. The escalation phase has an analogous silent
-  `continue` over an empty channel list (`alarm-lifecycle.service.ts:747`)
+  `continue` over an empty channel list (`alarm-lifecycle-phases.ts:606`
+  since `4a2d00ec` moved the phases out of `alarm-lifecycle.service.ts`)
   that Amendment 6 leaves untouched.
 - **Unblocks:** nothing directly.
 
