@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   answers403BeforeItEverReachesTheThrottle,
   doesNotResolveTheAssetScopeForARefusedPress,
+  keysAGrantlessCallerOnTheSubjectTheControllerPassed,
+  keysEveryGlobalAdminOnTheOneFleetBucket,
   keysOnTheOrganizationTheSafeHelperReturned,
   runsNoSweepForARefusedPress,
   saysTheSameWaitInTheHeaderAndTheBody,
@@ -40,5 +42,13 @@ describe("F3.47 evaluate route", () => {
 
   it("keys on the organization readableOrganizationIds returned", async () => {
     await keysOnTheOrganizationTheSafeHelperReturned();
+  });
+
+  it("keys a grantless caller on the subject the controller passed", async () => {
+    await keysAGrantlessCallerOnTheSubjectTheControllerPassed();
+  });
+
+  it("keys every unrestricted global admin on the one fleet bucket", async () => {
+    await keysEveryGlobalAdminOnTheOneFleetBucket();
   });
 });

@@ -3,7 +3,7 @@ import type { Response } from "express";
 
 import type { JwtPayload } from "@bms/shared";
 
-import { EvaluateThrottle } from "./evaluate-throttle";
+import { EvaluateThrottle, GLOBAL_ADMIN_THROTTLE_KEY } from "./evaluate-throttle";
 import { RulesController } from "./rules.controller";
 
 /**
@@ -76,10 +76,33 @@ type Ctor = ConstructorParameters<typeof RulesController>;
 const isTooManyRequests = (err: unknown): boolean =>
   err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS;
 
-const ADMIN_USER = { sub: "u1", email: "admin@bms.local" } as unknown as JwtPayload;
+/** The caller every block presses with. It carries a `name` because blocks 19
+ * and 20 need one: `user.name` is the wrong-field mutation that matters at the
+ * one call site, and a fixture with no display name would redden on
+ * `"user:undefined"` — a mismatch that says nothing about which field arrived. */
+const ADMIN_USER = {
+  sub: "u1",
+  email: "admin@bms.local",
+  name: "Automation Admin",
+} as unknown as JwtPayload;
 /** A second human in the SAME organization. The bucket is per organization, not
  * per user, so this one is refused by the first one's press. */
 const COLLEAGUE = { sub: "u2", email: "wc-hvac-admin@bms.local" } as unknown as JwtPayload;
+/**
+ * A third human, sharing `ADMIN_USER`'s **display name** on purpose:
+ * `bms.users` puts no unique constraint on `display_name`, so two provisioned
+ * accounts may carry the same one.
+ *
+ * Blocks 19 and 20 press with this user in opposite directions — its own bucket
+ * when neither caller has an organization, the one shared bucket when both are
+ * unrestricted admins. That is the sentinel split, read from the route rather
+ * than from the helper.
+ */
+const DISPLAY_NAME_TWIN = {
+  sub: "u3",
+  email: "second-grantless@bms.local",
+  name: "Automation Admin",
+} as unknown as JwtPayload;
 
 /** A distinct organization per harness. Not what keeps one block from
  * reddening another — every `controllerWith` builds its own `EvaluateThrottle`,
@@ -115,9 +138,24 @@ type Harness = {
  * Built here rather than shared with `rules-notifications.spec.ts`: a fixture
  * built once for another purpose hides the mutation class it was not built for,
  * and this one has to count calls that fixture never made.
+ *
+ * `readableOrganizations` reaches the two branches where `throttleKeysFor`
+ * reads its second argument. It was `writeAllowed` alone, so every block ran
+ * the non-empty branch and nothing here observed the identity the handler
+ * passes — see block 19.
  */
-function controllerWith(options: { writeAllowed?: boolean } = {}): Harness {
+function controllerWith(
+  options: { writeAllowed?: boolean; readableOrganizations?: string[] | null } = {},
+): Harness {
   const organizationId = freshOrganizationId();
+  // `in`, not `options.readableOrganizations ?? [organizationId]`: `null` IS the
+  // global-admin case, and `??` would fold it back into the default. Block 20
+  // would then assert `fleet:admin` while silently exercising the organization
+  // path, which is the failure mode this whole option exists to close.
+  const readableOrganizations =
+    "readableOrganizations" in options
+      ? (options.readableOrganizations ?? null)
+      : [organizationId];
   const counts = {
     sweeps: 0,
     assetScopeReads: 0,
@@ -139,7 +177,7 @@ function controllerWith(options: { writeAllowed?: boolean } = {}): Harness {
       options.writeAllowed === false
         ? Promise.reject(new ForbiddenException("configuration write denied"))
         : Promise.resolve(),
-    readableOrganizationIds: () => Promise.resolve([organizationId]),
+    readableOrganizationIds: () => Promise.resolve(readableOrganizations),
     // The trap. `writableOrganizationIds` calls `assertMasterDataRole`, which
     // excludes `asset_group_admin` — a role `WRITE_MATRIX` gives
     // `configuration: true` — so reaching for it would answer 403 to someone
@@ -368,5 +406,96 @@ export async function keysOnTheOrganizationTheSafeHelperReturned(): Promise<void
   assert(
     counts.sweeps === 1,
     `keying on the user, not the organization, doubles the real rate (${counts.sweeps} sweeps)`,
+  );
+}
+
+/**
+ * 19. A grantless caller is keyed on the subject the controller passed.
+ *
+ * **The only block that observes the controller's second argument to
+ * `throttleKeysFor`.** Every other block here runs the non-empty branch, where
+ * that argument is discarded, and `evaluate-throttle.spec.ts` calls the helper
+ * with an id of its own — so replacing `user.sub` at the one call site with any
+ * other `string` typechecked and left the whole suite green. Found in review,
+ * by both reviewers independently.
+ *
+ * `user.name` is the mutation that matters. A display name is not unique in
+ * `bms.users`, so keying on it folds every grantless `configuration`-role
+ * caller sharing one into a single bucket, and any of them then holds the
+ * others' *Evaluate now* button for the life of the process — the exact
+ * collapse the sentinel split closed, restored with the suite green. The
+ * exact-key assertion below catches any wrong field; the twin's press after it
+ * shows what the wrong field costs.
+ */
+export async function keysAGrantlessCallerOnTheSubjectTheControllerPassed(): Promise<void> {
+  const { controller, res, counts, checkedKeys } = controllerWith({ readableOrganizations: [] });
+
+  await controller.evaluateEnabledRules(ADMIN_USER, res);
+  assert(counts.sweeps === 1, `the grantless press sweeps, it ran ${counts.sweeps} times`);
+  assert(
+    checkedKeys.length === 1 &&
+      checkedKeys[0].length === 1 &&
+      checkedKeys[0][0] === `user:${ADMIN_USER.sub}`,
+    "a grantless caller is keyed on their token's sub — expected " +
+      `["user:${ADMIN_USER.sub}"], the throttle was checked with ${JSON.stringify(checkedKeys)}`,
+  );
+
+  await rejects(
+    () => controller.evaluateEnabledRules(ADMIN_USER, res),
+    isTooManyRequests,
+    "the same grantless caller pressing inside the window",
+  );
+  assert(
+    counts.sweeps === 1,
+    `the refused grantless press swept anyway (${counts.sweeps} sweeps)`,
+  );
+
+  // The twin shares ADMIN_USER's display name and nothing else, and must sweep.
+  await controller.evaluateEnabledRules(DISPLAY_NAME_TWIN, res);
+  assert(
+    counts.sweeps === 2,
+    "a second grantless caller was refused by the first one's press — two accounts sharing a " +
+      `display name collapsed into one bucket (${counts.sweeps} sweeps)`,
+  );
+  assert(
+    checkedKeys[2]?.[0] === `user:${DISPLAY_NAME_TWIN.sub}`,
+    `the twin is keyed on its own sub, the throttle was checked with ${JSON.stringify(checkedKeys)}`,
+  );
+}
+
+/**
+ * 20. Every unrestricted global admin shares the one fleet bucket.
+ *
+ * The other empty branch, and the other half of the sentinel split.
+ * `readableOrganizationIds` returns `null` for a global admin, which maps to a
+ * literal no organization id and no subject can be — so here the identity the
+ * handler passes is discarded, deliberately.
+ *
+ * Two different humans are what make that visible: the second is refused by the
+ * first one's press. That is the accepted cost of not handing an unrestricted
+ * role a per-user bucket, and it is also the assertion that a per-user key was
+ * not quietly substituted for the shared one.
+ */
+export async function keysEveryGlobalAdminOnTheOneFleetBucket(): Promise<void> {
+  const { controller, res, counts, checkedKeys } = controllerWith({ readableOrganizations: null });
+
+  await controller.evaluateEnabledRules(ADMIN_USER, res);
+  assert(counts.sweeps === 1, `the global admin's press sweeps, it ran ${counts.sweeps} times`);
+  assert(
+    checkedKeys.length === 1 &&
+      checkedKeys[0].length === 1 &&
+      checkedKeys[0][0] === GLOBAL_ADMIN_THROTTLE_KEY,
+    `an unrestricted admin falls in the ${GLOBAL_ADMIN_THROTTLE_KEY} bucket, the throttle was ` +
+      `checked with ${JSON.stringify(checkedKeys)}`,
+  );
+
+  await rejects(
+    () => controller.evaluateEnabledRules(DISPLAY_NAME_TWIN, res),
+    isTooManyRequests,
+    "a second unrestricted admin pressing inside the window",
+  );
+  assert(
+    counts.sweeps === 1,
+    `the second admin swept — global admins share one bucket, they do not get one each (${counts.sweeps} sweeps)`,
   );
 }

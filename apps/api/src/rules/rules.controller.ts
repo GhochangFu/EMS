@@ -189,6 +189,14 @@ export class RulesController {
   ) {
     await this.accessControl.assertOperationsWriteRole(user, "configuration");
 
+    // `user.sub`, and **which** field this is matters. The second argument is
+    // read only when the caller has no organization, so `throttleKeysFor`'s
+    // required parameter stops it being dropped — a compile error — and stops
+    // nothing else: any `string` typechecks here. `user.name` would fold every
+    // grantless caller sharing a display name into one bucket, where each holds
+    // the others' button for the life of the process. Block 19 of
+    // `evaluate-throttle-route.spec.ts` is the gate; nothing else observes this
+    // value, because every other test runs the non-empty branch.
     const decision = this.throttle.check(
       throttleKeysFor(await this.accessControl.readableOrganizationIds(user), user.sub),
       Date.now(),

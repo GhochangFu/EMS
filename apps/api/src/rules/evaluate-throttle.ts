@@ -65,6 +65,14 @@ export type EvaluateThrottleDecision =
  * rather than optional for that reason: an optional parameter would let a call
  * site drop it and fall back silently to one shared bucket, which is the defect
  * this signature exists to prevent.
+ *
+ * **What the type cannot do is check that the right value arrives.** Any
+ * `string` fits, so a call site passing `user.name` where it means `user.sub`
+ * compiles; the required parameter stops the argument being deleted and nothing
+ * more. This file's own spec calls the helper with an id it made up, so it
+ * cannot see the difference either — block 19 of
+ * `evaluate-throttle-route.spec.ts` is what observes the value the one real
+ * call site passes.
  */
 export function throttleKeysFor(
   organizationIds: string[] | null,
