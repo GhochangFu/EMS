@@ -9,6 +9,7 @@ import { Logger as PinoLogger } from "nestjs-pino";
 import { SwaggerModule } from "@nestjs/swagger";
 
 import { AppModule } from "./app.module";
+import { ZodErrorFilter } from "./common/zod-error.filter";
 import { areApiDocsEnabled } from "./openapi/api-docs-enabled";
 import { buildOpenApiDocument } from "./openapi/openapi-document";
 import { createSocketIoAdapter } from "./realtime/redis-io.adapter";
@@ -19,6 +20,23 @@ async function bootstrap(): Promise<void> {
   });
   app.useLogger(app.get(PinoLogger));
   app.useWebSocketAdapter(await createSocketIoAdapter(app));
+
+  // `F4.108` / ADR 0060 decision 2 — **the first exception filter this
+  // application has ever registered.**
+  //
+  // 44 `idParamSchema.parse(id)` calls across 12 controllers sit outside a
+  // `try`, so a mistyped uuid reached Nest's default handler and answered
+  // `500 Internal server error`: recorded as a server fault, and unreadable to
+  // the operator who pasted the link. This answers 400 with `err.flatten()`,
+  // the body the 70 already-guarded sites throw and `apiErrorMessage` renders.
+  //
+  // **Global rather than 12 `@UseFilters()`** (decision 4): a thirteenth
+  // controller added later would otherwise start unprotected. What makes the
+  // blanket 400 honest is decision 1, which landed first — every stored-data
+  // parse goes through `parseStoredContract` and raises a 500 this filter does
+  // not catch. Do not widen `@Catch(ZodError)`.
+  app.useGlobalFilters(new ZodErrorFilter());
+
   app.setGlobalPrefix("api/v1", {
     exclude: [
       { path: "health", method: RequestMethod.GET },
