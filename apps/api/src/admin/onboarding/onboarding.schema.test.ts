@@ -1,6 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  assertDraftDepthFixturesSitExactlyAtTheBound,
+  assertOnboardingDraftSchemaCoversTheModelProducer,
+  assertPatchDraftBodyAcceptsADraftAtTheBound,
+  assertPatchDraftBodyRefusesADraftOneDeeper,
+  assertTheShippedProducerShapesStillParse,
   runDraftCountCapTests,
   runDraftStaysPermissiveTests,
   runDraftStringBoundTests,
@@ -23,5 +28,32 @@ describe("onboarding.schema", () => {
 
   it("bounds every draft string field at its column width, length only (F4.104)", () => {
     runDraftStringBoundTests();
+  });
+});
+
+/**
+ * `F4.115` ruling 2a. One `it()` per claim: a mutation must redden the
+ * assertion that owns the claim, and a single `it()` over all five would die at
+ * the first one and say nothing about the four after it.
+ */
+describe("onboarding.schema — the draft's nesting depth (F4.115)", () => {
+  it("builds its fixtures exactly at and exactly one past the bound", () => {
+    assertDraftDepthFixturesSitExactlyAtTheBound();
+  });
+
+  it("accepts a draft nested exactly to the bound", () => {
+    assertPatchDraftBodyAcceptsADraftAtTheBound();
+  });
+
+  it("refuses a draft one level deeper, naming the limit and echoing nothing", () => {
+    assertPatchDraftBodyRefusesADraftOneDeeper();
+  });
+
+  it("refuses it on the draft schema itself, so the model's producer is covered", () => {
+    assertOnboardingDraftSchemaCoversTheModelProducer();
+  });
+
+  it("still parses the shape the shipped producers actually write", () => {
+    assertTheShippedProducerShapesStillParse();
   });
 });
