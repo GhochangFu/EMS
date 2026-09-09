@@ -61,7 +61,14 @@ const RAISE_KEY = "rule-1:alarm-1:warning";
  * than a variable name.
  */
 const STEP_KEY = buildDedupeKey(
-  escalationDispatchInput(alarmRow(), ruleRow(), 1, NOW) ?? { ruleId: "", alarmId: null, severity: null },
+  // `F3.52`: `stale: false` — the key must not depend on the answer, and the
+  // fixture below is a step one minute past due, which is nowhere near the
+  // 60-minute bound in any case.
+  escalationDispatchInput(alarmRow(), ruleRow(), 1, NOW, false) ?? {
+    ruleId: "",
+    alarmId: null,
+    severity: null,
+  },
 );
 
 /** One due step at 1 minute, naming BOTH channels — so one channel can be lost while the other lands. */

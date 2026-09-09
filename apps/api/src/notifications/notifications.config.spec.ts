@@ -84,6 +84,30 @@ export function runNotificationsConfigTests(): void {
       `NOTIFY_RATE_LIMIT_PER_HOUR=${value} must fall back to 60, never NaN or a non-limit`,
     );
   }
+
+  // --- the escalation step's age cut-off (`F3.52`, ADR 0041 Amendment 6 §2) --
+  //
+  // Minutes in, milliseconds out: the predicate compares against a duration and
+  // `stepIsTooLate` takes the bound as a parameter, so the conversion belongs
+  // here, once, beside the other environment readings.
+  assert(
+    buildConfig({}).stepMaxLatenessMs === 60 * 60_000,
+    `the default cut-off is 60 minutes — isOverHourlyLimit's own trailing hour — got ${buildConfig({}).stepMaxLatenessMs}`,
+  );
+  assert(
+    buildConfig({ NOTIFY_STEP_MAX_LATENESS_MINUTES: "90" }).stepMaxLatenessMs === 90 * 60_000,
+    "NOTIFY_STEP_MAX_LATENESS_MINUTES must be honoured, and read as MINUTES",
+  );
+  // The same NaN reasoning as the ceiling above, and it bites harder here: a
+  // NaN bound compares false against every comparison, so a typo would not
+  // relax the cut-off, it would silently REMOVE it and every late step would
+  // send for ever.
+  for (const value of ["", "abc", "0", "-5"]) {
+    assert(
+      buildConfig({ NOTIFY_STEP_MAX_LATENESS_MINUTES: value }).stepMaxLatenessMs === 60 * 60_000,
+      `NOTIFY_STEP_MAX_LATENESS_MINUTES=${value} must fall back to 60 minutes, never NaN`,
+    );
+  }
 }
 
 /** `F3.8` U3 — the stand-in transport reports a skip and says nothing private. */

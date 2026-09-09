@@ -25,7 +25,7 @@ describe("F3.8 notification deliveries", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows all five statuses, skips included, with no default filter", async () => {
+  it("shows all six statuses, skips included, with no default filter", async () => {
     await showsEverySkipWithoutAsking();
   });
 

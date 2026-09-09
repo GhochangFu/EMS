@@ -376,6 +376,23 @@ export class NotificationsService {
       if (alreadyRecorded) {
         return notRecorded(channel, { status: "skipped_deduped", error: null });
       }
+
+      // `F3.52` — the step is too late to send (ADR 0041 Amendment 6 §2). The POSITION is
+      // load-bearing and neither wrong neighbour is a compile error. BEFORE the `alreadyRecorded`
+      // return it would write a row for a step already sent — the phase re-dispatches every due
+      // step every tick, and the ledger read is what makes that idempotent (S6). AFTER the ceiling
+      // it would report an age as a rate limit (S7). INSIDE `input.event !== undefined` is ruling
+      // 1's structural gate: a raise and a re-offered raise cannot reach this line, and `stale`
+      // lives only on the escalation variant — a `skipped_stale` row under a RAISE key would block
+      // that raise for ever, since `channelsOwedTheRaise` excludes only `skipped_rate_limited` and
+      // a stale `skipped_unconfigured`. Case S8, a pair on one fixture, gates that, not this
+      // paragraph. The row IS written where `F3.48`'s ceiling exception writes none: an
+      // abandonment is a decision, not a postponement — nothing lifts by itself,
+      // `eventDeliveryBlocked`'s "not `failed`" arm is MEANT to block the key for ever, and the row
+      // is the only evidence. `offeredAgainWithoutAsking` asks another question: not consulted.
+      if (input.event.kind === "escalation" && input.event.stale === true) {
+        return this.record(input, channel, dedupeKey, { status: "skipped_stale", error: null });
+      }
     } else if (!input.raised) {
       // 1. The transition dedupe. The skip is still RECORDED: "we chose not to
       //    send" and "nothing happened" must not look the same in the ledger

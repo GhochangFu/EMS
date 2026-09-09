@@ -10,6 +10,7 @@ import {
   escalationDispatchInput,
   escalationKey,
   raiseRetryDispatchInput,
+  stepIsTooLate,
 } from "./alarm-lifecycle";
 
 /**
@@ -188,7 +189,7 @@ function testDueSteps(): void {
 
 /** Plan D12 and D14, and the `U7 must guarantee` block from PR 1's review. */
 function testEscalationDispatchInput(): void {
-  const input = escalationDispatchInput(alarm, rule, 1, NOW);
+  const input = escalationDispatchInput(alarm, rule, 1, NOW, false);
   assert(input !== null, "a rule with an organization yields an input");
   if (input === null) return;
   assert(input.ruleId === "rule-1" && input.ruleCode === "RULE-1", "the rule's id and code");
@@ -212,14 +213,14 @@ function testEscalationDispatchInput(): void {
     `D14 body, got "${input.message}"`,
   );
   // Whole minutes, floored: 125 s is 2 min, not 2.08 and not 3.
-  const later = escalationDispatchInput(alarm, rule, 2, secondsAfter(60));
+  const later = escalationDispatchInput(alarm, rule, 2, secondsAfter(60), false);
   assert(
     later?.message.includes("unacknowledged for 3 min (escalation step 2)") === true,
     `minutes are floored from raisedAt, got "${String(later?.message)}"`,
   );
 
   assert(
-    escalationDispatchInput(alarm, { ...rule, organizationId: null }, 1, NOW) === null,
+    escalationDispatchInput(alarm, { ...rule, organizationId: null }, 1, NOW, false) === null,
     "a rule with no organization yields null — the caller warns and skips",
   );
 }
@@ -305,6 +306,178 @@ function testEscalationKey(): void {
   assert(
     escalationKey("org-1", "warning") === "org-1:warning",
     `the catalogue key is organization then severity, got ${escalationKey("org-1", "warning")}`,
+  );
+}
+
+/*
+ * `F3.52` — the age half of the escalation decision (ADR 0041 Amendment 6 §2,
+ * ADR 0057 Amendment 7).
+ *
+ * These cases are EXPORTED and each has its own `it()` in the sibling `.test`,
+ * rather than joining `runAlarmLifecycleTests` below. `assert` throws, so a
+ * case added to that aggregate would share one `it()` with seven others and a
+ * mutation could redden an earlier block while the block owning the claim
+ * never ran (AGENTS.md §4.6). One `it()` each is what makes the measurement
+ * below available at all.
+ *
+ * **The bound is a parameter here, not the imported constant.** `stepIsTooLate`
+ * takes `maxLatenessMs` so a suite can move it; only `runEscalationPhase`
+ * imports `STEP_MAX_LATENESS_MS`. `raise-retry.ts` gives the same reason for
+ * `maxAttempts`.
+ */
+
+/** The default bound, in ms — 60 minutes, `isOverHourlyLimit`'s own trailing hour. */
+const BOUND_MS = 60 * 60_000;
+
+/** `raisedAt` for the age cases: `NOW`, so every `now` below reads as an offset from the raise. */
+const RAISED = NOW;
+
+/** `NOW` plus `ms`, for a step whose due instant is minutes or hours ahead of the raise. */
+function msAfter(ms: number): Date {
+  return new Date(NOW.getTime() + ms);
+}
+
+/**
+ * A step one minute past its due instant is late, and late is not stale.
+ *
+ * **Mutation:** the predicate inverted (`<` for `>`) → red here, and the two
+ * boundary cases below go green in each other's place, so this is the case
+ * that says which side of the comparison is the abandoned one.
+ */
+export function testAStepOneMinutePastDueIsNotStale(): void {
+  assert(
+    stepIsTooLate({
+      raisedAt: RAISED,
+      afterMinutes: 5,
+      now: msAfter(5 * 60_000 + 60_000),
+      maxLatenessMs: BOUND_MS,
+    }) === false,
+    "one minute past a 5-minute step's due instant is late, not stale — the bound is 60 minutes",
+  );
+}
+
+/**
+ * EXACTLY `maxLatenessMs` past due is not stale: the comparison is `>`.
+ *
+ * **Mutation:** `>` weakened to `>=` → red here alone. Only a fixture landing
+ * on the boundary to the millisecond separates the two comparators; the case
+ * above and the case below are green under both.
+ */
+export function testExactlyTheBoundIsNotStale(): void {
+  assert(
+    stepIsTooLate({
+      raisedAt: RAISED,
+      afterMinutes: 5,
+      now: msAfter(5 * 60_000 + BOUND_MS),
+      maxLatenessMs: BOUND_MS,
+    }) === false,
+    "exactly the bound past due still sends — a step is abandoned only once it is OVER the bound",
+  );
+}
+
+/**
+ * One millisecond further and the step is abandoned.
+ *
+ * **Mutation:** the same `>` widened to `>=`+1, or the bound read as
+ * `maxLatenessMs + 1` → red here alone. This is the boundary from the other
+ * side, and it is the only case in this file that asserts `true`.
+ */
+export function testOneMillisecondPastTheBoundIsStale(): void {
+  assert(
+    stepIsTooLate({
+      raisedAt: RAISED,
+      afterMinutes: 5,
+      now: msAfter(5 * 60_000 + BOUND_MS + 1),
+      maxLatenessMs: BOUND_MS,
+    }) === true,
+    "one millisecond over the bound is stale",
+  );
+}
+
+/**
+ * The age is measured from the step's DUE INSTANT, never from `raised_at`.
+ *
+ * A day-old alarm whose step is due at 24 hours is one minute late, not 24
+ * hours late. Without this case a predicate that dropped
+ * `+ afterMinutes * 60_000` would pass every case above, because each of those
+ * has a small `afterMinutes` and the two measurements barely differ.
+ *
+ * **Mutation:** `now - raisedAt > maxLatenessMs` (the age from the raise) → red
+ * here, and green in all three cases above.
+ */
+export function testLatenessIsMeasuredFromTheDueInstant(): void {
+  const afterMinutes = 24 * 60;
+  assert(
+    stepIsTooLate({
+      raisedAt: RAISED,
+      afterMinutes,
+      now: msAfter(afterMinutes * 60_000 + 60_000),
+      maxLatenessMs: BOUND_MS,
+    }) === false,
+    "a 24-hour step one minute past due is fresh — the age is from the due instant, not the raise",
+  );
+}
+
+/**
+ * The flag rides on the event, and only when the caller says so.
+ *
+ * **Mutations:** the spread dropped from `escalationDispatchInput` → the first
+ * half red; `stale: true` written unconditionally → the second half red. The
+ * key count is asserted beside the three properties because `stale === true`
+ * alone would still pass if the builder had leaked a fourth property in.
+ */
+export function testTheStaleFlagRidesOnTheEvent(): void {
+  const stale = escalationDispatchInput(alarm, rule, 1, NOW, true);
+  assert(stale !== null, "a rule with an organization yields an input");
+  if (stale === null) return;
+  const event = stale.event;
+  assert(
+    event !== undefined &&
+      event.kind === "escalation" &&
+      event.step === 1 &&
+      event.stale === true &&
+      Object.keys(event).length === 3,
+    `{ kind: "escalation", step: 1, stale: true } and nothing else, got ${JSON.stringify(event)}`,
+  );
+
+  const fresh = escalationDispatchInput(alarm, rule, 1, NOW, false);
+  assert(
+    fresh?.event !== undefined && !("stale" in fresh.event) && Object.keys(fresh.event).length === 2,
+    `a fresh step carries NO stale key at all, got ${JSON.stringify(fresh?.event)}`,
+  );
+}
+
+/**
+ * The flag must not reach the dedupe key.
+ *
+ * A step's key stays `rule:alarm:severity:escalation:<n>`, so the rows every
+ * earlier tick wrote under it still match — ADR 0041 Amendment 5's
+ * byte-identity argument, on the neighbouring path. A key that carried the flag
+ * would orphan them and `eventDeliveryBlocked` would answer from nothing.
+ *
+ * **Mutation:** `buildDedupeKey` pushing the flag (a `":stale"` part, or the
+ * event JSON-stringified into the key) → red here.
+ *
+ * **The subject half of this claim is NOT written, and the reason is that it
+ * is not observable.** `subjectFor` is module-private in
+ * `notifications.service.ts`, and a stale input returns at the
+ * `skipped_stale` exit BEFORE step 3 builds a subject — so no stale subject
+ * exists anywhere to compare. `dispatch-staleness.spec.ts` S5 asserts the
+ * transport is never reached, which is the same property stated where it can
+ * be measured.
+ */
+export function testTheStaleFlagStaysOutOfTheDedupeKey(): void {
+  const stale = escalationDispatchInput(alarm, rule, 1, NOW, true);
+  const fresh = escalationDispatchInput(alarm, rule, 1, NOW, false);
+  assert(stale !== null && fresh !== null, "both inputs are built");
+  if (stale === null || fresh === null) return;
+  assert(
+    buildDedupeKey(stale) === buildDedupeKey(fresh),
+    `the key is the same with and without the flag, got "${buildDedupeKey(stale)}" and "${buildDedupeKey(fresh)}"`,
+  );
+  assert(
+    buildDedupeKey(stale) === "rule-1:alarm-1:critical:escalation:1",
+    `and it is the literal form the ledger already holds, got "${buildDedupeKey(stale)}"`,
   );
 }
 

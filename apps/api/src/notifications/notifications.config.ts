@@ -22,12 +22,25 @@ export type NotificationsConfig = {
   smtp: SmtpConfig | null;
   webhookAllowInsecure: boolean;
   ratePerHour: number;
+  /**
+   * `F3.52` — how far past its own due instant a due escalation step may be and
+   * still be sent (ADR 0041 Amendment 6 §2). In MILLISECONDS: the environment
+   * gives minutes and the conversion happens once, here, because
+   * `stepIsTooLate` compares against a duration.
+   */
+  stepMaxLatenessMs: number;
 };
 
 /** Nodemailer's own default. Submission, not the legacy SMTP port. */
 const DEFAULT_SMTP_PORT = 587;
 /** ADR 0041 decision 7, plan D4. Per channel, per hour. */
 const DEFAULT_RATE_PER_HOUR = 60;
+/**
+ * ADR 0041 Amendment 6 §2, ruling 6. Sixty is not arbitrary: it is
+ * `isOverHourlyLimit`'s own trailing hour, so a step that could not fit inside
+ * one full ceiling window is over budget rather than merely queued.
+ */
+const DEFAULT_STEP_MAX_LATENESS_MINUTES = 60;
 
 /**
  * The one place the environment is interpreted.
@@ -49,10 +62,16 @@ const DEFAULT_RATE_PER_HOUR = 60;
  * An unparseable `NOTIFY_RATE_LIMIT_PER_HOUR` falls back to the default rather
  * than becoming `NaN`. `NaN` compares false against every ceiling, so a typo
  * would silently remove the storm control this exists to provide.
+ *
+ * `NOTIFY_STEP_MAX_LATENESS_MINUTES` is read the same way and for the same
+ * reason, and the consequence there is the sharper one: a `NaN` bound compares
+ * false against every comparison, so a typo would not relax the escalation
+ * cut-off — it would remove it, and every late step would go on sending.
  */
 export function buildConfig(env: NodeJS.ProcessEnv): NotificationsConfig {
   const parsedPort = Number(env.SMTP_PORT);
   const parsedRate = Number(env.NOTIFY_RATE_LIMIT_PER_HOUR);
+  const parsedLateness = Number(env.NOTIFY_STEP_MAX_LATENESS_MINUTES);
 
   return {
     smtp: env.SMTP_HOST
@@ -68,6 +87,10 @@ export function buildConfig(env: NodeJS.ProcessEnv): NotificationsConfig {
     webhookAllowInsecure: env.NOTIFY_WEBHOOK_ALLOW_INSECURE === "true",
     ratePerHour:
       Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : DEFAULT_RATE_PER_HOUR,
+    stepMaxLatenessMs:
+      (Number.isFinite(parsedLateness) && parsedLateness > 0
+        ? parsedLateness
+        : DEFAULT_STEP_MAX_LATENESS_MINUTES) * 60_000,
   };
 }
 
@@ -111,6 +134,21 @@ export const notificationsConfig: NotificationsConfig = buildConfig(process.env)
  * direction.
  */
 export const PROCESS_STARTED_AT = new Date();
+
+/**
+ * `F3.52` — the escalation cut-off as one importable duration (ADR 0041
+ * Amendment 6 §2, ADR 0057 Amendment 7).
+ *
+ * {@link PROCESS_STARTED_AT}'s pattern: a module-level constant read off the
+ * frozen snapshot above, imported by the one caller that needs it rather than
+ * threaded through Nest. One number needs no provider token.
+ *
+ * **Only `runEscalationPhase` imports this.** `stepIsTooLate` takes the bound as
+ * a parameter so a suite can move it without touching the environment, which is
+ * `raise-retry.ts`'s own argument for `maxAttempts`: a constant a test cannot
+ * move is a constant the test has to be written around.
+ */
+export const STEP_MAX_LATENESS_MS = notificationsConfig.stepMaxLatenessMs;
 
 /**
  * Nest injection token for {@link notificationsConfig}.

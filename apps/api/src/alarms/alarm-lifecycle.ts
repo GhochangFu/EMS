@@ -150,6 +150,40 @@ export function dueSteps(
 }
 
 /**
+ * `F3.52` — is a DUE step so far past its own due instant that it is abandoned
+ * rather than sent (ADR 0041 Amendment 6 §2, ADR 0057 Amendment 7)?
+ *
+ * The due instant is `raisedAt + afterMinutes`, the same arithmetic
+ * {@link dueSteps} does, and the lateness is measured from THERE — never from
+ * `raisedAt`. A day-old alarm whose step falls due at 24 hours is one minute
+ * late, not a day late.
+ *
+ * **A second predicate beside `dueSteps`, not a widened return type.** `dueSteps`
+ * answers "which steps are due" and still returns `number[]`; the age is a
+ * different question with a different consumer, and folding the two would make
+ * every caller of the first pay for the second.
+ *
+ * **The bound is a parameter, not the imported constant.** Only
+ * `runEscalationPhase` reads `STEP_MAX_LATENESS_MS`; a suite moves the bound by
+ * passing one, the way `raise-retry.ts` takes `maxAttempts`. Decision 4's rule
+ * that the sweep holds no state applies here too: everything this reads is an
+ * argument.
+ *
+ * `>` and not `>=`: exactly at the bound the step still sends. The cut-off is
+ * for a step that is OVER budget, and one instant of a 60-minute bound is not
+ * worth abandoning a message an operator is waiting for.
+ */
+export function stepIsTooLate(a: {
+  raisedAt: Date;
+  afterMinutes: number;
+  now: Date;
+  maxLatenessMs: number;
+}): boolean {
+  const dueAtMs = a.raisedAt.getTime() + a.afterMinutes * 60_000;
+  return a.now.getTime() - dueAtMs > a.maxLatenessMs;
+}
+
+/**
  * The escalation step's `DispatchInput` (decision 9, plan D12/D14), or
  * `null` for a rule with no organization.
  *
@@ -159,12 +193,20 @@ export function dueSteps(
  * read as a refusal to anyone grepping the ledger's inputs). The body is
  * string composition, no template: the alarm's message, how long it has gone
  * unacknowledged in whole minutes, and the step.
+ *
+ * **`stale` is REQUIRED, not defaulted** (`F3.52`). A defaulted parameter would
+ * let the production caller forget the question and still compile, which is the
+ * mutation `alarm-lifecycle-escalation-staleness.spec.ts` exists to catch; a
+ * required one makes forgetting it a build error. It is spread in rather than
+ * written as `stale: false`, so a fresh step's event carries no such key at all
+ * and stays the object every earlier tick built.
  */
 export function escalationDispatchInput(
   alarm: LifecycleAlarm,
   rule: LifecycleRule,
   stepNo: number,
   now: Date,
+  stale: boolean,
 ): DispatchInput | null {
   if (rule.organizationId === null) {
     return null;
@@ -178,7 +220,7 @@ export function escalationDispatchInput(
     severity: alarm.severity,
     message: `${alarm.message} — unacknowledged for ${minutes} min (escalation step ${stepNo})`,
     raised: true,
-    event: { kind: "escalation", step: stepNo },
+    event: { kind: "escalation", step: stepNo, ...(stale ? { stale: true } : {}) },
   };
 }
 
