@@ -178,6 +178,71 @@ so the choice is visible, not because it was open.
   break: **a `.parse()` on data this application stored belongs behind an
   explicit server fault, not behind the filter.**
 
+## Amendment 1 — the service set is eight, not ten (2026-09-09)
+
+Recorded before any source moved, at `F4.108`'s build start. **No ruling
+changes**: ruling 2 said fix the stored-data parses before registering the
+filter, and that is as true of eight as of ten. What was wrong is the list, in
+two of its entries, and both errors were mine.
+
+**`vocabularies/vocabularies.service.ts:335` is not a call site.** It is prose
+inside a docblock that discusses parse sites by name. The script that produced
+§Context's table matched `.parse(` in comment text. Re-measured with comments and
+string literals blanked by a character scanner — so a `//` inside a string and a
+quote inside a comment are both handled — the totals move by one:
+
+| | §Context said | Measured with comments stripped |
+|---|---|---|
+| Throwing zod `.parse(` calls | 157 | **156** |
+| …inside a `try` | 102 | 102 |
+| …unguarded | 55 | **54** |
+| …in a controller | 45 | **45** — unchanged |
+| …in a service | 10 | **9** |
+| `idParamSchema.parse(` unguarded | 44 across 12 controllers | **44 across 12** — unchanged |
+
+**The row's own headline is therefore untouched.** `F4.108` is still 44
+unguarded `idParamSchema` sites across 12 controllers.
+
+**`admin/asset-templates/asset-templates-stock.service.ts:183` is client input,
+and must not be converted.** `createAssetTemplateBodySchema.parse({ ...body,
+organizationId })` stands on a request path: `importStock`
+(`asset-templates.controller.ts:114`) wraps `await this.stock.import(...)` in a
+`try` whose `catch` already maps a `ZodError` to
+`BadRequestException(err.flatten())`. Turning it into a server fault would
+convert a correct 400 into a 500 — the exact inversion this ADR exists to
+prevent, pointed the other way.
+
+**The source had already written this down.** The docblock above that parse
+states it: *"Eight other service sites parse with no `try`/`catch` around them —
+measured … Every one of them parses STORED or CONSTRUCTED data — a row's
+`content`, a DTO being assembled — and none parses caller input. That, not the
+bare throw, is the real distinction: this parse stands on a request path, so its
+failure is an answer the caller is owed and the controller maps it; there a
+failure is an invariant break with no answer to give."* It enumerates the eight,
+and its count agrees with the corrected measurement exactly.
+
+**The eight sites ruling 2 covers:**
+
+```
+admin/asset-templates/asset-templates-stock.service.ts:83                  stockAssetTemplateDtoSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:141               sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:275               sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:649               dashboardTemplateDtoSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:658               sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates.service.ts:670               sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates-instantiate.service.ts:175   sectionTemplateContentSchema.parse
+admin/dashboard-templates/dashboard-templates-instantiate.service.ts:553   dashboardDtoSchema.parse
+```
+
+`:83`'s caller `listStock` has no `catch`, so its `ZodError` reaches Nest's
+default handler as a 500 today whose message is the JSON of `issues`. Making it
+an explicit server fault keeps the status and fixes the body.
+
+**What this costs the invariant in §Verification.** "No throwing `.parse(`
+outside a `try` in a service" is now false as stated, because `:183` is one and
+is correct. The assertion must allow it by name with the reason, and it must
+strip comments — this amendment exists because a measurement did not.
+
 ## Verification this ADR expects
 
 - The 44 unguarded controller sites answer 400 with a `formErrors` body on a
