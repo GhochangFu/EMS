@@ -189,9 +189,9 @@ export function runEnvelopeMessageWinsOverFieldErrorsTests(): void {
  * between them is what decides the output.
  *
  * Re-measured in this pass with the branch moved above `error` and no further:
- * this is the only `apiErrorMessage` assertion in the project that goes red,
- * and the C3 case above stays green. That is why the two are separate `it()`s —
- * as one function the second `assert` would never have run.
+ * of the assertions about `apiErrorMessage`, this is the only one that goes
+ * red, and the C3 case above stays green. That is why the two are separate
+ * `it()`s — as one function the second `assert` would never have run.
  */
 export function runEnvelopeErrorWinsOverFieldErrorsTests(): void {
   const shown = apiErrorMessage(
