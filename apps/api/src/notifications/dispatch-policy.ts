@@ -174,3 +174,76 @@ export function offeredAgainWithoutAsking(input: {
       return false;
   }
 }
+
+/**
+ * `F3.52` — which of decision 7's two hourly ceilings a dispatch is measured
+ * against (ADR 0041 Amendment 6 §1).
+ *
+ * **Named for the BUDGET it selects, not for a message kind**, and that is the
+ * whole reason the type exists. There are three callers of the ceiling and only
+ * two of them carry a message: `sendTest` is neither a raise nor an event — an
+ * operator pressing *Send test* on the channels page — so a parameter called
+ * `kind` would make that call site a false claim in the code, an argument
+ * naming something the caller does not have. `"reserved"` is a true statement
+ * about all three.
+ */
+export type CeilingBudget = "full" | "reserved";
+
+/**
+ * `F3.52` — the fraction of a channel's hourly ceiling the reserved budget may
+ * reach (ADR 0041 Amendment 6 §1, owner ruling 3).
+ *
+ * At the default 60 an hour, events stop at 48 and twelve slots stay reachable
+ * by a raise alone. The reserve exists because a critical alarm's raise queued
+ * behind an escalation backlog is operationally a loss even though `F3.51`'s
+ * sweep will eventually deliver it: the harm the row was filed on is a delay,
+ * and this is what bounds it.
+ */
+export const EVENT_SHARE = 0.8;
+
+/**
+ * `F3.52` — the ceiling a given budget may reach, out of a channel's
+ * configured `ratePerHour` (ADR 0041 Amendment 6 §1).
+ *
+ * One count, two limits: `isOverHourlyLimit` runs the same single `count(*)`
+ * of `sent` rows in the trailing hour it always has, and only the number it is
+ * compared against changes. There is no second query, no new column and no
+ * schema change.
+ *
+ * **`Math.floor`, and it is load-bearing at the extreme.** `floor(1 * 0.8)` is
+ * `0`, so a channel throttled to one message an hour sends raises only — no
+ * escalation step and no cleared message at all. Amendment 6 states that
+ * consequence and accepts it: a raise is the message an operator cannot do
+ * without. A rate of one is the only fixture that separates `floor` from
+ * `ceil` and `round`, and `dispatch-policy.spec.ts` holds it for that reason.
+ */
+export function hourlyCeiling(budget: CeilingBudget, ratePerHour: number): number {
+  return budget === "full" ? ratePerHour : Math.floor(ratePerHour * EVENT_SHARE);
+}
+
+/**
+ * `F3.52` — the budget a dispatch is measured against: an event stops at the
+ * reserve, everything else keeps the whole ceiling.
+ *
+ * The discriminator is the PRESENCE of an event, not its kind. Amendment 6 §1
+ * puts "an escalation step or a cleared message" on the reduced limit, which is
+ * every `DispatchEvent` there is — so reading `kind` here would add an arm a
+ * third event kind could fall through, for no gain.
+ *
+ * **It reads the same shape as {@link offeredAgainWithoutAsking} and disagrees
+ * with it on `reoffered`, on purpose.** That function answers whether a refusal
+ * is RECORDED, and a re-offered raise is silent there because the lifecycle
+ * sweep will ask again (ADR 0041 Amendment 5). This one answers which CEILING
+ * applies, and a re-offered raise is still a raise — it is the exact message
+ * the reserve is held for, so demoting it would defeat the reserve at the one
+ * dispatch that needs it most. `reoffered` is in the parameter type only so
+ * that a `DispatchInput` carrying it satisfies this shape.
+ *
+ * Structurally typed rather than `Pick<DispatchInput, …>`, for
+ * {@link offeredAgainWithoutAsking}'s reason: `DispatchInput` lives in
+ * `notifications.service.ts`, which imports this module, and a type-only edge
+ * back would be a cycle a reader has to reason about for nothing.
+ */
+export function budgetFor(input: { event?: DispatchEvent; reoffered?: true }): CeilingBudget {
+  return input.event === undefined ? "full" : "reserved";
+}

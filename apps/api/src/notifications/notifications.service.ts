@@ -9,7 +9,10 @@ import { ChannelsService } from "./channels.service";
 import { buildDedupeKey, type DispatchEvent } from "./dedupe-key";
 import {
   MAX_EVENT_ATTEMPTS,
+  type CeilingBudget,
   type DispatchOutcome,
+  budgetFor,
+  hourlyCeiling,
   offeredAgainWithoutAsking,
 } from "./dispatch-policy";
 import { EmailTransport } from "./email.transport";
@@ -404,7 +407,14 @@ export class NotificationsService {
     // 2. The per-channel hourly ceiling.
     let overLimit: boolean;
     try {
-      overLimit = await this.isOverHourlyLimit(channel.id, input.organizationId);
+      // `F3.52`: an event stops at the reserve, a raise keeps the whole
+      // ceiling, and `budgetFor` is what tells them apart — never a literal
+      // here (ADR 0041 Amendment 6 §1).
+      overLimit = await this.isOverHourlyLimit(
+        channel.id,
+        input.organizationId,
+        budgetFor(input),
+      );
     } catch (err) {
       // A ceiling that cannot be read is not a licence to send without one.
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
@@ -532,8 +542,37 @@ export class NotificationsService {
    * opens one, and `sendTest` runs off a request that has not either), so
    * there is no `withTenant` GUC to run it under — the `WHERE` clause is now
    * what does the org filtering, not the connection.
+   *
+   * **`F3.52`: one count, two limits** (ADR 0041 Amendment 6 §1, ruling 3).
+   * The query below is unchanged — the same single `count(*)` of `sent` rows in
+   * the trailing hour. What `budget` changes is only what that count is
+   * compared against: a raise keeps the whole `ratePerHour`, and an event or a
+   * manual test stops at `hourlyCeiling`'s reserved share, so the last slots of
+   * every hour stay reachable by a raise alone. No second query, no new column,
+   * no schema change.
+   *
+   * **The COUNT itself is not filtered by budget, and that is deliberate.**
+   * Filtering it to match the budget would give the two paths two independent
+   * pools, and one hour would then deliver `ratePerHour` raises PLUS
+   * `floor(ratePerHour * EVENT_SHARE)` events — 108 against a configured 60 —
+   * so the channel would exceed the very ceiling decision 7 exists to impose.
+   * Amendment 6 reallocates ONE fixed budget between two callers; it does not
+   * create a second one. One pool, filled by every `sent` row whatever produced
+   * it, and two heights at which callers stop drawing from it.
+   *
+   * That "one pool" claim is not gated by a unit case and cannot be: the fake
+   * database's count is a settable fixture rather than something derived from
+   * the rows it recorded, so no unit case can show an event's send consuming a
+   * slot a later raise would have seen. What IS gated there is the "no second
+   * query" half — `dispatch-budget.spec.ts` asserts one ceiling read per
+   * dispatch across the raise/step pair. The pool itself rests on the `WHERE`
+   * below, which `F3.52` did not change.
    */
-  private async isOverHourlyLimit(channelId: string, organizationId: string): Promise<boolean> {
+  private async isOverHourlyLimit(
+    channelId: string,
+    organizationId: string,
+    budget: CeilingBudget,
+  ): Promise<boolean> {
     const since = new Date(Date.now() - 60 * 60 * 1000);
     const rows = await this.fleetDb
       .select({ count: sql<number>`count(*)::int` })
@@ -546,7 +585,7 @@ export class NotificationsService {
           gte(notificationDeliveries.attemptedAt, since),
         ),
       );
-    return (rows[0]?.count ?? 0) >= this.config.ratePerHour;
+    return (rows[0]?.count ?? 0) >= hourlyCeiling(budget, this.config.ratePerHour);
   }
 
   /**
@@ -779,7 +818,10 @@ export class NotificationsService {
    *
    * Subject to the hourly ceiling — a test is a real send and must not be a way
    * around it — but **not** to the transition dedupe, which has no meaning
-   * here: there is no alarm and nothing transitioned.
+   * here: there is no alarm and nothing transitioned. Since `F3.52` it is
+   * subject to the RESERVED ceiling rather than the whole one (ADR 0041
+   * Amendment 6 §1, ruling 4): a manual test is not an alarm, so it must never
+   * consume headroom held for a critical raise.
    *
    * `E7.1c` (Blocker 1's ruling): refuses a fleet-wide (`organizationId ===
    * null`) channel outright, before the rate-limit read and before the
@@ -807,7 +849,10 @@ export class NotificationsService {
 
     let overLimit: boolean;
     try {
-      overLimit = await this.isOverHourlyLimit(channel.id, organizationId);
+      // `F3.52` ruling 4: a manual test meets the REDUCED event limit, not the
+      // full ceiling. A test is not an alarm, so it must never consume headroom
+      // held for a critical raise.
+      overLimit = await this.isOverHourlyLimit(channel.id, organizationId, "reserved");
     } catch (err) {
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
       return sendTestResult(
