@@ -349,6 +349,62 @@ const emptyVocabularies: VocabulariesResponse = {
 };
 
 /**
+ * The 429 body `POST /api/v1/rules/evaluate` returns, hand-copied from
+ * `rules.controller.ts` — `apps/web` cannot import from `apps/api`, and a 429
+ * body is not a response contract (every error path in `api/rules.ts` reads
+ * `res.text()` and parses no schema, so ADR 0030 does not reach it).
+ *
+ * `Retry-After` is set on that response but deliberately not in `main.ts`'s
+ * `exposedHeaders`, and the SPA is a different origin — so the seconds in this
+ * body are the only channel an operator has for the wait.
+ */
+const EVALUATE_REFUSAL_BODY = JSON.stringify({
+  statusCode: 429,
+  message: "Rules were evaluated moments ago. Try again in 12 seconds.",
+});
+
+/**
+ * `F3.47` — the panel actually renders the refusal (found in review).
+ *
+ * `EvaluateRefusalNotice` had its own spec, its own module and one call site,
+ * and **deleting that call site left every suite green** — which is precisely
+ * the defect the notice was written to prevent: `evaluateM` carried no
+ * `onError`, so a refused *Evaluate now* did nothing at all, silently, twice.
+ * A component spec proves the component; only this proves the wiring.
+ *
+ * Rendered through `RulesPanel` rather than the notice, and the text is
+ * asserted rather than the alert's existence: an alert rendering the raw
+ * envelope would satisfy a bare `findByRole`.
+ */
+export async function showsTheEvaluateRefusalWhereTheOperatorPressed(): Promise<void> {
+  stubApi();
+  vi.spyOn(rulesApi, "fetchRules").mockResolvedValue({ items: [notifyRule] });
+  vi.spyOn(rulesApi, "fetchRuleExecutions").mockResolvedValue({ items: [] });
+  vi.spyOn(rulesApi, "fetchRuleBuilderCatalog").mockResolvedValue({ assets: [] });
+  vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(emptyVocabularies);
+  vi.spyOn(rulesApi, "evaluateRules").mockRejectedValue(new Error(EVALUATE_REFUSAL_BODY));
+
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RulesPanel />
+    </QueryClientProvider>,
+  );
+
+  await userEvent.click(await screen.findByRole("button", { name: "Evaluate now" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("12 seconds");
+  expect(alert.textContent).not.toContain("statusCode");
+
+  // And the button comes back. A refusal that left it stuck on "Evaluating..."
+  // would read as a hung sweep rather than as a refusal.
+  expect(await screen.findByRole("button", { name: "Evaluate now" })).toBeEnabled();
+}
+
+/**
  * The editor mounts on the press and not before. Measured reason: 289 enabled
  * rules are live on this database, and a card that mounted the editor eagerly
  * would issue 289 `GET /rules/:id/notifications` to paint the list.

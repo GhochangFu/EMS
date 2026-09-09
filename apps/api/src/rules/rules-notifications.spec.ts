@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { EvaluateThrottle } from "./evaluate-throttle";
 import { RulesController } from "./rules.controller";
 
 function assert(condition: boolean, message: string): void {
@@ -75,7 +76,15 @@ function controllerWith(options: { writeAllowed?: boolean } = {}): {
     },
   } as unknown as Ctor[2];
 
-  return { controller: new RulesController(rules, accessControl, channels), writes, reads };
+  // A real `EvaluateThrottle` (`F3.47`), not a fake: it is the fourth and last
+  // constructor parameter, it bounds only `POST /rules/evaluate`, and no route
+  // asserted here ever calls it. A fresh instance per controller keeps it that
+  // way if one ever does.
+  return {
+    controller: new RulesController(rules, accessControl, channels, new EvaluateThrottle()),
+    writes,
+    reads,
+  };
 }
 
 /**

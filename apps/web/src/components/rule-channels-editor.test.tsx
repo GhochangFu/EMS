@@ -13,6 +13,7 @@ import {
   saysNothingAboutHiddenChannelsWhenThereAreNone,
   saysTheChannelListFailedRatherThanClaimingThereAreNone,
   saysThereAreNoChannelsRatherThanShowingAnEmptyList,
+  showsTheEvaluateRefusalWhereTheOperatorPressed,
   showsWhatTheServerStoredAfterASuccessfulSave,
 } from "./rule-channels-editor.spec";
 
@@ -70,5 +71,12 @@ describe("F3.7 per-rule channel picker", () => {
 
   it("keeps the plain caption for a notify rule", async () => {
     await keepsThePlainCaptionForANotifyRule();
+  });
+
+  // `F3.47`. Here rather than in `evaluate-refusal-notice.test.tsx` because the
+  // claim is the WIRING, and this file already spies on `rulesApi` and already
+  // renders `RulesPanel` under a `QueryClientProvider`.
+  it("shows the server's refusal on the panel when Evaluate now is refused", async () => {
+    await showsTheEvaluateRefusalWhereTheOperatorPressed();
   });
 });
