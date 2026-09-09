@@ -4,6 +4,7 @@ import { stockAssetTemplateDtoSchema } from "@bms/shared";
 import type { AdminAssetTemplateDto, JwtPayload, StockAssetTemplateDto } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { parseStoredContract } from "../../common/parse-stored-contract";
 import { createAssetTemplateBodySchema } from "./asset-templates.schema";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import { STOCK_ASSET_TEMPLATE_CATALOG_TOKEN } from "./asset-templates.tokens";
@@ -78,9 +79,20 @@ export class AssetTemplatesStockService {
    * `stock-catalog.spec.ts` parses every shipped entry through this schema at
    * build time, so the parse here cannot fail for a shipped entry — it is the
    * projection, not a second validation.
+   *
+   * **Through `parseStoredContract`, not bare** — `F4.108`, ADR 0060 ruling 2.
+   * The entry is data this repository ships, never anything a caller sent, and
+   * `listStock` has no `catch`: before ADR 0060 a failure here reached Nest's
+   * default handler, and after it the global `ZodErrorFilter` would have called
+   * a broken catalog entry the caller's bad request. It stays a 500 and now
+   * says why.
    */
   list(): { items: StockAssetTemplateDto[] } {
-    return { items: this.catalog.map((entry) => stockAssetTemplateDtoSchema.parse(entry)) };
+    return {
+      items: this.catalog.map((entry) =>
+        parseStoredContract(stockAssetTemplateDtoSchema, entry, "asset_templates_stock.list.entry"),
+      ),
+    };
   }
 
   /**
@@ -150,20 +162,23 @@ export class AssetTemplatesStockService {
     //
     // Propagating a `ZodError` out of a service is not unique to this method,
     // and the first draft of this comment claimed it was. Eight other service
-    // sites parse with no `try`/`catch` around them — measured, and the three
-    // `.catch` handlers in those files attach to `withTenant` chains rather
-    // than to a parse: `list()` above,
+    // sites parsed with no `try`/`catch` around them — `list()` above,
     // `dashboard-templates.service.ts` 141/275/649/658/670 and
     // `dashboard-templates-instantiate.service.ts` 175/553. Every one of them
     // parses STORED or CONSTRUCTED data — a row's `content`, a DTO being
     // assembled — and none parses caller input. That, not the bare throw, is
     // the real distinction: this parse stands on a request path, so its
     // failure is an answer the caller is owed and the controller maps it;
-    // there a failure is an invariant break with no answer to give. `list()`'s
-    // caller `listStock` has NO catch, so a `ZodError` there reaches Nest's
-    // default handler as a 500 whose message is the JSON of `issues` —
-    // unreachable for a shipped entry, but a genuine latent 500, and a
-    // different route's problem rather than this one's.
+    // there a failure is an invariant break with no answer to give.
+    //
+    // **`F4.108` acted on that distinction and this site is the exception it
+    // records.** ADR 0060 ruling 2 routed those eight through
+    // `parseStoredContract` — an explicit 500 — precisely so the global
+    // `ZodErrorFilter` it then registered could answer 400 for everything
+    // still reaching it. This parse is one of the things still reaching it,
+    // and 400 is the right answer, so it stays bare.
+    // `tests/f4.108-service-parses-are-guarded.test.ts` allowlists it BY NAME
+    // for that reason; do not "fix" it to match its neighbours.
     //
     // The parsed OUTPUT, not the raw entry, is what reaches `create`, so an
     // import and a hand-authored draft hand `create` the same shape. Measured

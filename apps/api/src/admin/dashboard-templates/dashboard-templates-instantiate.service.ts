@@ -33,6 +33,10 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+// `F4.108` / ADR 0060 ruling 2 — both parses below read stored data: a
+// template's `content` column, and the dashboard this service has just written
+// and read back. Neither can be the caller's fault, so neither may become a 400.
+import { parseStoredContract } from "../../common/parse-stored-contract";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -172,7 +176,11 @@ export class DashboardTemplatesInstantiateService {
       throw new ForbiddenException("Asset group is outside your access scope");
     }
 
-    const content = sectionTemplateContentSchema.parse(template.content);
+    const content = parseStoredContract(
+      sectionTemplateContentSchema,
+      template.content,
+      "dashboard_templates_instantiate.instantiate.content",
+    );
     if (content.widgets.length === 0) {
       throw new BadRequestException("This template has no widgets to instantiate");
     }
@@ -550,7 +558,7 @@ export class DashboardTemplatesInstantiateService {
       });
     }
 
-    return dashboardDtoSchema.parse({
+    const dto = {
       id: row.id,
       organizationId: row.organizationId,
       slug: row.slug,
@@ -561,6 +569,11 @@ export class DashboardTemplatesInstantiateService {
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       widgets,
-    });
+    };
+    return parseStoredContract(
+      dashboardDtoSchema,
+      dto,
+      "dashboard_templates_instantiate.read_back.dto",
+    );
   }
 }
