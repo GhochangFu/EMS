@@ -4135,6 +4135,65 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   document stops reading as a claim.
 - **Unblocks:** nothing. No row lists `F4.108` in `Depends`.
 
+### The sweep remembers a closed ceiling for one tick, and only its closed answer (`F3.53`, ADR 0041 Amendment 7) — done
+- **Status:** merged 2026-09-10 — PR
+  [#396](https://github.com/GhochangFu/EMS/pull/396) (`8934bde9`). Two owner
+  rulings, nine commits, three review passes. Fifth of the nine ready Track D
+  items.
+- **What shipped.** `ClosedCeilings` remembers, for the length of one lifecycle
+  sweep tick, which `(channel, organization, budget)` triples the hourly ceiling
+  has already refused. Only the closed answer: a `false` is never cached, so
+  nothing can be sent on the strength of memory. `runLifecycleSweep` creates one
+  per tick and it dies with the sweep — no TTL, no eviction cap — and
+  `dispatchRememberingLostRows`, the site shared by the two re-offering phases,
+  is the single caller that passes it. No schema change, no contract change, no
+  new dependency.
+- **The row was gated on fresh measurement, because every figure in it had
+  expired.** Three shifts, one onto a path the row never names: `F3.51`'s
+  raise-retry phase dispatches per owed channel per tick, which both ADR 0041
+  Amendment 5 and ADR 0057 Amendment 5 assign to `F3.53` by name; `F3.52`'s
+  two-count rewrite moved the per-read cost and not the query count; and
+  `F3.52`'s `skipped_stale` row blocks its own key, so an abandoned step stops
+  reaching the ceiling — which nothing had recorded anywhere.
+- **The row's own recommendation was inverted by the measurement.** It treats
+  the safe half of the fix as the less useful half. Driven over two ticks with
+  the read counted, a sent step and a `skipped_stale` step each pay once and are
+  then blocked by their own row; only a **ceiling-refused** step pays again, for
+  ever, because `F3.48` ruling Q1 writes no row so the next tick can ask. The
+  only case that spins is the case whose answer is `true`.
+- **Measured on a deployed build**, `--no-cache` from the branch against an
+  isolated database copy — 42 open critical alarms, 3 channels, the rate forced
+  to 1 so every step is refused before any transport. Nine consecutive ticks:
+  **126 dispatches, 3 ceiling reads**, ledger empty throughout. Per read, on a
+  2.2 M-row table, 2.86 ms round trip of which 0.62 ms is the query — the
+  aggregate was never the cost, the round trip was.
+- **Every review finding was a false sentence, and two of them were successive
+  attempts at the same one.** Security found the stated "one tick, 30 s" bound
+  wrong on the raise path, because `runRaiseRetryPhase` skips a cleared or
+  acknowledged alarm. The correction written for that then claimed the
+  escalation phase had no equivalent exposure "because a due step stays due" —
+  and correctness found that false in the same way: a due step stays due without
+  staying **sendable**, since `stepIsTooLate` is checked after the ceiling, so a
+  postponed step can cross its lateness cut-off and be abandoned as
+  `skipped_stale`, which blocks the key terminally. **A correction is a claim
+  too**, and this pair is the clearest instance the board has yet produced.
+- **The adapter needed a database to catch.** `AlarmLifecycleDeps` is typed from
+  the service method, so widening the method widened the type while the
+  hand-written adapter kept dropping the third argument. With it left that way
+  `tsc` exits 0 and `src/alarms` is entirely green; only the new integration
+  case reddens. All five existing sweep specs replace `deps.dispatchToChannels`
+  with a fake and never execute the adapter.
+- **Two side-effects.** `notifications.service.ts` was at 982 of the 1000-line
+  cap and needed 14, so `hasRecordedSkip` and `eventDeliveryBlocked` moved to
+  `ledger-reads.ts` **before** the addition — 982 → **833**, gated by `diff -w`
+  against the base bytes. That move orphaned two index-reader invariants in
+  `tests/`, which is what turned the full suite red: they run in the `repo`
+  vitest project, so no `apps/api` run and no typecheck could see it. Repointed,
+  not weakened, and re-proved by mutation.
+- **Unblocks:** nothing directly. Filed **`F3.58`** for the batched
+  `loadRaiseAttempts` round-trip cost that `raise-attempts.ts` had been
+  attributing to `F3.53` and that Amendment 7 does not reach.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
