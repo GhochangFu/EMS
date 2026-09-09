@@ -252,6 +252,16 @@ export function assertCloneJsonReturnsANonJsonObjectByReference(): void {
 }
 
 /**
+ * The shape the leaf-visitor assertions below are measured on: a leaf directly
+ * under an object, a leaf directly under an array, a leaf under an object inside
+ * an array, and one non-string leaf. Four leaves, one per position the walk has.
+ *
+ * **A factory and not a shared constant.** Each of the five functions below
+ * calls it and gets its own object, so no one of them can reach another through
+ * a value it happened to write.
+ *
+ * ---
+ *
  * **The second visitor, and the half of the walk it owns: every leaf, in both
  * branches.**
  *
@@ -261,31 +271,42 @@ export function assertCloneJsonReturnsANonJsonObjectByReference(): void {
  * the choice was one shared parameter here or a fourth traversal in the
  * onboarding module. §4.8 says the parameter.
  *
- * Four properties, and each one is a separate `assert` because each has its own
- * mutation:
+ * **Five properties, five exported functions, five `it()`s** — and that split is
+ * `F4.107`'s review, not the original shape. They were one function with five
+ * fixture blocks and fourteen `assert` calls run from a single `it()`. `assert`
+ * throws, so blocks three, four and five never executed once block one or two
+ * failed: the docblock claimed each property "has its own mutation" while the
+ * suite could only ever report the first of them. The five:
  *
- * 1. **Both branches consult it.** An object's value and an array's element are
- *    both leaves. Dropping either call leaves the other green.
- * 2. **`null` declines**, and the source's value is carried across unchanged —
- *    the same "declined" protocol `KeyVisitor` uses.
- * 3. **Containers are never offered.** The visitor decides about leaves; a walk
- *    that offered it an object would let a caller replace a subtree it never
- *    asked about, and `shedOverLongStrings` would then see `[object Object]`
- *    questions it has no answer for.
- * 4. **A key the key visitor already replaced is not offered**, so the two
- *    visitors cannot both act on one position. Running the leaf visitor first
- *    would also read the source's value, which is the getter the key visitor's
- *    ordering exists to avoid.
- *
- * And one that is not a property of the walk but of its implementation:
- * `{ value: undefined }` is a **replacement**, not a decline. Written
- * `visitLeaf?.(child)?.value ?? child` the two collapse, and every assertion
- * above still passes.
+ * 1. `assertRebuildDeepOffersALeafInBothBranches` — an object's value and an
+ *    array's element are both leaves, at any level.
+ * 2. `assertRebuildDeepDeclinesAndNeverOffersAContainer` — `null` declines, and
+ *    a container is descended into rather than offered.
+ * 3. `assertTheKeyVisitorAnswersBeforeTheLeafVisitor` — a key the key visitor
+ *    replaced is not offered to the leaf visitor.
+ * 4. `assertALeafReplacedByUndefinedIsNotADecline` — the implementation trap,
+ *    which is not a property of the walk but of how it is written.
+ * 5. `assertRebuildDeepWithoutALeafVisitorIsUnchanged` — the default path.
  */
-export function assertRebuildDeepOffersEveryLeafToTheLeafVisitor(): void {
-  const source = { a: "x", list: ["y", { b: "z" }], when: 1 };
+function leafShaped(): { a: string; list: [string, { b: string }]; when: number } {
+  return { a: "x", list: ["y", { b: "z" }], when: 1 };
+}
 
-  const upper = rebuildDeep(source, isJsonContainer, undefined, (value) =>
+/**
+ * **Both branches consult the leaf visitor**, and it is carried all the way
+ * down.
+ *
+ * An object's own value, an array's element and a string under an object inside
+ * an array are all leaves. One assert per position, because dropping the object
+ * branch's call and dropping the array branch's call are two different defects
+ * and each leaves the other position green.
+ *
+ * The declined number belongs here rather than in the decline case below: this
+ * visitor answers `null` for it, so a walk that wrote `undefined` in place of
+ * everything it was not asked to replace would be caught by the same fixture.
+ */
+export function assertRebuildDeepOffersALeafInBothBranches(): void {
+  const upper = rebuildDeep(leafShaped(), isJsonContainer, undefined, (value) =>
     typeof value === "string" ? { value: "L" } : null,
   ) as { a: string; list: [string, { b: string }]; when: number };
 
@@ -296,7 +317,23 @@ export function assertRebuildDeepOffersEveryLeafToTheLeafVisitor(): void {
     "a string nested under an array element must be offered — the walk carries the visitor down",
   );
   assert(upper.when === 1, "a value the visitor declined must be carried across unchanged");
+}
 
+/**
+ * **`null` declines, and a container is never offered.**
+ *
+ * The decline protocol is `KeyVisitor`'s: the source's value is carried across
+ * unchanged. And the visitor decides about *leaves* — a walk that offered it an
+ * object would let a caller replace a subtree it never asked about, and
+ * `shedOverLongStrings` would then be handed `[object Object]` questions it has
+ * no answer for.
+ *
+ * The count is here rather than in its own function because it is what makes the
+ * two claims above claims about the whole walk: without it they are satisfied by
+ * a visitor consulted at the two positions the asserts name and nowhere else.
+ */
+export function assertRebuildDeepDeclinesAndNeverOffersAContainer(): void {
+  const source = leafShaped();
   const seen: unknown[] = [];
   const untouched = rebuildDeep(source, isJsonContainer, undefined, (value) => {
     seen.push(value);
@@ -310,7 +347,18 @@ export function assertRebuildDeepOffersEveryLeafToTheLeafVisitor(): void {
     `no container may be offered to the leaf visitor, got: ${seen.filter((v) => isJsonContainer(v)).length} of them`,
   );
   assert(seen.length === 4, `every leaf exactly once — 4 expected, saw ${seen.length}`);
+}
 
+/**
+ * **A key the key visitor already replaced is not offered to the leaf visitor**,
+ * so the two visitors cannot both act on one position.
+ *
+ * Running the leaf visitor first would also read the source's value, which is
+ * the getter the key visitor's ordering exists to avoid — the secret under a
+ * secret-looking key is never touched, and that is `scrubSecrets`'s whole
+ * guarantee.
+ */
+export function assertTheKeyVisitorAnswersBeforeTheLeafVisitor(): void {
   const offered: unknown[] = [];
   const scrubbed = rebuildDeep(
     { secret: "hunter2", keep: "plain" },
@@ -331,7 +379,16 @@ export function assertRebuildDeepOffersEveryLeafToTheLeafVisitor(): void {
     "the key visitor still wins — its replacement is not overwritten by the leaf visitor",
   );
   assert(scrubbed.keep === "L", "and a key it declined is still offered as usual");
+}
 
+/**
+ * `{ value: undefined }` is a **replacement**, not a decline.
+ *
+ * Not a property of the walk but of how it is written: `visitLeaf?.(child)?.value
+ * ?? child` collapses the two answers into one, and every other assertion in
+ * this file still passes under that form. Only this one refuses it.
+ */
+export function assertALeafReplacedByUndefinedIsNotADecline(): void {
   const replaced = rebuildDeep({ a: "x" }, isJsonContainer, undefined, () => ({
     value: undefined,
   })) as Record<string, unknown>;
@@ -344,7 +401,17 @@ export function assertRebuildDeepOffersEveryLeafToTheLeafVisitor(): void {
     replaced.a === undefined,
     "{ value: undefined } is a replacement, not a decline: `?.value ?? child` collapses the two",
   );
+}
 
+/**
+ * The default path — no leaf visitor at all — copies the value.
+ *
+ * The positive half of the pair above: a fix for the `??` trap that reached for
+ * `visitLeaf === undefined ? … : …` in the wrong place would drop the value of
+ * every leaf on the two callers that pass no leaf visitor, and `cloneJson` is
+ * one of them.
+ */
+export function assertRebuildDeepWithoutALeafVisitorIsUnchanged(): void {
   const cloned = cloneJson({ a: "x" });
   assert(cloned.a === "x", "the default path — no leaf visitor at all — must copy the value");
 }

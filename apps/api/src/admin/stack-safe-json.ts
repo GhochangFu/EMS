@@ -116,8 +116,9 @@ export type KeyVisitor = (key: string) => { value: unknown } | null;
  *
  * `{ value: undefined }` is a **replacement** and `null` is a decline. They are
  * not the same answer, and `visitLeaf?.(child)?.value ?? child` silently makes
- * them one; `assertRebuildDeepOffersEveryLeafToTheLeafVisitor` is what refuses
- * that form.
+ * them one; `assertALeafReplacedByUndefinedIsNotADecline` is what refuses that
+ * form. It is one of the five functions `F4.107`'s review split this visitor's
+ * assertions into, so that the mutation each one owns reports its own name.
  */
 export type LeafVisitor = (value: unknown) => { value: unknown } | null;
 

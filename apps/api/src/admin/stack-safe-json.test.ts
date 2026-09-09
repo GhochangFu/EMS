@@ -1,13 +1,17 @@
 import { describe, it } from "vitest";
 
 import {
+  assertALeafReplacedByUndefinedIsNotADecline,
   assertCloneJsonIsIndependentAndOrdered,
   assertCloneJsonIsIterative,
   assertCloneJsonKeepsProtoAsData,
   assertCloneJsonReturnsANonJsonObjectByReference,
   assertExceedsDepthCountsFromTheRoot,
   assertExceedsDepthIsIterative,
-  assertRebuildDeepOffersEveryLeafToTheLeafVisitor,
+  assertRebuildDeepDeclinesAndNeverOffersAContainer,
+  assertRebuildDeepOffersALeafInBothBranches,
+  assertRebuildDeepWithoutALeafVisitorIsUnchanged,
+  assertTheKeyVisitorAnswersBeforeTheLeafVisitor,
 } from "./stack-safe-json.spec";
 
 /**
@@ -43,7 +47,23 @@ describe("stack-safe JSON walkers (F4.115)", () => {
     assertCloneJsonReturnsANonJsonObjectByReference();
   });
 
-  it("offers every leaf in both branches to the optional leaf visitor (F4.107)", () => {
-    assertRebuildDeepOffersEveryLeafToTheLeafVisitor();
+  it("offers a leaf in both branches to the optional leaf visitor (F4.107)", () => {
+    assertRebuildDeepOffersALeafInBothBranches();
+  });
+
+  it("carries a declined leaf across and never offers a container (F4.107)", () => {
+    assertRebuildDeepDeclinesAndNeverOffersAContainer();
+  });
+
+  it("asks the key visitor before the leaf visitor, so a replaced key is not offered (F4.107)", () => {
+    assertTheKeyVisitorAnswersBeforeTheLeafVisitor();
+  });
+
+  it("treats { value: undefined } as a replacement rather than a decline (F4.107)", () => {
+    assertALeafReplacedByUndefinedIsNotADecline();
+  });
+
+  it("copies the value on the default path, with no leaf visitor at all (F4.107)", () => {
+    assertRebuildDeepWithoutALeafVisitorIsUnchanged();
   });
 });
