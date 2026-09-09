@@ -52,6 +52,41 @@ import type { CeilingBudget } from "./dispatch-policy";
  * bounded at one tick of latency — 30 s, the same bound Amendment 5 and ADR
  * 0057 Amendment 2 already accept for a ceiling-refused dispatch.
  *
+ * **One tick, UNLESS the alarm leaves the active-and-unacknowledged set inside
+ * it** — the `F3.53` security review's L2, recorded here rather than left as a
+ * rounder sentence. `runRaiseRetryPhase` skips an alarm that this tick cleared
+ * or that carries an `acknowledged_at` (ADR 0057 Amendment 5 ruling 4:
+ * somebody is already on it). So a postponed RAISE retry has a next tick only
+ * while the alarm stays open and unacknowledged; if it is acknowledged or
+ * clears inside that 30 s, that channel is never offered the raise text again,
+ * and the cleared message does not stand in for it, because `notifyCleared`
+ * writes only to channels holding a `sent` row for the alarm.
+ *
+ * **The memo does not create that drop, and it is not a reason to cache less.**
+ * A real `isOverHourlyLimit` answering `true` at the same instant loses the
+ * same offer, and ruling 4 accepts it knowingly. What the memo adds is one
+ * narrow extra way in: a `sent` row that aged out of the trailing hour
+ * part-way through the sweep, so the ledger would have said `false` where
+ * memory says `true`.
+ *
+ * **The escalation phase has a terminal exit of its own, and the first draft of
+ * this paragraph said it did not.** It claimed "a due step stays due", which is
+ * true and beside the point — a due step stays due without staying SENDABLE.
+ * `stepIsTooLate` (`dispatchToChannel` block 2b) is checked AFTER the ceiling,
+ * by ruling 9, so a step the memo postpones never reaches it that tick. If the
+ * trailing hour moved inside the phase — the same aged-out edge above — and
+ * that step was within one tick of `raised_at + after_minutes +
+ * NOTIFY_STEP_MAX_LATENESS_MINUTES`, then the ledger would have SENT it at this
+ * tick, while the next tick finds the ceiling open, reaches 2b, and abandons it
+ * as `skipped_stale` — which `eventDeliveryBlocked` treats as an answer, so the
+ * key is blocked for the life of the ledger. The postponement there is not
+ * latency; it is the whole step.
+ *
+ * Two coincidences are needed and it stays narrow, but it is the same shape
+ * Amendment 7 gives as its reason for keeping `notifyCleared` off the memo, so
+ * it is named rather than rounded off. It is also why the sentence it replaces
+ * was worth catching: a correction is a claim too (AGENTS.md §4.6).
+ *
  * **The window is the tick.** Amendment 7 ruling 2 puts the construction in
  * `runLifecycleSweep`, so the memo dies with the sweep that made it. There is
  * no TTL and no eviction cap because it never outlives one sweep — `F3.51`
@@ -70,9 +105,9 @@ import type { CeilingBudget } from "./dispatch-policy";
  *
  * **Amendment 7 ruling 2 reaches production through `dispatchToChannels`,
  * which is to take the memo as an OPTIONAL argument** — a caller that passes
- * none reads the ledger exactly as it does today. That wiring is the ruling's,
- * not yet this tree's: nothing constructs this class until the sweep does.
- * `dispatchToChannels` has **three** production
+ * none reads the ledger exactly as it does today. `runLifecycleSweep`
+ * constructs the one instance there is, per tick, and it is the only
+ * constructor outside the specs. `dispatchToChannels` has **three** production
  * callers: `dispatchRememberingLostRows`, the site shared by the raise-retry
  * and escalation phases, which passes it and is where all the measured spin is;
  * `notifyCleared`, which does not, because a cleared message has no next tick

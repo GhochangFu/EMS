@@ -963,6 +963,47 @@ dispatch to the next tick. Since `F3.48` that dispatch is retried, so the cost
 is bounded at **one tick of latency, 30 s** — the same bound Amendment 5 and
 ADR 0057 Amendment 2 already accept for a ceiling-refused dispatch.
 
+**One tick, unless the alarm leaves the active-and-unacknowledged set inside
+it.** The security review's L2, and this amendment records it rather than
+keeping the rounder sentence. `runRaiseRetryPhase` skips an alarm cleared this
+tick or carrying an `acknowledged_at` — ADR 0057 Amendment 5 ruling 4, somebody
+is already on it — so a postponed RAISE retry has a next tick only while the
+alarm stays open and unacknowledged. Acknowledged or cleared inside that 30 s,
+the channel is never offered the raise text again, and the cleared message does
+not stand in for it: `notifyCleared` writes only to channels already holding a
+`sent` row for that alarm.
+
+**That is not a reason to cache less, and the review says so too.** A real
+`isOverHourlyLimit` answering `true` at the same instant loses the same offer,
+and ruling 4 accepts that knowingly. What the memo adds is one narrow extra way
+in — a `sent` row that aged out of the trailing hour part-way through the sweep,
+where the ledger would have answered `false`.
+
+**The escalation path has a terminal exit too, and this amendment first said it
+did not.** The correctness review's C-1, landing on the paragraph written an
+hour earlier to fix the security review's L2 — a correction is a claim too
+(AGENTS.md §4.6), and this one was wrong in the same way.
+
+The false sentence was "a due step stays due". It does; it does not stay
+**sendable**. `stepIsTooLate` is `dispatchToChannel`'s block 2b, checked AFTER
+the ceiling by Amendment 6 §2 ruling 9, so a step the memo postpones never
+reaches it on that tick. Where the trailing hour moved inside the phase, and
+that step was within one tick of `raised_at + after_minutes +
+NOTIFY_STEP_MAX_LATENESS_MINUTES`, the ledger would have sent it now — and the
+next tick instead finds the ceiling open, reaches 2b, and abandons the step as
+`skipped_stale`. `eventDeliveryBlocked` counts that row as an answer on its
+"not `failed`" arm, so the key is blocked for the life of the ledger. On that
+path the postponement is not latency; it is the whole step, permanently.
+
+**It stays in scope, and the reason is the measurement.** Two coincidences are
+required — the hour moving inside one phase, and the step in its final tick
+before a 60-minute cut-off — where the cost being bought is the removal of an
+unbounded per-tick term. Amendment 6 §2 already accepts that a step can be
+abandoned for age it spent waiting on a ceiling; this narrows the margin by at
+most one tick. What is not acceptable is an amendment that says the exposure
+does not exist, which is why it is written out here in full rather than
+softened.
+
 ### 3. Ruling 2 — the window is the tick, created by the sweep, and it reaches exactly one call site
 
 `runLifecycleSweep` creates the memo and it dies with the tick. There is no TTL
@@ -975,10 +1016,9 @@ does not pass one reads the ledger exactly as it does today. It has **three**
 production callers, one passes the memo and two do not, and each omission is a
 decision:
 
-- **`dispatchRememberingLostRows` passes it** (`alarm-lifecycle-phases.ts:511`)
-  — the single call site shared by the raise-retry and escalation phases, which
+- **`dispatchRememberingLostRows` passes it** — the single call site shared by the raise-retry and escalation phases, which
   is where all of the measured spin is.
-- **`notifyCleared` does not** (`alarm-lifecycle-phases.ts:237`). A cleared
+- **`notifyCleared` does not.** A cleared
   message is dispatched once, from the clear phase, and `loadActiveAlarms`
   never selects that alarm again. It has no next tick to be postponed to, so
   the aged-out edge in §2 would cost the clear itself — the silent-loss shape

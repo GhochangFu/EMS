@@ -74,8 +74,13 @@ const step = (alarmId: string) => input({ alarmId, event: { kind: "escalation", 
  *
  * **Mutation:** the ternary always taking `read()` — the memo consulted and
  * discarded — → `rateLimit === 2`, red here. This is the assertion that reddens
- * if the memo is ever removed from the call site; every other case in this file
- * is green without it.
+ * if the memo is ever removed from the call site.
+ *
+ * **Run, not reasoned: S4 reddens too**, at `S4: and three distinct triples are
+ * remembered, got 0`, because it also reads `memo.size`. Every other case in
+ * this file stays green. The first draft of this note claimed the whole rest of
+ * the file was green, which is the §4.6 failure of describing a mutation from
+ * the reasoning instead of from the run.
  */
 export async function testTwoRefusedStepsOnOneChannelCostOneCeilingRead(): Promise<void> {
   const { db, recorded, reads, setCount } = fakeDb();
@@ -126,10 +131,15 @@ export async function testTwoRefusedStepsOnOneChannelCostOneCeilingRead(): Promi
  * send is ever authorised by memory.
  *
  * **Mutation:** the memo answering from a remembered `false` — `closed.add(key)`
- * moved out of its `if (over)` in `closed-ceilings.ts` — → the second step is
- * answered from memory, `rateLimit === 1` and `memo.size === 1`, red here on
- * both counts. (That edit also reddens `closed-ceilings.spec.ts`, which owns the
- * class-level claim; this case is the wiring's own copy of it.)
+ * moved out of its `if (over)` in `closed-ceilings.ts`. **Measured, the block
+ * throws at `S2: so does the second, got skipped_rate_limited`** — the STATUS
+ * assertion, which runs first: a remembered `false` makes the second dispatch
+ * answer `true` from memory and be refused, so the case never reaches the
+ * `rateLimit` and `memo.size` assertions below it. An earlier draft of this
+ * note named those two counts as the ones that redden, which they do not; §4.6
+ * asks the mutation to be run and read, not predicted. (The edit also reddens
+ * `closed-ceilings.spec.ts`, which owns the class-level claim; this case is the
+ * wiring's own copy of it.)
  */
 export async function testAnOpenCeilingIsReadBeforeEveryDispatch(): Promise<void> {
   const { db, reads, setCount } = fakeDb();

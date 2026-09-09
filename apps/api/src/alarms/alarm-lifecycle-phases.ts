@@ -72,7 +72,11 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * TYPES only, so the emitted JavaScript holds no edge back to the service and
  * there is no runtime cycle.
  *
- * **No suite imports this module, and SIX of them gate it.** Every case still
+ * **No suite imports this module, and SIX UNIT suites gate it** — plus
+ * `alarm-lifecycle.integration.spec.ts`, which drives the same phases through
+ * `AlarmLifecycleService.sweep` against a real database and holds the one claim
+ * no fake can: that the service's `dispatchToChannels` adapter forwards the
+ * sweep's `ClosedCeilings`. Every unit case still
  * drives `runLifecycleSweep` over fakes, which is why the move needed no
  * change to a spec — but the gate is spread across
  * `alarm-lifecycle-raise-retry.spec.ts` (23 sweeps),
@@ -90,7 +94,10 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * `F3.52` added `alarm-lifecycle-escalation-staleness.spec.ts` and left the
  * sentence, and `F3.53` adds `alarm-lifecycle-closed-ceilings.spec.ts`. Do not
  * hand-edit the numbers — paste them from
- * `git grep -c "await runLifecycleSweep("`, and add `--untracked` only while
+ * `git grep -c "await runLifecycleSweep(" -- "*.spec.ts"`. **The pathspec is
+ * not decoration: without it the command matches this docblock's own quoted
+ * copy of itself and reports one file and one sweep too many** — which the
+ * `F3.53` correctness review caught here. Add `--untracked` only while
  * the file you are counting is still unstaged, which is how `F3.53` measured
  * its own: without it the new spec is invisible and the count is wrong by
  * exactly the file being added.

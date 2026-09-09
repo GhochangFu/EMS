@@ -260,10 +260,8 @@ export class NotificationsService {
    * OPTIONAL, and a caller that passes none reads the ledger before every
    * dispatch exactly as it did before that unit.
    *
-   * **No production caller passes one yet, and that is this tree's state rather
-   * than the ruling's.** Nothing constructs a `ClosedCeilings` outside the specs
-   * until the sweep does — the same gap `closed-ceilings.ts` records. Of the
-   * **three** production callers, one is to pass it and two are not, and each
+   * **`runLifecycleSweep` constructs the one instance there is, per tick.** Of
+   * the **three** production callers, one passes it and two do not, and each
    * omission is a decision: `dispatchRememberingLostRows` is the one — the
    * single site shared by the raise-retry and escalation phases, where all of
    * the measured spin is; `notifyCleared` is not, because a cleared message has
