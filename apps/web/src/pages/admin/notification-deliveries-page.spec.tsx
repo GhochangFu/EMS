@@ -64,7 +64,7 @@ function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeli
     // `F3.56` — `event` is required on the DTO (ADR 0041 Amendment 8), so this
     // factory must supply a default or nothing here compiles. `raise` matches
     // the rest of the literal, which carries both a rule and an alarm. The
-    // page's own column is Task 4 and is not in this commit.
+    // column itself is asserted by `namesTheEventOfEveryAttempt` below.
     event: "raise",
     ...overrides,
   };
@@ -312,8 +312,9 @@ export async function offersOnlyOrganizationsPresentInTheLedger(): Promise<void>
  * Amendment 8).
  *
  * Every row here shares the same status and the same error string on purpose:
- * `rate-limit check failed` is written at two real dispatch sites, and status
- * and error alone cannot tell them apart. Only `event` does.
+ * `rate-limit check failed` is written at two real sites — the dispatch path
+ * and `sendTest` — and status and error alone cannot tell them apart. Only
+ * `event` does.
  */
 export async function namesTheEventOfEveryAttempt(): Promise<void> {
   vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
@@ -355,9 +356,11 @@ export async function namesTheEventOfEveryAttempt(): Promise<void> {
 /**
  * `F3.56` — the empty-state row must span every column, including the new one.
  *
- * A hardcoded `colSpan` would pass silently the day a column is added and
- * removed on the same commit, since the count and the span would both be
- * wrong by the same amount and never disagree with each other.
+ * The two assertions fail at different mutations, and both were run. Removing
+ * the Event `<th>` reddens the first, at 6 headers against 7. Leaving
+ * `colSpan={6}` in place passes the first and reddens the second. That is why
+ * the header count is asserted here as well as compared against the span:
+ * either one alone would let one of those two mutations through.
  */
 export async function emptyStateSpansEveryColumn(): Promise<void> {
   vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({ items: [] });

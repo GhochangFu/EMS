@@ -47,8 +47,15 @@ import type { NotificationDeliveryEvent } from "@bms/shared";
  * equal to one: the raise row is already in the ledger when the sweep asks
  * about step 1, and an equal key would make every step look already sent.
  *
- * **Since `F3.56` the key has a SECOND reader, and it is in this file** (ADR
- * 0041 Amendment 8). `parseDeliveryEvent` below reads the kind back out of a
+ * **Since `F3.56` the key has a reader that takes it APART, and it is in this
+ * file** (ADR 0041 Amendment 8). It is not the key's first reader — there are
+ * four others, and counting wrongly here is how a grammar change updates one
+ * call site instead of five. `hasRecordedSkip` (`ledger-reads.ts:104`),
+ * `eventDeliveryBlocked` (`:211`) and `loadRaiseAttempts`
+ * (`raise-attempts.ts:219`) all match the key **whole**, by equality or by
+ * `IN`; `isOverHourlyLimit`'s reserved-budget predicate
+ * (`notifications.service.ts:650-651`) tests its shape without decomposing it,
+ * counting separators with `LIKE '%:%:%:%'`. `parseDeliveryEvent` below reads the kind back out of a
  * ledger row so `NotificationDeliveryDto` can say what a `failed` row was FOR,
  * and it sits beside the writer deliberately: a key format whose writer and
  * reader are one file can be gated by a round trip over every `DispatchEvent`

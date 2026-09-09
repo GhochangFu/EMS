@@ -234,7 +234,8 @@ export function runNoAlarmRaiseIsARaiseTests(): void {
  *
  * **What this block does NOT prove, stated rather than implied.** Deleting step
  * 2 outright leaves this block GREEN: with `ruleId === null` the template
- * produces the prefix `null:no-alarm:`, which the key under test does not start
+ * produces the prefix `null:<ALARM_ID>:` — this case passes a real `alarmId`,
+ * so the `no-alarm` sentinel never appears — which the key under test does not start
  * with, so step 3 refuses it and returns `unknown` anyway. The mutation this
  * block does kill is step 2 returning `raise` instead of `unknown`. Do not
  * record the deletion as proof of anything.

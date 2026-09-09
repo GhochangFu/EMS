@@ -7,11 +7,12 @@ import type { NotificationReadinessDto } from "@bms/shared";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import type { NotificationsConfig } from "./notifications.config";
 
-/**
- * Moved out of `channels.service.ts` by `F3.56`: that file was 989 lines
- * against the AGENTS.md §2/§4.5 cap, and this was the extraction the owner
- * ruled (2026-09-10) to make room before the item added to it.
- */
+// Moved out of `channels.service.ts` by `F3.56`: that file was 989 lines
+// against the AGENTS.md §2/§4.5 cap, and this was the extraction the owner
+// ruled (2026-09-10) to make room before the item added to it.
+//
+// A `//` header rather than a JSDoc block on purpose: a `/** */` here would
+// bind to `sqlCount` below, about which it says nothing.
 
 const sqlCount = sql<number>`count(*)::int`;
 

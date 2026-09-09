@@ -488,11 +488,15 @@ export class ChannelsService {
    * **`F3.56` (ADR 0041 Amendment 8) — the row says what the attempt was FOR.**
    * `dedupe_key` is selected only so `parseDeliveryEvent` can derive `event`
    * from it in the `.map()` below; the key itself is dropped there and never
-   * reaches a client. That is deliberate and was measured: the key carries a
-   * rule uuid, an alarm uuid **and** the severity code, so returning it would
-   * put alarm detail on the wire past the `errorProjection` redaction this
-   * method performs in SQL precisely so such detail never leaves Postgres. A
-   * derived kind adds no identifier at all. Nothing on the write path changes —
+   * reaches a client. That is deliberate and was measured. The key carries a
+   * rule uuid, an alarm uuid and the severity code, and the first two are
+   * already DTO fields selected a few lines below — so the **incremental**
+   * exposure returning it would create is the severity code, which is exactly
+   * what Amendment 8 means by "`NotificationDeliveryDto` carries no severity
+   * today". A derived kind adds no identifier at all. (`errorProjection` above
+   * is a narrower thing than a general redaction of alarm detail: it blanks the
+   * `error` column only, only for a non-`admin` caller, and only on a NULL-org
+   * channel row.) Nothing on the write path changes —
    * ADR 0057 decision 9's "the kind lives in the dedupe key, not in a new
    * column" still holds, and `event` is a projection rather than a stored value.
    */
