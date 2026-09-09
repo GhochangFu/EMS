@@ -172,10 +172,24 @@ services:
 
   api-replica:
     # A SECOND API process, and therefore a second `F3.47` evaluate-throttle
-    # `Map`. Harmless as wired: it listens on 4001, no load balancer fronts the
-    # pair, and the SPA is built against `http://localhost:4000` — so presses
-    # reach `api` only and the bound holds. Route evaluate presses to both and
-    # the ceiling doubles, silently. Same warning as on `api` above.
+    # `Map` with its own empty state. The SPA cannot reach it: `web` is built
+    # with `VITE_API_URL: http://localhost:4000`, so browser presses go to `api`
+    # only and the bound holds for them.
+    #
+    # An HTTP caller is another matter, and this is not "harmless as wired".
+    # This service publishes 4001, points at the same database, and sets neither
+    # AUTH_MODE nor OIDC_ISSUER — so `resolveAuthMode`
+    # (apps/api/src/auth/auth-mode.ts) answers `local` here, local login stays
+    # enabled, and JWT_SECRET is committed in this service's own environment
+    # below. As configured in this file a request to localhost:4001 therefore
+    # reaches `POST /api/v1/rules/evaluate` on a second process, and while the
+    # `realtime-smoke` profile is up the real ceiling for anything that is not
+    # the SPA is two sweeps per bucket per 30 s — one per process, and neither
+    # process can see the other's Map. Bring another replica up under any
+    # profile and it is three, on the same terms.
+    # Changing this service's auth configuration is a separate decision;
+    # this comment records the exposure rather than implying it away. Same
+    # warning as on `api` above.
     profiles: ["realtime-smoke"]
     build:
       context: .

@@ -397,7 +397,8 @@ export async function keysOnTheOrganizationTheSafeHelperReturned(): Promise<void
   // different human in the same organization is refused by the first one's
   // press. A caller WITH grants is keyed by organization even after the
   // grantless split — only a caller with no organization at all is keyed by
-  // user, and that caller has no organization to bypass.
+  // subject, and that caller has no organization to bypass. Blocks 19 and 20
+  // own the two branches where that subject is read.
   await rejects(
     () => controller.evaluateEnabledRules(COLLEAGUE, res),
     isTooManyRequests,

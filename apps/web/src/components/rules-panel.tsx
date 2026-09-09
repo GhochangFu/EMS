@@ -246,11 +246,14 @@ export function RulesPanel() {
             </div>
           </div>
 
-          {/* `F3.47`: the sweep is bounded to one per 30 s per organization, so
-              this button can now be refused with 429. Without this the mutation
-              had no error surface at all and a refused press did nothing,
-              silently, twice. Under the toolbar rather than inside its flex row
-              so a long sentence does not reflow the filters. */}
+          {/* `F3.47`: the sweep is bounded to one per 30 s per throttle bucket
+              — the caller's organization when they hold one, and a stand-in
+              bucket when they hold none — so this button can now be refused
+              with 429. Not "per organization": a global admin and a grantless
+              caller are keyed otherwise. Without this the mutation had no error
+              surface at all and a refused press did nothing, silently, twice.
+              Under the toolbar rather than inside its flex row so a long
+              sentence does not reflow the filters. */}
           <EvaluateRefusalNotice error={evaluateM.error} />
 
           {rulesQ.isLoading ? (

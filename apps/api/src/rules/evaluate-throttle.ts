@@ -31,7 +31,11 @@ export const GLOBAL_ADMIN_THROTTLE_KEY = "fleet:admin";
 
 /**
  * The bucket a **grantless** caller gets: a `configuration` role holding zero
- * grant rows, keyed by its own user id.
+ * grant rows, keyed by its own **IdP subject** — the token's `sub` claim, which
+ * is not a `bms.users.id`. `AccessControlService.resolveDbUser` matches on
+ * `users.id` OR `users.email` and never reads `bms.users.oidc_subject`, so
+ * under OIDC a provisioned account's row id and that same account's Keycloak
+ * `sub` are normally different values. This key is the claim, never the row.
  *
  * All three scoped admin roles are `configuration: true` and each has exactly
  * one read-scope source (`access-scope.ts`), so `readableOrganizationIds`
@@ -41,9 +45,9 @@ export const GLOBAL_ADMIN_THROTTLE_KEY = "fleet:admin";
  *
  * **This is not the per-user bypass the ruling forbids.** A caller with grants
  * is still keyed by organization; only a caller with no organization at all is
- * keyed by user, and such a caller has no organization to bypass. The prefix is
- * what keeps a user id from landing in the organization bucket that happens to
- * carry the same UUID.
+ * keyed by subject, and such a caller has no organization to bypass. The prefix
+ * is what keeps a subject from landing in the organization bucket that happens
+ * to carry the same UUID — two UUID namespaces that never had to agree.
  */
 const USER_THROTTLE_KEY_PREFIX = "user:";
 
@@ -116,8 +120,24 @@ export function throttleKeysFor(
  * token still has to be signed by the IdP, so the space is bounded by the
  * principals it will issue for — not by a caller, and not by a table either.
  *
- * No eviction, and none owed at that size: entries are overwritten in place and
- * a restart clears them. A prune would exist only to be white-box tested.
+ * **`sub` is never runtime-validated on this path.** `jwt-auth.guard.ts`
+ * *casts*: `verifyLocalToken` returns `this.jwt.verify<JwtPayload>(token)`
+ * (`:136-142`), and `verifyOidcToken` builds its payload out of an equally cast
+ * `KeycloakClaims` (`:167-180`). `jwtPayloadSchema`
+ * (`packages/shared/src/contracts/auth.ts:20-25`) is `.parse`d nowhere in
+ * `apps/api`. Anyone able to sign a token therefore chooses their own `sub` —
+ * and since the split each distinct forged one is its own `Map` entry, where
+ * before it every forgery landed in the single `"fleet"` bucket. Such a token
+ * has to claim a *scoped* `configuration` role to reach this bucket at all: a
+ * forged `admin` matching no row is refused inside `resolveDbUser`, and a
+ * `viewer` never passes `assertOperationsWriteRole`. This is a bound on honest
+ * callers. It is not a security control and it never was one.
+ *
+ * No eviction. Entries are overwritten in place and a restart clears them —
+ * that pair, not a size, is why none is owed: the paragraph above bounds the
+ * key space by the principals the IdP will issue for rather than by a table, so
+ * this file can no longer name a number. A prune would exist only to be
+ * white-box tested.
  *
  * ## Two rules on this implementation, not preferences
  *
@@ -155,10 +175,21 @@ export function throttleKeysFor(
  * **Per API process.** The state is a `Map` in this process's memory, so N
  * processes serving this route give N times the bound and nothing in this
  * repository detects it. `docker-compose.yml` runs one `api` container with no
- * `deploy.replicas`, and its `api-replica` service is on its own port under a
- * separate profile with no load balancer in front, so the bound holds as
- * deployed today. The note lives on both of those services as well, because
- * that is where someone adding a replica would meet it.
+ * `deploy.replicas` and no load balancer, and the `web` image is built with
+ * `VITE_API_URL: http://localhost:4000` — so **the SPA reaches one process**,
+ * and for a press made through the browser the bound holds.
+ *
+ * **It does not hold for an HTTP caller.** On the `realtime-smoke` profile the
+ * `api-replica` service publishes 4001, points at the same database, and sets
+ * neither `AUTH_MODE` nor `OIDC_ISSUER` — so `resolveAuthMode`
+ * (`../auth/auth-mode.ts`) answers `local` there, local login stays enabled,
+ * and `JWT_SECRET: change-me-in-compose` is committed in its environment. As
+ * configured in that file, a request to `localhost:4001` reaches this route on
+ * a second process holding its own empty `Map`, and `curl` is a press. That is
+ * an exposure of the replica's auth configuration, and changing it is a
+ * separate decision — recorded here rather than implied away. The note lives on
+ * both services as well, because that is where someone adding a replica would
+ * meet it.
  */
 @Injectable()
 export class EvaluateThrottle {

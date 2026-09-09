@@ -56,8 +56,11 @@ function freshOrganizationId(): string {
   return `aaaaaaaa-0000-0000-0000-${String(organizationsIssued).padStart(12, "0")}`;
 }
 
-/** A user id that is not an organization id, for the blocks where only its
- * distinctness matters. */
+/** A **subject** that is not an organization id, for the blocks where only its
+ * distinctness matters. The identifier keeps the older name, but the value
+ * stands for a token's `sub` claim rather than a `bms.users.id` — those are
+ * normally different values under OIDC, and `USER_THROTTLE_KEY_PREFIX` says
+ * why. */
 let usersIssued = 0;
 function freshUserId(): string {
   usersIssued += 1;
@@ -258,12 +261,12 @@ export function givesEveryCallerWithNoOrganizationABucketAnyway(): void {
   );
   assert(
     throttleKeysFor([], userId).length === 1 && throttleKeysFor([], userId)[0] === `user:${userId}`,
-    `a grantless role keys on its own user id, got ${JSON.stringify(throttleKeysFor([], userId))}`,
+    `a grantless role keys on its own subject, got ${JSON.stringify(throttleKeysFor([], userId))}`,
   );
   assert(
     throttleKeysFor([scoped], userId).length === 1 &&
       throttleKeysFor([scoped], userId)[0] === scoped,
-    "a scoped caller keys on its own organization ids, not on its user id",
+    "a scoped caller keys on its own organization ids, not on its subject",
   );
 
   const admin = new EvaluateThrottle();
@@ -343,7 +346,7 @@ export function twoGrantlessCallersDoNotDenyEachOther(): void {
  * 11d. Neither stand-in key can collide with an organization id.
  *
  * Stated behaviourally, not as a regex on the literal: a grantless caller whose
- * user id IS an organization id must not fall in that organization's bucket.
+ * subject IS an organization id must not fall in that organization's bucket.
  * That is what the `user:` prefix buys, and dropping the prefix is the mutation
  * this block owns.
  */
@@ -357,7 +360,7 @@ export function keepsBothStandInKeysOutOfEveryOrganizationBucket(): void {
   );
   assert(
     throttle.check(throttleKeysFor([], organizationId), T).allowed,
-    "a grantless caller whose user id equals an organization id fell in that organization's bucket — the user key carries no prefix",
+    "a grantless caller whose subject equals an organization id fell in that organization's bucket — the user key carries no prefix",
   );
   assert(
     throttle.check(throttleKeysFor(null, organizationId), T).allowed,
