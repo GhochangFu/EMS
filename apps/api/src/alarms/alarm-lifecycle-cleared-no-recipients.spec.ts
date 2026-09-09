@@ -231,8 +231,25 @@ export async function assertTheTwoWarnsAreDistinguishable(): Promise<void> {
  * channel's configuration. The two warns are the only new log lines this row
  * adds, and a warn is read on a shared operations console.
  *
- * **Mutation:** appending `alarm.message`, `channelIds.join(",")` or a channel
- * code to either string reddens this.
+ * **Two of the four absences are live; two are forward guards, and the
+ * difference matters.** No channel ROW is in scope at either return —
+ * `channelIds` is `[]` at the first and `channels` is `[]` at the second — so a
+ * channel's code and its configuration cannot be interpolated into either
+ * string by any mutation that can be written today. Those two assertions gate
+ * the future edit that loads a row here and names it.
+ *
+ * **Mutation, runnable, one per live absence:** appending `${alarm.message}` to
+ * either string reddens the alarm-text assertion (`alarm` is in scope at both
+ * returns); appending `${channelIds.join(",")}` to the SECOND string reddens
+ * the recipient-id assertion (`channelIds` holds the sent id there, and is
+ * empty at the first). Run them one at a time — `assert` throws, so a combined
+ * mutation only ever proves the first.
+ *
+ * **Why the recipient-code guard is a plain `includes`.** The two-part form
+ * `` !includes(`${C1.code} `) && !endsWith(C1.code) `` answers "no leak" for
+ * `"…is disabled c1,c2"` — the comma-joined shape a future author writes — so
+ * it is weaker than the sentence above it. The plain form fires on that string
+ * and passes on both real lines.
  */
 export async function assertNeitherWarnLeaksAlarmTextOrRecipients(): Promise<void> {
   const none = noSentRowDeps();
@@ -254,7 +271,7 @@ export async function assertNeitherWarnLeaksAlarmTextOrRecipients(): Promise<voi
   for (const warning of [none.recorded.warnings[0] ?? "", disabled.recorded.warnings[0] ?? ""]) {
     assert(!warning.includes("Feeder overload"), `§9.6: no alarm text, got "${warning}"`);
     assert(!warning.includes(C1.id), `§9.6: no recipient id, got "${warning}"`);
-    assert(!warning.includes(`${C1.code} `) && !warning.endsWith(C1.code), `§9.6: no recipient code, got "${warning}"`);
+    assert(!warning.includes(C1.code), `§9.6: no recipient code, got "${warning}"`);
     assert(!warning.includes("hooks.example.com"), `§9.6: no channel configuration, got "${warning}"`);
   }
 }

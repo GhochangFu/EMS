@@ -1011,13 +1011,16 @@ returned early after each. Neither return sent anything, recorded anything or
 wrote a log line:
 
 - `sentChannelIdsForAlarm` answers with an empty list — **no channel holds a
-  `sent` row for this alarm**.
+  `sent` row for this alarm**, either because no channel is joined to the rule
+  at all or because the raise left no `sent` row behind (two readings, below).
 - `loadEnabledChannelsByIds` answers with an empty list over a non-empty set of
   ids — the channels did hold one, and **every one of them is disabled now**.
 
-The second is the ordinary, reachable shape this row was filed against: a
-channel took the raise, an operator disabled it, and the clear arrives with
-nobody to tell. Both were the fully silent shape — no send, no row, no retry,
+The second is the shape this row was filed against: a channel took the raise,
+an operator disabled it, and the clear arrives with nobody to tell. The first is
+the commoner one today — on a database where nobody has joined a channel to the
+rule, it is what every clear of that rule logs. Both were the fully silent
+shape — no send, no row, no retry,
 no log — which is precisely what Amendment 2's ruling Q-A calls worse than the
 defect `F3.48` set out to fix. They survived `F3.54` because they sit one layer
 **above** `dispatchToChannel`: Amendment 4's two ternaries live inside that
@@ -1043,27 +1046,45 @@ which is the mirror image of that and lands in the same place: the `warn` is
 the record, because there is nothing else to record.
 
 **The two warns are distinguishable, and that is the operational point.** An
-operator reading the log has to be able to tell "the raise reached nobody" from
-"the recipients were disabled before the clear", because the two ask for
-different actions. The first sends them to the raise path; the second to the
-channel that somebody turned off. Each line carries the alarm id, the rule code
-and its own case, and the unit spec asserts the discrimination **in both
-directions** — exchanging the two strings is the mutation a "the two differ"
-assertion would pass.
+operator reading the log has to be able to tell "no channel holds a `sent` row
+for this alarm" from "the recipients were disabled before the clear", because
+the two ask for different actions. The first sends them to the rule's channel
+list — and only if a channel is joined there at all, on to the raise path; the
+second to the channel that somebody turned off. Each line carries the alarm id,
+the rule code and its own case, and the unit spec asserts the discrimination
+**in both directions** — exchanging the two strings is the mutation a "the two
+differ" assertion would pass.
 
-**What the first return does and does not say about the raise (`F3.51`).**
-`sentChannelIdsForAlarm` filters on `status = 'sent'`, so an empty answer covers
-two states and the amendment must not blur them. If rows exist under the raise
-key but none is `sent` — a `failed` row, a `skipped_rate_limited` one, a
-`skipped_unconfigured` one newer than its watermark — then `runRaiseRetryPhase`
-is **still owed that raise** and may yet deliver it; the raise is not lost, and
-this warn must not be read as saying it was. If there are **zero** rows under
-the key, Amendment 5's ruling 3 evidence conjunct means that phase never
-re-offers it at all — "zero rows reads as 'not yet offered', not as 'owed'" —
-and then this warn is the only trace the whole episode leaves anywhere. Both
-states arrive at the same return and the sweep cannot separate them there
-without a second read, so the line is worded on the `sent`-row predicate rather
-than on "the raise never landed".
+**What the first return covers: two readings, and it does not assume the raise
+was ever offered.** `sentChannelIdsForAlarm` filters on `status = 'sent'`, and
+an empty answer is reached by two quite different routes. They arrive at the
+same return and the sweep cannot separate them there without a second read, so
+the line is worded on the `sent`-row predicate rather than on "the raise never
+landed" — and the amendment must not blur them either:
+
+- **No channel was ever configured for this rule.** With no `rule_notifications`
+  join the rule has no recipients, so the raise was offered to nobody and wrote
+  no delivery row, and the read answers `[]` at every clear of that rule. This
+  is not the rare shape: no seed writes `rule_notifications`, and ADR 0058
+  decision 2 — *"a seeded rule carries `action = review` and joins no
+  notification channel"* — makes `asset-templates-instantiate.service.ts`
+  deliberately not write one either. On a seeded or a template-built database
+  this is therefore the *usual* line. Nothing was offered, nothing vanished and
+  nothing is owed: the warn says there is no channel to tell, which is the
+  whole of what it claims.
+- **The raise was offered and left no `sent` row.** If rows exist under the
+  raise key but none is `sent` — a `failed` row, a `skipped_rate_limited` one, a
+  `skipped_unconfigured` one newer than its watermark — then
+  `runRaiseRetryPhase` is **still owed that raise** and may yet deliver it; the
+  raise is not lost, and this warn must not be read as saying it was. If a
+  channel is joined and there are nonetheless **zero** rows under the key,
+  Amendment 5's ruling 3 evidence conjunct means that phase never re-offers it
+  at all — "zero rows reads as 'not yet offered', not as 'owed'" — and then
+  this warn is the only trace that episode leaves anywhere.
+
+Read the line as its own words say it — *"no channel holds a sent row for it"* —
+and not as "a message was lost". Under the first reading there was no episode
+to lose.
 
 **Not a contradiction of `channel-reads.ts`.** `loadEnabledChannelsByIds`'s
 docblock says a disabled channel is silently absent, because an operator who
@@ -1076,7 +1097,11 @@ left".
 never the alarm message, never a channel id or code, never a channel's
 configuration. The unit spec asserts each of those absences over both lines,
 after first asserting that both lines exist, because a redaction assertion over
-a warn that was never emitted passes on the empty string.
+a warn that was never emitted passes on the empty string — with the caveat that
+only two of the four are live today (the alarm message at both returns, the
+channel ids at the second), because no channel row is in scope at either return
+for a code or a configuration to leak from, so those two are forward guards on
+the edit that loads one here.
 
 **What gates it.** `alarm-lifecycle-cleared-no-recipients.spec.ts`, five
 numbered assertions with one `it()` each per `F4.105`, and every absence paired
@@ -1088,8 +1113,10 @@ option that does dispatch. It is its own file because
 `alarm-lifecycle.service.spec.ts` stands at 801 of §4.5's 1000 lines and its
 wrapper is a single `it()` over thirteen cases, where a mutation reddens
 whichever case runs first rather than the one that owns the claim.
-`alarm-lifecycle.service.ts` is at 995 lines after this change, so the next
-change to that file extracts before it adds.
+`alarm-lifecycle.service.ts` is at 991 lines after this change, four fewer than
+the first draft of it: the reasoning above is carried here, and the call site
+points at it rather than restating it. The next change to that file still
+extracts before it adds.
 
 **Not fixed, and named here so it is not re-filed as a gap.** A *partially*
 disabled recipient set says nothing: the enabled channels are dispatched to,

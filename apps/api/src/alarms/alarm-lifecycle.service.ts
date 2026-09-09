@@ -344,21 +344,18 @@ async function notifyCleared(
   }
   try {
     // `F3.55` (ADR 0057 Amendment 6): both of these returns were silent — no
-    // send, no row, no retry, no log line — which is the shape Amendment 2's
-    // ruling Q-A calls worse than the defect `F3.48` closed. They are one layer
-    // above `dispatchToChannel`, so `F3.54`'s ternaries never reached them.
-    // Each warns; NEITHER writes a delivery row, and for a different reason
-    // each. §9.6: the alarm id and the rule code only — never the alarm text,
-    // a recipient or a channel's configuration.
+    // send, no row, no retry, no log line, which ruling Q-A calls worse than
+    // the defect `F3.48` closed. Each warns now; NEITHER writes a delivery row,
+    // and the amendment gives the different reason at each. §9.6 bounds both
+    // lines to the alarm id and the rule code — never the alarm text, a
+    // recipient or a channel's configuration.
     const channelIds = await deps.sentChannelIdsForAlarm(alarm.id, input.organizationId);
     if (channelIds.length === 0) {
-      // No channel reported a `sent` row for this alarm, so there is no channel
-      // a row could be attributed to. Note what this does NOT say: rows under
-      // the raise key may exist and be `failed`, rate-limited or unconfigured,
-      // in which case `runRaiseRetryPhase` is still owed the raise. What is
-      // true is that with ZERO rows under the key, ruling 3's evidence
-      // conjunct (`F3.51`, Amendment 5) means that phase never re-offers it —
-      // and then this line is the only trace the raise leaves anywhere.
+      // An empty answer has two readings and this line has to fit both: no
+      // channel is joined to the rule at all (no `rule_notifications` row —
+      // what a seeded or a template-built rule has), or the raise was offered
+      // and left no `sent` row. Amendment 6 separates them and says what each
+      // one owes; the predicate this line states is the same either way.
       deps.logger.warn(
         `alarm lifecycle: alarm ${alarm.id} rule ${rule.code} cleared with no cleared message: no channel holds a sent row for it`,
       );
@@ -366,8 +363,7 @@ async function notifyCleared(
     }
     const channels = await deps.loadChannels(channelIds);
     if (channels.length === 0) {
-      // The recipients exist and every one is disabled, so
-      // `loadEnabledChannelsByIds` dropped them all. A row here would record an
+      // Named recipients, every one disabled now: a row here would record an
       // attempt against a channel that was never asked to send.
       deps.logger.warn(
         `alarm lifecycle: alarm ${alarm.id} rule ${rule.code} cleared with no cleared message: every channel that holds a sent row for it is disabled`,
