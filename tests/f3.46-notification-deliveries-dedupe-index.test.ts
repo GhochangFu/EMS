@@ -18,7 +18,8 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 const MIGRATION_REL = "packages/db/drizzle/0065_notification_deliveries_dedupe_index.sql";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
-const SERVICE_REL = "apps/api/src/notifications/notifications.service.ts";
+/** `F3.53` moved `hasRecordedSkip` here, out of `notifications.service.ts`. */
+const LEDGER_READS_REL = "apps/api/src/notifications/ledger-reads.ts";
 
 /** Comments stripped before every assertion (the `f3.1a` lesson). */
 const sqlOnly = (source: string): string =>
@@ -92,21 +93,32 @@ describe("F3.46 notification_deliveries dedupe skip index (ADR 0041 Amendment 2)
     ).toBeGreaterThan(entry64!.when);
   });
 
-  it("the reader exists: NotificationsService.hasRecordedSkip reads dedupe_key under the index's own predicate", () => {
-    const service = read(SERVICE_REL);
-    // Scoped to the method body, not the whole file: the partial index serves
+  it("the reader exists: hasRecordedSkip reads dedupe_key under the index's own predicate", () => {
+    // `F3.53` moved this read out of `NotificationsService` into
+    // `ledger-reads.ts`, to make room under §4.5's cap — `private async
+    // hasRecordedSkip(` became `export async function hasRecordedSkip(`. The
+    // invariant is unchanged and deliberately not weakened: both column filters
+    // below are still asserted, in the same body-scoped way.
+    //
+    // **This test is what caught that move**, by going red in the full suite,
+    // and nothing else did — it runs in the `repo` vitest project, so neither
+    // a filtered `vitest run apps/api/...` nor `pnpm typecheck:tests` executes
+    // it. An extraction can orphan a source-scanning invariant in `tests/`
+    // while every gate the extracting unit runs stays green.
+    const ledgerReads = read(LEDGER_READS_REL);
+    // Scoped to the function body, not the whole file: the partial index serves
     // this read only while the read filters on BOTH the key column and the
     // exact status the index is partial on. A drifted status elsewhere in the
     // file must not satisfy this check for it.
-    const start = service.indexOf("private async hasRecordedSkip(");
-    const end = service.indexOf("return rows.length > 0;", start);
+    const start = ledgerReads.indexOf("export async function hasRecordedSkip(");
+    const end = ledgerReads.indexOf("return rows.length > 0;", start);
     expect(
       start >= 0 && end > start,
-      "apps/api/src/notifications/notifications.service.ts no longer has hasRecordedSkip — " +
+      "apps/api/src/notifications/ledger-reads.ts no longer has hasRecordedSkip — " +
         "0038's rule in reverse: an index whose reader is later removed should be named by " +
         "a failing test rather than carried for free.",
     ).toBe(true);
-    const body = service.slice(start, end);
+    const body = ledgerReads.slice(start, end);
     expect(
       body.includes("eq(notificationDeliveries.dedupeKey"),
       "hasRecordedSkip no longer filters on dedupe_key, the reader 0065's index was added for",

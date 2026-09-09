@@ -27,6 +27,8 @@ const MIGRATION_REL = "packages/db/drizzle/0066_alarm_lifecycle.sql";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const SCHEMA_REL = "packages/db/src/schema/alarms-schema.ts";
 const SERVICE_REL = "apps/api/src/notifications/notifications.service.ts";
+/** `F3.53` moved the two dedupe-key ledger reads here, out of the service. */
+const LEDGER_READS_REL = "apps/api/src/notifications/ledger-reads.ts";
 
 const ESCALATION_TABLES = [
   "alarm_escalation_profiles",
@@ -275,8 +277,21 @@ describe("F3.10 alarm lifecycle migration 0066 (ADR 0057 decisions 1, 2, 3, 7)",
   it("the readers exist: sentChannelIdsForAlarm, eventDeliveryBlocked and hasRecordedSkip read what the indexes serve", () => {
     const service = read(SERVICE_REL);
     expect(service).toContain("async sentChannelIdsForAlarm(");
-    expect(service).toContain("private async eventDeliveryBlocked(");
-    expect(service).toContain("private async hasRecordedSkip(");
+
+    // `F3.53` moved the two dedupe-key reads OUT of the service, into
+    // `ledger-reads.ts`, to make room under §4.5's cap. The invariant is
+    // unchanged and deliberately not weakened — an index must still have a
+    // reader that filters on the columns it serves. Only the file and the
+    // declaration form moved: `private async x(` became
+    // `export async function x(`.
+    //
+    // This test found that move by going red in the full suite, and nothing
+    // else did: it lives in the `repo` vitest project, so neither
+    // `vitest run apps/api/src/notifications` nor `pnpm typecheck:tests`
+    // executes it.
+    const ledgerReads = read(LEDGER_READS_REL);
+    expect(ledgerReads).toContain("export async function eventDeliveryBlocked(");
+    expect(ledgerReads).toContain("export async function hasRecordedSkip(");
 
     const alarmRead = service.slice(service.indexOf("async sentChannelIdsForAlarm("));
     expect(
@@ -284,7 +299,9 @@ describe("F3.10 alarm lifecycle migration 0066 (ADR 0057 decisions 1, 2, 3, 7)",
       "sentChannelIdsForAlarm no longer filters on alarm_id, so notification_deliveries_alarm_idx has no reader",
     ).toBe(true);
 
-    const eventRead = service.slice(service.indexOf("private async eventDeliveryBlocked("));
+    const eventRead = ledgerReads.slice(
+      ledgerReads.indexOf("export async function eventDeliveryBlocked("),
+    );
     expect(
       eventRead.slice(0, eventRead.indexOf("return ")).includes("eq(notificationDeliveries.dedupeKey"),
       "eventDeliveryBlocked no longer filters on dedupe_key, so notification_deliveries_channel_key_idx has no reader",

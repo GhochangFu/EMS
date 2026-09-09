@@ -883,3 +883,205 @@ that class. The staleness decision is a **pure predicate in a module beside the
 service**, on `dispatch-policy.ts`'s and `raise-retry.ts`'s precedent, and the
 row is written by the dispatch path that already writes every other refusal —
 no second writer beside `record()`.
+
+## Amendment 7 — `F3.53`: the sweep remembers a closed ceiling for the length of one tick, and only ever the closed answer (2026-09-09)
+
+**Status: Accepted — 2026-09-09.** Ruled by the repository owner at `F3.53`'s
+step-2 gate; two rulings, taken 2026-09-09 on the measurements in §1 below
+rather than on the row's filed text.
+
+### The row was filed on a cost model that has moved three ways, and one of them is a path it never mentions
+
+`docs/BACKLOG.md`'s `F3.53` row was created 2026-09-08 by `F3.48`'s security
+review (M2). Every figure in it predates `F3.51` and `F3.52`.
+
+1. **Up, on a path the row does not name.** `F3.51` added
+   `runRaiseRetryPhase`, which dispatches per owed channel per active
+   unacknowledged alarm on every tick. Amendment 5 above and ADR 0057
+   Amendment 5 both assign that cost to `F3.53` by name; the row's own text
+   describes only the escalation phase.
+2. **Up marginally, and not in the number of queries.** Amendment 6 §1 made the
+   read return two counts instead of one. It is still one round trip, one index
+   scan and the same buffers.
+3. **Down, and unrecorded anywhere until now.** Amendment 6 §2's
+   `skipped_stale` row is not excluded by `eventDeliveryBlocked`, so it blocks
+   its key on the "not `failed`" arm. An abandoned step stops reaching the
+   ceiling at all.
+
+### 1. What was measured, because the ruling rests on it and not on the row
+
+All figures below were taken on the development host against a 2.2 M-row,
+718 MB copy of `bms.notification_deliveries`, warm cache, before any code was
+written. The plan is an index scan of
+`notification_deliveries_channel_time_idx` with `organization_id` and
+`status = 'sent'` as residual filters — **identical for both forms**, ten
+shared buffer hits each.
+
+| | server-side execution | round trip from the API process |
+|---|---|---|
+| the `F3.48` form, one count | 0.471 ms | 2.533 ms (p95 5.175) |
+| the Amendment 6 form, two counts | 0.622 ms | 2.863 ms (p95 8.926) |
+
+**About 2.2 ms of every read is round trip and driver, not the query.** The
+aggregate is not the cost; the round trip is, and Amendment 6 added 0.33 ms to
+it. `dispatchToChannels` issues these reads serially, so on the 30 s
+sweep-then-sleep tick 52 spinning dispatches — the burst ADR 0057 Amendment 2
+ruling Q7 measured — cost **149 ms, 0.5 % of a tick**. The tick stops sleeping
+at about **10 500**.
+
+**And exactly one case spins.** Driven over two ticks with the ceiling read
+counted: a step that sends, and a step abandoned as `skipped_stale`, each pay
+the read once and are blocked by their own row on the next tick. A step
+**refused by the ceiling** pays it again on every tick, for ever, because
+`F3.48` ruling Q1 deliberately writes no row so that the next tick can ask.
+Three channels on one step cost three reads.
+
+That result decides the shape. The row states the two answers are asymmetric —
+a cached `false` over-sends permanently, a cached `true` can only postpone —
+and worries that the safe half is the less useful one. **The measurement
+inverts that: the only case that spins is the case whose answer is `true`, so
+the safe half of the fix removes all of the cost and the dangerous half is not
+needed at all.**
+
+### 2. Ruling 1 — the memo remembers the closed ceiling only
+
+Within one tick, a channel the ceiling has already refused is not asked again.
+Nothing else is remembered: a `false` is never cached, so no send is ever
+authorised by memory, and decision 7's ceiling is still read from the ledger
+before every dispatch that could be admitted by it.
+
+**The key is `channel · organization · budget`.** The budget belongs in the key
+because Amendment 6 §1 gives the two budgets different limits against different
+counts: a channel over the reserved limit may still be under the full one, and
+a raise must not inherit an event's refusal.
+
+**A cached `true` is safe but it is NOT monotone, and the amendment says so
+rather than claiming it is.** `isOverHourlyLimit` recomputes `since` on every
+call, so the trailing hour's left edge moves and a channel at its limit can
+drop below it part-way through a tick. The memo therefore postpones such a
+dispatch to the next tick. Since `F3.48` that dispatch is retried, so the cost
+is bounded at **one tick of latency, 30 s** — the same bound Amendment 5 and
+ADR 0057 Amendment 2 already accept for a ceiling-refused dispatch.
+
+**One tick, unless the alarm leaves the active-and-unacknowledged set inside
+it.** The security review's L2, and this amendment records it rather than
+keeping the rounder sentence. `runRaiseRetryPhase` skips an alarm cleared this
+tick or carrying an `acknowledged_at` — ADR 0057 Amendment 5 ruling 4, somebody
+is already on it — so a postponed RAISE retry has a next tick only while the
+alarm stays open and unacknowledged. Acknowledged or cleared inside that 30 s,
+the channel is never offered the raise text again, and the cleared message does
+not stand in for it: `notifyCleared` writes only to channels already holding a
+`sent` row for that alarm.
+
+**That is not a reason to cache less, and the review says so too.** A real
+`isOverHourlyLimit` answering `true` at the same instant loses the same offer,
+and ruling 4 accepts that knowingly. What the memo adds is one narrow extra way
+in — a `sent` row that aged out of the trailing hour part-way through the sweep,
+where the ledger would have answered `false`.
+
+**The escalation path has a terminal exit too, and this amendment first said it
+did not.** The correctness review's C-1, landing on the paragraph written an
+hour earlier to fix the security review's L2 — a correction is a claim too
+(AGENTS.md §4.6), and this one was wrong in the same way.
+
+The false sentence was "a due step stays due". It does; it does not stay
+**sendable**. `stepIsTooLate` is `dispatchToChannel`'s block 2b, checked AFTER
+the ceiling by Amendment 6 §2 ruling 9, so a step the memo postpones never
+reaches it on that tick. Where the trailing hour moved inside the phase, and
+that step was within one tick of `raised_at + after_minutes +
+NOTIFY_STEP_MAX_LATENESS_MINUTES`, the ledger would have sent it now — and the
+next tick instead finds the ceiling open, reaches 2b, and abandons the step as
+`skipped_stale`. `eventDeliveryBlocked` counts that row as an answer on its
+"not `failed`" arm, so the key is blocked for the life of the ledger. On that
+path the postponement is not latency; it is the whole step, permanently.
+
+**It stays in scope, and the reason is the measurement.** Two coincidences are
+required — the hour moving inside one phase, and the step in its final tick
+before a 60-minute cut-off — where the cost being bought is the removal of an
+unbounded per-tick term. Amendment 6 §2 already accepts that a step can be
+abandoned for age it spent waiting on a ceiling; this narrows the margin by at
+most one tick. What is not acceptable is an amendment that says the exposure
+does not exist, which is why it is written out here in full rather than
+softened.
+
+### 3. Ruling 2 — the window is the tick, created by the sweep, and it reaches exactly one call site
+
+`runLifecycleSweep` creates the memo and it dies with the tick. There is no TTL
+and no eviction cap, because it never outlives one sweep — `F3.51` ruling 3
+replaced a clock constant with a structural condition and this keeps that
+precedent rather than reintroducing one.
+
+`dispatchToChannels` takes it as an **optional** argument, so a caller that
+does not pass one reads the ledger exactly as it does today. It has **three**
+production callers, one passes the memo and two do not, and each omission is a
+decision:
+
+- **`dispatchRememberingLostRows` passes it** — the single call site shared by the raise-retry and escalation phases, which
+  is where all of the measured spin is.
+- **`notifyCleared` does not.** A cleared
+  message is dispatched once, from the clear phase, and `loadActiveAlarms`
+  never selects that alarm again. It has no next tick to be postponed to, so
+  the aged-out edge in §2 would cost the clear itself — the silent-loss shape
+  ADR 0057 Amendment 2 ruling Q-A refused.
+- **`dispatch()`, the fire-and-forget raise path, does not**
+  (the `dispatch()` tail of `notifications.service.ts`). It runs concurrently
+  outside it; it was the row's stated reason for doubting a service-level memo,
+  and threading the window from the sweep removes the question rather than
+  answering it.
+
+**`sendTest` is not one of them, and this section said it was.** Corrected in
+place on Amendment 6 §1's precedent rather than quietly reworded: `sendTest`
+calls `isOverHourlyLimit` **directly**, from `NotificationsService.sendTest`, and
+never enters `dispatchToChannels` at all, so it cannot see a memo on either
+reading and the ruling's behaviour is unchanged. The count of four callers was
+wrong, and the correction is recorded because a closure record or a docblock
+that copied the sentence would carry the error forward.
+
+**The adapter is the edit that makes any of this reach production, and this
+section omitted it.** `AlarmLifecycleDeps.dispatchToChannels` is typed
+`NotificationsService["dispatchToChannels"]`, so it widens with the method —
+but the adapter that satisfies it, `alarm-lifecycle.service.ts:320`, is written
+`(channels, input) => this.notifications.dispatchToChannels(channels, input)`
+and **drops a third argument**. Left alone, the memo is created, threaded
+through both phases, and never delivered — while every sweep spec stays green,
+because they replace `deps.dispatchToChannels` with their own fake. The build
+edits that line and gates it against a real database, since no fake-deps test
+can reach it.
+
+`DispatchInput` is local to `apps/api` (declared in `notifications.service.ts`), not a
+`packages/shared` contract, so nothing here is ADR 0030 contract drift.
+
+### What this does not change
+
+Decision 7's ceiling, its two limits and its two counts are untouched — this
+amendment changes only how often the query is issued, never its answer.
+Decision 4's row-per-attempt is untouched: the memo writes nothing and reads
+nothing. `MAX_EVENT_ATTEMPTS`, `eventDeliveryBlocked`, the unconfigured
+watermark, `F3.48`'s ceiling exception and Amendment 6's `skipped_stale` exit
+all keep their present meanings, and there is no schema change.
+
+### A constraint the build must respect, recorded here because it shapes the design
+
+`apps/api/src/notifications/notifications.service.ts` stands at **982 of
+AGENTS.md §4.5's 1000-line cap** and is still on §2's "extract before adding"
+list. The memo's type, its docblock and its behaviour belong in a module beside
+the service, on the `dispatch-policy.ts` precedent; the service itself may gain
+only the parameter and the consultation. If that does not fit, the build
+extracts before it adds, as `F3.52` did twice — it does not spend the last
+eighteen lines and call the file legal.
+
+**Measured at the plan, and it does not fit: the parameter and the consultation
+alone cost +14, landing the file at 996 of 1000.** The owner ruled the
+extraction at the plan gate: `hasRecordedSkip` and `eventDeliveryBlocked` — the
+two dedupe-key ledger reads, each `fleetDb`-only and needing nothing from the
+class — move to a module beside the service, which the service's own comment at
+`:833` already gives as the rule for a read it kept out. The service lands near
+805 before the memo is added.
+
+**The move gate is weaker than `F3.52`'s and the amendment says so rather than
+asking for a byte-identity it cannot have.** After `F3.52` nothing is left at
+module level in that file; every remaining candidate is a method on
+`this.fleetDb`. The achievable claim is *identical apart from indentation, the
+signature line, and `this.fleetDb` → `db`*, checked with `diff -w` against the
+base commit's bytes — not "byte-identical apart from `export`", which held for
+`ledger-text.ts` and `dispatch-shapes.ts` and does not hold here.

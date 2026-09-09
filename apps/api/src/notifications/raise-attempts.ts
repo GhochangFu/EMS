@@ -162,7 +162,16 @@ export function raiseAttemptBatches(
  * Honest bound, restated for the chunked shape: the cost per tick is now
  * `ceil(alarms / 500)` sequential statements rather than one, so a fleet with
  * ten thousand open alarms pays twenty round trips a tick. That is a cost, not
- * a failure, and it is `F3.53`'s ground.
+ * a failure — and **no row owns it**.
+ *
+ * This said "it is `F3.53`'s ground", and that was written before `F3.53` was
+ * scoped. ADR 0041 Amendment 7, which `F3.53` is built under, bounds the
+ * per-DISPATCH hourly-ceiling read inside one tick and nothing else: its memo is
+ * keyed on channel, organization and budget, it is consulted only from
+ * `dispatchToChannel`, and this phase-level batch read is a different query on a
+ * different key that never reaches it. The batch cost above is therefore
+ * currently unowned. It is named here so a reader does not take a closed row as
+ * covering it; whoever picks it up files the row.
  */
 export async function loadRaiseAttempts(
   db: BmsDb,
