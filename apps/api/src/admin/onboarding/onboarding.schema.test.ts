@@ -5,6 +5,7 @@ import {
   assertOnboardingDraftSchemaCoversTheModelProducer,
   assertPatchDraftBodyAcceptsADraftAtTheBound,
   assertPatchDraftBodyRefusesADraftOneDeeper,
+  assertTheDepthRefusalSentenceStatesTheLimit,
   assertTheShippedProducerShapesStillParse,
   runDraftCountCapTests,
   runDraftStaysPermissiveTests,
@@ -45,8 +46,12 @@ describe("onboarding.schema — the draft's nesting depth (F4.115)", () => {
     assertPatchDraftBodyAcceptsADraftAtTheBound();
   });
 
-  it("refuses a draft one level deeper, naming the limit and echoing nothing", () => {
+  it("refuses a draft one level deeper, under fieldErrors.draft", () => {
     assertPatchDraftBodyRefusesADraftOneDeeper();
+  });
+
+  it("states the limit in the refusal sentence and echoes nothing from the draft", () => {
+    assertTheDepthRefusalSentenceStatesTheLimit();
   });
 
   it("refuses it on the draft schema itself, so the model's producer is covered", () => {

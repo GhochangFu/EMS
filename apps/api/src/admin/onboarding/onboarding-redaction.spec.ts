@@ -380,6 +380,13 @@ function deepConfig(): Record<string, unknown> {
  *
  * The step ceiling is a runaway guard: a copy that somehow became cyclic would
  * otherwise hang the suite instead of failing it.
+ *
+ * **The runaway answer is a sentinel string, not `null`**, matching `leafOf` in
+ * `stack-safe-json.spec.ts`. It returned `null` until `F4.115`'s review sweep,
+ * and `assert(bottom !== null)` then passed on a `config` that was missing
+ * altogether: `bottomOf(undefined)` returns `undefined`, which is not `null`.
+ * The caller now checks the two conditions separately — that the config is
+ * there at all, and that the walk down it terminated.
  */
 function bottomOf(value: unknown): unknown {
   let node = value;
@@ -389,7 +396,7 @@ function bottomOf(value: unknown): unknown {
     }
     node = (node as { next: unknown }).next;
   }
-  return null;
+  return "RUNAWAY";
 }
 
 /**
@@ -408,9 +415,17 @@ function bottomOf(value: unknown): unknown {
  * failure message and report the wrong defect.
  */
 export function assertRedactDraftForClientReadsADeepDraft(): void {
+  // `credentialsSet` is deliberately **absent** from the stored RTU. The
+  // function spreads `scrubMeta(rtu)` and then writes
+  // `credentialsSet: Boolean(rtu.credentialsSet)`, so a fixture carrying `true`
+  // makes the derivation unobservable — the spread already supplies `true` and
+  // deleting the line changes nothing. Absent, the spread supplies nothing and
+  // the derived value is `false`, so deleting the line leaves `undefined` and
+  // the assertion below reddens. (The `typeof … === "boolean"` this replaced
+  // could not fail at all while `rtus[0]` existed.)
   const stored = {
     location: { name: "Deep site" },
-    rtus: [rtu("R1", { config: deepConfig(), credentialsSet: true })],
+    rtus: [rtu("R1", { config: deepConfig() })],
     _secrets: { R1: { c: "abc", iv: "def" } },
   };
 
@@ -421,17 +436,23 @@ export function assertRedactDraftForClientReadsADeepDraft(): void {
 
   assert(client._secrets === undefined, "a deep draft's client view still strips _secrets");
   assert(
-    typeof client.rtus?.[0]?.credentialsSet === "boolean",
-    "a deep draft's client view still derives credentialsSet",
+    client.rtus?.[0]?.credentialsSet === false,
+    "a deep draft's client view still derives credentialsSet, and derives false for an RTU that carries no flag",
   );
 
-  const bottom = bottomOf(client.rtus?.[0]?.config) as { password?: unknown } | null;
+  const config = client.rtus?.[0]?.config;
   assert(
-    bottom !== null,
+    config !== undefined,
+    "the client view must still carry rtus[0].config — without this the walk below is handed undefined and every assertion after it passes vacuously",
+  );
+
+  const bottom: unknown = bottomOf(config);
+  assert(
+    bottom !== "RUNAWAY",
     "the walk down the cloned config must terminate, not run away",
   );
   assert(
-    bottom?.password === "[REDACTED]",
+    (bottom as { password?: unknown } | null)?.password === "[REDACTED]",
     "the scrub must reach the bottom of the chain and redact the password there",
   );
 }
@@ -518,4 +539,54 @@ export function assertScrubSecretsKeepsKeyOrderAndProtoKey(): void {
     Object.keys(nested).join(",") === "__proto__,zeta,alpha",
     `the nested subtree keeps its own key order too, got: ${Object.keys(nested).join(",")}`,
   );
+}
+
+/**
+ * **The half of the shared walk that the scrub owns: which values it descends
+ * into.**
+ *
+ * `scrubSecrets` and `cloneJson` are one traversal parameterised by a container
+ * predicate, and the predicates are deliberately different. The scrub's is "any
+ * non-null object", so a `Date` or a `Map` under a non-secret key is **descended
+ * into and rebuilt** — and since neither has own enumerable keys, both come back
+ * as `{}`. That is exactly what the recursive `Object.entries` form did, and
+ * keeping it is why the walk takes a predicate rather than hard-coding
+ * `isJsonContainer`.
+ *
+ * Nothing asserted it until `F4.115`'s review sweep. Once the traversal was
+ * shared, passing the clone's narrower predicate here compiled and left every
+ * other assertion in both suites green while silently changing what a client
+ * receives. `assertCloneJsonReturnsANonJsonObjectByReference` pins the other
+ * side of the same pair.
+ *
+ * **What this does and does not claim.** It does not claim a shipped producer
+ * ever puts a `Date` in a draft — every one of them writes JSON that arrived
+ * through `JSON.parse`, so none does. It claims only that the observable
+ * behaviour on such a value is the one that shipped, which is what makes
+ * "deliberately not the narrower predicate" in `isContainer`'s docblock a
+ * checked sentence instead of a hope.
+ */
+export function assertScrubSecretsRebuildsANonJsonObject(): void {
+  const when = new Date("2026-09-09T00:00:00.000Z");
+  const seen = new Map<string, number>([["a", 1]]);
+
+  const client = redactDraftForClient({
+    rtus: [rtu("R1", { config: { installedAt: when, counts: seen, password: "hunter2" } })],
+  }) as { rtus?: { config?: Record<string, unknown> }[] };
+  const scrubbed = client.rtus?.[0]?.config ?? {};
+
+  assert(
+    scrubbed.installedAt !== when,
+    "the scrub must descend into a Date rather than carry the same object across",
+  );
+  assert(
+    Object.getPrototypeOf(scrubbed.installedAt) === Object.prototype &&
+      Object.keys(scrubbed.installedAt as object).length === 0,
+    "a Date has no own enumerable keys, so the scrub rebuilds it as a plain {}",
+  );
+  assert(
+    scrubbed.counts !== seen && Object.keys(scrubbed.counts as object).length === 0,
+    "a Map is rebuilt as {} the same way — its entries are not own properties",
+  );
+  assert(scrubbed.password === "[REDACTED]", "and the secret beside them is still redacted");
 }

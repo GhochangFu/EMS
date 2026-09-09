@@ -166,11 +166,31 @@ export const onboardingDraftMetaSchema = z
  * - **Bound — 10.** The draft skeleton consumes four levels before the first
  *   free-form byte, so this leaves a hand-written `config` or `meta` six levels
  *   of its own structure where every shipped producer uses one.
- * - **Ceiling, for contrast — ~2,000 and ~6,000.** The first observed failures:
- *   the clone inside `redactDraftForClient` at about 2,000, and the jsonb write
- *   itself at about 6,000. The bound sits twice above every shape the product
- *   writes and roughly 200x below the first observed failure, which is what
- *   makes it a semantic bound rather than one tuned to a crash point.
+ * - **Ceilings, for contrast — ~2,000, 4,173 and ~6,000.** All three measured
+ *   inside `bms-api-1` on **node v20.20.2**, the serving runtime. A figure
+ *   measured on a dev machine does not transfer: where a recursive walk gives
+ *   out moves with the platform, the flags and the frame size, which is exactly
+ *   why the bound is set from the product's shapes and not from any of them.
+ *
+ *   - **~2,000 — the clone inside `redactDraftForClient`, and this row fixed
+ *     it.** It is `cloneJson` now and walks any depth.
+ *   - **4,173 — the response's own `JSON.stringify`, and it still stands.** It
+ *     returned at 4,173 levels and threw at 4,174. This sits on the read path
+ *     this row exists to unblock, so ruling 2b's "an already-stored deep draft
+ *     stays readable" holds below it and **not** above: for such a draft the
+ *     failure has moved from the clone to the serialiser, not gone. Measured on
+ *     a bare chain — the response wraps the draft in a session envelope, so the
+ *     ceiling on the draft itself is a few levels lower again.
+ *   - **~6,000 — the jsonb write, and it still stands.** It is the same
+ *     `JSON.stringify` call under a different caller, which is why the two are
+ *     close and why the unreadable band is narrow. **Narrow is not empty**: a
+ *     draft nested between 4,174 and ~6,000 could be stored by the base code and
+ *     cannot be served by this one. Above ~6,000 nothing was ever stored, so
+ *     there is nothing to serve.
+ *
+ *   The bound sits twice above every shape the product writes and two orders of
+ *   magnitude below the lowest of the three, which is what makes it a semantic
+ *   bound rather than one tuned to a crash point.
  *
  * `MAX_CONTENT_DEPTH = 12` in `asset-templates-content.schema.ts` is the same
  * *form* of judgement and a different number, because template `content` is an
@@ -289,12 +309,33 @@ export const DRAFT_TOO_DEEP_MESSAGE =
  * and `readyToCommit` stays false until it is patched, which is what stops a
  * deep `config` reaching `rtu_connection_configs` at commit.
  *
- * The other two producers — the workbook upload and the rule-based chat branch
- * — parse nothing here and need **no** depth guard, and the reason is not that
- * they are trusted: `parseRtus` and `defaultConfig` write `config` as a flat
- * literal of at most four scalar keys and write no `meta` at all, so neither
- * can produce depth. Stated rather than left unsaid, because `F4.104` shipped a
- * docblock naming two producers where there were three.
+ * **The producers that parse nothing here need no depth guard, and the count of
+ * two missed half of them.** `bms.onboarding_sessions.draft` is written at
+ * **five** sites, every one of them in `onboarding.service.ts`. Two of the five
+ * reach this schema; the other three parse nothing, and neither does `chat`'s
+ * rule-based branch. The whole list is here because a partial one is precisely
+ * how `F4.104` shipped a docblock naming two producers where there were three,
+ * and the third shipped unguarded:
+ *
+ * - `createSession` — writes the literal `{}`. One level, and nothing a caller
+ *   sent reaches it.
+ * - `setCredentials` — `mergeDraft(session.draft, {}, { rtuIndex, credentials })`.
+ *   The patch is empty, and `credentials` is
+ *   `z.record(z.string().min(1).max(MAX_RTU_CREDENTIAL_CHARS))` below, so it is
+ *   two levels by schema; `mergeDraft` encrypts it into `_secrets` as a
+ *   `{ c, iv }` pair of base64 strings and never writes it into the draft body.
+ * - `chat` — the model's `draftPatch`, which **does** parse this schema
+ *   (producer 3 above) and is why the refinement is attached here. Its other
+ *   branch, `handleRuleBasedTurn`, parses nothing: `defaultConfig` returns
+ *   `{host,port,tls,topic}`, `{host,port,unitId,pollIntervalMs}` or `{}`, and
+ *   writes no `meta`.
+ * - `patchDraft` — the HTTP caller, through `patchDraftBodySchema` (producer 1).
+ * - `uploadExcel` — parses nothing here: `parseRtus` writes
+ *   `config: { host, port, tls, topic }`, a flat literal, and writes no `meta`.
+ *
+ * So the only two that can carry depth are the two that parse this schema, and
+ * the reason the rest cannot is not that they are trusted — it is that each
+ * writes a shape whose depth is fixed by this repository's own source.
  *
  * The check runs **after** the fields parse, which diverges from
  * `asset-templates-content.schema.ts`'s deliberate depth-first ordering. That

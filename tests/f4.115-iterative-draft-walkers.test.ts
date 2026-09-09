@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * `F4.115` — the two invariants a future edit could quietly undo.
+ * `F4.115` — the invariants a future edit could quietly undo.
  *
  * Assertions are **inline** here, which is §4.6's carve-out for the top-level
  * `tests/` directory; there is no `.spec` sibling.
@@ -27,8 +27,24 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 const ONBOARDING_DIR = "apps/api/src/admin/onboarding";
+const ADMIN_DIR = "apps/api/src/admin";
 const TEMPLATE_SCHEMA_REL = "apps/api/src/admin/asset-templates/asset-templates-content.schema.ts";
 const DRAFT_SCHEMA_REL = "apps/api/src/admin/onboarding/onboarding.schema.ts";
+const SHARED_WALKER_REL = "apps/api/src/admin/stack-safe-json.ts";
+const REDACTION_REL = "apps/api/src/admin/onboarding/onboarding-redaction.ts";
+
+/**
+ * The shape of a rebuild traversal: a stack of frames pairing the node being
+ * read with the shell being filled.
+ *
+ * This is a **textual** pin and it is stated as one. It matches the frame
+ * declaration both walkers carried before they were merged, which is what a
+ * copy-paste of the walk would carry too; it cannot catch a second traversal
+ * written from scratch under different names. The assertion that the shared
+ * module itself still matches is what keeps it from going vacuous the day the
+ * frame is rewritten.
+ */
+const REBUILD_FRAME = /\{\s*source:[\s\S]{0,160}?target:/;
 
 /**
  * Every production `.ts` file under a directory, relative to the repo root.
@@ -119,6 +135,59 @@ describe("F4.115 — the onboarding draft's walkers stay iterative", () => {
     expect(
       /import\s*\{[^}]*\bexceedsDepth\b[^}]*\}\s*from\s*"\.\.\/stack-safe-json"/.test(source),
       `${TEMPLATE_SCHEMA_REL} must import exceedsDepth from "../stack-safe-json"`,
+    ).toBe(true);
+  });
+
+  /**
+   * One **rebuild** traversal, for the same reason as one `exceedsDepth`.
+   *
+   * `cloneJson` and `scrubSecrets` shipped as two copies of one stack of
+   * `{source, target}` frames — same array branch, same shell-create-and-push,
+   * same `Object.defineProperty` assign — differing in one `if` and in their
+   * container predicate. That is the §4.8 drift the `exceedsDepth` extraction
+   * was meant to end, regrown in the same commit. They are now one
+   * `rebuildDeep` taking a predicate and a per-key visitor.
+   *
+   * The **predicates stay two**, deliberately: the clone's checks the prototype
+   * and carries a `Date` across by reference, the scrub's descends into it and
+   * rebuilds it as `{}`. That difference is behaviour, and it is pinned by an
+   * assertion on each side rather than here —
+   * `assertCloneJsonReturnsANonJsonObjectByReference` and
+   * `assertScrubSecretsRebuildsANonJsonObject`. This test is about the walk, not
+   * about what either caller descends into.
+   */
+  it("keeps one rebuild traversal, imported from the shared module", () => {
+    const files = productionFilesUnder(ADMIN_DIR);
+
+    // A broken walk must fail loudly rather than pass having scanned nothing.
+    expect(
+      files.length,
+      "the walk over apps/api/src/admin found far too few files — it is broken, and the " +
+        "single-match assertion below would mean nothing",
+    ).toBeGreaterThanOrEqual(40);
+
+    // ...and a regex that no longer matches the shared walker would make the
+    // same assertion vacuous without the walk being broken at all.
+    expect(
+      REBUILD_FRAME.test(read(SHARED_WALKER_REL)),
+      `${SHARED_WALKER_REL} no longer matches the frame-stack pattern this test searches for, ` +
+        "so the single-match assertion below proves nothing. Update REBUILD_FRAME to the shape " +
+        "rebuildDeep now uses.",
+    ).toBe(true);
+
+    expect(
+      files.filter((rel) => REBUILD_FRAME.test(read(rel))),
+      "more than one file under apps/api/src/admin declares a {source, target} rebuild stack. " +
+        "cloneJson and scrubSecrets were two copies of that walk in F4.115 and were merged into " +
+        "rebuildDeep in apps/api/src/admin/stack-safe-json.ts; a second copy is a second thing " +
+        "to fix when one of them is wrong (§4.8).",
+    ).toEqual([SHARED_WALKER_REL]);
+
+    expect(
+      /import\s*\{[^}]*\brebuildDeep\b[^}]*\}\s*from\s*"\.\.\/stack-safe-json"/.test(
+        read(REDACTION_REL),
+      ),
+      `${REDACTION_REL} must build its scrub on rebuildDeep from "../stack-safe-json"`,
     ).toBe(true);
   });
 

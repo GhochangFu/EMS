@@ -210,3 +210,43 @@ export function assertCloneJsonIsIterative(): void {
     "the bottom of a 20,000-deep clone must be reachable, so every level was copied",
   );
 }
+
+/**
+ * **The half of the shared walk that `cloneJson` owns: which values it descends
+ * into.**
+ *
+ * `cloneJson` and `scrubSecrets` are one traversal parameterised by a container
+ * predicate, and the two predicates are deliberately different.
+ * `isJsonContainer` here checks the prototype, so a `Date` or a `Map` is copied
+ * **by reference**; `onboarding-redaction.ts` passes a wider "any non-null
+ * object" predicate that descends into those and rebuilds them as `{}`, which
+ * is what its recursive `Object.entries` form did and what a reviewer verified
+ * the iterative rewrite still did.
+ *
+ * Nothing asserted that difference until `F4.115`'s review sweep, and after the
+ * traversal was shared it became a one-word mutation: passing `isJsonContainer`
+ * to the scrub compiles and every other assertion in both suites stays green.
+ * This function and `assertScrubSecretsRebuildsANonJsonObject` are the pair that
+ * pins it, one from each side.
+ *
+ * Not a claim that `cloneJson` is a full `structuredClone` replacement — it is
+ * the opposite claim, and the docblock on `cloneJson` states the same narrowing
+ * as a contract.
+ */
+export function assertCloneJsonReturnsANonJsonObjectByReference(): void {
+  const when = new Date("2026-09-09T00:00:00.000Z");
+  const seen = new Map<string, number>([["a", 1]]);
+  const source = { rtus: [{ config: { installedAt: when, counts: seen } }] };
+
+  const clone = cloneJson(source);
+
+  assert(
+    clone.rtus[0].config.installedAt === when,
+    "a Date is not a JSON container, so the clone must carry the same object across",
+  );
+  assert(
+    clone.rtus[0].config.counts === seen,
+    "a Map is not a JSON container either, so it is carried across the same way",
+  );
+  assert(clone.rtus[0].config !== source.rtus[0].config, "the plain object around them is copied");
+}

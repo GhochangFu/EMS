@@ -726,9 +726,11 @@ export function assertPatchDraftBodyAcceptsADraftAtTheBound(): void {
  * exactly this shape already; `api-error-message.spec.ts` carries the same body
  * for `F4.103`'s count cap.
  *
- * The sentence itself echoes **nothing from the input** (§4.3): the field names
- * in it are literals from `onboarding.schema.ts`, and the only interpolation is
- * the constant.
+ * Every assertion here is about **the parse**. The two that are about the
+ * exported sentence moved to `assertTheDepthRefusalSentenceStatesTheLimit`,
+ * with an `it()` of their own: they could not run at all once either assertion
+ * above them threw, so deleting the `superRefine` reddened this function at its
+ * first line and never reached the §4.3 claim.
  */
 export function assertPatchDraftBodyRefusesADraftOneDeeper(): void {
   const parsed = patchDraftBodySchema.safeParse({
@@ -742,6 +744,23 @@ export function assertPatchDraftBodyRefusesADraftOneDeeper(): void {
     draftErrors.includes(DRAFT_TOO_DEEP_MESSAGE),
     `the refusal must name the depth limit under fieldErrors.draft, got: ${JSON.stringify(flattened)}`,
   );
+}
+
+/**
+ * Two claims about the exported sentence itself, and about nothing else.
+ *
+ * They parse no draft and so cannot be blocked by a parse assertion failing
+ * first — which is what they were, appended to
+ * `assertPatchDraftBodyRefusesADraftOneDeeper` above. That is `F4.105`'s
+ * lesson, now AGENTS.md §4.6: a mutation must redden **the** assertion that
+ * owns the claim, and grouping decides whether it is ever reached.
+ *
+ * - The sentence states the limit, so the caller knows what to flatten to.
+ * - It echoes **nothing from the input** (§4.3). The field names in it are
+ *   literals from `onboarding.schema.ts` and the only interpolation is the
+ *   constant, so the two fixture-only key names below can never appear in it.
+ */
+export function assertTheDepthRefusalSentenceStatesTheLimit(): void {
   assert(
     DRAFT_TOO_DEEP_MESSAGE.includes(String(MAX_ONBOARDING_DRAFT_DEPTH)),
     "the sentence must state the limit, so the caller knows what to flatten to",

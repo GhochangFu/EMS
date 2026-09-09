@@ -4,6 +4,7 @@ import {
   assertCloneJsonIsIndependentAndOrdered,
   assertCloneJsonIsIterative,
   assertCloneJsonKeepsProtoAsData,
+  assertCloneJsonReturnsANonJsonObjectByReference,
   assertExceedsDepthCountsFromTheRoot,
   assertExceedsDepthIsIterative,
 } from "./stack-safe-json.spec";
@@ -35,5 +36,9 @@ describe("stack-safe JSON walkers (F4.115)", () => {
 
   it("clones a 20,000-deep value down to its leaf", () => {
     assertCloneJsonIsIterative();
+  });
+
+  it("carries a Date or a Map across by reference instead of rebuilding it", () => {
+    assertCloneJsonReturnsANonJsonObjectByReference();
   });
 });

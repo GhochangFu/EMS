@@ -4,6 +4,7 @@ import {
   assertAttachEncryptedCredentialsReadsADeepDraft,
   assertRedactDraftForClientReadsADeepDraft,
   assertScrubSecretsKeepsKeyOrderAndProtoKey,
+  assertScrubSecretsRebuildsANonJsonObject,
   runOnboardingRedactionTests,
 } from "./onboarding-redaction.spec";
 
@@ -31,5 +32,9 @@ describe("onboarding-redaction — an already-deep stored draft (F4.115)", () =>
 
   it("keeps key order and an own __proto__ through the scrub", () => {
     assertScrubSecretsKeepsKeyOrderAndProtoKey();
+  });
+
+  it("descends into a Date or a Map and rebuilds it as {}, unlike cloneJson", () => {
+    assertScrubSecretsRebuildsANonJsonObject();
   });
 });

@@ -1,6 +1,6 @@
 import type { OnboardingDraft } from "@bms/shared";
 
-import { cloneJson } from "../stack-safe-json";
+import { cloneJson, rebuildDeep } from "../stack-safe-json";
 
 /**
  * Draft redaction and the internal encrypted-credential store (ADR 0022).
@@ -259,10 +259,16 @@ export function redactDraftForLlm(draft: unknown): OnboardingDraft {
  * of this function overflowed the stack on a stored draft nested a couple of
  * thousand deep, which is a `RangeError` and so a 500 rather than a response.
  *
+ * **It is `cloneJson`'s traversal with two parameters, not a second copy of it**
+ * (`F4.115` review, §4.8). `rebuildDeep` owns the stack, the shell-and-push, the
+ * key order and the `__proto__`-safe define; this function supplies the wider
+ * container predicate and the one visitor that makes it a scrub rather than a
+ * clone. It shipped as a near-duplicate body differing in a single `if`.
+ *
  * The semantics are unchanged: an object key that satisfies `isSecretKey`
  * becomes the placeholder and is **not** descended into, everything else is
  * copied, and arrays keep their indices so no index is ever tested against
- * `isSecretKey`.
+ * `isSecretKey` — `rebuildDeep` offers the visitor object keys only.
  *
  * **One thing did change, and it is a fix rather than a regression.** The
  * previous `out[key] = …` invoked `Object.prototype`'s `__proto__` accessor, so
@@ -273,56 +279,9 @@ export function redactDraftForLlm(draft: unknown): OnboardingDraft {
  * `z.record` parse drops the key again on arrival.
  */
 function scrubSecrets(value: unknown): unknown {
-  if (!isContainer(value)) {
-    return value;
-  }
-
-  const root: Record<string, unknown> | unknown[] = Array.isArray(value) ? [] : {};
-  const stack: { source: Record<string, unknown> | unknown[]; target: object }[] = [
-    { source: value, target: root },
-  ];
-
-  while (stack.length > 0) {
-    const frame = stack.pop();
-    if (!frame) {
-      break;
-    }
-    const { source, target } = frame;
-    if (Array.isArray(source)) {
-      const out = target as unknown[];
-      for (let index = 0; index < source.length; index += 1) {
-        const child = source[index];
-        if (isContainer(child)) {
-          const shell: Record<string, unknown> | unknown[] = Array.isArray(child) ? [] : {};
-          out[index] = shell;
-          stack.push({ source: child, target: shell });
-        } else {
-          out[index] = child;
-        }
-      }
-      continue;
-    }
-    // One loop over the source's own key order, so the copy's key order is
-    // fixed here and never depends on the stack's LIFO order —
-    // `runOnboardingRedactionTests` asserts over `JSON.stringify` of this
-    // output, and the jsonb text is the same serialisation.
-    for (const key of Object.keys(source)) {
-      if (isSecretKey(key)) {
-        defineOwn(target, key, "[REDACTED]");
-        continue;
-      }
-      const child = source[key];
-      if (isContainer(child)) {
-        const shell: Record<string, unknown> | unknown[] = Array.isArray(child) ? [] : {};
-        defineOwn(target, key, shell);
-        stack.push({ source: child, target: shell });
-      } else {
-        defineOwn(target, key, child);
-      }
-    }
-  }
-
-  return root;
+  return rebuildDeep(value, isContainer, (key) =>
+    isSecretKey(key) ? { value: "[REDACTED]" } : null,
+  );
 }
 
 /**
@@ -333,19 +292,20 @@ function scrubSecrets(value: unknown): unknown {
  * one descends into those and rebuilds them as plain objects, exactly as
  * `Object.entries` recursion did before. Nothing here is meant to change what
  * the scrub produces; only how it walks.
+ *
+ * **Sharing the traversal made that difference a one-word mutation**, so it now
+ * has a test on each side: `assertScrubSecretsRebuildsANonJsonObject` here and
+ * `assertCloneJsonReturnsANonJsonObjectByReference` in
+ * `stack-safe-json.spec.ts`. Passing `isJsonContainer` in below compiles and
+ * reddens exactly those two.
+ *
+ * It narrows to `object` rather than to `Record<string, unknown> | unknown[]`,
+ * which was the type it claimed until the same review: a `Date` is not a
+ * `Record<string, unknown>`, so the compiler was being told something this
+ * function is written to contradict.
  */
-function isContainer(value: unknown): value is Record<string, unknown> | unknown[] {
+function isContainer(value: unknown): value is object {
   return typeof value === "object" && value !== null;
-}
-
-/** `setBlob` for arbitrary values — assigns without invoking a setter. */
-function defineOwn(target: object, key: string, value: unknown): void {
-  Object.defineProperty(target, key, {
-    value,
-    enumerable: true,
-    writable: true,
-    configurable: true,
-  });
 }
 
 /**
