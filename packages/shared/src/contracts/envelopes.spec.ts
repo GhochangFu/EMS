@@ -1,10 +1,15 @@
+import { expect } from "vitest";
+
 import {
   notificationDeliveriesResponseSchema,
   pointAggregateBucketSchema,
   pointAggregateResponseSchema,
   pointAggregateStatsSchema,
 } from "./envelopes";
-import { notificationDeliveryStatusSchema } from "./notifications";
+import {
+  notificationDeliveryEventSchema,
+  notificationDeliveryStatusSchema,
+} from "./notifications";
 
 /**
  * `F3.35` Stage A — the point-aggregate response contract (ADR 0048 decision 3).
@@ -194,6 +199,12 @@ export function runNotificationDeliveryStatusEnvelopeTests(): void {
     status: "sent",
     attemptedAt: "2026-09-09T10:00:00.000Z",
     error: null,
+    // `F3.56` — `event` is required, and this literal is untyped, so `tsc`
+    // says nothing when it is missing: every `expectAccepts` below simply
+    // starts failing at run time. `test` is the honest value here, because the
+    // row's `ruleId` and `alarmId` are both null and that is what a send test
+    // looks like (ADR 0041 Amendment 8).
+    event: "test",
   };
 
   for (const status of notificationDeliveryStatusSchema.options) {
@@ -217,5 +228,87 @@ export function runNotificationDeliveryStatusEnvelopeTests(): void {
     notificationDeliveriesResponseSchema,
     { items: [{ ...row, status: "skipped_invented" }] },
     "a status outside the contract must be refused, or the enum gates nothing",
+  );
+}
+
+/**
+ * The delivery row the `F3.56` event cases vary, held apart from the status
+ * cases' own literal on purpose: those fix `event` and vary `status`, these fix
+ * `status` and vary `event`, and one shared literal would let a mutation to
+ * either axis be read as a change to the other.
+ */
+const deliveryEventRow = {
+  id: "d1",
+  organizationId: "00000000-0000-4000-8000-000000000001",
+  ruleId: "00000000-0000-4000-8000-000000000011",
+  ruleCode: "UPS-BATT-TEMP",
+  alarmId: "00000000-0000-4000-8000-0000000000a1",
+  channelId: "00000000-0000-4000-8000-0000000000c1",
+  channelCode: "ops-webhook",
+  status: "sent",
+  attemptedAt: "2026-09-10T10:00:00.000Z",
+  error: null,
+  event: "raise",
+};
+
+/**
+ * `F3.56` S1 — the deliveries envelope admits every event kind the contract
+ * declares (ADR 0041 Amendment 8).
+ *
+ * The same gate `runNotificationDeliveryStatusEnvelopeTests` above is: the web
+ * client runs `checkResponse(notificationDeliveriesResponseSchema, …)` on the
+ * real response, so a kind the envelope refuses becomes a thrown error and an
+ * empty page rather than an unlabelled row.
+ *
+ * The loop is driven from `notificationDeliveryEventSchema.options`, so a sixth
+ * kind is covered the day it lands — **and the explicit list below is what
+ * stops the loop passing vacuously.** An enum that lost `cleared` would still
+ * satisfy every iteration of a loop over its own options.
+ */
+export function deliveryEventEnvelopeAdmitsEveryKind(): void {
+  const options = notificationDeliveryEventSchema.options;
+
+  for (const event of options) {
+    expectAccepts(
+      notificationDeliveriesResponseSchema,
+      { items: [{ ...deliveryEventRow, event }] },
+      `event ${event} must survive the envelope the web client parses with`,
+    );
+  }
+
+  expect(options).toEqual(["raise", "escalation", "cleared", "test", "unknown"]);
+}
+
+/**
+ * `F3.56` S2 — an invented event kind is refused.
+ *
+ * `retry` is not an arbitrary invalid string. It is the value open row `F3.57`
+ * would add — Amendment 8 declines to mark a re-offered raise, because
+ * Amendment 5 makes it byte-identical to its original — and until that row is
+ * ruled on, the wire must refuse it rather than let a client ship a label the
+ * server never produces.
+ */
+export function deliveryEventEnvelopeRefusesAnInventedKind(): void {
+  expectRejects(
+    notificationDeliveriesResponseSchema,
+    { items: [{ ...deliveryEventRow, event: "retry" }] },
+    "`retry` is F3.57's value, not this row's — the envelope must refuse it",
+  );
+}
+
+/**
+ * `F3.56` S3 — `event` is required on every row, not optional.
+ *
+ * An optional field would typecheck everywhere and go inert: `listDeliveries`
+ * could stop deriving it and no consumer, no spec and no compiler would notice.
+ * Required is what makes the producer's omission a parse failure.
+ */
+export function deliveryEventIsRequiredOnEveryRow(): void {
+  const withoutEvent: Record<string, unknown> = { ...deliveryEventRow };
+  delete withoutEvent.event;
+  expectRejects(
+    notificationDeliveriesResponseSchema,
+    { items: [withoutEvent] },
+    "a delivery row with no `event` must be refused — the field is required, not optional",
   );
 }

@@ -57,6 +57,45 @@ export const notificationDeliveryStatusSchema = z.enum([
   "skipped_stale",
 ]);
 
+/**
+ * `F3.56` — which lifecycle event one delivery attempt was *for* (ADR 0041
+ * Amendment 8). A status says what happened to the attempt; this says what the
+ * attempt was about, and one column cannot answer both.
+ *
+ * **Derived, never stored.** `ChannelsService.listDeliveries` computes it in
+ * its `.map()` from the row's own `dedupe_key`, `rule_id` and `alarm_id`
+ * (`parseDeliveryEvent`, `apps/api/src/notifications/dedupe-key.ts`). No column
+ * was added and nothing on the write path changed — ADR 0057 decision 9's "the
+ * kind lives in the dedupe key, not in a new column" is untouched. The raw key
+ * itself is not exposed: it carries a severity code past the redaction
+ * `listDeliveries` performs in SQL.
+ *
+ * **This set is closed by a FUNCTION, where the status set above is closed by a
+ * database CHECK.** That difference is the whole reason
+ * `tests/adr-0041-notification-invariants.test.ts` deliberately does **not**
+ * grow a mirror for this enum: it compares `notificationDeliveryStatusSchema`
+ * against `notification_deliveries_status_check`, and there is no constraint
+ * here to compare against. A mirror written anyway would assert nothing and
+ * read as though it asserted something.
+ *
+ * **`unknown` is unreachable from every writer in this codebase** —
+ * `NotificationsService.record()` is the one production insert, its six
+ * dispatch call sites always pass a `buildDedupeKey(...)` string with a
+ * non-null `ruleId`, and its three `sendTest` call sites always pass `null` for
+ * both. `unknown` exists so the parse is total without lying: a row whose key
+ * does not start with its own rule and alarm was not written by this code, and
+ * calling it a raise would be a claim about a row nothing here produced. It is
+ * driven directly through `parseDeliveryEvent` by that function's own spec, so
+ * it is a measured case rather than dead prose.
+ */
+export const notificationDeliveryEventSchema = z.enum([
+  "raise",
+  "escalation",
+  "cleared",
+  "test",
+  "unknown",
+]);
+
 /** One configured destination. */
 export const notificationChannelDtoSchema = z.object({
   id: z.string(),
@@ -88,6 +127,10 @@ export const notificationChannelDtoSchema = z.object({
  * and no alarm, and a `skipped_unconfigured` row can predate any alarm.
  * `channelCode` is joined in because the deliveries view lists attempts across
  * channels and a uuid names nothing to a reader.
+ *
+ * Since `F3.56` the row also carries `event` — a raise, an escalation step, a
+ * cleared message or a send test — so a `failed` row says what it was for and
+ * not only that it failed (ADR 0041 Amendment 8).
  */
 export const notificationDeliveryDtoSchema = z.object({
   id: z.string(),
@@ -107,6 +150,12 @@ export const notificationDeliveryDtoSchema = z.object({
   status: notificationDeliveryStatusSchema,
   attemptedAt: z.string(),
   error: z.string().nullable(),
+  /**
+   * `F3.56` — what the attempt was for, derived server-side from the dedupe
+   * key (ADR 0041 Amendment 8). Required, not optional: an optional field would
+   * let the producer stop deriving it with nothing failing to compile.
+   */
+  event: notificationDeliveryEventSchema,
 });
 
 /**

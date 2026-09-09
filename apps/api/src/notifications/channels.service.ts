@@ -29,6 +29,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
+import { parseDeliveryEvent } from "./dedupe-key";
 import type { NotificationChannelRow } from "./notification-transport";
 import type { NotificationsConfig } from "./notifications.config";
 import type {
@@ -461,7 +462,9 @@ export class ChannelsService {
    *
    * `E7.1c` (item G, the security-critical one): the select below
    * (`:id, organizationId, ruleId, ruleCode, alarmId, channelId, channelCode,
-   * status, attemptedAt, error`) carries no alarm text — no subject, message
+   * status, attemptedAt, error`, and since `F3.56` an eleventh column,
+   * `dedupeKey`, which is **consumed in the `.map()` and never returned**)
+   * carries no alarm text — no subject, message
    * or body — so the exposure the organization filter guards is channel
    * `config` (via `channelCode`/`channelId`, resolvable through `list()`) and
    * delivery/error metadata, not alarm content. `assertAdmin` came off this
@@ -481,6 +484,17 @@ export class ChannelsService {
    * `list()`: a `location_admin` gets `{ items: [] }` unconditionally, not a
    * `writableOrganizationIds`-filtered read. (`asset_group_admin` is refused
    * earlier still, by `requireMasterDataUser`'s `isMasterDataRole` check.)
+   *
+   * **`F3.56` (ADR 0041 Amendment 8) — the row says what the attempt was FOR.**
+   * `dedupe_key` is selected only so `parseDeliveryEvent` can derive `event`
+   * from it in the `.map()` below; the key itself is dropped there and never
+   * reaches a client. That is deliberate and was measured: the key carries a
+   * rule uuid, an alarm uuid **and** the severity code, so returning it would
+   * put alarm detail on the wire past the `errorProjection` redaction this
+   * method performs in SQL precisely so such detail never leaves Postgres. A
+   * derived kind adds no identifier at all. Nothing on the write path changes —
+   * ADR 0057 decision 9's "the kind lives in the dedupe key, not in a new
+   * column" still holds, and `event` is a projection rather than a stored value.
    */
   async listDeliveries(
     jwt: JwtPayload,
@@ -540,6 +554,9 @@ export class ChannelsService {
         status: notificationDeliveries.status,
         attemptedAt: notificationDeliveries.attemptedAt,
         error: errorProjection,
+        // `F3.56` — read for the derivation below and dropped there. See the
+        // method comment for why it is not returned.
+        dedupeKey: notificationDeliveries.dedupeKey,
       })
       .from(notificationDeliveries)
       .innerJoin(
@@ -564,6 +581,11 @@ export class ChannelsService {
         status: row.status as NotificationDeliveryDto["status"],
         attemptedAt: row.attemptedAt.toISOString(),
         error: row.error,
+        // `row` already carries `dedupeKey`, `ruleId` and `alarmId` as
+        // `string | null`, so it satisfies the parameter with no adapter and no
+        // optional field — an optional parameter at an adapter goes inert while
+        // `tsc` exits 0 and every fake-based suite stays green.
+        event: parseDeliveryEvent(row),
       })),
     };
   }

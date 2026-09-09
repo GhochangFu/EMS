@@ -61,6 +61,11 @@ function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeli
     status: "sent",
     attemptedAt: new Date("2026-08-23T10:00:00Z").toISOString(),
     error: null,
+    // `F3.56` — `event` is required on the DTO (ADR 0041 Amendment 8), so this
+    // factory must supply a default or nothing here compiles. `raise` matches
+    // the rest of the literal, which carries both a rule and an alarm. The
+    // page's own column is Task 4 and is not in this commit.
+    event: "raise",
     ...overrides,
   };
 }
