@@ -53,8 +53,26 @@ const MAX_DEDUPE_KEY_LENGTH = 255;
 /**
  * Which lifecycle event a dispatch is for (ADR 0057 decision 9). Absent on the
  * raise path; set by the alarm lifecycle sweep.
+ *
+ * **`F3.52` — `stale` marks a step the sweep found too late to send** (ADR 0041
+ * Amendment 6 §2, ADR 0057 Amendment 7). Two things about its placement are
+ * load-bearing:
+ *
+ * - It is **optional**, so every existing `{ kind: "escalation", step: n }`
+ *   still typechecks and only the escalation phase has to answer the question.
+ * - It is on the **escalation variant only**. A raise, a re-offered raise and a
+ *   cleared message cannot carry it — that is the type-level half of ruling 1's
+ *   gate, and it matters because a `skipped_stale` row under a RAISE key would
+ *   block that raise for ever (`channelsOwedTheRaise` excludes only
+ *   `skipped_rate_limited` and a stale `skipped_unconfigured`).
+ *
+ * It does NOT reach `buildDedupeKey` below: a step's key stays
+ * `rule:alarm:severity:escalation:<n>`, so the rows earlier ticks wrote under
+ * it still match. `alarm-lifecycle.spec.ts` asserts that identity.
  */
-export type DispatchEvent = { kind: "escalation"; step: number } | { kind: "cleared" };
+export type DispatchEvent =
+  | { kind: "escalation"; step: number; stale?: true }
+  | { kind: "cleared" };
 
 /** The key for one notification: `rule:alarm:severity`, plus the event suffix when there is one. */
 export function buildDedupeKey(input: {

@@ -357,7 +357,9 @@ export const notificationDeliveries = bmsSchema.table("notification_deliveries",
     .notNull()
     .references(() => notificationChannels.id),
   // Closed set, enforced by `notification_deliveries_status_check`:
-  // sent · failed · skipped_unconfigured · skipped_deduped · skipped_rate_limited.
+  // sent · failed · skipped_unconfigured · skipped_deduped · skipped_rate_limited ·
+  // skipped_stale. `0038` created the constraint with the first five; `0068` widened it to
+  // add the sixth (ADR 0041 Amendment 6 ruling 5 — a due escalation step abandoned for age).
   status: varchar("status", { length: 32 }).notNull(),
   dedupeKey: varchar("dedupe_key", { length: 255 }),
   attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),

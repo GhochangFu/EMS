@@ -4,7 +4,7 @@ import { automationRuleOperatorSchema } from "@bms/shared";
 import { buildDedupeKey } from "../notifications/dedupe-key";
 import { MAX_EVENT_ATTEMPTS } from "../notifications/dispatch-policy";
 import type { NotificationChannelRow } from "../notifications/notification-transport";
-import { PROCESS_STARTED_AT } from "../notifications/notifications.config";
+import { PROCESS_STARTED_AT, STEP_MAX_LATENESS_MS } from "../notifications/notifications.config";
 import type { DispatchInput } from "../notifications/notifications.service";
 import type { RaiseAttemptsRead } from "../notifications/raise-attempts";
 // `LostLedgerRows` is a type here, not a value: this module reads the instance
@@ -26,6 +26,7 @@ import {
   escalationDispatchInput,
   escalationKey,
   raiseRetryDispatchInput,
+  stepIsTooLate,
 } from "./alarm-lifecycle";
 import type { ActiveAlarm, AlarmLifecycleDeps, AlarmStateUpdate } from "./alarm-lifecycle.service";
 import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
@@ -590,7 +591,18 @@ export async function runEscalationPhase(
       if (!step) {
         continue;
       }
-      const dispatchInput = escalationDispatchInput(alarm, rule, stepNo, input.now);
+      // `F3.52` — the age, per STEP, from the step's own due instant (ADR 0041
+      // Amendment 6 §2). The step is still dispatched: the mark rides on the
+      // input and `dispatchToChannel` writes the `skipped_stale` row, so a
+      // stale step leaves the same evidence every other refusal does. A
+      // `continue` here would leave none.
+      const stale = stepIsTooLate({
+        raisedAt: alarm.raisedAt,
+        afterMinutes: step.afterMinutes,
+        now: input.now,
+        maxLatenessMs: STEP_MAX_LATENESS_MS,
+      });
+      const dispatchInput = escalationDispatchInput(alarm, rule, stepNo, input.now, stale);
       if (dispatchInput === null) {
         deps.logger.warn(
           `alarm lifecycle: rule ${rule.code} (${rule.id}) has no organization; alarm ${alarm.id} not escalated`,

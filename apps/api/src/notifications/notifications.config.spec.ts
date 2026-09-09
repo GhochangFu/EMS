@@ -84,6 +84,65 @@ export function runNotificationsConfigTests(): void {
       `NOTIFY_RATE_LIMIT_PER_HOUR=${value} must fall back to 60, never NaN or a non-limit`,
     );
   }
+
+}
+
+/**
+ * `F3.52`, ADR 0041 Amendment 6 §2 — the escalation step's age cut-off.
+ *
+ * Minutes in, milliseconds out: the predicate compares against a duration and
+ * `stepIsTooLate` takes the bound as a parameter, so the conversion belongs in
+ * `buildConfig`, once, beside the other environment readings.
+ *
+ * **Its own exported function, not the tail of the block above.** `assert`
+ * throws, so a failure anywhere earlier in a shared block stops the run before
+ * these ever execute — and a mutation to this bound was reported under an
+ * `it()` named for `SMTP_HOST` until this split. The block that owns a claim
+ * must be the block that reddens for it.
+ */
+export function runStepLatenessConfigTests(): void {
+  assert(
+    buildConfig({}).stepMaxLatenessMs === 60 * 60_000,
+    `the default cut-off is 60 minutes — isOverHourlyLimit's own trailing hour — got ${buildConfig({}).stepMaxLatenessMs}`,
+  );
+  assert(
+    buildConfig({ NOTIFY_STEP_MAX_LATENESS_MINUTES: "90" }).stepMaxLatenessMs === 90 * 60_000,
+    "NOTIFY_STEP_MAX_LATENESS_MINUTES must be honoured, and read as MINUTES",
+  );
+  // The same NaN reasoning as the ceiling above, and it bites harder here: a
+  // NaN bound compares false against every comparison, so a typo would not
+  // relax the cut-off, it would silently REMOVE it and every late step would
+  // send for ever.
+  for (const value of ["", "abc", "0", "-5"]) {
+    assert(
+      buildConfig({ NOTIFY_STEP_MAX_LATENESS_MINUTES: value }).stepMaxLatenessMs === 60 * 60_000,
+      `NOTIFY_STEP_MAX_LATENESS_MINUTES=${value} must fall back to 60 minutes, never NaN`,
+    );
+  }
+
+  // `F3.52` security review (Low). These four are FINITE minutes, so the input
+  // guard admits every one of them — and `minutes * 60_000` then overflows to
+  // `Infinity`, which is the cut-off removed rather than a long grace period.
+  // The guard used to run on the minutes alone and this whole loop passed.
+  // Two decades of minutes is the largest value that must still be honoured
+  // exactly, so the boundary is asserted from both sides rather than only at
+  // the overflow.
+  for (const value of ["1e308", "9e303", "1.5e304", "1e310"]) {
+    const ms = buildConfig({ NOTIFY_STEP_MAX_LATENESS_MINUTES: value }).stepMaxLatenessMs;
+    assert(
+      Number.isFinite(ms),
+      `NOTIFY_STEP_MAX_LATENESS_MINUTES=${value} must not produce a non-finite bound, got ${ms}`,
+    );
+    assert(
+      ms === 60 * 60_000,
+      `NOTIFY_STEP_MAX_LATENESS_MINUTES=${value} overflows and must fall back to 60 minutes, got ${ms}`,
+    );
+  }
+  assert(
+    buildConfig({ NOTIFY_STEP_MAX_LATENESS_MINUTES: "10512000" }).stepMaxLatenessMs ===
+      10_512_000 * 60_000,
+    "a large but non-overflowing bound — twenty years in minutes — must be honoured exactly",
+  );
 }
 
 /** `F3.8` U3 — the stand-in transport reports a skip and says nothing private. */

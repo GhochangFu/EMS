@@ -89,20 +89,28 @@ describe("notification channel form", () => {
 });
 
 describe("delivery status presentation", () => {
-  it("names all five statuses in words an operator can act on", () => {
+  it("names all six statuses in words an operator can act on", () => {
     expect(deliveryStatusLabel("sent")).toBe("Sent");
     expect(deliveryStatusLabel("failed")).toBe("Failed");
     expect(deliveryStatusLabel("skipped_unconfigured")).toContain("not configured");
     expect(deliveryStatusLabel("skipped_deduped")).toContain("already open");
     expect(deliveryStatusLabel("skipped_rate_limited")).toContain("rate limited");
+    // `F3.52` — the sixth. Asserted whole rather than by substring: every
+    // `default:` in this module returns the raw status, so a missing case
+    // renders `skipped_stale` and passes any `toContain` of a fragment of it.
+    expect(deliveryStatusLabel("skipped_stale")).toBe("Skipped — too late to send");
   });
 
-  it("does not render the two skips that mean nobody was told as calm grey", () => {
-    // Three of five statuses are skips. The two that mean a person was NOT told
+  it("does not render the three skips that mean nobody was told as calm grey", () => {
+    // Four of six statuses are skips. The three that mean a person was NOT told
     // about an alarm must not look like "disabled" — that is how they get
     // scrolled past.
     expect(deliveryStatusTone("skipped_unconfigured")).toBe("warning");
     expect(deliveryStatusTone("skipped_rate_limited")).toBe("warning");
+    // `F3.52` — a step abandoned for age is the same class of harm: the
+    // escalation was due and nobody was told. Without a case it falls to the
+    // `default:` and renders in the grey a disabled channel uses.
+    expect(deliveryStatusTone("skipped_stale")).toBe("warning");
     // This one is the system working: the alarm was already open and somebody
     // was already told.
     expect(deliveryStatusTone("skipped_deduped")).toBe("info");
@@ -132,6 +140,7 @@ describe("send-test message", () => {
       "skipped_unconfigured",
       "skipped_deduped",
       "skipped_rate_limited",
+      "skipped_stale",
     ] as const) {
       const message = testResultMessage({
         channelId: channel.id,
@@ -143,6 +152,27 @@ describe("send-test message", () => {
       expect(message.length).toBeGreaterThan(10);
       expect(message).toContain("ops-webhook");
     }
+  });
+
+  /**
+   * `F3.52` — the sixth status needs its own block, because the loop above
+   * cannot gate it.
+   *
+   * The `default:` arm returns "Test finished for ops-webhook: skipped_stale."
+   * That is longer than ten characters and it names the channel, so the loop
+   * passes with the case deleted. Only the whole sentence separates the handled
+   * arm from the fall-through.
+   */
+  it("answers a stale skip with the plain sentence, never the raw status", () => {
+    const message = testResultMessage({
+      channelId: channel.id,
+      channelCode: "ops-webhook",
+      status: "skipped_stale",
+      deliveryId: null,
+      error: null,
+    });
+    expect(message).toBe("Test skipped for ops-webhook.");
+    expect(message).not.toContain("skipped_stale");
   });
 });
 

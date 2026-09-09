@@ -648,3 +648,238 @@ does hold, as `TS2366` under `strictNullChecks` from `strict: true` in
 keeps its row "at all three of those exits": it reaches two, because the first
 is inside `if (input.event !== undefined)` and an ordinary raise carries no
 event.
+
+## Amendment 6 — `F3.52`: the hourly ceiling reserves headroom for the raise path, and a due escalation step can be too late to send (2026-09-09)
+
+**Status: Accepted — 2026-09-09.** Ruled by the repository owner at `F3.52`'s
+step-2 gate; six rulings, taken 2026-09-09.
+
+### The premise `F3.52` was filed on is no longer true, and the row is kept anyway
+
+`docs/BACKLOG.md`'s `F3.52` row, written 2026-09-08, says a new critical
+alarm's raise that meets a full ceiling is "then lost outright". **It is not,
+and has not been since `F3.51` merged as `16dc9e89` the following day.** A
+ceiling-refused raise writes `skipped_rate_limited`; in `channelsOwedTheRaise`
+that row counts as *evidence* at stage 1 but is *excluded* at stage 2, so the
+eligible set is empty, both blocking arms are false, and the channel comes back
+owed. The sweep re-offers that raise every 30 s until it lands.
+
+The harm is therefore a **delay**, not a loss — and the owner ruled the fix in
+scope regardless (ruling 2), because a critical raise queued behind an
+escalation backlog for hours is operationally a loss even though the ledger
+will eventually deliver it. The row's severity text is wrong and is corrected
+in this row's closure sweep, not here.
+
+**The row's other error, corrected here so it is not repeated:** it says both
+fixes are "ADR 0041 decision 5 territory". The per-channel hourly ceiling is
+**decision 7**, storm control's second bullet. Decision 5 is the unconfigured
+channel's recorded skip.
+
+### 1. Decision 7's ceiling is one query, two counts and two limits (rulings 3, 4 and 8)
+
+`isOverHourlyLimit` counts `sent` rows in the trailing hour and compares that
+count to `ratePerHour`. It gains a third argument — **the budget to charge
+against, not the kind asking**, and this sentence said "kind" until the build
+measured why it cannot: `sendTest` is neither a raise nor an event, so a
+parameter called `kind` would make that call site a false claim in code. The
+type is `CeilingBudget = "full" | "reserved"`. One query returns **two**
+numbers, and each budget reads the pair differently:
+
+- **the raise path keeps the whole ceiling** — refused when `allSent >=
+  ratePerHour`;
+- **the reserved path — an escalation step, a cleared message or a `sendTest` —
+  is refused when `allSent >= ratePerHour` **or** `reservedSent >=
+  Math.floor(ratePerHour * EVENT_SHARE)`**, with `EVENT_SHARE` at `0.8`.
+
+At the default 60 an hour, events can never occupy more than 48 of the 60, so
+twelve slots stay reachable by a raise alone. Still one round trip and no schema
+change: a `FILTER` aggregate beside the existing count.
+
+**This said "one count, two limits" and shipped that way, and it was
+backwards** (`F3.52` security review, Medium; owner ruling 8). An unfiltered
+count charges a RAISE against the reduced limit too, so forty-eight sent
+*raises* refused every step, every cleared message and every test send on that
+channel while raises went on to 60. The reserve was taking from the path it was
+meant to protect — and a step held that long is exactly the step §2's age
+cut-off then abandons, so the two halves of this row compounded into a loss
+where there had been a late delivery.
+
+**The invariant that makes the second count correct, and it is not "events":**
+*the rows counted against the reserved limit are exactly the rows written by
+dispatches that CHARGED the reserved limit.* A `sendTest` charges it (ruling 4)
+and therefore must be counted in it, or a burst of tests would fill the full
+ceiling and eat the raise headroom without ever tripping the reserved one. A
+raise's dedupe key carries no suffix; an escalation key ends `:escalation:<n>`,
+a cleared key ends `:cleared`, and a test send writes no key at all.
+
+**`sendTest` meets the reduced event limit** (ruling 4). It is the third caller
+of this ceiling and is neither a raise nor an event — an operator pressing *Send
+test* on the channels page. A manual test is not an alarm, so it must never
+consume headroom held for a critical raise, and the reserve then means exactly
+one thing: **only a real raise may reach the last slots.** A refused test
+already records `skipped_rate_limited` and already reads as a refusal in the UI;
+that is unchanged.
+
+**The accepted consequence at a small ceiling, stated because the owner should
+see it at this gate.** `Math.floor(ratePerHour * 0.8)` is `0` at
+`ratePerHour = 1`: a channel throttled that hard sends raises only, and no
+escalation step or cleared message at all. That is the correct ordering of the
+two — a raise is the message an operator cannot do without — but it is a
+behaviour change at the extreme.
+
+**This paragraph said "a change no existing test covers". That was false**, and
+it is struck rather than softened: `notifications.events.spec.ts` case 7 —
+`F3.48` ruling Q1's own gate — builds exactly `NOTIFY_RATE_LIMIT_PER_HOUR: "1"`,
+refuses a step at one `sent` row and then asserts the step **sends** once the
+count falls to zero. At a reserved limit of zero it refuses at every count, so
+the case inverts. The claim it makes — the next tick retries a ceiling-refused
+step — is `F3.48`'s and must survive, so the fixture is raised to a rate of five
+refusing at four rather than the case being re-pointed at the new behaviour.
+The extreme itself is then covered on purpose, by a `hourlyCeiling` case
+asserting `0` at a rate of one: it is the only fixture that separates
+`Math.floor` from `Math.ceil`.
+
+### 2. Decision 4 gains a sixth status: a due step can be too late to send (rulings 1, 5 and 6)
+
+**Only the escalation path is touched (ruling 1).** The `F3.52` row asks for
+"an age cut-off past which a due step is abandoned", while Amendment 5 above
+assigns this row "the retried message's lack of any age or staleness marker" on
+the **raise-retry** path. Those are different changes on different paths, and
+Amendment 5 says in the same sentence that **byte-identity with the original
+raise is what lets the ledger rows line up**. An age marker on a retried raise
+would break the thing Amendment 5 defends. The raise retry stays byte-identical;
+the retried-raise staleness question is re-filed, not carried here.
+
+**A due escalation step more than `STEP_MAX_LATENESS` past due is abandoned**
+(ruling 6), where a step's due instant is `raised_at + after_minutes` — the same
+arithmetic `dueSteps` already does — and the default is **60 minutes**,
+configurable from the environment as `ratePerHour` already is. Sixty matches
+`isOverHourlyLimit`'s own trailing hour: a step that could not fit inside one
+full ceiling window is over budget, not merely queued.
+
+**The abandonment is recorded as a new `skipped_stale` row** (ruling 5), not as
+a log line and not as a reused status. Three consequences follow, and the third
+is the one that makes this the honest choice:
+
+1. `packages/shared/src/contracts/notifications.ts` gains the sixth value, and
+   **the comment above that enum, which today reads "The database refuses a
+   sixth value; this refuses it one layer earlier", is corrected in the same
+   edit.** Migration `0068` widens
+   `notification_deliveries_status_check` from migration `0038`. The schema
+   comment at `packages/db/src/schema/alarms-schema.ts:359-362` restates the list
+   and is corrected too.
+
+   **`0068`'s own header says its widening was "MEASURED" against the running
+   database, and the first measurement ran on different bytes.** The migration
+   review found the applied row hashing `d452088a…` while the committed file
+   hashes `b257bb67…` — a DRAFT of `0068` had run, and because drizzle applies a
+   file only when the last stamp is *strictly* lower than the journal's, an
+   equal stamp meant the committed bytes would never have run on that database
+   at all. The DDL was identical, so nothing was wrong in the schema; what was
+   wrong is that a green readback proved a file nobody had executed. Repaired by
+   hand on the dev database — the stray row re-stamped one millisecond earlier,
+   never deleted, since lowering the maximum re-runs everything above it — and
+   `pnpm db:migrate` then applied the committed bytes, whose hash is now the
+   newest row. `0068` is frozen by the pre-commit hook, so this note is the
+   correction rather than an edit to the header.
+2. `apps/web/src/lib/notification-channels.ts` holds **three** switches over
+   the status — the row label, the tone, and the *Send test* message — so this
+   row has an `apps/web` surface and owes a browser layer. A test send carries
+   no step and can never be stale, so the third handles the value the way it
+   already handles `skipped_deduped` there, marked unreachable.
+
+   **All three carry a `default:` clause, so the compiler flags none of them**,
+   and this note said "for exhaustiveness" as though it would. Adding the sixth
+   value produces no error anywhere in `apps/web`: the label would render the
+   raw string `skipped_stale` and the tone would fall to `"offline"` — grey, the
+   way a disabled channel renders, which is precisely the misread
+   `deliveryStatusTone`'s own docblock argues against. The `default:` clauses
+   stay, because each records a deliberate reason. **The hand-written cases in
+   `notification-channels.spec.ts` are the only gate on all three**, and a
+   missing case is therefore a silent grey row rather than a red build.
+
+   The same undercount applies to the prose, and **this note got the count
+   wrong three times in a row** — one, then three, then thirteen. Measured from
+   the branch base, it is **fifteen sites across eight files**:
+
+   | file | sites |
+   |---|---|
+   | `packages/shared/src/contracts/notifications.ts` | 3 — the opening line, the skips enumeration, the "refuses a sixth value" pointer |
+   | `tests/f3.8-notification-schema.integration.test.ts` | 3 — a docblock item and two `it()` names |
+   | `apps/web/src/lib/notification-channels.ts` | 2 — `:260`, `:284` |
+   | `apps/web/src/lib/notification-channels.test.ts` | 2 — `:92`, `:101` |
+   | `apps/web/src/pages/admin/notification-deliveries-page.*` | 2 — the `ALL_FIVE` fixture and the `it()` that renders it |
+   | `packages/shared/src/index.ts` | 1 — the docblock on the exported type |
+   | `apps/api/src/notifications/notification-transport.ts` | 1 |
+   | `packages/db/src/schema/alarms-schema.ts` | 1 |
+
+   **Two of the fifteen were found by no review pass and by neither
+   implementer**, and each names a different failure. The barrel docblock at
+   `packages/shared/src/index.ts:603` is the sentence a consumer of
+   `@bms/shared` reads — missed because nobody looked outside the contract file.
+   The `ALL_FIVE` fixture was missed because **the census `git grep` used
+   `apps/**/*.ts`, which does not match `.tsx`.** A search that silently
+   excludes a file extension reports a clean sweep of the files it happened to
+   look at; the glob is as much a claim as the count.
+
+   `ALL_FIVE` is the one that mattered beyond prose: it is the deliveries
+   page's only "every status renders" fixture, so a name-only correction would
+   have left a test asserting six statuses over five rows.
+
+   **The durable rule, and this row is the third to pay for it** (`F4.102`,
+   `F4.105`): count echo sites from the source with a search, never from the
+   sites a row or a plan happens to name — and check the search's own glob
+   before trusting that it found none.
+3. **A non-`failed` row blocks its key through `eventDeliveryBlocked`'s existing
+   arm**, so the abandoned step is never re-offered without a line of new retry
+   logic. `failed` would have been wrong on behaviour rather than merely on
+   naming — the step would have gone on being offered until
+   `MAX_EVENT_ATTEMPTS`.
+
+**The blocking must reach the step and nothing else, and that is an assertion,
+not an assumption.** A step's key carries an `:escalation:<n>` suffix, so a
+`skipped_stale` row blocks that step number for that alarm and channel, for the
+life of the ledger. `channelsOwedTheRaise` reads the raise key, which has no
+suffix, and excludes only `skipped_rate_limited` and a stale
+`skipped_unconfigured` — so a `skipped_stale` row reaching a **raise** key would
+block that raise for ever. Ruling 1 keeps the raise path untouched and no such
+row should ever exist; the build gates that rather than trusting it.
+
+**Where the exit sits, and what that does *not* buy** (ruling 9). It is the last
+pre-check in `dispatchToChannel`: after the ledger read, and **after** the hourly
+ceiling. It sat before the ceiling until the security review, and the argument
+for moving it was that a step refused by the budget would then never be
+abandoned for age it spent waiting. **That argument is false and is recorded
+here rather than in a comment, because it was believed for a while.** A
+correctness pass traced it: `stepIsTooLate` recomputes each tick from a fixed
+`raised_at` and an increasing `now`, so once a step is stale it stays stale — the
+moment the ceiling frees, control reaches the exit and the step is abandoned
+after all. **The end state is identical either way; the move changes only which
+reason an operator reads while the channel is over budget**, and that is the
+whole of its justification: `skipped_rate_limited` is true and self-clearing
+while it is true, and `skipped_stale` is written at the moment the step could
+actually have been sent and was too old. What actually reduces the loss is
+ruling 8 in §1 — stopping raises from consuming the event budget in the first
+place.
+
+Before the ledger read is wrong for its own unrelated reason: it would write a
+row for a step already sent, because the phase re-dispatches every due step
+every tick and the ledger read is what makes that idempotent.
+
+### What this does not change
+
+Decision 4's "a row for every attempt" is better served, not eroded: an
+abandonment that today would be an unrecorded late send becomes a row an
+operator can read. Decision 7's dedupe bullet is untouched. The raise path's
+recording is untouched. `MAX_EVENT_ATTEMPTS`, the unconfigured watermark and
+the `F3.48` ceiling exception all keep their present meanings.
+
+### A constraint the build must respect, recorded here because it shapes the design
+
+`apps/api/src/notifications/notifications.service.ts` stands at **986 of
+AGENTS.md §4.5's 1000-line cap** and is on §2's "extract before adding" list.
+Neither change above may be built by adding a public method and its docblock to
+that class. The staleness decision is a **pure predicate in a module beside the
+service**, on `dispatch-policy.ts`'s and `raise-retry.ts`'s precedent, and the
+row is written by the dispatch path that already writes every other refusal —
+no second writer beside `record()`.

@@ -265,6 +265,14 @@ export async function runNotificationEventTests(): Promise<void> {
   // rows has fallen back under the ceiling. Before this, the tail of a first
   // mapping's burst was lost for the life of the ledger (ruling Q7, 52 alarms
   // measured on the stack).
+  //
+  // **`F3.52` moved this fixture from a rate of 1 refusing at 1, and the claim
+  // is unchanged** (ADR 0041 Amendment 6 §1). A step is now measured against
+  // the RESERVED limit, `floor(ratePerHour * 0.8)`, which at a rate of 1 is
+  // zero — the case would have refused at every count, including the retry, and
+  // stopped testing the ceiling at all. A rate of 5 reserves 4, so refusing at
+  // 4 and retrying at 0 is the same two-tick shape the case has always made.
+  // Amendment 6 covers the zero extreme on purpose, in `dispatch-policy.spec.ts`.
   {
     const { db, recorded, reads, setCount, setDeliveryRecorded } = fakeDb();
     const webhook = sendingWebhook();
@@ -272,12 +280,12 @@ export async function runNotificationEventTests(): Promise<void> {
       db,
       channels: [],
       webhook: webhook.transport,
-      env: { NOTIFY_RATE_LIMIT_PER_HOUR: "1" },
+      env: { NOTIFY_RATE_LIMIT_PER_HOUR: "5" },
     });
     const step = eventInput({ kind: "escalation", step: 1 });
 
     setDeliveryRecorded([], []);
-    setCount(1);
+    setCount(4);
     const refused = await service.dispatchToChannels([channelRow()], step);
     assert(
       refused[0]?.status === "skipped_rate_limited",
@@ -317,6 +325,13 @@ export async function runNotificationEventTests(): Promise<void> {
   // there is no tick to retry it. Dropping the row would make the refusal
   // invisible and buy nothing, so ADR 0041 decision 4's visible refusal is
   // kept exactly where no retry replaces it (ADR 0057 Amendment 2, Q-A).
+  //
+  // **`F3.52` moved this fixture too, and here it was green by accident.** A
+  // cleared message is an event, so it now stops at the RESERVED limit,
+  // `floor(ratePerHour * 0.8)` — zero at the old rate of 1. The case would have
+  // stayed green while refusing at every count, including zero, and would no
+  // longer have been testing the ceiling at all. A rate of 5 reserves 4, so a
+  // count of 4 is a real ceiling refusal again (ADR 0041 Amendment 6 §1).
   {
     const { db, recorded, setCount, setDeliveryRecorded } = fakeDb();
     const webhook = sendingWebhook();
@@ -324,11 +339,11 @@ export async function runNotificationEventTests(): Promise<void> {
       db,
       channels: [],
       webhook: webhook.transport,
-      env: { NOTIFY_RATE_LIMIT_PER_HOUR: "1" },
+      env: { NOTIFY_RATE_LIMIT_PER_HOUR: "5" },
     });
 
     setDeliveryRecorded([]);
-    setCount(1);
+    setCount(4);
     const results = await service.dispatchToChannels([channelRow()], eventInput({ kind: "cleared" }));
     assert(
       results[0]?.status === "skipped_rate_limited",

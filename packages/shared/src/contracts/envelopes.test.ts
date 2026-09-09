@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runNotificationDeliveryStatusEnvelopeTests,
   runPointAggregateBucketSecondsTests,
   runPointAggregateEmptyWindowTests,
   runPointAggregateIsNotStrictTests,
@@ -23,5 +24,11 @@ describe("F3.35 Stage A — the point-aggregate response contract", () => {
 
   it("bounds the bucket width it reports in place of a level", () => {
     runPointAggregateBucketSecondsTests();
+  });
+});
+
+describe("F3.52 — the deliveries envelope the web client parses with", () => {
+  it("admits every delivery status the contract declares, `skipped_stale` included", () => {
+    runNotificationDeliveryStatusEnvelopeTests();
   });
 });

@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, gt, gte, ne, or, sql } from "drizzle-orm";
+import { and, eq, gt, gte, isNull, like, ne, or, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import { notificationDeliveries } from "@bms/db";
@@ -9,10 +9,16 @@ import { ChannelsService } from "./channels.service";
 import { buildDedupeKey, type DispatchEvent } from "./dedupe-key";
 import {
   MAX_EVENT_ATTEMPTS,
+  RESERVED_KEY_PATTERN,
+  type CeilingBudget,
   type DispatchOutcome,
+  budgetFor,
+  hourlyCeiling,
   offeredAgainWithoutAsking,
 } from "./dispatch-policy";
+import { notRecorded, sendTestResult, subjectFor } from "./dispatch-shapes";
 import { EmailTransport } from "./email.transport";
+import { reasonOf, storable } from "./ledger-text";
 import { LogTransport } from "./log.transport";
 import type {
   DeliveryResult,
@@ -156,29 +162,6 @@ export type DispatchInput = {
    */
   reoffered?: true;
 };
-
-/** How much of a transport's failure text is stored. */
-const MAX_ERROR_LENGTH = 1_000;
-
-/**
- * `F3.51` second review (Medium) — the characters a delivery error may not
- * carry into `notification_deliveries.error`.
- *
- * Every C0 and C1 control but the three whitespace ones (`\t`, `\n`, `\r`),
- * which Postgres accepts and every reader handles — an SMTP server's
- * multi-line refusal stays readable, which is why the text is stored at all.
- *
- * **`U+0000` is the one that costs a row, and it is reachable from outside.**
- * `webhook.transport.ts`'s `readBounded` normalises its excerpt with
- * `.replace(/\s+/g, " ").trim()`, and `\s` matches no NUL and `trim()` strips
- * none, so an endpoint answering 500 with one in its body reaches this insert
- * with it. Postgres refuses the parameter (measured: `invalid byte sequence for
- * encoding "UTF8": 0x00`), `record()` catches that, and the lost row spends one
- * of `LOST_LEDGER_ROW_CAP`'s 1000 in-process slots. Past the cap the pair is
- * re-offered every tick for the life of the alarm, dispatched sequentially — a
- * caller-controlled byte must not be able to start that.
- */
-const LEDGER_UNSAFE_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
 
 @Injectable()
 export class NotificationsService {
@@ -395,6 +378,7 @@ export class NotificationsService {
       if (alreadyRecorded) {
         return notRecorded(channel, { status: "skipped_deduped", error: null });
       }
+
     } else if (!input.raised) {
       // 1. The transition dedupe. The skip is still RECORDED: "we chose not to
       //    send" and "nothing happened" must not look the same in the ledger
@@ -426,7 +410,14 @@ export class NotificationsService {
     // 2. The per-channel hourly ceiling.
     let overLimit: boolean;
     try {
-      overLimit = await this.isOverHourlyLimit(channel.id, input.organizationId);
+      // `F3.52`: an event stops at the reserve, a raise keeps the whole
+      // ceiling, and `budgetFor` is what tells them apart — never a literal
+      // here (ADR 0041 Amendment 6 §1).
+      overLimit = await this.isOverHourlyLimit(
+        channel.id,
+        input.organizationId,
+        budgetFor(input),
+      );
     } catch (err) {
       // A ceiling that cannot be read is not a licence to send without one.
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
@@ -497,6 +488,47 @@ export class NotificationsService {
         : this.record(input, channel, dedupeKey, limited);
     }
 
+    // 2b. `F3.52` — the step is too late to send (ADR 0041 Amendment 6 §2,
+    //     owner ruling 9). Last of the pre-checks: after the ledger read, and
+    //     after the ceiling.
+    //
+    //     **Being after the ceiling buys the REASON, not the message, and the
+    //     comment here claimed otherwise until a correctness pass ran it.** It
+    //     said a step refused by the budget could never then be abandoned for
+    //     age it spent waiting. False: `stepIsTooLate` recomputes each tick
+    //     from a fixed `raised_at` and an increasing `now`, so once stale a
+    //     step stays stale — the moment the ceiling frees, control reaches this
+    //     line and the step is abandoned anyway. The end state is the same in
+    //     both orders. What differs is what an operator reads meanwhile:
+    //     `skipped_rate_limited` is true and self-clearing while the channel is
+    //     over budget, where `skipped_stale` would be terminal and premature.
+    //     What actually reduces the loss is ruling 8's two-count ceiling above,
+    //     which stops raises consuming the event budget at all. S7 and S9 gate
+    //     this order; S5 gates the age deciding under a ceiling the step passes.
+    //
+    //     BEFORE the `alreadyRecorded` return is still wrong for its own
+    //     reason: it would write a row for a step already sent, because the
+    //     phase re-dispatches every due step every tick and the ledger read is
+    //     what makes that idempotent (S6).
+    //
+    //     `input.event?.kind` re-narrows because the `if` block above has
+    //     closed. That is ruling 1's structural gate all the same: `stale`
+    //     lives only on the escalation variant, so a raise and a re-offered
+    //     raise cannot carry it. A `skipped_stale` row under a RAISE key would
+    //     block that raise for ever — `channelsOwedTheRaise` excludes only
+    //     `skipped_rate_limited` and a stale `skipped_unconfigured`. Case S8, a
+    //     pair on one fixture, is the gate; this paragraph is not.
+    //
+    //     The row IS written where the ceiling exception writes none: an
+    //     abandonment is a decision, not a postponement — nothing lifts by
+    //     itself, `eventDeliveryBlocked`'s "not `failed`" arm is MEANT to block
+    //     the key for ever, and the row is the only evidence an operator gets.
+    //     `offeredAgainWithoutAsking` answers a different question and is not
+    //     consulted.
+    if (input.event?.kind === "escalation" && input.event.stale === true) {
+      return this.record(input, channel, dedupeKey, { status: "skipped_stale", error: null });
+    }
+
     // 3. Send. A transport that rejects is a `failed` delivery, never a
     //    rejection out of `dispatch` (decision 1).
     const transport = this.transportFor(channel.kind);
@@ -554,11 +586,41 @@ export class NotificationsService {
    * opens one, and `sendTest` runs off a request that has not either), so
    * there is no `withTenant` GUC to run it under — the `WHERE` clause is now
    * what does the org filtering, not the connection.
+   *
+   * **`F3.52`: one query, two limits** (ADR 0041 Amendment 6 §1, rulings 3 and
+   * 8). A raise keeps the whole `ratePerHour`; an event or a manual test must
+   * ALSO stay under `hourlyCeiling`'s reserved share, so the last slots of every
+   * hour stay reachable by a raise alone. One round trip, no new column, no
+   * schema change.
+   *
+   * **Two numbers, and each limit reads its own** (ruling 8, the security
+   * review's finding). `allSent` is every `sent` row; `reservedSent` is the
+   * subset {@link RESERVED_KEY_PATTERN} matches — the rows a dispatch that
+   * CHARGED the reserved budget wrote. That constant's docblock holds the
+   * invariant, why the pattern is structural, and the defect this replaced: one
+   * unfiltered count compared against both limits let 48 sent RAISES refuse
+   * every step, clear and test on the channel while raises sent on to 60.
+   *
+   * **The full arm is tested first and applies to BOTH budgets**, so the hourly
+   * total is still `ratePerHour` and the two limits are not two pools. An event
+   * is refused when either number is at its limit; a raise, only by the first.
+   * `dispatch-budget.spec.ts` N4 is that claim, on a mixed count.
    */
-  private async isOverHourlyLimit(channelId: string, organizationId: string): Promise<boolean> {
+  private async isOverHourlyLimit(
+    channelId: string,
+    organizationId: string,
+    budget: CeilingBudget,
+  ): Promise<boolean> {
     const since = new Date(Date.now() - 60 * 60 * 1000);
+    const chargedTheReserve = or(
+      isNull(notificationDeliveries.dedupeKey),
+      like(notificationDeliveries.dedupeKey, RESERVED_KEY_PATTERN),
+    );
     const rows = await this.fleetDb
-      .select({ count: sql<number>`count(*)::int` })
+      .select({
+        allSent: sql<number>`count(*)::int`,
+        reservedSent: sql<number>`count(*) FILTER (WHERE ${chargedTheReserve})::int`,
+      })
       .from(notificationDeliveries)
       .where(
         and(
@@ -568,7 +630,9 @@ export class NotificationsService {
           gte(notificationDeliveries.attemptedAt, since),
         ),
       );
-    return (rows[0]?.count ?? 0) >= this.config.ratePerHour;
+    if ((rows[0]?.allSent ?? 0) >= hourlyCeiling("full", this.config.ratePerHour)) return true;
+    if (budget === "full") return false;
+    return (rows[0]?.reservedSent ?? 0) >= hourlyCeiling("reserved", this.config.ratePerHour);
   }
 
   /**
@@ -801,7 +865,10 @@ export class NotificationsService {
    *
    * Subject to the hourly ceiling — a test is a real send and must not be a way
    * around it — but **not** to the transition dedupe, which has no meaning
-   * here: there is no alarm and nothing transitioned.
+   * here: there is no alarm and nothing transitioned. Since `F3.52` it is
+   * subject to the RESERVED ceiling rather than the whole one (ADR 0041
+   * Amendment 6 §1, ruling 4): a manual test is not an alarm, so it must never
+   * consume headroom held for a critical raise.
    *
    * `E7.1c` (Blocker 1's ruling): refuses a fleet-wide (`organizationId ===
    * null`) channel outright, before the rate-limit read and before the
@@ -829,7 +896,10 @@ export class NotificationsService {
 
     let overLimit: boolean;
     try {
-      overLimit = await this.isOverHourlyLimit(channel.id, organizationId);
+      // `F3.52` ruling 4: a manual test meets the REDUCED event limit, not the
+      // full ceiling. A test is not an alarm, so it must never consume headroom
+      // held for a critical raise.
+      overLimit = await this.isOverHourlyLimit(channel.id, organizationId, "reserved");
     } catch (err) {
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
       return sendTestResult(
@@ -909,78 +979,4 @@ export class NotificationsService {
     return { ...result, channelId: channel.id, rowLost: false };
   }
 
-}
-
-/**
- * `sendTest`'s two-field answer, narrowed from `record()`'s outcome at the
- * source (`F3.51` review).
- *
- * `sendTest` declares two fields and `record()` now returns four. TypeScript
- * accepts that — a returned value is not a fresh object literal, so no
- * excess-property check fires — and the two extra keys would ride out at
- * RUNTIME to whatever the caller does with them. `notifications.controller.ts`
- * happens to rebuild its response field by field today, so nothing reached the
- * wire; that is the controller's shape, not a promise, and `rowLost` is an
- * internal ledger fact with no business on an API response either way. Narrowed
- * here so the declared type and the object agree.
- */
-function sendTestResult(outcome: DispatchOutcome): {
-  status: DeliveryResult["status"];
-  error: string | null;
-} {
-  return { status: outcome.status, error: outcome.error };
-}
-
-/**
- * An outcome for an exit that wrote no row **by design** — a deduped answer, or
- * one of {@link offeredAgainWithoutAsking}'s three conserved refusals.
- *
- * `rowLost` is `false` here and that is not a white lie: nothing was lost. The
- * flag means "an insert was attempted and threw", so that the raise retry stops
- * offering a triple the ledger can never record — and a ceiling-refused
- * re-offer, which writes nothing so the NEXT tick can ask again, must go on
- * being offered (`F3.48` ruling Q1; `alarm-lifecycle.integration.spec.ts` I2).
- */
-function notRecorded(channel: NotificationChannelRow, result: DeliveryResult): DispatchOutcome {
-  return { ...result, channelId: channel.id, rowLost: false };
-}
-
-/**
- * The subject line, by event (plan D14): a raise is `severity: RULE`, a step
- * is `escalation n · severity: RULE`, a clear is `cleared · severity: RULE`.
- * String composition, no template — the body stays the caller's message.
- */
-function subjectFor(input: DispatchInput): string {
-  const base = `${input.severity ?? "alarm"}: ${input.ruleCode}`;
-  if (input.event === undefined) return base;
-  return input.event.kind === "escalation"
-    ? `escalation ${input.event.step} · ${base}`
-    : `cleared · ${base}`;
-}
-
-function reasonOf(err: unknown): string {
-  return truncate(err instanceof Error ? err.message : String(err));
-}
-
-function truncate(text: string): string {
-  return text.length > MAX_ERROR_LENGTH ? `${text.slice(0, MAX_ERROR_LENGTH)}…` : text;
-}
-
-/**
- * A transport's failure text as the ledger can hold it — see
- * {@link LEDGER_UNSAFE_CHARACTERS}. Stripped before it is bounded, so the cut
- * lands on text a reader can see.
- *
- * **The stored text and the returned `DeliveryResult.error` now differ for one
- * delivery**, deliberately: the result is the transport's own words, going back
- * to a caller that can hold them; the column is what a `text` parameter can
- * carry. Only one of the two refuses a byte, and it is the one that costs a
- * row.
- *
- * Here rather than in `readBounded`, because this is the one place any
- * transport's text reaches the column — the rule in two files is the drift
- * shape, and the email and log transports would be left out of the first one.
- */
-function storable(text: string): string {
-  return truncate(text.replace(LEDGER_UNSAFE_CHARACTERS, ""));
 }

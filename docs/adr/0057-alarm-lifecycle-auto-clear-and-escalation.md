@@ -1124,3 +1124,134 @@ the disabled ones are dropped by the read, and no warn is emitted, exactly as
 before. Only the wholly-empty case speaks. A per-channel account of who was
 dropped is a different row from this one, and it would have to carry the
 recipient identities that §9.6 keeps out of these two lines.
+
+## Amendment 7 — `F3.52`: a due escalation step can be too late to send, and the sweep is the thing that decides it (2026-09-09)
+
+**Status: Accepted — 2026-09-09**, by the repository owner. The **nine** rulings
+behind it are recorded in full in **ADR 0041 Amendment 6**, which is the
+contract; this amendment exists so a reader of ADR 0057 alone is not left
+believing the escalation phase sends every due step. The paired-amendment shape
+is the one `F3.48`, `F3.51` and `F3.54` each used.
+
+**Rulings 7, 8 and 9 arrived after this text was drafted**, from the review
+passes, and two of them change what is written below rather than adding to it —
+see "What the reviews changed" at the end. Read that section before the body.
+
+### The escalation phase now decides an age, per step, every tick
+
+`runEscalationPhase` iterates `dueSteps(steps, raisedAt, now)` and dispatches
+each. Since `F3.48` a step the hourly ceiling refuses is re-asked on every 30 s
+tick until it lands, so a step can stay due — and undelivered — for as long as
+the channel's budget stays full. Nothing bounded that, and nothing told the
+reader of an eventually-delivered step that it was old.
+
+**A due step more than `STEP_MAX_LATENESS` past its own due instant is
+abandoned.** The due instant is `raised_at + after_minutes` — the arithmetic
+`dueSteps` already does — and the default bound is **60 minutes**, configurable
+from the environment. Sixty is not arbitrary: it is `isOverHourlyLimit`'s own
+trailing hour, so a step that could not fit inside one full ceiling window is
+over budget rather than merely queued.
+
+**`dueSteps` is unchanged.** The age question is a second, pure predicate beside
+it — `stepIsTooLate` — rather than a widened return type. Decision 4's rule that
+the sweep holds no state applies here too: the predicate takes `now`, the
+alarm's `raised_at`, the step's `after_minutes` and the bound, and reads nothing
+else.
+
+### The step is still dispatched, and that is the load-bearing part
+
+The phase does **not** skip a stale step in code. It marks the dispatch input
+and dispatches as it always did, so the row is written by the path that writes
+every other refusal — `dispatchToChannel`'s pre-check ladder — and there is no
+second writer beside the private `record()`. A phase that simply `continue`d
+would produce no send, no row and no evidence, which is the silent-loss shape
+`F3.48`, `F3.54` and `F3.55` were each filed to remove.
+
+The mark is an optional `stale?: true` on the **escalation variant only** of
+`DispatchEvent`. Two consequences follow from that placement, and both are
+deliberate:
+
+- A raise, a re-offered raise and a cleared message **cannot** carry it. That is
+  the type-level half of ruling 1's gate; the executable half is a
+  positive/negative pair on one fixture, because an absence assertion alone
+  passes when the action never happens.
+- It must not reach `buildDedupeKey` or the message subject. A step's key stays
+  `rule:alarm:severity:escalation:<n>` exactly as before, so the ledger rows a
+  previous tick wrote under that key still match.
+
+### What the abandoned row means, and how far it reaches
+
+The abandonment records a new sixth delivery status, `skipped_stale`. Because it
+is not `failed`, `eventDeliveryBlocked`'s existing arm blocks that key for the
+life of the ledger with no new retry logic — which is exactly right: an
+abandonment is a decision, not a postponement, and nothing lifts by itself the
+way the hourly ceiling does.
+
+**It must block that step and nothing else.** A step's key carries the
+`:escalation:<n>` suffix, so the block is scoped to one step number for one
+alarm and one channel. `channelsOwedTheRaise` reads the **raise** key, which has
+no suffix, and excludes only `skipped_rate_limited` and a stale
+`skipped_unconfigured` — so a `skipped_stale` row appearing under a raise key
+would block that raise for ever. Ruling 1 keeps the raise path untouched and the
+type placement above makes such a row unconstructible; the build gates it rather
+than trusting the argument.
+
+### What this does not change
+
+- **Amendment 5's byte-identity on the raise-retry path stands.** The re-offered
+  raise gains no age marker, no subject change and no key change. Amendment 5
+  assigns `F3.52` "the retried message's lack of any age or staleness marker";
+  ruling 1 declines that half here, because an age marker on the retried raise
+  would break the byte-identity Amendment 5 calls the mechanism by which the
+  ledger rows line up. It is **re-filed as its own row**, not silently dropped.
+- **Decision 6 is untouched.** A cleared alarm still leaves the selection before
+  the escalation phase sees it, so a stale step and a clear cannot race.
+- **Amendment 6's out-of-scope note stands.** The escalation phase's silent
+  `continue` over an empty channel list (`alarm-lifecycle-phases.ts:606`) is
+  still deliberately untouched, and is a different case from this one: there the
+  step has nobody to send to, here it has recipients and is simply too late.
+- `MAX_EVENT_ATTEMPTS`, the unconfigured watermark, `F3.48`'s ceiling exception
+  and `LostLedgerRows` all keep their present meanings. A lost `skipped_stale`
+  row is remembered by `dispatchRememberingLostRows` exactly as any other.
+
+### What the reviews changed (rulings 7, 8 and 9, 2026-09-09)
+
+Three rulings landed after the body above was drafted. Two of them correct it.
+
+**Ruling 8 — the reserve was charging raises against the event limit.** ADR 0041
+Amendment 6 §1 shipped as "one count, two limits", and an unfiltered count
+charges a RAISE against the reduced limit too: forty-eight sent raises an hour
+refused every escalation step and every cleared message on that channel while
+raises went on to the full ceiling. The reserve took from the path it exists to
+protect, and a step held that long is exactly the step this amendment's age
+cut-off then abandons — **the two halves of `F3.52` compounded a late delivery
+into no delivery.** The fix is one query returning two counts, so events can
+never occupy more than four fifths of the ceiling. The escalation phase is
+unchanged by it; what changes is how often a step reaches the age bound at all.
+
+**Rulings 7 and 9 — where the `skipped_stale` exit sits, and what that does not
+buy.** The exit is the last pre-check in `dispatchToChannel`: after the ledger
+read, and after the ceiling. It sat before the ceiling until the security
+review, and the stated reason for moving it — that a step refused by the budget
+could then never be abandoned for age it spent waiting — **is false, and is
+recorded here rather than quietly reworded because it was believed and acted
+on.** A correctness pass traced it: `stepIsTooLate` recomputes each tick from a
+fixed `raised_at` and an increasing `now`, so once a step is stale it stays
+stale; the moment the ceiling frees, control reaches the exit and the step is
+abandoned after all. **The end state is identical in both orders.**
+
+What the position does buy is the reason an operator reads while the channel is
+over budget: `skipped_rate_limited` is true and self-clearing while it is true,
+where `skipped_stale` would be terminal and premature. That is worth having, and
+it is all it is worth.
+
+**What this means for the age cut-off's own justification.** The row was filed
+against steps "delivered with the same subject as a fresh one" after a long
+deferral. That is still real, but ruling 8 removed the largest cause of the
+deferral. After it, a step reaches the bound mainly when the TRANSPORT has been
+failing for an hour — which is the case the cut-off was written for, and a
+narrower one than the row assumed.
+
+**Amendment 6's out-of-scope note still stands**, and the escalation phase's
+silent `continue` over an empty channel list (`alarm-lifecycle-phases.ts:606`)
+is still untouched.

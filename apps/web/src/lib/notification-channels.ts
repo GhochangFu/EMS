@@ -257,7 +257,7 @@ export function channelFormToPatch(
   return patch;
 }
 
-/** The five delivery statuses, as an operator reads them. */
+/** The six delivery statuses, as an operator reads them. */
 export function deliveryStatusLabel(status: NotificationDeliveryStatus): string {
   switch (status) {
     case "sent":
@@ -270,6 +270,8 @@ export function deliveryStatusLabel(status: NotificationDeliveryStatus): string 
       return "Skipped — already open";
     case "skipped_rate_limited":
       return "Skipped — rate limited";
+    case "skipped_stale":
+      return "Skipped — too late to send";
     default:
       // The status set is closed in the contract and in the database, so this
       // is unreachable today. It exists because `F3.9` may add a status before
@@ -281,10 +283,10 @@ export function deliveryStatusLabel(status: NotificationDeliveryStatus): string 
 /**
  * The pill colour per status.
  *
- * A skip is `warning`, not `offline`: three of the five statuses are skips, and
- * the two an operator most needs to notice — nothing configured, over the
- * ceiling — mean a person was NOT told about an alarm. Rendering those in the
- * same grey as "disabled" is how they get scrolled past.
+ * A skip is `warning`, not `offline`: four of the six statuses are skips, and
+ * the three an operator most needs to notice — nothing configured, over the
+ * ceiling, too late to send — mean a person was NOT told about an alarm.
+ * Rendering those in the same grey as "disabled" is how they get scrolled past.
  *
  * `skipped_deduped` is the exception and is deliberately calm: it means the
  * alarm was already open and somebody was already told. That is the system
@@ -302,6 +304,7 @@ export function deliveryStatusTone(
       return "info";
     case "skipped_unconfigured":
     case "skipped_rate_limited":
+    case "skipped_stale":
       return "warning";
     default:
       return "offline";
@@ -333,6 +336,12 @@ export function testResultMessage(
     case "skipped_deduped":
       // Unreachable: a test carries no alarm, so the transition dedupe cannot
       // fire. Handled rather than defaulted so the switch stays exhaustive.
+      return `Test skipped for ${result.channelCode}.`;
+    case "skipped_stale":
+      // Unreachable for a different reason than `skipped_deduped` above: a test
+      // send carries no escalation step, so it has no due instant it can be
+      // late for. Handled rather than defaulted, because the `default:` echoes
+      // the raw status and this one is now reachable in the contract.
       return `Test skipped for ${result.channelCode}.`;
     default:
       return `Test finished for ${result.channelCode}: ${String(result.status)}.`;

@@ -65,7 +65,16 @@ function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeli
   };
 }
 
-const ALL_FIVE: NotificationDeliveryDto[] = [
+/**
+ * One row per delivery status, so the page is asked to render each label.
+ *
+ * **The name carries the count on purpose.** It was `ALL_FIVE` until `F3.52`
+ * added `skipped_stale`, and a fixture whose name says five while the set holds
+ * six is how a status ships with no label: nothing in `apps/web` fails to
+ * compile when the contract grows, because all three switches in
+ * `notification-channels.ts` carry a `default:`.
+ */
+const ALL_SIX: NotificationDeliveryDto[] = [
   delivery({ id: "d1", status: "sent" }),
   delivery({ id: "d2", status: "failed", error: "webhook responded 500" }),
   delivery({
@@ -76,6 +85,7 @@ const ALL_FIVE: NotificationDeliveryDto[] = [
   }),
   delivery({ id: "d4", status: "skipped_deduped" }),
   delivery({ id: "d5", status: "skipped_rate_limited" }),
+  delivery({ id: "d6", status: "skipped_stale" }),
 ];
 
 /**
@@ -103,7 +113,7 @@ function renderWith(node: React.ReactElement, organizations = ORGANIZATIONS): vo
  * needs. Nothing is filtered by default.
  */
 export async function showsEverySkipWithoutAsking(): Promise<void> {
-  vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({ items: ALL_FIVE });
+  vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({ items: ALL_SIX });
   vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({ items: [] });
 
   renderWith(<NotificationDeliveriesPage user={user} />);
@@ -113,6 +123,10 @@ export async function showsEverySkipWithoutAsking(): Promise<void> {
   expect(screen.getByText(/Skipped — not configured/)).toBeInTheDocument();
   expect(screen.getByText(/Skipped — already open/)).toBeInTheDocument();
   expect(screen.getByText(/Skipped — rate limited/)).toBeInTheDocument();
+  // `F3.52`. Deleting `deliveryStatusLabel`'s case reddens this line with the
+  // raw `skipped_stale` on screen — the page renders the status either way,
+  // which is why a compile error is not what catches it.
+  expect(screen.getByText(/Skipped — too late to send/)).toBeInTheDocument();
   // The reason travels with the row: "skipped" alone does not tell an operator
   // what to change.
   expect(screen.getByText("SMTP_HOST is not set")).toBeInTheDocument();
