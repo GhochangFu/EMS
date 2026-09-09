@@ -243,7 +243,14 @@ function scrubMeta<T extends { meta?: unknown }>(entry: T): T {
   return { ...entry, meta: scrubSecrets(entry.meta) as T["meta"] };
 }
 
-/** Strips credential values from objects recursively for LLM context. */
+/**
+ * Strips credential values from objects iteratively for LLM context.
+ *
+ * "iteratively" since `F4.115` and the sentence lagged behind the code — both
+ * halves of this are `rebuildDeep` with an explicit stack. It says nothing about
+ * size: `F4.107`'s `serialiseDraftForPrompt` is the caller that bounds the
+ * result before it is embedded in a prompt.
+ */
 export function redactDraftForLlm(draft: unknown): OnboardingDraft {
   const client = redactDraftForClient(draft);
   return scrubSecrets(client) as OnboardingDraft;

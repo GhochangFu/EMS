@@ -89,9 +89,38 @@ export type ContainerPredicate = (value: unknown) => value is object;
  * offers `String(index)` to the visitor in the array branch reddens nothing in
  * either suite. A visitor keyed on anything else **would** observe it, which is
  * why the guarantee is written down: the recursive form had it by construction,
- * and the second visitor to be added here would need it back.
+ * and any later key visitor would need it back.
+ *
+ * `LeafVisitor` below is **not** that later key visitor and does not weaken this
+ * — it is offered values, so an array element reaches it as the string it is
+ * rather than as an index, and "object keys only" stays a claim about *keys*.
  */
 export type KeyVisitor = (key: string) => { value: unknown } | null;
+
+/**
+ * An optional per-**value** visitor: `{ value }` to write that in place of the
+ * leaf, or `null` to carry the source's leaf across as usual.
+ *
+ * The two visitors answer different questions, which is why there are two.
+ * `KeyVisitor` runs before the value under a key is read, so it can decide
+ * "this key is a secret" and never touch the secret; it cannot decide anything
+ * about the value, because it has not seen one. `F4.107`'s
+ * `shedOverLongStrings` needs exactly the other decision — *this string is
+ * longer than any code or name column* — and the alternative to this parameter
+ * was a fourth traversal in the onboarding module (§4.8).
+ *
+ * **Every leaf, in both branches**, and a leaf is anything `isContainer`
+ * rejects: an object's value, an array's element, a number, `null`. A container
+ * is never offered — the walk descends into it instead, so a visitor cannot
+ * replace a subtree it was not asked about.
+ *
+ * `{ value: undefined }` is a **replacement** and `null` is a decline. They are
+ * not the same answer, and `visitLeaf?.(child)?.value ?? child` silently makes
+ * them one; `assertALeafReplacedByUndefinedIsNotADecline` is what refuses that
+ * form. It is one of the five functions `F4.107`'s review split this visitor's
+ * assertions into, so that the mutation each one owns reports its own name.
+ */
+export type LeafVisitor = (value: unknown) => { value: unknown } | null;
 
 /**
  * True for the two containers JSON can express, and for nothing else.
@@ -107,8 +136,15 @@ export type KeyVisitor = (key: string) => { value: unknown } | null;
  * predicate: `assertCloneJsonReturnsANonJsonObjectByReference` and
  * `assertScrubSecretsRebuildsANonJsonObject` fail on opposite sides of that
  * change.
+ *
+ * **Exported for a third consumer** (`F4.107`):
+ * `onboarding/onboarding-prompt-budget.ts` sheds values out of a draft that is
+ * already post-scrub plain JSON — it came from `JSON.parse` of a jsonb column
+ * and went through `redactDraftForLlm` — so the JSON-only predicate is the one
+ * that describes its input. Exported rather than copied, for the reason §4.8
+ * gives; the pair of assertions above still keeps the two predicates different.
  */
-function isJsonContainer(value: unknown): value is object {
+export function isJsonContainer(value: unknown): value is object {
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -143,13 +179,15 @@ function define(target: object, key: string, value: unknown): void {
  * instead of the call stack, descending into whatever `isContainer` accepts and
  * carrying everything else across by reference.
  *
- * Two callers, and they differ only in the two parameters: `cloneJson` below
+ * Callers differ only in the three optional parameters: `cloneJson` below
  * passes the JSON-only predicate and no visitor; `scrubSecrets` in
  * `onboarding-redaction.ts` passes the any-object predicate and a visitor that
- * answers `[REDACTED]` for a secret-looking key. They were two copies of this
- * body until `F4.115`'s review.
+ * answers `[REDACTED]` for a secret-looking key; `F4.107`'s two shed passes in
+ * `onboarding/onboarding-prompt-budget.ts` pass a key visitor and a leaf
+ * visitor respectively. They were two copies of this body until `F4.115`'s
+ * review.
  *
- * Three properties this shape gives both of them:
+ * Four properties this shape gives all of them:
  *
  * - **Key insertion order.** Each container's children are defined in one loop
  *   over the source's own key order, so the order is fixed at that moment and
@@ -159,8 +197,15 @@ function define(target: object, key: string, value: unknown): void {
  *   would invoke `Object.prototype`'s accessor: the key vanishes and the copy is
  *   reparented. Array elements are assigned by index, where no such accessor
  *   exists.
- * - **The visitor runs before the source's value is read**, so a replaced key's
- *   getter is never invoked — the recursive form's order, kept.
+ * - **The key visitor runs before the source's value is read**, so a replaced
+ *   key's getter is never invoked — the recursive form's order, kept.
+ * - **One order for the three decisions, and each step of it is observable.**
+ *   The key visitor is asked first and its answer ends the position — the value
+ *   under a replaced key is neither read nor offered anywhere else. Then the
+ *   container check, so a leaf visitor is never handed a subtree. Only what
+ *   survives both is a leaf, and only a leaf reaches `visitLeaf`. A root that is
+ *   not a container is returned unvisited, as it always was: the walk starts at
+ *   a container or it does not start.
  *
  * There is no seen-set. Both callers' inputs are acyclic by construction (each
  * came from `JSON.parse` of a jsonb column or of a request body), and a `Map`
@@ -172,6 +217,7 @@ export function rebuildDeep(
   value: unknown,
   isContainer: ContainerPredicate,
   visitKey?: KeyVisitor,
+  visitLeaf?: LeafVisitor,
 ): unknown {
   if (!isContainer(value)) {
     return value;
@@ -195,7 +241,10 @@ export function rebuildDeep(
           out[index] = shell;
           stack.push({ source: child, target: shell });
         } else {
-          out[index] = child;
+          // `!== null` and not `?? child`: `{ value: undefined }` is a
+          // replacement the caller asked for, not a decline.
+          const leaf = visitLeaf?.(child) ?? null;
+          out[index] = leaf !== null ? leaf.value : child;
         }
       }
       continue;
@@ -215,7 +264,8 @@ export function rebuildDeep(
         define(target, key, shell);
         stack.push({ source: child, target: shell });
       } else {
-        define(target, key, child);
+        const leaf = visitLeaf?.(child) ?? null;
+        define(target, key, leaf !== null ? leaf.value : child);
       }
     }
   }

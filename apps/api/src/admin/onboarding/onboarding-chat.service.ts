@@ -23,11 +23,17 @@ import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
+// F4.107: the draft goes into the prompt through this, not through
+// `redactDraftForLlm` directly — the redaction says nothing about size, and
+// nothing measured the serialised draft before this row. The module owns the
+// budget, the two shed passes, the marker, the sentence that explains it to the
+// model and the guard that refuses a patch echoing it back.
 import {
-  attachEncryptedCredentials,
-  reconcileSecrets,
-  redactDraftForLlm,
-} from "./onboarding-redaction";
+  PROMPT_MARKER_SENTENCE,
+  carriesPromptMarker,
+  serialiseDraftForPrompt,
+} from "./onboarding-prompt-budget";
+import { attachEncryptedCredentials, reconcileSecrets } from "./onboarding-redaction";
 import { onboardingDraftSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingProtocolService } from "./onboarding-protocol.service";
@@ -291,7 +297,8 @@ Current phase: ${phase}. Return JSON with keys: assistantMessage, draftPatch (pa
 Phases: location, rtu, point_keys, assets, mappings, review.
 Protocols: mqtt, modbus_tcp, bacnet, opc_ua, snmp, rest_poller, simulator, catalog.
 Never include password or secret values in assistantMessage. Credentials are NEVER collected through this chat — if the user offers one, tell them to use the Credentials field on the RTU step. Never set credential values in draftPatch.
-Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
+${PROMPT_MARKER_SENTENCE}
+Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
 
     const completion = await client.chat.completions.create({
       model,
@@ -310,14 +317,29 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
       suggestedReplies?: string[];
     };
 
+    // F4.107 review, L1: the prompt asks the model not to copy a marker back
+    // (`PROMPT_MARKER_SENTENCE`), and an instruction is not a control. A patch
+    // echoing the marker into `rtus[].config` already fails the parse below and
+    // is discarded; one echoing it into `pointKeys[].description` **passes**,
+    // and `mergeDraft` replaces that array wholesale — so the operator's prose
+    // would be overwritten by a system literal and committed. Both get the same
+    // answer, which is the empty patch the first case already produces. Whole
+    // patch, not the offending leaf: dropping a `config` key lets `.default({})`
+    // blank a real connection config. `carriesPromptMarker` walks it with the
+    // shared iterative rebuild, so a deep reply cannot throw here either.
+    const echoed: unknown = parsed.draftPatch ?? {};
+    const draftPatch: OnboardingDraftInput = carriesPromptMarker(echoed)
+      ? {}
+      : // M2 from the 2026-08-10 review: this was cast straight from the model's
+        // JSON and merged with a spread that preserves unknown keys, so a
+        // `_secrets` key in the reply could overwrite the encrypted credential
+        // store, and `rtus[].config.password` could land as plaintext. Client
+        // input via `patchDraft` was already validated; model output was not.
+        (onboardingDraftSchema.safeParse(echoed).data ?? {});
+
     return this.finalizeTurn(
       parsed.assistantMessage ?? "Thanks, I've updated the draft.",
-      // M2 from the 2026-08-10 review: this was cast straight from the model's
-      // JSON and merged with a spread that preserves unknown keys, so a
-      // `_secrets` key in the reply could overwrite the encrypted credential
-      // store, and `rtus[].config.password` could land as plaintext. Client
-      // input via `patchDraft` was already validated; model output was not.
-      onboardingDraftSchema.safeParse(parsed.draftPatch ?? {}).data ?? {},
+      draftPatch,
       parsed.currentPhase ?? phase,
       parsed.suggestedReplies,
       message,
