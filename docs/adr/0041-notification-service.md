@@ -984,14 +984,14 @@ decision:
   the aged-out edge in §2 would cost the clear itself — the silent-loss shape
   ADR 0057 Amendment 2 ruling Q-A refused.
 - **`dispatch()`, the fire-and-forget raise path, does not**
-  (`notifications.service.ts:223`). It runs concurrently with the sweep and
+  (the `dispatch()` tail of `notifications.service.ts`). It runs concurrently
   outside it; it was the row's stated reason for doubting a service-level memo,
   and threading the window from the sweep removes the question rather than
   answering it.
 
 **`sendTest` is not one of them, and this section said it was.** Corrected in
 place on Amendment 6 §1's precedent rather than quietly reworded: `sendTest`
-calls `isOverHourlyLimit` **directly** (`notifications.service.ts:902`) and
+calls `isOverHourlyLimit` **directly**, from `NotificationsService.sendTest`, and
 never enters `dispatchToChannels` at all, so it cannot see a memo on either
 reading and the ruling's behaviour is unchanged. The count of four callers was
 wrong, and the correction is recorded because a closure record or a docblock
@@ -1008,7 +1008,7 @@ because they replace `deps.dispatchToChannels` with their own fake. The build
 edits that line and gates it against a real database, since no fake-deps test
 can reach it.
 
-`DispatchInput` is local to `apps/api` (`notifications.service.ts:118`), not a
+`DispatchInput` is local to `apps/api` (declared in `notifications.service.ts`), not a
 `packages/shared` contract, so nothing here is ADR 0030 contract drift.
 
 ### What this does not change

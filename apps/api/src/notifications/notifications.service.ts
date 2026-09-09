@@ -6,6 +6,7 @@ import { notificationDeliveries } from "@bms/db";
 
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { ChannelsService } from "./channels.service";
+import type { ClosedCeilings } from "./closed-ceilings";
 import { buildDedupeKey, type DispatchEvent } from "./dedupe-key";
 import {
   RESERVED_KEY_PATTERN,
@@ -253,10 +254,32 @@ export class NotificationsService {
    * Returns one `DeliveryResult` per channel kept, **in the order given** —
    * the caller chose the order, and `loadEnabledChannelsByIds` already sorts
    * by code. Never rejects, for the reason the class header gives.
+   *
+   * **`F3.53` — `closedCeilings` is the sweep's memory of which ceilings have
+   * already refused inside this tick** (ADR 0041 Amendment 7, ruling 2). It is
+   * OPTIONAL, and a caller that passes none reads the ledger before every
+   * dispatch exactly as it did before that unit.
+   *
+   * **No production caller passes one yet, and that is this tree's state rather
+   * than the ruling's.** Nothing constructs a `ClosedCeilings` outside the specs
+   * until the sweep does — the same gap `closed-ceilings.ts` records. Of the
+   * **three** production callers, one is to pass it and two are not, and each
+   * omission is a decision: `dispatchRememberingLostRows` is the one — the
+   * single site shared by the raise-retry and escalation phases, where all of
+   * the measured spin is; `notifyCleared` is not, because a cleared message has
+   * no next tick to be postponed to and `closed-ceilings.ts`'s non-monotone edge
+   * would cost the clear itself; and `dispatch()` is not, because it runs
+   * concurrently with the sweep and outside it. **`sendTest` is not one of the
+   * three at all** — it
+   * calls `isOverHourlyLimit` directly and never enters this method, so it
+   * cannot see a memo on any reading. Amendment 7 first counted four callers
+   * and named `sendTest`; that was corrected in place in the ADR, and this
+   * paragraph is written from the correction.
    */
   async dispatchToChannels(
     channels: readonly NotificationChannelRow[],
     input: DispatchInput,
+    closedCeilings?: ClosedCeilings,
   ): Promise<DispatchOutcome[]> {
     if (input.event !== undefined && input.alarmId === null) {
       this.logger.warn(
@@ -278,7 +301,7 @@ export class NotificationsService {
     const dedupeKey = buildDedupeKey(input);
     const results: DispatchOutcome[] = [];
     for (const channel of kept) {
-      const result = await this.dispatchToChannel(input, channel, dedupeKey);
+      const result = await this.dispatchToChannel(input, channel, dedupeKey, closedCeilings);
       results.push(result);
     }
     return results;
@@ -288,6 +311,7 @@ export class NotificationsService {
     input: DispatchInput,
     channel: NotificationChannelRow,
     dedupeKey: string,
+    closedCeilings?: ClosedCeilings,
   ): Promise<DispatchOutcome> {
     // 0. `F3.10` — event idempotency (ADR 0057 decision 10), and it comes
     //    FIRST. An escalation step or a cleared message is sent once per
@@ -419,11 +443,17 @@ export class NotificationsService {
       // `F3.52`: an event stops at the reserve, a raise keeps the whole
       // ceiling, and `budgetFor` is what tells them apart — never a literal
       // here (ADR 0041 Amendment 6 §1).
-      overLimit = await this.isOverHourlyLimit(
-        channel.id,
-        input.organizationId,
-        budgetFor(input),
-      );
+      const budget = budgetFor(input);
+      const read = () => this.isOverHourlyLimit(channel.id, input.organizationId, budget);
+      // `F3.53`: with a sweep's memo, a ceiling this tick has already found
+      // CLOSED answers without a read; without one, nothing is remembered. The
+      // ternary is explicit rather than an optional chain or a default instance
+      // because "no memo, no memory" has to be visible here — a default would
+      // cache across every caller. `closed-ceilings.ts` holds the reasons.
+      overLimit =
+        closedCeilings === undefined
+          ? await read()
+          : await closedCeilings.overLimit(channel.id, input.organizationId, budget, read);
     } catch (err) {
       // A ceiling that cannot be read is not a licence to send without one.
       this.logger.warn(`rate-limit check failed for channel=${channel.code}: ${reasonOf(err)}`);
