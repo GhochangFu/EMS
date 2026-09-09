@@ -455,6 +455,9 @@ export class OnboardingCommitService {
         ...result,
       };
     }).catch((err: unknown) => {
+      // `F4.109` — `.catch` rather than a `try`, and narrow on both SQLSTATE and
+      // constraint name. Both choices are justified in full at the head of
+      // `commit()` above; `onboarding-commit-conflict.ts` holds the map.
       throw translateCommitUniqueConflict(err);
     });
   }

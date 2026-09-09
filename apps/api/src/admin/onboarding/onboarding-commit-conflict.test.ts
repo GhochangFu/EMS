@@ -8,7 +8,7 @@ import {
   assertEveryMappedConstraintBecomesItsOwnFieldError,
   assertNoGlobalMessageUsesTheObviousCrossTenantPhrasing,
   assertNothingFromTheDriverErrorReachesTheClient,
-  assertTheMapCoversEveryReachableUniqueConstraint,
+  assertTheMapMatchesTheAuthoredReachableList,
 } from "./onboarding-commit-conflict.spec";
 
 /**
@@ -23,8 +23,8 @@ describe("onboarding commit unique-constraint conflicts (F4.109)", () => {
     await assertACommitCollisionIsAFieldErrorNotAServerFault();
   });
 
-  it("maps every unique constraint a commit can violate, and nothing else", () => {
-    assertTheMapCoversEveryReachableUniqueConstraint();
+  it("holds exactly the constraint names the authored census lists", () => {
+    assertTheMapMatchesTheAuthoredReachableList();
   });
 
   it("gives each mapped constraint its own field and its own sentence", () => {

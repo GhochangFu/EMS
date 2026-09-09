@@ -23,9 +23,12 @@ const JWT: JwtPayload = {
 };
 
 /**
- * The nine constraints a commit can violate, listed here rather than read back
- * from the map — a set-equality assertion that derived both sides from the map
- * would be an identity and could not fail.
+ * The nine constraints a commit can violate, **as authored on 2026-09-10** from
+ * a live census of `pg_constraint` and `pg_indexes` over the six tables the
+ * commit inserts into. Listed here rather than read back from the map — a
+ * set-equality assertion that derived both sides from the map would be an
+ * identity and could not fail. It is a transcript of a census, not a query: a
+ * later migration can make it stale, and nothing in this file will say so.
  *
  * `rtu_connection_configs_rtu_id_key` is the tenth constraint on the commit's
  * six inserts and is deliberately absent; the module header carries why it is
@@ -229,19 +232,29 @@ export async function assertACommitCollisionIsAFieldErrorNotAServerFault(): Prom
 }
 
 /**
- * `F4.109` — the map covers every unique constraint a commit can violate, and
- * covers nothing it cannot.
+ * `F4.109` — the map holds exactly the constraint names `REACHABLE_CONSTRAINTS`
+ * lists.
  *
  * Owner ruling 2 asks for one map read by one catch. The failure this pins is
  * the quiet one: a tenth entry added without a reachability argument, or one of
  * the nine dropped by a refactor, both of which leave every other case here
  * green because each of those tests only the entries that exist.
+ *
+ * **The name says "the authored list", not "reachable", and the distinction is
+ * the whole limit of this case.** Both sides are source in this repository:
+ * `COMMIT_UNIQUE_CONFLICTS.keys()` against a list a human typed at `:34` from a
+ * live census of `pg_constraint` and `pg_indexes`. It therefore does not hold
+ * the property its first name claimed. A migration that adds a unique index to
+ * `locations`, `point_keys`, `rtus`, `rtu_connection_configs`, `assets` or
+ * `asset_points` reddens nothing here and answers `500` in production; the
+ * census has to be re-run by hand. Commit `7c28ab5c` renamed the neutrality
+ * check for this same reason, so the precedent is this branch's own.
  */
-export function assertTheMapCoversEveryReachableUniqueConstraint(): void {
+export function assertTheMapMatchesTheAuthoredReachableList(): void {
   const mapped = [...COMMIT_UNIQUE_CONFLICTS.keys()].sort();
   assert(
     JSON.stringify(mapped) === JSON.stringify(REACHABLE_CONSTRAINTS),
-    `the map holds exactly the nine reachable constraints, got ${JSON.stringify(mapped)}`,
+    `the map holds exactly the nine names REACHABLE_CONSTRAINTS lists, got ${JSON.stringify(mapped)}`,
   );
 }
 
@@ -306,10 +319,21 @@ export function assertNoGlobalMessageUsesTheObviousCrossTenantPhrasing(): void {
  * `F4.109` / §4.3 — no part of the driver's error reaches the client.
  *
  * `err.detail` is the dangerous one — `Key (slug)=(rsmoc-eastern-cape) already
- * exists.` echoes a value that, on the five global constraints, belongs to a
- * row in an organization the caller cannot see. `table`, `schema` and the
- * driver's own message are checked beside it because a later edit reaching for
- * "a more helpful message" reaches for whichever of the four is nearest.
+ * exists.` echoes the value the caller supplied, which on the five global
+ * constraints is equal to one in a row belonging to an organization it cannot
+ * see. `table`, `schema` and the driver's own message are checked beside it
+ * because a later edit reaching for "a more helpful message" reaches for
+ * whichever of the four is nearest.
+ *
+ * **The sentinel `detail` is deliberately more than the production path can
+ * produce.** Postgres omits the key description when RLS is enabled on the
+ * relation, so as `bms_owner` a real `23505` from `locations`, `assets`, `rtus`,
+ * `rtu_connection_configs` or `asset_points` arrives with `detail` `undefined` —
+ * measured; the module header carries the two-role probe. `bms.point_keys` is
+ * the exception, its RLS dropped by migration `0057`. A pure function must not
+ * be excused by the server having withheld its input, so this case supplies the
+ * field on every constraint and the rule is held here rather than at the
+ * integration layer, where there is nothing to echo.
  *
  * Four sentinels, one per field, and the failure names which leaked — this is a
  * runtime check on the rendered body, not a source scan, so the blanking rule
@@ -348,8 +372,11 @@ export function assertNothingFromTheDriverErrorReachesTheClient(): void {
  * `asset-templates-instantiate.service.ts:864` branches on the constraint name
  * alone, and that is the weaker pattern this case exists to keep out of here:
  * `constraint` is not a `23505` field. Dropping the `code === "23505"` test
- * reddens this, and every other case in this file stays green because they all
- * supply a real `23505`.
+ * reddens **two** `it()`s, not one: this case, and
+ * `assertADifferentSqlstatePassesThrough` below, which supplies `23503`. Every
+ * other case stays green because they all supply a real `23505`. Measured, not
+ * reasoned — the count was wrong in the first draft of this sentence, and so
+ * was the reason given for it.
  */
 export function assertAMappedConstraintWithoutASqlstatePassesThrough(): void {
   const err = Object.assign(new Error("something else entirely"), {

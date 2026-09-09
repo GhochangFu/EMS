@@ -197,9 +197,39 @@ export type CommitDuplicateFixtures = {
  * The seeded row is written by the fixture, not by a sibling test, so this case
  * does not depend on the order the file's `it()`s run in.
  *
- * The body assertion is first because it is the one the load-bearing mutation
- * targets — removing the `.catch` from `commit` leaves a raw driver error here,
- * which is exactly the `500` the row was filed for.
+ * **This case shipped with four `expect`s and now has two, because review and
+ * then a live probe showed the other two could not fail.** `expect` throws, so
+ * only the first failure runs, and both dead ones sat below a body equality
+ * against a static literal.
+ *
+ * - `getStatus() === 400` cannot fail at any position. `BadRequestException` is
+ *   400 by construction, and the equality above has already established the
+ *   type.
+ * - `!body.includes(locationCode)` — an echo check — was dead by construction
+ *   too: the body is compared to `conflict.message`, a fixed string, while
+ *   `locationCode` carries a per-run suffix, so any edit that could put the
+ *   value in the body changes the body and the equality reddens first.
+ *   Reordering it was the obvious repair and it **still** did not fire under the
+ *   mutation that appends `err.detail` to the message. The reason is worth
+ *   keeping: Postgres's `BuildIndexValueDescription` returns NULL when RLS is
+ *   enabled on the relation, so on `bms.locations` the value never reaches the
+ *   driver at all. Probed as `bms_owner`, `err.detail` is `undefined`; as
+ *   `bms_fleet` (`BYPASSRLS`) the same insert yields the full key. There is no
+ *   value here to echo, so no assertion here can hold the §4.3 rule.
+ *
+ * What is left is stronger than either, and it is worth being exact about how
+ * far. Equality to a fixed body forbids every **addition** — `detail`,
+ * `constraint`, `table`, `schema`, the driver's message — and every substituted
+ * **message**. It reddens under the load-bearing mutation, removing the `.catch`
+ * from `commit`, which leaves a raw driver error here; measured, the failure
+ * reads `expected 'not a BadRequestException: error: dup…'`.
+ *
+ * It does **not** hold a substituted *field*. A translation that ignored the
+ * entry it looked up and hard-coded `location` would leave this case green,
+ * because `location` is the field under test. That mutation belongs to
+ * `assertEveryMappedConstraintBecomesItsOwnFieldError` in the unit spec, which
+ * walks all nine. The §4.3 sentinels live there too, where a synthetic error can
+ * carry the `detail` this path withholds.
  */
 export async function assertCommitAnswersADuplicateLocationCodeWithAFieldError(
   ctx: CommitDuplicateFixtures,
@@ -219,26 +249,19 @@ export async function assertCommitAnswersADuplicateLocationCodeWithAFieldError(
     raised = error;
   }
 
-  expect(
+  // One string from whatever was raised, so a raw driver error is compared as
+  // readily as a refusal. A `pg` error's `code`, `constraint`, `table` and
+  // `schema` are own enumerable properties, so `JSON.stringify` reaches them and
+  // the equality below refuses them all.
+  const answered =
     raised instanceof BadRequestException
       ? JSON.stringify(raised.getResponse())
-      : `not a BadRequestException: ${String(raised)}`,
+      : `not a BadRequestException: ${String(raised)} ${JSON.stringify(raised)}`;
+
+  expect(
+    answered,
     "a duplicate location code is answered as a per-field 400, not a 500",
   ).toBe(JSON.stringify({ formErrors: [], fieldErrors: { location: [conflict.message] } }));
-
-  expect(
-    (raised as BadRequestException).getStatus(),
-    "the status is 400 — a duplicate an operator typed is not a server fault",
-  ).toBe(400);
-
-  // §4.3 — `err.detail` is `Key (organization_id, code)=(…) already exists.`,
-  // and on a global constraint that value belongs to a row the caller cannot
-  // read. Checked here as well as in the unit spec because this is the only
-  // place the real `detail` string exists.
-  expect(
-    JSON.stringify((raised as BadRequestException).getResponse()).includes(locationCode),
-    "the refusal must not echo the value the driver reported",
-  ).toBe(false);
 
   const { rows } = await ownerPool.query<{ id: string }>(
     `SELECT id FROM bms.locations WHERE code = $1 AND organization_id = $2`,

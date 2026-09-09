@@ -1,7 +1,3 @@
-import { BadRequestException } from "@nestjs/common";
-
-import type { OnboardingDraft } from "@bms/shared";
-
 /**
  * `F4.109` — the one map from a unique-constraint name to the refusal an
  * onboarding commit answers with, and the narrow translation that reads it.
@@ -26,12 +22,42 @@ import type { OnboardingDraft } from "@bms/shared";
  *
  * ## Why the message is built from the constraint name alone
  *
- * `node-postgres` puts the offending value in `err.detail` —
- * `Key (slug)=(rsmoc-eastern-cape) already exists.` — and on a constraint with
- * no `organization_id` in its key that value belongs to a row in an
- * organization the caller cannot see. Measured live: an insert for PHEWB was
- * refused by a slug ESKOM holds. So nothing from the driver is passed on: not
- * `detail`, not `table`, not `schema`, not the driver's own message (§4.3).
+ * **This paragraph was rewritten twice, and both corrections were measurements.**
+ * The first draft said `err.detail` carries a value belonging to a row in an
+ * organization the caller cannot see. Postgres in fact builds `detail` from the
+ * key of the tuple being *inserted*, so the value is the caller's own — equal to
+ * the colliding row's on those columns, because that equality is why it
+ * collided, but not read out of that row. The second draft said that value
+ * reaches this function. **On eight of the nine constraints it does not reach it
+ * at all.**
+ *
+ * `BuildIndexValueDescription` returns NULL when RLS is enabled on the relation,
+ * so the server omits the key description before it ever reaches the wire.
+ * Probed live, same INSERT and same server, two roles:
+ *
+ * - as `bms_owner` — the role the API connects as, which `FORCE ROW LEVEL
+ *   SECURITY` binds — `err.detail` is `undefined`. `code`, `constraint`, `table`
+ *   and `schema` all arrive; only the value is gone.
+ * - as `bms_fleet`, which holds `BYPASSRLS`, the same insert yields
+ *   `Key (organization_id, code)=(1ddf7041-…, RSMOC-EC) already exists.`
+ *
+ * The exception is `bms.point_keys`, whose RLS migration `0057` dropped
+ * entirely. There `bms_owner` does receive `Key (code)=(CALCWRITE_A) already
+ * exists.` So `point_keys_code_unique` is the **one** mapped constraint on which
+ * the no-echo rule is load-bearing rather than belt-and-braces, and it is the
+ * one already reachable only as a race.
+ *
+ * Passing nothing on is right either way, and neither correction weakens it.
+ * §4.3 forbids echoing the input back in a refusal, and `detail` is the input.
+ * What a refusal built from `detail` would disclose is not a foreign *value* but
+ * the *existence* of a colliding row — which, on a constraint with no
+ * `organization_id` in its key, is a row in an organization the caller cannot
+ * see. Measured live: an insert for PHEWB was refused by a slug ESKOM holds. So
+ * nothing from the driver is passed on: not `detail`, not `table`, not `schema`,
+ * not the driver's own message. The unit spec's sentinels supply a `detail` the
+ * production path mostly cannot produce, on purpose — a pure function must not
+ * depend on the server having withheld it.
+ *
  * `scope` is what decides the wording, and it is a field rather than a habit
  * because the wording rule differs by scope:
  *
@@ -49,8 +75,12 @@ import type { OnboardingDraft } from "@bms/shared";
  *
  * ## The ten constraints, and the one that is not here
  *
- * Measured from `pg_constraint` and `pg_indexes`, a commit's six inserts sit
- * under ten unique constraints. **Nine are mapped. The tenth,
+ * Measured from `pg_constraint` and `pg_indexes`, a commit's six *draft-derived*
+ * inserts sit under ten unique constraints. Six is the count of inserts that
+ * write a value the draft supplied; the transaction runs two more — the
+ * `audit.write(…, tx)` calls at `onboarding-commit.service.ts:423` and `:441` —
+ * and neither can collide, because every column they key on is a
+ * `defaultRandom()` primary key. **Nine of the ten are mapped. The tenth,
  * `rtu_connection_configs_rtu_id_key` `(rtu_id)`, is unreachable from this
  * path** and is deliberately absent rather than mapped for symmetry:
  * `onboarding-commit.service.ts:320` is the only write to that table in the
@@ -59,6 +89,13 @@ import type { OnboardingDraft } from "@bms/shared";
  * `defaultRandom()`. Two iterations cannot share one, and no pre-existing row
  * can reference an RTU created moments earlier inside an uncommitted
  * transaction. An entry for it would be a mapping no mutation could redden.
+ *
+ * That name will not be found by grepping this repository, which is the usual
+ * reason a reader doubts a paragraph like this one. Postgres generated it: the
+ * column is declared inline as `rtu_id uuid NOT NULL UNIQUE …` at
+ * `packages/db/drizzle/0019_onboarding_credentials.sql:22`, and an inline
+ * `UNIQUE` is named `<table>_<column>_key` by the server. It was probed live to
+ * confirm the constraint exists and fires under a duplicate `rtu_id`.
  *
  * Reachability of the nine, stated per constraint because the brief asked for
  * it rather than for a list copied across:
@@ -87,7 +124,23 @@ import type { OnboardingDraft } from "@bms/shared";
  * are unique on one bare column with no `organization_id` in the key —
  * migration `0016` lines 65 and 67 — so they refuse across organizations
  * exactly as `locations_slug_unique` does, and they carry `scope: "global"`.
+ *
+ * ## The other translation of `assets_code_unique`
+ *
+ * `AssetTemplatesInstantiateService.translateAssetCodeCollision`
+ * (`asset-templates-instantiate.service.ts:862`) already translates that same
+ * constraint, and answers **409** where this map answers **400**. Both are
+ * right for their route and neither should be made to match the other: there,
+ * the service generates the codes itself and a collision means one was taken
+ * mid-batch, so the caller retries unchanged and `409 Conflict` says exactly
+ * that. Here the operator typed the code, so retrying unchanged repeats the
+ * failure and the answer has to name the field to correct — which is a `400`.
  */
+import { BadRequestException } from "@nestjs/common";
+
+import type { OnboardingDraft } from "@bms/shared";
+
+/** The draft's own top-level key that a refusal names, less the metadata block. */
 export type CommitConflictField = keyof Omit<OnboardingDraft, "onboardingMeta">;
 
 /** Whether the row that refused the write is one this caller could ever see. */
@@ -96,7 +149,8 @@ export type CommitConflictScope = "global" | "tenant";
 export type CommitUniqueConflict = {
   /**
    * The draft's own top-level name, so the body matches the shape
-   * `z.flatten()` produces at the 70 sites that already throw it. `flatten()`
+   * `z.flatten()` produces at the 75 `BadRequestException(…flatten())` sites in
+   * `apps/api/src` outside `*.spec.ts` and `*.test.ts`. `flatten()`
    * cannot name an array element either — `F4.103`'s recorded residual — so
    * the element is named in prose inside `message`, never as a key.
    */
