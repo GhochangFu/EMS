@@ -184,7 +184,7 @@ export class RulesController {
     await this.accessControl.assertOperationsWriteRole(user, "configuration");
 
     const decision = this.throttle.check(
-      throttleKeysFor(await this.accessControl.readableOrganizationIds(user)),
+      throttleKeysFor(await this.accessControl.readableOrganizationIds(user), user.sub),
       Date.now(),
     );
     if (!decision.allowed) {

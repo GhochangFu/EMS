@@ -2,7 +2,7 @@ import { LIFECYCLE_TICK_MS } from "../alarms/alarm-lifecycle";
 import {
   EVALUATE_MIN_INTERVAL_MS,
   EvaluateThrottle,
-  FLEET_THROTTLE_KEY,
+  GLOBAL_ADMIN_THROTTLE_KEY,
   throttleKeysFor,
 } from "./evaluate-throttle";
 
@@ -202,39 +202,135 @@ export function runEvaluateThrottleTests(): void {
     assert(won.length === 1, `exactly one press in the same tick wins, ${won.length} did`);
   }
 
-  // --- 11. the sentinel, and what happens without it -----------------------
+  // --- 11. neither empty case may map to an empty key array ----------------
   //
   // `null` is the unrestricted global admin; `[]` is a `configuration` role with
   // zero grants, which is reachable — a `location_admin` with no
   // `user_location_access` rows. Mapping either to an empty key array makes
   // `check([])` VACUOUSLY ALLOWED and hands both an unthrottled endpoint. Each
   // shape assertion is therefore paired with a press through it; the shapes
-  // alone would prove nothing.
+  // alone would prove nothing. 11a–11d below own the claim that the two empty
+  // cases are DIFFERENT buckets.
   {
     const scoped = freshOrganizationId();
+    const userId = "11111111-1111-1111-1111-111111110011";
     assert(
-      throttleKeysFor(null).length === 1 && throttleKeysFor(null)[0] === FLEET_THROTTLE_KEY,
-      `an unrestricted admin falls in the sentinel bucket, got ${JSON.stringify(throttleKeysFor(null))}`,
+      throttleKeysFor(null, userId).length === 1 &&
+        throttleKeysFor(null, userId)[0] === GLOBAL_ADMIN_THROTTLE_KEY,
+      `an unrestricted admin falls in the global-admin bucket, got ${JSON.stringify(throttleKeysFor(null, userId))}`,
     );
     assert(
-      throttleKeysFor([]).length === 1 && throttleKeysFor([])[0] === FLEET_THROTTLE_KEY,
-      `a grantless role falls in the sentinel bucket, got ${JSON.stringify(throttleKeysFor([]))}`,
+      throttleKeysFor([], userId).length === 1 &&
+        throttleKeysFor([], userId)[0] === `user:${userId}`,
+      `a grantless role keys on its own user id, got ${JSON.stringify(throttleKeysFor([], userId))}`,
     );
     assert(
-      throttleKeysFor([scoped]).length === 1 && throttleKeysFor([scoped])[0] === scoped,
-      "a scoped caller keys on its own organization ids",
+      throttleKeysFor([scoped], userId).length === 1 &&
+        throttleKeysFor([scoped], userId)[0] === scoped,
+      "a scoped caller keys on its own organization ids, not on its user id",
     );
 
     const admin = new EvaluateThrottle();
-    assert(admin.check(throttleKeysFor(null), T).allowed, "the global admin's first press runs");
-    refusal(admin.check(throttleKeysFor(null), T + 1), "the global admin's second press");
+    assert(
+      admin.check(throttleKeysFor(null, userId), T).allowed,
+      "the global admin's first press runs",
+    );
+    refusal(admin.check(throttleKeysFor(null, userId), T + 1), "the global admin's second press");
 
     const grantless = new EvaluateThrottle();
     assert(
-      grantless.check(throttleKeysFor([]), T).allowed,
+      grantless.check(throttleKeysFor([], userId), T).allowed,
       "the grantless role's first press runs",
     );
-    refusal(grantless.check(throttleKeysFor([]), T + 1), "the grantless role's second press");
+    refusal(
+      grantless.check(throttleKeysFor([], userId), T + 1),
+      "the grantless role's second press",
+    );
+  }
+
+  // --- 11a. a grantless caller does not deny a global admin ----------------
+  //
+  // Both used to be `[FLEET_THROTTLE_KEY]`, so either could hold the other's
+  // button indefinitely by pressing every 30 s. Each "does not deny" is an
+  // ALLOWED assertion, so each is paired on the SAME instance with a refusal:
+  // a throttle that allows everything satisfies the allowed halves alone.
+  {
+    const throttle = new EvaluateThrottle();
+    const grantless = throttleKeysFor([], "11111111-1111-1111-1111-11111111000a");
+    const globalAdmin = throttleKeysFor(null, "11111111-1111-1111-1111-11111111000b");
+
+    assert(throttle.check(grantless, T).allowed, "the grantless caller's first press runs");
+    assert(
+      throttle.check(globalAdmin, T).allowed,
+      "a grantless caller's press denied a global admin — the two share one bucket",
+    );
+    refusal(throttle.check(grantless, T + 1), "the grantless caller's second press");
+    refusal(throttle.check(globalAdmin, T + 1), "the global admin's second press");
+  }
+
+  // --- 11b. and a global admin does not deny a grantless caller ------------
+  //
+  // The same claim in the other order, because a fixture that only ever
+  // stamps one of the two first cannot see a collapse that depends on which
+  // one arrives first.
+  {
+    const throttle = new EvaluateThrottle();
+    const grantless = throttleKeysFor([], "11111111-1111-1111-1111-11111111000c");
+    const globalAdmin = throttleKeysFor(null, "11111111-1111-1111-1111-11111111000d");
+
+    assert(throttle.check(globalAdmin, T).allowed, "the global admin's first press runs");
+    assert(
+      throttle.check(grantless, T).allowed,
+      "a global admin's press denied a grantless caller — the two share one bucket",
+    );
+    refusal(throttle.check(globalAdmin, T + 1), "the global admin's second press");
+    refusal(throttle.check(grantless, T + 1), "the grantless caller's second press");
+  }
+
+  // --- 11c. two different grantless callers are two buckets ----------------
+  {
+    const throttle = new EvaluateThrottle();
+    const first = throttleKeysFor([], "11111111-1111-1111-1111-11111111000e");
+    const second = throttleKeysFor([], "11111111-1111-1111-1111-11111111000f");
+
+    assert(throttle.check(first, T).allowed, "the first grantless caller's press runs");
+    assert(
+      throttle.check(second, T).allowed,
+      "one grantless caller denied another — every grantless caller is in one shared bucket",
+    );
+    refusal(throttle.check(first, T + 1), "the first grantless caller's second press");
+    refusal(throttle.check(second, T + 1), "the second grantless caller's second press");
+  }
+
+  // --- 11d. neither key can collide with an organization id ----------------
+  //
+  // Stated behaviourally, not as a regex on the literal: a grantless caller
+  // whose user id IS an organization id must not fall in that organization's
+  // bucket. That is what the `user:` prefix buys, and dropping the prefix is
+  // the mutation this block owns.
+  {
+    const throttle = new EvaluateThrottle();
+    const organizationId = freshOrganizationId();
+
+    assert(
+      throttle.check(
+        throttleKeysFor([organizationId], "11111111-1111-1111-1111-111111110010"),
+        T,
+      ).allowed,
+      "the scoped caller sweeps",
+    );
+    assert(
+      throttle.check(throttleKeysFor([], organizationId), T).allowed,
+      "a grantless caller whose user id equals an organization id fell in that organization's bucket — the user key carries no prefix",
+    );
+    assert(
+      throttle.check(throttleKeysFor(null, organizationId), T).allowed,
+      "a global admin fell in an organization's bucket",
+    );
+    refusal(
+      throttle.check(throttleKeysFor([organizationId], "someone-else-entirely"), T + 1),
+      "the scoped organization's second press",
+    );
   }
 
   // --- 12. the interval is the lifecycle tick ------------------------------

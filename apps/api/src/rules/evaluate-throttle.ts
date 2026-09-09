@@ -13,14 +13,38 @@ import { Injectable } from "@nestjs/common";
 export const EVALUATE_MIN_INTERVAL_MS = 30_000;
 
 /**
- * The bucket for a caller with no organization of their own: an unrestricted
- * global `admin` (`readableOrganizationIds` returns `null`), and a
- * `configuration` role holding zero grants (it returns `[]` — reachable, a
- * `location_admin` with no `user_location_access` rows).
+ * The bucket every unrestricted global `admin` shares
+ * (`readableOrganizationIds` returns `null` for them).
  *
- * Organization ids are UUIDs, so this literal cannot collide with one.
+ * One bucket for all of them on purpose: each one sweeps the whole fleet, and
+ * no organization of theirs distinguishes one from another, so a shared bucket
+ * is the strictest reading available. They can therefore hold each other's
+ * button — that is the accepted cost of not handing an unrestricted role a
+ * per-user bucket.
+ *
+ * The colon is load-bearing: organization ids are UUIDs, which contain none, so
+ * this literal cannot collide with one. It cannot collide with a grantless
+ * caller's key either, which carries a different prefix.
  */
-export const FLEET_THROTTLE_KEY = "fleet";
+export const GLOBAL_ADMIN_THROTTLE_KEY = "fleet:admin";
+
+/**
+ * The bucket a **grantless** caller gets: a `configuration` role holding zero
+ * grant rows, keyed by its own user id.
+ *
+ * All three scoped admin roles are `configuration: true` and each has exactly
+ * one read-scope source (`access-scope.ts`), so `readableOrganizationIds`
+ * returns `[]` for any of them holding no grant row. Folding that into
+ * {@link GLOBAL_ADMIN_THROTTLE_KEY} let one grantless `location_admin` hold
+ * every global admin's *Evaluate now* button indefinitely, and the reverse.
+ *
+ * **This is not the per-user bypass the ruling forbids.** A caller with grants
+ * is still keyed by organization; only a caller with no organization at all is
+ * keyed by user, and such a caller has no organization to bypass. The prefix is
+ * what keeps a user id from landing in the organization bucket that happens to
+ * carry the same UUID.
+ */
+const USER_THROTTLE_KEY_PREFIX = "user:";
 
 /** Allowed, or refused with the seconds the caller must wait. */
 export type EvaluateThrottleDecision =
@@ -28,18 +52,28 @@ export type EvaluateThrottleDecision =
   | { allowed: false; retryAfterSeconds: number };
 
 /**
- * The throttle keys for a caller's readable organizations.
+ * The throttle keys for a caller: their readable organizations, or the bucket
+ * that stands in when they have none.
  *
  * **Neither empty case may map to an empty key array.** `check([])` is
  * vacuously allowed — no key is inside any window — so mapping `null` or `[]`
  * to `[]` would hand every global admin and every grantless `location_admin` an
- * unthrottled endpoint. Both fall in the shared `FLEET_THROTTLE_KEY` bucket
- * instead, which is the strictest reading available: a caller who can reach
- * every organization's rules occupies one bucket for all of them.
+ * unthrottled endpoint.
+ *
+ * **And the two empty cases are not the same bucket.** `userId` is required
+ * rather than optional for that reason: an optional parameter would let a call
+ * site drop it and fall back silently to one shared bucket, which is the defect
+ * this signature exists to prevent.
  */
-export function throttleKeysFor(organizationIds: string[] | null): string[] {
-  if (organizationIds === null || organizationIds.length === 0) {
-    return [FLEET_THROTTLE_KEY];
+export function throttleKeysFor(
+  organizationIds: string[] | null,
+  userId: string,
+): string[] {
+  if (organizationIds === null) {
+    return [GLOBAL_ADMIN_THROTTLE_KEY];
+  }
+  if (organizationIds.length === 0) {
+    return [`${USER_THROTTLE_KEY_PREFIX}${userId}`];
   }
   return organizationIds;
 }
@@ -59,10 +93,21 @@ export function throttleKeysFor(organizationIds: string[] | null): string[] {
  *
  * One `Map` in process memory, the trade `PROCESS_STARTED_AT`
  * (`notifications.config.ts`) already makes: no DDL, no read on the hot path,
- * and a restart clears it. The keys come from the database through
- * `AccessControlService.readableOrganizationIds`, never from the caller, so the
- * key space is bounded by `bms.organizations` plus the sentinel and no eviction
- * is owed.
+ * and a restart clears it.
+ *
+ * The key space is `bms.organizations`, plus one global-admin bucket, plus one
+ * bucket per **grantless** `configuration`-role principal. The organization
+ * keys come from the database through
+ * `AccessControlService.readableOrganizationIds`. The grantless key is the
+ * caller's `sub`, and it is the one key that does not correspond to a row:
+ * ADR 0044 keeps `resolveDbUser`'s row-absent fallback for every role except
+ * `admin`, so a validly signed token claiming `location_admin` and matching no
+ * `bms.users` row resolves to zero grants and takes a bucket of its own. That
+ * token still has to be signed by the IdP, so the space is bounded by the
+ * principals it will issue for — not by a caller, and not by a table either.
+ *
+ * No eviction, and none owed at that size: entries are overwritten in place and
+ * a restart clears them. A prune would exist only to be white-box tested.
  *
  * ## Two rules on this implementation, not preferences
  *
