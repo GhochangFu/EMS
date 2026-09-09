@@ -678,8 +678,12 @@ channel's recorded skip.
 ### 1. Decision 7's ceiling is one count against two limits (rulings 3 and 4)
 
 `isOverHourlyLimit` counts `sent` rows in the trailing hour and compares that
-count to `ratePerHour`. It gains a third argument, the *kind* asking, and the
-count is unchanged — what changes is only what it is compared against:
+count to `ratePerHour`. It gains a third argument — **the budget to charge
+against, not the kind asking**, and this sentence said "kind" until the build
+measured why it cannot: `sendTest` is neither a raise nor an event, so a
+parameter called `kind` would make that call site a false claim in code. The
+type is `CeilingBudget = "full" | "reserved"` and the count itself is
+unchanged — what changes is only what it is compared against:
 
 - **the raise path keeps the whole ceiling**, `ratePerHour`;
 - **the event path — an escalation step or a cleared message — stops at
@@ -761,9 +765,24 @@ is the one that makes this the honest choice:
    `notification-channels.spec.ts` are the only gate on all three**, and a
    missing case is therefore a silent grey row rather than a red build.
 
-   The same overcount applies to the prose: **three** sentences in the tree call
-   this set five, not one — the enum's opening line, the sentence quoted in
-   point 1, and `deliveryStatusLabel`'s docblock in `apps/web`.
+   The same undercount applies to the prose, and it was made twice. This note
+   first said **one** sentence calls the set five, then **three**. Counted from
+   the branch base with `git grep`, it is **thirteen sentences across seven
+   files**: three in `packages/shared/src/contracts/notifications.ts` (the
+   opening line, the skips enumeration, and the "refuses a sixth value"
+   pointer), one on the exported type in `packages/shared/src/index.ts:603`,
+   one in `apps/api/src/notifications/notification-transport.ts:15`, two in
+   `apps/web/src/lib/notification-channels.ts` (`:260`, `:284`), two more in
+   its spec (`:92`, `:101`), three in
+   `tests/f3.8-notification-schema.integration.test.ts` (a docblock item and
+   two `it()` names), and one in
+   `packages/db/src/schema/alarms-schema.ts:359-360`.
+
+   **The barrel one was found by no review pass and by neither implementer** —
+   it is a docblock on the exported type itself, the sentence a consumer of
+   `@bms/shared` reads. Count echo sites from the source with a search, never
+   from the sites a row or a plan happens to name: `F4.102` and `F4.105` each
+   ended the same way, and this row makes three.
 3. **A non-`failed` row blocks its key through `eventDeliveryBlocked`'s existing
    arm**, so the abandoned step is never re-offered without a line of new retry
    logic. `failed` would have been wrong on behaviour rather than merely on
