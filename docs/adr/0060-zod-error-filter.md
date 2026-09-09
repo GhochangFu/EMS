@@ -261,6 +261,37 @@ outside a `try` in a service" is now false as stated, because `:183` is one and
 is correct. The assertion must allow it by name with the reason, and it must
 strip comments — this amendment exists because a measurement did not.
 
+**A fourth correction, and it is to §Context's last paragraph rather than to its
+table.** §Context says `idParamSchema` is declared **three times** and
+§Consequences repeats it as "three declarations stay three". It is declared
+**seven** times, all `z.string().uuid()`:
+
+```
+apps/api/src/admin/admin.schema.ts:6                              (the exported one)
+apps/api/src/dashboard-builder/dashboard-builder.controller.ts:33
+apps/api/src/maintenance/maintenance.controller.ts:29
+apps/api/src/notifications/escalation-profiles.controller.ts:31
+apps/api/src/notifications/notifications.controller.ts:32
+apps/api/src/rules/rules.controller.ts:39
+apps/api/src/work-orders/work-orders.controller.ts:29
+```
+
+So the §4.8 split is **six local re-declarations of one exported schema**, not
+two. This ADR still declines to collapse them and the branch collapses none —
+the scope is unchanged. What changes is what a later row inherits: told to
+"collapse the three", it would fix three, leave four, and believe it had
+finished.
+
+**Three of this ADR's measurements have now been corrected, and all three were
+mine.** A regex that matched inside comments; a site classified as stored data
+that stands on a request path; and a grep narrow enough to miss four of seven
+declarations. The first two were caught by reading the source before the build,
+the third by the compliance review. The pattern is not carelessness about any
+one number — it is that a count written into a document reads as settled
+afterwards, and nothing re-runs it. AGENTS.md §4.6 already says a correction is
+a claim; the harder half is that **the original count is a claim too, and an ADR
+is exactly the artefact where it stops looking like one.**
+
 ## Verification this ADR expects
 
 - The 44 unguarded controller sites answer 400 with a `formErrors` body on a
