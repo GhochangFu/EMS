@@ -4002,8 +4002,76 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   the mutation the plan specified would have left the suite green with the
   defect fully present; every fixture is 20,000.
 - **Unblocks:** nothing directly. Leaves `F4.116` — key count is bounded by
-  nothing on the four `z.record(z.unknown())` fields, and `location.meta`
-  accumulates because `mergeDraft` merges `location` field-wise.
+  nothing on the four `z.record(z.unknown())` fields. **The second half of this
+  sentence used to say `location.meta` accumulates because `mergeDraft` merges
+  `location` field-wise, and that was corrected on 2026-09-09 during `F4.107`.**
+  The merge is one level deep, so a patch carrying `meta` replaces the whole
+  object: ten patches of 100,000 B under distinct keys leave 100,033 B, and a
+  patch sending `meta: {}` leaves 38. The value persists across patches that
+  ignore it; it does not grow. `F4.107`'s plan §0 holds the measurement.
+
+### The draft the model is shown is bounded, and the marker it may echo back is refused (`F4.107`) — done
+- **Status:** merged 2026-09-09 — PR
+  [#392](https://github.com/GhochangFu/EMS/pull/392) (`ccc58470`), plan in the
+  same PR.
+- **The defect.** `handleOpenAiTurn` embedded
+  `JSON.stringify(redactDraftForLlm(draft))` in its system prompt on every
+  turn, with nothing measuring the size. `F4.103` bounds item count, `F4.104`
+  string length and `F4.115` depth — the ~0.68 MB a turn can forward is a
+  *consequence* of those three limits meeting a 102,400-byte body limit, not a
+  check anything performs.
+- **The row was wrong on both of its own terms, and this was the second time in
+  the batch.** It put the figure at ~4.7 MB "dominated by `_secrets`".
+  `redactDraftForLlm` composes `redactDraftForClient`, which **deletes**
+  `_secrets` — the term the row calls dominant never reaches the prompt, and is
+  0.07 MB anyway. The 4.7 MB is schema-maximal; no producer can reach it,
+  because `parseUpload` refuses an over-cap RTUS section and the body limit is
+  exactly 102,400 bytes. The availability half was false in the other direction
+  and shipped first as `F4.115`.
+- **The fix.** `PROMPT_DRAFT_BUDGET_BYTES = 262_144`, derived from a **measured**
+  floor of 82,280 B — the demo estate through the shipped producers, where the
+  plan had estimated 71,035 — at 3.19× that floor and 2.56× one request body,
+  with two per-turn ceilings recorded beside it: 651,960 B producer-reachable,
+  and the model's context window at roughly 350–450 KB. Over budget, stage 1
+  sheds the four free-form records and stage 2 sheds strings wider than any
+  code/name column, so every code, name and protocol survives. 128 KiB sits in
+  the docblock as considered and declined: it would shed `config` from a
+  legitimate ~180 KB estate for no security gain, `config` being already
+  secret-scrubbed.
+- **Depth is checked before the first `JSON.stringify`, and that ordering is the
+  point.** The serialiser is itself recursive and dies at 4,183 levels on the
+  serving runtime, inside the bare `catch {}` that swallows it — so on the draft
+  that most needs measuring, the measurement is what fails. A budget you cannot
+  measure on the input is not a budget.
+- **An instruction is not a control.** Stage 1 puts a *string* where `config` is
+  `z.record(z.unknown())`, so the model is shown a shape the draft schema
+  refuses, and only a sentence in the prompt stopped it echoing that back. The
+  security review traced the consequence: the same marker on
+  `pointKeys[].description` **passes** `safeParse`, and `mergeDraft` replaces
+  that array wholesale, so a system literal would have been stored over the
+  operator's prose and committed. `carriesPromptMarker` refuses such a patch in
+  code — the whole patch, not the offending leaf, because dropping a `config`
+  key lets `.default({})` blank a real connection config.
+- **No fourth traversal.** `rebuildDeep` gained an optional `visitLeaf`, so both
+  shed passes and the marker guard share the one iterative rebuild — §4.8, and
+  the rule `F4.115`'s review caught this diff's predecessor breaking.
+- **What review found.** Four reviews, three before the merge and one after on
+  the fix commits the first three never saw: no Critical, no High, no
+  correctness defect, no false green. Two findings were about tests and both are
+  the class this batch keeps hitting — one exported assertion carried five
+  claims in a single `it()` and `assert` throws, so blocks three to five could
+  not run; and four mutation sentences claimed several assertions redden
+  together when only the first ever does. The build had already found that the
+  plan's own mutation for stage 1 **reddened nothing**, because that fixture
+  nests its depth under a `config` key the pass replaces without descending.
+- **Residuals, none blocking.** The depth pre-check is key-name-based, so a
+  deep chain under any key other than `config`/`meta` would still reach
+  `JSON.stringify` — latent, because all four producers were enumerated and only
+  the four `z.record` fields can nest, but the function reads a jsonb column and
+  does not name that invariant as a dependency. `carriesPromptMarker`'s first
+  docblock line is false for a scalar root. The marker refusal is silent, and
+  needs a `Logger` in `OnboardingChatService` before it can be anything else.
+- **Unblocks:** nothing. No row lists `F4.107` in `Depends`.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
