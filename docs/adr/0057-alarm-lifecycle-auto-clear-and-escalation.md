@@ -1127,11 +1127,15 @@ recipient identities that §9.6 keeps out of these two lines.
 
 ## Amendment 7 — `F3.52`: a due escalation step can be too late to send, and the sweep is the thing that decides it (2026-09-09)
 
-**Status: Proposed — drafted with the `F3.52` branch, awaiting the repository
-owner's acceptance.** The six rulings behind it are recorded in full in **ADR
-0041 Amendment 6**, which is the contract; this amendment exists so a reader of
-ADR 0057 alone is not left believing the escalation phase sends every due step.
-The paired-amendment shape is the one `F3.48`, `F3.51` and `F3.54` each used.
+**Status: Accepted — 2026-09-09**, by the repository owner. The **nine** rulings
+behind it are recorded in full in **ADR 0041 Amendment 6**, which is the
+contract; this amendment exists so a reader of ADR 0057 alone is not left
+believing the escalation phase sends every due step. The paired-amendment shape
+is the one `F3.48`, `F3.51` and `F3.54` each used.
+
+**Rulings 7, 8 and 9 arrived after this text was drafted**, from the review
+passes, and two of them change what is written below rather than adding to it —
+see "What the reviews changed" at the end. Read that section before the body.
 
 ### The escalation phase now decides an age, per step, every tick
 
@@ -1209,3 +1213,45 @@ than trusting the argument.
 - `MAX_EVENT_ATTEMPTS`, the unconfigured watermark, `F3.48`'s ceiling exception
   and `LostLedgerRows` all keep their present meanings. A lost `skipped_stale`
   row is remembered by `dispatchRememberingLostRows` exactly as any other.
+
+### What the reviews changed (rulings 7, 8 and 9, 2026-09-09)
+
+Three rulings landed after the body above was drafted. Two of them correct it.
+
+**Ruling 8 — the reserve was charging raises against the event limit.** ADR 0041
+Amendment 6 §1 shipped as "one count, two limits", and an unfiltered count
+charges a RAISE against the reduced limit too: forty-eight sent raises an hour
+refused every escalation step and every cleared message on that channel while
+raises went on to the full ceiling. The reserve took from the path it exists to
+protect, and a step held that long is exactly the step this amendment's age
+cut-off then abandons — **the two halves of `F3.52` compounded a late delivery
+into no delivery.** The fix is one query returning two counts, so events can
+never occupy more than four fifths of the ceiling. The escalation phase is
+unchanged by it; what changes is how often a step reaches the age bound at all.
+
+**Rulings 7 and 9 — where the `skipped_stale` exit sits, and what that does not
+buy.** The exit is the last pre-check in `dispatchToChannel`: after the ledger
+read, and after the ceiling. It sat before the ceiling until the security
+review, and the stated reason for moving it — that a step refused by the budget
+could then never be abandoned for age it spent waiting — **is false, and is
+recorded here rather than quietly reworded because it was believed and acted
+on.** A correctness pass traced it: `stepIsTooLate` recomputes each tick from a
+fixed `raised_at` and an increasing `now`, so once a step is stale it stays
+stale; the moment the ceiling frees, control reaches the exit and the step is
+abandoned after all. **The end state is identical in both orders.**
+
+What the position does buy is the reason an operator reads while the channel is
+over budget: `skipped_rate_limited` is true and self-clearing while it is true,
+where `skipped_stale` would be terminal and premature. That is worth having, and
+it is all it is worth.
+
+**What this means for the age cut-off's own justification.** The row was filed
+against steps "delivered with the same subject as a fresh one" after a long
+deferral. That is still real, but ruling 8 removed the largest cause of the
+deferral. After it, a step reaches the bound mainly when the TRANSPORT has been
+failing for an hour — which is the case the cut-off was written for, and a
+narrower one than the row assumed.
+
+**Amendment 6's out-of-scope note still stands**, and the escalation phase's
+silent `continue` over an empty channel list (`alarm-lifecycle-phases.ts:606`)
+is still untouched.
