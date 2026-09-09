@@ -4073,6 +4073,68 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   needs a `Logger` in `OnboardingChatService` before it can be anything else.
 - **Unblocks:** nothing. No row lists `F4.107` in `Depends`.
 
+### One ZodErrorFilter for a malformed parameter, and the stored-data parses that had to move first (`F4.108`) — done
+- **Status:** merged 2026-09-09 — PR
+  [#395](https://github.com/GhochangFu/EMS/pull/395) (`e5ae0c17`), gated by
+  **ADR 0060** [#394](https://github.com/GhochangFu/EMS/pull/394) (`98308042`)
+  with its Amendment 1.
+- **The defect.** `POST /admin/onboarding/sessions/<not-a-uuid>/validate`
+  answered `500 Internal server error`. `apps/api/src` registered **no exception
+  filter at all** — `main.ts` had neither `useGlobalFilters` nor
+  `useGlobalPipes` — so an escaping `ZodError` reached Nest's default handler.
+  A 500 is recorded as a server fault, and the operator who pasted a bad link
+  could not tell they had mistyped.
+- **The row said two routes; it was 44.** Measured by brace-tracking each `try`
+  rather than by proximity: 73 `idParamSchema.parse(` sites in 14 files, 29
+  inside a `try`, 44 outside one across 12 controllers.
+- **Why an ADR, when `F4.103` ruling 1 exempts this batch.** A global filter
+  changes what every controller returns on a Zod failure, including routes
+  nobody in the batch has read. That is a promotion §10 wants recorded.
+- **Ruling 2 ordered the work rather than choosing between two options.** A
+  global `@Catch(ZodError)` cannot tell client input from stored data —
+  `ZodError` carries a path inside the parsed value and nothing about who
+  supplied it. So the eight service parses of `*DtoSchema` and
+  `sectionTemplateContentSchema` raise an explicit server fault through one
+  shared `parseStoredContract(schema, value, context)` **first**, and only then
+  is the filter registered. By that point every `ZodError` reaching it came from
+  client input, and 400 is always the honest answer.
+- **The ordering closed a disclosure nobody had filed.** Five of the eight are
+  reached from inside a controller `try` that maps any escaping `ZodError` to
+  `BadRequestException(err.flatten())`. `unrecognized_keys` names a row's keys
+  and `invalid_enum_value` echoes its value, so a corrupt `content` on
+  `GET /admin/dashboard-templates` answered **400 carrying `flatten()` of stored
+  data**. The security review found it; Amendment 1 records it; and it runs
+  opposite to the ADR's own framing that the eight were "500 before and after".
+- **Verified live, which ADR 0060 calls non-substitutable** because no suite here
+  boots the Nest application. Against a container rebuilt from the branch on node
+  v20.20.2, 7 of 7 with zero screenshots: a malformed id answers `400` with the
+  body exactly `{"formErrors":["Invalid uuid"],"fieldErrors":{}}` and no
+  `statusCode`/`message`/`error`; `/admin/rtus/…` and `/admin/locations/…` carry
+  the **identical etag**, so three controllers emit byte-identical bodies; a
+  deliberately corrupted `dashboard_templates.content` still answers **500**
+  naming `dashboard_templates.map.content`, with twelve searched terms all
+  absent; an uncorrupted row answers 200; and the log carries the context literal
+  plus `(1 issue(s): invalid_type)`, codes only. The row was restored
+  byte-identical afterwards.
+- **What review found, and the distinction worth keeping.** Four reviews, three
+  before the merge and one after on the fix commits the first three never saw:
+  no Critical, no correctness defect, nothing blocking. **Both Highs were gates
+  that could not fail** — every reviewer traced the runtime and found it right.
+  The `@Catch(ZodError)` check in `tests/f4.52-auth-failure-status.test.ts` was
+  satisfied by the filter's own docblock text, so `@Catch()` left it green. And
+  `zod` is two module instances under Vitest and one under the CommonJS
+  resolution the API runs, so a future spec would observe a bare `ZodError`
+  rather than the 500 — which also means none of the 71 `instanceof ZodError`
+  catches in `apps/api/src` is observed under its real resolution by any unit
+  test. Both are now AGENTS.md §4.6.
+- **Four corrections to ADR 0060, all to counts written into it**, carried by
+  Amendment 1: the service set is eight not ten; a bare `ZodError`'s 500 body is
+  Nest's generic envelope, not its `issues`; `idParamSchema` is declared seven
+  times, not three; and the "500 before and after" sentence. Three of the four
+  were counts, which is the part worth remembering — a count written into a
+  document stops reading as a claim.
+- **Unblocks:** nothing. No row lists `F4.108` in `Depends`.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.

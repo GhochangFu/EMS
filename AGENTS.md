@@ -1341,6 +1341,32 @@ five claims and fourteen `assert` calls behind a single `it()`, where blocks
 three to five could not execute once block one failed. State which assertion
 reddens, then run the mutation and read the name it prints.
 
+**A gate can observe something other than the thing it claims to gate, and from
+the outside it looks identical.** `F4.108` shipped two, and both were found by
+running a mutation rather than by reading one:
+
+- **A source scan matched its own subject's prose.** A rule in
+  `tests/f4.52-auth-failure-status.test.ts` tested `/@Catch\(ZodError\)/`
+  against the whole file, and the filter's docblock contains that literal text
+  in a heading. Changing the decorator to `@Catch()` left the `it()` green — in
+  the one file that grants the application's first global filter its allowance,
+  and where `@Catch()` would have made the filter call `exception.flatten()` on
+  an `UnauthorizedException`. A regex over source must be anchored to the
+  construct, not to a string that also occurs in prose about it.
+- **A test observed a different module instance than production.** `zod`
+  resolves to two instances under Vitest and one under the CommonJS resolution
+  the API actually runs, because `packages/shared` serves `dist/index.js` for
+  both conditions. So `err instanceof ZodError` is false under a Vitest static
+  import and true in the container — and **none** of the 71 `instanceof
+  ZodError` catches in `apps/api/src` is observed under its real resolution by
+  any unit test. Reach the schema through `createRequire` when the identity of
+  the class is the thing under test.
+
+Both are the same failure in different clothes: the gate ran, it was green, and
+it was not looking at the subject. Neither is visible to a reviewer reading the
+assertion, nor to the author who wrote it. What finds them is applying the
+mutation the docblock names and checking that **that** assertion goes red.
+
 ### 4.7 Authorization (ADR 0009/0010 master data · ADR 0017 operations)
 
 Five role gates exist and they are **not** interchangeable — this section
