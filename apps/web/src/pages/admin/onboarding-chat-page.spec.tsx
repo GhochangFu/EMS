@@ -93,6 +93,11 @@ function chatResponse(session: OnboardingSessionDto): OnboardingChatResponseDto 
   return { assistantMessage: "Tell me about the location.", session };
 }
 
+/** `HTMLElement.prototype` seen as jsdom leaves it: without `scrollTo`. */
+type ScrollableProto = { scrollTo?: HTMLElement["scrollTo"] };
+
+let scrollingStubbed = false;
+
 /**
  * jsdom implements no scrolling, so `Element.prototype.scrollTo` does not exist
  * and the page's thread-pinning effect throws on mount. Without this every case
@@ -100,8 +105,25 @@ function chatResponse(session: OnboardingSessionDto): OnboardingChatResponseDto 
  * A no-op is the whole of what these assertions need from it.
  */
 function stubScrolling(): void {
-  if (typeof HTMLElement.prototype.scrollTo !== "function") {
-    HTMLElement.prototype.scrollTo = () => undefined;
+  const proto = HTMLElement.prototype as ScrollableProto;
+  if (typeof proto.scrollTo !== "function") {
+    proto.scrollTo = () => undefined;
+    scrollingStubbed = true;
+  }
+}
+
+/**
+ * Undoes `stubScrolling`, and is why the wrapper's `afterEach` calls it.
+ *
+ * A prototype assignment is not a spy, so `vi.restoreAllMocks()` does not reach
+ * it. Vitest isolates an environment per test file, so the patch does not in
+ * fact cross into another suite today — but that is a runner setting, and a
+ * global left patched on the strength of one is a trap for whoever changes it.
+ */
+export function restoreScrolling(): void {
+  if (scrollingStubbed) {
+    delete (HTMLElement.prototype as ScrollableProto).scrollTo;
+    scrollingStubbed = false;
   }
 }
 

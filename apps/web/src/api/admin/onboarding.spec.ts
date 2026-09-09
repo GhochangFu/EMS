@@ -11,10 +11,10 @@ import { downloadOnboardingTemplate, uploadOnboardingExcel } from "./onboarding"
  * `api-error.ts` warns that importing a module which reads `import.meta.env` at
  * module scope drags Vite's environment into a node test, and this file imports
  * exactly such a module (`onboarding.ts`, and `client.ts` behind it). It
- * resolves: `apps/web/src/api/validate.test.ts` already does the same and
- * records the measured value `{ DEV: true, MODE: "test" }`. This suite was run
- * as a one-assertion smoke before the six claims were written, and the import
- * resolved with no DOM at all.
+ * resolves, and the evidence is checkable rather than historical:
+ * `apps/web/src/api/validate.test.ts` runs in this same node project, imports
+ * `./validate` — which reads `import.meta.env` at module scope — and records
+ * the measured value `{ DEV: true, MODE: "test" }`.
  *
  * `File` and `FormData` are Node 20 globals and the repo ships Node 20.
  * `document.createElement` and `URL.createObjectURL` are only reached on the

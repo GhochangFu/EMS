@@ -84,6 +84,13 @@ export function runFallbackTests(): void {
     apiErrorMessage(new Error('{"error":"Bad Request","statusCode":400}')) === "Bad Request",
     "an envelope with no message falls back to error",
   );
+  // `F4.106` made this line load-bearing for a second branch as well: it now
+  // also holds the flatten unwrapper's null path, because `{"statusCode":400}`
+  // has neither `formErrors` nor `fieldErrors`. Making that branch answer a
+  // generic line reddens here as well as in `runEmptyZodFlattenTests`. The loop
+  // above still reddens on its own — measured with
+  // `if (!trimmed.startsWith("{")) return "The request failed."`, which fails at
+  // the `admin /asset-templates 502` case and never reaches this one.
   assert(
     apiErrorMessage(new Error('{"statusCode":400}')) === '{"statusCode":400}',
     "an envelope with neither message nor error shows what the server said",

@@ -31,7 +31,9 @@ import { oversizeUploadMessage } from "./oversize-upload";
  * did not have, so it matches `Import failed (…).` and
  * `Mapping sheet upload failed (…).` — the two sibling helpers.
  *
- * §9.6: this text is rendered, never logged. The body can carry a filename.
+ * §9.6: this text is rendered, never logged. `bodyText` is server output of
+ * unknown content — no claim is made here about what any particular route puts
+ * in it, which is the reason not to log it.
  *
  * @param status the HTTP status of the refused upload.
  * @param bodyText the response body, verbatim.

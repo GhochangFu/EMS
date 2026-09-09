@@ -10,6 +10,7 @@ import {
   aRefusedCommitShowsTheReason,
   aRefusedCredentialSaveShowsTheReason,
   aRefusedStartShowsASentenceNotAZodFlatten,
+  restoreScrolling,
 } from "./onboarding-chat-page.spec";
 
 /**
@@ -33,6 +34,8 @@ describe("F4.106 onboarding chat page error surfaces", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    // A prototype assignment is not a spy, so the line above does not undo it.
+    restoreScrolling();
   });
 
   it("shows a sentence, not a Zod flatten, when the session cannot start", async () => {
