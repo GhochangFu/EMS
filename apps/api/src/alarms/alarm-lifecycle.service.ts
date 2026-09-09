@@ -343,12 +343,31 @@ async function notifyCleared(
     return;
   }
   try {
+    // `F3.55` (ADR 0057 Amendment 6): both of these returns were silent — no
+    // send, no row, no retry, no log line, which ruling Q-A calls worse than
+    // the defect `F3.48` closed. Each warns now; NEITHER writes a delivery row,
+    // and the amendment gives the different reason at each. §9.6 bounds both
+    // lines to the alarm id and the rule code — never the alarm text, a
+    // recipient or a channel's configuration.
     const channelIds = await deps.sentChannelIdsForAlarm(alarm.id, input.organizationId);
     if (channelIds.length === 0) {
+      // An empty answer has two readings and this line has to fit both: no
+      // channel is joined to the rule at all (no `rule_notifications` row —
+      // what a seeded or a template-built rule has), or the raise was offered
+      // and left no `sent` row. Amendment 6 separates them and says what each
+      // one owes; the predicate this line states is the same either way.
+      deps.logger.warn(
+        `alarm lifecycle: alarm ${alarm.id} rule ${rule.code} cleared with no cleared message: no channel holds a sent row for it`,
+      );
       return;
     }
     const channels = await deps.loadChannels(channelIds);
     if (channels.length === 0) {
+      // Named recipients, every one disabled now: a row here would record an
+      // attempt against a channel that was never asked to send.
+      deps.logger.warn(
+        `alarm lifecycle: alarm ${alarm.id} rule ${rule.code} cleared with no cleared message: every channel that holds a sent row for it is disabled`,
+      );
       return;
     }
     await deps.dispatchToChannels(channels, input);

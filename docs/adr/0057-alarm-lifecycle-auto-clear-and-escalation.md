@@ -995,3 +995,132 @@ refused and nothing warned. The remaining five are corrections to sentences
 above, each made in place: the memory's one-strike behaviour, the best-effort
 reclaim, the two phases rather than one, the restart's true cost, and the SMTP
 bound.
+
+## Amendment 6 — `F3.55`: a cleared message that reaches nobody says so, at both of the two returns that were silent (2026-09-09)
+
+Amends **decision 9** in one respect and leaves **owner ruling Q5's recipient
+set exactly where it stands**: the cleared message still goes to the channels
+that hold a `sent` row for that alarm and to nobody else. What changes is what
+happens when that set turns out to be empty. Unchanged: decision 10,
+Amendment 2's rulings Q1, Q2 and Q-A, Amendment 3's ruling Q1, Amendment 4's
+three rulings, the whole of Amendment 5, and every status the ledger can hold —
+this amendment adds no row, no column, no migration and no contract change.
+
+**The two returns, and they are not one case.** `notifyCleared` reads twice and
+returned early after each. Neither return sent anything, recorded anything or
+wrote a log line:
+
+- `sentChannelIdsForAlarm` answers with an empty list — **no channel holds a
+  `sent` row for this alarm**, either because no channel is joined to the rule
+  at all or because the raise left no `sent` row behind (two readings, below).
+- `loadEnabledChannelsByIds` answers with an empty list over a non-empty set of
+  ids — the channels did hold one, and **every one of them is disabled now**.
+
+The second is the shape this row was filed against: a channel took the raise,
+an operator disabled it, and the clear arrives with nobody to tell. The first is
+the commoner one today — on a database where nobody has joined a channel to the
+rule, it is what every clear of that rule logs. Both were the fully silent
+shape — no send, no row, no retry,
+no log — which is precisely what Amendment 2's ruling Q-A calls worse than the
+defect `F3.48` set out to fix. They survived `F3.54` because they sit one layer
+**above** `dispatchToChannel`: Amendment 4's two ternaries live inside that
+method, and control never reaches it when the channel list is empty.
+
+**The ruling — a `warn` at both, and no delivery row at either.** The reason
+differs at each, and that is why they are two rulings and not one.
+
+At the first return, no channel reported a `sent` row. A
+`notification_deliveries` row names a channel; here there is no channel to
+name, so there is nothing a row could be attributed to.
+
+At the second, the channels are named but disabled. A row against a disabled
+channel would record an attempt that was never made, and the whole value of
+this ledger is that *"no notification arrived"* and *"no notification was
+attempted"* are different answers — a row here would give the wrong one.
+
+Neither case is a refusal, which is the same distinction Amendment 4's ruling 2
+drew when it left `dispatchToChannels`'s two pre-check exits alone. Those
+refuse the **pairing** before `buildDedupeKey` has run, so no key exists for a
+row to be attributed under. Here the key exists and the recipient does not,
+which is the mirror image of that and lands in the same place: the `warn` is
+the record, because there is nothing else to record.
+
+**The two warns are distinguishable, and that is the operational point.** An
+operator reading the log has to be able to tell "no channel holds a `sent` row
+for this alarm" from "the recipients were disabled before the clear", because
+the two ask for different actions. The first sends them to the rule's channel
+list — and only if a channel is joined there at all, on to the raise path; the
+second to the channel that somebody turned off. Each line carries the alarm id,
+the rule code and its own case, and the unit spec asserts the discrimination
+**in both directions** — exchanging the two strings is the mutation a "the two
+differ" assertion would pass.
+
+**What the first return covers: two readings, and it does not assume the raise
+was ever offered.** `sentChannelIdsForAlarm` filters on `status = 'sent'`, and
+an empty answer is reached by two quite different routes. They arrive at the
+same return and the sweep cannot separate them there without a second read, so
+the line is worded on the `sent`-row predicate rather than on "the raise never
+landed" — and the amendment must not blur them either:
+
+- **No channel was ever configured for this rule.** With no `rule_notifications`
+  join the rule has no recipients, so the raise was offered to nobody and wrote
+  no delivery row, and the read answers `[]` at every clear of that rule. This
+  is not the rare shape: no seed writes `rule_notifications`, and ADR 0058
+  decision 2 — *"a seeded rule carries `action = review` and joins no
+  notification channel"* — makes `asset-templates-instantiate.service.ts`
+  deliberately not write one either. On a seeded or a template-built database
+  this is therefore the *usual* line. Nothing was offered, nothing vanished and
+  nothing is owed: the warn says there is no channel to tell, which is the
+  whole of what it claims.
+- **The raise was offered and left no `sent` row.** If rows exist under the
+  raise key but none is `sent` — a `failed` row, a `skipped_rate_limited` one, a
+  `skipped_unconfigured` one newer than its watermark — then
+  `runRaiseRetryPhase` is **still owed that raise** and may yet deliver it; the
+  raise is not lost, and this warn must not be read as saying it was. If a
+  channel is joined and there are nonetheless **zero** rows under the key,
+  Amendment 5's ruling 3 evidence conjunct means that phase never re-offers it
+  at all — "zero rows reads as 'not yet offered', not as 'owed'" — and then
+  this warn is the only trace that episode leaves anywhere.
+
+Read the line as its own words say it — *"no channel holds a sent row for it"* —
+and not as "a message was lost". Under the first reading there was no episode
+to lose.
+
+**Not a contradiction of `channel-reads.ts`.** `loadEnabledChannelsByIds`'s
+docblock says a disabled channel is silently absent, because an operator who
+disabled it asked for exactly that. That sentence stands and the read is
+unchanged. The **caller** now warns when the read answers with nothing at all,
+which is a different fact: not "this channel was skipped" but "there is nobody
+left".
+
+**§9.6.** Each warn carries the alarm id and the rule code, and nothing else —
+never the alarm message, never a channel id or code, never a channel's
+configuration. The unit spec asserts each of those absences over both lines,
+after first asserting that both lines exist, because a redaction assertion over
+a warn that was never emitted passes on the empty string — with the caveat that
+only two of the four are live today (the alarm message at both returns, the
+channel ids at the second), because no channel row is in scope at either return
+for a code or a configuration to leak from, so those two are forward guards on
+the edit that loads one here.
+
+**What gates it.** `alarm-lifecycle-cleared-no-recipients.spec.ts`, five
+numbered assertions with one `it()` each per `F4.105`, and every absence paired
+with a positive **on the same fixture**: "no dispatch" passes when
+`notifyCleared` is never reached at all, so the first case asserts the recipient
+read ran, the second asserts the channel read ran with the sent id — reachable
+only past the first return — and each has a sibling fixture differing in one
+option that does dispatch. It is its own file because
+`alarm-lifecycle.service.spec.ts` stands at 801 of §4.5's 1000 lines and its
+wrapper is a single `it()` over thirteen cases, where a mutation reddens
+whichever case runs first rather than the one that owns the claim.
+`alarm-lifecycle.service.ts` is at 991 lines after this change, four fewer than
+the first draft of it: the reasoning above is carried here, and the call site
+points at it rather than restating it. The next change to that file still
+extracts before it adds.
+
+**Not fixed, and named here so it is not re-filed as a gap.** A *partially*
+disabled recipient set says nothing: the enabled channels are dispatched to,
+the disabled ones are dropped by the read, and no warn is emitted, exactly as
+before. Only the wholly-empty case speaks. A per-channel account of who was
+dropped is a different row from this one, and it would have to carry the
+recipient identities that §9.6 keeps out of these two lines.
