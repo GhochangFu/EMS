@@ -886,8 +886,9 @@ no second writer beside `record()`.
 
 ## Amendment 7 — `F3.53`: the sweep remembers a closed ceiling for the length of one tick, and only ever the closed answer (2026-09-09)
 
-**Status: Proposed.** Two rulings taken at `F3.53`'s step-2 gate, 2026-09-09,
-on the measurements in §1 below rather than on the row's filed text.
+**Status: Accepted — 2026-09-09.** Ruled by the repository owner at `F3.53`'s
+step-2 gate; two rulings, taken 2026-09-09 on the measurements in §1 below
+rather than on the row's filed text.
 
 ### The row was filed on a cost model that has moved three ways, and one of them is a path it never mentions
 
