@@ -136,8 +136,17 @@ export async function hasRecordedSkip(
  *
  * **Unless the hourly ceiling refuses the retry**, in which case `F3.48`
  * ruling Q1 writes nothing and the key stays released, re-offered every tick
- * until the ceiling lifts. That costs two reads a tick and grows the ledger
- * not at all.
+ * until the ceiling lifts. That grows the ledger not at all, and since `F3.53`
+ * (ADR 0041 Amendment 7) it costs two reads a tick only for the FIRST such key
+ * on a channel. This read is one of the two and is never memoised — it is what
+ * makes the re-dispatch idempotent, so it runs once per key per tick whatever
+ * the answer. The other, the hourly ceiling, is asked at most once per channel,
+ * organization and budget for the length of one sweep, because `ClosedCeilings`
+ * remembers a refusal — and only a refusal — for that long. A second released
+ * key on the same channel AND BUDGET therefore costs one read a tick, not two.
+ * The budget is part of that key: an escalation step charges `reserved` and a
+ * re-offered raise charges `full`, so a channel spinning one of each still pays
+ * a ceiling read for each of them.
  *
  * The exclusion has to be in the SQL for the next paragraph to stay true.
  * The read asks for at most `MAX_EVENT_ATTEMPTS` rows' `status`: fewer than

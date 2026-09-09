@@ -8,6 +8,7 @@ import type { BmsDb } from "@bms/db";
 import {
   assertClearsAfterTheHoldAndReopens,
   assertEscalatesOnceAndTellsSentChannelsOnly,
+  assertTheSweepHandsItsCeilingMemoToTheService,
   assertTwoBandsClearOnOneSample,
 } from "./alarm-lifecycle.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
@@ -57,5 +58,11 @@ describe.skipIf(!connectionString)("F3.10 — alarm lifecycle sweep against a re
 
   it("clears both bands on one asset from one reading, each on its own hold", async () => {
     await assertTwoBandsClearOnOneSample(db);
+  }, 60_000);
+
+  // `F3.53` I1 — the production adapter in `AlarmLifecycleService.deps()` is
+  // replaced by every fake-deps sweep spec, so this is its only gate.
+  it("forwards the sweep's ClosedCeilings through the adapter to NotificationsService", async () => {
+    await assertTheSweepHandsItsCeilingMemoToTheService(db);
   }, 60_000);
 });

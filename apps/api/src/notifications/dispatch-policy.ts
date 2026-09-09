@@ -51,7 +51,17 @@ import type { DeliveryResult } from "./notification-transport";
  * refuses the released step, `F3.48` ruling Q1 writes no row at all, so the key
  * is NOT blocked again and the step is re-offered every tick until the ceiling
  * lifts. Nothing is written and nothing is sent, so the ledger does not grow —
- * the cost is two reads per tick per such key, which `F3.53` owns.
+ * the cost is the reads, and `F3.53` (ADR 0041 Amendment 7) has bounded one of
+ * the two. The key's own event read still happens once per key per tick: it is
+ * what makes the re-dispatch idempotent, and it is never memoised. The hourly
+ * ceiling is now read at most once per channel, organization and BUDGET for the
+ * whole sweep, because `ClosedCeilings` remembers a refused ceiling — and only a
+ * refused one — for the length of the tick that asked. So the first such key on
+ * a channel AND BUDGET still costs two reads a tick and every other key on that
+ * pair costs one. The budget is not decoration here: a spinning escalation step
+ * charges `reserved` and a spinning re-offered raise charges `full`, so a
+ * channel spinning both pays one ceiling read for each — a raise must never
+ * inherit an event's refusal, which is what the reserve exists for.
  *
  * **`F3.51` — an alarm's RAISE key now enters this same accounting** (ADR 0041
  * Amendment 5, owner ruling 2). It reaches it through `channelsOwedTheRaise`

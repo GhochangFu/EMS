@@ -1,6 +1,10 @@
 import type { AlarmListItem } from "@bms/shared";
 import { automationRuleOperatorSchema } from "@bms/shared";
 
+// `F3.53`: a type here for the same reason `LostLedgerRows` is one below —
+// this module reads the instance off the phase input and never constructs one.
+// `runLifecycleSweep` owns the single per-tick instance.
+import type { ClosedCeilings } from "../notifications/closed-ceilings";
 import { buildDedupeKey } from "../notifications/dedupe-key";
 import { MAX_EVENT_ATTEMPTS } from "../notifications/dispatch-policy";
 import type { NotificationChannelRow } from "../notifications/notification-transport";
@@ -68,17 +72,35 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * TYPES only, so the emitted JavaScript holds no edge back to the service and
  * there is no runtime cycle.
  *
- * **No suite imports this module, and FOUR of them gate it.** Every case still
+ * **No suite imports this module, and SIX of them gate it.** Every case still
  * drives `runLifecycleSweep` over fakes, which is why the move needed no
  * change to a spec — but the gate is spread across
  * `alarm-lifecycle-raise-retry.spec.ts` (23 sweeps),
  * `alarm-lifecycle.service.spec.ts` (21),
- * `alarm-lifecycle-cleared-no-recipients.spec.ts` (9) and
- * `alarm-lifecycle-escalation-lost-rows.spec.ts` (6). **Run all four.** This
- * docblock named only the second until review measured the split: 38 of the 59
- * sweeps are outside it, and `runRaiseRetryPhase`'s invariants are almost
- * entirely in the first — so `vitest run alarm-lifecycle.service` is green on a
- * change it never exercised.
+ * `alarm-lifecycle-cleared-no-recipients.spec.ts` (9),
+ * `alarm-lifecycle-escalation-lost-rows.spec.ts` (6),
+ * `alarm-lifecycle-closed-ceilings.spec.ts` (5) and
+ * `alarm-lifecycle-escalation-staleness.spec.ts` (2). **Run the directory, not
+ * a file.** 45 of the 66 sweeps are outside `alarm-lifecycle.service.spec.ts`,
+ * and `runRaiseRetryPhase`'s invariants are almost entirely in the first — so
+ * `vitest run alarm-lifecycle.service` is green on a change it never exercised.
+ *
+ * **This paragraph has now been measured wrong twice, so it carries its own
+ * command.** It said FOUR files and "38 of the 59" until `F3.53` re-counted:
+ * `F3.52` added `alarm-lifecycle-escalation-staleness.spec.ts` and left the
+ * sentence, and `F3.53` adds `alarm-lifecycle-closed-ceilings.spec.ts`. Do not
+ * hand-edit the numbers — paste them from
+ * `git grep -c "await runLifecycleSweep("`, and add `--untracked` only while
+ * the file you are counting is still unstaged, which is how `F3.53` measured
+ * its own: without it the new spec is invisible and the count is wrong by
+ * exactly the file being added.
+ *
+ * **That first sentence is also what lets the two phase inputs take a REQUIRED
+ * `closedCeilings`** (`F3.53`). With no importer outside
+ * `alarm-lifecycle.service.ts`, widening these types breaks exactly one call
+ * site and the compiler names it; an optional field would instead let a phase
+ * silently drop the tick's memo, which is the failure mode ADR 0041 Amendment 7
+ * found already shipped in the service's own adapter.
  */
 
 type ClearPhaseInput = {
@@ -246,6 +268,13 @@ type RaiseRetryPhaseInput = {
   activeAlarms: ActiveAlarm[];
   rulesById: Map<string, RuleRow>;
   clearedIds: Set<string>;
+  /**
+   * `F3.53` — the TICK's memo of which ceilings have already refused (ADR 0041
+   * Amendment 7 ruling 2). Required, not optional: this module has no importer
+   * outside `alarm-lifecycle.service.ts`, so an omission is a compile error
+   * rather than a silently unmemoised phase.
+   */
+  closedCeilings: ClosedCeilings;
 };
 
 /** One alarm the phase may re-offer, with the input and the ledger key already built. */
@@ -447,6 +476,7 @@ export async function runRaiseRetryPhase(
         dedupeKey: candidate.ref.dedupeKey,
         channels: owed,
         input: candidate.input,
+        closedCeilings: input.closedCeilings,
       });
     } catch (err) {
       deps.logger.warn(
@@ -491,6 +521,27 @@ export async function runRaiseRetryPhase(
  *
  * The two callers share ONE {@link LostLedgerRows} instance, so they share its
  * cap as well as its reclaim — see the class docblock.
+ *
+ * **`F3.53`: this is also the one call site that carries the tick's
+ * {@link ClosedCeilings}** (ADR 0041 Amendment 7 ruling 2), and it is the site
+ * where all of the measured spin is. A step or a re-offered raise the hourly
+ * ceiling refuses writes no row at all (`F3.48` ruling Q1, ADR 0041 Amendment
+ * 5), so nothing in the ledger blocks it and the next tick asks again — for
+ * ever, while the ceiling stays closed. The memo makes that cost one read per
+ * channel, organization and budget per tick rather than one per dispatch.
+ *
+ * **Why the memo enters HERE and not in {@link notifyCleared}.** Both re-offer:
+ * a due step is re-dispatched every tick until its own ledger row answers it,
+ * and a raise-retry candidate is re-offered every tick for the life of the
+ * alarm. A cleared message is neither — it is dispatched once, from the clear
+ * phase, and `loadActiveAlarms` never selects that alarm again. A remembered
+ * `true` is safe but NOT monotone (`closed-ceilings.ts`): `isOverHourlyLimit`
+ * recomputes `since` on every call, so a channel at its limit can drop below it
+ * part-way through a tick, and the memo postpones such a dispatch to the next
+ * tick. For a step that costs 30 s of latency; for a clear there is no next
+ * tick, so it would cost the clear itself — the silent-loss shape ADR 0057
+ * Amendment 2 ruling Q-A refused. `notifyCleared` therefore reads the ledger
+ * before every dispatch exactly as it did before this row.
  */
 async function dispatchRememberingLostRows(
   deps: AlarmLifecycleDeps,
@@ -499,6 +550,8 @@ async function dispatchRememberingLostRows(
     dedupeKey: string;
     channels: readonly NotificationChannelRow[];
     input: DispatchInput;
+    /** The tick's memo — required, so a phase cannot forget to pass it. */
+    closedCeilings: ClosedCeilings;
   },
 ): Promise<number> {
   const offered = a.channels.filter(
@@ -508,7 +561,7 @@ async function dispatchRememberingLostRows(
     return 0;
   }
   let refusedByTheCap = 0;
-  for (const outcome of await deps.dispatchToChannels(offered, a.input)) {
+  for (const outcome of await deps.dispatchToChannels(offered, a.input, a.closedCeilings)) {
     // `rowLost` is true in exactly one case: an insert was attempted and it
     // threw. An exit that writes no row BY DESIGN reports `false`, and treating
     // those as losses would stop re-offering a ceiling-refused dispatch — the
@@ -529,6 +582,13 @@ type EscalationPhaseInput = {
   catalog: EscalationCatalog;
   clearedIds: Set<string>;
   now: Date;
+  /**
+   * `F3.53` — the same instance {@link RaiseRetryPhaseInput} carries, and it is
+   * one per TICK rather than one per phase. The two never collide: `budgetFor`
+   * puts a re-offered raise on the `full` budget and a step on the `reserved`
+   * one, and the budget is part of the memo's key.
+   */
+  closedCeilings: ClosedCeilings;
 };
 
 /**
@@ -627,6 +687,7 @@ export async function runEscalationPhase(
           dedupeKey: buildDedupeKey(dispatchInput),
           channels,
           input: dispatchInput,
+          closedCeilings: input.closedCeilings,
         });
       } catch (err) {
         deps.logger.warn(

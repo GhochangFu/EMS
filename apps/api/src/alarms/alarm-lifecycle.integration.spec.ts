@@ -18,12 +18,14 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { ChannelsService } from "../notifications/channels.service";
+import { ClosedCeilings } from "../notifications/closed-ceilings";
 import type {
   DeliveryResult,
   NotificationMessage,
   NotificationTransport,
 } from "../notifications/notification-transport";
 import { buildConfig } from "../notifications/notifications.config";
+import type { DispatchInput } from "../notifications/notifications.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
 import { AlarmLifecycleService } from "./alarm-lifecycle.service";
@@ -604,6 +606,118 @@ export async function assertEscalatesOnceAndTellsSentChannelsOnly(db: BmsDb): Pr
     assert(
       harness.clearedBroadcasts.join(",") === alarm.id,
       `broadcastCleared once for the alarm, got [${harness.clearedBroadcasts.join(",")}]`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * `F3.53` I1 — **the sweep's ceiling memo really reaches
+ * `NotificationsService`, and this is the only case in the repository that can
+ * say so** (ADR 0041 Amendment 7).
+ *
+ * `AlarmLifecycleDeps.dispatchToChannels` is typed
+ * `NotificationsService["dispatchToChannels"]`, so it widened with the method —
+ * but the ADAPTER that satisfies it, the arrow in
+ * `AlarmLifecycleService.deps()`, is hand-written and dropped the third
+ * argument. Left that way the memo is created by `runLifecycleSweep`, threaded
+ * through both re-offering phases, and never delivered.
+ *
+ * **Nothing else catches that.** Every sweep spec — the five fake-deps suites
+ * and `alarm-lifecycle-closed-ceilings.spec.ts` with them — replaces
+ * `deps.dispatchToChannels` with its own function, so not one of them executes
+ * the adapter. `tsc` is silent too: a two-parameter function is assignable to a
+ * three-parameter type. The gate has to be the real Nest wiring against a real
+ * database, which is this file.
+ *
+ * The wrapper patches the SERVICE INSTANCE rather than the deps, and that is
+ * what makes the case honest: the adapter resolves
+ * `this.notifications.dispatchToChannels` at call time, so an own property on
+ * the instance is what the production line will find. It delegates to the
+ * original, so the step really sends and the assertion below is paired with the
+ * `sent` row that proves the dispatch happened at all.
+ *
+ * **Mutation:** the adapter written back to `(channels, input) => …(channels,
+ * input)` → the recorded third argument is `undefined` and this reddens, while
+ * the whole of `src/alarms` without a database stays green.
+ */
+export async function assertTheSweepHandsItsCeilingMemoToTheService(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    await insertFixtureSeverity(tx);
+    const loc = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F310", loc);
+    const pointKey = `f353_memo_${randomUUID().slice(0, 8)}`;
+    const rule = await insertFixtureRule(tx, {
+      assetId,
+      organizationId: loc.organizationId,
+      pointKey,
+      thresholdValue: 100,
+      clearHoldSeconds: 30,
+    });
+
+    // The escalation profile fixture of the scenario above: one channel, one
+    // profile, step 1 at one minute, mapped for the fixture severity so no
+    // seeded alarm can escalate into this transaction.
+    const suffix = randomUUID().slice(0, 8);
+    const [channel] = await tx
+      .insert(notificationChannels)
+      .values({
+        organizationId: loc.organizationId,
+        code: `f353-c1-${suffix}`,
+        name: "F3.53 step channel",
+        kind: "webhook",
+        config: { url: "https://hooks.example.com/f353" },
+      })
+      .returning({ id: notificationChannels.id });
+    assert(channel !== undefined, "the fixture channel");
+    const [profile] = await tx
+      .insert(alarmEscalationProfiles)
+      .values({ organizationId: loc.organizationId, code: `f353-p1-${suffix}`, name: "F3.53 profile" })
+      .returning({ id: alarmEscalationProfiles.id });
+    assert(profile !== undefined, "the fixture profile");
+    const steps = await tx
+      .insert(alarmEscalationSteps)
+      .values([{ profileId: profile.id, stepNo: 1, afterMinutes: 1 }])
+      .returning({ id: alarmEscalationSteps.id });
+    await tx
+      .insert(alarmEscalationStepChannels)
+      .values(steps.map((step) => ({ stepId: step.id, channelId: channel.id })));
+    await tx
+      .insert(alarmEscalationDefaults)
+      .values({ organizationId: loc.organizationId, severity: SEVERITY, profileId: profile.id });
+
+    const harness = buildHarness(tx);
+    const offered: { input: DispatchInput; memo: ClosedCeilings | undefined }[] = [];
+    const original = harness.notifications.dispatchToChannels.bind(harness.notifications);
+    harness.notifications.dispatchToChannels = (channels, input, closedCeilings) => {
+      offered.push({ input, memo: closedCeilings });
+      return original(channels, input, closedCeilings);
+    };
+
+    const alarm = await raise(tx, harness, assetId, loc.organizationId, rule, 150);
+    const t0 = alarm.raisedAt;
+    await insertSample(tx, assetId, pointKey, 150, t0);
+
+    // Step 1 is due at +61 s. The sweep spans every tenant, so the dispatches
+    // are filtered to this fixture's alarm rather than counted.
+    await harness.lifecycle.sweep(secondsAfter(61, t0));
+
+    const stepOneKey = `${rule.id}:${alarm.id}:${SEVERITY}:escalation:1`;
+    assert(
+      (await deliveriesByKey(tx, channel.id, stepOneKey)).join(",") === "sent",
+      `I1: the step really went — one sent row under ...:escalation:1, got [${(
+        await deliveriesByKey(tx, channel.id, stepOneKey)
+      ).join(",")}]`,
+    );
+    const mine = offered.filter((call) => call.input.alarmId === alarm.id);
+    assert(
+      mine.length === 1,
+      `I1: one dispatch for the fixture alarm reached the service, got ${mine.length}`,
+    );
+    assert(
+      mine[0]?.memo instanceof ClosedCeilings,
+      `I1: and the sweep's memo reached it through the adapter, got ${String(mine[0]?.memo)}`,
     );
 
     tx.rollback();

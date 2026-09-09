@@ -21,6 +21,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { loadEnabledChannelsByIds } from "../notifications/channel-reads";
 import { ChannelsService } from "../notifications/channels.service";
+import { ClosedCeilings } from "../notifications/closed-ceilings";
 import type { NotificationChannelRow } from "../notifications/notification-transport";
 import { NotificationsService } from "../notifications/notifications.service";
 import type { RaiseAttemptsRead } from "../notifications/raise-attempts";
@@ -98,6 +99,18 @@ import { AlarmsGateway } from "./alarms.gateway";
  * again. Under a restart LOOP — and a database refusing writes is exactly when
  * this API may be crash-looping — that replay is unbounded. See
  * {@link LostLedgerRows}.
+ *
+ * **`F3.53` adds a second in-process memory, and the two are opposites — read
+ * the lifetime, not the shape.** {@link LostLedgerRows} is state BETWEEN ticks
+ * and deliberately survives them: it is the bound on a re-offer whose ledger
+ * row could not be written, so forgetting it would restore the unbounded
+ * re-offer it exists to stop, which is why it needs a cap and a `retainAlarms`
+ * reclaim and why it hangs off the class. The {@link ClosedCeilings} memo lives
+ * INSIDE one tick and deliberately does not survive it: it caches an answer
+ * that is only true of one trailing hour, so letting it outlive the sweep would
+ * be the defect rather than the feature — it is a `const` in
+ * {@link runLifecycleSweep} and it has no cap, because its lifetime IS its
+ * bound.
  *
  * **Why `runLifecycleSweep` takes its dependencies.** Every read and write is
  * a function on {@link AlarmLifecycleDeps}, so the spec runs the eight cases
@@ -195,6 +208,15 @@ export interface AlarmLifecycleDeps {
  * One tick. `now` is the tick's own instant (`runSweepLoop` supplies it) and
  * is the only clock: the stamps, the hold and the step offsets are all
  * measured against it, so the spec runs the whole matrix at one fixed date.
+ *
+ * **`F3.53` — the ceiling memo is created here and dies here** (ADR 0041
+ * Amendment 7 ruling 2). One {@link ClosedCeilings} per call, handed to the two
+ * re-offering phases and to nothing else, with no TTL and no eviction cap
+ * because it never outlives this function: the window IS the tick, which is
+ * `F3.51` ruling 3's structural condition rather than another clock constant.
+ * A `const` in this body is the whole of that guarantee — a field on the class
+ * below, or a module-level instance, would answer a later tick from a trailing
+ * hour that has already moved.
  */
 export async function runLifecycleSweep(deps: AlarmLifecycleDeps, now: Date): Promise<void> {
   const activeAlarms = await deps.loadActiveAlarms();
@@ -211,9 +233,21 @@ export async function runLifecycleSweep(deps: AlarmLifecycleDeps, now: Date): Pr
     deps.loadEscalation(),
   ]);
 
+  // The tick's memory of which ceilings have already refused. The clear phase
+  // deliberately does not get it: a cleared message has no next tick to be
+  // postponed to — see `dispatchRememberingLostRows`.
+  const closedCeilings = new ClosedCeilings();
+
   const clearedIds = await runClearPhase(deps, { activeAlarms, rulesById, loadSample, now });
-  await runRaiseRetryPhase(deps, { activeAlarms, rulesById, clearedIds });
-  await runEscalationPhase(deps, { activeAlarms, rulesById, catalog, clearedIds, now });
+  await runRaiseRetryPhase(deps, { activeAlarms, rulesById, clearedIds, closedCeilings });
+  await runEscalationPhase(deps, {
+    activeAlarms,
+    rulesById,
+    catalog,
+    clearedIds,
+    now,
+    closedCeilings,
+  });
 }
 
 export interface AlarmLifecycleLoopDeps extends AlarmLifecycleDeps {
@@ -317,7 +351,18 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
       // The instance field, never a new one per sweep: `deps()` is called on
       // every tick and this must survive between them.
       lostLedgerRows: this.lostLedgerRows,
-      dispatchToChannels: (channels, input) => this.notifications.dispatchToChannels(channels, input),
+      // `F3.53` — the third argument is the tick's `ClosedCeilings` and it MUST
+      // be forwarded (ADR 0041 Amendment 7). This line read
+      // `(channels, input) => …dispatchToChannels(channels, input)` and dropped
+      // it: the memo was created, threaded through both phases, and never
+      // delivered, while every sweep spec stayed green because each replaces
+      // `deps.dispatchToChannels` with its own fake. A two-parameter function is
+      // assignable to the three-parameter type, so `tsc` reports nothing either.
+      // `alarm-lifecycle.integration.spec.ts`'s I1 is the only gate on this
+      // line; it patches the service instance, which works because this arrow
+      // resolves the method at call time.
+      dispatchToChannels: (channels, input, closedCeilings) =>
+        this.notifications.dispatchToChannels(channels, input, closedCeilings),
       broadcastCleared: (alarm) => this.gateway.broadcastCleared(alarm),
       logger: this.logger,
     };
