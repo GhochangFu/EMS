@@ -12,7 +12,10 @@ import type {
 } from "@bms/shared";
 
 import { adminFetch, getAdminAuthHeaders } from "./client";
-import { checkResponse } from "../validate";
+import { clearSessionOnAuthFailure } from "../http";
+import { readJson } from "../validate";
+import { apiErrorMessage } from "../../lib/api-error-message";
+import { describeOnboardingUploadError } from "../../lib/onboarding-upload-error";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -65,12 +68,28 @@ export async function setOnboardingCredentials(
   });
 }
 
-/** Downloads the Excel onboarding template. */
+/**
+ * Downloads the Excel onboarding template.
+ *
+ * The refusal path had two gaps `F4.106` closes. It never called
+ * `clearSessionOnAuthFailure`, unlike both of its telemetry siblings, so a 401
+ * here left a dead token in place; and it discarded the response body, so a
+ * refusal with a reason showed a bare status instead. The status line survives
+ * as the fallback for a genuinely blank body.
+ *
+ * **The session clear comes first, before the body is read.** `res.text()` on a
+ * broken stream rejects, and an ordering that read the body first would skip
+ * the clear on exactly the failures that most need it.
+ */
 export async function downloadOnboardingTemplate(): Promise<void> {
   const headers = await getAdminAuthHeaders();
   const res = await fetch(`${base}/api/v1/admin/onboarding/template.xlsx`, { headers });
   if (!res.ok) {
-    throw new Error(`Template download failed (${res.status})`);
+    clearSessionOnAuthFailure(res);
+    const text = await res.text();
+    throw new Error(
+      text.trim() === "" ? `Template download failed (${res.status})` : apiErrorMessage(text),
+    );
   }
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
@@ -81,7 +100,29 @@ export async function downloadOnboardingTemplate(): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-/** Uploads a filled Excel workbook into the session draft. */
+/**
+ * Uploads a filled Excel workbook into the session draft.
+ *
+ * The `!res.ok` block is now the exact shape of its telemetry sibling
+ * (`telemetry-import.ts`), which had all three of these since `F1.9`:
+ *
+ * - `clearSessionOnAuthFailure`, which this path never called, so a 401 left a
+ *   dead token in place until the next `adminFetch` happened to notice;
+ * - a described refusal instead of `text || …`, which put the raw response body
+ *   on the wizard's screen;
+ * - `readJson` rather than `checkResponse(…, await res.json(), …)`, which puts
+ *   the call inside `readJson`'s loud post-guard assertion instead of outside
+ *   it.
+ *
+ * **The session clear comes first, before the body is read**, for the reason
+ * `readJson`'s own docblock gives: an error body is not a response contract,
+ * and any ordering that touches the body first can skip the clear.
+ *
+ * It throws a plain `Error` rather than `ApiError`. Both siblings do, no caller
+ * branches on the class, and `lib/query-retry.ts` reads a status on queries
+ * while this is a raw promise chain. That leaves one file throwing two error
+ * classes, which is recorded as a residual rather than settled here.
+ */
 export async function uploadOnboardingExcel(
   sessionId: string,
   file: File,
@@ -95,10 +136,10 @@ export async function uploadOnboardingExcel(
     body: form,
   });
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Upload failed (${res.status})`);
+    clearSessionOnAuthFailure(res);
+    throw new Error(describeOnboardingUploadError(res.status, await res.text()));
   }
-  return checkResponse(onboardingChatResponseDtoSchema, await res.json(), "admin onboarding upload");
+  return readJson(res, onboardingChatResponseDtoSchema, "admin onboarding upload");
 }
 
 /** Patches draft from inline editor. */

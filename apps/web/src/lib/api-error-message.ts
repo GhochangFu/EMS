@@ -32,7 +32,59 @@
 type ErrorEnvelope = {
   message?: unknown;
   error?: unknown;
+  /** A Zod `flatten()` thrown verbatim — see `flattenedZodMessage`. */
+  formErrors?: unknown;
+  fieldErrors?: unknown;
 };
+
+/** The non-blank strings of an unknown array, trimmed. */
+function usableStrings(values: readonly unknown[]): string[] {
+  return values
+    .filter((value): value is string => typeof value === "string" && value.trim() !== "")
+    .map((value) => value.trim());
+}
+
+/**
+ * A Zod `flatten()` thrown verbatim, as one sentence — or `null`.
+ *
+ * The four onboarding routes this row was filed for
+ * `throw new BadRequestException(err.flatten())`, and
+ * `HttpException.createBody` returns an object argument unchanged, so the wire
+ * body is `{"formErrors":[…],"fieldErrors":{…}}` with **no** `message`, `error`
+ * or `statusCode` at all. Before `F4.106` that fell through to the raw text and
+ * the whole JSON object was what the operator read.
+ *
+ * **Those four are not the only ones, and reading this paragraph as if they
+ * were is what made the branch below look like a change for nobody.** Measured
+ * on this branch, the same throw appears 73 times in `apps/api/src` — 71 across
+ * 26 controllers and 2 in `asset-templates-stock.service.ts`. See the comment
+ * on the branch itself.
+ *
+ * `formErrors` first and unlabelled — those are the whole-body complaints and
+ * naming a field there would invent one. Then each `fieldErrors` key that has
+ * at least one usable message, in `Object.keys` order.
+ *
+ * **What this shape cannot say, stated rather than implied.** `z.flatten()`
+ * collapses a nested path to its top-level key, so `PATCH :id/draft` refusing an
+ * over-cap array reports the field `draft` and cannot name the offending
+ * element. That is `F4.103`'s recorded residual; naming `draft` is the most
+ * this body carries, and this function does not manufacture more.
+ */
+function flattenedZodMessage(envelope: ErrorEnvelope): string | null {
+  const parts = Array.isArray(envelope.formErrors) ? usableStrings(envelope.formErrors) : [];
+
+  const { fieldErrors } = envelope;
+  if (typeof fieldErrors === "object" && fieldErrors !== null && !Array.isArray(fieldErrors)) {
+    for (const [field, messages] of Object.entries(fieldErrors)) {
+      const usable = Array.isArray(messages) ? usableStrings(messages) : [];
+      if (usable.length > 0) {
+        parts.push(`${field}: ${usable.join(" ")}`);
+      }
+    }
+  }
+
+  return parts.length > 0 ? parts.join(" ") : null;
+}
 
 /**
  * The readable message inside an error.
@@ -87,6 +139,39 @@ export function apiErrorMessage(cause: unknown): string {
   // server said.
   if (typeof envelope.error === "string" && envelope.error.trim() !== "") {
     return envelope.error.trim();
+  }
+
+  // LAST, and the placement is the whole safety argument for a function 24
+  // modules import: everything above still wins — the `message` branch and the
+  // `error` branch — so this branch fires only on bodies that used to return
+  // raw JSON. Both halves are asserted rather than asserted-in-a-comment; see
+  // `runEnvelopeMessageWinsOverFieldErrorsTests` and
+  // `runEnvelopeErrorWinsOverFieldErrorsTests`. The second was added by the
+  // review pass, which measured that before it existed, moving this branch
+  // above `error` alone left the whole `apps/web` suite green — half the claim
+  // this comment makes was gated by nothing.
+  //
+  // **It is not "a change for none", and that sentence was wrong by about 17x.**
+  // Measured on this branch: `throw new BadRequestException(err.flatten())`
+  // appears at 71 sites in 26 controllers (`rules` 9, `asset-templates` 7,
+  // `dashboard-templates` 5, and on down), plus 2 more in
+  // `asset-templates-stock.service.ts` — not the four onboarding routes named
+  // above. So this branch changes the rendered refusal text repo-wide, at 46
+  // `apiErrorMessage` call sites across 24 modules, while editing none of them.
+  //
+  // What is true is that the change is **non-increasing**. The rendered
+  // sentence is never longer than the raw body it replaces, because every part
+  // it keeps costs more inside the JSON than outside it: a message loses its
+  // two quotes and any escaping, a field name loses `":["` and `"]` and gains
+  // only `": "`, and the `{"formErrors":[],"fieldErrors":{}}` wrapper is
+  // dropped whole. Measured over 15 bodies — twelve built by parsing
+  // adversarial input through the four real onboarding schemas, three
+  // hand-built to minimise the JSON overhead — the output was strictly shorter
+  // in all 15. The closest was a hand-built single-field body carrying a
+  // 100,000-character message: 100,003 rendered against 100,026 raw.
+  const flattened = flattenedZodMessage(envelope);
+  if (flattened !== null) {
+    return flattened;
   }
 
   return trimmed;

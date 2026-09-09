@@ -20,6 +20,7 @@ import {
 } from "../../api/admin/onboarding";
 import { StatusPill } from "../../components/status-pill";
 import { AppShell } from "../../layouts/app-shell";
+import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   formatOnboardingDraftSummary,
   formatOnboardingValidationErrors,
@@ -71,7 +72,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
       setValidationErrors(data.validationErrors ?? []);
       applyAutoOpen(data.autoOpenPreview, data.autoOpenReason);
     },
-    onError: (err: Error) => setChatError(err.message),
+    onError: (err: Error) => setChatError(apiErrorMessage(err)),
   });
 
   useEffect(() => {
@@ -107,7 +108,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
       // CREDENTIAL_ENCRYPTION_KEY is the common case, and leaving the password
       // in component state there contradicts the reasoning applied to the chat
       // input below (second review, L4).
-      setCredError(err.message);
+      setCredError(apiErrorMessage(err));
       clearCredForm();
     },
   });
@@ -144,7 +145,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           : null,
       );
     },
-    onError: (err: Error) => setChatError(err.message),
+    onError: (err: Error) => setChatError(apiErrorMessage(err)),
   });
 
   const validateMutation = useMutation({
@@ -158,6 +159,10 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           : null,
       );
     },
+    // Until `F4.106` this mutation had no `onError` at all, so a refused
+    // validation settled the button and changed nothing on screen — silence,
+    // which reads as "the draft is fine".
+    onError: (err: Error) => setChatError(apiErrorMessage(err)),
   });
 
   const commitMutation = useMutation({
@@ -165,7 +170,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
     onSuccess: (result) => {
       navigate(`/admin/locations/${result.locationId}/rtus`);
     },
-    onError: (err: Error) => setChatError(err.message),
+    onError: (err: Error) => setChatError(apiErrorMessage(err)),
   });
 
   const applyAutoOpen = useCallback(
@@ -240,7 +245,14 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
           </span>
           <button
             type="button"
-            onClick={() => void downloadOnboardingTemplate()}
+            onClick={() => {
+              // `void download…()` swallowed every refusal as an unhandled
+              // rejection: a 401 cleared the session while the operator saw
+              // nothing at all.
+              downloadOnboardingTemplate().catch((err: Error) =>
+                setChatError(apiErrorMessage(err)),
+              );
+            }}
             className="rounded border border-gray-200 px-3 py-1 text-xs font-semibold hover:bg-gray-50"
           >
             Excel template
@@ -276,7 +288,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                       : null,
                   );
                 })
-                .catch((err: Error) => setChatError(err.message))
+                .catch((err: Error) => setChatError(apiErrorMessage(err)))
                 .finally(() => setUploadBusy(false));
             }}
           />
@@ -324,7 +336,10 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                 <div className="text-xs text-bms-muted">Assistant is typing…</div>
               )}
               {chatError && (
-                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <div
+                  role="alert"
+                  className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                >
                   {chatError}
                 </div>
               )}
@@ -454,7 +469,10 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                       // where the fail-closed 503 surfaces when
                       // CREDENTIAL_ENCRYPTION_KEY is unset, so it is the last
                       // message that should read as an aside.
-                      <p className="mt-1 rounded border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700">
+                      <p
+                        role="alert"
+                        className="mt-1 rounded border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-700"
+                      >
                         {credError}
                       </p>
                     )}

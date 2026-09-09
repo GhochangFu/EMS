@@ -104,10 +104,15 @@ export function aFileLevelRefusalReadsAsLabelAndMessage(): void {
 /**
  * Case 3 — anything that is not one of those bodies falls back to a sentence.
  *
- * Three shapes reach here in practice: a framework error page (Multer's 413,
- * raised before the controller runs), an empty body, and a Zod `flatten()` from
- * `parseQuery` — valid JSON that is not this DTO. None may throw, and none may
- * be rendered as `[object Object]`.
+ * Three shapes reach here in practice: a 413 (multer's own, which Nest maps to
+ * `PayloadTooLargeException` and therefore renders as the ordinary envelope, or
+ * a reverse proxy's HTML page, which never reaches Nest at all), an empty body,
+ * and a Zod `flatten()` from `parseQuery` — valid JSON that is not this DTO.
+ * None may throw, and none may be rendered as `[object Object]`.
+ *
+ * `F4.106` corrected the 413 half of this: it used to say "a framework error
+ * page, raised before the controller runs", which is where the body comes from
+ * but not why the branch exists. It exists to add the 5 MB figure.
  */
 export function aBodyThatIsNotAnErrorDtoFallsBack(): void {
   expect(describeMappingSheetUploadError(500, "<html>Internal Server Error</html>")).toContain(

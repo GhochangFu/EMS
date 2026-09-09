@@ -84,6 +84,13 @@ export function runFallbackTests(): void {
     apiErrorMessage(new Error('{"error":"Bad Request","statusCode":400}')) === "Bad Request",
     "an envelope with no message falls back to error",
   );
+  // `F4.106` made this line load-bearing for a second branch as well: it now
+  // also holds the flatten unwrapper's null path, because `{"statusCode":400}`
+  // has neither `formErrors` nor `fieldErrors`. Making that branch answer a
+  // generic line reddens here as well as in `runEmptyZodFlattenTests`. The loop
+  // above still reddens on its own — measured with
+  // `if (!trimmed.startsWith("{")) return "The request failed."`, which fails at
+  // the `admin /asset-templates 502` case and never reaches this one.
   assert(
     apiErrorMessage(new Error('{"statusCode":400}')) === '{"statusCode":400}',
     "an envelope with neither message nor error shows what the server said",
@@ -94,6 +101,116 @@ export function runFallbackTests(): void {
   for (const empty of [new Error(""), new Error("   "), null, undefined]) {
     const shown = apiErrorMessage(empty);
     assert(shown.trim() !== "", `an empty cause must not render blank, got "${shown}"`);
+  }
+}
+
+/**
+ * `F4.106` C1 — the Zod `flatten()` four onboarding routes throw verbatim.
+ *
+ * The body is `F4.103`'s `PATCH :id/draft` refusal, character for character as
+ * `scratchpad/f4106-probe-envelope.mjs` built it from the real
+ * `BadRequestException`. It carries no `message`, no `error` and no
+ * `statusCode`, so before this the operator read the JSON object itself.
+ *
+ * **Equality, and no separate leak loop.** The plan asked for a second half
+ * asserting the output holds none of `fieldErrors`, `formErrors` or `{`,
+ * because the raw body contains `Array must contain at most 100 element(s)` as
+ * a substring and a *substring* presence assertion would survive the mutation.
+ * `===` already excludes every leak, so the loop would be an assertion no
+ * mutation can reach on its own — the shape §4.6 exists to keep out. The page
+ * spec keeps its loop, because `toHaveTextContent` really is a substring match
+ * and the loop there is what reddens.
+ */
+export function runZodFlattenFieldErrorTests(): void {
+  const shown = apiErrorMessage(
+    new Error(
+      '{"formErrors":[],"fieldErrors":{"draft":["Array must contain at most 100 element(s)"]}}',
+    ),
+  );
+  assert(
+    shown === "draft: Array must contain at most 100 element(s)",
+    `expected the field and its message, got "${shown}"`,
+  );
+}
+
+/**
+ * `F4.106` C2 — a whole-body complaint carries no field, and none is invented.
+ *
+ * `z.object(...).parse([])` produces exactly this: `formErrors` populated and
+ * `fieldErrors` empty. Labelling it with a field name would name a field the
+ * server never mentioned.
+ */
+export function runZodFlattenFormErrorTests(): void {
+  const shown = apiErrorMessage(
+    new Error('{"formErrors":["Expected object, received array"],"fieldErrors":{}}'),
+  );
+  assert(
+    shown === "Expected object, received array",
+    `a formErrors-only body must render its own sentence, got "${shown}"`,
+  );
+}
+
+/**
+ * `F4.106` C3 — the new branch regresses no existing caller, half one.
+ *
+ * 24 modules import this function (measured on this branch: twelve pages, ten
+ * components, `api/admin/onboarding.ts` and `lib/onboarding-upload-error.ts`),
+ * and the argument that the change is safe for all of them is entirely about
+ * **where** the branch sits: last, so every body that already produced a
+ * sentence still does. That is a claim about other people's screens, so it is
+ * asserted rather than written in a comment.
+ *
+ * This half holds the `message` branch: moving the flatten branch above it
+ * reddens here.
+ */
+export function runEnvelopeMessageWinsOverFieldErrorsTests(): void {
+  const shown = apiErrorMessage(
+    new Error(
+      '{"message":"Validation failed","error":"Bad Request","statusCode":400,"fieldErrors":{"code":["Required"]}}',
+    ),
+  );
+  // Equality, so "and does not name the field" needs no second assertion —
+  // see `runZodFlattenFieldErrorTests` for why the loop is left out here.
+  assert(shown === "Validation failed", `the envelope message must still win, got "${shown}"`);
+}
+
+/**
+ * `F4.106` C3b — the same claim, half two: the `error` branch.
+ *
+ * **Added by the review pass, because half of C3's claim was asserted by
+ * nothing.** "Everything above still wins" names two branches, and no fixture
+ * in this repository carried both `error` and `fieldErrors` — so moving the
+ * flatten branch above the `error` branch (and only that far) left the whole
+ * `apps/web` suite green. A docblock claim with no assertion behind it is the
+ * shape §4.6 exists to keep out, and this row's own comment was making it.
+ *
+ * The body is the `error`-only envelope `runFallbackTests` already uses, with a
+ * `fieldErrors` key added — so the two branches are both live and the order
+ * between them is what decides the output.
+ *
+ * Re-measured in this pass with the branch moved above `error` and no further:
+ * of the assertions about `apiErrorMessage`, this is the only one that goes
+ * red, and the C3 case above stays green. That is why the two are separate
+ * `it()`s — as one function the second `assert` would never have run.
+ */
+export function runEnvelopeErrorWinsOverFieldErrorsTests(): void {
+  const shown = apiErrorMessage(
+    new Error('{"error":"Bad Request","fieldErrors":{"code":["Required"]}}'),
+  );
+  assert(shown === "Bad Request", `the envelope error must still win, got "${shown}"`);
+}
+
+/**
+ * `F4.106` C4 — a flatten with nothing usable in it still shows the body.
+ *
+ * The fallback is the point of the whole function: an empty `fieldErrors`, or a
+ * key whose message list is empty, says nothing an operator can act on. Showing
+ * the server's own body beats inventing a generic line that hides it.
+ */
+export function runEmptyZodFlattenTests(): void {
+  for (const raw of ['{"formErrors":[],"fieldErrors":{}}', '{"fieldErrors":{"a":[]}}']) {
+    const shown = apiErrorMessage(new Error(raw));
+    assert(shown === raw, `an unusable flatten must show what the server said, got "${shown}"`);
   }
 }
 
