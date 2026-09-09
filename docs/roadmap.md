@@ -3771,6 +3771,48 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 - **What was deliberately not fixed.** `F3.52` and `F3.53` are untouched.
 - **Unblocks:** nothing directly.
 
+### A press of *Evaluate now* is bounded to a per-organization interval (`F3.47`) — done
+- **Status:** merged 2026-09-09 — PR
+  [#379](https://github.com/GhochangFu/EMS/pull/379) (`7017b12a`).
+- **The defect.** `POST /rules/evaluate` runs the deliberately cross-organization
+  fleet-wide sweep ADR 0033 decision 2 chose, writing one `bms.rule_executions`
+  row and one `automation_rules.last_evaluated_at` update per enabled rule —
+  289 of each on the seeded database — with nothing bounding how often a press
+  could arrive. ADR 0033's own Consequences named the endpoint and deferred it
+  to `F4.17` or a follow-up specifically on it; this is that follow-up, so no
+  new ADR was owed.
+- **What shipped.** `EvaluateThrottle` holds one `Map` in process memory and
+  refuses a press with 429 and `Retry-After` when the caller's bucket swept
+  less than `LIFECYCLE_TICK_MS` (30 s) ago — before the sweep runs and before
+  the caller's own asset-scope resolution. `apps/web` gained a refusal notice,
+  since the panel previously had no `onError` and would have gone silently
+  inert under the 429.
+- **Five owner rulings.** A route throttle, not retention — `bms.rule_executions`
+  is a plain table, not a hypertable. Thirty seconds, per organization, in
+  process memory — per user would let two admins double the rate. The refusal
+  notice ships with the bound. `Retry-After` is set but not exposed across CORS,
+  so the SPA reads the wait from the message body. And the sentinel splits: an
+  unrestricted global admin and a grantless `configuration`-role caller each get
+  their own bucket rather than sharing one.
+- **The table stays unbounded; only the sweep is.** `AlarmRaiseService`'s
+  streaming-path writes and `POST /rules/preview`'s per-call audit row are
+  untouched, and the real ceiling is **K + 1 + G full cross-organization sweeps
+  per 30 s per API process** — both reviewers found the discharge paragraph's
+  first draft understated it as "K". `F4.17` stays open.
+- **Five review passes found four tests that did not gate, and no correctness
+  defect.** The sharpest: the controller's one call to `throttleKeysFor` passed
+  the caller's identity, but no route test exercised the branch that reads it —
+  a literal string typechecked and left the suite green, and a later change to
+  `user.name`, which `bms.users` does not make unique, would have folded every
+  grantless caller into one bucket the same way.
+- **An unrelated finding, surfaced while checking one of the branch's own
+  sentences.** `api-replica`, added on this branch so the per-process bound
+  could be stated honestly, set neither `AUTH_MODE` nor `OIDC_ISSUER` — local
+  login answered on its published port, gated only by the committed
+  `change-me-in-compose` secret, for the whole authenticated route inventory.
+  Fixed on the branch; `keycloak` joined the `realtime-smoke` profile with it.
+- **Unblocks:** nothing directly.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
