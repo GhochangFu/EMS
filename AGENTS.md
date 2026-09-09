@@ -1328,6 +1328,19 @@ and shipped first. Measure the classification the same way you measure the
 defect: it costs one probe, and it is the claim that decides whether anyone
 looks.
 
+**`assert` throws, so only the *first* failing assertion in a function ever
+reddens.** A mutation table that says two or more redden together has not been
+run — it has been reasoned about, which is the thing §4.6 exists to forbid. In
+`F4.107` four such sentences shipped into the branch at once: "all four redden",
+"both redden", "reddens exactly three", "marker and byte asserts redden". Every
+one was false, and each named a real distinction its author was reaching for, so
+the fix was to name the single assertion each mutation reaches rather than to
+restructure the spec. The same arithmetic is why a function carrying several
+claims is worth splitting: `F4.107` also shipped one exported assertion with
+five claims and fourteen `assert` calls behind a single `it()`, where blocks
+three to five could not execute once block one failed. State which assertion
+reddens, then run the mutation and read the name it prints.
+
 ### 4.7 Authorization (ADR 0009/0010 master data · ADR 0017 operations)
 
 Five role gates exist and they are **not** interchangeable — this section
