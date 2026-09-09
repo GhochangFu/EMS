@@ -20,6 +20,11 @@ import {
 } from "@bms/shared";
 import { z } from "zod";
 
+// F4.115: the iterative depth walk, shared with
+// `asset-templates-content.schema.ts`. The **walker** is shared; the two limits
+// are not — see `MAX_ONBOARDING_DRAFT_DEPTH` below.
+import { exceedsDepth } from "../stack-safe-json";
+
 export const onboardingPhaseSchema = z.enum([
   "location",
   "rtu",
@@ -145,6 +150,80 @@ export const onboardingDraftMetaSchema = z
   });
 
 /**
+ * How deep a draft may nest, counting the draft object itself as level 1.
+ *
+ * **Three numbers, because a bound without its neighbours is just a magic
+ * number:**
+ *
+ * - **Floor — 5.** The deepest shape any shipped producer writes:
+ *   `draft` (1) → `rtus` (2) → `rtus[i]` (3) → `config` (4) → `config.host`
+ *   (5). `OnboardingExcelService.parseRtus` writes
+ *   `config: { host, port, tls, topic }`; `OnboardingChatService.defaultConfig`
+ *   writes `{host,port,tls,topic}`, `{host,port,unitId,pollIntervalMs}` or
+ *   `{}`; `buildTemplateBuffer`'s template rows become the same flat object.
+ *   Nothing in this repository writes a nested `meta` at all, and the other
+ *   draft branches are shallower — `_secrets` and `assetPoints` reach 4.
+ * - **Bound — 10.** The draft skeleton consumes four levels before the first
+ *   free-form byte, so this leaves a hand-written `config` or `meta` six levels
+ *   of its own structure where every shipped producer uses one.
+ * - **Ceilings, for contrast — ~2,000, 4,173 and ~6,000.** All three measured
+ *   inside `bms-api-1` on **node v20.20.2**, the serving runtime. A figure
+ *   measured on a dev machine does not transfer: where a recursive walk gives
+ *   out moves with the platform, the flags and the frame size, which is exactly
+ *   why the bound is set from the product's shapes and not from any of them.
+ *
+ *   - **~2,000 — the clone inside `redactDraftForClient`, and this row fixed
+ *     it.** It is `cloneJson` now and walks any depth.
+ *   - **4,173 — the response's own `JSON.stringify`, and it still stands.** It
+ *     returned at 4,173 levels and threw at 4,174. This sits on the read path
+ *     this row exists to unblock, so ruling 2b's "an already-stored deep draft
+ *     stays readable" holds below it and **not** above: for such a draft the
+ *     failure has moved from the clone to the serialiser, not gone. Measured on
+ *     a bare chain — the response wraps the draft in a session envelope, so the
+ *     ceiling on the draft itself is a few levels lower again.
+ *   - **~6,000 — the jsonb write, and it still stands.** It is the same
+ *     `JSON.stringify` call under a different caller, which is why the two are
+ *     close and why the unreadable band is narrow. **Narrow is not empty**: a
+ *     draft nested between 4,174 and ~6,000 could be stored by the base code and
+ *     cannot be served by this one. Above ~6,000 nothing was ever stored, so
+ *     there is nothing to serve.
+ *
+ *   The bound sits twice above every shape the product writes and two orders of
+ *   magnitude below the lowest of the three, which is what makes it a semantic
+ *   bound rather than one tuned to a crash point.
+ *
+ * `MAX_CONTENT_DEPTH = 12` in `asset-templates-content.schema.ts` is the same
+ * *form* of judgement and a different number, because template `content` is an
+ * authoring surface a human nests by hand while a draft's only free-form fields
+ * are a connection config and metadata. The two share the walker, not the
+ * limit.
+ *
+ * **It is declared here and NOT in `packages/shared/src/contracts/onboarding.ts`**,
+ * which is the opposite of what the `F4.103` paragraph in that file argues for
+ * the count caps — so the reason is written down rather than left to be
+ * assumed. That copy is the **response** contract, parsed at runtime by
+ * `apps/web/src/api/admin/onboarding.ts` (ADR 0030 decision 5). A depth refusal
+ * there would throw in dev and test on exactly the already-stored deep draft
+ * that ruling 2b requires to stay readable and patchable. `MAX_RTU_CREDENTIAL_CHARS`
+ * below is the precedent for a bound that stays in this file with its
+ * derivation.
+ */
+export const MAX_ONBOARDING_DRAFT_DEPTH = 10;
+
+/**
+ * The refusal sentence. Every field name in it is a **literal from this file**
+ * and nothing is read from the draft — no key name, no path fragment and no
+ * value (§4.3).
+ *
+ * The four paths named are the draft's only `z.record(z.unknown())` fields, and
+ * so its only free-form ones. `onboardingMeta` is deliberately not among them:
+ * it is a closed three-field object and cannot nest.
+ */
+export const DRAFT_TOO_DEEP_MESSAGE =
+  `The draft nests deeper than ${MAX_ONBOARDING_DRAFT_DEPTH} levels. Flatten the value under ` +
+  "`rtus[].config`, `rtus[].meta`, `assets[].meta` or `location.meta` and send it again.";
+
+/**
  * **Deliberately NOT `.strict()`, and neither is anything below it (`E7.1f`).**
  *
  * ADR 0029 Amendment 3 ruling 1 keeps strictness a per-schema judgement. This
@@ -209,6 +288,61 @@ export const onboardingDraftMetaSchema = z
  * strings straight into the draft, so a bound here does not reach them at all.
  * They are bounded where they read, in the commits that follow this one. A
  * bound on a schema binds only the producers that parse it.
+ *
+ * **And a fourth axis: how deep it nests (`F4.115`).** Permissive about which
+ * keys an item carries; bounded about how many items the draft holds, how long
+ * one value may be, and now how deep the whole may nest.
+ *
+ * The refinement is attached **here** and not to `patchDraftBodySchema`, and
+ * that is what covers producer 3: the model's `draftPatch` parses this schema
+ * directly and never touches the wrapper, so on the wrapper alone a deep patch
+ * from the model would still be merged and stored. The same silent-discard
+ * ruling as above carries over for that producer, on the same terms and no
+ * wider.
+ *
+ * A refusal here also runs when `OnboardingValidateService` re-parses a
+ * **stored** draft, and that is deliberate: it is a `safeParse` with an early
+ * `return { valid: false, ... }` and it does not throw, so an already-deep
+ * session stays readable — `getSession` never parses the draft, `validate`
+ * returns `redactDraftForClient(session.draft)` regardless, and `patchDraft`
+ * parses the request body only. It reports the depth error as a wizard error
+ * and `readyToCommit` stays false until it is patched, which is what stops a
+ * deep `config` reaching `rtu_connection_configs` at commit.
+ *
+ * **The producers that parse nothing here need no depth guard, and the count of
+ * two missed half of them.** `bms.onboarding_sessions.draft` is written at
+ * **five** sites, every one of them in `onboarding.service.ts`. Two of the five
+ * reach this schema; the other three parse nothing, and neither does `chat`'s
+ * rule-based branch. The whole list is here because a partial one is precisely
+ * how `F4.104` shipped a docblock naming two producers where there were three,
+ * and the third shipped unguarded:
+ *
+ * - `createSession` — writes the literal `{}`. One level, and nothing a caller
+ *   sent reaches it.
+ * - `setCredentials` — `mergeDraft(session.draft, {}, { rtuIndex, credentials })`.
+ *   The patch is empty, and `credentials` is
+ *   `z.record(z.string().min(1).max(MAX_RTU_CREDENTIAL_CHARS))` below, so it is
+ *   two levels by schema; `mergeDraft` encrypts it into `_secrets` as a
+ *   `{ c, iv }` pair of base64 strings and never writes it into the draft body.
+ * - `chat` — the model's `draftPatch`, which **does** parse this schema
+ *   (producer 3 above) and is why the refinement is attached here. Its other
+ *   branch, `handleRuleBasedTurn`, parses nothing: `defaultConfig` returns
+ *   `{host,port,tls,topic}`, `{host,port,unitId,pollIntervalMs}` or `{}`, and
+ *   writes no `meta`.
+ * - `patchDraft` — the HTTP caller, through `patchDraftBodySchema` (producer 1).
+ * - `uploadExcel` — parses nothing here: `parseRtus` writes
+ *   `config: { host, port, tls, topic }`, a flat literal, and writes no `meta`.
+ *
+ * So the only two that can carry depth are the two that parse this schema, and
+ * the reason the rest cannot is not that they are trusted — it is that each
+ * writes a shape whose depth is fixed by this repository's own source.
+ *
+ * The check runs **after** the fields parse, which diverges from
+ * `asset-templates-content.schema.ts`'s deliberate depth-first ordering. That
+ * ordering exists there because its `superRefine` calls `JSON.stringify` on the
+ * next line; nothing in this object's parse recurses or serialises —
+ * `z.record(z.unknown())` returns its values by reference — and zod itself was
+ * measured depth-safe to at least 4,000.
  */
 export const onboardingDraftSchema = z
   .object({
@@ -218,7 +352,16 @@ export const onboardingDraftSchema = z
     assets: z.array(draftAssetSchema).max(MAX_ONBOARDING_ASSETS).optional(),
     assetPoints: z.array(draftAssetPointSchema).max(MAX_ONBOARDING_ASSET_POINTS).optional(),
     onboardingMeta: onboardingDraftMetaSchema.optional(),
-  });
+  })
+  .superRefine((draft, ctx) => {
+    if (exceedsDepth(draft, MAX_ONBOARDING_DRAFT_DEPTH)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: DRAFT_TOO_DEEP_MESSAGE });
+    }
+  })
+  .describe(
+    `The draft nests at most ${MAX_ONBOARDING_DRAFT_DEPTH} levels deep, counting the draft ` +
+      "object itself as level 1.",
+  );
 
 export const createSessionBodySchema = z
   .object({

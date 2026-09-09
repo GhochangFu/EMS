@@ -1,5 +1,7 @@
 import type { OnboardingDraft } from "@bms/shared";
 
+import { cloneJson, rebuildDeep } from "../stack-safe-json";
+
 /**
  * Draft redaction and the internal encrypted-credential store (ADR 0022).
  *
@@ -194,12 +196,20 @@ export function rtuSecretKey(draft: unknown, rtuIndex: number): string | null {
   return rtuCodeAt(draft, rtuIndex);
 }
 
-/** Removes internal secret blobs before sending draft to client or LLM. */
+/**
+ * Removes internal secret blobs before sending draft to client or LLM.
+ *
+ * `F4.115`: `cloneJson`, not `structuredClone`. This function is on the path of
+ * every `GET /sessions/:id`, `validate`, `chat` and `mapSession`, so a stored
+ * draft it cannot read is a session that answers 500 on every route — including
+ * the `PATCH :id/draft` that would repair it. A draft nested about 2,000 deep
+ * costs a caller 12 KB and did exactly that.
+ */
 export function redactDraftForClient(draft: unknown): OnboardingDraft {
   if (typeof draft !== "object" || draft === null) {
     return {};
   }
-  const copy = structuredClone(draft) as DraftWithSecrets;
+  const copy = cloneJson(draft) as DraftWithSecrets;
   delete copy._secrets;
   if (copy.location) {
     copy.location = scrubMeta(copy.location);
@@ -239,32 +249,81 @@ export function redactDraftForLlm(draft: unknown): OnboardingDraft {
   return scrubSecrets(client) as OnboardingDraft;
 }
 
+/**
+ * Replaces every value under a secret-looking key with `[REDACTED]`, copying
+ * everything else.
+ *
+ * **Iterative since `F4.115`, and for the same reason the clone above is.**
+ * `rtus[].config` and the three `meta` records are `z.record(z.unknown())`, so
+ * their contents are whatever a caller or the model wrote; the recursive form
+ * of this function overflowed the stack on a stored draft nested a couple of
+ * thousand deep, which is a `RangeError` and so a 500 rather than a response.
+ *
+ * **It is `cloneJson`'s traversal with two parameters, not a second copy of it**
+ * (`F4.115` review, §4.8). `rebuildDeep` owns the stack, the shell-and-push, the
+ * key order and the `__proto__`-safe define; this function supplies the wider
+ * container predicate and the one visitor that makes it a scrub rather than a
+ * clone. It shipped as a near-duplicate body differing in a single `if`.
+ *
+ * The semantics are unchanged: an object key that satisfies `isSecretKey`
+ * becomes the placeholder and is **not** descended into, everything else is
+ * copied, and arrays keep their indices so no index is ever tested against
+ * `isSecretKey` — `rebuildDeep` offers the visitor object keys only.
+ *
+ * **One thing did change, and it is a fix rather than a regression.** The
+ * previous `out[key] = …` invoked `Object.prototype`'s `__proto__` accessor, so
+ * an own `__proto__` inside a scrubbed subtree vanished into the copy's
+ * prototype and left the API-side copy reparented onto a caller-shaped object.
+ * `Object.defineProperty` keeps it as data. Nothing downstream is polluted by
+ * that: the output is `JSON.stringify`d onto the wire, and the web's own
+ * `z.record` parse drops the key again on arrival.
+ */
 function scrubSecrets(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(scrubSecrets);
-  }
-  if (typeof value === "object" && value !== null) {
-    const out: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value)) {
-      if (isSecretKey(key)) {
-        out[key] = "[REDACTED]";
-      } else {
-        out[key] = scrubSecrets(val);
-      }
-    }
-    return out;
-  }
-  return value;
+  return rebuildDeep(value, isContainer, (key) =>
+    isSecretKey(key) ? { value: "[REDACTED]" } : null,
+  );
 }
 
-/** Merges pending credentials into internal _secrets store. */
+/**
+ * Any non-null object — the recursive form's own test, unchanged.
+ *
+ * Deliberately **not** `stack-safe-json.ts`'s narrower `isJsonContainer`, which
+ * checks the prototype and so returns a `Date` or a `Map` by reference. This
+ * one descends into those and rebuilds them as plain objects, exactly as
+ * `Object.entries` recursion did before. Nothing here is meant to change what
+ * the scrub produces; only how it walks.
+ *
+ * **Sharing the traversal made that difference a one-word mutation**, so it now
+ * has a test on each side: `assertScrubSecretsRebuildsANonJsonObject` here and
+ * `assertCloneJsonReturnsANonJsonObjectByReference` in
+ * `stack-safe-json.spec.ts`. Passing `isJsonContainer` in below compiles and
+ * reddens exactly those two.
+ *
+ * It narrows to `object` rather than to `Record<string, unknown> | unknown[]`,
+ * which was the type it claimed until the same review: a `Date` is not a
+ * `Record<string, unknown>`, so the compiler was being told something this
+ * function is written to contradict.
+ */
+function isContainer(value: unknown): value is object {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * Merges pending credentials into internal _secrets store.
+ *
+ * `F4.115`: the third `structuredClone` site, and the one that was **masked**.
+ * `mergeDraft` clones before it ever reaches here, so on a deep stored draft
+ * `POST :id/credentials` died there first — fixing the other two sites and
+ * leaving this one would have made every route ruling 2b names answer 200 while
+ * this one still answered 500.
+ */
 export function attachEncryptedCredentials(
   draft: DraftWithSecrets,
   rtuIndex: number,
   ciphertext: Buffer,
   iv: Buffer,
 ): DraftWithSecrets {
-  const next = structuredClone(draft) as DraftWithSecrets;
+  const next = cloneJson(draft);
   const key = rtuCodeAt(next, rtuIndex);
   if (key === null) {
     // Fail closed: storing under a positional key is what M4 was.

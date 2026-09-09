@@ -19,6 +19,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 // `moreTail` bound how many of them one list may name. Both axes are declared
 // together in that file, because either alone leaves the product unbounded.
 import { MAX_ECHOED_ITEMS, echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
+import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
@@ -672,7 +673,21 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
   }
 
 
-  /** Merges draft patch and optional encrypted credentials into stored draft. */
+  /**
+   * Merges draft patch and optional encrypted credentials into stored draft.
+   *
+   * `F4.115`: `cloneJson`, not `structuredClone`. This is the clone that made a
+   * deeply nested stored draft *unrepairable* — every write path runs through
+   * here, so the `PATCH :id/draft` that would have flattened the value threw a
+   * `RangeError` on the stored draft before it applied the patch, and answered
+   * 500 like every read did.
+   *
+   * It takes the same whole-value clone rather than something narrower. A clone
+   * copying only the levels this method, `reconcileSecrets` and the credential
+   * branch actually mutate would be a claim about the mutation set of three
+   * functions across two files; `structuredClone`'s guarantee is "the caller's
+   * object is untouched", and only how it is computed changes here.
+   */
   mergeDraft(
     current: unknown,
     patch: OnboardingDraftInput,
@@ -682,7 +697,7 @@ Draft context (redacted): ${JSON.stringify(redactDraftForLlm(draft))}`;
   ): unknown {
     const base =
       typeof current === "object" && current !== null
-        ? (structuredClone(current) as OnboardingDraft & { _secrets?: Record<string, string> })
+        ? (cloneJson(current) as OnboardingDraft & { _secrets?: Record<string, string> })
         : {};
     const merged: OnboardingDraft = {
       ...base,

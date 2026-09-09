@@ -332,3 +332,261 @@ export function runOnboardingRedactionTests(): void {
   }
   assert(threw, "a code-less RTU cannot have credentials attached");
 }
+
+/* -------------------------------------------------------------------------- */
+/* F4.115 — a stored draft that is already too deep must still be readable     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The depth of the `rtus[0].config` chain in the fixtures below.
+ *
+ * **20,000, and the number was measured rather than chosen.** The obvious 5,000
+ * — the depth at which both `structuredClone` and a recursive `scrubSecrets`
+ * throw a `RangeError` in a plain `node` process — is *not* enough here: run
+ * under vitest, whose worker threads get a larger stack than the main thread,
+ * a recursive `scrubSecrets` walks 5,000 levels without overflowing. So the
+ * mutation "put the recursion back" left this suite green at 5,000 while the
+ * defect it exists to catch was fully present. It reddens at 20,000.
+ *
+ * `structuredClone` throws at both depths, so only the scrub needed the raise.
+ * **This is not a claim about where any stack limit is** — that number moves
+ * with the platform, the flags and the frame size, which is exactly why it is
+ * set an order of magnitude past the point where the recursion was seen to
+ * fail rather than at it.
+ *
+ * Ruling 2b's subject is a session that is **already** stored this deep.
+ * `onboarding.schema.ts` refuses a new one and cannot reach back.
+ */
+const DEEP_CONFIG_LEVELS = 20_000;
+
+/**
+ * A `config` value nested `DEEP_CONFIG_LEVELS` deep with a `password` at the
+ * bottom.
+ *
+ * Built with a loop, never recursively: a recursive builder would throw before
+ * the function under test does, and the spec would be measuring itself.
+ */
+function deepConfig(): Record<string, unknown> {
+  let node: Record<string, unknown> = { password: "hunter2" };
+  for (let level = 0; level < DEEP_CONFIG_LEVELS; level += 1) {
+    node = { next: node };
+  }
+  return node;
+}
+
+/**
+ * Follows the `next` links of a `deepConfig` chain and returns the bottom
+ * object — iteratively, for the same reason.
+ *
+ * The step ceiling is a runaway guard: a copy that somehow became cyclic would
+ * otherwise hang the suite instead of failing it.
+ *
+ * **The runaway answer is a sentinel string, not `null`**, matching `leafOf` in
+ * `stack-safe-json.spec.ts`. It returned `null` until `F4.115`'s review sweep,
+ * and `assert(bottom !== null)` then passed on a `config` that was missing
+ * altogether: `bottomOf(undefined)` returns `undefined`, which is not `null`.
+ * The caller now checks the two conditions separately — that the config is
+ * there at all, and that the walk down it terminated.
+ */
+function bottomOf(value: unknown): unknown {
+  let node = value;
+  for (let steps = 0; steps <= DEEP_CONFIG_LEVELS + 1; steps += 1) {
+    if (typeof node !== "object" || node === null || !("next" in node)) {
+      return node;
+    }
+    node = (node as { next: unknown }).next;
+  }
+  return "RUNAWAY";
+}
+
+/**
+ * `GET /sessions/:id`, `validate`, `chat` and `mapSession` all answer through
+ * `redactDraftForClient`, so a stored draft it cannot read is a session that
+ * answers 500 on every route — including the `PATCH` that would repair it.
+ *
+ * Two recursive walks stood between this draft and a response:
+ * `structuredClone` at the top of the function, and `scrubSecrets` over
+ * `rtus[].config`. Both are exercised here, and the `[REDACTED]` assertion is
+ * what makes the second one's *result* observable rather than only its absence
+ * of a throw.
+ *
+ * **Every message below is a string literal.** Interpolating any of these
+ * values calls `JSON.stringify`, which would throw while constructing the
+ * failure message and report the wrong defect.
+ */
+export function assertRedactDraftForClientReadsADeepDraft(): void {
+  // `credentialsSet` is deliberately **absent** from the stored RTU. The
+  // function spreads `scrubMeta(rtu)` and then writes
+  // `credentialsSet: Boolean(rtu.credentialsSet)`, so a fixture carrying `true`
+  // makes the derivation unobservable — the spread already supplies `true` and
+  // deleting the line changes nothing. Absent, the spread supplies nothing and
+  // the derived value is `false`, so deleting the line leaves `undefined` and
+  // the assertion below reddens. (The `typeof … === "boolean"` this replaced
+  // could not fail at all while `rtus[0]` existed.)
+  const stored = {
+    location: { name: "Deep site" },
+    rtus: [rtu("R1", { config: deepConfig() })],
+    _secrets: { R1: { c: "abc", iv: "def" } },
+  };
+
+  const client = redactDraftForClient(stored) as {
+    _secrets?: unknown;
+    rtus?: { config?: unknown; credentialsSet?: unknown }[];
+  };
+
+  assert(client._secrets === undefined, "a deep draft's client view still strips _secrets");
+  assert(
+    client.rtus?.[0]?.credentialsSet === false,
+    "a deep draft's client view still derives credentialsSet, and derives false for an RTU that carries no flag",
+  );
+
+  const config = client.rtus?.[0]?.config;
+  assert(
+    config !== undefined,
+    "the client view must still carry rtus[0].config — without this the walk below is handed undefined and every assertion after it passes vacuously",
+  );
+
+  const bottom: unknown = bottomOf(config);
+  assert(
+    bottom !== "RUNAWAY",
+    "the walk down the cloned config must terminate, not run away",
+  );
+  assert(
+    (bottom as { password?: unknown } | null)?.password === "[REDACTED]",
+    "the scrub must reach the bottom of the chain and redact the password there",
+  );
+}
+
+/**
+ * Site 3 of three, and **the only assertion that reaches it**.
+ *
+ * `mergeDraft` clones before it ever calls this function, so on a deep stored
+ * draft `POST :id/credentials` used to die inside `mergeDraft` first. Fix the
+ * other two sites and leave this one recursive and every route ruling 2b names
+ * answers 200 while this one still answers 500 — a green two-site fix. Counting
+ * the sites from the source, and giving the masked one its own assertion, is
+ * `F4.102`'s lesson applied here.
+ */
+export function assertAttachEncryptedCredentialsReadsADeepDraft(): void {
+  const stored = { rtus: [rtu("R1", { config: deepConfig() })] };
+
+  const next = attachEncryptedCredentials(stored, 0, CT, IV);
+
+  const found = readEncryptedCredentials(next, 0);
+  assert(found !== null, "a credential attached to a deep draft must be readable back");
+  assert(
+    found?.ciphertext.toString() === CT.toString(),
+    "the blob read back must be the one that was attached",
+  );
+  assert(
+    next.rtus?.[0]?.credentialsSet === true,
+    "attaching a credential to a deep draft still sets the flag",
+  );
+}
+
+/**
+ * The scrub rebuilds every object it copies, so it owns key order and
+ * `__proto__` exactly as the clone does.
+ *
+ * Key order because `onboarding-redaction.spec.ts` asserts over
+ * `JSON.stringify` of this output and the jsonb text is the same serialisation.
+ *
+ * `__proto__` is a **behaviour change here and is stated rather than hidden**:
+ * the previous `out[key] = scrubSecrets(val)` invoked `Object.prototype`'s
+ * accessor, so an own `__proto__` inside a scrubbed subtree vanished into the
+ * copy's prototype. The iterative rewrite keeps it as data. That is safe — the
+ * output is `JSON.stringify`d to the wire and the web's own `z.record` parse
+ * drops the key again on arrival — and strictly better than silently reparenting
+ * the API-side copy onto a caller-shaped object.
+ *
+ * Reached through `redactDraftForClient` because `scrubSecrets` is file-private;
+ * `rtus[].config` is the subtree it scrubs.
+ */
+export function assertScrubSecretsKeepsKeyOrderAndProtoKey(): void {
+  // `JSON.parse`, not an object literal: `{ __proto__: … }` in source sets the
+  // prototype, while the parser defines an own data property — and the parser
+  // is how a stored draft actually arrives.
+  const config = JSON.parse(
+    '{"topic":"site/1","host":"broker.example","password":"hunter2","port":8883,' +
+      '"nested":{"__proto__":{"polluted":true},"zeta":1,"alpha":2}}',
+  ) as Record<string, unknown>;
+  assert(
+    Object.prototype.hasOwnProperty.call(config.nested, "__proto__"),
+    "the fixture itself must carry an own __proto__, or this proves nothing",
+  );
+
+  const client = redactDraftForClient({ rtus: [rtu("R1", { config })] }) as {
+    rtus?: { config?: Record<string, unknown> }[];
+  };
+  const scrubbed = client.rtus?.[0]?.config ?? {};
+
+  assert(
+    Object.keys(scrubbed).join(",") === "topic,host,password,port,nested",
+    `the scrub must reproduce the source key order, got: ${Object.keys(scrubbed).join(",")}`,
+  );
+  assert(scrubbed.password === "[REDACTED]", "the secret key is still redacted");
+
+  const nested = scrubbed.nested as Record<string, unknown>;
+  assert(
+    Object.prototype.hasOwnProperty.call(nested, "__proto__"),
+    "an own __proto__ inside a scrubbed subtree survives as an own data property",
+  );
+  assert(
+    Object.getPrototypeOf(nested) === Object.prototype,
+    "the scrubbed copy must not be reparented by its own __proto__ key",
+  );
+  assert(
+    Object.keys(nested).join(",") === "__proto__,zeta,alpha",
+    `the nested subtree keeps its own key order too, got: ${Object.keys(nested).join(",")}`,
+  );
+}
+
+/**
+ * **The half of the shared walk that the scrub owns: which values it descends
+ * into.**
+ *
+ * `scrubSecrets` and `cloneJson` are one traversal parameterised by a container
+ * predicate, and the predicates are deliberately different. The scrub's is "any
+ * non-null object", so a `Date` or a `Map` under a non-secret key is **descended
+ * into and rebuilt** — and since neither has own enumerable keys, both come back
+ * as `{}`. That is exactly what the recursive `Object.entries` form did, and
+ * keeping it is why the walk takes a predicate rather than hard-coding
+ * `isJsonContainer`.
+ *
+ * Nothing asserted it until `F4.115`'s review sweep. Once the traversal was
+ * shared, passing the clone's narrower predicate here compiled and left every
+ * other assertion in both suites green while silently changing what a client
+ * receives. `assertCloneJsonReturnsANonJsonObjectByReference` pins the other
+ * side of the same pair.
+ *
+ * **What this does and does not claim.** It does not claim a shipped producer
+ * ever puts a `Date` in a draft — every one of them writes JSON that arrived
+ * through `JSON.parse`, so none does. It claims only that the observable
+ * behaviour on such a value is the one that shipped, which is what makes
+ * "deliberately not the narrower predicate" in `isContainer`'s docblock a
+ * checked sentence instead of a hope.
+ */
+export function assertScrubSecretsRebuildsANonJsonObject(): void {
+  const when = new Date("2026-09-09T00:00:00.000Z");
+  const seen = new Map<string, number>([["a", 1]]);
+
+  const client = redactDraftForClient({
+    rtus: [rtu("R1", { config: { installedAt: when, counts: seen, password: "hunter2" } })],
+  }) as { rtus?: { config?: Record<string, unknown> }[] };
+  const scrubbed = client.rtus?.[0]?.config ?? {};
+
+  assert(
+    scrubbed.installedAt !== when,
+    "the scrub must descend into a Date rather than carry the same object across",
+  );
+  assert(
+    Object.getPrototypeOf(scrubbed.installedAt) === Object.prototype &&
+      Object.keys(scrubbed.installedAt as object).length === 0,
+    "a Date has no own enumerable keys, so the scrub rebuilds it as a plain {}",
+  );
+  assert(
+    scrubbed.counts !== seen && Object.keys(scrubbed.counts as object).length === 0,
+    "a Map is rebuilt as {} the same way — its entries are not own properties",
+  );
+  assert(scrubbed.password === "[REDACTED]", "and the secret beside them is still redacted");
+}
