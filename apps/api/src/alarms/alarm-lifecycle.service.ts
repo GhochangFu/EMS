@@ -19,7 +19,8 @@ import type { AlarmListItem } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
-import { loadEnabledChannelsByIds } from "../notifications/channel-reads";
+import { loadEnabledChannelsByIds, loadEnabledChannelsForRules } from "../notifications/channel-reads";
+import type { RuleChannelsRead } from "../notifications/channel-reads";
 import { ChannelsService } from "../notifications/channels.service";
 import { ClosedCeilings } from "../notifications/closed-ceilings";
 import type { NotificationChannelRow } from "../notifications/notification-transport";
@@ -166,14 +167,25 @@ export interface AlarmLifecycleDeps {
   /** The enabled channels among `ids`, as the transports see them. */
   loadChannels(ids: readonly string[]): Promise<NotificationChannelRow[]>;
   /**
-   * `F3.51`: the channels joined to the rule, as the RAISE path loads them
+   * `F3.51`: the channels joined to each rule, as the RAISE path loads them
    * (`ChannelsService.loadForRule`) — the `rule_notifications` join filtered to
    * `enabled = true`, in code order. The raise-retry phase re-offers the
    * original raise, so "the rule's channels" must have one definition and it
    * is `dispatch()`'s; a step's channels come from its profile and are a
-   * different list (`loadChannels` above).
+   * different list (`loadChannels` above). Case CI4 in
+   * `channel-reads.integration.spec.ts` asserts the two lists id-for-id, so
+   * that sentence is measured rather than promised.
+   *
+   * **`F3.60`: many rules per call, not one** (ADR 0041 Amendment 10). It cost
+   * one round trip per distinct rule with an evidence-bearing alarm, every
+   * tick, serially. It returns a {@link RuleChannelsRead} rather than a list
+   * for the reason `loadRaiseAttempts` does: a batch can fail on its own, and
+   * `unread` names the rules whose channels were never read. An absent group
+   * and an unread rule mean opposite things and the phase must not confuse
+   * them — a rule with no entry joins no enabled channel, which is the
+   * ordinary seeded shape.
    */
-  loadRuleChannels(ruleId: string): Promise<NotificationChannelRow[]>;
+  loadRuleChannels(ruleIds: readonly string[]): Promise<RuleChannelsRead<NotificationChannelRow>>;
   /**
    * `F3.51`: `loadRaiseAttempts` from `notifications/raise-attempts.ts` —
    * every ledger row under these alarms' raise keys, in one query per batch of
@@ -346,7 +358,21 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
       // a constructor parameter — `ChannelsService` and `fleetDb` are already
       // here, which is what keeps `alarm-lifecycle.integration.spec.ts`'s
       // `new AlarmLifecycleService(...)` compiling untouched.
-      loadRuleChannels: (ruleId) => this.channels.loadForRule(ruleId),
+      // `F3.60`: one read for every evidenced rule in the tick. `toChannelRow`
+      // never throws (its own docblock says so), so the mapping cannot turn a
+      // batch that returned into one that did not.
+      loadRuleChannels: async (ruleIds) => {
+        const read = await loadEnabledChannelsForRules(this.fleetDb, ruleIds);
+        return {
+          ...read,
+          byRule: new Map(
+            [...read.byRule].map(([ruleId, rows]) => [
+              ruleId,
+              rows.map((row) => this.channels.toChannelRow(row)),
+            ]),
+          ),
+        };
+      },
       loadRaiseAttempts: (refs) => loadRaiseAttempts(this.fleetDb, refs),
       // The instance field, never a new one per sweep: `deps()` is called on
       // every tick and this must survive between them.

@@ -49,7 +49,9 @@ async function statusesUnderKey(db: BmsDb, channelId: string, dedupeKey: string)
  * fakes apply no `WHERE`, hold no ledger and have no ceiling. Everything below
  * needs the real ones:
  *
- * - the `rule_notifications` join `ChannelsService.loadForRule` reads, which is
+ * - the `rule_notifications` join — `ChannelsService.loadForRule` on the raise
+ *   path, `loadEnabledChannelsForRules` in the sweep since `F3.60`, and case
+ *   CI4 asserts the two give the same list per rule — which is
  *   how the phase learns who the rule's channels are;
  * - the real `notification_deliveries` rows, written by the raise path itself,
  *   so "the retry lands under the ORIGINAL key" is a fact about the ledger
@@ -82,7 +84,8 @@ async function statusesUnderKey(db: BmsDb, channelId: string, dedupeKey: string)
  * through `rule_notifications`.
  *
  * **Both halves are load-bearing, and each was mutated to prove it.**
- * `ChannelsService.loadForRule` reads `rule_notifications ⋈
+ * The sweep's channel read — `loadEnabledChannelsForRules` since `F3.60`, and
+ * `ChannelsService.loadForRule` before it — reads `rule_notifications ⋈
  * notification_channels`, and `insertFixtureRule` writes no such row — the
  * `F3.10` scenarios reach their channels through
  * `alarm_escalation_step_channels`, a different join. And

@@ -8,8 +8,11 @@ import { C1, NOW, ORG_B, alarmRow, assert, fakeDeps, ruleRow } from "./alarm-lif
  * Assertions live here; the sibling `.test` is the Vitest entry point
  * (ADR 0014).
  *
- * `runRaiseRetryPhase` paid `loadRuleChannels(candidate.rule.id)` before it
- * knew whether the alarm held any row. `channelsOwedTheRaise` returns `[]` for
+ * `runRaiseRetryPhase` paid a channel read for a candidate before it knew
+ * whether the alarm held any row. (It was `loadRuleChannels(rule.id)` from
+ * inside the loop when this file was written; since `F3.60` it is one batched
+ * read over the rules the guard below leaves standing, which is what makes the
+ * guard decide the id LIST rather than skip a call.) `channelsOwedTheRaise` returns `[]` for
  * ANY channel list when its `rows` argument is empty — stage 1, owner ruling 3
  * of ADR 0057 Amendment 5 — so for an alarm whose organization-filtered row
  * group is empty the round trip could not change the answer. The phase now
@@ -33,8 +36,10 @@ import { C1, NOW, ORG_B, alarmRow, assert, fakeDeps, ruleRow } from "./alarm-lif
  *
  * **What this file cannot prove, stated so nobody reads more into it.** The
  * fakes apply no `WHERE` and hold no connection: `fakeDeps` records every rule
- * id `loadRuleChannels` was called with and answers from an array. So what is
- * gated below is the ABSENCE and the PRESENCE of those calls, and nothing at
+ * id `loadRuleChannels` was asked about — flattened across calls since `F3.60`,
+ * so every assertion below still reads the list it always read — and answers
+ * from an array. So what is
+ * gated below is the ABSENCE and the PRESENCE of those ids, and nothing at
  * all about a database round trip or its cost. The round trips were counted on
  * the running stack instead, as `pg_stat_all_tables` scan-count deltas — three
  * ticks before the change and four after, each window's tick count read off the

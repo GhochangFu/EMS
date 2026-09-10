@@ -145,8 +145,14 @@ export type Recorded = {
   channelLoads: string[][];
   /** `F3.51`: the refs of every `loadRaiseAttempts` call, one entry per call. */
   raiseAttemptReads: RaiseKeyRef[][];
-  /** `F3.51`: every rule id `loadRuleChannels` was called with, in order — the memo's gate. */
+  /**
+   * `F3.51`: every rule id `loadRuleChannels` was called with, in order —
+   * flattened across calls since `F3.60`, so the assertions written against the
+   * per-rule signature keep meaning what they said.
+   */
   ruleChannelLoads: string[];
+  /** `F3.60`: one entry per `loadRuleChannels` CALL — the batching gate (R23). */
+  ruleChannelReads: string[][];
   warnings: string[];
 };
 
@@ -188,6 +194,12 @@ export function fakeDeps(opts: {
   /** `F3.51`: the channels joined to a rule; defaults to both known rows for every rule. */
   ruleChannels?: (ruleId: string) => NotificationChannelRow[];
   /**
+   * `F3.60`: replaces the recording `loadRuleChannels` outright — for the cases
+   * that need a batch which did not return (R24, R25) or a read that rejects
+   * (R26). `ruleChannels` above still shapes the groups for every other case.
+   */
+  loadRuleChannels?: AlarmLifecycleDeps["loadRuleChannels"];
+  /**
    * `F3.51` review: the lost-row memory. Defaults to a FRESH instance per
    * fixture — a case that needs it to survive two sweeps passes one in, and no
    * case can be polluted by another's losses.
@@ -202,6 +214,7 @@ export function fakeDeps(opts: {
     channelLoads: [],
     raiseAttemptReads: [],
     ruleChannelLoads: [],
+    ruleChannelReads: [],
     warnings: [],
   };
   const byId = new Map(opts.alarms.map((alarm) => [alarm.id, alarm]));
@@ -258,9 +271,24 @@ export function fakeDeps(opts: {
       }
       return Promise.resolve(opts.channels ?? known.filter((row) => ids.includes(row.id)));
     },
-    loadRuleChannels: (ruleId) => {
-      recorded.ruleChannelLoads.push(ruleId);
-      return Promise.resolve(opts.ruleChannels ? opts.ruleChannels(ruleId) : known);
+    loadRuleChannels: (ruleIds) => {
+      // Both recordings, because they answer different questions: the flattened
+      // list is WHICH rules were asked about (`F3.51`'s assertions read it and
+      // still mean what they said), and the per-call list is HOW MANY round
+      // trips it took (`F3.60`'s R23). One cannot stand in for the other — a
+      // per-rule read and one batched read flatten to the same list.
+      recorded.ruleChannelLoads.push(...ruleIds);
+      recorded.ruleChannelReads.push([...ruleIds]);
+      if (opts.loadRuleChannels) {
+        return opts.loadRuleChannels(ruleIds);
+      }
+      return Promise.resolve({
+        byRule: new Map(
+          ruleIds.map((ruleId) => [ruleId, opts.ruleChannels ? opts.ruleChannels(ruleId) : known]),
+        ),
+        unread: new Set<string>(),
+        reasons: [],
+      });
     },
     loadRaiseAttempts: (refs) => {
       recorded.raiseAttemptReads.push([...refs]);

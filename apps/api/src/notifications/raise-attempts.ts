@@ -172,8 +172,13 @@ export function raiseAttemptBatches(
  * that whoever picked it up should file the row. The row was filed, and the
  * measurement closed it. On the local seeded fleet — 78 active unacknowledged
  * alarms over 78 DISTINCT rules, so the calling phase's per-rule channel cache
- * saves nothing — this read cost **one** round trip a tick while
- * `loadRuleChannels`, in the loop that consumes it, cost **78**.
+ * saved nothing — this read cost **one** round trip a tick while
+ * `loadRuleChannels`, in the loop that consumed it, cost **78**.
+ *
+ * **That 78 is now one as well** (`F3.60`, 2026-09-10, ADR 0041 Amendment 10):
+ * the channel read is batched over the distinct evidenced rules, so the
+ * comparison this paragraph draws no longer holds and is kept only as the
+ * measurement that motivated the row.
  *
  * **That 78 is a figure from before `F3.59` (2026-09-10).** ADR 0057
  * Amendment 9 hoists the phase's organization filter above the channel read and
