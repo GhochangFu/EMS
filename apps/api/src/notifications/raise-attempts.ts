@@ -175,6 +175,14 @@ export function raiseAttemptBatches(
  * saves nothing — this read cost **one** round trip a tick while
  * `loadRuleChannels`, in the loop that consumes it, cost **78**.
  *
+ * **That 78 is a figure from before `F3.59` (2026-09-10).** ADR 0057
+ * Amendment 9 hoists the phase's organization filter above the channel read and
+ * skips a candidate whose row group is empty, so the read is now paid only for
+ * an alarm that holds a row under its raise key. This fleet holds zero
+ * `notification_deliveries` rows, so on it the guard skips all 78. The figure is
+ * kept rather than rewritten because it is what the comparison below was made
+ * against; what it is not is the cost of the loop today.
+ *
  * **The reason it closed is a comparison of terms, and a first draft of this
  * paragraph got it wrong in a way worth keeping written down.** It called this
  * "the only sublinear per-alarm term in the sweep", which quantified over reads
@@ -189,7 +197,11 @@ export function raiseAttemptBatches(
  * once per offered channel. Optimising the batched term while the unbatched ones
  * sit beside it is the weakest available intervention. If a bound is ever owed
  * it is on how many alarms one tick decides — an ADR 0057 question, not this
- * file's. That measurement filed `F3.59` instead, against the channel read.
+ * file's. That measurement filed `F3.59` instead, against the channel read —
+ * and `F3.59` was built the same day, as ADR 0057 Amendment 9. What it closed is
+ * the DEAD read, not the round-trip count: one channel query per distinct rule
+ * with an evidence-bearing alarm is still one per rule, and batching those into
+ * a single statement is a separate filed row (owner ruling 1).
  *
  * ADR 0041 Amendment 7, which `F3.53` is built under, still does not reach this
  * read, and that stays worth writing down: its memo is keyed on channel,
