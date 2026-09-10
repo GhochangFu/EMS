@@ -376,3 +376,165 @@ All four were ruled by the owner on 2026-09-07, and all four write nothing.
     correction cannot repair them — the template will have moved. All three
     `SeededRuleValues` passed to `driftVerdict` must come from the same
     derivation, for the same reason.
+
+---
+
+## Amendment 2 — the picker offers what the validator accepts (`F3.49`, 2026-09-10)
+
+Amendment 1 item 5 records that `assertCompatiblePoint` was widened, under owner
+ruling Q1, to accept a point key the asset's **pinned template** declares. It
+widened one side. `getBuilderCatalog` — the query that populates the guided rule
+builder's telemetry-point dropdown — was deliberately left on
+`pointKeysForAsset`'s hard-coded map, because widening the picker changes what
+every rule author sees and not only what someone editing a seeded rule can save.
+That was filed as `F3.49` and is what this amendment closes.
+
+The gap is not cosmetic. `PATCH /rules/:id` carrying a water, mechanical or
+facility point key **succeeds**, and the screen built for that edit never offers
+the key. So decision 1's local override — an engineer tuning one chiller's
+threshold away from its class default — works through the API and not through
+the UI, which for an engineer is indistinguishable from not working.
+
+### Decision — the picker offers the union, through one helper both sides call
+
+The rule builder's catalog offers, per asset, the **union of the hard-coded map
+and the asset's pinned-template point keys**: exactly the set
+`assertCompatiblePoint` already accepts.
+
+**The acceptance set does not move.** Nobody can save a rule after this row that
+they could not save before it. What changes is that the screen now shows what the
+API had already accepted since `E2.4`.
+
+**Both sides call one shared union helper.** This is the load-bearing half of the
+decision, and it is not a tidiness preference. `rule-points.ts` opens by stating
+the invariant this repository then broke:
+
+> *"Used twice: to populate the guided builder's catalog, and to reject a draft
+> whose point does not belong to its asset. Both must agree, which is why it is
+> one function rather than two lists."*
+
+Q1 widened the reject half and left the populate half, so the file's own docblock
+became false the day it merged. Widening the picker with a second, parallel union
+would fix today's mismatch and leave the mechanism that produced it — the next
+widening drifts the same way, silently, because a union computed in two places
+has no compiler edge between them. One helper makes *picker == validator*
+structural rather than asserted.
+
+### Two alternatives declined, on a measured fact rather than a preference
+
+`F3.49` offered two other sets: the asset's own `bms.asset_points` rows, and the
+union of all three sources. **Both invert the defect** — they would offer a key
+the write path answers with 400, turning a missing option into a broken one,
+which is worse than the gap this row closes.
+
+The fact that settles it: **an `asset_points` row is gated on the fleet-wide
+catalog and nothing else.** `AssetPointsAdminService.create` calls
+`resolveCatalogPointKey`, which checks that the code exists in `bms.point_keys`
+and is `active` (`F3.39` / ADR 0051 decision 2 made that catalog fleet-wide),
+and then refuses with a 409 when the pinned template calls the key `derived`. It
+does **not** consult `pointKeysForAsset`'s map, and it does not require the key
+to be in the asset's template. A hand-created asset — `template_id` NULL, joining
+to zero `template_points` rows — can therefore hold a legitimate `asset_points`
+row for a key `assertCompatiblePoint` rejects.
+
+Offering `asset_points` also **hides every derived point**, which is the opposite
+of what Q1 was for. A `derived` template point has no `asset_points` row at all —
+`F2.2` cannot emit one, `source_data_key` being NOT NULL with no honest source
+key for a computed tag — and it is a legal rule target, because the calc engine
+writes its samples. That is precisely why Q1 widened the check with
+`template_points` rather than with `asset_points`.
+
+Closing either gap would mean widening `assertCompatiblePoint` as well, which
+moves the acceptance set and is new scope rather than this row.
+
+### What this amendment does not do
+
+- **It does not change what the API accepts.** `assertCompatiblePoint`'s
+  behaviour is unchanged; routing it through the shared helper is worthwhile
+  precisely because its answer stays identical.
+- **It does not touch the write path, the seed, or any migration.** No column, no
+  vocabulary row, no dependency.
+- **It does not retire `pointKeysForAsset`'s map.** The map remains the only
+  answer for an asset with no pinned template, which is the honest one — such an
+  asset declares no template points.
+- **It does not reconcile the map with `bms.point_keys`.** The hard-coded map and
+  the fleet catalog still disagree about what exists, so an `asset_points` row
+  can name a key neither the map nor any template declares, and no rule can be
+  written against that key. That is as true after this row as before it, and it
+  is named here so a later reader does not mistake this amendment for having
+  closed it.
+- **No contract change and no web change.** `ruleBuilderCatalogAssetSchema`
+  already types `pointKeys` as `z.array(z.string())`, and no field is added.
+  `rule-builder-panel.tsx` renders whatever the catalog sends with no
+  client-side filter — held by a gate rather than by assertion, since
+  `rule-builder-panel.spec.tsx` already feeds it a key in none of the six
+  constants and selects it, so a filter added there would fail that spec today.
+
+### The mechanism
+
+`apps/api/src/rules/rule-points.ts` becomes the one place the union is computed.
+`assertCompatiblePoint` moves there from `rules.service.ts` **in its own commit,
+before the feature adds a line** — AGENTS.md §2 records that file at 990 lines
+against §4.5's 1000-line cap and says to extract before adding to it — and
+`templatePointKeysForAsset`, which Q1 added, is deleted, its reasoning paragraphs
+moving onto the batched lookup that replaces it. `getBuilderCatalog` derives its
+id list from the asset rows it has already fetched, so the filtered and
+unfiltered branches share one bounded template query and cannot drift apart from
+the asset filter.
+
+Three properties of the union are decided here rather than left to the code:
+
+1. **The laziness of Amendment 1 item 5 is gone.** `assertCompatiblePoint`
+   queried `template_points` only when the map missed. It now runs one indexed
+   query on every validation. A map-first short-circuit is a second code path,
+   and a second code path is what this row exists to remove — `getBuilderCatalog`
+   cannot be lazy at all, because it needs the whole set. The cost is bounded to
+   human-paced write paths; the evaluation sweep and `AlarmEngineService` never
+   reach this function.
+2. **Order is the map first, then template-only keys by `(sort_order,
+   point_key)`.** Map first keeps every existing assertion in
+   `rule-points.spec.ts` true byte-for-byte and leaves a template-less asset's
+   list unchanged. The `point_key` tie-break is not decoration: the health seed
+   writes `sort_order = 0` on every row it creates, so without it those keys
+   arrive in heap order, which differs between databases — a picker order that
+   passes on one machine and fails on another.
+3. **A key in both sets appears once, at its map position.**
+
+Beside the tests, one static gate,
+`tests/f3.49-picker-validator-single-source.test.ts`, asserts that the rules
+module holds exactly one reader of the map and one of `template_points`. It
+exists because the behavioural tests cannot see the divergence that matters: a
+lazy short-circuit re-added to the validator changes no answer on any fixture
+while re-creating two code paths. Its own limit is that it cannot see a
+divergence *inside* the one function.
+
+### A consequence the seed makes visible, accepted 2026-09-10
+
+**On the seeded data the picker offers keys from other domains**, and the owner
+accepted this rather than filtering them out. Measured on the running database:
+
+```
+BASELINE-ELECTRICAL   41 assets, 8 template points
+  backup_min          UPS / battery
+  battery_temp_c      UPS / battery
+  supply_air_temp_c   HVAC
+  breaker_main, current_a, kw, pf, voltage_l1_v
+```
+
+Each of those 41 electrical assets therefore goes from six offered keys to nine,
+and all three additions belong to another domain. `EC-CR-UTILITY` goes from six
+to twelve while holding four `asset_points` rows.
+
+The cause is not the picker. `HEALTH_TEMPLATE_POINTS_SQL` builds each baseline
+template as the union of every active, non-computed `asset_points` key **across
+the whole domain**, so one mis-wired electrical asset puts its key on all 41.
+`BASELINE-ELECTRICAL-INCOMER` inherits those eight as a copy of the electrical
+baseline and adds the three PUE derived points.
+
+It is accepted because **the API has accepted every one of these keys since
+`E2.4`** — the screen was hiding them, and a rule written on one evaluates
+against no samples rather than being refused. Filtering them in the picker would
+make the picker a strict subset of the validator again, which is the drift this
+amendment exists to remove. Whether a baseline template should be a domain-wide
+union at all is a separate question, and a backlog row is owed for it in the
+`chore(agents):` sweep that closes `F3.49`.
