@@ -98,7 +98,14 @@ function isSecretKey(key: string): boolean {
   return SECRET_FRAGMENTS.some((fragment) => normalised.includes(fragment));
 }
 
-type EncryptedBlob = { c: string; iv: string };
+/**
+ * The internal store's per-RTU shape. `v` is the ADR 0062 decision 3 key
+ * version: absent on a blob written before that change (read as version 1 by
+ * `readEncryptedCredentials`), and otherwise a safe integer `>= 1` — anything
+ * else makes `ownBlob` treat the whole entry as absent, the same treatment a
+ * malformed `c` already gets.
+ */
+export type EncryptedBlob = { c: string; iv: string; v?: number };
 
 /**
  * Reads one blob from the `_secrets` map by **own** property only.
@@ -115,6 +122,14 @@ type EncryptedBlob = { c: string; iv: string };
  *
  * A charset regex on `code` would not have: `__proto__` matches
  * `/^[A-Za-z0-9_-]+$/`.
+ *
+ * **Carries `v` through** (ADR 0062 decision 3). `attachEncryptedCredentials`
+ * and `reconcileSecrets` both rebuild the `_secrets` store by reading every
+ * existing entry through this function, so a version this dropped would be
+ * stripped from every stored blob on the very next merge. An absent `v` stays
+ * absent; a present `v` survives only when it is a safe integer `>= 1` —
+ * anything else makes the whole entry read as absent, the same treatment a
+ * malformed `c` already gets.
  */
 function ownBlob(secrets: unknown, key: string): EncryptedBlob | null {
   if (typeof secrets !== "object" || secrets === null) {
@@ -127,8 +142,14 @@ function ownBlob(secrets: unknown, key: string): EncryptedBlob | null {
   if (typeof entry !== "object" || entry === null) {
     return null;
   }
-  const { c, iv } = entry as { c?: unknown; iv?: unknown };
-  return typeof c === "string" && typeof iv === "string" ? { c, iv } : null;
+  const { c, iv, v } = entry as { c?: unknown; iv?: unknown; v?: unknown };
+  if (typeof c !== "string" || typeof iv !== "string") {
+    return null;
+  }
+  if (v === undefined) {
+    return { c, iv };
+  }
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 1 ? { c, iv, v } : null;
 }
 
 /**
@@ -329,6 +350,7 @@ export function attachEncryptedCredentials(
   rtuIndex: number,
   ciphertext: Buffer,
   iv: Buffer,
+  keyVersion: number,
 ): DraftWithSecrets {
   const next = cloneJson(draft);
   const key = rtuCodeAt(next, rtuIndex);
@@ -352,6 +374,7 @@ export function attachEncryptedCredentials(
   setBlob(store, key, {
     c: ciphertext.toString("base64"),
     iv: iv.toString("base64"),
+    v: keyVersion,
   });
   next._secrets = store;
   if (Array.isArray(next.rtus) && next.rtus[rtuIndex]) {
@@ -360,11 +383,18 @@ export function attachEncryptedCredentials(
   return next;
 }
 
-/** Reads encrypted credential blobs from draft internal store. */
+/**
+ * Reads encrypted credential blobs from draft internal store.
+ *
+ * `keyVersion` is `entry.v ?? 1` (ADR 0062 decision 3): a blob written before
+ * this change carries no `v` at all, and every one of those is in fact version
+ * 1 — the only version `CredentialCryptoService` ever wrote before rotation
+ * existed.
+ */
 export function readEncryptedCredentials(
   draft: unknown,
   rtuIndex: number,
-): { ciphertext: Buffer; iv: Buffer } | null {
+): { ciphertext: Buffer; iv: Buffer; keyVersion: number } | null {
   if (typeof draft !== "object" || draft === null) {
     return null;
   }
@@ -379,6 +409,7 @@ export function readEncryptedCredentials(
   return {
     ciphertext: Buffer.from(entry.c, "base64"),
     iv: Buffer.from(entry.iv, "base64"),
+    keyVersion: entry.v ?? 1,
   };
 }
 

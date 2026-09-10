@@ -2,8 +2,10 @@ import { BadRequestException } from "@nestjs/common";
 import { expect } from "vitest";
 import pg from "pg";
 
+import { CREDENTIAL_KEY_ENV } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
+import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import type { OnboardingCommitService } from "./onboarding-commit.service";
 
@@ -268,4 +270,124 @@ export async function assertCommitAnswersADuplicateLocationCodeWithAFieldError(
     [locationCode, organizationId],
   );
   expect(rows.length, "the refused commit wrote no second location and rolled back").toBe(1);
+}
+
+/** What the ADR 0062 decision 3 key-version proof needs. */
+export type CommitKeyVersionFixtures = {
+  commitSvc: OnboardingCommitService;
+  ownerPool: pg.Pool;
+  /** A commit-ready draft with three RTUs, seeded with `_secrets` already attached. */
+  sessionId: string;
+  /** 32-byte base64, distinct from `previousKeyBase64`. */
+  currentKeyBase64: string;
+  /** 32-byte base64, the key that encrypted `rtuCodes.previous`'s blob. */
+  previousKeyBase64: string;
+  rtuCodes: { current: string; previous: string; none: string };
+};
+
+/**
+ * ADR 0062 decision 3 — the RTU row's `key_version` travels with the
+ * ciphertext, never a literal.
+ *
+ * Three RTUs, one draft: `rtuCodes.current` carries a blob `{c,iv,v:2}`
+ * encrypted under `currentKeyBase64`; `rtuCodes.previous` carries a
+ * version-less blob `{c,iv}` encrypted under `previousKeyBase64` — the state
+ * every pre-ADR-0062 blob is actually in; `rtuCodes.none` carries no blob at
+ * all. The commit runs with `KEY=currentKeyBase64`,
+ * `PREVIOUS=previousKeyBase64`, `VERSION=2`.
+ *
+ * **`rtuCodes.previous`'s row reading `key_version = 1` does not, by itself,
+ * distinguish "read as 1" from "the column default is 1"** — `key_version` is
+ * `NOT NULL DEFAULT 1`, so an implementation that never wrote the column at
+ * all would read back the same value. What kills that mutation is the unit
+ * assertion `readEncryptedCredentials({c,iv}).keyVersion === 1` in
+ * `onboarding-redaction.spec.ts`; this case's own proof that something was
+ * actually written and read correctly is the round trip below, which decrypts
+ * the stored ciphertext at the stored version and gets the original plaintext
+ * back.
+ */
+export async function assertCommitWritesTheKeyVersionForEachCredentialState(
+  ctx: CommitKeyVersionFixtures,
+  jwt: JwtPayload,
+): Promise<CommitIds> {
+  const { commitSvc, ownerPool, sessionId, currentKeyBase64, previousKeyBase64, rtuCodes } = ctx;
+
+  const saved = {
+    current: process.env[CREDENTIAL_KEY_ENV.current],
+    previous: process.env[CREDENTIAL_KEY_ENV.previous],
+    version: process.env[CREDENTIAL_KEY_ENV.version],
+  };
+  process.env[CREDENTIAL_KEY_ENV.current] = currentKeyBase64;
+  process.env[CREDENTIAL_KEY_ENV.previous] = previousKeyBase64;
+  process.env[CREDENTIAL_KEY_ENV.version] = "2";
+
+  try {
+    const result = await commitSvc.commit(jwt, sessionId);
+    expect(result.rtuIds.length, "the three-RTU draft wrote three RTUs").toBe(3);
+
+    const { rows } = await ownerPool.query<{
+      code: string;
+      key_version: number;
+      credentials_ciphertext: Buffer | null;
+      credentials_iv: Buffer | null;
+    }>(
+      `SELECT r.code, rcc.key_version, rcc.credentials_ciphertext, rcc.credentials_iv
+         FROM bms.rtu_connection_configs rcc
+         JOIN bms.rtus r ON r.id = rcc.rtu_id
+        WHERE rcc.rtu_id = ANY($1)`,
+      [result.rtuIds],
+    );
+    const byCode = new Map(rows.map((row) => [row.code, row]));
+    const currentRow = byCode.get(rtuCodes.current);
+    const previousRow = byCode.get(rtuCodes.previous);
+    const noneRow = byCode.get(rtuCodes.none);
+
+    expect(
+      currentRow?.key_version,
+      "the RTU encrypted under the current key keeps its written version",
+    ).toBe(2);
+    expect(
+      noneRow?.key_version,
+      "a credential-less row is labelled with the current version — it labels nothing, " +
+        "but the NOT NULL column needs a value",
+    ).toBe(2);
+    expect(
+      previousRow?.key_version,
+      "a version-less blob (every pre-ADR-0062 blob) is labelled version 1 (decision 3)",
+    ).toBe(1);
+
+    // The round trip: decrypt the stored ciphertext at the stored version,
+    // with the same env still loaded, and recover the original plaintext.
+    const crypto = new CredentialCryptoService();
+    const decrypted = crypto.decrypt(
+      previousRow!.credentials_ciphertext!,
+      previousRow!.credentials_iv!,
+      1,
+    );
+    expect(
+      decrypted.password,
+      "the version-1 row actually decrypts under the previous key — proving something " +
+        "was written, not merely relabelled",
+    ).toBe("previous-key-password");
+
+    return {
+      locationId: result.locationId,
+      rtuIds: result.rtuIds,
+      assetIds: result.assetIds,
+      pointKeyIds: result.pointKeyIds,
+      assetPointIds: result.assetPointIds,
+    };
+  } finally {
+    for (const [name, value] of [
+      [CREDENTIAL_KEY_ENV.current, saved.current],
+      [CREDENTIAL_KEY_ENV.previous, saved.previous],
+      [CREDENTIAL_KEY_ENV.version, saved.version],
+    ] as const) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
 }

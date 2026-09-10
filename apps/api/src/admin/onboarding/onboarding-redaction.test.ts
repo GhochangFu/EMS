@@ -2,7 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   assertAttachEncryptedCredentialsReadsADeepDraft,
+  assertAttachEncryptedCredentialsWritesTheKeyVersion,
+  assertReadEncryptedCredentialsDefaultsToVersionOne,
+  assertReadEncryptedCredentialsReadsAPresentVersion,
+  assertReadEncryptedCredentialsRejectsAMalformedVersion,
   assertRedactDraftForClientReadsADeepDraft,
+  assertReconcileSecretsKeepsTheVersionOnAKeptBlob,
   assertScrubSecretsKeepsKeyOrderAndProtoKey,
   assertScrubSecretsRebuildsANonJsonObject,
   runOnboardingRedactionTests,
@@ -36,5 +41,28 @@ describe("onboarding-redaction — an already-deep stored draft (F4.115)", () =>
 
   it("descends into a Date or a Map and rebuilds it as {}, unlike cloneJson", () => {
     assertScrubSecretsRebuildsANonJsonObject();
+  });
+});
+
+/** ADR 0062 decision 3 — the version travels with the draft blob. */
+describe("onboarding-redaction — the draft blob carries a key version (ADR 0062)", () => {
+  it("attachEncryptedCredentials writes the key version onto the stored blob", () => {
+    assertAttachEncryptedCredentialsWritesTheKeyVersion();
+  });
+
+  it("readEncryptedCredentials reads a present version back unchanged", () => {
+    assertReadEncryptedCredentialsReadsAPresentVersion();
+  });
+
+  it("readEncryptedCredentials defaults a version-less blob to version 1", () => {
+    assertReadEncryptedCredentialsDefaultsToVersionOne();
+  });
+
+  it("readEncryptedCredentials rejects a malformed version as an absent blob", () => {
+    assertReadEncryptedCredentialsRejectsAMalformedVersion();
+  });
+
+  it("reconcileSecrets keeps the version on a kept blob", () => {
+    assertReconcileSecretsKeepsTheVersionOnAKeptBlob();
   });
 });
