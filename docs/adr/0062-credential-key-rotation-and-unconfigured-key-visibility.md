@@ -217,6 +217,23 @@ lives there), so decision 2 adds no dependency edge.
   Ingest adapters row describes. It is not frozen — the freeze was on
   `src/index.js`, which ADR 0016 §6 commit 4 deleted — but the rulebook's
   sentence becomes stale and the promotion sweep must correct it.
+- **There is a third ciphertext carrier, and decision 6's command does not walk
+  it.** An onboarding draft's `_secrets` store holds ciphertext with its own
+  version (decision 3), but it lives inside `bms.onboarding_sessions.draft`
+  rather than in either table, and the rotation walk reads only
+  `bms.rtu_connection_configs` and `bms.notification_channels`. Commit copies a
+  draft's stored version **verbatim** rather than re-encrypting — which is the
+  correct behaviour, since relabelling ciphertext under a key that did not write
+  it is precisely what decision 4 refuses — so a draft started before a rotation
+  and committed after it lands at the old version *after* the walk has already
+  reported clean. Unsetting `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` at that point
+  makes the row unreadable. The repair is operational and is written into the
+  runbook at `docs/security/encryption-at-rest.md` §3.1 step 5: **drain or
+  discard open drafts holding credentials before unsetting the previous key.**
+  Extending the command to rewrite draft blobs is a follow-up row, not a
+  decision of this ADR. Measured 2026-09-11: **0 drafts hold a `_secrets`
+  entry**, so nothing is exposed today.
+
 - **`E8.4` does not fully close.** Decision 10 leaves the env-fallback
   retirement open, blocked on data. The row stays open with that single item,
   and the backlog row must say which part shipped and which did not.
