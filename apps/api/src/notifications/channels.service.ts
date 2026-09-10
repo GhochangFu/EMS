@@ -863,6 +863,7 @@ export class ChannelsService {
         enabled: notificationChannels.enabled,
         secretCiphertext: notificationChannels.secretCiphertext,
         secretIv: notificationChannels.secretIv,
+        secretKeyVersion: notificationChannels.secretKeyVersion,
         updatedAt: notificationChannels.updatedAt,
       })
       .from(ruleNotifications)
@@ -878,6 +879,12 @@ export class ChannelsService {
    *
    * Never throws. Every failure to read a secret becomes `unreadable`, because
    * the caller is on a fire-and-forget path.
+   *
+   * `secretKeyVersion` is **required**, not optional (ADR 0062 decision 3).
+   * This parameter type is the whole definition of the projection —
+   * `channel-reads.ts` derives `StoredChannelRow` from it — so a required
+   * property is what makes a select that stops carrying the column a
+   * compile error rather than a row that silently decrypts at the wrong key.
    */
   toChannelRow(row: {
     id: string;
@@ -889,6 +896,7 @@ export class ChannelsService {
     enabled: boolean;
     secretCiphertext: Buffer | null;
     secretIv: Buffer | null;
+    secretKeyVersion: number | null;
     updatedAt: Date;
   }): NotificationChannelRow {
     const base = {
@@ -911,7 +919,17 @@ export class ChannelsService {
       return { ...base, secret: null, secretState: "unreadable" };
     }
     try {
-      const payload = this.crypto.decrypt(row.secretCiphertext, row.secretIv);
+      // The STORED version, undefaulted (ADR 0062 decision 4). The column is
+      // nullable, and a `?? 1` here would be a guess: a null on a row that
+      // holds ciphertext means nobody recorded which key wrote it. `decrypt`
+      // refuses it with `CredentialKeyVersionError`, the catch below turns
+      // that into `unreadable`, and the operator gets a state to fix instead
+      // of a secret decrypted under a key that happened to verify.
+      const payload = this.crypto.decrypt(
+        row.secretCiphertext,
+        row.secretIv,
+        row.secretKeyVersion,
+      );
       const secret = payload[SECRET_FIELD];
       if (typeof secret !== "string" || secret === "") {
         return { ...base, secret: null, secretState: "unreadable" };

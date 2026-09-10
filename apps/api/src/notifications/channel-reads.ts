@@ -52,6 +52,11 @@ export async function loadEnabledChannelsByIds(
       enabled: notificationChannels.enabled,
       secretCiphertext: notificationChannels.secretCiphertext,
       secretIv: notificationChannels.secretIv,
+      // `E8.4` (ADR 0062 decision 3): `toChannelRow` decrypts at the stored
+      // version, so this projection has to carry it. Drop this line and the
+      // build stops compiling — `StoredChannelRow` is that method's parameter
+      // type and the property is required there.
+      secretKeyVersion: notificationChannels.secretKeyVersion,
       updatedAt: notificationChannels.updatedAt,
     })
     .from(notificationChannels)
