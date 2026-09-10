@@ -268,6 +268,79 @@ diff and leaves the whole counter surface to `F3.16`.
   not fail.
 - **Live, against the running stack**: after deploy, `SELECT count(*) FROM
   telemetry.point_values WHERE time > now()` stops growing, and rows written
-  after the cutover carry a non-NULL `device_time` whose difference from `time`
-  reproduces that RTU's known offset from the table above. That last check is
-  the one that proves the column is not merely present but correct.
+  after the cutover carry a non-NULL `device_time`. **Derive each RTU's offset
+  from `device_time - time` on the new rows themselves** and check the RTUs
+  against each other's ordering — do **not** pin the assertion to §Context's
+  2026-08-22 numbers. Those are 19 days old, "stable per device" is `F1.7`'s
+  claim rather than a fresh measurement, and a device that has been re-synced
+  since would fail a correct implementation.
+
+## Amendment 1 — three corrections, recorded before any source moved (2026-09-10)
+
+At `F4.57`'s build start, following ADR 0060 Amendment 1's precedent. **No
+ruling changes.** Two of the three are defects in this ADR's own §Decision and
+§Verification; the third is a measurement that confirms decision 7 and records
+*why*, which the ADR asserted without evidence.
+
+**1. The upsert's `DO UPDATE` must set `device_time`, and §Decision did not say
+so.** `normaliser.ts:328` reads:
+
+```sql
+ON CONFLICT (time, asset_id, point_key) DO UPDATE
+  SET value = EXCLUDED.value, unit = EXCLUDED.unit
+```
+
+A re-delivered reading therefore updates `value` and `unit` while keeping
+whatever `device_time` the first delivery wrote. The column would silently stop
+describing its own row — the exact failure this ADR exists to prevent, one
+column over. **Decision 1 is extended**: the conflict clause also sets
+`device_time = EXCLUDED.device_time`, and §Verification gains an assertion that
+a second delivery carrying a different `ts` moves the stored `device_time`.
+
+**2. `NotifyReading` is not widened, and it is declared twice.**
+
+```
+apps/api/src/admin/telemetry-entry/notify-chunk.ts:20
+apps/ingest/src/host/chunk.ts:25
+```
+
+Two independent declarations of one wire shape, and the ingest one is what
+`pg_notify` carries on `bms_telemetry` to the API's relay. Decision 7 says no
+web work is owed, and that holds **only** if the notify payload is left alone.
+`toNotifyReading` (`normaliser.ts:344`) must keep emitting exactly its five
+existing fields. Adding `deviceTime` there would widen a shape in two apps and a
+socket contract, for a column decision 3 says nothing reads yet.
+
+Recorded as a §4.8 vocabulary split found in passing and **not** repaired here,
+the way ADR 0060 recorded `idParamSchema`'s duplicates.
+
+**3. Decision 7's aggregate claim is now measured, and it holds for a reason the
+ADR did not give.** The concern is real in general: moving `time` to
+`receivedAt` makes new rows land *behind* wherever the continuous-aggregate
+watermark sits, and a row below the watermark is invisible until a refresh
+covers its bucket. Measured on the running stack at `now() = 2026-09-10
+05:02:59Z`:
+
+| Aggregate | Watermark | Policy `start_offset` / `end_offset` |
+|---|---|---|
+| `point_values_1m` | 05:01:00 — **2 min behind** | 3 h / 1 min |
+| `point_values_5m` | 04:50:00 — 13 min behind | 12 h / 10 min |
+| `point_values_1h` | 02:00:00 — 3 h behind | 3 days / 2 h |
+| `point_values_1d` | 2026-09-09 00:00 — > 1 day behind | 30 days / 2 days |
+
+**No watermark is ahead of `now()`, and the 1,806 future-dated rows did not push
+one there.** The `end_offset` bounds it: the 1m policy refreshes only to
+`now − 1 min`, and its watermark sits exactly at that bucket. Future-dated rows
+live *above* every watermark and are served by the live tail, because all four
+aggregates are `materialized_only = false` — the union `telemetry-schema.ts:54`
+already documents.
+
+Two independent reasons the cutover is safe, so neither has to be trusted alone:
+every `start_offset` (3 h, 12 h, 3 days, 30 days) reaches far behind the 37-
+minute skew, so the boundary window is re-materialised on the next run either
+way; and until it is, the live tail answers.
+
+**`0069` therefore issues no `refresh_continuous_aggregate`.** That is
+deliberate and is the safer choice on this stack: a manual refresh is what
+leaves an orphaned `continuous_aggs_jobs_refresh_ranges` row when it is
+interrupted, and one of those blocks every later refresh on that aggregate.
