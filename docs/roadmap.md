@@ -4321,6 +4321,74 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   is a retry) stays open and is explicitly not this row's gap — Amendment 5
   makes a re-offer byte-identical to its original, dedupe key included.
 
+### The rule builder's picker offers what the validator accepts (`F3.49`, ADR 0058 Amendment 2) — done
+- **Status:** merged 2026-09-10 — PR
+  [#405](https://github.com/GhochangFu/EMS/pull/405) (`9a577afe`). Two owner
+  rulings, four commits, three review passes. Seventh of the nine ready Track D
+  items.
+- **What shipped.** `GET /api/v1/rules/catalog` returns, per asset, the **union**
+  of `pointKeysForAsset`'s hard-coded map and the point keys the asset's pinned
+  template declares — computed by **one** function, `ruleTargetPointKeysByAsset`,
+  which `assertCompatiblePoint` now also calls. **No migration, no dependency,
+  no contract change, no web change.**
+- **Why it mattered.** `E2.4`'s ruling Q1 widened the validator and deliberately
+  left the picker alone, so `PATCH /rules/:id` accepted a water, mechanical or
+  facility point key while the screen built for that edit never offered it. ADR
+  0058 decision 1's local override — an engineer tuning one chiller's threshold
+  — worked through the API and not through the UI, which for an engineer is
+  indistinguishable from not working.
+- **The acceptance set does not move.** Nothing savable became unsavable and
+  nothing unsavable became savable; the screen now shows what the API had
+  already accepted since `E2.4`.
+- **One function, because two lists is what caused this.** `rule-points.ts` opens
+  by declaring *"Both must agree, which is why it is one function rather than
+  two lists"* — Q1 widened one half, so that docblock had been false since it
+  merged. A second parallel union would have fixed the mismatch and kept the
+  mechanism, so `assertCompatiblePoint` moved into that file and the map-miss
+  laziness was dropped: a short-circuit is a second code path, and the catalog
+  cannot be lazy at all.
+- **Two alternatives declined on a measured fact.** Offering the asset's own
+  `asset_points` rows, alone or in a three-way union, **inverts** the defect.
+  `AssetPointsAdminService.create` gates a new row on the fleet-wide catalog
+  alone — existence and `active`, then a 409 for a `derived` template key — and
+  never consults the map, so such a row can hold a key the validator rejects.
+  That would present a choice the PATCH answers with 400, and would hide every
+  derived point: the case Q1 widened the check for.
+- **The `ORDER BY` shipped ungated, and the first repair for it was dead too.**
+  Two of the three reviews found the same false green independently: the unit
+  fakes ignore their arguments and the fixture's three points sit at distinct
+  `sort_order`s in insertion order, so a sequential scan returned them sorted by
+  accident and the `point_key` tie-break never executed. The repair tied two
+  points and moved the alphabetically earlier one to the end of the heap — and
+  the mutation left it **green**, because Postgres leaves rows tying on every
+  `ORDER BY` key in an *arbitrary* order, free to coincide with the assertion.
+  No behavioural test can hold that leg. It moved to a source assertion; the
+  `sort_order` leg stayed behavioural. **16 mutations run, none reasoned about.**
+- **A consequence accepted rather than filtered.** `HEALTH_TEMPLATE_POINTS_SQL`
+  builds each baseline template from every active, non-computed `asset_points`
+  key **across the whole domain**, so `BASELINE-ELECTRICAL` carries `backup_min`,
+  `battery_temp_c` and `supply_air_temp_c` across 41 assets. Those assets now
+  offer nine keys where six are electrical. Filtering them would make the picker
+  a strict subset of the validator again — the drift this row exists to remove —
+  so the seed question was filed as `F2.32` instead.
+- **Verified on the running stack, and the freshness grep earned its place.**
+  The first `docker compose build api` packaged **pre-merge** source, because the
+  root checkout's `main` was one commit behind `origin/main`; the grep caught it
+  (`ruleTargetPointKeysByAsset` 0, the deleted `templatePointKeysForAsset` 2). A
+  rebuild from the merged worktree gave 3 and 0. The browser pass then read the
+  served bundle: `EC-CR-UTILITY` returns the exact twelve keys in
+  `(map, then sort_order, point_key)` order with `site_kw`, `it_kw` and `pue`
+  among them — the three `derived` points that prove there is no `kind` filter —
+  and the Telemetry Point `<select>` offers `pue`. `PHE-AIRSP1051M-000000001`,
+  which has no pinned template, returns exactly the four environment keys.
+- **`rules.service.ts` left §2's near-cap list**, 990 → 970 → 972, by moving
+  `assertCompatiblePoint` out **before** the feature added a line — the third
+  consecutive row to leave that list the way it asks.
+- **Unblocks:** nothing directly; no backlog row lists `F3.49` in `Depends`. Two
+  rows were filed on the way out: `F2.32` (should a baseline template be a
+  domain-wide union at all) and `F4.121` (`GET /rules/catalog` is unbounded in
+  fleet size, and this row gave it a bind-parameter ceiling as well).
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
