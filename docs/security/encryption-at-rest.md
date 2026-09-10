@@ -176,17 +176,32 @@ volume" is checking for *this*, not for the snippet above.
 configured*, and no plaintext is ever written. The unconfigured path used to
 fail open silently; it no longer does:
 
-1. The credential is discarded, and the draft reports `credentialsSet: false`
-   for that RTU — the branch that used to claim `true` with no key configured
-   is deleted (`onboarding-chat.service.ts:757-760`).
+1. The credential is discarded, and **nothing in the server sets
+   `credentialsSet: true`** for that RTU any more — the branch that used to
+   claim it with no key configured is deleted
+   (`onboarding-chat.service.ts:757-760`).
+
+   **One residual, stated rather than glossed.** The flag is part of the draft
+   schema (`onboarding.schema.ts:85`), and with no key configured
+   `reconcileSecrets` runs with `deriveCredentialsSet: false`
+   (`onboarding-chat.service.ts:755`), so it does not overwrite what the patch
+   supplied. A client or the model can therefore still *assert*
+   `credentialsSet: true` in a patch and have it survive. That was an explicit
+   owner ruling at the plan gate (`docs/plans/e8.4-credential-key-rotation.md`
+   §12 ruling 5) rather than an oversight: changing it is the unconfigured-path
+   change `E8.3` deliberately declined. **Do not read this section as saying the
+   flag cannot be true without a stored credential.**
 2. Commit writes `credentials_ciphertext: null` / `credentials_iv: null`
-   (`onboarding-commit.service.ts:166-176`).
+   (`onboarding-commit.service.ts:332-352`).
 3. Ingest still falls through to the **global** `MQTT_USERNAME` /
    `MQTT_PASSWORD` (`apps/ingest/src/rtu-config.js`) — that fallback is
    unretired, per decision 10 below — but now reports it honestly:
    `credentialSource: "env"` while `source` stays `"db"` (a config row did
    exist), and the host logs `rtu credential fallback
-   reason=credential-env-fallback` once per affected RTU on every reload.
+   reason=credential-env-fallback` **once per affected RTU per process, the
+   first time it sees that RTU in the fallback** — at boot, or at the reload
+   that first serves it. It is deliberately not repeated on every reload: a line
+   per RTU per cycle buries the signal it exists to give.
 
 Net effect if a pilot is deployed without the key: storage and the admin UI
 both say so, and the ingest log names every RTU still sharing the global
@@ -211,8 +226,16 @@ version neither key holds is a loud, named error, not a silent skip.
    in), `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` (the old key, for decrypt-only),
    and `CREDENTIAL_ENCRYPTION_KEY_VERSION` (one higher than the version the
    old key wrote).
-2. `docker compose up -d api ingest` — `docker compose build` alone restarts
-   nothing.
+2. `docker compose up -d api api-replica ingest` — `docker compose build` alone
+   restarts nothing, and `up -d` recreates **only the services it names**.
+   Leaving `api-replica` out is a silent failure rather than a loud one: its
+   pre-rotation window is valid, so no boot refusal fires, and after the walk
+   every channel secret sits at version *N+1* that the replica's key cannot
+   read. `toChannelRow` then returns `secretState: "unreadable"` and
+   `WebhookTransport` records `skipped_unconfigured` — the replica sends no
+   webhook and says nothing. (It sits behind the `realtime-smoke` profile, so
+   it is often not up; naming it costs nothing and omitting it costs a webhook
+   outage nobody is paged for.)
 3. `docker compose exec api pnpm rotate-credentials`. The command connects as
    `bms_fleet` (rotation is fleet-wide by design — an RLS-scoped connection
    would silently skip every other organization's rows and still report
@@ -231,6 +254,12 @@ version neither key holds is a loud, named error, not a silent skip.
 4. Read the report before doing anything else:
    - `rotated` is the count actually re-encrypted; `skipped` is a row already
      at the current version (idempotent — a second run reports `rotated: 0`).
+   - **`raced` is not an error, and it is not "done" either.** Another writer
+     changed the row's ciphertext or version between the read and the update,
+     so the compare-and-set matched nothing and the walk left that row alone
+     rather than overwriting the concurrent write. The row is still at its old
+     version. **Run the command again**; a non-zero `raced` means step 5's
+     completion test has not been met yet.
    - **`failed` rows are collected, not fatal.** One bad row does not stop the
      walk; every other row still rotates, and the failure is named in
      `failures` with its table, id and stored version.

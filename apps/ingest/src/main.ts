@@ -9,6 +9,7 @@ import {
   loadBindingRows,
   planEndpoints,
   type PlanOptions,
+  type PlanWarning,
   type SkippedBinding,
 } from "./host/bindings.js";
 import { readHostConfig } from "./host/config.js";
@@ -145,19 +146,37 @@ async function main(): Promise<void> {
     });
   }
 
-  // ADR 0062 decision 9. Once per RTU per process, like the skips above, and
-  // deliberately not repeated on reload: an unchanged fallback is not news, and
-  // a line per RTU every `INGEST_RELOAD_MS` is how a real signal gets buried.
-  // Nothing is dropped here — the endpoint runs — so it is a warning and not a
-  // skip, and it is the one line that tells an operator their entered
-  // credential is not the one the broker sees.
-  for (const warning of initial.warnings) {
-    logger.warn("rtu credential fallback", {
-      rtuCode: warning.rtuCode,
-      rtuId: warning.rtuId,
-      reason: warning.reason,
-    });
-  }
+  // ADR 0062 decision 9. Once per RTU per process — which is what this now
+  // delivers, and what the first draft only claimed. That draft read
+  // `initial.warnings` alone, so an RTU that entered the fallback at a *reload*
+  // was never named at all, while this comment promised the per-process
+  // guarantee. The 2026-09-11 security review found it: the ordinary sequence
+  // is that an operator onboards an RTU into a running host, which is exactly
+  // the path the boot-only loop could not see.
+  //
+  // The set keeps the guarantee honest in both directions. An unchanged
+  // fallback is still not repeated every `INGEST_RELOAD_MS` — a line per RTU
+  // per cycle is how a real signal gets buried — but a new one is reported the
+  // first time this process sees it.
+  //
+  // Nothing is dropped here (the endpoint runs), so it is a warning and not a
+  // skip, and it is the one line that tells an operator that the credential
+  // they entered is not the one the broker sees.
+  const warnedCredentialFallback = new Set<string>();
+  const reportCredentialFallbacks = (warnings: readonly PlanWarning[]): void => {
+    for (const warning of warnings) {
+      if (warnedCredentialFallback.has(warning.rtuId)) {
+        continue;
+      }
+      warnedCredentialFallback.add(warning.rtuId);
+      logger.warn("rtu credential fallback", {
+        rtuCode: warning.rtuCode,
+        rtuId: warning.rtuId,
+        reason: warning.reason,
+      });
+    }
+  };
+  reportCredentialFallbacks(initial.warnings);
 
   for (const plan of initial.endpoints) {
     const factory = lookupAdapter(plan.protocol);
@@ -228,6 +247,9 @@ async function main(): Promise<void> {
       try {
         const next = planEndpoints(await loadBindingRows(pool), planOptions);
         skipped = next.skipped;
+        // An RTU onboarded into a running host reaches the fallback here, not
+        // at boot. Deduplicated per process by the set above.
+        reportCredentialFallbacks(next.warnings);
         const seen = new Set<string>();
         for (const plan of next.endpoints) {
           const key = endpointGroupKey(plan.protocol, plan.endpointKey);

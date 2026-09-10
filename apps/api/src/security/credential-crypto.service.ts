@@ -71,9 +71,11 @@ export class CredentialCryptoService {
    * `isConfigured` and `currentKeyVersion` alike. That is the behaviour the old
    * `getKey()` had, and specs elsewhere in the repo depend on it: they mutate
    * `process.env` after they have constructed the service and expect the next
-   * call to see the change (`channels.service.spec.ts:247-292`,
+   * call to see the change (`channels.service.spec.ts:175-191` and `:335-380`,
    * `notifications.module.ts:23`). Caching the window in the constructor would
-   * be invisible to every assertion that does not switch keys mid-test.
+   * be invisible to every assertion that does not switch keys mid-test — and
+   * `credential-crypto.spec.ts`'s round-trip case is the one that catches it,
+   * because it re-encrypts on the same instance after moving the window.
    */
   private static load(): LoadedCredentialKeys {
     return resolveCredentialKeys(process.env, decode);
