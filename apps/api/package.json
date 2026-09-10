@@ -5,7 +5,8 @@
   "scripts": {
     "build": "nest build",
     "dev": "nest start --watch",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "rotate-credentials": "node dist/security/rotate-credentials.cli.js"
   },
   "dependencies": {
     "@bms/db": "workspace:*",

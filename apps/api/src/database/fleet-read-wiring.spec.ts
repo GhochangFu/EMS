@@ -8,6 +8,7 @@ import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { ReportsService } from "../reports/reports.service";
 import { RulesService } from "../rules/rules.service";
+import { CredentialRotationService } from "../security/credential-rotation.service";
 import { WorkOrdersService } from "../work-orders/work-orders.service";
 import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "./database.tokens";
 
@@ -17,7 +18,9 @@ import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "./database.tokens";
  * (ADR 0014). Two kinds of service depend on it:
  *
  *  - the unconditional fleet reads (calc cache, energy report, telemetry-import
- *    asset resolution, `locations` master data — a decision-2 surface, ADR 0043);
+ *    asset resolution, `locations` master data — a decision-2 surface, ADR 0043 —
+ *    and `E8.4`'s credential rotation walk, ADR 0062 decision 6, whose every
+ *    integration proof runs on an explicit transaction so this is its only gate);
  *  - the four conformed decision-1 LIST services (`alarms`, `work-orders`,
  *    `maintenance`, `rules`), which inject **both** a fleet and a tenant token —
  *    and whose slot order is deliberately **not** uniform (`AlarmsService` and
@@ -62,6 +65,7 @@ export function assertUnconditionalFleetReadSlots(): void {
   expect(injectedToken(TelemetryImportService, 0)).toBe(FLEET_DRIZZLE);
   expect(injectedToken(LocationsAdminService, 0)).toBe(FLEET_DRIZZLE);
   expect(injectedToken(LocationsAdminService, 1)).toBe(TENANT_DRIZZLE);
+  expect(injectedToken(CredentialRotationService, 0)).toBe(FLEET_DRIZZLE);
 }
 
 /**
