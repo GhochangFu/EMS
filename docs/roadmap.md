@@ -4135,6 +4135,65 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   document stops reading as a claim.
 - **Unblocks:** nothing. No row lists `F4.108` in `Depends`.
 
+### A duplicate value an operator typed is a 400 naming the field, not a 500 (`F4.109`) — done
+- **Status:** merged 2026-09-10 — PR
+  [#400](https://github.com/GhochangFu/EMS/pull/400) (`e8e27bcd`). No ADR owed:
+  `F4.103` ruling 1 exempts a refusal inside an existing route, and nothing here
+  is a new surface, a new dependency or a schema change.
+- **The defect.** `onboarding-commit.service.ts` contains **no** `onConflict`
+  anywhere, so every one of its six draft-derived inserts wrote the draft's value
+  verbatim and let `23505` reach Nest's default handler. An operator's typo was
+  recorded as a server fault and named nothing.
+- **The row was filed backwards and the owner superseded it.** It asked for a
+  hash suffix on a truncated `location.code`. But `draftLocationSchema`
+  *requires* `code`, so an operator — or the model — can simply supply one that
+  already exists; truncation is one narrow way into a hole that is open by
+  typing. The three derivation sites are unchanged and the conflict is answered
+  where every constraint reaches, not only the one.
+- **Nine mapped, not ten, and the tenth is argued rather than omitted.**
+  `rtu_connection_configs_rtu_id_key` is unreachable — `rtuId` is the `id` a
+  fresh `rtus` insert just returned from `defaultRandom()`, one config row per
+  iteration. It was probed live to confirm the constraint exists and fires, then
+  deliberately left unmapped: an entry for it would be a mapping no mutation
+  could redden. **Five of the nine are cross-tenant, not the four the brief
+  stated** — `rtus_external_rtu_idx` and `rtus_mqtt_topic_idx` are unique on one
+  bare column.
+- **A repair that did not work, and the measurement behind it.** Review found
+  three of the integration case's four `expect`s unreachable — `expect` throws,
+  and they sat below a body equality against a fixed string. Moving the echo
+  check above it was the obvious fix, and it *still* did not fire under the
+  mutation that appends `err.detail`. **Postgres omits the offending value from a
+  unique violation whenever RLS is enabled on the relation**
+  (`BuildIndexValueDescription` returns NULL). Probed on the same INSERT and the
+  same server: as `bms_owner`, which the API connects as and which `FORCE ROW
+  LEVEL SECURITY` binds, `err.detail` is `undefined`; as `bms_fleet`
+  (`BYPASSRLS`) the full key arrives. `bms.point_keys` is the one exception of
+  the six tables, its RLS dropped by migration `0057` — so **exactly one** mapped
+  constraint hands the service the value on the production path, and it is the
+  one reachable only as a race. Both dead assertions were removed rather than
+  kept with an excuse, and §4.6 gained the rule: a repair is a claim too.
+- **Two measured corrections to counts in the branch's own prose.** Dropping the
+  `code === "23505"` guard half reddens **two** `it()`s, not one, and the reason
+  given for the count was wrong as well. And
+  `assertTheMapCoversEveryReachableUniqueConstraint` compared two hand-written
+  lists in one file, so it never held the property its name claimed; renamed,
+  with the limit now stated — a migration adding a unique index to any of the six
+  tables reddens nothing and answers 500.
+- **Verified.** `pnpm typecheck` 0, `pnpm typecheck:tests` 0, api+repo 231 files
+  / 1243 tests, and **all 84 integration suites — 468 tests — green against the
+  live database**. Four mutations, each read by the `it()` name it reddened.
+  Browser **N/A**, no UI change; migration **N/A**.
+- **One number that measured the environment, not the branch.** A first parallel
+  run reported 8 failed files and 3 failed tests. It was taken while another
+  session ran its own `vitest` against the same machine and the same Postgres,
+  with orphaned workers from memory-killed retries holding ~560 MB. Re-run clean
+  and in batches: no failure. Recorded because the convenient explanation was
+  also the correct one this time, which is exactly when it is worth showing the
+  work.
+- **Unblocks:** nothing. No row lists `F4.109` in `Depends`. It filed `F4.119`
+  (the `23503` foreign-key sibling) and `F4.120` (`assets_code_unique` is global
+  and looks unintentionally so).
+
 ### The sweep remembers a closed ceiling for one tick, and only its closed answer (`F3.53`, ADR 0041 Amendment 7) — done
 - **Status:** merged 2026-09-10 — PR
   [#396](https://github.com/GhochangFu/EMS/pull/396) (`8934bde9`). Two owner
