@@ -1263,12 +1263,9 @@ byte-identical to the original — body included — recording the missing age
 marker as `F3.52`'s to inherit. The reasoning and the correction to it are in
 ADR 0041 Amendment 9; what belongs here is what changed inside the sweep.
 
-**`RaiseRetryPhaseInput` gains a required `now: Date`.** The sweep has passed
-`now` since `F3.10`, and the clear and escalation phases have taken it as an
-input field since `4a2d00ec` extracted them into `alarm-lifecycle-phases.ts` —
-stated that way because the phase FUNCTIONS did not exist at `F3.10` and the
-first wording implied they did. This was the one phase that needed no clock, and
-now it does. Required rather than defaulted to
+**`RaiseRetryPhaseInput` gains a required `now: Date`.** The clear and
+escalation phases have carried one since `F3.10`. This was the one phase that
+needed no clock, and now it does. Required rather than defaulted to
 `new Date()`, for the reason `F3.52` made `stale` required: a defaulted clock
 would let the phase drift out of step with the sweep's own `now` and would still
 compile, and every one of this repository's lifecycle decisions is asserted at a

@@ -256,8 +256,12 @@ export async function assertAFailedRaiseIsDeliveredByALaterSweepOnce(db: BmsDb):
     );
     // `F3.57` — the alarm's message with its age, and against a REAL database
     // this is the whole ruling in one place. The sweep above ran at
-    // `secondsAfter(60, t0)` where `t0` is the alarm's own `raised_at`, so the
-    // age is exactly one whole minute — the boundary, and deterministic.
+    // `secondsAfter(90, t0)` where `t0` is the alarm's own `raised_at`, so the
+    // age floors to one whole minute with thirty seconds of slack either side.
+    // (This comment said `secondsAfter(60, t0)` and called that "the boundary,
+    // and deterministic" — the value the same review had already moved off,
+    // for the reason given at the sweep call. A reader who trusted it would
+    // have restored the millisecond boundary.)
     //
     // What makes this the strongest evidence in the row: the body differs from
     // the original raise's, and the two assertions ABOVE still found the

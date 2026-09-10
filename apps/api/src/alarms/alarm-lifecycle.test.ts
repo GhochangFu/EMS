@@ -83,7 +83,7 @@ describe("F3.57 a re-offered raise says how long the alarm has been open", () =>
     testTheAgeStaysOutOfTheDedupeKey();
   });
 
-  it("leaves the subject byte-identical, so a mail client still threads it", () => {
+  it("leaves the subject byte-identical, so a subject-grouping mail client keeps the two together", () => {
     testTheSubjectStaysTheRaisesOwn();
   });
 });
