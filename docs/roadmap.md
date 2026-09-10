@@ -4494,7 +4494,8 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   `channelsOwedTheRaise`, and that predicate filters the channel list by the
   ledger rows — so an alarm whose organization-filtered row group is empty
   yields an empty owed list for any channel list, and its round trip cannot have
-  changed the answer. Filed as **`F3.59`**, unbuilt. The identical argument is
+  changed the answer. Filed as **`F3.59`** — **built and closed 2026-09-10**, PR
+  #420, and its premise held. The identical argument is
   already in the file immediately above, for the undecidable-batch case. One
   attribution correction: on *this* fleet those 78 reads are explained one line
   earlier than the evidence conjunct — with zero `rule_notifications`,
@@ -4507,13 +4508,21 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   the most favourable possible shape. Where raises send, an open alarm holds a
   `sent` row and the read is needed. The steady-state saving is **unmeasured**
   and could not be measured here for want of a configured tenant, which is why
-  `F3.59` carries measurement as its first task and names won't-fix as a
-  legitimate outcome.
+  `F3.59` carried measurement as its first task and named won't-fix as a
+  legitimate outcome. **`F3.59` took that measurement and it changed the
+  conclusion**: the *saving* is not configuration-dependent after all, because a
+  rule with no `rule_notifications` join never dispatches, so never writes a
+  delivery row, so its group is always empty — and ADR 0057 Amendment 6 names
+  that rule the ordinary seeded and template-built shape. What is
+  configuration-dependent is only how much of the fleet is in that class.
 - **The 78 is this fleet's shape, not a law.** `loadRuleChannels` costs one round
   trip per *distinct rule*; it equalled the alarm count only because each of the
   78 alarms belongs to a different one of the 290 rules. On a fleet with many
   alarms per rule that read is far cheaper than 78, which narrows `F3.59`'s
-  value as well and is recorded in that row.
+  value as well and is recorded in that row. **`F3.59` then measured what the
+  78 reads actually cost** — 183–200 ms of a 30 s tick against 2.5–4.1 ms for one
+  batched read over the same rule ids — and that figure is what carried the
+  batching finding into **`F3.60`** rather than a second won't-fix.
 - **Scope was not substituted.** `F3.53`'s precedent is on the record: it
   corrected the comment attributing this cost to itself and deliberately did not
   widen. This row does the same — it records the reason and files the finding
@@ -4594,9 +4603,13 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   including the `cls` one that had survived. The person-week figures were
   re-measured on the rendered board and moved as predicted, 909 to 908 and 33 to
   32.
-- **Unblocks:** nothing. **`F3.59` is now the only remaining Wave-2 Track D
+- **Unblocks:** nothing. **`F3.60` is now the only remaining Wave-2 Track D
   row** — this line first named `F3.57` alone, which the same commit's own new
-  row falsified; it then named both, and `F3.57` closed 2026-09-10. Read from
+  row falsified; it then named both; `F3.57` closed 2026-09-10, and `F3.59`
+  closed the same day having filed `F3.60`. **This line has now been falsified
+  three times by the very commit that wrote it**, because a closing row in this
+  cluster keeps filing its successor into the same Wave. Do not read a
+  successor count from it — read from
   the Wave cell of each open Track D row rather than from §1: F3.11 is Wave 1,
   F3.12 Wave 3, F3.13 and F3.14 Wave 4, F3.9 Wave 5.
 
@@ -4639,7 +4652,81 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   than argued. **Browser N/A:** the ledger stores no body, so no web surface
   renders the clause. **Deployed API N/A:** no route, contract or schema
   changed; the surface is the sweep, which the integration case drives.
-- **Unblocks:** nothing. `F3.59` is the only remaining Wave-2 Track D row.
+- **Unblocks:** nothing. `F3.60` is the only remaining Wave-2 Track D row —
+  `F3.59` closed 2026-09-10 and filed it.
+
+### The raise-retry phase reads a rule's channels only for an alarm that holds evidence (`F3.59`, ADR 0057 Amendment 9) — done
+- **Status:** merged 2026-09-10 — PR
+  [#420](https://github.com/GhochangFu/EMS/pull/420) (`6cf73f87`), four
+  commits. One owner ruling. No migration, no dependency, no contract change, no
+  ADR 0041 change, no `apps/web` change.
+- **What shipped:** the organization filter Amendment 5 put on
+  `channelsOwedTheRaise`'s `rows` argument is **hoisted** above
+  `loadRuleChannels` into a `const evidence`, the predicate is handed that very
+  array as `rows: evidence`, and the candidate is skipped when it is empty.
+  Because the predicate's stage 1 answers `false` for every channel with zero
+  rows, an empty group is "not owed" for **any** channel list — so the skip is
+  behaviour-preserving *for the owed set* **by construction**, one filter rather
+  than two that can drift.
+- **The row's premise held; its value sentence did not.** It said that for a rule
+  with no `rule_notifications` join "the phase already exits one line earlier, at
+  `channels.length === 0`". That exit is **after** the read. A rule with no join
+  never dispatches, so never writes a delivery row, so its group is always empty:
+  the no-join rule is exactly where the guard saves, and ADR 0057 Amendment 6 with
+  ADR 0058 decision 2 name it the ordinary seeded and template-built shape. The
+  saving is therefore not configuration-dependent and **the row understated
+  itself**. The bound the other way: where raises send, an open alarm holds a
+  `sent` row and the read is still paid.
+- **Owner ruling 1: the guard as filed.** Batching the remaining reads into one
+  round trip was declined here as a different defect on the same line — count,
+  not deadness — and filed as **`F3.60`** with its measurement attached.
+- **Measured from where the sweep runs.** Inside `bms-api-1` as `bms_fleet` over
+  the docker network: 78 sequential per-rule reads 183–200 ms, one batched read
+  over the same 78 rule ids 2.5–4.1 ms, bare floor for 78 `select 1` 81–90 ms.
+  **A first pass from the Windows host over published 5433 was discarded** — it
+  timed Docker Desktop's proxy, not the sweep's hop. 190 ms is 0.63% of the 30 s
+  tick.
+- **Verification (AGENTS.md §4.6).** Nine mutations, **eight killed**, run with
+  the database attached. **M8 survives and is recorded rather than hidden**: a
+  `catch` that falls through with no `reasons` instead of returning is a genuine
+  equivalence, because the catch fires only when the read rejected, so its rows
+  are empty and the guard skips everything. M1 and M3 were **re-run** after a
+  repair changed R20's fixture, since a repair for a dead gate can be dead too.
+  Three new cases in a new spec file, one `it()` each — the sibling stood at 905
+  of §4.5's cap and its wrapper is a single `it()` over nineteen cases.
+  **Database layer, on the running stack:** `pg_stat_all_tables` scan deltas, a
+  pure read chosen over `ALTER SYSTEM SET log_min_duration_statement = 0` because
+  that persists in `postgresql.auto.conf` and the database is shared with a second
+  session — `rule_notifications` went from **+234 over three ticks to 0 over
+  four**, with `notification_deliveries` +4 and `alarms` +4 as the controls that
+  the sweep was alive. The container was proved to carry the change first: a
+  `--no-cache` build with the worktree as context, the guard present in the new
+  image's `dist` and **absent** from the old one, and the running container's
+  image id identical to the built one. **Browser N/A:** no rendered surface and no
+  bundle to reload.
+- **The reviews' best find was a comment, and it was a live false green.** The
+  guard's comment said the status exclusions stay inside the predicate "(case R21
+  gates both)". R21 gates neither — both its rows are `failed` — and the
+  `skipped_rate_limited` exclusion was gated by **nothing** at sweep level, so a
+  later author hoisting those exclusions would have shipped green through every
+  case in the repository while un-fixing the third of `F3.51`'s three cases.
+  Fixed by making R20's evidence row `skipped_rate_limited`; the mutation now
+  reddens it. Correctness and compliance found this and two other prose defects
+  **independently**.
+- **Two attributions corrected.** §4.6 authorises R22's synthetic **input**, not
+  the keeping of a line whose production effect is nil — that half is the
+  amendment's own defensive argument. And **R21 is a sentinel too**: no API path
+  writes a delivery row for an alarm under any organization but its rule's, so
+  its crossed row is reachable only by a direct database write. The filter is kept
+  and gated because the phase runs on `fleetDb`, where no RLS policy stands behind
+  it.
+- **One defect inherited from `F3.57`.** The phase docblock still claimed "`now`
+  is not a parameter, and its absence is the point — the re-offered message is the
+  alarm's own, verbatim, with no age". `F3.57` falsified every clause; its prose
+  sweep corrected the four sentences naming the byte-identity and missed the one
+  naming the parameter.
+- **Unblocks:** `F3.60`, which this row filed and which is now the only remaining
+  Wave-2 Track D row.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
