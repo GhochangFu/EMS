@@ -1367,6 +1367,36 @@ it was not looking at the subject. Neither is visible to a reviewer reading the
 assertion, nor to the author who wrote it. What finds them is applying the
 mutation the docblock names and checking that **that** assertion goes red.
 
+**The repair for a dead assertion can itself be dead, for a different reason
+than the first — so re-run the mutation after fixing it, not before.** `F4.109`
+shipped an integration case whose echo check sat below a body equality against a
+fixed string. `expect` throws, so review correctly called it unreachable, and
+the obvious repair was to move it above. Measured after the move, it *still* did
+not fire: **Postgres omits the offending value from a unique violation whenever
+RLS is enabled on the relation** — `BuildIndexValueDescription` returns NULL —
+so `err.detail` never reaches the service at all. Probed on the same INSERT and
+the same server, as `bms_owner`, which is what the API connects as and which
+`FORCE ROW LEVEL SECURITY` binds, `detail` is `undefined`; as `bms_fleet`, which
+holds `BYPASSRLS`, the same insert yields the full key. `bms.point_keys` is the
+one exception among the six tables an onboarding commit writes, its RLS dropped
+by migration `0057`.
+
+Two general points, and the second is the one that generalises furthest:
+
+- **Ordering is only one way an assertion can be unable to fail.** The other is
+  that its input does not exist on the path under test. No amount of reordering
+  reaches that, and a docblock explaining the ordering fix would have been a
+  second false sentence written to replace the first.
+- **Where a rule is held is a claim about where its input exists.** The §4.3
+  no-echo rule cannot be held at the integration layer for an RLS-protected
+  table, because there is nothing there to echo; it belongs in the unit spec,
+  where a synthetic error can carry a `detail` the production path withholds. A
+  sentinel that is *stronger* than production is correct there and worth saying
+  so, or a later reader will "fix" it.
+
+The rule this leaves: after repairing a gate, apply the mutation again and read
+the name it prints. A repair is a claim like any other.
+
 ### 4.7 Authorization (ADR 0009/0010 master data · ADR 0017 operations)
 
 Five role gates exist and they are **not** interchangeable — this section
