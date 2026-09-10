@@ -344,3 +344,95 @@ way; and until it is, the live tail answers.
 deliberate and is the safer choice on this stack: a manual refresh is what
 leaves an orphaned `continuous_aggs_jobs_refresh_ranges` row when it is
 interrupted, and one of those blocks every later refresh on that aggregate.
+
+## Amendment 2 — a buffered sample's receive time is its original arrival (2026-09-10)
+
+**Ruling 4**, taken at the same start gate after the step-3 plan found that
+decision 2 does not reach the `F1.10` disk-buffer replay path. Decision 2 says
+`time` is *"the receive time, always"* and never says what the receive time of a
+**buffered** sample is. `apps/ingest/src/main.ts:165` — the single call site —
+passes `new Date()`.
+
+### What decision 2 did to that path, before this amendment
+
+`supervisor.ts:715-727`'s `replayLoop` hands 500-sample slices to the same
+`resolveSamples`. So, applied literally:
+
+1. **Replay stopped being idempotent.** A re-replayed segment takes a fresh
+   `new Date()`, therefore a fresh primary key, therefore **duplicate rows**.
+   ADR 0016 Amendment 4 decision 5 — *"Replay is safe because `writeResolved` is
+   `ON CONFLICT DO UPDATE`: a replayed row is idempotent"* — and decision 8 —
+   *"re-replays at most one minute, idempotently"* — both become false. So does
+   the comment at `disk-buffer.ts:330-333`, which exists to keep them true:
+   *"replay must write the same `(time, asset_id, point_key)` every time, or a
+   re-replayed segment lands duplicate rows instead of an idempotent upsert."*
+2. **A device timestamp would be fabricated.** `serialise` stamps the spill
+   instant into a line's `at` when the sample carries none. Under decision 2
+   that stamp becomes `device_time` — the invention ruling 2 refused.
+3. **An hour of backlog would land within seconds**, so every recency window
+   reads the whole backlog as *now*.
+4. **A whole 500-slice would share one `time`**, so decision 6's collapse
+   applies across the slice. §Context measured zero collisions on the **live**
+   path; the replay path batches by construction, so that measurement does not
+   transfer.
+
+### The ruling
+
+**A buffered sample's receive time is its original arrival, not the replay
+instant.** The declined alternative was accepting the replay instant and
+amending ADR 0016 Amendment 4 decisions 5 and 8 to say replay is no longer
+idempotent — cheapest in code, and it withdraws a guarantee `F1.10` was built to
+provide.
+
+### What that costs, and one thing it does not
+
+The segment path already encodes receipt time — decision 7's
+`<epoch-minute>.jsonl`, *"one append-only segment per minute of receipt time"* —
+but only to the minute, and shared by every sample in the file. Using it would
+collapse a whole minute of one point into a single key. **The receive time must
+therefore be per-sample and on the line**, which makes this a segment-format
+change under ADR 0016 Amendment 4 decision 7, carried by that ADR's own
+Amendment 5 rather than by this one.
+
+**Segments already on disk at deploy are ambiguous and cannot be repaired.**
+Their `at` holds either a device time or a spill stamp, and nothing stored
+distinguishes them — the same indistinguishability decision 4 accepts for
+`device_time`, one layer earlier. So the deploy sequence gains a gate:
+**`buffered = 0` on every endpoint's health entry before migrating.** The buffer
+is empty unless an outage is in progress, so this is a check rather than a wait
+in the normal case.
+
+**`SourceSample` does not change.** `adapter-contract.spec.ts:414-418` forbids an
+adapter fabricating a time, and a receive time set by an adapter is exactly
+that. The value travels from the buffer to the normaliser through a
+host-internal shape.
+
+### Consequences
+
+- **Decision 2 is narrowed in wording, not in effect.** `time` is the receive
+  time; for a live sample that is the batch's `new Date()`, and for a buffered
+  one it is the arrival the buffer recorded. Both are receive times. What is
+  excluded, in both cases, is the device's own clock.
+- **`device_time` is NULL for a replayed sample that carried no device
+  timestamp** — decision 4 case 2, reached through the buffer. This amendment
+  adds no fourth case, which is the point of choosing the original arrival over
+  the replay instant.
+- **Replay idempotency is preserved rather than restored**, and ADR 0016
+  Amendment 4 decisions 5 and 8 stay true as written.
+- **The build order is fixed by this.** The plan's Tasks 1–2 (the migration and
+  the six-parameter upsert) are independent and may proceed. Task 3 — the
+  normaliser's semantics — may not land before ADR 0016 Amendment 5 defines the
+  line format, because Task 3 is the commit that changes what a replayed row
+  means.
+
+### Verification this amendment adds
+
+- **A re-replayed segment writes the same primary key.** Replay one segment
+  twice through the host path and assert the row count is unchanged and `time`
+  is identical — the assertion that owns ADR 0016 Amendment 4 decision 5. A
+  mutation restoring `new Date()` as the replayed row's `time` must redden it.
+- **A replayed sample that carried no device timestamp yields
+  `device_time IS NULL`**, and specifically not the spill stamp. The mutation is
+  to feed the stamp through.
+- **The deploy gate is real**: `buffered = 0` is read and recorded before
+  migrating, not asserted afterwards.

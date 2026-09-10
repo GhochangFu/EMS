@@ -1292,3 +1292,94 @@ Per §10 and §9.10, the `chore(agents):` sweep after merge: the AGENTS.md §2
 sentences in `docs/ingest-host.md` *Health endpoint* and *Known limits* — the
 last of which lands with the feature, not the sweep, because it documents the
 host.
+
+## Amendment 5 — the segment line carries the receive time (`F4.57`, 2026-09-10)
+
+Required by [ADR 0061](./0061-ingest-receive-time-and-device-time.md) Amendment 2,
+ruling 4. **Amendment 4 decisions 5 and 8 do not change — this amendment is what
+keeps them true.** Decision 7's format changes.
+
+### Why the format has to move
+
+ADR 0061 makes `telemetry.point_values.time` the ingest **receive** time. On the
+live path that is the batch's own `new Date()`. On the replay path,
+`main.ts:165` would hand a replayed sample a *fresh* `new Date()` on every
+replay — a fresh primary key, and therefore duplicate rows. Decision 5's
+*"a replayed row is idempotent"* and decision 8's *"re-replays at most one
+minute, idempotently"* both rest on a replayed row keeping the same
+`(time, asset_id, point_key)`, which is exactly what `disk-buffer.ts:330-333`
+says the spill stamp exists to guarantee.
+
+The stamp guaranteed it while `time` came from `at`. Once `time` comes from the
+receive time, the receive time is what must survive a round trip to disk.
+
+**The segment path is not enough.** Decision 7 already names
+`<epoch-minute>.jsonl` as *"one append-only segment per minute of receipt
+time"*, so the receipt minute is recoverable from the filename. But it is
+minute-granular and shared by every line in the file, so under ADR 0061
+decision 6 a whole minute of one point would collapse to one row. The receive
+time must be **per line**.
+
+### Decision 7, amended
+
+The line gains a receive time and `at` becomes optional:
+
+| Field | Before | After |
+|---|---|---|
+| `at` | required; the device time, or the **spill instant** substituted when the sample carried none | **optional**; the device time and nothing else. Absent when the device sent none. |
+| `rx` | — | **required**; the instant the host received the sample, ISO-8601, written once at spill and never rewritten. |
+
+Everything else in decision 7 stands: one `SourceSample` per line, `deviceKey`
+kept, the sample stored **before** normalisation so a mapping corrected during
+the outage corrects the backlog, and a segment only ever appended to or
+unlinked.
+
+**`serialise` stops substituting.** The substitution it performs today is the
+thing this amendment removes: `at` is written only when the sample really has
+one, and `rx` carries what the stamp used to stand in for. `toSample` therefore
+stops always setting `sample.at`.
+
+**`SourceSample` does not change**, and no adapter gains a receive time.
+`adapter-contract.spec.ts:414-418` forbids an adapter fabricating a time, and a
+receive time supplied by an adapter is exactly that. `rx` travels from the buffer
+to the normaliser through a host-internal shape, never through the adapter
+contract.
+
+### Segments written before this amendment are ambiguous
+
+An old line's `at` is either a real device time or a spill stamp, and nothing
+stored distinguishes them. They cannot be migrated, only read wrongly or not at
+all. **So the deploy sequence gains a gate: every endpoint's health entry must
+read `buffered = 0` before the migration and the new image go out.** The buffer
+is empty unless an outage is in progress, so in the normal case this is a check,
+not a wait.
+
+This is deliberately a deploy-time gate rather than a compatibility branch in
+`lineSchema`. A branch would have to guess which of the two meanings an old `at`
+carried, and guessing wrong writes a fabricated `device_time` — the invention
+ADR 0061 ruling 2 declined.
+
+### What this does not change
+
+- Decisions 5 and 8 keep their wording. A replayed row is idempotent, and a
+  mid-segment failure re-replays at most one minute idempotently, **because**
+  `rx` is written once and read back unchanged.
+- Decision 6's bounds, decision 7's path layout and decision 8's crash safety
+  are untouched. A partial last line still fails `lineSchema` and is still
+  counted in `bufferDropped` — with `rx` required, a truncated line fails for one
+  more reason, not a new way.
+- The health endpoint's `buffered` and `bufferDropped` counters are unchanged.
+
+### Verification this amendment expects
+
+- **A round trip preserves `rx`.** Spill a sample, replay it, and assert the
+  resolved row's `time` equals the original receive time — not the replay
+  instant. The mutation that must redden it is passing `new Date()` at replay.
+- **Replaying one segment twice writes one row.** The count is unchanged and
+  `time` is identical across both replays — the assertion that owns decision 5.
+- **A sample with no device time round-trips to `at` absent**, and its resolved
+  row has `device_time IS NULL` rather than the spill instant. The mutation is
+  to restore `serialise`'s substitution.
+- **`disk-buffer.spec.ts:267` and `:319-320` invert.** They pin the stamp today;
+  they must pin its absence after, and the replacement assertions carry the
+  reason so a later reader does not restore the old behaviour as a fix.
