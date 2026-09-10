@@ -56,15 +56,18 @@ and keys) are encrypted before they reach the database.
 - **Algorithm:** AES-256-GCM. 12-byte random IV per record; the 16-byte GCM
   authentication tag is appended to the ciphertext.
 - **Key:** `CREDENTIAL_ENCRYPTION_KEY`, a base64 string that **must decode to
-  exactly 32 bytes**. The service refuses to start an encrypt/decrypt operation
-  otherwise — it never silently falls back to plaintext.
+  exactly 32 bytes**. Since ADR 0062 Amendment 1 a wrong-length current key —
+  or a dead rotation window, §3.1 — refuses the process's **boot**, not merely
+  an encrypt/decrypt call; it never silently falls back to plaintext.
 - **Storage:** `bms.rtu_connection_configs.credentials_ciphertext` /
   `.credentials_iv` (`bytea`), plus a `key_version` column.
 - **Implementation:** `apps/api/src/security/credential-crypto.service.ts`.
-- **Read path:** decryption happens in exactly one place — the ingest runtime
-  (`apps/ingest/src/rtu-config.js`). There are **zero** `.decrypt(` call sites
-  in `apps/api/src`; onboarding commit moves ciphertext and IV across tables
-  without decrypting them.
+- **Read path.** Since ADR 0062 `apps/api/src` decrypts in two more places
+  besides the ingest runtime (`apps/ingest/src/rtu-config.js`):
+  `notifications/channels.service.ts` reads a webhook secret at its stored
+  version, and `security/credential-rotation.service.ts` decrypts each row
+  it rotates so it can re-encrypt it. Onboarding commit still only moves
+  ciphertext and IV across tables — it does not decrypt.
 - **Client exposure — read this before concluding secrets are contained.** The
   REST API never *decrypts* a stored secret, but that is not the same as never
   returning one. `redactDraftForClient` deletes the `_secrets` blob and coerces
@@ -88,8 +91,17 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 While an onboarding session is still a draft, credentials the admin has
 supplied are held under `onboarding_sessions.draft._secrets` as
-`{ c: <base64 ciphertext>, iv: <base64 iv> }` using the same key and algorithm.
-On commit they move to `rtu_connection_configs`.
+`{ c: <base64 ciphertext>, iv: <base64 iv>, v?: <key version> }` (ADR 0062
+decision 3; an absent `v` is version 1) using the same key and algorithm. On
+commit they move to `rtu_connection_configs` **unre-encrypted, at the version
+they already carry** — commit copies `enc.keyVersion` verbatim rather than
+calling `encrypt()` again. **This is why `pnpm rotate-credentials` (§3.1) does
+not, by itself, retire an old key**: a draft's `_secrets` blob is not one of
+the two tables the walk covers, so a draft created before a rotation and
+committed after it lands in `rtu_connection_configs` still at the old version.
+Drain or discard in-flight drafts before unsetting
+`CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` — a clean rotation report does not prove
+one is not still open.
 
 **The `_secrets` blob** — and only that blob — is stripped from client and LLM
 payloads. The raw chat turn is not. `handleOpenAiTurn` scrubs the *draft* it
@@ -234,7 +246,13 @@ version neither key holds is a loud, named error, not a silent skip.
    to its `scanned` count, and `failures: []`. There is no three-key window:
    unsetting the previous key while any row still holds the version it wrote
    turns that row into a loud `CredentialKeyVersionError` on its next read,
-   not a silent skip.
+   not a silent skip. **A clean report covers only
+   `rtu_connection_configs` and `notification_channels` — not an in-flight
+   onboarding draft.** §2.2: commit copies a draft's stored key version
+   verbatim rather than re-encrypting, so a draft started before the
+   rotation and committed after it can still land at the old version once the
+   walk has already reported clean. Drain or discard open drafts with
+   credentials before unsetting the previous key.
 6. **Finish one rotation before starting the next.** Moving straight from
    version *N* to *N+2* without completing the *N*→*N+1* rotation first
    abandons rows still at *N-1*, which no longer has a loaded key.
