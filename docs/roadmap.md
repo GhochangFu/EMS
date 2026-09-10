@@ -4487,13 +4487,45 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   corrected the comment attributing this cost to itself and deliberately did not
   widen. This row does the same — it records the reason and files the finding
   rather than quietly becoming the finding's row.
-- **The board misreports this row, and that is filed rather than fixed here.**
-  `backlog-dashboard.mjs` tests the in-progress set before the `dropped` arm, so
-  while the branch spelling `F3.58` exists the row renders as *In flight*; the
-  state-chip list has no *Dropped* chip either, so the row cannot be filtered.
-  This is the first `⛔` row ever to reach that arm. CI is unaffected — its
-  shallow clone derives no in-flight set — so this hits the local and published
-  board, not the gate.
+- **The board could not render a dropped row at all, and the owner ruled to fix
+  it here.** Closing the first dropped row this repository has had found **two**
+  code paths announcing it as active work, and the second is the one a partial
+  fix would have left standing.
+  - `stateOf`'s in-flight branch claimed any row whose id a branch name spells,
+    ahead of the `dropped` branch. So the row read *In flight* — and the
+    `dropped` branch never ran, which cost it its own `stateKey` as well. That
+    is precisely the defect `planned` had until 2026-08-23, recorded in this
+    same function: a state sharing another's key is counted by every aggregate
+    keyed on it, and no chip can filter it.
+  - The *In flight* stat tile, the *In flight now* section header and the cards
+    under it read the in-progress set **directly** rather than `stateKey`. So
+    guarding `stateOf` alone still left the client-facing card reading
+    *"Actively being built now."* of a decision that had just been dropped, and
+    the header reading *2 items* while one card rendered — `F4.86`'s
+    three-numbers-one-meaning failure, in the file that carries the warning.
+- **The seam matters more than the fix.** Both halves moved to a new
+  `docs/scripts/backlog-state.mjs`, with the deciding input passed as a
+  **parameter**: the generator is a top-level script whose import reads the
+  status JSON and writes three HTML files, so nothing could drive it in place.
+  And generating the board to grep the HTML **cannot** gate this — CI's checkout
+  is shallow, so it derives no in-progress set at all and every such assertion
+  passes vacuously against the exact input that produced the defect. That is
+  written into the test file so a later rewrite does not undo it.
+  `tests/f3.58-board-dropped-state.test.ts` holds eleven cases; **all six
+  mutations were killed**, each reddening the case that owns its claim.
+- **Three smaller consequences.** `Dropped` gains its own palette token in all
+  three themes, so it is not one indistinguishable band with `Waiting` in the
+  wave lanes and track bars. Scope now excludes dropped rows — 278 tracked,
+  **277** in scope — while the rendered-row counts ("one square per item", "The
+  full board") stay on 278, because the dropped row is still drawn. And the
+  in-progress set is filtered at the point of presentation rather than at its
+  source, because that set answers a different question — *which rows have a
+  branch* — and that answer is correct.
+- **My own first assertion passed while the defect stood.** It matched only the
+  `F3.58 · P3 · <state>` tooltip form, which the in-flight card does not use, so
+  it proved nothing about the one surface that was wrong. The replacement checks
+  the section by name and asserts `F4.57` is still in it, so it cannot pass by
+  rendering nothing.
 - **Unblocks:** nothing. **`F3.57` and the newly filed `F3.59` are the remaining
   Wave-2 Track D rows** — the first draft of this line named only `F3.57`, which
   this same commit's own new row falsified. Read from the Wave cell of each open

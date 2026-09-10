@@ -25,6 +25,7 @@ export const CSS = `
   --lamp-ready:#7A6A16; --lamp-ready-wash:#EFEBD6;
   --lamp-gated:#9A3D22; --lamp-gated-wash:#F3E1DA;
   --lamp-idle:#6B736B; --lamp-idle-wash:#E7E9E4;
+  --lamp-dropped:#4A4550; --lamp-dropped-wash:#E4E1E7;
   --grid:#DCDED5;
   --shadow:0 1px 0 rgba(25,29,25,.05), 0 1px 3px rgba(25,29,25,.06);
   --mono:ui-monospace,"SFMono-Regular","Cascadia Mono","Consolas","Liberation Mono",monospace;
@@ -42,6 +43,7 @@ export const CSS = `
     --lamp-ready:#CFBB63; --lamp-ready-wash:#282415;
     --lamp-gated:#E0876A; --lamp-gated-wash:#2E1E18;
     --lamp-idle:#8B938E; --lamp-idle-wash:#22262A;
+    --lamp-dropped:#9B93A3; --lamp-dropped-wash:#24212A;
     --grid:#2A3137;
     --shadow:0 1px 0 rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.35);
   }
@@ -57,6 +59,7 @@ export const CSS = `
   --lamp-ready:#CFBB63; --lamp-ready-wash:#282415;
   --lamp-gated:#E0876A; --lamp-gated-wash:#2E1E18;
   --lamp-idle:#8B938E; --lamp-idle-wash:#22262A;
+  --lamp-dropped:#9B93A3; --lamp-dropped-wash:#24212A;
   --grid:#2A3137;
   --shadow:0 1px 0 rgba(0,0,0,.3), 0 1px 3px rgba(0,0,0,.35);
 }
@@ -241,6 +244,7 @@ section{display:flex; flex-direction:column; gap:12px}
 .lamp-ready{--lamp:var(--lamp-ready); --lamp-wash:var(--lamp-ready-wash)}
 .lamp-gated{--lamp:var(--lamp-gated); --lamp-wash:var(--lamp-gated-wash)}
 .lamp-idle{--lamp:var(--lamp-idle); --lamp-wash:var(--lamp-idle-wash)}
+.lamp-dropped{--lamp:var(--lamp-dropped); --lamp-wash:var(--lamp-dropped-wash)}
 .lamp-accent{--lamp:var(--accent); --lamp-wash:var(--accent-wash)}
 
 .gate-why{font-size:12.5px; color:var(--ink-2); background:var(--panel-2);
