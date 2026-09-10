@@ -24,8 +24,9 @@ import { describe, expect, it } from "vitest";
  * Two named limits, and the first is why this docblock does not say "the rules
  * module". It reads exactly the two files below. `apps/api/src/rules/` holds
  * 18 non-test files, and `rule-points.ts` is today the only one of them naming
- * `templatePoints` — but a reader added to a third file would keep all four
- * cases green. Second, it cannot see a divergence *inside* the one function;
+ * `templatePoints` — but a reader added to a third file would keep all five of
+ * the cases below green. Second, it cannot see a divergence *inside* the one
+ * function;
  * `rule-points.spec.ts` and the integration cases hold that.
  */
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));

@@ -20,8 +20,9 @@ import {
  * what `assertCompatiblePoint` accepts, on a real database.
  *
  * A sibling of `asset-templates.seed-rules.integration.spec.ts` rather than
- * two more cases in it: that file sits at 989 lines against AGENTS.md §4.5's
- * 1000-line cap, and §2 says to extract before adding.
+ * more cases in it: that file stood at 989 lines against AGENTS.md §4.5's
+ * 1000-line cap when this suite was split out, and the hook refused the append
+ * at 1120. It is 993 now, so the split stands for the same reason it was made.
  *
  * **It shares that file's fixture helpers, not its fixture rows**, on the
  * `asset-templates.seeded-rules-guards.integration.test.ts` model. Vitest
@@ -177,8 +178,8 @@ export async function assertEveryOfferedKeyIsAcceptedAndOneOtherRefused(
  * and 2 in the same order it lists them, and `publish` flips the row's status
  * rather than forking, so those rows are never re-inserted: insertion order
  * equals declared order, a sequential scan returns them sorted by accident, and
- * deleting the `ORDER BY` reddens nothing. Both reviews of `F3.49` found the
- * clause ungated. So this case moves the `derived` point to `sort_order = -1`,
+ * deleting the `ORDER BY` reddens nothing. Two of `F3.49`'s three reviews found
+ * the clause ungated, independently of each other. So this case moves the `derived` point to `sort_order = -1`,
  * where only `asc(sort_order)` can put it first.
  *
  * **The `asc(point_key)` tie-break is deliberately NOT gated here, and no
@@ -221,12 +222,15 @@ export async function assertTemplateKeysAreOrderedByDeclaredOrder(
   const [first, second, derived] = fx.pointKeys.map((key) => key.code);
   const rewritten = [derived, first, second];
 
-  // Anti-vacuity: if the rewritten order matched insertion order, a sequential
-  // scan would satisfy the assertion and this case would hold nothing.
+  // The precondition that can actually fail: three DISTINCT keys. An earlier
+  // version of this guard compared `rewritten` against insertion order, which
+  // moving the third key to the front can never equal — so it could not fire on
+  // the condition its own comment described. A repeated key is the real risk:
+  // it would make the rewritten order ambiguous and the assertion meaningless.
   assert(
-    rewritten.join() !== fx.pointKeys.map((key) => key.code).join(),
-    `F3.49 fixture: the rewritten order [${rewritten.join(", ")}] equals insertion order, so ` +
-      "the sort_order leg cannot discriminate. Choose different fixture point keys.",
+    new Set(rewritten).size === 3,
+    `F3.49 fixture: expected three distinct point keys, got [${rewritten.join(", ")}]. ` +
+      "`loadSeedFixtures` takes them from one `LIMIT 3`; a repeat makes this case vacuous.",
   );
 
   try {
