@@ -162,6 +162,14 @@ async function main(): Promise<void> {
   // Nothing is dropped here (the endpoint runs), so it is a warning and not a
   // skip, and it is the one line that tells an operator that the credential
   // they entered is not the one the broker sees.
+  //
+  // **No unit test holds this.** `main.ts` is wiring and has none, which is the
+  // same condition that let the boot-only defect through in the first place —
+  // so it is said here rather than implied. The layer that stands in for it is
+  // the ingest step of `docs/plans/e8.4-credential-key-rotation.md` §14: plant
+  // an `rtu_connection_configs` row with no readable credential against a
+  // *running* host and read the line out of `docker compose logs ingest`. If
+  // that step is skipped, this path is unverified. (AGENTS.md §4.6.)
   const warnedCredentialFallback = new Set<string>();
   const reportCredentialFallbacks = (warnings: readonly PlanWarning[]): void => {
     for (const warning of warnings) {

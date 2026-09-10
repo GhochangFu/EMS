@@ -203,9 +203,22 @@ fail open silently; it no longer does:
    that first serves it. It is deliberately not repeated on every reload: a line
    per RTU per cycle buries the signal it exists to give.
 
-Net effect if a pilot is deployed without the key: storage and the admin UI
-both say so, and the ingest log names every RTU still sharing the global
-broker account. **Set the key before onboarding any RTU.**
+**Net effect if a pilot is deployed without the key — and read the second half,
+because the obvious reading of the first is wrong.** Storage says so and the
+admin UI says so. **The ingest log names nothing at all**, and that is not a
+defect: with no key, `POST :id/credentials` answers 503 before anything is
+stored (`onboarding.service.ts:159`), so no `rtu_connection_configs` row is ever
+created for that RTU. `planEndpoints` then builds `configRow = null`, and the
+fallback warning is guarded on `configRow !== null` (`bindings.ts:515`) — a
+warning about a row that does not exist would name a state nobody is in. The
+count is **zero, not partial**, and `bindings-credentials.spec.ts:155-161` gates
+that absence deliberately.
+
+The warning's real subject is the *other* case: a config row that exists and
+holds no readable credential, which is what an RTU onboarded while the key was
+briefly configured, or a row whose ciphertext predates a key change, produces.
+**Set the key before onboarding any RTU**, and do not wait for an ingest log
+line to tell you it is missing — it will not come.
 
 **Not yet retired: the `MQTT_USERNAME`/`MQTT_PASSWORD` fallback** (ADR 0062
 decision 10, blocked on data — `rtu_connection_configs` still holds 0 rows in
@@ -252,6 +265,18 @@ version neither key holds is a loud, named error, not a silent skip.
 
    Exit code is non-zero exactly when `failures` is non-empty.
 4. Read the report before doing anything else:
+   - **First, check `currentVersion` in the report against the
+     `CREDENTIAL_ENCRYPTION_KEY_VERSION` you set at step 1.** If they differ,
+     **this process never picked up the new window** — almost always because the
+     env file was edited without `docker compose up -d`, which does not change a
+     running container. Everything below is then meaningless: the walk takes
+     `currentVersion` from the process it runs in, so every row already matches
+     it, every row is counted `skipped`, `failures` is empty and the exit code
+     is 0. **That is bit-for-bit the completion signature of step 5**, and
+     acting on it would take you to unsetting the previous key against rows
+     nothing has touched. The command refuses outright only when the key is
+     *unset*; a stale *version* it cannot tell from a finished rotation, which is
+     why this check is yours and not the tool's.
    - `rotated` is the count actually re-encrypted; `skipped` is a row already
      at the current version (idempotent — a second run reports `rotated: 0`).
    - **`raced` is not an error, and it is not "done" either.** Another writer
@@ -271,8 +296,10 @@ version neither key holds is a loud, named error, not a silent skip.
      wrong pilot); on `CredentialKeyVersionError`, suspect a version that was
      never set on this process.
 5. **Do not unset `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` until a run reports
-   nothing below the current version** — every table's `skipped` count equal
-   to its `scanned` count, and `failures: []`. There is no three-key window:
+   nothing below the current version** — `currentVersion` equal to the version
+   you set at step 1 (step 4's first bullet, and without it this test is
+   worthless), every table's `skipped` count equal to its `scanned` count, and
+   `failures: []`. There is no three-key window:
    unsetting the previous key while any row still holds the version it wrote
    turns that row into a loud `CredentialKeyVersionError` on its next read,
    not a silent skip. **A clean report covers only

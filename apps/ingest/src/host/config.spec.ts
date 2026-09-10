@@ -386,16 +386,27 @@ export function runHostConfigTests(): void {
  * `ingest host failed to start` and exits 1 — the same treatment a missing
  * `DATABASE_URL` gets.
  *
- * **Every one of the four functions below asserts on the same error class**, and
- * `resolveCredentialKeys` throws `CredentialKeyConfigError` from four different
- * guards in one function, in this order: the version parse, the current-key
- * length, the previous-key length, the version-0 window, and the
+ * **The refusal functions below all assert on one error class**, and
+ * `resolveCredentialKeys` throws `CredentialKeyConfigError` from **five**
+ * different guards in one function, in this order: the version parse, the
+ * current-key length, the previous-key length, the version-0 window, and the
  * previous-without-current window. So a fixture that leaves an earlier guard
  * live cannot gate a later one — the test sees a throw and cannot tell which
  * guard produced it. That defect passed review twice on this branch (plan §13
- * corrections 1 and 4). Each function therefore states which guard it reaches,
- * pins a phrase belonging to that guard, and asserts the **neighbouring**
- * guard's phrase is absent.
+ * corrections 1 and 4). Each **refusal** function therefore states which guard
+ * it reaches, pins a phrase belonging to that guard, and asserts the
+ * **neighbouring** guard's phrase is absent.
+ *
+ * `runCredentialKeyOpenWindowAcceptedTests` and `runCredentialKeyUnsetTests`
+ * are the exceptions, deliberately: they assert a *successful* boot and never
+ * see an error, so they have no guard to name. They are the positive controls
+ * for the refusals — without them, a `resolveCredentialKeys` that threw on
+ * everything would satisfy every other function in this file.
+ *
+ * This docblock previously said "four functions" and "four guards" and claimed
+ * the negative-assertion rule held for all of them. All three were wrong; the
+ * 2026-09-11 code review found them. A file whose subject is *which guard
+ * answered* had miscounted its own subject.
  */
 
 /**

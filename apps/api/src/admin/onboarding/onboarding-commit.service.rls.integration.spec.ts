@@ -356,13 +356,17 @@ export async function assertCommitWritesTheKeyVersionForEachCredentialState(
       "a version-less blob (every pre-ADR-0062 blob) is labelled version 1 (decision 3)",
     ).toBe(1);
 
-    // The round trip: decrypt the stored ciphertext at the stored version,
-    // with the same env still loaded, and recover the original plaintext.
+    // The round trip: decrypt the stored ciphertext at **the version read back
+    // out of the column**, not at a literal. A literal `1` here would restate
+    // the assertion above rather than depend on it — the round trip would still
+    // pass if the column held something else and the two assertions had drifted
+    // apart. Reading the column makes this prove the stored version selects the
+    // key that actually wrote the bytes, which is the whole of decision 3.
     const crypto = new CredentialCryptoService();
     const decrypted = crypto.decrypt(
       previousRow!.credentials_ciphertext!,
       previousRow!.credentials_iv!,
-      1,
+      previousRow!.key_version,
     );
     expect(
       decrypted.password,

@@ -4,6 +4,7 @@ import { NestFactory } from "@nestjs/core";
 import type pg from "pg";
 
 import { AUTH_POOL, FLEET_POOL, TENANT_POOL } from "../database/database.tokens";
+import { CredentialCryptoService } from "./credential-crypto.service";
 import { CredentialRotationModule } from "./credential-rotation.module";
 import { CredentialRotationService } from "./credential-rotation.service";
 
@@ -35,6 +36,25 @@ async function main(): Promise<void> {
     abortOnError: false,
   });
   try {
+    // A rotation with no current key cannot re-encrypt anything, and it would
+    // not *say* so: the walk would take `currentVersion` from an unconfigured
+    // process, count every row `skipped`, return `failures: []` and exit 0 —
+    // which is exactly the runbook's completion signature. The operator would
+    // then unset `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` against rows nothing had
+    // touched. Found by the 2026-09-11 code review.
+    //
+    // This refuses the unset case only. A *stale* window — the container still
+    // holding version N because `docker compose up -d` was never run after the
+    // env was edited — is indistinguishable from here, because the command
+    // cannot know what the operator intended. That one is caught by reading
+    // `currentVersion` back out of the report, which §3.1 step 4 of
+    // `docs/security/encryption-at-rest.md` now requires.
+    if (!CredentialCryptoService.isConfigured()) {
+      throw new Error(
+        "CREDENTIAL_ENCRYPTION_KEY is not configured in this process, so nothing can be re-encrypted. " +
+          "Set the key and recreate the container (docker compose up -d) before rotating.",
+      );
+    }
     const report = await app.get(CredentialRotationService).run();
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
     process.exitCode = report.failures.length > 0 ? 1 : 0;
