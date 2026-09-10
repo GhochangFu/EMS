@@ -149,19 +149,30 @@ services:
       OIDC_ISSUER: http://localhost:8080/realms/bms
       OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
       OTEL_SERVICE_NAME: bms-api
-      # AES-256-GCM key for RTU connection credentials (ADR 0012). Interpolated
-      # from the gitignored compose `.env`; empty means "not configured", and
-      # the API then refuses to store credentials rather than storing plaintext.
-      # The `ingest` service reads the same key via its `env_file`.
+      # AES-256-GCM key window for RTU connection credentials and webhook
+      # secrets (ADR 0012, ADR 0062). Interpolated from the gitignored compose
+      # `.env`; empty means "not configured", and the API then refuses to store
+      # credentials rather than storing plaintext. The `ingest` service reads
+      # the same three variables via its `env_file`.
       #
-      # Leaving it empty fails closed on STORAGE but open on AUTHENTICATION:
-      # the draft still reports credentialsSet=true and ingest falls back to the
-      # global MQTT_USERNAME/MQTT_PASSWORD, so every RTU shares one broker
-      # account with no warning. Set it before onboarding any RTU (E8.4).
+      # Leaving CREDENTIAL_ENCRYPTION_KEY empty now fails closed on both
+      # storage and authentication: `credentialsSet` stays false (ADR 0062
+      # decision 8) and every route that would encrypt a secret answers 503
+      # rather than silently falling back to a shared broker account. Set it
+      # before onboarding any RTU.
+      #
+      # `_PREVIOUS` and `_VERSION` open a rotation window (ADR 0062) — see
+      # docs/security/encryption-at-rest.md §3 for the runbook. Both
+      # applications refuse to boot on a dead window: a previous key while the
+      # version is 1, a previous key of the wrong length, a current key of the
+      # wrong length, or a previous key with no current key.
+      #
       # This file-based wiring is DEV ONLY — a pilot host must inject the key
       # from a secret store, not from a plaintext file on the data volume.
       # See docs/security/encryption-at-rest.md §3.
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: ${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}
+      CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-}
     ports:
       - "4000:4000"
     depends_on:
@@ -221,6 +232,13 @@ services:
       AUTH_MODE: oidc
       OIDC_ISSUER: http://localhost:8080/realms/bms
       OIDC_JWKS_URI: http://keycloak:8080/realms/bms/protocol/openid-connect/certs
+      # `E8.4` / ADR 0062 owner ruling 6 — this service previously set none of
+      # these at all. A replica that cannot decrypt a channel secret answers
+      # `unreadable` on every webhook it evaluates, so it needs the whole
+      # window `api` gets above, not just the current key.
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: ${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}
+      CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-}
     ports:
       - "4001:4001"
     depends_on:
