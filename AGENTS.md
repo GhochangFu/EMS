@@ -269,6 +269,23 @@
 > that vocabulary was the recommendation and the owner declined it, so no
 > plant-domain picker moved, at the accepted cost that the two overlap and will
 > drift.
+> The **ingest timestamp rule** finally settles what `F4.37` deferred and
+> `F1.7` measured at a 3 h 37 m fleet spread (**ADR 0061**, `F4.57`, PR #413):
+> `telemetry.point_values.time` is the ingest **receive** time for every row,
+> and a nullable `device_time` records what the device claimed, **unclamped**,
+> so the skew stays measurable instead of corrected away. Not a clamp — that
+> answer was declined, because it leaves a lagging device omitted by every
+> recency query. Three things follow that a reader should not have to infer.
+> `time` is the primary key, the `ON CONFLICT` target *and* the in-batch dedupe
+> key, so the dedupe key had to move with it, and an in-batch collapse now names
+> the point it discarded rather than counting it anonymously. **ADR 0016
+> Amendment 5** extends the rule into the `F1.10` disk buffer — a segment line
+> carries a required `rx`, so a replayed sample keeps its original arrival and
+> Amendment 4's idempotent-replay guarantee stays true rather than being
+> amended away. And rows written before migration `0069` keep the device clock
+> in `time` with `device_time IS NULL`; nothing marks that boundary but the
+> migration's own timestamp, which is a deliberate ruling over 10 million rows,
+> not an oversight.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
@@ -427,7 +444,7 @@ entry **D-0001**.
 |--------------|------------|
 | Frontend     | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, ECharts, and — since `F2.5` (ADR 0038 Amendment 2) — **CodeMirror 6** on the two authored-formula surfaces only. Five declared packages (`codemirror`, `@codemirror/{state,view,autocomplete,lint}`), composed from `minimalSetup` and never `basicSetup`, reached solely through `components/asset-templates/formula-editor-lazy.tsx` so the library ships in its own chunk. Measured: the entry chunk contains no CodeMirror at all, and `@codemirror/search` tree-shakes out of both chunks. `tests/adr-0038-formula-editor.test.ts` holds all of that statically — it is the only module allowed to import `codemirror` or `@codemirror/*`, in any import form. **Whether an asset is live is decided in exactly one place since `F4.37` (2026-08-14): `apps/web/src/lib/schematic-telemetry.ts`.** `FRESH_MS`, the arrival clamp and `isStale` live there, extracted from the context component so they can be tested at all — the context imports React, TanStack Query and socket.io-client, and `vitest.config.ts` only counts `apps/web/src/lib/**` toward coverage, so anything above it is untestable *and* invisible to the gate. Put new pure logic there, not in the component. **Freshness is computed at render, so it needs something to force one**: the provider's `staleTick` is the only periodic re-render in the app, and a `refetchInterval` is not a substitute — TanStack v5 tracks accessed properties and structurally shares results, so an unchanged response notifies nobody. **Since `F4.38` (2026-08-15, ADR 0027) the gate reaches everything on screen**, not just the SVG schematics: all seven control-room pages derive their tiles through `isStale`, a stale tile renders `—` rather than its last numbers, `offline` outranks `critical` in every page banner, and aggregates (`ctx.totalKw`, the KPI averages) exclude stale slices and show the count they excluded. Two rules follow for anyone adding to these pages. **Status renderers are `if`/ternary chains whose default is the healthy branch, so a new status member compiles silently and draws as `normal`** — test `offline` first in every chain; the compiler will not find them for you. And **read the clock at render**, taking the re-render from the provider's `staleTick`: a page that starts its own interval or caches the status re-freezes the tiles. `tests/repo-invariants.test.ts` holds both, plus the live-critical count that stops a dead sensor masking a live alarm. **`F4.39` (2026-08-15, ADR 0028) closed the assumption underneath all of this — that the thing on screen is a reading at all.** Every value on a control-room page is now one of: *measured* / *derived* (gated by ADR 0027), or *nameplate* / *configuration* / *simulated*, which render through `StaticValue` / `StaticTspan` (`components/static-value.tsx`) and are visibly marked `NP` / `SET` / `SIM`. The rule that decides which: **a value may be labelled a measurement of X only if it comes from telemetry that measures X** — `kVA` from `kW` and `pf` is fine, "Voltage Y" from Voltage R is not, and 32 cell voltages from one string voltage is not. Markers qualify *values*, not headings, hints or `x / y` denominators, whose form already says they are not readings. Three more traps this drew out: **each value takes the clock of the asset it came from** — `freshValue(own ?? fallback, ownStale)` reads naturally and is wrong, because the `??` resolves before the gate, so use `ownElse`; **absent is not zero** — `(fanSpeedPct ?? 0) > 20` renders a unit that publishes no fan speed as `IDLE`, which for a standby unit is its normal reading, so use `isHvacRunning`, which returns `null`; and a box holding a gated value must be able to **render offline**, or an em-dash inside a confident green outline is the only signal. Checks live in `tests/repo-invariants-provenance.test.ts`. **Since `F4.23` (2026-08-15, ADR 0030) every response this client reads is checked against a schema before any of the above sees it** — see the *API contracts* row and §4.8; a `fetch` in `src/api/` that does not go through `checkResponse` is the gap that row exists to close |
 | Backend API  | NestJS (Node 20 LTS, TypeScript) |
-| Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set. The source is `LISTEN bms_telemetry` on a dedicated `pg` connection (`telemetry-notify.service.ts` → `telemetry-listener.ts`), fanned out through `TelemetryBroadcastHub`. **That listener supervises itself since `F4.34` (2026-08-14)** — error handler, reconnect with the ADR 0016 §5 backoff, and a re-`LISTEN` on every reconnect. Before it, the listener connected once with no `error` handler, and because `pg.Client` is an `EventEmitter` an unhandled `error` event **threw**: with no `uncaughtException` handler in `apps/api` and no `restart:` on the compose service, any dropped connection took the whole API down and left it down. Watch `bms_api_telemetry_listener_connected` on `/metrics` — 0 means realtime is dead while REST still serves. **`NOTIFY` has no replay**, so readings published during an outage never reach the live push; they are still in the hypertable, and clients recover history through `GET /telemetry/points/:pointRef/recent`. **The payload is validated since `F4.36` (2026-08-14)** — `telemetry-reading.schema.ts` checks every reading, drops the invalid ones individually and delivers the rest, because one `null` entry used to throw inside `AlarmThresholdService.collapseLatest` *before any rule ran* and silently suppress alarms for the whole batch. Watch `bms_api_telemetry_readings_dropped_total` beside the gauge: non-zero means something is publishing in a shape the contract does not allow, and `NOTIFY` needs **no table privilege**, so any role that can connect can write to that channel. It counts rejected *readings* — a broken envelope (non-JSON, `readings` not an array) is log-only. The payload is capped at 500 readings because validating is far dearer than the cast it replaced and the 8000-byte `NOTIFY` limit bounds bytes, not entries. **A future-dated `time` still passes validation here, deliberately, and that is not an oversight**: `resolveSamples` trusts `sample.at`, and the PHE pilot was measured writing 33 minutes ahead of `now()` (`F4.28`), so rejecting it server-side would delete real telemetry. Verified 2026-08-14 by publishing a reading 33 minutes ahead — accepted and broadcast, `dropped_total` unchanged. **The sink is what was fixed instead (`F4.37`, PR #39)**: the web client clamps on arrival, so a skewed producer costs at most `FRESH_MS` of delayed offline detection rather than pinning a dead asset `running` forever |
+| Realtime     | NestJS WebSocket gateway over Socket.IO with Redis adapter when `REDIS_URL` is set. The source is `LISTEN bms_telemetry` on a dedicated `pg` connection (`telemetry-notify.service.ts` → `telemetry-listener.ts`), fanned out through `TelemetryBroadcastHub`. **That listener supervises itself since `F4.34` (2026-08-14)** — error handler, reconnect with the ADR 0016 §5 backoff, and a re-`LISTEN` on every reconnect. Before it, the listener connected once with no `error` handler, and because `pg.Client` is an `EventEmitter` an unhandled `error` event **threw**: with no `uncaughtException` handler in `apps/api` and no `restart:` on the compose service, any dropped connection took the whole API down and left it down. Watch `bms_api_telemetry_listener_connected` on `/metrics` — 0 means realtime is dead while REST still serves. **`NOTIFY` has no replay**, so readings published during an outage never reach the live push; they are still in the hypertable, and clients recover history through `GET /telemetry/points/:pointRef/recent`. **The payload is validated since `F4.36` (2026-08-14)** — `telemetry-reading.schema.ts` checks every reading, drops the invalid ones individually and delivers the rest, because one `null` entry used to throw inside `AlarmThresholdService.collapseLatest` *before any rule ran* and silently suppress alarms for the whole batch. Watch `bms_api_telemetry_readings_dropped_total` beside the gauge: non-zero means something is publishing in a shape the contract does not allow, and `NOTIFY` needs **no table privilege**, so any role that can connect can write to that channel. It counts rejected *readings* — a broken envelope (non-JSON, `readings` not an array) is log-only. The payload is capped at 500 readings because validating is far dearer than the cast it replaced and the 8000-byte `NOTIFY` limit bounds bytes, not entries. **A future-dated `time` still passes validation here, deliberately, and that is not an oversight**: rejecting it server-side would delete real telemetry, and the PHE pilot was measured writing 33 minutes ahead of `now()` (`F4.28`). Verified 2026-08-14 by publishing a reading 33 minutes ahead — accepted and broadcast, `dropped_total` unchanged. **Two fixes landed instead, at the two ends.** `F4.37` (PR #39) clamps on arrival in the web client, so a skewed producer costs at most `FRESH_MS` of delayed offline detection rather than pinning a dead asset `running` forever — and that clamp stays, because it is the only defence for rows written before migration `0069` and for any writer that bypasses the normaliser. **`F4.57` (ADR 0061, PR #413) closed the source**: `resolveSamples` no longer trusts `sample.at` at all — `time` is the ingest receive time for every row and the device's own claim is stored beside it in `device_time`. So ingest stops *producing* future-dated rows; it does not repair the ones already written, and this validator must still accept them |
 | Auth         | Keycloak/OIDC for pilot compose; local JWT fallback only for native WSL development |
 | Observability | Optional Prometheus, Grafana, Loki, Promtail, and OpenTelemetry baseline |
 | OLTP DB      | PostgreSQL 16 |
@@ -1996,20 +2013,32 @@ These are intentionally deferred. Do not implement them yet:
   row-level security (decision 9 — no `organization_id` column, no policy;
   isolation stays application-layer through `readableAssetIds`, deliberately
   and permanently, not merely "not yet")
-- **Clamping a device timestamp at ingest, and widening the enabled RTU set.**
-  `F1.7` left both open on purpose. `parsePayload` takes the envelope's `ts`
-  verbatim and nothing bounds it; measured 2026-08-22, the twelve PHE devices
-  span **−3:02:36 to +34:31** against the server, and all five *enabled* ones
-  run ahead — so each reads online for as long as its clock leads after it dies.
-  `F4.37` closed the sink-side half and named `F1.7` as where the ingest-side
-  clamp belongs, then called the trade a **product call**: clamping forward only,
-  substituting receive time past a bound, and recording both times are three
-  different answers with different costs, and choosing is the owner's under §10
-  (see `F4.57`). Likewise the four RTUs held out of the set are held for measured
-  reasons — two with dark meters (`F4.58`), two whose rows land outside every
-  dashboard window — and enabling one takes its assets from simulated to dead.
-  Re-measure with `apps/ingest/scripts/fleet-probe.mjs`; do not widen the set
-  unprompted.
+- **The device-timestamp question is decided and delivered** (**ADR 0061**,
+  `F4.57`, PR #413) — and it was **not** decided by clamping. `time` is now the
+  ingest **receive** time for every row, and a nullable
+  `telemetry.point_values.device_time` records what the device claimed,
+  **unclamped**, so the skew stays measurable rather than corrected away. Of the
+  three answers `F4.37` named, the owner took "record both": a forward-only
+  clamp leaves a lagging device silently omitted by every recency query, and
+  substituting past a bound discards the device's own ordering. Ruling 4 and
+  **ADR 0016 Amendment 5** extend it to the `F1.10` disk buffer — a segment line
+  carries a required `rx`, so a replayed sample keeps its original arrival and
+  replay stays idempotent.
+
+  Two things it deliberately did **not** do. Rows written before migration
+  `0069` keep the device clock in `time` and carry `device_time IS NULL`;
+  nothing marks that boundary but the migration's own timestamp (ruling 2, over
+  10 million rows). And **the clocks are still wrong** — `device_time` makes the
+  skew visible, it does not fix any device.
+
+- **Widening the enabled RTU set is still out of scope**, and ADR 0061 does not
+  change that. The four RTUs held out are held for measured reasons — two with
+  dark meters (`F4.58`), two whose rows landed outside every dashboard window —
+  and enabling one takes its assets from simulated to dead. Receive-time
+  stamping does make the second pair *able* to land inside a window at last, so
+  the case for re-measuring is stronger than it was; the decision is still an
+  evidence question `packages/db/src/ingest-enabled-set.ts` owns. Re-measure
+  with `apps/ingest/scripts/fleet-probe.mjs`; do not widen the set unprompted.
 - MFA / SSO / AD federation
 - Real protocol adapters for BACnet, Modbus, SNMP, OPC-UA, REST polling, DCS.
   The **MQTT PHE ingest pilot is promoted for five RTUs** (ADR 0007 as amended

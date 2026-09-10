@@ -840,11 +840,18 @@ Process (`AGENTS.md` §10).
 - **Unblocks:** nothing directly — no row lists `F1.7` as a whole-token
   dependency. `F3.16` and `E1.1` carry the `F1.x` wildcard, and `F3.16` overlaps
   the two rows below.
-- **Owed:** the `F4.37` ingest-side clamp, **owner-gated** — holding four RTUs
-  back closed the never-online half, but all five enabled stations run **+8:11
-  to +34:31 ahead**, so each still reads online for as long as its clock leads
-  after it dies. Plus the AGENTS.md §6 sweep in its own `chore(agents):` PR
-  (§9.10), and seven new rows: `F1.15`, `F4.57`–`F4.62`.
+- **~~Owed: the `F4.37` ingest-side clamp~~ — settled 2026-09-10 as `F4.57`,
+  and settled the other way.** The owner declined the clamp under ADR 0061 and
+  chose to record **both** times: `time` is the ingest receive time and
+  `device_time` keeps the device's own claim, unclamped. The false-fresh half
+  this bullet describes is closed at the source rather than bounded. Verified
+  live on all five enabled stations, each writing `device_time` with **zero
+  spread within the device** and the ordering matching this fleet probe's
+  independent measurement 19 days earlier.
+- **Still owed:** the AGENTS.md §6 sweep in its own `chore(agents):` PR
+  (§9.10), and of the seven rows this item raised — `F1.15`, `F4.57`–`F4.62` —
+  six remain: `F4.57` closed, and `F4.58` (the absent-reading counters) still
+  overlaps `F3.16`.
 
 ### Ingest adapter framework (F1.1) — strangler migration complete
 - **Status:** ADR 0016 §6 **commits 2 and 3 landed** (PR #13, then PR #19 on
@@ -1328,8 +1335,17 @@ Process (`AGENTS.md` §10).
   `drop_after` runs, and `_1d` alone cannot answer "the peak hour in March two
   years ago" — what ISO 50001 baselining (`F4.19`) needs. A raw `DELETE` also
   does **not** remove the aggregate rows and no policy repairs it.
-- **Deliberately not done:** the unclamped ingest `sample.at` that parks
-  watermarks ahead of `now()` (belongs with `F1.7`), and the **unmeasured** lock
+- **Deliberately not done:** ~~the unclamped ingest `sample.at` that parks
+  watermarks ahead of `now()`~~ — **both halves of that sentence were false, and
+  `F4.57` measured it.** No watermark on any of the four aggregates was ever
+  ahead of `now()`: each refresh policy's `end_offset` bounds it, so a
+  future-dated row sits *above* the watermark and is served by the live tail
+  (`materialized_only = false`). And the unclamped `sample.at` is gone —
+  ADR 0061 made `time` the receive time. What is genuinely owed here instead is
+  narrower: a **replayed** sample carries its original arrival, so
+  `INGEST_BUFFER_MAX_AGE_MS` must stay under `point_values_1m`'s 3 h
+  `start_offset` or a replayed row lands outside every scheduled refresh
+  window. Also still owed: the **unmeasured** lock
   level `CREATE MATERIALIZED VIEW … WITH NO DATA` takes on `point_values` — the
   ADR states that as unverified rather than implying otherwise.
 
