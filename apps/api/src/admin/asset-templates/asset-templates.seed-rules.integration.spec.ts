@@ -119,7 +119,8 @@ export function assert(condition: boolean, message: string): void {
   }
 }
 
-async function expectRejection(
+/** Fails unless `run` rejects with a message matching `match`; `what` names the case. */
+export async function expectRejection(
   run: () => Promise<unknown>,
   match: RegExp,
   what: string,
@@ -360,14 +361,14 @@ export async function publishFixtureTemplate(
 }
 
 /** The two assets every "happy path" case builds. */
-function twoAssets(): { code: string; name: string; sourceDataKeyVars: { unit: string } }[] {
+export function twoAssets(): { code: string; name: string; sourceDataKeyVars: { unit: string } }[] {
   return [
     { code: `${TEST_ASSET_PREFIX}01`, name: "Seed Skid 01", sourceDataKeyVars: { unit: "01" } },
     { code: `${TEST_ASSET_PREFIX}02`, name: "Seed Skid 02", sourceDataKeyVars: { unit: "02" } },
   ];
 }
 
-type SeededRuleRow = {
+export type SeededRuleRow = {
   id: string;
   code: string;
   name: string;
@@ -394,7 +395,7 @@ type SeededRuleRow = {
 };
 
 /** Every rule this suite's template seeded, joined to its asset. */
-async function seededRules(pool: pg.Pool): Promise<SeededRuleRow[]> {
+export async function seededRules(pool: pg.Pool): Promise<SeededRuleRow[]> {
   const { rows } = await pool.query<SeededRuleRow>(
     `SELECT r.id, r.code, r.name, r.description, r.category, r.rule_type, r.source, r.enabled,
             r.point_key, r.operator, r.threshold_value, r.severity, r.clear_hold_seconds,
@@ -410,7 +411,8 @@ async function seededRules(pool: pg.Pool): Promise<SeededRuleRow[]> {
   return rows;
 }
 
-function ruleFor(rows: SeededRuleRow[], assetCode: string, alarmCode: string): SeededRuleRow {
+/** The one seeded rule for this asset and template alarm; throws, listing what it found, if absent. */
+export function ruleFor(rows: SeededRuleRow[], assetCode: string, alarmCode: string): SeededRuleRow {
   const row = rows.find((r) => r.asset_code === assetCode && r.source_alarm_code === alarmCode);
   if (!row) {
     throw new Error(
@@ -830,10 +832,12 @@ export async function assertPhilosophyRowCannotBeArmed(
   await svc.rules.setEnabled(proto.id, { enabled: true }, actor);
   assert((await isEnabled(proto.id)) === true, `${proto.code}: re-arming a proto rule must work`);
 
-  // Commissioning: one PATCH carrying BOTH fields. This is the E2.4 Q1 join's
-  // only database execution — `philosophy.point_key` is not in
+  // Commissioning: one PATCH carrying BOTH fields. This suite's only proof that
+  // the E2.4 Q1 join returns the right rows — `philosophy.point_key` is not in
   // `pointKeysForAsset`'s answer, so `assertCompatiblePoint` can only pass by
-  // reading the asset's pinned template.
+  // reading the asset's pinned template. It stopped being that join's only
+  // *execution* under `F3.49`, which runs it on every threshold validation
+  // rather than only on a map miss.
   await svc.rules.updateRule(philosophy.id, { operator: "gt", thresholdValue: 3 }, actor);
   const { rows: patched } = await pool.query<{ operator: string | null; threshold_value: string }>(
     `SELECT operator, threshold_value::text FROM bms.automation_rules WHERE id = $1`,

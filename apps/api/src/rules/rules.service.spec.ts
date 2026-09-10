@@ -56,8 +56,9 @@ type Chain = {
  * to `rows`. Enough for the three reads `validateRuleDraft` can perform: the
  * code uniqueness scan (`.select().from().orderBy()`), `assertCompatiblePoint`'s
  * asset lookup (`.select().from().where().limit()`) and — since `E2.4` widened
- * that check — `templatePointKeysForAsset`'s
- * `.select().from().innerJoin().where()`.
+ * that check, batched by `F3.49` — `ruleTargetPointKeysByAsset`'s
+ * `.select().from().innerJoin().where().orderBy()`, which runs on every
+ * threshold validation and folds its rows by `assetId`.
  */
 function selectChain(rows: unknown[]): Chain {
   const chain: Chain = {
@@ -77,6 +78,11 @@ function selectChain(rows: unknown[]): Chain {
  * back to `rows` once it is spent — the one thing `rows` alone cannot do, and
  * exactly what the widened `assertCompatiblePoint` needs: its asset lookup and
  * the template-point read are two selects that must answer differently.
+ *
+ * The HVAC cases still pass `rows` alone: since `F3.49` the template read runs
+ * on every threshold validation, and the asset row it is answered with carries
+ * no `assetId`, so the fold ignores it and the map alone decides — which is the
+ * behaviour those cases pin.
  */
 function validator(rows: unknown[] = [], queue?: unknown[][]): ValidateAccess {
   const pending = queue ? [...queue] : undefined;
@@ -348,9 +354,13 @@ export async function runCompatiblePointWideningTests(): Promise<void> {
   // two selects deep: the asset lookup, then the template-point read.
   const draft: RuleDraftBody = { ...thresholdDraft(), pointKey: TEMPLATE_KEY };
 
+  // `assetId` on the template row is load-bearing since `F3.49`:
+  // `ruleTargetPointKeysByAsset` folds each row into the entry of the asset it
+  // names and ignores a row naming no input asset, so without it this key is
+  // dropped and the case reddens on the refusal below.
   const accepted = await validator(
     [],
-    [WATER_ASSET, [{ pointKey: TEMPLATE_KEY }]],
+    [WATER_ASSET, [{ assetId: ASSET_ID, pointKey: TEMPLATE_KEY }]],
   ).validateRuleDraft(draft, undefined, null);
   assert(
     accepted.pointKey === TEMPLATE_KEY,

@@ -58,7 +58,7 @@ import {
   selectRuleRows,
   traceProjection,
 } from "./rule-reads";
-import { pointKeysForAsset, templatePointKeysForAsset } from "./rule-points";
+import { assertCompatiblePoint, ruleTargetPointKeysByAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
   ListRuleExecutionsQuery,
@@ -84,7 +84,8 @@ export class RulesService {
     // caller's `assetIds` is the isolation control. `evaluateEnabledRules` is a
     // deliberately cross-org system sweep (ADR 0033 decision 2); the code scan,
     // the pre-write asset lookup and the pre-tenant actor read stay on `fleetDb`;
-    // `getBuilderCatalog` reads `assets` (master data, not a decision-1 table).
+    // `getBuilderCatalog` reads `assets` (master data) and, since `F3.49`,
+    // `template_points` — its `assetIds` WHERE is the isolation control for both.
     // Writes run inside `withTenant(org)`, and E7.1c folds the post-write
     // read-back into that transaction (`getRuleRowTx`); the pre-write current-row
     // read stays on `fleetDb`. `rule_notifications` stays in `ChannelsService`.
@@ -134,6 +135,7 @@ export class RulesService {
           .where(inArray(assets.id, assetIds))
           .orderBy(asc(assets.siteName), asc(assets.code))
       : base.orderBy(asc(assets.siteName), asc(assets.code)));
+    const pointKeys = await ruleTargetPointKeysByAsset(this.fleetDb, rows);
 
     return {
       assets: rows.map((row) => ({
@@ -143,7 +145,7 @@ export class RulesService {
         // 0031 Amendment 1, so this is not a narrowing cast any more — the
         // vocabulary is data, and the foreign key is the enforcement.
         domain: row.domain as AssetDomain,
-        pointKeys: pointKeysForAsset(row.domain, row.code),
+        pointKeys: pointKeys.get(row.id) ?? [],
       })),
     };
   }
@@ -900,7 +902,7 @@ export class RulesService {
           "Threshold rules require asset, point, operator, and threshold value",
         );
       }
-      await this.assertCompatiblePoint(dto.assetId, dto.pointKey);
+      await assertCompatiblePoint(this.fleetDb, dto.assetId, dto.pointKey);
       if (!("window" in dto.condition) || dto.condition.window !== "latest") {
         throw new BadRequestException("Threshold rules must use the latest-value window");
       }
@@ -925,26 +927,6 @@ export class RulesService {
       operator: null,
       thresholdValue: null,
     });
-  }
-
-  private async assertCompatiblePoint(assetId: string, pointKey: string): Promise<void> {
-    // fleetDb: a pre-write asset lookup, already scope-checked by the caller.
-    const [asset] = await this.fleetDb
-      .select({ code: assets.code, domain: assets.domain })
-      .from(assets)
-      .where(eq(assets.id, assetId))
-      .limit(1);
-    if (!asset) {
-      throw new BadRequestException("Selected asset does not exist");
-    }
-    if (!pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
-      // E2.4 Q1: only on the miss, so nothing that passed before pays for this
-      // query or changes behaviour. Same `fleetDb` and the same reason as the
-      // asset read above — see `templatePointKeysForAsset`'s doc.
-      if (!(await templatePointKeysForAsset(this.fleetDb, assetId)).includes(pointKey)) {
-        throw new BadRequestException("Selected telemetry point is not compatible with asset");
-      }
-    }
   }
 
   /** The stored org of a rule being mutated; refuses a pre-0046 NULL. */
