@@ -1146,10 +1146,20 @@ product of the two sets.
 
 **The raw key was declined on two grounds, both measured.**
 
-*Nobody outside `apps/api` reads it.* `git grep -ln "dedupeKey\|dedupe_key"`
-outside that tree returns documentation only — `AGENTS.md`, `docs/BACKLOG.md`,
-two ADRs and five plans — and no source. Exposing the key would therefore create
-the **first** client of a grammar that is already load-bearing for two unrelated
+*Nobody outside `apps/api` **parses** it.* **The first draft of this sentence
+said `git grep -ln "dedupeKey\|dedupe_key"` outside that tree "returns
+documentation only … and no source", and that is false** — `F3.56`'s post-merge
+review re-ran it and got eight non-documentation files: the column declaration
+(`packages/db/src/schema/alarms-schema.ts`), three migrations (`0038`, `0065`,
+`0066`), `packages/shared/src/contracts/notifications.ts` (added by `F3.56`
+itself), and three `tests/` invariants, two of which read `ledger-reads.ts`'s
+source and assert it still filters on the column. The doc half was short too:
+seven plans, not five, plus `docs/roadmap.md`, which the sentence did not name.
+
+**The conclusion survives the correction, and that is why it is worth stating
+precisely.** Not one of those eight **decomposes** the key — they declare the
+column, index it, or assert that a reader filters on it. Exposing the key would
+therefore still create the **first** client of a grammar that is already load-bearing for two unrelated
 purposes: Amendment 5's byte-identity between a raise and its re-offer, and
 `RESERVED_KEY_PATTERN`'s segment-count invariant, which is compiled into SQL. A
 browser that parses the key becomes a second reader of an invariant that exists

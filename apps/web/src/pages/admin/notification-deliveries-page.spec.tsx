@@ -76,8 +76,11 @@ function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeli
  * **The name carries the count on purpose.** It was `ALL_FIVE` until `F3.52`
  * added `skipped_stale`, and a fixture whose name says five while the set holds
  * six is how a status ships with no label: nothing in `apps/web` fails to
- * compile when the contract grows, because all three switches in
- * `notification-channels.ts` carry a `default:`.
+ * compile when the contract grows, because all four switches in
+ * `notification-channels.ts` carry a `default:` — `deliveryStatusLabel`,
+ * `deliveryEventLabel`, `deliveryStatusTone` and `testResultMessage`. It said
+ * three until `F3.56` added the second of those, which is the undercount this
+ * sentence exists to warn about, made by the sentence itself.
  */
 const ALL_SIX: NotificationDeliveryDto[] = [
   delivery({ id: "d1", status: "sent" }),

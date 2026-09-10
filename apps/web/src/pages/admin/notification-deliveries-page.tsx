@@ -58,9 +58,11 @@ type NotificationDeliveriesPageProps = { user: AuthUser };
  * one, so the whole set is already in hand.
  *
  * **`F3.56` adds the Event column** (ADR 0041 Amendment 8): a raise, an
- * escalation step, a cleared message or a send test, rendered as plain text
- * beside the Status pill rather than as a second pill, since the two answer
- * different questions and only one of them is an outcome.
+ * escalation step, a cleared message, a send test, or `unknown` — five values,
+ * and `deliveryEventLabel` names all five, because a row this codebase never
+ * wrote still has to render something. Plain text beside the Status pill rather
+ * than a second pill, since the two answer different questions and only one of
+ * them is an outcome.
  */
 export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageProps) {
   const [channelFilter, setChannelFilter] = useState("");

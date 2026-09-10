@@ -129,8 +129,13 @@ export const notificationChannelDtoSchema = z.object({
  * channels and a uuid names nothing to a reader.
  *
  * Since `F3.56` the row also carries `event` — a raise, an escalation step, a
- * cleared message or a send test — so a `failed` row says what it was for and
- * not only that it failed (ADR 0041 Amendment 8).
+ * cleared message, a send test, or `unknown` — so a `failed` row says what it
+ * was for and not only that it failed (ADR 0041 Amendment 8). **A client must
+ * handle all five.** `unknown` is unreachable from every writer in this
+ * codebase, which is why Amendment 8 describes only four as things a row can
+ * be — but it is a member of the set, it is what a row whose key does not match
+ * its own rule and alarm derives to, and a `switch` that omits it falls through
+ * to whatever the author meant for a real event kind.
  */
 export const notificationDeliveryDtoSchema = z.object({
   id: z.string(),

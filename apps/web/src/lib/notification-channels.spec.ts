@@ -202,10 +202,14 @@ export function neverRefusesAnAdminItsFleetWideDefault(): void {
  * `F3.56` — every delivery event has a word an operator can read (ADR 0041
  * Amendment 8).
  *
- * Asserted with `.toBe`, not `.toContain`: every `default:` in this module
+ * Asserted with `.toBe`, not `.toContain`: **`deliveryEventLabel`'s** `default:`
  * returns the raw enum value, so a `.toContain` of a fragment would still pass
  * with a case deleted — the same reasoning `notification-channels.test.ts`
- * records for `deliveryStatusLabel`'s sixth status.
+ * records for `deliveryStatusLabel`'s sixth status. Scoped to this function on
+ * purpose: two of the module's four `default:` branches return something else —
+ * `deliveryStatusTone`'s returns the literal `"offline"` and
+ * `testResultMessage`'s returns a whole sentence — so the reasoning does not
+ * carry to them.
  */
 export function namesEveryDeliveryEventInWords(): void {
   const cases: Array<[NotificationDeliveryEvent, string]> = [
