@@ -58,7 +58,7 @@ import {
   selectRuleRows,
   traceProjection,
 } from "./rule-reads";
-import { assertCompatiblePoint, pointKeysForAsset } from "./rule-points";
+import { assertCompatiblePoint, ruleTargetPointKeysByAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
   ListRuleExecutionsQuery,
@@ -84,7 +84,8 @@ export class RulesService {
     // caller's `assetIds` is the isolation control. `evaluateEnabledRules` is a
     // deliberately cross-org system sweep (ADR 0033 decision 2); the code scan,
     // the pre-write asset lookup and the pre-tenant actor read stay on `fleetDb`;
-    // `getBuilderCatalog` reads `assets` (master data, not a decision-1 table).
+    // `getBuilderCatalog` reads `assets` (master data) and, since `F3.49`,
+    // `template_points` — its `assetIds` WHERE is the isolation control for both.
     // Writes run inside `withTenant(org)`, and E7.1c folds the post-write
     // read-back into that transaction (`getRuleRowTx`); the pre-write current-row
     // read stays on `fleetDb`. `rule_notifications` stays in `ChannelsService`.
@@ -134,6 +135,7 @@ export class RulesService {
           .where(inArray(assets.id, assetIds))
           .orderBy(asc(assets.siteName), asc(assets.code))
       : base.orderBy(asc(assets.siteName), asc(assets.code)));
+    const pointKeys = await ruleTargetPointKeysByAsset(this.fleetDb, rows);
 
     return {
       assets: rows.map((row) => ({
@@ -143,7 +145,7 @@ export class RulesService {
         // 0031 Amendment 1, so this is not a narrowing cast any more — the
         // vocabulary is data, and the foreign key is the enforcement.
         domain: row.domain as AssetDomain,
-        pointKeys: pointKeysForAsset(row.domain, row.code),
+        pointKeys: pointKeys.get(row.id) ?? [],
       })),
     };
   }

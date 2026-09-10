@@ -119,7 +119,7 @@ export function assert(condition: boolean, message: string): void {
   }
 }
 
-async function expectRejection(
+export async function expectRejection(
   run: () => Promise<unknown>,
   match: RegExp,
   what: string,
@@ -360,14 +360,14 @@ export async function publishFixtureTemplate(
 }
 
 /** The two assets every "happy path" case builds. */
-function twoAssets(): { code: string; name: string; sourceDataKeyVars: { unit: string } }[] {
+export function twoAssets(): { code: string; name: string; sourceDataKeyVars: { unit: string } }[] {
   return [
     { code: `${TEST_ASSET_PREFIX}01`, name: "Seed Skid 01", sourceDataKeyVars: { unit: "01" } },
     { code: `${TEST_ASSET_PREFIX}02`, name: "Seed Skid 02", sourceDataKeyVars: { unit: "02" } },
   ];
 }
 
-type SeededRuleRow = {
+export type SeededRuleRow = {
   id: string;
   code: string;
   name: string;
@@ -394,7 +394,7 @@ type SeededRuleRow = {
 };
 
 /** Every rule this suite's template seeded, joined to its asset. */
-async function seededRules(pool: pg.Pool): Promise<SeededRuleRow[]> {
+export async function seededRules(pool: pg.Pool): Promise<SeededRuleRow[]> {
   const { rows } = await pool.query<SeededRuleRow>(
     `SELECT r.id, r.code, r.name, r.description, r.category, r.rule_type, r.source, r.enabled,
             r.point_key, r.operator, r.threshold_value, r.severity, r.clear_hold_seconds,
@@ -410,7 +410,7 @@ async function seededRules(pool: pg.Pool): Promise<SeededRuleRow[]> {
   return rows;
 }
 
-function ruleFor(rows: SeededRuleRow[], assetCode: string, alarmCode: string): SeededRuleRow {
+export function ruleFor(rows: SeededRuleRow[], assetCode: string, alarmCode: string): SeededRuleRow {
   const row = rows.find((r) => r.asset_code === assetCode && r.source_alarm_code === alarmCode);
   if (!row) {
     throw new Error(
