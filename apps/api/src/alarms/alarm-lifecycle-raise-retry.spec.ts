@@ -142,9 +142,14 @@ async function testTheOriginalRaiseIsOfferedAgain(): Promise<void> {
   // would then block that key for the life of the alarm.
   assert(dispatch.input.raised === true, "raised: true, so the transition dedupe is not reached");
   assert(dispatch.input.reoffered === true, "reoffered: true, so a ceiling refusal writes no row");
+  // `F3.57` — the alarm's message with its age, and this is the SWEEP-level
+  // proof that the builder's clause survives the whole phase to the dispatch.
+  // `alarmRow`'s default `raisedAt` is `secondsBefore(61)`, one second past the
+  // whole-minute floor, so the fixture that has always driven this case now
+  // exercises the clause without being changed for it.
   assert(
-    dispatch.input.message === "Feeder overload: kw = 150 (gt 100)",
-    `the alarm's message verbatim, got "${dispatch.input.message}"`,
+    dispatch.input.message === "Feeder overload: kw = 150 (gt 100) — alarm open for 1 min",
+    `the alarm's message with the age appended, got "${dispatch.input.message}"`,
   );
   assert(dispatch.input.alarmId === "alarm-1", "the alarm id");
   assert(

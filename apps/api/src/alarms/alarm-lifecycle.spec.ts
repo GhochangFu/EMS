@@ -1,5 +1,6 @@
 import { buildDedupeKey } from "../notifications/dedupe-key";
 import { subjectFor } from "../notifications/dispatch-shapes";
+import type { DispatchInput } from "../notifications/notifications.service";
 import {
   DEFAULT_CLEAR_HOLD_SECONDS,
   LIFECYCLE_TICK_MS,
@@ -251,7 +252,7 @@ function testClearedDispatchInput(): void {
  * whole mechanism, so every field is asserted rather than sampled.
  */
 function testRaiseRetryDispatchInput(): void {
-  const input = raiseRetryDispatchInput(alarm, rule);
+  const input = raiseRetryDispatchInput(alarm, rule, NOW);
   assert(input !== null, "a rule with an organization yields an input");
   if (input === null) return;
   assert(input.ruleId === "rule-1" && input.ruleCode === "RULE-1", "the rule's id and code");
@@ -264,9 +265,14 @@ function testRaiseRetryDispatchInput(): void {
     input.severity === "critical",
     `the ALARM's severity, never the rule's: a rule edited mid-alarm would otherwise change the key and orphan the very rows the ledger read matched on; got ${String(input.severity)}`,
   );
+  // `F3.57` — the alarm's message, plus the age, and the age is the whole
+  // point of the row: `channelsOwedTheRaise` only ever re-offers a channel
+  // whose every eligible row is `failed`, so the recipient never received the
+  // original and reads this one as current. The fixture alarm was raised 125 s
+  // before `NOW`, which is 2 whole minutes.
   assert(
-    input.message === "Feeder overload: kw = 150 (gt 100)",
-    `the alarm's message VERBATIM — no prefix, no age, no staleness marker (F3.52 inherits that complaint); got "${input.message}"`,
+    input.message === "Feeder overload: kw = 150 (gt 100) — alarm open for 2 min",
+    `the alarm's message with the age appended; got "${input.message}"`,
   );
   // `raised: true` is load-bearing and is asserted rather than assumed. With
   // `event: undefined` a `raised: false` input falls into `dispatchToChannel`
@@ -298,8 +304,107 @@ function testRaiseRetryDispatchInput(): void {
   );
 
   assert(
-    raiseRetryDispatchInput(alarm, { ...rule, organizationId: null }) === null,
+    raiseRetryDispatchInput(alarm, { ...rule, organizationId: null }, NOW) === null,
     "a rule with no organization yields null — the caller warns and skips",
+  );
+}
+
+/**
+ * `F3.57` — the age clause appears only once a whole minute has passed, and
+ * the key is untouched either way.
+ *
+ * **Why a floor and not a constant.** The first re-offer lands on the tick
+ * after the raise, so it is at most `LIFECYCLE_TICK_MS` old and `Math.floor`
+ * gives 0. "open for 0 min" would be noise on the common case and would say
+ * nothing the recipient does not already assume. The clause therefore appears
+ * exactly when the age is expressible in whole minutes — no threshold constant
+ * was invented for it.
+ *
+ * **The key is asserted on BOTH branches.** That is the property `F3.51` built
+ * the phase on and the one this row was filed believing it would break: the
+ * message text reaches no ledger reader, so two different bodies produce the
+ * same `rule:alarm:severity` and the rows the phase matched on still match.
+ */
+const RAISE_KEY = `${rule.id}:${alarm.id}:${alarm.severity}`;
+
+/** The re-offered raise's input for an alarm raised `seconds` before `NOW`. */
+function reofferAged(seconds: number): DispatchInput {
+  const input = raiseRetryDispatchInput({ ...alarm, raisedAt: secondsBefore(seconds) }, rule, NOW);
+  if (input === null) {
+    throw new Error("the fixture rule has an organization, so this is never null");
+  }
+  return input;
+}
+
+export function testNoClauseUnderAWholeMinute(): void {
+  const input = reofferAged(59);
+  assert(
+    input.message === "Feeder overload: kw = 150 (gt 100)",
+    `under a whole minute the message is the alarm's VERBATIM; got "${input.message}"`,
+  );
+}
+
+export function testTheClauseAppearsAtExactlyOneMinute(): void {
+  const input = reofferAged(60);
+  assert(
+    input.message === "Feeder overload: kw = 150 (gt 100) — alarm open for 1 min",
+    `at exactly one whole minute the clause appears; got "${input.message}"`,
+  );
+}
+
+export function testADeferredFirstDeliveryCarriesItsAge(): void {
+  const input = reofferAged(3_600);
+  assert(
+    input.message === "Feeder overload: kw = 150 (gt 100) — alarm open for 60 min",
+    `the hour-old first delivery this row exists for; got "${input.message}"`,
+  );
+}
+
+/**
+ * The ruling in one case: two different bodies, one key.
+ *
+ * This is the property `F3.57` was filed believing an age marker would break.
+ * `buildDedupeKey` reads `ruleId`, `alarmId`, `severity` and `event`; the
+ * ledger stores no body and no subject; `loadRaiseAttempts` matches on
+ * `alarm_id`, `organization_id` and `dedupe_key`. So the rows an earlier tick
+ * wrote still match, and the phase's evidence is intact.
+ */
+export function testTheAgeStaysOutOfTheDedupeKey(): void {
+  const fresh = reofferAged(59);
+  const old = reofferAged(3_600);
+  assert(
+    fresh.message !== old.message,
+    "the two bodies really do differ, or the rest of this case proves nothing",
+  );
+  assert(
+    buildDedupeKey(fresh) === RAISE_KEY,
+    `the fresh re-offer carries the raise's own key, got "${buildDedupeKey(fresh)}"`,
+  );
+  assert(
+    buildDedupeKey(old) === RAISE_KEY,
+    `and so does the aged one, got "${buildDedupeKey(old)}"`,
+  );
+}
+
+/**
+ * `F3.57` — the subject is untouched, and that IS a mechanism rather than a
+ * preference.
+ *
+ * `subjectFor` composes from `severity`, `ruleCode` and `event`, so it could
+ * not reach the key either; what an identical subject buys is that a mail
+ * client threads the re-offer with the original instead of opening a second
+ * conversation. `notifications.events.spec.ts` E18 holds the same property one
+ * layer down, on what the transport is actually handed.
+ */
+export function testTheSubjectStaysTheRaisesOwn(): void {
+  const expected = `${alarm.severity}: ${rule.code}`;
+  assert(
+    subjectFor(reofferAged(59)) === expected,
+    `a fresh re-offer, got "${subjectFor(reofferAged(59))}"`,
+  );
+  assert(
+    subjectFor(reofferAged(3_600)) === expected,
+    `and an hour-old one, got "${subjectFor(reofferAged(3_600))}"`,
   );
 }
 

@@ -239,7 +239,7 @@ export async function runLifecycleSweep(deps: AlarmLifecycleDeps, now: Date): Pr
   const closedCeilings = new ClosedCeilings();
 
   const clearedIds = await runClearPhase(deps, { activeAlarms, rulesById, loadSample, now });
-  await runRaiseRetryPhase(deps, { activeAlarms, rulesById, clearedIds, closedCeilings });
+  await runRaiseRetryPhase(deps, { activeAlarms, rulesById, clearedIds, closedCeilings, now });
   await runEscalationPhase(deps, {
     activeAlarms,
     rulesById,

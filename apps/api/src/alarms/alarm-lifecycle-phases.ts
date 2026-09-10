@@ -282,6 +282,14 @@ type RaiseRetryPhaseInput = {
    * rather than a silently unmemoised phase.
    */
   closedCeilings: ClosedCeilings;
+  /**
+   * `F3.57` — the tick's instant, for the age the re-offered raise now carries
+   * (ADR 0041 Amendment 9). Required rather than defaulted to `new Date()`, on
+   * `stale`'s precedent: a defaulted clock would let this phase drift out of
+   * step with the sweep's own `now` and would still compile. The clear and
+   * escalation phases have carried the same field since `F3.10`.
+   */
+  now: Date;
 };
 
 /** One alarm the phase may re-offer, with the input and the ledger key already built. */
@@ -354,7 +362,7 @@ export async function runRaiseRetryPhase(
     if (!shouldNotify(rule.action)) {
       continue;
     }
-    const dispatchInput = raiseRetryDispatchInput(alarm, rule);
+    const dispatchInput = raiseRetryDispatchInput(alarm, rule, input.now);
     if (dispatchInput === null) {
       // §9.6: the rule code, the rule id and the alarm id — the line
       // `notifyCleared` writes, never the alarm text.

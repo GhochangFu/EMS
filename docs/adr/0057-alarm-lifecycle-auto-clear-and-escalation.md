@@ -1255,3 +1255,38 @@ narrower one than the row assumed.
 **Amendment 6's out-of-scope note still stands**, and the escalation phase's
 silent `continue` over an empty channel list (`alarm-lifecycle-phases.ts:606`)
 is still untouched.
+
+## Amendment 8 — `F3.57`: the raise-retry phase gains the tick's clock, and the message it re-offers says how old the alarm is (2026-09-10)
+
+Amendment 5 above gave the sweep its third phase and left the re-offered raise
+byte-identical to the original — body included — recording the missing age
+marker as `F3.52`'s to inherit. The reasoning and the correction to it are in
+ADR 0041 Amendment 9; what belongs here is what changed inside the sweep.
+
+**`RaiseRetryPhaseInput` gains a required `now: Date`.** The clear and
+escalation phases have carried one since `F3.10`; this was the phase that did
+not need a clock, and now it does. Required rather than defaulted to
+`new Date()`, for the reason `F3.52` made `stale` required: a defaulted clock
+would let the phase drift out of step with the sweep's own `now` and would still
+compile, and every one of this repository's lifecycle decisions is asserted at a
+fixed instant precisely so it does not depend on when CI happens to run. There
+is exactly one construction site — `runLifecycleSweep`, which already holds
+`now` — so the field costs one argument, and a mutation that passes `new Date()`
+there reddens the sweep-level case and nothing else.
+
+**`raiseRetryDispatchInput` gains `now` and composes the age.** It is the right
+place because `LifecycleAlarm.raisedAt` is in scope there and nowhere further
+down: `dispatchToChannels` composes no message text and, on this row's ruling,
+must not start. The clause is suppressed below one whole minute, which is the
+common case — the first re-offer lands one tick (30 s) after the raise.
+
+**Decision 9 is untouched.** A re-offered raise still carries no `event`, so its
+key is still the raise's own `rule:alarm:severity` and no kind is stored in a
+column. The age is a property of the rendered message only; it reaches no ledger
+reader, and `channelsOwedTheRaise` matches exactly the rows it matched before.
+
+**What this does not fix, stated so the next reader does not assume it.** The
+re-offer still cannot tell a recipient that a message was already delivered to
+them, in the one case where that can happen — a transport that reports failure
+for a message that landed. Nothing in the ledger distinguishes it, and this row
+does not try.

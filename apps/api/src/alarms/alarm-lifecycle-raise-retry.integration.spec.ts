@@ -247,9 +247,19 @@ export async function assertAFailedRaiseIsDeliveredByALaterSweepOnce(db: BmsDb):
         delivered[0]?.subject,
       )}"`,
     );
+    // `F3.57` — the alarm's message with its age, and against a REAL database
+    // this is the whole ruling in one place. The sweep above ran at
+    // `secondsAfter(60, t0)` where `t0` is the alarm's own `raised_at`, so the
+    // age is exactly one whole minute — the boundary, and deterministic.
+    //
+    // What makes this the strongest evidence in the row: the body differs from
+    // the original raise's, and the two assertions ABOVE still found the
+    // delivery under `alarm.dedupeKey`. Postgres matched the row on the key the
+    // original attempt was written with, exactly as before. A second body text
+    // under one key orphans nothing, because the ledger stores no body.
     assert(
-      delivered[0]?.body === alarm.message,
-      `the alarm's own message, verbatim; got "${String(delivered[0]?.body)}"`,
+      delivered[0]?.body === `${alarm.message} — alarm open for 1 min`,
+      `the alarm's message with the age appended; got "${String(delivered[0]?.body)}"`,
     );
 
     // The `sent` row now blocks the key on this channel, so the next sweep

@@ -1288,3 +1288,110 @@ function.
   field.
 
 No migration, no dependency, no change to any write path.
+
+## Amendment 9 — `F3.57`: a re-offered raise carries the alarm's age, and Amendment 5's "byte-identity" sentence was wider than the mechanism (2026-09-10)
+
+`F3.51`'s raise-retry phase re-offers a still-open alarm's ORIGINAL raise: the
+same `DispatchInput`, the same subject, the same dedupe key, the same body.
+Amendment 5 above recorded that identity as the mechanism and assigned the
+missing age marker to `F3.52`, which inherited it and deliberately did not build
+it. `F3.57` is that row, and the first thing it did was measure the constraint
+it was filed under.
+
+**The constraint is the KEY, not the message.** Three measurements, and any one
+of them settles it:
+
+- `buildDedupeKey` takes `ruleId`, `alarmId`, `severity` and `event`. Its own
+  docblock has said since `F3.8` that the key is "the rule and the alarm, not
+  the message text" — keying on the text would defeat the dedupe on exactly the
+  storm it exists to stop.
+- `notification_deliveries` has **no body column and no subject column**
+  (migration `0038`, unchanged since). Neither text is stored, so neither can be
+  matched.
+- `loadRaiseAttempts`'s statement matches on `alarm_id`, `organization_id` and
+  `dedupe_key`, and `channelsOwedTheRaise` then groups those rows by channel.
+  Nothing on that path reads a message.
+
+So a second body under one key orphans nothing. What a marker must still not do
+is reach `buildDedupeKey` — a `:retry` suffix or a new `event` kind would, and
+that half of Amendment 5's sentence is exactly right and unchanged.
+
+**The subject is unchanged for a different and narrower reason.** `subjectFor`
+composes from `severity`, `ruleCode` and `event`, so it could not reach the key
+either. What an identical subject buys is that a mail client threads the
+re-offer with the original instead of opening a second conversation. That is a
+real reason to keep it; it is not the reason Amendment 5 gave.
+
+**The complaint the row was filed with also needed correcting, in two parts.**
+
+*"A recipient cannot tell a retry from a first attempt"* is **narrow, not
+general**. `channelsOwedTheRaise` stage 3 blocks on any eligible row that is not
+`failed`, so a channel that ever recorded `sent` is never re-offered: the
+recipient of a re-offer did not receive the original. It arises only where a
+transport reports failure for a message that was in fact delivered — a webhook
+that timed out after the endpoint committed, SMTP that accepted and then failed
+locally. Real, and not what this amendment is for.
+
+*"Nothing in the message says how long the alarm has been open"* is the real
+defect, and its mechanism is worth stating because it is not obvious. A plainly
+failing channel writes three `failed` rows and spends `MAX_EVENT_ATTEMPTS` in
+about ninety seconds; there is no age problem there. The long deferral exists
+**only** because `skipped_rate_limited` (`F3.48` ruling Q2) and stale
+`skipped_unconfigured` (`F3.50` ruling Q1) rows are excluded from `eligible` and
+so never count toward the cap. Such a channel stays owed for the life of the
+alarm and is delivered the moment the ceiling frees or the credential lands — an
+hour later, reading as current. **The two rulings that make a deferred delivery
+survivable are the same two that make it arrive stale.**
+
+### The shape (owner ruling 1, 2026-09-10)
+
+A body-only age clause, composed in `raiseRetryDispatchInput` where the alarm's
+`raisedAt` is in scope:
+
+```text
+Feeder overload: kw = 150 (gt 100) — alarm open for 62 min
+```
+
+- **The subject and the dedupe key are byte-identical to the original raise's.**
+- **No threshold constant.** The first re-offer lands one tick after the raise,
+  so `Math.floor` gives 0 and "open for 0 min" would be noise on the common case
+  while telling the recipient nothing they do not already assume. The clause
+  appears exactly when the age is expressible in whole minutes.
+- **The composition mirrors `escalationDispatchInput`'s**, which has rendered
+  the same figure since `F3.10`. The re-offered raise was the only lifecycle
+  message with no age in it.
+
+`runRaiseRetryPhase` gains a required `now: Date`, which the clear and
+escalation phases have both carried since `F3.10`; it is required rather than
+defaulted for the reason `F3.52` made `stale` required — a defaulted clock lets
+the phase drift out of step with the sweep's own `now` and still compile.
+
+**Two of the three shapes the row offered were declined.** A separate follow-up
+message needs a new `DispatchEvent` kind, so a new key suffix, a new subject
+form, `parseDeliveryEvent`, the `NotificationDeliveryEvent` contract and the web
+Event column — an ADR 0030 contract change — and it would double the messages to
+a recipient who never received the first one. Won't-fix was live until the
+measurement above: it rested on a constraint that does not exist.
+
+No migration, no dependency, no contract change, no write-path change, and no
+change to what any ledger reader matches on.
+
+### What holds it
+
+`alarm-lifecycle.spec.ts` gains five cases, one `it()` each on `F3.52`'s
+precedent. Ten mutations were run and all ten reddened, each on the case that
+owns its claim — the two sharpest being the floor inverted (`minutes < 1` →
+`minutes < 0`), which reddens **only** "says nothing under a whole minute", and
+the phase passing `new Date()` instead of `input.now`, which reddens **only** the
+sweep-level case in `alarm-lifecycle-raise-retry.spec.ts`.
+
+Two of those mutations exist because two assertions were otherwise unproven:
+nothing in the first batch could make the subject case or the key case fail, so
+they passed without having been tested. A `subjectFor` that prefixes a re-offer
+reddens the subject case, and an `event` on the re-offered input reddens the key
+case.
+
+`notifications.events.spec.ts` E18 is unchanged behaviourally and stays green:
+the age lives in the builder, and `dispatchToChannels` still passes
+`input.message` through untouched. Its comment carried Amendment 5's wider
+sentence and now carries this one.
