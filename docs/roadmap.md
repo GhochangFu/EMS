@@ -4337,8 +4337,12 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   three rows sharing an identical `failed | rate-limit check failed`, told apart
   only by `event`.
 - **Unblocks:** nothing directly. `F3.57` (a re-offered raise carries no sign it
-  is a retry) stays open and is explicitly not this row's gap — Amendment 5
-  makes a re-offer byte-identical to its original, dedupe key included.
+  is a retry) was open at the time and explicitly not this row's gap. It closed
+  2026-09-10, and the reason given here — "Amendment 5 makes a re-offer
+  byte-identical to its original, dedupe key included" — was measured false in
+  the half that matters: the KEY is byte-identical and that is the mechanism,
+  but the body reaches no ledger reader, so it was free to carry an age all
+  along (ADR 0041 Amendment 9).
 
 ### The rule builder's picker offers what the validator accepts (`F3.49`, ADR 0058 Amendment 2) — done
 - **Status:** merged 2026-09-10 — PR
@@ -4579,11 +4583,52 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   including the `cls` one that had survived. The person-week figures were
   re-measured on the rendered board and moved as predicted, 909 to 908 and 33 to
   32.
-- **Unblocks:** nothing. **`F3.57` and the newly filed `F3.59` are the remaining
-  Wave-2 Track D rows** — the first draft of this line named only `F3.57`, which
-  this same commit's own new row falsified. Read from the Wave cell of each open
-  Track D row rather than from §1: F3.11 is Wave 1, F3.12 Wave 3, F3.13 and
-  F3.14 Wave 4, F3.9 Wave 5.
+- **Unblocks:** nothing. **`F3.59` is now the only remaining Wave-2 Track D
+  row** — this line first named `F3.57` alone, which the same commit's own new
+  row falsified; it then named both, and `F3.57` closed 2026-09-10. Read from
+  the Wave cell of each open Track D row rather than from §1: F3.11 is Wave 1,
+  F3.12 Wave 3, F3.13 and F3.14 Wave 4, F3.9 Wave 5.
+
+### A re-offered raise says how old the alarm is (`F3.57`, ADR 0041 Amendment 9 + ADR 0057 Amendment 8) — done
+- **Status:** merged 2026-09-10 — PR
+  [#415](https://github.com/GhochangFu/EMS/pull/415) (`eb3ebb6e`). One owner
+  ruling. No migration, no dependency, no contract change, no write-path change.
+- **What shipped:** `raiseRetryDispatchInput` takes `now: Date` and appends
+  `— alarm open for N min` to the BODY of a re-offered raise once a whole minute
+  has passed. The subject and the dedupe key stay byte-identical.
+  `RaiseRetryPhaseInput` gains a required `now`, which the sweep already held
+  and which the clear and escalation phases have each taken since `4a2d00ec`.
+- **The row was filed under a constraint that does not exist.** It said an age
+  marker "in the subject or body would orphan every row already written under
+  the raise key". `buildDedupeKey` takes `ruleId`, `alarmId`, `severity` and
+  `event`; `notification_deliveries` has no body column and no subject column;
+  `loadRaiseAttempts` matches on `alarm_id`, `organization_id` and `dedupe_key`;
+  and `input.message` has exactly one reader. Only a marker reaching
+  `buildDedupeKey` breaks anything, and that half of Amendment 5 stands.
+- **The complaint needed correcting on both halves.** "Cannot tell a retry from
+  a first attempt" is narrow — `channelsOwedTheRaise` blocks on any eligible row
+  that is not `failed`, so a re-offered channel never recorded `sent`. The real
+  defect is the missing age, and its mechanism is that `skipped_rate_limited`
+  and stale `skipped_unconfigured` rows never count toward
+  `MAX_EVENT_ATTEMPTS`: the two rulings that make a deferred delivery survivable
+  are the same two that make it arrive stale.
+- **The guard shipped backwards.** It asked `minutes < 1`, and `NaN < 1` is
+  `false`, so an unparseable `raisedAt` rendered `alarm open for NaN min`. Ten
+  mutations could not find it — `< 1` and `>= 1` agree on every age the suite
+  drove, so nothing gated the direction of the comparison. A reviewer reading
+  the operator did. Now `>= 1`, which fails closed.
+- **Verification (AGENTS.md §4.6).** 12 mutations, 12 killed, **with the
+  database attached** — the first batch ran without `DATABASE_URL` and produced
+  a false "reddens only" sentence. **471 files / 2639 tests**, run in five parts
+  because `pnpm test` was killed three times for low memory; 2639 reconciles
+  against 2637 on `main`, the delta being the two clock cases. **Database
+  layer:** `alarm-lifecycle-raise-retry.integration.spec.ts` against real
+  Postgres — the body differs from the original raise's and the delivery is
+  still found under `alarm.dedupeKey`, which is the ruling demonstrated rather
+  than argued. **Browser N/A:** the ledger stores no body, so no web surface
+  renders the clause. **Deployed API N/A:** no route, contract or schema
+  changed; the surface is the sweep, which the integration case drives.
+- **Unblocks:** nothing. `F3.59` is the only remaining Wave-2 Track D row.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
