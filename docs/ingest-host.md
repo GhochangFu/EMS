@@ -179,15 +179,23 @@ survives a database outage — it does not survive a broker outage; that is
 **Path and format.** Each endpoint's spilled batches land at
 `<INGEST_BUFFER_DIR>/<protocol>/<encodeURIComponent(endpointKey)>/<epoch-minute>.jsonl`
 — for the pilot, `mqtt/phe.thinkiot.co.in%3A8883/<minute>.jsonl`. Each line is
-one `SourceSample`, written as an explicit field whitelist — `sourceKey`,
-`value`, `deviceKey` (when the sample carried one), `at` (always, ISO-8601),
-`good` (when present) — never `JSON.stringify` of the whole object, so a
-credential or any other field a future adapter might attach cannot reach disk
-by accident. **`at` is stamped at spill time when the sample had none**, the
-same substitution the live path makes at write time. That is why a replayed
-row lands where the live path would have put it, and why replaying the same
-segment twice is safe: both writes target the same `(time, asset_id,
-point_key)` and the second is an `ON CONFLICT DO UPDATE`, not a duplicate.
+one `SourceSample` plus its receive time, written as an explicit field
+whitelist — `sourceKey`, `value`, `deviceKey` (when the sample carried one),
+`at` (only when the device sent a readable timestamp — the device time and
+nothing else), `rx` (always, ISO-8601 — the instant the host received the
+sample), `good` (when present) — never `JSON.stringify` of the whole object, so
+a credential or any other field a future adapter might attach cannot reach disk
+by accident. **`rx` is the receive time the failed write used, written once at
+spill and never rewritten** (ADR 0016 Amendment 5) — not the append instant,
+which can be `writeTimeoutMs` later while the timed-out write still lands.
+That is why a replayed row lands where the live path put it — `time` is the
+receive time since ADR 0061 — and why replaying the same segment twice is safe:
+both writes target the same `(time, asset_id, point_key)` and the second is an
+`ON CONFLICT DO UPDATE`, not a duplicate. `at` is never substituted: a stamp
+there would reach `device_time` as a clock the device never reported. A segment
+written before Amendment 5 (`at`, no `rx`) cannot be read — nothing says whether
+its `at` was a device time or a stamp — so it is skipped and counted in
+`bufferDropped`; the deploy gate is `buffered = 0` before the image goes out.
 Because the buffer is written before normalisation, a point mapping fixed
 during the outage applies to the whole backlog when it replays — the backlog
 is not frozen to a stale mapping.
@@ -431,7 +439,7 @@ differently from the behaviour the pilot had in the field for a year. The
 |---|---|---|
 | Readings published beside the `values` block | Merged in, nested wins a collision | Unreachable — `body.values` replaces the body |
 | `dev_id` / `ts` as mappable readings | Never; envelope only | Readable, but only on a payload with no `values` block |
-| A missing `ts` | Leaves `at` unset; the host substitutes receive time | Fabricates `Date.now()` |
+| A missing `ts` | Leaves `at` unset; `time` is the receive time either way and `device_time` is NULL (ADR 0061) | Fabricates `Date.now()` |
 
 The first is a **fix**, not a preference. The pilot RTU publishes `rssi` at the
 top level, so `network_strength` — mapped in the PHE seed and documented in

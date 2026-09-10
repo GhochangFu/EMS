@@ -162,7 +162,11 @@ async function main(): Promise<void> {
       buffer: bufferStore.handle(plan.protocol, plan.endpointKey),
       writeSamples: async (samples) => {
         const index = pointIndexes.get(key) ?? plan.pointIndex;
-        const { rows, counters } = resolveSamples(samples, index, new Date(), soleDeviceKey);
+        // No clock here. Each sample carries its own receive time: the drain
+        // loop stamped a live batch, and a replayed one keeps the `rx` the disk
+        // buffer wrote at spill (ADR 0016 Amendment 5) — which is what keeps a
+        // re-replayed segment on the same primary key.
+        const { rows, counters } = resolveSamples(samples, index, soleDeviceKey);
         // `droppedCount`, not a list summed here: this file summed five buckets
         // by hand and `F2.7`'s `outOfRange` would have been the sixth and the
         // one nobody added, leaving a batch that dropped readings logging

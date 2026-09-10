@@ -436,3 +436,32 @@ host-internal shape.
   to feed the stamp through.
 - **The deploy gate is real**: `buffered = 0` is read and recorded before
   migrating, not asserted afterwards.
+
+### One consequence found during the build, recorded rather than coded
+
+**A replayed sample can never be decision 4 case 3.** An unreadable `at` — a
+`ts` that parsed as a number but yields an Invalid Date — cannot be serialised
+to the segment line at all: `toISOString()` throws on it, which is the same
+throw `resolveSamples` guards against one layer down. So the buffer drops it at
+spill, and what replays carries no `at`. Its row is decision 4 **case 2**, "the
+device sent no timestamp", not case 3, "the device sent one this host could not
+read".
+
+The `device_time` column is `NULL` either way, so nothing a reader sees changes
+— which is precisely why this is recorded here instead of repaired. What does
+change is `counters.invalidTimestamp`: the live batch counts the unreadable `at`
+once, at the moment it arrives, and the replay counts nothing. That is the
+honest tally rather than a lost one, but a later reader comparing counter totals
+against replayed row counts would otherwise find them short and go looking for a
+bug that is not there.
+
+**`rx` is the drain loop's stamp, not the append instant, and the difference is
+load-bearing.** `supervisor.ts` builds `receivedTogether(batch, scheduler.now())`
+**once** per drain iteration, above the breaker branch, and hands the same array
+to `writeSamples` and to both spill sites. The first build stamped `rx` inside
+the store at append time, which is up to `writeTimeoutMs` later — and
+`main.ts:71-73` records that `withTimeout` *"rejects the wait, but it cannot
+cancel the query"*, so a timed-out write can still land. A row landing at the
+attempted receive time beside a replayed row at the append instant is two rows,
+in exactly the failure the buffer exists for. The gate is its own assertion, and
+its mutation is to stamp at append.

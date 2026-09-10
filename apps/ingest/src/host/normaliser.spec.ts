@@ -12,6 +12,7 @@ import {
   type QueryableClient,
   type SampleCounters,
 } from "./normaliser.js";
+import { receivedTogether } from "./received-sample.js";
 
 /**
  * Exported, with the fixtures below, so `normaliser-time.spec.ts` can state
@@ -106,9 +107,8 @@ export function runNormaliserTests(): void {
 
   {
     const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "shared", value: 42 })],
+      receivedTogether([sample({ sourceKey: "shared", value: 42 })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows.length === 2, `a shared source_data_key must fan out to both assets, got ${rows.length}`);
@@ -125,9 +125,8 @@ export function runNormaliserTests(): void {
 
   {
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "unitless" })],
+      receivedTogether([sample({ sourceKey: "unitless" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows[0].unit === null, "a null unit must survive as null, not become undefined");
@@ -137,13 +136,15 @@ export function runNormaliserTests(): void {
 
   {
     const { rows, counters } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", good: false }),
-        sample({ sourceKey: "flow", good: true }),
-        sample({ sourceKey: "press" }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", good: false }),
+          sample({ sourceKey: "flow", good: true }),
+          sample({ sourceKey: "press" }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(counters.badQuality === 1, `good:false must be dropped and counted, got ${counters.badQuality}`);
@@ -155,13 +156,15 @@ export function runNormaliserTests(): void {
 
   {
     const { rows, counters } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", value: Number.NaN }),
-        sample({ sourceKey: "flow", value: Number.POSITIVE_INFINITY }),
-        sample({ sourceKey: "press", value: 0 }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", value: Number.NaN }),
+          sample({ sourceKey: "flow", value: Number.POSITIVE_INFINITY }),
+          sample({ sourceKey: "press", value: 0 }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(counters.nonFinite === 2, `NaN and Infinity must be dropped, got ${counters.nonFinite}`);
@@ -173,9 +176,8 @@ export function runNormaliserTests(): void {
 
   {
     const { counters } = resolveSamples(
-      [sample({ sourceKey: "flow", deviceKey: "RTU-NOPE" })],
+      receivedTogether([sample({ sourceKey: "flow", deviceKey: "RTU-NOPE" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
     );
     assert(counters.unknownDevice === 1, "an unmatched deviceKey is counted as unknownDevice");
     assert(counters.unmappedSourceKey === 0, "an unknown device is not an unmapped source key");
@@ -183,9 +185,8 @@ export function runNormaliserTests(): void {
 
   {
     const { counters } = resolveSamples(
-      [sample({ sourceKey: "not-mapped", deviceKey: "RTU-1" })],
+      receivedTogether([sample({ sourceKey: "not-mapped", deviceKey: "RTU-1" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
     );
     assert(
       counters.unmappedSourceKey === 1,
@@ -197,9 +198,8 @@ export function runNormaliserTests(): void {
     // Several bindings on the endpoint: an omitted deviceKey is ambiguous and
     // must be dropped rather than attributed to whichever binding came first.
     const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "flow" })],
+      receivedTogether([sample({ sourceKey: "flow" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       undefined,
     );
     assert(rows.length === 0, "an ambiguous sample must not be written");
@@ -209,9 +209,8 @@ export function runNormaliserTests(): void {
   {
     // Exactly one binding: the host supplies the deviceKey the adapter omitted.
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "flow", value: 7 })],
+      receivedTogether([sample({ sourceKey: "flow", value: 7 })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-2",
     );
     assert(
@@ -223,9 +222,8 @@ export function runNormaliserTests(): void {
   {
     // An explicit deviceKey always wins over the sole-binding default.
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "flow", deviceKey: "RTU-2" })],
+      receivedTogether([sample({ sourceKey: "flow", deviceKey: "RTU-2" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows[0].assetId === "asset-c", "an explicit deviceKey must not be overridden");
@@ -241,9 +239,8 @@ export function runNormaliserTests(): void {
 
   {
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "flow" })],
+      receivedTogether([sample({ sourceKey: "flow" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(
@@ -256,9 +253,8 @@ export function runNormaliserTests(): void {
     // `new Date("nonsense")` is an Invalid Date: `toISOString()` throws on it,
     // which would take the whole batch down rather than one sample.
     const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "flow", at: new Date("nonsense") })],
+      receivedTogether([sample({ sourceKey: "flow", at: new Date("nonsense") })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows.length === 1, "an invalid timestamp must not lose the reading");
@@ -280,12 +276,14 @@ export function runNormaliserTests(): void {
     // batch is. `normaliser-time.spec.ts` owns the attribution half.
     const at = new Date("2026-08-05T09:00:00.000Z");
     const { rows, counters } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", value: 1, at }),
-        sample({ sourceKey: "flow", value: 2, at }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", value: 1, at }),
+          sample({ sourceKey: "flow", value: 2, at }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows.length === 1, `duplicates must collapse to one row, got ${rows.length}`);
@@ -300,12 +298,14 @@ export function runNormaliserTests(): void {
     // row — the reading this schema cannot keep, and §Consequences says so in
     // as many words.
     const { rows, counters } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:00.000Z") }),
-        sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:01.000Z") }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:00.000Z") }),
+          sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:01.000Z") }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(
@@ -440,12 +440,14 @@ export async function runNormaliserWriteTests(): Promise<void> {
   {
     const at = new Date("2026-08-05T09:00:00.000Z");
     const { rows: resolved } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", value: 1, at }),
-        sample({ sourceKey: "flow", value: 2, at }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", value: 1, at }),
+          sample({ sourceKey: "flow", value: 2, at }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     const { client, calls } = makeFakeClient();
@@ -540,9 +542,8 @@ export function runMetadataTests(): void {
   ): ReturnType<typeof resolveSamples> {
     const index = makeIndex({ "RTU-1": { flow: [pointTarget] } });
     return resolveSamples(
-      [sample({ sourceKey: "flow", ...overrides })],
+      receivedTogether([sample({ sourceKey: "flow", ...overrides })], RECEIVED_AT),
       index,
-      RECEIVED_AT,
       "RTU-1",
     );
   }
@@ -723,9 +724,8 @@ export function runMetadataTests(): void {
       },
     });
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "shared", value: 2500 })],
+      receivedTogether([sample({ sourceKey: "shared", value: 2500 })], RECEIVED_AT),
       index,
-      RECEIVED_AT,
       "RTU-1",
     );
     const byAsset = new Map(rows.map((r) => [r.assetId, r.value]));
@@ -748,9 +748,8 @@ export function runMetadataTests(): void {
       },
     });
     const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "shared", value: 42 })],
+      receivedTogether([sample({ sourceKey: "shared", value: 42 })], RECEIVED_AT),
       index,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows.length === 1 && rows[0].assetId === "asset-b", "the in-range target is written");

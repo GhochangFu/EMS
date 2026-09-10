@@ -13,6 +13,7 @@ import {
   type DiskBufferOptions,
   type DiskBufferStore,
 } from "./disk-buffer.js";
+import { receivedTogether, type ReceivedSample } from "./received-sample.js";
 
 export function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -46,7 +47,7 @@ export const ENCODED = "phe.thinkiot.co.in%3A8883";
 export const START = new Date("2026-09-06T10:00:00.000Z");
 export const MINUTE = Math.floor(START.getTime() / 60_000);
 const HOUR_MS = 3_600_000;
-const ALLOWED_KEYS = new Set(["sourceKey", "value", "deviceKey", "at", "good"]);
+const ALLOWED_KEYS = new Set(["sourceKey", "value", "deviceKey", "at", "rx", "good"]);
 
 function minuteDate(minute: number): Date {
   return new Date(minute * 60_000);
@@ -56,9 +57,23 @@ export function sample(value: number): SourceSample {
   return { sourceKey: "flow", value, deviceKey: "RTU-1" };
 }
 
-/** The on-disk form of `sample(value)` stamped at `at` — the format decision 7 fixes. */
-export function line(value: number, at: Date): string {
-  return `${JSON.stringify({ sourceKey: "flow", value, deviceKey: "RTU-1", at: at.toISOString() })}\n`;
+/**
+ * A batch as the drain loop hands it to the store — stamped with one receive
+ * time, here the harness clock at the moment of the call. That is the instant
+ * the store used to read for itself at append, so every block below keeps the
+ * `rx` it asserted before ADR 0016 Amendment 5 moved the stamp to the caller.
+ */
+export function received(harness: Harness, samples: readonly SourceSample[]): readonly ReceivedSample[] {
+  return receivedTogether(samples, harness.clock.now);
+}
+
+/**
+ * The on-disk form of `sample(value)` received at `rx` — the format decision 7
+ * fixes as amended by ADR 0016 Amendment 5: `rx` is required and `at`, the
+ * device time, is absent because `sample()` carries none.
+ */
+export function line(value: number, rx: Date): string {
+  return `${JSON.stringify({ sourceKey: "flow", value, deviceKey: "RTU-1", rx: rx.toISOString() })}\n`;
 }
 
 export function exists(path: string): Promise<boolean> {
@@ -241,7 +256,7 @@ export async function runDiskBufferTests(): Promise<void> {
     // A wider object than `SourceSample` — the shape a careless adapter could
     // pass — carrying a property the serialiser must not copy.
     const poisoned = { sourceKey: "flow", value: 7, deviceKey: "RTU-1", password: SENTINEL };
-    assert(await handle.append([poisoned]), "a healthy append resolves true");
+    assert(await handle.append(received(harness, [poisoned])), "a healthy append resolves true");
 
     const protocols = await readdir(dir);
     assert(protocols.join(",") === "mqtt", `the protocol directory, got ${protocols.join(",")}`);
@@ -264,7 +279,22 @@ export async function runDiskBufferTests(): Promise<void> {
     );
     const parsed = JSON.parse(rows[0]) as Record<string, unknown>;
     assert(parsed.sourceKey === "flow" && parsed.value === 7 && parsed.deviceKey === "RTU-1", "the three fields round-trip");
-    assert(parsed.at === START.toISOString(), `at is stamped at spill, got ${String(parsed.at)}`);
+    // Inverted at ADR 0016 Amendment 5. This line used to pin `at` to the
+    // spill instant, and that stamp was how replay stayed idempotent while
+    // `time` came from `at`. Since ADR 0061 `time` is the receive time, `rx`
+    // is what keeps replay idempotent, and a stamped `at` would be written to
+    // `device_time` as a device clock the device never reported — the
+    // fabrication ruling 2 refused. Restoring the stamp is not a fix.
+    assert(
+      !("at" in parsed),
+      `at must be ABSENT for a sample that carried no device time (ADR 0016 Amendment 5) — ` +
+        `on replay it would become a fabricated device_time (ADR 0061 ruling 2); ` +
+        `the spill instant belongs in rx. Got at=${String(parsed.at)}`,
+    );
+    assert(
+      parsed.rx === START.toISOString(),
+      `rx is the receive time, stamped once at spill, got ${String(parsed.rx)}`,
+    );
     assert(
       Object.keys(parsed).every((key) => ALLOWED_KEYS.has(key)),
       `only whitelisted keys reach disk, got ${Object.keys(parsed).join(",")}`,
@@ -278,8 +308,8 @@ export async function runDiskBufferTests(): Promise<void> {
   await withTempDir(async (dir) => {
     const harness = makeHarness();
     const { handle } = await openWithHandle(harness, dir);
-    await handle.append([sample(1)]);
-    await handle.append([sample(2), sample(3)]);
+    await handle.append(received(harness, [sample(1)]));
+    await handle.append(received(harness, [sample(2), sample(3)]));
     let segments = await segmentNames(dir);
     assert(segments.length === 1, `same minute, same file, got ${segments.join(",")}`);
     const content = await readFile(join(dir, "mqtt", ENCODED, segments[0]), "utf8");
@@ -289,7 +319,7 @@ export async function runDiskBufferTests(): Promise<void> {
     );
 
     harness.clock.now = new Date(START.getTime() + 60_000);
-    await handle.append([sample(4)]);
+    await handle.append(received(harness, [sample(4)]));
     segments = await segmentNames(dir);
     assert(
       segments.join(",") === `${MINUTE}.jsonl,${MINUTE + 1}.jsonl`,
@@ -298,7 +328,7 @@ export async function runDiskBufferTests(): Promise<void> {
     assert(handle.buffered === 4, `buffered is the lines on disk, got ${handle.buffered}`);
   });
 
-  // ---- 5. oldest-first, at revived, commit unlinks, null when empty ----------
+  // ---- 5. oldest-first, rx and at revived, commit unlinks, null when empty ---
 
   await withTempDir(async (dir) => {
     const harness = makeHarness();
@@ -306,21 +336,37 @@ export async function runDiskBufferTests(): Promise<void> {
     assert((await handle.oldest()) === null, "an empty handle has no oldest segment");
 
     const carried = new Date("2026-09-06T09:30:00.000Z");
-    await handle.append([sample(1), { sourceKey: "temp", value: 21.5, deviceKey: "RTU-2", at: carried, good: true }]);
+    await handle.append(received(harness, [sample(1), { sourceKey: "temp", value: 21.5, deviceKey: "RTU-2", at: carried, good: true }]));
     harness.clock.now = new Date(START.getTime() + 60_000);
-    await handle.append([sample(2)]);
+    await handle.append(received(harness, [sample(2)]));
     assert(handle.buffered === 3, `buffered is 3, got ${handle.buffered}`);
 
     const oldest = segment(await handle.oldest(), "two segments on disk, oldest is not null");
     assert(oldest.samples.length === 2, `the lower minute has two samples, got ${oldest.samples.length}`);
     const [first, second] = oldest.samples;
-    assert(first.value === 1 && first.at instanceof Date, "the first sample is the older one with a Date");
     assert(
-      first.at !== undefined && first.at.getTime() === START.getTime(),
-      `a stamped at revives to the spill instant, got ${String(first.at)}`,
+      first.sample.value === 1 && first.receivedAt instanceof Date,
+      "the first sample is the older one, with its receive time revived to a Date",
+    );
+    // Inverted at ADR 0016 Amendment 5 — this used to read "a stamped at
+    // revives to the spill instant". The spill instant now revives into
+    // `receivedAt`, and `at` stays absent, because a revived stamp would reach
+    // `device_time` as a device clock the device never reported (ADR 0061
+    // ruling 2). Restoring the old line is not a fix.
+    assert(
+      first.sample.at === undefined,
+      `a sample spilled without a device time revives WITHOUT one: at is the device time and ` +
+        `nothing else (ADR 0016 Amendment 5), got ${String(first.sample.at)}`,
     );
     assert(
-      second.at !== undefined && second.at.getTime() === carried.getTime() && second.good === true && second.deviceKey === "RTU-2",
+      first.receivedAt.getTime() === START.getTime(),
+      `rx revives to the spill instant in receivedAt, got ${first.receivedAt.toISOString()}`,
+    );
+    assert(
+      second.sample.at !== undefined &&
+        second.sample.at.getTime() === carried.getTime() &&
+        second.sample.good === true &&
+        second.sample.deviceKey === "RTU-2",
       "a carried at, good and deviceKey round-trip",
     );
 
@@ -329,7 +375,7 @@ export async function runDiskBufferTests(): Promise<void> {
     assert(!(await exists(join(dir, "mqtt", ENCODED, `${MINUTE}.jsonl`))), "commit unlinks the segment");
 
     const next = segment(await handle.oldest(), "the next minute is still on disk");
-    assert(next.samples.length === 1 && next.samples[0].value === 2, "the next minute follows");
+    assert(next.samples.length === 1 && next.samples[0].sample.value === 2, "the next minute follows");
     await next.commit();
     assert(handle.buffered === 0 && (await handle.oldest()) === null, "drained: nothing buffered, oldest is null");
     assert(handle.dropped === 0, "replay is not loss");
@@ -340,12 +386,12 @@ export async function runDiskBufferTests(): Promise<void> {
   await withTempDir(async (dir) => {
     const harness = makeHarness();
     const { handle } = await openWithHandle(harness, dir);
-    await handle.append([sample(1), sample(2)]);
+    await handle.append(received(harness, [sample(1), sample(2)]));
     harness.clock.now = minuteDate(MINUTE + 1);
-    await handle.append([sample(3)]);
+    await handle.append(received(harness, [sample(3)]));
 
     harness.clock.now = minuteDate(MINUTE + 61);
-    await handle.append([sample(4)]);
+    await handle.append(received(harness, [sample(4)]));
     const segments = await segmentNames(dir);
     assert(
       segments.join(",") === `${MINUTE + 1}.jsonl,${MINUTE + 61}.jsonl`,
@@ -364,13 +410,13 @@ export async function runDiskBufferTests(): Promise<void> {
     const store = await openDiskBufferStore(harness.options(dir, { maxBytes: 300 }));
     const a = store.handle("mqtt", "a.example:1883");
     const b = store.handle("mqtt", "b.example:1883");
-    await a.append([sample(1)]);
+    await a.append(received(harness, [sample(1)]));
     harness.clock.now = minuteDate(MINUTE + 1);
-    await b.append([sample(2)]);
+    await b.append(received(harness, [sample(2)]));
     harness.clock.now = minuteDate(MINUTE + 2);
     let appends = 0;
     while (a.dropped === 0 && appends < 10) {
-      await b.append([sample(10 + appends)]);
+      await b.append(received(harness, [sample(10 + appends)]));
       appends += 1;
     }
     assert(a.dropped === 1, `A's segment is the oldest and is erased, got ${a.dropped}`);
@@ -427,7 +473,7 @@ export async function runDiskBufferTests(): Promise<void> {
     const strayLines = harness.lines.filter((row) => row.startsWith("warn") && row.includes("notes.txt"));
     assert(strayLines.length === 1, `the stray file is logged once:\n${harness.lines.join("\n")}`);
     const oldest = await handle.oldest();
-    assert(oldest !== null && oldest.samples[0].value === 4, "replay starts at the oldest kept segment");
+    assert(oldest !== null && oldest.samples[0].sample.value === 4, "replay starts at the oldest kept segment");
   });
 
   // ---- 10. read-then-append: commit keeps a segment that grew ------------------
@@ -435,10 +481,10 @@ export async function runDiskBufferTests(): Promise<void> {
   await withTempDir(async (dir) => {
     const harness = makeHarness();
     const { handle } = await openWithHandle(harness, dir);
-    await handle.append([sample(1), sample(2)]);
+    await handle.append(received(harness, [sample(1), sample(2)]));
     const read = segment(await handle.oldest(), "two lines on disk to read");
     assert(read.samples.length === 2, "two lines read");
-    await handle.append([sample(3)]);
+    await handle.append(received(harness, [sample(3)]));
     await read.commit();
     const path = join(dir, "mqtt", ENCODED, `${MINUTE}.jsonl`);
     assert(await exists(path), "a segment appended to since it was read is not unlinked");
@@ -463,7 +509,7 @@ export async function runDiskBufferTests(): Promise<void> {
     };
     const { handle } = await openWithHandle(harness, dir, { fs });
     const SECRET_VALUE = 4242.5;
-    const outcome = await handle.append([{ sourceKey: "flow", value: SECRET_VALUE }, sample(2)]);
+    const outcome = await handle.append(received(harness, [{ sourceKey: "flow", value: SECRET_VALUE }, sample(2)]));
     assert(outcome === false, "a failed append resolves false rather than rejecting");
     assert(handle.dropped === 2, `the whole batch is counted lost, got ${handle.dropped}`);
     assert(handle.buffered === 0, "nothing is buffered");
@@ -499,7 +545,7 @@ export async function runDiskBufferTests(): Promise<void> {
   await withTempDir(async (dir) => {
     const harness = makeHarness();
     const { handle } = await openWithHandle(harness, dir);
-    assert(await handle.append([{ sourceKey: "flow", value: Number.NaN }]), "the append itself succeeds");
+    assert(await handle.append(received(harness, [{ sourceKey: "flow", value: Number.NaN }])), "the append itself succeeds");
     const content = await readFile(join(dir, "mqtt", ENCODED, `${MINUTE}.jsonl`), "utf8");
     assert(content.includes('"value":null'), `JSON cannot carry NaN, got ${content}`);
     assert(handle.buffered === 1, "the line is on disk");
@@ -536,12 +582,12 @@ export async function runDiskBufferTests(): Promise<void> {
     const afterScan = statCalls;
     assert(afterScan === 1, `the scan measures each candidate once, got ${afterScan}`);
 
-    assert(await handle.append([sample(3)]), "the append succeeds");
+    assert(await handle.append(received(harness, [sample(3)])), "the append succeeds");
     assert(!(await exists(join(endpointDir, `${MINUTE - 5}.jsonl`))), "one byte over the cap erases the oldest segment");
     assert(await exists(join(endpointDir, `${MINUTE}.jsonl`)), "the new segment stays");
     assert(handle.dropped === 2 && handle.buffered === 1, `dropped=${handle.dropped} buffered=${handle.buffered}`);
 
-    assert(await handle.append([sample(4)]), "a second append succeeds");
+    assert(await handle.append(received(harness, [sample(4)])), "a second append succeeds");
     assert(
       statCalls - afterScan === 0,
       `no append may call stat — sizes come from the scan and the appends, got ${statCalls - afterScan}`,
@@ -590,7 +636,7 @@ export async function runDiskBufferTests(): Promise<void> {
     const { handle } = await openWithHandle(harness, dir, { fs, maxBytes });
     assert(handle.buffered === 3, `the scan counted both segments, got ${handle.buffered}`);
 
-    assert(await handle.append([sample(4)]), "the append itself succeeds");
+    assert(await handle.append(received(harness, [sample(4)])), "the append itself succeeds");
     assert(attemptsOn(refusedPath) === 1, `the bound tried the store's oldest once, got ${attemptsOn(refusedPath)}`);
     assert(
       attemptsOn(nextPath) === 1,
@@ -620,8 +666,8 @@ export async function runDiskBufferTests(): Promise<void> {
     // file holds an endpoint's whole later backlog off the database.
     const replayed = segment(await handle.oldest(), "replay must not stall on the refused segment");
     assert(
-      replayed.samples.map((one) => one.value).join(",") === "4",
-      `the segment after the refused one replays, got ${replayed.samples.map((one) => one.value).join(",")}`,
+      replayed.samples.map((one) => one.sample.value).join(",") === "4",
+      `the segment after the refused one replays, got ${replayed.samples.map((one) => one.sample.value).join(",")}`,
     );
     await replayed.commit();
     assert((await handle.oldest()) === null, "and nothing but the refused record is left to read");
@@ -630,9 +676,9 @@ export async function runDiskBufferTests(): Promise<void> {
     // on the same record is silent, or a volume that refuses for ever writes
     // one `error` line per pass for ever.
     harness.clock.now = minuteDate(MINUTE + 1);
-    assert(await handle.append([sample(5)]), "a later append still succeeds");
+    assert(await handle.append(received(harness, [sample(5)])), "a later append still succeeds");
     harness.clock.now = minuteDate(MINUTE + 2);
-    assert(await handle.append([sample(6)]), "and so does the one that goes over the cap again");
+    assert(await handle.append(received(harness, [sample(6)])), "and so does the one that goes over the cap again");
     assert(
       attemptsOn(refusedPath) === 1,
       `the refused record is skipped, not retried, got ${attemptsOn(refusedPath)} attempts`,
@@ -687,7 +733,7 @@ export async function runDiskBufferTests(): Promise<void> {
       [0, 4],
     ] as const) {
       harness.clock.now = minuteDate(MINUTE + offset);
-      assert(await b.append([sample(value)]), `B's append at minute ${offset} succeeds`);
+      assert(await b.append(received(harness, [sample(value)])), `B's append at minute ${offset} succeeds`);
     }
 
     assert(attempts.filter((row) => row === stuck).length === 1, "the store's oldest is A's stuck segment, tried once");
@@ -732,7 +778,7 @@ export async function runDiskBufferTests(): Promise<void> {
     assert(held.samples.length === 2, `both lines replay, got ${held.samples.length}`);
     assert(failures().length === 0, "nothing has been refused yet");
 
-    assert(await handle.append([sample(3)]), "the append that goes over the cap succeeds");
+    assert(await handle.append(received(harness, [sample(3)])), "the append that goes over the cap succeeds");
     assert(failures().length === 1, `the bound's refusal is logged once:\n${harness.lines.join("\n")}`);
 
     await held.commit();
@@ -815,7 +861,7 @@ export async function runDiskBufferTests(): Promise<void> {
     assert(handle.buffered === 2, "the scan counted the segment that is about to age out");
 
     harness.clock.now = minuteDate(MINUTE + 61);
-    assert(await handle.append([sample(3)]), "the retried append lands the batch");
+    assert(await handle.append(received(harness, [sample(3)])), "the retried append lands the batch");
     assert(appendCalls === 2, `exactly one retry, got ${appendCalls} appendFile calls`);
     assert(!(await exists(agedPath)), "the aged segment was erased on the failure path");
     assert(handle.dropped === 2, `only the evicted segment counts as dropped, got ${handle.dropped}`);
@@ -837,7 +883,7 @@ export async function runDiskBufferTests(): Promise<void> {
     const store = await openDiskBufferStore(harness.options(dir));
     const a = store.handle("mqtt", "a.example:1883");
     const b = store.handle("mqtt", "b.example:1883");
-    await a.append([sample(1)]);
+    await a.append(received(harness, [sample(1)]));
     harness.clock.now = minuteDate(MINUTE + 61);
     assert(
       a.buffered === 1 && a.dropped === 0,
@@ -854,7 +900,7 @@ export async function runDiskBufferTests(): Promise<void> {
 
     // A handle's sweep is the same host-wide pass: an idle endpoint sweeping
     // erases another endpoint's aged segment, because the disk is host-wide.
-    await a.append([sample(2)]);
+    await a.append(received(harness, [sample(2)]));
     harness.clock.now = minuteDate(MINUTE + 200);
     assert(a.buffered === 1, "a second segment, again with nothing appending");
     await b.sweep();
@@ -884,7 +930,7 @@ export async function runDiskBufferTests(): Promise<void> {
       `the warning carries the size and the bound: ${skipped[0]}`,
     );
     const oldest = segment(await handle.oldest(), "the usable segment still replays");
-    assert(oldest.samples.length === 1 && oldest.samples[0].value === 1, "and it is the right one");
+    assert(oldest.samples.length === 1 && oldest.samples[0].sample.value === 1, "and it is the right one");
   });
 
   // ---- 20. one unreadable file skips; an unreadable directory refuses --------
@@ -911,7 +957,7 @@ export async function runDiskBufferTests(): Promise<void> {
     assert(await exists(badPath), "the unreadable file is left alone, not erased");
     assert(warnLines(harness, `${MINUTE - 1}.jsonl`).length === 1, `skipped with one warning:\n${harness.lines.join("\n")}`);
     const oldest = segment(await handle.oldest(), "the readable segment replays");
-    assert(oldest.samples[0].value === 3, "and it is the one that could be read");
+    assert(oldest.samples[0].sample.value === 3, "and it is the one that could be read");
 
     // A directory is different: a subtree the store cannot enumerate is a
     // backlog it can neither replay nor bound, so start-up still refuses.

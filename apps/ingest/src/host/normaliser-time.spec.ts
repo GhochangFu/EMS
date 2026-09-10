@@ -6,6 +6,7 @@ import {
   sample,
 } from "./normaliser.spec.js";
 import { resolveSamples, writeResolved, type PointValueRow } from "./normaliser.js";
+import { receivedTogether } from "./received-sample.js";
 
 /**
  * ADR 0061 — `time` is the receive time and `device_time` keeps what the RTU
@@ -70,12 +71,14 @@ function show(value: Date | null): string {
  */
 export function assertDeviceTimeNeverReachesTime(): void {
   const { rows, counters } = resolveSamples(
-    [
-      sample({ sourceKey: "flow", at: LAGGING_DEVICE_TIME }),
-      sample({ sourceKey: "press", at: LEADING_DEVICE_TIME }),
-    ],
+    receivedTogether(
+      [
+        sample({ sourceKey: "flow", at: LAGGING_DEVICE_TIME }),
+        sample({ sourceKey: "press", at: LEADING_DEVICE_TIME }),
+      ],
+      RECEIVED_AT,
+    ),
     PILOT_INDEX,
-    RECEIVED_AT,
     "RTU-1",
   );
 
@@ -109,9 +112,8 @@ export function assertDeviceTimeNeverReachesTime(): void {
 /** Decision 4 case 2 — a payload carrying no `ts` at all. */
 export function assertOmittedTimestampYieldsNullDeviceTime(): void {
   const { rows, counters } = resolveSamples(
-    [sample({ sourceKey: "flow" })],
+    receivedTogether([sample({ sourceKey: "flow" })], RECEIVED_AT),
     PILOT_INDEX,
-    RECEIVED_AT,
     "RTU-1",
   );
 
@@ -130,9 +132,8 @@ export function assertOmittedTimestampYieldsNullDeviceTime(): void {
 /** Decision 4 case 3 and decision 5 — an `at` this host cannot read. */
 export function assertUnreadableTimestampYieldsNullDeviceTimeAndCounts(): void {
   const { rows, counters } = resolveSamples(
-    [sample({ sourceKey: "flow", at: new Date("nonsense") })],
+    receivedTogether([sample({ sourceKey: "flow", at: new Date("nonsense") })], RECEIVED_AT),
     PILOT_INDEX,
-    RECEIVED_AT,
     "RTU-1",
   );
 
@@ -163,12 +164,14 @@ export function assertCollapseIsAttributed(): void {
   const at1 = new Date(RECEIVED_AT.getTime() - 60_000);
   const at2 = new Date(RECEIVED_AT.getTime() - 30_000);
   const { rows, counters } = resolveSamples(
-    [
-      sample({ sourceKey: "flow", value: 1, at: at1 }),
-      sample({ sourceKey: "flow", value: 2, at: at2 }),
-    ],
+    receivedTogether(
+      [
+        sample({ sourceKey: "flow", value: 1, at: at1 }),
+        sample({ sourceKey: "flow", value: 2, at: at2 }),
+      ],
+      RECEIVED_AT,
+    ),
     PILOT_INDEX,
-    RECEIVED_AT,
     "RTU-1",
   );
 
@@ -207,14 +210,16 @@ export function assertCollapseIsAttributed(): void {
  */
 export function assertTheFirstCollapseIsTheOneNamed(): void {
   const { counters } = resolveSamples(
-    [
-      sample({ sourceKey: "press", value: 1 }),
-      sample({ sourceKey: "press", value: 2 }),
-      sample({ sourceKey: "flow", value: 3 }),
-      sample({ sourceKey: "flow", value: 4 }),
-    ],
+    receivedTogether(
+      [
+        sample({ sourceKey: "press", value: 1 }),
+        sample({ sourceKey: "press", value: 2 }),
+        sample({ sourceKey: "flow", value: 3 }),
+        sample({ sourceKey: "flow", value: 4 }),
+      ],
+      RECEIVED_AT,
+    ),
     PILOT_INDEX,
-    RECEIVED_AT,
     "RTU-1",
   );
 

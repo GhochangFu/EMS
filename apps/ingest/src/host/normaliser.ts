@@ -1,6 +1,7 @@
-import type { QualityPolicy, SourceSample } from "@bms/shared/ingest";
+import type { QualityPolicy } from "@bms/shared/ingest";
 
 import { chunkReadings, type NotifyReading } from "./chunk.js";
+import type { ReceivedSample } from "./received-sample.js";
 
 /**
  * The host's write path (ADR 0016 §2).
@@ -226,11 +227,18 @@ function isInEngineeringRange(value: number, target: PointTarget): boolean {
 /**
  * Turns raw samples into the rows to write. Pure — no clock, no database.
  *
- * `receivedAt` is passed in rather than read from `Date.now()` so a test can
- * pin it. `soleDeviceKey` is the endpoint's only binding when it has exactly
- * one, which is the case in which `SourceSample.deviceKey` may be omitted; pass
- * `undefined` when the endpoint serves several devices, and a sample without a
- * `deviceKey` is then counted and dropped rather than guessed at.
+ * Each sample arrives with the instant this host received it
+ * (`ReceivedSample`), so this function reads no clock at all: the drain loop
+ * stamps a live batch once, and the disk buffer revives the `rx` it wrote at
+ * spill (ADR 0016 Amendment 5). The receive time is a **required field on each
+ * sample** rather than a batch argument with a per-sample override, because an
+ * optional receive time at this seam is invisible to `tsc` and to every
+ * fake-based suite — a path that forgot to set it would compile, pass, and
+ * silently take the replay instant. `soleDeviceKey` is the endpoint's only
+ * binding when it has exactly one, which is the case in which
+ * `SourceSample.deviceKey` may be omitted; pass `undefined` when the endpoint
+ * serves several devices, and a sample without a `deviceKey` is then counted
+ * and dropped rather than guessed at.
  *
  * ## The two times (`F4.57` / ADR 0061)
  *
@@ -243,9 +251,10 @@ function isInEngineeringRange(value: number, target: PointTarget): boolean {
  * future-dated row that every `time > now() - interval 'N'` window read as
  * fresh for half an hour.
  *
- * `receivedAt` is a **receive** time, not necessarily this instant: ADR 0016
- * Amendment 5 makes a replayed sample carry the arrival the disk buffer
- * recorded, so a re-replayed segment keeps writing the same primary key.
+ * `receivedAt` is a **receive** time, not necessarily this instant: for a live
+ * sample it is the batch's own instant, and for a replayed one it is the
+ * arrival the disk buffer recorded (ADR 0061 Amendment 2 ruling 4), so a
+ * re-replayed segment keeps writing the same primary key.
  *
  * Both are computed once per sample, before the target loop, so a sample
  * fanning out to three points counts `invalidTimestamp` once rather than three
@@ -276,9 +285,8 @@ function isInEngineeringRange(value: number, target: PointTarget): boolean {
  * bad-quality `NaN` counts `nonFinite`.
  */
 export function resolveSamples(
-  samples: readonly SourceSample[],
+  samples: readonly ReceivedSample[],
   index: PointIndex,
-  receivedAt: Date,
   soleDeviceKey?: string,
 ): ResolveResult {
   const counters = emptyCounters();
@@ -299,7 +307,7 @@ export function resolveSamples(
   // second silently updates the first. It preserves nothing, order-dependently.
   const deduped = new Map<string, PointValueRow>();
 
-  for (const sample of samples) {
+  for (const { sample, receivedAt } of samples) {
     if (typeof sample.value !== "number" || !Number.isFinite(sample.value)) {
       counters.nonFinite += 1;
       continue;

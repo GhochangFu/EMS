@@ -4,6 +4,7 @@ import type { AdapterLogger, IngestAdapter, IngestAdapterFactory } from "../adap
 import { backoffDelayMs, DEFAULT_BACKOFF, type BackoffPolicy } from "@bms/shared/ingest";
 import type { EndpointPlan } from "./bindings.js";
 import type { BufferedSegment, DiskBufferHandle } from "./disk-buffer.js";
+import { receivedTogether, type ReceivedSample } from "./received-sample.js";
 import { createSampleQueue, DEFAULT_QUEUE_CAPACITY, type SampleQueue } from "./sample-queue.js";
 
 /**
@@ -197,8 +198,15 @@ export type SupervisorDeps = {
    * database attempt until a replay probe succeeds (Amendment 4 decision 3).
    * The batch is lost only when the disk append fails too, and that loss is
    * counted in `bufferDropped`.
+   *
+   * Every sample carries the instant this host received it — the host-internal
+   * shape, never the adapter contract. The drain loop stamps a live batch with
+   * `scheduler.now()` once; a replayed batch keeps the `rx` the buffer wrote at
+   * spill (ADR 0016 Amendment 5), so a re-replayed segment writes the same
+   * primary key. One shape for both loops, so the seam cannot grow a "which
+   * time" branch on the far side.
    */
-  writeSamples(samples: readonly SourceSample[]): Promise<void>;
+  writeSamples(samples: readonly ReceivedSample[]): Promise<void>;
 };
 
 /** Races `work` against a timeout without leaving an unhandled rejection behind. */
@@ -350,12 +358,14 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
    * Stamping at spill time means the disk carries what the plan meant when the
    * sample arrived.
    */
-  function stampDeviceKeys(batch: readonly SourceSample[]): readonly SourceSample[] {
+  function stampDeviceKeys(batch: readonly ReceivedSample[]): readonly ReceivedSample[] {
     if (soleDeviceKey === undefined) {
       return batch;
     }
-    return batch.map((sample) =>
-      sample.deviceKey === undefined ? { ...sample, deviceKey: soleDeviceKey } : sample,
+    return batch.map((one) =>
+      one.sample.deviceKey === undefined
+        ? { ...one, sample: { ...one.sample, deviceKey: soleDeviceKey } }
+        : one,
     );
   }
 
@@ -371,7 +381,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
    * The batch is counted here rather than in the store, because a store that
    * rejected is a store whose `dropped` never moved — see `bufferRejected`.
    */
-  async function appendToBuffer(batch: readonly SourceSample[]): Promise<boolean> {
+  async function appendToBuffer(batch: readonly ReceivedSample[]): Promise<boolean> {
     try {
       return await deps.buffer.append(stampDeviceKeys(batch));
     } catch (error) {
@@ -565,6 +575,16 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         await scheduler.sleep(timings.drainIdleMs, stopController.signal);
         continue;
       }
+      // ADR 0061 decision 2: a live batch's receive time is the batch's own
+      // instant, read once here and carried by BOTH exits of this iteration —
+      // the write, and the spill when the write fails or the breaker is open.
+      // The buffer gets the same `receivedAt` the write used (Amendment 5:
+      // `rx` is the instant the host received the sample, not the append
+      // instant) because `withTimeout` rejects the wait and cannot cancel the
+      // query: a timed-out write can still land, and a replay stamped at
+      // append — up to `writeTimeoutMs` later — would sit beside that row on a
+      // second primary key, in exactly the failure the buffer exists for.
+      const received = receivedTogether(batch, scheduler.now());
       if (buffering) {
         // Decision 3: no database attempt while the breaker is open, and no
         // per-batch log. Attempting each batch would cost `writeTimeoutMs` per
@@ -583,7 +603,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // batch spends `writeTimeoutMs` on a database that is still down.
         spilling += 1;
         try {
-          writePath = (await appendToBuffer(batch)) ? "buffering" : "losing";
+          writePath = (await appendToBuffer(received)) ? "buffering" : "losing";
         } finally {
           spilling -= 1;
         }
@@ -591,7 +611,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       }
       try {
         await withTimeout(
-          deps.writeSamples(batch),
+          deps.writeSamples(received),
           timings.writeTimeoutMs,
           scheduler,
           "writeSamples()",
@@ -610,7 +630,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // fire and the endpoint would sit buffering with an empty buffer.
         spilling += 1;
         try {
-          if (await appendToBuffer(batch)) {
+          if (await appendToBuffer(received)) {
             buffering = true;
             writePath = "buffering";
           } else {
@@ -717,6 +737,10 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
           abandoned = true;
           break;
         }
+        // Handed over as read — each sample carries the `rx` the buffer wrote
+        // at spill, and nothing here re-stamps it (Amendment 5). Re-stamping
+        // with `scheduler.now()` is the mutation that mints a fresh primary key
+        // per replay and makes decision 5 false.
         const batch = segment.samples.slice(start, start + timings.drainBatchSize);
         try {
           await withTimeout(

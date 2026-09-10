@@ -1,5 +1,6 @@
 import type { DiskBufferHandle } from "./disk-buffer.js";
-import { assert, ENDPOINT, makeRig, settle, withTempDir } from "./supervisor-buffer.spec.js";
+import { receivedTogether } from "./received-sample.js";
+import { assert, ENDPOINT, makeRig, settle, START, withTempDir } from "./supervisor-buffer.spec.js";
 import { sample, stopSupervisor } from "./supervisor.spec.js";
 
 /**
@@ -120,7 +121,9 @@ export async function runSupervisorValveTests(): Promise<void> {
       },
       append: async () => true,
       oldest: async () =>
-        state.buffered === 0 ? null : { samples: [sample(9)], commit: async () => undefined },
+        state.buffered === 0
+          ? null
+          : { samples: receivedTogether([sample(9)], START), commit: async () => undefined },
       sweep: async () => undefined,
     };
     const rig = await makeRig(dir, { handle: controllable });

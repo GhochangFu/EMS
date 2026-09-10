@@ -14,6 +14,7 @@ import {
   MINUTE,
   openWithHandle,
   realFs,
+  received,
   sample,
   segment,
   START,
@@ -67,8 +68,8 @@ export async function runDiskBufferRefusedTests(): Promise<void> {
 
     const replayed = segment(await handle.oldest(), "the segment reads before anything refuses it");
     assert(
-      replayed.samples.map((one) => one.value).join(",") === "1",
-      `the line replays, got ${replayed.samples.map((one) => one.value).join(",")}`,
+      replayed.samples.map((one) => one.sample.value).join(",") === "1",
+      `the line replays, got ${replayed.samples.map((one) => one.sample.value).join(",")}`,
     );
     await replayed.commit();
     assert(errorLines(harness, "unlink failed").length === 1, "the refusal is logged once");
@@ -80,7 +81,7 @@ export async function runDiskBufferRefusedTests(): Promise<void> {
     );
 
     // Still inside minute M, so this appends to the flagged file itself.
-    assert(await handle.append([sample(2)]), "the append into the refused minute succeeds");
+    assert(await handle.append(received(harness, [sample(2)])), "the append into the refused minute succeeds");
     assert(handle.buffered === 2, `both lines are counted, got ${handle.buffered}`);
 
     const again = segment(
@@ -89,8 +90,8 @@ export async function runDiskBufferRefusedTests(): Promise<void> {
         "must be offered again, or the batch just written can never replay",
     );
     assert(
-      again.samples.map((one) => one.value).join(",") === "1,2",
-      `the old line and the new one both replay, got ${again.samples.map((one) => one.value).join(",")}`,
+      again.samples.map((one) => one.sample.value).join(",") === "1,2",
+      `the old line and the new one both replay, got ${again.samples.map((one) => one.sample.value).join(",")}`,
     );
 
     // The remount. A successful unlink still ends it, and the record goes.

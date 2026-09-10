@@ -2,11 +2,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { SourceSample } from "@bms/shared/ingest";
-
 import type { AdapterLogger } from "../adapter/types.js";
 import type { EndpointPlan } from "./bindings.js";
 import { openDiskBufferStore, type DiskBufferHandle } from "./disk-buffer.js";
+import type { ReceivedSample } from "./received-sample.js";
 import {
   createSupervisor,
   type Scheduler,
@@ -48,7 +47,7 @@ export function assert(condition: boolean, message: string): void {
 /** `makePlan()`'s key, and the store's `encodeURIComponent` of it. */
 export const ENDPOINT = "phe.thinkiot.co.in:8883";
 const ENCODED = "phe.thinkiot.co.in%3A8883";
-const START = new Date("2026-09-06T10:00:00.000Z");
+export const START = new Date("2026-09-06T10:00:00.000Z");
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 /** A gibibyte: every block except the ones about a bound must never hit one. */
@@ -123,13 +122,16 @@ export async function withTempDir(run: (dir: string) => Promise<void>): Promise<
   }
 }
 
-/** Writes a segment the way an earlier process would have left it. */
+/**
+ * Writes a segment the way an earlier process would have left it — `rx` on
+ * every line and no `at`, the format ADR 0016 Amendment 5 fixes.
+ */
 async function seedSegment(dir: string, minute: number, values: readonly number[]): Promise<void> {
   const endpointDir = join(dir, "mqtt", ENCODED);
   await mkdir(endpointDir, { recursive: true });
-  const at = new Date(minute * MINUTE_MS).toISOString();
+  const rx = new Date(minute * MINUTE_MS).toISOString();
   const body = values
-    .map((value) => JSON.stringify({ sourceKey: "flow", value, deviceKey: "RTU-1", at }))
+    .map((value) => JSON.stringify({ sourceKey: "flow", value, deviceKey: "RTU-1", rx }))
     .join("\n");
   await writeFile(join(endpointDir, `${minute}.jsonl`), `${body}\n`, "utf8");
 }
@@ -139,10 +141,10 @@ export type Rig = {
   readonly scripted: ScriptedAdapter;
   readonly supervisor: Supervisor;
   readonly handle: DiskBufferHandle;
-  /** Every batch handed to `writeSamples`, refused ones included, in call order. */
-  readonly attempted: SourceSample[][];
-  /** Only the batches the database accepted, in call order. */
-  readonly written: SourceSample[][];
+  /** Every batch handed to `writeSamples`, refused ones included, in call order, as handed over. */
+  readonly attempted: ReceivedSample[][];
+  /** Only the batches the database accepted, in call order, receive times intact. */
+  readonly written: ReceivedSample[][];
   readonly logs: string[];
   /** Values of the accepted batches, flattened — the call log an assertion reads. */
   writtenValues(): string;
@@ -162,6 +164,12 @@ export type RigOptions = {
   readonly handle?: DiskBufferHandle;
   /** Defaults to the two-binding plan; block H needs the sole-binding one. */
   readonly plan?: EndpointPlan;
+  /**
+   * Runs inside `writeSamples` before the failure check — where a block moves
+   * the clock to model the `writeTimeoutMs` a failed write costs before the
+   * batch reaches the disk (`replay-receive-time.spec.ts`).
+   */
+  readonly onAttempt?: () => void;
 };
 
 export async function makeRig(dir: string, options: RigOptions = {}): Promise<Rig> {
@@ -192,8 +200,8 @@ export async function makeRig(dir: string, options: RigOptions = {}): Promise<Ri
   const handle = options.handle ?? store.handle("mqtt", ENDPOINT);
 
   const scripted = makeScriptedAdapter("push");
-  const attempted: SourceSample[][] = [];
-  const written: SourceSample[][] = [];
+  const attempted: ReceivedSample[][] = [];
+  const written: ReceivedSample[][] = [];
   const state = { failing: options.failing ?? true };
 
   const supervisor = createSupervisor({
@@ -206,6 +214,7 @@ export async function makeRig(dir: string, options: RigOptions = {}): Promise<Ri
     timings: { ...TIMINGS, ...options.timings },
     writeSamples: async (samples) => {
       attempted.push([...samples]);
+      options.onAttempt?.();
       if (state.failing) {
         throw new Error("database unreachable");
       }
@@ -221,7 +230,7 @@ export async function makeRig(dir: string, options: RigOptions = {}): Promise<Ri
     attempted,
     written,
     logs,
-    writtenValues: () => written.flat().map((s) => s.value).join(","),
+    writtenValues: () => written.flat().map((s) => s.sample.value).join(","),
     setFailing: (failing) => {
       state.failing = failing;
     },
@@ -387,7 +396,7 @@ export async function runSupervisorBufferTests(): Promise<void> {
     await rig.fake.flush(1);
     await settle(() => rig.written.length === 3, "the live batch and the next segment land");
 
-    const live = rig.written.findIndex((batch) => batch.some((s) => s.value === 99));
+    const live = rig.written.findIndex((batch) => batch.some((s) => s.sample.value === 99));
     assert(
       live >= 0 && live <= 1,
       `live telemetry must not queue behind the backlog: writes were ${rig.writtenValues()}`,
@@ -396,7 +405,7 @@ export async function runSupervisorBufferTests(): Promise<void> {
     // `drainIdleMs` between batches, so it cannot have drained the whole
     // backlog in the round that wrote the live batch.
     assert(
-      !rig.written.some((batch) => batch.some((s) => s.value === 3)),
+      !rig.written.some((batch) => batch.some((s) => s.sample.value === 3)),
       `replay must yield between segments, not drain them in one pass: ${rig.writtenValues()}`,
     );
 
