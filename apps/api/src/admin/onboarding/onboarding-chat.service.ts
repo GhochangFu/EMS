@@ -33,7 +33,11 @@ import {
   carriesPromptMarker,
   serialiseDraftForPrompt,
 } from "./onboarding-prompt-budget";
-import { attachEncryptedCredentials, reconcileSecrets } from "./onboarding-redaction";
+import {
+  attachEncryptedCredentials,
+  reconcileSecrets,
+  type EncryptedBlob,
+} from "./onboarding-redaction";
 import { onboardingDraftSchema } from "./onboarding.schema";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingProtocolService } from "./onboarding-protocol.service";
@@ -734,8 +738,8 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         : base.onboardingMeta,
     };
 
-    let stored: OnboardingDraft & { _secrets?: Record<string, { c: string; iv: string }> } =
-      merged as OnboardingDraft & { _secrets?: Record<string, { c: string; iv: string }> };
+    let stored: OnboardingDraft & { _secrets?: Record<string, EncryptedBlob> } =
+      merged as OnboardingDraft & { _secrets?: Record<string, EncryptedBlob> };
 
     const credList = credentialsToEncrypt
       ? Array.isArray(credentialsToEncrypt)
@@ -750,12 +754,20 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
     const configured = CredentialCryptoService.isConfigured();
     stored = reconcileSecrets(stored, { deriveCredentialsSet: configured });
 
+    // ADR 0062 decision 8: with no key configured, the credential is dropped —
+    // as it already was — and the draft must not claim otherwise. The branch
+    // that used to set `credentialsSet: true` here is deleted rather than kept
+    // as a false success.
     for (const cred of credList) {
       if (configured) {
         const enc = this.crypto.encrypt(cred.credentials);
-        stored = attachEncryptedCredentials(stored, cred.rtuIndex, enc.ciphertext, enc.iv);
-      } else if (Array.isArray(stored.rtus) && stored.rtus[cred.rtuIndex]) {
-        stored.rtus[cred.rtuIndex] = { ...stored.rtus[cred.rtuIndex], credentialsSet: true };
+        stored = attachEncryptedCredentials(
+          stored,
+          cred.rtuIndex,
+          enc.ciphertext,
+          enc.iv,
+          enc.keyVersion,
+        );
       }
     }
 
