@@ -28,6 +28,8 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { inFlightRows } from '../../docs/scripts/backlog-state.mjs';
+
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const STATUS = join(repoRoot, 'docs', 'scripts', 'backlog-status.mjs');
 const DASHBOARD = join(repoRoot, 'docs', 'scripts', 'backlog-dashboard.mjs');
@@ -89,7 +91,13 @@ const run = (script) =>
     writeFileSync(ASKED, `${current}\n`);
 
     const counts = data.counts || {};
-    const inFlight = (data.inProgress || []).map((i) => i.id);
+    // `F3.58` post-merge: filtered, not raw. The in-progress set holds any row
+    // whose id a branch name spells, so while the branch closing a dropped row
+    // exists this line named it as in flight — the same defect the dashboard
+    // had, on the surface its own comment claimed was already covered. Shares
+    // the generator's predicate rather than restating it (`F4.86`).
+    const byId = new Map((data.items || []).map((it) => [it.id, it]));
+    const inFlight = inFlightRows(data.inProgress || [], (id) => byId.get(id)).map((i) => i.id);
     // `counts.gated` — the number the board's stat tile prints (`F4.86`).
     //
     // This was a fourth re-derivation of "held", added to match the renderer
