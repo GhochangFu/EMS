@@ -119,6 +119,7 @@ export function assert(condition: boolean, message: string): void {
   }
 }
 
+/** Fails unless `run` rejects with a message matching `match`; `what` names the case. */
 export async function expectRejection(
   run: () => Promise<unknown>,
   match: RegExp,
@@ -410,6 +411,7 @@ export async function seededRules(pool: pg.Pool): Promise<SeededRuleRow[]> {
   return rows;
 }
 
+/** The one seeded rule for this asset and template alarm; throws, listing what it found, if absent. */
 export function ruleFor(rows: SeededRuleRow[], assetCode: string, alarmCode: string): SeededRuleRow {
   const row = rows.find((r) => r.asset_code === assetCode && r.source_alarm_code === alarmCode);
   if (!row) {
@@ -830,10 +832,12 @@ export async function assertPhilosophyRowCannotBeArmed(
   await svc.rules.setEnabled(proto.id, { enabled: true }, actor);
   assert((await isEnabled(proto.id)) === true, `${proto.code}: re-arming a proto rule must work`);
 
-  // Commissioning: one PATCH carrying BOTH fields. This is the E2.4 Q1 join's
-  // only database execution — `philosophy.point_key` is not in
+  // Commissioning: one PATCH carrying BOTH fields. This suite's only proof that
+  // the E2.4 Q1 join returns the right rows — `philosophy.point_key` is not in
   // `pointKeysForAsset`'s answer, so `assertCompatiblePoint` can only pass by
-  // reading the asset's pinned template.
+  // reading the asset's pinned template. It stopped being that join's only
+  // *execution* under `F3.49`, which runs it on every threshold validation
+  // rather than only on a map miss.
   await svc.rules.updateRule(philosophy.id, { operator: "gt", thresholdValue: 3 }, actor);
   const { rows: patched } = await pool.query<{ operator: string | null; threshold_value: string }>(
     `SELECT operator, threshold_value::text FROM bms.automation_rules WHERE id = $1`,

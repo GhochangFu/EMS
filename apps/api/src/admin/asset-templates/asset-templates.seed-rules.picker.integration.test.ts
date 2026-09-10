@@ -25,6 +25,7 @@ import {
 import {
   assertEveryOfferedKeyIsAcceptedAndOneOtherRefused,
   assertPickerOffersTheValidatorsUnion,
+  assertTemplateKeysAreOrderedByDeclaredOrder,
 } from "./asset-templates.seed-rules.picker.integration.spec";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
@@ -35,15 +36,19 @@ import { asRole } from "../../testing/role-urls";
  * Assertions live in the sibling `.spec` (ADR 0014); this file owns the
  * database lifecycle.
  *
- * The lifecycle is the one `asset-templates.seed-rules.integration.test.ts`
- * has, because the two suites share one fixture (the same published template,
- * the same two assets, the same per-case reset). It is a second file rather
- * than two more cases in that one because the `E2.4` spec sits at 989 lines
- * against §4.5's cap, and `tests/repo-invariants.test.ts` requires a same-stem
- * wrapper for every spec. Vitest evaluates each test file's module graph
- * afresh, so the spec's per-run `TEST_TEMPLATE_CODE` / `TEST_ASSET_PREFIX`
- * differ between the two suites and neither `cleanup` can reach the other's
- * rows.
+ * It is a second file rather than two more cases in
+ * `asset-templates.seed-rules.integration.test.ts` because that suite's spec
+ * sits near §4.5's 1000-line cap, and `tests/repo-invariants.test.ts` requires
+ * a same-stem wrapper for every spec.
+ *
+ * **It copies that wrapper's lifecycle; it does not join it.** Vitest evaluates
+ * each test file's module graph afresh, and `TEST_TEMPLATE_CODE` /
+ * `TEST_ASSET_PREFIX` call `randomUUID()` at module scope, so this suite
+ * publishes its own template under its own codes and neither `cleanup` can
+ * reach the other's rows. That is why the `beforeAll` below calls
+ * `assertJoinPredicateIsNotVacuous` and `publishFixtureTemplate` itself rather
+ * than inheriting them: delete either as redundant and the union case passes on
+ * the hard-coded map alone.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.49",
@@ -132,5 +137,15 @@ describe.skipIf(!connectionString)("F3.49 — the picker offers what the validat
 
   it("accepts every offered key through updateRule, and refuses one it does not offer", async () => {
     await assertEveryOfferedKeyIsAcceptedAndOneOtherRefused(svc, fx, pool as pg.Pool, template.id);
+  });
+
+  // Last on purpose: it rewrites this suite's template so that declared order
+  // and insertion order disagree, which is the only way the `asc(sort_order)`
+  // leg can be observed at all. It restores the three `sort_order` values in a
+  // `finally`. The `asc(point_key)` tie-break is held by
+  // `tests/f3.49-picker-validator-single-source.test.ts` instead, for the
+  // reason the spec's docblock measures.
+  it("orders the template half by declared sort_order, not by insertion", async () => {
+    await assertTemplateKeysAreOrderedByDeclaredOrder(svc, fx, pool as pg.Pool, template.id);
   });
 });

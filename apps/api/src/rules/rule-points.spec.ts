@@ -150,11 +150,16 @@ function foldDb(rows: unknown[]): BmsDb {
 }
 
 /**
- * Three claims in one function, and they are **ordered**: `assert` throws, so
- * the second is reachable only once the first holds, and the third only once
- * both do. A fold that built its `Map` from the query rows alone reddens on the
- * first (`c` absent); a fold that answered a stray `assetId` reddens on the
- * third — and only if the first two hold.
+ * Three claims in four `assert` calls, and they are **ordered**: `assert`
+ * throws, so each claim is reachable only once the ones before it hold. Claim
+ * one is the first two calls together (`c` has an entry, and that entry is the
+ * map); claim two is the third call; claim three is the fourth.
+ *
+ * A fold that built its `Map` from the query rows alone reddens on the **first**
+ * call. A fold that answered a stray `assetId` reddens on the **fourth** call,
+ * which is the third claim — and only if the three before it hold. The count a
+ * mutation run prints is the call, not the claim, so the two are named
+ * separately here rather than left to be read as one.
  */
 export async function runFoldAnswersEveryInputAssetTests(): Promise<void> {
   const db = foldDb([

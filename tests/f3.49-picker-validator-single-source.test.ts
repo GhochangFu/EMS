@@ -17,11 +17,16 @@ import { describe, expect, it } from "vitest";
  * equality on one fixture. A future second path — a `kind` filter added to
  * the picker's query only, or the map-first short-circuit re-added to the
  * validator — keeps that fixture green while diverging on other data. The
- * scan fails the moment the rules module has two readers of the hard-coded
- * map or two of `template_points`, because a union computed in two places has
- * no compiler edge between them. Its named limit: it cannot see a divergence
- * *inside* the one function; `rule-points.spec.ts` and the integration cases
- * hold that.
+ * scan fails the moment **either of the two files it reads** holds a second
+ * reader of the hard-coded map or of `template_points`, because a union
+ * computed in two places has no compiler edge between them.
+ *
+ * Two named limits, and the first is why this docblock does not say "the rules
+ * module". It reads exactly the two files below. `apps/api/src/rules/` holds
+ * 18 non-test files, and `rule-points.ts` is today the only one of them naming
+ * `templatePoints` — but a reader added to a third file would keep all four
+ * cases green. Second, it cannot see a divergence *inside* the one function;
+ * `rule-points.spec.ts` and the integration cases hold that.
  */
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
@@ -147,5 +152,37 @@ describe("F3.49 — getBuilderCatalog offers ruleTargetPointKeysByAsset's answer
       "`getBuilderCatalog` no longer offers `ruleTargetPointKeysByAsset`'s answer. That is the " +
         "picker half of picker == validator.",
     ).toContain("ruleTargetPointKeysByAsset(");
+  });
+});
+
+/**
+ * ADR 0058 Amendment 2 property 2's tie-break, held here because **no
+ * behavioural test can hold it**.
+ *
+ * Postgres does not specify the order of rows that tie on every `ORDER BY` key,
+ * so deleting `asc(point_key)` does not produce a *different* order — it
+ * produces an arbitrary one, which is free to coincide with whatever a test
+ * asserts. Measured while building this row: with two fixture points tied at
+ * `sort_order = 5` and the alphabetically earlier one deleted and re-inserted
+ * so that it was physically last, the integration case stayed green with the
+ * tie-break removed.
+ *
+ * The clause is not decoration. `HEALTH_TEMPLATE_POINTS_SQL` writes
+ * `sort_order = 0` on **every** row it creates, so on seeded data every
+ * template point ties and this leg decides the whole picker order — which is
+ * why the ADR argues it from the seed rather than from a failing test.
+ */
+describe("F3.49 — the template half's order is (sort_order, point_key)", () => {
+  it("ruleTargetPointKeysByAsset orders by sort_order and then by point_key", () => {
+    const body = bodyOf(points, "export async function ruleTargetPointKeysByAsset(", POINTS_REL);
+    expect(body.length).toBeGreaterThan(200);
+    expect(body.length).toBeLessThan(points.length);
+    expect(
+      body,
+      "`ruleTargetPointKeysByAsset` no longer orders by `(sort_order, point_key)`. The " +
+        "`sort_order` leg is also held by the picker integration suite; the `point_key` " +
+        "tie-break is held HERE ALONE, because the health seed gives every row `sort_order = 0` " +
+        "and Postgres leaves tied rows in an arbitrary order that no assertion can pin.",
+    ).toContain("orderBy(asc(templatePoints.sortOrder), asc(templatePoints.pointKey))");
   });
 });

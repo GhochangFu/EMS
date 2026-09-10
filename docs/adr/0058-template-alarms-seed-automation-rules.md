@@ -501,12 +501,36 @@ Three properties of the union are decided here rather than left to the code:
 3. **A key in both sets appears once, at its map position.**
 
 Beside the tests, one static gate,
-`tests/f3.49-picker-validator-single-source.test.ts`, asserts that the rules
-module holds exactly one reader of the map and one of `template_points`. It
-exists because the behavioural tests cannot see the divergence that matters: a
-lazy short-circuit re-added to the validator changes no answer on any fixture
-while re-creating two code paths. Its own limit is that it cannot see a
-divergence *inside* the one function.
+`tests/f3.49-picker-validator-single-source.test.ts`, asserts that
+`rules.service.ts` and `rule-points.ts` hold exactly one reader of the map and
+one of `template_points` between them. It exists because the behavioural tests
+cannot see the divergence that matters: a lazy short-circuit re-added to the
+validator changes no answer on any fixture while re-creating two code paths. It
+reads **those two files and no others** — `apps/api/src/rules/` holds 18
+non-test files, and a reader added to a third would keep the gate green — and it
+cannot see a divergence *inside* the one function.
+
+Property 2 shipped ungated, and both `F3.49` reviews found it independently.
+`publishFixtureTemplate` declares its three points at `sort_order` 0, 1 and 2 in
+insertion order, so a sequential scan returned them sorted whether or not the
+`ORDER BY` was there, and no two of them tie, so the `point_key` leg never
+executed at all.
+
+The two legs are now held differently, and the difference is worth stating
+because it is not a matter of taste. The **`sort_order`** leg is behavioural: a
+third picker case rewrites its own template so declared order and insertion
+order disagree, and deleting that leg reddens it. The **`point_key`** tie-break
+is held by a source assertion in
+`tests/f3.49-picker-validator-single-source.test.ts`, because **no behavioural
+test can hold it**: Postgres does not specify the order of rows tying on every
+`ORDER BY` key, so removing the leg yields an arbitrary order rather than a
+different one, free to coincide with whatever a test asserts. Measured while
+building this row — two fixture points tied at `sort_order = 5`, the
+alphabetically earlier one deleted and re-inserted so that it was physically
+last, and the case stayed green with the tie-break gone. That is also why this
+amendment argues the clause from `HEALTH_TEMPLATE_POINTS_SQL` writing
+`sort_order = 0` on every row, rather than from a failing test: on seeded data
+every template point ties, and the tie-break decides the whole picker order.
 
 ### A consequence the seed makes visible, accepted 2026-09-10
 

@@ -100,14 +100,36 @@ export function mergeRulePointKeys(
  * `fleetDb`, because `template_points` is a tenant table under `FORCE ROW LEVEL
  * SECURITY` and a bare tenant handle reads zero rows from it outside a
  * `withTenant` block — which would silently refuse every point rather than
- * widen the check. This is a pre-write lookup on a path where the caller has
- * already scope-checked the asset, so the isolation control is that check and
- * the `assetId` in the WHERE, not the pool.
+ * widen the check.
+ *
+ * **Two callers now, two shapes of the same containment, and the pool is
+ * neither of them** (§4.3). This paragraph served only the validator before
+ * `F3.49`, and saying "the `assetId` in the WHERE" would now describe half of
+ * its callers. `assertCompatiblePoint` passes one asset it has already
+ * scope-checked, so the control is that check plus the single id.
+ * `getBuilderCatalog` passes the rows its own asset query returned — filtered
+ * by the caller's `readableAssetIds`, or every asset when that is `null`, which
+ * is the unrestricted admin — so the control is that filter plus an `inArray`
+ * over exactly those ids. No caller-supplied id reaches this WHERE on either
+ * path.
+ *
+ * That `inArray` makes the catalog's unfiltered branch bind one parameter per
+ * fleet asset, against Postgres's 65535-per-message ceiling. The ceiling is
+ * named here rather than chunked away: that branch already returns every asset
+ * with no pagination, so the route has been linear in fleet size since long
+ * before this function, and bounding it is the route's question rather than
+ * this query's.
  *
  * Runs on every validation, not only when the map misses — Amendment 2
  * property 1. A map-first short-circuit is a second code path, and the catalog
- * cannot be lazy at all. These are human-paced write paths; the evaluation
- * sweep and `AlarmEngineService` never reach this function.
+ * cannot be lazy at all.
+ *
+ * The cost lands in two places rather than one, because this function has two
+ * callers. Through `assertCompatiblePoint` it is one extra indexed query per
+ * rule validation — a human-paced, role-gated write path, and the evaluation
+ * sweep and `AlarmEngineService` reach it on neither. Through
+ * `getBuilderCatalog` it is one query per catalog read, of whatever size that
+ * read already was.
  *
  * Ordered by `(sort_order, point_key)`. `sort_order` is the author's declared
  * order; the `point_key` tie-break exists because the health seed writes
