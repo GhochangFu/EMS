@@ -4324,7 +4324,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 ### The rule builder's picker offers what the validator accepts (`F3.49`, ADR 0058 Amendment 2) — done
 - **Status:** merged 2026-09-10 — PR
   [#405](https://github.com/GhochangFu/EMS/pull/405) (`9a577afe`). Two owner
-  rulings, four commits, three review passes. Seventh of the nine ready Track D
+  rulings, five commits, three review passes. Seventh of the nine ready Track D
   items.
 - **What shipped.** `GET /api/v1/rules/catalog` returns, per asset, the **union**
   of `pointKeysForAsset`'s hard-coded map and the point keys the asset's pinned
