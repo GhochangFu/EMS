@@ -4526,6 +4526,43 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   it proved nothing about the one surface that was wrong. The replacement checks
   the section by name and asserts `F4.57` is still in it, so it cannot pass by
   rendering nothing.
+- **The post-merge pass found nine more, and it had to.** The board fix landed
+  after the three pre-merge reviews had already run, so it reached `main` with
+  exactly one reviewer — me. Two of the nine were real defects, and **both
+  reviewers found the same one independently**, which is the strongest signal
+  available.
+  - **Another false green in my own gate.** `cls: "lamp-dropped"` was asserted
+    nowhere. Revert it to `lamp-idle` and all eleven cases stayed green while
+    the swimlane chip and the full-board pill rendered idle-grey again — the
+    "one indistinguishable band" this row claims to have fixed. Six mutations
+    had been run; that line was not one of them. It is now its own case, and the
+    mutation is killed.
+  - **The scope fix was half-applied.** The item ring moved onto the
+    dropped-excluding total; both person-week aggregates did not. Measured on
+    the rendered page: the effort ring read *~909 person-weeks* where the same
+    definition gives **908**, and Track D's bar read *~33 pw left* against
+    **32**. Scope meant two things one line apart — `F4.86` again, in the file
+    that carries the warning. Both now read `countsAsWork`, which is extracted
+    and tested for the same reason `scopeTotal` is.
+  - **A third total stays inclusive on purpose.** Each track's own `total` still
+    counts the dropped row, because the track bar draws a `dropped` segment
+    sized `n / total` and the segments have to sum to the whole. The *Total
+    scope* tile's hint had said *across 8 tracks*, which those eight bars
+    falsify by summing to 278 — so the hint changed, not the totals, and
+    `scopeTotal`'s docblock now enumerates which surfaces are inside its
+    meaning and which are deliberately outside it.
+  - **A fifth surface was still unfiltered.** `check-backlog-republish.mjs`
+    named a dropped row as in flight, on the very line whose comment claimed the
+    meaning was written once. It is tracked, so it shares the predicate now
+    rather than restating it.
+  - **And a repeat.** A mutation-table sentence said one mutation "reddens on
+    both assertions". `expect` throws, so only the first ever runs — the lesson
+    this repository recorded at `F3.54`, written again here. The case is split
+    in two so both assertions are genuinely reachable.
+- **Repaired and re-proved:** fifteen cases, **seven mutations, seven killed**,
+  including the `cls` one that had survived. The person-week figures were
+  re-measured on the rendered board and moved as predicted, 909 to 908 and 33 to
+  32.
 - **Unblocks:** nothing. **`F3.57` and the newly filed `F3.59` are the remaining
   Wave-2 Track D rows** — the first draft of this line named only `F3.57`, which
   this same commit's own new row falsified. Read from the Wave cell of each open
