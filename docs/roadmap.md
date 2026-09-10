@@ -805,9 +805,11 @@ Process (`AGENTS.md` §10).
   the two deferral bullets covering what ADR 0019 deliberately left closed.
 
 ### MQTT ingest beyond one RTU (F1.7) — five of twelve, measured
-- **Status:** ✅ **2026-08-22** on `feat/F1.7-mqtt-fleet`, eight commits, and
-  **merged the same day** — PR [#133](https://github.com/GhochangFu/EMS/pull/133),
-  squash `1e33ca35`. The "Not merged" sentence this replaces reached `main`
+- **Status:** ✅ **2026-08-22** on `feat/F1.7-mqtt-fleet`, eight commits of
+  work, and **merged the same day** — PR
+  [#133](https://github.com/GhochangFu/EMS/pull/133), squash `1e33ca35`, which
+  lists ten commits: the eight, the ADR 0007 Amendment 1 acceptance, and a
+  merge from `main`. The "Not merged" sentence this replaces reached `main`
   already false, in the closure sweep
   ([#134](https://github.com/GhochangFu/EMS/pull/134)) that merged 69 seconds
   after the merge it denied — #133 at 15:10:23Z, #134 at 15:11:32Z.
@@ -838,7 +840,9 @@ Process (`AGENTS.md` §10).
   **two-pass** seed integration test (one pass cannot reach the branches that
   matter, because CI seeds a fresh database once) and by deriving the stamp from
   a digest of the set *and* pinning the five by name.
-- **Verified:** 133 files / 495 tests serially, exit 0; live at `rtus=5
+- **Verified:** 133 files / 495 tests serially, exit 0 — **on the branch, before
+  the merge from `main`**; the squash message for `1e33ca35` reports 143 files /
+  580 tests on the merged tree. Live at `rtus=5
   stale=0`, all five writing and all seven held-back writing zero; API checked
   at query level (OIDC mode blocks local login), `apps/web` N/A.
 - **Unblocks:** nothing directly — no row lists `F1.7` as a whole-token
@@ -1135,11 +1139,14 @@ Process (`AGENTS.md` §10).
   precisely the strangler failure mode Resolved decision 4 named.
 - **Known limits carried forward:** reload refreshes point *mappings* only (a
   new RTU or a changed endpoint needs a restart); RTUs sharing an endpoint share
-  credentials until `F1.7`; ~~a batch lost to a failed write is gone until `F1.10`
+  credentials — `F1.7` **raised** this, it did not close it, and the open row is
+  `F4.62`; ~~a batch lost to a failed write is gone until `F1.10`
   adds disk buffering~~ ✅ **`F1.10` (2026-09-06)** — a failed write now spills
   the batch to a disk tier under the supervisor and replays it when the
-  database returns, bounded at 1 h and 256 MiB; telemetry authenticity rests
-  entirely on broker ACLs, which `F1.7` should carry in its scope.
+  database returns, bounded at 1 h and 256 MiB; ~~telemetry authenticity rests
+  entirely on broker ACLs, which `F1.7` should carry in its scope~~ ✅ **`F1.7`
+  (2026-08-22)** — payload-to-topic binding closed the impersonation path, as
+  the F1.7 section above records; broker ACLs are no longer the only check.
 - ~~**Owed:** the AGENTS.md promotion (ADR 0016 Resolved decision 8)~~ ✅
   **cleared** — the §2 *Ingest adapters* and *Real ingestion* rows, the §3 tree,
   §6 and the §8 "also promoted" paragraph now describe the host, and §6 gained a
