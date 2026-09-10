@@ -13,13 +13,21 @@ import {
   type SampleCounters,
 } from "./normaliser.js";
 
-function assert(condition: boolean, message: string): void {
+/**
+ * Exported, with the fixtures below, so `normaliser-time.spec.ts` can state
+ * ADR 0061's claims against the same index and the same receive time — the
+ * shape `disk-buffer-refused.spec.ts` and `supervisor-valve.spec.ts` already
+ * use. Those claims live in their own file because `runNormaliserTests` is one
+ * `it()` over fifteen blocks, and a claim added at the end of it would sit
+ * behind every earlier `assert` and could never redden alone.
+ */
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-const RECEIVED_AT = new Date("2026-08-05T10:00:00.000Z");
+export const RECEIVED_AT = new Date("2026-08-05T10:00:00.000Z");
 
 function makeIndex(
   entries: Record<string, Record<string, PointTarget[]>>,
@@ -56,7 +64,7 @@ function target(
   return { ...NO_METADATA, assetId, pointKey, unit, ...metadata };
 }
 
-const PILOT_INDEX = makeIndex({
+export const PILOT_INDEX = makeIndex({
   "RTU-1": {
     flow: [target("asset-a", "FLOW_RATE", "m³/h")],
     press: [target("asset-a", "PRESSURE", "bar")],
@@ -71,7 +79,7 @@ const PILOT_INDEX = makeIndex({
 });
 
 /** Records every statement so ordering and parameters can be asserted. */
-function makeFakeClient(failOn?: RegExp): {
+export function makeFakeClient(failOn?: RegExp): {
   client: QueryableClient;
   calls: { text: string; values?: readonly unknown[] }[];
 } {
@@ -88,7 +96,7 @@ function makeFakeClient(failOn?: RegExp): {
   return { client, calls };
 }
 
-function sample(overrides: Partial<SourceSample> & { sourceKey: string }): SourceSample {
+export function sample(overrides: Partial<SourceSample> & { sourceKey: string }): SourceSample {
   return { value: 1, ...overrides };
 }
 
@@ -224,18 +232,12 @@ export function runNormaliserTests(): void {
   }
 
   // ---- timestamps ----------------------------------------------------------
-
-  {
-    const deviceTime = new Date("2026-08-05T09:59:12.000Z");
-    const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "flow", at: deviceTime })],
-      PILOT_INDEX,
-      RECEIVED_AT,
-      "RTU-1",
-    );
-    assert(rows[0].time.getTime() === deviceTime.getTime(), "a device timestamp must be used as-is");
-    assert(counters.invalidTimestamp === 0, "a valid timestamp is not counted as invalid");
-  }
+  //
+  // "a device timestamp must be used as-is" used to stand here. ADR 0061
+  // decision 2 inverted it: a device timestamp never reaches `time` again. The
+  // replacement claims — `time` is always the receive time, `device_time`
+  // carries the device's own value unclamped, and the three NULL cases — are in
+  // `normaliser-time.spec.ts`, one `it()` each.
 
   {
     const { rows } = resolveSamples(
@@ -246,7 +248,7 @@ export function runNormaliserTests(): void {
     );
     assert(
       rows[0].time.getTime() === RECEIVED_AT.getTime(),
-      "an omitted timestamp falls back to receive time",
+      "an omitted timestamp writes at receive time — the rule, not a fallback (ADR 0061 decision 2)",
     );
   }
 
@@ -262,7 +264,7 @@ export function runNormaliserTests(): void {
     assert(rows.length === 1, "an invalid timestamp must not lose the reading");
     assert(
       rows[0].time.getTime() === RECEIVED_AT.getTime(),
-      "an invalid timestamp falls back to receive time",
+      "an invalid timestamp writes at receive time — as every row does since ADR 0061 decision 2",
     );
     assert(counters.invalidTimestamp === 1, "an invalid timestamp is counted");
   }
@@ -270,9 +272,12 @@ export function runNormaliserTests(): void {
   // ---- in-batch dedupe -----------------------------------------------------
 
   {
-    // Two samples for the same point at the same instant. Postgres rejects an
+    // Two samples for the same point in one batch. Postgres rejects an
     // ON CONFLICT DO UPDATE statement that touches one row twice, so this must
-    // collapse before it reaches the database.
+    // collapse before it reaches the database. Since ADR 0061 decision 6 the
+    // key is the stored key, `(receivedAt, assetId, pointKey)`, so the shared
+    // `at` below is no longer what makes these two a duplicate — the shared
+    // batch is. `normaliser-time.spec.ts` owns the attribution half.
     const at = new Date("2026-08-05T09:00:00.000Z");
     const { rows, counters } = resolveSamples(
       [
@@ -289,8 +294,12 @@ export function runNormaliserTests(): void {
   }
 
   {
-    // Same point, different instants: not a duplicate.
-    const { rows } = resolveSamples(
+    // Same point, different device instants. "distinct timestamps are distinct
+    // rows" was true while `time` came from `at`; ADR 0061 decision 6 inverts
+    // it. The device's clock no longer reaches the key, so these two are one
+    // row — the reading this schema cannot keep, and §Consequences says so in
+    // as many words.
+    const { rows, counters } = resolveSamples(
       [
         sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:00.000Z") }),
         sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:01.000Z") }),
@@ -299,19 +308,33 @@ export function runNormaliserTests(): void {
       RECEIVED_AT,
       "RTU-1",
     );
-    assert(rows.length === 2, "distinct timestamps are distinct rows");
+    assert(
+      rows.length === 1,
+      `distinct device timestamps no longer make distinct rows, got ${rows.length}`,
+    );
+    assert(counters.duplicateInBatch === 1, "the collapse the stored key causes is counted");
   }
 
   // ---- SQL shape -----------------------------------------------------------
 
   {
+    // Six columns since ADR 0061 decision 1, with `device_time` **last** so the
+    // bind order of the five that were already here does not move.
+    const deviceTime = new Date("2026-08-05T06:57:24.000Z");
     const rows: PointValueRow[] = [
-      { time: RECEIVED_AT, assetId: "a", pointKey: "P", value: 1, unit: "kW" },
-      { time: RECEIVED_AT, assetId: "b", pointKey: "Q", value: 2, unit: null },
+      { time: RECEIVED_AT, assetId: "a", pointKey: "P", value: 1, unit: "kW", deviceTime },
+      { time: RECEIVED_AT, assetId: "b", pointKey: "Q", value: 2, unit: null, deviceTime: null },
     ];
     const { text, values } = buildUpsert(rows);
-    assert(values.length === 10, `five parameters per row, got ${values.length}`);
-    assert(text.includes("($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)"), `wrong tuple list: ${text}`);
+    assert(values.length === 12, `six parameters per row, got ${values.length}`);
+    assert(
+      text.includes("($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)"),
+      `wrong tuple list: ${text}`,
+    );
+    assert(
+      text.includes("(time, asset_id, point_key, value, unit, device_time)"),
+      `the column list must name device_time, last: ${text}`,
+    );
     assert(
       text.includes("ON CONFLICT (time, asset_id, point_key) DO UPDATE"),
       "the upsert clause must match the conflict target index.js relies on",
@@ -322,7 +345,19 @@ export function runNormaliserTests(): void {
       text.includes("value = EXCLUDED.value") && text.includes("unit = EXCLUDED.unit"),
       "the update clause must refresh both value and unit",
     );
-    assert(values[4] === "kW" && values[9] === null, "a null unit binds as null");
+    // ADR 0061 Amendment 1 item 1. Without this clause a re-delivered reading
+    // updates `value` and `unit` and keeps the **first** delivery's
+    // `device_time`, so the column stops describing the row it sits on — the
+    // exact failure this ADR exists to prevent, one column over.
+    assert(
+      text.includes("device_time = EXCLUDED.device_time"),
+      `a second delivery must move the stored device_time: ${text}`,
+    );
+    assert(
+      values[5] === deviceTime && values[11] === null,
+      `device_time binds sixth in each row, as a Date or as null; got ${String(values[5])} and ${String(values[11])}`,
+    );
+    assert(values[4] === "kW" && values[10] === null, "a null unit binds as null");
   }
 
 }
@@ -337,8 +372,8 @@ export function runNormaliserTests(): void {
  */
 export async function runNormaliserWriteTests(): Promise<void> {
   const rows: PointValueRow[] = [
-    { time: RECEIVED_AT, assetId: "a", pointKey: "P", value: 1, unit: "kW" },
-    { time: RECEIVED_AT, assetId: "b", pointKey: "Q", value: 2, unit: null },
+    { time: RECEIVED_AT, assetId: "a", pointKey: "P", value: 1, unit: "kW", deviceTime: null },
+    { time: RECEIVED_AT, assetId: "b", pointKey: "Q", value: 2, unit: null, deviceTime: null },
   ];
 
   // ---- transaction ordering ------------------------------------------------
@@ -433,6 +468,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
       pointKey: "FLOW_RATE",
       value: i,
       unit: "m³/h",
+      deviceTime: null,
     }));
     const { client, calls } = makeFakeClient();
     const result = await writeResolved(client, many);
@@ -443,7 +479,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
       "no statement may exceed the Postgres bind-parameter ceiling",
     );
     assert(
-      inserts.reduce((n, c) => n + (c.values?.length ?? 0) / 5, 0) === 2500,
+      inserts.reduce((n, c) => n + (c.values?.length ?? 0) / 6, 0) === 2500,
       "every row is written exactly once across the statements",
     );
     assert(result.rowsWritten === 2500, "the written count covers every row");
@@ -739,6 +775,9 @@ export function runMetadataTests(): void {
       outOfRange: 32,
       invalidTimestamp: 64,
       duplicateInBatch: 128,
+      // ADR 0061 decision 6's datum. Not a number, so it cannot reach a sum —
+      // which is the strongest form of "droppedCount ignores it".
+      firstDuplicate: null,
     };
     assert(
       droppedCount(filled) === 63,
