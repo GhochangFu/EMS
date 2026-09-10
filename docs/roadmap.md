@@ -4253,6 +4253,74 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   `loadRaiseAttempts` round-trip cost that `raise-attempts.ts` had been
   attributing to `F3.53` and that Amendment 7 does not reach.
 
+### The delivery ledger names the event kind, derived from the key (`F3.56`, ADR 0041 Amendment 8) — done
+- **Status:** merged 2026-09-10 — PR
+  [#401](https://github.com/GhochangFu/EMS/pull/401) (`305d679f`). Two owner
+  rulings, five commits, three review passes plus a post-merge pass. Sixth of
+  the nine ready Track D items.
+- **What shipped.** `NotificationDeliveryDto` gains one flat required field,
+  `event`, from the closed set `raise | escalation | cleared | test | unknown`,
+  derived server-side in `ChannelsService.listDeliveries`'s `.map()` by
+  `parseDeliveryEvent` in `dedupe-key.ts`. The deliveries page renders it as an
+  Event column between Status and Detail. **No migration, no dependency, no
+  write-path change** — ADR 0057 decision 9's "the kind lives in the dedupe key,
+  not in a new column" stays true, because `event` is a projection rather than a
+  stored value.
+- **Why an operator needed it.** A `failed` row named a channel, a rule and a
+  time, but not what the attempt was *for*. `F3.54` sharpened that: a refused
+  cleared message now writes a `failed` row that reads exactly like a transport
+  failure the sweep will retry three times, and it will never be retried at all.
+- **The row's own text was wrong in one place and stale in another.** It says
+  `rate-limit check failed` is ambiguous two ways; the string is written at two
+  sites — the dispatch path and `sendTest` — so it is ambiguous **three** ways.
+  And it cites `F3.54` ruling 3's cost for a sixth status as though it still
+  held in full, when `F3.52` had since shipped exactly "a migration plus a
+  contract change plus every reader" as `skipped_stale` in migration `0068`.
+  The ruling stands on its other half: a status says what happened to an
+  attempt, a kind says what the attempt was for.
+- **The raw key was declined on measurement, not taste.** No source outside
+  `apps/api` reads it, so exposing it would create the first client of a grammar
+  already load-bearing for Amendment 5's byte-identity and
+  `RESERVED_KEY_PATTERN`'s segment count. And the options are not
+  information-neutral: the DTO carries no severity, while the key carries a rule
+  uuid, an alarm uuid **and** the severity code — the severity being the
+  incremental exposure, since the first two are already DTO fields.
+- **Totality was proved by enumerating writers, not by counting rows.** One
+  production insert with nine call sites: six on the dispatch path pass
+  `buildDedupeKey` under a non-nullable `DispatchInput.ruleId`, three in
+  `sendTest` pass literal `null`. No seed and no migration inserts a row, and
+  `dedupe_key` was in the original `CREATE TABLE`, so no pre-column row can be
+  mislabelled. A live count **was** run and is deliberately recorded as
+  non-evidence: the shared ledger held zero rows, so it separated nothing.
+- **Prefix-strip, because both cheaper parses are wrong.**
+  `alarm_severities.code` is an open vocabulary with no format CHECK, so a colon
+  in a code defeats a segment count and a code named `cleared` defeats a bare
+  suffix match — `rule:alarm:cleared` is a raise of a `cleared`-severity alarm.
+  Two residual limits are named in the amendment rather than claimed away, and
+  each has a test that documents it.
+- **`channels.service.ts` was extracted before the addition, not after.** It sat
+  at 989 against the 1000-line cap, and §2 already said "extract before adding
+  to either". `readiness()` moved to `readiness.ts` in its own commit — 989 →
+  938, gated by `diff -w` showing only the signature and `this.fleetDb` →
+  `fleetDb` — before `F3.56` took it to 964.
+- **Seven false sentences, five of which only went false at the tip.** Each was
+  true of its own commit and false once the whole change landed together. The
+  sharpest: `dedupe-key.ts` called `parseDeliveryEvent` the key's "SECOND
+  reader"; it is the fifth site to touch the column, and the reviewer's own
+  correction of "fourth" was **also** short — it missed `isOverHourlyLimit`'s
+  reserved-budget predicate. The count was beside the point anyway: the real
+  distinction is that the other four match the key whole or test its shape,
+  and this one takes it apart.
+- **The first browser pass passed vacuously and said so.** With an empty ledger,
+  "every row carries `event`" and "no row leaks the key" are assertions over
+  zero rows. Five inert rows were inserted on a disabled channel wired to no
+  rule, covering all five kinds, and then removed. The re-run is the evidence:
+  three rows sharing an identical `failed | rate-limit check failed`, told apart
+  only by `event`.
+- **Unblocks:** nothing directly. `F3.57` (a re-offered raise carries no sign it
+  is a retry) stays open and is explicitly not this row's gap — Amendment 5
+  makes a re-offer byte-identical to its original, dedupe key included.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
