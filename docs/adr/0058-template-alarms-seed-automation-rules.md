@@ -452,8 +452,12 @@ moves the acceptance set and is new scope rather than this row.
 - **It does not change what the API accepts.** `assertCompatiblePoint`'s
   behaviour is unchanged; routing it through the shared helper is worthwhile
   precisely because its answer stays identical.
-- **It does not touch the write path, the seed, or any migration.** No column, no
-  vocabulary row, no dependency.
+- **It changes no schema and no write-path *behaviour*.** No column, no migration,
+  no vocabulary row, no dependency, and no seed change. It does change what a
+  write-path validation *costs*: see the mechanism section's property 1, where
+  the map-miss laziness is dropped and every threshold validation runs one
+  indexed `template_points` query. Saying "it does not touch the write path"
+  would contradict that.
 - **It does not retire `pointKeysForAsset`'s map.** The map remains the only
   answer for an asset with no pinned template, which is the honest one — such an
   asset declares no template points.
@@ -474,8 +478,9 @@ moves the acceptance set and is new scope rather than this row.
 
 `apps/api/src/rules/rule-points.ts` becomes the one place the union is computed.
 `assertCompatiblePoint` moves there from `rules.service.ts` **in its own commit,
-before the feature adds a line** — AGENTS.md §2 records that file at 990 lines
-against §4.5's 1000-line cap and says to extract before adding to it — and
+before the feature adds a line** — AGENTS.md §2 recorded that file at 990 lines
+against §4.5's 1000-line cap and said to extract before adding to it — §2 now
+records **972**, which this row is why — and
 `templatePointKeysForAsset`, which Q1 added, is deleted, its reasoning paragraphs
 moving onto the batched lookup that replaces it. `getBuilderCatalog` derives its
 id list from the asset rows it has already fetched, so the filtered and
@@ -510,7 +515,8 @@ reads **those two files and no others** — `apps/api/src/rules/` holds 18
 non-test files, and a reader added to a third would keep the gate green — and it
 cannot see a divergence *inside* the one function.
 
-Property 2 shipped ungated, and both `F3.49` reviews found it independently.
+Property 2 shipped ungated, and two of `F3.49`'s three reviews found it
+independently.
 `publishFixtureTemplate` declares its three points at `sort_order` 0, 1 and 2 in
 insertion order, so a sequential scan returned them sorted whether or not the
 `ORDER BY` was there, and no two of them tie, so the `point_key` leg never
@@ -560,5 +566,5 @@ It is accepted because **the API has accepted every one of these keys since
 against no samples rather than being refused. Filtering them in the picker would
 make the picker a strict subset of the validator again, which is the drift this
 amendment exists to remove. Whether a baseline template should be a domain-wide
-union at all is a separate question, and a backlog row is owed for it in the
-`chore(agents):` sweep that closes `F3.49`.
+union at all is a separate question, filed as **`F2.32`** by the `chore(agents):`
+sweep that closed `F3.49` (`01b1fdb6`).
