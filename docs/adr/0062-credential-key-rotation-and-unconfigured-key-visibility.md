@@ -226,3 +226,37 @@ lives there), so decision 2 adds no dependency edge.
   the Secrets row gains the two-key window, the Ingest adapters row's
   "unmodified `rtu-config.js`" sentence and its `E8.4` reassignment gain
   decision 9, and `docs/BACKLOG.md` plus `docs/roadmap.md` record what shipped.
+
+## Amendment 1 — decision 5 covers two more dead windows (2026-09-10)
+
+The step-3 plan (`docs/plans/e8.4-credential-key-rotation.md`) asked seven
+questions at its gate and the owner ruled all seven as recommended the same day.
+Five are implementation choices and live in the plan's §12. Two widen **decision
+5**, so they are recorded here rather than there — decision 5 as written names
+only the *previous* key, and building to the plan without this amendment would
+have made the ADR describe less than the code does.
+
+Decision 5's refusal now covers three configurations, not one:
+
+1. A previous key at version 0 — the original decision, unchanged.
+2. **A `CREDENTIAL_ENCRYPTION_KEY` that does not decode to 32 bytes.** Today it
+   reads as *unconfigured* — `isConfigured()` answers false and the throw waits
+   for the first use — so a typo in the key silently becomes "no encryption
+   available" and the failure surfaces at a broker connection or a webhook
+   secret rather than at boot. That is the same argument decision 5 already
+   makes about a dead previous key, applied to the key that matters more. The
+   two states are genuinely different and only one of them is configuration:
+   **unset stays unconfigured** and every fail-closed path already handles it;
+   **malformed refuses the boot.**
+3. **`CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` set while `CREDENTIAL_ENCRYPTION_KEY`
+   is unset.** The likeliest cause is that the two names were swapped during a
+   rotation, and the resulting process is a half-done one — it could decrypt
+   what exists and could not encrypt anything new, so the next credential
+   written would be dropped by decision 8's honest path while the operator
+   believed a rotation was in progress.
+
+Both refusals happen in `resolveCredentialKeys`, so both applications inherit
+them from decision 2's single resolver: the API through
+`CredentialCryptoService`'s constructor under `NestFactory.create`, and the
+ingest through `readHostConfig`. Nothing else in the ADR changes; decisions 1–4
+and 6–11 stand as written.
