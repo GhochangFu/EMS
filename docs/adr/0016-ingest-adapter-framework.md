@@ -1411,3 +1411,46 @@ with this work; a reader who reaches `:232` or `:613` should follow that file.
 - **`disk-buffer.spec.ts:267` and `:319-320` invert.** They pin the stamp today;
   they must pin its absence after, and the replacement assertions carry the
   reason so a later reader does not restore the old behaviour as a fix.
+
+## Amendment 6 — `rtu-config.js` is modified, and its test is gone (`E8.4`, 2026-09-11)
+
+§6 commit 4's paragraph says `rtu-config.js` is **"reused with zero logic
+changes"** and keeps its `resolveMqttConnection()` export "so
+`rtu-config.test.js` — the one ingest test CI runs today, and part of the
+`test:onboarding` substring filter — keeps passing unmodified."
+
+**Both halves stopped being true on 2026-09-11**, under ADR 0062 and the
+`E8.4` plan. The historical text stays as written; this amendment is what a
+reader needs beside it.
+
+1. **The file changed.** ADR 0062 decision 2 puts the credential *key
+   selection* in `packages/shared/src/credential-keys.ts`, because the ingest
+   carries its own AES-GCM implementation and two copies of a rotation window
+   disagree about which key reads which row in a way two copies of a pinned
+   version never could. `rtu-config.js` now imports
+   `@bms/shared/credential-keys`, and `decryptCredentials` takes a third
+   `keyVersion` argument. **The `createDecipheriv` call itself is untouched** —
+   the cipher may stay duplicated; the key selection may not.
+
+2. **`rtu-config.test.js` is deleted**, by ruling 4 of the plan's §12
+   (2026-09-10). The carve-out's stated reason was that the file was the
+   unmodified pilot file; point 1 ends that reason. Its checks moved to
+   `rtu-config.spec.ts` / `rtu-config.test.ts`, which are type-checked against
+   the new JSDoc signatures — the reason the move was worth making, since those
+   JSDoc types are what make `main.ts`'s forwarding arity-checked.
+
+3. **Two clauses of that paragraph still hold, and are the reason the file was
+   not simply absorbed.** The ADR 0012 seam survives:
+   `isCredentialKeyConfigured()` and `resolveMqttConnection()` are still
+   exported from this file. And it is still part of the `test:onboarding`
+   substring filter — measured after the rename, `vitest run rtu-config`
+   collects one file and nine tests, so the filter did not quietly empty.
+
+4. **Commit 4's fifth action is still outstanding**, as Amendment 3 recorded
+   when it reassigned that action to `E8.4`. ADR 0062 decision 10 keeps the
+   `MQTT_USERNAME`/`MQTT_PASSWORD` fallback: `bms.rtu_connection_configs` still
+   held **0 rows** when re-measured on 2026-09-10, so the condition this ADR
+   itself set is still unmet. What `E8.4` changed is that the fallback is now
+   **honest** — `resolveMqttConnection` reports `credentialSource: "env"` when
+   it hands back the environment's credentials, and the host logs it — rather
+   than retired. `E8.4` stays open on that action.
