@@ -28,7 +28,7 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { inFlightRows } from '../../docs/scripts/backlog-state.mjs';
+import { inFlightRows, readyToStartNow } from '../../docs/scripts/backlog-state.mjs';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const STATUS = join(repoRoot, 'docs', 'scripts', 'backlog-status.mjs');
@@ -107,13 +107,22 @@ const run = (script) =>
     // `counts.gated` does exclude done and dropped rows, so that was never
     // what set the two numbers apart — `dependencyClear` was.
     const held = counts.gated ?? 0;
+    // `counts.ready` is ELIGIBLE, not ready-to-start: it counts a row that is
+    // eligible and already in flight. This line printed it raw and said "91
+    // ready" against a board showing 90 — the same disagreement the `held`
+    // comment above records, on the next word along. Shares the renderer's
+    // derivation rather than restating it, which is what caused both.
+    const ready = readyToStartNow(
+      data.ready || [],
+      new Set((data.inProgress || []).map((i) => i.id)),
+    ).length;
     const warnings = data.warnings || [];
 
     const lines = [
       'The backlog board moved and the published artifact is now behind it.',
       `  fingerprint ${published || '(never published)'} -> ${current}`,
       `  ${counts.done ?? 0} done · ${inFlight.length} in flight${inFlight.length ? ` (${inFlight.join(', ')})` : ''}` +
-        ` · ${counts.ready ?? 0} ready · ${held} held`,
+        ` · ${ready} ready · ${held} held`,
       '',
       'Both files are regenerated already. Two steps remain, in this order:',
       `  1. Publish ${ARTIFACT_FILE} with the Artifact tool, passing`,

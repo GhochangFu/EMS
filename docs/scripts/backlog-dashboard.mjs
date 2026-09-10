@@ -22,6 +22,7 @@ import {
   countsAsWork,
   inFlightRows,
   isClientGate,
+  readyToStartNow,
   STATE_KEYS,
   scopeTotal,
   stateOf,
@@ -75,7 +76,7 @@ const byId = new Map(data.items.map((i) => [i.id, i]));
 const item = (id) => byId.get(id);
 const P_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3 };
 const inProgressIds = new Set(data.inProgress.map((p) => p.id));
-const readyIds = data.ready.filter((id) => !inProgressIds.has(id));
+const readyIds = readyToStartNow(data.ready, inProgressIds);
 
 
 for (const it of data.items) it.stateKey = stateOf(it, inProgressIds).key;
