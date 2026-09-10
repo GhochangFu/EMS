@@ -437,6 +437,88 @@ host-internal shape.
 - **The deploy gate is real**: `buffered = 0` is read and recorded before
   migrating, not asserted afterwards.
 
+## Amendment 3 — what four review passes corrected (2026-09-10)
+
+No ruling changes. Five corrections, four of them to this ADR's own text, and
+one of them to a decision that was simply wrong.
+
+**1. Decision 7's "no API change" is false, and the reason it was written is
+the reason it misled.** Its stated justification is about **reads** —
+`dashboard.service.ts:455` and `map.service.ts:102` become correct unedited,
+which is true. But `apps/api` also **writes** this table.
+`telemetry-write.service.ts`'s `overwrite` upsert set only `value` and `unit`,
+so an operator correcting an ingest-written row through manual entry or CSV
+import left the RTU's `device_time` standing beside an operator's value. That is
+Amendment 1 item 1's defect exactly, one writer over, and this ADR's own
+integration spec already ruled the semantics: a delivery carrying no device time
+**clears** the column. The clause is added, with `deviceTime: null` spelled in
+the values so it does not rest on an implicit `EXCLUDED` default.
+
+`calc-write.service.ts` was checked and needs nothing: it is
+`onConflictDoNothing`, so a recompute leaves an existing row alone.
+
+**Decision 7 now reads: no API *read* changes, and one API *write* did.**
+
+**2. The deploy order covers the API too, not only the ingest.** Because the
+write path names `device_time`, `apps/api` now hard-requires `0069` as much as
+`apps/ingest` does — without it the whole telemetry-write integration suite is
+red, not merely the new case. The order is: read `buffered = 0` on every
+endpoint → migrate → deploy ingest **and** API.
+
+**3. Decision 3's "unclamped" was unbounded, and Postgres is narrower than
+`Date`.** A `ts` around `-2.2e14` ms yields a JS `Date` that is finite —
+`-005002-06-23T16:53:20.000Z` — and `pg` serialises it with `toISOString()`.
+Postgres `timestamptz` stops at 4713 BC and refuses the literal, which aborts
+the **whole multi-row INSERT**, spills the batch and opens the breaker. Measured
+on the running stack:
+
+```
+SELECT '275760-09-13'::timestamptz;  -- 275760-09-13 00:00:00+00  (accepted)
+SELECT '5003-06-23 BC'::timestamptz; -- ERROR: timestamp out of range
+```
+
+`counters.invalidTimestamp` did not fire for it, so the counter decision 5 keeps
+in order to record "the device sent a timestamp this host could not read" missed
+the one value that breaks the write. **This is not a regression of this branch**
+— before it, the same value reached the same statement through `time` — but
+decision 3 blessed "unclamped" as policy, so this ADR owns it. The guard is now
+a Postgres-representable range and the existing `else` counts it. "Unclamped"
+means *uncorrected*, not *unbounded*: a skew of hours is kept exactly as
+reported.
+
+**4. Amendment 1 item 3's premise is backwards.** It said moving `time` to
+`receivedAt` makes new rows land **behind** the watermark. Its own measured
+table contradicts that: every watermark sits behind `now()`, so a receive-time
+row lands **above** all four. The rows that did sit below one were the lagging
+RTU's at −3:02:36, and this change moves them **up**. The no-refresh conclusion
+stands, for a better reason than the one given.
+
+The case that genuinely lands below a watermark is a **replayed** sample, which
+since Amendment 2 carries its original arrival. Its bound is
+`INGEST_BUFFER_MAX_AGE_MS`, default 1 h and operator-settable far higher. Above
+`point_values_1m`'s 3 h `start_offset`, a replayed row lands outside every
+scheduled refresh window — the standing obligation
+`0027_continuous_aggregates.sql:33-38` already records. **Keep that variable
+under 3 h.**
+
+**5. Two measurements of this ADR state their scope too widely.**
+
+- Decision 6's "zero collisions measured" was taken on the **live** path with no
+  backlog. One `receivedAt` covers a batch of up to 500, so a store-and-forward
+  RTU dumping a backlog collapses up to 500 readings for one point into one row.
+  The measurement is not wrong; its scope is narrower than it reads.
+- **Decision 8's clamp does not defend the backwards direction.** An RTU that
+  buffers during a WAN outage and dumps on reconnect writes hour-old readings at
+  `time = now()`, and every freshness window reads them as current.
+  `readingTimestampMs` is `Math.min(parsed, nowMs)` — forward-only — so it is
+  **inert** against exactly this case, and `device_time` is the only column that
+  still holds the distinction. Two facts bound the exposure and belong on the
+  record: the MQTT client runs `clean: true`, so the broker queues nothing
+  across a reconnect; and a disk-buffer replay is safe, because `rx` preserves
+  the original arrival. **No code is owed here** — if a control is ever wanted,
+  the cheap one is a counter when `receivedAt - deviceTime` exceeds a threshold,
+  not a clamp.
+
 ### One consequence found during the build, recorded rather than coded
 
 **A replayed sample can never be decision 4 case 3.** An unreadable `at` — a

@@ -7,7 +7,13 @@ import { createDb } from "@bms/db";
 import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { cleanup, loadFixtures, runTelemetryWriteServiceTests, type Fixtures } from "./telemetry-write.spec";
+import {
+  cleanup,
+  loadFixtures,
+  runOverwriteMovesDeviceTimeTests,
+  runTelemetryWriteServiceTests,
+  type Fixtures,
+} from "./telemetry-write.spec";
 import { TelemetryWriteService } from "./telemetry-write.service";
 
 /**
@@ -65,6 +71,14 @@ describe.skipIf(!connectionString)("TelemetryWriteService", () => {
     // sharing the database with other integration suites.
     30_000,
   );
+
+  // Its own case, not a block appended to the one above: ADR 0061's claims each
+  // get an `it()` so a mutation reddens the assertion that owns it rather than
+  // "the telemetry write suite".
+  it("an overwrite moves device_time with the value it replaces", async () => {
+    if (!pool) throw new Error("pool not initialised");
+    await runOverwriteMovesDeviceTimeTests(pool, svc, fx);
+  });
 
   it("the CHECK boundary rejects what the service must never be able to write", async () => {
     if (!pool) throw new Error("pool not initialised");

@@ -7,6 +7,7 @@ import {
   assertOmittedTimestampYieldsNullDeviceTime,
   assertTheFirstCollapseIsTheOneNamed,
   assertUnreadableTimestampYieldsNullDeviceTimeAndCounts,
+  assertUnstorableTimestampYieldsNullDeviceTimeAndCounts,
 } from "./normaliser-time.spec.js";
 
 /**
@@ -29,6 +30,10 @@ describe("ADR 0061 — receive time in time, device time beside it", () => {
 
   it("writes a null device_time and counts invalidTimestamp when it cannot read one", () => {
     assertUnreadableTimestampYieldsNullDeviceTimeAndCounts();
+  });
+
+  it("writes a null device_time and counts invalidTimestamp when it cannot store one", () => {
+    assertUnstorableTimestampYieldsNullDeviceTimeAndCounts();
   });
 
   it("collapses on the stored key and names the point it discarded", () => {

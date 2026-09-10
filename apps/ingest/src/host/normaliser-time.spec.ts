@@ -127,6 +127,18 @@ export function assertOmittedTimestampYieldsNullDeviceTime(): void {
     counters.invalidTimestamp === 0,
     `an honest absence is not an unreadable timestamp, got ${counters.invalidTimestamp}`,
   );
+  // The `null` half of `firstDuplicate`'s contract, asserted here because this
+  // is the smallest batch in the file that collapses nothing. Without it the
+  // documented "or `null` if nothing collapsed" is unheld: moving the
+  // assignment out of the `if (deduped.has(key))` branch, so every batch names
+  // its last-written point, leaves every other assertion in this file green.
+  assert(
+    counters.firstDuplicate === null,
+    `ADR 0061 decision 6: firstDuplicate is null when NOTHING collapsed. A ` +
+      `batch of one sample discarded no reading, so naming a point here would ` +
+      `report a data loss that did not happen — 'F3.16' puts this datum in front ` +
+      `of an operator. Got ${JSON.stringify(counters.firstDuplicate)}`,
+  );
 }
 
 /** Decision 4 case 3 and decision 5 — an `at` this host cannot read. */
@@ -153,6 +165,65 @@ export function assertUnreadableTimestampYieldsNullDeviceTimeAndCounts(): void {
     `ADR 0061 decision 5: the counter keeps firing once the value no longer ` +
       `steers 'time'. It records "the device sent a timestamp this host could ` +
       `not read". Got ${counters.invalidTimestamp}`,
+  );
+}
+
+/**
+ * An epoch far enough back that Postgres cannot store it: `-2.2e14` ms is
+ * `-005002-06-23T16:53:20.000Z`, and `timestamptz` stops at 4713 BC.
+ *
+ * Written as the raw millisecond offset the defect was reproduced with rather
+ * than as a date literal, because the point of the fixture is that this is an
+ * ordinary, **finite** `Date` — `Number.isFinite(at.getTime())` says yes.
+ */
+const BEFORE_POSTGRES_FLOOR = new Date(-2.2e14);
+
+/**
+ * Decision 4 case 3 at the other end of the range — a device timestamp that is
+ * a perfectly valid `Date` and still not storable.
+ *
+ * "Finite" and "storable" are not the same question. A JS `Date` reaches
+ * 271821 BC; `timestamptz` stops at 4713 BC. Measured on the running stack:
+ * `new Date(-2.2e14)` is finite and reads `-005002-06-23T16:53:20.000Z`, and
+ * `SELECT '5003-06-23 BC'::timestamptz` answers `ERROR: timestamp out of
+ * range`. `pg` serialises a `Date` parameter with `toISOString()`, so the value
+ * reached the statement verbatim and Postgres refused it — and the write is ONE
+ * multi-row INSERT of up to 1000 rows, so a single such sample aborted the whole
+ * batch of good readings, spilled it to the disk buffer and opened the breaker.
+ * That is the same failure the Invalid Date case above exists to stop, one range
+ * apart, and the bare finite check did not see it.
+ *
+ * Mutation: restore the bare `Number.isFinite(sample.at.getTime())` check.
+ */
+export function assertUnstorableTimestampYieldsNullDeviceTimeAndCounts(): void {
+  const { rows, counters } = resolveSamples(
+    receivedTogether([sample({ sourceKey: "flow", at: BEFORE_POSTGRES_FLOOR })], RECEIVED_AT),
+    PILOT_INDEX,
+    "RTU-1",
+  );
+
+  // A guard, not the claim: `rows[0]` below dereferences it, and this line does
+  // not move under the mutation.
+  assert(
+    rows.length === 1,
+    `an unstorable device timestamp must not lose the reading — it is the device ` +
+      `time that cannot be kept, not the value. Got ${rows.length} rows`,
+  );
+  assert(
+    rows[0].deviceTime === null,
+    `ADR 0061 decision 4 case 3: a device timestamp outside the Postgres ` +
+      `'timestamptz' range must not be carried into device_time. ` +
+      `${BEFORE_POSTGRES_FLOOR.toISOString()} is a finite Date, so a bare ` +
+      `Number.isFinite check accepts it, 'pg' serialises it with toISOString() ` +
+      `and Postgres answers "timestamp out of range" — aborting the whole ` +
+      `multi-row INSERT of good readings. Got ${show(rows[0].deviceTime)}`,
+  );
+  assert(
+    counters.invalidTimestamp === 1,
+    `ADR 0061 decision 5: "the device sent a timestamp this host cannot store" ` +
+      `is the same counter as "cannot read" — the device tried to tell this host ` +
+      `the time and the host kept the reading without it. Got ` +
+      `${counters.invalidTimestamp}`,
   );
 }
 

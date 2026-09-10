@@ -331,12 +331,19 @@ export class TelemetryWriteService {
 
       for (let i = 0; i < toWrite.length; i += MAX_ROWS_PER_STATEMENT) {
         const chunk = toWrite.slice(i, i + MAX_ROWS_PER_STATEMENT);
+        // `deviceTime` is spelled out as `null` rather than omitted. A manual
+        // entry has no device that stamped it, so `null` is the honest value —
+        // and `excluded.device_time` below depends on this column being in the
+        // INSERT list. Omitted, it would still resolve to `null` (Postgres fills
+        // EXCLUDED from the column default), but silently, via a rule nobody
+        // reading the two lines together can see.
         const values = chunk.map((a) => ({
           time: new Date(a.row.time),
           assetId: a.row.assetId,
           pointKey: a.row.pointKey,
           value: a.row.value,
           unit: a.unit,
+          deviceTime: null,
         }));
 
         const returningCols = {
@@ -351,7 +358,20 @@ export class TelemetryWriteService {
                 .values(values)
                 .onConflictDoUpdate({
                   target: [pointValues.time, pointValues.assetId, pointValues.pointKey],
-                  set: { value: sql`excluded.value`, unit: sql`excluded.unit` },
+                  // `device_time` moves with the value, for the reason ADR 0061
+                  // Amendment 1 item 1 gives for the ingest upsert one writer
+                  // over: the column describes the row's LATEST delivery, so a
+                  // delivery carrying no device time CLEARS it rather than
+                  // leaving the previous one behind. Without this line, an
+                  // operator correcting an ingest-written reading leaves the
+                  // RTU's stamp sitting beside the operator's value, and the
+                  // column has stopped describing its own row. A plain
+                  // assignment, never a COALESCE onto the stored value.
+                  set: {
+                    value: sql`excluded.value`,
+                    unit: sql`excluded.unit`,
+                    deviceTime: sql`excluded.device_time`,
+                  },
                 })
                 .returning(returningCols)
             : tx

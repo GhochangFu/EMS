@@ -105,8 +105,11 @@ export type SampleCounters = {
    */
   outOfRange: number;
   /**
-   * The device sent a timestamp this host could not read — `at` was present and
-   * was not a usable `Date`.
+   * The device sent a timestamp this host cannot store — `at` was present and
+   * was either not a `Date` at all, an Invalid Date, or a finite `Date` outside
+   * the Postgres `timestamptz` range (see {@link isStorableTime}). One counter
+   * for the three, because from the column's side they are one outcome:
+   * `device_time IS NULL` beside a reading that was kept.
    *
    * It no longer means "receive time was substituted", because since ADR 0061
    * decision 2 receive time is what every row gets anyway. Decision 5 keeps the
@@ -222,6 +225,42 @@ function isInEngineeringRange(value: number, target: PointTarget): boolean {
     return false;
   }
   return !(target.engMax !== null && value > target.engMax);
+}
+
+/**
+ * Postgres's floor for `timestamptz`, 4713 BC, as epoch milliseconds —
+ * `Date.UTC(-4712, 0, 1)`, since ISO expanded year `-004712` is 4713 BC.
+ *
+ * **This end is the binding one.** A JS `Date` reaches back to 271821 BC, so
+ * there is a whole 267,000-year band of perfectly finite `Date`s that Postgres
+ * refuses. Deliberately conservative by a small margin: Postgres switches to the
+ * Julian calendar before 1582, so the two calendars disagree by days near this
+ * boundary and an exact match is not available. Rejecting a few extra days at
+ * 4713 BC costs nothing — no plant RTU reports from antiquity.
+ */
+const MIN_STORABLE_TIME_MS = Date.UTC(-4712, 0, 1);
+
+/**
+ * The maximum time value a JS `Date` can hold (275760-09-13), per the ECMAScript
+ * spec's ±8.64e15 ms.
+ *
+ * **This end catches nothing, and is written anyway.** Postgres's ceiling is
+ * 294276 AD, which is *above* `Date`'s own, so every finite `Date` is already
+ * inside it and this comparison can never be the one that fails. It is here so
+ * the pair reads as what it is — the intersection of the `Date` range and the
+ * `timestamptz` range — rather than leaving a reader to work out from a
+ * one-sided test whether the other end was considered or forgotten.
+ */
+const MAX_STORABLE_TIME_MS = 8.64e15;
+
+/**
+ * Whether `pg` can hand this instant to Postgres and have it stored.
+ *
+ * `NaN` fails both comparisons, so this subsumes the `Number.isFinite` test it
+ * replaced rather than sitting beside it.
+ */
+function isStorableTime(timeMs: number): boolean {
+  return timeMs >= MIN_STORABLE_TIME_MS && timeMs <= MAX_STORABLE_TIME_MS;
 }
 
 /**
@@ -342,7 +381,12 @@ export function resolveSamples(
       // leaves `deviceTime` null (decision 4 case 3) and counts, exactly as an
       // absent one leaves it null (case 2). A reader cannot tell the two apart
       // from the column, which decision 4 accepts rather than repairs.
-      if (sample.at instanceof Date && Number.isFinite(sample.at.getTime())) {
+      //
+      // The range test is the same defence one step further out: a `Date` can be
+      // finite and still unstorable, and `toISOString()` serialises it happily —
+      // Postgres is then the one that throws, with the whole 1000-row statement
+      // in its hand. Same outcome, no throw on this side to catch it.
+      if (sample.at instanceof Date && isStorableTime(sample.at.getTime())) {
         deviceTime = sample.at;
       } else {
         counters.invalidTimestamp += 1;

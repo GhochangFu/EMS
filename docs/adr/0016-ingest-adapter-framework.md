@@ -1380,6 +1380,22 @@ with this work; a reader who reaches `:232` or `:613` should follow that file.
   are untouched. A partial last line still fails `lineSchema` and is still
   counted in `bufferDropped` — with `rx` required, a truncated line fails for one
   more reason, not a new way.
+
+- **The bounds are untouched; the capacity Amendment 4 derives from them is
+  not.** `:1113-1114` reads the 256 MiB cap as "≈600 samples/s for an hour at
+  ~120 bytes a line". Adding `rx` while keeping `at` moves a pilot-shaped line —
+  `sourceKey` `flow_rate`, `deviceKey` `861736076128211`, both timestamps — from
+  **104 to 136 bytes**, measured on this branch's own `serialise` output. It
+  stays 104 when the device sends no `ts`, because `at` is now absent rather
+  than stamped. At 136 bytes the cap holds **~460 samples/s** for an hour, not
+  ~600, so the rolling-hour guarantee degrades sooner than Amendment 4 says
+  under a fast fleet.
+
+  Recorded rather than re-tuned: the bound is a deliberate ceiling and no
+  operator default changes. This branch re-derived
+  `MAX_ROWS_PER_STATEMENT` for the same reason — a stale derivation is the kind
+  of number a later reader divides a real batch size by — and the review that
+  caught that one caught this.
 - The health endpoint's `buffered` and `bufferDropped` counters are unchanged.
 
 ### Verification this amendment expects

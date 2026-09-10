@@ -75,9 +75,17 @@ function primaryKey(row: PointValueRow): string {
  * `writeSamples`. What arrives there, resolved exactly as `main.ts` resolves
  * it, must carry `START` — while the replay instant is `START + 30 min`.
  *
- * Mutations that must redden the second assertion: `toSample` reviving
+ * Mutations that must redden the **first** assertion: `toSample` reviving
  * `receivedAt: new Date()` instead of `rx`; the replay loop re-stamping the
  * batch with `scheduler.now()`.
+ *
+ * The first, not the second, and the reason is the note four lines into the
+ * body: this repo's `assert` throws, so only the first failure in a block is
+ * ever observed. Both mutations move `batch[0].receivedAt`, and `rows[0].time`
+ * is *derived* from it by `resolveSamples` — so the assertion on `time` fails
+ * first and throws, and the assertion on `receivedAt` never runs. That is why
+ * the claim was put first. (This paragraph replaces a sentence that named the
+ * second assertion, which was reasoned about rather than run.)
  */
 export async function assertReplayKeepsTheOriginalReceiveTime(): Promise<void> {
   await withTempDir(async (dir) => {
