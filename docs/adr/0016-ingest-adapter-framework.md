@@ -1359,6 +1359,18 @@ This is deliberately a deploy-time gate rather than a compatibility branch in
 carried, and guessing wrong writes a fabricated `device_time` — the invention
 ADR 0061 ruling 2 declined.
 
+### Two sentences of this ADR are superseded, and are left standing
+
+`:232` (the `SourceSample` sketch) and `:613` both say the host **substitutes**
+receive time when `at` is absent. Since ADR 0061 decision 2 the host substitutes
+nothing: it stamps its own receive time on **every** row's `time`, and an absent
+`at` means `device_time IS NULL` rather than "receive time was copied in".
+
+They are recorded here rather than edited, because this repository amends an ADR
+instead of rewriting the decision it made. The live contract is
+`packages/shared/src/ingest.ts`, whose `SourceSample.at` docblock was corrected
+with this work; a reader who reaches `:232` or `:613` should follow that file.
+
 ### What this does not change
 
 - Decisions 5 and 8 keep their wording. A replayed row is idempotent, and a

@@ -490,16 +490,25 @@ decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
   above can never fire for this case. The reload therefore logs
   `endpoint device set changed; restart required to apply` with the added and
   removed device keys. That names the gap rather than closing it.
-- **A device's clock is trusted without check.** Where the payload carries a
-  timestamp it becomes the row's `time`, so telemetry inherits whatever the
-  device believes. Measured on the pilot RTU on 2026-08-06: **~34 minutes
-  ahead** of the server (Postgres and both containers agreeing). Not a timezone
-  error — IST would be +5:30 — and unchanged from `index.js`, which uses `ts`
-  the same way. It means live PHE rows land in the *future* relative to
-  `now()`, which affects any dashboard window query and any rule evaluated on a
-  recency bound. Nothing here detects or corrects it; deciding between trusting
-  the device, stamping on receipt, or recording both is product work, not a
-  host fix.
+- **~~A device's clock is trusted without check.~~ Closed by `F4.57`
+  (ADR 0061).** A device timestamp no longer reaches the row's `time`. The host
+  stamps its own **receive** time on every row and stores what the device
+  claimed beside it, unclamped, in `telemetry.point_values.device_time` — the
+  "recording both" option, chosen by the owner over trusting the device or
+  clamping to receipt.
+
+  The skew that motivated it, for anyone reading `device_time`: **~34 minutes
+  ahead** on the pilot RTU on 2026-08-06, and a **3 h 37 m spread** across nine
+  RTUs when `F1.7` measured the fleet on 2026-08-22, from −3:02:36 to +34:31.
+  Not a timezone error — IST would be +5:30 — and stable per device rather than
+  drifting.
+
+  **Two things this did not fix.** Rows written before migration `0069` keep
+  the device's clock in `time` and carry `device_time IS NULL`; nothing marks
+  that boundary but the migration's own timestamp, and ruling 2 accepted it
+  rather than rewrite 10 million rows. And the clocks themselves are still
+  wrong — `device_time` makes the skew *visible and measurable*, it does not
+  correct the devices.
 - **RTUs sharing an endpoint share credentials.** The first non-empty set wins.
   This narrows the `activeMqttConnection` singleton in `index.js` but does not
   cure it; `F1.7` owns the per-RTU credential story (ADR 0016 §Consequences).

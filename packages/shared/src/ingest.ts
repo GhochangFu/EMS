@@ -76,8 +76,18 @@ export type SourceSample = {
   readonly deviceKey?: string;
   /**
    * Device timestamp, set **only** where the protocol genuinely carries one.
-   * Omit it otherwise — the host substitutes receive time, and a fabricated
-   * timestamp is worse than an honest absence.
+   * Omit it otherwise — a fabricated timestamp is worse than an honest absence.
+   *
+   * Since **ADR 0061** the host does not substitute receive time here: it
+   * stamps the receive time onto the row's `time` for every sample, and stores
+   * this value beside it in `telemetry.point_values.device_time`, unclamped and
+   * uncorrected. An absent `at` therefore means `device_time IS NULL`, not
+   * "receive time was copied in".
+   *
+   * **There is deliberately no receive-time field on this type.** The host
+   * carries it in its own `ReceivedSample` wrapper, because an adapter that
+   * could set a receive time could fabricate one, which
+   * `adapter-contract.spec.ts` forbids.
    */
   readonly at?: Date;
   /** Protocol quality flag. `false` → the host discards the sample and counts it. */
