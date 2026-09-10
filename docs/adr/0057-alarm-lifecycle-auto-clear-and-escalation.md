@@ -1290,3 +1290,161 @@ re-offer still cannot tell a recipient that a message was already delivered to
 them, in the one case where that can happen — a transport that reports failure
 for a message that landed. Nothing in the ledger distinguishes it, and this row
 does not try.
+
+## Amendment 9 — `F3.59`: the raise-retry phase reads a rule's channels only for an alarm that holds evidence (2026-09-10)
+
+**What changed.** `runRaiseRetryPhase` paid `loadRuleChannels(candidate.rule.id)`
+before it knew whether the alarm held any ledger row. The organization filter
+that Amendment 5 put on the predicate's `rows` argument is now hoisted above
+that read, the one hoisted array is handed to `channelsOwedTheRaise`, and the
+candidate is skipped when the array is empty. The saving is exact rather than
+approximate: `channelsOwedTheRaise` stage 1 answers `false` for every channel
+whose row list is empty, so an empty group is "not owed" for **any** channel
+list and the round trip could not change the answer. The skip is therefore
+behaviour-preserving by construction, not merely conservative. Only the
+organization is filtered at the guard — the status exclusions and the
+unconfigured watermark stay inside the predicate, where the channel decides
+them.
+
+**What did not change.** The chunked ledger read, the per-rule channel memo, the
+`read.unread` skip and the `channels.length === 0` exit all stay. Amendment 5's
+four owner rulings are unchanged, and ruling 3 (the evidence conjunct) is *why*
+the read was dead rather than something this row revisits. Decisions 9 and 10
+are untouched. No DDL, no status vocabulary, no contract and no
+`NotificationsService` change, so **ADR 0041 is not amended**; nothing in
+`packages/shared` moves, so §4.8 and ADR 0030 do not apply.
+
+**The measurement, cited rather than re-taken.** Taken inside `bms-api-1` as
+`bms_fleet` over the docker network, which is the sweep's own role, host and
+port. A first pass from the Windows host over published 5433 measured Docker
+Desktop's proxy and is discarded.
+
+| | ms, 5 samples |
+|---|---|
+| 78 sequential per-rule reads (the shape before this row) | 183 / 187 / 191 / 200 / 200 |
+| 1 batched read over the same 78 rule ids | 2.5 / 3.1 / 3.5 / 3.8 / 4.1 |
+| bare round-trip floor, 78 × `select 1` | 81 / 87 / 87 / 89 / 90 |
+
+Fleet shape, as `bms_app` on the local seeded stack: **78** candidate alarms
+over **78 distinct** rules — so the per-rule memo saves nothing here — **289 of
+290** rules are `notify`, and **zero** rows in `notification_channels`,
+`rule_notifications` and `notification_deliveries`. 190 ms is **0.63 %** of the
+30 s tick (`LIFECYCLE_TICK_MS`). **This is this fleet's shape and not a law**:
+the saving is one round trip per distinct rule, and only when every candidate of
+that rule lacks evidence.
+
+**The backlog row's own value sentence was false as an argument about the read,
+and the row understated itself.** It said that for a rule with no
+`rule_notifications` join "the phase already exits one line earlier, at
+`channels.length === 0`". Line 468 paid the round trip and line 469 threw the
+result away — the exit was *after* the cost. A rule with no join never
+dispatches, so it never writes a delivery row, so its evidence group is always
+empty, so the guard **does** save its read. Amendment 6 above and ADR 0058
+decision 2 name the no-join rule as the deliberate seeded and template-built
+shape rather than a misconfiguration, so the guard's value is **not**
+configuration-dependent. The honest bound the other way: on a fleet where raises
+send, an open alarm holds a `sent` row, the read is still paid, and the predicate
+answers "not owed" after it. The guard saves the never-dispatched class and
+nothing else.
+
+**Owner ruling 1 (2026-09-10) — batching the channel read is declined here.** A
+`ChannelsService.loadForRules(ruleIds)`, a change to `AlarmLifecycleDeps`,
+chunking and a warn-and-return failure shape are a different defect on the same
+line — round-trip count, not deadness — and new scope under AGENTS.md §10. It is
+filed as its own backlog row. The two are independent: after this row a rule with
+an evidence-bearing alarm still costs one channel query per distinct rule per
+tick.
+
+**The `read.unread` skip stays, and it now buys something else.** It is kept
+because it is the only line that stops a blind re-offer of an *undecidable*
+alarm if ruling 3's evidence conjunct is ever revisited: a ruling that read an
+empty group as "owed" would turn this guard into a re-offer for every alarm whose
+batch failed, which Amendment 5's R9 forbids in terms. What it buys today is
+`RaiseAttemptsRead.unread`'s contract — "the caller must decide NOTHING about
+these this tick" — stated at the one place that could violate it, not a channel
+read: the guard reaches every alarm the skip reaches, because an unread alarm's
+rows are in the batch that failed and its group is empty. That also cost the skip
+its old gate. R16 asserted the saving on a fixture whose unread alarm holds no
+row, so dropping the skip now leaves R16 **green**; R16's docblock says so rather
+than keeping a mutation sentence that no longer holds. The skip's gate is R22, on
+a read shape `loadRaiseAttempts` cannot produce — `raiseAttemptBatches` slices
+the refs into disjoint batches, `selectBatch` binds `inArray(alarm_id,
+batch.alarmIds)`, a failing batch adds all of its own alarm ids to `unread`, and
+the phase builds exactly one ref per active alarm, so no alarm can be both listed
+in `unread` and represented in `rows`. AGENTS.md §4.6 permits a sentinel stronger
+than production and requires saying so; R22's docblock says it, and says a later
+reader must not "fix" the fixture into a producible one.
+
+**What gates it.** `alarm-lifecycle-raise-retry-evidence-guard.spec.ts`, cases
+R20-R22 continuing the raise-retry file's numbering, with **one `it()` each**.
+The new file exists for two measured reasons: the raise-retry spec stood at 905
+of §4.5's 1000-line cap, and its wrapper is a single `it()` over nineteen cases,
+where `assert` throwing means a mutation reddens whichever case runs first rather
+than the one that owns the claim (`F4.105`). R20 holds both arms of the guard in
+one assertion — no read for the rule whose only alarm holds no row, one read for
+the rule whose alarm holds one — on two rules, because with both alarms on one
+rule the memo would hide the saving. R21 holds that the group is filtered by the
+**ref's** organization, and is the only case with its own `it()` that reddens
+for either mutation that widens it: `rowsByAlarm.has(candidate.alarm.id)`, which
+nothing else in the suite catches at all, and a filter on
+`candidate.alarm.organizationId`, which also reddens R1 — but as the first case
+of that single `it()`.
+
+**Eight mutations were run and their printed messages recorded, not reasoned
+about.** Seven were killed, each by the assertion that owns its claim: the guard
+deleted (R20 assertion 2, `got [rule-1,rule-2]`); the guard skipping
+unconditionally (R20 assertion 2, `got []` — and R21, R22, R1 and all three
+integration cases with it); the unfiltered `has` (R21 only); the predicate handed
+the unfiltered group while the guard uses the filtered one (R2, `one re-offer,
+got 0`, which is what makes the hoist a hoist and not a second filter); the
+`read.unread` skip deleted (R22 only, R16 green — the finding above, measured);
+the alarm's own organization (R21 and R1); and the `catch` assigning an empty
+read that carries the cause instead of returning (R9's warn COUNT, two warns).
+**The eighth survives and is recorded rather than repaired**: a `catch` that
+assigns an empty read and discards `reasons` leaves all seven tests green, and
+after this guard that is a behavioural equivalence rather than a hole — an empty
+read decides nothing about anybody, which is exactly what the `return` does. R9's
+docblock states it, so a later reader does not take the green as coverage.
+
+What no unit case can prove is stated in the file: the
+fakes count calls and hold no connection, so nothing there is evidence about a
+round trip. `alarm-lifecycle-raise-retry.integration.spec.ts` is unchanged and
+was run **with** the database attached — 3 files, 7 tests, **0 skipped** — where
+without one its three cases skip. I1-I3 all hold rows under the key, so the guard
+never fires there; that is the regression check, not a gate on the guard.
+
+**The database-level check is owed to step 6 and its baseline is recorded here.**
+`pg_stat_all_tables` scan counts over a 75 s window (two ticks), taken as
+`bms_app` — a pure read with no configuration change, which replaces a planned
+`ALTER SYSTEM SET log_min_duration_statement = 0`: this Postgres is shared with a
+second session, and statement logging would pollute their window and persist in
+`postgresql.auto.conf` if a reset were missed. **Before**, on `144ce8cb`:
+`bms.rule_notifications` 517380 → 517614, delta **+234**, which is 78 × 3 ticks
+and so the 78 distinct candidate rules exactly; `bms.notification_deliveries`
+104174 → 104177, delta **+3**, one ledger read per tick and the positive control
+that the sweep is alive. **Expected after the guard**: `rule_notifications` delta
+**0**, `notification_deliveries` still ~3. That after-figure is *not* in this
+amendment because it had not been taken when this was written — the dispatcher
+owns it. **Caveat for whoever reads it**: the same Postgres is shared, so a
+non-zero `rule_notifications` delta is not automatically a failure of the guard;
+correlate it against the tick count before concluding.
+
+**Browser — N/A**, and said rather than skipped silently: no rendered surface, no
+`apps/web` change, no bundle to reload.
+
+**Prose corrected, because the guard made it false.** R9's assertion message
+("would cost a channel read per rule") and its docblock, which now records that
+the assertion no longer distinguishes the `return` from a carry-on with an empty
+read; R16's docblock mutation sentence; the phase docblock's per-tick read cost
+and its memo comment; the `read.unread` comment; and `raise-attempts.ts`'s "cost
+**78**", which is dated to before this row and now records that on that fleet the
+guard skips all 78. The phase docblock's spec census also went stale by
+construction — a seventh suite and three more sweeps — and was re-counted with
+the command that docblock carries. Still owed to the separate `chore(agents):`
+sweep, and deliberately not touched on the feature branch (§9.10): the
+`F3.59` BACKLOG row's own false value sentence, and the `docs/roadmap.md` mirror
+of it.
+
+**What this does not fix.** A rule with at least one evidence-bearing alarm still
+costs one channel query per distinct rule per tick, and on a configured fleet
+that is most of them. That cost is the filed batching row's, not this one's.
