@@ -111,6 +111,31 @@ export const STATE_KEYS = [
 export const scopeTotal = (counts) => counts.total - (counts.dropped ?? 0);
 
 /**
+ * The rows that are eligible AND not already under way — "ready to start".
+ *
+ * **One derivation, because this file has now lost the same argument twice.**
+ * `counts.ready` is *eligible*: every dependency met and no gate. It says
+ * nothing about whether somebody has already begun, so a row that is eligible
+ * and in flight is counted by it. The board has always subtracted the in-flight
+ * rows before printing "Ready to start"; `check-backlog-republish.mjs` printed
+ * `counts.ready` raw, so the hook said **91 ready** against a board showing
+ * **90** — differing by exactly the one row that was both.
+ *
+ * That is the third instance of `F4.86` in this pair of files. The hook's own
+ * comment records the second: it reported 16 held against a board showing 15,
+ * and the fix was to match the renderer. This is that fix for the next word
+ * along, done by sharing the derivation instead of restating it — because
+ * restating it is what produced both.
+ *
+ * `inProgressIds` is the RAW in-progress set, not {@link inFlightRows}' filtered
+ * one. It makes no difference today (a dropped row is never eligible, because
+ * `readyToStart` requires `pending`), and the raw set is the honest input here:
+ * the question is "has anyone begun", not "should the board draw it as active".
+ */
+export const readyToStartNow = (ready, inProgressIds) =>
+  ready.filter((id) => !inProgressIds.has(id));
+
+/**
  * Whether a row counts as work at all.
  *
  * **Added by `F3.58`'s post-merge review**, which found the page printing a

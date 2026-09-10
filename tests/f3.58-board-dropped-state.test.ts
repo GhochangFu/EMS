@@ -44,6 +44,7 @@ type StateModule = {
   STATE_KEYS: ReadonlyArray<{ key: string; label: string; token: string }>;
   scopeTotal: (counts: { total: number; dropped?: number }) => number;
   countsAsWork: (it: Row) => boolean;
+  readyToStartNow: (ready: readonly string[], inProgressIds: Set<string>) => string[];
   inFlightRows: <T extends { id: string }>(
     inProgress: readonly T[],
     lookup: (id: string) => Row | undefined,
@@ -61,9 +62,8 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const MODULE = new URL(
   `file://${join(repoRoot, "docs", "scripts", "backlog-state.mjs").replace(/\\/g, "/")}`,
 ).href;
-const { stateOf, STATE_KEYS, scopeTotal, countsAsWork, inFlightRows } = (await import(
-  MODULE
-)) as StateModule;
+const { stateOf, STATE_KEYS, scopeTotal, countsAsWork, readyToStartNow, inFlightRows } =
+  (await import(MODULE)) as StateModule;
 
 const row = (over: Partial<Row> & { id: string; status: string }): Row => ({
   held: false,
@@ -233,6 +233,47 @@ describe("F3.58 — a dropped row is not remaining scope", () => {
   it("counts pending and done rows as work", () => {
     expect(countsAsWork(row({ id: "F3.57", status: "pending" }))).toBe(true);
     expect(countsAsWork(row({ id: "F3.49", status: "done" }))).toBe(true);
+  });
+});
+
+describe("F4.86 — ready to start excludes what is already under way", () => {
+  /**
+   * `counts.ready` is ELIGIBLE — every dependency met, no gate. It says nothing
+   * about whether anyone has begun, so a row that is eligible **and** in flight
+   * is inside it. The board has always subtracted the in-flight rows before
+   * printing "Ready to start"; `check-backlog-republish.mjs` printed
+   * `counts.ready` raw and so said **91 ready** against a board showing **90**,
+   * differing by exactly the one row that was both.
+   *
+   * Measured on the live board: `F4.57` was eligible and in flight at once.
+   *
+   * This is the third instance of `F4.86` across that pair of files — the hook's
+   * own comment records the second, where it reported 16 held against a board
+   * showing 15. Both came from restating a derivation instead of sharing it,
+   * which is why this one is shared and why this case exists.
+   */
+  it("drops a row that is eligible but already in flight", () => {
+    expect(readyToStartNow(["F3.57", "F4.57", "F3.59"], new Set(["F4.57"]))).toEqual([
+      "F3.57",
+      "F3.59",
+    ]);
+  });
+
+  /**
+   * Not over-broad: with nothing in flight, every eligible row survives. Mutate
+   * the filter to return an empty list and this reddens while the case above
+   * stays green, so neither can stand in for the other.
+   */
+  it("keeps every eligible row when nothing is in flight", () => {
+    expect(readyToStartNow(["F3.57", "F3.59"], new Set())).toEqual(["F3.57", "F3.59"]);
+  });
+
+  /** Order is the board's display order, so it must survive the filter. */
+  it("preserves the order it was given", () => {
+    expect(readyToStartNow(["F3.59", "F3.57", "F4.57"], new Set(["F4.57"]))).toEqual([
+      "F3.59",
+      "F3.57",
+    ]);
   });
 });
 
