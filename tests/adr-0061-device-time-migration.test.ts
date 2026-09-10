@@ -27,9 +27,27 @@ const SCHEMA_REL = "packages/db/src/schema/telemetry-schema.ts";
  */
 const sqlOnly = (source: string): string =>
   source
+    // Block comments first: a `/* … */` spanning lines survives a line filter,
+    // and a `DEFAULT` inside one would trip the forbidden-pattern scan below.
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
     .split("\n")
-    .filter((line) => !line.trim().startsWith("--"))
+    // `--` anywhere on the line, not only at its start: a trailing comment on a
+    // real statement is the case a `startsWith` filter keeps.
+    .map((line) => line.replace(/--.*$/, ""))
     .join("\n");
+
+/**
+ * The `ADD COLUMN` clause alone, so the forbidden-pattern scan below judges the
+ * column definition rather than the whole file.
+ *
+ * Scanning the file made the gate wrong in both directions. `SET LOCAL
+ * lock_timeout = DEFAULT` — the idiom `0028` uses on this very table — would
+ * have failed it with "must not contain DEFAULT", and a `RESET`/`SET` line has
+ * nothing to do with what decision 1 forbids *on the column*. Found by the
+ * migration review, which was blocked by this gate while fixing a real defect.
+ */
+const addColumnClause = (source: string): string =>
+  /ADD COLUMN[\s\S]*?;/.exec(source)?.[0] ?? "";
 
 describe("F4.57 — migration 0069 exists", () => {
   it("0069_point_values_device_time.sql is present in packages/db/drizzle", () => {
@@ -47,10 +65,30 @@ describe("F4.57 point_values.device_time (ADR 0061 decision 1)", () => {
     ).toBe(true);
   });
 
-  it("adds nothing decision 1 forbids", () => {
+  it("adds nothing decision 1 forbids to the column definition", () => {
+    const clause = addColumnClause(sql);
+    expect(clause, "the ADD COLUMN clause must be findable for this gate to mean anything").not.toBe(
+      "",
+    );
+
     const forbidden: ReadonlyArray<{ pattern: RegExp; label: string }> = [
       { pattern: /\bDEFAULT\b/i, label: "DEFAULT" },
       { pattern: /\bNOT NULL\b/i, label: "NOT NULL" },
+    ];
+
+    for (const { pattern, label } of forbidden) {
+      expect(
+        pattern.test(clause),
+        `migration 0069's ADD COLUMN clause must not contain ${label} (ADR 0061 decision 1).`,
+      ).toBe(false);
+    }
+  });
+
+  it("rewrites no data and builds no index anywhere in the file", () => {
+    // These three are file-wide on purpose, unlike DEFAULT and NOT NULL above:
+    // decision 1 forbids a backfill, an index and a manual refresh ANYWHERE in
+    // `0069`, not merely inside the column definition.
+    const forbidden: ReadonlyArray<{ pattern: RegExp; label: string }> = [
       { pattern: /\bUPDATE\b/i, label: "UPDATE" },
       { pattern: /CREATE\s+INDEX/i, label: "CREATE INDEX" },
       { pattern: /refresh_continuous_aggregate/i, label: "refresh_continuous_aggregate" },
@@ -59,6 +97,22 @@ describe("F4.57 point_values.device_time (ADR 0061 decision 1)", () => {
     for (const { pattern, label } of forbidden) {
       expect(pattern.test(sql), `migration 0069 must not contain ${label} (ADR 0061 decision 1).`).toBe(false);
     }
+  });
+
+  it("bounds its lock acquisition, as 0028 and 0031 do on this table", () => {
+    // `ADD COLUMN` takes ACCESS EXCLUSIVE on the parent and every chunk. The
+    // work is catalog-only; the hazard is the WAIT, which blocks every request
+    // queued behind it on a table under continuous ingest. `0028:111` and
+    // `0031:128` both bound it here and both RESET afterwards, so `0069`
+    // inherits nothing. Raised by the migration review.
+    expect(
+      /SET\s+LOCAL\s+lock_timeout\s*=\s*'5s'/i.test(sql),
+      "migration 0069 must bound its lock acquisition with SET LOCAL lock_timeout = '5s'.",
+    ).toBe(true);
+    expect(
+      /RESET\s+lock_timeout/i.test(sql),
+      "migration 0069 must RESET lock_timeout so the bound does not leak to a later statement.",
+    ).toBe(true);
   });
 
   it("journals migration 0069 with idx 69, a tag equalling the filename stem, and a when strictly greater than 0068's", () => {

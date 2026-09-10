@@ -16,25 +16,41 @@
 -- exits 0 — no `DROP` + `ADD` pair is needed the way `0068`'s CHECK widening
 -- needed one.
 --
+-- `IF NOT EXISTS` matches on the NAME only, so a `device_time` hand-added as
+-- `timestamp` without a time zone would satisfy it and this file would skip,
+-- leaving the drizzle declaration disagreeing with the database in silence.
+-- Unlikely, and stated because the paragraph above claims the type as
+-- absolute.
+--
 -- WHY NO `SET ROLE bms_owner` BRACKET, and that is deliberate rather than an
 -- omission. `0055` records the rule and `0068` restates it: ownership does
 -- not change on `ALTER TABLE`, and the migrator connects as
 -- `DATABASE_URL_SUPERUSER` (ADR 0045), which may alter a table it does not
 -- own without first assuming that table's owning role.
 --
--- WHY NO `refresh_continuous_aggregate` — ADR 0061 Amendment 1 item 3,
--- verbatim: the concern is real in general, since moving `time` to
--- `receivedAt` makes new rows land behind wherever a continuous-aggregate
--- watermark sits, and a row below the watermark is invisible until a refresh
--- covers its bucket. Measured on the running stack: no watermark on any of
--- the four aggregates (`point_values_1m/5m/1h/1d`) is ahead of `now()`, every
--- `start_offset` (3 h / 12 h / 3 days / 30 days) reaches far behind the
--- skew this ADR measured, and all four aggregates are `materialized_only =
--- false`, so the live tail answers in the meantime. `0069` therefore issues
--- no manual refresh — that is the safer choice on this stack, because a
--- manual `refresh_continuous_aggregate` is what leaves an orphaned
--- `continuous_aggs_jobs_refresh_ranges` row when it is interrupted, and one
--- of those blocks every later refresh on that aggregate.
+-- WHY NO `refresh_continuous_aggregate` — ADR 0061 Amendment 1 item 3, with
+-- its direction corrected by the migration review of this branch. The general
+-- concern is that a row landing BELOW a continuous-aggregate watermark is
+-- invisible until a refresh covers its bucket. Moving `time` to `receivedAt`
+-- does not do that to live traffic: a receive-time row lands at `now()`, which
+-- is ABOVE every watermark. The rows that did sit below one were the lagging
+-- RTU's (−3:02:36), and this change moves them UP. Measured on the running
+-- stack: no watermark on any of the four aggregates (`point_values_1m/5m/1h/
+-- 1d`) is ahead of `now()` — `end_offset` bounds it — every `start_offset`
+-- (3 h / 12 h / 3 days / 30 days) reaches far behind the skew this ADR
+-- measured, and all four are `materialized_only = false`, so the live tail
+-- answers in the meantime. `0069` therefore issues no manual refresh — the
+-- safer choice on this stack, because an interrupted manual
+-- `refresh_continuous_aggregate` leaves an orphaned
+-- `continuous_aggs_jobs_refresh_ranges` row, and one of those blocks every
+-- later refresh on that aggregate.
+--
+-- The case that DOES land below a watermark is a replayed sample, which since
+-- ADR 0061 Amendment 2 carries its original arrival. Its bound is
+-- `INGEST_BUFFER_MAX_AGE_MS` (default 1 h), and that must stay under
+-- `point_values_1m`'s 3 h `start_offset` or a replayed row lands outside every
+-- scheduled refresh window — the standing obligation
+-- `0027_continuous_aggregates.sql:33-38` already records.
 --
 -- `telemetry.point_values` is a COMPRESSED HYPERTABLE
 -- (`0028_compression_retention.sql`, segmentby `asset_id, point_key`, orderby
@@ -44,6 +60,37 @@
 -- stack holds 12 days of rows and so has compressed chunks; a fresh CI
 -- database does not, so this form is exercised, but the compressed-chunk case
 -- itself is proved only at step 6 against the running stack, never in CI.
+--
+-- DEPLOY ORDER IS LOAD-BEARING. `apps/ingest` emits a six-column INSERT naming
+-- `device_time` once ADR 0061 ships, so against a database where this file has
+-- not run, EVERY ingest write fails — total loss on the hot path, not
+-- degradation. The order is: read `buffered = 0` on every endpoint (ADR 0061
+-- Amendment 2's gate, because segments written before ADR 0016 Amendment 5
+-- cannot be disambiguated), then this migration, then the new ingest image.
 
+-- Lock acquisition is bounded, exactly as `0031_point_values_finite_check.sql`
+-- bounds it on this same table (`:128`), and `0028` before it (`:111`). The
+-- work here is catalog-only and takes microseconds; the hazard is the WAIT.
+-- `ADD COLUMN` needs ACCESS EXCLUSIVE on the parent and on every chunk, so it
+-- queues behind any in-flight reader — a dashboard query, a rollup — and while
+-- it waits it blocks every request that arrives after it. On the PHE pilot the
+-- ingest and the simulator write continuously, so that is a stall on the hot
+-- telemetry path rather than a theoretical one. Five seconds, then fail and be
+-- re-run, rather than hold the table.
+--
+-- `RESET`, not `SET LOCAL lock_timeout = DEFAULT` — `0028`'s form — because
+-- the two are equivalent here and `RESET` keeps the word DEFAULT out of a file
+-- whose own gate forbids it in the column definition.
+--
+-- Neither `0028` nor `0031` leaks the setting: both clear it, and this does
+-- too. A migration that left it set would silently bound every later statement
+-- in the same session.
+--
+-- Raised by the migration review of this branch, after the first version of
+-- this file shipped with no bound at all.
+SET LOCAL lock_timeout = '5s';
+--> statement-breakpoint
 ALTER TABLE telemetry.point_values
   ADD COLUMN IF NOT EXISTS device_time timestamptz;
+--> statement-breakpoint
+RESET lock_timeout;
