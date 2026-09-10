@@ -261,8 +261,15 @@ async function selectBatch(db: BmsDb, batch: RaiseAttemptBatch): Promise<RaiseAt
   );
 }
 
-/** §9.6: a cause, bounded, with nothing of the alarm in it. */
-function reasonOf(err: unknown): string {
+/**
+ * §9.6: a cause, bounded, with nothing of the alarm in it.
+ *
+ * Exported since `F3.60`, which needs the same bound for the same sink — a
+ * sweep warn line, not the ledger column, whose own bound is
+ * `ledger-text.ts`'s `reasonOf` and is a different number. Shared rather than
+ * copied so the two cannot drift apart while both keep this name.
+ */
+export function reasonOf(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
   return text.length > 200 ? `${text.slice(0, 200)}…` : text;
 }
