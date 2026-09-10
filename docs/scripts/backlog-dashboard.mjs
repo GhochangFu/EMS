@@ -18,7 +18,14 @@ import { fileURLToPath } from "node:url";
 
 import { CSS } from "./backlog-dashboard-style.mjs";
 // `F3.58` extracted these so a suite can drive `inProgressIds`; see that file.
-import { inFlightRows, isClientGate, STATE_KEYS, scopeTotal, stateOf } from "./backlog-state.mjs";
+import {
+  countsAsWork,
+  inFlightRows,
+  isClientGate,
+  STATE_KEYS,
+  scopeTotal,
+  stateOf,
+} from "./backlog-state.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const IN = join(repoRoot, "docs", "status", "backlog-status.json");
@@ -166,7 +173,14 @@ if (missingHeld.length > 0) {
 }
 
 const pwOf = (it) => it.effortWeeks?.mid ?? 0;
-const pwTotal = data.items.reduce((a, it) => a + pwOf(it), 0);
+// `F3.58` post-merge: a dropped row is a decision made, not work remaining, so
+// it is out of BOTH person-week aggregates — this one and `pwLeft` below. The
+// first pass fixed the item ring and left these, so the page printed a scope of
+// 277 items beside an effort total that still counted the 278th. Two reviewers
+// found it independently, which is the signal that "one meaning, two
+// definitions" had happened again (`F4.86`).
+const sized = data.items.filter(countsAsWork);
+const pwTotal = sized.reduce((a, it) => a + pwOf(it), 0);
 const pwDone = data.items.filter((it) => it.status === "done").reduce((a, it) => a + pwOf(it), 0);
 const unsized = data.items.filter((it) => !it.effortWeeks).length;
 
@@ -484,7 +498,7 @@ function render(forClient) {
     { n: readyIds.length, k: "Ready to start", h: "every dependency met, no gate", lamp: "lamp-ready" },
     { n: data.counts.gated ?? 0, k: "Eligible · held", h: "needs an ADR or a client answer", lamp: "lamp-gated" },
     { n: data.counts.blocked ?? 0, k: "Waiting", h: "upstream item not done yet", lamp: "lamp-idle" },
-    { n: scope, k: "Total scope", h: "tracked items across 8 tracks, dropped rows excluded", lamp: "lamp-accent" },
+    { n: scope, k: "Total scope", h: "tracked items, less the ones dropped", lamp: "lamp-accent" },
   ];
 
   const tilesHtml = tiles
@@ -585,7 +599,11 @@ function render(forClient) {
   const trackRows = data.tracks
     .map((t, ti) => {
       const rows = data.items.filter((i) => i.track === t.id);
-      const pwLeft = rows.filter((r) => r.status !== "done").reduce((a, r) => a + pwOf(r), 0);
+      // `status !== "done"` alone counted a dropped row as work left — see
+      // `pwTotal` above.
+      const pwLeft = rows
+        .filter((r) => r.status !== "done" && countsAsWork(r))
+        .reduce((a, r) => a + pwOf(r), 0);
       const segs = STATE_KEYS.map(
         (s) => {
           const n = rows.filter((r) => r.stateKey === s.key).length;

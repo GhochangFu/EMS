@@ -89,11 +89,42 @@ export const STATE_KEYS = [
  *
  * `F3.58` made the difference visible: a won't-fix closure is a decision that
  * has been made, not work that remains, so counting it as remaining scope
- * overstates the board by one row and understates completion. The rendered-row
- * counts ("one square per item", "The full board — N items") deliberately stay
- * on `counts.total`, because the dropped row IS drawn.
+ * overstates the board by one row and understates completion.
+ *
+ * **Three totals now coexist, and the boundary is stated here because the first
+ * pass moved some of them and not others.** The post-merge review found the
+ * page printing a 277-item scope beside a person-week total and eight track
+ * bars that still counted the 278th.
+ *
+ * - **In this meaning** (dropped excluded): the item ring and its label, the
+ *   "Total scope" tile, and both person-week aggregates — `pwTotal` and each
+ *   track's `pwLeft` — because those measure work, and a dropped row is a
+ *   decision rather than work.
+ * - **Deliberately outside it** (`counts.total`, 278): the rendered-row counts,
+ *   "one square per item" and "The full board — N items", because the dropped
+ *   row IS drawn; and each track's `total`, because the track bar draws a
+ *   `dropped` segment sized `n / t.total` and the segments have to sum to the
+ *   whole. That is why the "Total scope" tile's hint may not say "across N
+ *   tracks" — the eight bars and the tile count different populations on
+ *   purpose.
  */
 export const scopeTotal = (counts) => counts.total - (counts.dropped ?? 0);
+
+/**
+ * Whether a row counts as work at all.
+ *
+ * **Added by `F3.58`'s post-merge review**, which found the page printing a
+ * 277-item scope beside a person-week total and eight track bars that still
+ * counted the 278th. The first pass moved the item ring onto {@link scopeTotal}
+ * and left both effort aggregates behind, so "scope" meant two things one line
+ * apart — `F4.86` again.
+ *
+ * A dropped row is a decision that has been made. It is not work remaining, and
+ * it is not work that was done either, so it is outside BOTH person-week
+ * aggregates rather than being counted as completed. `done` stays inside: the
+ * effort was really spent, and `pwDone` is a subset of `pwTotal`.
+ */
+export const countsAsWork = (it) => it.status !== "dropped";
 
 /**
  * The in-progress rows worth presenting as work under way.
