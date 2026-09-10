@@ -1,0 +1,49 @@
+-- `F4.57` / ADR 0061 decision 1 — `telemetry.point_values` gains a nullable
+-- `device_time timestamptz`. Nothing else. No default, no backfill, no index,
+-- no `refresh_continuous_aggregate`.
+--
+-- WHY THE NUMBER IS `0069`. Read from this directory: `0068_notification_
+-- deliveries_stale_status` is the last file here and the last entry in
+-- `meta/_journal.json`. `0055`'s durable rule applies again: AN ADR NAMES A
+-- MIGRATION'S JOB, NEVER ITS NUMBER.
+--
+-- WHY `IF NOT EXISTS` IS THE IDEMPOTENCY. Unlike `0068`'s widened CHECK,
+-- there is nothing here for an existence check to hide: the column either
+-- exists with exactly this type and nullability, or it does not, and there
+-- is no narrower prior state to lose by skipping the ADD. A second run finds
+-- the column already present, emits Postgres's own `NOTICE: column
+-- "device_time" of relation "point_values" already exists, skipping`, and
+-- exits 0 — no `DROP` + `ADD` pair is needed the way `0068`'s CHECK widening
+-- needed one.
+--
+-- WHY NO `SET ROLE bms_owner` BRACKET, and that is deliberate rather than an
+-- omission. `0055` records the rule and `0068` restates it: ownership does
+-- not change on `ALTER TABLE`, and the migrator connects as
+-- `DATABASE_URL_SUPERUSER` (ADR 0045), which may alter a table it does not
+-- own without first assuming that table's owning role.
+--
+-- WHY NO `refresh_continuous_aggregate` — ADR 0061 Amendment 1 item 3,
+-- verbatim: the concern is real in general, since moving `time` to
+-- `receivedAt` makes new rows land behind wherever a continuous-aggregate
+-- watermark sits, and a row below the watermark is invisible until a refresh
+-- covers its bucket. Measured on the running stack: no watermark on any of
+-- the four aggregates (`point_values_1m/5m/1h/1d`) is ahead of `now()`, every
+-- `start_offset` (3 h / 12 h / 3 days / 30 days) reaches far behind the
+-- skew this ADR measured, and all four aggregates are `materialized_only =
+-- false`, so the live tail answers in the meantime. `0069` therefore issues
+-- no manual refresh — that is the safer choice on this stack, because a
+-- manual `refresh_continuous_aggregate` is what leaves an orphaned
+-- `continuous_aggs_jobs_refresh_ranges` row when it is interrupted, and one
+-- of those blocks every later refresh on that aggregate.
+--
+-- `telemetry.point_values` is a COMPRESSED HYPERTABLE
+-- (`0028_compression_retention.sql`, segmentby `asset_id, point_key`, orderby
+-- `time DESC`). TimescaleDB permits `ADD COLUMN` on a compressed hypertable
+-- only in the nullable, default-less form used here — a column with a
+-- non-null default would require rewriting every compressed chunk. The local
+-- stack holds 12 days of rows and so has compressed chunks; a fresh CI
+-- database does not, so this form is exercised, but the compressed-chunk case
+-- itself is proved only at step 6 against the running stack, never in CI.
+
+ALTER TABLE telemetry.point_values
+  ADD COLUMN IF NOT EXISTS device_time timestamptz;

@@ -39,6 +39,20 @@ export const pointValues = telemetrySchema.table(
      */
     value: doublePrecision("value").notNull(),
     unit: varchar("unit", { length: 32 }),
+    /**
+     * `F4.57` / ADR 0061 decisions 3–4 — what the device itself said, stored
+     * unchanged and **unclamped**: a value hours ahead of or behind `time` is
+     * kept rather than corrected, because the skew is the point of the
+     * column. `time` never carries a device timestamp again (decision 2).
+     *
+     * NULL means "no trustworthy device time", and covers three cases the
+     * column cannot and does not distinguish: every row written before
+     * migration `0069`; a payload that carried no device timestamp; and a
+     * device timestamp this host could not parse. All three are the same to
+     * a reader — decision 4 accepts that rather than inventing a value to
+     * tell them apart.
+     */
+    deviceTime: timestamp("device_time", { withTimezone: true }),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.time, t.assetId, t.pointKey] }),
