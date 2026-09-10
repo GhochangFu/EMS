@@ -1609,6 +1609,44 @@ pass and both were real gaps**, which is the part of this record worth keeping:
   decision, only an extra empty adapter call per quiet tick. R28 asserts the
   absence with a twin as its positive control.
 
+### Step 6 — measured on a running sweep, on a scratch database
+
+The suites gate the call count at the dep boundary; they cannot see a round
+trip. This is the count of SQL **statements** a real
+`AlarmLifecycleService.sweep` issues against `bms.rule_notifications`, read from
+the server's own `log_statement='all'` output.
+
+The fixture is four rules, each with one open unacknowledged alarm, one enabled
+joined channel and one `failed` delivery row under the alarm's raise key — the
+evidence Amendment 9's guard demands before the read is reached at all. Without
+that row the measurement would count zero in both arms and prove nothing.
+
+| Arm | Statements over 3 ticks | Per tick |
+|---|---|---|
+| control — the adapter reading one rule at a time, the pre-`F3.60` shape | **12** | 4 |
+| this change | **3** | **1** |
+
+Four evidenced rules, so the control's 4 per tick is one per rule and this
+change's is one per tick. The reduction at this fleet is 4×; what matters is
+that the control is linear in the rule count and this is constant.
+
+**A scratch Postgres, not the shared stack**, and for a reason worth recording:
+the fixture must be COMMITTED, because the sweep reads on its own connections
+and a rollback-isolated fixture is invisible to it — and a concurrent session
+was live on `notification_channels` in the shared database throughout. The
+scratch instance was brought up empty and taken through the full documented cold
+start (`roles`, the `docker-init` schema script, `db:migrate`, `db:seed`, 47
+tables), so this doubles as the cold-start gate.
+
+**One false reading was found and is recorded rather than dropped.** The first
+attempt counted `pg_stat_all_tables` scans and read **4 per tick for both
+arms**. Two separate faults: `pg_stat_clear_snapshot()` and the counter read
+were landing on different pooled backends, so the delta read 0 inside the
+script; and `idx_scan` counts one index descent per `= ANY(array)` element, so
+it reports 4 for a single statement binding four ids. Scans are the wrong
+instrument for a round-trip claim. Statement logging is the right one, and it is
+what the table above uses.
+
 ### Owed to the `chore(agents):` sweep, not this branch
 
 `docs/BACKLOG.md`'s `F3.60` row and status, the Wave-2 Track D sentences in
