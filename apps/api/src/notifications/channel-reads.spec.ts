@@ -21,9 +21,12 @@ import {
  * really orders, and that each group is `loadForRule`'s list id-for-id are
  * `channel-reads.integration.spec.ts`'s claims and stay there.
  *
- * **What this file cannot prove.** The fake applies no `WHERE`, so a case here
- * cannot tell a right predicate from a missing one. Every claim about the
- * predicate is CI1–CI4's.
+ * **What this file cannot prove.** The fake applies no `WHERE` and discards the
+ * argument it is handed, so a case here cannot tell a right predicate from a
+ * missing one, nor see WHICH ids a statement bound. Every claim about the
+ * predicate is CI1–CI6's — CI5 owns the `rule_id IN (…)` filter and CI6 owns
+ * each statement binding its own batch, and both exist because a mutation
+ * survived every case in this file.
  *
  * Assertions live here; the sibling `.test` is the Vitest entry point
  * (ADR 0014). **One `it()` per case, by `F4.105`**: `assert` throws, so a

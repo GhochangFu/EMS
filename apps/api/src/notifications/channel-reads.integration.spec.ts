@@ -258,3 +258,56 @@ export async function assertEachGroupIsLoadForRulesList(db: BmsDb): Promise<void
     }
   });
 }
+
+/**
+ * CI6 — each statement binds its OWN batch, not the whole rule-id list.
+ *
+ * **This case exists because a mutation survived all eighteen others.**
+ * Replacing `selectRuleChannelBatch(db, batch)` with the whole de-duplicated
+ * list left every case green: the unit fake discards its `where` argument, and
+ * every other integration fixture passes at most three rule ids, so exactly one
+ * batch runs and `batch` already equals the whole list — the mutant is the
+ * identity there. That is why `size` is a parameter.
+ *
+ * `size: 2` over three rules gives batches `[r1, r2]` and `[r3]`. Under the
+ * mutant both statements bind all three, so r1's group is appended twice and
+ * holds each channel twice. Nothing downstream de-duplicates —
+ * `channelsOwedTheRaise` and `dispatchRememberingLostRows` are both a plain
+ * `.filter` — so a doubled group is a doubled offer to the same channel.
+ *
+ * The second assertion is the positive control: r3, alone in the second batch,
+ * must still come back, so the first assertion cannot pass against a read that
+ * returned nothing.
+ */
+export async function assertEachStatementBindsItsOwnBatch(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const { r1, r2, r3 } = await plantThreeRules(tx);
+    // r3 joins nothing in the shared fixture, so give it a channel of its own —
+    // this case needs a THIRD rule that comes back, not a quiet one.
+    const rows = await tx
+      .insert(notificationChannels)
+      .values({
+        organizationId: (await fixtureLocation(tx)).organizationId,
+        code: `f360-c9-${randomUUID().slice(0, 8)}`,
+        name: "F3.60 c9",
+        kind: "webhook",
+        config: { url: "https://hooks.example.com/f360" },
+        enabled: true,
+      })
+      .returning({ id: notificationChannels.id });
+    const c9 = (rows[0] as { id: string }).id;
+    await tx.insert(ruleNotifications).values([{ ruleId: r3, channelId: c9 }]);
+
+    const read = await loadEnabledChannelsForRules(tx, [r1, r2, r3], 2);
+
+    assert(
+      codesOf(read.byRule, r1) === "c1,c2" && codesOf(read.byRule, r2) === "c3",
+      `CI6: two batches must not duplicate a group — got r1=[${codesOf(read.byRule, r1)}] ` +
+        `r2=[${codesOf(read.byRule, r2)}]`,
+    );
+    assert(
+      codesOf(read.byRule, r3) === "c9",
+      `CI6: the rule alone in the second batch must still come back, got [${codesOf(read.byRule, r3)}]`,
+    );
+  });
+}

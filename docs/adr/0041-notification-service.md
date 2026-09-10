@@ -1539,7 +1539,10 @@ this series has been closed on exactly this kind of unconditional sentence:
    `ChannelsService.loadForRules` the backlog row sketches.
    `channels.service.ts` stands at 964 of AGENTS.md §4.5's 1000 lines, and a
    batching loop with a failure shape and a docblock in this repository's style
-   is 80–120. That is the same reason `channel-reads.ts` itself exists (its
+   was estimated at 80–120 lines. **About 150 landed** — `channel-reads.ts` went
+   from 44 to 220 — and the estimate is corrected rather than quietly left,
+   because the conclusion never depended on it: 964 plus even 37 breaks the cap.
+   That is the same reason `channel-reads.ts` itself exists (its
    header records `channels.service.ts` at 986 when `F3.10` wrote it) and the
    reason `raise-attempts.ts` is "a module function, not a service method". The
    sketch is followed in everything but its home.
@@ -1590,19 +1593,39 @@ this series has been closed on exactly this kind of unconditional sentence:
 
 ### What gates it
 
-C1–C7 over a fake database, CI1–CI5 against a real one, one `it()` per case in
-both. Twelve mutations were run — not reasoned about — and all twelve killed.
-Three are recorded rather than claimed:
+C1–C7 over a fake database, CI1–CI6 against a real one, one `it()` per case in
+both. Thirteen mutations were run — not reasoned about — and all thirteen
+killed, two of them only after a case was added for them. Four are recorded
+rather than claimed:
 
 - **M9** (`RULE_CHANNEL_BATCH_SIZE = 70_000`) reddens **only C6**. C1 is
   expressed in terms of the constant, so it stays invariant. The plan predicted
   C1 would redden too; it does not.
-- **M11** (the `ORDER BY` dropped) reddens CI2 on the heap order this fixture
-  happens to produce, and a heap order is unspecified — the mutant is free to
-  coincide. CI4 is what actually holds the clause to `loadForRule`'s.
+- **M11** (the `ORDER BY` dropped) reddens CI2 **and** CI4, and the honest
+  reading is that neither is stronger than the other for this mutant. The
+  mutation leaves `ChannelsService.loadForRule`'s own `ORDER BY` in place, so
+  CI4's id-for-id comparison diverges on exactly the condition CI2 diverges on —
+  heap order differs from code order — and coincides on exactly the condition
+  CI2 coincides on. A heap order is unspecified, so **the clause is unheld
+  against a heap order that happens to agree**, in both cases. What CI4 holds
+  order-independently is the other half: that the join and the `enabled` filter
+  are `loadForRule`'s. An earlier draft of this bullet claimed CI4 rescued the
+  ordering claim; the compliance pass showed it does not, and the mutation run
+  had already printed both case names.
 - **M12** (the `WHERE rule_id IN (…)` dropped) **survived the first pass**, and
   the reason is worth keeping: the projection carries `rule_id` and the caller
   groups on it, so removing the filter changes no decision the phase makes — it
   returns every rule's channels on the whole fleet, in every batch, every tick,
   which is the opposite of this row's purpose. Every other case stayed green.
   CI5 was added for it and kills it.
+- **M26** (each statement binds the whole de-duplicated list instead of its own
+  batch) **survived all eighteen cases**, and the correctness pass found it. The
+  unit fake discards the argument it is handed, and every integration fixture
+  passed at most three rule ids — one batch, where `batch` already equals the
+  whole list, so the mutant was the identity. Above 500 evidenced rules it makes
+  each of the N statements return every rule's channels and each group hold N
+  copies of every channel; nothing downstream de-duplicates, so a doubled group
+  is a doubled offer to the same channel. `loadEnabledChannelsForRules` now
+  takes `size` for the sole purpose of letting a case drive two batches against
+  a real database. CI6 does, and kills it — measured, printing
+  `r1=[c1,c2,c1,c2]`.

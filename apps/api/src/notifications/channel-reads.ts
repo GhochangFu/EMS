@@ -151,6 +151,14 @@ type RuleChannelRow = StoredChannelRow & { ruleId: string };
  * channels interleave; grouping by insertion leaves each rule's own slice in
  * code order, which is what the caller needs (case C4).
  *
+ * **`size` is a parameter for one reason: so a case can drive more than one
+ * batch against a real database.** The default is the only value production
+ * uses. Without it every integration fixture is a single batch, in which
+ * "each statement binds its own batch" and "each statement binds the whole
+ * list" are the same statement — and the correctness review found exactly that
+ * gap: a mutation replacing `batch` with the whole de-duplicated list survived
+ * all eighteen cases. Case CI6 drives `size: 2` and kills it.
+ *
  * **A failing batch costs only its own rules** — `loadRaiseAttempts`'s shape,
  * and its reason: one noisy tenant's volume must not disable raise retry for
  * the whole fleet. The other batches are still read, the failed batch's ids go
@@ -168,12 +176,13 @@ type RuleChannelRow = StoredChannelRow & { ruleId: string };
 export async function loadEnabledChannelsForRules(
   db: BmsDb,
   ruleIds: readonly string[],
+  size: number = RULE_CHANNEL_BATCH_SIZE,
 ): Promise<RuleChannelsRead<StoredChannelRow>> {
   const byRule = new Map<string, StoredChannelRow[]>();
   const unread = new Set<string>();
   const reasons: string[] = [];
 
-  for (const batch of ruleChannelBatches(ruleIds)) {
+  for (const batch of ruleChannelBatches(ruleIds, size)) {
     let rows: RuleChannelRow[];
     try {
       rows = await selectRuleChannelBatch(db, batch);

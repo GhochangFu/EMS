@@ -9,6 +9,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import {
   assertAQuietRuleHasNoEntryAndIsNotUnread,
   assertEachGroupIsLoadForRulesList,
+  assertEachStatementBindsItsOwnBatch,
   assertOnlyTheRequestedRulesComeBack,
   assertTheEnabledFilterIsInTheStatement,
   assertTheGroupIsInCodeOrder,
@@ -63,5 +64,9 @@ describe.skipIf(!connectionString)("F3.60 — the batched rule-channel read agai
 
   it("CI4 — gives per rule the same list, in the same order, as ChannelsService.loadForRule", async () => {
     await assertEachGroupIsLoadForRulesList(db);
+  }, 60_000);
+
+  it("CI6 — binds each statement to its own batch, so two batches do not duplicate a group", async () => {
+    await assertEachStatementBindsItsOwnBatch(db);
   }, 60_000);
 });

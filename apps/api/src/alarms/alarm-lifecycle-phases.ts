@@ -4,13 +4,13 @@ import { automationRuleOperatorSchema } from "@bms/shared";
 // `F3.53`: a type here for the same reason `LostLedgerRows` is one below —
 // this module reads the instance off the phase input and never constructs one.
 // `runLifecycleSweep` owns the single per-tick instance.
+import type { RuleChannelsRead } from "../notifications/channel-reads";
 import type { ClosedCeilings } from "../notifications/closed-ceilings";
 import { buildDedupeKey } from "../notifications/dedupe-key";
 import { MAX_EVENT_ATTEMPTS } from "../notifications/dispatch-policy";
 import type { NotificationChannelRow } from "../notifications/notification-transport";
 import { PROCESS_STARTED_AT, STEP_MAX_LATENESS_MS } from "../notifications/notifications.config";
 import type { DispatchInput } from "../notifications/notifications.service";
-import type { RuleChannelsRead } from "../notifications/channel-reads";
 import type { RaiseAttemptsRead } from "../notifications/raise-attempts";
 // `LostLedgerRows` is a type here, not a value: this module reads the instance
 // off `deps` and never constructs one — `AlarmLifecycleService` owns the single
@@ -273,7 +273,6 @@ async function notifyCleared(
     deps.logger.warn(
       `alarm lifecycle: cleared message for alarm ${alarm.id} rule ${rule.code} failed: ${reasonOf(err)}`,
     );
-    return;
   }
 }
 

@@ -38,8 +38,9 @@ import {
  * prevent. The per-call list is the only recording that separates them.
  *
  * The case numbers continue `alarm-lifecycle-raise-retry-evidence-guard.spec.ts`'s
- * sequence — R23 to R26 — because they are cases of the same phase and a reader
- * looking for R23 must not find two different ones.
+ * sequence — R23 to R28 — because they are cases of the same phase and a reader
+ * looking for R23 must not find two different ones. R27 and R28 were added
+ * after the first mutation run, for the two mutants that survived it.
  *
  * Assertions live here; the sibling `.test` is the Vitest entry point
  * (ADR 0014). One `it()` per case, by `F4.105`.
@@ -212,6 +213,18 @@ export async function assertAPartialFailureWarnsOnceAndCarriesOn(): Promise<void
  * The twin at the end is what makes the absence a gate. Without it, "no retry"
  * would pass against a phase that never ran at all — the same fixture with a
  * working read re-offers, so the absence is attributable to the rejection.
+ *
+ * **This fixture is stronger than production, as R24's is, and says so for the
+ * same reason.** The adapter cannot reject today: `loadEnabledChannelsForRules`
+ * catches per batch, `ruleChannelBatches` cannot throw on a string array,
+ * `toChannelRow` never throws, and building the `Map` cannot. So the phase-level
+ * `catch` this case drives is unreachable on the current reader. What would make
+ * it producible is a reader that threw outside the per-batch `try` — a
+ * connection acquired before the loop, an argument validated up front, or an
+ * adapter that mapped rows through something that can throw. A later reader must
+ * not delete the `catch` on the grounds that nothing reaches it: the contract
+ * `AlarmLifecycleDeps.loadRuleChannels` publishes is a promise, and a promise
+ * may reject.
  */
 export async function assertARejectedReadStopsThePhaseAndNotTheTick(): Promise<void> {
   const fixture = {

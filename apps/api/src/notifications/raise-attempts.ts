@@ -273,6 +273,14 @@ async function selectBatch(db: BmsDb, batch: RaiseAttemptBatch): Promise<RaiseAt
  * sweep warn line, not the ledger column, whose own bound is
  * `ledger-text.ts`'s `reasonOf` and is a different number. Shared rather than
  * copied so the two cannot drift apart while both keep this name.
+ *
+ * **There is a THIRD function of this name and it bounds nothing.**
+ * `alarm-lifecycle-phases.ts` exports its own, and all six of that file's warn
+ * lines use it — including the two the raise-retry phase writes, one of which
+ * interpolates a cause this function produced and one of which does not. The
+ * asymmetry is pre-existing and deliberate: bounding one of the six would make
+ * that line the odd one out. It is named here so a reader does not take
+ * "the same bound for the same sink" as covering every sweep warn line.
  */
 export function reasonOf(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
