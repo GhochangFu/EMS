@@ -805,8 +805,12 @@ Process (`AGENTS.md` §10).
   the two deferral bullets covering what ADR 0019 deliberately left closed.
 
 ### MQTT ingest beyond one RTU (F1.7) — five of twelve, measured
-- **Status:** ✅ **2026-08-22** on `feat/F1.7-mqtt-fleet`, eight commits.
-  **Not merged** — the PR is not open and merge approval is the owner's gate.
+- **Status:** ✅ **2026-08-22** on `feat/F1.7-mqtt-fleet`, eight commits, and
+  **merged the same day** — PR [#133](https://github.com/GhochangFu/EMS/pull/133),
+  squash `1e33ca35`. The "Not merged" sentence this replaces reached `main`
+  already false, in the closure sweep
+  ([#134](https://github.com/GhochangFu/EMS/pull/134)) that merged 69 seconds
+  after the merge it denied — #133 at 15:10:23Z, #134 at 15:11:32Z.
   **ADR 0007 Amendment 1 accepted 2026-08-22** at the §10 gate, superseding
   decision 4's "one pilot RTU only".
 - **Delivered:** per-RTU liveness on the health endpoint (a device that has
