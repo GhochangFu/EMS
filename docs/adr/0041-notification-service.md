@@ -1565,10 +1565,28 @@ this series has been closed on exactly this kind of unconditional sentence:
    `RAISE_ATTEMPT_BATCH_SIZE`, which holds the same number by coincidence: that
    one binds roughly two parameters per alarm across three `IN` lists. Here the
    pessimal bind count is `500 + 1` against the extended protocol's 65 535.
-6. **`reasonOf` is exported from `raise-attempts.ts` rather than copied.** Both
-   bound a sweep warn line to 200 characters; `ledger-text.ts`'s `reasonOf`
-   bounds a database column and is a different number. Sharing the one that
-   matches the sink stops the two drifting.
+6. **`reasonOf` is exported from `raise-attempts.ts` rather than copied**, for
+   the reasons and with the limits below — the limits matter, because there are
+   **three** functions of that name in this codebase with three different
+   bounds, and the security pass caught an earlier draft of this decision
+   implying otherwise.
+
+   - `raise-attempts.ts`'s bounds to **200 characters**. `channel-reads.ts` now
+     imports that one, so the two module reads that fill `reasons` share a
+     single bound and cannot drift apart. That is the whole of what this
+     decision changes.
+   - `ledger-text.ts`'s bounds a **database column** and is a different number.
+     It is untouched.
+   - `alarm-lifecycle-phases.ts`'s is **unbounded**, and `F3.60`'s own
+     phase-level warn line uses it, as do the five warn lines that were already
+     in that file. **That is deliberate and it is not a regression**: bounding
+     one of six would make the new line the odd one out, and bounding all six is
+     a different row. The cause on that path is a raw driver message reached
+     only when the whole read rejects — `loadEnabledChannelsForRules` catches
+     per batch and `toChannelRow` never throws — so it carries no SQL text, no
+     bind parameters and no ciphertext on `drizzle-orm@0.38.4`. A driver upgrade
+     that started wrapping queries would remove that protection, which is the
+     reason to record it here rather than to leave it unsaid.
 
 ### What gates it
 
