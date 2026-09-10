@@ -41,8 +41,10 @@ import {
  * carries no `event`. E15 and E17 are the two exits a re-offered raise can
  * reach; E16 and E17's second half are their regression twins on an ordinary
  * raise, without which a change that silenced EVERY raise refusal would pass;
- * E18 pins the key and the subject to the original raise's, and pins this
- * layer to composing no message text of its own (`F3.57`).
+ * E18 pins the key and the subject to the original raise's, and pins this layer
+ * to composing no BODY of its own (`F3.57`). Not "no message text" — the
+ * SUBJECT is composed right here, by `subjectFor` at
+ * `notifications.service.ts:572`.
  *
  * What this file does **not** hold: that the exclusion actually releases a key.
  * The fake answers each ledger read from a queue and applies no `WHERE`, so it
@@ -900,8 +902,12 @@ export async function runNotificationEventTests(): Promise<void> {
   // `dedupe_key`. So the two assertions below hold for their own reasons, and
   // both are narrower than orphaning:
   //
-  // - the SUBJECT, so that a mail client threads the re-offer with the
-  //   original rather than opening a second conversation;
+  // - the SUBJECT, so that a subject-GROUPING mail client keeps the re-offer in
+  //   the same conversation. Stated carefully, because the first wording of
+  //   this called it threading: `email.transport.ts` passes `from`, `to`,
+  //   `subject` and `text` and sets no `Message-ID`, `In-Reply-To` or
+  //   `References`, so there is no RFC 5322 thread to join. It is the receiving
+  //   client's heuristic, and it buys a webhook channel nothing at all.
   // - the BODY, because this layer passes `input.message` through untouched.
   //   `F3.57` DID add an age to a re-offered raise, and it added it in
   //   `raiseRetryDispatchInput` — one layer up, where the alarm's `raisedAt`

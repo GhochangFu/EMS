@@ -230,7 +230,14 @@ export async function assertAFailedRaiseIsDeliveredByALaterSweepOnce(db: BmsDb):
     const t0 = (row as AlarmState).raisedAt;
 
     const sending = buildHarness(tx);
-    await sending.lifecycle.sweep(secondsAfter(60, t0));
+    // `F3.57` review — 90 s, not 60. At exactly 60 000 ms the age sits ON the
+    // whole-minute boundary, so one millisecond either way flips the clause and
+    // the body assertion below would fail for a reason unrelated to what it
+    // asserts. 90 s renders the same "1 min" with thirty seconds of slack on
+    // both sides. The unit fixtures have that slack already (`alarmRow` raises
+    // at `secondsBefore(61)`); this suite, which runs least often because it
+    // needs a database, had none.
+    await sending.lifecycle.sweep(secondsAfter(90, t0));
     assert(
       (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "failed,sent",
       `the sweep re-offered the raise and it sent, under the ORIGINAL key; got [${(await statusesUnderKey(tx, c1, alarm.dedupeKey))}]`,

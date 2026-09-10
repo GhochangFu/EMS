@@ -344,6 +344,44 @@ export function testNoClauseUnderAWholeMinute(): void {
   );
 }
 
+/**
+ * `F3.57` review — the sign, which the first draft did not gate.
+ *
+ * `minutes < 1` and `minutes === 0` agree on every age the other cases drive,
+ * so the mutation `< 1` → `=== 0` survived all of them: nothing held the
+ * direction of the test. A skewed clock is the way in. `bms.alarms.raised_at`
+ * is stamped by the DATABASE clock and `now` reaches the sweep from the API
+ * process clock, so on two hosts a `raisedAt` AFTER `now` is reachable, and
+ * `alarm open for -5 min` would go to a real recipient.
+ */
+export function testAFutureRaisedAtRendersNoClause(): void {
+  const input = reofferAged(-120);
+  assert(
+    input.message === "Feeder overload: kw = 150 (gt 100)",
+    `a raised_at two minutes in the FUTURE renders no clause; got "${input.message}"`,
+  );
+}
+
+/**
+ * `F3.57` review — an unparseable `raisedAt`, and the reason the test is `>= 1`
+ * rather than `< 1`.
+ *
+ * `NaN < 1` is `false`, so the first draft took the append branch and rendered
+ * `alarm open for NaN min`. `NaN >= 1` is also `false`, so the shipped form
+ * takes the safe branch. Every comparison against NaN is false, which is the
+ * whole reason a guard like this must be written in the direction that fails
+ * closed.
+ */
+export function testAnUnparseableRaisedAtRendersNoClause(): void {
+  const input = raiseRetryDispatchInput({ ...alarm, raisedAt: new Date(Number.NaN) }, rule, NOW);
+  assert(input !== null, "the fixture rule has an organization");
+  if (input === null) return;
+  assert(
+    input.message === "Feeder overload: kw = 150 (gt 100)",
+    `an Invalid Date renders no clause, never "NaN min"; got "${input.message}"`,
+  );
+}
+
 export function testTheClauseAppearsAtExactlyOneMinute(): void {
   const input = reofferAged(60);
   assert(
@@ -368,6 +406,17 @@ export function testADeferredFirstDeliveryCarriesItsAge(): void {
  * ledger stores no body and no subject; `loadRaiseAttempts` matches on
  * `alarm_id`, `organization_id` and `dedupe_key`. So the rows an earlier tick
  * wrote still match, and the phase's evidence is intact.
+ *
+ * **This case and {@link testTheSubjectStaysTheRaisesOwn} cannot fail from an
+ * age change, and that is worth saying plainly** (`F3.57` review). Neither
+ * `buildDedupeKey` nor `subjectFor` can see `message` — not by convention, by
+ * TYPE — so no edit to the clause can redden either. They are documented
+ * invariants, not age gates, and a later reader must not count them as coverage
+ * for the clause. What keeps them honest is that each has a mutation that DOES
+ * redden it (an `event` added to the re-offered input here, a `subjectFor`
+ * prefix there), plus the first assertion below, which is a positive control:
+ * it fails first if the two bodies ever stop differing, so the two key
+ * assertions can never pass vacuously.
  */
 export function testTheAgeStaysOutOfTheDedupeKey(): void {
   const fresh = reofferAged(59);
@@ -387,14 +436,25 @@ export function testTheAgeStaysOutOfTheDedupeKey(): void {
 }
 
 /**
- * `F3.57` — the subject is untouched, and that IS a mechanism rather than a
- * preference.
+ * `F3.57` — the subject is untouched, and the honest reason is weaker than the
+ * first draft of this docblock claimed.
+ *
+ * It said the unchanged subject "IS a mechanism rather than a preference",
+ * because a mail client threads the re-offer with the original. **The transport
+ * establishes no such thing** (`F3.57` review): `email.transport.ts` calls
+ * `sendMail` with `from`, `to`, `subject` and `text` only — no `Message-ID`, no
+ * `In-Reply-To`, no `References` — so nodemailer mints a fresh id per send and
+ * there is no RFC 5322 thread. What survives is that a subject-GROUPING client
+ * (Gmail's conversation view, Outlook's conversation topic) keeps the two
+ * together, which is a receiving client's heuristic and worth nothing to a
+ * webhook channel.
  *
  * `subjectFor` composes from `severity`, `ruleCode` and `event`, so it could
- * not reach the key either; what an identical subject buys is that a mail
- * client threads the re-offer with the original instead of opening a second
- * conversation. `notifications.events.spec.ts` E18 holds the same property one
- * layer down, on what the transport is actually handed.
+ * not reach the dedupe key either way. The case is kept because an unchanged
+ * subject is still the intended behaviour and a later reader must not "improve"
+ * it; the mutation that prefixes a re-offer reddens it, so it is a live gate.
+ * `notifications.events.spec.ts` E18 holds the same property one layer down, on
+ * what the transport is actually handed.
  */
 export function testTheSubjectStaysTheRaisesOwn(): void {
   const expected = `${alarm.severity}: ${rule.code}`;

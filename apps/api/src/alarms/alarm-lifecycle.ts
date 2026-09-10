@@ -310,13 +310,26 @@ export function raiseRetryDispatchInput(
  * case — and it would tell the recipient nothing they do not already assume.
  * The clause appears exactly when the age is expressible in whole minutes.
  *
+ * **The test is `>= 1`, and the direction is the point** (`F3.57` review). The
+ * first draft asked `minutes < 1` and returned the bare message, which is the
+ * same answer for every age this code will normally see and the WRONG answer
+ * for two it can: `NaN < 1` is `false`, so an unparseable `raisedAt` rendered
+ * `alarm open for NaN min` to a real recipient. Asking `>= 1` fails closed —
+ * anything that is not a whole minute or more, NaN and a negative age
+ * included, yields the message untouched. A clock skewed the wrong way is
+ * reachable: `raised_at` is stamped by the DATABASE clock and `now` arrives
+ * from the API process clock.
+ *
  * The composition mirrors `escalationDispatchInput`'s, which has rendered the
- * same figure since `F3.10`; the re-offered raise was the only lifecycle
- * message with no age in it.
+ * same figure since `F3.10`. **The cleared message still carries no age** and
+ * that is deliberate, not an oversight this row missed: `clearedDispatchInput`
+ * composes `Cleared: <message>` for an alarm that has just stopped being a
+ * problem, where the age is history rather than a call to act. What the
+ * re-offered raise was is the only FIRST delivery with no age in it.
  */
 function withAge(message: string, raisedAt: Date, now: Date): string {
   const minutes = Math.floor((now.getTime() - raisedAt.getTime()) / 60_000);
-  return minutes < 1 ? message : `${message} — alarm open for ${minutes} min`;
+  return minutes >= 1 ? `${message} — alarm open for ${minutes} min` : message;
 }
 
 /** The cleared message's `DispatchInput` (decision 9, plan D12/D14), or `null` for a rule with no organization. */

@@ -3,7 +3,9 @@ import { describe, it } from "vitest";
 import {
   runAlarmLifecycleTests,
   testADeferredFirstDeliveryCarriesItsAge,
+  testAFutureRaisedAtRendersNoClause,
   testAStepOneMinutePastDueIsNotStale,
+  testAnUnparseableRaisedAtRendersNoClause,
   testExactlyTheBoundIsNotStale,
   testLatenessIsMeasuredFromTheDueInstant,
   testNoClauseUnderAWholeMinute,
@@ -63,6 +65,14 @@ describe("F3.57 a re-offered raise says how long the alarm has been open", () =>
 
   it("appends the clause at exactly one whole minute", () => {
     testTheClauseAppearsAtExactlyOneMinute();
+  });
+
+  it("says nothing for a raised_at in the future — the guard fails closed on a skewed clock", () => {
+    testAFutureRaisedAtRendersNoClause();
+  });
+
+  it("says nothing for an unparseable raised_at, never \"NaN min\"", () => {
+    testAnUnparseableRaisedAtRendersNoClause();
   });
 
   it("tells an hour-old first delivery that it is an hour old", () => {
