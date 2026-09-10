@@ -159,24 +159,37 @@ export function raiseAttemptBatches(
  * a generic plan leaves `$n` a parameter, the partial predicate is no longer
  * proved, and the read silently degrades to a scan.
  *
- * Honest bound, restated for the chunked shape: the cost per tick is now
- * `ceil(alarms / 500)` sequential statements rather than one, so a fleet with
- * ten thousand open alarms pays twenty round trips a tick. That is a cost, not
- * a failure.
+ * Honest bound, restated for the chunked shape: the cost per tick is
+ * `ceil(eligible / 500)` sequential statements rather than one, so a fleet with
+ * ten thousand eligible alarms pays twenty round trips a tick. The denominator
+ * is the ELIGIBLE candidates, not the open alarms — `runRaiseRetryPhase` filters
+ * out cleared, acknowledged, non-`notify` and organization-less alarms before it
+ * builds the refs, and this line said `ceil(alarms / 500)` until `F3.58`
+ * measured it. That is a cost, not a failure.
  *
- * **`F3.58` measured that cost and closed won't-fix (2026-09-10) — do not
- * re-file it.** This paragraph used to say the cost was unowned and that
- * whoever picked it up should file the row. The row was filed, and the
- * measurement closed it. On the running fleet — 78 active unacknowledged alarms
- * over 78 DISTINCT rules, so the calling phase's per-rule channel cache saves
- * nothing — this read costs **one** round trip a tick while
- * `loadRuleChannels`, in the loop that consumes this read, costs **78**, and
- * `notifyCleared` costs two unbatched round trips per cleared alarm.
- * `loadActiveAlarms` carries no `LIMIT`. So this is the only **sublinear**
- * per-alarm term in the sweep, and bounding it while nothing bounds the tick is
- * the weakest available intervention. If a bound is ever owed it is on how many
- * alarms one tick decides, which is an ADR 0057 question and not this file's.
- * That measurement filed `F3.59` instead, against the channel read beside it.
+ * **`F3.58` measured that cost and closed it as dropped (2026-09-10) — do not
+ * re-file it.** The paragraph above used to add that the cost was unowned and
+ * that whoever picked it up should file the row. The row was filed, and the
+ * measurement closed it. On the local seeded fleet — 78 active unacknowledged
+ * alarms over 78 DISTINCT rules, so the calling phase's per-rule channel cache
+ * saves nothing — this read cost **one** round trip a tick while
+ * `loadRuleChannels`, in the loop that consumes it, cost **78**.
+ *
+ * **The reason it closed is a comparison of terms, and a first draft of this
+ * paragraph got it wrong in a way worth keeping written down.** It called this
+ * "the only sublinear per-alarm term in the sweep", which quantified over reads
+ * it had not measured. `loadStepChannels` memoises on the distinct channel-id
+ * set INSIDE the per-alarm loop, so it divides by the alarm count where this
+ * read divides by 500 — this is not even the best-batched term. And
+ * `writeAlarmState` issues one `UPDATE` per changing alarm inside its
+ * per-organization transaction, which the same draft had called one round trip
+ * per organization. What survives carries the ruling on its own: **this read is
+ * batched and the terms beside it are linear** — `writeAlarmState` per changing
+ * alarm, `notifyCleared` up to twice per cleared alarm, and both dispatch paths
+ * once per offered channel. Optimising the batched term while the unbatched ones
+ * sit beside it is the weakest available intervention. If a bound is ever owed
+ * it is on how many alarms one tick decides — an ADR 0057 question, not this
+ * file's. That measurement filed `F3.59` instead, against the channel read.
  *
  * ADR 0041 Amendment 7, which `F3.53` is built under, still does not reach this
  * read, and that stays worth writing down: its memo is keyed on channel,
