@@ -1,12 +1,14 @@
-import type { QualityPolicy, SourceSample } from "@bms/shared/ingest";
+import type { QualityPolicy } from "@bms/shared/ingest";
 
 import { chunkReadings, type NotifyReading } from "./chunk.js";
+import type { ReceivedSample } from "./received-sample.js";
 
 /**
  * The host's write path (ADR 0016 §2).
  *
  * Adapters emit `SourceSample[]` and nothing else. Everything below — resolving
- * `source_data_key` to `(assetId, pointKey, unit)`, the timestamp fallback, the
+ * `source_data_key` to `(assetId, pointKey, unit)`, stamping the receive time
+ * and keeping the device's own beside it (ADR 0061), the
  * batched upsert into `telemetry.point_values`, and the `pg_notify` fan-out —
  * belongs to the host. That is the clause that makes six protocol adapters safe
  * to build in parallel, and it is what makes `F1.11` ("ingest is the only
@@ -55,11 +57,29 @@ export type PointIndex = ReadonlyMap<string, ReadonlyMap<string, readonly PointT
 
 /** One row destined for `telemetry.point_values`. */
 export type PointValueRow = {
+  /**
+   * The host's **receive** time, always (ADR 0061 decision 2). It is the first
+   * component of the primary key, the `ON CONFLICT` target and the in-batch
+   * dedupe key, so a device's clock steering it made three things wrong at
+   * once.
+   */
   readonly time: Date;
   readonly assetId: string;
   readonly pointKey: string;
   readonly value: number;
   readonly unit: string | null;
+  /**
+   * What the device said its own time was, stored **unclamped** — hours ahead
+   * or behind, exactly as reported (ADR 0061 decision 3).
+   *
+   * `null` means "no trustworthy device time" and decision 4's three cases are
+   * indistinguishable here by design: no `at` at all, an `at` this host could
+   * not read, and (in the table, not in this type) every row written before
+   * migration `0069`. **Required, never optional**: an optional field at this
+   * seam is invisible to `tsc` and to every fake-based suite, so a builder that
+   * forgot to fill it would compile and pass.
+   */
+  readonly deviceTime: Date | null;
 };
 
 /**
@@ -84,10 +104,33 @@ export type SampleCounters = {
    * out-of-range sample leaves a counter rather than a row.
    */
   outOfRange: number;
-  /** `at` was present but not a usable `Date`; receive time was substituted. */
+  /**
+   * The device sent a timestamp this host cannot store — `at` was present and
+   * was either not a `Date` at all, an Invalid Date, or a finite `Date` outside
+   * the Postgres `timestamptz` range (see {@link isStorableTime}). One counter
+   * for the three, because from the column's side they are one outcome:
+   * `device_time IS NULL` beside a reading that was kept.
+   *
+   * It no longer means "receive time was substituted", because since ADR 0061
+   * decision 2 receive time is what every row gets anyway. Decision 5 keeps the
+   * counter: what it records is that the device tried to tell this host the
+   * time and failed, which is worth knowing once the value no longer steers
+   * `time`. The row is still written, so this is not a drop.
+   */
   invalidTimestamp: number;
-  /** Rows collapsed by the in-batch `(time, assetId, pointKey)` dedupe. */
+  /** Rows collapsed by the in-batch `(receivedAt, assetId, pointKey)` dedupe. */
   duplicateInBatch: number;
+  /**
+   * The **first** `(assetId, pointKey)` a collapse discarded in this batch, or
+   * `null` if nothing collapsed (ADR 0061 decision 6).
+   *
+   * The reading itself cannot be kept — two samples for one point in one batch
+   * share the stored primary key — so the *fact of losing it* is what gets
+   * kept, attributed instead of folded anonymously into `duplicateInBatch`. The
+   * first, not the last, so the datum is stable for a batch that collapses
+   * several times. `F3.16` owns the operator-facing surface for it.
+   */
+  firstDuplicate: { readonly assetId: string; readonly pointKey: string } | null;
 };
 
 /** A zeroed counter set. Exported so a caller can accumulate across batches. */
@@ -101,17 +144,21 @@ export function emptyCounters(): SampleCounters {
     outOfRange: 0,
     invalidTimestamp: 0,
     duplicateInBatch: 0,
+    firstDuplicate: null,
   };
 }
 
 /**
- * How many writes this batch refused, and why the other two counters are not in
+ * How many writes this batch refused, and why the other three fields are not in
  * the sum.
  *
  * `invalidTimestamp` and `duplicateInBatch` are **not** drops: a sample with an
- * unusable `at` is still written at receive time, and a collapsed duplicate is
- * one row written rather than one lost. Adding either to this total would make
- * `main.ts` log "samples discarded" for a batch that discarded nothing.
+ * unusable `at` is still written, at receive time like every other row, and a
+ * collapsed duplicate is one row written rather than one lost. Adding either to
+ * this total would make `main.ts` log "samples discarded" for a batch that
+ * discarded nothing. `firstDuplicate` is not a count at all — it is
+ * `duplicateInBatch`'s attribution (ADR 0061 decision 6) and cannot reach a sum
+ * even by accident, because it is not a number.
  *
  * Lives here, next to the counters, because `main.ts` summed the buckets by hand
  * and a new bucket was therefore invisible to the log that exists to explain it
@@ -181,13 +228,76 @@ function isInEngineeringRange(value: number, target: PointTarget): boolean {
 }
 
 /**
+ * Postgres's floor for `timestamptz`, 4713 BC, as epoch milliseconds —
+ * `Date.UTC(-4712, 0, 1)`, since ISO expanded year `-004712` is 4713 BC.
+ *
+ * **This end is the binding one.** A JS `Date` reaches back to 271821 BC, so
+ * there is a whole 267,000-year band of perfectly finite `Date`s that Postgres
+ * refuses. Deliberately conservative by a small margin: Postgres switches to the
+ * Julian calendar before 1582, so the two calendars disagree by days near this
+ * boundary and an exact match is not available. Rejecting a few extra days at
+ * 4713 BC costs nothing — no plant RTU reports from antiquity.
+ */
+const MIN_STORABLE_TIME_MS = Date.UTC(-4712, 0, 1);
+
+/**
+ * The maximum time value a JS `Date` can hold (275760-09-13), per the ECMAScript
+ * spec's ±8.64e15 ms.
+ *
+ * **This end catches nothing, and is written anyway.** Postgres's ceiling is
+ * 294276 AD, which is *above* `Date`'s own, so every finite `Date` is already
+ * inside it and this comparison can never be the one that fails. It is here so
+ * the pair reads as what it is — the intersection of the `Date` range and the
+ * `timestamptz` range — rather than leaving a reader to work out from a
+ * one-sided test whether the other end was considered or forgotten.
+ */
+const MAX_STORABLE_TIME_MS = 8.64e15;
+
+/**
+ * Whether `pg` can hand this instant to Postgres and have it stored.
+ *
+ * `NaN` fails both comparisons, so this subsumes the `Number.isFinite` test it
+ * replaced rather than sitting beside it.
+ */
+function isStorableTime(timeMs: number): boolean {
+  return timeMs >= MIN_STORABLE_TIME_MS && timeMs <= MAX_STORABLE_TIME_MS;
+}
+
+/**
  * Turns raw samples into the rows to write. Pure — no clock, no database.
  *
- * `receivedAt` is passed in rather than read from `Date.now()` so a test can
- * pin it. `soleDeviceKey` is the endpoint's only binding when it has exactly
- * one, which is the case in which `SourceSample.deviceKey` may be omitted; pass
- * `undefined` when the endpoint serves several devices, and a sample without a
- * `deviceKey` is then counted and dropped rather than guessed at.
+ * Each sample arrives with the instant this host received it
+ * (`ReceivedSample`), so this function reads no clock at all: the drain loop
+ * stamps a live batch once, and the disk buffer revives the `rx` it wrote at
+ * spill (ADR 0016 Amendment 5). The receive time is a **required field on each
+ * sample** rather than a batch argument with a per-sample override, because an
+ * optional receive time at this seam is invisible to `tsc` and to every
+ * fake-based suite — a path that forgot to set it would compile, pass, and
+ * silently take the replay instant. `soleDeviceKey` is the endpoint's only
+ * binding when it has exactly one, which is the case in which
+ * `SourceSample.deviceKey` may be omitted; pass `undefined` when the endpoint
+ * serves several devices, and a sample without a `deviceKey` is then counted
+ * and dropped rather than guessed at.
+ *
+ * ## The two times (`F4.57` / ADR 0061)
+ *
+ * **`receivedAt` is what `time` gets, for every row, unconditionally**
+ * (decision 2). What the device said goes to `deviceTime`, unclamped in either
+ * direction (decision 3), or `null` when there is no trustworthy value for it
+ * (decision 4). Nine RTUs measured on 2026-08-22 spanned 3 h 37 m of skew and
+ * `time` is the primary key, the `ON CONFLICT` target and the dedupe key, so a
+ * device's clock steering it made three things wrong at once — including a
+ * future-dated row that every `time > now() - interval 'N'` window read as
+ * fresh for half an hour.
+ *
+ * `receivedAt` is a **receive** time, not necessarily this instant: for a live
+ * sample it is the batch's own instant, and for a replayed one it is the
+ * arrival the disk buffer recorded (ADR 0061 Amendment 2 ruling 4), so a
+ * re-replayed segment keeps writing the same primary key.
+ *
+ * Both are computed once per sample, before the target loop, so a sample
+ * fanning out to three points counts `invalidTimestamp` once rather than three
+ * times — the same reason the raw non-finite pre-check sits outside the loop.
  *
  * ## The point metadata (`F2.7` / ADR 0056 decision 4)
  *
@@ -214,9 +324,8 @@ function isInEngineeringRange(value: number, target: PointTarget): boolean {
  * bad-quality `NaN` counts `nonFinite`.
  */
 export function resolveSamples(
-  samples: readonly SourceSample[],
+  samples: readonly ReceivedSample[],
   index: PointIndex,
-  receivedAt: Date,
   soleDeviceKey?: string,
 ): ResolveResult {
   const counters = emptyCounters();
@@ -226,9 +335,18 @@ export function resolveSamples(
   // whole INSERT. `index.js` never hit this because it issues one statement per
   // row. Last value wins, matching what the sequential upserts would have left
   // behind.
+  //
+  // **The key is the STORED key** — `(receivedAt, assetId, pointKey)`, ADR 0061
+  // decision 6 — so this map's notion of uniqueness and Postgres's cannot
+  // disagree. Keying on the device time instead is ruling 3's first form, and
+  // it is not implementable: with `time` fixed at `receivedAt`, two samples
+  // deduped on device time produce two rows whose stored keys are identical, so
+  // either one statement raises "cannot affect row a second time" and rolls the
+  // batch back, or the 1000-row statement boundary falls between them and the
+  // second silently updates the first. It preserves nothing, order-dependently.
   const deduped = new Map<string, PointValueRow>();
 
-  for (const sample of samples) {
+  for (const { sample, receivedAt } of samples) {
     if (typeof sample.value !== "number" || !Number.isFinite(sample.value)) {
       counters.nonFinite += 1;
       continue;
@@ -252,13 +370,24 @@ export function resolveSamples(
       continue;
     }
 
-    let time = receivedAt;
+    // ADR 0061 decisions 3-5. `time` is not computed here at all any more —
+    // it is `receivedAt` below, always.
+    let deviceTime: Date | null = null;
     if (sample.at !== undefined) {
       // An adapter that fabricates a timestamp is worse than one that omits it,
-      // but a malformed `Date` must not reach `toISOString()` — it throws, and
-      // that would take down a whole batch of good readings.
-      if (sample.at instanceof Date && Number.isFinite(sample.at.getTime())) {
-        time = sample.at;
+      // but a malformed `Date` must not reach `toISOString()` — `pg` serialises
+      // a `Date` parameter that way, it throws on an Invalid Date, and that
+      // would take down a whole batch of good readings. So an unreadable `at`
+      // leaves `deviceTime` null (decision 4 case 3) and counts, exactly as an
+      // absent one leaves it null (case 2). A reader cannot tell the two apart
+      // from the column, which decision 4 accepts rather than repairs.
+      //
+      // The range test is the same defence one step further out: a `Date` can be
+      // finite and still unstorable, and `toISOString()` serialises it happily —
+      // Postgres is then the one that throws, with the whole 1000-row statement
+      // in its hand. Same outcome, no throw on this side to catch it.
+      if (sample.at instanceof Date && isStorableTime(sample.at.getTime())) {
+        deviceTime = sample.at;
       } else {
         counters.invalidTimestamp += 1;
       }
@@ -287,16 +416,22 @@ export function resolveSamples(
         continue;
       }
 
-      const key = [time.toISOString(), target.assetId, target.pointKey].join(KEY_SEPARATOR);
+      const key = [receivedAt.toISOString(), target.assetId, target.pointKey].join(KEY_SEPARATOR);
       if (deduped.has(key)) {
         counters.duplicateInBatch += 1;
+        // The first collapse, not the latest: a batch that collapses several
+        // times still names one point, and it names the same one on every run.
+        if (counters.firstDuplicate === null) {
+          counters.firstDuplicate = { assetId: target.assetId, pointKey: target.pointKey };
+        }
       }
       deduped.set(key, {
-        time,
+        time: receivedAt,
         assetId: target.assetId,
         pointKey: target.pointKey,
         value,
         unit: target.unit,
+        deviceTime,
       });
     }
   }
@@ -312,20 +447,31 @@ export type QueryableClient = {
 /**
  * Rows per `INSERT` statement.
  *
- * Postgres caps a statement at 65535 bind parameters. At five parameters per
- * row the hard ceiling is 13107, so 1000 leaves a wide margin and keeps any
- * single statement small enough to stay off the slow-query log. A poll adapter
- * reading a few thousand registers is the case that makes this matter — the
- * MQTT pilot never exceeds a handful.
+ * Postgres caps a statement at 65535 bind parameters. At **six** parameters per
+ * row — `device_time` joined them at ADR 0061 decision 1 — the hard ceiling is
+ * 65535 / 6 = 10922, so 1000 leaves a wide margin and keeps any single
+ * statement small enough to stay off the slow-query log. A poll adapter reading
+ * a few thousand registers is the case that makes this matter — the MQTT pilot
+ * never exceeds a handful.
+ *
+ * The derivation is re-stated here rather than left at the five-parameter
+ * figure it used to give, because a stale ceiling is the kind of comment a
+ * later reader would divide a batch size by.
  */
 const MAX_ROWS_PER_STATEMENT = 1000;
 
 const NOTIFY_CHANNEL = "bms_telemetry";
 
 const UPSERT_HEAD =
-  "INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit) VALUES ";
+  "INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit, device_time) VALUES ";
+/**
+ * `device_time` is in the `SET` list, and that is ADR 0061 Amendment 1 item 1
+ * rather than symmetry: a re-delivered reading refreshes `value` and `unit`,
+ * and if it did not also refresh `device_time` the column would keep the first
+ * delivery's stamp and stop describing its own row.
+ */
 const UPSERT_TAIL =
-  " ON CONFLICT (time, asset_id, point_key) DO UPDATE SET value = EXCLUDED.value, unit = EXCLUDED.unit";
+  " ON CONFLICT (time, asset_id, point_key) DO UPDATE SET value = EXCLUDED.value, unit = EXCLUDED.unit, device_time = EXCLUDED.device_time";
 
 /** Builds one multi-row upsert. Exported so a test can read the SQL without a database. */
 export function buildUpsert(rows: readonly PointValueRow[]): {
@@ -334,9 +480,9 @@ export function buildUpsert(rows: readonly PointValueRow[]): {
 } {
   const values: unknown[] = [];
   const tuples = rows.map((row, i) => {
-    const base = i * 5;
-    values.push(row.time, row.assetId, row.pointKey, row.value, row.unit);
-    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5})`;
+    const base = i * 6;
+    values.push(row.time, row.assetId, row.pointKey, row.value, row.unit, row.deviceTime);
+    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6})`;
   });
   return { text: UPSERT_HEAD + tuples.join(", ") + UPSERT_TAIL, values };
 }

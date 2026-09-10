@@ -179,15 +179,23 @@ survives a database outage — it does not survive a broker outage; that is
 **Path and format.** Each endpoint's spilled batches land at
 `<INGEST_BUFFER_DIR>/<protocol>/<encodeURIComponent(endpointKey)>/<epoch-minute>.jsonl`
 — for the pilot, `mqtt/phe.thinkiot.co.in%3A8883/<minute>.jsonl`. Each line is
-one `SourceSample`, written as an explicit field whitelist — `sourceKey`,
-`value`, `deviceKey` (when the sample carried one), `at` (always, ISO-8601),
-`good` (when present) — never `JSON.stringify` of the whole object, so a
-credential or any other field a future adapter might attach cannot reach disk
-by accident. **`at` is stamped at spill time when the sample had none**, the
-same substitution the live path makes at write time. That is why a replayed
-row lands where the live path would have put it, and why replaying the same
-segment twice is safe: both writes target the same `(time, asset_id,
-point_key)` and the second is an `ON CONFLICT DO UPDATE`, not a duplicate.
+one `SourceSample` plus its receive time, written as an explicit field
+whitelist — `sourceKey`, `value`, `deviceKey` (when the sample carried one),
+`at` (only when the device sent a readable timestamp — the device time and
+nothing else), `rx` (always, ISO-8601 — the instant the host received the
+sample), `good` (when present) — never `JSON.stringify` of the whole object, so
+a credential or any other field a future adapter might attach cannot reach disk
+by accident. **`rx` is the receive time the failed write used, written once at
+spill and never rewritten** (ADR 0016 Amendment 5) — not the append instant,
+which can be `writeTimeoutMs` later while the timed-out write still lands.
+That is why a replayed row lands where the live path put it — `time` is the
+receive time since ADR 0061 — and why replaying the same segment twice is safe:
+both writes target the same `(time, asset_id, point_key)` and the second is an
+`ON CONFLICT DO UPDATE`, not a duplicate. `at` is never substituted: a stamp
+there would reach `device_time` as a clock the device never reported. A segment
+written before Amendment 5 (`at`, no `rx`) cannot be read — nothing says whether
+its `at` was a device time or a stamp — so it is skipped and counted in
+`bufferDropped`; the deploy gate is `buffered = 0` before the image goes out.
 Because the buffer is written before normalisation, a point mapping fixed
 during the outage applies to the whole backlog when it replays — the backlog
 is not frozen to a stale mapping.
@@ -431,7 +439,7 @@ differently from the behaviour the pilot had in the field for a year. The
 |---|---|---|
 | Readings published beside the `values` block | Merged in, nested wins a collision | Unreachable — `body.values` replaces the body |
 | `dev_id` / `ts` as mappable readings | Never; envelope only | Readable, but only on a payload with no `values` block |
-| A missing `ts` | Leaves `at` unset; the host substitutes receive time | Fabricates `Date.now()` |
+| A missing `ts` | Leaves `at` unset; `time` is the receive time either way and `device_time` is NULL (ADR 0061) | Fabricates `Date.now()` |
 
 The first is a **fix**, not a preference. The pilot RTU publishes `rssi` at the
 top level, so `network_strength` — mapped in the PHE seed and documented in
@@ -482,16 +490,25 @@ decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
   above can never fire for this case. The reload therefore logs
   `endpoint device set changed; restart required to apply` with the added and
   removed device keys. That names the gap rather than closing it.
-- **A device's clock is trusted without check.** Where the payload carries a
-  timestamp it becomes the row's `time`, so telemetry inherits whatever the
-  device believes. Measured on the pilot RTU on 2026-08-06: **~34 minutes
-  ahead** of the server (Postgres and both containers agreeing). Not a timezone
-  error — IST would be +5:30 — and unchanged from `index.js`, which uses `ts`
-  the same way. It means live PHE rows land in the *future* relative to
-  `now()`, which affects any dashboard window query and any rule evaluated on a
-  recency bound. Nothing here detects or corrects it; deciding between trusting
-  the device, stamping on receipt, or recording both is product work, not a
-  host fix.
+- **~~A device's clock is trusted without check.~~ Closed by `F4.57`
+  (ADR 0061).** A device timestamp no longer reaches the row's `time`. The host
+  stamps its own **receive** time on every row and stores what the device
+  claimed beside it, unclamped, in `telemetry.point_values.device_time` — the
+  "recording both" option, chosen by the owner over trusting the device or
+  clamping to receipt.
+
+  The skew that motivated it, for anyone reading `device_time`: **~34 minutes
+  ahead** on the pilot RTU on 2026-08-06, and a **3 h 37 m spread** across nine
+  RTUs when `F1.7` measured the fleet on 2026-08-22, from −3:02:36 to +34:31.
+  Not a timezone error — IST would be +5:30 — and stable per device rather than
+  drifting.
+
+  **Two things this did not fix.** Rows written before migration `0069` keep
+  the device's clock in `time` and carry `device_time IS NULL`; nothing marks
+  that boundary but the migration's own timestamp, and ruling 2 accepted it
+  rather than rewrite 10 million rows. And the clocks themselves are still
+  wrong — `device_time` makes the skew *visible and measurable*, it does not
+  correct the devices.
 - **RTUs sharing an endpoint share credentials.** The first non-empty set wins.
   This narrows the `activeMqttConnection` singleton in `index.js` but does not
   cure it; `F1.7` owns the per-RTU credential story (ADR 0016 §Consequences).

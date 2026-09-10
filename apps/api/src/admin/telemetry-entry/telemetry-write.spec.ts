@@ -269,6 +269,133 @@ async function fetchPointValue(
 }
 
 /**
+ * `device_time` for one stored row, read independently of the service.
+ *
+ * Throws rather than returning `null` when the row is missing: `null` is a
+ * legitimate value of this column and is exactly what the claim below asserts,
+ * so a missing row must not be able to impersonate a cleared one.
+ */
+async function fetchDeviceTime(
+  pool: pg.Pool,
+  assetId: string,
+  pointKey: string,
+  time: string,
+): Promise<Date | null> {
+  const { rows } = await pool.query<{ device_time: Date | null }>(
+    `SELECT device_time FROM telemetry.point_values
+      WHERE asset_id = $1 AND point_key = $2 AND time = $3`,
+    [assetId, pointKey, time],
+  );
+  if (rows.length !== 1) {
+    throw new Error(
+      `expected exactly one telemetry.point_values row at ${time}, found ${rows.length}. ` +
+        "A missing row must not read as a cleared device_time — the claim below is " +
+        "about a column, not about a row's existence.",
+    );
+  }
+  return rows[0].device_time;
+}
+
+/** `null` prints as `null` rather than vanishing from a template literal. */
+function showTime(value: Date | null): string {
+  return value === null ? "null" : value.toISOString();
+}
+
+/**
+ * ADR 0061 Amendment 1 item 1, one writer over — an `overwrite` upsert moves
+ * `device_time` with the value it overwrites.
+ *
+ * **Its own exported function and its own `it()`, deliberately.**
+ * `runTelemetryWriteServiceTests` below is a single `it()` over a dozen blocks
+ * joined by a throwing `assert`, so only the first failure in it is ever
+ * observed and a claim appended there could not be shown to redden on its own
+ * mutation.
+ *
+ * The fixture row is seeded by direct SQL because **this service is not the
+ * writer that produces a non-null `device_time`** — the ingest normaliser is.
+ * What is reproduced here is the real sequence: an RTU delivery lands a value
+ * with the device's own stamp beside it, and an operator then corrects that
+ * reading through manual entry. A manual entry carries no device time, and
+ * `apps/ingest/src/host/normaliser.integration.spec.ts:203-211` already rules
+ * what that means for the column — a delivery carrying no device time CLEARS
+ * it, because the row describes its own latest delivery. Leaving the RTU's
+ * stamp beside an operator's value is the same defect Amendment 1 item 1 fixed
+ * for the ingest upsert.
+ *
+ * Mutation: drop `deviceTime: sql\`excluded.device_time\`` from the
+ * `onConflictDoUpdate` set in `telemetry-write.service.ts`.
+ */
+export async function runOverwriteMovesDeviceTimeTests(
+  pool: pg.Pool,
+  svc: TelemetryWriteService,
+  fx: Fixtures,
+): Promise<void> {
+  const at = new Date();
+  const time = at.toISOString();
+  const pointKey = fx.freshAssetPointKey.code;
+  // An RTU three hours behind the server — ADR 0061 §Context's own lagging
+  // shape, and unmistakably not a value this service could have invented.
+  const deviceTime = new Date(at.getTime() - 3 * 60 * 60 * 1000);
+
+  await pool.query(
+    `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit, device_time)
+     VALUES ($1, $2::uuid, $3, $4, $5, $6)
+     ON CONFLICT (time, asset_id, point_key)
+     DO UPDATE SET value = excluded.value, device_time = excluded.device_time`,
+    [time, fx.freshAssetId, pointKey, 11, fx.freshAssetPointKey.unit, deviceTime.toISOString()],
+  );
+
+  // Guard, not the claim: without a device_time in the column to begin with,
+  // "the column is null afterwards" is true whatever the service does.
+  const seeded = await fetchDeviceTime(pool, fx.freshAssetId, pointKey, time);
+  assert(
+    seeded?.getTime() === deviceTime.getTime(),
+    `the fixture did not land an RTU device_time, so the assertion below would ` +
+      `pass vacuously. Expected ${deviceTime.toISOString()}, got ${showTime(seeded)}`,
+  );
+
+  const corrected = await svc.writeReadings(fx.adminJwt, {
+    rows: [
+      row({
+        assetId: fx.freshAssetId,
+        pointKey,
+        time,
+        value: 22,
+        unit: fx.freshAssetPointKey.unit ?? undefined,
+      }),
+    ],
+    sourceKind: "manual",
+    conflictPolicy: "overwrite",
+    auditAction: "telemetry.manual_entry",
+  });
+  assert(
+    corrected.result.written === 1,
+    `the operator's correction must be written, got ${corrected.result.written}: ` +
+      JSON.stringify(corrected.rejected),
+  );
+
+  // Guard: proves the ON CONFLICT branch was the one taken. If the value did
+  // not move, no DO UPDATE ran and the device_time assertion proves nothing.
+  const after = await fetchPointValue(pool, fx.freshAssetId, pointKey, time);
+  assert(
+    after?.value === 22,
+    `conflictPolicy 'overwrite' did not replace the value, so the DO UPDATE ` +
+      `clause never ran. Got ${JSON.stringify(after)}`,
+  );
+
+  const afterDeviceTime = await fetchDeviceTime(pool, fx.freshAssetId, pointKey, time);
+  assert(
+    afterDeviceTime === null,
+    `ADR 0061 Amendment 1 item 1: an 'overwrite' upsert must set ` +
+      `device_time = excluded.device_time. A manual entry carries no device time, ` +
+      `so the column CLEARS — the row describes its own latest delivery. It ` +
+      `instead kept ${showTime(afterDeviceTime)}, leaving an RTU's stamp beside ` +
+      `an operator's value, which is the state that makes device_time unreadable ` +
+      `as evidence of anything.`,
+  );
+}
+
+/**
  * Drives `TelemetryWriteService` and checks every outcome by **independent
  * SQL through the pool** — never by reading back the service's own return
  * value, which would let it grade its own work.

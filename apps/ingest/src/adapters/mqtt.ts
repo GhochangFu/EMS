@@ -164,12 +164,17 @@ function readingFields(body: Record<string, unknown>): Record<string, unknown> {
  *
  * **2. `at` is not fabricated.** Legacy defaults a missing `ts` to
  * `Date.now()`. Under the new contract `at` is set **only** where the protocol
- * genuinely carries a device timestamp, and the host substitutes receive time
- * otherwise (`SourceSample.at`). Those two behaviours agree to within the
- * handful of milliseconds between receipt and parsing — but the second one is
- * honest about which clock produced the value, and `F3.16` reads that
- * distinction. The pilot RTU makes the point concrete: its clock ran ~34
- * minutes ahead of the server on 2026-08-06.
+ * genuinely carries a device timestamp, and it is left absent otherwise
+ * (`SourceSample.at`) — an honest absence rather than a clock the device never
+ * reported.
+ *
+ * Since **ADR 0061** the host no longer *substitutes* anything: the row's
+ * `time` is the receive time for every sample, and `at` is stored beside it in
+ * `telemetry.point_values.device_time`, unclamped. So `at`'s only job is to say
+ * what the device claimed, and `F3.16` reads that distinction off the column
+ * rather than having to infer it. The pilot RTU makes the point concrete: its
+ * clock ran ~34 minutes ahead of the server on 2026-08-06, and the `F1.7` fleet
+ * probe later measured a 3 h 37 m spread across nine RTUs.
  */
 export function parsePayload(raw: string): {
   devId: string;

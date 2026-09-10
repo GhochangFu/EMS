@@ -192,11 +192,17 @@ export function emptySlice(): SchematicTelemetrySlice {
  * instead of an unbounded, silent "running".
  *
  * **Why the fix is here and not in the API schema.** `F4.36` added
- * `telemetryReadingSchema` and deliberately did not bound `time`, because
- * `resolveSamples` trusts `sample.at` from the adapter and an RTU with a skewed
- * clock emits future timestamps *legitimately* (the unclamped `sample.at` is
- * `F1.7`). A server-side reject would delete real telemetry to fix a
- * client-side arithmetic bug.
+ * `telemetryReadingSchema` and deliberately did not bound `time`; a server-side
+ * reject would delete real telemetry to fix a client-side arithmetic bug.
+ *
+ * The reason `F4.36` recorded for that — "`resolveSamples` trusts `sample.at`
+ * from the adapter, so a skewed RTU emits future timestamps legitimately, and
+ * the unclamped `sample.at` is `F1.7`" — **stopped being true at `F4.57`**.
+ * Since ADR 0061 `sample.at` never reaches `time`: the ingest host stamps every
+ * row with its own receive time and keeps the device's stamp beside it in
+ * `telemetry.point_values.device_time`. The clamp below stays anyway, for the
+ * two cases the normaliser does not cover — see the note at the end of this
+ * block.
  *
  * **Known residual on the REST hydration path.** `nowMs` means "this reading
  * arrived now", which is true on the socket path and false on hydration:
@@ -219,8 +225,35 @@ export function emptySlice(): SchematicTelemetrySlice {
  * historical row as no evidence — makes every healthy asset on a skewed
  * producer render `offline` on page load until its next socket reading, and
  * trading a brief false-`running` for a brief false-`offline` on live plant is
- * the owner's call. The real repair is upstream in `F1.7`: clamp `sample.at` at
- * ingest and no future-dated row exists to read.
+ * the owner's call.
+ *
+ * **What `F4.57` changed about the upstream repair, and why the clamp stays.**
+ * This paragraph used to say the real repair was `F1.7` — clamp `sample.at` at
+ * ingest, and no future-dated row exists to read. ADR 0061 ruling 1 decided the
+ * opposite: record **both** times rather than clamp either, because a clamp
+ * destroys the evidence of the skew and the skew is what an operator needs to
+ * see. So the ingest path now writes the host's receive time into `time`, and a
+ * row arriving through `resolveSamples` cannot be future-dated by a device
+ * clock at all.
+ *
+ * The clamp below is kept deliberately (ADR 0061 decision 8), as a
+ * **forward-only defence** for the two sources the normaliser does not stand in
+ * front of:
+ *
+ * - rows written before migration `0069`, under the rule where a device's own
+ *   `at` became `time` — they are in the hypertable and are read for as long as
+ *   retention keeps them;
+ * - writers that bypass the normaliser entirely and set `time` themselves.
+ *   `apps/api/src/calc/calc-write.service.ts` and the manual-entry path both
+ *   insert `telemetry.point_values` without going through `resolveSamples`. Of
+ *   the two, only manual entry is known to be able to date a row forward:
+ *   `telemetryEntryRowSchema.time` requires a parsable ISO-8601 string and
+ *   bounds it in neither direction. Calc is not claimed to — it is named here
+ *   as a bypass writer, which is what decision 8's "any future writer that
+ *   bypasses the normaliser" is about.
+ *
+ * It is a sink-side defence against a value this client did not produce, not a
+ * placeholder for an upstream fix that is now not coming.
  *
  * **Zone-less timestamps.** `Date.parse` accepts forms with no offset
  * (`"2026-08-14 15:00:00"`), which every browser then reads in its *own* local

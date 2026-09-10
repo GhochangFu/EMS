@@ -42,8 +42,15 @@ import { createHash } from "node:crypto";
  *   whatever the plant is doing. Tracked as `F4.57`.
  *
  * **Re-enabling them is one `UPDATE` and no code change**, because the seed
- * defers to the operator once a row is stamped. `F4.57`'s ingest-side clamp
- * would fix the second pair; the first pair needs a field visit.
+ * defers to the operator once a row is stamped. `F4.57` shipped as ADR 0061 —
+ * the host records **both** times rather than clamping, so `time` is now the
+ * receive time and the second pair can land inside a recency window at last.
+ * The first pair still needs a field visit.
+ *
+ * **That does not re-enable them here.** Whether a station joins the set is an
+ * evidence question this list owns, not a consequence of ADR 0061, and
+ * Bhutnirghat II's two dark Modbus registers (`F4.58`) are untouched by it.
+ * Re-measure first.
  *
  * Re-measure before editing this list. `apps/ingest/scripts/fleet-probe.mjs`
  * repeats the run, and reports `absent=` per topic so the second filter is

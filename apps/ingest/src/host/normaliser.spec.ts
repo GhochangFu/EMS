@@ -12,14 +12,23 @@ import {
   type QueryableClient,
   type SampleCounters,
 } from "./normaliser.js";
+import { receivedTogether } from "./received-sample.js";
 
-function assert(condition: boolean, message: string): void {
+/**
+ * Exported, with the fixtures below, so `normaliser-time.spec.ts` can state
+ * ADR 0061's claims against the same index and the same receive time — the
+ * shape `disk-buffer-refused.spec.ts` and `supervisor-valve.spec.ts` already
+ * use. Those claims live in their own file because `runNormaliserTests` is one
+ * `it()` over fifteen blocks, and a claim added at the end of it would sit
+ * behind every earlier `assert` and could never redden alone.
+ */
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-const RECEIVED_AT = new Date("2026-08-05T10:00:00.000Z");
+export const RECEIVED_AT = new Date("2026-08-05T10:00:00.000Z");
 
 function makeIndex(
   entries: Record<string, Record<string, PointTarget[]>>,
@@ -56,7 +65,7 @@ function target(
   return { ...NO_METADATA, assetId, pointKey, unit, ...metadata };
 }
 
-const PILOT_INDEX = makeIndex({
+export const PILOT_INDEX = makeIndex({
   "RTU-1": {
     flow: [target("asset-a", "FLOW_RATE", "m³/h")],
     press: [target("asset-a", "PRESSURE", "bar")],
@@ -71,7 +80,7 @@ const PILOT_INDEX = makeIndex({
 });
 
 /** Records every statement so ordering and parameters can be asserted. */
-function makeFakeClient(failOn?: RegExp): {
+export function makeFakeClient(failOn?: RegExp): {
   client: QueryableClient;
   calls: { text: string; values?: readonly unknown[] }[];
 } {
@@ -88,7 +97,7 @@ function makeFakeClient(failOn?: RegExp): {
   return { client, calls };
 }
 
-function sample(overrides: Partial<SourceSample> & { sourceKey: string }): SourceSample {
+export function sample(overrides: Partial<SourceSample> & { sourceKey: string }): SourceSample {
   return { value: 1, ...overrides };
 }
 
@@ -98,9 +107,8 @@ export function runNormaliserTests(): void {
 
   {
     const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "shared", value: 42 })],
+      receivedTogether([sample({ sourceKey: "shared", value: 42 })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows.length === 2, `a shared source_data_key must fan out to both assets, got ${rows.length}`);
@@ -117,9 +125,8 @@ export function runNormaliserTests(): void {
 
   {
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "unitless" })],
+      receivedTogether([sample({ sourceKey: "unitless" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows[0].unit === null, "a null unit must survive as null, not become undefined");
@@ -129,13 +136,15 @@ export function runNormaliserTests(): void {
 
   {
     const { rows, counters } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", good: false }),
-        sample({ sourceKey: "flow", good: true }),
-        sample({ sourceKey: "press" }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", good: false }),
+          sample({ sourceKey: "flow", good: true }),
+          sample({ sourceKey: "press" }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(counters.badQuality === 1, `good:false must be dropped and counted, got ${counters.badQuality}`);
@@ -147,13 +156,15 @@ export function runNormaliserTests(): void {
 
   {
     const { rows, counters } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", value: Number.NaN }),
-        sample({ sourceKey: "flow", value: Number.POSITIVE_INFINITY }),
-        sample({ sourceKey: "press", value: 0 }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", value: Number.NaN }),
+          sample({ sourceKey: "flow", value: Number.POSITIVE_INFINITY }),
+          sample({ sourceKey: "press", value: 0 }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(counters.nonFinite === 2, `NaN and Infinity must be dropped, got ${counters.nonFinite}`);
@@ -165,9 +176,8 @@ export function runNormaliserTests(): void {
 
   {
     const { counters } = resolveSamples(
-      [sample({ sourceKey: "flow", deviceKey: "RTU-NOPE" })],
+      receivedTogether([sample({ sourceKey: "flow", deviceKey: "RTU-NOPE" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
     );
     assert(counters.unknownDevice === 1, "an unmatched deviceKey is counted as unknownDevice");
     assert(counters.unmappedSourceKey === 0, "an unknown device is not an unmapped source key");
@@ -175,9 +185,8 @@ export function runNormaliserTests(): void {
 
   {
     const { counters } = resolveSamples(
-      [sample({ sourceKey: "not-mapped", deviceKey: "RTU-1" })],
+      receivedTogether([sample({ sourceKey: "not-mapped", deviceKey: "RTU-1" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
     );
     assert(
       counters.unmappedSourceKey === 1,
@@ -189,9 +198,8 @@ export function runNormaliserTests(): void {
     // Several bindings on the endpoint: an omitted deviceKey is ambiguous and
     // must be dropped rather than attributed to whichever binding came first.
     const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "flow" })],
+      receivedTogether([sample({ sourceKey: "flow" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       undefined,
     );
     assert(rows.length === 0, "an ambiguous sample must not be written");
@@ -201,9 +209,8 @@ export function runNormaliserTests(): void {
   {
     // Exactly one binding: the host supplies the deviceKey the adapter omitted.
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "flow", value: 7 })],
+      receivedTogether([sample({ sourceKey: "flow", value: 7 })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-2",
     );
     assert(
@@ -215,38 +222,30 @@ export function runNormaliserTests(): void {
   {
     // An explicit deviceKey always wins over the sole-binding default.
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "flow", deviceKey: "RTU-2" })],
+      receivedTogether([sample({ sourceKey: "flow", deviceKey: "RTU-2" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows[0].assetId === "asset-c", "an explicit deviceKey must not be overridden");
   }
 
   // ---- timestamps ----------------------------------------------------------
-
-  {
-    const deviceTime = new Date("2026-08-05T09:59:12.000Z");
-    const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "flow", at: deviceTime })],
-      PILOT_INDEX,
-      RECEIVED_AT,
-      "RTU-1",
-    );
-    assert(rows[0].time.getTime() === deviceTime.getTime(), "a device timestamp must be used as-is");
-    assert(counters.invalidTimestamp === 0, "a valid timestamp is not counted as invalid");
-  }
+  //
+  // "a device timestamp must be used as-is" used to stand here. ADR 0061
+  // decision 2 inverted it: a device timestamp never reaches `time` again. The
+  // replacement claims — `time` is always the receive time, `device_time`
+  // carries the device's own value unclamped, and the three NULL cases — are in
+  // `normaliser-time.spec.ts`, one `it()` each.
 
   {
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "flow" })],
+      receivedTogether([sample({ sourceKey: "flow" })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(
       rows[0].time.getTime() === RECEIVED_AT.getTime(),
-      "an omitted timestamp falls back to receive time",
+      "an omitted timestamp writes at receive time — the rule, not a fallback (ADR 0061 decision 2)",
     );
   }
 
@@ -254,15 +253,14 @@ export function runNormaliserTests(): void {
     // `new Date("nonsense")` is an Invalid Date: `toISOString()` throws on it,
     // which would take the whole batch down rather than one sample.
     const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "flow", at: new Date("nonsense") })],
+      receivedTogether([sample({ sourceKey: "flow", at: new Date("nonsense") })], RECEIVED_AT),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows.length === 1, "an invalid timestamp must not lose the reading");
     assert(
       rows[0].time.getTime() === RECEIVED_AT.getTime(),
-      "an invalid timestamp falls back to receive time",
+      "an invalid timestamp writes at receive time — as every row does since ADR 0061 decision 2",
     );
     assert(counters.invalidTimestamp === 1, "an invalid timestamp is counted");
   }
@@ -270,17 +268,22 @@ export function runNormaliserTests(): void {
   // ---- in-batch dedupe -----------------------------------------------------
 
   {
-    // Two samples for the same point at the same instant. Postgres rejects an
+    // Two samples for the same point in one batch. Postgres rejects an
     // ON CONFLICT DO UPDATE statement that touches one row twice, so this must
-    // collapse before it reaches the database.
+    // collapse before it reaches the database. Since ADR 0061 decision 6 the
+    // key is the stored key, `(receivedAt, assetId, pointKey)`, so the shared
+    // `at` below is no longer what makes these two a duplicate — the shared
+    // batch is. `normaliser-time.spec.ts` owns the attribution half.
     const at = new Date("2026-08-05T09:00:00.000Z");
     const { rows, counters } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", value: 1, at }),
-        sample({ sourceKey: "flow", value: 2, at }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", value: 1, at }),
+          sample({ sourceKey: "flow", value: 2, at }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows.length === 1, `duplicates must collapse to one row, got ${rows.length}`);
@@ -289,29 +292,49 @@ export function runNormaliserTests(): void {
   }
 
   {
-    // Same point, different instants: not a duplicate.
-    const { rows } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:00.000Z") }),
-        sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:01.000Z") }),
-      ],
+    // Same point, different device instants. "distinct timestamps are distinct
+    // rows" was true while `time` came from `at`; ADR 0061 decision 6 inverts
+    // it. The device's clock no longer reaches the key, so these two are one
+    // row — the reading this schema cannot keep, and §Consequences says so in
+    // as many words.
+    const { rows, counters } = resolveSamples(
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:00.000Z") }),
+          sample({ sourceKey: "flow", at: new Date("2026-08-05T09:00:01.000Z") }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
-    assert(rows.length === 2, "distinct timestamps are distinct rows");
+    assert(
+      rows.length === 1,
+      `distinct device timestamps no longer make distinct rows, got ${rows.length}`,
+    );
+    assert(counters.duplicateInBatch === 1, "the collapse the stored key causes is counted");
   }
 
   // ---- SQL shape -----------------------------------------------------------
 
   {
+    // Six columns since ADR 0061 decision 1, with `device_time` **last** so the
+    // bind order of the five that were already here does not move.
+    const deviceTime = new Date("2026-08-05T06:57:24.000Z");
     const rows: PointValueRow[] = [
-      { time: RECEIVED_AT, assetId: "a", pointKey: "P", value: 1, unit: "kW" },
-      { time: RECEIVED_AT, assetId: "b", pointKey: "Q", value: 2, unit: null },
+      { time: RECEIVED_AT, assetId: "a", pointKey: "P", value: 1, unit: "kW", deviceTime },
+      { time: RECEIVED_AT, assetId: "b", pointKey: "Q", value: 2, unit: null, deviceTime: null },
     ];
     const { text, values } = buildUpsert(rows);
-    assert(values.length === 10, `five parameters per row, got ${values.length}`);
-    assert(text.includes("($1, $2, $3, $4, $5), ($6, $7, $8, $9, $10)"), `wrong tuple list: ${text}`);
+    assert(values.length === 12, `six parameters per row, got ${values.length}`);
+    assert(
+      text.includes("($1, $2, $3, $4, $5, $6), ($7, $8, $9, $10, $11, $12)"),
+      `wrong tuple list: ${text}`,
+    );
+    assert(
+      text.includes("(time, asset_id, point_key, value, unit, device_time)"),
+      `the column list must name device_time, last: ${text}`,
+    );
     assert(
       text.includes("ON CONFLICT (time, asset_id, point_key) DO UPDATE"),
       "the upsert clause must match the conflict target index.js relies on",
@@ -322,7 +345,19 @@ export function runNormaliserTests(): void {
       text.includes("value = EXCLUDED.value") && text.includes("unit = EXCLUDED.unit"),
       "the update clause must refresh both value and unit",
     );
-    assert(values[4] === "kW" && values[9] === null, "a null unit binds as null");
+    // ADR 0061 Amendment 1 item 1. Without this clause a re-delivered reading
+    // updates `value` and `unit` and keeps the **first** delivery's
+    // `device_time`, so the column stops describing the row it sits on — the
+    // exact failure this ADR exists to prevent, one column over.
+    assert(
+      text.includes("device_time = EXCLUDED.device_time"),
+      `a second delivery must move the stored device_time: ${text}`,
+    );
+    assert(
+      values[5] === deviceTime && values[11] === null,
+      `device_time binds sixth in each row, as a Date or as null; got ${String(values[5])} and ${String(values[11])}`,
+    );
+    assert(values[4] === "kW" && values[10] === null, "a null unit binds as null");
   }
 
 }
@@ -337,8 +372,8 @@ export function runNormaliserTests(): void {
  */
 export async function runNormaliserWriteTests(): Promise<void> {
   const rows: PointValueRow[] = [
-    { time: RECEIVED_AT, assetId: "a", pointKey: "P", value: 1, unit: "kW" },
-    { time: RECEIVED_AT, assetId: "b", pointKey: "Q", value: 2, unit: null },
+    { time: RECEIVED_AT, assetId: "a", pointKey: "P", value: 1, unit: "kW", deviceTime: null },
+    { time: RECEIVED_AT, assetId: "b", pointKey: "Q", value: 2, unit: null, deviceTime: null },
   ];
 
   // ---- transaction ordering ------------------------------------------------
@@ -405,12 +440,14 @@ export async function runNormaliserWriteTests(): Promise<void> {
   {
     const at = new Date("2026-08-05T09:00:00.000Z");
     const { rows: resolved } = resolveSamples(
-      [
-        sample({ sourceKey: "flow", value: 1, at }),
-        sample({ sourceKey: "flow", value: 2, at }),
-      ],
+      receivedTogether(
+        [
+          sample({ sourceKey: "flow", value: 1, at }),
+          sample({ sourceKey: "flow", value: 2, at }),
+        ],
+        RECEIVED_AT,
+      ),
       PILOT_INDEX,
-      RECEIVED_AT,
       "RTU-1",
     );
     const { client, calls } = makeFakeClient();
@@ -433,6 +470,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
       pointKey: "FLOW_RATE",
       value: i,
       unit: "m³/h",
+      deviceTime: null,
     }));
     const { client, calls } = makeFakeClient();
     const result = await writeResolved(client, many);
@@ -443,7 +481,7 @@ export async function runNormaliserWriteTests(): Promise<void> {
       "no statement may exceed the Postgres bind-parameter ceiling",
     );
     assert(
-      inserts.reduce((n, c) => n + (c.values?.length ?? 0) / 5, 0) === 2500,
+      inserts.reduce((n, c) => n + (c.values?.length ?? 0) / 6, 0) === 2500,
       "every row is written exactly once across the statements",
     );
     assert(result.rowsWritten === 2500, "the written count covers every row");
@@ -504,9 +542,8 @@ export function runMetadataTests(): void {
   ): ReturnType<typeof resolveSamples> {
     const index = makeIndex({ "RTU-1": { flow: [pointTarget] } });
     return resolveSamples(
-      [sample({ sourceKey: "flow", ...overrides })],
+      receivedTogether([sample({ sourceKey: "flow", ...overrides })], RECEIVED_AT),
       index,
-      RECEIVED_AT,
       "RTU-1",
     );
   }
@@ -687,9 +724,8 @@ export function runMetadataTests(): void {
       },
     });
     const { rows } = resolveSamples(
-      [sample({ sourceKey: "shared", value: 2500 })],
+      receivedTogether([sample({ sourceKey: "shared", value: 2500 })], RECEIVED_AT),
       index,
-      RECEIVED_AT,
       "RTU-1",
     );
     const byAsset = new Map(rows.map((r) => [r.assetId, r.value]));
@@ -712,9 +748,8 @@ export function runMetadataTests(): void {
       },
     });
     const { rows, counters } = resolveSamples(
-      [sample({ sourceKey: "shared", value: 42 })],
+      receivedTogether([sample({ sourceKey: "shared", value: 42 })], RECEIVED_AT),
       index,
-      RECEIVED_AT,
       "RTU-1",
     );
     assert(rows.length === 1 && rows[0].assetId === "asset-b", "the in-range target is written");
@@ -739,6 +774,9 @@ export function runMetadataTests(): void {
       outOfRange: 32,
       invalidTimestamp: 64,
       duplicateInBatch: 128,
+      // ADR 0061 decision 6's datum. Not a number, so it cannot reach a sum —
+      // which is the strongest form of "droppedCount ignores it".
+      firstDuplicate: null,
     };
     assert(
       droppedCount(filled) === 63,

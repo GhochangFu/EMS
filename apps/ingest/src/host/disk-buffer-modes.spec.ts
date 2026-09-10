@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import type { AdapterLogger } from "../adapter/types.js";
 import { openDiskBufferStore, type BufferFileSystem } from "./disk-buffer.js";
+import { receivedTogether } from "./received-sample.js";
 
 /**
  * The store's file modes — ADR 0016 Amendment 4, the `Modes` note.
@@ -66,7 +67,7 @@ export async function runDiskBufferModeTests(): Promise<void> {
       fs,
     });
     const handle = store.handle("mqtt", "phe.thinkiot.co.in:8883");
-    assert(await handle.append([{ sourceKey: "flow", value: 1 }]), "the append lands");
+    assert(await handle.append(receivedTogether([{ sourceKey: "flow", value: 1 }], NOW)), "the append lands");
 
     // `ensureDir` walks up on `ENOENT` and creates the missing ancestors
     // top-down, so `deep`, `deeper`, `mqtt` and the encoded endpoint directory

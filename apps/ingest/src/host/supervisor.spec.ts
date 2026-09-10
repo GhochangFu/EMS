@@ -9,6 +9,7 @@ import type {
 } from "../adapter/types.js";
 import type { EndpointPlan } from "./bindings.js";
 import type { DiskBufferHandle } from "./disk-buffer.js";
+import type { ReceivedSample } from "./received-sample.js";
 import { createSupervisor, type Scheduler } from "./supervisor.js";
 
 /**
@@ -274,8 +275,11 @@ export function sample(value: number, deviceKey = "RTU-1"): SourceSample {
  * that call read — without touching a filesystem. `supervisor-buffer.spec.ts`
  * runs the real store for the blocks where the disk is the subject.
  */
-export function makeMemoryBuffer(): DiskBufferHandle & { readonly appended: SourceSample[][] } {
-  const appended: SourceSample[][] = [];
+export function makeMemoryBuffer(): DiskBufferHandle & { readonly appended: ReceivedSample[][] } {
+  // Kept as handed over, receive times included — the real store's contract
+  // since ADR 0016 Amendment 5, and what lets a replayed batch carry the
+  // instant the failed write used.
+  const appended: ReceivedSample[][] = [];
   return {
     protocol: "mqtt",
     endpointKey: "phe.thinkiot.co.in:8883",
@@ -327,7 +331,7 @@ export async function runSupervisorTests(): Promise<void> {
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async (samples) => {
-        written.push([...samples]);
+        written.push(samples.map((one) => one.sample));
       },
     });
 
@@ -845,7 +849,7 @@ export async function runSupervisorTests(): Promise<void> {
       scheduler: fake.scheduler,
       random: () => 0.5,
       writeSamples: async (samples) => {
-        written.push([...samples]);
+        written.push(samples.map((one) => one.sample));
       },
     });
 

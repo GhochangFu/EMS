@@ -6,6 +6,7 @@ import { z } from "zod";
 import { INGEST_PROTOCOLS, type IngestProtocol, type SourceSample } from "@bms/shared/ingest";
 
 import type { AdapterLogger } from "../adapter/types.js";
+import type { ReceivedSample } from "./received-sample.js";
 
 /**
  * The disk tier under the supervisor's drain loop (ADR 0016 Amendment 4).
@@ -17,10 +18,21 @@ import type { AdapterLogger } from "../adapter/types.js";
  * handle owns the endpoint's segments and counters so one endpoint's backlog
  * stays that endpoint's blast radius (decision 2).
  *
- * **Format (decision 7).** `<dir>/<protocol>/<encodeURIComponent(endpointKey)>/
- * <epoch-minute>.jsonl`, one `SourceSample` per line with `at` as ISO-8601
- * text. A segment is only ever appended to or unlinked. The sample is stored
- * before normalisation so the point index at replay time applies.
+ * **Format (decision 7, as amended by Amendment 5).**
+ * `<dir>/<protocol>/<encodeURIComponent(endpointKey)>/<epoch-minute>.jsonl`,
+ * one `SourceSample` per line plus `rx` — the instant the host received it, as
+ * the drain loop stamped it and **not** the append instant, ISO-8601, written
+ * once at spill and never rewritten. `at` is the device time and nothing else,
+ * present only when the sample carried one. A segment is only ever appended to
+ * or unlinked. The sample is stored before normalisation so the point index at
+ * replay time applies.
+ *
+ * `rx` is what makes replay idempotent since ADR 0061 made
+ * `telemetry.point_values.time` the receive time: a replayed sample keeps the
+ * arrival the buffer recorded (ADR 0061 Amendment 2 ruling 4), so a re-replayed
+ * segment writes the same primary key. Before that, `at` was stamped with the
+ * spill instant to the same end — and that stamp would now be written to
+ * `device_time` as a clock the device never reported.
  *
  * **Crash safety (decision 8).** One append is one `appendFile` of whole
  * lines, so a kill mid-write leaves at most one partial last line; replay
@@ -72,8 +84,12 @@ import type { AdapterLogger } from "../adapter/types.js";
  */
 
 export type BufferedSegment = {
-  /** Parseable lines, oldest first, `at` revived to a Date. */
-  readonly samples: readonly SourceSample[];
+  /**
+   * Parseable lines, oldest first — `rx` revived into `receivedAt`, `at` into
+   * `sample.at` when the line carries one. The host-internal shape, not the
+   * adapter contract: the receive time never travels as a `SourceSample` field.
+   */
+  readonly samples: readonly ReceivedSample[];
   /** Unlinks the segment unless a line was appended since it was read. */
   commit(): Promise<void>;
 };
@@ -85,8 +101,13 @@ export type DiskBufferHandle = {
   readonly buffered: number;
   /** Samples erased by a bound, unparseable, or lost to a failed append — a counter. */
   readonly dropped: number;
-  /** Persists one batch. Resolves `false` (logged, counted) rather than rejecting. */
-  append(samples: readonly SourceSample[]): Promise<boolean>;
+  /**
+   * Persists one batch, each sample with the receive time the drain loop
+   * stamped it with — the same instant the failed write used — so a replayed
+   * row lands on the key that write may already have landed on. Resolves
+   * `false` (logged, counted) rather than rejecting.
+   */
+  append(samples: readonly ReceivedSample[]): Promise<boolean>;
   /** The endpoint's oldest segment, or `null` when nothing is buffered. */
   oldest(): Promise<BufferedSegment | null>;
   /**
@@ -156,16 +177,30 @@ const FILE_MODE = 0o600;
 
 /**
  * One line, read back. Zod strips keys it does not list, so nothing an earlier
- * process wrote beyond the five fields reaches a `SourceSample`. `z.number()`
+ * process wrote beyond the six fields reaches a `SourceSample`. `z.number()`
  * rejects `null`, which is how a `NaN` or `Infinity` value arrives from
  * `JSON.stringify` — the line is skipped and counted, as the live path counts
  * the same sample as `nonFinite`.
+ *
+ * `rx` is required and `at` optional (ADR 0016 Amendment 5). **There is
+ * deliberately no branch for a line that has `at` and no `rx`** — a segment
+ * written before the amendment. Its `at` is either a device time or a spill
+ * stamp and nothing stored says which, so a branch would have to guess, and
+ * guessing wrong writes a fabricated `device_time` (ADR 0061 ruling 2). The
+ * deploy gate — `buffered = 0` on every endpoint before the new image goes out
+ * — is what keeps such a line from being read; one that is read fails here
+ * and counts in `bufferDropped` rather than being guessed at.
  */
 const lineSchema = z.object({
   sourceKey: z.string().min(1),
   value: z.number(),
   deviceKey: z.string().optional(),
   at: z
+    .string()
+    .datetime()
+    .transform((text) => new Date(text))
+    .optional(),
+  rx: z
     .string()
     .datetime()
     .transform((text) => new Date(text)),
@@ -177,7 +212,10 @@ type SegmentLine = {
   sourceKey: string;
   value: number;
   deviceKey?: string;
-  at: string;
+  /** The device time, only when the sample carried a readable one. */
+  at?: string;
+  /** The receive time — the instant the host took the sample in, written once at spill. */
+  rx: string;
   good?: boolean;
 };
 
@@ -322,18 +360,36 @@ function decodeCanonicalKey(name: string): string | null {
   return decoded;
 }
 
-function serialise(sample: SourceSample, receivedAt: Date): string {
-  const line: SegmentLine = { sourceKey: sample.sourceKey, value: sample.value, at: "" };
+function serialise(received: ReceivedSample): string {
+  const { sample, receivedAt } = received;
+  // `rx` is the receive time as the drain loop stamped it — the instant the
+  // host took the sample in, and the instant the write that failed used for
+  // `time`. Written once here and never rewritten: replay must write the same
+  // `(time, asset_id, point_key)` as that write, or a re-replayed segment
+  // lands duplicate rows instead of an idempotent upsert (Amendment 4
+  // decision 5). The append instant is deliberately NOT used: it can be
+  // `writeTimeoutMs` later, and a timed-out write is not a cancelled one
+  // (`main.ts`), so a later stamp would put the replay on a second key beside
+  // the row that landed.
+  const line: SegmentLine = {
+    sourceKey: sample.sourceKey,
+    value: sample.value,
+    rx: receivedAt.toISOString(),
+  };
   if (sample.deviceKey !== undefined) {
     line.deviceKey = sample.deviceKey;
   }
-  // Stamped at spill when the sample carries none (or an invalid one, the same
-  // substitution `resolveSamples` makes): replay must write the same
-  // `(time, asset_id, point_key)` every time, or a re-replayed segment lands
-  // duplicate rows instead of an idempotent upsert.
-  const at =
-    sample.at instanceof Date && Number.isFinite(sample.at.getTime()) ? sample.at : receivedAt;
-  line.at = at.toISOString();
+  // `at` is the device time and nothing else (Amendment 5). This used to
+  // substitute the spill instant when the sample carried none, to the same
+  // end `rx` now serves — and under ADR 0061 that substitute would be written
+  // to `device_time` as a clock the device never reported, the fabrication
+  // ruling 2 refused. An unreadable `at` is left out for the same reason, and
+  // because `toISOString()` throws on an Invalid Date; it replays as decision
+  // 4 case 2 rather than case 3, so `invalidTimestamp` counts it on the live
+  // attempt, if there was one, and not again on replay.
+  if (sample.at instanceof Date && Number.isFinite(sample.at.getTime())) {
+    line.at = sample.at.toISOString();
+  }
   if (sample.good !== undefined) {
     line.good = sample.good;
   }
@@ -344,24 +400,32 @@ function splitLines(text: string): string[] {
   return text.split("\n").filter((row) => row.trim() !== "");
 }
 
-function toSample(data: z.infer<typeof lineSchema>): SourceSample {
+/**
+ * Revives one parsed line into the host-internal shape: the `SourceSample` the
+ * adapter emitted, and beside it — never inside it — the receive time. `at` is
+ * set only when the line carries one; a line without it revives to a sample
+ * without it, which the normaliser resolves to `device_time IS NULL`.
+ */
+function toSample(data: z.infer<typeof lineSchema>): ReceivedSample {
   const sample: { -readonly [K in keyof SourceSample]: SourceSample[K] } = {
     sourceKey: data.sourceKey,
     value: data.value,
-    at: data.at,
   };
   if (data.deviceKey !== undefined) {
     sample.deviceKey = data.deviceKey;
   }
+  if (data.at !== undefined) {
+    sample.at = data.at;
+  }
   if (data.good !== undefined) {
     sample.good = data.good;
   }
-  return sample;
+  return { sample, receivedAt: data.rx };
 }
 
-function parseSegment(text: string): { lines: number; skipped: number; samples: SourceSample[] } {
+function parseSegment(text: string): { lines: number; skipped: number; samples: ReceivedSample[] } {
   const rows = splitLines(text);
-  const samples: SourceSample[] = [];
+  const samples: ReceivedSample[] = [];
   let skipped = 0;
   for (const row of rows) {
     let json: unknown;
@@ -566,14 +630,17 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     }
   }
 
-  async function appendBatch(endpoint: EndpointRecord, samples: readonly SourceSample[]): Promise<boolean> {
+  async function appendBatch(endpoint: EndpointRecord, samples: readonly ReceivedSample[]): Promise<boolean> {
     if (samples.length === 0) {
       return true;
     }
-    const receivedAt = now();
-    const minute = Math.floor(receivedAt.getTime() / MINUTE_MS);
+    // The append instant names the segment (decision 7's receipt minute) and
+    // drives the bounds. It is not what goes on the line: each sample carries
+    // its own `receivedAt`, and `serialise` says why the two must differ.
+    const appendedAt = now();
+    const minute = Math.floor(appendedAt.getTime() / MINUTE_MS);
     const path = join(endpoint.dir, `${minute}.jsonl`);
-    const payload = `${samples.map((sample) => serialise(sample, receivedAt)).join("\n")}\n`;
+    const payload = `${samples.map((one) => serialise(one)).join("\n")}\n`;
     const bytes = Buffer.byteLength(payload, "utf8");
     try {
       await ensureDir(fs, endpoint.dir);
@@ -584,7 +651,7 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       // becomes permanent: nothing is ever evicted, so every later append
       // fails the same way. Enforce, try once more, and only then take the
       // loss. One retry, not a loop — a second failure is the disk, not space.
-      await enforceBounds(receivedAt.getTime());
+      await enforceBounds(appendedAt.getTime());
       try {
         await ensureDir(fs, endpoint.dir);
         await fs.appendFile(path, payload, { encoding: "utf8", mode: FILE_MODE });
@@ -632,7 +699,7 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
     segment.bytes += bytes;
     segment.lines += samples.length;
     totalBytes += bytes;
-    await enforceBounds(receivedAt.getTime());
+    await enforceBounds(appendedAt.getTime());
     return true;
   }
 

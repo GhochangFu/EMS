@@ -38,11 +38,21 @@ import type { TelemetryReading } from "@bms/shared";
  *    reading arrives, which for a dead asset is never. Raised by the `F4.36`
  *    security review and left open deliberately as **`F4.37`**, because the
  *    honest fix is to clamp at the sink (`Math.min(t, Date.now())` in the web
- *    client) rather than reject here: `resolveSamples` trusts `sample.at` from
- *    the adapter, so an RTU with a skewed clock emits future timestamps
- *    legitimately — the unclamped `sample.at` already deferred to `F1.7`. A
- *    server-side reject would delete real telemetry to fix a client-side
- *    arithmetic bug.
+ *    client) rather than reject here. A server-side reject would delete real
+ *    telemetry to fix a client-side arithmetic bug.
+ *
+ *    **The reason this paragraph used to give is no longer true.** It said
+ *    `resolveSamples` trusts `sample.at` from the adapter, so a skewed RTU
+ *    emits future `time` values legitimately, and that the unclamped
+ *    `sample.at` was deferred to `F1.7`. Since `F4.57` and ADR 0061,
+ *    `sample.at` never reaches `time` at all: `time` is the host's receive
+ *    time for every ingested row, and the device's own stamp is kept beside it
+ *    in `telemetry.point_values.device_time`. Ruling 1 chose recording both
+ *    times **over** clamping either, so `F1.7`'s clamp is not owed and is not
+ *    coming. The conclusion survives — do not reject here — but on the
+ *    narrower ground that this schema is not the only writer of `time`
+ *    (`calc-write.service.ts` inserts `point_values` directly, and rows
+ *    predating migration `0069` were written under the old rule).
  *
  * **Invalid readings are dropped; the rest of the batch is delivered.** The row
  * left this open ("drop the batch, or drop the bad readings"). Consequence 1
