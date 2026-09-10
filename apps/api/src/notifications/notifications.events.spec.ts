@@ -41,7 +41,10 @@ import {
  * carries no `event`. E15 and E17 are the two exits a re-offered raise can
  * reach; E16 and E17's second half are their regression twins on an ordinary
  * raise, without which a change that silenced EVERY raise refusal would pass;
- * E18 pins the key and the subject to the original raise's.
+ * E18 pins the key and the subject to the original raise's, and pins this layer
+ * to composing no BODY of its own (`F3.57`). Not "no message text" — the
+ * SUBJECT is composed right here, by `subjectFor` at
+ * `notifications.service.ts:572`.
  *
  * What this file does **not** hold: that the exclusion actually releases a key.
  * The fake answers each ledger read from a queue and applies no `WHERE`, so it
@@ -885,12 +888,32 @@ export async function runNotificationEventTests(): Promise<void> {
 
   // --- E18. `reoffered` reaches neither the key nor the subject --------------
   //
-  // The identity of a re-offered raise with the original one is the mechanism,
-  // not a convenience: the sweep decides who is owed by reading rows under the
-  // ORIGINAL key, so a `:retry` suffix would orphan every row it matched on,
-  // and a subject prefix would tell the operator this is a different alarm.
-  // This is the assertion that stops anyone "improving" the message later —
-  // the staleness complaint is `F3.52`'s, and it is inherited here, not fixed.
+  // The KEY's identity with the original raise's is the mechanism: the sweep
+  // decides who is owed by reading rows under the ORIGINAL key, so a `:retry`
+  // suffix — or anything else reaching `buildDedupeKey` — would orphan every
+  // row it matched on.
+  //
+  // **`F3.57` corrected what that argument covers.** This comment used to
+  // extend it to the subject and the body, and to say the staleness complaint
+  // was "inherited here, not fixed". Neither text reaches a ledger reader:
+  // `buildDedupeKey` takes `ruleId`, `alarmId`, `severity` and `event`,
+  // `notification_deliveries` has no body or subject column, and
+  // `loadRaiseAttempts` matches on `alarm_id`, `organization_id` and
+  // `dedupe_key`. So the two assertions below hold for their own reasons, and
+  // both are narrower than orphaning:
+  //
+  // - the SUBJECT, so that a subject-GROUPING mail client keeps the re-offer in
+  //   the same conversation. Stated carefully, because the first wording of
+  //   this called it threading: `email.transport.ts` passes `from`, `to`,
+  //   `subject` and `text` and sets no `Message-ID`, `In-Reply-To` or
+  //   `References`, so there is no RFC 5322 thread to join. It is the receiving
+  //   client's heuristic, and it buys a webhook channel nothing at all.
+  // - the BODY, because this layer passes `input.message` through untouched.
+  //   `F3.57` DID add an age to a re-offered raise, and it added it in
+  //   `raiseRetryDispatchInput` — one layer up, where the alarm's `raisedAt`
+  //   is in scope. `dispatchToChannels` composes no message text and must not
+  //   start; `alarm-lifecycle.spec.ts`'s five `F3.57` cases hold the clause
+  //   itself, and the key identity across two different bodies.
   {
     const { db, recorded } = fakeDb();
     const webhook = sendingWebhook();
@@ -915,7 +938,7 @@ export async function runNotificationEventTests(): Promise<void> {
     );
     assert(
       webhook.sent[0]?.body === original.message,
-      "and the body is the alarm's message, untouched",
+      "and this layer passes the body through untouched — `F3.57`'s age clause is the BUILDER's",
     );
   }
 }

@@ -230,7 +230,14 @@ export async function assertAFailedRaiseIsDeliveredByALaterSweepOnce(db: BmsDb):
     const t0 = (row as AlarmState).raisedAt;
 
     const sending = buildHarness(tx);
-    await sending.lifecycle.sweep(secondsAfter(60, t0));
+    // `F3.57` review — 90 s, not 60. At exactly 60 000 ms the age sits ON the
+    // whole-minute boundary, so one millisecond either way flips the clause and
+    // the body assertion below would fail for a reason unrelated to what it
+    // asserts. 90 s renders the same "1 min" with thirty seconds of slack on
+    // both sides. The unit fixtures have that slack already (`alarmRow` raises
+    // at `secondsBefore(61)`); this suite, which runs least often because it
+    // needs a database, had none.
+    await sending.lifecycle.sweep(secondsAfter(90, t0));
     assert(
       (await statusesUnderKey(tx, c1, alarm.dedupeKey)) === "failed,sent",
       `the sweep re-offered the raise and it sent, under the ORIGINAL key; got [${(await statusesUnderKey(tx, c1, alarm.dedupeKey))}]`,
@@ -247,9 +254,19 @@ export async function assertAFailedRaiseIsDeliveredByALaterSweepOnce(db: BmsDb):
         delivered[0]?.subject,
       )}"`,
     );
+    // `F3.57` — the alarm's message with its age, and against a REAL database
+    // this is the whole ruling in one place. The sweep above ran at
+    // `secondsAfter(60, t0)` where `t0` is the alarm's own `raised_at`, so the
+    // age is exactly one whole minute — the boundary, and deterministic.
+    //
+    // What makes this the strongest evidence in the row: the body differs from
+    // the original raise's, and the two assertions ABOVE still found the
+    // delivery under `alarm.dedupeKey`. Postgres matched the row on the key the
+    // original attempt was written with, exactly as before. A second body text
+    // under one key orphans nothing, because the ledger stores no body.
     assert(
-      delivered[0]?.body === alarm.message,
-      `the alarm's own message, verbatim; got "${String(delivered[0]?.body)}"`,
+      delivered[0]?.body === `${alarm.message} — alarm open for 1 min`,
+      `the alarm's message with the age appended; got "${String(delivered[0]?.body)}"`,
     );
 
     // The `sent` row now blocks the key on this channel, so the next sweep

@@ -1288,3 +1288,203 @@ function.
   field.
 
 No migration, no dependency, no change to any write path.
+
+## Amendment 9 — `F3.57`: a re-offered raise carries the alarm's age, and Amendment 5's "byte-identity" sentence was wider than the mechanism (2026-09-10)
+
+`F3.51`'s raise-retry phase re-offers a still-open alarm's ORIGINAL raise: the
+same `DispatchInput`, the same subject, the same dedupe key, the same body.
+Amendment 5 above recorded that identity as the mechanism and assigned the
+missing age marker to `F3.52`, which inherited it and deliberately did not build
+it. `F3.57` is that row, and the first thing it did was measure the constraint
+it was filed under.
+
+**The constraint is the KEY, not the message.** Three measurements, and any one
+of them settles it:
+
+- `buildDedupeKey` takes `ruleId`, `alarmId`, `severity` and `event`. Its own
+  docblock has said since `F3.8` that the key is "the rule and the alarm, not
+  the message text" — keying on the text would defeat the dedupe on exactly the
+  storm it exists to stop.
+- `notification_deliveries` has **no body column and no subject column**
+  (migration `0038`, unchanged since). Neither text is stored, so neither can be
+  matched.
+- `loadRaiseAttempts`'s statement matches on `alarm_id`, `organization_id` and
+  `dedupe_key`, and `channelsOwedTheRaise` then groups those rows by channel.
+  Nothing on that path reads a message.
+
+So a second body under one key orphans nothing. What a marker must still not do
+is reach `buildDedupeKey` — a `:retry` suffix or a new `event` kind would, and
+that half of Amendment 5's sentence is exactly right and unchanged.
+
+**The subject is unchanged for a different and much narrower reason than either
+Amendment 5 or the first draft of this amendment claimed.** `subjectFor`
+composes from `severity`, `ruleCode` and `event`, so it could not reach the key
+either. This paragraph first said an identical subject lets a mail client
+*thread* the re-offer with the original. **The transport establishes no such
+thing** (`F3.57` review): `email.transport.ts` calls `sendMail` with `from`,
+`to`, `subject` and `text` and sets no `Message-ID`, `In-Reply-To` or
+`References`, so nodemailer mints a fresh id per send and there is no RFC 5322
+thread to join. What actually survives is that a subject-GROUPING client —
+Gmail's conversation view, Outlook's conversation topic — keeps the two
+together. That is a receiving client's heuristic, not a property this code
+establishes, and it is worth nothing at all on a `webhook` channel, which is the
+other transport. Enough to keep the subject stable; not a mechanism.
+
+**The complaint the row was filed with also needed correcting, in two parts.**
+
+*"A recipient cannot tell a retry from a first attempt"* is **narrow, not
+general**. `channelsOwedTheRaise` stage 3 blocks on any eligible row that is not
+`failed`, so a channel that ever recorded `sent` is never re-offered: the
+recipient of a re-offer did not receive the original. It arises only where a
+transport reports failure for a message that was in fact delivered — a webhook
+that timed out after the endpoint committed, SMTP that accepted and then failed
+locally. Real, and not what this amendment is for.
+
+*"Nothing in the message says how long the alarm has been open"* is the real
+defect, and its mechanism is worth stating because it is not obvious. A plainly
+failing channel writes three `failed` rows and spends `MAX_EVENT_ATTEMPTS` after
+about ninety seconds; there is no age problem there. (`raise-retry.ts` says "the
+cap is spent inside a minute" of the same mechanism, and both are right about
+different instants: the third row lands at t≈60 s, and the tick that reads three
+rows and declines to re-offer is the one at t≈90 s. Named here because the two
+figures sit in adjacent files describing one thing.) The long deferral exists
+**only** because `skipped_rate_limited` (`F3.48` ruling Q2) and stale
+`skipped_unconfigured` (`F3.50` ruling Q1) rows are excluded from `eligible` and
+so never count toward the cap. Such a channel stays owed for the life of the
+alarm and is delivered the moment the ceiling frees or the credential lands — an
+hour later, reading as current. **The two rulings that make a deferred delivery
+survivable are the same two that make it arrive stale.**
+
+**`F3.52` ruling 8 narrowed one of those two causes and not the other**, and the
+`F3.57` row's own text claimed it narrowed the urgency generally. Ruling 8
+stopped an unfiltered count charging a RAISE against the reduced limit, so a
+raise is now far less likely to be ceiling-refused at all — which shrinks the
+`skipped_rate_limited` path. It does nothing to the `skipped_unconfigured` one:
+an SMTP password that is not set is not a budget question, and `F3.50` ruling
+Q1's watermark is what holds that channel owed until the credential lands. The
+hour-old first delivery therefore remains reachable by the second path after
+ruling 8, which is what keeps this row worth building rather than closing.
+
+**One accuracy limit, stated rather than claimed away** (`F3.57` security
+review). `bms.alarms.raised_at` defaults to the DATABASE clock, and `now`
+reaches the sweep from the API process clock (`alarm-lifecycle.service.ts`,
+`now: () => Date.now()`). Skew between the two hosts shifts the printed figure.
+The sweep already rests on that same pair far more heavily — `dueSteps` and
+`stepIsTooLate` decide *whether* to escalate from it, where this decides only a
+number in a message — so the exposure is not new and is strictly smaller than
+what already depends on it.
+
+### The shape (owner ruling 1, 2026-09-10)
+
+A body-only age clause, composed in `raiseRetryDispatchInput` where the alarm's
+`raisedAt` is in scope:
+
+```text
+Feeder overload: kw = 150 (gt 100) — alarm open for 62 min
+```
+
+- **The subject and the dedupe key are byte-identical to the original raise's.**
+- **No threshold constant.** The first re-offer lands one tick after the raise,
+  so `Math.floor` gives 0 and "open for 0 min" would be noise on the common case
+  while telling the recipient nothing they do not already assume. The clause
+  appears exactly when the age is expressible in whole minutes.
+- **The composition mirrors `escalationDispatchInput`'s**, which has rendered
+  the same figure since `F3.10`. The re-offered raise was the only **first
+  delivery** with no age in it. The first draft of this line said "the only
+  lifecycle message", which is false and was caught in review:
+  `clearedDispatchInput` composes `Cleared: <message>` and carries no age
+  either. It keeps none — a cleared alarm has stopped being a problem, so its
+  age is history rather than a call to act.
+- **The guard is written `minutes >= 1`, not `minutes < 1`.** The two agree on
+  every age this code normally sees, which is exactly why the first draft's
+  direction survived a mutation and had to be found by review: `NaN < 1` is
+  `false`, so an unparseable `raisedAt` rendered `alarm open for NaN min` to a
+  real recipient. Every comparison against NaN is false, so the `>= 1` form
+  fails closed — NaN and a negative age both yield the message untouched. A
+  negative age is reachable, because `raised_at` is stamped by the DATABASE
+  clock and `now` arrives from the API process clock.
+
+`runRaiseRetryPhase` gains a required `now: Date`, which the clear and
+escalation phases have both carried since `F3.10`; it is required rather than
+defaulted for the reason `F3.52` made `stale` required — a defaulted clock lets
+the phase drift out of step with the sweep's own `now` and still compile.
+
+**All three shapes the row offered were declined, and what shipped is a fourth**
+(`F3.57` compliance review — the first draft of this paragraph said "two of
+three", which misread the row's own first option).
+
+- *A field the transport renders but `buildDedupeKey` and `subjectFor` never
+  see*, on `F3.52`'s `stale?: true` precedent — declined because it is more than
+  is needed. A new field on `DispatchInput` obliges every transport to learn to
+  render it. The age is text, and the body is already text nothing reads.
+- *A separate follow-up message* — declined because it needs a new
+  `DispatchEvent` kind, so a new key suffix, a new subject form,
+  `parseDeliveryEvent`, the `NotificationDeliveryEvent` contract and the web
+  Event column, an ADR 0030 contract change; and it would double the messages to
+  a recipient who never received the first one.
+- *Won't-fix* — live until the measurement above, and it rested on a constraint
+  that does not exist.
+
+The fourth meets the first shape's constraint — a text no ledger reader sees —
+without the first shape's field. **The shipped surface is strictly smaller than
+any of the three**: one composed string, no new field, no new kind, no new
+column, no contract.
+
+No migration, no dependency, no contract change, no write-path change, and no
+change to what any ledger reader matches on.
+
+### What holds it
+
+`alarm-lifecycle.spec.ts` gains **seven** cases, one `it()` each on `F3.52`'s
+precedent. Twelve mutations were run and all twelve reddened. §4.6 asks which
+assertion reddens, so all twelve are named rather than summarised — the first
+draft of this section named two of ten and left the rest an unnamed aggregate
+the next reader could not check.
+
+Short names below are the seven unit cases in `alarm-lifecycle.spec.ts` —
+`under`, `exactly-1`, `hour`, `key`, `subject`, `future`, `NaN` — plus
+**S** = the sweep case in
+`alarm-lifecycle-raise-retry.spec.ts`, **I** = the case in
+`alarm-lifecycle-raise-retry.integration.spec.ts`, **R** =
+`runAlarmLifecycleTests`, **E** = `notifications.events.spec.ts` E18.
+
+| # | Mutation | Reddens |
+|---|---|---|
+| M1 | `>= 1` → `> 1` (boundary moves) | `exactly-1`, S, I |
+| M2 | `>= 1` → `true` (clause always) | `under`, `future`, `NaN` |
+| M3 | `>= 1` → `false` (clause never) | `exactly-1`, `hour`, `key`, S, I, R |
+| M4 | `>= 1` → `!== 0` (fails OPEN) | **`future`, `NaN` — and nothing else** |
+| M5 | `Math.floor` → `Math.ceil` | `under`, S, I, R |
+| M6 | `60_000` → `1_000` | `under`, `exactly-1`, `hour`, S, I, R |
+| M7 | age measured backwards | `exactly-1`, `hour`, `key`, `future`, S, I, R |
+| M8 | builder reads the wall clock | `under`, `exactly-1`, `hour`, `future`, S, I, R |
+| M9 | builder drops the age (row reverted) | `exactly-1`, `hour`, `key`, S, I, R |
+| M10 | phase passes `new Date()`, not `input.now` | **S and I** |
+| M11 | `subjectFor` prefixes a re-offer | `subject`, I, E |
+| M12 | an `event` on the re-offered input | `key`, `subject`, R, S, and three I cases |
+
+**M4 is the one that matters most**, and it exists because the review found a
+defect ten mutations could not: it reddens the two new clock cases and nothing
+else, which is exactly the claim they own. Its predecessor — the shipped
+`minutes < 1` — agreed with `minutes === 0` on every age the suite drove, so the
+direction of the guard was never gated at all.
+
+**M10 corrects a false sentence in the first draft of this section**, which said
+the wall-clock mutation reddens "only the sweep-level case". It reddens **two**:
+the unit sweep case and the integration case. The first mutation batch was run
+with no `DATABASE_URL`, so the integration spec was skipped and the word "only"
+was measured against a suite that never ran. This table was re-measured with the
+database attached, and the integration spec is in the runner for that reason.
+
+**Three mutations exist because three assertions were otherwise unproven.**
+Nothing in the first batch could make the subject case, the key case or the
+guard's direction fail, so they were passing without having been tested. M11,
+M12 and M4 are their gates. The subject and key cases still cannot fail from an
+age change — neither `subjectFor` nor `buildDedupeKey` can see `message`, by
+type — so they are documented invariants with positive controls, not age gates,
+and `alarm-lifecycle.spec.ts` says so where they are defined.
+
+`notifications.events.spec.ts` E18 is unchanged behaviourally and stays green:
+the age lives in the builder, and `dispatchToChannels` still passes
+`input.message` through untouched. Its comment carried Amendment 5's wider
+sentence and now carries this one.

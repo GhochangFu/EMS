@@ -243,10 +243,18 @@ export function escalationDispatchInput(
  * - `severity` is the ALARM's, never `rule.severity`. An operator who re-bands
  *   the rule mid-alarm would otherwise change the key and orphan the rows the
  *   read matched on — the same guarantee `escalationDispatchInput` makes.
- * - `message` is the alarm's VERBATIM. No prefix, no age, no staleness marker:
- *   a marker would be a second message text under one key, and the complaint
- *   that a re-offered raise reads as current is inherited by `F3.52`, not
- *   fixed here.
+ * - `message` is the alarm's, plus the age once a whole minute has passed
+ *   (`F3.57`, ADR 0041 Amendment 9). **This is the one field that is a choice
+ *   rather than a constraint**, and the paragraph that used to stand here said
+ *   the opposite — "no prefix, no age, no staleness marker: a marker would be a
+ *   second message text under one key". Three measurements retired it:
+ *   {@link buildDedupeKey} takes `ruleId`, `alarmId`, `severity` and `event`
+ *   and its own docblock says the key is "not the message text";
+ *   `notification_deliveries` has no body or subject column; and
+ *   `loadRaiseAttempts` matches on `alarm_id`, `organization_id` and
+ *   `dedupe_key`. The body reaches no ledger reader, so two texts under one key
+ *   orphan nothing. What a marker must still not do is reach the KEY — an
+ *   `event` kind would, which is why this stays `undefined` below.
  * - **No `event`.** A kind would append `:escalation:<n>` or `:cleared` to the
  *   key. This is not an event; it is the raise, offered again.
  * - `raised: true`, and it is not decoration. With no event, a `false` here
@@ -261,6 +269,7 @@ export function escalationDispatchInput(
 export function raiseRetryDispatchInput(
   alarm: LifecycleAlarm,
   rule: LifecycleRule,
+  now: Date,
 ): DispatchInput | null {
   if (rule.organizationId === null) {
     return null;
@@ -271,10 +280,56 @@ export function raiseRetryDispatchInput(
     organizationId: rule.organizationId,
     alarmId: alarm.id,
     severity: alarm.severity,
-    message: alarm.message,
+    message: withAge(alarm.message, alarm.raisedAt, now),
     raised: true,
     reoffered: true,
   };
+}
+
+/**
+ * `F3.57` — the alarm's message with its age appended, or unchanged while the
+ * age is under a whole minute (ADR 0041 Amendment 9, ADR 0057 Amendment 8).
+ *
+ * **Why the re-offer needs this and the original raise does not.**
+ * `channelsOwedTheRaise` re-offers a channel only while every one of its
+ * eligible rows is `failed`, so the recipient never received the original —
+ * this message is their FIRST, and with no age in it they read an hour-old
+ * alarm as current.
+ *
+ * **The delay is bounded by two deliberate exclusions, which is why it can be
+ * an hour.** Three `failed` rows spend `MAX_EVENT_ATTEMPTS` in about ninety
+ * seconds and the re-offers stop. What does not stop is a channel whose rows
+ * are `skipped_rate_limited` (`F3.48` ruling Q2) or stale
+ * `skipped_unconfigured` (`F3.50` ruling Q1): neither counts toward the cap, so
+ * the channel stays owed for the life of the alarm and is delivered the moment
+ * the ceiling frees or the credential lands. Those two rulings are what make a
+ * deferred delivery survivable and what make it arrive stale.
+ *
+ * **No threshold constant.** The first re-offer lands one tick after the raise,
+ * so `Math.floor` gives 0 and "open for 0 min" would be noise on the common
+ * case — and it would tell the recipient nothing they do not already assume.
+ * The clause appears exactly when the age is expressible in whole minutes.
+ *
+ * **The test is `>= 1`, and the direction is the point** (`F3.57` review). The
+ * first draft asked `minutes < 1` and returned the bare message, which is the
+ * same answer for every age this code will normally see and the WRONG answer
+ * for two it can: `NaN < 1` is `false`, so an unparseable `raisedAt` rendered
+ * `alarm open for NaN min` to a real recipient. Asking `>= 1` fails closed —
+ * anything that is not a whole minute or more, NaN and a negative age
+ * included, yields the message untouched. A clock skewed the wrong way is
+ * reachable: `raised_at` is stamped by the DATABASE clock and `now` arrives
+ * from the API process clock.
+ *
+ * The composition mirrors `escalationDispatchInput`'s, which has rendered the
+ * same figure since `F3.10`. **The cleared message still carries no age** and
+ * that is deliberate, not an oversight this row missed: `clearedDispatchInput`
+ * composes `Cleared: <message>` for an alarm that has just stopped being a
+ * problem, where the age is history rather than a call to act. What the
+ * re-offered raise was is the only FIRST delivery with no age in it.
+ */
+function withAge(message: string, raisedAt: Date, now: Date): string {
+  const minutes = Math.floor((now.getTime() - raisedAt.getTime()) / 60_000);
+  return minutes >= 1 ? `${message} — alarm open for ${minutes} min` : message;
 }
 
 /** The cleared message's `DispatchInput` (decision 9, plan D12/D14), or `null` for a rule with no organization. */
