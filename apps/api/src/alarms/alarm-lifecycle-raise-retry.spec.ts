@@ -72,8 +72,15 @@ import {
 
 const RAISE_KEY = "rule-1:alarm-1:warning";
 
-/** One ledger row under the raise key. `attemptedAt` defaults to a stale instant — see {@link stale}. */
-function attempt(
+/**
+ * One ledger row under the raise key. `attemptedAt` defaults to a stale instant
+ * — see {@link stale}.
+ *
+ * Exported for `alarm-lifecycle-raise-retry-evidence-guard.spec.ts` (`F3.59`),
+ * which continues this file's case numbering in its own file rather than
+ * rebuilding the fixture.
+ */
+export function attempt(
   channelId: string,
   status: string,
   overrides: Partial<RaiseAttemptRow> = {},
@@ -100,11 +107,11 @@ const stale = new Date(PROCESS_STARTED_AT.getTime() - 60_000);
 const fresh = new Date(PROCESS_STARTED_AT.getTime() + 60_000);
 
 /** A matching sample keeps the clear phase inert: nothing stamps, nothing clears. */
-const freshMatching = { time: secondsBefore(5), value: 150, unit: "kW" };
+export const freshMatching = { time: secondsBefore(5), value: 150, unit: "kW" };
 const freshNonMatching = { time: secondsBefore(5), value: 50, unit: "kW" };
 
 /** The dispatches this phase made — never an index into every dispatch (a clear or a step shares the list). */
-function retries(recorded: Recorded): Recorded["dispatches"] {
+export function retries(recorded: Recorded): Recorded["dispatches"] {
   return recorded.dispatches.filter((entry) => entry.input.reoffered === true);
 }
 
@@ -394,6 +401,22 @@ async function testTheRaiseIsReofferedOnEveryTick(): Promise<void> {
  * `return` is inside the phase and not out of the sweep. The second runs the
  * identical fixture with a working read and gets the re-offer, which proves
  * the absence was the rejection's doing and not a fixture that owed nobody.
+ *
+ * **Since `F3.59` the `ruleChannelLoads` assertion below no longer
+ * distinguishes the `return` from a carry-on with an empty row set.** The
+ * evidence guard skips every candidate of an empty read, so both shapes read no
+ * rule's channels and that assertion is a regression check rather than the gate
+ * it was. **Which mutation measured which half matters here, because `assert`
+ * throws.** `F3.59`'s M8 — a `catch` that assigns an empty read with no
+ * `reasons` and falls through instead of returning — ran this case to the end
+ * with that empty read in the loop and EVERY assertion passed, including the
+ * `ruleChannelLoads` one: that is the measurement for the sentence above. M7,
+ * the same mutant carrying the cause, never reached that assertion at all — the
+ * warn COUNT throws first, because the per-batch warn fires as well and two
+ * warns is red. So the `return` is still held, but by the warn count and only
+ * against a mutant that keeps `reasons`. **The honest bound**: M8 survives, and
+ * after the guard that is a behavioural equivalence rather than a false green —
+ * an empty read decides nothing about anybody, which is what the `return` does.
  */
 async function testARejectedLedgerReadWarnsAndStopsThePhaseOnly(): Promise<void> {
   const alarms = [alarmRow({ raisedAt: secondsBefore(61) })];
@@ -430,7 +453,7 @@ async function testARejectedLedgerReadWarnsAndStopsThePhaseOnly(): Promise<void>
   assert(!warning.includes("Feeder overload"), "§9.6: the warn carries no alarm text");
   assert(
     refused.recorded.ruleChannelLoads.length === 0,
-    `the phase RETURNS — it does not carry on with an empty row set, which would cost a channel read per rule and still owe nobody; got ${refused.recorded.ruleChannelLoads.length} reads`,
+    `a rejected read costs no channel read at all — the phase RETURNS, and since F3.59 the evidence guard would skip every candidate anyway; got ${refused.recorded.ruleChannelLoads.length} reads`,
   );
 
   const working = fakeDeps({
@@ -656,14 +679,20 @@ async function testOneAlarmFailingDoesNotStopTheNext(): Promise<void> {
  * **What the `read.unread` skip really costs, stated exactly.** It is not what
  * stops the blind re-offer: an unread alarm's rows are in the failed batch, so
  * its group is empty and ruling 3's evidence conjunct already answers "not
- * owed". What the skip buys is the channel read — the assertion on
- * `ruleChannelLoads` below is its only gate, which is why the two alarms sit on
- * two DIFFERENT rules here. R9 makes the same claim for the phase-wide failure.
+ * owed".
+ *
+ * **And since `F3.59` this case is no longer the skip's gate**, which the second
+ * mutation below used to claim. The `ruleChannelLoads` assertion here is held by
+ * the evidence guard as well as by the skip: `alarm-1` is in the failed batch,
+ * so it holds no row in the group either, so dropping the skip alone leaves this
+ * case GREEN — the guard skips the same alarm one line later. The skip's gate is
+ * R22 in `alarm-lifecycle-raise-retry-evidence-guard.spec.ts`, on a read shape
+ * production cannot produce, and that case says why it must stay a sentinel.
+ * What this assertion still holds is the per-batch shape itself, on both alarms.
  *
  * **Mutations:** `if (read.reasons.length > 0) return;` (the old per-phase
  * shape) → `alarm-2` is not re-offered, red. Dropping the `read.unread` skip →
- * `rule-2`'s channels are read for an alarm nothing can be decided about, red
- * on `ruleChannelLoads`.
+ * green here, and red on R22 (`F3.59` mutation M5, run rather than reasoned).
  */
 async function testAFailedBatchCostsOnlyItsOwnAlarms(): Promise<void> {
   const { deps, recorded } = fakeDeps({
