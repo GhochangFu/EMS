@@ -323,11 +323,18 @@ type RetryCandidate = {
  * budget per channel and organization and whichever dispatches first takes it,
  * so an escalation backlog must not starve a new critical alarm's raise.
  *
- * **`now` is not a parameter, and its absence is the point.** The re-offered
- * message is the alarm's own, verbatim, with no age and no staleness marker
- * (that complaint is `F3.52`'s and is inherited, not fixed), and the only
- * instant the decision consults is `PROCESS_STARTED_AT` — a constant, not the
- * tick.
+ * **`now` IS a parameter, and this paragraph said the opposite until `F3.59`
+ * found it.** It read "`now` is not a parameter, and its absence is the point —
+ * the re-offered message is the alarm's own, verbatim, with no age and no
+ * staleness marker (that complaint is `F3.52`'s and is inherited, not fixed)".
+ * `F3.57` (ADR 0057 Amendment 8) falsified every clause of that: it added the
+ * required `RaiseRetryPhaseInput.now` and `raiseRetryDispatchInput` now composes
+ * `withAge(...)`, so the re-offered message carries `— alarm open for N min`
+ * and the `F3.52` complaint IS fixed. `F3.57`'s own prose sweep missed this
+ * paragraph because it corrected the four sentences that named the byte-identity
+ * and not the one that named the parameter. **The DECISION still consults no
+ * tick**, which is the true half worth keeping: `channelsOwedTheRaise` reads
+ * `PROCESS_STARTED_AT`, a constant, and `now` reaches only the message.
  *
  * Reads per tick: `ceil(eligible / RAISE_ATTEMPT_BATCH_SIZE)` ledger
  * statements — one before the `F3.51` review, chunked since, so a fleet under
@@ -481,8 +488,13 @@ export async function runRaiseRetryPhase(
     // row list is empty, so an empty group is "not owed" for ANY channel list
     // and the round trip below cannot change the answer. The filter is HOISTED
     // rather than duplicated — the predicate is handed this very array — so
-    // the skip is behaviour-preserving by construction and not merely
-    // conservative.
+    // the skip is behaviour-preserving FOR THE OWED SET by construction and not
+    // merely conservative. **Not for the warn stream, and the qualifier is
+    // there because both reviews asked for it**: a no-evidence candidate no
+    // longer enters the `try` below, so a rejecting `loadRuleChannels` that used
+    // to warn once per such candidate — 78 lines on the seeded fleet — now warns
+    // none. No decision changes and no message about a channel that was actually
+    // owed is lost, because nothing was owed.
     //
     // The organization is re-checked here rather than trusted to the read: the
     // ledger query's three `IN` lists are independent, so a row for this alarm
@@ -490,7 +502,18 @@ export async function runRaiseRetryPhase(
     // organization, which is the RULE's — what every delivery row for this
     // alarm was stamped with — and the organization is the ONLY thing filtered
     // here: the status exclusions and the unconfigured watermark stay inside
-    // the predicate, where the channel decides them (case R21 gates both).
+    // the predicate, where the channel decides them. **Three different cases
+    // gate those three claims, and naming one for all of them was a false
+    // sentence here until the `F3.59` correctness review caught it.** R21 gates
+    // the organization axis (its foreign row is `failed`, so it gates neither
+    // exclusion); R5 gates the watermark (its only evidence is
+    // `skipped_unconfigured`, so a guard that dropped those rows leaves it with
+    // nothing to re-offer); R20 gates the rate-limited exclusion, and it is the
+    // only case in the repository that does at sweep level — its row is
+    // `skipped_rate_limited` for exactly that reason. Hoisting either exclusion
+    // up here would drop a row `channelsOwedTheRaise` must still see as
+    // evidence, and for the rate-limited one that silently un-fixes the third
+    // of `F3.51`'s three cases.
     //
     // **No warn line, deliberately.** An empty group is the ordinary shape of a
     // rule with no `rule_notifications` join — no seed writes one and

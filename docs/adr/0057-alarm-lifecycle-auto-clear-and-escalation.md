@@ -1301,7 +1301,15 @@ candidate is skipped when the array is empty. The saving is exact rather than
 approximate: `channelsOwedTheRaise` stage 1 answers `false` for every channel
 whose row list is empty, so an empty group is "not owed" for **any** channel
 list and the round trip could not change the answer. The skip is therefore
-behaviour-preserving by construction, not merely conservative. Only the
+behaviour-preserving **for the owed set** by construction, not merely
+conservative — and the qualifier is not pedantry, because both the correctness
+and the compliance review asked for it independently. It is **not**
+behaviour-preserving for the warn stream: a no-evidence candidate no longer
+enters the per-alarm `try`, so a rejecting `loadRuleChannels` that used to warn
+once per such candidate — 78 lines on the seeded fleet — now warns none. That is
+an improvement and no message about an actually-owed channel is lost, but the
+unqualified sentence was the kind of generalisation this row was asked to hunt.
+Only the
 organization is filtered at the guard — the status exclusions and the
 unconfigured watermark stay inside the predicate, where the channel decides
 them.
@@ -1375,6 +1383,19 @@ in `unread` and represented in `rows`. AGENTS.md §4.6 permits a sentinel strong
 than production and requires saying so; R22's docblock says it, and says a later
 reader must not "fix" the fixture into a producible one.
 
+**The authority for the two halves is not the same, and an earlier draft of this
+paragraph claimed §4.6 for both.** §4.6's provision — under "Where a rule is held
+is a claim about where its input exists" — authorises the **synthetic input**,
+and R22 is squarely that shape. It does **not** authorise keeping a line whose
+production effect is nil, which is the other half of the decision and which rests
+on the defensive argument above: only that line would stop a blind re-offer if
+ruling 3 were ever revised to read an empty group as "owed". The repository's
+nearer precedent for the line itself is `LostLedgerRows.add`, which keeps a
+branch no case reaches and says so in place of a test. The compliance review
+caught this over-attribution, and it is recorded rather than quietly reworded
+because the same slip — claiming a rulebook section for a decision the section
+does not cover — is how a later reader inherits a rule that was never written.
+
 **What gates it.** `alarm-lifecycle-raise-retry-evidence-guard.spec.ts`, cases
 R20-R22 continuing the raise-retry file's numbering, with **one `it()` each**.
 The new file exists for two measured reasons: the raise-retry spec stood at 905
@@ -1389,6 +1410,31 @@ for either mutation that widens it: `rowsByAlarm.has(candidate.alarm.id)`, which
 nothing else in the suite catches at all, and a filter on
 `candidate.alarm.organizationId`, which also reddens R1 — but as the first case
 of that single `it()`.
+
+**A false green the correctness review found, and it is the most useful thing to
+come out of this row.** The guard's comment said the status exclusions and the
+unconfigured watermark stay inside the predicate "(case R21 gates both)". R21
+gates **neither** — both of its ledger rows are `failed`, so neither exclusion is
+engaged — and worse, the `skipped_rate_limited` exclusion was gated by **nothing**
+at sweep level. `alarm-lifecycle-closed-ceilings.spec.ts` only *asserts* that
+status as an outcome, and integration I2's ledger ends at `failed` because
+`F3.53`'s closed-ceiling memo means a refused tick writes no row at all. So a
+later author reading that comment as an invitation and hoisting the exclusions —
+`.filter((row) => row.organizationId === … && row.status !== "skipped_rate_limited")`
+— would have shipped **green** through every case in the new file, R1-R19, all
+three integration cases and `raise-retry.spec.ts`, while silently un-fixing the
+third of Amendment 5's three cases: a raise refused by the hourly ceiling has
+`skipped_rate_limited` as its only row, stage 1 must read that as evidence with
+an empty eligible set and answer "owed" (`blocked` is `0 >= 3 || [].some(…)`,
+false), and the mutated guard drops the row before the predicate sees it.
+
+**Fixed without a new case**: R20's evidence row is now
+`skipped_rate_limited` rather than `failed`, which makes R20 the only sweep-level
+gate on that exclusion, and its docblock says the status is load-bearing so a
+later reader does not tidy it back. The comment now points at the three cases that
+actually gate its three claims — R21 for the organization axis, R5 for the
+watermark (its only evidence is `skipped_unconfigured`), R20 for the rate-limited
+exclusion — because naming one case for all three was the false sentence.
 
 **Eight mutations were run and their printed messages recorded, not reasoned
 about.** Seven were killed, each by the assertion that owns its claim: the guard
@@ -1413,8 +1459,8 @@ was run **with** the database attached — 3 files, 7 tests, **0 skipped** — w
 without one its three cases skip. I1-I3 all hold rows under the key, so the guard
 never fires there; that is the regression check, not a gate on the guard.
 
-**The database-level check is owed to step 6 and its baseline is recorded here.**
-`pg_stat_all_tables` scan counts over a 75 s window (two ticks), taken as
+**The database-level check ran on the stack, and both halves are recorded here.**
+`pg_stat_all_tables` scan counts, taken as
 `bms_app` — a pure read with no configuration change, which replaces a planned
 `ALTER SYSTEM SET log_min_duration_statement = 0`: this Postgres is shared with a
 second session, and statement logging would pollute their window and persist in
@@ -1422,12 +1468,27 @@ second session, and statement logging would pollute their window and persist in
 `bms.rule_notifications` 517380 → 517614, delta **+234**, which is 78 × 3 ticks
 and so the 78 distinct candidate rules exactly; `bms.notification_deliveries`
 104174 → 104177, delta **+3**, one ledger read per tick and the positive control
-that the sweep is alive. **Expected after the guard**: `rule_notifications` delta
-**0**, `notification_deliveries` still ~3. That after-figure is *not* in this
-amendment because it had not been taken when this was written — the dispatcher
-owns it. **Caveat for whoever reads it**: the same Postgres is shared, so a
-non-zero `rule_notifications` delta is not automatically a failure of the guard;
-correlate it against the tick count before concluding.
+that the sweep is alive. **After**, on the rebuilt image over a 100 s window:
+`bms.rule_notifications` 524526 → 524526, delta **0**; `bms.notification_deliveries`
+104910 → 104914, delta **+4**; `bms.alarms` 108882 → 108886, delta **+4**. So
+**78 channel reads a tick became none**, and the two non-zero deltas are the
+positive controls that four ticks genuinely fired — the zero is the guard, not a
+dead sweep. Each window's tick count is read off the `notification_deliveries`
+delta rather than divided out of the window length, which is why "before" is
+three ticks and "after" is four.
+
+**The container was proved to carry the change before anything was read from
+it**, because a worktree build has served `main`'s code in this repository
+before: a `--no-cache` build with the worktree as context, the guard's
+`evidence.length === 0` present in the new image's
+`dist/alarms/alarm-lifecycle-phases.js` and **absent** from the pre-change image
+as a negative control, and the running container's image id identical to the
+newly built one. No log line is expected or found for the skip itself — the guard
+writes none by design, which is why the scan counters carry this claim.
+
+**Caveat for whoever reads it**: the same Postgres is shared with a second
+session, so a non-zero `rule_notifications` delta is not automatically a failure
+of the guard; correlate it against the tick count before concluding.
 
 **Browser — N/A**, and said rather than skipped silently: no rendered surface, no
 `apps/web` change, no bundle to reload.
@@ -1442,8 +1503,22 @@ guard skips all 78. The phase docblock's spec census also went stale by
 construction — a seventh suite and three more sweeps — and was re-counted with
 the command that docblock carries. Still owed to the separate `chore(agents):`
 sweep, and deliberately not touched on the feature branch (§9.10): the
-`F3.59` BACKLOG row's own false value sentence, and the `docs/roadmap.md` mirror
-of it.
+`F3.59` BACKLOG row's own false value sentence and its `⬜` status; three stale
+`docs/roadmap.md` sites (the "filed, unbuilt" entry and two calling `F3.59` the
+only remaining Wave-2 Track D row); `AGENTS.md`'s "477 and 728" line counts, the
+phases file now standing at **795** — re-measure it rather than copy that figure,
+which is what the `AGENTS.md` sentence itself says and which this row proved
+right by going stale twice inside one branch; an Amendment 9 summary in the §2 *Alarm
+lifecycle* row; and **the new batching backlog row from owner ruling 1**, which
+does not exist yet and is the easiest of these to lose.
+
+**One correction to this list, which an earlier draft of it got wrong.** It said
+the roadmap carried a *mirror* of the BACKLOG row's false sentence. It does not:
+the roadmap says "the loop exits at `channels.length === 0`, so
+`channelsOwedTheRaise` is never reached", and that is **true** — the predicate
+really is never reached for a rule with no join. Only the *cost* precedes that
+exit, which is the half the BACKLOG row gets wrong. The roadmap owes a status
+flip, not a correction.
 
 **What this does not fix.** A rule with at least one evidence-bearing alarm still
 costs one channel query per distinct rule per tick, and on a configured fleet
