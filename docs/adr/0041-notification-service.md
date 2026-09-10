@@ -1488,3 +1488,103 @@ and `alarm-lifecycle.spec.ts` says so where they are defined.
 the age lives in the builder, and `dispatchToChannels` still passes
 `input.message` through untouched. Its comment carried Amendment 5's wider
 sentence and now carries this one.
+
+## Amendment 10 — `F3.60`: the sweep's rule-channel read is one statement per 500 rules, and "the rule's channels" keeps one definition (2026-09-10)
+
+**Status: Proposed — 2026-09-10.** Awaiting the repository owner's ruling.
+
+Amendment 9's raise-retry phase read a rule's channels through
+`ChannelsService.loadForRule`, one round trip per distinct rule with an
+evidence-bearing alarm, serially, every 30 s tick. `F3.59` (ADR 0057 Amendment
+9) removed the reads that were *dead*; this row is the *count* of the ones that
+remain. They are now `ceil(distinct evidenced rules / RULE_CHANNEL_BATCH_SIZE)`
+statements.
+
+### The measurement, with every conditional it carries
+
+Taken on `main` at `13b32232`, read-only, as `bms_fleet` from inside
+`bms-api-1` over the docker network, over the 78 distinct rules of the 78 open
+unacknowledged alarms this stack held:
+
+| Probe (three runs) | Result |
+|---|---|
+| round-trip floor — `select 1` × 78, sequential | 83 · 132 · 94 ms |
+| sequential `loadForRule` × 78 — the old shape | 135 · 131 · 125 ms |
+| one batched statement over the same 78 ids | 3.6 · 2.9 · 2.6 ms |
+
+Four things that measurement does **not** say, each recorded because a row in
+this series has been closed on exactly this kind of unconditional sentence:
+
+- **Both timed queries returned zero rows.** The stack held 0
+  `notification_channels`, 0 `rule_notifications` and 0
+  `notification_deliveries`, so the statement cost is approximately nothing and
+  what the probe compares is the round-trip **hop**. That is the stronger claim
+  rather than the weaker one: the hop does not shrink on a configured fleet,
+  and the statement cost only grows.
+- **On that stack the read is not reached at all.** Since `F3.59` the evidence
+  guard returns before it, and with no delivery rows no candidate holds
+  evidence. The ~130 ms is what a **configured** fleet pays once raises send —
+  0.43% of the 30 s tick at 78 rules, linear in distinct evidenced rules, while
+  the batched read is constant.
+- **`F3.59`'s own figures (183–200 / 2.5–4.1 / 81–90 ms) are not corrected by
+  these.** Different day, unknown load, three runs each. Only the ratio is
+  stable across the two samples: **~40–50×**.
+- **The shared stack moved 15 minutes later**, to 105 channels and 105
+  `rule_notifications`, when the concurrent `E8.4` session committed them. These
+  figures are timestamped, not current.
+
+### What was decided
+
+1. **The read is a module function in `channel-reads.ts`**, not the
+   `ChannelsService.loadForRules` the backlog row sketches.
+   `channels.service.ts` stands at 964 of AGENTS.md §4.5's 1000 lines, and a
+   batching loop with a failure shape and a docblock in this repository's style
+   is 80–120. That is the same reason `channel-reads.ts` itself exists (its
+   header records `channels.service.ts` at 986 when `F3.10` wrote it) and the
+   reason `raise-attempts.ts` is "a module function, not a service method". The
+   sketch is followed in everything but its home.
+2. **The contract is `byRule` / `unread` / `reasons`**, mirroring
+   `RaiseAttemptsRead` — which Amendment 5's review introduced for the same
+   reason: a failing batch must cost only the rows it bound, so one noisy
+   tenant's volume cannot disable the phase for the whole fleet. An absent group
+   and an unread rule mean opposite things, so the difference is a field rather
+   than an inference.
+3. **The statement is `loadForRule`'s** — same join, same `enabled = true`
+   filter, same ten columns, same `ORDER BY notification_channels.code` — plus
+   `rule_notifications.rule_id` so the rows can be grouped, and grouping is by
+   insertion so each rule's slice keeps the statement's order. Decision 8's
+   decryption stays in `ChannelsService.toChannelRow`, which the sweep's adapter
+   applies; `dispatch()` is unchanged and still calls `loadForRule`. Case CI4
+   asserts the two lists id-for-id, so "one definition" is measured.
+4. **De-duplication runs over the whole id list before the slicing**, which is
+   the one place this differs from `raiseAttemptBatches`. A rule id landing in
+   two batches would be grouped twice and its channels offered twice — a
+   duplicate send, the failure `F3.51` exists to stop. `raiseAttemptBatches`
+   never faced it because the phase builds one ref per alarm.
+5. **`RULE_CHANNEL_BATCH_SIZE = 500` is its own constant**, not a reuse of
+   `RAISE_ATTEMPT_BATCH_SIZE`, which holds the same number by coincidence: that
+   one binds roughly two parameters per alarm across three `IN` lists. Here the
+   pessimal bind count is `500 + 1` against the extended protocol's 65 535.
+6. **`reasonOf` is exported from `raise-attempts.ts` rather than copied.** Both
+   bound a sweep warn line to 200 characters; `ledger-text.ts`'s `reasonOf`
+   bounds a database column and is a different number. Sharing the one that
+   matches the sink stops the two drifting.
+
+### What gates it
+
+C1–C7 over a fake database, CI1–CI5 against a real one, one `it()` per case in
+both. Twelve mutations were run — not reasoned about — and all twelve killed.
+Three are recorded rather than claimed:
+
+- **M9** (`RULE_CHANNEL_BATCH_SIZE = 70_000`) reddens **only C6**. C1 is
+  expressed in terms of the constant, so it stays invariant. The plan predicted
+  C1 would redden too; it does not.
+- **M11** (the `ORDER BY` dropped) reddens CI2 on the heap order this fixture
+  happens to produce, and a heap order is unspecified — the mutant is free to
+  coincide. CI4 is what actually holds the clause to `loadForRule`'s.
+- **M12** (the `WHERE rule_id IN (…)` dropped) **survived the first pass**, and
+  the reason is worth keeping: the projection carries `rule_id` and the caller
+  groups on it, so removing the filter changes no decision the phase makes — it
+  returns every rule's channels on the whole fleet, in every batch, every tick,
+  which is the opposite of this row's purpose. Every other case stayed green.
+  CI5 was added for it and kills it.
