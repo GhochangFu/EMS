@@ -72,8 +72,15 @@ import {
 
 const RAISE_KEY = "rule-1:alarm-1:warning";
 
-/** One ledger row under the raise key. `attemptedAt` defaults to a stale instant — see {@link stale}. */
-function attempt(
+/**
+ * One ledger row under the raise key. `attemptedAt` defaults to a stale instant
+ * — see {@link stale}.
+ *
+ * Exported for `alarm-lifecycle-raise-retry-evidence-guard.spec.ts` (`F3.59`),
+ * which continues this file's case numbering in its own file rather than
+ * rebuilding the fixture.
+ */
+export function attempt(
   channelId: string,
   status: string,
   overrides: Partial<RaiseAttemptRow> = {},
@@ -100,11 +107,11 @@ const stale = new Date(PROCESS_STARTED_AT.getTime() - 60_000);
 const fresh = new Date(PROCESS_STARTED_AT.getTime() + 60_000);
 
 /** A matching sample keeps the clear phase inert: nothing stamps, nothing clears. */
-const freshMatching = { time: secondsBefore(5), value: 150, unit: "kW" };
+export const freshMatching = { time: secondsBefore(5), value: 150, unit: "kW" };
 const freshNonMatching = { time: secondsBefore(5), value: 50, unit: "kW" };
 
 /** The dispatches this phase made — never an index into every dispatch (a clear or a step shares the list). */
-function retries(recorded: Recorded): Recorded["dispatches"] {
+export function retries(recorded: Recorded): Recorded["dispatches"] {
   return recorded.dispatches.filter((entry) => entry.input.reoffered === true);
 }
 

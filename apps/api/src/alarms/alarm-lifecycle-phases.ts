@@ -72,7 +72,7 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * TYPES only, so the emitted JavaScript holds no edge back to the service and
  * there is no runtime cycle.
  *
- * **No suite imports this module, and SIX UNIT suites gate it** — plus
+ * **No suite imports this module, and SEVEN UNIT suites gate it** — plus
  * `alarm-lifecycle.integration.spec.ts`, which drives the same phases through
  * `AlarmLifecycleService.sweep` against a real database and holds the one claim
  * no fake can: that the service's `dispatchToChannels` adapter forwards the
@@ -83,16 +83,19 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * `alarm-lifecycle.service.spec.ts` (21),
  * `alarm-lifecycle-cleared-no-recipients.spec.ts` (9),
  * `alarm-lifecycle-escalation-lost-rows.spec.ts` (6),
- * `alarm-lifecycle-closed-ceilings.spec.ts` (5) and
+ * `alarm-lifecycle-closed-ceilings.spec.ts` (5),
+ * `alarm-lifecycle-raise-retry-evidence-guard.spec.ts` (3) and
  * `alarm-lifecycle-escalation-staleness.spec.ts` (2). **Run the directory, not
- * a file.** 45 of the 66 sweeps are outside `alarm-lifecycle.service.spec.ts`,
+ * a file.** 48 of the 69 sweeps are outside `alarm-lifecycle.service.spec.ts`,
  * and `runRaiseRetryPhase`'s invariants are almost entirely in the first — so
  * `vitest run alarm-lifecycle.service` is green on a change it never exercised.
  *
  * **This paragraph has now been measured wrong twice, so it carries its own
  * command.** It said FOUR files and "38 of the 59" until `F3.53` re-counted:
  * `F3.52` added `alarm-lifecycle-escalation-staleness.spec.ts` and left the
- * sentence, and `F3.53` adds `alarm-lifecycle-closed-ceilings.spec.ts`. Do not
+ * sentence, `F3.53` added `alarm-lifecycle-closed-ceilings.spec.ts`, and
+ * `F3.59` adds `alarm-lifecycle-raise-retry-evidence-guard.spec.ts` — whose own
+ * docblock says why its three cases are not in the raise-retry file. Do not
  * hand-edit the numbers — paste them from
  * `git grep -c "await runLifecycleSweep(" -- "*.spec.ts"`. **The pathspec is
  * not decoration: without it the command matches this docblock's own quoted
@@ -329,7 +332,11 @@ type RetryCandidate = {
  * Reads per tick: `ceil(eligible / RAISE_ATTEMPT_BATCH_SIZE)` ledger
  * statements — one before the `F3.51` review, chunked since, so a fleet under
  * 500 open eligible alarms still pays exactly one — plus one channel query per
- * distinct rule with an eligible alarm (case R13 holds the memo).
+ * distinct rule that has at least one eligible alarm holding a ledger row under
+ * its raise key in the RULE's organization (`F3.59`, ADR 0057 Amendment 9: case
+ * R13 holds the memo, R20 the evidence guard). A rule none of whose alarms
+ * holds such a row costs no channel query at all, because ruling 3 answers "not
+ * owed" for any channel list against an empty row group.
  */
 export async function runRaiseRetryPhase(
   deps: AlarmLifecycleDeps,
@@ -431,7 +438,10 @@ export async function runRaiseRetryPhase(
   }
 
   // One channel read per rule per tick, however many of its alarms are owed —
-  // `loadStepChannels`'s cache shape, keyed on the rule id.
+  // `loadStepChannels`'s cache shape, keyed on the rule id. Since `F3.59` the
+  // memo is reached only for a rule with an evidence-bearing alarm, so the
+  // count is one per distinct SUCH rule and not one per distinct candidate
+  // rule; a rule none of whose alarms holds a row never enters it.
   const channelsByRule = new Map<string, Promise<NotificationChannelRow[]>>();
   const loadRuleChannels = (ruleId: string): Promise<NotificationChannelRow[]> => {
     let pending = channelsByRule.get(ruleId);
@@ -447,19 +457,58 @@ export async function runRaiseRetryPhase(
   let refusedByTheCap = 0;
 
   for (const candidate of candidates) {
-    // This alarm's batch did not return, so the phase decides nothing about
-    // it and does not pay a channel read to find that out.
+    // This alarm's batch did not return, so the phase decides NOTHING about
+    // it — not "owed" and not "not owed", which is `RaiseAttemptsRead.unread`'s
+    // contract and is the whole of what this line now buys.
     //
     // **It is not what stops a blind re-offer, and saying so would be a false
     // claim.** An unread alarm's rows are in the batch that failed, so its
     // group below is empty, and ruling 3's evidence conjunct already reads an
     // empty group as "not owed" — the safe answer, and the same one a
-    // phase-wide failure gives. What this line buys is the read: without it
-    // every undecidable alarm still costs one `loadRuleChannels` per rule that
-    // has no decidable alarm, which is the cost R9 refuses for the phase-wide
-    // case and R16 refuses for the per-batch one. It is also the line that
-    // keeps the intent explicit if the conjunct is ever revisited.
+    // phase-wide failure gives. Since `F3.59` it does not buy the channel read
+    // either: the evidence guard immediately below reaches every alarm this
+    // line reaches, for the same reason, and skips it one line later. It is
+    // therefore the line that keeps the intent explicit if the conjunct is ever
+    // revisited — a ruling that read an empty group as "owed" would otherwise
+    // turn the guard into a re-offer of every alarm whose batch failed. Case
+    // R22 in `alarm-lifecycle-raise-retry-evidence-guard.spec.ts` is its gate;
+    // R16 no longer is, and R16's docblock says so.
     if (read.unread.has(candidate.alarm.id)) {
+      continue;
+    }
+    // **No evidence, no channel read** (`F3.59`, ADR 0057 Amendment 9).
+    // `channelsOwedTheRaise` stage 1 answers `false` for every channel whose
+    // row list is empty, so an empty group is "not owed" for ANY channel list
+    // and the round trip below cannot change the answer. The filter is HOISTED
+    // rather than duplicated — the predicate is handed this very array — so
+    // the skip is behaviour-preserving by construction and not merely
+    // conservative.
+    //
+    // The organization is re-checked here rather than trusted to the read: the
+    // ledger query's three `IN` lists are independent, so a row for this alarm
+    // under another organization could reach the group. It is the REF's
+    // organization, which is the RULE's — what every delivery row for this
+    // alarm was stamped with — and the organization is the ONLY thing filtered
+    // here: the status exclusions and the unconfigured watermark stay inside
+    // the predicate, where the channel decides them (case R21 gates both).
+    //
+    // **No warn line, deliberately.** An empty group is the ordinary shape of a
+    // rule with no `rule_notifications` join — no seed writes one and
+    // `asset-templates-instantiate.service.ts` deliberately does not either
+    // (ADR 0057 Amendment 6, ADR 0058 decision 2) — so there is no
+    // misconfiguration to report, and one line per alarm per tick would be 78
+    // lines every 30 s on the seeded stack.
+    //
+    // **What it does not save.** An alarm whose raise landed holds a `sent`
+    // row, so on a configured fleet the read is still paid and the predicate
+    // answers "not owed" after it; the saving is the never-dispatched class.
+    // Batching the reads that remain into one round trip is a different defect
+    // on this same line — round-trip count, not deadness — and is filed as its
+    // own backlog row (owner ruling 1, 2026-09-10).
+    const evidence = (rowsByAlarm.get(candidate.alarm.id) ?? []).filter(
+      (row) => row.organizationId === candidate.ref.organizationId,
+    );
+    if (evidence.length === 0) {
       continue;
     }
     // Caught per alarm, the escalation phase's shape: one bad alarm must not
@@ -471,12 +520,7 @@ export async function runRaiseRetryPhase(
       }
       const owed = channelsOwedTheRaise({
         channels,
-        // The organization is re-checked here rather than trusted to the
-        // read: the ledger query's three `IN` lists are independent, so a row
-        // for this alarm under another organization could reach the group.
-        rows: (rowsByAlarm.get(candidate.alarm.id) ?? []).filter(
-          (row) => row.organizationId === candidate.ref.organizationId,
-        ),
+        rows: evidence,
         maxAttempts: MAX_EVENT_ATTEMPTS,
         processStartedAt: PROCESS_STARTED_AT,
       });
