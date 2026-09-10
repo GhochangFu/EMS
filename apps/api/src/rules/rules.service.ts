@@ -58,7 +58,7 @@ import {
   selectRuleRows,
   traceProjection,
 } from "./rule-reads";
-import { pointKeysForAsset, templatePointKeysForAsset } from "./rule-points";
+import { assertCompatiblePoint, pointKeysForAsset } from "./rule-points";
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
   ListRuleExecutionsQuery,
@@ -900,7 +900,7 @@ export class RulesService {
           "Threshold rules require asset, point, operator, and threshold value",
         );
       }
-      await this.assertCompatiblePoint(dto.assetId, dto.pointKey);
+      await assertCompatiblePoint(this.fleetDb, dto.assetId, dto.pointKey);
       if (!("window" in dto.condition) || dto.condition.window !== "latest") {
         throw new BadRequestException("Threshold rules must use the latest-value window");
       }
@@ -925,26 +925,6 @@ export class RulesService {
       operator: null,
       thresholdValue: null,
     });
-  }
-
-  private async assertCompatiblePoint(assetId: string, pointKey: string): Promise<void> {
-    // fleetDb: a pre-write asset lookup, already scope-checked by the caller.
-    const [asset] = await this.fleetDb
-      .select({ code: assets.code, domain: assets.domain })
-      .from(assets)
-      .where(eq(assets.id, assetId))
-      .limit(1);
-    if (!asset) {
-      throw new BadRequestException("Selected asset does not exist");
-    }
-    if (!pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
-      // E2.4 Q1: only on the miss, so nothing that passed before pays for this
-      // query or changes behaviour. Same `fleetDb` and the same reason as the
-      // asset read above — see `templatePointKeysForAsset`'s doc.
-      if (!(await templatePointKeysForAsset(this.fleetDb, assetId)).includes(pointKey)) {
-        throw new BadRequestException("Selected telemetry point is not compatible with asset");
-      }
-    }
   }
 
   /** The stored org of a rule being mutated; refuses a pre-0046 NULL. */

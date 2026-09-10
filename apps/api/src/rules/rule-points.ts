@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 
 import { assets, templatePoints } from "@bms/db";
@@ -88,4 +89,28 @@ export async function templatePointKeysForAsset(
     .innerJoin(assets, eq(assets.templateId, templatePoints.templateId))
     .where(eq(assets.id, assetId));
   return rows.map((row) => row.pointKey);
+}
+
+export async function assertCompatiblePoint(
+  fleetDb: BmsDb,
+  assetId: string,
+  pointKey: string,
+): Promise<void> {
+  // fleetDb: a pre-write asset lookup, already scope-checked by the caller.
+  const [asset] = await fleetDb
+    .select({ code: assets.code, domain: assets.domain })
+    .from(assets)
+    .where(eq(assets.id, assetId))
+    .limit(1);
+  if (!asset) {
+    throw new BadRequestException("Selected asset does not exist");
+  }
+  if (!pointKeysForAsset(asset.domain, asset.code).includes(pointKey)) {
+    // E2.4 Q1: only on the miss, so nothing that passed before pays for this
+    // query or changes behaviour. Same `fleetDb` and the same reason as the
+    // asset read above — see `templatePointKeysForAsset`'s doc.
+    if (!(await templatePointKeysForAsset(fleetDb, assetId)).includes(pointKey)) {
+      throw new BadRequestException("Selected telemetry point is not compatible with asset");
+    }
+  }
 }
