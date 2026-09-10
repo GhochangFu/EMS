@@ -162,16 +162,27 @@ export function raiseAttemptBatches(
  * Honest bound, restated for the chunked shape: the cost per tick is now
  * `ceil(alarms / 500)` sequential statements rather than one, so a fleet with
  * ten thousand open alarms pays twenty round trips a tick. That is a cost, not
- * a failure — and **no row owns it**.
+ * a failure.
  *
- * This said "it is `F3.53`'s ground", and that was written before `F3.53` was
- * scoped. ADR 0041 Amendment 7, which `F3.53` is built under, bounds the
- * per-DISPATCH hourly-ceiling read inside one tick and nothing else: its memo is
- * keyed on channel, organization and budget, it is consulted only from
- * `dispatchToChannel`, and this phase-level batch read is a different query on a
- * different key that never reaches it. The batch cost above is therefore
- * currently unowned. It is named here so a reader does not take a closed row as
- * covering it; whoever picks it up files the row.
+ * **`F3.58` measured that cost and closed won't-fix (2026-09-10) — do not
+ * re-file it.** This paragraph used to say the cost was unowned and that
+ * whoever picked it up should file the row. The row was filed, and the
+ * measurement closed it. On the running fleet — 78 active unacknowledged alarms
+ * over 78 DISTINCT rules, so the calling phase's per-rule channel cache saves
+ * nothing — this read costs **one** round trip a tick while
+ * `loadRuleChannels`, in the loop that consumes this read, costs **78**, and
+ * `notifyCleared` costs two unbatched round trips per cleared alarm.
+ * `loadActiveAlarms` carries no `LIMIT`. So this is the only **sublinear**
+ * per-alarm term in the sweep, and bounding it while nothing bounds the tick is
+ * the weakest available intervention. If a bound is ever owed it is on how many
+ * alarms one tick decides, which is an ADR 0057 question and not this file's.
+ * That measurement filed `F3.59` instead, against the channel read beside it.
+ *
+ * ADR 0041 Amendment 7, which `F3.53` is built under, still does not reach this
+ * read, and that stays worth writing down: its memo is keyed on channel,
+ * organization and budget, it is consulted only from `dispatchToChannel`, and
+ * this is a phase-level batch read on a different key. A reader must not take
+ * that closed row as covering this one in either direction.
  */
 export async function loadRaiseAttempts(
   db: BmsDb,

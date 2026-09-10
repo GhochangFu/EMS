@@ -4251,7 +4251,10 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   not weakened, and re-proved by mutation.
 - **Unblocks:** nothing directly. Filed **`F3.58`** for the batched
   `loadRaiseAttempts` round-trip cost that `raise-attempts.ts` had been
-  attributing to `F3.53` and that Amendment 7 does not reach.
+  attributing to `F3.53` and that Amendment 7 does not reach. **`F3.58`
+  closed won't-fix on 2026-09-10**: measured at one round trip a tick beside
+  a 78-round-trip channel read in the same phase, it is the sweep's only
+  sublinear per-alarm term. Its measurement filed `F3.59`.
 
 ### The delivery ledger names the event kind, derived from the key (`F3.56`, ADR 0041 Amendment 8) — done
 - **Status:** merged 2026-09-10 — PR
@@ -4388,6 +4391,51 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   rows were filed on the way out: `F2.32` (should a baseline template be a
   domain-wide union at all) and `F4.121` (`GET /rules/catalog` is unbounded in
   fleet size, and this row gave it a bind-parameter ceiling as well).
+
+### The batched raise-attempts read is measured and left alone (`F3.58`) — won't-fix
+- **Status:** closed 2026-09-10 as `⛔` won't-fix — one owner ruling, no ADR, and
+  no code change beyond the docblock that had been inviting the row. The first
+  dropped row in `docs/BACKLOG.md`; `F3.47`'s precedent covers closing on a
+  recorded reason.
+- **What the row asked.** `loadRaiseAttempts` chunks its ledger read at 500 refs
+  (`F3.51` review, Medium), so the raise-retry phase issues
+  `ceil(alarms / 500)` sequential statements a tick, and `raise-attempts.ts`
+  said in as many words that **no row owns that cost**. The row's own
+  instruction was to state whether it is worth building at all before proposing
+  a shape, on `F3.53`'s precedent — that row's measurement inverted the fix its
+  text had proposed.
+- **Measured as `bms_fleet` on the running stack.** 78 active unacknowledged
+  alarms carrying a rule; all of them `notify`; **78 distinct rules**, one alarm
+  per rule, so the phase's per-rule channel cache saves nothing. The read costs
+  `ceil(78 / 500)` = **1** round trip a tick. `loadRuleChannels`, in the loop that
+  consumes it, costs **78**. `notifyCleared` costs **2 unbatched**
+  round trips per *cleared* alarm. And `loadActiveAlarms` carries **no `LIMIT`**.
+- **Why that closes it.** This read is the only **sublinear** per-alarm term in
+  the whole sweep — it divides by 500 where two terms beside it are linear in
+  the same unbounded count. Bounding it while nothing bounds the tick is the
+  weakest available intervention. The row's own closing sentence had guessed
+  exactly that: if anything is owed it is a bound on how many alarms one tick
+  decides, which is an ADR 0057 question and not an ADR 0041 one.
+- **What the measurement found instead.** `loadRuleChannels` runs *before* the
+  evidence conjunct, and `channelsOwedTheRaise` filters the channel list by the
+  ledger rows — so an alarm whose organization-filtered row group is empty
+  yields an empty owed list for any channel list, and its round trip cannot
+  have changed the answer. Filed as **`F3.59`**, unbuilt. The identical
+  argument is already in the file immediately above, for the
+  undecidable-batch case.
+- **One figure is recorded as non-evidence.** This stack holds **zero**
+  `notification_channels`, zero `rule_notifications` and zero delivery rows, so
+  "78 of 78 channel reads are waste" describes an **unconfigured** fleet and is
+  the most favourable possible shape. Where raises send, an open alarm holds a
+  `sent` row and the read is needed. The steady-state saving is **unmeasured**
+  and could not be measured here for want of a configured tenant, which is why
+  `F3.59` carries measurement as its first task and names won't-fix as a
+  legitimate outcome.
+- **Scope was not substituted.** `F3.53`'s precedent is on the record: it
+  corrected the comment attributing this cost to itself and deliberately did not
+  widen. This row does the same — it records the reason and files the finding
+  rather than quietly becoming the finding's row.
+- **Unblocks:** nothing. `F3.57` is the remaining Wave-2 Track D row.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
