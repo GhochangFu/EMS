@@ -44,12 +44,20 @@ import { notificationReadiness } from "./readiness";
  * decrypted (ADR 0041 decision 8).
  *
  * Keeping decryption here is what lets every transport be written without a
- * `try`/`catch` around a key: `CredentialCryptoService.getKey()` throws when
- * `CREDENTIAL_ENCRYPTION_KEY` is unset or the wrong length, and dispatch is
+ * `try`/`catch` around a key. `decrypt` throws on two states this service can
+ * meet — an unset `CREDENTIAL_ENCRYPTION_KEY` (`CredentialKeyConfigError`) and
+ * a stored `secret_key_version` no loaded key answers
+ * (`CredentialKeyVersionError`, ADR 0062 decision 4) — and dispatch is
  * fire-and-forget, so a throw down in a transport would land in an unhandled
  * rejection instead of in front of an operator. This service asks
  * `isConfigured()` first — the static that exists for exactly this — and
  * reports `secretState: "unreadable"` rather than attempting the decrypt.
+ *
+ * A key of the wrong *length* never reaches here at all since ADR 0062
+ * Amendment 1: the API refuses to boot on it, so it is a deployment failure
+ * rather than a per-channel state. This paragraph named
+ * `CredentialCryptoService.getKey()` until E8.4 deleted that method; the
+ * sentence outlived the code it described by one task.
  *
  * `WebhookTransport` turns that state into a recorded `skipped_unconfigured`
  * and sends nothing, which is the right answer: an unsigned POST to an
