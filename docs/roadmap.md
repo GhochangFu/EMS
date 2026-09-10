@@ -4251,7 +4251,10 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   not weakened, and re-proved by mutation.
 - **Unblocks:** nothing directly. Filed **`F3.58`** for the batched
   `loadRaiseAttempts` round-trip cost that `raise-attempts.ts` had been
-  attributing to `F3.53` and that Amendment 7 does not reach.
+  attributing to `F3.53` and that Amendment 7 does not reach. **`F3.58`
+  closed won't-fix on 2026-09-10**: measured at one round trip a tick beside a
+  78-round-trip channel read in the same loop, it is the batched term and the
+  ones beside it are linear. Its measurement filed `F3.59`.
 
 ### The delivery ledger names the event kind, derived from the key (`F3.56`, ADR 0041 Amendment 8) — done
 - **Status:** merged 2026-09-10 — PR
@@ -4388,6 +4391,146 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   rows were filed on the way out: `F2.32` (should a baseline template be a
   domain-wide union at all) and `F4.121` (`GET /rules/catalog` is unbounded in
   fleet size, and this row gave it a bind-parameter ceiling as well).
+
+### The batched raise-attempts read is measured and left alone (`F3.58`) — dropped
+- **Status:** closed 2026-09-10 as `⛔ dropped`, a won't-fix on measurement — one
+  owner ruling, no ADR, and no code change beyond the docblock that had been
+  inviting the row. The first dropped row in `docs/BACKLOG.md`.
+- **Why no ADR, grounded in the rulebook rather than a precedent.** The
+  authority is `docs/BACKLOG.md`'s own rule — "Removing scope? Mark `⛔`, don't
+  delete" — together with AGENTS.md §10 and §10.1, which gate scope moving
+  **in**; a drop is not a promotion. §5 of that file, the decision-ADR queue,
+  never listed `F3.58`; ADR 0057 states the batch cost as a measured fact and
+  claims no ownership of it; ADR 0041 says nothing about it. The one sentence
+  asserting the cost was unowned lived in `raise-attempts.ts`, and this change
+  removes it, so no amendment and no discharge marker are owed. An earlier draft
+  cited `F3.47` as the precedent and **overstated it**: `F3.47` closed **done**
+  having shipped a route throttle, discharging a consequence ADR 0033 had already
+  recorded and leaving a marker in that ADR. This row ships nothing and leaves no
+  marker.
+- **What the row asked.** `loadRaiseAttempts` chunks its ledger read at 500 refs
+  (`F3.51` review, Medium), so the raise-retry phase issues one statement per
+  batch of eligible alarms a tick, and `raise-attempts.ts` said in as many words
+  that **no row owns that cost**. The row's own instruction was to state whether
+  it is worth building at all before proposing a shape, on `F3.53`'s precedent —
+  that row's measurement inverted the fix its text had proposed.
+- **Measured as `bms_fleet` on the local seeded stack** — named, so a later
+  reader does not take these for a client production figure. 78 active
+  unacknowledged alarms carrying a rule; all of them `notify`; **78 distinct
+  rules**, one alarm per rule, so the phase's per-rule channel cache saves
+  nothing. The read costs **1** round trip a tick; `loadRuleChannels`, in the
+  loop that consumes it, costs **78**.
+- **Why that closes it — a comparison of terms, not a superlative.** The first
+  draft of this bullet called the read *the only sublinear per-alarm term in the
+  sweep*. That was false, and both the correctness pass and my own census found
+  it independently: `loadStepChannels` memoises on the distinct channel-id set
+  **inside** the per-alarm loop, so ten thousand alarms due at one step cost one
+  read — it divides by the alarm count where this read divides by 500. So this
+  read is not even the best-batched term in the sweep, let alone the only one.
+  What survives is the comparison that actually carries the ruling: **this read
+  is batched and the terms beside it are linear.** `writeAlarmState` issues one
+  `UPDATE` per changing alarm inside its per-organization transaction — a second
+  census error of mine, which had called it one round trip per organization —
+  `notifyCleared` reads once per cleared alarm, and both dispatch paths write
+  once per offered channel. Optimising the batched term while the unbatched ones
+  sit beside it in the same tick is the weakest available intervention. The row's
+  own closing sentence had guessed exactly that: if anything is owed it is a
+  bound on how many alarms one tick decides, an ADR 0057 question and not an
+  ADR 0041 one.
+- **Two figures are corrected rather than softened.** `notifyCleared` costs **up
+  to two** round trips, not two: `loadChannels` is reached only when
+  `sentChannelIdsForAlarm` returns ids, and with zero delivery rows here it
+  returns none, so the measured cost on this stack is **one** — while on a
+  configured fleet it is two *plus* the dispatch's own per-channel reads, so
+  "two" was short in that direction too. And the denominator is
+  `ceil(eligible / 500)`, not `ceil(alarms / 500)`: cleared, acknowledged,
+  non-`notify` and organization-less candidates are filtered out before the
+  batches are built, which `alarm-lifecycle-phases.ts` already states correctly.
+- **`loadActiveAlarms` has no `LIMIT`, but *unbounded* is the wrong word.** The
+  security pass supplied the bound: migration `0066` creates
+  `alarms_open_per_rule_uidx` on
+  `(asset_id, rule_id) WHERE cleared_at IS NULL AND rule_id IS NOT NULL`, and
+  this read filters on the **identical** predicate, so at most one open row
+  exists per asset-and-rule pair. The selection is bounded by **provisioning**,
+  not by telemetry volume, and no unauthenticated input inflates it.
+  `runSweepLoop` sweeps and then sleeps, so ticks cannot overlap and a slow read
+  delays the next tick rather than stacking work. Both facts **strengthen** this
+  closure. The residual is a cross-tenant *cadence* coupling, not exposure: the
+  per-candidate sequential awaits let one tenant's distinct-rule count delay
+  another tenant's clearing, which ADR 0033 decision 2 and `raise-attempts.ts`
+  already document.
+- **What the measurement found instead.** `loadRuleChannels` runs *before*
+  `channelsOwedTheRaise`, and that predicate filters the channel list by the
+  ledger rows — so an alarm whose organization-filtered row group is empty
+  yields an empty owed list for any channel list, and its round trip cannot have
+  changed the answer. Filed as **`F3.59`**, unbuilt. The identical argument is
+  already in the file immediately above, for the undecidable-batch case. One
+  attribution correction: on *this* fleet those 78 reads are explained one line
+  earlier than the evidence conjunct — with zero `rule_notifications`,
+  `loadForRule` returns an empty list for all 78 rules and the loop exits at
+  `channels.length === 0`, so `channelsOwedTheRaise` is never reached. `F3.59`'s
+  conclusion survives, because a rule with no join also has an empty row group.
+- **One figure is recorded as non-evidence.** This stack holds **zero**
+  `notification_channels`, zero `rule_notifications` and zero delivery rows, so
+  "78 of 78 channel reads are waste" describes an **unconfigured** fleet and is
+  the most favourable possible shape. Where raises send, an open alarm holds a
+  `sent` row and the read is needed. The steady-state saving is **unmeasured**
+  and could not be measured here for want of a configured tenant, which is why
+  `F3.59` carries measurement as its first task and names won't-fix as a
+  legitimate outcome.
+- **The 78 is this fleet's shape, not a law.** `loadRuleChannels` costs one round
+  trip per *distinct rule*; it equalled the alarm count only because each of the
+  78 alarms belongs to a different one of the 290 rules. On a fleet with many
+  alarms per rule that read is far cheaper than 78, which narrows `F3.59`'s
+  value as well and is recorded in that row.
+- **Scope was not substituted.** `F3.53`'s precedent is on the record: it
+  corrected the comment attributing this cost to itself and deliberately did not
+  widen. This row does the same — it records the reason and files the finding
+  rather than quietly becoming the finding's row.
+- **The board could not render a dropped row at all, and the owner ruled to fix
+  it here.** Closing the first dropped row this repository has had found **two**
+  code paths announcing it as active work, and the second is the one a partial
+  fix would have left standing.
+  - `stateOf`'s in-flight branch claimed any row whose id a branch name spells,
+    ahead of the `dropped` branch. So the row read *In flight* — and the
+    `dropped` branch never ran, which cost it its own `stateKey` as well. That
+    is precisely the defect `planned` had until 2026-08-23, recorded in this
+    same function: a state sharing another's key is counted by every aggregate
+    keyed on it, and no chip can filter it.
+  - The *In flight* stat tile, the *In flight now* section header and the cards
+    under it read the in-progress set **directly** rather than `stateKey`. So
+    guarding `stateOf` alone still left the client-facing card reading
+    *"Actively being built now."* of a decision that had just been dropped, and
+    the header reading *2 items* while one card rendered — `F4.86`'s
+    three-numbers-one-meaning failure, in the file that carries the warning.
+- **The seam matters more than the fix.** Both halves moved to a new
+  `docs/scripts/backlog-state.mjs`, with the deciding input passed as a
+  **parameter**: the generator is a top-level script whose import reads the
+  status JSON and writes three HTML files, so nothing could drive it in place.
+  And generating the board to grep the HTML **cannot** gate this — CI's checkout
+  is shallow, so it derives no in-progress set at all and every such assertion
+  passes vacuously against the exact input that produced the defect. That is
+  written into the test file so a later rewrite does not undo it.
+  `tests/f3.58-board-dropped-state.test.ts` holds eleven cases; **all six
+  mutations were killed**, each reddening the case that owns its claim.
+- **Three smaller consequences.** `Dropped` gains its own palette token in all
+  three themes, so it is not one indistinguishable band with `Waiting` in the
+  wave lanes and track bars. Scope now excludes dropped rows — 278 tracked,
+  **277** in scope — while the rendered-row counts ("one square per item", "The
+  full board") stay on 278, because the dropped row is still drawn. And the
+  in-progress set is filtered at the point of presentation rather than at its
+  source, because that set answers a different question — *which rows have a
+  branch* — and that answer is correct.
+- **My own first assertion passed while the defect stood.** It matched only the
+  `F3.58 · P3 · <state>` tooltip form, which the in-flight card does not use, so
+  it proved nothing about the one surface that was wrong. The replacement checks
+  the section by name and asserts `F4.57` is still in it, so it cannot pass by
+  rendering nothing.
+- **Unblocks:** nothing. **`F3.57` and the newly filed `F3.59` are the remaining
+  Wave-2 Track D rows** — the first draft of this line named only `F3.57`, which
+  this same commit's own new row falsified. Read from the Wave cell of each open
+  Track D row rather than from §1: F3.11 is Wave 1, F3.12 Wave 3, F3.13 and
+  F3.14 Wave 4, F3.9 Wave 5.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending

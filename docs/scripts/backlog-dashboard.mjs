@@ -17,6 +17,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CSS } from "./backlog-dashboard-style.mjs";
+// `F3.58` extracted these so a suite can drive `inProgressIds`; see that file.
+import { inFlightRows, isClientGate, STATE_KEYS, scopeTotal, stateOf } from "./backlog-state.mjs";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const IN = join(repoRoot, "docs", "status", "backlog-status.json");
@@ -68,53 +70,25 @@ const P_ORDER = { P0: 0, P1: 1, P2: 2, P3: 3 };
 const inProgressIds = new Set(data.inProgress.map((p) => p.id));
 const readyIds = data.ready.filter((id) => !inProgressIds.has(id));
 
-/**
- * One test for a gate's audience (`F4.86`). The WORDING differs by surface —
- * a full-board state chip reads "Awaiting client", the card pill beside it
- * reads "awaiting client" — but the condition behind them must not, and it was
- * written out twice. Flip one and the chip filter selects a different set than
- * the cards show, which is this row's own defect one level down.
- */
-const isClientGate = (it) => it.gate?.kind === "client";
 
-const stateOf = (it) => {
-  if (inProgressIds.has(it.id) && it.status !== "done") return { label: "In flight", cls: "lamp-active", key: "flight" };
-  if (it.status === "done") return { label: "Done", cls: "lamp-done", key: "done" };
-  if (it.status === "dropped") return { label: "Dropped", cls: "lamp-idle", key: "waiting" };
-  // `it.held`, not `it.gate` (`F4.86`). Reading the gate alone put an item
-  // that is gated AND dependency-blocked under the `held` key, so the legend,
-  // the wave lanes and the full board's state chips all counted it as held
-  // while the stat tile beside them read `counts.gated` and did not.
-  if (it.held) return { label: isClientGate(it) ? "Awaiting client" : "Needs ADR", cls: "lamp-gated", key: "held" };
-  // `planned` (🟡) gets its OWN key, not `flight`.
-  //
-  // It shared `flight` until 2026-08-23, which made every aggregate keyed on
-  // `stateKey` — the wave lanes, the legend, the state chips — count an
-  // ADR-stage row as active work. Wave 0 read "In flight: 2" (F3.8 and E8.1)
-  // while `check-backlog-republish.mjs` and this file's OWN header card and
-  // "In flight now" section all read 1, because those three go straight to
-  // `data.inProgress`, which is derived from live git branches.
-  //
-  // E8.1 is what made it matter: no branch, waiting on an unanswered Ion
-  // Exchange question, and rendered to anyone reading the shared board as work
-  // in progress. `backlog-status.mjs` states the intent this restores —
-  // planned "means an ADR is in flight or the item shipped only in part, which
-  // is not the same as 'pick this up'".
-  if (it.status === "planned") return { label: "Planned", cls: "lamp-planned", key: "planned" };
-  if (it.readyToStart) return { label: "Ready", cls: "lamp-ready", key: "ready" };
-  return { label: "Waiting", cls: "lamp-idle", key: "waiting" };
-};
+for (const it of data.items) it.stateKey = stateOf(it, inProgressIds).key;
 
-const STATE_KEYS = [
-  { key: "done", label: "Done", token: "--lamp-done" },
-  { key: "flight", label: "In flight", token: "--lamp-active" },
-  { key: "planned", label: "Planned", token: "--lamp-planned" },
-  { key: "ready", label: "Ready", token: "--lamp-ready" },
-  { key: "held", label: "Held", token: "--lamp-gated" },
-  { key: "waiting", label: "Waiting", token: "--lamp-idle" },
-];
+// Tracked rows minus the dropped ones — see `scopeTotal` in backlog-state.mjs.
+const scope = scopeTotal(data.counts);
 
-for (const it of data.items) it.stateKey = stateOf(it).key;
+// `F3.58`, and this is the SECOND code path for "in flight" — the one
+// `stateOf`'s own guard does not reach, because this section and the console
+// summary read `inProgress` directly. That set is derived from the repository's
+// branches: it holds any row whose id a branch name spells, so while the branch
+// closing the `⛔` row existed it claimed that row, and the card read
+// "Actively being built now." of a decision that had just been dropped.
+// Filtered once, here, because `F4.86` is the standing lesson of this file: one
+// meaning written out twice disagrees with itself sooner or later.
+//
+// It is a filter rather than a change at the source, and the reason is that
+// `inProgress` answers a DIFFERENT question — which rows have a branch — and
+// that answer is correct. What is wrong is presenting it as board state.
+const inFlight = inFlightRows(data.inProgress, item);
 
 // `F4.86`. THE held set for this file — the "Eligible, but held" cards read it,
 // and every `stateKey === "held"` above must have come from the same flag.
@@ -231,7 +205,7 @@ function gauge() {
   const R2 = 46;
   const C1 = 2 * Math.PI * R1;
   const C2 = 2 * Math.PI * R2;
-  const pItems = (data.counts.done ?? 0) / data.counts.total;
+  const pItems = (data.counts.done ?? 0) / scope;
   const pWeeks = pwDone / pwTotal;
   const arc = (r, c, p, token, delay) =>
     `<circle cx="76" cy="76" r="${r}" fill="none" stroke="var(--grid)" stroke-width="11" />
@@ -250,7 +224,7 @@ function gauge() {
       <div class="gauge-read">
         <div>
           <div class="big" data-count="${(pItems * 100).toFixed(0)}" data-suffix="%">0%</div>
-          <div class="lbl">of ${data.counts.total} items</div>
+          <div class="lbl">of ${scope} in scope</div>
         </div>
         <div>
           <div class="sm" data-count="${(pWeeks * 100).toFixed(0)}" data-suffix="%">0%</div>
@@ -439,7 +413,7 @@ function swimlanes() {
             );
           const chips = rows
             .map((it) => {
-              const st = stateOf(it);
+              const st = stateOf(it, inProgressIds);
               return `<i class="chip-i ${st.cls}${it.priority === "P0" ? " p0i" : ""}"
                 title="${esc(`${it.id} · ${it.priority} · ${st.label} — ${it.title}`)}"></i>`;
             })
@@ -506,11 +480,11 @@ function render(forClient) {
   client = forClient;
   const tiles = [
     { n: data.counts.done ?? 0, k: "Delivered", h: "merged to main, ADR-backed", lamp: "lamp-done" },
-    { n: data.inProgress.length, k: "In flight", h: "derived from live git branches", lamp: "lamp-active" },
+    { n: inFlight.length, k: "In flight", h: "derived from live branches, dropped rows excluded", lamp: "lamp-active" },
     { n: readyIds.length, k: "Ready to start", h: "every dependency met, no gate", lamp: "lamp-ready" },
     { n: data.counts.gated ?? 0, k: "Eligible · held", h: "needs an ADR or a client answer", lamp: "lamp-gated" },
     { n: data.counts.blocked ?? 0, k: "Waiting", h: "upstream item not done yet", lamp: "lamp-idle" },
-    { n: data.counts.total, k: "Total scope", h: "tracked items across 8 tracks", lamp: "lamp-accent" },
+    { n: scope, k: "Total scope", h: "tracked items across 8 tracks, dropped rows excluded", lamp: "lamp-accent" },
   ];
 
   const tilesHtml = tiles
@@ -521,8 +495,8 @@ function render(forClient) {
     )
     .join("");
 
-  const inProgressHtml = data.inProgress.length
-    ? data.inProgress
+  const inProgressHtml = inFlight.length
+    ? inFlight
         .map((p) => {
           const it = item(p.id);
           const c = p.current ? "lamp-active" : "lamp-idle";
@@ -639,7 +613,7 @@ function render(forClient) {
         a.id.localeCompare(b.id, undefined, { numeric: true }),
     )
     .map((it, idx) => {
-      const st = stateOf(it);
+      const st = stateOf(it, inProgressIds);
       const long = it.detail.length > DETAIL_CAP;
       const short = long ? `${it.detail.slice(0, DETAIL_CAP).replace(/\s\S*$/, "")}…` : it.detail;
       return `<tr class="item" data-track="${esc(it.track)}" data-state="${esc(st.label)}" data-p="${esc(it.priority)}"
@@ -780,7 +754,7 @@ function render(forClient) {
     </section>
 
     <section>
-      <div class="sec-head"><div class="sec-title"><h2>In flight now</h2><span class="count">${data.inProgress.length} item${data.inProgress.length === 1 ? "" : "s"}</span></div>
+      <div class="sec-head"><div class="sec-title"><h2>In flight now</h2><span class="count">${inFlight.length} item${inFlight.length === 1 ? "" : "s"}</span></div>
         <p>${
           client
             ? "Work the team has actively started but not yet completed."
@@ -1098,7 +1072,7 @@ console.log(`wrote ${OUT} (${(internal.length / 1024).toFixed(0)} KB, artifact f
 console.log(`wrote ${OUT_FILE} (standalone, internal)`);
 console.log(`wrote ${OUT_CLIENT} (standalone, client-facing${found.length ? " — LEAK CHECK FAILED" : ", leak check passed"})`);
 console.log(
-  `  ${data.counts.done ?? 0} done · ${data.inProgress.length} in flight · ${readyIds.length} ready · ` +
+  `  ${data.counts.done ?? 0} done · ${inFlight.length} in flight · ${readyIds.length} ready · ` +
     // `counts.gated`, the same number the stat tile renders — NOT a re-derivation.
     // This line used to filter on `i.gate` alone, which omitted
     // `dependencyClear` and so counted an item that is gated AND
