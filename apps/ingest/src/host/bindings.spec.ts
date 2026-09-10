@@ -41,9 +41,18 @@ const modbusFactory: IngestAdapterFactory<
   },
 };
 
-const ENV_CONNECTION = { host: "phe.thinkiot.co.in", port: 8883 };
+/**
+ * `ENV_CONNECTION`, `makeOptions` and `row` are exported for
+ * `bindings-credentials.spec.ts`, which holds the `E8.4` key-version and
+ * credential-source assertions. They are apart from this file only because
+ * §4.5 caps a file at 1000 lines, so the fixtures are shared rather than
+ * copied — a second `row()` drifting from this one would make two suites
+ * disagree about what a binding row is. `supervisor-buffer.spec.ts` imports
+ * `supervisor.spec.ts`'s fixtures for the same reason.
+ */
+export const ENV_CONNECTION = { host: "phe.thinkiot.co.in", port: 8883 };
 
-function makeOptions(overrides: Partial<PlanOptions> = {}): PlanOptions {
+export function makeOptions(overrides: Partial<PlanOptions> = {}): PlanOptions {
   return {
     lookup: (protocol: IngestProtocol) =>
       protocol === "mqtt"
@@ -52,17 +61,21 @@ function makeOptions(overrides: Partial<PlanOptions> = {}): PlanOptions {
           ? (modbusFactory as unknown as IngestAdapterFactory)
           : undefined,
     decryptCredentials: () => ({ username: "db-user", password: "db-secret" }),
+    // `credentialSource: "env"` is honest against the credentials this fake
+    // returns — they are the environment's (ADR 0062 decision 9). The rows that
+    // care override it, which is what makes the override load-bearing.
     resolveMqttConnection: () => ({
       ...ENV_CONNECTION,
       username: "env-user",
       password: "env-secret",
+      credentialSource: "env",
     }),
     credentialKeyConfigured: true,
     ...overrides,
   };
 }
 
-function row(overrides: Partial<BindingRow> = {}): BindingRow {
+export function row(overrides: Partial<BindingRow> = {}): BindingRow {
   return {
     rtu_id: "rtu-uuid-1",
     rtu_code: "RTU-1",
@@ -85,6 +98,10 @@ function row(overrides: Partial<BindingRow> = {}): BindingRow {
     connection_config: null,
     credentials_ciphertext: null,
     credentials_iv: null,
+    // `null` is the no-config-row case: the column is NOT NULL, so a row that
+    // exists always carries a version and the LEFT JOIN is the only source of a
+    // null (ADR 0062 decision 3).
+    key_version: null,
     ...overrides,
   };
 }
@@ -181,7 +198,11 @@ export function runBindingsTests(): void {
       makeOptions({
         resolveMqttConnection: () => {
           call += 1;
-          return { host: call === 1 ? "broker-a" : "broker-b", port: 8883 };
+          return {
+            host: call === 1 ? "broker-a" : "broker-b",
+            port: 8883,
+            credentialSource: "env",
+          };
         },
       }),
     );
@@ -510,7 +531,12 @@ export function runBindingsTests(): void {
       ],
       makeOptions({
         decryptCredentials: () => ({ password: sentinel }),
-        resolveMqttConnection: () => ({ ...ENV_CONNECTION, username: "u", password: sentinel }),
+        resolveMqttConnection: () => ({
+          ...ENV_CONNECTION,
+          username: "u",
+          password: sentinel,
+          credentialSource: "db",
+        }),
       }),
     );
     assert(
@@ -601,7 +627,7 @@ export function runBindingsTests(): void {
             if (configRow === null) {
               throw new Error("Unsupported state or unable to authenticate data");
             }
-            return { ...ENV_CONNECTION, username: "u", password: "p" };
+            return { ...ENV_CONNECTION, username: "u", password: "p", credentialSource: "db" };
           },
         }),
       );

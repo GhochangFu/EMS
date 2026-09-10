@@ -57,6 +57,17 @@ export type BindingRow = {
   readonly connection_config: unknown;
   readonly credentials_ciphertext: Buffer | null;
   readonly credentials_iv: Buffer | null;
+  /**
+   * `rtu_connection_configs.key_version` — which key encrypted this row's blob
+   * (ADR 0062 decision 3).
+   *
+   * `null` **only** when the RTU has no config row at all: the column is
+   * `integer not null default 1`, so the `LEFT JOIN` is the one thing that can
+   * produce a null here. It arrives from `pg` as a JS `number`;
+   * `bindings.integration.spec.ts` is the only gate for that, and
+   * `keyForVersion` refuses anything that is not one.
+   */
+  readonly key_version: number | null;
 };
 
 /**
@@ -117,7 +128,8 @@ export const BINDING_QUERY = `
     c.protocol AS config_protocol,
     c.config AS connection_config,
     c.credentials_ciphertext,
-    c.credentials_iv
+    c.credentials_iv,
+    c.key_version
   FROM bms.rtus r
   INNER JOIN bms.asset_points ap
           ON ap.rtu_id = r.id
@@ -167,31 +179,64 @@ export type EndpointPlan = {
   readonly pointIndex: PointIndex;
 };
 
+/**
+ * An RTU that is served, but not with what its row says (`E8.4`, ADR 0062
+ * decision 9).
+ *
+ * Separate from `SkippedBinding` because nothing was dropped: the endpoint runs
+ * and the telemetry flows. It is the *fail-open* report — a config row exists
+ * and the process still connected with the environment's credential — and
+ * folding it into `skipped` would make an operator reading the skip list
+ * believe the RTU is down.
+ */
+export type PlanWarning = {
+  readonly rtuId: string;
+  /** `string | null` to match `SkippedBinding`; non-null on every current path. */
+  readonly rtuCode: string | null;
+  readonly reason: "credential-env-fallback";
+};
+
 export type PlanResult = {
   readonly endpoints: readonly EndpointPlan[];
   readonly skipped: readonly SkippedBinding[];
+  readonly warnings: readonly PlanWarning[];
 };
 
-/** Decrypts one RTU's credential blob. Injected so tests need no encryption key. */
+/**
+ * Decrypts one RTU's credential blob **at the version the row stores** (ADR
+ * 0062 decisions 3 and 4). Injected so tests need no encryption key.
+ *
+ * The third parameter is `rtu_connection_configs.key_version`, passed through
+ * unchanged — no `?? 1`. A blob whose version no loaded key writes must be
+ * refused, and defaulting it here would restore exactly the guess decision 4
+ * forbids.
+ */
 export type CredentialDecryptor = (
   ciphertext: Buffer,
   iv: Buffer,
+  keyVersion: number | null,
 ) => Record<string, unknown>;
 
 /**
  * The pilot-era MQTT connection resolver — `resolveMqttConnection` from
  * `apps/ingest/src/rtu-config.js`, injected rather than imported so the planner
  * stays pure and testable.
+ *
+ * `credentialSource` is `"db"` only when a credential came out of the decrypted
+ * blob. It is **not** the same question as that function's `source`, which
+ * reports whether a config row existed — see its docblock.
  */
 export type MqttConnectionResolver = (configRow: {
   config: unknown;
   credentials_ciphertext: Buffer | null;
   credentials_iv: Buffer | null;
+  key_version: number | null;
 } | null) => {
   host: string;
   port: number;
   username?: string;
   password?: string;
+  credentialSource: "db" | "env";
 };
 
 export type PlanOptions = {
@@ -262,6 +307,27 @@ function narrowCredentials(raw: Record<string, unknown>): {
   return { credentials, droppedKeys };
 }
 
+/**
+ * The one credential-failure cause worth naming to an operator: the row was
+ * encrypted under a key this process does not hold (ADR 0062 decision 4).
+ *
+ * **A constant, never `err.message`.** §9.6 keeps crypto text out of the skip
+ * report because it can carry key material or ciphertext framing, and the
+ * report is served on the health endpoint. A fixed token also keeps the
+ * vocabulary closed, so an operator can grep for it. Every other failure — a
+ * wrong-length IV, a bad tag, a truncated ciphertext — carries no detail at
+ * all, which is why this returns an empty object rather than a second string.
+ *
+ * Matched on `name` rather than `instanceof`: vitest can load two module
+ * instances of `@bms/shared` (`F4.108`), and the ingest host loads the built
+ * `dist` while a spec may load the source.
+ */
+function keyVersionDetail(error: unknown): { detail?: string } {
+  const name =
+    typeof error === "object" && error !== null ? (error as { name?: unknown }).name : undefined;
+  return name === "CredentialKeyVersionError" ? { detail: "key-version-not-loaded" } : {};
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -293,6 +359,7 @@ function splitConfig(raw: unknown): {
  */
 export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions): PlanResult {
   const skipped: SkippedBinding[] = [];
+  const warnings: PlanWarning[] = [];
   const byRtu = new Map<string, BindingRow[]>();
   for (const row of rows) {
     const existing = byRtu.get(row.rtu_id);
@@ -405,18 +472,23 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         continue;
       }
 
+      // Hoisted rather than inlined at the call: the warning below has to know
+      // whether a config row existed, and re-deriving that condition twice is
+      // how the two answers drift apart.
+      const configRow =
+        head.connection_config === null && head.credentials_ciphertext === null
+          ? null
+          : {
+              config: head.connection_config,
+              credentials_ciphertext: head.credentials_ciphertext,
+              credentials_iv: head.credentials_iv,
+              key_version: head.key_version,
+            };
+
       let resolved: ReturnType<MqttConnectionResolver>;
       try {
-        resolved = options.resolveMqttConnection(
-          head.connection_config === null && head.credentials_ciphertext === null
-            ? null
-            : {
-                config: head.connection_config,
-                credentials_ciphertext: head.credentials_ciphertext,
-                credentials_iv: head.credentials_iv,
-              },
-        );
-      } catch {
+        resolved = options.resolveMqttConnection(configRow);
+      } catch (error) {
         // `resolveMqttConnection` decrypts, so it throws on a wrong-length IV, a
         // bad GCM tag, a truncated ciphertext or a rotated encryption key. This
         // guard was missing while the non-MQTT branch below had one — and
@@ -426,8 +498,22 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         // in a restart loop, against §3 ("It never throws") and §5's blast-radius
         // criterion. The error is not attached: crypto messages can carry key
         // material or ciphertext framing (AGENTS.md §9.6).
-        skipped.push({ rtuId, rtuCode: deviceKey, reason: "credential-decrypt-failed" });
+        skipped.push({
+          rtuId,
+          rtuCode: deviceKey,
+          reason: "credential-decrypt-failed",
+          ...keyVersionDetail(error),
+        });
         continue;
+      }
+
+      // Decision 9: a row exists and the process still used the environment's
+      // credential. Nothing is dropped — the endpoint runs — so this is a
+      // warning rather than a skip, and it is the one signal that distinguishes
+      // "the operator entered a credential" from "the operator entered one and
+      // the host is not using it".
+      if (configRow !== null && resolved.credentialSource === "env") {
+        warnings.push({ rtuId, rtuCode: deviceKey, reason: "credential-env-fallback" });
       }
 
       connectionSlice = {
@@ -453,6 +539,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         const plaintext = options.decryptCredentials(
           head.credentials_ciphertext,
           head.credentials_iv,
+          head.key_version,
         );
         const narrowed = narrowCredentials(asRecord(plaintext));
         credentials = narrowed.credentials;
@@ -464,10 +551,15 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
             detail: narrowed.droppedKeys.join(","),
           });
         }
-      } catch {
+      } catch (error) {
         // The error is deliberately not attached — a decryption failure message
         // can carry key material or ciphertext framing (AGENTS.md §9.6).
-        skipped.push({ rtuId, rtuCode: deviceKey, reason: "credential-decrypt-failed" });
+        skipped.push({
+          rtuId,
+          rtuCode: deviceKey,
+          reason: "credential-decrypt-failed",
+          ...keyVersionDetail(error),
+        });
         continue;
       }
     }
@@ -584,6 +676,7 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
       pointIndex: group.index,
     })),
     skipped,
+    warnings,
   };
 }
 

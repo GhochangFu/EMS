@@ -176,3 +176,110 @@ export async function assertCoalescePicksEachSidePerColumn(pool: pg.Pool): Promi
     client.release();
   }
 }
+
+/** An ingest-bound RTU that has no `rtu_connection_configs` row — `rtu_id` is UNIQUE. */
+const CONFIGLESS_RTU_QUERY = `
+  SELECT r.id AS rtu_id, r.organization_id
+    FROM bms.rtus r
+    INNER JOIN bms.asset_points ap
+            ON ap.rtu_id = r.id
+           AND ap.active = true
+           AND ap.source_kind = 'measured'
+    LEFT JOIN bms.rtu_connection_configs c ON c.rtu_id = r.id
+   WHERE r.ingest_enabled = true
+     AND c.id IS NULL
+   ORDER BY r.created_at, r.id
+   LIMIT 1
+`;
+
+/**
+ * `E8.4` / ADR 0062 decision 3 — `key_version` comes back from Postgres, and it
+ * comes back as a JS **integer**.
+ *
+ * **This is the only gate for that claim in the repository.** Plan §13
+ * correction 11 records that the API side has no equivalent: both integration
+ * specs that reach `toChannelRow` plant channels with no ciphertext, so they
+ * return at the null branch before the version is read. Do not weaken this one
+ * into a unit assertion — `bindings-credentials.spec.ts` supplies
+ * `key_version` from a fixture and therefore cannot see the column's type, or
+ * its absence from the SQL. `pg` parses `int4` to a `number` and `numeric` to a
+ * *string*; a version arriving as `"3"` would be refused by `keyForVersion`'s
+ * `typeof !== "number"` guard on every RTU in the fleet, with the failure
+ * surfacing as one skipped RTU at a time.
+ *
+ * `key_version = 3`, not 1: the column defaults to 1 and the current key
+ * version defaults to 1, so 1 cannot distinguish a value read from the row from
+ * either default.
+ *
+ * Every write runs inside `BEGIN … ROLLBACK` on one client, like the function
+ * above — another suite runs against this database at the same time.
+ */
+export async function assertKeyVersionArrivesAsAnInteger(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const { rows: candidates } = await client.query<{
+      rtu_id: string;
+      organization_id: string;
+    }>(CONFIGLESS_RTU_QUERY);
+    expect(
+      candidates.length,
+      "no ingest-bound RTU without a connection config to plant one on",
+    ).toBe(1);
+    const { rtu_id: rtuId, organization_id: organizationId } = candidates[0];
+
+    const baseline = await bindingRows(client);
+    for (const row of baseline) {
+      expect(
+        Object.prototype.hasOwnProperty.call(row, "key_version"),
+        "key_version is missing from the binding query — every stored version would arrive as " +
+          "undefined and every credential would be refused",
+      ).toBe(true);
+    }
+    const baselineRow = baseline.find((r) => r.rtu_id === rtuId);
+    expect(baselineRow, "the chosen RTU dropped out of the binding query").toBeDefined();
+    expect(
+      (baselineRow as BindingRow).key_version,
+      "an RTU with no config row reads null — the LEFT JOIN is the only source of one, " +
+        "because the column itself is NOT NULL",
+    ).toBeNull();
+
+    await client.query("BEGIN");
+    try {
+      // `organization_id` is the **RTU's**, not the asset's: the column's own
+      // comment says the org resolves via `rtu_id -> rtus`.
+      await client.query(
+        `INSERT INTO bms.rtu_connection_configs (organization_id, rtu_id, protocol, config, key_version)
+         VALUES ($1, $2, 'mqtt', '{}'::jsonb, 3)`,
+        [organizationId, rtuId],
+      );
+
+      const planted = await bindingRows(client);
+      expect(
+        planted.length,
+        "the config join changed the row count — a LEFT JOIN onto a UNIQUE rtu_id may not fan out",
+      ).toBe(baseline.length);
+      const plantedRow = planted.find((r) => r.rtu_id === rtuId);
+      expect(plantedRow, "the planted RTU dropped out of the binding query").toBeDefined();
+      expect(
+        typeof (plantedRow as BindingRow).key_version,
+        `key_version came back as ${typeof (plantedRow as BindingRow).key_version} ` +
+          `(${String((plantedRow as BindingRow).key_version)}); keyForVersion refuses anything ` +
+          "that is not a number, so a string here refuses every credential in the fleet",
+      ).toBe("number");
+      expect(
+        (plantedRow as BindingRow).key_version,
+        "the planted version must be the one that comes back, not the column default",
+      ).toBe(3);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+
+    const afterRollback = (await bindingRows(client)).find((r) => r.rtu_id === rtuId);
+    expect(
+      (afterRollback as BindingRow).key_version,
+      "the fixture must leave nothing behind",
+    ).toBeNull();
+  } finally {
+    client.release();
+  }
+}

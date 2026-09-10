@@ -18,14 +18,12 @@ import { createHostLogger } from "./host/logger.js";
 import type { PointIndex } from "./host/normaliser.js";
 import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
-// The ADR 0012 seam, imported from the **unmodified** pilot file (ADR 0016 §4,
-// §6). It keeps its `resolveMqttConnection` export so `rtu-config.test.js` —
-// the one ingest test CI runs today — keeps passing untouched.
-import {
-  decryptCredentials,
-  isCredentialKeyConfigured,
-  resolveMqttConnection,
-} from "./rtu-config.js";
+// The ADR 0012 seam (ADR 0016 §4, §6). It stopped being the *unmodified* pilot
+// file at ADR 0062 decision 2, which moved its key selection into
+// `@bms/shared/credential-keys` while leaving its AES-GCM call where it is —
+// the cipher may stay duplicated, the rotation window may not. Its assertions
+// moved with it, from an inline `runRtuConfigTests` to `rtu-config.spec.ts`.
+import { decryptCredentials, resolveMqttConnection } from "./rtu-config.js";
 
 /**
  * The ingest host entry point — **the only one** (ADR 0016 §6, commit 4).
@@ -92,10 +90,15 @@ async function main(): Promise<void> {
 
   const planOptions: PlanOptions = {
     lookup: lookupAdapter,
-    decryptCredentials: (ciphertext, iv) =>
-      decryptCredentials(ciphertext, iv) as Record<string, unknown>,
+    // Forwarded rather than passed by reference, so the arity is *checked*: a
+    // dropped `keyVersion` is `TS2554: Expected 3 arguments, but got 2` at
+    // `pnpm typecheck:tests`, because `rtu-config.js` declares its parameters
+    // in JSDoc. Handing the function over directly would type-check with a
+    // two-parameter implementation and decrypt every row under the current key.
+    decryptCredentials: (ciphertext, iv, keyVersion) =>
+      decryptCredentials(ciphertext, iv, keyVersion),
     resolveMqttConnection,
-    credentialKeyConfigured: isCredentialKeyConfigured(),
+    credentialKeyConfigured: hostConfig.credentialKeyConfigured,
     mqttConnectionDefaults: hostConfig.mqttConnectionDefaults,
   };
 
@@ -139,6 +142,20 @@ async function main(): Promise<void> {
       rtuId: skip.rtuId,
       reason: skip.reason,
       ...(skip.detail === undefined ? {} : { detail: skip.detail }),
+    });
+  }
+
+  // ADR 0062 decision 9. Once per RTU per process, like the skips above, and
+  // deliberately not repeated on reload: an unchanged fallback is not news, and
+  // a line per RTU every `INGEST_RELOAD_MS` is how a real signal gets buried.
+  // Nothing is dropped here — the endpoint runs — so it is a warning and not a
+  // skip, and it is the one line that tells an operator their entered
+  // credential is not the one the broker sees.
+  for (const warning of initial.warnings) {
+    logger.warn("rtu credential fallback", {
+      rtuCode: warning.rtuCode,
+      rtuId: warning.rtuId,
+      reason: warning.reason,
     });
   }
 
