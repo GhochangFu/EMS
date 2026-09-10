@@ -61,6 +61,11 @@ function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeli
     status: "sent",
     attemptedAt: new Date("2026-08-23T10:00:00Z").toISOString(),
     error: null,
+    // `F3.56` — `event` is required on the DTO (ADR 0041 Amendment 8), so this
+    // factory must supply a default or nothing here compiles. `raise` matches
+    // the rest of the literal, which carries both a rule and an alarm. The
+    // column itself is asserted by `namesTheEventOfEveryAttempt` below.
+    event: "raise",
     ...overrides,
   };
 }
@@ -76,7 +81,9 @@ function delivery(overrides: Partial<NotificationDeliveryDto>): NotificationDeli
  */
 const ALL_SIX: NotificationDeliveryDto[] = [
   delivery({ id: "d1", status: "sent" }),
-  delivery({ id: "d2", status: "failed", error: "webhook responded 500" }),
+  // `F3.56` — a failed cleared message keeps its row (ADR 0057 Amendment 4);
+  // `event: "cleared"` names what this particular failure was for.
+  delivery({ id: "d2", status: "failed", error: "webhook responded 500", event: "cleared" }),
   delivery({
     id: "d3",
     status: "skipped_unconfigured",
@@ -85,7 +92,9 @@ const ALL_SIX: NotificationDeliveryDto[] = [
   }),
   delivery({ id: "d4", status: "skipped_deduped" }),
   delivery({ id: "d5", status: "skipped_rate_limited" }),
-  delivery({ id: "d6", status: "skipped_stale" }),
+  // `F3.56` — a stale step is an escalation event whose STATUS says stale;
+  // Amendment 8 keeps staleness out of the dedupe key, so this stays "escalation".
+  delivery({ id: "d6", status: "skipped_stale", event: "escalation" }),
 ];
 
 /**
@@ -135,7 +144,9 @@ export async function showsEverySkipWithoutAsking(): Promise<void> {
 /** A test send has no rule, and the column must say so rather than render blank. */
 export async function labelsATestSendWithNoRule(): Promise<void> {
   vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
-    items: [delivery({ id: "d6", ruleId: null, ruleCode: null, alarmId: null })],
+    items: [
+      delivery({ id: "d6", ruleId: null, ruleCode: null, alarmId: null, event: "test" }),
+    ],
   });
   vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({ items: [] });
 
@@ -294,4 +305,72 @@ export async function offersOnlyOrganizationsPresentInTheLedger(): Promise<void>
   expect(screen.getByRole("option", { name: "Ion Exchange" })).toBeInTheDocument();
   // PHEWB is a real organization with no delivery in this window.
   expect(screen.queryByRole("option", { name: "PHE West Bengal" })).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.56` — the Event column names what a `failed` attempt was FOR (ADR 0041
+ * Amendment 8).
+ *
+ * Every row here shares the same status and the same error string on purpose:
+ * `rate-limit check failed` is written at two real sites — the dispatch path
+ * and `sendTest` — and status and error alone cannot tell them apart. Only
+ * `event` does.
+ */
+export async function namesTheEventOfEveryAttempt(): Promise<void> {
+  vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({
+    items: [
+      delivery({ id: "d1", event: "raise", status: "failed", error: "rate-limit check failed" }),
+      delivery({
+        id: "d2",
+        event: "escalation",
+        status: "failed",
+        error: "rate-limit check failed",
+      }),
+      delivery({
+        id: "d3",
+        event: "cleared",
+        status: "failed",
+        error: "rate-limit check failed",
+      }),
+      delivery({ id: "d4", event: "test", status: "failed", error: "rate-limit check failed" }),
+      delivery({
+        id: "d5",
+        event: "unknown",
+        status: "failed",
+        error: "rate-limit check failed",
+      }),
+    ],
+  });
+  vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({ items: [] });
+
+  renderWith(<NotificationDeliveriesPage user={user} />);
+
+  expect(await screen.findByRole("columnheader", { name: "Event" })).toBeInTheDocument();
+  expect(await screen.findByRole("cell", { name: "Raise" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "Escalation" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "Cleared" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "Test" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "Unknown" })).toBeInTheDocument();
+}
+
+/**
+ * `F3.56` — the empty-state row must span every column, including the new one.
+ *
+ * The two assertions fail at different mutations, and both were run. Removing
+ * the Event `<th>` reddens the first, at 6 headers against 7. Leaving
+ * `colSpan={6}` in place passes the first and reddens the second. That is why
+ * the header count is asserted here as well as compared against the span:
+ * either one alone would let one of those two mutations through.
+ */
+export async function emptyStateSpansEveryColumn(): Promise<void> {
+  vi.spyOn(api, "fetchNotificationDeliveries").mockResolvedValue({ items: [] });
+  vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({ items: [] });
+
+  renderWith(<NotificationDeliveriesPage user={user} />);
+
+  const headers = await screen.findAllByRole("columnheader");
+  expect(headers).toHaveLength(7);
+
+  const emptyCell = await screen.findByText(/No delivery attempts recorded yet/);
+  expect(emptyCell.getAttribute("colspan")).toBe(String(headers.length));
 }

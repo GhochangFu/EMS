@@ -6,9 +6,11 @@ import {
   bannerAppearsWhenATransportIsUnconfigured,
   bannerIsSilentWhenEverythingIsConfigured,
   bannerIsSilentWhenTheCheckFails,
+  emptyStateSpansEveryColumn,
   explainsAnEmptyLedger,
   filtersTheLedgerByOrganization,
   labelsATestSendWithNoRule,
+  namesTheEventOfEveryAttempt,
   namesTheOrganizationOfEveryAttempt,
   offersOnlyOrganizationsPresentInTheLedger,
   showsEverySkipWithoutAsking,
@@ -60,5 +62,14 @@ describe("F3.8 notification deliveries", () => {
 
   it("offers only the organizations the ledger actually contains", async () => {
     await offersOnlyOrganizationsPresentInTheLedger();
+  });
+
+  // `F3.56` — the Event column (ADR 0041 Amendment 8).
+  it("names the event of every attempt", async () => {
+    await namesTheEventOfEveryAttempt();
+  });
+
+  it("spans the empty-state row across every column", async () => {
+    await emptyStateSpansEveryColumn();
   });
 });

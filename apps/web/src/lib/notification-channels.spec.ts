@@ -1,12 +1,13 @@
 import { expect } from "vitest";
 
-import type { NotificationChannelDto } from "@bms/shared";
+import type { NotificationChannelDto, NotificationDeliveryEvent } from "@bms/shared";
 
 import {
   blankChannelForm,
   channelFormToPatch,
   channelFormToPayload,
   channelOrganizationOptions,
+  deliveryEventLabel,
   formFromChannel,
   organizationChoiceRefusal,
   organizationLabel,
@@ -195,4 +196,26 @@ export function neverRefusesAnAdminItsFleetWideDefault(): void {
   expect(organizationChoiceRefusal("admin", options, orgs[0]!.id)).toBeNull();
   // Even with nothing to offer: fleet-wide needs no organization to exist.
   expect(organizationChoiceRefusal("admin", [], "")).toBeNull();
+}
+
+/**
+ * `F3.56` — every delivery event has a word an operator can read (ADR 0041
+ * Amendment 8).
+ *
+ * Asserted with `.toBe`, not `.toContain`: every `default:` in this module
+ * returns the raw enum value, so a `.toContain` of a fragment would still pass
+ * with a case deleted — the same reasoning `notification-channels.test.ts`
+ * records for `deliveryStatusLabel`'s sixth status.
+ */
+export function namesEveryDeliveryEventInWords(): void {
+  const cases: Array<[NotificationDeliveryEvent, string]> = [
+    ["raise", "Raise"],
+    ["escalation", "Escalation"],
+    ["cleared", "Cleared"],
+    ["test", "Test"],
+    ["unknown", "Unknown"],
+  ];
+  for (const [event, label] of cases) {
+    expect(deliveryEventLabel(event)).toBe(label);
+  }
 }

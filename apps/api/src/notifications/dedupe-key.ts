@@ -1,3 +1,5 @@
+import type { NotificationDeliveryEvent } from "@bms/shared";
+
 /**
  * `F3.8` — the dedupe key written on every delivery row (ADR 0041 decision 7).
  *
@@ -45,6 +47,22 @@
  * equal to one: the raise row is already in the ledger when the sweep asks
  * about step 1, and an equal key would make every step look already sent.
  *
+ * **Since `F3.56` the key has a reader that takes it APART, and it is in this
+ * file** (ADR 0041 Amendment 8). It is not the key's first reader — there are
+ * four others, and counting wrongly here is how a grammar change updates one
+ * call site instead of five. `hasRecordedSkip` (`ledger-reads.ts:104`),
+ * `eventDeliveryBlocked` (`:211`) and `loadRaiseAttempts`
+ * (`raise-attempts.ts:219`) all match the key **whole**, by equality or by
+ * `IN`; `isOverHourlyLimit`'s reserved-budget predicate
+ * (`notifications.service.ts:650-651`) tests its shape without decomposing it,
+ * counting separators with `LIKE '%:%:%:%'`. `parseDeliveryEvent` below reads the kind back out of a
+ * ledger row so `NotificationDeliveryDto` can say what a `failed` row was FOR,
+ * and it sits beside the writer deliberately: a key format whose writer and
+ * reader are one file can be gated by a round trip over every `DispatchEvent`
+ * shape — `runEventRoundTripTests` builds each key with `buildDedupeKey` and
+ * hands it straight to the parse — where a format read in a second module is a
+ * claim about a file the reader never opens.
+ *
  * Bounded to the column width — `dedupe_key varchar(255)` in migration 0038 —
  * so a long rule id can never make the insert fail. Two uuids, a severity and
  * the longest suffix are far short of it; the clamp is there for the case
@@ -91,4 +109,67 @@ export function buildDedupeKey(input: {
   }
   const key = parts.join(":");
   return key.length > MAX_DEDUPE_KEY_LENGTH ? key.slice(0, MAX_DEDUPE_KEY_LENGTH) : key;
+}
+
+/**
+ * `F3.56` — which lifecycle event one ledger row's attempt was FOR (ADR 0041
+ * Amendment 8). Derived, never stored: no column was added, and ADR 0057
+ * decision 9's "the kind lives in the dedupe key" is unchanged.
+ *
+ * **The four steps, in order.**
+ *
+ * 1. `dedupeKey === null` → `test`. `NotificationsService.record()` is the one
+ *    production insert; its three `sendTest` call sites are the only ones that
+ *    pass a literal `null`, and they pass a `null` rule with it.
+ * 2. `ruleId === null` with a non-null key → `unknown`. No writer produces that
+ *    shape.
+ * 3. Strip the prefix the ROW itself determines,
+ *    `${ruleId}:${alarmId ?? "no-alarm"}:`. A key that does not start with it
+ *    was not written for this row → `unknown`.
+ * 4. On the remainder — the severity plus at most one suffix — `:cleared` at
+ *    the end is `cleared`, `:escalation:<digits>` at the end is `escalation`,
+ *    and everything else is a `raise`.
+ *
+ * **Neither a segment count nor a bare suffix match would work.**
+ * `bms.alarm_severities.code` is `varchar(64)` PRIMARY KEY with **no format
+ * CHECK** — the vocabulary is open by design (migration `0030`, ADR 0032). A
+ * severity code containing a colon defeats a segment count. A severity code
+ * literally named `cleared` defeats a bare `/:cleared$/` over the whole key,
+ * because `rule:alarm:cleared` is a *raise* of a `cleared`-severity alarm.
+ * Stripping the prefix the row supplies removes both, because the two uuids are
+ * known values rather than parsed ones. `runSeverityThatMimicsASuffixIsARaise`
+ * holds all three cases.
+ *
+ * **Two residual limits, named rather than claimed away.** A severity code
+ * whose own text *ends* in `:cleared` or `:escalation:<digits>` is still read as
+ * that event; and `buildDedupeKey` clamps at 255 and cuts the tail, so a key
+ * long enough to lose its suffix reads as a raise. Both are asserted —
+ * `runResidualLimitSeveritySuffix` and `runResidualLimitClampedTail` — so a
+ * later fix reddens a test instead of silently contradicting the ADR.
+ *
+ * **`unknown` is unreachable from the writers**, and exists so the parse is
+ * total without lying: a row whose key does not start with its own rule and
+ * alarm was not written by this code, and calling it a raise would be a claim
+ * about a row nothing here produced. `runUnknownWhenTheRuleIsNull`,
+ * `…KeyIsAnotherRules` and `…KeyIsAnotherAlarms` drive it through this function
+ * directly, so it is measured rather than dead prose.
+ *
+ * Pure and silent: it logs nothing (AGENTS.md §9.6), because the key it reads
+ * carries a rule uuid, an alarm uuid and the severity code.
+ */
+export function parseDeliveryEvent(row: {
+  dedupeKey: string | null;
+  ruleId: string | null;
+  alarmId: string | null;
+}): NotificationDeliveryEvent {
+  if (row.dedupeKey === null) return "test";
+  if (row.ruleId === null) return "unknown";
+
+  const prefix = `${row.ruleId}:${row.alarmId ?? "no-alarm"}:`;
+  if (!row.dedupeKey.startsWith(prefix)) return "unknown";
+  const rest = row.dedupeKey.slice(prefix.length);
+
+  if (rest.endsWith(":cleared")) return "cleared";
+  if (/:escalation:\d+$/.test(rest)) return "escalation";
+  return "raise";
 }

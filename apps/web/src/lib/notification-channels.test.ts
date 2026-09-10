@@ -16,6 +16,7 @@ import {
   distinguishesAFailedOrganizationListFromAnEmptyOne,
   keepsOrganizationIdOutOfAPatch,
   namesAnOrganizationRatherThanPrintingItsUuid,
+  namesEveryDeliveryEventInWords,
   neverOffersAnOrganizationAdminTheFleetWideOption,
   neverRefusesAnAdminItsFleetWideDefault,
   offersAnAdminFleetWidePlusEveryActiveOrganization,
@@ -231,5 +232,12 @@ describe("E7.1d channel organization scope", () => {
 
   it("says the organization list failed rather than claiming there are none", () => {
     distinguishesAFailedOrganizationListFromAnEmptyOne();
+  });
+});
+
+/** `F3.56` — delivery event presentation (ADR 0041 Amendment 8). */
+describe("F3.56 delivery event presentation", () => {
+  it("names every delivery event in words", () => {
+    namesEveryDeliveryEventInWords();
   });
 });

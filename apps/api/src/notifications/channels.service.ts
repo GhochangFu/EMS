@@ -6,7 +6,7 @@ import {
   Injectable,
   Logger,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import {
@@ -29,6 +29,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
+import { parseDeliveryEvent } from "./dedupe-key";
 import type { NotificationChannelRow } from "./notification-transport";
 import type { NotificationsConfig } from "./notifications.config";
 import type {
@@ -36,6 +37,7 @@ import type {
   ListDeliveriesQuery,
   UpdateNotificationChannelBody,
 } from "./notifications.schema";
+import { notificationReadiness } from "./readiness";
 
 /**
  * `F3.8` — reading channels, and the **only** place a channel secret is
@@ -62,8 +64,6 @@ import type {
 
 /** The shape the ciphertext holds. `CredentialCryptoService` stores objects. */
 const SECRET_FIELD = "secret";
-
-const sqlCount = sql<number>`count(*)::int`;
 
 /** Postgres SQLSTATEs this service can produce and must not answer with a 500. */
 const UNIQUE_VIOLATION = "23505";
@@ -462,7 +462,9 @@ export class ChannelsService {
    *
    * `E7.1c` (item G, the security-critical one): the select below
    * (`:id, organizationId, ruleId, ruleCode, alarmId, channelId, channelCode,
-   * status, attemptedAt, error`) carries no alarm text — no subject, message
+   * status, attemptedAt, error`, and since `F3.56` an eleventh column,
+   * `dedupeKey`, which is **consumed in the `.map()` and never returned**)
+   * carries no alarm text — no subject, message
    * or body — so the exposure the organization filter guards is channel
    * `config` (via `channelCode`/`channelId`, resolvable through `list()`) and
    * delivery/error metadata, not alarm content. `assertAdmin` came off this
@@ -482,6 +484,21 @@ export class ChannelsService {
    * `list()`: a `location_admin` gets `{ items: [] }` unconditionally, not a
    * `writableOrganizationIds`-filtered read. (`asset_group_admin` is refused
    * earlier still, by `requireMasterDataUser`'s `isMasterDataRole` check.)
+   *
+   * **`F3.56` (ADR 0041 Amendment 8) — the row says what the attempt was FOR.**
+   * `dedupe_key` is selected only so `parseDeliveryEvent` can derive `event`
+   * from it in the `.map()` below; the key itself is dropped there and never
+   * reaches a client. That is deliberate and was measured. The key carries a
+   * rule uuid, an alarm uuid and the severity code, and the first two are
+   * already DTO fields selected a few lines below — so the **incremental**
+   * exposure returning it would create is the severity code, which is exactly
+   * what Amendment 8 means by "`NotificationDeliveryDto` carries no severity
+   * today". A derived kind adds no identifier at all. (`errorProjection` above
+   * is a narrower thing than a general redaction of alarm detail: it blanks the
+   * `error` column only, only for a non-`admin` caller, and only on a NULL-org
+   * channel row.) Nothing on the write path changes —
+   * ADR 0057 decision 9's "the kind lives in the dedupe key, not in a new
+   * column" still holds, and `event` is a projection rather than a stored value.
    */
   async listDeliveries(
     jwt: JwtPayload,
@@ -541,6 +558,9 @@ export class ChannelsService {
         status: notificationDeliveries.status,
         attemptedAt: notificationDeliveries.attemptedAt,
         error: errorProjection,
+        // `F3.56` — read for the derivation below and dropped there. See the
+        // method comment for why it is not returned.
+        dedupeKey: notificationDeliveries.dedupeKey,
       })
       .from(notificationDeliveries)
       .innerJoin(
@@ -565,63 +585,18 @@ export class ChannelsService {
         status: row.status as NotificationDeliveryDto["status"],
         attemptedAt: row.attemptedAt.toISOString(),
         error: row.error,
+        // `row` already carries `dedupeKey`, `ruleId` and `alarmId` as
+        // `string | null`, so it satisfies the parameter with no adapter and no
+        // optional field — an optional parameter at an adapter goes inert while
+        // `tsc` exits 0 and every fake-based suite stays green.
+        event: parseDeliveryEvent(row),
       })),
     };
   }
 
-  /**
-   * Whether each kind can actually send (decision 5).
-   *
-   * Authenticated but not admin-only, and this is what makes that safe: one
-   * boolean and one sentence per kind, with no host, no port and no credential
-   * in either. A location-scoped operator editing a rule marked `notify` is
-   * exactly the person who must learn that nothing is configured.
-   *
-   * **`configured` and `detail` never disagree.** The first draft reported
-   * webhook as `configured: true` while the sentence said
-   * `CREDENTIAL_ENCRYPTION_KEY` was missing — and decision 5 ties readiness to
-   * "the same visible-when-absent treatment E8.4 specifies for an unconfigured
-   * CREDENTIAL_ENCRYPTION_KEY", so a banner keyed on the boolean would have
-   * shown nothing while every secret-bearing webhook channel skipped. The
-   * boolean now costs one COUNT: webhooks are ready unless a channel actually
-   * stores a secret that cannot be read. A deployment with no signed webhook
-   * is genuinely unaffected by a missing key, and says so.
-   */
+  /** Delegates to `notificationReadiness` in `readiness.ts` — moved out by `F3.56` (AGENTS.md §2). */
   async readiness(config: NotificationsConfig): Promise<NotificationReadinessDto[]> {
-    const keyReady = CredentialCryptoService.isConfigured();
-    let secretBearingChannels = 0;
-    if (!keyReady) {
-      const rows = await this.fleetDb
-        .select({ count: sqlCount })
-        .from(notificationChannels)
-        .where(
-          and(
-            eq(notificationChannels.enabled, true),
-            isNotNull(notificationChannels.secretCiphertext),
-          ),
-        );
-      secretBearingChannels = rows[0]?.count ?? 0;
-    }
-    const webhooksReady = keyReady || secretBearingChannels === 0;
-
-    return [
-      {
-        kind: "email",
-        configured: config.smtp !== null,
-        detail:
-          config.smtp === null
-            ? "SMTP_HOST is not set, so email notifications are recorded as skipped."
-            : "SMTP is configured.",
-      },
-      {
-        kind: "webhook",
-        configured: webhooksReady,
-        detail: webhooksReady
-          ? "Webhooks send over https to public addresses only."
-          : `CREDENTIAL_ENCRYPTION_KEY is not set, so ${secretBearingChannels} webhook ` +
-            "channel(s) with a stored secret cannot be signed and are recorded as skipped.",
-      },
-    ];
+    return notificationReadiness(this.fleetDb, config);
   }
 
   /**

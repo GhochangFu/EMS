@@ -8,6 +8,7 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import {
+  deliveryEventLabel,
   deliveryStatusLabel,
   deliveryStatusTone,
   organizationLabel,
@@ -55,6 +56,11 @@ type NotificationDeliveriesPageProps = { user: AuthUser };
  * `listDeliveriesQuerySchema` accepts `channelId` and `ruleId` and no
  * organization, and the ledger is a bounded recent list rather than a paged
  * one, so the whole set is already in hand.
+ *
+ * **`F3.56` adds the Event column** (ADR 0041 Amendment 8): a raise, an
+ * escalation step, a cleared message or a send test, rendered as plain text
+ * beside the Status pill rather than as a second pill, since the two answer
+ * different questions and only one of them is an outcome.
  */
 export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageProps) {
   const [channelFilter, setChannelFilter] = useState("");
@@ -159,6 +165,7 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
               <th className="px-2 py-2">Channel</th>
               <th className="px-2 py-2">Rule</th>
               <th className="px-2 py-2">Status</th>
+              <th className="px-2 py-2">Event</th>
               <th className="px-2 py-2">Detail</th>
             </tr>
           </thead>
@@ -179,12 +186,13 @@ export function NotificationDeliveriesPage({ user }: NotificationDeliveriesPageP
                     tone={deliveryStatusTone(item.status)}
                   />
                 </td>
+                <td className="px-2 py-2">{deliveryEventLabel(item.event)}</td>
                 <td className="px-2 py-2 max-w-[28rem] break-words">{item.error ?? "—"}</td>
               </tr>
             ))}
             {!deliveriesQ.isLoading && items.length === 0 ? (
               <tr>
-                <td className="px-2 py-3 text-bms-muted" colSpan={6}>
+                <td className="px-2 py-3 text-bms-muted" colSpan={7}>
                   No delivery attempts recorded yet. A rule marked notify writes a row here every
                   time it fires — including when it sends nothing.
                 </td>
