@@ -57,7 +57,8 @@ import type { PointGridProblem, TemplatePointRow } from "./template-points-grid"
  * clears what the new dialect may not carry, the same shape as
  * `setCalcTrigger`. `calcConfigErrors` gains the two ratio rules; the two
  * `*_HINT` strings are the sentences the tab renders beside the controls, so
- * the override panel (`F2.22` T12) says the same thing from the same source.
+ * the override panel (`F2.22` T12, PR 2 of this row) will say the same thing
+ * from the same source once it lands.
  */
 
 /** Bounds, mirroring `templatePointBodySchema`. */

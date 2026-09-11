@@ -85,7 +85,7 @@ export type KpiFormulaInput = {
 
 /**
  * The two derived-reference messages, copied from
- * `apps/api/src/admin/asset-templates/asset-templates.schema.ts:159–171`.
+ * `apps/api/src/admin/asset-templates/asset-templates.schema.ts:304-307`.
  *
  * `apps/web` may not import from `apps/api`, so these are string literals on
  * both sides of the boundary — stated here rather than left for a reader to
@@ -98,7 +98,7 @@ const DERIVED_SELF_REFERENCE_MESSAGE =
 const DERIVED_SIBLING_REFERENCE_MESSAGE =
   "This point's formula references another derived point — a derived formula may only reference measured points";
 
-/** Copied from `templateKpiSchema.superRefine` (`asset-templates-content.schema.ts:230`). */
+/** Copied from `templateKpiSchema.superRefine` (`asset-templates-content.schema.ts:349`). */
 const UNUSED_POINT_KEYS_MESSAGE =
   "Every entry in pointKeys must be referenced by expression at least once";
 

@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   aCycleBlocksTheSaveUnderBothRows,
   aFrozenVersionDisablesEveryControl,
+  aMixedDialectPairSkipsTheCycleMirror,
   choosingV2FlipsAStreamingRowToScheduled,
   eachRowRendersItsDialectsControls,
   savingCarriesTheRatioAndPreservesTheDialect,
@@ -39,5 +40,9 @@ describe("F2.22 calculations tab — Grammar, Minimum coverage and the v2 trigge
 
   it("renders the cycle sentence under both rows of a within-template cycle and blocks the save", async () => {
     await aCycleBlocksTheSaveUnderBothRows();
+  });
+
+  it("skips the cycle mirror on a mixed-dialect pair, but still blocks the save on the sibling-reference sentence", async () => {
+    await aMixedDialectPairSkipsTheCycleMirror();
   });
 });

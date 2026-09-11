@@ -352,7 +352,25 @@ export function runParserV2Tests(): void {
 // The ten codes, enumerated from ast.ts, not the F2.22 deferral list. Keeping
 // the old one-liners here (rather than deleting them) is what lets assertion
 // (a) prove the rewording actually landed, and not merely that a string exists.
-const OLD: Readonly<Record<string, string>> = {
+const V2_ERROR_CODES = [
+  "unknown_scope",
+  "unterminated_string",
+  "empty_string",
+  "malformed_qualified_reference",
+  "malformed_scope",
+  "scope_required",
+  "scope_not_allowed",
+  "aggregate_needs_point_reference",
+  "qualified_reference_in_aggregate",
+  "too_many_cross_refs",
+] as const satisfies readonly CalcErrorCode[];
+
+// `Record<(typeof V2_ERROR_CODES)[number], string>`, not `Record<string,
+// string>` — a missing or mistyped key here is a compile error, not a
+// silent `undefined` that would make assertion (a) pass vacuously for that
+// code (it compares against `` `${OLD[code]} at character 0` ``, and
+// `${undefined} at character 0` still fails to equal the new message).
+const OLD: Readonly<Record<(typeof V2_ERROR_CODES)[number], string>> = {
   unknown_scope: "unknown scope",
   unterminated_string: "unterminated string",
   empty_string: "empty string",
@@ -364,19 +382,6 @@ const OLD: Readonly<Record<string, string>> = {
   qualified_reference_in_aggregate: "an aggregate cannot take a qualified point reference",
   too_many_cross_refs: "the formula has too many distinct cross-asset references",
 };
-
-const V2_ERROR_CODES: CalcErrorCode[] = [
-  "unknown_scope",
-  "unterminated_string",
-  "empty_string",
-  "malformed_qualified_reference",
-  "malformed_scope",
-  "scope_required",
-  "scope_not_allowed",
-  "aggregate_needs_point_reference",
-  "qualified_reference_in_aggregate",
-  "too_many_cross_refs",
-];
 
 /**
  * Ten codes, three claims each: the sentence changed from the `F2.9` one-liner

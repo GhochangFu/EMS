@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * `F2.22` T9 — the wording gate. Four sentences the editor mirrors from the
+ * `F2.22` T9 — the wording gate. Five sentences the editor mirrors from the
  * server, each copied by hand because `apps/web` cannot import `apps/api`
  * (design decision 6). A copy that drifts is worse than no copy: the editor
  * clears the author's problem and the save still fails, with different words.
@@ -26,6 +26,7 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 const FILES = {
   templateSchema: "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
+  templateContentSchema: "apps/api/src/admin/asset-templates/asset-templates-content.schema.ts",
   overrideSchema: "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
   templateCalcConfig: "apps/web/src/lib/template-calc-config.ts",
   overrideLib: "apps/web/src/lib/asset-point-calc-override.ts",
@@ -76,7 +77,7 @@ function dropTrailingPeriod(sentence: string): string {
   return sentence.replace(/\.$/, "");
 }
 
-describe("F2.22 T9 — the editor's four copies of server wording, gated against drift", () => {
+describe("F2.22 T9 — the editor's five copies of server wording, gated against drift", () => {
   // --- pair (a) — ADR 0055 decision 10's streaming-refusal sentence --------
   //
   // Four copies: the template save path, the override save path (both API),
@@ -204,6 +205,33 @@ describe("F2.22 T9 — the editor's four copies of server wording, gated against
       'minCoverageRatio applies only to a derived point in the "${CALC_DIALECT_V2}" dialect — ' +
         "it is the fraction of an aggregate's declared members that must be fresh",
     );
+    expect(web).toBe(server);
+  });
+
+  // --- pair (e) — the unused-pointKeys sentence ------------------------------
+  //
+  // `asset-templates-content.schema.ts` (~line 349, `templateKpiSchema`'s
+  // `superRefine`) versus `template-formula-validation.ts`'s
+  // `UNUSED_POINT_KEYS_MESSAGE`. Gated by nothing until this task.
+  it("pair (e) — the unused-pointKeys sentence matches UNUSED_POINT_KEYS_MESSAGE", () => {
+    const SERVER_RE = /message:\s*[`"]Every entry in pointKeys[\s\S]*?at least once[`"]/;
+    const WEB_RE = /UNUSED_POINT_KEYS_MESSAGE\s*=\s*\n?\s*"([^"]*)"/;
+
+    const serverRaw = extractExactlyOne(
+      source.templateContentSchema,
+      SERVER_RE,
+      "asset-templates-content.schema.ts (unused pointKeys)",
+    );
+    const server = joinConcatenatedLiteral(
+      serverRaw.replace(/^message:\s*/, ""),
+    );
+
+    const webGlobal = new RegExp(WEB_RE.source, "g");
+    const webMatches = [...source.formulaValidation.matchAll(webGlobal)];
+    expect(webMatches.length, "template-formula-validation.ts: UNUSED_POINT_KEYS_MESSAGE").toBe(1);
+    const web = webMatches[0][1];
+
+    expect(server).toBe("Every entry in pointKeys must be referenced by expression at least once");
     expect(web).toBe(server);
   });
 });

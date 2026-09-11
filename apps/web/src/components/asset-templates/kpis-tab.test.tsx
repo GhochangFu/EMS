@@ -24,7 +24,11 @@ describe("F2.22 KPIs tab — a bms-calc-v2 KPI is checked, and Grammar (ADR 0055
     await aStoredV2KpiRendersAsChecked();
   });
 
-  it("validates an unvalidated KPI under the chosen grammar and saves it as bms-calc-v2 with derived pointKeys", async () => {
+  // The fixture (`{kw} * 2` with stored `["kw"]`) cannot show derivation —
+  // `pointKeys` is unchanged by the parse either way. This asserts what the
+  // Validate path actually writes to the payload; `template-kpi-form.spec.ts`'s
+  // `runV2PointKeyDerivationTests` owns the derivation claim itself.
+  it("validates an unvalidated KPI under the chosen grammar and saves it as bms-calc-v2, with pointKeys unchanged in the payload", async () => {
     await validateUpgradesToTheChosenGrammar();
   });
 

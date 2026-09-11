@@ -336,3 +336,58 @@ export async function aCycleBlocksTheSaveUnderBothRows(): Promise<void> {
   expect(screen.getByRole("button", { name: "Save calculations" })).toBeDisabled();
   expect(screen.getByText("Fix the problems above to save.")).toBeInTheDocument();
 }
+
+/**
+ * Case 6 — a mixed-dialect pair the cycle mirror deliberately does not
+ * report (plan correction 12; `template-calc-cycles.ts:43-55`'s "Where this
+ * narrows the server's node set" argument).
+ *
+ * `D` is `v1` with `formula: "{E}"`; `E` is `v2` with `formula: "sum({D}
+ * @site)"`. `templateCycleProblems` builds no node for a `v1` row, so `E`'s
+ * only dependency (`D`) is never in `nodeByKey` and no cycle is found — the
+ * mirror stays silent. `D`'s reference to a derived sibling is refused
+ * under `v1` only (`validateDerivedFormula`'s dialect gate; `v2` repeals the
+ * ban per ADR 0055 decision 7), and it is refused **twice over**: once by
+ * `formulaProblems` (the sibling-reference sentence asserted below) and
+ * again, independently, by `brokenFormulaRefs`'s own `v1`-derived-reference
+ * check feeding `refProblems` — the plan's correction 12 names both as
+ * carrying "a blocking refusal on the same field". Either alone would block
+ * Save, so a mutation that removes only `formulaProblems.length > 0` from
+ * `blocked` does not redden this case (verified; `refProblems` keeps it
+ * blocked) — the case that reddens on that particular disjunct is a
+ * malformed formula, the one shape `brokenFormulaRefs` and
+ * `templateCycleProblems` both bail out of before checking anything. What
+ * this case actually proves — non-vacuously, by mutation — is the docblock's
+ * own claim: deleting the `v1` skip in `template-calc-cycles.ts`'s node loop
+ * makes `D` a node, completes the `D`→`E`→`D` cycle, and turns the absence
+ * assertion below red while cases 1–5 stay green.
+ */
+export async function aMixedDialectPairSkipsTheCycleMirror(): Promise<void> {
+  const mixed = template([
+    point("D", 0, { kind: "derived", formula: "{E}", formulaDialect: V1, calcTrigger: "streaming" }),
+    point(
+      "E",
+      1,
+      { kind: "derived", formula: "sum({D} @site)", formulaDialect: V2, calcTrigger: "scheduled", calcIntervalSeconds: 60 },
+    ),
+  ]);
+  const onDirtyChange = vi.fn();
+  renderTab(mixed, true, onDirtyChange);
+
+  // The positive control: the derived-sibling sentence renders under D.
+  expect(
+    within(formulaFor("D").closest("section") ?? document.body).getByText(
+      "This point's formula references another derived point — a derived formula may only reference measured points",
+    ),
+  ).toBeInTheDocument();
+  // The mirror is silent — asserted as an absence beside the positive
+  // control above, not on its own (an absence check alone cannot show the
+  // mirror ran and chose not to report, versus never having run at all).
+  expect(screen.queryByText(CYCLE_SENTENCE)).toBeNull();
+
+  fireEvent.change(coverageFor("E"), { target: { value: "0.5" } });
+  expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+
+  expect(screen.getByRole("button", { name: "Save calculations" })).toBeDisabled();
+  expect(screen.getByText("Fix the problems above to save.")).toBeInTheDocument();
+}
