@@ -146,10 +146,20 @@ type RuleChannelRow = StoredChannelRow & { ruleId: string };
  *
  * **The statement is `ChannelsService.loadForRule`'s**, one rule id widened to
  * an `IN` list and `rule_notifications.rule_id` added to the projection so the
- * rows can be grouped. Same join, same `enabled = true` filter, same ten
+ * rows can be grouped. Same join, same `enabled = true` filter, same eleven
  * columns and the same `ORDER BY code`, so "the rule's channels" keeps the one
- * definition `AlarmLifecycleDeps.loadRuleChannels` promises it has — case CI4
- * asserts the two lists id-for-id rather than trusting this sentence.
+ * definition `AlarmLifecycleDeps.loadRuleChannels` promises it has.
+ *
+ * **CI4 asserts the two lists id-for-id, and that is weaker than it reads.** It
+ * compares ids, so it says nothing about the PROJECTION: this read shipped
+ * missing `secret_key_version` and CI4 stayed green. What caught it was
+ * `pnpm build`, after the merge, on `main` — `E8.4` added that column to
+ * `toChannelRow`'s parameter and to both reads that existed when it landed,
+ * while this one sat on an unmerged branch. Each pull request was green alone.
+ * **`tsc -p tsconfig.json --noEmit` did not catch it either**, and the reason is
+ * worth keeping: the branch was rebased onto a `main` that did not yet carry
+ * `E8.4`, so the type it had to satisfy was the old one. A rebase is only a
+ * merge-skew test against the `main` that exists when you run it.
  *
  * **Order inside a group is the statement's**, because the rows are appended in
  * the order they arrive. `ORDER BY code` is over the whole batch, so two rules'
@@ -223,6 +233,11 @@ async function selectRuleChannelBatch(db: BmsDb, ruleIds: string[]): Promise<Rul
       enabled: notificationChannels.enabled,
       secretCiphertext: notificationChannels.secretCiphertext,
       secretIv: notificationChannels.secretIv,
+      // `E8.4` added this column to `toChannelRow`'s parameter and to both of
+      // the reads that existed when it landed. This read was on an unmerged
+      // branch at the time, so nothing connected the two: each pull request was
+      // green alone and `main` was red with both. See the header.
+      secretKeyVersion: notificationChannels.secretKeyVersion,
       updatedAt: notificationChannels.updatedAt,
     })
     .from(ruleNotifications)

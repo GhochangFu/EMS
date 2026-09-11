@@ -10,7 +10,7 @@ import {
   withRollback,
 } from "../alarms/alarm-lifecycle.integration.spec";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
-import { loadEnabledChannelsForRules } from "./channel-reads";
+import { loadEnabledChannelsByIds, loadEnabledChannelsForRules } from "./channel-reads";
 import { ChannelsService } from "./channels.service";
 
 /**
@@ -323,6 +323,55 @@ export async function assertEachStatementBindsItsOwnBatch(db: BmsDb): Promise<vo
       codesOf(read.byRule, r3) === "c9",
       `CI6: the rule alone in the second batch must still come back, got [${codesOf(read.byRule, r3)}]`,
     );
+    tx.rollback();
+  });
+}
+
+/**
+ * CI7 — the two reads that feed `toChannelRow` project the SAME columns.
+ *
+ * **This case exists because the projection shipped wrong and every gate missed
+ * it.** `loadEnabledChannelsForRules` was written without
+ * `secret_key_version`, which `E8.4` had added to `toChannelRow`'s parameter
+ * and to both reads that existed at the time. CI4 compares ids and stayed
+ * green; the unit fake supplies its own rows and can see no projection at all;
+ * and `tsc` was satisfied because the branch was rebased onto a `main` that did
+ * not yet carry `E8.4`. `pnpm build` on `main`, after the merge, is what caught
+ * it — the two pull requests were each green alone.
+ *
+ * The claim is order-independent and cheap: both functions hand their rows to
+ * the same `toChannelRow`, so whatever one selects the other must select. A
+ * column added to that method's parameter by a third row reddens this the next
+ * time the suite runs, in EITHER read, without anyone remembering to look.
+ *
+ * `ruleId` is excluded because it is this read's own grouping key and belongs
+ * to no channel — it is the one intended difference between the projections.
+ */
+export async function assertBothChannelReadsProjectTheSameColumns(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const { r2 } = await plantThreeRules(tx);
+
+    const byRuleRead = await loadEnabledChannelsForRules(tx, [r2]);
+    const grouped = (byRuleRead.byRule.get(r2) ?? [])[0];
+    assert(grouped !== undefined, "CI7: the fixture rule must return a channel");
+    const byIdRead = await loadEnabledChannelsByIds(tx, [(grouped as { id: string }).id]);
+    const direct = byIdRead[0];
+    assert(direct !== undefined, "CI7: the same channel must come back by id");
+
+    const groupedKeys = Object.keys(grouped as object)
+      .filter((key) => key !== "ruleId")
+      .sort()
+      .join(",");
+    const directKeys = Object.keys(direct as object)
+      .sort()
+      .join(",");
+
+    assert(
+      groupedKeys === directKeys,
+      `CI7: both reads feed toChannelRow and must project the same columns — ` +
+        `byRule gives [${groupedKeys}], byId gives [${directKeys}]`,
+    );
+
     tx.rollback();
   });
 }
