@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import { Logger } from "@nestjs/common";
+
 import { and, eq, is, TransactionRollbackError } from "drizzle-orm";
 
 import {
@@ -25,14 +27,17 @@ import { buildConfig } from "../notifications/notifications.config";
 import { NotificationsService } from "../notifications/notifications.service";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
 import { until } from "../testing/until";
-import { selectRuleRows } from "./rule-reads";
-import { RuleSweepService } from "./rule-sweep.service";
+import { withTenant } from "../database/tenant-context";
+import { selectRuleRows, stampRulesEvaluated } from "./rule-reads";
+import { batchedLatestPointValues } from "./rule-samples";
+import { runRuleSweep } from "./rule-sweep";
 
 /**
- * `F3.11` / ADR 0064 decisions 4, 5 — `RuleSweepService` composed for real
- * (`new RuleSweepService(tx, new AlarmRaiser(tx), notifications).run(tx)`)
- * against a real database, so the sweep's write policy is proved on rows
- * rather than on the recording raiser `rule-sweep.spec.ts` drives.
+ * `F3.11` / ADR 0064 decisions 4, 5 — the sweep body on the deps
+ * `RuleSweepService.run` wires, with a real `AlarmRaiser`, a real
+ * `NotificationsService` and the real stamp, against a real database — so the
+ * sweep's write policy is proved on rows rather than on the recording raiser
+ * `rule-sweep.spec.ts` drives. See `sweepOn` for why the walk is scoped.
  *
  * Same isolation as `evaluate-enabled-rules.integration.spec.ts`: one
  * transaction per scenario, used as BOTH pools (the fleet read and the tenant
@@ -40,11 +45,12 @@ import { RuleSweepService } from "./rule-sweep.service";
  * `pg_notify` the raiser issues rides that transaction and is dropped with
  * it, so a run here announces nothing to the running stack's listener.
  *
- * **The sweep walks every enabled, published rule in the database** (ADR
- * 0033 decision 2), not just the fixtures — 289 on the seeded dev database
- * on 2026-09-11 — so every count below is filtered to a fixture rule's id and
- * never taken table-wide, and the `evaluated` claim derives its expectation
- * from the same `selectRuleRows` read inside the same transaction.
+ * **The reader walks every enabled, published rule in the database** (ADR
+ * 0033 decision 2) — 289 on the seeded dev database on 2026-09-11 — and
+ * `sweepOn` keeps only the scenario's own rows, so every count below is
+ * filtered to a fixture rule's id and never taken table-wide, and the
+ * `evaluated` claim derives its expectation from the same `selectRuleRows`
+ * read inside the same transaction.
  *
  * **Shape.** One scenario runner per `withRollback` returns a plain outcome
  * read before the rollback; one exported assert per claim reads it
@@ -160,13 +166,54 @@ async function stampOf(db: BmsDb, ruleId: string): Promise<StampRow> {
 }
 
 /**
- * The service as `RuleSweepModule` builds it, on one handle. The fleet read
- * inside `run(tx)` is `tx.transaction(selectRuleRows)` — a savepoint on the
- * same connection — and every tenant write is `withTenant(tx, …)`, so the
- * fixtures inserted above are visible to both.
+ * The sweep body on the five deps `RuleSweepService.run` wires
+ * (`rule-sweep.service.ts`), on one handle — the fleet read is
+ * `tx.transaction(selectRuleRows)`, a savepoint on the same connection, and
+ * every tenant write is `withTenant(tx, …)`, so the fixtures inserted above are
+ * visible to both. That wiring itself is pinned by `rule-sweep.service.spec.ts`
+ * (three sentinel claims); this suite proves the policy against real rows.
+ *
+ * **The walk is scoped to the scenario's own rules, after the real reader
+ * runs.** `selectRuleRows` still returns the whole fleet; the filter drops the
+ * ~290 committed seeded rules. Unscoped, the sweep raised on seeded rules and
+ * stamped all of them in one `UPDATE … = ANY($1)` inside this suite's
+ * never-committing transaction, while `evaluate-enabled-rules.integration`
+ * stamped the same rows one by one inside *its* never-committing transaction
+ * — measured 2026-09-11, three of three runs beside that suite, zero alone:
+ * Postgres reported `40P01` (`Process 29097 waits for ShareLock on transaction
+ * 6375722; blocked by process 29098 … while updating tuple in relation
+ * "automation_rules"`) and killed the stamp. The sweep's per-organization
+ * `catch` swallowed it, but on one connection the stamp is a savepoint, and
+ * the fire-and-forget dispatch's ledger insert had landed inside that
+ * savepoint window — `ROLLBACK TO SAVEPOINT` erased the row `sent.length === 1`
+ * proved was written, and `until` waited out its 10 s. Production cannot form
+ * the cycle: the press stamps each rule in its own short `withTenant`
+ * transaction (`rules.service.ts:709`), so it never holds row X while waiting
+ * for row Y. Two long-transaction fleet walkers on one shared database can,
+ * and the fix is to stop this one competing on rows it did not create.
  */
-function sweepOn(tx: BmsDb, notifications: NotificationsService): RuleSweepService {
-  return new RuleSweepService(tx, new AlarmRaiser(tx), notifications);
+function sweepOn(
+  tx: BmsDb,
+  notifications: NotificationsService,
+  ruleIds: readonly string[],
+): { run(): Promise<RuleSweepSummary> } {
+  const own = new Set(ruleIds);
+  const raiser = new AlarmRaiser(tx);
+  const logger = new Logger("rule-sweep.integration");
+  return {
+    run: () =>
+      runRuleSweep({
+        readRules: async () =>
+          (await tx.transaction((inner) => selectRuleRows(inner))).filter((row) => own.has(row.id)),
+        loadSamples: (rows) => batchedLatestPointValues(tx, rows),
+        raiser,
+        notifications,
+        stampEvaluated: (organizationId, ids, at) =>
+          withTenant(tx, organizationId, (inner) => stampRulesEvaluated(inner, ids, at)),
+        logger,
+        now: Date.now,
+      }),
+  };
 }
 
 /**
@@ -228,8 +275,8 @@ export async function runMatchingSweep(db: BmsDb): Promise<MatchingSweepOutcome>
     });
     const before = [await stampOf(tx, matching.ruleId), await stampOf(tx, nonMatching.ruleId)];
 
-    const service = sweepOn(tx, silentNotifications);
-    const summary = await service.run(tx);
+    const service = sweepOn(tx, silentNotifications, [matching.ruleId, nonMatching.ruleId]);
+    const summary = await service.run();
 
     const first = {
       matching: {
@@ -243,7 +290,7 @@ export async function runMatchingSweep(db: BmsDb): Promise<MatchingSweepOutcome>
     };
     const after = [await stampOf(tx, matching.ruleId), await stampOf(tx, nonMatching.ruleId)];
 
-    await service.run(tx);
+    await service.run();
 
     outcome = {
       summary,
@@ -477,10 +524,10 @@ export async function runNotifySweep(db: BmsDb): Promise<NotifySweepOutcome> {
     const { notifications, sent } = realNotificationsOn(tx);
     const sentFor = (ruleId: string): number =>
       sent.filter((message) => message.ruleId === ruleId).length;
-    const service = sweepOn(tx, notifications);
+    const service = sweepOn(tx, notifications, [ruleA.ruleId, ruleB.ruleId]);
 
     // --- sweep 1: rule A transitions --------------------------------------
-    await service.run(tx);
+    await service.run();
     await until(async () => (await deliveriesForRule(tx, ruleA.ruleId)).length === 1, {
       timeoutMs: 10_000,
       label: "rule A's first delivery row",
@@ -496,7 +543,7 @@ export async function runNotifySweep(db: BmsDb): Promise<NotifySweepOutcome> {
       value: 600_000,
       unit: null,
     });
-    await service.run(tx);
+    await service.run();
     await until(async () => (await deliveriesForRule(tx, ruleB.ruleId)).length === 1, {
       timeoutMs: 10_000,
       label: "rule B's delivery row (the drain marker)",
@@ -617,11 +664,16 @@ export async function runBoundsSweep(db: BmsDb): Promise<BoundsSweepOutcome> {
       },
     });
 
+    const own = [stale.ruleId, fresh.ruleId, window.ruleId];
     const expectedRows = (await selectRuleRows(tx)).filter(
-      (row) => row.enabled && row.lifecycleStatus === "published" && row.organizationId !== null,
+      (row) =>
+        own.includes(row.id) &&
+        row.enabled &&
+        row.lifecycleStatus === "published" &&
+        row.organizationId !== null,
     );
 
-    const summary = await sweepOn(tx, silentNotifications).run(tx);
+    const summary = await sweepOn(tx, silentNotifications, own).run();
 
     outcome = {
       staleAlarms: await alarmsForRule(tx, assetStale, stale.ruleId),

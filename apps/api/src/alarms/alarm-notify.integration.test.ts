@@ -139,6 +139,16 @@ describe.skipIf(!connectionString)("F3.11 — NOTIFY bms_alarms reaches the list
           operator: "gte",
           thresholdValue: 999_999,
           severity: "warning",
+          // Committed rows are visible to every fleet-wide walker for as long
+          // as they exist — `POST /rules/evaluate` (ADR 0033 decision 2) in a
+          // concurrent suite reads every enabled, published rule and writes a
+          // trace per rule, and this suite's `afterAll` deletes the rule under
+          // it: `rule_executions_rule_id_fkey` fails in the OTHER suite
+          // (measured 2026-09-11, three of three pair runs). `raise` takes the
+          // rule as an argument and never reads `enabled`, so the listener
+          // proof is unchanged. Same shape as
+          // `rules.service.rls.integration.test.ts`'s committed fixture.
+          enabled: false,
         })
         .returning({ id: automationRules.id, code: automationRules.code });
       if (!rule) {
