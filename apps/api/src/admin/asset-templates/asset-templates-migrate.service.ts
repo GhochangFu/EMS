@@ -23,15 +23,17 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-// `F2.9` PR 2 review fix 2 — the override endpoint's *second* gate. Exported by
-// `CalcModule`, which `AdminModule` already imports.
+// `F2.9` PR 2 review fix 2 — one of the override endpoint's three gates (its
+// cycle check; `F2.22` item 9 added a third, `unresolvedQualifiedCodes`, run
+// only at the endpoint). Exported by `CalcModule`, which `AdminModule` already
+// imports.
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
-// `F2.9` Task 12b, widened at the PR 2 review — the override endpoint's own two
-// gates, imported rather than restated. See that file's docblock.
+// `F2.9` Task 12b, widened at the PR 2 review — two of the override endpoint's
+// three gates, imported rather than restated. See that file's docblock.
 import { refuseOverridesThatDoNotSurvive } from "./asset-templates-migrate-calc";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
 import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
@@ -78,8 +80,10 @@ import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./templat
  *   which is the one thing ADR 0015's identity invariant exists to prevent.
  * - **`F2.9` Task 12b** — a migrating asset's own calc override, merged over
  *   the target version's declaration of the same derived point, that either of
- *   the override endpoint's two gates refuses: `validateMergedCalcOverride`,
- *   or `CalcDependencyService.checkCandidate`. The delta is pure over two
+ *   two of the override endpoint's three gates refuses: `validateMergedCalcOverride`,
+ *   or `CalcDependencyService.checkCandidate`. (The endpoint's third gate,
+ *   `unresolvedQualifiedCodes` from `F2.22` item 9, is deliberately not run at
+ *   migrate — see `asset-templates-migrate-calc.ts`.) The delta is pure over two
  *   template versions and never sees an override, so without this the pin could
  *   move under a legal dialect-only override and leave a `bms-calc-v2` formula
  *   wearing a `bms-calc-v1` label — a pair no code path had validated

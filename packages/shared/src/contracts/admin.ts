@@ -661,15 +661,20 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    * version's declaration of the same derived point, is not a pair this engine
    * will run (findings 31 and 34; ADR 0039 decision 2, "no blind apply").
    *
-   * ## The same rules as the override endpoint, deliberately
+   * ## The same rules as two of the override endpoint's three gates, deliberately
    *
-   * This one reason covers **both** of that endpoint's gates, because both are
-   * "the merged pair does not survive the move" and an operator acts on either
-   * the same way — correct or clear the override, then migrate.
+   * This one reason covers **two of that endpoint's three gates**, because both
+   * are "the merged pair does not survive the move" and an operator acts on
+   * either the same way — correct or clear the override, then migrate.
    * `AssetTemplateMigrationService` runs `validateMergedCalcOverride`, the one
    * pure function `PUT /admin/assets/:id/calc-points/:key` validates with, and
    * `CalcDependencyService.checkCandidate`, the save-time cycle detector that
-   * endpoint also runs. An override states only the columns it sets and
+   * endpoint also runs. The endpoint's third gate — `unresolvedQualifiedCodes`
+   * (`F2.22` item 9) — is the endpoint's alone: an asset deleted after a save is
+   * ADR 0055 decision 8's evaluation-time case, counted as
+   * `unknown_asset_reference` rather than refused, and refusing a migrate for it
+   * would strand the asset (`asset-templates-migrate-calc.ts` docblock). An
+   * override states only the columns it sets and
    * inherits the rest, so a new version can turn a pair that was legal when it
    * was written into one that is not: a legal dialect-only `bms-calc-v1`
    * override plus a target version whose formula is `bms-calc-v2` merges to a
@@ -677,9 +682,13 @@ export const templateMigrationRefusalReasonSchema = z.enum([
    * correctly. Two implementations of one rule is how two paths drift apart, so
    * both are imported rather than restated.
    *
-   * **The claim is parity, and only parity.** Both gates resolve against the
-   * estate as it stands, exactly as the endpoint resolves them, so a merged
-   * pair migrate admits is one that endpoint would admit at this instant. It is
+   * **The claim is parity on the two shared gates, and only that.** Both
+   * resolve against the estate as it stands, exactly as the endpoint resolves
+   * them, so a merged pair migrate admits is one that endpoint would admit at
+   * this instant — with the one exception the third gate carries: a `v2`
+   * formula whose qualified code resolves to no active asset at the asset’s own
+   * location, which the endpoint refuses and migrate admits, counted instead
+   * as `unknown_asset_reference`. Beyond that exception it is
    * not a promise that the post-migration graph is acyclic: definitions resolve
    * through each asset's *current* pin, so the target version's own derived
    * points join the graph only once the pin moves. ADR 0055 decision 8 puts
