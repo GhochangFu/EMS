@@ -60,8 +60,15 @@ services:
     # replays the queue (the scheduled heartbeat and any pending job) rather
     # than starting empty.
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    # Loopback only (ADR 0063 Amendment 2, the F4.24 security review's M3).
+    # Redis carries no password and, since the worker, runs whatever job it
+    # finds under `bms:*` — a heartbeat today, a command into any tenant once
+    # F3.12 lands. `api`, `api-replica` and `worker` reach `redis:6379` on the
+    # compose network and never use this port; it exists for host-side
+    # `redis-cli` and the integration specs. `--requirepass` is F3.12's gate,
+    # not this row's.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:

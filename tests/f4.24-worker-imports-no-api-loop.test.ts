@@ -332,6 +332,19 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
       expect(compose).toMatch(/^volumes:\s*$/m);
     });
 
+    // ADR 0063 Amendment 2 (the 2026-09-11 security review, M3): Redis is
+    // now a write path into the tenant database — the worker runs whatever
+    // it finds under `bms:*` — so the host port binds to loopback. `api`,
+    // `api-replica` and `worker` reach `redis:6379` on the compose network
+    // and never use the published port; only host-side tooling does.
+    it("the redis service publishes 6379 on 127.0.0.1 only (Amendment 2: loopback bind)", () => {
+      expect(redis).toMatch(/^\s*-\s*"127\.0\.0\.1:6379:6379"\s*$/m);
+    });
+
+    it("the redis service does not publish 6379 on every interface (the negative of the row above)", () => {
+      expect(redis).not.toMatch(/^\s*-\s*"6379:6379"\s*$/m);
+    });
+
     it("redis-data is declared under the top-level volumes: block", () => {
       expect(sectionAfter(compose, /^volumes:\s*$/m)).toMatch(/^ {2}redis-data:\s*$/m);
     });

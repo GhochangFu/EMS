@@ -313,3 +313,86 @@ panel; a configured, connected queue with no heartbeat ever written reads
 what Q4 exists to make visible); and the manifest commit stages a one-line pin
 note in this ADR's Dependencies section, which is what `.githooks/pre-commit.mjs`
 requires of a `package.json` change.
+
+## Amendment 2 — the review tightened four decisions, and Redis binds to loopback (2026-09-11)
+
+Raised by the three review gates on the finished branch (code, security,
+compliance), the same day as Amendment 1, and ruled by the owner before merge.
+Nothing here widens scope; each item narrows a decision the reviews measured
+to be looser than its own sentence.
+
+**Decision 9 said the worker refuses to start without `REDIS_URL`. It refused
+that case only.** Measured by the code review: a port already bound, a missing
+database URL, or a Redis that is set but unreachable each printed *"worker
+failed to start"* and then **kept running** — `QueueModule`'s factory had
+already opened BullMQ sockets, and in the port case `onModuleInit` had started
+the `Worker` and written heartbeat keys from a process with no `/health`. The
+unreachable-Redis case never reached the catch at all, because
+`upsertSchedule` awaits an ioredis connection that retries forever. Decision 9
+now reads: **the worker refuses to start on any of** a missing `REDIS_URL`, a
+Redis that does not answer `PING` within `REDIS_PROBE_TIMEOUT_MS` (5 s, a
+bounded probe before `NestFactory.create`), a `WORKER_PORT` it cannot bind
+(checked before boot), or any throw during boot — and **exits 1 explicitly**,
+because live sockets would otherwise keep the loop alive. All four cases were
+re-measured at exit 1 within six seconds with no key written; the no-Redis
+case is the positive control. `apps/api/src/queue/redis-probe.ts` and
+`worker-port-probe.ts` carry it.
+
+**Decision 4's "payload type" is a Zod schema, not a TypeScript type.** A job
+in Redis is input that did not arrive over HTTP (AGENTS.md §4.3, the `F4.36`
+class), and the processor cast it. `defineQueue` now takes `payload:
+z.ZodType`; `enqueue`, `upsertSchedule` and `runProcessor` each parse against
+it before any Redis call or any `withTenant`, refusing with
+`QueuePayloadError("invalid_payload")` and field paths only. The heartbeat's
+schema is `z.object({}).strict()`. `F3.11` and `F3.12` inherit the slot and
+cannot skip it.
+
+**Decision 6's `organizationId` is a UUID.** Migration
+`0040_rls_on_org_bearing_tables.sql` casts the GUC with `::uuid`, so a non-UUID
+would fail closed anyway — as a `22P02` retried three times. One named refusal
+at the producer is the honest form: `tenantPayloadSchema` is
+`z.object({ organizationId: z.string().uuid() })`.
+
+**Decision 5's job id has a grammar and a reserved list.** The security
+review reproduced the gap against the live Redis: BullMQ keys a job's hash at
+`<prefix>:<queue>:<jobId>`, the namespace of its own bookkeeping, and validates
+only some collisions. `jobId: "meta"` resolved and the job was silently dropped;
+`"repeat"` left a HASH where the scheduler needs a ZSET; `"wait"` threw
+`WRONGTYPE`. A deterministic command id (`F3.12`) equal to a reserved word
+would be a command that looks delivered — the failure decision 9 exists to
+refuse. `enqueue` now refuses `RESERVED_JOB_IDS` (BullMQ 5.81.5's own key
+names: `active`, `wait`, `waiting-children`, `paused`, `id`, `delayed`,
+`prioritized`, `stalled-check`, `completed`, `failed`, `stalled`, `repeat`,
+`limiter`, `meta`, `events`, `pc`, `marker`, `de`, `priority`, `metrics`,
+`logs`, `lock`), any id outside `JOB_ID_PATTERN` (`[A-Za-z0-9_.-]{1,200}` — a
+`:` is refused by BullMQ itself, measured), and an all-digit id (also
+BullMQ's own rule), with `QueuePayloadError("invalid_job_id")`. The dedupe
+sentence — an id de-duplicates only while the earlier job is retained, so
+every processor is idempotent on its own row — now lives in
+`queue-registry.ts` and `queues.ts`, where the next row reads it.
+
+**Redis publishes 6379 on loopback only; `--requirepass` is `F3.12`'s gate**
+(owner ruling, M3). Redis has carried no password since ADR 0002, and the
+compose file published `6379:6379` on every host interface. That was a
+fan-out channel; with the worker it is a write path — the worker runs whatever
+it finds under `bms:*`, a `tenant` job under the `organizationId` the payload
+names and a `fleet` job as `bms_fleet`. Today the only payload is `{}` and the
+worst an intruder can do is spoof liveness; with `F3.12` the same access
+injects a command into any tenant. Ruled: `docker-compose.yml` binds the port
+to `127.0.0.1:6379:6379` in this PR (`api`, `api-replica` and `worker` reach
+`redis:6379` on the compose network; only host tooling and the integration
+specs use the published port — `tests/f4.24-worker-imports-no-api-loop.test.ts`
+pins the bind), and **`F3.12` does not start before Redis is authenticated** —
+`--requirepass` from the environment, carried in `REDIS_URL`, which
+`queue-config.ts` already parses. `F3.12`'s ADR records that, and also that a
+job payload never carries a decrypted credential (ADR 0012: decrypt only in the
+runtime that uses it), because AOF now writes every payload to `redis-data`.
+
+**Recorded, not changed.** The `waiting` set has no bound — nothing grows it
+today (a scheduler adds the next iteration only when the worker takes the
+current one), `maxmemory` is unset so `noeviction` never refuses a write, and a
+producer-side bound is `F3.12`'s to set. `QueueClient.close()` is called by
+neither root; the `Worker`s close on `onModuleDestroy`, `tracing.ts` exits on
+`SIGTERM`. Every `GET /health` on either port waits out the 1.5 s race when
+Redis is down. `bullmq` 5.81.5's transitive set adds zero advisories to
+`pnpm audit --prod`.
