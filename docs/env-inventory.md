@@ -30,12 +30,32 @@ provide.
 | `PORT` | No | `4000` | API HTTP and Socket.IO port. |
 | `LOG_LEVEL` | No | `info` | Pino log level. |
 | `ENERGY_TARIFF_ZAR_PER_KWH` | No | `2.15` | Indicative Energy Centre cost calculation. |
-| `REDIS_URL` | No | `redis://redis:6379` in compose | Enables Socket.IO Redis fan-out. Native WSL may omit it for in-process fallback. |
+| `REDIS_URL` | No | `redis://redis:6379` in compose | Enables Socket.IO Redis fan-out, and the BullMQ job queue (`F4.24`, ADR 0063). Native WSL may omit it for in-process Socket.IO fallback; absent, `GET /health` reports `queue.configured: false` and `enqueue` rejects `QueueUnavailableError` rather than the API failing to boot. |
 | `CREDENTIAL_ENCRYPTION_KEY` | **Secret** — RTU credentials only | unset (interpolated from compose `.env`) | **32-byte base64** AES-256-GCM key for RTU connection credentials (ADR 0012). Empty means not configured and the API declines to store credentials rather than storing plaintext. Must match the `ingest` service's key. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
 | `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | **Secret** — rotation only | unset (interpolated from compose `.env`) | 32-byte base64 key accepted for **decryption only**, during a rotation window (ADR 0062). Never encrypts. Refuses to boot if set while `CREDENTIAL_ENCRYPTION_KEY` is unset, or while `CREDENTIAL_ENCRYPTION_KEY_VERSION` is `1` (that would make it version 0, which no row can hold). Set on `api`, `api-replica` **and** `ingest`. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
 | `CREDENTIAL_ENCRYPTION_KEY_VERSION` | No | unset (default `1`) | The version `CREDENTIAL_ENCRYPTION_KEY` writes; a stored credential's `key_version` selects which of the two keys reads it. Must be a positive integer. Set on `api`, `api-replica` **and** `ingest`. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
 | `OPENAI_API_KEY` | **Secret** — onboarding wizard only | unset — **not wired into compose** | Enables the LLM path of the AI onboarding wizard (ADR 0011). `docker-compose.yml` passes neither this nor `OPENAI_MODEL` to the `api` service, so **every compose run uses the deterministic rule-based fallback** regardless of what the root `.env` holds; the key only takes effect in native dev. Note the LLM path currently forwards the raw user turn unredacted (`onboarding-chat.service.ts:209`) — see `E8.3`. |
 | `OPENAI_MODEL` | No | `gpt-4o-mini` — **not wired into compose** | Chat completion model for the onboarding wizard. See the note on `OPENAI_API_KEY`. |
+
+## Worker (apps/api/src/worker.ts)
+
+`F4.24` / ADR 0063's second entrypoint (`dist/worker.js`). Runs only with the
+`core` / `pilot` / `phe` compose profiles, or natively via
+`pnpm --filter api worker`. `WorkerModule` imports no `AuthModule`, so none of
+the API's `JWT_SECRET`/`AUTH_MODE`/OIDC variables apply here.
+
+| Variable | Required | Default / compose value | Purpose |
+|----------|----------|-------------------------|---------|
+| `DATABASE_URL_AUTH` | Yes | `postgres://bms_auth:bms_auth_dev@postgres:5432/bms` | Same pool as the API (ADR 0043 decision 8) — `DatabaseModule` refuses to boot unless all three are set, though the worker's own processors do not yet use this one. |
+| `DATABASE_URL_TENANT` | Yes | `postgres://bms_tenant:bms_tenant_dev@postgres:5432/bms` | Injected into `WorkerHostService` for a `tenant`-tenancy processor's `withTenant` transaction. |
+| `DATABASE_URL_FLEET` | Yes | `postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms` | Injected into `WorkerHostService` for a `fleet`-tenancy processor (the `heartbeat` queue uses this one). |
+| `REDIS_URL` | **Required — refuses to boot** | `redis://redis:6379` in compose | ADR 0063 decision 9: `readWorkerConfig` throws `QueueConfigError` before Nest starts if this is unset or blank. Unlike the API, there is no unconfigured fallback for the worker. |
+| `WORKER_PORT` | No | `4100` | HTTP port for the worker's own `/health` and `/metrics`. |
+| `LOG_LEVEL` | No | `info` | Pino log level, same values as the API. |
+| `OTEL_SERVICE_NAME` | No | `bms-worker` in compose | Service name on OpenTelemetry spans and the `service` label on Prometheus default metrics — note `MetricsService` still emits `bms_api_process_*` metric names regardless of this label (a recorded wart, not renamed by this row). |
+| `CREDENTIAL_ENCRYPTION_KEY` | **Secret** | unset (interpolated from compose `.env`) | Passed through in the same shape as `api`/`ingest`. The worker reads none of the three key variables yet (ADR 0063 Consequences) — carried now so the day dispatch moves here is a code change, not a compose change. |
+| `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | **Secret** — rotation only | unset (interpolated from compose `.env`) | See above. Unread today. |
+| `CREDENTIAL_ENCRYPTION_KEY_VERSION` | No | unset (interpolated from compose `.env`) | See above. Unread today. |
 
 ## Web
 

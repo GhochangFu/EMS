@@ -69,7 +69,8 @@ VMs. Use profiles so an 8 GB laptop does not need to run every service
 all day.
 
 ```bash
-# Build and start Postgres/TimescaleDB, Redis, Keycloak, migrations/seed, API, and web.
+# Build and start Postgres/TimescaleDB, Redis, Keycloak, migrations/seed,
+# API, the BullMQ worker (F4.24, ADR 0063; :4100), and web.
 docker compose --profile core up --build
 
 # Optional: run migrations and seed data explicitly. Keep `--build`: unlike
@@ -90,7 +91,7 @@ With the compose path, sign in through Keycloak as `admin@bms.local` /
 `admin123`. Native WSL can still use the local login form when
 `VITE_AUTH_MODE=local` and `AUTH_MODE=local`.
 
-For a demo-like run with API, web, simulator, and migration/seed ordering:
+For a demo-like run with API, the worker, web, simulator, and migration/seed ordering:
 
 ```bash
 docker compose --profile pilot up --build

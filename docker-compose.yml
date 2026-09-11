@@ -51,8 +51,19 @@ services:
   redis:
     profiles: ["core", "pilot", "phe", "realtime-smoke"]
     image: redis:7-alpine
+    # ADR 0063 decision 8 (F4.24 Q2). BullMQ requires `noeviction` — with any
+    # eviction policy Redis is free to drop a queued job under memory
+    # pressure and BullMQ has no way to notice. The image's own default
+    # happens to already be `noeviction`, but a queue must not rest on an
+    # undocumented default staying put across an image bump, so it is spelled
+    # out here. `--appendonly yes` turns on AOF persistence so a Redis restart
+    # replays the queue (the scheduled heartbeat and any pending job) rather
+    # than starting empty.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     ports:
       - "6379:6379"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -250,6 +261,60 @@ services:
       # realm's JWKS, so it needs the same dependency `api` declares.
       keycloak:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    # `F4.24` / ADR 0063 decisions 8 and 12: the second entrypoint
+    # (`apps/api/src/worker.ts` → `dist/worker.js`) runs as its own compose
+    # service rather than a second command on `api`, because it needs its own
+    # `WORKER_PORT` for `/health` and `/metrics` and its own container to
+    # measure decision 3 against (`pg_stat_activity` empty for its address).
+    #
+    # One consumer per queue (decision 12, Q4) is the point here: this is the
+    # only process running `startQueueWorkers`, so there is exactly one
+    # `heartbeat` consumer in the whole stack. Scaling this service to two
+    # replicas would double-consume every queue it declares — safe today
+    # because BullMQ's `jobId` dedupe and `concurrency: 1` make a duplicate
+    # heartbeat tick a no-op, but it is `F3.11`'s question the day a queue
+    # exists whose jobs are not naturally idempotent.
+    profiles: ["core", "pilot", "phe"]
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/worker.js"]
+    environment:
+      # Same three pools as `api` (ADR 0043 decision 8) — `DatabaseModule`
+      # refuses to boot unless all three are set, and the worker's
+      # `WorkerHostService` injects both the tenant and fleet pools.
+      DATABASE_URL_AUTH: postgres://bms_auth:bms_auth_dev@postgres:5432/bms
+      DATABASE_URL_TENANT: postgres://bms_tenant:bms_tenant_dev@postgres:5432/bms
+      DATABASE_URL_FLEET: postgres://bms_fleet:bms_fleet_dev@postgres:5432/bms
+      # Required — ADR 0063 decision 9: the worker refuses to start without
+      # it (`readWorkerConfig` throws `QueueConfigError` before Nest boots).
+      REDIS_URL: redis://redis:6379
+      WORKER_PORT: 4100
+      LOG_LEVEL: info
+      OTEL_SERVICE_NAME: bms-worker
+      # No `AUTH_MODE`, no `OIDC_ISSUER`/`OIDC_JWKS_URI`, no `JWT_SECRET` —
+      # `WorkerModule` imports no `AuthModule` (the closure test in
+      # `tests/f4.24-worker-imports-no-api-loop.test.ts` holds this), so none
+      # of the API's authentication configuration applies here.
+      #
+      # The worker reads none of these three yet (ADR 0063 Consequences) —
+      # `WorkerModule` decrypts no credential today — but they are passed
+      # through in `api`'s shape now so the day dispatch moves to the worker
+      # (a later row) is a code change, not a compose change.
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: ${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}
+      CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-}
+    ports:
+      - "4100:4100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
 
@@ -454,6 +519,7 @@ services:
 
 volumes:
   bms-postgres-data:
+  redis-data:
   bms-prometheus-data:
   bms-loki-data:
   bms-grafana-data:

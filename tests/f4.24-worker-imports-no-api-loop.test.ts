@@ -167,6 +167,28 @@ function absent(c: Closure, paths: readonly string[]): string[] {
 }
 
 // ---------------------------------------------------------------------------
+// Rule 5's compose reader (the tests/f1.10-ingest-buffer-volume.test.ts
+// precedent: hold the committed text statically, never the running stack).
+// ---------------------------------------------------------------------------
+
+/** Strip `#` comments so a commented-out line cannot satisfy an assertion. */
+function withoutComments(yaml: string): string {
+  return yaml
+    .split("\n")
+    .map((line) => line.replace(/\s+#.*$/, "").replace(/^\s*#.*$/, ""))
+    .join("\n");
+}
+
+/** One top-level `<name>:` service block: from its heading to the next two-space service key. */
+function serviceBlock(compose: string, name: string): string {
+  const start = new RegExp(`^ {2}${name}:\\s*$`, "m").exec(compose);
+  expect(start, `docker-compose.yml must declare a \`${name}\` service`).not.toBeNull();
+  const after = compose.slice(start?.index ?? 0);
+  const next = /\n {2}[A-Za-z_][\w-]*:\s*$/m.exec(after.slice(1));
+  return next === null ? after : after.slice(0, next.index + 1);
+}
+
+// ---------------------------------------------------------------------------
 // The rules
 // ---------------------------------------------------------------------------
 
@@ -269,19 +291,53 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
   });
 
   describe("rule 5 — compose (decisions 8 and 12; the adr-0041 / f1.10 precedent) — Unit 6", () => {
-    // Written as `it.todo` so every commit before Unit 6 stays green; Unit 6
-    // turns each into an `it()` with the assertion its name states.
-    it.todo(
-      'the redis service\'s command contains "--appendonly" followed by "yes" (decision 8: a restart replays the queue)',
-    );
-    it.todo(
-      'the redis service\'s command contains "--maxmemory-policy" followed by "noeviction" (decision 8: BullMQ requires it)',
-    );
-    it.todo("the redis service mounts the named volume redis-data at /data, and redis-data is declared under volumes:");
-    it.todo('a worker service exists with command: ["node", "dist/worker.js"] (decision 12)');
-    it.todo("the worker service carries the profiles core, pilot and phe (decision 12)");
-    it.todo("the worker service sets REDIS_URL (the worker refuses to boot without it, decision 9)");
-    it.todo("the worker service sets WORKER_PORT: 4100 and publishes 4100:4100");
-    it.todo("the worker service's depends_on names redis and migrate (decision 12)");
+    const composePath = join(repoRoot, "docker-compose.yml");
+    const compose = withoutComments(readFileSync(composePath, "utf8"));
+    const redis = serviceBlock(compose, "redis");
+    const worker = serviceBlock(compose, "worker");
+
+    it('the redis service\'s command contains "--appendonly" followed by "yes" (decision 8: a restart replays the queue)', () => {
+      expect(redis).toMatch(/"--appendonly",\s*"yes"/);
+    });
+
+    it('the redis service\'s command contains "--maxmemory-policy" followed by "noeviction" (decision 8: BullMQ requires it)', () => {
+      expect(redis).toMatch(/"--maxmemory-policy",\s*"noeviction"/);
+    });
+
+    it("the redis service mounts the named volume redis-data at /data, and redis-data is declared under volumes:", () => {
+      expect(redis).toMatch(/^\s*-\s*redis-data:\/data\s*$/m);
+      const topLevel = /^volumes:\s*$/m.exec(compose);
+      expect(topLevel, "docker-compose.yml must have a top-level `volumes:` block").not.toBeNull();
+      const declared = compose.slice(topLevel?.index ?? 0);
+      expect(declared).toMatch(/^ {2}redis-data:\s*$/m);
+    });
+
+    it('a worker service exists with command: ["node", "dist/worker.js"] (decision 12)', () => {
+      expect(worker).toMatch(/command:\s*\["node",\s*"dist\/worker\.js"\]/);
+    });
+
+    it("the worker service carries the profiles core, pilot and phe (decision 12)", () => {
+      const profilesLine = /^\s*profiles:\s*\[([^\]]*)\]\s*$/m.exec(worker);
+      expect(profilesLine, "worker service must declare a profiles: [...] line").not.toBeNull();
+      const profiles = (profilesLine?.[1] ?? "").split(",").map((p) => p.trim().replace(/"/g, ""));
+      expect(profiles).toEqual(["core", "pilot", "phe"]);
+    });
+
+    it("the worker service sets REDIS_URL (the worker refuses to boot without it, decision 9)", () => {
+      expect(worker).toMatch(/^\s*REDIS_URL:\s*\S+/m);
+    });
+
+    it("the worker service sets WORKER_PORT: 4100 and publishes 4100:4100", () => {
+      expect(worker).toMatch(/^\s*WORKER_PORT:\s*4100\s*$/m);
+      expect(worker).toMatch(/^\s*-\s*["']?4100:4100["']?\s*$/m);
+    });
+
+    it("the worker service's depends_on names redis and migrate (decision 12)", () => {
+      const dependsOn = /^\s*depends_on:\s*$/m.exec(worker);
+      expect(dependsOn, "worker service must declare depends_on:").not.toBeNull();
+      const after = worker.slice(dependsOn?.index ?? 0);
+      expect(after).toMatch(/^\s*redis:\s*$/m);
+      expect(after).toMatch(/^\s*migrate:\s*$/m);
+    });
   });
 });
