@@ -245,20 +245,21 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
   // (`cycle.map(...).join(" → ")`), and the editor can only ever see a
   // cycle of length one (its own key) — so, like pair (c), only the fixed
   // prefix and suffix around that difference are compared.
+  //
+  // **The prefix is gated by the count alone.** `PREFIX_RE` has no free span,
+  // so a match is the literal itself and a `toBe` between the two copies
+  // would compare a constant to itself (step 5 of PR 2, nit). What holds the
+  // prefix is `extractExactlyOne`: each file must contain those exact words
+  // exactly once, and a drift in either file is a count of zero. The prefix
+  // cannot be widened to the interpolation, because the editor's copy inserts
+  // `it reads its own point "…"` there by design (it knows the one member).
   it("pair (f) — the override save path's cycle sentence matches its editor mirror in prefix and suffix", () => {
     const PREFIX_RE = /This formula would form a dependency cycle:/;
     const SUFFIX_RE = /Every point on a cycle waits on another[\s\S]*?points in\.?/;
 
-    const serverPrefix = joinConcatenatedLiteral(
-      extractExactlyOne(
-        source.overrideService,
-        PREFIX_RE,
-        "asset-point-calc-override.service.ts (cycle prefix)",
-      ),
-    );
-    const webPrefix = joinConcatenatedLiteral(
-      extractExactlyOne(source.overrideLib, PREFIX_RE, "asset-point-calc-override.ts (cycle prefix)"),
-    );
+    extractExactlyOne(source.overrideService, PREFIX_RE, "asset-point-calc-override.service.ts (cycle prefix)");
+    extractExactlyOne(source.overrideLib, PREFIX_RE, "asset-point-calc-override.ts (cycle prefix)");
+
     const serverSuffix = dropTrailingPeriod(
       joinConcatenatedLiteral(
         extractExactlyOne(
@@ -273,9 +274,6 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
         extractExactlyOne(source.overrideLib, SUFFIX_RE, "asset-point-calc-override.ts (cycle suffix)"),
       ),
     );
-
-    expect(serverPrefix).toBe("This formula would form a dependency cycle:");
-    expect(webPrefix).toBe(serverPrefix);
 
     expect(serverSuffix).toBe(
       "Every point on a cycle waits on another, so none of them ever computes. Break " +

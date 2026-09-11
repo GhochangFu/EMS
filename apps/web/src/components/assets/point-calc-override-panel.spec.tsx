@@ -42,10 +42,15 @@ const NOTHING = {
   maxInputAgeSeconds: null,
 };
 
-/** A `v1` scheduled template point `KWH`, or a `v2` one on request. */
+/**
+ * A `v1` scheduled template point `KWH`, or a `v2` one on request. `override`
+ * is `NOTHING` unless a case needs a stored row (case 4 does — Clear is
+ * enabled only when there is something to clear).
+ */
 function config(
   dialect: typeof V1 | typeof V2 = V1,
   minCoverageRatio: number | null = null,
+  override: Partial<AssetPointCalcConfigDto["override"]> = {},
 ): AssetPointCalcConfigDto {
   const template = {
     formula: dialect === V1 ? "{KW} * 2" : "sum({KW} @site)",
@@ -54,15 +59,23 @@ function config(
     calcIntervalSeconds: 300,
     maxInputAgeSeconds: 600,
   };
+  const stored = { ...NOTHING, ...override };
+  const overridden = Object.values(stored).some((value) => value !== null);
   return assetPointCalcConfigDtoSchema.parse({
     pointKey: "KWH",
     templatePointId: "tp-1",
     label: "Energy",
     unit: "kWh",
-    assetPointId: null,
+    assetPointId: overridden ? "ap-1" : null,
     template,
-    override: NOTHING,
-    effective: template,
+    override: stored,
+    effective: {
+      formula: stored.formula ?? template.formula,
+      formulaDialect: stored.formulaDialect ?? template.formulaDialect,
+      calcTrigger: stored.calcTrigger ?? template.calcTrigger,
+      calcIntervalSeconds: stored.calcIntervalSeconds ?? template.calcIntervalSeconds,
+      maxInputAgeSeconds: stored.maxInputAgeSeconds ?? template.maxInputAgeSeconds,
+    },
     minCoverageRatio,
     runtime: null,
   });
@@ -72,11 +85,13 @@ type HarnessProps = {
   config: AssetPointCalcConfigDto;
   busy?: boolean;
   onSave?: () => void;
+  /** The draft the page would seed from `draftFromConfig`; `EMPTY_DRAFT` unless a case needs a submittable one. */
+  initialDraft?: OverrideDraft;
 };
 
 /** The page's wiring: the draft lives above the panel and flows back down. */
-function Harness({ config: dto, busy = false, onSave = () => undefined }: HarnessProps) {
-  const [draft, setDraft] = useState<OverrideDraft>(EMPTY_DRAFT);
+function Harness({ config: dto, busy = false, onSave = () => undefined, initialDraft = EMPTY_DRAFT }: HarnessProps) {
+  const [draft, setDraft] = useState<OverrideDraft>(initialDraft);
   return (
     <PointCalcOverridePanel
       config={dto}
@@ -176,17 +191,31 @@ export async function saveIsDisabledWhileAProblemIsListed(): Promise<void> {
  * Case 4 — `busy` disables every control, the new ones with the old: the
  * count is read off a red run and pins the control set, so a control added
  * without `disabled={busy}` fails here rather than accepting an edit during a
- * save. The enabled Grammar select on a non-busy render is the control that
- * shows the sweep is not counting a select that is always disabled.
+ * save.
+ *
+ * **Save and Clear are held by `busy` alone here.** Each has a second reason
+ * to be disabled — `!canSubmit` on an empty draft, `!canClear` with nothing
+ * stored — and under `EMPTY_DRAFT` on an override-less config both fired, so
+ * removing `busy ||` from either button left the sweep green (step 5 of PR 2,
+ * nit). The fixture therefore stores an interval override and seeds a draft
+ * that changes it: `canClear` and `canSubmit` both hold, which the non-busy
+ * render proves by finding Save, Clear and Grammar enabled — the positive
+ * control that shows the sweep is not counting a control disabled for some
+ * other reason.
  */
 export async function busyDisablesEveryControl(): Promise<void> {
-  const { container, unmount } = render(<Harness config={config(V2)} busy />);
+  const stored = config(V2, null, { calcIntervalSeconds: 120 });
+  const submittable: OverrideDraft = { ...EMPTY_DRAFT, calcIntervalSeconds: "180" };
+
+  const { container, unmount } = render(<Harness config={stored} initialDraft={submittable} busy />);
 
   const controls = container.querySelectorAll("input, select, textarea, button");
   expect(controls).toHaveLength(8);
   controls.forEach((control) => expect(control).toBeDisabled());
   unmount();
 
-  render(<Harness config={config(V2)} />);
+  render(<Harness config={stored} initialDraft={submittable} />);
   expect(grammar()).toBeEnabled();
+  expect(saveButton()).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Clear override" })).toBeEnabled();
 }

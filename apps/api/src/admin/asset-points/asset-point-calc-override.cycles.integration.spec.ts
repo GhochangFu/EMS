@@ -33,12 +33,18 @@ import type { AssetPointCalcOverrideService } from "./asset-point-calc-override.
  *   back to `Y`.
  * - **W** — at location 2, pinned to the **same template as V**, so it carries
  *   the identical formula. `V` and `W` differ in exactly one thing: location.
+ * - **Z** — in the **foreign organization**, at `fx.foreignLocationId`, under
+ *   a copy of V's template made in that organization. `W` and `Z` differ in
+ *   exactly one thing: the organization the asset and its location belong to.
  *
- * That last pair is the point of `assertQualifiedReferenceIsConfinedToLocation`.
+ * That `V`/`W` pair is the point of `assertQualifiedReferenceIsConfinedToLocation`.
  * `bms.assets.code` is globally unique, so a lookup by code alone finds `W`
  * from location 1; only decision 12's `location_id` filter stops it. The same
  * override text is therefore refused against both — as a cycle against `V`,
- * and as a code that resolves nowhere against `W` (`F2.22` item 9).
+ * and as a code that resolves nowhere against `W` (`F2.22` item 9). `Z` is the
+ * tenancy half of the same case: the refusal for a code in another
+ * organization must be word-for-word the refusal for a code at another
+ * location and for one that exists nowhere.
  */
 
 /** Per-run, so two instances of this file never delete each other's rows
@@ -57,8 +63,15 @@ export const CODE_X = `${TEST_CODE}-X`;
 export const CODE_Y = `${TEST_CODE}-Y`;
 export const CODE_V = `${TEST_CODE}-V`;
 export const CODE_W = `${TEST_CODE}-W`;
+export const CODE_Z = `${TEST_CODE}-Z`;
 
-export type CycleFixture = { readonly x: string; readonly y: string; readonly v: string; readonly w: string };
+export type CycleFixture = {
+  readonly x: string;
+  readonly y: string;
+  readonly v: string;
+  readonly w: string;
+  readonly z: string;
+};
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -117,16 +130,36 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
 }
 
 /**
- * Writes the four assets and their three templates directly. This suite is
+ * Writes the five assets and their four templates directly. This suite is
  * about what the detector does with rows already in the database, not about how
  * they got there — and two of these formulas are ones the template author would
  * itself refuse once instantiated, which is the situation the tick exists for.
+ *
+ * `Z`'s organization is the one `fx.foreignLocationId` belongs to — a seeded
+ * location in another organization, read rather than minted, so this file
+ * writes neither `bms.organizations` nor `bms.locations` and `cleanup()` stays
+ * the one `code LIKE` sweep. `assets.organization_id` must agree with the
+ * location's organization (`AssetsService` maintains that invariant; no
+ * constraint does — plan correction 47), so the organization is read off the
+ * location rather than assumed.
  */
 export async function seedCycleFixture(pool: pg.Pool, fx: Fixtures): Promise<CycleFixture> {
   const db = createDb(pool);
 
+  const { rows: foreign } = await pool.query<{ organization_id: string }>(
+    `SELECT organization_id FROM bms.locations WHERE id = $1`,
+    [fx.foreignLocationId],
+  );
+  const foreignOrganizationId = foreign[0]?.organization_id;
+  if (foreignOrganizationId === undefined || foreignOrganizationId === fx.organizationId) {
+    throw new Error(
+      "fixture: fx.foreignLocationId must belong to a different organization — run pnpm db:seed",
+    );
+  }
+
   const template = async (
     suffix: string,
+    organizationId: string,
     points: {
       pointKey: string;
       kind: "measured" | "derived";
@@ -138,7 +171,7 @@ export async function seedCycleFixture(pool: pg.Pool, fx: Fixtures): Promise<Cyc
     const [row] = await db
       .insert(assetTemplates)
       .values({
-        organizationId: fx.organizationId,
+        organizationId,
         code: `${TEST_CODE}-${suffix}`,
         version: 1,
         name: `Override Cycle Fixture ${suffix}`,
@@ -150,7 +183,7 @@ export async function seedCycleFixture(pool: pg.Pool, fx: Fixtures): Promise<Cyc
       .returning({ id: assetTemplates.id });
     await db.insert(templatePoints).values(
       points.map((point) => ({
-        organizationId: fx.organizationId,
+        organizationId,
         templateId: row.id,
         pointKey: point.pointKey,
         kind: point.kind,
@@ -168,7 +201,7 @@ export async function seedCycleFixture(pool: pg.Pool, fx: Fixtures): Promise<Cyc
 
   const measured = { pointKey: KEY_MEASURED, kind: "measured" as const, sortOrder: 0 };
 
-  const aggregateTemplate = await template("TAGG", [
+  const aggregateTemplate = await template("TAGG", fx.organizationId, [
     measured,
     {
       pointKey: KEY_TOTAL,
@@ -178,7 +211,7 @@ export async function seedCycleFixture(pool: pg.Pool, fx: Fixtures): Promise<Cyc
       sortOrder: 1,
     },
   ]);
-  const memberTemplate = await template("TMEM", [
+  const memberTemplate = await template("TMEM", fx.organizationId, [
     measured,
     {
       pointKey: KEY_KW,
@@ -190,25 +223,34 @@ export async function seedCycleFixture(pool: pg.Pool, fx: Fixtures): Promise<Cyc
   ]);
   // One template for both V and W — the two assets then differ in nothing but
   // their location, which is what makes the containment case a controlled pair.
-  const qrefTemplate = await template("TQREF", [
+  const qrefPoints = [
     measured,
     {
       pointKey: KEY_TOTAL,
-      kind: "derived",
+      kind: "derived" as const,
       formula: `{${CODE_Y}.${KEY_KW}}`,
       formulaDialect: CALC_DIALECT_V2,
       sortOrder: 1,
     },
-  ]);
+  ];
+  const qrefTemplate = await template("TQREF", fx.organizationId, qrefPoints);
+  // The same points again in the foreign organization, for Z — a template row
+  // belongs to one organization, so W's cannot be reused across the boundary.
+  const foreignQrefTemplate = await template("TQREFZ", foreignOrganizationId, qrefPoints);
 
-  const asset = async (code: string, templateId: string, locationId: string): Promise<string> => {
+  const asset = async (
+    code: string,
+    templateId: string,
+    organizationId: string,
+    locationId: string,
+  ): Promise<string> => {
     const [row] = await db
       .insert(assets)
       .values({
         code,
         name: `Cycle Fixture ${code}`,
         siteName: "Cycle Fixture Site",
-        organizationId: fx.organizationId,
+        organizationId,
         locationId,
         domain: "electrical",
         templateId,
@@ -218,10 +260,11 @@ export async function seedCycleFixture(pool: pg.Pool, fx: Fixtures): Promise<Cyc
   };
 
   return {
-    x: await asset(CODE_X, aggregateTemplate, fx.rtuLocationId),
-    y: await asset(CODE_Y, memberTemplate, fx.rtuLocationId),
-    v: await asset(CODE_V, qrefTemplate, fx.rtuLocationId),
-    w: await asset(CODE_W, qrefTemplate, fx.otherLocationId),
+    x: await asset(CODE_X, aggregateTemplate, fx.organizationId, fx.rtuLocationId),
+    y: await asset(CODE_Y, memberTemplate, fx.organizationId, fx.rtuLocationId),
+    v: await asset(CODE_V, qrefTemplate, fx.organizationId, fx.rtuLocationId),
+    w: await asset(CODE_W, qrefTemplate, fx.organizationId, fx.otherLocationId),
+    z: await asset(CODE_Z, foreignQrefTemplate, foreignOrganizationId, fx.foreignLocationId),
   };
 }
 
@@ -316,6 +359,11 @@ export async function assertV2OverrideRefusesAMembershipCycle(
  * a pair, so a refusal is also checked for the neighbour's absence. */
 const UNRESOLVED_CODE = /resolve to no active asset/;
 const DEPENDENCY_CYCLE = /dependency cycle/;
+/** The clause every sentence in `validateMergedCalcOverride` carries for a
+ * half the body left `null`; the item-9 refusal carries it since plan
+ * correction 46. */
+const INHERITED_FORMULA = " (inherited from the template)";
+
 
 /**
  * ADR 0055 decision 12 at the override author, both halves. `F2.22` item 9
@@ -341,18 +389,35 @@ const DEPENDENCY_CYCLE = /dependency cycle/;
  * formula that is *both* unresolved and cyclic tells the orders apart, and it
  * must name the code — the defect the author can fix without a graph.
  *
- * **The tenancy boundary.** `W` exists, at another location. A code that
- * exists nowhere must draw the *same* refusal, code for code: `assets.code` is
- * unique across organizations, so a sentence that distinguished "elsewhere"
- * from "nowhere" would confirm another tenant's code (plan design decision 8).
- * Held by comparison rather than by wording — the two messages are identical
- * once the echoed code is masked.
+ * **The tenancy boundary.** `W` exists, at another location in the owner's
+ * organization; `Z` exists, active, in **another organization** (ADR 0043's
+ * boundary — its location and its `organization_id` both belong to the foreign
+ * tenant); a third code exists nowhere. All three must draw the *same*
+ * refusal, code for code: `assets.code` is unique across organizations, so a
+ * sentence that distinguished "elsewhere" from "nowhere" — or "another
+ * location" from "another organization" — would confirm another tenant's
+ * code to anyone who can save an override (plan design decision 8). Held by
+ * comparison rather than by wording — the three messages are identical once
+ * the echoed code is masked.
+ *
+ * What makes `Z` unresolved is decision 12's `location_id` filter and nothing
+ * else: `CalcScopeService.readQualifiedCodes` joins `bms.assets` on the code
+ * with `WHERE a.location_id = r.location_id AND a.active`, on the fleet role,
+ * and never reads `template_points` — so `Z`'s declared key plays no part in
+ * the refusal (plan correction 47). It is pinned to a copy of V's template so
+ * the three assets differ in as little as possible, not because the resolver
+ * looks.
  *
  * **The control.** The `F2.9` case anchored its "untouched row" checks on the
  * stored `{W.TOTAL}`, which no longer stores. `{X.MEASURED}` — same location,
  * a measured point, so no edge — is the value that does, and every refusal
  * after it must leave it in place. The first refusal runs before any row
  * exists, so the new guard is also shown to precede the eager create.
+ *
+ * **The echo bound.** A code lifted from a formula is bounded only by
+ * `MAX_FORMULA_LENGTH`, so step 7 sends a 65-character code and requires the
+ * echo to be its first 64 characters and the `(truncated)` marker, never the
+ * whole string (`MAX_ECHOED_ASSET_CODE_LENGTH`).
  */
 export async function assertQualifiedReferenceIsConfinedToLocation(
   pool: pg.Pool,
@@ -407,11 +472,28 @@ export async function assertQualifiedReferenceIsConfinedToLocation(
     `the refusal names the code the author typed so it can be fixed, got: ${farMessage}`,
   );
   assert(
+    !farMessage.includes(INHERITED_FORMULA),
+    "the body states the formula, so the sentence must not call it inherited — the clause is " +
+      `for the merged case assertAnInheritedFormulaIsCheckedAndSaidToBeInherited covers, got: ${farMessage}`,
+  );
+  assert(
     (await formulaOf(pool, fixture.y, KEY_KW)) === control,
     "the code refusal must precede the update too — the stored control must be untouched",
   );
 
-  // 4 — a code that exists nowhere draws the identical sentence.
+  // 4 — a code in another organization, and a code that exists nowhere, draw
+  // the identical sentence.
+  const acrossOrganizations = `{${CODE_Z}.${KEY_TOTAL}}`;
+  const foreignMessage = await expectRejection(
+    () => override(acrossOrganizations),
+    UNRESOLVED_CODE,
+    "a qualified code carried by an active asset in another organization",
+    400,
+  );
+  assert(
+    !DEPENDENCY_CYCLE.test(foreignMessage),
+    `Z draws no edge either — the code guard must own this refusal, got: ${foreignMessage}`,
+  );
   const nowhere = `${TEST_CODE}-NOWHERE`;
   const nowhereMessage = await expectRejection(
     () => override(`{${nowhere}.${KEY_TOTAL}}`),
@@ -419,10 +501,20 @@ export async function assertQualifiedReferenceIsConfinedToLocation(
     "a qualified code no asset carries",
     400,
   );
+  const masked = {
+    far: farMessage.replace(CODE_W, "<code>"),
+    foreign: foreignMessage.replace(CODE_Z, "<code>"),
+    nowhere: nowhereMessage.replace(nowhere, "<code>"),
+  };
   assert(
-    farMessage.replace(CODE_W, "<code>") === nowhereMessage.replace(nowhere, "<code>"),
-    "the message must not say whether a code exists at another location — assets.code is " +
-      `globally unique, and a different sentence would confirm another tenant's code. Got:\n${farMessage}\n${nowhereMessage}`,
+    masked.far === masked.nowhere && masked.foreign === masked.nowhere,
+    "the message must not say whether a code exists at another location or in another " +
+      "organization — assets.code is globally unique, and a different sentence would confirm " +
+      `another tenant's code (plan design decision 8, ADR 0043). Got:\n${farMessage}\n${foreignMessage}\n${nowhereMessage}`,
+  );
+  assert(
+    (await formulaOf(pool, fixture.y, KEY_KW)) === control,
+    "the stored control must be untouched after the foreign-organization refusal",
   );
 
   // 5 — the same-location code that closes a cycle.
@@ -456,6 +548,78 @@ export async function assertQualifiedReferenceIsConfinedToLocation(
   assert(
     (await formulaOf(pool, fixture.y, KEY_KW)) === control,
     "the stored control must be untouched after the mixed refusal",
+  );
+
+  // 7 — a code longer than any `assets.code` can be is echoed cut, never whole.
+  const overlong = "A".repeat(65);
+  const overlongMessage = await expectRejection(
+    () => override(`{${overlong}.${KEY_TOTAL}}`),
+    UNRESOLVED_CODE,
+    "a 65-character code lifted from the formula",
+    400,
+  );
+  assert(
+    !DEPENDENCY_CYCLE.test(overlongMessage),
+    `an unresolved code is the code guard's, whatever its length, got: ${overlongMessage}`,
+  );
+  assert(
+    !overlongMessage.includes(overlong),
+    `assets.code is varchar(64), so a 65-character string is never a code and must not be echoed whole, got: ${overlongMessage}`,
+  );
+  assert(
+    overlongMessage.includes(`${"A".repeat(64)}… (truncated)`),
+    `the echo is the first 64 characters and the truncation marker, got: ${overlongMessage}`,
+  );
+  assert(
+    (await formulaOf(pool, fixture.y, KEY_KW)) === control,
+    "the stored control must be untouched after the overlong-code refusal",
+  );
+}
+
+/**
+ * Plan correction 46 (owner ruling, 2026-09-11): the item-9 check runs on the
+ * **merged** formula, so an override that states no formula is still refused
+ * when the template's formula names a code that resolves nowhere at this
+ * asset's location — and the sentence must then say the formula is inherited,
+ * as every sibling sentence in `validateMergedCalcOverride` does, so the
+ * operator does not go looking for a formula they never typed.
+ *
+ * `W.TOTAL`'s template formula is `{Y.KW}`; `Y` is at location 1 and `W` at
+ * location 2, so the inherited formula resolves to nothing at `W`'s own
+ * location. An interval-only override there is the shape the ruling names.
+ * Three things beside the status: the sentence is the item-9 one and not the
+ * cycle guard's; it carries the inherited clause; and no row is written. The
+ * negative control — a body that states the formula carries **no** clause —
+ * is asserted in `assertQualifiedReferenceIsConfinedToLocation` step 3.
+ */
+export async function assertAnInheritedFormulaIsCheckedAndSaidToBeInherited(
+  pool: pg.Pool,
+  fx: Fixtures,
+  svc: AssetPointCalcOverrideService,
+): Promise<void> {
+  const fixture = await seedCycleFixture(pool, fx);
+
+  const message = await expectRejection(
+    () => svc.setOverride(fx.adminJwt, fixture.w, KEY_TOTAL, { ...NOTHING, calcIntervalSeconds: 120 }),
+    UNRESOLVED_CODE,
+    "an interval-only override on a point whose template formula names a code at another location",
+    400,
+  );
+  assert(
+    !DEPENDENCY_CYCLE.test(message),
+    `Y is not at W's location, so no edge is drawn and the code guard must own this refusal, got: ${message}`,
+  );
+  assert(
+    message.includes(`This formula${INHERITED_FORMULA} names asset code(s)`),
+    `the body left the formula null, so the sentence must say it is the template's, got: ${message}`,
+  );
+  assert(
+    message.includes(CODE_Y),
+    `the refusal names the inherited formula's code so the operator can find it, got: ${message}`,
+  );
+  assert(
+    (await formulaOf(pool, fixture.w, KEY_TOTAL)) === undefined,
+    "the refusal must precede the eager create — no asset_points row may exist afterwards",
   );
 }
 

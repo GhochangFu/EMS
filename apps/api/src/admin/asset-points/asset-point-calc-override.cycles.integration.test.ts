@@ -19,6 +19,7 @@ import {
   KEY_KW,
   KEY_MEASURED,
   KEY_TOTAL,
+  assertAnInheritedFormulaIsCheckedAndSaidToBeInherited,
   assertQualifiedReferenceIsConfinedToLocation,
   assertTheCalcPointsReadCarriesTheRecordedRefusal,
   assertTheCalcPointsReadCarriesTheTemplateRatio,
@@ -93,6 +94,11 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 override cycle refusal"
   it("refuses a {CODE.key} that resolves nowhere at the owner's location, and the cycle one that does (ADR 0055 decision 12, F2.22 item 9)", async () => {
     if (!pool) throw new Error("pool required");
     await assertQualifiedReferenceIsConfinedToLocation(pool, fx, svc);
+  });
+
+  it("refuses an interval-only override whose inherited template formula names a code unresolved at this asset's location, and says the formula is inherited (plan correction 46)", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAnInheritedFormulaIsCheckedAndSaidToBeInherited(pool, fx, svc);
   });
 
   it("carries a recorded dependency_cycle refusal into the calc-points read (Task 16)", async () => {

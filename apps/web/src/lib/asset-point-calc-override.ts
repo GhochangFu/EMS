@@ -221,8 +221,11 @@ export function coverageRatioDisplay(ratio: number | null): string {
  * the draft's formula — a chosen grammar over the template's formula is
  * parsed by the server (`validateMergedCalcOverride` reads the merged pair
  * whenever either half is stated) and reaches the page as its 400; the panel
- * has no key list to check a reference against and no asset code to see a
- * qualified self-reference, so those stay the server's as well.
+ * has no key list to check a reference against, no asset code to see a
+ * qualified self-reference, and no domain or group membership to see an
+ * `@domain`/`@group` aggregate over the point's own key, so those stay the
+ * server's as well. Only a local ref and an `@site` aggregate are decidable
+ * from the DTO alone.
  */
 export function draftProblems(
   draft: OverrideDraft,
@@ -267,14 +270,29 @@ export function draftProblems(
       );
     } else if (
       parsed.refs.includes(config.pointKey) ||
-      parsed.crossRefs.some((node) => node.kind === "aggregate" && node.pointKey === config.pointKey)
+      parsed.crossRefs.some(
+        (node) => node.kind === "aggregate" && node.scope.kind === "site" && node.pointKey === config.pointKey,
+      )
     ) {
       // A cycle of length one, which a pure check on this request can see: a
-      // local ref to the point's own key, or an aggregate over it (the asset
-      // is a member of its own site, domain and groups). The fixed part of the
-      // server's cycle sentence, `asset-point-calc-override.service.ts:250-257`
-      // — the member list there is data this panel cannot compute. A qualified
-      // `{OWN_CODE.key}` needs the asset code, which the DTO does not carry.
+      // local ref to the point's own key, or an `@site` aggregate over it —
+      // the asset is always a member of its own site, and it declares the key.
+      //
+      // **Only `@site`.** An aggregate edge comes from the *resolved* member
+      // set (`apps/api/src/calc/calc-graph.ts`), and the asset is a member of
+      // a group only through an `asset_group_members` row and of a domain only
+      // through its own `domain` column (`calc-scope.service.ts`) — neither of
+      // which the DTO carries. A parent summing the same key over a child group
+      // is the ordinary use of a per-asset override, and the server stores it
+      // when the asset is not in that group; refusing it here would disable
+      // Save on a formula the server accepts (plan correction 45). So
+      // `@domain` and `@group` stay the server's — the same line PR 1's
+      // template mirror draws (`template-calc-cycles.ts`).
+      //
+      // The fixed part of the server's cycle sentence,
+      // `asset-point-calc-override.service.ts:259-266` — the member list there
+      // is data this panel cannot compute. A qualified `{OWN_CODE.key}` needs
+      // the asset code, which the DTO does not carry.
       problems.push(
         `This formula would form a dependency cycle: it reads its own point "${config.pointKey}". ` +
           "Every point on a cycle waits on another, so none of them ever computes. Break " +

@@ -283,14 +283,26 @@ export function runDialectMirrorTests(): void {
 /**
  * `F2.22` item 7 on the override panel — a self-reference is a cycle of length
  * one, and the panel says so before the fleet-wide read the server's cycle
- * check costs. A local ref to the point's own key, or an aggregate over its
- * own key (the asset is a member of its own site), are the two shapes a pure
- * check on this request can see; a qualified `{OWN_CODE.key}` needs the asset
- * code, which the DTO does not carry, and stays the server's.
+ * check costs. A local ref to the point's own key, or an `@site` aggregate
+ * over it (the asset is always a member of its own site, and it declares the
+ * key), are the two shapes a pure check on this request can see.
  *
- * `{other}` is the negative control: the panel has no sibling-key list, so an
- * unknown reference is the server's to refuse — and must not be refused here
- * under a sentence about cycles.
+ * Three negative controls, each a shape the panel must leave to the server:
+ *
+ * - `{other}` — the panel has no sibling-key list, so an unknown reference is
+ *   the server's to refuse, and must not be refused here under a sentence
+ *   about cycles;
+ * - `sum({KWH} @group('OTHER'))` and `sum({KWH} @domain('x'))` — an aggregate
+ *   edge comes only from the **resolved** member set (`calc-graph.ts`), and the
+ *   asset is a member of a group only through an `asset_group_members` row and
+ *   of a domain only through its own `domain` column, neither of which the DTO
+ *   carries. A parent summing the same key over a child group is the ordinary
+ *   use of a per-asset override, and the server accepts it when the asset is
+ *   not in that group (plan correction 45). Refusing it here disabled Save on
+ *   a formula the server would have stored.
+ *
+ * A qualified `{OWN_CODE.key}` needs the asset code, which the DTO does not
+ * carry either, and stays the server's for the same reason.
  */
 export function runSelfReferenceTests(): void {
   const CYCLE = /would form a dependency cycle/;
@@ -307,20 +319,51 @@ export function runSelfReferenceTests(): void {
   );
   assert(
     aggregate.length === 1 && CYCLE.test(aggregate[0]),
-    `an aggregate over the point's own key is one cycle problem — got ${JSON.stringify(aggregate)}`,
+    `an @site aggregate over the point's own key is one cycle problem — got ${JSON.stringify(aggregate)}`,
   );
   assert(
     aggregate[0] ===
       'This formula would form a dependency cycle: it reads its own point "KWH". Every point on ' +
         "a cycle waits on another, so none of them ever computes. Break the loop — change this " +
         "formula, or the aggregate scope that draws the other points in.",
-    `the fixed part is the server's cycle sentence (asset-point-calc-override.service.ts:250-257), got: ${aggregate[0]}`,
+    `the fixed part is the server's cycle sentence (asset-point-calc-override.service.ts:259-266), got: ${aggregate[0]}`,
   );
 
   const other = draftProblems({ ...EMPTY_DRAFT, formula: "{other}" }, config());
   assert(
     other.length === 0,
     `a reference to another key is not the panel's to refuse — got ${JSON.stringify(other)}`,
+  );
+
+  // The key half of the `@site` arm, held constant by every other case here:
+  // without this, "every @site aggregate is a cycle" passes all of them.
+  const otherSite = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({other} @site)" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  assert(
+    otherSite.length === 0,
+    `an @site aggregate over another key is not a self-reference — got ${JSON.stringify(otherSite)}`,
+  );
+
+  const group = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({KWH} @group('OTHER'))" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  assert(
+    group.length === 0,
+    `a @group aggregate over the point's own key is the server's to decide — the DTO carries no ` +
+      `group membership, and the asset may not be in the group — got ${JSON.stringify(group)}`,
+  );
+
+  const domain = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({KWH} @domain('x'))" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  assert(
+    domain.length === 0,
+    `a @domain aggregate over the point's own key is the server's to decide — the DTO carries no ` +
+      `asset domain — got ${JSON.stringify(domain)}`,
   );
 }
 

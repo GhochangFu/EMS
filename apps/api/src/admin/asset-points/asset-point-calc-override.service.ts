@@ -234,9 +234,18 @@ export class AssetPointCalcOverrideService {
         // may exist. `assets.code` is unique across organizations, so "that
         // code belongs to another location" would confirm another tenant's
         // code to anyone who can save an override (plan design decision 8).
+        //
+        // **On the merged formula, and the sentence says so.** An override
+        // that states no formula is checked against the template's, and is
+        // refused when that formula names a code unresolved at this asset's
+        // location (plan correction 46, the owner's ruling: consistent with
+        // the cycle check beside it and decision 12's "rejected at save
+        // time"). The sentence then carries the same `inherited(...)` clause
+        // every sibling in `validateMergedCalcOverride` does, so the operator
+        // reads that the formula is the template's, not one they typed.
         const unresolved = await this.dependencies.unresolvedQualifiedCodes(assetId, parsed.crossRefs);
         if (unresolved.length > 0) {
-          throw new BadRequestException(unresolvedQualifiedCodesMessage(unresolved));
+          throw new BadRequestException(unresolvedQualifiedCodesMessage(unresolved, body.formula === null));
         }
 
         const cycle = await this.dependencies.checkCandidate({
@@ -638,18 +647,25 @@ const MAX_ECHOED_ASSET_CODE_LENGTH = 64;
 /**
  * The `F2.22` item-9 refusal. Names the codes, states decision 12's rule, and
  * offers the two ways out — and never says whether a code exists at another
- * location (plan design decision 8; the sibling integration case holds this by
- * comparing the sentence for a code that exists elsewhere with the sentence
- * for one that exists nowhere).
+ * location or in another organization (plan design decision 8; the sibling
+ * integration case holds this by comparing the sentence for a code that
+ * exists at another location, one in another organization, and one that
+ * exists nowhere).
+ *
+ * `formulaInherited` is `body.formula === null`: the check runs on the merged
+ * formula, and the clause is the one `validateMergedCalcOverride`'s
+ * `inherited(...)` builds for a `null` half, word for word, so the two
+ * refusals read as one voice (plan correction 46).
  */
-function unresolvedQualifiedCodesMessage(codes: readonly string[]): string {
+function unresolvedQualifiedCodesMessage(codes: readonly string[], formulaInherited: boolean): string {
   const listed = codes.map((code) =>
     code.length > MAX_ECHOED_ASSET_CODE_LENGTH
       ? `${code.slice(0, MAX_ECHOED_ASSET_CODE_LENGTH)}… (truncated)`
       : code,
   );
+  const inherited = formulaInherited ? " (inherited from the template)" : "";
   return (
-    "This formula names asset code(s) that resolve to no active asset at this asset's " +
+    `This formula${inherited} names asset code(s) that resolve to no active asset at this asset's ` +
     `location: ${listed.join(", ")}. A qualified reference reaches only assets at the same ` +
     "location as this asset (ADR 0055 decision 12). Check the code, or use an aggregate scope."
   );
