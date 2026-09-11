@@ -2,8 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   assertBlankRedisUrlIsUnconfigured,
+  assertCredentialRefusalDoesNotEchoThePassword,
   assertCredentialsAndDbAreParsed,
-  assertInvalidUrlThrowsQueueConfigErrorWithoutEchoingTheValue,
+  assertInvalidUrlThrowsItsOwnMessageWithoutEchoingTheValue,
   assertInvalidWorkerPortThrowsNamingWorkerPortNotRedisUrl,
   assertMinimalUrlParsesToHostAndPortOnly,
   assertQueueConfigErrorNameIsStable,
@@ -12,7 +13,7 @@ import {
   assertWorkerConfigDefaultsPortTo4100,
   assertWorkerConfigHonoursExplicitPort,
   assertWorkerConfigRefusesMissingRedisUrlNamingOnlyRedisUrl,
-  INVALID_URLS,
+  INVALID_URL_ROWS,
   INVALID_WORKER_PORTS,
 } from "./queue-config.spec";
 
@@ -42,12 +43,16 @@ describe("F4.24 — queue and worker configuration readers", () => {
     assertRedissSchemeMapsToTlsAndDefaultPort();
   });
 
-  it.each(INVALID_URLS)(
-    "throws QueueConfigError without echoing the value for %s",
-    (raw) => {
-      assertInvalidUrlThrowsQueueConfigErrorWithoutEchoingTheValue(raw);
+  it.each(INVALID_URL_ROWS)(
+    "refuses $raw with its own guard's message, without echoing the value",
+    (row) => {
+      assertInvalidUrlThrowsItsOwnMessageWithoutEchoingTheValue(row);
     },
   );
+
+  it("does not echo the password on its own when a credential-bearing URL is refused", () => {
+    assertCredentialRefusalDoesNotEchoThePassword();
+  });
 
   it("defaults the worker port to 4100", () => {
     assertWorkerConfigDefaultsPortTo4100();

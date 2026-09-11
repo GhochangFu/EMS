@@ -31,8 +31,10 @@ const apiSrc = join(repoRoot, "apps", "api", "src");
  *
  * **Rule 3 is the positive control**, without which a walker that follows
  * nothing passes rule 2 vacuously: the same walk over `main.ts` must reach
- * every one of the thirteen files. Rule 1's own controls are the same shape —
- * the worker's closure must reach the modules it is built from.
+ * every one of the fifteen files but `main.ts` itself — an entry is in its
+ * own closure by construction, so its presence there proves nothing about
+ * the walker. Rule 1's own controls are the same shape — the worker's
+ * closure must reach the modules it is built from.
  *
  * This is what fences `F3.11`: the day `WorkerModule` gains
  * `imports: [RulesModule]`, rule 2 reddens naming `rules/rules.module.ts`,
@@ -41,7 +43,8 @@ const apiSrc = join(repoRoot, "apps", "api", "src");
  */
 
 // ---------------------------------------------------------------------------
-// The thirteen files, in the ADR's four groups
+// The fifteen files (6 + 2 + 5 + 2), in the ADR's four groups. The first
+// version of this file and plan §8 said "thirteen"; the review re-counted.
 // ---------------------------------------------------------------------------
 
 /** The six `onModuleInit` loop sites (ADR 0063 Context 2). */
@@ -69,7 +72,14 @@ const LOOP_MODULES = [
 /** The API root and its entrypoint — a worker that reaches either is the API. */
 const API_ROOTS = ["app.module.ts", "main.ts"] as const;
 
-const ALL_THIRTEEN = [...LOOP_SITES, ...LOOP_HOSTS, ...LOOP_MODULES, ...API_ROOTS];
+const ALL_FIFTEEN = [...LOOP_SITES, ...LOOP_HOSTS, ...LOOP_MODULES, ...API_ROOTS];
+
+/**
+ * Rule 3 walks from `main.ts`, and an entry is always in its own closure —
+ * so `main.ts` is dropped from the positive control: fourteen files the
+ * walker must actually *follow* an edge to reach.
+ */
+const POSITIVE_CONTROL = ALL_FIFTEEN.filter((p) => p !== "main.ts");
 
 /** What the worker's closure must reach — the modules `WorkerModule` is built from. */
 const WORKER_LEAVES = [
@@ -188,6 +198,16 @@ function serviceBlock(compose: string, name: string): string {
   return next === null ? after : after.slice(0, next.index + 1);
 }
 
+/**
+ * The text from a heading line to the end of `block`, or `""` when the
+ * heading is absent — so each `it()` below holds exactly one `expect`, and a
+ * missing heading fails the `it()` that names it rather than a shared setup.
+ */
+function sectionAfter(block: string, heading: RegExp): string {
+  const found = heading.exec(block);
+  return found === null ? "" : block.slice(found.index);
+}
+
 // ---------------------------------------------------------------------------
 // The rules
 // ---------------------------------------------------------------------------
@@ -224,7 +244,7 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     });
   });
 
-  describe("rule 2 — the closure of apps/api/src/worker.ts contains none of the thirteen", () => {
+  describe("rule 2 — the closure of apps/api/src/worker.ts contains none of the fifteen", () => {
     it("reaches none of the six onModuleInit loop sites", () => {
       const offending = present(closure("worker.ts"), LOOP_SITES);
       expect(
@@ -265,9 +285,9 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     });
   });
 
-  describe("rule 3 — positive control: the closure of apps/api/src/main.ts contains every one of the thirteen", () => {
-    it("reaches all thirteen files from main.ts", () => {
-      const missing = absent(closure("main.ts"), ALL_THIRTEEN);
+  describe("rule 3 — positive control: the closure of apps/api/src/main.ts contains every one of the fifteen but itself", () => {
+    it("reaches the other fourteen files from main.ts", () => {
+      const missing = absent(closure("main.ts"), POSITIVE_CONTROL);
       expect(
         missing,
         "files the API's closure does not reach — either a loop moved (update the list with its " +
@@ -304,12 +324,16 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
       expect(redis).toMatch(/"--maxmemory-policy",\s*"noeviction"/);
     });
 
-    it("the redis service mounts the named volume redis-data at /data, and redis-data is declared under volumes:", () => {
+    it("the redis service mounts the named volume redis-data at /data (decision 8)", () => {
       expect(redis).toMatch(/^\s*-\s*redis-data:\/data\s*$/m);
-      const topLevel = /^volumes:\s*$/m.exec(compose);
-      expect(topLevel, "docker-compose.yml must have a top-level `volumes:` block").not.toBeNull();
-      const declared = compose.slice(topLevel?.index ?? 0);
-      expect(declared).toMatch(/^ {2}redis-data:\s*$/m);
+    });
+
+    it("docker-compose.yml has a top-level volumes: block", () => {
+      expect(compose).toMatch(/^volumes:\s*$/m);
+    });
+
+    it("redis-data is declared under the top-level volumes: block", () => {
+      expect(sectionAfter(compose, /^volumes:\s*$/m)).toMatch(/^ {2}redis-data:\s*$/m);
     });
 
     it('a worker service exists with command: ["node", "dist/worker.js"] (decision 12)', () => {
@@ -327,17 +351,24 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
       expect(worker).toMatch(/^\s*REDIS_URL:\s*\S+/m);
     });
 
-    it("the worker service sets WORKER_PORT: 4100 and publishes 4100:4100", () => {
+    it("the worker service sets WORKER_PORT: 4100", () => {
       expect(worker).toMatch(/^\s*WORKER_PORT:\s*4100\s*$/m);
+    });
+
+    it("the worker service publishes 4100:4100", () => {
       expect(worker).toMatch(/^\s*-\s*["']?4100:4100["']?\s*$/m);
     });
 
-    it("the worker service's depends_on names redis and migrate (decision 12)", () => {
-      const dependsOn = /^\s*depends_on:\s*$/m.exec(worker);
-      expect(dependsOn, "worker service must declare depends_on:").not.toBeNull();
-      const after = worker.slice(dependsOn?.index ?? 0);
-      expect(after).toMatch(/^\s*redis:\s*$/m);
-      expect(after).toMatch(/^\s*migrate:\s*$/m);
+    it("the worker service declares depends_on: (decision 12)", () => {
+      expect(worker).toMatch(/^\s*depends_on:\s*$/m);
+    });
+
+    it("the worker service's depends_on names redis", () => {
+      expect(sectionAfter(worker, /^\s*depends_on:\s*$/m)).toMatch(/^\s*redis:\s*$/m);
+    });
+
+    it("the worker service's depends_on names migrate", () => {
+      expect(sectionAfter(worker, /^\s*depends_on:\s*$/m)).toMatch(/^\s*migrate:\s*$/m);
     });
   });
 });

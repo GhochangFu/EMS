@@ -412,6 +412,12 @@ export type HeartbeatOutcome = {
  * `everyMs: 1_000`, not `HEARTBEAT_EVERY_MS` — the mechanism under test is
  * the scheduler → worker → tick → health chain, and `heartbeat.spec.ts`
  * already pins the 60 s constant. Waiting a minute here would test the clock.
+ *
+ * Two waits, not one. The tick lands *inside* the processor, before BullMQ
+ * moves the job and emits `completed`, so a read of the `completed` count
+ * taken the instant the tick appears can still see zero — measured 1 red in
+ * 4 by the 2026-09-11 review. The second `until` waits for the count the
+ * outcome reads.
  */
 export async function runHeartbeat(suite: QueueSuite): Promise<HeartbeatOutcome> {
   await upsertSchedule(
@@ -423,6 +429,10 @@ export async function runHeartbeat(suite: QueueSuite): Promise<HeartbeatOutcome>
   await until(async () => (await suite.readTick()) !== null, {
     timeoutMs: 10_000,
     label: "the heartbeat tick landed",
+  });
+  await until(() => suite.metrics.count(heartbeatQueue.name, "completed") >= 1, {
+    timeoutMs: 10_000,
+    label: "the heartbeat completion was counted",
   });
   const health = await readHealth(suite);
   return {

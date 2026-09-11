@@ -29,6 +29,15 @@ import type { QueueClient, QueueHandle } from "./queue-registry";
  * the heartbeat is stale (which includes the never-ticked null, plan §15
  * ruling 5). `degraded` still answers HTTP 200 (ruling 1); the controller's
  * docblock says why.
+ *
+ * **`lastHeartbeatAt` is the stored string passed through as read** — not
+ * re-parsed or re-formatted here. That is deliberate: `heartbeatIsStale`
+ * fails closed on anything `Date.parse` cannot read (`heartbeat.ts`), so a
+ * corrupted key reads `heartbeatStale: true` → `degraded` rather than fresh.
+ * The contract's `datetime()` on the field describes the shape for readers;
+ * nothing validates this route's body at runtime (checked 2026-09-11 — no
+ * response validator applies `livenessResponseSchema`), so the stale guard
+ * is the only runtime protection, and it is enough for a liveness verdict.
  */
 
 export const QUEUE_HEALTH_TIMEOUT_MS: number = 1_500;

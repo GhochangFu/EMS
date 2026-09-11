@@ -13,12 +13,46 @@ import {
  * table-driven rows are exported as per-input functions so the wrapper can
  * run them through `it.each` — a loop inside one `it()` would let the first
  * failing input hide the rest.
+ *
+ * **The "expected to throw" sentinel lives outside the `try`** (the
+ * 2026-09-11 review, Blocker B). The first version threw it *inside* the
+ * `try`, where the same `catch` caught it — and because its text named the
+ * variable under test, the four `INVALID_WORKER_PORTS` rows stayed green
+ * with `readWorkerPort` reduced to `return Number(raw.trim())`: 18/18
+ * passing against a guard that refused nothing. `captureThrow` is the
+ * `captureRejection` shape from `queue-registry.spec.ts`, synchronous.
  */
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+/** Captures a throw. A call that returns fails here, with this message, never inside a `catch`. */
+function captureThrow(run: () => unknown): unknown {
+  let threw = false;
+  let caught: unknown;
+  try {
+    run();
+  } catch (err) {
+    threw = true;
+    caught = err;
+  }
+  assert(threw, "expected the call to throw, and it returned");
+  return caught;
+}
+
+function errorName(err: unknown): string | undefined {
+  return typeof err === "object" && err !== null
+    ? (err as { name?: unknown }).name?.toString()
+    : undefined;
+}
+
+function errorMessage(err: unknown): string {
+  return typeof err === "object" && err !== null
+    ? String((err as { message?: unknown }).message)
+    : String(err);
 }
 
 export function assertUnsetRedisUrlIsUnconfigured(): void {
@@ -63,36 +97,47 @@ export function assertRedissSchemeMapsToTlsAndDefaultPort(): void {
 }
 
 /**
- * `redis://:s3cret@cache/abc` is the one entry that carries a credential
- * (§9.6) — a bad db segment ("abc") makes it invalid, and it is the case
- * that actually tests "the value never appears in the message" rather than
- * only the scheme/host/db-shape checks.
+ * One row per guard in `redisOptionsFromUrl`, each with the message that
+ * guard — and only that guard — throws (the review, C). `redis://` parses
+ * under WHATWG rules with an empty host; a lone `%` in the password survives
+ * `new URL` and fails `decodeURIComponent`. The two credential rows are the
+ * ones that test "the value never appears in the message" for real.
  */
-export const INVALID_URLS = [
-  "http://x",
-  "redis://",
-  "redis://h/abc",
-  "not a url",
-  "redis://:s3cret@cache/abc",
+export const INVALID_URL_ROWS = [
+  { raw: "http://x", message: "REDIS_URL must use the redis or rediss scheme" },
+  { raw: "redis://", message: "REDIS_URL must name a host" },
+  { raw: "redis://h/abc", message: "REDIS_URL path must be a numeric database index" },
+  { raw: "not a url", message: "REDIS_URL is not a valid URL" },
+  { raw: "redis://:s3cret@cache/abc", message: "REDIS_URL path must be a numeric database index" },
+  { raw: "redis://:pa%ss@cache", message: "REDIS_URL credentials carry a malformed percent-escape" },
 ] as const;
 
-export function assertInvalidUrlThrowsQueueConfigErrorWithoutEchoingTheValue(
-  raw: string,
-): void {
-  try {
-    redisOptionsFromUrl(raw);
-    throw new Error(`expected redisOptionsFromUrl(${JSON.stringify(raw)}) to throw`);
-  } catch (err) {
-    assert(err instanceof Error, `expected an Error for ${JSON.stringify(raw)}`);
-    assert(
-      (err as Error).name === "QueueConfigError",
-      `expected err.name === "QueueConfigError" for ${JSON.stringify(raw)}, got "${(err as Error).name}"`,
-    );
-    assert(
-      !(err as Error).message.includes(raw),
-      `err.message must not contain the input value "${raw}" (it can carry a password) — got "${(err as Error).message}"`,
-    );
-  }
+export function assertInvalidUrlThrowsItsOwnMessageWithoutEchoingTheValue(row: {
+  raw: string;
+  message: string;
+}): void {
+  const err = captureThrow(() => redisOptionsFromUrl(row.raw));
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError" for ${JSON.stringify(row.raw)}, got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err) === row.message,
+    `expected the guard's own message ${JSON.stringify(row.message)} for ${JSON.stringify(row.raw)}, got ${JSON.stringify(errorMessage(err))}`,
+  );
+  assert(
+    !errorMessage(err).includes(row.raw),
+    `err.message must not contain the input value "${row.raw}" (it can carry a password) — got "${errorMessage(err)}"`,
+  );
+}
+
+/** §9.6, sharpened: the whole-value check above passes for any substring; the password on its own must be absent too. */
+export function assertCredentialRefusalDoesNotEchoThePassword(): void {
+  const err = captureThrow(() => redisOptionsFromUrl("redis://:s3cret@cache/abc"));
+  assert(
+    !errorMessage(err).includes("s3cret"),
+    `err.message must not contain the password on its own — got "${errorMessage(err)}"`,
+  );
 }
 
 export function assertWorkerConfigDefaultsPortTo4100(): void {
@@ -106,41 +151,37 @@ export function assertWorkerConfigHonoursExplicitPort(): void {
 }
 
 export function assertWorkerConfigRefusesMissingRedisUrlNamingOnlyRedisUrl(): void {
-  try {
-    readWorkerConfig({});
-    throw new Error("expected readWorkerConfig({}) to throw");
-  } catch (err) {
-    assert(err instanceof Error, "expected an Error");
-    assert(
-      (err as Error).message.includes("REDIS_URL"),
-      `expected the message to name REDIS_URL, got "${(err as Error).message}"`,
-    );
-    assert(
-      !(err as Error).message.includes("WORKER_PORT"),
-      `the missing-REDIS_URL refusal must not also name WORKER_PORT (the port guard must not fire first) — got "${(err as Error).message}"`,
-    );
-  }
+  const err = captureThrow(() => readWorkerConfig({}));
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError", got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes("REDIS_URL"),
+    `expected the message to name REDIS_URL, got "${errorMessage(err)}"`,
+  );
+  assert(
+    !errorMessage(err).includes("WORKER_PORT"),
+    `the missing-REDIS_URL refusal must not also name WORKER_PORT (the port guard must not fire first) — got "${errorMessage(err)}"`,
+  );
 }
 
 export const INVALID_WORKER_PORTS = ["0", "70000", "1e3", "abc"] as const;
 
-export function assertInvalidWorkerPortThrowsNamingWorkerPortNotRedisUrl(
-  raw: string,
-): void {
-  try {
-    readWorkerConfig({ REDIS_URL: "redis://r", WORKER_PORT: raw });
-    throw new Error(`expected WORKER_PORT=${JSON.stringify(raw)} to throw`);
-  } catch (err) {
-    assert(err instanceof Error, `expected an Error for WORKER_PORT=${JSON.stringify(raw)}`);
-    assert(
-      (err as Error).message.includes("WORKER_PORT"),
-      `expected the message to name WORKER_PORT for ${JSON.stringify(raw)}, got "${(err as Error).message}"`,
-    );
-    assert(
-      !(err as Error).message.includes("REDIS_URL"),
-      `the WORKER_PORT refusal must not also name REDIS_URL for ${JSON.stringify(raw)} — got "${(err as Error).message}"`,
-    );
-  }
+export function assertInvalidWorkerPortThrowsNamingWorkerPortNotRedisUrl(raw: string): void {
+  const err = captureThrow(() => readWorkerConfig({ REDIS_URL: "redis://r", WORKER_PORT: raw }));
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError" for WORKER_PORT=${JSON.stringify(raw)}, got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes("WORKER_PORT"),
+    `expected the message to name WORKER_PORT for ${JSON.stringify(raw)}, got "${errorMessage(err)}"`,
+  );
+  assert(
+    !errorMessage(err).includes("REDIS_URL"),
+    `the WORKER_PORT refusal must not also name REDIS_URL for ${JSON.stringify(raw)} — got "${errorMessage(err)}"`,
+  );
 }
 
 /** Exercised so the exported class is referenced from a test (dead-import guard). */

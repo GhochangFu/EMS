@@ -41,28 +41,25 @@ export class QueueConfigError extends Error {
  * Parses a `redis://` or `rediss://` URL into the shape BullMQ's `Queue`
  * and `Worker` accept as `connection`. Throws `QueueConfigError` on any
  * failure — **the raw value never appears in the thrown message**, because
- * it can carry a password.
+ * it can carry a password. Each guard has its own message (the 2026-09-11
+ * review, C: all five used to say "must use the redis or rediss scheme",
+ * which was false for four of them); none names the value, so the message
+ * says which rule failed and the operator reads the value from their env.
  */
 export function redisOptionsFromUrl(raw: string): RedisConnectionOptions {
   let url: URL;
   try {
     url = new URL(raw);
   } catch {
-    throw new QueueConfigError(
-      "REDIS_URL must use the redis or rediss scheme",
-    );
+    throw new QueueConfigError("REDIS_URL is not a valid URL");
   }
 
   if (url.protocol !== "redis:" && url.protocol !== "rediss:") {
-    throw new QueueConfigError(
-      "REDIS_URL must use the redis or rediss scheme",
-    );
+    throw new QueueConfigError("REDIS_URL must use the redis or rediss scheme");
   }
 
   if (!url.hostname) {
-    throw new QueueConfigError(
-      "REDIS_URL must use the redis or rediss scheme",
-    );
+    throw new QueueConfigError("REDIS_URL must name a host");
   }
 
   const options: RedisConnectionOptions = {
@@ -80,17 +77,13 @@ export function redisOptionsFromUrl(raw: string): RedisConnectionOptions {
   } catch {
     // `decodeURIComponent` throws `URIError` on a malformed percent-escape
     // (e.g. a lone `%`). The raw value is never in this message either.
-    throw new QueueConfigError(
-      "REDIS_URL must use the redis or rediss scheme",
-    );
+    throw new QueueConfigError("REDIS_URL credentials carry a malformed percent-escape");
   }
 
   const dbPath = url.pathname.replace(/^\//, "");
   if (dbPath.length > 0) {
     if (!/^\d+$/.test(dbPath)) {
-      throw new QueueConfigError(
-        "REDIS_URL must use the redis or rediss scheme",
-      );
+      throw new QueueConfigError("REDIS_URL path must be a numeric database index");
     }
     options.db = Number(dbPath);
   }
