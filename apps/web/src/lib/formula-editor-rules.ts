@@ -275,9 +275,9 @@ export function scopeCompletions(rules: FormulaEditorRules): ScopeCompletion[] {
  * The two reference forms `bms-calc-v2` carries, and what each answers (ADR
  * 0055 decision 6, from the Q1 ruling: "each form answers one of them").
  *
- * This is the teaching the tabs render under a `v2` row (T6, T7, and T12 once
- * PR 2 of this row lands): an author who knows which *question* they are
- * asking can pick the form without
+ * This is the teaching the tabs render under a `v2` row (T6, T7, and T12's
+ * `point-calc-override-panel.tsx`): an author who knows which *question* they
+ * are asking can pick the form without
  * reading the grammar. An **aggregate** ranges over a set the database resolves
  * at evaluation time, so a new asset joins the sum by joining the site — a
  * total or a ratio. A **qualified reference** names individual assets, so it

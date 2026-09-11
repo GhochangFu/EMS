@@ -6,6 +6,8 @@ import {
   assertTheBatchResolvesOnceForTheWholeBatch,
   assertTheCandidateReplacesItsOwnStoredNode,
   assertTheDetectorsReadDoesNotCountSkips,
+  assertUnresolvedQualifiedCodesNamesOnlyTheNullEntries,
+  assertUnresolvedQualifiedCodesReadsNothingWithoutAQualifiedReference,
 } from "./calc-dependency.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -28,5 +30,13 @@ describe("F2.9 — CalcDependencyService, the save-time cycle detector", () => {
 
   it("resolves the estate once for a whole batch, and still builds one graph per candidate", async () => {
     await assertTheBatchResolvesOnceForTheWholeBatch();
+  });
+
+  it("names only the qualified codes the resolver answered null for, once each (F2.22 item 9)", async () => {
+    await assertUnresolvedQualifiedCodesNamesOnlyTheNullEntries();
+  });
+
+  it("reads nothing when the formula holds no qualified reference (F2.22 item 9)", async () => {
+    await assertUnresolvedQualifiedCodesReadsNothingWithoutAQualifiedReference();
   });
 });

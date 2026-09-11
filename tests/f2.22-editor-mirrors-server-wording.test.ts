@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * `F2.22` T9 — the wording gate. Five sentences the editor mirrors from the
+ * `F2.22` T9 — the wording gate. Six sentences the editor mirrors from the
  * server, each copied by hand because `apps/web` cannot import `apps/api`
  * (design decision 6). A copy that drifts is worse than no copy: the editor
  * clears the author's problem and the save still fails, with different words.
@@ -28,6 +28,7 @@ const FILES = {
   templateSchema: "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
   templateContentSchema: "apps/api/src/admin/asset-templates/asset-templates-content.schema.ts",
   overrideSchema: "apps/api/src/admin/asset-points/asset-point-calc-override.schema.ts",
+  overrideService: "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
   templateCalcConfig: "apps/web/src/lib/template-calc-config.ts",
   overrideLib: "apps/web/src/lib/asset-point-calc-override.ts",
   formulaValidation: "apps/web/src/lib/template-formula-validation.ts",
@@ -77,7 +78,7 @@ function dropTrailingPeriod(sentence: string): string {
   return sentence.replace(/\.$/, "");
 }
 
-describe("F2.22 T9 — the editor's five copies of server wording, gated against drift", () => {
+describe("F2.22 T9 — the editor's six copies of server wording, gated against drift", () => {
   // --- pair (a) — ADR 0055 decision 10's streaming-refusal sentence --------
   //
   // Four copies: the template save path, the override save path (both API),
@@ -233,5 +234,52 @@ describe("F2.22 T9 — the editor's five copies of server wording, gated against
 
     expect(server).toBe("Every entry in pointKeys must be referenced by expression at least once");
     expect(web).toBe(server);
+  });
+
+  // --- pair (f) — the override save path's own cycle sentence ---------------
+  //
+  // `asset-point-calc-override.service.ts` (T12, find by the literal below —
+  // the plan's `:227-231` citation predates T11) versus its editor mirror in
+  // `asset-point-calc-override.ts`'s `draftProblems` (T12, panel PR 2). The
+  // member list is data the server computes from the full cycle
+  // (`cycle.map(...).join(" → ")`), and the editor can only ever see a
+  // cycle of length one (its own key) — so, like pair (c), only the fixed
+  // prefix and suffix around that difference are compared.
+  //
+  // **The prefix is gated by the count alone.** `PREFIX_RE` has no free span,
+  // so a match is the literal itself and a `toBe` between the two copies
+  // would compare a constant to itself (step 5 of PR 2, nit). What holds the
+  // prefix is `extractExactlyOne`: each file must contain those exact words
+  // exactly once, and a drift in either file is a count of zero. The prefix
+  // cannot be widened to the interpolation, because the editor's copy inserts
+  // `it reads its own point "…"` there by design (it knows the one member).
+  it("pair (f) — the override save path's cycle sentence matches its editor mirror in prefix and suffix", () => {
+    const PREFIX_RE = /This formula would form a dependency cycle:/;
+    const SUFFIX_RE = /Every point on a cycle waits on another[\s\S]*?points in\.?/;
+
+    extractExactlyOne(source.overrideService, PREFIX_RE, "asset-point-calc-override.service.ts (cycle prefix)");
+    extractExactlyOne(source.overrideLib, PREFIX_RE, "asset-point-calc-override.ts (cycle prefix)");
+
+    const serverSuffix = dropTrailingPeriod(
+      joinConcatenatedLiteral(
+        extractExactlyOne(
+          source.overrideService,
+          SUFFIX_RE,
+          "asset-point-calc-override.service.ts (cycle suffix)",
+        ),
+      ),
+    );
+    const webSuffix = dropTrailingPeriod(
+      joinConcatenatedLiteral(
+        extractExactlyOne(source.overrideLib, SUFFIX_RE, "asset-point-calc-override.ts (cycle suffix)"),
+      ),
+    );
+
+    expect(serverSuffix).toBe(
+      "Every point on a cycle waits on another, so none of them ever computes. Break " +
+        "the loop — change this formula, or the aggregate scope that draws the other " +
+        "points in",
+    );
+    expect(webSuffix).toBe(serverSuffix);
   });
 });

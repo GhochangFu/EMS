@@ -60,6 +60,10 @@ import {
  *   whole estate.
  * - A merged configuration the engine could not run — D-1, in
  *   `validateMergedCalcOverride`.
+ * - A merged `bms-calc-v2` formula that names a qualified code resolving to no
+ *   active asset at this asset's location (`F2.22` item 9, ADR 0055 decision
+ *   12), or that would close a dependency cycle (`F2.9` Task 12, decision 8) —
+ *   in that order, in `setOverride`.
  *
  * ## `E7.1b` — reads on `fleetDb`, the write inside `withTenant`
  *
@@ -147,6 +151,9 @@ export class AssetPointCalcOverrideService {
         template,
         override,
         effective: mergeFields(override, template),
+        // `F2.22` item 4 — the template point's own value, read-only; there is
+        // no override role for it (ADR 0055 decision 11).
+        minCoverageRatio: point.minCoverageRatio,
         runtime:
           runtime === null
             ? null
@@ -214,6 +221,33 @@ export class AssetPointCalcOverrideService {
     if (mergedDialect === CALC_DIALECT_V2 && mergedFormula !== null) {
       const parsed = parseFormula(mergedFormula, { dialect: CALC_DIALECT_V2 });
       if (parsed.ok) {
+        // **`F2.22` item 9 — a qualified code that resolves nowhere is
+        // refused here, and before the cycle check.** This is the one write
+        // path that knows the asset: a template has no location to resolve a
+        // code against, so its save cannot make this check by construction.
+        // Before the cycle check because a code that resolves nowhere draws
+        // no edge — the graph would pass it silently — and because the author
+        // is told about the defect they can fix without a graph first, before
+        // the fleet-wide read the cycle check costs.
+        //
+        // The message names the code and says nothing about where else it
+        // may exist. `assets.code` is unique across organizations, so "that
+        // code belongs to another location" would confirm another tenant's
+        // code to anyone who can save an override (plan design decision 8).
+        //
+        // **On the merged formula, and the sentence says so.** An override
+        // that states no formula is checked against the template's, and is
+        // refused when that formula names a code unresolved at this asset's
+        // location (plan correction 46, the owner's ruling: consistent with
+        // the cycle check beside it and decision 12's "rejected at save
+        // time"). The sentence then carries the same `inherited(...)` clause
+        // every sibling in `validateMergedCalcOverride` does, so the operator
+        // reads that the formula is the template's, not one they typed.
+        const unresolved = await this.dependencies.unresolvedQualifiedCodes(assetId, parsed.crossRefs);
+        if (unresolved.length > 0) {
+          throw new BadRequestException(unresolvedQualifiedCodesMessage(unresolved, body.formula === null));
+        }
+
         const cycle = await this.dependencies.checkCandidate({
           assetId,
           pointKey,
@@ -597,4 +631,42 @@ function mergeFields(
 /** Which columns this request actually sets — the audit payload's `columns`. */
 function changedColumns(values: AssetPointCalcOverrideFields): string[] {
   return CALC_COLUMNS.filter((column) => values[column] !== null);
+}
+
+/**
+ * The longest asset code the item-9 refusal echoes. `bms.assets.code` is
+ * `varchar(64)`, so a longer string cannot be a code — but it can be lifted
+ * out of a formula, whose only bound is `MAX_FORMULA_LENGTH`, and the parser
+ * accepts any text before the `.` as a code. Same reasoning and same shape as
+ * `MAX_ECHOED_POINT_KEY_LENGTH` in `asset-templates-cross-refs.ts`: a value
+ * the DTO already bounds is echoed in full, and only a formula-lifted one is
+ * cut. The count is already bounded by `MAX_FORMULA_CROSS_REFS` at the parse.
+ */
+const MAX_ECHOED_ASSET_CODE_LENGTH = 64;
+
+/**
+ * The `F2.22` item-9 refusal. Names the codes, states decision 12's rule, and
+ * offers the two ways out — and never says whether a code exists at another
+ * location or in another organization (plan design decision 8; the sibling
+ * integration case holds this by comparing the sentence for a code that
+ * exists at another location, one in another organization, and one that
+ * exists nowhere).
+ *
+ * `formulaInherited` is `body.formula === null`: the check runs on the merged
+ * formula, and the clause is the one `validateMergedCalcOverride`'s
+ * `inherited(...)` builds for a `null` half, word for word, so the two
+ * refusals read as one voice (plan correction 46).
+ */
+function unresolvedQualifiedCodesMessage(codes: readonly string[], formulaInherited: boolean): string {
+  const listed = codes.map((code) =>
+    code.length > MAX_ECHOED_ASSET_CODE_LENGTH
+      ? `${code.slice(0, MAX_ECHOED_ASSET_CODE_LENGTH)}… (truncated)`
+      : code,
+  );
+  const inherited = formulaInherited ? " (inherited from the template)" : "";
+  return (
+    `This formula${inherited} names asset code(s) that resolve to no active asset at this asset's ` +
+    `location: ${listed.join(", ")}. A qualified reference reaches only assets at the same ` +
+    "location as this asset (ADR 0055 decision 12). Check the code, or use an aggregate scope."
+  );
 }

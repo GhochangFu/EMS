@@ -7,10 +7,12 @@ import {
   canClear,
   canSubmit,
   columnOrigin,
+  coverageRatioDisplay,
   draftFromConfig,
   draftProblems,
   draftToBody,
   hasAnyOverride,
+  mergedDialect,
   EMPTY_DRAFT,
 } from "./asset-point-calc-override";
 
@@ -72,6 +74,9 @@ function config(
       calcIntervalSeconds: ov.calcIntervalSeconds ?? template.calcIntervalSeconds,
       maxInputAgeSeconds: ov.maxInputAgeSeconds ?? template.maxInputAgeSeconds,
     },
+    // `F2.22` item 4 — template-only and read-only (ADR 0055 decision 11);
+    // nothing in this module's rules reads it.
+    minCoverageRatio: null,
     // `F2.9` Task 16 — the panel's own rules do not read it, and the pill's
     // label is asserted on the field directly in `runRuntimePillLabelTests`.
     runtime: null,
@@ -155,9 +160,29 @@ export function runDraftSeedingTests(): void {
     none.formula === "" && none.calcIntervalSeconds === "" && none.maxInputAgeSeconds === "",
     "nothing overridden seeds an empty form",
   );
+  assert(none.formulaDialect === "", "and the Grammar select seeds to inherit");
+
+  const relabelled = draftFromConfig(config({ formulaDialect: CALC_DIALECT_V2 }));
+  assert(
+    relabelled.formulaDialect === CALC_DIALECT_V2,
+    `an overridden dialect seeds the Grammar select, got ${JSON.stringify(relabelled.formulaDialect)}`,
+  );
 }
 
-/** Empty means inherit; the dialect is sent only with a formula. */
+/**
+ * Empty means inherit — for the dialect too (`F2.22` design decision 9, ruling
+ * Q2).
+ *
+ * `draftToBody` used to stamp `bms-calc-v1` beside any formula, on the premise
+ * that there was exactly one dialect. `F2.9` made it two, and the stamp became
+ * a label the author never chose: a `v2`-shaped formula typed against a `v2`
+ * template with Grammar left on inherit was refused for being `v1`. The dialect
+ * is now its own column of the draft and is sent exactly as the author set it,
+ * with or without a formula. The API accepts both halves alone
+ * (`assertFormulaAloneInheritsTheDialect`,
+ * `assertADialectOnlyUpgradeOfAValidFormulaIsAccepted` in
+ * `asset-point-calc-override.schema.spec.ts`).
+ */
 export function runDraftToBodyTests(): void {
   const blank = draftToBody(EMPTY_DRAFT);
   assert(
@@ -168,18 +193,191 @@ export function runDraftToBodyTests(): void {
   const withFormula = draftToBody({ ...EMPTY_DRAFT, formula: "  {KW} + 1  " });
   assert(withFormula.formula === "{KW} + 1", "the formula is trimmed");
   assert(
-    withFormula.formulaDialect === "bms-calc-v1",
-    "the dialect rides along with a formula — there is one dialect, and asking an author to " +
-      "restate it on every edit is the restatement decision 6 exists to avoid",
+    withFormula.formulaDialect === null,
+    `inherit sends formulaDialect: null even beside a formula — got ${JSON.stringify(
+      withFormula.formulaDialect,
+    )}. A stamped label is one the author never chose, and against a v2 template it refuses ` +
+      "the v2 syntax they typed (design decision 9)",
+  );
+
+  const dialectOnly = draftToBody({ ...EMPTY_DRAFT, formulaDialect: CALC_DIALECT_V2 });
+  assert(
+    dialectOnly.formulaDialect === CALC_DIALECT_V2 && dialectOnly.formula === null,
+    `a chosen dialect is sent without a formula — a dialect-only override, which the API ` +
+      `parses on the merged pair. Got ${JSON.stringify(dialectOnly)}`,
   );
 
   const withoutFormula = draftToBody({ ...EMPTY_DRAFT, calcIntervalSeconds: "45" });
   assert(
-    withoutFormula.formulaDialect === null,
-    "and it is NOT sent without one — that would override the dialect on a point whose " +
-      "formula is still the template's",
+    withoutFormula.formulaDialect === null && withoutFormula.formula === null,
+    "an interval alone sends neither half of the formula pair",
   );
   assert(withoutFormula.calcIntervalSeconds === 45, "numbers are parsed, not sent as strings");
+}
+
+/**
+ * `F2.22` item 3 on the override panel — the draft formula is parsed under the
+ * **merged** dialect, so T1's ten `v2` sentences reach this surface, and so a
+ * `v2`-shaped formula against a `v1` template says which grammar refused it
+ * rather than failing after Save.
+ *
+ * Compared in full, not by substring, for the reason `runV2IsScheduledOnlyTests`
+ * gives. The "character 9" is read off a red run (`sum({kw} @site)` — the `@`
+ * is the ninth character, and `v1`'s tokenizer stops there; plan correction
+ * 25 records the same text on the KPIs tab).
+ *
+ * The dialect-only draft is the assertion the plan's list was missing: a
+ * `v2` label alone over a valid `v1` formula must be **submittable**, because
+ * `v2` is a superset (ADR 0055 decision 4) and the API accepts exactly that
+ * body. `CALC_FIELDS` names the dialect, so the "sets no column" refusal must
+ * not fire on it either.
+ */
+export function runDialectMirrorTests(): void {
+  const V1_REFUSAL = "unexpected character at character 9";
+  const inheritV1 = draftProblems({ ...EMPTY_DRAFT, formula: "sum({kw} @site)" }, config());
+  assert(
+    inheritV1.length === 1,
+    `a v2-shaped formula under an inherited v1 grammar is refused once — got ${JSON.stringify(inheritV1)}`,
+  );
+  assert(
+    inheritV1[0] ===
+      `Under bms-calc-v1 (inherited from the template) the formula does not parse: ${V1_REFUSAL}.`,
+    `the problem names the grammar that refused it and ends with formatCalcError's text, got: ${inheritV1[0]}`,
+  );
+
+  const chosenV2 = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({kw} @site)", formulaDialect: CALC_DIALECT_V2 },
+    config(),
+  );
+  assert(
+    chosenV2.length === 0,
+    `the same formula under a chosen v2 grammar parses — got ${JSON.stringify(chosenV2)}`,
+  );
+
+  const chosenV1 = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({kw} @site)", formulaDialect: "bms-calc-v1" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  assert(
+    chosenV1.length === 1 &&
+      chosenV1[0] === `Under bms-calc-v1 the formula does not parse: ${V1_REFUSAL}.`,
+    `a chosen v1 grammar over a v2 template is the merged dialect, and the sentence drops the ` +
+      `inherited clause — got ${JSON.stringify(chosenV1)}`,
+  );
+
+  const dialectOnly = { ...EMPTY_DRAFT, formulaDialect: CALC_DIALECT_V2 };
+  assert(
+    canSubmit(dialectOnly, config()),
+    `a dialect-only upgrade over a valid v1 formula must be submittable (ADR 0055 decision 4), ` +
+      `got: ${JSON.stringify(draftProblems(dialectOnly, config()))}`,
+  );
+
+  assert(
+    mergedDialect(EMPTY_DRAFT, config({}, { ...V2_TEMPLATE })) === CALC_DIALECT_V2 &&
+      mergedDialect(dialectOnly, config()) === CALC_DIALECT_V2 &&
+      mergedDialect(EMPTY_DRAFT, config()) === "bms-calc-v1",
+    "the merged dialect is the draft's when chosen and the template's when inheriting",
+  );
+}
+
+/**
+ * `F2.22` item 7 on the override panel — a self-reference is a cycle of length
+ * one, and the panel says so before the fleet-wide read the server's cycle
+ * check costs. A local ref to the point's own key, or an `@site` aggregate
+ * over it (the asset is always a member of its own site, and it declares the
+ * key), are the two shapes a pure check on this request can see.
+ *
+ * Three negative controls, each a shape the panel must leave to the server:
+ *
+ * - `{other}` — the panel has no sibling-key list, so an unknown reference is
+ *   the server's to refuse, and must not be refused here under a sentence
+ *   about cycles;
+ * - `sum({KWH} @group('OTHER'))` and `sum({KWH} @domain('x'))` — an aggregate
+ *   edge comes only from the **resolved** member set (`calc-graph.ts`), and the
+ *   asset is a member of a group only through an `asset_group_members` row and
+ *   of a domain only through its own `domain` column, neither of which the DTO
+ *   carries. A parent summing the same key over a child group is the ordinary
+ *   use of a per-asset override, and the server accepts it when the asset is
+ *   not in that group (plan correction 45). Refusing it here disabled Save on
+ *   a formula the server would have stored.
+ *
+ * A qualified `{OWN_CODE.key}` needs the asset code, which the DTO does not
+ * carry either, and stays the server's for the same reason.
+ */
+export function runSelfReferenceTests(): void {
+  const CYCLE = /would form a dependency cycle/;
+
+  const local = draftProblems({ ...EMPTY_DRAFT, formula: "{KWH} * 2" }, config());
+  assert(
+    local.length === 1 && CYCLE.test(local[0]),
+    `a local reference to the point's own key is one cycle problem — got ${JSON.stringify(local)}`,
+  );
+
+  const aggregate = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({KWH} @site)" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  assert(
+    aggregate.length === 1 && CYCLE.test(aggregate[0]),
+    `an @site aggregate over the point's own key is one cycle problem — got ${JSON.stringify(aggregate)}`,
+  );
+  assert(
+    aggregate[0] ===
+      'This formula would form a dependency cycle: it reads its own point "KWH". Every point on ' +
+        "a cycle waits on another, so none of them ever computes. Break the loop — change this " +
+        "formula, or the aggregate scope that draws the other points in.",
+    `the fixed part is the server's cycle sentence (asset-point-calc-override.service.ts:259-266), got: ${aggregate[0]}`,
+  );
+
+  const other = draftProblems({ ...EMPTY_DRAFT, formula: "{other}" }, config());
+  assert(
+    other.length === 0,
+    `a reference to another key is not the panel's to refuse — got ${JSON.stringify(other)}`,
+  );
+
+  // The key half of the `@site` arm, held constant by every other case here:
+  // without this, "every @site aggregate is a cycle" passes all of them.
+  const otherSite = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({other} @site)" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  assert(
+    otherSite.length === 0,
+    `an @site aggregate over another key is not a self-reference — got ${JSON.stringify(otherSite)}`,
+  );
+
+  const group = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({KWH} @group('OTHER'))" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  assert(
+    group.length === 0,
+    `a @group aggregate over the point's own key is the server's to decide — the DTO carries no ` +
+      `group membership, and the asset may not be in the group — got ${JSON.stringify(group)}`,
+  );
+
+  const domain = draftProblems(
+    { ...EMPTY_DRAFT, formula: "sum({KWH} @domain('x'))" },
+    config({}, { ...V2_TEMPLATE }),
+  );
+  assert(
+    domain.length === 0,
+    `a @domain aggregate over the point's own key is the server's to decide — the DTO carries no ` +
+      `asset domain — got ${JSON.stringify(domain)}`,
+  );
+}
+
+/**
+ * `F2.22` item 4 on the override panel — the template's ratio, read-only. A
+ * `null` reads as what it means (fail closed, ADR 0055 decision 11), never as
+ * a dash that an operator would read as "no limit".
+ */
+export function runCoverageRatioDisplayTests(): void {
+  assert(
+    coverageRatioDisplay(null) === "fail closed (every member must be fresh)",
+    `null is fail closed, got ${coverageRatioDisplay(null)}`,
+  );
+  assert(coverageRatioDisplay(0.5) === "0.5", `a stored ratio reads as itself, got ${coverageRatioDisplay(0.5)}`);
 }
 
 /**
@@ -249,9 +447,11 @@ export function runBoundsTests(): void {
  * ADR 0055 decision 10 on the **merged** pair, word for word from the API.
  *
  * The mistake decision 6 makes easy: the author overrides `Runs` to streaming
- * and never types the dialect that makes it illegal, because the dialect is not
- * an input on this panel at all — `draftToBody` can only ever send `v1` beside
- * a formula. So the `v2` half is always inherited, and the message says so.
+ * on a `v2` template and never touches Grammar, so the `v2` half is inherited
+ * and the message says so. Since `F2.22` Grammar is an input, and the second
+ * arm is the other way round: a chosen `v2` over a `v1` template makes the
+ * merged pair illegal with the dialect half stated, so the sentence drops the
+ * inherited clause on that half.
  *
  * The wording is compared in full rather than by substring. The API's sentence
  * and this one are two copies of one rule that `apps/web` cannot import; a
@@ -278,6 +478,19 @@ export function runV2IsScheduledOnlyTests(): void {
         '"scheduled" — a cross-asset formula resolves its members once per sweep and cannot ' +
         "run on a single reading.",
     `the panel must use the API's sentence verbatim, got: ${v2[0]}`,
+  );
+
+  const chosen = draftProblems(
+    { ...EMPTY_DRAFT, calcTrigger: "streaming", formulaDialect: CALC_DIALECT_V2 },
+    config({}, { ...SCHEDULED_TEMPLATE, calcIntervalSeconds: null }),
+  ).filter((problem) => problem.includes(`A "${CALC_DIALECT_V2}" point`));
+  assert(
+    chosen.length === 1 &&
+      chosen[0] ===
+        `The merged formulaDialect is "${CALC_DIALECT_V2}" but calcTrigger is "streaming". ` +
+          `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset ` +
+          "formula resolves its members once per sweep and cannot run on a single reading.",
+    `a chosen v2 grammar states the dialect half, so no inherited clause on it — got ${JSON.stringify(chosen)}`,
   );
 
   const v1 = draftProblems({ ...EMPTY_DRAFT, calcTrigger: "streaming" }, config());
