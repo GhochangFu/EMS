@@ -24,6 +24,16 @@ export const QUEUE_KEY_PREFIX = "bms";
  */
 export const DEFAULT_WORKER_PORT: number = 4100;
 
+/**
+ * `RULE_SWEEP_INTERVAL_MS` (ADR 0064 decision 6). No "off" value — a
+ * deployer who does not want scheduled evaluation runs no worker process;
+ * a queue with no consumer is the failure ADR 0063 decision 12 exists to
+ * avoid. Annotated `: number`, same `TS2367` reason as `DEFAULT_WORKER_PORT`.
+ */
+export const DEFAULT_RULE_SWEEP_INTERVAL_MS: number = 60_000;
+export const MIN_RULE_SWEEP_INTERVAL_MS: number = 10_000;
+export const MAX_RULE_SWEEP_INTERVAL_MS: number = 3_600_000;
+
 export type RedisConnectionOptions = {
   host: string;
   port: number;
@@ -114,6 +124,7 @@ export function readQueueConfig(
 export type WorkerConfig = {
   readonly redis: RedisConnectionOptions;
   readonly port: number;
+  readonly ruleSweepIntervalMs: number;
 };
 
 const MAX_PORT = 65535;
@@ -138,9 +149,35 @@ function readWorkerPort(raw: string | undefined): number {
 }
 
 /**
+ * `RULE_SWEEP_INTERVAL_MS` (ADR 0064 decision 6). Unset or blank is the
+ * default; a set value must be an integer within `[MIN, MAX]` inclusive, or
+ * the worker refuses to start. An interval is not a secret, so the raw
+ * value is echoed in the message (unlike `redisOptionsFromUrl`'s guards).
+ */
+function readRuleSweepInterval(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_RULE_SWEEP_INTERVAL_MS;
+  }
+  const trimmed = raw.trim();
+  const value = Number(trimmed);
+  if (
+    !/^\d+$/.test(trimmed) ||
+    value < MIN_RULE_SWEEP_INTERVAL_MS ||
+    value > MAX_RULE_SWEEP_INTERVAL_MS
+  ) {
+    throw new QueueConfigError(
+      `RULE_SWEEP_INTERVAL_MS must be an integer between 10000 and 3600000 milliseconds, got "${raw}"`,
+    );
+  }
+  return value;
+}
+
+/**
  * `readQueueConfig` runs first, so a missing `REDIS_URL` is refused before
  * `WORKER_PORT` is even looked at — the plan's table rules out the port
- * guard firing first on an otherwise-unconfigured worker.
+ * guard firing first on an otherwise-unconfigured worker. `WORKER_PORT` is
+ * read before `RULE_SWEEP_INTERVAL_MS` for the same reason: guard order is
+ * `REDIS_URL` → `WORKER_PORT` → `RULE_SWEEP_INTERVAL_MS`.
  */
 export function readWorkerConfig(
   env: Record<string, string | undefined>,
@@ -151,8 +188,10 @@ export function readWorkerConfig(
       "REDIS_URL is required for the worker process (ADR 0063 decision 9)",
     );
   }
+  const port = readWorkerPort(env.WORKER_PORT);
   return {
     redis: queueConfig.redis,
-    port: readWorkerPort(env.WORKER_PORT),
+    port,
+    ruleSweepIntervalMs: readRuleSweepInterval(env.RULE_SWEEP_INTERVAL_MS),
   };
 }

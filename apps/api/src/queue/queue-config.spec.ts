@@ -189,3 +189,118 @@ export function assertQueueConfigErrorNameIsStable(): void {
   const err = new QueueConfigError("x");
   assert(err.name === "QueueConfigError", `expected name "QueueConfigError", got "${err.name}"`);
 }
+
+/**
+ * `RULE_SWEEP_INTERVAL_MS` (ADR 0064 decision 6, plan §8). One `it()` per
+ * row; `err.name` is matched, never `instanceof` (the file's own rule
+ * above).
+ */
+export function assertRuleSweepIntervalDefaultsTo60000(): void {
+  const config = readWorkerConfig({ REDIS_URL: "redis://r" });
+  assert(
+    config.ruleSweepIntervalMs === 60000,
+    `expected default ruleSweepIntervalMs 60000, got ${config.ruleSweepIntervalMs}`,
+  );
+}
+
+export function assertBlankRuleSweepIntervalIsUnset(): void {
+  const config = readWorkerConfig({
+    REDIS_URL: "redis://r",
+    RULE_SWEEP_INTERVAL_MS: " ",
+  });
+  assert(
+    config.ruleSweepIntervalMs === 60000,
+    `expected a whitespace-only RULE_SWEEP_INTERVAL_MS to read as unset (60000), got ${config.ruleSweepIntervalMs}`,
+  );
+}
+
+export function assertRuleSweepIntervalHonoursFloor(): void {
+  const config = readWorkerConfig({
+    REDIS_URL: "redis://r",
+    RULE_SWEEP_INTERVAL_MS: "10000",
+  });
+  assert(
+    config.ruleSweepIntervalMs === 10000,
+    `expected the floor 10000 to be accepted, got ${config.ruleSweepIntervalMs}`,
+  );
+}
+
+export function assertRuleSweepIntervalHonoursCeiling(): void {
+  const config = readWorkerConfig({
+    REDIS_URL: "redis://r",
+    RULE_SWEEP_INTERVAL_MS: "3600000",
+  });
+  assert(
+    config.ruleSweepIntervalMs === 3600000,
+    `expected the ceiling 3600000 to be accepted, got ${config.ruleSweepIntervalMs}`,
+  );
+}
+
+export const INVALID_RULE_SWEEP_INTERVALS = [
+  "9999",
+  "3600001",
+  "60000.5",
+  "1e3",
+  "-1",
+  "abc",
+] as const;
+
+export function assertInvalidRuleSweepIntervalThrowsNamingOnlyRuleSweep(raw: string): void {
+  const err = captureThrow(() =>
+    readWorkerConfig({ REDIS_URL: "redis://r", RULE_SWEEP_INTERVAL_MS: raw }),
+  );
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError" for RULE_SWEEP_INTERVAL_MS=${JSON.stringify(raw)}, got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes("RULE_SWEEP_INTERVAL_MS"),
+    `expected the message to name RULE_SWEEP_INTERVAL_MS for ${JSON.stringify(raw)}, got "${errorMessage(err)}"`,
+  );
+  assert(
+    !errorMessage(err).includes("WORKER_PORT"),
+    `the RULE_SWEEP_INTERVAL_MS refusal must not also name WORKER_PORT for ${JSON.stringify(raw)} — got "${errorMessage(err)}"`,
+  );
+  assert(
+    !errorMessage(err).includes("REDIS_URL"),
+    `the RULE_SWEEP_INTERVAL_MS refusal must not also name REDIS_URL for ${JSON.stringify(raw)} — got "${errorMessage(err)}"`,
+  );
+}
+
+export function assertMissingRedisUrlRefusalFiresBeforeRuleSweepGuard(): void {
+  const err = captureThrow(() => readWorkerConfig({ RULE_SWEEP_INTERVAL_MS: "5" }));
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError", got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes("REDIS_URL"),
+    `expected the message to name REDIS_URL (guard order), got "${errorMessage(err)}"`,
+  );
+  assert(
+    !errorMessage(err).includes("RULE_SWEEP"),
+    `the missing-REDIS_URL refusal must not also name RULE_SWEEP — got "${errorMessage(err)}"`,
+  );
+}
+
+export function assertInvalidWorkerPortRefusalFiresBeforeRuleSweepGuard(): void {
+  const err = captureThrow(() =>
+    readWorkerConfig({
+      REDIS_URL: "redis://r",
+      WORKER_PORT: "0",
+      RULE_SWEEP_INTERVAL_MS: "60000",
+    }),
+  );
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError", got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes("WORKER_PORT"),
+    `expected the message to name WORKER_PORT (guard order), got "${errorMessage(err)}"`,
+  );
+  assert(
+    !errorMessage(err).includes("RULE_SWEEP"),
+    `the invalid-WORKER_PORT refusal must not also name RULE_SWEEP — got "${errorMessage(err)}"`,
+  );
+}
