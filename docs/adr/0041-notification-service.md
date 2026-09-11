@@ -1491,7 +1491,7 @@ sentence and now carries this one.
 
 ## Amendment 10 — `F3.60`: the sweep's rule-channel read is one statement per 500 rules, and "the rule's channels" keeps one definition (2026-09-10)
 
-**Status: Proposed — 2026-09-10.** Awaiting the repository owner's ruling.
+**Status: Accepted — 2026-09-11.** Ruled by the repository owner.
 
 Amendment 9's raise-retry phase read a rule's channels through
 `ChannelsService.loadForRule`, one round trip per distinct rule with an

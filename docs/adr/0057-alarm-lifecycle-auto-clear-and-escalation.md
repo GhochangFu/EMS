@@ -1526,7 +1526,7 @@ that is most of them. That cost is the filed batching row's, not this one's.
 
 ## Amendment 10 — `F3.60`: the raise-retry phase reads every evidenced rule's channels in one round trip, and decides nothing about a rule whose batch did not return (2026-09-10)
 
-**Status: Proposed — 2026-09-10.** Awaiting the repository owner's ruling.
+**Status: Accepted — 2026-09-11.** Ruled by the repository owner.
 
 Amendment 9 closed with a sentence naming what it did not fix: *"A rule with at
 least one evidence-bearing alarm still costs one channel query per distinct rule
