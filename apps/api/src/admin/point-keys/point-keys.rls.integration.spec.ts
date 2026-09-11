@@ -59,7 +59,7 @@ export async function assertGlobalAdminLifecycle(
 ): Promise<string> {
   const { svc, ownerPool } = ctx;
   const created = await svc.create(jwt, {
-    code: `f3.39-global-${Date.now()}`,
+    code: `f3-39-global-${Date.now()}`,
     name: "F3.39 global catalog write-path check",
   });
   expect(created.active).toBe(true);
@@ -123,7 +123,7 @@ export async function assertOrganizationAdminIsRefusedEveryWrite(
 
   await expect(
     svc.create(orgAdminJwt, {
-      code: `f3.39-deny-${Date.now()}`,
+      code: `f3-39-deny-${Date.now()}`,
       name: "must never be created",
     }),
     "an organization_admin must not create a fleet-wide point key",
@@ -161,7 +161,7 @@ export async function assertCreateAuditRowIsOrgLess(
 ): Promise<void> {
   const { svc, ownerPool } = ctx;
   const created = await svc.create(jwt, {
-    code: `f3.39-audit-${Date.now()}`,
+    code: `f3-39-audit-${Date.now()}`,
     name: "F3.39 org-less audit row check",
   });
   try {

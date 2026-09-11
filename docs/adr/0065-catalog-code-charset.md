@@ -46,9 +46,19 @@ frozen `phe-catalog.json`, the 46 literal and 7 templated asset codes in
 `eskom-assets-seed.ts`, the 7 in migration `0013`, `ESK-MANUAL-01` in
 `access-fixtures-seed.ts`, and every `pointKey` literal in the 33 stock-catalog
 files all match `^[A-Za-z0-9_-]+$`. Migration `0057` derives its point keys from
-`asset_points.point_key`, which the same constants populated. The integration
-fixtures produce `FIXTURE-<label>-<uuid>-<nn>` (lower-case hex in the UUID) and
-`CALCWRITE_A`…`CALCWRITE_E_OK`.
+`asset_points.point_key`, which the same constants populated. The shared
+integration fixtures produce `FIXTURE-<label>-<uuid>-<nn>` (lower-case hex in
+the UUID) and `CALCWRITE_A`…`CALCWRITE_E_OK`.
+
+**Correction, 2026-09-11, found by the full suite under `DATABASE_URL`:** the
+sentence above was true of the shared fixture builder and false of two suites
+that build their own codes. `assets.service.rls.integration.spec.ts` wrote
+`e7.1b-rls-<ts>` and `e7.1b-move-<ts>`; `point-keys.rls.integration.spec.ts`
+wrote `f3.39-global-<ts>`, `f3.39-deny-<ts>` and `f3.39-audit-<ts>` — a `.`
+inside the suite's own id. The `F2.9`-era scan looked for string literals and
+these are template literals, and the unit-only run that gated Task 2 skips
+every DB suite. Five fixture codes were renamed (`e7-1b-…`, `f3-39-…`); see
+decision 7.
 
 **3. Five API schemas admit a code, and one producer can emit an illegal
 one.** The write paths, from source:
@@ -161,8 +171,15 @@ ADR copies both.
    rather than "keys without a dot", and the `F2.9` docblocks in §6 are
    rewritten to say the class is enforced at the boundary and in the schema.
 
-7. **Fixtures comply already and stay as they are.** `CALCWRITE_*` and
-   `FIXTURE-<label>-<uuid>-<nn>` are inside the class; no fixture is renamed.
+7. **Fixtures inside the class stay as they are; five outside it are renamed.**
+   `CALCWRITE_*` and `FIXTURE-<label>-<uuid>-<nn>` are inside the class and
+   untouched. As drafted this decision read "no fixture is renamed", which the
+   full suite under `DATABASE_URL` refuted the same day (§2, correction): two
+   RLS suites spelled their own row id with a `.` (`e7.1b-…`, `f3.39-…`) and
+   the new `CHECK` refused them. Those five codes now read `e7-1b-…` and
+   `f3-39-…`. The `f3.39-no-such-key-<ts>` value in the same file is an
+   `asset_points.point_key` that must fail the foreign key, not a catalog row,
+   and keeps its dot. No seed changes.
 
 ## Dependencies
 
