@@ -51,6 +51,15 @@ import { WebhookTransport } from "./webhook.transport";
     // unconfigured deployment constructs no SMTP client at all.
     { provide: EmailTransport, useFactory: () => new EmailTransport() },
   ],
-  exports: [NotificationsService, ChannelsService],
+  // `NOTIFICATIONS_CONFIG` is exported because `NotificationsController`
+  // injects it at slot 2 and a provider is private to its module unless
+  // exported. The first carve exported the two services only; `pnpm build`
+  // and every spec stayed green (no test boots a module, AGENTS.md §4.6), and
+  // the API refused to start on the stack — `Nest can't resolve dependencies
+  // of the NotificationsController (ChannelsService, NotificationsService,
+  // ?)`, measured 2026-09-11. `notifications-module-wiring.spec.ts` now holds
+  // the invariant: every token the three controllers inject is exported here,
+  // provided beside them, or exported by a `@Global()` module.
+  exports: [NotificationsService, ChannelsService, NOTIFICATIONS_CONFIG],
 })
 export class NotificationsCoreModule {}
