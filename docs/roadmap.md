@@ -4603,15 +4603,15 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   including the `cls` one that had survived. The person-week figures were
   re-measured on the rendered board and moved as predicted, 909 to 908 and 33 to
   32.
-- **Unblocks:** nothing. **`F3.60` is now the only remaining Wave-2 Track D
-  row** — this line first named `F3.57` alone, which the same commit's own new
-  row falsified; it then named both; `F3.57` closed 2026-09-10, and `F3.59`
-  closed the same day having filed `F3.60`. **This line has now been falsified
-  three times by the very commit that wrote it**, because a closing row in this
-  cluster keeps filing its successor into the same Wave. Do not read a
-  successor count from it — read from
-  the Wave cell of each open Track D row rather than from §1: F3.11 is Wave 1,
-  F3.12 Wave 3, F3.13 and F3.14 Wave 4, F3.9 Wave 5.
+- **Unblocks:** nothing. **This line has now been falsified four times by the
+  very commit that wrote it**, because a closing row in this cluster kept filing
+  its successor into the same Wave. It named `F3.57` alone; then both; then
+  `F3.60`, which `F3.59` filed on closing; and `F3.60` closed 2026-09-11. **As
+  measured on that date no Wave-2 Track D row is open** — F3.11 is Wave 1, F3.12
+  Wave 3, F3.13 and F3.14 Wave 4, F3.9 Wave 5 — but read that as a measurement
+  with a date on it, never as a standing fact. **Do not read a successor count
+  from this line at all.** Read the Wave cell of each open Track D row, from §2
+  rather than from §1.
 
 ### A re-offered raise says how old the alarm is (`F3.57`, ADR 0041 Amendment 9 + ADR 0057 Amendment 8) — done
 - **Status:** merged 2026-09-10 — PR
@@ -4652,8 +4652,23 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   than argued. **Browser N/A:** the ledger stores no body, so no web surface
   renders the clause. **Deployed API N/A:** no route, contract or schema
   changed; the surface is the sweep, which the integration case drives.
-- **Unblocks:** nothing. `F3.60` is the only remaining Wave-2 Track D row —
-  `F3.59` closed 2026-09-10 and filed it.
+- **Unblocks:** nothing. `F3.59` closed 2026-09-10 having filed `F3.60`, and
+  `F3.60` closed 2026-09-11 filing nothing — the first row in this cluster not
+  to leave a successor behind it.
+
+### The raise-retry phase reads every evidenced rule's channels in one round trip (`F3.60`, ADR 0041 Amendment 10 + ADR 0057 Amendment 10) — done
+- **Status:** merged 2026-09-11 — PR [#424](https://github.com/GhochangFu/EMS/pull/424), squash `d867f7ad`. Nine commits, both amendments Accepted the same day.
+- **The premise survived measurement**, which is what separates this row from the four before it. `F3.53`, `F3.57`, `F3.58` and `F3.59` were each filed against a premise that did not, and `F3.58` was dropped on it.
+- **Measured on a running sweep, in statements.** A real `AlarmLifecycleService.sweep` over four evidenced rules issues **12** `rule_notifications` statements over three ticks with the adapter reading one rule at a time and **3** with this change — one per tick, constant where the old shape was linear in the rule count. Read from the server's own `log_statement='all'`.
+- **On a scratch Postgres taken through the full cold start** (roles, the `docker-init` schema script, `db:migrate`, `db:seed`, 47 tables), because the fixture must be COMMITTED for the sweep's own connections to see it and a concurrent session was live on `notification_channels` in the shared database. That doubles as the cold-start gate.
+- **The first measurement read 4 per tick for BOTH arms and is recorded rather than dropped.** `pg_stat_clear_snapshot()` clears only the backend that runs it, so through a pool the clear and the read land on different connections; and `idx_scan` counts one index descent per `= ANY(array)` element, so it reports 4 for one statement binding four ids. **Scans are the wrong instrument for a round-trip claim.**
+- **The earlier ~40–50x probe figure is a different measurement** and keeps all four of its conditionals in ADR 0041 Amendment 10: both timed queries returned zero rows, so it compares the round-trip hop rather than the statement, and on that stack the read was not reached at all.
+- **Where the read lives is a §4.5 decision, not the row's sketch.** `channels.service.ts` is at 964 of the 1000-line cap and about 150 lines landed, so the read is a module function in `channel-reads.ts` rather than the `ChannelsService.loadForRules` the backlog row names — the same reason `channel-reads.ts` and `raise-attempts.ts` both exist.
+- **Four mutants survived a first pass and every one was a real gap.** `M12` and `M26` changed **no decision the phase makes** — the projection carries `rule_id` and the caller groups on it, so they only make the read return the whole fleet's channels every tick; `loadEnabledChannelsForRules` gained a `size` parameter for the sole purpose of letting `CI6` drive two batches, because every other fixture is one batch where the mutant is the identity. `M16` needed an alarm holding evidence in its own organization **and** a foreign row, where a foreign `sent` row would block a legitimate retry across tenants. `M23` was equivalent and is gated by `R28`.
+- **The largest defect this row shipped was in its own tests, and it failed somebody else's suite.** All six integration cases **committed** their fixtures — `withRollback` catches the error `tx.rollback()` throws, and a case that simply returns commits, while the docblock claimed isolation. Measured: **298 `f360-*` channels, 298 `rule_notifications` rows, 236 deliveries** left in the shared development database, whose joins broke `storm-control.integration.test.ts` in CI. `tests/f3.60-withrollback-cases-roll-back.test.ts` gates the class; `integration-fixture-isolation.test.ts` could not, because it selects the suites it governs **by** the presence of `tx.rollback()`.
+- **Two of my own conclusions were wrong.** I attributed the leaked rows to the concurrent `E8.4` session, and I reported the CI failure as pre-existing because it also failed on the base commit — against a database my own suite had already polluted. **A base-commit run is only a causality test when the environment is clean**; `main`'s recorded CI, green at that exact base, settled it.
+- **Deployed API N/A:** no route, contract or schema changed; the surface is the sweep. **Browser N/A:** no `apps/web` change and no rendered surface.
+- **Unblocks:** nothing — no row lists `F3.60` in `Depends`, and it files no successor.
 
 ### The raise-retry phase reads a rule's channels only for an alarm that holds evidence (`F3.59`, ADR 0057 Amendment 9) — done
 - **Status:** merged 2026-09-10 — PR
@@ -4725,8 +4740,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   alarm's own, verbatim, with no age". `F3.57` falsified every clause; its prose
   sweep corrected the four sentences naming the byte-identity and missed the one
   naming the parameter.
-- **Unblocks:** `F3.60`, which this row filed and which is now the only remaining
-  Wave-2 Track D row.
+- **Unblocks:** `F3.60`, which this row filed and which closed 2026-09-11.
 
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
