@@ -873,16 +873,6 @@ export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
       assetsParsed.error?.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
     )}`,
   );
-  // The parity fixture F4.104 kept here (`Berhampurx` moved the 64 mid-pair) is
-  // the same claim now: nothing is cut, and the code is the slug plus the marker.
-  const oddPrefixName = `Berhampurx ${"\u{1F600}".repeat(200)}`;
-  const oddTurn = await ruleBasedTurn("One asset", draftBeforeAssets(oddPrefixName), "assets");
-  const oddCode = oddTurn.draftPatch.assets?.[0]?.code;
-  assert(
-    oddCode === "BERHAMPURX-ASSET-1",
-    `an odd ASCII prefix yields the same shape, got ${JSON.stringify(oddCode)}`,
-  );
-
   // `config.topic` has no schema oracle at all — `config` is `z.record(z.unknown())`
   // in both copies (owner ruling 3) — so the serialisation check is the whole
   // assertion, and it is the one the database actually applies.
