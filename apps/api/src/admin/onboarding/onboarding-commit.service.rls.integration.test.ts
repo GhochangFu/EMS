@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -6,6 +7,7 @@ import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { withTenant } from "../../database/tenant-context";
+import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { asRole } from "../../testing/role-urls";
@@ -17,9 +19,11 @@ import {
   assertCommitAnswersADuplicateLocationCodeWithAFieldError,
   assertCommitRefusesAContradictingPointKey,
   assertCommitStampsOrgOnEveryTenantRow,
+  assertCommitWritesTheKeyVersionForEachCredentialState,
   type CommitConflictFixtures,
   type CommitDuplicateFixtures,
   type CommitIds,
+  type CommitKeyVersionFixtures,
   type CommitRlsFixtures,
 } from "./onboarding-commit.service.rls.integration.spec";
 
@@ -78,6 +82,17 @@ const DUPE_DRAFT_LOCATION_SLUG = `e71b-obd-draft-${RUN}`;
 const DUPE_RTU_CODE = `E71B-OBD-RTU-${RUN}`;
 const DUPE_ASSET_CODE = `E71B-OBD-AS-${RUN}`;
 const DUPE_POINT_KEY_CODE = `E71B_OBD_PK_${RUN}`;
+
+// ADR 0062 decision 3 — a fourth draft, on its own codes and its own location,
+// with three RTUs and no assets or point keys: nothing here exercises those,
+// so they are left out rather than padded in to match the other drafts' shape.
+const KEYVER_LOCATION_CODE = `E71B-OBK-${RUN}`;
+const KEYVER_LOCATION_SLUG = `e71b-obk-${RUN}`;
+const KEYVER_RTU_CURRENT_CODE = `E71B-OBK-RTU-A-${RUN}`;
+const KEYVER_RTU_PREVIOUS_CODE = `E71B-OBK-RTU-P-${RUN}`;
+const KEYVER_RTU_NONE_CODE = `E71B-OBK-RTU-N-${RUN}`;
+const KEYVER_ASSET_CODE = `E71B-OBK-AS-${RUN}`;
+const KEYVER_POINT_KEY_CODE = `E71B_OBK_PK_${RUN}`;
 
 /** The distinct codes one draft writes, so two drafts never collide. */
 type DraftCodes = {
@@ -164,6 +179,106 @@ const DUPE_CODES: DraftCodes = {
   pointKeyUnit: "kW",
 };
 
+/**
+ * Runs `fn` with the three key-window env vars set to exactly the given
+ * values, then restores whatever was there before — used both to produce
+ * fixture ciphertext under a chosen key and, in the case itself, to run the
+ * commit under the real rotation window (ADR 0062 decision 3).
+ */
+async function withKeyWindow<T>(
+  vars: { current?: string; previous?: string; version?: string },
+  fn: () => Promise<T> | T,
+): Promise<T> {
+  const NAMES = {
+    current: "CREDENTIAL_ENCRYPTION_KEY",
+    previous: "CREDENTIAL_ENCRYPTION_KEY_PREVIOUS",
+    version: "CREDENTIAL_ENCRYPTION_KEY_VERSION",
+  } as const;
+  const saved: Record<string, string | undefined> = {};
+  for (const key of Object.keys(NAMES) as (keyof typeof NAMES)[]) {
+    saved[NAMES[key]] = process.env[NAMES[key]];
+    const value = vars[key];
+    if (value === undefined) {
+      delete process.env[NAMES[key]];
+    } else {
+      process.env[NAMES[key]] = value;
+    }
+  }
+  try {
+    return await fn();
+  } finally {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  }
+}
+
+/**
+ * A draft with three RTUs. `readyToCommit` requires the "review" phase, which
+ * `OnboardingValidateService.inferPhase` reaches only once a point key, an
+ * asset and an asset point all exist — so one of each is added here, mapped
+ * to the first RTU, exactly as `commitReadyDraft` does for its single RTU.
+ */
+function keyVersionDraft(domain: string): OnboardingDraft {
+  return {
+    location: {
+      code: KEYVER_LOCATION_CODE,
+      slug: KEYVER_LOCATION_SLUG,
+      name: "E8.4 Key Version Location",
+      type: "smoc_campus",
+      latitude: 0,
+      longitude: 0,
+    },
+    rtus: [
+      {
+        code: KEYVER_RTU_CURRENT_CODE,
+        displayName: "E8.4 Current-key RTU",
+        protocol: "simulator",
+        config: {},
+      },
+      {
+        code: KEYVER_RTU_PREVIOUS_CODE,
+        displayName: "E8.4 Previous-key RTU",
+        protocol: "simulator",
+        config: {},
+      },
+      {
+        code: KEYVER_RTU_NONE_CODE,
+        displayName: "E8.4 Credential-less RTU",
+        protocol: "simulator",
+        config: {},
+      },
+    ],
+    pointKeys: [
+      {
+        code: KEYVER_POINT_KEY_CODE,
+        name: "E8.4 Key Version Point Key",
+        unit: "kW",
+      },
+    ],
+    assets: [
+      {
+        rtuIndex: 0,
+        code: KEYVER_ASSET_CODE,
+        name: "E8.4 Key Version Asset",
+        siteName: "E8.4 Site",
+        domain,
+      },
+    ],
+    assetPoints: [
+      {
+        assetIndex: 0,
+        pointKey: KEYVER_POINT_KEY_CODE,
+        sourceDataKey: "E71B/OBK/RAW",
+      },
+    ],
+  } as OnboardingDraft;
+}
+
 describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under real RLS", () => {
   let ownerPool: pg.Pool;
   let authPool: pg.Pool;
@@ -178,6 +293,9 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
   let dupeLocationId = "";
   let removeSharedPointKey: (() => Promise<void>) | undefined;
   let committed: CommitIds | undefined;
+  let keyVerCtx: CommitKeyVersionFixtures;
+  let keyVerSessionId = "";
+  let keyVerCommitted: CommitIds | undefined;
 
   const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
 
@@ -245,6 +363,37 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
     conflictSessionId = await seedSession(commitReadyDraft(domain, CONFLICT_CODES));
     dupeSessionId = await seedSession(commitReadyDraft(domain, DUPE_CODES));
 
+    // ADR 0062 decision 3 — build the two credential blobs the key-version
+    // draft carries, each under its own env-loaded key, before the draft is
+    // seeded. `previousKeyBase64` encrypts as the (sole, "current") key here
+    // so the blob is genuinely readable under it, and is stored with no `v` —
+    // the state every pre-ADR-0062 blob is actually in.
+    const currentKeyBase64 = randomBytes(32).toString("base64");
+    const previousKeyBase64 = randomBytes(32).toString("base64");
+    const currentBlob = await withKeyWindow(
+      { current: currentKeyBase64, version: "2" },
+      () => new CredentialCryptoService().encrypt({ password: "current-key-password" }),
+    );
+    const previousBlob = await withKeyWindow({ current: previousKeyBase64 }, () =>
+      new CredentialCryptoService().encrypt({ password: "previous-key-password" }),
+    );
+
+    const draftWithSecrets = {
+      ...keyVersionDraft(domain),
+      _secrets: {
+        [KEYVER_RTU_CURRENT_CODE]: {
+          c: currentBlob.ciphertext.toString("base64"),
+          iv: currentBlob.iv.toString("base64"),
+          v: 2,
+        },
+        [KEYVER_RTU_PREVIOUS_CODE]: {
+          c: previousBlob.ciphertext.toString("base64"),
+          iv: previousBlob.iv.toString("base64"),
+        },
+      },
+    } as unknown as OnboardingDraft;
+    keyVerSessionId = await seedSession(draftWithSecrets);
+
     // `F4.109` — the row the third draft's `location.code` collides with.
     // Written here rather than by a sibling test so the case carries no
     // ordering dependency, and on `ownerPool` (BYPASSRLS) so it needs no GUC.
@@ -286,6 +435,18 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       organizationId,
       locationCode: DUPE_LOCATION_CODE,
     };
+    keyVerCtx = {
+      commitSvc,
+      ownerPool,
+      sessionId: keyVerSessionId,
+      currentKeyBase64,
+      previousKeyBase64,
+      rtuCodes: {
+        current: KEYVER_RTU_CURRENT_CODE,
+        previous: KEYVER_RTU_PREVIOUS_CODE,
+        none: KEYVER_RTU_NONE_CODE,
+      },
+    };
   });
 
   afterAll(async () => {
@@ -311,9 +472,30 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
         ]);
         await ownerPool.query(`DELETE FROM bms.locations WHERE id = $1`, [committed.locationId]);
       }
+      // ADR 0062 decision 3's draft, cleaned up the same way as `committed` above.
+      if (keyVerCommitted) {
+        await ownerPool.query(`DELETE FROM bms.asset_points WHERE id = ANY($1)`, [
+          keyVerCommitted.assetPointIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [
+          keyVerCommitted.assetIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.rtu_connection_configs WHERE rtu_id = ANY($1)`, [
+          keyVerCommitted.rtuIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.rtus WHERE id = ANY($1)`, [keyVerCommitted.rtuIds]);
+        await ownerPool.query(`DELETE FROM bms.point_keys WHERE id = ANY($1)`, [
+          keyVerCommitted.pointKeyIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.locations WHERE id = $1`, [
+          keyVerCommitted.locationId,
+        ]);
+      }
       // Both sessions, unconditionally: the conflict draft never commits, so it
       // leaves nothing but its own row, and `committed` says nothing about it.
-      const sessionIds = [sessionId, conflictSessionId, dupeSessionId].filter(Boolean);
+      const sessionIds = [sessionId, conflictSessionId, dupeSessionId, keyVerSessionId].filter(
+        Boolean,
+      );
       if (sessionIds.length > 0) {
         await ownerPool.query(`DELETE FROM bms.onboarding_sessions WHERE id = ANY($1)`, [
           sessionIds,
@@ -447,5 +629,9 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
 
   it("answers a duplicate location code with a per-field 400 rather than a 500 (F4.109)", async () => {
     await assertCommitAnswersADuplicateLocationCodeWithAFieldError(dupeCtx, jwt);
+  });
+
+  it("writes the key version with the ciphertext, never a literal (ADR 0062 decision 3)", async () => {
+    keyVerCommitted = await assertCommitWritesTheKeyVersionForEachCredentialState(keyVerCtx, jwt);
   });
 });

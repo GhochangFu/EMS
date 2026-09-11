@@ -331,9 +331,16 @@ export class OnboardingCommitService {
         const enc = readEncryptedCredentials(session.draft, i);
         let credentialsCiphertext: Buffer | null = null;
         let credentialsIv: Buffer | null = null;
+        // ADR 0062 decision 3: the column is NOT NULL, so a credential-less row
+        // still needs a value here. The current version is the honest answer —
+        // it labels nothing, since no ciphertext exists to be labelled.
+        let keyVersion: number;
         if (enc && CredentialCryptoService.isConfigured()) {
           credentialsCiphertext = enc.ciphertext;
           credentialsIv = enc.iv;
+          keyVersion = enc.keyVersion;
+        } else {
+          keyVersion = CredentialCryptoService.currentKeyVersion();
         }
 
         await tx.insert(rtuConnectionConfigs).values({
@@ -343,7 +350,7 @@ export class OnboardingCommitService {
           config,
           credentialsCiphertext,
           credentialsIv,
-          keyVersion: 1,
+          keyVersion,
           updatedAt: sql`now()`,
         });
       }

@@ -173,7 +173,7 @@ export function runOnboardingRedactionTests(): void {
   assert(rtuSecretKey(twoRtus, 5) === null, "an out-of-range index has no key");
   assert(rtuSecretKey({ rtus: [{ config: {} }] }, 0) === null, "a code-less RTU has no key");
 
-  const withSecret = attachEncryptedCredentials(structuredClone(twoRtus), 1, CT, IV);
+  const withSecret = attachEncryptedCredentials(structuredClone(twoRtus), 1, CT, IV, 1);
   assert(
     Object.keys(withSecret._secrets ?? {})[0] === "R2",
     "the blob is stored under the RTU code, not the index",
@@ -234,7 +234,7 @@ export function runOnboardingRedactionTests(): void {
   assert(rtuSecretKey(aliased, 0) === null, "a contested code has no key, even for its first claimant");
   let aliasThrew = false;
   try {
-    attachEncryptedCredentials(structuredClone(aliased), 0, CT, IV);
+    attachEncryptedCredentials(structuredClone(aliased), 0, CT, IV, 1);
   } catch {
     aliasThrew = true;
   }
@@ -282,6 +282,7 @@ export function runOnboardingRedactionTests(): void {
       0,
       CT,
       IV,
+      1,
     );
     assert(
       Object.keys(attached._secrets ?? {}).includes(code),
@@ -326,7 +327,7 @@ export function runOnboardingRedactionTests(): void {
   // Storing under a positional key is what M4 was, so it must not be reachable.
   let threw = false;
   try {
-    attachEncryptedCredentials({ rtus: [{ config: {} } as never] }, 0, CT, IV);
+    attachEncryptedCredentials({ rtus: [{ config: {} } as never] }, 0, CT, IV, 1);
   } catch {
     threw = true;
   }
@@ -470,7 +471,7 @@ export function assertRedactDraftForClientReadsADeepDraft(): void {
 export function assertAttachEncryptedCredentialsReadsADeepDraft(): void {
   const stored = { rtus: [rtu("R1", { config: deepConfig() })] };
 
-  const next = attachEncryptedCredentials(stored, 0, CT, IV);
+  const next = attachEncryptedCredentials(stored, 0, CT, IV, 1);
 
   const found = readEncryptedCredentials(next, 0);
   assert(found !== null, "a credential attached to a deep draft must be readable back");
@@ -589,4 +590,65 @@ export function assertScrubSecretsRebuildsANonJsonObject(): void {
     "a Map is rebuilt as {} the same way — its entries are not own properties",
   );
   assert(scrubbed.password === "[REDACTED]", "and the secret beside them is still redacted");
+}
+
+/* -------------------------------------------------------------------------- */
+/* ADR 0062 decision 3 — the version travels with the draft blob              */
+/* -------------------------------------------------------------------------- */
+
+/** `attachEncryptedCredentials` writes the key version onto the stored blob. */
+export function assertAttachEncryptedCredentialsWritesTheKeyVersion(): void {
+  const next = attachEncryptedCredentials({ rtus: [rtu("R1")] }, 0, CT, IV, 4);
+  assert((next._secrets?.R1 as { v?: unknown })?.v === 4, "the blob carries the key version");
+}
+
+/** Positive control: `readEncryptedCredentials` returns a present `v` as-is. */
+export function assertReadEncryptedCredentialsReadsAPresentVersion(): void {
+  const draft = { rtus: [rtu("R1")], _secrets: { R1: { c: "abc", iv: "def", v: 7 } } };
+  const result = readEncryptedCredentials(draft, 0);
+  assert(result?.keyVersion === 7, "a present v is read back unchanged");
+}
+
+/**
+ * A blob with no `v` at all — every blob written before ADR 0062 — reads as
+ * version 1 (decision 3). The return type is `number`, which also catches an
+ * `undefined` default at `pnpm typecheck:tests`.
+ */
+export function assertReadEncryptedCredentialsDefaultsToVersionOne(): void {
+  const draft = { rtus: [rtu("R1")], _secrets: { R1: { c: "abc", iv: "def" } } };
+  const result = readEncryptedCredentials(draft, 0);
+  assert(result?.keyVersion === 1, "a version-less blob reads as version 1");
+}
+
+/**
+ * Any present-but-invalid `v` makes the whole blob read as absent — the same
+ * treatment a malformed `c` already gets, rather than a value being silently
+ * accepted or coerced.
+ */
+export function assertReadEncryptedCredentialsRejectsAMalformedVersion(): void {
+  for (const v of ["2", 0, 1.5]) {
+    const draft = { rtus: [rtu("R1")], _secrets: { R1: { c: "abc", iv: "def", v } } };
+    assert(
+      readEncryptedCredentials(draft, 0) === null,
+      `v=${JSON.stringify(v)} must make the blob read as absent`,
+    );
+  }
+}
+
+/**
+ * `reconcileSecrets` rebuilds `kept` through `ownBlob` on every merge — the
+ * highest-value assertion in this task, per the plan. Before decision 3's fix
+ * `ownBlob` returned `{ c, iv }` only, so a kept blob's version silently
+ * vanished the next time a draft was patched.
+ */
+export function assertReconcileSecretsKeepsTheVersionOnAKeptBlob(): void {
+  const draft = {
+    rtus: [rtu("R1", { credentialsSet: true })],
+    _secrets: { R1: { c: "abc", iv: "def", v: 3 } },
+  };
+  const reconciled = reconcileSecrets(draft, { deriveCredentialsSet: true });
+  assert(
+    (reconciled._secrets?.R1 as { v?: unknown })?.v === 3,
+    "a kept blob's version survives reconcileSecrets",
+  );
 }

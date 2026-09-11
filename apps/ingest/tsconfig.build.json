@@ -7,8 +7,12 @@
   },
   "include": ["src/**/*.ts"],
   // `src/index.js` was excluded here until ADR 0016 §6 commit 4 deleted it.
-  // `src/**/*.test.js` is still load-bearing: `rtu-config.test.js` is the one
-  // ingest test CI has run since ADR 0007, and it must stay out of `dist`.
+  // `src/**/*.test.js` matched exactly one file, `rtu-config.test.js`, and
+  // `E8.4` deleted it: ADR 0062 decision 2 modified `rtu-config.js`, which
+  // ended the "unmodified pilot file" reason its assertions lived inline, and
+  // they moved to `rtu-config.spec.ts` where `pnpm typecheck:tests` checks them
+  // against the new JSDoc signatures. The pattern stays so the next `.js` test
+  // written here cannot reach `dist` before anyone notices.
   //
   // `src/testing/` holds the `F2.7` integration-database gate, which reads
   // `process.env`, opens a `pg` pool and can `throw` at module scope — the same

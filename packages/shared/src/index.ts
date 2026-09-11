@@ -73,6 +73,18 @@ export * from "./calc-dsl";
  */
 export * from "./source-key-pattern";
 
+/**
+ * The credential encryption key window (`E8.4`, ADR 0062 decision 2) —
+ * `resolveCredentialKeys`, `keyForVersion` and the two named errors. Published
+ * under the `./credential-keys` subpath for the ingest (NodeNext) and
+ * re-exported here for the same node10 reason `./calc-dsl` is: `apps/api`
+ * compiles with `moduleResolution: "node"` and ignores the `exports` map, so
+ * the barrel is the only route `CredentialCryptoService` typechecks through.
+ * Pure over `Uint8Array` with an injected decoder — no Node global, so the
+ * barrel stays safe for `apps/web` to bundle.
+ */
+export * from "./credential-keys";
+
 // ---------------------------------------------------------------------------
 // Auth and access scope
 // ---------------------------------------------------------------------------

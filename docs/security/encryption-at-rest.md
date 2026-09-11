@@ -1,9 +1,10 @@
 # Encryption at Rest
 
-> **Backlog:** E8.1 (Track F, P1). **Related:** E8.2 automated backup &
-> recovery · F3.3 object storage · ADR 0012 encrypted RTU credentials.
+> **Backlog:** E8.1 (Track F, P1), E8.4 (key rotation, ADR 0062). **Related:**
+> E8.2 automated backup & recovery · F3.3 object storage · ADR 0012 encrypted
+> RTU credentials.
 > **Audience:** whoever deploys and operates a TRINETRA instance.
-> **Last verified against `main`:** 2026-08-04.
+> **Last verified against `main`:** 2026-09-11.
 
 ## 0. Read this first
 
@@ -55,15 +56,18 @@ and keys) are encrypted before they reach the database.
 - **Algorithm:** AES-256-GCM. 12-byte random IV per record; the 16-byte GCM
   authentication tag is appended to the ciphertext.
 - **Key:** `CREDENTIAL_ENCRYPTION_KEY`, a base64 string that **must decode to
-  exactly 32 bytes**. The service refuses to start an encrypt/decrypt operation
-  otherwise — it never silently falls back to plaintext.
+  exactly 32 bytes**. Since ADR 0062 Amendment 1 a wrong-length current key —
+  or a dead rotation window, §3.1 — refuses the process's **boot**, not merely
+  an encrypt/decrypt call; it never silently falls back to plaintext.
 - **Storage:** `bms.rtu_connection_configs.credentials_ciphertext` /
   `.credentials_iv` (`bytea`), plus a `key_version` column.
 - **Implementation:** `apps/api/src/security/credential-crypto.service.ts`.
-- **Read path:** decryption happens in exactly one place — the ingest runtime
-  (`apps/ingest/src/rtu-config.js`). There are **zero** `.decrypt(` call sites
-  in `apps/api/src`; onboarding commit moves ciphertext and IV across tables
-  without decrypting them.
+- **Read path.** Since ADR 0062 `apps/api/src` decrypts in two more places
+  besides the ingest runtime (`apps/ingest/src/rtu-config.js`):
+  `notifications/channels.service.ts` reads a webhook secret at its stored
+  version, and `security/credential-rotation.service.ts` decrypts each row
+  it rotates so it can re-encrypt it. Onboarding commit still only moves
+  ciphertext and IV across tables — it does not decrypt.
 - **Client exposure — read this before concluding secrets are contained.** The
   REST API never *decrypts* a stored secret, but that is not the same as never
   returning one. `redactDraftForClient` deletes the `_secrets` blob and coerces
@@ -87,8 +91,17 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 While an onboarding session is still a draft, credentials the admin has
 supplied are held under `onboarding_sessions.draft._secrets` as
-`{ c: <base64 ciphertext>, iv: <base64 iv> }` using the same key and algorithm.
-On commit they move to `rtu_connection_configs`.
+`{ c: <base64 ciphertext>, iv: <base64 iv>, v?: <key version> }` (ADR 0062
+decision 3; an absent `v` is version 1) using the same key and algorithm. On
+commit they move to `rtu_connection_configs` **unre-encrypted, at the version
+they already carry** — commit copies `enc.keyVersion` verbatim rather than
+calling `encrypt()` again. **This is why `pnpm rotate-credentials` (§3.1) does
+not, by itself, retire an old key**: a draft's `_secrets` blob is not one of
+the two tables the walk covers, so a draft created before a rotation and
+committed after it lands in `rtu_connection_configs` still at the old version.
+Drain or discard in-flight drafts before unsetting
+`CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` — a clean rotation report does not prove
+one is not still open.
 
 **The `_secrets` blob** — and only that blob — is stripped from client and LLM
 payloads. The raw chat turn is not. `handleOpenAiTurn` scrubs the *draft* it
@@ -158,31 +171,162 @@ services:
 §9 checklist line "that key comes from a secret store, not from the data
 volume" is checking for *this*, not for the snippet above.
 
-**Failing closed on storage — but silently, and it fails *open* on
-authentication.** An empty value means *not configured*, and no plaintext is
-ever written. That much is intentional and verified. The rest of the behaviour
-is not obvious and matters more:
+**Failing closed on storage, and now failing closed on authentication too**
+(ADR 0062 decision 8, `E8.4`). An empty `CREDENTIAL_ENCRYPTION_KEY` means *not
+configured*, and no plaintext is ever written. The unconfigured path used to
+fail open silently; it no longer does:
 
-1. The credential is discarded, yet the draft is still marked
-   `credentialsSet: true` (`onboarding-chat.service.ts:509-511`), so the admin
-   UI reports credentials as set for that RTU.
+1. The credential is discarded, and **nothing in the server sets
+   `credentialsSet: true`** for that RTU any more — the branch that used to
+   claim it with no key configured is deleted
+   (`onboarding-chat.service.ts:757-760`).
+
+   **One residual, stated rather than glossed.** The flag is part of the draft
+   schema (`onboarding.schema.ts:85`), and with no key configured
+   `reconcileSecrets` runs with `deriveCredentialsSet: false`
+   (`onboarding-chat.service.ts:755`), so it does not overwrite what the patch
+   supplied. A client or the model can therefore still *assert*
+   `credentialsSet: true` in a patch and have it survive. That was an explicit
+   owner ruling at the plan gate (`docs/plans/e8.4-credential-key-rotation.md`
+   §12 ruling 5) rather than an oversight: changing it is the unconfigured-path
+   change `E8.3` deliberately declined. **Do not read this section as saying the
+   flag cannot be true without a stored credential.**
 2. Commit writes `credentials_ciphertext: null` / `credentials_iv: null`
-   (`onboarding-commit.service.ts:166-176`).
-3. Ingest then falls through to the **global** `MQTT_USERNAME` /
-   `MQTT_PASSWORD` (`apps/ingest/src/rtu-config.js:51-52`) and still reports
-   `source: "db"`.
+   (`onboarding-commit.service.ts:332-352`).
+3. Ingest still falls through to the **global** `MQTT_USERNAME` /
+   `MQTT_PASSWORD` (`apps/ingest/src/rtu-config.js`) — that fallback is
+   unretired, per decision 10 below — but now reports it honestly:
+   `credentialSource: "env"` while `source` stays `"db"` (a config row did
+   exist), and the host logs `rtu credential fallback
+   reason=credential-env-fallback` **once per affected RTU per process, the
+   first time it sees that RTU in the fallback** — at boot, or at the reload
+   that first serves it. It is deliberately not repeated on every reload: a line
+   per RTU per cycle buries the signal it exists to give.
 
-Net effect if a pilot is deployed without the key: nothing fails, nothing logs,
-every onboarded RTU quietly authenticates with one shared broker account, and
-per-RTU credential revocation silently does nothing. **Set the key before
-onboarding any RTU.** Surfacing the unconfigured state is tracked as `E8.4`.
+**Net effect if a pilot is deployed without the key — and read the second half,
+because the obvious reading of the first is wrong.** Storage says so and the
+admin UI says so. **The ingest log names nothing at all**, and that is not a
+defect: with no key, `POST :id/credentials` answers 503 before anything is
+stored (`onboarding.service.ts:159`), so no `rtu_connection_configs` row is ever
+created for that RTU. `planEndpoints` then builds `configRow = null`, and the
+fallback warning is guarded on `configRow !== null` (`bindings.ts:515`) — a
+warning about a row that does not exist would name a state nobody is in. The
+count is **zero, not partial**, and `bindings-credentials.spec.ts:155-161` gates
+that absence deliberately.
 
-**Key rotation is not implemented.** The `key_version` column exists and
-`CredentialCryptoService` hard-codes version `1`; there is no re-encryption
-path. ADR 0012 records this as deferred; it is tracked as **`E8.4`** — a
-rotation procedure has to be written before a compromised key can be retired
-without manually re-entering every RTU credential. Treat this as an open risk,
-not a solved problem.
+The warning's real subject is the *other* case: a config row that exists and
+holds no readable credential, which is what an RTU onboarded while the key was
+briefly configured, or a row whose ciphertext predates a key change, produces.
+**Set the key before onboarding any RTU**, and do not wait for an ingest log
+line to tell you it is missing — it will not come.
+
+**Not yet retired: the `MQTT_USERNAME`/`MQTT_PASSWORD` fallback** (ADR 0062
+decision 10, blocked on data — `rtu_connection_configs` still holds 0 rows in
+the pilot). `E8.4` stays open on this one decision.
+
+### 3.1 Key rotation (ADR 0062)
+
+Key rotation is implemented. `CREDENTIAL_ENCRYPTION_KEY_VERSION` names the
+version the current key writes (default `1`); `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS`
+is a second key accepted for **decryption only**, at that version minus one.
+`decrypt` selects a key by the stored version and never guesses — a row at a
+version neither key holds is a loud, named error, not a silent skip.
+
+**Runbook.**
+
+1. Set all three variables on **both** `api` (and `api-replica`, if it is up)
+   **and** `ingest`: the new `CREDENTIAL_ENCRYPTION_KEY` (the key rotating
+   in), `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` (the old key, for decrypt-only),
+   and `CREDENTIAL_ENCRYPTION_KEY_VERSION` (one higher than the version the
+   old key wrote).
+2. `docker compose up -d api api-replica ingest` — `docker compose build` alone
+   restarts nothing, and `up -d` recreates **only the services it names**.
+   Leaving `api-replica` out is a silent failure rather than a loud one: its
+   pre-rotation window is valid, so no boot refusal fires, and after the walk
+   every channel secret sits at version *N+1* that the replica's key cannot
+   read. `toChannelRow` then returns `secretState: "unreadable"` and
+   `WebhookTransport` records `skipped_unconfigured` — the replica sends no
+   webhook and says nothing. (It sits behind the `realtime-smoke` profile, so
+   it is often not up; naming it costs nothing and omitting it costs a webhook
+   outage nobody is paged for.)
+3. `docker compose exec api pnpm rotate-credentials`. The command connects as
+   `bms_fleet` (rotation is fleet-wide by design — an RLS-scoped connection
+   would silently skip every other organization's rows and still report
+   success) and prints a JSON report to stdout:
+
+   ```json
+   {
+     "currentVersion": 2,
+     "rtuConnectionConfigs": { "scanned": 12, "rotated": 11, "skipped": 1, "raced": 0, "failed": 0 },
+     "notificationChannels": { "scanned": 3, "rotated": 3, "skipped": 0, "raced": 0, "failed": 0 },
+     "failures": []
+   }
+   ```
+
+   Exit code is non-zero exactly when `failures` is non-empty.
+4. Read the report before doing anything else:
+   - **First, check `currentVersion` in the report against the
+     `CREDENTIAL_ENCRYPTION_KEY_VERSION` you set at step 1.** If they differ,
+     **this process never picked up the new window** — almost always because the
+     env file was edited without `docker compose up -d`, which does not change a
+     running container. Everything below is then meaningless: the walk takes
+     `currentVersion` from the process it runs in, so every row already matches
+     it, every row is counted `skipped`, `failures` is empty and the exit code
+     is 0. **That is bit-for-bit the completion signature of step 5**, and
+     acting on it would take you to unsetting the previous key against rows
+     nothing has touched. The command refuses outright only when the key is
+     *unset*; a stale *version* it cannot tell from a finished rotation, which is
+     why this check is yours and not the tool's.
+   - `rotated` is the count actually re-encrypted; `skipped` is a row already
+     at the current version (idempotent — a second run reports `rotated: 0`).
+   - **`raced` is not an error, and it is not "done" either.** Another writer
+     changed the row's ciphertext or version between the read and the update,
+     so the compare-and-set matched nothing and the walk left that row alone
+     rather than overwriting the concurrent write. The row is still at its old
+     version. **Run the command again**; a non-zero `raced` means step 5's
+     completion test has not been met yet.
+   - **`failed` rows are collected, not fatal.** One bad row does not stop the
+     walk; every other row still rotates, and the failure is named in
+     `failures` with its table, id and stored version.
+   - **A wrong key reports `error: "Error"`, not a named class.** An AES-GCM
+     tag failure throws a bare `Error` — the ciphertext does not authenticate
+     under the key the stored version selected — while a version this window
+     does not load reports `error: "CredentialKeyVersionError"` precisely. On
+     `"Error"`, suspect a key that does not match the row (wrong environment,
+     wrong pilot); on `CredentialKeyVersionError`, suspect a version that was
+     never set on this process.
+5. **Do not unset `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` until a run reports
+   nothing below the current version** — `currentVersion` equal to the version
+   you set at step 1 (step 4's first bullet, and without it this test is
+   worthless), every table's `skipped` count equal to its `scanned` count, and
+   `failures: []`. There is no three-key window:
+   unsetting the previous key while any row still holds the version it wrote
+   turns that row into a loud `CredentialKeyVersionError` on its next read,
+   not a silent skip. **A clean report covers only
+   `rtu_connection_configs` and `notification_channels` — not an in-flight
+   onboarding draft.** §2.2: commit copies a draft's stored key version
+   verbatim rather than re-encrypting, so a draft started before the
+   rotation and committed after it can still land at the old version once the
+   walk has already reported clean. Drain or discard open drafts with
+   credentials before unsetting the previous key.
+6. **Finish one rotation before starting the next.** Moving straight from
+   version *N* to *N+2* without completing the *N*→*N+1* rotation first
+   abandons rows still at *N-1*, which no longer has a loaded key.
+
+**What refuses a boot**, on both `api` and `ingest` (ADR 0062 decision 5,
+Amendment 1) — the same guard fires before the first request or the first MQTT
+connection, not on first use:
+
+- `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` set while `CREDENTIAL_ENCRYPTION_KEY_VERSION`
+  is `1` (or unset) — that would make the previous key version 0, and no row
+  can hold version 0.
+- `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` of the wrong decoded length (not 32
+  bytes).
+- `CREDENTIAL_ENCRYPTION_KEY` of the wrong decoded length — Amendment 1: dead
+  configuration is refused rather than read as "unconfigured".
+- `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` set while `CREDENTIAL_ENCRYPTION_KEY`
+  is unset — Amendment 1: the two names were most likely swapped, and a
+  process that can decrypt but not encrypt is a half-done rotation.
 
 ---
 
@@ -380,9 +524,11 @@ deliberately stays out of that lane. When E8.2 lands it **must** satisfy:
    radius.
 3. **A backup remains restorable after `CREDENTIAL_ENCRYPTION_KEY` rotates.**
    Dumps contain AES-GCM ciphertext in `rtu_connection_configs`; restoring an
-   old dump under a new key yields undecryptable credentials. Retain key
-   versions for at least the backup retention window — this is precisely why
-   the unimplemented `key_version` rotation path (§3) matters.
+   old dump under a new key requires the key that dump's rows were still at
+   the version of — `decrypt` refuses any other. Retain the retiring key as
+   `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` for at least the backup retention
+   window, or run `pnpm rotate-credentials` against the restored dump before
+   discarding the old key. §3.1 is the rotation procedure this now uses.
 4. **Restores are exercised, not assumed.** An untested backup is not a backup.
 5. **Backup transport is encrypted** and off-host storage is access-controlled.
 
@@ -455,9 +601,9 @@ emitted artefact.
 **If you ever created an `apps/*/.env` and built an image before this fix,
 treat every value in it as exposed** — `JWT_SECRET`, `DATABASE_URL`,
 `OPENAI_API_KEY` and `CREDENTIAL_ENCRYPTION_KEY`. Rotate them and delete the
-affected local images. If `CREDENTIAL_ENCRYPTION_KEY` was among them, rotating
-it is not enough on its own: there is no re-encryption path (§3), so **every
-stored RTU credential must be re-entered by hand.**
+affected local images. If `CREDENTIAL_ENCRYPTION_KEY` was among them, run the
+§3.1 rotation procedure with the exposed key as `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS`
+rather than re-entering every stored RTU credential by hand.
 
 This does not apply to a clean checkout of this repository, which has never
 contained an `apps/*/.env`.
@@ -486,9 +632,11 @@ Before a pilot or production deployment:
 ## 10. Scope boundary
 
 Delivered by E8.1: this document, the `.dockerignore` fix and its CI gate, and
-the compose key wiring.
+the compose key wiring. Delivered by **E8.4** (ADR 0062): the two-key rotation
+window, `pnpm rotate-credentials`, and honest fail-closed behaviour on an
+unconfigured or dead key — §3, §3.1.
 
-**Not** delivered by E8.1, with owners:
+**Not** delivered, with owners:
 
 | Not covered | Owner |
 |-------------|-------|
@@ -496,7 +644,7 @@ the compose key wiring.
 | Object storage and its bucket encryption | **F3.3** (ADR required) |
 | Full-disk / volume / KMS encryption | **The deployer** — §4, not implementable in this repo |
 | Row-level security | **F4.16** |
-| `CREDENTIAL_ENCRYPTION_KEY` rotation and re-encryption | **unowned** — §3 |
+| Retiring the `MQTT_USERNAME`/`MQTT_PASSWORD` fallback | **E8.4**, blocked on data (decision 10) — §3 |
 | Onboarding chat transcript redaction | **unowned** — §5.1 |
 | mTLS between services | **F4.18** |
 | Keycloak MFA | **F4.13** |

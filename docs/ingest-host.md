@@ -43,8 +43,8 @@ so that fallback is the pilot's only working credential path. It moved to
 
 Adapters never read `process.env` at all (ADR 0016 §4). The **host** reads it in
 `src/host/config.ts` — and in one other place, which the table below makes
-explicit: the pilot-era `MQTT_*` credential fallback inside the unmodified
-`src/rtu-config.js`, reached through `resolveMqttConnection`. That fallback is
+explicit: the pilot-era `MQTT_*` credential fallback inside `src/rtu-config.js`,
+reached through `resolveMqttConnection`. That fallback is
 still the only working credential path (ADR 0016 Amendment 3).
 
 | Variable | Default | Notes |
@@ -53,7 +53,7 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `INGEST_HOST_HEALTH_PORT` | `9103` | **Compose sets it to `9102`**, which is the port it publishes. The default is 9103 rather than 9102 for a historical reason: the ADR 0007 entry point bound 9102 as `INGEST_METRICS_PORT` and §6 commit 3 needed both processes up at once. That entry point is gone, but the separate default is kept so two hosts side by side still need only one variable set. |
 | `INGEST_RELOAD_MS` | `60000` | How often point mappings are refreshed. Matches what the ADR 0007 pilot did. |
 | `INGEST_STALE_AFTER_MS` | `300000` | Silence longer than this marks one RTU `stale` on the health endpoint (`F1.7`). Five minutes because the fleet was measured, not guessed: the nine live PHE RTUs publish every ~60 s (probe, 2026-08-22, 600 s window), so this is five missed cycles — a single dropped message can never raise it. Widen it for a protocol that polls far more slowly than MQTT pushes. |
-| `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through the unmodified `src/rtu-config.js`. No new adapter gets an environment fallback. |
+| `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through `src/rtu-config.js`. No new adapter gets an environment fallback. |
 | `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, as in the ADR 0007 pilot. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
 | `INGEST_BUFFER_DIR` | `/var/lib/bms-ingest` | Where a batch the database refused lands (`F1.10`, ADR 0016 Amendment 4 ruling 4). Blank or unset takes the default; compose mounts a named volume at that path. **Must be absolute** — a relative value would resolve against the container working directory, putting the buffer on the writable layer with the volume unused, which nothing downstream can detect. A directory that cannot be created, that fails a write-and-unlink probe, or whose listing fails refuses host start-up with the path in the error — there is no "no buffer" mode. |

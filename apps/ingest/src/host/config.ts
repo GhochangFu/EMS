@@ -12,6 +12,11 @@
 
 import { isAbsolute } from "node:path";
 
+import {
+  resolveCredentialKeys,
+  type Base64Decoder,
+} from "@bms/shared/credential-keys";
+
 export type HostConfig = {
   readonly databaseUrl: string;
   /**
@@ -70,6 +75,19 @@ export type HostConfig = {
    * oldest segment is erased. 256 MiB is Amendment 4's ruling 3.
    */
   readonly bufferMaxBytes: number;
+  /**
+   * Whether a current credential encryption key is loaded (`E8.4`, ADR 0062
+   * decision 5 with Amendment 1).
+   *
+   * `false` is **unconfigured**, not broken: `planEndpoints` then skips
+   * decryption entirely and every RTU connects with the environment's
+   * credential, which is what the pilot does today. *Dead* configuration — a
+   * malformed version, a key of the wrong length, a previous key at version 0,
+   * a previous key with no current key — never reaches this field at all,
+   * because `readHostConfig` lets the resolver's `CredentialKeyConfigError`
+   * escape and the host refuses to start.
+   */
+  readonly credentialKeyConfigured: boolean;
 };
 
 /**
@@ -166,12 +184,34 @@ function readBufferDir(raw: string | undefined): string {
   return trimmed;
 }
 
+/**
+ * `packages/shared` has no `@types/node` reachable, so `resolveCredentialKeys`
+ * works over `Uint8Array` and takes its base64 decoder from the caller. This is
+ * the host's half; `rtu-config.js` injects the same one.
+ */
+const decodeKey: Base64Decoder = (value) => Buffer.from(value, "base64");
+
 /** Pure over its input, so the parsing rules are testable without mutating `process.env`. */
 export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
   const databaseUrl = env.DATABASE_URL;
   if (databaseUrl === undefined || databaseUrl.trim() === "") {
     throw new Error("DATABASE_URL is required");
   }
+
+  // ADR 0062 decision 5 with Amendment 1 — **the ingest's refused boot.**
+  //
+  // The call is deliberately not wrapped: a `CredentialKeyConfigError` escapes
+  // to `main().catch`, which logs `ingest host failed to start` and exits 1,
+  // the same treatment a missing `DATABASE_URL` gets. Dead configuration that
+  // waits for the first decrypt surfaces in production, at a broker connection,
+  // on one RTU — and a rotation whose version bump was forgotten would look
+  // like a single flaky station rather than like a mistake in the environment.
+  //
+  // It lives here rather than in `main.ts` because this is the tested module:
+  // `main.ts` is the piece with no test around it, so a branch there is a
+  // branch nothing checks. `config.spec.ts` names which of the resolver's four
+  // refusals each of its rows reaches.
+  const credentialKeys = resolveCredentialKeys(env, decodeKey);
 
   // `INGEST_NOTIFY` was deleted at ADR 0016 §6 commit 4 and is deliberately
   // **ignored** rather than refused. A stale `INGEST_NOTIFY=off` left in an
@@ -228,5 +268,6 @@ export function readHostConfig(env: NodeJS.ProcessEnv): HostConfig {
       "INGEST_BUFFER_MAX_BYTES",
       MAX_BUFFER_BYTES,
     ),
+    credentialKeyConfigured: credentialKeys.current !== null,
   };
 }

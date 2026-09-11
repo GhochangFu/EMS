@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import {
   assertCoalescePicksEachSidePerColumn,
   assertEveryRowCarriesResolvedMetadata,
+  assertKeyVersionArrivesAsAnInteger,
 } from "./bindings.integration.spec.js";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate.js";
 
@@ -44,5 +45,11 @@ describe.skipIf(!connectionString)("F2.7 — resolved point metadata on the bind
 
   it("resolves the template default and the asset override per column", async () => {
     await assertCoalescePicksEachSidePerColumn(pool as pg.Pool);
+  });
+
+  // `E8.4` / ADR 0062 decision 3. The suite's `describe` name predates it; this
+  // case is about the credential key version, not the point metadata.
+  it("returns key_version as a JS integer, null for an RTU with no config row", async () => {
+    await assertKeyVersionArrivesAsAnInteger(pool as pg.Pool);
   });
 });

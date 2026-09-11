@@ -44,12 +44,20 @@ import { notificationReadiness } from "./readiness";
  * decrypted (ADR 0041 decision 8).
  *
  * Keeping decryption here is what lets every transport be written without a
- * `try`/`catch` around a key: `CredentialCryptoService.getKey()` throws when
- * `CREDENTIAL_ENCRYPTION_KEY` is unset or the wrong length, and dispatch is
+ * `try`/`catch` around a key. `decrypt` throws on two states this service can
+ * meet — an unset `CREDENTIAL_ENCRYPTION_KEY` (`CredentialKeyConfigError`) and
+ * a stored `secret_key_version` no loaded key answers
+ * (`CredentialKeyVersionError`, ADR 0062 decision 4) — and dispatch is
  * fire-and-forget, so a throw down in a transport would land in an unhandled
  * rejection instead of in front of an operator. This service asks
  * `isConfigured()` first — the static that exists for exactly this — and
  * reports `secretState: "unreadable"` rather than attempting the decrypt.
+ *
+ * A key of the wrong *length* never reaches here at all since ADR 0062
+ * Amendment 1: the API refuses to boot on it, so it is a deployment failure
+ * rather than a per-channel state. This paragraph named
+ * `CredentialCryptoService.getKey()` until E8.4 deleted that method; the
+ * sentence outlived the code it described by one task.
  *
  * `WebhookTransport` turns that state into a recorded `skipped_unconfigured`
  * and sends nothing, which is the right answer: an unsigned POST to an
@@ -863,6 +871,7 @@ export class ChannelsService {
         enabled: notificationChannels.enabled,
         secretCiphertext: notificationChannels.secretCiphertext,
         secretIv: notificationChannels.secretIv,
+        secretKeyVersion: notificationChannels.secretKeyVersion,
         updatedAt: notificationChannels.updatedAt,
       })
       .from(ruleNotifications)
@@ -878,6 +887,12 @@ export class ChannelsService {
    *
    * Never throws. Every failure to read a secret becomes `unreadable`, because
    * the caller is on a fire-and-forget path.
+   *
+   * `secretKeyVersion` is **required**, not optional (ADR 0062 decision 3).
+   * This parameter type is the whole definition of the projection —
+   * `channel-reads.ts` derives `StoredChannelRow` from it — so a required
+   * property is what makes a select that stops carrying the column a
+   * compile error rather than a row that silently decrypts at the wrong key.
    */
   toChannelRow(row: {
     id: string;
@@ -889,6 +904,7 @@ export class ChannelsService {
     enabled: boolean;
     secretCiphertext: Buffer | null;
     secretIv: Buffer | null;
+    secretKeyVersion: number | null;
     updatedAt: Date;
   }): NotificationChannelRow {
     const base = {
@@ -911,7 +927,17 @@ export class ChannelsService {
       return { ...base, secret: null, secretState: "unreadable" };
     }
     try {
-      const payload = this.crypto.decrypt(row.secretCiphertext, row.secretIv);
+      // The STORED version, undefaulted (ADR 0062 decision 4). The column is
+      // nullable, and a `?? 1` here would be a guess: a null on a row that
+      // holds ciphertext means nobody recorded which key wrote it. `decrypt`
+      // refuses it with `CredentialKeyVersionError`, the catch below turns
+      // that into `unreadable`, and the operator gets a state to fix instead
+      // of a secret decrypted under a key that happened to verify.
+      const payload = this.crypto.decrypt(
+        row.secretCiphertext,
+        row.secretIv,
+        row.secretKeyVersion,
+      );
       const secret = payload[SECRET_FIELD];
       if (typeof secret !== "string" || secret === "") {
         return { ...base, secret: null, secretState: "unreadable" };

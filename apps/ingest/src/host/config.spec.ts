@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import {
   DEFAULT_BUFFER_DIR,
   DEFAULT_BUFFER_MAX_AGE_MS,
@@ -22,6 +24,34 @@ function expectThrow(fn: () => unknown, message: string): void {
     threw = true;
   }
   assert(threw, message);
+}
+
+type ThrownShape = { readonly name?: unknown; readonly message?: unknown };
+
+/** Runs `fn`, returns what it threw, and fails when it threw nothing. */
+function thrownBy(fn: () => unknown, what: string): ThrownShape {
+  try {
+    fn();
+  } catch (err) {
+    if (typeof err === "object" && err !== null) {
+      return err as ThrownShape;
+    }
+    throw new Error(`${what} threw a non-object: ${String(err)}`);
+  }
+  throw new Error(`expected ${what} to throw`);
+}
+
+function nameOf(err: ThrownShape): string {
+  return String(err.name);
+}
+
+function messageOf(err: ThrownShape): string {
+  return String(err.message);
+}
+
+/** A base64 key of exactly `bytes` bytes. Generated, never a fixture. */
+function keyOf(bytes: number): string {
+  return randomBytes(bytes).toString("base64");
 }
 
 const BASE = { DATABASE_URL: "postgres://localhost/bms" };
@@ -344,4 +374,144 @@ export function runHostConfigTests(): void {
       );
     }
   }
+}
+
+/**
+ * `E8.4` / ADR 0062 decision 5 with Amendment 1 — the credential key window is
+ * resolved here, so dead configuration is the ingest's **refused boot**.
+ *
+ * `readHostConfig` is where it lives rather than `main.ts` for the reason this
+ * module's header already gives: `main.ts` is the piece with no test around it.
+ * A `CredentialKeyConfigError` thrown here reaches `main().catch`, which logs
+ * `ingest host failed to start` and exits 1 — the same treatment a missing
+ * `DATABASE_URL` gets.
+ *
+ * **The refusal functions below all assert on one error class**, and
+ * `resolveCredentialKeys` throws `CredentialKeyConfigError` from **five**
+ * different guards in one function, in this order: the version parse, the
+ * current-key length, the previous-key length, the version-0 window, and the
+ * previous-without-current window. So a fixture that leaves an earlier guard
+ * live cannot gate a later one — the test sees a throw and cannot tell which
+ * guard produced it. That defect passed review twice on this branch (plan §13
+ * corrections 1 and 4). Each **refusal** function therefore states which guard
+ * it reaches, pins a phrase belonging to that guard, and asserts the
+ * **neighbouring** guard's phrase is absent.
+ *
+ * `runCredentialKeyOpenWindowAcceptedTests` and `runCredentialKeyUnsetTests`
+ * are the exceptions, deliberately: they assert a *successful* boot and never
+ * see an error, so they have no guard to name. They are the positive controls
+ * for the refusals — without them, a `resolveCredentialKeys` that threw on
+ * everything would satisfy every other function in this file.
+ *
+ * This docblock previously said "four functions" and "four guards" and claimed
+ * the negative-assertion rule held for all of them. All three were wrong; the
+ * 2026-09-11 code review found them. A file whose subject is *which guard
+ * answered* had miscounted its own subject.
+ */
+
+/**
+ * A previous key with no version bump makes the previous key version 0, and no
+ * row can hold version 0 (decision 5).
+ *
+ * **Reaches guard 4.** Both keys are a valid 32 bytes and `VERSION` is unset, so
+ * the two length guards and the version parse are all satisfied and cannot be
+ * what threw. `32 bytes` is asserted absent because that is the neighbouring
+ * guard's phrase: deleting the version-0 rule alone would otherwise let this row
+ * go green on a length refusal.
+ */
+export function runCredentialKeyVersionZeroRefusedTests(): void {
+  const err = thrownBy(
+    () =>
+      readHostConfig({
+        ...BASE,
+        CREDENTIAL_ENCRYPTION_KEY: keyOf(32),
+        CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: keyOf(32),
+      }),
+    "a previous key with no version bump",
+  );
+  assert(
+    nameOf(err) === "CredentialKeyConfigError",
+    `dead configuration is refused by name, got ${nameOf(err)}: ${messageOf(err)}`,
+  );
+  assert(
+    messageOf(err).includes("version 0"),
+    `the refusal must name version 0, got ${messageOf(err)}`,
+  );
+  assert(
+    !messageOf(err).includes("32 bytes"),
+    `a length refusal answered instead of the version-0 one, so this row would go green ` +
+      `with decision 5's guard deleted: ${messageOf(err)}`,
+  );
+}
+
+/**
+ * The positive control for the two refusals: an **open** window boots, and says
+ * the key is configured.
+ *
+ * Without this, a `readHostConfig` that refused every window carrying a previous
+ * key would satisfy both refusal functions.
+ */
+export function runCredentialKeyOpenWindowAcceptedTests(): void {
+  const config = readHostConfig({
+    ...BASE,
+    CREDENTIAL_ENCRYPTION_KEY: keyOf(32),
+    CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: keyOf(32),
+    CREDENTIAL_ENCRYPTION_KEY_VERSION: "2",
+  });
+  assert(
+    config.credentialKeyConfigured,
+    "an open rotation window boots, and reports a configured key",
+  );
+}
+
+/**
+ * An **unset** key is not dead configuration — it is unconfigured. The host
+ * boots and every fail-closed path downstream reads `false`
+ * (`planEndpoints` skips decryption entirely on it).
+ *
+ * Reddens if Amendment 1's "malformed refuses, unset does not" line is
+ * collapsed into a single refusal.
+ */
+export function runCredentialKeyUnsetTests(): void {
+  const config = readHostConfig({ ...BASE });
+  assert(
+    !config.credentialKeyConfigured,
+    "an unset CREDENTIAL_ENCRYPTION_KEY is unconfigured, not dead — the host still boots",
+  );
+}
+
+/**
+ * A previous key that is not 32 bytes is dead configuration too (decision 5).
+ *
+ * **Reaches guard 3, and `VERSION=2` is what makes that true.** The length check
+ * runs *before* the version-0 check, so with `VERSION` unset this row would
+ * still throw — from the version-0 guard — and would go green against a build
+ * with the length rule deleted. That is plan §13 correction 4, one task later
+ * and in a different file. The absent `version 0` is what proves which guard
+ * answered.
+ */
+export function runCredentialKeyShortPreviousRefusedTests(): void {
+  const err = thrownBy(
+    () =>
+      readHostConfig({
+        ...BASE,
+        CREDENTIAL_ENCRYPTION_KEY: keyOf(32),
+        CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: keyOf(16),
+        CREDENTIAL_ENCRYPTION_KEY_VERSION: "2",
+      }),
+    "a 16-byte previous key",
+  );
+  assert(
+    nameOf(err) === "CredentialKeyConfigError",
+    `a short key is refused by name, got ${nameOf(err)}: ${messageOf(err)}`,
+  );
+  assert(
+    messageOf(err).includes("32 bytes"),
+    `the refusal must name the required length, got ${messageOf(err)}`,
+  );
+  assert(
+    !messageOf(err).includes("version 0"),
+    `the version-0 refusal answered instead of the length one, so this row would go green ` +
+      `with the length rule deleted: ${messageOf(err)}`,
+  );
 }

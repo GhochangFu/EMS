@@ -9,6 +9,7 @@ import {
   loadBindingRows,
   planEndpoints,
   type PlanOptions,
+  type PlanWarning,
   type SkippedBinding,
 } from "./host/bindings.js";
 import { readHostConfig } from "./host/config.js";
@@ -18,14 +19,12 @@ import { createHostLogger } from "./host/logger.js";
 import type { PointIndex } from "./host/normaliser.js";
 import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
-// The ADR 0012 seam, imported from the **unmodified** pilot file (ADR 0016 §4,
-// §6). It keeps its `resolveMqttConnection` export so `rtu-config.test.js` —
-// the one ingest test CI runs today — keeps passing untouched.
-import {
-  decryptCredentials,
-  isCredentialKeyConfigured,
-  resolveMqttConnection,
-} from "./rtu-config.js";
+// The ADR 0012 seam (ADR 0016 §4, §6). It stopped being the *unmodified* pilot
+// file at ADR 0062 decision 2, which moved its key selection into
+// `@bms/shared/credential-keys` while leaving its AES-GCM call where it is —
+// the cipher may stay duplicated, the rotation window may not. Its assertions
+// moved with it, from an inline `runRtuConfigTests` to `rtu-config.spec.ts`.
+import { decryptCredentials, resolveMqttConnection } from "./rtu-config.js";
 
 /**
  * The ingest host entry point — **the only one** (ADR 0016 §6, commit 4).
@@ -92,10 +91,15 @@ async function main(): Promise<void> {
 
   const planOptions: PlanOptions = {
     lookup: lookupAdapter,
-    decryptCredentials: (ciphertext, iv) =>
-      decryptCredentials(ciphertext, iv) as Record<string, unknown>,
+    // Forwarded rather than passed by reference, so the arity is *checked*: a
+    // dropped `keyVersion` is `TS2554: Expected 3 arguments, but got 2` at
+    // `pnpm typecheck:tests`, because `rtu-config.js` declares its parameters
+    // in JSDoc. Handing the function over directly would type-check with a
+    // two-parameter implementation and decrypt every row under the current key.
+    decryptCredentials: (ciphertext, iv, keyVersion) =>
+      decryptCredentials(ciphertext, iv, keyVersion),
     resolveMqttConnection,
-    credentialKeyConfigured: isCredentialKeyConfigured(),
+    credentialKeyConfigured: hostConfig.credentialKeyConfigured,
     mqttConnectionDefaults: hostConfig.mqttConnectionDefaults,
   };
 
@@ -141,6 +145,46 @@ async function main(): Promise<void> {
       ...(skip.detail === undefined ? {} : { detail: skip.detail }),
     });
   }
+
+  // ADR 0062 decision 9. Once per RTU per process — which is what this now
+  // delivers, and what the first draft only claimed. That draft read
+  // `initial.warnings` alone, so an RTU that entered the fallback at a *reload*
+  // was never named at all, while this comment promised the per-process
+  // guarantee. The 2026-09-11 security review found it: the ordinary sequence
+  // is that an operator onboards an RTU into a running host, which is exactly
+  // the path the boot-only loop could not see.
+  //
+  // The set keeps the guarantee honest in both directions. An unchanged
+  // fallback is still not repeated every `INGEST_RELOAD_MS` — a line per RTU
+  // per cycle is how a real signal gets buried — but a new one is reported the
+  // first time this process sees it.
+  //
+  // Nothing is dropped here (the endpoint runs), so it is a warning and not a
+  // skip, and it is the one line that tells an operator that the credential
+  // they entered is not the one the broker sees.
+  //
+  // **No unit test holds this.** `main.ts` is wiring and has none, which is the
+  // same condition that let the boot-only defect through in the first place —
+  // so it is said here rather than implied. The layer that stands in for it is
+  // the ingest step of `docs/plans/e8.4-credential-key-rotation.md` §14: plant
+  // an `rtu_connection_configs` row with no readable credential against a
+  // *running* host and read the line out of `docker compose logs ingest`. If
+  // that step is skipped, this path is unverified. (AGENTS.md §4.6.)
+  const warnedCredentialFallback = new Set<string>();
+  const reportCredentialFallbacks = (warnings: readonly PlanWarning[]): void => {
+    for (const warning of warnings) {
+      if (warnedCredentialFallback.has(warning.rtuId)) {
+        continue;
+      }
+      warnedCredentialFallback.add(warning.rtuId);
+      logger.warn("rtu credential fallback", {
+        rtuCode: warning.rtuCode,
+        rtuId: warning.rtuId,
+        reason: warning.reason,
+      });
+    }
+  };
+  reportCredentialFallbacks(initial.warnings);
 
   for (const plan of initial.endpoints) {
     const factory = lookupAdapter(plan.protocol);
@@ -211,6 +255,9 @@ async function main(): Promise<void> {
       try {
         const next = planEndpoints(await loadBindingRows(pool), planOptions);
         skipped = next.skipped;
+        // An RTU onboarded into a running host reaches the fallback here, not
+        // at boot. Deduplicated per process by the set above.
+        reportCredentialFallbacks(next.warnings);
         const seen = new Set<string>();
         for (const plan of next.endpoints) {
           const key = endpointGroupKey(plan.protocol, plan.endpointKey);
