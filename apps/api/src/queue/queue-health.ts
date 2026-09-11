@@ -3,6 +3,7 @@ import type { LivenessResponse, QueueDepth, QueueHealth } from "@bms/shared";
 import type { MetricsService } from "../observability/metrics.service";
 import { heartbeatIsStale } from "./heartbeat";
 import type { QueueClient, QueueHandle } from "./queue-registry";
+import { parseRuleSweepSummary } from "./rules-sweep";
 
 /**
  * The queue section of `GET /health`, and the verdict drawn from it (ADR
@@ -38,6 +39,14 @@ import type { QueueClient, QueueHandle } from "./queue-registry";
  * nothing validates this route's body at runtime (checked 2026-09-11 — no
  * response validator applies `livenessResponseSchema`), so the stale guard
  * is the only runtime protection, and it is enough for a liveness verdict.
+ *
+ * **`lastRuleSweep` (`F3.11`, ADR 0064 decision 8) rides the same read and
+ * is handled the other way round.** The sweep key is read through
+ * `deps.readSweep()` in the same `Promise.all` as the tick — a rejection
+ * there IS a disconnection, it is the same Redis — but its VALUE goes
+ * through `parseRuleSweepSummary`, which fails closed to `null` on a corrupt
+ * or off-schema key without touching `connected`. The field never enters
+ * `livenessFrom`: the ADR names it and no verdict.
  */
 
 export const QUEUE_HEALTH_TIMEOUT_MS: number = 1_500;
@@ -48,6 +57,8 @@ export type QueueHealthDeps = {
   now(): number;
   /** The last heartbeat tick as stored, or `null` when the key is absent. */
   readTick(): Promise<string | null>;
+  /** The last completed sweep as stored, or `null` when the key is absent (`F3.11`). */
+  readSweep(): Promise<string | null>;
   metrics: Pick<MetricsService, "setQueueDepth">;
   /** Defaults to `QUEUE_HEALTH_TIMEOUT_MS`. */
   timeoutMs?: number;
@@ -61,6 +72,7 @@ function disconnected(): QueueHealth {
     queues: [],
     lastHeartbeatAt: null,
     heartbeatStale: true,
+    lastRuleSweep: null,
   };
 }
 
@@ -94,7 +106,7 @@ function timeoutAfter(ms: number): { promise: Promise<never>; clear(): void } {
   };
 }
 
-/** Reads the queue section of `GET /health` — per-queue depths and the heartbeat tick — bounded by `timeoutMs`; gauges are published only on a complete read. */
+/** Reads the queue section of `GET /health` — per-queue depths, the heartbeat tick and the last sweep — bounded by `timeoutMs`; gauges are published only on a complete read. */
 export async function readQueueHealth(
   client: QueueClient,
   deps: QueueHealthDeps,
@@ -106,25 +118,29 @@ export async function readQueueHealth(
       queues: [],
       lastHeartbeatAt: null,
       heartbeatStale: false,
+      lastRuleSweep: null,
     };
   }
 
   const timeout = timeoutAfter(deps.timeoutMs ?? QUEUE_HEALTH_TIMEOUT_MS);
   let queues: QueueDepth[];
   let lastHeartbeatAt: string | null;
+  let rawSweep: string | null;
   try {
-    [queues, lastHeartbeatAt] = await Promise.race([
+    [queues, lastHeartbeatAt, rawSweep] = await Promise.race([
       Promise.all([
         Promise.all([...client.queues].map(([name, handle]) => readDepth(name, handle))),
         deps.readTick(),
+        deps.readSweep(),
       ]),
       timeout.promise,
     ]);
   } catch {
-    // A rejection from any handle, from the tick read, or from the timer:
-    // one shape, gauges untouched. The cause is not surfaced here — the
-    // handle's own `error` listener already logged a connection failure,
-    // and a probe body is not a place for an error message.
+    // A rejection from any handle, from the tick read, from the sweep read,
+    // or from the timer: one shape, gauges untouched. The cause is not
+    // surfaced here — the handle's own `error` listener already logged a
+    // connection failure, and a probe body is not a place for an error
+    // message.
     return disconnected();
   } finally {
     timeout.clear();
@@ -142,6 +158,9 @@ export async function readQueueHealth(
     queues,
     lastHeartbeatAt,
     heartbeatStale: heartbeatIsStale(lastHeartbeatAt, deps.now()),
+    // A corrupt or off-schema value reads `null` here, not `disconnected()`:
+    // the key was READ — the connection is fine — and only its value is bad.
+    lastRuleSweep: parseRuleSweepSummary(rawSweep),
   };
 }
 

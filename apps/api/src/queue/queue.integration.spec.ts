@@ -229,6 +229,9 @@ function readHealth(suite: QueueSuite, timeoutMs = QUEUE_HEALTH_TIMEOUT_MS): Pro
   return readQueueHealth(suite.client, {
     now: Date.now,
     readTick: () => suite.readTick(),
+    // F3.11 Unit 5 stub: the sweep key is not on this suite yet. Unit 8 §12(c)
+    // replaces it with the real read when `SUITE_QUEUES` gains `rulesSweepQueue`.
+    readSweep: async () => null,
     metrics: suite.metrics,
     timeoutMs,
   });
@@ -513,6 +516,8 @@ export async function runTimeoutGuard(suite: QueueSuite): Promise<TimeoutOutcome
         await pending;
         return slow.get(heartbeatKey(suite.prefix));
       },
+      // F3.11 Unit 5 stub — see `readHealth`. The hang under test is the tick read.
+      readSweep: async () => null,
       metrics,
       timeoutMs: SLOW_READ_BUDGET_MS,
     });
