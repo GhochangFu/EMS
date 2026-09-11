@@ -2,10 +2,10 @@
 
 ## Status
 
-Proposed — drafted 2026-09-11 under `F3.11`. The four scope questions below
+Accepted — drafted and ruled 2026-09-11 under `F3.11`. The four scope questions
 (shape, broadcast path, write policy, cadence) were put to the owner and ruled
-that day, each as drafted; the record itself awaits the owner's approval before
-any implementation code lands (AGENTS.md §10, `backlog-cycle` step 2).
+that day, each as drafted; the owner approved the record as a whole the same
+day, before any implementation code (AGENTS.md §10, `backlog-cycle` step 2).
 
 ## Context
 
