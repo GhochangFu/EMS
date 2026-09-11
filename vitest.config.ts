@@ -538,11 +538,32 @@ export default defineConfig({
       // in the denominator, against ~15 deliberately uncovered wiring lines in
       // `apps/ingest/src/main.ts`. Margin held at ~0.7–0.8 per axis for the
       // same two hazards named above.
+      //
+      // `F4.24` (2026-09-11) — the BullMQ queue and the worker process (ADR
+      // 0063). Measured against the live database AND a live Redis on a full
+      // run, 494/494 files and 2896/2896 tests, none skipped, exit 0:
+      // 80.9 statements · 78.09 branches · 82.2 functions · 81.1 lines.
+      //
+      // **A ~7-point rise, and almost none of it is this row.** 98 commits
+      // landed between the `F1.10` measurement and this one without a ratchet
+      // — the Track D closures `F3.46`–`F3.60`, `F2.7`, `F2.9`, `E2.2`, `E8.4`
+      // and the `F4.100`–`F4.120` onboarding guards, each arriving with its
+      // specs — and this row measures the sum. Its own share is
+      // `apps/api/src/queue/**` (nine modules, fully in the denominator, every
+      // one spec-paired and the integration pair now RUN here because CI and
+      // this machine both have `REDIS_URL`) against four deliberately
+      // uncovered wiring files (`worker.ts`, `worker.module.ts`,
+      // `queue.module.ts`, `worker-host.service.ts`, ~150 lines — Nest
+      // composition, like `main.ts`). Margin widened to ~1.0 per axis rather
+      // than the usual ~0.7: the jump is the largest this file has banked and
+      // the two hazards above are unchanged, so the extra tenth or two is
+      // insurance against CI's fresh database reproducing a little less of the
+      // calc state than this machine's long-lived one.
       thresholds: {
-        statements: 73.4,
-        branches: 69.4,
-        functions: 75.1,
-        lines: 73.5,
+        statements: 79.9,
+        branches: 77.0,
+        functions: 81.2,
+        lines: 80.1,
       },
     },
   },
