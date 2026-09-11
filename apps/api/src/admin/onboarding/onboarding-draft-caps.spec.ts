@@ -485,6 +485,11 @@ export function assertCatalogCodeSlug(): void {
     ["Straße", "Stra-e", "`ß` is outside the class"],
     ["\u{1F600}\u{1F600}", "", "an all-illegal name collapses to nothing"],
     ["TX_01", "TX_01", "a name inside the class is byte-identical"],
+    // All four kinds the class admits, in one row: upper, lower, digit, `_`
+    // and `-`. Narrowing `CATALOG_CODE_PATTERN` in any one of them reddens
+    // this row, which is the direction the negated copy beside
+    // `cutToBoundWithHashSuffix` cannot catch on its own.
+    ["aZ0_9-x", "aZ0_9-x", "every kind the class admits survives untouched"],
   ];
   for (const [input, output, pins] of rows) {
     const result = catalogCodeSlug(input);

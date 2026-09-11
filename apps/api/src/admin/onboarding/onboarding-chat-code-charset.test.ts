@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
-  assertAnAssetCodeCollisionIsAlreadyASlugCollision,
+  assertASharedAssetCodeIsAlwaysATranslatedRefusal,
   assertAssetsTurnFromAnAllIllegalName,
   assertAssetsTurnKeepsACutCodeInsideTheClass,
   assertAssetsTurnPatchSatisfiesTheSchema,
@@ -31,7 +31,7 @@ describe("OnboardingChatService.handleTurn, assets branch — the catalog code c
     await assertAssetsTurnKeepsACutCodeInsideTheClass();
   });
 
-  it("never collides two tenants on an asset code without colliding them on the slug first", async () => {
-    await assertAnAssetCodeCollisionIsAlreadyASlugCollision();
+  it("answers a translated 400 for a shared derived asset code, on either constraint", async () => {
+    await assertASharedAssetCodeIsAlwaysATranslatedRefusal();
   });
 });

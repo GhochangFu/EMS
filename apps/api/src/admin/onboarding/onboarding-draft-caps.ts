@@ -377,8 +377,18 @@ export function cutToBoundWithHashSuffix(
 /**
  * A run of one or more characters outside the catalog code class. The class is
  * `CATALOG_CODE_PATTERN`'s (`@bms/shared`), restated here in its negated form
- * because a full-match regex cannot drive a replacement; the spec's per-row
- * `CATALOG_CODE_PATTERN.test(result)` is what keeps the two in step.
+ * because a full-match regex cannot drive a replacement.
+ *
+ * **Two gates keep the two in step, one per direction, and neither covers the
+ * other** (found by the `F2.23` code review, which showed the original comment
+ * named only the first). NARROWING the shared class reddens the spec's per-row
+ * `CATALOG_CODE_PATTERN.test(result)` here, because the slug would then emit a
+ * character the class refuses. WIDENING it does not — every row still passes
+ * while this negation silently strips a now-legal character; what catches that
+ * is `tests/f2.23-catalog-code-charset.test.ts`, which pins
+ * `CATALOG_CODE_PATTERN.source` and holds it byte-identical to migration
+ * `0070`'s SQL. The identity row `aZ0_9-x` in `assertCatalogCodeSlug` carries
+ * all four kinds of character, so a narrowing of any one of them reddens.
  */
 const OUTSIDE_CATALOG_CODE_CLASS = /[^A-Za-z0-9_-]+/g;
 

@@ -122,10 +122,14 @@ describe.skipIf(!connectionString)("F2.23 catalog code charset (migration 0070)"
       await client.query("ROLLBACK TO SAVEPOINT before_ok_point_key");
 
       await client.query("SAVEPOINT before_ok_asset");
-      await client.query(
+      // `rowCount`, not just "it did not throw": on an empty `bms.assets` the
+      // subquery yields no id, the UPDATE affects nothing and succeeds, and
+      // the control would pass having exercised no constraint at all.
+      const okAsset = await client.query(
         `UPDATE bms.assets SET code = $1 WHERE id = (SELECT id FROM bms.assets LIMIT 1)`,
         [okCode],
       );
+      expect(okAsset.rowCount, "the positive control must update exactly one asset row").toBe(1);
       await client.query("ROLLBACK TO SAVEPOINT before_ok_asset");
     } finally {
       // Explicit ROLLBACK, written by hand — a case that only returns

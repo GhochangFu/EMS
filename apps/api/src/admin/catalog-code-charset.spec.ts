@@ -10,7 +10,7 @@ import { createPointKeyBodySchema } from "./point-keys/point-keys.schema";
 /**
  * `F2.23` / ADR 0065 decision 1 — the five Zod sites that admit a catalog code
  * apply `CATALOG_CODE_PATTERN` with `CATALOG_CODE_MESSAGE`, one function per
- * site so a site that loses its `.regex()` reddens alone.
+ * site so a site that loses its `.regex()` reddens on its own `it`.
  *
  * Each refusal pins four things: `success === false`; the issue sits at the
  * exact `path` the column reports; its `message` is the shared sentence; and

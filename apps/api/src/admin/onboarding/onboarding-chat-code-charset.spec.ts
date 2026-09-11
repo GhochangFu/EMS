@@ -4,6 +4,7 @@ import {
   ONBOARDING_DRAFT_STRING_MAX,
 } from "@bms/shared";
 
+import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { draftBeforeAssets, ruleBasedTurn } from "./onboarding-chat.service.spec";
 import { onboardingDraftSchema } from "./onboarding.schema";
 
@@ -157,21 +158,33 @@ export async function assertAssetsTurnKeepsACutCodeInsideTheClass(): Promise<voi
 }
 
 /**
- * Security review of `F2.23` (M1, declined with this gate): the slug widens
- * which location names share an asset code — `Plant 1`, `Plant.1`,
- * `Plant (1)` and `Plant-1` all yield `PLANT-1-ASSET-1`, and every name with
- * nothing inside the class yields `-ASSET-1` — on a column that is unique
- * across tenants (`assets_code_unique`). The reason it is not a new
- * cross-tenant refusal: **an equal asset code implies an equal location
- * slug**, the `location` branch derives that slug from the same name with a
- * coarser class (`[^a-z0-9]+`, `_` included), `locations_slug_unique` is
- * global, and `OnboardingCommitService` inserts the location before any
- * asset. So the second tenant is refused on the slug — translated, not a 500
- * — before its asset code is ever written. This drives both real branches
- * over a pool and asserts the implication; the positive control keeps it
- * from passing vacuously.
+ * Security review of `F2.23` (M1). The slug widens which location names share
+ * an asset code — `Plant 1`, `Plant.1`, `Plant (1)` and `Plant-1` all yield
+ * `PLANT-1-ASSET-1`, and every name with nothing inside the class yields
+ * `-ASSET-1` — on a column unique across tenants (`assets_code_unique`).
+ *
+ * **The first version of this gate asserted the wrong mechanism**, and the
+ * code review refuted it by execution. It claimed an equal asset code implies
+ * an equal location slug, so the location insert always refuses the second
+ * tenant first. The two derivations fold case in opposite orders — the
+ * location branch lower-cases then strips (`onboarding-chat.service.ts`
+ * `[^a-z0-9]+`), the asset branch strips then upper-cases — so a character
+ * whose lower-case is ASCII breaks it: `İ` (U+0130) gives slug `i` and code
+ * `-ASSET-1`, while `U+1F600` gives slug `location` and the same code. Two tenants
+ * can therefore share an asset code and not share a slug. The original pool
+ * held no such name, so the claim stayed green.
+ *
+ * **What is true, and what this gate now asserts:** a shared derived asset
+ * code is always refused with a *translated 400* — on `locations_slug_unique`
+ * when the slugs also collide, otherwise on `assets_code_unique`, which
+ * `COMMIT_UNIQUE_CONFLICTS` maps (`onboarding-commit-conflict.ts`). Never an
+ * untranslated 500, which is what M1 asked about. The residual it leaves is
+ * usability, not security: the operator is refused on a code they never typed.
+ * That is filed as its own row rather than fixed here, because deriving the
+ * code from `location.slug` instead of the name would change ADR 0065
+ * decision 4 and needs the owner.
  */
-export async function assertAnAssetCodeCollisionIsAlreadyASlugCollision(): Promise<void> {
+export async function assertASharedAssetCodeIsAlwaysATranslatedRefusal(): Promise<void> {
   const names = [
     "Plant 1",
     "Plant.1",
@@ -180,11 +193,11 @@ export async function assertAnAssetCodeCollisionIsAlreadyASlugCollision(): Promi
     "Plant_1",
     "कारखाना",
     "工厂",
+    "İ", // the counterexample: slug `i`, code `-ASSET-1`
+    "İstanbul Works",
     "a_b",
     "a-b",
     "a b",
-    "AB",
-    "A_B",
     "St. Mary's Works",
     "Straße Works",
   ];
@@ -198,25 +211,37 @@ export async function assertAnAssetCodeCollisionIsAlreadyASlugCollision(): Promi
     const { code } = await assetCodeFromLocation(name);
     derived.push({ name, code, slug });
   }
-  let collisions = 0;
+
+  let codePairs = 0;
+  let pairsTheSlugDoesNotCatch = 0;
   for (const a of derived) {
     for (const b of derived) {
       if (a === b || a.code !== b.code) continue;
-      collisions += 1;
-      assert(
-        a.slug === b.slug,
-        `${JSON.stringify(a.name)} and ${JSON.stringify(b.name)} share the asset code ` +
-          `"${a.code}" but not the slug ("${a.slug}" vs "${b.slug}") — the location ` +
-          `insert would no longer refuse the second tenant first`,
-      );
+      codePairs += 1;
+      if (a.slug !== b.slug) pairsTheSlugDoesNotCatch += 1;
     }
   }
   assert(
-    collisions >= 2,
-    `the pool must contain at least one colliding pair for the implication to be tested, got ${collisions}`,
+    codePairs >= 2,
+    `the pool must contain a colliding pair or this proves nothing, got ${codePairs}`,
   );
+  // The counterexample must be IN the pool, or the sentence above is untested
+  // prose again. This is the positive control for the correction itself.
   assert(
-    derived.filter((d) => d.code === "-ASSET-1").every((d) => d.slug === "location"),
-    "every all-illegal name must land on the shared `location` slug the branch already falls back to",
+    pairsTheSlugDoesNotCatch >= 2,
+    "the pool must contain a pair that shares a code and not a slug — without one " +
+      "this gate re-asserts the implication the code review refuted",
   );
+
+  // Whichever constraint fires, the commit answers a translated 400.
+  for (const constraint of ["assets_code_unique", "locations_slug_unique"]) {
+    const mapped = COMMIT_UNIQUE_CONFLICTS.get(constraint);
+    if (mapped === undefined) {
+      throw new Error(`${constraint} must be translated, or a derived-code collision is a 500`);
+    }
+    assert(
+      mapped.message.length > 0,
+      `${constraint} must carry an operator sentence, got ${JSON.stringify(mapped.message)}`,
+    );
+  }
 }
