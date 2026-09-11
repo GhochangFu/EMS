@@ -347,3 +347,52 @@ export function runParserV2Tests(): void {
   const second = parseFormula("sum({kw} @site) / {TX_01.kwh}", V2);
   assert(JSON.stringify(first) === JSON.stringify(second), "parseFormula must be pure under v2");
 }
+
+// ---- F2.22: author-facing wording for the ten v2 error codes ------------------
+// The ten codes, enumerated from ast.ts, not the F2.22 deferral list. Keeping
+// the old one-liners here (rather than deleting them) is what lets assertion
+// (a) prove the rewording actually landed, and not merely that a string exists.
+const OLD: Readonly<Record<string, string>> = {
+  unknown_scope: "unknown scope",
+  unterminated_string: "unterminated string",
+  empty_string: "empty string",
+  malformed_qualified_reference: "malformed qualified point reference",
+  malformed_scope: "malformed scope",
+  scope_required: "an aggregate needs a scope after its point reference",
+  scope_not_allowed: "a scope is only allowed inside an aggregate",
+  aggregate_needs_point_reference: "an aggregate takes exactly one point reference",
+  qualified_reference_in_aggregate: "an aggregate cannot take a qualified point reference",
+  too_many_cross_refs: "the formula has too many distinct cross-asset references",
+};
+
+const V2_ERROR_CODES: CalcErrorCode[] = [
+  "unknown_scope",
+  "unterminated_string",
+  "empty_string",
+  "malformed_qualified_reference",
+  "malformed_scope",
+  "scope_required",
+  "scope_not_allowed",
+  "aggregate_needs_point_reference",
+  "qualified_reference_in_aggregate",
+  "too_many_cross_refs",
+];
+
+/**
+ * Ten codes, three claims each: the sentence changed from the `F2.9` one-liner
+ * (a — the rewording landed), it echoes none of `parser.spec.ts`'s own no-echo
+ * fragments (b), and it still ends with the fixed `at character N` suffix (c).
+ */
+export function runV2ErrorWordingTests(): void {
+  const offending = ["IT_LOAD", "TX_01", "foo"];
+  for (const code of V2_ERROR_CODES) {
+    const message = formatCalcError({ code, position: 0 });
+    assert(message !== `${OLD[code]} at character 0`, `${code}: the F2.9 one-liner must have been reworded`);
+    for (const fragment of offending) {
+      assert(!message.includes(fragment), `${code}: must not echo ${fragment}: ${message}`);
+    }
+    assert(!message.includes("sum"), `${code}: must not name the sum function: ${message}`);
+    assert(!message.includes("avg"), `${code}: must not name the avg function: ${message}`);
+    assert(message.endsWith("at character 0"), `${code}: must end with the fixed position suffix, got ${JSON.stringify(message)}`);
+  }
+}
