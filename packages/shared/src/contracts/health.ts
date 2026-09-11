@@ -221,3 +221,67 @@ export const healthSummaryResponseSchema = z
     ...windowFields,
   })
   .strict();
+
+// ---------------------------------------------------------------------------
+// `F4.24` — the process liveness probe (ADR 0063 decisions 10, 11)
+// ---------------------------------------------------------------------------
+//
+// Everything above is the ASSET health score. Everything below is a different
+// noun that shares the word: the health of the PROCESS answering the request —
+// `GET /health` on the API (`:4000`) and on the worker (`WORKER_PORT`, 4100).
+// The two are in one file because the route family is `health`, not because
+// the shapes are related; nothing below reuses a schema from above.
+//
+// Before this row `GET /health` returned an inline `{ status: string }` with no
+// contract and no reader. It gains a `queue` section so a queue with no
+// consumer — the condition ADR 0063 Q4 exists to make visible — has somewhere
+// to show, and the response is typed here so `HealthController` derives its
+// return type rather than declaring it (ADR 0030).
+
+/** One queue's depth, sampled with the health read (decision 11's gauge, as a response field). */
+export const queueDepthSchema = z
+  .object({
+    name: z.string(),
+    waiting: z.number().int().nonnegative(),
+    active: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/**
+ * The `queue` section of the liveness body.
+ *
+ * `configured: false` is a CHOSEN state (ADR 0002's native-dev path, no
+ * `REDIS_URL`), not a degradation: the API boots, `enqueue` rejects, and the
+ * body says so. `connected: false` while configured is the degradation — the
+ * counts and the tick could not be read inside the timeout.
+ *
+ * `heartbeatStale` is the reason field (plan §15 ruling 2). Without it a
+ * reader has to know the three-tick rule to explain why `status` reads
+ * `degraded`, which is the "one error class, many guards" shape. It is `true`
+ * when `lastHeartbeatAt` is `null` (ruling 5 — a fresh Redis the worker has
+ * never ticked is a queue with no consumer) and when the tick is older than
+ * `HEARTBEAT_STALE_TICKS` ticks.
+ */
+export const queueHealthSchema = z
+  .object({
+    configured: z.boolean(),
+    connected: z.boolean(),
+    queues: z.array(queueDepthSchema),
+    lastHeartbeatAt: z.string().datetime({ offset: true }).nullable(),
+    /** `true` when `lastHeartbeatAt` is null or older than HEARTBEAT_STALE_TICKS ticks — the reason `status` reads `degraded`. */
+    heartbeatStale: z.boolean(),
+  })
+  .strict();
+
+/**
+ * `GET /health` on both processes. `degraded` still answers HTTP 200 (plan
+ * §15 ruling 1): the route is a liveness probe, and a dead worker is not a
+ * reason for an orchestrator to restart a process that serves traffic.
+ */
+export const livenessResponseSchema = z
+  .object({
+    status: z.enum(["ok", "degraded"]),
+    queue: queueHealthSchema,
+  })
+  .strict();

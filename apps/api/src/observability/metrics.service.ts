@@ -170,6 +170,34 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * Per-queue depth (ADR 0063 decision 11), sampled by `readQueueHealth` on
+   * every `GET /health` read rather than on a timer — so the series moves
+   * only as often as the probe is scraped or curled, and a queue nobody
+   * reads reports nothing here. **No `bms_api_` prefix**, as the ADR spells
+   * the name: the same registry answers on the worker's `WORKER_PORT`, and a
+   * queue is not an API concern.
+   */
+  private readonly queueDepth = new Gauge({
+    name: "bms_queue_depth",
+    help: "Jobs in a BullMQ queue by state (waiting, active, failed), sampled with the health read.",
+    labelNames: ["queue", "state"],
+    registers: [this.registry],
+  });
+
+  /**
+   * Job outcomes (ADR 0063 decision 11), incremented by the worker host's
+   * `completed`/`failed` listeners. The series therefore lives in the
+   * WORKER's registry and is scraped from `WORKER_PORT` (plan §15 ruling 3);
+   * on the API it exists and stays at zero. No `bms_api_` prefix, as above.
+   */
+  private readonly queueJobs = new Counter({
+    name: "bms_queue_jobs_total",
+    help: "BullMQ jobs finished by the worker, by queue and outcome (completed, failed).",
+    labelNames: ["queue", "outcome"],
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({
       service: process.env.OTEL_SERVICE_NAME ?? "bms-api",
@@ -249,5 +277,15 @@ export class MetricsService {
   /** Sets the largest declared member set seen by the last scheduled sweep. */
   setCalcAggregateMembersMax(count: number): void {
     this.calcAggregateMembersMax.set(count);
+  }
+
+  /** Sets one queue's depth in one state, as read with the health probe. */
+  setQueueDepth(queue: string, state: "waiting" | "active" | "failed", n: number): void {
+    this.queueDepth.labels(queue, state).set(n);
+  }
+
+  /** Records one job the worker finished, by queue and outcome. */
+  countQueueJob(queue: string, outcome: "completed" | "failed"): void {
+    this.queueJobs.labels(queue, outcome).inc();
   }
 }

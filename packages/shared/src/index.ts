@@ -224,6 +224,16 @@ export type AssetHealthResponse = z.infer<typeof He.assetHealthResponseSchema>;
 export type HealthBandCount = z.infer<typeof He.healthBandCountSchema>;
 /** `GET /api/v1/asset-health/summary` — the plant and enterprise donut. */
 export type HealthSummaryResponse = z.infer<typeof He.healthSummaryResponseSchema>;
+/**
+ * `F4.24` — the PROCESS liveness probe (ADR 0063 decisions 10, 11), a
+ * different noun from the asset health score above; `contracts/health.ts`
+ * draws the line. One queue's `waiting`/`active`/`failed` depth.
+ */
+export type QueueDepth = z.infer<typeof He.queueDepthSchema>;
+/** The `queue` section of `GET /health`; `heartbeatStale` is the reason `status` reads `degraded`. */
+export type QueueHealth = z.infer<typeof He.queueHealthSchema>;
+/** `GET /health` on the API and on the worker. `degraded` still answers 200. */
+export type LivenessResponse = z.infer<typeof He.livenessResponseSchema>;
 /** One plotted bucket — the same `{ t, v }` shape the chart renderer already takes. */
 export type PointAggregateBucket = z.infer<typeof E.pointAggregateBucketSchema>;
 /** The scalar half: totals, extremes, the weighted mean, and when the peak fell. */
