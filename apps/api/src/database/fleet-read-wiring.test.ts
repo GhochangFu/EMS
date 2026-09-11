@@ -1,7 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAlarmNotifyServiceFleetSlot,
+  assertAlarmRaiserTenantSlot,
   assertConformedServiceSlots,
+  assertRuleSweepServiceTenantSlot,
   assertUnconditionalFleetReadSlots,
   assertWorkerHostFleetSlot,
   assertWorkerHostTenantSlot,
@@ -26,5 +29,17 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("F4.24 WorkerHostService injects the fleet pool in slot 2", () => {
     assertWorkerHostFleetSlot();
+  });
+
+  it("F3.11 RuleSweepService injects the tenant pool in slot 0", () => {
+    assertRuleSweepServiceTenantSlot();
+  });
+
+  it("F3.11 AlarmRaiser injects the tenant pool in slot 0", () => {
+    assertAlarmRaiserTenantSlot();
+  });
+
+  it("F3.11 AlarmNotifyService injects the fleet pool in slot 0", () => {
+    assertAlarmNotifyServiceFleetSlot();
   });
 });

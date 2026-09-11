@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { expect } from "vitest";
 
+import { AlarmNotifyService } from "../alarms/alarm-notify.service";
+import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import { AlarmsService } from "../alarms/alarms.service";
 import { LocationsAdminService } from "../admin/locations/locations.service";
 import { TelemetryImportService } from "../admin/telemetry-import/telemetry-import.service";
@@ -8,6 +10,7 @@ import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { WorkerHostService } from "../queue/worker-host.service";
 import { ReportsService } from "../reports/reports.service";
+import { RuleSweepService } from "../rules/rule-sweep.service";
 import { RulesService } from "../rules/rules.service";
 import { CredentialRotationService } from "../security/credential-rotation.service";
 import { WorkOrdersService } from "../work-orders/work-orders.service";
@@ -30,7 +33,17 @@ import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "./database.tokens";
  *  - `F4.24`'s `WorkerHostService` (ADR 0063 decision 6), which hands both
  *    pools to `runProcessor` as `{ tenantDb, fleetDb }` — no test boots
  *    `WorkerModule` (Amendment 1), so this is the only gate that the tenant
- *    pool lands in slot 1 and the fleet pool in slot 2.
+ *    pool lands in slot 1 and the fleet pool in slot 2. `F3.11` appended two
+ *    slots after `metrics`; the two rows below are the proof the append
+ *    shifted nothing;
+ *  - `F3.11`'s three worker-side services (ADR 0064 decisions 3, 4, 6):
+ *    `RuleSweepService` and `AlarmRaiser` inject the **tenant** pool only —
+ *    the sweep's fleet handle arrives as `run(fleetDb)`'s argument from the
+ *    `fleet`-tenancy processor, and the raiser's every write runs under
+ *    `withTenant` — while `AlarmNotifyService` reads the alarm it was
+ *    `NOTIFY`ed about on the **fleet** pool, since a `LISTEN` payload carries
+ *    an id and no session GUC. Each `.rls.integration` proof constructs its
+ *    service with explicit pools, so this is the only gate on the token.
  *
  * The `.rls.integration` proofs each construct their service with explicit
  * pools, so none gates the `@Inject` token itself: reverting or swapping a
@@ -99,4 +112,23 @@ export function assertWorkerHostTenantSlot(): void {
 
 export function assertWorkerHostFleetSlot(): void {
   expect(injectedToken(WorkerHostService, 2)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F3.11` — `RuleSweepService(db, alarmRaiser, notifications)`: the tenant
+ * pool in slot 0, and no fleet token at all (`rule-sweep.service.ts` says
+ * why: a second route to the fleet pool the processor mapping could not see).
+ */
+export function assertRuleSweepServiceTenantSlot(): void {
+  expect(injectedToken(RuleSweepService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+/** `F3.11` — `AlarmRaiser(db)`: the tenant pool, its only injection since the gateway left (ADR 0064 decision 4). */
+export function assertAlarmRaiserTenantSlot(): void {
+  expect(injectedToken(AlarmRaiser, 0)).toBe(TENANT_DRIZZLE);
+}
+
+/** `F3.11` — `AlarmNotifyService(fleetDb, gateway, metrics)`: the fleet pool in slot 0, for the read-by-id after `NOTIFY`. */
+export function assertAlarmNotifyServiceFleetSlot(): void {
+  expect(injectedToken(AlarmNotifyService, 0)).toBe(FLEET_DRIZZLE);
 }
