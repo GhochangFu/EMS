@@ -1,19 +1,22 @@
-import { alarms, assets } from "@bms/db";
+import { alarms, assets, type BmsDb } from "@bms/db";
 import type { AlarmListItem } from "@bms/shared";
+import { eq } from "drizzle-orm";
 
 /**
  * The one projection and the one mapper behind every `AlarmListItem` the API
  * produces (`F3.10`, plan D9).
  *
  * Four places build this shape — `AlarmsService.list`, `AlarmsService
- * .acknowledge`, `AlarmRaiser`'s post-insert read-back and, from U7, the
- * lifecycle sweep's cleared broadcast — and each one used to spell the twelve
- * columns out by hand. `alarmListItemSchema` requires every key and the SPA
- * validates each response through `checkResponse`, so a column added in three
- * of the four places is a runtime failure on the fourth, in whichever path is
- * exercised last. `cleared_at` (ADR 0057 decision 1) is the column that made
- * that concrete: it is on the list, on the socket payload and on the details
- * response, and the sweep is the only writer.
+ * .acknowledge`, U7's lifecycle sweep for its cleared broadcast, and
+ * `readAlarmListItem` below, the `F3.11` listener's read of a `created`
+ * alarm by id (ADR 0064 decision 4; it replaced `AlarmRaiser`'s post-insert
+ * read-back, which went with the gateway) — and each one used to spell the
+ * twelve columns out by hand. `alarmListItemSchema` requires every key and
+ * the SPA validates each response through `checkResponse`, so a column added
+ * in three of the four places is a runtime failure on the fourth, in
+ * whichever path is exercised last. `cleared_at` (ADR 0057 decision 1) is the
+ * column that made that concrete: it is on the list, on the socket payload
+ * and on the details response, and the sweep is the only writer.
  *
  * **The projection spans two tables.** `assetCode`, `assetName` and `siteName`
  * come from `bms.assets`, so every consumer of `alarmListItemColumns` must
@@ -80,4 +83,27 @@ export function toAlarmListItem(r: AlarmListItemRow): AlarmListItem {
     assetName: r.assetName,
     siteName: r.siteName,
   };
+}
+
+/**
+ * One alarm by id, as the wire shape, or `null` when no row is visible.
+ *
+ * The one caller is `AlarmNotifyService` (`F3.11`, ADR 0064 decision 4),
+ * which hands it the fleet handle — and §4.3 asks for the reason at the call
+ * site, so here it is: the read is a system fan-out with no actor. A
+ * `NOTIFY` carries no JWT and the alarm may belong to any tenant, so no
+ * single organization GUC could be set — the same reasoning as the engine's
+ * rule-cache read (`alarm-engine.service.ts`, E7.1b). The per-socket scope is
+ * not weakened by it: `AlarmsGateway.emitScoped` filters every socket by its
+ * own readable asset set, so the row is read fleet-wide and delivered
+ * per-viewer. The join is the projection's own requirement (see above).
+ */
+export async function readAlarmListItem(db: BmsDb, alarmId: string): Promise<AlarmListItem | null> {
+  const [row] = await db
+    .select(alarmListItemColumns)
+    .from(alarms)
+    .innerJoin(assets, eq(alarms.assetId, assets.id))
+    .where(eq(alarms.id, alarmId))
+    .limit(1);
+  return row === undefined ? null : toAlarmListItem(row);
 }

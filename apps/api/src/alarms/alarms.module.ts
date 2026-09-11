@@ -9,6 +9,7 @@ import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEngineService } from "./alarm-engine.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmLifecycleService } from "./alarm-lifecycle.service";
+import { AlarmNotifyService } from "./alarm-notify.service";
 import { AlarmRaiseModule } from "./alarm-raise.module";
 import { AlarmsController } from "./alarms.controller";
 import { AlarmsGateway } from "./alarms.gateway";
@@ -35,6 +36,11 @@ import { AlarmsService } from "./alarms.service";
     // notification services this module already imports, and the gateway
     // for the `cleared` broadcast; all resolvable here today.
     AlarmLifecycleService,
+    // `F3.11` (ADR 0064 decision 4): the `LISTEN bms_alarms` client that
+    // turns a raise from any process into this process's `created`
+    // broadcast. It needs the gateway, so it lives here and not in
+    // `AlarmRaiseModule`; the worker never reaches this module.
+    AlarmNotifyService,
     JwtAuthGuard,
   ],
   // `RulesModule` (F3.6 task 5) needs `AlarmRaiser` so the on-demand evaluator

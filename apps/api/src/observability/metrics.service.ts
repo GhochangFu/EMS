@@ -96,6 +96,29 @@ export class MetricsService {
   });
 
   /**
+   * Whether the `bms_alarms` NOTIFY listener is currently subscribed (`F3.11`,
+   * ADR 0064 Amendment 1 A3), mirrored from the telemetry pair above.
+   *
+   * Before ADR 0064 an `api`-side raise reached `api`'s own sockets with no
+   * listener in the path; since it, every `created` on a screen depends on
+   * `LISTEN bms_alarms` being up, and the reason `F4.34` gives for the
+   * telemetry gauge applies verbatim: a dropped listener means alarms landing
+   * in `bms.alarms` while every alarm rail sits silent. `/health` is left
+   * alone for the same reason.
+   */
+  private readonly alarmListenerConnected = new Gauge({
+    name: "bms_api_alarm_listener_connected",
+    help: "1 when the API is subscribed to the bms_alarms NOTIFY channel, 0 otherwise.",
+    registers: [this.registry],
+  });
+
+  private readonly alarmListenerReconnects = new Counter({
+    name: "bms_api_alarm_listener_reconnects_total",
+    help: "Reconnect attempts made by the bms_alarms NOTIFY listener.",
+    registers: [this.registry],
+  });
+
+  /**
    * Readings refused by validation before broadcast (`F4.36`).
    *
    * Non-zero means something is publishing to `bms_telemetry` in a shape the
@@ -247,6 +270,16 @@ export class MetricsService {
   /** Records one reconnect attempt by the telemetry NOTIFY listener. */
   countTelemetryListenerReconnect(): void {
     this.telemetryListenerReconnects.inc();
+  }
+
+  /** Records whether the alarm NOTIFY listener is subscribed right now (`F3.11`). */
+  setAlarmListenerConnected(connected: boolean): void {
+    this.alarmListenerConnected.set(connected ? 1 : 0);
+  }
+
+  /** Records one reconnect attempt by the alarm NOTIFY listener (`F3.11`). */
+  countAlarmListenerReconnect(): void {
+    this.alarmListenerReconnects.inc();
   }
 
   /** Records readings refused by NOTIFY payload validation. */
