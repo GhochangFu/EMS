@@ -4,12 +4,15 @@ import {
   runBoundsTests,
   runClearAvailabilityTests,
   runColumnOriginTests,
+  runCoverageRatioDisplayTests,
   runD1IsCaughtBeforeSubmitTests,
+  runDialectMirrorTests,
   runDraftSeedingTests,
   runDraftToBodyTests,
   runEmptySubmitIsRefusedTests,
   runFieldRowTests,
   runRuntimePillLabelTests,
+  runSelfReferenceTests,
   runV2IsScheduledOnlyTests,
 } from "./asset-point-calc-override.spec";
 
@@ -31,7 +34,7 @@ describe("F2.6 — per-point calc override panel rules", () => {
     runDraftSeedingTests();
   });
 
-  it("sends empty as null, and the dialect only alongside a formula", () => {
+  it("sends empty as null, the dialect as the author set it, with or without a formula (F2.22 Q2)", () => {
     runDraftToBodyTests();
   });
 
@@ -49,6 +52,18 @@ describe("F2.6 — per-point calc override panel rules", () => {
 
   it("refuses a streaming override on a merged bms-calc-v2 point (ADR 0055 decision 10)", () => {
     runV2IsScheduledOnlyTests();
+  });
+
+  it("parses the draft formula under the merged dialect, and accepts a dialect-only upgrade (F2.22 item 3)", () => {
+    runDialectMirrorTests();
+  });
+
+  it("refuses a self-reference with the server's cycle sentence, and leaves unknown keys to the server (F2.22 item 7)", () => {
+    runSelfReferenceTests();
+  });
+
+  it("renders the template's coverage ratio, with null as fail closed (F2.22 item 4)", () => {
+    runCoverageRatioDisplayTests();
   });
 
   it("labels the calc-points status pill from what the engine last did (F2.9 Task 16)", () => {

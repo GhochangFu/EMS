@@ -1,27 +1,40 @@
 /**
- * The per-point calc override panel (`F2.6`, ADR 0039 decisions 6, 7 and 8).
+ * The per-point calc override panel (`F2.6`, ADR 0039 decisions 6, 7 and 8;
+ * `F2.22` T12 for the `bms-calc-v2` controls).
  *
  * Presentation only. Every rule is in `lib/asset-point-calc-override.ts`,
- * because `apps/web`'s Vitest project runs `environment: "node"` over
- * `src/**\/*.test.ts` and the coverage gate reaches `src/lib/**` and nothing
- * above it — a `.tsx` is untestable and uncovered in this repository.
+ * because the coverage gate reaches `src/lib/**` and nothing above it. The
+ * render itself is `point-calc-override-panel.spec.tsx`'s claim (jsdom, ADR
+ * 0042) — the first spec to mount this panel.
  *
  * The shape the panel is built around: **three values per column, not one.**
  * "Every 300s" tells an operator what runs but not whether editing the template
  * would change it, and that is the whole question an override screen exists to
  * answer.
+ *
+ * The `v2` controls mirror the Calculations tab's, from the same sources:
+ * Grammar lists `dialectOptions()` after an `inherit (…)` option, the
+ * streaming option is disabled — not hidden — under a merged `v2` (design
+ * decision 5) with `V2_TRIGGER_LATENCY_HINT` beside it, and the two
+ * `V2_REFERENCE_FORMS` are taught under the formula. The coverage ratio is
+ * the one thing the tab edits and this panel only shows: ADR 0055 decision 11
+ * refuses a per-asset override, so it is a line in the table, not a field.
  */
-import { CALC_TRIGGERS } from "@bms/shared";
+import { CALC_DIALECT_V2, CALC_TRIGGERS } from "@bms/shared";
 import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import {
   calcFieldRows,
   canClear,
   canSubmit,
+  coverageRatioDisplay,
   draftProblems,
+  mergedDialect,
   type ColumnOrigin,
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
+import { V2_REFERENCE_FORMS } from "../../lib/formula-editor-rules";
+import { V2_TRIGGER_LATENCY_HINT, dialectOptions } from "../../lib/template-calc-config";
 
 type Props = {
   config: AssetPointCalcConfigDto;
@@ -53,6 +66,10 @@ export function PointCalcOverridePanel({
   const rows = calcFieldRows(config);
   const problems = draftProblems(draft, config);
   const set = (patch: Partial<OverrideDraft>) => onDraftChange({ ...draft, ...patch });
+  // The grammar in force after the save — the draft's when chosen, the
+  // template's when inheriting — from the same function `draftProblems` reads,
+  // so the controls below and the sentences under them cannot disagree.
+  const isV2 = mergedDialect(draft, config) === CALC_DIALECT_V2;
 
   return (
     <div className="rounded border border-gray-200 p-3">
@@ -82,14 +99,47 @@ export function PointCalcOverridePanel({
               <td className="py-1 text-bms-muted">{ORIGIN_LABEL[row.origin]}</td>
             </tr>
           ))}
+          {/* `F2.22` item 4 — the template's ratio, read-only (ADR 0055
+              decision 11, ruling Q3). A line here and not a `CALC_FIELDS`
+              row: it has no override role and no merge, so "Template" and
+              "In effect" are the same value by construction, and the Source
+              column says why there is no field for it below. */}
+          <tr className="border-t border-gray-100">
+            <td className="py-1">Minimum coverage</td>
+            <td className="py-1 font-mono">{coverageRatioDisplay(config.minCoverageRatio)}</td>
+            <td className="py-1 font-mono">{coverageRatioDisplay(config.minCoverageRatio)}</td>
+            <td className="py-1 text-bms-muted">from the template — not overridable per asset</td>
+          </tr>
         </tbody>
       </table>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <label className="text-xs sm:col-span-2">
+          <span className="text-bms-muted">Grammar</span>
+          <select
+            aria-label={`Grammar for ${config.pointKey}`}
+            value={draft.formulaDialect}
+            disabled={busy}
+            // A direct write, unlike the tab's `setFormulaDialect`: an
+            // override clears nothing on a dialect change, because every
+            // other column is a separate inherit-or-set choice and the
+            // merged rules below say what the pair needs.
+            onChange={(event) => set({ formulaDialect: event.target.value })}
+            className="mt-1 w-full rounded border border-gray-200 px-2 py-1"
+          >
+            <option value="">inherit ({config.template.formulaDialect ?? "not set"})</option>
+            {dialectOptions().map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-xs sm:col-span-2">
           <span className="text-bms-muted">Formula — leave empty to inherit</span>
           <input
             type="text"
+            aria-label={`Formula for ${config.pointKey}`}
             value={draft.formula}
             disabled={busy}
             onChange={(event) => set({ formula: event.target.value })}
@@ -97,21 +147,43 @@ export function PointCalcOverridePanel({
             placeholder={config.template.formula ?? ""}
           />
         </label>
+        {isV2 ? (
+          // The teaching ADR 0055 decision 6 buys, as the Calculations tab
+          // renders it: which reference form answers which question. A
+          // sibling of the label, as on the tab — a list inside a `<label>`
+          // is flow content in phrasing content, and a click on an example
+          // would focus the input.
+          <ul className="space-y-0.5 text-[11px] text-bms-muted sm:col-span-2">
+            {V2_REFERENCE_FORMS.map((form) => (
+              <li key={form.form}>
+                <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
+                <code className="rounded bg-gray-100 px-1">{form.example}</code>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <label className="text-xs">
           <span className="text-bms-muted">Runs</span>
           <select
+            aria-label={`Runs for ${config.pointKey}`}
             value={draft.calcTrigger}
             disabled={busy}
             onChange={(event) => set({ calcTrigger: event.target.value })}
             className="mt-1 w-full rounded border border-gray-200 px-2 py-1"
           >
             <option value="">inherit ({config.template.calcTrigger ?? "not set"})</option>
+            {/* Disabled under a merged `v2`, not hidden (design decision 5):
+                a stored streaming override keeps its value visible while
+                `draftProblems`' server sentence names the problem. */}
             {CALC_TRIGGERS.map((trigger) => (
-              <option key={trigger} value={trigger}>
+              <option key={trigger} value={trigger} disabled={isV2 && trigger === "streaming"}>
                 {trigger}
               </option>
             ))}
           </select>
+          {isV2 ? (
+            <span className="mt-1 block text-[11px] text-bms-muted">{V2_TRIGGER_LATENCY_HINT}</span>
+          ) : null}
         </label>
         <label className="text-xs">
           <span className="text-bms-muted">Every (seconds)</span>
