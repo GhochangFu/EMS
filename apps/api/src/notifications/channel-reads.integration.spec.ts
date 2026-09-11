@@ -32,10 +32,19 @@ import { ChannelsService } from "./channels.service";
  *   list — the sentence `AlarmLifecycleDeps.loadRuleChannels`' docblock makes,
  *   asserted id-for-id against the other implementation rather than trusted.
  *
- * **Rollback isolation, so nothing is committed.** Every case runs inside
- * `withRollback`, which is why the fixture needs no cleanup and no committed
- * prefix. Nothing here resolves a seeded row, so a concurrent session's data
- * cannot change an outcome: each case reads only rules it created in its own
+ * **Rollback isolation, so nothing is committed — and every case must end with
+ * `tx.rollback()` for that sentence to be true.** `withRollback` catches the
+ * `TransactionRollbackError` that call throws; without it the transaction
+ * COMMITS and the fixture is permanent. This file shipped without those six
+ * calls and this paragraph claimed the isolation anyway. The cost, measured:
+ * **298 `f360-*` channels** committed to the shared development database, and a
+ * CI failure in `storm-control.integration.test.ts` — a suite this row does not
+ * touch — which I first mis-attributed to a concurrent session's writes. A
+ * leaked fixture does not fail its own suite; it fails somebody else's, later,
+ * and the blame lands in the wrong place.
+ *
+ * Nothing here resolves a seeded row, so a concurrent session's data cannot
+ * change an outcome: each case reads only rules it created in its own
  * transaction.
  *
  * Assertions live here; the sibling `.test` is the Vitest entry point
@@ -144,6 +153,7 @@ export async function assertTheEnabledFilterIsInTheStatement(db: BmsDb): Promise
       !codes.includes("c0") && codes.includes("c1"),
       `CI1: a disabled channel must be absent and an enabled one present, got [${codes}]`,
     );
+    tx.rollback();
   });
 }
 
@@ -168,6 +178,7 @@ export async function assertTheGroupIsInCodeOrder(db: BmsDb): Promise<void> {
       codesOf(read.byRule, r1) === "c1,c2",
       `CI2: the group must be in code order, got [${codesOf(read.byRule, r1)}]`,
     );
+    tx.rollback();
   });
 }
 
@@ -190,6 +201,7 @@ export async function assertAQuietRuleHasNoEntryAndIsNotUnread(db: BmsDb): Promi
       `CI3: r2 must hold its own channel, r3 none, and nothing may be unread — ` +
         `got r2=[${codesOf(read.byRule, r2)}] r3-entry=${read.byRule.has(r3)} unread=${read.unread.size}`,
     );
+    tx.rollback();
   });
 }
 
@@ -224,6 +236,7 @@ export async function assertOnlyTheRequestedRulesComeBack(db: BmsDb): Promise<vo
       `CI5: only the requested rule may come back — got requested=${read.byRule.has(r1)} ` +
         `unrequested=${read.byRule.has(unrequested)} over ${read.byRule.size} group(s)`,
     );
+    tx.rollback();
   });
 }
 
@@ -256,6 +269,7 @@ export async function assertEachGroupIsLoadForRulesList(db: BmsDb): Promise<void
           `loadForRule gives [${expected}]`,
       );
     }
+    tx.rollback();
   });
 }
 
@@ -309,5 +323,6 @@ export async function assertEachStatementBindsItsOwnBatch(db: BmsDb): Promise<vo
       codesOf(read.byRule, r3) === "c9",
       `CI6: the rule alone in the second batch must still come back, got [${codesOf(read.byRule, r3)}]`,
     );
+    tx.rollback();
   });
 }
