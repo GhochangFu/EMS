@@ -337,9 +337,15 @@ const HASH_SEPARATOR = "-";
  * `hexCase` picks the alphabet, because the suffix must survive the field's own
  * character class: `location.slug` is `/^[a-z0-9-]+$/` and `location.code` is
  * `/^[A-Z0-9_-]+$/`, so `-` plus hex is legal in either at the right case.
- * (`assets[].code` carries no regex in `draftAssetSchema` and no CHECK on
- * `bms.assets.code`; it is uppercased by its producer, so it takes the upper
- * alphabet to match what surrounds it.)
+ * (`assets[].code` now carries `CATALOG_CODE_PATTERN` in `draftAssetSchema`
+ * and `assets_code_charset_check` on `bms.assets.code` (ADR 0065). The chat
+ * producer runs `catalogCodeSlug` — this file, decision 4 — then
+ * `toUpperCase()`, so this function's upper-case hex suffix stays inside the
+ * class. The Excel producer (`onboarding-excel.service.ts`, `parseAssets`,
+ * the `asset_code` cell) copies the cell verbatim instead of deriving it, and
+ * `OnboardingValidateService.validate` refuses an illegal one at
+ * `assets.<i>.code`; it takes the upper alphabet to match what a slugified
+ * code would surround it with.)
  *
  * The suffix is budgeted **inside** `max`, never appended past it: the prefix is
  * cut to `max - HASH_SUFFIX_CHARS - 1`, any trailing separator is stripped so

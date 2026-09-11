@@ -289,9 +289,11 @@ function scopeRequest(locationId: string, ref: CalcAggregate): ScopeRequest {
   };
 }
 
-/** A JSON tuple, not a joined string: point keys and group codes are
- * unconstrained text (the Q1 charset row is still owed), so no separator is
- * safe, and only a real encoding keeps the request key injective. */
+/** A JSON tuple, not a joined string. ADR 0065 now constrains `pointKey`
+ * (`point_keys.code`) to `^[A-Za-z0-9_-]+$`, but `scopeCode` can be a group or
+ * domain code (`asset_groups.code`, `asset_domains.code`), both explicitly out
+ * of that ADR's scope and still unconstrained text — so no separator is safe,
+ * and only a real encoding keeps the request key injective. */
 function scopeRequestKey(request: ScopeRequest): string {
   return JSON.stringify([request.locationId, request.pointKey, request.scopeKind, request.scopeCode]);
 }

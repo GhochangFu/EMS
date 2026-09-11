@@ -17,22 +17,26 @@ import type { CalcCrossRef, CalcScope } from "./ast";
  * This docblock used to argue that the aggregate form always contains `(`
  * while the qualified form introduces none of its own, so the two could meet
  * only through a code containing `(`, `)` or `@` — "which no catalog-shaped
- * code does". That claim was load-bearing and unsupported: the tokenizer
- * accepts every character except `{` and `}` inside braces, `bms.assets.code`
- * is `varchar(64).notNull().unique()` with no regex, and the write boundary is
- * `z.string().min(2).max(64)`, also with no regex. `parseFormula` on
- * `"{sum(kw)@domain:x.y} + sum({kw} @domain('x.y'))"` returned **one**
- * `crossRef`, not two: `dedupeCrossRefs` dropped the aggregate, so it reached
- * no save-time check and no evaluation-time lookup, and one key served both
- * nodes. Discriminating on the kind removes the charset from the argument
- * entirely — two nodes of different kinds cannot collide whatever their codes
- * contain.
+ * code does". That claim was load-bearing and unsupported at the time: the
+ * tokenizer accepts every character except `{` and `}` inside braces, and
+ * neither `bms.assets.code` nor the write boundary carried a regex.
+ * `parseFormula` on `"{sum(kw)@domain:x.y} + sum({kw} @domain('x.y'))"`
+ * returned **one** `crossRef`, not two: `dedupeCrossRefs` dropped the
+ * aggregate, so it reached no save-time check and no evaluation-time lookup,
+ * and one key served both nodes. Discriminating on the kind removes the
+ * charset from the argument entirely — two nodes of different kinds cannot
+ * collide whatever their codes contain, independent of whether a charset is
+ * enforced anywhere.
  *
  * Within a kind, injectivity still rests on the grammar: a qref key splits at
  * the first `.` (the plan's Q1 ruling), and an aggregate key's `(`, `)@` and
- * `:` come from the production rather than from the code. The Q1 charset row
- * is still owed — it is what settles *resolution*, i.e. which asset or group a
- * code names — and this prefix does not discharge it.
+ * `:` come from the production rather than from the code. ADR 0065 has since
+ * enforced the class `^[A-Za-z0-9_-]+$` on `bms.assets.code` and
+ * `bms.point_keys.code` (`assets_code_charset_check` /
+ * `point_keys_code_charset_check`, mirrored at the five Zod write sites),
+ * which settles *resolution* — which asset or group a code names — but this
+ * prefix's injectivity claim never depended on that charset and still does
+ * not.
  *
  * `position` is deliberately not part of the key: the same reference at two
  * offsets is one input.
