@@ -18,10 +18,10 @@
  * `@bms/shared` — the key `evaluate` itself looks up (`evaluate.ts`) — so a
  * panel built on this module and the evaluator cannot disagree on the key.
  *
- * The panel that renders this module is T8 of
- * `docs/plans/f2.22-calc-v2-authoring.md`. When this docblock was written no
- * panel existed: `previewFormula` had no caller outside its spec (plan
- * finding 1). T8 owns this sentence once it lands.
+ * The panel that renders this module is `formula-preview.tsx` (`F2.22`
+ * T8). Before that landed, `previewFormula` had no caller outside its spec —
+ * ADR 0038 decision 5 shipped in `F2.5` as this module and its spec, and no
+ * tab ever rendered it (the `F2.22` plan, finding 1).
  *
  * **This module is pure and must stay pure.** It does not fetch live telemetry:
  * a formula being authored belongs to a template, and a template has no asset
@@ -104,7 +104,8 @@ export type CalcPreviewOptions = {
  * Builds the evaluator's input map, dropping values that are not finite
  * numbers.
  *
- * A text input mid-edit produces `Number("") === NaN` and `Number("-") === NaN`.
+ * A text input mid-edit produces `Number("-") === NaN` (and `Number("")` is
+ * `0`, not `NaN` — the panel omits a blank row from the map for that reason).
  * Passing those through would refuse with `non_finite` **at the reference**,
  * which reads as "your formula overflows" when the truth is "you have not
  * finished typing". Dropping them refuses with `missing_input` at the same
