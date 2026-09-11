@@ -1,21 +1,44 @@
 /**
- * The live formula preview (`F2.5`, ADR 0038 decision 5 — Unit 5).
+ * The live formula preview (`F2.5`, ADR 0038 decision 5 — Unit 5; `F2.22`
+ * item 6 for `bms-calc-v2`, cases 5 onward).
  *
  * Every literal below was read off a probe of the real `parseFormula` →
  * `evaluate` pair and then pasted, never recomputed here from the same
- * derivation the module uses.
+ * derivation the module uses. The one exception is the cross-asset key in
+ * case 5, which is deliberately **not** a literal: it is `crossRefKey(node)`
+ * over the node the real parser returned, because a hand-typed key would pass
+ * against a module that keyed the same wrong way.
  *
  * The positions matter as much as the values. ADR 0037 decision 9 refuses at
  * **the node that produced the non-finite value**, not at the root, and a
  * preview that reported the root would look correct in every screenshot while
  * pointing the author at the wrong half of their expression.
  */
-import { previewFormula, previewInputKeys } from "./calc-preview";
+import { CALC_DIALECT_V2, crossRefKey, parseFormula, type CalcCrossRef } from "@bms/shared";
+
+import { previewCrossRefs, previewFormula, previewInputKeys } from "./calc-preview";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+/**
+ * The first cross-asset node of `expression`, read off the real parser under
+ * `v2`. Case 5 keys its cross map by `crossRefKey` of this node — the key
+ * `evaluate` reads — rather than by a string typed here.
+ */
+function aggregateNodeOf(expression: string): CalcCrossRef {
+  const parsed = parseFormula(expression, { dialect: CALC_DIALECT_V2 });
+  if (!parsed.ok) {
+    throw new Error(`sanity: ${JSON.stringify(expression)} must parse under v2, got ${JSON.stringify(parsed.errors)}`);
+  }
+  const node = parsed.crossRefs[0];
+  if (node === undefined || node.kind !== "aggregate") {
+    throw new Error(`sanity: the first cross reference must be the aggregate, got ${JSON.stringify(node)}`);
+  }
+  return node;
 }
 
 /** Case 1 — the ordinary path. */
@@ -141,4 +164,92 @@ export function runPreviewInputKeyTests(): void {
     `expected deduplicated source order B,A — got ${JSON.stringify(keys)}`,
   );
   assert(previewInputKeys("{A} +").length === 0, "unparsable text asks for no inputs");
+}
+
+/**
+ * Case 5 — `bms-calc-v2`: one sample value per cross-asset reference.
+ *
+ * The author types the aggregate's value, not its members (`F2.22` plan
+ * design decision 1): the member set is resolved only by the database, which
+ * this module may not reach. The cross map is keyed by `crossRefKey(node)`,
+ * the key `evaluate` looks up (`evaluate.ts`), and the node comes from the
+ * real parser — so this case cannot agree with the module on a key the
+ * evaluator would refuse. `10 / 2`: the aggregate's sample over the local one.
+ */
+export function runV2PreviewComputesTests(): void {
+  const expression = "sum({kw} @site) / {kw}";
+  const node = aggregateNodeOf(expression);
+  const preview = previewFormula(
+    expression,
+    { kw: 2 },
+    { dialect: CALC_DIALECT_V2, crossValues: { [crossRefKey(node)]: 10 } },
+  );
+  assert(preview.state === "ok", `expected ok, got ${JSON.stringify(preview)}`);
+  if (preview.state !== "ok") {
+    return;
+  }
+  assert(preview.value === 5, `10 / 2 must be 5, got ${preview.value}`);
+}
+
+/**
+ * Case 5b — the aggregate has no sample value yet.
+ *
+ * Refused at the aggregate. Its `position` is the offset of its function-name
+ * token (`ast.ts`, `CalcAggregate`), and `sum` opens this expression, so the
+ * measured offset is `0` — read off the real pair, not an unset default. The
+ * message names the cross-asset reference: a `v2` author told "referenced
+ * point" would look for a `{ref}` row that is not there.
+ */
+export function runV2MissingCrossInputTests(): void {
+  const preview = previewFormula("sum({kw} @site) / {kw}", { kw: 2 }, { dialect: CALC_DIALECT_V2 });
+  assert(preview.state === "refused", `expected refused, got ${JSON.stringify(preview)}`);
+  if (preview.state !== "refused") {
+    return;
+  }
+  assert(preview.code === "missing_input", `code must be missing_input, got ${preview.code}`);
+  assert(preview.position === 0, `must point at the aggregate (offset 0), got ${preview.position}`);
+  assert(
+    preview.message === "no sample value for a referenced point or cross-asset reference at character 0",
+    `the refusal must name the cross-asset reference, got ${JSON.stringify(preview.message)}`,
+  );
+}
+
+/**
+ * Case 6 — which rows the preview asks for, under each dialect.
+ *
+ * `previewCrossRefs` lists the cross-asset references in source order,
+ * `aggregate` then `qref`, under `v2`. Under the default dialect the same
+ * text does not tokenize (`@` is `unexpected_character` under `v1`), so the
+ * answer is `[]` — and that is the gate on the default: a module that
+ * defaulted to `v2` would return two entries there. A plain `v1` formula
+ * names no cross reference either.
+ *
+ * The local list stays local (Q3b). The `{kw}` inside `sum({kw} @site)` is
+ * the aggregate's member key and the `kwh` inside `{TX_01.kwh}` belongs to
+ * `TX_01`; neither is a row the author fills, so `previewInputKeys` lists
+ * nothing for that expression — measured `[]`, not the `["kw"]` the plan
+ * wrote. The positive control is an expression with a local `{kw}` beside
+ * the aggregate, where `kw` is listed exactly once.
+ */
+export function runPreviewCrossRefsTests(): void {
+  const expression = "sum({kw} @site) + {TX_01.kwh}";
+  const kinds = previewCrossRefs(expression, CALC_DIALECT_V2).map((node) => node.kind);
+  assert(
+    kinds.join(",") === "aggregate,qref",
+    `expected the aggregate then the qualified reference, in source order — got ${JSON.stringify(kinds)}`,
+  );
+  assert(
+    previewCrossRefs(expression).length === 0,
+    "the default dialect is v1, under which a cross-asset reference does not parse",
+  );
+  assert(previewCrossRefs("{A} * {B}").length === 0, "a v1 formula names no cross-asset reference");
+  assert(previewCrossRefs("sum({kw} @site) +", CALC_DIALECT_V2).length === 0, "unparsable text asks for nothing");
+
+  const localKeys = previewInputKeys(expression, CALC_DIALECT_V2);
+  assert(
+    localKeys.length === 0,
+    `neither a member key nor another asset's key is a local input — got ${JSON.stringify(localKeys)}`,
+  );
+  const withLocal = previewInputKeys("sum({kw} @site) / {kw}", CALC_DIALECT_V2);
+  assert(withLocal.join(",") === "kw", `the local {kw} is listed once under v2 — got ${JSON.stringify(withLocal)}`);
 }

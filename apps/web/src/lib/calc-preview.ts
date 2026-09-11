@@ -1,12 +1,27 @@
 /**
- * The live formula preview (`F2.5`, ADR 0038 decision 5 — Unit 5).
+ * The live formula preview (`F2.5`, ADR 0038 decision 5 — Unit 5; `F2.22`
+ * item 6 for `bms-calc-v2`).
  *
- * The author types a sample value for each referenced point and sees the
- * computed result — or the evaluator's refusal — as they type. This is a thin
- * adapter over `parseFormula` → `evaluate` from `@bms/shared`, which is a
- * runtime package since ADR 0030, so the browser runs the **same** evaluator
- * the calc engine runs. ADR 0037's consequence forbids a second one, and a
- * preview that disagreed with the engine would be worse than no preview.
+ * The author types a sample value for each referenced point — and, under
+ * `bms-calc-v2`, one per cross-asset reference — and sees the computed result
+ * or the evaluator's refusal as they type. This is a thin adapter over
+ * `parseFormula` → `evaluate` from `@bms/shared`, which is a runtime package
+ * since ADR 0030, so the browser runs the **same** evaluator the calc engine
+ * runs, under the same dialect. ADR 0037's consequence forbids a second one,
+ * and a preview that disagreed with the engine would be worse than no preview.
+ *
+ * Under `v2` an aggregate such as `sum({kw} @site)` is **one** input, not a
+ * member list (`F2.22` plan design decision 1): its member set is resolved
+ * only by the database, which this module may not reach (below), so the
+ * author supplies the aggregate's value. `previewCrossRefs` lists the nodes
+ * that need one; the cross map is keyed by `crossRefKey(node)` from
+ * `@bms/shared` — the key `evaluate` itself looks up (`evaluate.ts`) — so a
+ * panel built on this module and the evaluator cannot disagree on the key.
+ *
+ * The panel that renders this module is T8 of
+ * `docs/plans/f2.22-calc-v2-authoring.md`. When this docblock was written no
+ * panel existed: `previewFormula` had no caller outside its spec (plan
+ * finding 1). T8 owns this sentence once it lands.
  *
  * **This module is pure and must stay pure.** It does not fetch live telemetry:
  * a formula being authored belongs to a template, and a template has no asset
@@ -20,8 +35,11 @@
  * no `node` types, so `node:fs` does not typecheck here.
  */
 import {
+  CALC_DIALECT,
   evaluate,
   parseFormula,
+  type CalcCrossRef,
+  type CalcDialect,
   type CalcEvalErrorCode,
 } from "@bms/shared";
 
@@ -48,20 +66,39 @@ export type CalcPreview =
  * They name **no** source text, matching the no-input-echo rule ADR 0036 set
  * for `CalcParseError`. `position` is what the caller uses to point at the
  * offending node; the message stays a description of the failure.
+ *
+ * `missing_input` covers both maps: a `{ref}` absent from `values`, or a
+ * cross-asset node absent from `crossValues` (`v2`). The sentence names both,
+ * because a `v2` author told only "referenced point" would look for a `{ref}`
+ * row that is not there.
  */
 const REFUSAL_REASONS: Readonly<Record<CalcEvalErrorCode, string>> = {
-  missing_input: "no sample value for a referenced point",
+  missing_input: "no sample value for a referenced point or cross-asset reference",
   non_finite: "the result is not a finite number",
   invalid_clamp_range: "clamp was given a low bound above its high bound",
 };
 
 /**
- * Sample values, keyed by point key.
+ * Sample values. Keyed by local point key for `values`, and by
+ * `crossRefKey(node)` for `CalcPreviewOptions.crossValues` — one record per
+ * map, as `evaluate` takes one map per namespace, so a local key can never
+ * shadow a cross-asset reference or be shadowed by one.
  *
  * A record rather than a `Map` because that is the shape a controlled form
  * holds. `toInputMap` converts and filters.
  */
 export type CalcSampleValues = Readonly<Record<string, number>>;
+
+/**
+ * `dialect` defaults to `bms-calc-v1`, so a caller that passes nothing gets
+ * the `v1` preview it always had. `crossValues` is read only by a `v2` AST —
+ * a `v1` AST has no cross-asset node — and is keyed by `crossRefKey(node)`
+ * for each node `previewCrossRefs` returns.
+ */
+export type CalcPreviewOptions = {
+  readonly dialect?: CalcDialect;
+  readonly crossValues?: CalcSampleValues;
+};
 
 /**
  * Builds the evaluator's input map, dropping values that are not finite
@@ -87,20 +124,26 @@ function toInputMap(values: CalcSampleValues): Map<string, number> {
 }
 
 /**
- * Evaluates `expression` over `values`.
+ * Evaluates `expression` over `values` — and, under `bms-calc-v2`, over
+ * `options.crossValues` for its cross-asset references.
  *
  * Every refusal comes from `evaluate` itself, including the position. ADR 0037
  * decision 9 checks finiteness at **every node**, so `{A} / {B}` with `B = 0`
  * refuses at the divide rather than at the root — the author gets pointed at
- * the operator that failed, not at the whole formula.
+ * the operator that failed, not at the whole formula. A cross-asset node with
+ * no sample value refuses with `missing_input` at the node, as a `{ref}` does.
  */
-export function previewFormula(expression: string, values: CalcSampleValues): CalcPreview {
-  const parsed = parseFormula(expression);
+export function previewFormula(
+  expression: string,
+  values: CalcSampleValues,
+  options?: CalcPreviewOptions,
+): CalcPreview {
+  const parsed = parseFormula(expression, { dialect: options?.dialect ?? CALC_DIALECT });
   if (!parsed.ok) {
     return { state: "unparsed" };
   }
 
-  const result = evaluate(parsed.ast, toInputMap(values));
+  const result = evaluate(parsed.ast, toInputMap(values), toInputMap(options?.crossValues ?? {}));
   if (result.ok) {
     // `evaluate` already normalises `-0` to `0` at every node
     // (`evaluate.ts:19`), so this value is passed through untouched. Do not
@@ -117,13 +160,31 @@ export function previewFormula(expression: string, values: CalcSampleValues): Ca
 }
 
 /**
- * The point keys this expression needs a sample value for, deduplicated in
- * first-appearance order.
+ * The **local** point keys this expression needs a sample value for,
+ * deduplicated in first-appearance order — `parsed.refs`, whose meaning is
+ * unchanged under `v2` (`F2.22` Q3b). A cross-asset node contributes nothing
+ * here: the `kw` in `sum({kw} @site)` is the aggregate's member key, and the
+ * `kwh` in `{TX_01.kwh}` belongs to `TX_01`. Those rows come from
+ * `previewCrossRefs`.
  *
  * Drives the preview's input rows. Unparsable text asks for nothing — there is
  * no partial ref list worth showing while the expression is still being typed.
  */
-export function previewInputKeys(expression: string): string[] {
-  const parsed = parseFormula(expression);
+export function previewInputKeys(expression: string, dialect: CalcDialect = CALC_DIALECT): string[] {
+  const parsed = parseFormula(expression, { dialect });
   return parsed.ok ? parsed.refs : [];
+}
+
+/**
+ * The cross-asset references this expression needs a sample value for — one
+ * node per distinct `crossRefKey`, first-appearance order (`parsed.crossRefs`).
+ * Always `[]` under `v1`, where no cross-asset node parses, and for unparsable
+ * text, for the same reason `previewInputKeys` asks for nothing then.
+ *
+ * Drives the preview's cross-asset rows. The caller keys each row's value by
+ * `crossRefKey(node)` when it builds `CalcPreviewOptions.crossValues`.
+ */
+export function previewCrossRefs(expression: string, dialect: CalcDialect = CALC_DIALECT): CalcCrossRef[] {
+  const parsed = parseFormula(expression, { dialect });
+  return parsed.ok ? parsed.crossRefs : [];
 }
