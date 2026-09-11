@@ -115,17 +115,15 @@ const GATES = [
       "Held for a decision on the object-storage service and its encryption boundary.",
     source: "AGENTS.md §6",
   },
-  {
-    ids: ["F4.24"],
-    kind: "adr",
-    reason:
-      "Bundles three separately deferred things — the EMQX broker, a BullMQ job " +
-      "queue and MinIO. AGENTS.md §6 defers all three; Redis must not become a " +
-      "job queue until a later promotion.",
-    clientReason:
-      "Held for decisions on the message broker, job queue and object storage this bundles together.",
-    source: "AGENTS.md §6",
-  },
+  // F4.24's gate was here until 2026-09-11 ("bundles three separately deferred
+  // things — EMQX, a BullMQ job queue and MinIO; needs decisions on all
+  // three"). ADR 0063 answered it by narrowing: the owner ruled BullMQ-only,
+  // Accepted the same day with its five questions ruled as drafted, and the row
+  // moved to 🟡. MinIO stays F3.3's gate above; EMQX and Traefik have no row
+  // and no dependant, so nothing is held on them. The citation stopped being
+  // true and the entry is deleted rather than left to rot, per this list's own
+  // rule — left in place, `held` would have shown a ruled row as waiting on a
+  // decision.
   {
     ids: ["F4.15"],
     kind: "adr",
