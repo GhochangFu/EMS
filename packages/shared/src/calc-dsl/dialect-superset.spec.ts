@@ -54,7 +54,7 @@ function assert(condition: boolean, message: string): void {
  * ref). The superset property is stated over the whole catalog class
  * (`^[A-Za-z0-9_-]+$`, ADR 0065): `/` and a space are outside that class too,
  * and stay in the pool as a deliberate over-approximation, the same reasoning
- * as `cross-ref.spec.ts`'s `codePool` (ADR 0065 decision 6, D7). The pool
+ * as `cross-ref.spec.ts`'s `codePool` (ADR 0065 decision 6; plan D7). The pool
  * excludes `.`, because `v2`'s qualified-reference form splits a `{…}` body
  * at the FIRST `.`, so a `v1` point key containing `.` would change meaning
  * under `v2` — `.` is now outside the catalog class as well (it was merely

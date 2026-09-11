@@ -79,11 +79,11 @@ export function runCrossRefKeyTests(): void {
   // `assets_code_charset_check` / `point_keys_code_charset_check`, mirrored at
   // the five Zod write sites — but it is the class `^[A-Za-z0-9_-]+$`, which
   // excludes `(`, `)`, `@` and `:` outright. The pool below keeps those
-  // out-of-class characters on purpose (ADR 0065 decision 6, D7): the
+  // out-of-class characters on purpose (ADR 0065 decision 6; plan D7): the
   // injectivity proof is the one-character kind prefix (`q:`/`a:`), not the
   // class, so testing over a pool the class would now refuse is what makes
   // this a stronger test than one that trusts the class to do the work. This
-  // closes F2.9 findings 8 and 27.
+  // closes F2.9 finding 8.
   //
   // `.` stays out of the pool: it is the qualified form's own separator.
 

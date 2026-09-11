@@ -99,13 +99,16 @@ formula containing one. Once the catalog cannot contain such a key, a
 reference to one is simply unresolvable — which `missing_input` already
 reports — and the grammar needs no second rule.
 
-**6. Three docblocks name this row and go stale when it lands.**
+**6. Five docblocks name this row and go stale when it lands.**
 `calc-dsl/cross-ref.spec.ts` (§4, ≈75–82 and ≈139–140: "nothing enforces that
 charset"), `calc-dsl/dialect-superset.spec.ts` (≈56–58: "no seeded or stock
-catalog code has one"), and `onboarding-draft-caps.ts` (≈340–342:
+catalog code has one"), `onboarding-draft-caps.ts` (≈340–342:
 "`assets[].code` carries no regex … and no CHECK on `bms.assets.code`; it is
 uppercased by its producer" — the last clause is already false for the Excel
-producer, which does not uppercase).
+producer, which does not uppercase), and — found by the build's prose sweep,
+not by this draft — `calc-dsl/cross-ref.ts` (≈17–40) and
+`apps/api/src/calc/calc-scope.service.ts` (≈289–294), both saying "the Q1
+charset row is still owed".
 
 **7. The repository has the precedent for both halves.** Five Zod code fields
 already carry a class — `organizations.schema.ts` and `draftLocationSchema`
@@ -241,8 +244,11 @@ ruling, with the `VALIDATE` step filed as its own row.
   new module, nothing in `apps/web` beyond the message the two admin pages
   already surface through `onError`.
 - `F2.9`'s finding 8 ("the injectivity argument rested on a charset nothing
-  enforces") and finding 27 (a catalog scan with no test-file exemption) close
-  with this row. Finding 35 was already closed structurally and is unaffected.
+  enforces") closes with this row. Finding 35 was already closed structurally
+  and is unaffected. **Finding 27 does not close here**, although the backlog
+  row cites it: it is the `v1`/`v2` parity scan over `stock-catalog/` formula
+  literals having no `.spec.ts` exemption, which no charset can settle. The
+  row's "three findings point here" was two.
 - An operator who tries to create `pump 1` or `feeder.a` now reads one
   sentence naming the class and an example, at the form, at the wizard's
   per-field errors, and at `POST /admin/assets` — instead of a stored code that
