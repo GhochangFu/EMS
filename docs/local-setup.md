@@ -262,6 +262,7 @@ LOG_LEVEL=info
 # (step 10 below): `apps/api/src/worker.ts` refuses to start without it.
 # REDIS_URL=redis://localhost:6379
 # WORKER_PORT=4100
+# RULE_SWEEP_INTERVAL_MS=60000
 ```
 
 Create `apps/web/.env` (do not commit):
@@ -312,6 +313,12 @@ it) and re-run the `worker` script after each change. Without a local Redis,
 `REDIS_URL` is unset, the API still starts with `queue.configured: false`,
 and the worker process refuses to start at all (ADR 0063 decision 9) — it is
 optional only for the API.
+
+Since `F3.11` (ADR 0064), the worker process also evaluates every enabled,
+published rule once per `RULE_SWEEP_INTERVAL_MS` (default 60 s) and raises
+through the same `AlarmRaiser` the streaming engine uses. A native run
+without the worker process has no scheduled evaluation — only the streaming
+engine's on-ingest evaluation runs.
 
 `pnpm install` also runs `pnpm hooks:install`, which points git at the
 committed `.githooks/` directory. See §10a below — if you skip `pnpm install`
