@@ -285,7 +285,14 @@
 > amended away. And rows written before migration `0069` keep the device clock
 > in `time` with `device_time IS NULL`; nothing marks that boundary but the
 > migration's own timestamp, which is a deliberate ruling over 10 million rows,
-> not an oversight.
+> not an oversight. And the **job queue** — `bullmq` on the existing Redis,
+> one typed registry in `apps/api/src/queue/` where every queue declares a Zod
+> payload schema and a tenancy, a `worker` process that is a **second
+> entrypoint of `apps/api`** and starts no loop the API starts, one
+> `heartbeat` queue reported on both `GET /health` surfaces, Redis AOF-persisted
+> and bound to loopback, a Redis service in CI (**ADR 0063** + Amendments 1–2,
+> `F4.24`, 2026-09-11) — which promotes the queue and **no consumer of it**:
+> `F3.11`, `F3.12` and the ADR 0041 dispatch follow-up stay behind their rows.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
@@ -479,7 +486,7 @@ entry **D-0001**.
 | Containers   | Dockerfiles and Docker Compose profiles for API, web, simulator, **ingest** and DB |
 | CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, **the `apps/ingest` image build**, migration validation, **`db:seed` against a fresh schema**, **`db:refresh-aggregates`** (ADR 0023 — a no-op on a fresh database, since `db:seed` writes zero telemetry rows; it runs so the backfill path cannot rot unexercised), and `test:coverage` (ADR 0014). The Postgres service image is **pinned** to the same tag as `docker-compose.yml`, because the aggregate suite asserts behaviour measured on TimescaleDB 2.29.1. The image build is there because no workflow built one, so `apps/ingest/Dockerfile` sat broken on `main` while CI stayed green — it is the only ingest image gated, being the only one that installs before COPYing sources |
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
-| Cache / pub-sub | Redis 7 for Socket.IO adapter fan-out |
+| Cache / pub-sub / jobs | Redis 7 for Socket.IO adapter fan-out (ADR 0002) **and the BullMQ job queue** (ADR 0063, `F4.24`) — AOF-persisted, `noeviction`, host port on loopback only. Caching stays out of scope. |
 | Local dev    | WSL2 Ubuntu 22.04; native Postgres remains supported, Docker Compose is optional |
 
 No new dependencies may be added without an ADR in `docs/adr/`.
@@ -617,6 +624,15 @@ bms/
 │   │                            inputs, write, streaming, scheduled), no
 │   │                            controller, wired via CalcModule with no
 │   │                            HTTP surface of its own. See §2 *Calc engine*
+│   │                            src/queue/ is the ADR 0063 BullMQ registry
+│   │                            (F4.24): defineQueue with a Zod payload
+│   │                            schema, enqueue guards, tenancy-bound
+│   │                            processors, the heartbeat, the health reader.
+│   │                            src/worker.ts is the SECOND ENTRYPOINT of this
+│   │                            package (dist/worker.js, compose service
+│   │                            `worker`, :4100) — a second root that starts
+│   │                            no loop the API starts, fenced by
+│   │                            tests/f4.24-worker-imports-no-api-loop.test.ts
 │   ├── sim/                   ← telemetry simulator (Node script)
 │   └── ingest/                ← PHE MQTT TLS subscriber (ADR 0007), five RTUs.
 │                                ONE entry point since §6 commit 4 (2026-08-14):
@@ -2245,8 +2261,9 @@ Docker Compose, Dockerfiles, GitHub Actions CI, Redis-backed Socket.IO
 pub/sub, Keycloak/OIDC authentication, and the observability baseline are
 now in scope for Phase 1 only. Phase 2 Sprint 0 promoted documentation
 and readiness analysis only, then selected Path B because real access is
-not available. Redis must not be used for unrelated caching or job queues
-until a later promotion. Keycloak is limited to local/pilot OIDC
+not available. Redis has two approved uses — Socket.IO fan-out (ADR 0002)
+and **the BullMQ job queue with its `worker` process (ADR 0063, `F4.24`,
+merged 2026-09-11)**; caching stays unpromoted. Keycloak is limited to local/pilot OIDC
 authentication; MFA, SSO federation, and advanced identity governance
 remain out of scope. Observability is limited to optional local/pilot
 diagnostics. Protocol *brokers* remain out of scope; protocol *adapters* are
@@ -2278,8 +2295,10 @@ used to draw that contrast the other way), persisted report storage, CR
 Security, CR Alarm Management, CR Trends, Phase 6 3D, two-way commands,
 setpoint changes, manual bypass, battery tests, equalize charge, HVAC
 force-changeover, sensor calibration/test execution, real-ingestion rules,
-scheduler/job queues, and complex node graph builders remain out of scope
-until their specific sprint is promoted. General site-wide AI Copilot /
+and complex node graph builders remain out of scope
+until their specific sprint is promoted. **The job queue itself is promoted
+(ADR 0063) and carries one queue, `heartbeat`; scheduled rule evaluation on
+it is `F3.11`, the command path `F3.12`, and each is still its own row.** General site-wide AI Copilot /
 chatbot remains deferred, but the scoped admin onboarding wizard (ADR 0011),
 the hierarchical master-data admin (ADR 0008–0010), and the PHE MQTT ingest
 pilot (ADR 0007, 0012 — five RTUs since Amendment 1) are promoted and in
@@ -2328,6 +2347,21 @@ described as `maintenance`'s shape rather than `dashboards`'; since `F2.19`
 a tab under ADR 0038 Amendment 5 Part B, so `health` is the only section left
 that the API accepts and the UI does not author. `optimisation` alone is
 unchanged in both halves and is the one closed section left.
+**The job queue and its `worker` process are promoted (ADR 0063 + Amendments
+1–2, `F4.24`, merged 2026-09-11 as `7c4e933f`, PR #429).** What §6 used to
+gate as "scheduler/job queues" and "Redis … job queues until a later
+promotion" is now `bullmq` in `apps/api` under §9.4, one typed registry in
+`apps/api/src/queue/`, a second entrypoint `apps/api/src/worker.ts` (the
+production tree's `apps/worker/` was amended to it — decision 2), one queue
+(`heartbeat`) reported on both `GET /health` surfaces, Redis with AOF and
+`noeviction` bound to loopback, and a Redis service in CI. **It promotes no
+consumer of the queue**: `F3.11` (scheduled rule evaluation), `F3.12` (the
+command path — which does not start before Redis is authenticated, Amendment
+2) and the ADR 0041 dispatch follow-up each stay behind their own row. **It
+narrowed the row rather than the bundle**: EMQX and Traefik stay in the list
+above with no row and no dependant; MinIO is `F3.3`'s ADR. The three
+in-process sweeps stay in the API process (`F4.128` records their doubling
+under `api-replica`).
 Application-layer encryption at rest
 is in scope (ADR 0012); **full-disk / volume / KMS encryption is a deployer
 action and not implementable in this repo**. Object-storage bucket encryption
@@ -2391,7 +2425,9 @@ Single source of truth lives in `docs/local-setup.md`. Summary:
    observability, are documented in `README.md`. Windows VM Docker-only
    deployment steps live in `docs/windows-vm-docker-deploy.md`.
 
-No protocol broker yet. Just Postgres, Redis for realtime fan-out,
+No protocol broker yet. Just Postgres, Redis for realtime fan-out and the
+BullMQ job queue (ADR 0063 — the `worker` service is a second entrypoint of
+`apps/api`, not a new app),
 Keycloak for local/pilot OIDC, optional observability services, Node, and
 Docker Compose for reproducible development. Phase 2 is **no longer paused**:
 the PHE MQTT pilot ships in `apps/ingest` (ADR 0007, 0012) across five RTUs,
@@ -2423,7 +2459,11 @@ new scope-sensitive features.
    free text that once carried pasted broker passwords, and it is scrubbed on
    the way out to the client as well as refused on the way in (ADR 0022).
 7. Do not introduce EMQX, MinIO, or any item from §6 without a Promotion
-   PR (see §10). Redis is only approved for Socket.IO fan-out; Keycloak is
+   PR (see §10). Redis is approved for Socket.IO fan-out and for the BullMQ
+   job queue (ADR 0063) — every new queue is declared in
+   `apps/api/src/queue/queues.ts` with a Zod payload schema and a tenancy, and
+   `F3.12` does not start before Redis is authenticated (ADR 0063 Amendment
+   2); Keycloak is
    only approved for local/pilot OIDC; observability is only approved for
    optional local/pilot diagnostics. Phase 2 may document real-ingestion
    candidates, but it must not implement adapters or brokers until real

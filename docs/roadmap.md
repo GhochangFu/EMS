@@ -4793,6 +4793,71 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   naming the parameter.
 - **Unblocks:** `F3.60`, which this row filed and which closed 2026-09-11.
 
+### A BullMQ job queue and a `worker` process, split out of the infra bundle (`F4.24`, ADR 0063 + Amendments 1–2) — done
+- **Status:** merged 2026-09-11 — PR
+  [#429](https://github.com/GhochangFu/EMS/pull/429) (`7c4e933f`), fifteen
+  commits over `a3107885`. Eleven owner rulings (Q1–Q5 at the ADR, six at the
+  plan gate) and one security posture ruling, all as recommended. One
+  dependency (`bullmq` 5.81.5, §9.4), no migration, no `apps/web` change. The
+  first Wave 0 row taken up since `E8.4`, and the one four P1 Track D rows wait
+  on.
+- **What the owner narrowed first.** The row bundled four deferrals — an
+  `apps/worker` on BullMQ, EMQX, Traefik, MinIO — and only the first had a
+  dependant. Ruled BullMQ-only: MinIO is `F3.3`'s ADR, EMQX and Traefik stay
+  in §6 with no row.
+- **What shipped:** `bullmq` on the existing Redis; a typed registry in
+  `apps/api/src/queue/` where a queue is declared once with a **Zod payload
+  schema**, a tenancy (`tenant` runs inside `withTenant`, `fleet` as
+  `bms_fleet`) and a retry policy, and `enqueue` refuses a missing or
+  structural `jobId` (`RESERVED_JOB_IDS` — the security review reproduced
+  `"meta"` being silently dropped and `"wait"` throwing `WRONGTYPE`), an
+  unparseable payload, a non-UUID `organizationId`, or an unconfigured queue;
+  a **second entrypoint of `apps/api`** (`dist/worker.js`, compose service
+  `worker` on 4100) whose `WorkerModule` is a second root that starts none of
+  the six `onModuleInit` loops — fenced by an import-closure test with
+  `main.ts` as its positive control and measured as zero worker backends in
+  `pg_stat_activity`; one `heartbeat` repeatable job reported on both
+  `GET /health` surfaces (200 with `status: "degraded"` in the body after three
+  missed ticks); `bms_queue_depth` and `bms_queue_jobs_total`; Redis with AOF,
+  `noeviction`, a named volume and its host port on loopback; a pinned Redis
+  service in CI so the integration spec gates rather than skips (17 tests ran
+  there on the first run).
+- **Decision 9 was narrower than its sentence, and the code review measured
+  it.** "The worker refuses to start without `REDIS_URL`" held for that case
+  only: a bound port, a missing database URL or an unreachable Redis printed
+  *failed to start* and **kept consuming** — the unreachable case never reached
+  the catch, because `upsertSchedule` awaited an ioredis reconnect forever.
+  Amendment 2 widens it: a bounded `PING` probe and a port pre-flight before
+  `NestFactory.create`, and `process.exit(1)` on any boot throw. All four cases
+  re-measured at exit 1 in under six seconds with no key written.
+- **Decision 3's test could not be written here.** No spec in `apps/api` boots
+  a Nest module (esbuild emits no `design:paramtypes`, §4.6). Amendment 1
+  substitutes the closure invariant plus the stack measurement, and records
+  that BullMQ 5.81 lists node-redis as an optional peer — Context 6's "accepts
+  no other client" was wrong, and the two-client cost stands as accepted.
+- **Verified on the running stack**, images `--no-cache` from the branch: both
+  `/health` surfaces `ok`; the counter one increment per tick; worker 0
+  Postgres backends while the API holds its one `LISTEN`; the API without
+  `REDIS_URL` boots and says `configured: false`; the worker without it exits 1;
+  Redis recreated with the worker stopped **replayed the delayed tick** and the
+  API kept its container; three missed ticks → `degraded`, worker start →
+  `ok` in five seconds. Full suite 2896/2896, none skipped, both URLs set;
+  coverage ratcheted to 79.9 / 77.0 / 81.2 / 80.1 — the largest jump the gate
+  has banked, and almost none of it this row (98 unratcheted commits since
+  `F1.10`).
+- **The first `compose up` failed in `db:seed`** on 62 `FIXTURE-F310-*` assets
+  leaked by the previous day's suite runs: the seed derives
+  `ESKOM_<asset code>_<suffix>` into a `varchar(64)` unbounded. Filed as
+  `F4.129`; the leaked rows (62 assets, 233 rules, 62 memberships, nothing else
+  referencing them) were deleted by hand from the shared database, counts in
+  `docs/plans/f4.24-bullmq-worker.md` §16.
+- **Filed:** `F4.128` (every API process starts the same five loops, so
+  `api-replica` runs each twice — Q5 kept the sweeps in `api`), `F4.129`.
+- **Unblocks:** `F3.11` (Wave 1, P1) and `F3.12` (Wave 3, P1) on the board;
+  `F3.13`/`F3.14` follow `F3.12`. **`F3.12` does not start before Redis is
+  authenticated** (Amendment 2 — `--requirepass` is its gate). The ADR 0041
+  dispatch follow-up is now possible and still has no row.
+
 ### Phase 6 — Premium visuals (~3 weeks)
 - **Status:** pending
 - **Graduates:** Three.js Control Room 3D only.
@@ -4852,7 +4917,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 | Keycloak / OIDC / MFA / SSO | Phase 1 |
 | Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 — MQTT promoted for one RTU (ADR 0007); the `IngestAdapter` **interface, its host and the MQTT adapter** are promoted (ADR 0016 §6 commit 2); each *further* protocol implementation still needs its own ADR |
 | EMQX broker | Phase 2 |
-| Redis cache and pub/sub | Phase 1 |
+| Redis cache and pub/sub | Phase 1 — pub/sub promoted (ADR 0002); **the BullMQ job queue and `worker` process promoted 2026-09-11 (ADR 0063, `F4.24`)**; caching still unpromoted |
 | MinIO / object storage | Phase 5 Sprint F only if persisted report storage is needed |
 | Two-way commanding with approval workflow | Phase 4 |
 | Audit hash-chaining | Phase 4 |
