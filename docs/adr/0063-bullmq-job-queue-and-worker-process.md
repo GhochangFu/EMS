@@ -251,3 +251,64 @@ alternatives are kept so a later reader can see what was declined and why.
 | Q3 | 13 | Add a pinned Redis service to CI; the spec gates | Gate the spec on `REDIS_URL` and let CI skip it. Zero CI change, and the only test of the thing four P1 rows build on never runs where merges are decided. |
 | Q4 | 12 | Worker in `core`/`pilot`/`phe` | Its own `worker` profile, opt-in. Keeps `core` unchanged for anyone not using queues — which after `F3.11` is nobody, and a queue nobody drains grows until Redis is full. |
 | Q5 | 3 | Sweeps stay in `api`; the doubling is filed as its own row | Move the three sweeps into the worker under this ADR. Fixes the replica doubling now, and turns an infra row into a change to three services' lifecycles, ADR 0037's shape and their specs — the scope creep the `F2.9`/`F2.22` split was cut to avoid. |
+
+## Amendment 1 — decision 3's spec cannot be written here, and Context 6 was wrong about the client (2026-09-11)
+
+Raised at the step-3 plan (`docs/plans/f4.24-bullmq-worker.md` §14 Q4 and
+Q7), the same day the record was accepted, and ruled by the owner before any
+code.
+
+**Decision 3 described a test this repository cannot run.** It said *"a spec
+boots `WorkerModule` against a fake database and asserts that `runSweepLoop` is
+never entered and no `LISTEN` is issued"*. No spec in `apps/api` instantiates a
+Nest module: the one `createTestingModule` hit is a comment in
+`zod-error.filter.spec.ts` explaining why a source scan is used instead, and
+AGENTS.md §4.6 (`F4.20`) records the cause — vitest runs specs through esbuild,
+which emits no `design:paramtypes`, so Nest's constructor injection cannot
+resolve. Making it resolve is an swc transform, a §9.4 dependency ADR of its
+own and not this row's.
+
+**The gate is substituted, not dropped.** Two halves, each necessary:
+
+1. **A static import-closure invariant** —
+   `tests/f4.24-worker-imports-no-api-loop.test.ts` walks the relative
+   `import`/`export … from` closure of `apps/api/src/worker.ts` and asserts it
+   contains none of the six `onModuleInit` loop sites, `scheduling/sweep-loop.ts`,
+   `telemetry/telemetry-listener.ts`, the five loop-bearing modules
+   (`alarms`, `calc`, `asset-health`, `telemetry`, `rules`), `app.module.ts` or
+   `main.ts`. The same walk over `main.ts` must contain **every one** of them —
+   the positive control without which a walker that follows nothing passes
+   vacuously. This is what fences `F3.11`: the day `WorkerModule` imports
+   `RulesModule`, the test reddens and forces the split then, under that row.
+2. **A runtime measurement on the stack** — `pg.Pool` connects lazily, so a
+   worker that runs only the heartbeat opens zero Postgres backends.
+   `pg_stat_activity` filtered to the worker container's address must be empty
+   after two minutes while the API's `LISTEN bms_telemetry` backend is present;
+   `docker compose logs worker` must carry no sweep line. Recorded in the
+   closure row with the numbers, not asserted from the code.
+
+The invariant in decision 3 — the worker starts no loop the API starts, by
+construction of the module graph and never by a flag — is unchanged. Only the
+proof moved.
+
+**Context 6 said BullMQ "accepts no other client". It does not.** `bullmq`
+5.81.5 (the pin this row resolves to; 6.x exists and is not taken) vendors
+`ioredis@5.11.1` **and** lists `redis: >=5.0.0` as an optional peer, so it can
+be handed the node-redis client the Socket.IO adapter already holds. This ADR
+stays on the ioredis path — BullMQ creates the connection from options — because
+changing which client library the API runs on is a decision, not a build
+detail, and the two-client cost in the Dependencies section stands as accepted.
+Consolidating on one client is a possible follow-up row with no dependant; it is
+not owed.
+
+**Five smaller rulings from the same plan gate, recorded so they are not
+re-asked:** `GET /health` answers 200 with `status: "degraded"` in the body (a
+liveness probe must not let a dead worker eject an API that serves traffic);
+the queue section carries a `heartbeatStale` boolean beyond decision 10's list,
+so `degraded` names its cause; `infra/observability/prometheus.yml` gains a
+`bms-worker` scrape target, without which decision 11's counter reaches no
+panel; a configured, connected queue with no heartbeat ever written reads
+`heartbeatStale: true` → `degraded` (fail closed — a queue with no consumer is
+what Q4 exists to make visible); and the manifest commit stages a one-line pin
+note in this ADR's Dependencies section, which is what `.githooks/pre-commit.mjs`
+requires of a `package.json` change.
