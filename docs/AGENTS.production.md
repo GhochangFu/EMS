@@ -75,13 +75,18 @@ bms/
 ├── apps/
 │   ├── web/
 │   ├── api/
-│   ├── ingest/
-│   │   ├── bacnet/
-│   │   ├── modbus/
-│   │   ├── mqtt/
-│   │   ├── snmp/
-│   │   └── opcua/
-│   └── worker/
+│   │   ├── src/queue/          ← BullMQ registry (ADR 0063)
+│   │   └── src/worker.ts       ← the worker process: a second entrypoint of
+│   │                              api, not a separate app (ADR 0063 decision 2,
+│   │                              amended from `apps/worker/` on 2026-09-11 —
+│   │                              the worker runs api's own services off the
+│   │                              request path, and nothing in api is a library)
+│   └── ingest/
+│       ├── bacnet/
+│       ├── modbus/
+│       ├── mqtt/
+│       ├── snmp/
+│       └── opcua/
 ├── packages/
 │   ├── shared/
 │   ├── db/
