@@ -95,9 +95,13 @@ per-queue `waiting`/`active`/`failed` depths on both `/health` endpoints and
 will build on"* (ADR 0063 decision 10). The worker service in
 `docker-compose.yml` already carries the three pools and the three
 `CREDENTIAL_ENCRYPTION_KEY*` variables *"so the day dispatch moves to the
-worker … is a code change, not a compose change"*; the notification transports
-read their SMTP settings from the encrypted channel row, not from the
-environment, so dispatch from the worker needs no compose change.
+worker … is a code change, not a compose change"*. ~~The notification
+transports read their SMTP settings from the encrypted channel row, not from
+the environment, so dispatch from the worker needs no compose change.~~
+*Corrected by Amendment 1: the transports read `SMTP_*` from the process
+environment (`notifications.config.ts:97-105`); the conclusion holds for a
+different reason — compose sets none of them on `api` either, and
+`tests/adr-0041-notification-invariants.test.ts` forbids an `SMTP_HOST` line.*
 
 **6. `AlarmRaiser.raise` is already idempotent on its own row.**
 `alarms_open_per_rule_uidx` makes a second raise of an open alarm return
@@ -167,14 +171,16 @@ earlier job is retained; the sweep's row is the alarm, and it already is.
    raised on the worker, on `api` or on `api-replica` reaches the sockets of
    both API processes. `AlarmRaiser` loses its `AlarmsGateway` dependency,
    which is what lets `AlarmRaiseModule` be loop-free without a fake gateway.
-   Six existing specs construct `AlarmRaiser` with a fake gateway and some
-   assert `broadcastCreated` on raise — `alarm-raise.integration.spec.ts`,
+   Six existing specs construct `AlarmRaiser` with a fake gateway at nine
+   sites — `alarm-raise.integration.spec.ts`,
    `alarm-raise.service.rls.integration.test.ts`,
    `alarm-engine.integration.spec.ts`, `alarm-lifecycle.integration.spec.ts`,
    `rules/evaluate-enabled-rules.integration.spec.ts` and
-   `rules/rules.service.rls.integration.test.ts`; each moves its assertion to
-   the notification (or drops the fake), and that reddening is expected, not
-   a regression.
+   `rules/rules.service.rls.integration.test.ts`. ~~Some assert
+   `broadcastCreated` on raise; each moves its assertion to the
+   notification.~~ *Corrected by Amendment 1: none asserts it — every stub is
+   a no-op — so each site drops one constructor argument and nothing moves.*
+   The `NOTIFY`-reaches-the-gateway claim gets its own integration spec.
    `acknowledged` and `cleared` keep their direct emits; moving them onto the
    same channel is `F4.132`. No new package (AGENTS.md §9.4): `pg` already
    carries `LISTEN`, and *"a channel name is not a schema object"* — no grant,
@@ -276,3 +282,75 @@ in the `rule_executions.trace` JSONB column, which carries no CHECK, and a
   `bms.rule_executions` (ADR 0033 decision 3, still not justified by traffic
   under decision 5); moving `acknowledged`/`cleared` to `NOTIFY` (`F4.132`);
   a second worker replica (decision 7).
+
+## Amendment 1 — the worker's module graph, the listener seam, and three corrections (2026-09-11)
+
+Raised by the step-3 plan (`docs/plans/f3.11-scheduled-rule-evaluation.md`
+§2, §17) the same day the record was accepted; ruled by the owner as a
+package, with two further rulings beside it. Nothing here changes decisions
+1, 2, 5, 6, 7 or 9.
+
+**A1. Decision 3's module list could not boot in the worker as written.**
+`NotificationsModule` declares three controllers, each `@UseGuards(JwtAuthGuard)`
+(`notifications.controller.ts:54`, `escalation-profiles.controller.ts:50,92`);
+`JwtAuthGuard` injects `JwtService` (`jwt-auth.guard.ts:115`) from the
+`JwtModule.register({ global: true })` that only `AuthModule` loads
+(`auth.module.ts:11-18`); and `ChannelsService` injects `AccessControlService`
+(`channels.service.ts:189`), provided only by `@Global() AuthModule`
+(`auth.module.ts:21`). A `WorkerModule` that imports `NotificationsModule`
+without `AuthModule` fails DI at boot; one that imports `AuthModule` mounts
+`/auth`, `/notifications` and `/admin/escalation-*` on `WORKER_PORT` — a
+host-published port — without `main.ts`'s global `ZodErrorFilter` and `api/v1`
+prefix, on the `dev-only-change-me` JWT fallback. **Refused.** Decision 3
+gains two provider-only carves, no behaviour change: `auth/access-control.module.ts`
+(`@Global`, provides and exports `AccessControlService`; `AuthModule` imports
+it) and `notifications/notifications-core.module.ts` (the providers of
+`NotificationsModule` minus `EscalationProfilesService`, no controllers,
+exports `NotificationsService` and `ChannelsService`; `NotificationsModule`
+imports and re-exports it). `RuleSweepModule` imports `AlarmRaiseModule` and
+`NotificationsCoreModule`; `WorkerModule` imports `AccessControlModule` and
+`RuleSweepModule`. The fence gains **rule 6**: the worker's import closure
+holds exactly two controllers, `health/health.controller.ts` and
+`observability/metrics.controller.ts` — so importing either full module
+reddens by name.
+
+**A2. Decision 4's listener is an extraction, not a copy.** "On the
+`telemetry-listener.ts` loop shape" is discharged by moving the `F4.34` loop
+(`telemetry-listener.ts:128-339` — the `error`-before-`connect` order, the
+abort-listener removal, the stable-window backoff reset) to
+`database/notify-listener.ts` with `channel` and `onNotification` as
+parameters; `createTelemetryListener` becomes an adapter over it. The gate is
+`telemetry-listener.spec.ts` and `telemetry-notify.service.ts` **unchanged,
+byte for byte, and green**. `database/notify-listener.ts` and
+`alarms/alarm-notify.ts` join the fence's loop hosts; `alarms/alarm-notify.service.ts`
+joins its loop sites.
+
+**A3. Decision 8 gains two metrics.** `bms_api_alarm_listener_connected`
+(gauge) and `bms_api_alarm_listener_reconnects_total` (counter), mirrored from
+`F4.34`'s telemetry pair. Before this ADR an `api`-side raise reached `api`'s
+own sockets with no listener in the path; after it, every `created` on a
+screen depends on `LISTEN bms_alarms` being up, and the reason `F4.34` gave
+for the telemetry gauge applies verbatim.
+
+**A4. Decision 5's stamp is `last_evaluated_at` only** (ruled). The press
+also bumps `updated_at` (`rules.service.ts:743`); a sweep every minute doing
+the same would make every rule read "updated one minute ago". The press keeps
+its own behaviour.
+
+**A5. The worker does not refuse to boot on a missing credential key**
+(ruled). ADR 0063's Consequences owed the worker a boot refusal "the day it
+first decrypts anything"; this is that day (a webhook secret on dispatch).
+The API refuses nothing on a missing `CREDENTIAL_ENCRYPTION_KEY` — a delivery
+reads `skipped_unconfigured` (`notifications.config.ts:121-158`) — and the
+ingest host warns and falls back. A worker that refused while `api`
+dispatched would turn an optional key into an outage of scheduled
+evaluation. Parity with `api`; the sentence in ADR 0063 is discharged by this
+ruling, not by a refusal.
+
+**A6. Two sentences in the accepted text were false and are struck above.**
+Context 5 said the transports read SMTP settings from the channel row; they
+read `process.env` (`notifications.config.ts:97-105`). The conclusion — no
+compose change — holds because compose sets none on `api` either and
+`tests/adr-0041-notification-invariants.test.ts` forbids it; `docs/env-inventory.md`
+records that a deployment which sets SMTP on `api` must set it on `worker`.
+Decision 4 said some raiser specs assert `broadcastCreated`; none does.
