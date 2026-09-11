@@ -4878,6 +4878,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 - **Filed:** `F4.128` (every API process starts the same five loops, so
   `api-replica` runs each twice — Q5 kept the sweeps in `api`), `F4.129`.
 - **Unblocks:** `F3.11` (Wave 1, P1) and `F3.12` (Wave 3, P1) on the board;
+  **`F3.11` took it up the same day** — see the `F3.11` entry below;
   `F3.13`/`F3.14` follow `F3.12`. **`F3.12` does not start before Redis is
   authenticated** (Amendment 2 — `--requirepass` is its gate). The ADR 0041
   dispatch follow-up is now possible and still has no row.
@@ -4961,3 +4962,57 @@ off `docs/BACKLOG.md` against the loop in `docs/build-operating-model.md`, and
 lands via ADRs that cut across these phase rows. When the two disagree, the
 ADRs and `docs/BACKLOG.md` are authoritative — this table describes the
 original plan, not the current board.
+
+### `F3.11` — scheduled rule evaluation on the worker (ADR 0064) ✅ 2026-09-11
+
+**The queue's first real consumer.** One fleet-wide `rules-sweep` repeatable
+job on the worker evaluates every enabled, published rule each
+`RULE_SWEEP_INTERVAL_MS` (default 60 s, floor 10 s, ceiling 1 h, fail-closed:
+a value outside the range is a `QueueConfigError` and the worker exits 1).
+Until this row a rule was evaluated only when telemetry arrived for its point
+(the streaming engine, which never sees a dead meter and never evaluates a
+`time_window` rule) or when a human pressed "Evaluate now". The gap
+`docs/zoho-iot-gap-analysis.md` records as *"Scheduled/cron evaluation —
+Missing — Priority High"* is closed.
+
+**It takes the streaming engine's write policy, not the button's** (ADR 0064
+decision 5): a `bms.rule_executions` trace and a notification dispatch only
+when a new alarm is actually raised, so a quiet plant grows neither table;
+`raisedBy: "rule_sweep"` in the trace tells an operator which path fired;
+`last_evaluated_at` is one `UPDATE … = ANY($1)` per organization, with
+`updated_at` untouched.
+
+**The broadcast became cross-process on the way** (decision 4). `AlarmRaiser`
+now publishes `pg_notify('bms_alarms', …)` inside its own tenant transaction
+and no longer calls the gateway; every API process runs `LISTEN bms_alarms`,
+reads the alarm by id and emits `created`. That is what lets a worker-raised
+alarm reach a browser at all, and it repairs an `api`/`api-replica` split that
+predates this row for the `created` case. `F4.133` carries
+`acknowledged`/`cleared` onto the same channel.
+
+**Effort was estimated at 4 weeks and took one day.** The estimate predates
+ADR 0063; the plan's closure walk found that the worker fence forbids five
+*module* files by path while the services themselves reach none of them, so no
+service moved and the work was two provider-only carves plus the sweep.
+
+**Three gates caught what the cheaper ones could not**, and each is recorded
+in `docs/BACKLOG.md` §1b: the running stack found a dependency-injection hole
+(`NOTIFICATIONS_CONFIG` unexported by the new carve) while `pnpm build`,
+`typecheck:tests` and 3116 passing tests were green — a Nest module graph is
+not a type; the full suite found two cross-suite defects invisible to a
+filtered run (an FK race on committed fixtures, and a Postgres `40P01`
+deadlock between two long-transaction fleet walkers whose savepoint rollback
+erased a fire-and-forget ledger row); and the reviews found one High (the same
+DI hole) and two Lows, one of which — a replayed `NOTIFY` re-emitting a
+cleared alarm as `created` — is now guarded by the read-back's `clearedAt`.
+
+**Measured on the stack, not asserted:** a sweep every 60 s over 289 rules in
+~290 ms; both `/health` surfaces carrying `lastRuleSweep`; a breaching sample
+raised on the worker, deduped on the next sweep, and counted by the API's
+gateway; nothing raised in 200 s with the worker stopped, and `/health`
+`degraded`; worker Postgres backends `bms_fleet` + `bms_tenant` and no
+`bms_auth`. CI: 512 files, 3133 tests, no skipped gate. The one number still
+owed — the T0+60 min quiet-plant row counts — was voided when the local
+Postgres container was stopped mid-window; `F4.134` carries what the outage
+revealed instead: a sweep that cannot reach the database fails every retry
+while `GET /health` still reads `ok`.
