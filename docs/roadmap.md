@@ -2033,9 +2033,33 @@ Process (`AGENTS.md` §10).
   re-seed. The simulator's IT load and provincial feeder band were re-sized
   so the demo ratio is plausible; the compose simulator covers three sites,
   so seven demo incomers stay silent (`F4.95`).
-- **Still open:** `F2.22` (the `v2` authoring affordances), `F4.95` (demo
-  simulator coverage), `F4.96` (an open baseline draft blocks the next
-  `compose up`).
+- **Still open:** `F4.95` (demo simulator coverage), `F4.96` (an open
+  baseline draft blocks the next `compose up`). `F2.22` (the `v2` authoring
+  affordances) closed 2026-09-11 — the section below.
+
+### `bms-calc-v2` authoring affordances (`F2.22`, ADR 0055) — done
+
+- **Status:** merged 2026-09-11 in two PRs — #431 (`41181e9f`, the
+  template tabs) and #432 (`1b5c0882`, the override panel and the save
+  check); plan `docs/plans/f2.22-calc-v2-authoring.md`, 48 corrections.
+- **What it was.** `F2.9` gave the engine `bms-calc-v2` and left the
+  browser stamping `bms-calc-v1` on every save, so a `v2` formula could be
+  authored only through the API. This row is the nine deferrals the `F2.9`
+  plan wrote down: a Grammar control on each of the three surfaces, `@`
+  completion and the two reference forms, author wording for the ten `v2`
+  error codes, a coverage input whose empty state reads *fail closed*, the
+  `scheduled`-only trigger rule, the live preview with one sample value per
+  cross-asset reference, the cycle refusal mirrored in the editor, `v2` KPI
+  authoring, and the save-time refusal of a qualified reference that
+  resolves nowhere.
+- **What the row found.** ADR 0038 decision 5's live preview panel had
+  never rendered — `F2.5` shipped the pure module and its spec and no tab
+  imported it — so the owner ruled it into this row. No template KPI
+  evaluates at all, `v1` included (`F2.33`, ADR-gated). And `F2.23`'s
+  charset trap became reachable from the UI: a dotted point key is re-read
+  as a qualified reference on a Grammar flip.
+- **Not promoted.** Nothing new entered scope; ADR 0055 already governed
+  the grammar, and no `AGENTS.md` §6 line moves.
 
 ### Template authoring UI + formula editor (`F2.5`, ADR 0038) — done
 
