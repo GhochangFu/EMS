@@ -2354,10 +2354,22 @@ promotion" is now `bullmq` in `apps/api` under §9.4, one typed registry in
 `apps/api/src/queue/`, a second entrypoint `apps/api/src/worker.ts` (the
 production tree's `apps/worker/` was amended to it — decision 2), one queue
 (`heartbeat`) reported on both `GET /health` surfaces, Redis with AOF and
-`noeviction` bound to loopback, and a Redis service in CI. **It promotes no
-consumer of the queue**: `F3.11` (scheduled rule evaluation), `F3.12` (the
-command path — which does not start before Redis is authenticated, Amendment
-2) and the ADR 0041 dispatch follow-up each stay behind their own row. **It
+`noeviction` bound to loopback, and a Redis service in CI. ~~**It promotes no
+consumer of the queue**: `F3.11` (scheduled rule evaluation), `F3.12` … and
+the ADR 0041 dispatch follow-up each stay behind their own row.~~
+**`F3.11` is that consumer, and it is promoted** (ADR 0064 + Amendment 1,
+merged 2026-09-11 as `bb01fdf5`, PR #435): a second queue `rules-sweep`, one
+repeatable job every `RULE_SWEEP_INTERVAL_MS` (default 60 s) evaluating every
+enabled, published rule on the worker with the streaming engine's write policy,
+`NOTIFY bms_alarms` carrying the `created` broadcast so a raise from any
+process reaches every process's sockets, and two provider-only module carves
+(`AccessControlModule`, `NotificationsCoreModule`) so the worker resolves the
+services without `AuthModule`'s controllers — held by fence rule 6, which
+pins the worker's import closure to exactly the health and metrics controllers.
+**What stays gated is unchanged:** `F3.12` does not start before Redis is
+authenticated (ADR 0063 Amendment 2), the ADR 0041 dispatch follow-up is still
+not a row, and a per-rule schedule, a `bms.rule_executions` retention policy
+and a second worker replica are named deferred in ADR 0064's Consequences. **It
 narrowed the row rather than the bundle**: EMQX and Traefik stay in the list
 above with no row and no dependant; MinIO is `F3.3`'s ADR. The three
 in-process sweeps stay in the API process (`F4.128` records their doubling
