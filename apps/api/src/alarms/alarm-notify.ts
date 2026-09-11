@@ -78,6 +78,18 @@ export function createAlarmNotifyListener(deps: AlarmNotifyDeps): NotifyListener
             logger.warn(`${ALARM_NOTIFY_CHANNEL}: alarm ${alarmId} not found`);
             return;
           }
+          // The read-back is the source of truth, not the payload. `NOTIFY`
+          // needs no table privilege, so any connected role can replay a
+          // known id; a row that is already cleared is not a `created`, and
+          // emitting it would show every in-scope socket a stale alarm as
+          // fresh (`F3.11` security review, L1). The legitimate race — an
+          // auto-clear landing in the milliseconds between the raise's commit
+          // and this read — drops the same way, and the lifecycle sweep's own
+          // `cleared` broadcast is what the screen should see for it.
+          if (row.clearedAt !== null) {
+            logger.warn(`${ALARM_NOTIFY_CHANNEL}: alarm ${alarmId} is not active; dropped`);
+            return;
+          }
           deps.broadcast(row);
         })
         .catch((error: unknown) => {

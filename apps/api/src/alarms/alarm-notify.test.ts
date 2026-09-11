@@ -4,6 +4,7 @@ import {
   assertAClearedPayloadIsNeitherReadNorBroadcast,
   assertAMissingAlarmIsNotBroadcast,
   assertAMissingAlarmIsWarnedNamingTheId,
+  assertAClearedRowIsNotBroadcastAsCreated,
   assertARejectedReadIsWarnedOnce,
   assertAValidCreatedPayloadIsReadOnceAndBroadcastOnce,
   assertAfterARejectedReadTheNextValidPayloadStillBroadcasts,
@@ -53,6 +54,10 @@ describe("alarm-notify (F3.11, ADR 0064 decision 4)", () => {
 
   it("does not broadcast when the read returns null", async () => {
     await assertAMissingAlarmIsNotBroadcast();
+  });
+
+  it("does not broadcast a row whose clearedAt is set, and warns once naming the id (security L1)", async () => {
+    await assertAClearedRowIsNotBroadcastAsCreated();
   });
 
   it("warns once with the real message when the read rejects", async () => {

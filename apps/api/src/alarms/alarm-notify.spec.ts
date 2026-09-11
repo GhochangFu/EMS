@@ -285,6 +285,34 @@ export async function assertAMissingAlarmIsNotBroadcast(): Promise<void> {
 }
 
 /**
+ * A row that is no longer active is not `created` — the security review of
+ * `F3.11` (L1): `NOTIFY` needs no table privilege, so any connected role can
+ * replay a known id, and without this guard every in-scope socket would
+ * receive a cleared alarm as a fresh `created`. The read-back is the source
+ * of truth, and `clearedAt` is the row's own word on whether it is active.
+ */
+export async function assertAClearedRowIsNotBroadcastAsCreated(): Promise<void> {
+  const fake = makeFakeListenerClient();
+  const cleared = { ...sampleRow(ALARM_ID), clearedAt: new Date(0).toISOString() };
+  const h = makeAlarmHarness([fake], { readAlarm: () => Promise.resolve(cleared) });
+  h.listener.start();
+  await flushListener();
+
+  fake.emitNotification(VALID_CREATED);
+  await flushListener();
+
+  assert(h.reads.length === 1, "the read should have happened (control)");
+  assert(h.broadcasts.length === 0, `a cleared row must not be broadcast, got ${h.broadcasts.length}`);
+  const warns = h.warns();
+  assert(
+    warns.length === 1 && warns[0].includes(ALARM_ID),
+    `one warn naming ${ALARM_ID}, got ${JSON.stringify(h.logs)}`,
+  );
+
+  await h.listener.stop();
+}
+
+/**
  * A rejected read is caught and warned with its real message. Without the
  * `.catch` this is an unhandled rejection inside a `pg` event handler —
  * vitest fails the run on one, and the warn count here reads zero.
