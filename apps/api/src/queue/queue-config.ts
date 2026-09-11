@@ -107,6 +107,7 @@ export type QueueConfig = {
   readonly redis: RedisConnectionOptions | null;
 };
 
+/** Reads `REDIS_URL` from `env`: unset or blank is unconfigured (`redis: null`); a set value must parse. */
 export function readQueueConfig(
   env: Record<string, string | undefined>,
 ): QueueConfig {

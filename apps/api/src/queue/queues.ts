@@ -8,7 +8,12 @@ import type { QueueDeclaration } from "./queue-registry";
  *
  * One entry today — `heartbeatQueue` (`./heartbeat`), the decision 10
  * repeatable job. `F3.11` and `F3.12` append theirs here, each with its own
- * tenancy and retry policy, and nowhere else.
+ * tenancy, payload schema and retry policy, and nowhere else.
+ *
+ * A declaration's `jobId` de-duplicates only while the earlier job is still
+ * retained (decision 7's `removeOnComplete` / `removeOnFail` counts), so
+ * every processor registered against an entry here must be idempotent on
+ * its own row — the queue never promises exactly-once.
  *
  * `as const satisfies readonly QueueDeclaration[]`: the tuple keeps each
  * entry's literal `name` and `tenancy` for `PayloadOf` and the processor

@@ -49,6 +49,7 @@ export type WorkerHostDeps = {
 
 export type WorkerHost = { close(): Promise<void> };
 
+/** Starts one BullMQ `Worker` per registration on the client's connection and returns the handle that closes them all. */
 export function startQueueWorkers(
   client: QueueClient,
   registrations: readonly ProcessorRegistration[],

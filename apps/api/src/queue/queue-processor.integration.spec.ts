@@ -5,7 +5,7 @@ import { expect } from "vitest";
 import { createDb } from "@bms/db";
 
 import { runProcessor } from "./queue-processor";
-import { defineQueue } from "./queue-registry";
+import { defineQueue, tenantPayloadSchema } from "./queue-registry";
 
 /**
  * F4.24 (ADR 0063 decision 6) — the one proof that a `tenant` processor's
@@ -32,9 +32,10 @@ export async function assertTenantProcessorBindsTheOrganizationGuc(
   // rather than a second connection the test would then have to close.
   const fleetDb = tenantDb;
 
-  const decl = defineQueue<"f4.24-tenancy-probe", { organizationId: string }>({
+  const decl = defineQueue({
     name: "f4.24-tenancy-probe",
     tenancy: "tenant",
+    payload: tenantPayloadSchema,
   });
 
   let seen: string | null | undefined;

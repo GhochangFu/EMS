@@ -1,6 +1,7 @@
 import type { BmsDb } from "@bms/db";
 import type { LivenessResponse, QueueHealth } from "@bms/shared";
 import { Worker, type Queue } from "bullmq";
+import { z } from "zod";
 
 import type { MetricsService } from "../observability/metrics.service";
 import {
@@ -62,18 +63,21 @@ function assert(condition: boolean, message: string): void {
 // Declarations and fakes
 // ---------------------------------------------------------------------------
 
-type Marked = { readonly marker: string };
+const markedSchema = z.object({ marker: z.string() });
+type Marked = z.output<typeof markedSchema>;
 
 /** `attempts: 1` so the failing row fails once, not after 1 s + 2 s of backoff. */
-export const roundTripQueue = defineQueue<"q", Marked>({
+export const roundTripQueue = defineQueue({
   name: "q",
   tenancy: "fleet",
+  payload: markedSchema,
   retry: { attempts: 1 },
 });
 
-export const failingQueue = defineQueue<"q2", Marked>({
+export const failingQueue = defineQueue({
   name: "q2",
   tenancy: "fleet",
+  payload: markedSchema,
   retry: { attempts: 1 },
 });
 

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type { ProcessorHandler } from "./queue-processor";
 import { defineQueue } from "./queue-registry";
 
@@ -14,8 +16,9 @@ import { defineQueue } from "./queue-registry";
  *
  * **Fleet, not tenant.** The heartbeat has no organization; a `tenant`
  * declaration here would make `enqueue` and the processor demand an
- * `organizationId` the job cannot carry. The payload is `Record<string,
- * never>` — an empty object, and the type refuses a field being smuggled in.
+ * `organizationId` the job cannot carry. The payload schema is
+ * `z.object({}).strict()` — an empty object, and the schema refuses a field
+ * being smuggled in, at `upsertSchedule` and again at the processor.
  *
  * **The processor never touches Postgres.** It receives `ctx.db` because a
  * fleet handler always does, and ignores it — that is what lets ADR 0063
@@ -41,9 +44,10 @@ export const HEARTBEAT_STALE_TICKS: number = 3;
 /** The job scheduler id. The scheduler is the identity — there is no `jobId` on a repeatable job. */
 export const HEARTBEAT_SCHEDULER_ID = "heartbeat";
 
-export const heartbeatQueue = defineQueue<"heartbeat", Record<string, never>>({
+export const heartbeatQueue = defineQueue({
   name: "heartbeat",
   tenancy: "fleet",
+  payload: z.object({}).strict(),
 });
 
 /**

@@ -85,6 +85,7 @@ function timeoutAfter(ms: number): { promise: Promise<never>; clear(): void } {
   };
 }
 
+/** Reads the queue section of `GET /health` — per-queue depths and the heartbeat tick — bounded by `timeoutMs`; gauges are published only on a complete read. */
 export async function readQueueHealth(
   client: QueueClient,
   deps: QueueHealthDeps,
@@ -135,6 +136,7 @@ export async function readQueueHealth(
   };
 }
 
+/** The one place the verdict is decided: `degraded` when a configured queue is unreadable or its heartbeat is stale, `ok` otherwise. */
 export function livenessFrom(queue: QueueHealth): LivenessResponse {
   const degraded = queue.configured && (!queue.connected || queue.heartbeatStale);
   return { status: degraded ? "degraded" : "ok", queue };

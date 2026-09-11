@@ -4,11 +4,15 @@ import {
   assertFleetHandlerNeverEntersWithTenant,
   assertFleetHandlerReceivesTheFleetDb,
   assertFleetHandlerThrowPropagatesUnchanged,
+  assertFleetPayloadFailingItsSchemaIsRefusedAtTheProcessor,
+  assertHandlerReceivesTheSchemaOutputNotRawJobData,
   assertRegistrationCarriesTheDeclaration,
   assertTenantHandlerReceivesThePayload,
   assertTenantHandlerReceivesTheTransactionFromWithTenant,
   assertTenantHandlerRunsWithTenantOnTheTenantPoolForTheOrganization,
   assertTenantHandlerThrowPropagatesUnchanged,
+  assertTenantNonUuidOrganizationIdIsInvalidPayloadAtTheProcessor,
+  assertTenantPayloadFailingItsSchemaIsRefusedAtTheProcessor,
   assertTenantPayloadWithoutOrganizationIdIsRefusedAtTheProcessor,
 } from "./queue-processor.spec";
 
@@ -36,6 +40,14 @@ describe("F4.24 — tenancy-bound processors", () => {
       await assertTenantPayloadWithoutOrganizationIdIsRefusedAtTheProcessor();
     });
 
+    it("refuses a payload failing its schema before the handler or withTenant run (review M2)", async () => {
+      await assertTenantPayloadFailingItsSchemaIsRefusedAtTheProcessor();
+    });
+
+    it("refuses a non-UUID organizationId as invalid_payload, never entering withTenant", async () => {
+      await assertTenantNonUuidOrganizationIdIsInvalidPayloadAtTheProcessor();
+    });
+
     it("propagates a handler throw unchanged", async () => {
       await assertTenantHandlerThrowPropagatesUnchanged();
     });
@@ -48,6 +60,14 @@ describe("F4.24 — tenancy-bound processors", () => {
 
     it("never enters withTenant", async () => {
       await assertFleetHandlerNeverEntersWithTenant();
+    });
+
+    it("refuses a payload failing its schema before the handler runs (review M2)", async () => {
+      await assertFleetPayloadFailingItsSchemaIsRefusedAtTheProcessor();
+    });
+
+    it("hands the handler the schema's output, with an undeclared key stripped", async () => {
+      await assertHandlerReceivesTheSchemaOutputNotRawJobData();
     });
 
     it("propagates a handler throw unchanged", async () => {

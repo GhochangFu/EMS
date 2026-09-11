@@ -1,11 +1,14 @@
 import type { Logger } from "@nestjs/common";
+import { z } from "zod";
 
 import type { QueueConfig, RedisConnectionOptions } from "./queue-config";
 import {
   createQueueClient,
   defineQueue,
   enqueue,
+  RESERVED_JOB_IDS,
   RETRY_DEFAULTS,
+  tenantPayloadSchema,
   upsertSchedule,
   type QueueClient,
   type QueueDeclaration,
@@ -17,11 +20,12 @@ import {
  *
  * Assertions live here; `queue-registry.test.ts` is the Vitest wrapper
  * (§4.6/ADR 0014). One exported function per row of plan §6's first table,
- * plus the few rows that fence the seam four P1 rows will build against
- * (`defineQueue`'s retry merge, the `prefix` override, the error listener
- * actually warning). Errors are matched on `err.name` / `err.reason`, never
- * `instanceof` (F4.108 — a class identity does not survive a second copy of
- * the module).
+ * plus the rows the 2026-09-11 review added (M1 — the `jobId` grammar; M2 —
+ * the payload schema) and the few that fence the seam four P1 rows will
+ * build against (`defineQueue`'s retry merge, the `prefix` override, the
+ * error listener actually warning). Errors are matched on `err.name` /
+ * `err.reason`, never `instanceof` (F4.108 — a class identity does not
+ * survive a second copy of the module).
  */
 
 function assert(condition: boolean, message: string): void {
@@ -61,18 +65,29 @@ function errorReason(err: unknown): string | undefined {
     : undefined;
 }
 
+function errorMessage(err: unknown): string {
+  return typeof err === "object" && err !== null
+    ? String((err as { message?: unknown }).message)
+    : String(err);
+}
+
 // ---------------------------------------------------------------------------
 // Fixture
 // ---------------------------------------------------------------------------
 
-export const tenantQ = defineQueue<"t", { organizationId: string; x: number }>({
+/** A UUID because `tenantPayloadSchema` requires one; the suffix keeps it recognisable in a message. */
+export const ORG_A = "00000000-0000-4000-8000-00000000000a";
+
+export const tenantQ = defineQueue({
   name: "t",
   tenancy: "tenant",
+  payload: tenantPayloadSchema.extend({ x: z.number() }),
 });
 
-export const fleetQ = defineQueue<"f", { x: number }>({
+export const fleetQ = defineQueue({
   name: "f",
   tenancy: "fleet",
+  payload: z.object({ x: z.number() }),
   retry: { attempts: 5 },
 });
 
@@ -145,6 +160,10 @@ function makeFixture(
 
 function allAdds(fixture: Fixture): RecordedAdd[] {
   return fixture.handles.flatMap((h) => h.adds);
+}
+
+function allUpserts(fixture: Fixture): RecordedUpsert[] {
+  return fixture.handles.flatMap((h) => h.upserts);
 }
 
 /** The retry-derived BullMQ job options `fleetQ` resolves to (attempts overridden to 5). */
@@ -264,7 +283,7 @@ export function assertUnconfiguredConfigWarnsOnce(): void {
 }
 
 // ---------------------------------------------------------------------------
-// enqueue
+// enqueue — decision 5 and the happy path
 // ---------------------------------------------------------------------------
 
 /** Positive control for every refusal row below: the happy path reaches `add` with the resolved options. */
@@ -303,6 +322,118 @@ export async function assertMissingJobIdIsRefusedBeforeRedis(opts: {
   assert(allAdds(fixture).length === 0, "expected add never to be called after the jobId refusal");
 }
 
+// ---------------------------------------------------------------------------
+// enqueue — review M1: the jobId grammar
+// ---------------------------------------------------------------------------
+
+/**
+ * The three the security review reproduced on a real Redis: `meta` collides
+ * with the queue's meta hash, `repeat` with the scheduler ZSET, `wait` with
+ * the waiting LIST (`WRONGTYPE`).
+ */
+export const RESERVED_JOB_ID_ROWS = ["meta", "wait", "repeat"] as const;
+
+export async function assertReservedJobIdIsRefusedBeforeRedis(jobId: string): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  const err = await captureRejection(() => enqueue(fixture.client, fleetQ, { x: 1 }, { jobId }));
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_job_id",
+    `expected QueuePayloadError(invalid_job_id) for the structural name ${JSON.stringify(jobId)}, got ${errorName(err)}(${errorReason(err)})`,
+  );
+  assert(
+    allAdds(fixture).length === 0,
+    `expected add never to be called for jobId ${JSON.stringify(jobId)} — it would overwrite a BullMQ structure`,
+  );
+}
+
+/** The exported list is what `F3.12` reads; the three reproduced names must be on it. */
+export function assertReservedListCarriesTheReproducedThree(): void {
+  const missing = RESERVED_JOB_ID_ROWS.filter((id) => !RESERVED_JOB_IDS.includes(id));
+  assert(
+    missing.length === 0,
+    `expected RESERVED_JOB_IDS to carry ${JSON.stringify(RESERVED_JOB_ID_ROWS)}, missing ${JSON.stringify(missing)}`,
+  );
+}
+
+export async function assertOverlongJobIdIsRefused(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  const err = await captureRejection(() =>
+    enqueue(fixture.client, fleetQ, { x: 1 }, { jobId: "a".repeat(201) }),
+  );
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_job_id",
+    `expected QueuePayloadError(invalid_job_id) for a 201-character id, got ${errorName(err)}(${errorReason(err)})`,
+  );
+  assert(allAdds(fixture).length === 0, "expected add never to be called for a 201-character id");
+}
+
+/** Boundary positive control for the row above: 200 characters is inside the grammar. */
+export async function assertTwoHundredCharacterJobIdIsAccepted(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  await enqueue(fixture.client, fleetQ, { x: 1 }, { jobId: "a".repeat(200) });
+  assert(allAdds(fixture).length === 1, "expected a 200-character id to reach add");
+}
+
+/**
+ * Measured 2026-09-11 on BullMQ 5.81.5: `add` with `"cmd-123:v2"` throws
+ * `Custom Id cannot contain :` (only a three-segment `a:b:c` passes, a legacy
+ * repeatable form). The review's draft named this id as the positive
+ * control; it is refused here by name instead, before Redis.
+ */
+export async function assertColonJobIdIsRefused(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  const err = await captureRejection(() =>
+    enqueue(fixture.client, fleetQ, { x: 1 }, { jobId: "cmd-123:v2" }),
+  );
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_job_id",
+    `expected QueuePayloadError(invalid_job_id) for a colon id, got ${errorName(err)}(${errorReason(err)})`,
+  );
+  assert(
+    errorMessage(err).includes("colon"),
+    `expected the message to name the colon, got "${errorMessage(err)}"`,
+  );
+}
+
+/** Measured the same day: BullMQ throws `Custom Id cannot be integers` for `"123"`. */
+export async function assertAllDigitJobIdIsRefused(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  const err = await captureRejection(() => enqueue(fixture.client, fleetQ, { x: 1 }, { jobId: "123" }));
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_job_id",
+    `expected QueuePayloadError(invalid_job_id) for an all-digit id, got ${errorName(err)}(${errorReason(err)})`,
+  );
+}
+
+/** Positive control for the grammar rows: the shape `F3.12` will use, with every permitted class of character. */
+export async function assertGrammaticalJobIdIsAccepted(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  await enqueue(fixture.client, fleetQ, { x: 1 }, { jobId: "cmd-123.v2_a" });
+  const adds = allAdds(fixture);
+  assert(
+    adds.length === 1 && (adds[0].opts as { jobId?: unknown }).jobId === "cmd-123.v2_a",
+    `expected "cmd-123.v2_a" to reach add as the jobId, got ${JSON.stringify(adds)}`,
+  );
+}
+
+/** The guard-order proof for M1: a structural id is a programming error, refused with or without Redis. */
+export async function assertInvalidJobIdAnswersBeforeAvailability(): Promise<void> {
+  const fixture = makeFixture(UNCONFIGURED);
+  const err = await captureRejection(() => enqueue(fixture.client, fleetQ, { x: 1 }, { jobId: "meta" }));
+  assert(
+    errorName(err) !== "QueueUnavailableError",
+    "guard order inverted: an unconfigured client answered QueueUnavailableError for a structural jobId",
+  );
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_job_id",
+    `expected QueuePayloadError(invalid_job_id) on an unconfigured client, got ${errorName(err)}(${errorReason(err)})`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// enqueue — decision 6 and review M2: the payload
+// ---------------------------------------------------------------------------
+
 export async function assertTenantPayloadWithoutOrganizationIdIsRefused(): Promise<void> {
   const fixture = makeFixture(CONFIGURED);
   const err = await captureRejection(() =>
@@ -318,11 +449,80 @@ export async function assertTenantPayloadWithoutOrganizationIdIsRefused(): Promi
 /** Positive control for the row above: the guard must not over-refuse. */
 export async function assertTenantPayloadWithOrganizationIdIsAdded(): Promise<void> {
   const fixture = makeFixture(CONFIGURED);
-  await enqueue(fixture.client, tenantQ, { organizationId: "org-a", x: 1 }, { jobId: "j1" });
+  await enqueue(fixture.client, tenantQ, { organizationId: ORG_A, x: 1 }, { jobId: "j1" });
   const adds = allAdds(fixture);
   assert(
     adds.length === 1 && adds[0].name === "t",
     `expected one add on queue "t" for a tenant payload carrying organizationId, got ${JSON.stringify(adds)}`,
+  );
+}
+
+/**
+ * Which reason fires when: an absent or empty `organizationId` is
+ * `missing_organization_id` (the row above); a present, non-empty one that is
+ * not a UUID is the schema's `invalid_payload` — and the negative names the
+ * neighbour that must **not** have answered.
+ */
+export async function assertTenantNonUuidOrganizationIdIsInvalidPayloadNotMissing(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  const err = await captureRejection(() =>
+    enqueue(fixture.client, tenantQ, { organizationId: "org-a", x: 1 }, { jobId: "j1" }),
+  );
+  assert(
+    errorReason(err) !== "missing_organization_id",
+    "a present, non-empty organizationId answered missing_organization_id — the tenancy guard must only refuse absence",
+  );
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_payload",
+    `expected QueuePayloadError(invalid_payload) for a non-UUID organizationId, got ${errorName(err)}(${errorReason(err)})`,
+  );
+  assert(
+    errorMessage(err).includes("organizationId") && !errorMessage(err).includes("org-a"),
+    `expected the message to name the field path and not the value, got "${errorMessage(err)}"`,
+  );
+  assert(allAdds(fixture).length === 0, "expected add never to be called after the schema refusal");
+}
+
+export async function assertPayloadFailingItsSchemaIsRefusedAtEnqueue(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  const err = await captureRejection(() =>
+    enqueue(fixture.client, fleetQ, { x: "one" } as never, { jobId: "j1" }),
+  );
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_payload",
+    `expected QueuePayloadError(invalid_payload) for x: "one" against z.number(), got ${errorName(err)}(${errorReason(err)})`,
+  );
+  assert(
+    errorMessage(err).includes("x") && !errorMessage(err).includes("one"),
+    `expected the message to name the field path "x" and not the value "one", got "${errorMessage(err)}"`,
+  );
+  assert(allAdds(fixture).length === 0, "expected add never to be called after the schema refusal");
+}
+
+/** What reaches `add` is the schema's output: an undeclared key is stripped, not stored. */
+export async function assertEnqueueAddsTheSchemaOutputNotTheRawObject(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  await enqueue(fixture.client, fleetQ, { x: 1, smuggled: "yes" } as never, { jobId: "j1" });
+  const adds = allAdds(fixture);
+  assert(
+    adds.length === 1 && JSON.stringify(adds[0].data) === JSON.stringify({ x: 1 }),
+    `expected add to receive the parsed output { x: 1 } with the undeclared key stripped, got ${JSON.stringify(adds.map((a) => a.data))}`,
+  );
+}
+
+/** The guard-order proof for M2: a payload the schema refuses is a programming error, refused with or without Redis. */
+export async function assertInvalidPayloadAnswersBeforeAvailability(): Promise<void> {
+  const fixture = makeFixture(UNCONFIGURED);
+  const err = await captureRejection(() =>
+    enqueue(fixture.client, fleetQ, { x: "one" } as never, { jobId: "j1" }),
+  );
+  assert(
+    errorName(err) !== "QueueUnavailableError",
+    "guard order inverted: an unconfigured client answered QueueUnavailableError for a payload its schema refuses",
+  );
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_payload",
+    `expected QueuePayloadError(invalid_payload) on an unconfigured client, got ${errorName(err)}(${errorReason(err)})`,
   );
 }
 
@@ -334,6 +534,10 @@ export async function assertFleetPayloadNeedsNoOrganizationId(): Promise<void> {
     "expected a fleet payload without organizationId to be added — the tenancy check must read decl.tenancy",
   );
 }
+
+// ---------------------------------------------------------------------------
+// enqueue — decision 9 and the registry
+// ---------------------------------------------------------------------------
 
 export async function assertUnconfiguredClientRejectsWithQueueUnavailableError(): Promise<void> {
   const fixture = makeFixture(UNCONFIGURED);
@@ -370,7 +574,7 @@ export async function assertPayloadGuardAnswersBeforeAvailability(): Promise<voi
 export async function assertUndeclaredQueueIsRefused(): Promise<void> {
   const fixture = makeFixture(CONFIGURED, [fleetQ]);
   const err = await captureRejection(() =>
-    enqueue(fixture.client, tenantQ, { organizationId: "org-a", x: 1 }, { jobId: "j1" }),
+    enqueue(fixture.client, tenantQ, { organizationId: ORG_A, x: 1 }, { jobId: "j1" }),
   );
   assert(
     errorName(err) === "QueuePayloadError" && errorReason(err) === "unknown_queue",
@@ -385,14 +589,14 @@ export async function assertUndeclaredQueueIsRefused(): Promise<void> {
 
 export async function assertUpsertScheduleCallsUpsertJobSchedulerWithTemplate(): Promise<void> {
   const fixture = makeFixture(CONFIGURED);
-  await upsertSchedule(fixture.client, fleetQ, { schedulerId: "s", everyMs: 60_000 }, {} as never);
-  const upserts = fixture.handles.flatMap((h) => h.upserts);
+  await upsertSchedule(fixture.client, fleetQ, { schedulerId: "s", everyMs: 60_000 }, { x: 1 });
+  const upserts = allUpserts(fixture);
   assert(upserts.length === 1, `expected exactly one upsertJobScheduler call, got ${upserts.length}`);
   const [call] = upserts;
   const expected = {
     schedulerId: "s",
     repeat: { every: 60000 },
-    template: { name: "f", data: {}, opts: FLEET_RETRY_OPTS },
+    template: { name: "f", data: { x: 1 }, opts: FLEET_RETRY_OPTS },
   };
   assert(
     JSON.stringify(call) === JSON.stringify(expected),
@@ -410,15 +614,30 @@ export async function assertUpsertScheduleAppliesTenancyGuard(): Promise<void> {
     `expected the scheduler path to refuse a tenant payload without organizationId, got ${errorName(err)}(${errorReason(err)})`,
   );
   assert(
-    fixture.handles.flatMap((h) => h.upserts).length === 0,
+    allUpserts(fixture).length === 0,
     "expected upsertJobScheduler never to be called after the tenancy refusal",
+  );
+}
+
+export async function assertUpsertScheduleRefusesAPayloadFailingItsSchema(): Promise<void> {
+  const fixture = makeFixture(CONFIGURED);
+  const err = await captureRejection(() =>
+    upsertSchedule(fixture.client, fleetQ, { schedulerId: "s", everyMs: 60_000 }, { x: "one" } as never),
+  );
+  assert(
+    errorName(err) === "QueuePayloadError" && errorReason(err) === "invalid_payload",
+    `expected the scheduler path to refuse a payload its schema rejects, got ${errorName(err)}(${errorReason(err)})`,
+  );
+  assert(
+    allUpserts(fixture).length === 0,
+    "expected upsertJobScheduler never to be called after the schema refusal",
   );
 }
 
 export async function assertUpsertScheduleOnUnconfiguredClientRejects(): Promise<void> {
   const fixture = makeFixture(UNCONFIGURED);
   const err = await captureRejection(() =>
-    upsertSchedule(fixture.client, fleetQ, { schedulerId: "s", everyMs: 60_000 }, {} as never),
+    upsertSchedule(fixture.client, fleetQ, { schedulerId: "s", everyMs: 60_000 }, { x: 1 }),
   );
   assert(
     errorName(err) === "QueueUnavailableError",

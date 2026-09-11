@@ -1,5 +1,6 @@
 import type { Logger } from "@nestjs/common";
 import { EventEmitter } from "node:events";
+import { z } from "zod";
 
 import { heartbeatQueue } from "./heartbeat";
 import type { ProcessorRegistration } from "./queue-processor";
@@ -39,7 +40,11 @@ function errorName(err: unknown): string | undefined {
 // Fixture
 // ---------------------------------------------------------------------------
 
-const otherQueue = defineQueue<"other", { x: number }>({ name: "other", tenancy: "fleet" });
+const otherQueue = defineQueue({
+  name: "other",
+  tenancy: "fleet",
+  payload: z.object({ x: z.number() }),
+});
 
 const CONNECTION = { host: "cache", port: 6380 } as const;
 

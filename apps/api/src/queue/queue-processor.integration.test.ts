@@ -20,8 +20,12 @@ const connectionString = requireIntegrationDb({
     "payload's organizationId — the binding FORCE ROW LEVEL SECURITY reads in the worker.",
 });
 
-/** Any string binds; the GUC is what is under test, not the seed. Named so a leak is attributable. */
-const PROBE_ORGANIZATION_ID = "f4.24-queue-processor-probe";
+/**
+ * A UUID because `tenantPayloadSchema` requires one (migration 0040 casts the
+ * GUC to `uuid`); the value is still arbitrary — the GUC binding is what is
+ * under test, not the seed. `f424…` so a leak is attributable.
+ */
+const PROBE_ORGANIZATION_ID = "f4240000-0000-4000-8000-000000000001";
 
 describe.skipIf(!connectionString)("F4.24 — tenant processor binds app.current_organization", () => {
   let tenantPool: pg.Pool;
