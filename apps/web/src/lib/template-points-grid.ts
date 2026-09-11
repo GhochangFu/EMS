@@ -102,8 +102,10 @@ export type TemplatePointRow = {
    * ADR 0055 decision 11 — the fraction of an aggregate's declared members that
    * must be fresh, or `null` for the default.
    *
-   * Carried, never edited here (a ratio input is `F2.22`'s). It is on the row
-   * for the same reason the five calc fields are — the server replaces the whole
+   * Carried, never edited here. The ratio's rules — `(0, 1]`, `v2` derived rows
+   * only, cleared by a change to `v1` — are `template-calc-config.ts`'s
+   * (`F2.22`), and its input is the Calculations tab's. It is on the row for
+   * the same reason the five calc fields are — the server replaces the whole
    * point set from whichever tab saves — and the consequence of losing it is
    * sharper than theirs: `null` is **fail closed**, so a dropped ratio does not
    * loosen the rule, it stops the formula computing at all, with nothing on
@@ -547,12 +549,16 @@ export function brokenFormulaRefs(rows: readonly TemplatePointRow[]): PointGridP
  *
  * `formulaDialect` is nullable on the wire and a stored row can predate a
  * vocabulary, so this resolves through `CALC_DIALECTS` and falls back to `v1`
- * rather than trusting the column. `v1` is the safe fallback for **this**
- * function: it is the narrower grammar, so an unrecognised label yields a parse
- * failure the function already knows to leave alone, never a silently widened
- * one.
+ * rather than trusting the column. `v1` is the safe fallback for
+ * `brokenFormulaRefs`: it is the narrower grammar, so an unrecognised label
+ * yields a parse failure the function already knows to leave alone, never a
+ * silently widened one.
+ *
+ * Exported for `template-calc-cycles.ts` (`F2.22`), which mirrors the server's
+ * `templateCycles` and must resolve a row's dialect the same way this grid
+ * does — one resolution, so the two scans cannot disagree on which rows parse.
  */
-function rowDialect(row: TemplatePointRow): CalcDialect {
+export function rowDialect(row: TemplatePointRow): CalcDialect {
   return CALC_DIALECTS.find((known) => known === row.formulaDialect) ?? CALC_DIALECT;
 }
 

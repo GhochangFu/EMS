@@ -183,9 +183,9 @@ function wholeText(formula: string, message: string): FormulaDiagnostic {
  * graph, which needs membership resolution and therefore lives on the server
  * (`F2.9` Task 12). This function cannot do it and does not pretend to. The
  * within-template subset — the only part a template can see, because it has no
- * asset — is a sibling `lib/` module's job, as a client re-implementation that
- * is wording, not authority (`F2.22`, the owner's Q5 ruling), so nothing here
- * will grow a cycle scan.
+ * asset — is `template-calc-cycles.ts`'s job, as a client re-implementation
+ * that is wording, not authority (`F2.22`, the owner's Q5 ruling), so nothing
+ * here will grow a cycle scan.
  *
  * `dialect` defaults to `v1`, so every caller that predates `F2.9` is unchanged
  * without restating it.
