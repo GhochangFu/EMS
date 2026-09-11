@@ -15,7 +15,6 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
-import type { AlarmsGateway } from "../alarms/alarms.gateway";
 import { ChannelsService } from "../notifications/channels.service";
 import type {
   DeliveryResult,
@@ -50,10 +49,6 @@ function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
-}
-
-function stubGateway(): AlarmsGateway {
-  return { broadcastCreated: () => undefined } as unknown as AlarmsGateway;
 }
 
 function stubVocabularies(): VocabulariesService {
@@ -146,7 +141,7 @@ export async function assertRaisesUnscopedButReturnsScoped(db: BmsDb): Promise<v
       tx,
       tx,
       stubVocabularies(),
-      new AlarmRaiser(tx, stubGateway()),
+      new AlarmRaiser(tx),
       { dispatch: () => Promise.resolve([]) } as unknown as NotificationsService,
     );
 
@@ -239,7 +234,7 @@ export async function assertStaleSampleMatchesButDoesNotRaise(db: BmsDb): Promis
       tx,
       tx,
       stubVocabularies(),
-      new AlarmRaiser(tx, stubGateway()),
+      new AlarmRaiser(tx),
       { dispatch: () => Promise.resolve([]) } as unknown as NotificationsService,
     );
     await service.evaluateEnabledRules(ACTOR, [assetId]);
@@ -429,7 +424,7 @@ export async function assertNotifyRuleDispatchesOnRaiseOnly(db: BmsDb): Promise<
       tx,
       tx,
       stubVocabularies(),
-      new AlarmRaiser(tx, stubGateway()),
+      new AlarmRaiser(tx),
       notifications,
     );
     const sentForRule = (ruleId: string): NotificationMessage[] =>

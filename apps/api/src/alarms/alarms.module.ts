@@ -9,7 +9,7 @@ import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEngineService } from "./alarm-engine.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmLifecycleService } from "./alarm-lifecycle.service";
-import { AlarmRaiser } from "./alarm-raise.service";
+import { AlarmRaiseModule } from "./alarm-raise.module";
 import { AlarmsController } from "./alarms.controller";
 import { AlarmsGateway } from "./alarms.gateway";
 import { AlarmsService } from "./alarms.service";
@@ -18,13 +18,16 @@ import { AlarmsService } from "./alarms.service";
   // `F3.7`: `NotificationsModule` imports nothing from alarms or rules and
   // declares no `imports` at all, so this edge is acyclic — checked before
   // adding it, not assumed, the same way `rules.module.ts` checked its own.
-  imports: [TelemetryModule, VocabulariesModule, NotificationsModule],
+  //
+  // `F3.11` (ADR 0064 decision 3): `AlarmRaiser` moved out to the loop-free
+  // `AlarmRaiseModule` so the worker can import it without this module —
+  // and with it the controller, the gateway and the JWT guard.
+  imports: [TelemetryModule, VocabulariesModule, NotificationsModule, AlarmRaiseModule],
   controllers: [AlarmsController],
   providers: [
     AlarmsService,
     AlarmsGateway,
     AlarmEngineService,
-    AlarmRaiser,
     AlarmDetailsService,
     AlarmEnrichmentService,
     // `F3.10` (ADR 0057 decision 4): the 30 s lifecycle sweep — the one
@@ -35,7 +38,9 @@ import { AlarmsService } from "./alarms.service";
     JwtAuthGuard,
   ],
   // `RulesModule` (F3.6 task 5) needs `AlarmRaiser` so the on-demand evaluator
-  // raises through the same engine as the streaming path.
-  exports: [AlarmRaiser],
+  // raises through the same engine as the streaming path. Re-exporting the
+  // module, not the provider, is how Nest hands on a provider it did not
+  // declare itself.
+  exports: [AlarmRaiseModule],
 })
 export class AlarmsModule {}

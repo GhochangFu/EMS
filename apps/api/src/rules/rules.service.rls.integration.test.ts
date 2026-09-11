@@ -8,7 +8,6 @@ import type { BmsDb } from "@bms/db";
 import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
-import type { AlarmsGateway } from "../alarms/alarms.gateway";
 import { withTenant } from "../database/tenant-context";
 import type { NotificationsService } from "../notifications/notifications.service";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
@@ -67,10 +66,6 @@ const GLOBAL_ADMIN_EMAIL = "admin@bms.local";
 // declaration because the isolation invariant
 // (tests/integration-fixture-isolation.test.ts) reads it literally.
 const PREFIX = `E71B-RULE-${randomUUID().replace(/-/g, "").slice(0, 12)}-`;
-
-function stubGateway(): AlarmsGateway {
-  return { broadcastCreated: () => undefined } as unknown as AlarmsGateway;
-}
 
 describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under real RLS", () => {
   let ownerPool: pg.Pool;
@@ -275,7 +270,7 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
         t,
         f,
         new VocabulariesService(f),
-        new AlarmRaiser(t, stubGateway()),
+        new AlarmRaiser(t),
         notifications,
       );
     ctx = {

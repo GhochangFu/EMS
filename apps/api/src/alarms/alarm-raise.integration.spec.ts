@@ -5,7 +5,6 @@ import type { BmsDb } from "@bms/db";
 
 import type { AlarmRaiseRule } from "./alarm-raise.service";
 import { AlarmRaiser } from "./alarm-raise.service";
-import type { AlarmsGateway } from "./alarms.gateway";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
 
 /**
@@ -25,21 +24,22 @@ import { createFixtureAssets, fixtureLocation } from "../testing/integration-fix
  * seed with `SELECT id FROM bms.assets LIMIT 1`, which was flaky under a full
  * parallel run — see `../testing/integration-fixtures.ts` for the mechanism.
  *
- * The gateway is a minimal stub (`broadcastCreated` only) rather than a real
- * `AlarmsGateway` — matching how `access-control.integration.test.ts`
- * constructs its service with `new`, not through a Nest testing module.
- * `AlarmRaiser.raise` calls `broadcastCreated` for real when the insert
- * succeeds, so the stub has to be a working no-op, not `{}`.
+ * `AlarmRaiser` is constructed with `new` and the transaction handle alone —
+ * matching how `access-control.integration.test.ts` constructs its service,
+ * not through a Nest testing module. It takes no gateway: since `F3.11`
+ * (ADR 0064 decision 4) a raise announces itself with a transactional
+ * `pg_notify('bms_alarms', …)` as the last statement of its own transaction,
+ * and the `created` broadcast comes from the `LISTEN bms_alarms` path
+ * (`AlarmNotifyService`, Unit 3). Every row here rolls back, so the `NOTIFY`
+ * each successful raise issues is dropped with the row — which still proves
+ * the statement parses and binds on a real connection; that it reaches a
+ * listener needs a commit and is Unit 8's integration spec.
  */
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
-}
-
-function stubGateway(): AlarmsGateway {
-  return { broadcastCreated: () => undefined } as unknown as AlarmsGateway;
 }
 
 async function insertTestRule(
@@ -129,7 +129,7 @@ export async function assertRaisesDedupesAndTracesOnlyOnRaise(db: BmsDb): Promis
       assetId,
       organizationId: loc.organizationId,
     });
-    const raiser = new AlarmRaiser(tx, stubGateway());
+    const raiser = new AlarmRaiser(tx);
 
     const first = await raiser.raise(assetId, loc.organizationId, rule, 1_000_000);
     assert(first.raised, "the first raise for a fresh (asset, rule) must succeed");
@@ -266,7 +266,7 @@ export async function assertPreservesSeededSeverity(db: BmsDb): Promise<void> {
       assetId,
       organizationId: loc.organizationId,
     });
-    const raiser = new AlarmRaiser(tx, stubGateway());
+    const raiser = new AlarmRaiser(tx);
 
     const result = await raiser.raise(assetId, loc.organizationId, rule, 1_000_000);
     assert(result.raised, "raising a rule with a non-default seeded severity must succeed");
@@ -278,6 +278,127 @@ export async function assertPreservesSeededSeverity(db: BmsDb): Promise<void> {
     assert(
       row?.severity === "high",
       `expected severity 'high' to survive the raise unchanged, got '${row?.severity ?? "undefined"}'`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * `F3.11` / ADR 0064 decision 5 — the trace names which engine raised.
+ *
+ * Three rows on the same fixture, each its own transaction and each its own
+ * `it()` in the wrapper, because `assert` throws and the plan's mutation
+ * (hard-code `"alarm_engine"`) has to redden the `rule_sweep` row and no
+ * other. Every row also executes the `pg_notify` the raise now issues inside
+ * its rolled-back transaction — that is the gate that the statement parses
+ * and binds under a real connection; the `NOTIFY`-reaches-the-listener claim
+ * needs a commit and is Unit 8's.
+ */
+async function readSingleTrace(
+  tx: Parameters<Parameters<BmsDb["transaction"]>[0]>[0],
+  ruleId: string,
+): Promise<Record<string, unknown>> {
+  const traces = await tx
+    .select({ trace: ruleExecutions.trace })
+    .from(ruleExecutions)
+    .where(eq(ruleExecutions.ruleId, ruleId));
+  assert(traces.length === 1, `expected exactly 1 rule_executions row, found ${traces.length}`);
+  const trace = traces[0]?.trace;
+  assert(
+    trace !== null && typeof trace === "object" && !Array.isArray(trace),
+    `expected the trace to be a JSON object, got ${JSON.stringify(trace)}`,
+  );
+  return trace as Record<string, unknown>;
+}
+
+/** No `opts` at all — the streaming engine's call shape — traces `raisedBy: "alarm_engine"` and no `evaluatedBy`. */
+export async function assertDefaultTraceNamesTheStreamingEngine(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const loc = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36", loc);
+    const rule = await insertTestRule(tx, {
+      code: "F36_TEST_RAISE_TRACE_DEFAULT",
+      pointKey: "f36_test_trace_default_point",
+      severity: "warning",
+      assetId,
+      organizationId: loc.organizationId,
+    });
+    const raiser = new AlarmRaiser(tx);
+
+    const result = await raiser.raise(assetId, loc.organizationId, rule, 1_000_000);
+    assert(result.raised, "the raise must succeed for the trace row to exist");
+
+    const trace = await readSingleTrace(tx, rule.id);
+    assert(
+      trace.raisedBy === "alarm_engine",
+      `expected the default trace to read raisedBy "alarm_engine", got ${JSON.stringify(trace.raisedBy)}`,
+    );
+    assert(
+      !("evaluatedBy" in trace),
+      `an engine trace must carry no evaluatedBy key — nobody pressed anything; got ${JSON.stringify(trace)}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/** `{ raisedBy: "rule_sweep" }` — the worker's sweep — is what the trace reads back. */
+export async function assertRaisedByOptionReachesTheTrace(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const loc = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36", loc);
+    const rule = await insertTestRule(tx, {
+      code: "F36_TEST_RAISE_TRACE_SWEEP",
+      pointKey: "f36_test_trace_sweep_point",
+      severity: "warning",
+      assetId,
+      organizationId: loc.organizationId,
+    });
+    const raiser = new AlarmRaiser(tx);
+
+    const result = await raiser.raise(assetId, loc.organizationId, rule, 1_000_000, {
+      raisedBy: "rule_sweep",
+    });
+    assert(result.raised, "the raise must succeed for the trace row to exist");
+
+    const trace = await readSingleTrace(tx, rule.id);
+    assert(
+      trace.raisedBy === "rule_sweep",
+      `expected the sweep's trace to read raisedBy "rule_sweep", got ${JSON.stringify(trace.raisedBy)}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/** `raisedBy` does not force a trace: `recordTrace: false` still writes none. */
+export async function assertRaisedByDoesNotForceATrace(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const loc = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F36", loc);
+    const rule = await insertTestRule(tx, {
+      code: "F36_TEST_RAISE_TRACE_NONE",
+      pointKey: "f36_test_trace_none_point",
+      severity: "warning",
+      assetId,
+      organizationId: loc.organizationId,
+    });
+    const raiser = new AlarmRaiser(tx);
+
+    const result = await raiser.raise(assetId, loc.organizationId, rule, 1_000_000, {
+      recordTrace: false,
+      raisedBy: "rule_sweep",
+    });
+    assert(result.raised, "the raise itself must still succeed with recordTrace: false");
+
+    const traces = await tx
+      .select({ id: ruleExecutions.id })
+      .from(ruleExecutions)
+      .where(eq(ruleExecutions.ruleId, rule.id));
+    assert(
+      traces.length === 0,
+      `recordTrace: false must write no rule_executions row whatever raisedBy says, found ${traces.length}`,
     );
 
     tx.rollback();

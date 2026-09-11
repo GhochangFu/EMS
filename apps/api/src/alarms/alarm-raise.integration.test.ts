@@ -6,7 +6,10 @@ import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import {
+  assertDefaultTraceNamesTheStreamingEngine,
   assertPreservesSeededSeverity,
+  assertRaisedByDoesNotForceATrace,
+  assertRaisedByOptionReachesTheTrace,
   assertRaisesDedupesAndTracesOnlyOnRaise,
 } from "./alarm-raise.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
@@ -51,5 +54,19 @@ describe.skipIf(!connectionString)("F3.6 — AlarmRaiser against a real database
 
   it("preserves a severity added to the vocabulary by a plain INSERT", async () => {
     await assertPreservesSeededSeverity(db);
+  });
+
+  // `F3.11` / ADR 0064 decision 5 — one `it()` per row so the plan's mutation
+  // (hard-code "alarm_engine") reddens the rule_sweep row and no other.
+  it("traces raisedBy alarm_engine with no evaluatedBy when raise takes no opts", async () => {
+    await assertDefaultTraceNamesTheStreamingEngine(db);
+  });
+
+  it("traces raisedBy rule_sweep when the sweep passes it", async () => {
+    await assertRaisedByOptionReachesTheTrace(db);
+  });
+
+  it("writes no trace under recordTrace: false whatever raisedBy says", async () => {
+    await assertRaisedByDoesNotForceATrace(db);
   });
 });
