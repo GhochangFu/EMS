@@ -2,9 +2,13 @@
  * The Calculations tab (`F2.5`, ADR 0038 Unit 9c).
  *
  * Wiring only. The formula field is Unit 5's `FormulaEditorLazy` in `"derived"`
- * mode; the trigger rules are `src/lib/template-calc-config.ts`; the payload is
- * Unit 9b's `buildPointsPayload`, because the server replaces the whole point
- * set from whichever tab saves and this one edits five fields of it.
+ * mode; the live preview under it is `formula-preview.tsx` (ADR 0038 decision
+ * 5, first rendered in `F2.22` — item 6); the trigger, dialect and coverage
+ * rules are `src/lib/template-calc-config.ts`; the within-template cycle
+ * mirror is `src/lib/template-calc-cycles.ts`; the payload is Unit 9b's
+ * `buildPointsPayload`, because the server replaces the whole point set from
+ * whichever tab saves and this one edits six fields of it — the formula, its
+ * dialect, the three trigger fields, and since `F2.22` the coverage ratio.
  *
  * **The editor is reached through `formula-editor-lazy.tsx`, never directly.**
  * A value import of `formula-editor.tsx` puts CodeMirror in the entry chunk
@@ -19,22 +23,28 @@
  */
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import type { AdminAssetTemplateDto } from "@bms/shared";
-import { CALC_DIALECT, CALC_TRIGGERS } from "@bms/shared";
+import type { AdminAssetTemplateDto, CalcDialect } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2, CALC_TRIGGERS } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { validateEditorFormula } from "../../lib/formula-editor-rules";
+import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-editor-rules";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
   CALC_INTERVAL_BOUNDS,
+  COVERAGE_RATIO_HINT,
   INPUT_AGE_BOUNDS,
   IMPLIED_MAX_INPUT_AGE_SECONDS,
+  V2_TRIGGER_LATENCY_HINT,
   calcConfigErrors,
   calcGridErrors,
+  dialectOptions,
+  parseOptionalRatio,
   parseOptionalSeconds,
   setCalcTrigger,
+  setFormulaDialect,
 } from "../../lib/template-calc-config";
+import { templateCycleProblems } from "../../lib/template-calc-cycles";
 import {
   brokenFormulaRefs,
   buildPointsPayload,
@@ -43,6 +53,7 @@ import {
   type TemplatePointRow,
 } from "../../lib/template-points-grid";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
+import { FormulaPreview } from "./formula-preview";
 
 type CalculationsTabProps = {
   template: AdminAssetTemplateDto;
@@ -97,7 +108,16 @@ export function CalculationsTab({
   );
   const configProblems = calcGridErrors(rows);
   const refProblems = brokenFormulaRefs(rows);
-  const blocked = formulaProblems.length > 0 || configProblems.length > 0 || refProblems.length > 0;
+  // `F2.22` item 7 — the within-template cycle mirror, wording for a save the
+  // server refuses through `templateCycles`. Blocking here, like the other
+  // three, because the server's refusal is certain and the author would
+  // otherwise learn of it only from the 400.
+  const cycleProblems = templateCycleProblems(rows);
+  const blocked =
+    formulaProblems.length > 0 ||
+    configProblems.length > 0 ||
+    refProblems.length > 0 ||
+    cycleProblems.length > 0;
   const changed = pointsHaveChanged(rows, template);
 
   // The same comparison Save already uses, reported up so the page can guard a
@@ -130,18 +150,29 @@ export function CalculationsTab({
       ) : null}
 
       {derivedIndexes.map(({ row, index }) => {
+        // The dialect the formula is stored under, read once per row so the
+        // Grammar select, the editor and the linter cannot disagree on it.
+        // `null` on the wire is `v1` — the label a row had before ADR 0055
+        // gave it a choice.
+        const dialect = row.formulaDialect ?? CALC_DIALECT;
+        const isV2 = dialect === CALC_DIALECT_V2;
         const validation = validateEditorFormula(
           {
             mode: "derived",
             points: siblings,
             selfPointKey: row.pointKey,
-            dialect: row.formulaDialect ?? CALC_DIALECT,
+            dialect,
           },
           row.formula ?? "",
         );
+        // `problemFor` renders the *first* problem per field. A broken
+        // reference and a cycle both land on `formula`, and the reference
+        // comes first: a key that is no longer in the template is the
+        // simpler thing to fix, and fixing it may dissolve the cycle.
         const problems = [
           ...calcConfigErrors(row, index),
           ...refProblems.filter((problem) => problem.row === index),
+          ...cycleProblems.filter((problem) => problem.row === index),
         ];
         const problemFor = (field: string) =>
           problems.find((problem) => problem.field === field)?.message;
@@ -158,17 +189,64 @@ export function CalculationsTab({
 
             <label className="block space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                Grammar
+              </span>
+              <select
+                aria-label={`Grammar for ${row.pointKey}`}
+                value={dialect}
+                disabled={!editable}
+                // Through `setFormulaDialect`, never a direct write: to `v2` it
+                // flips a streaming trigger to `scheduled`, the only trigger
+                // the server accepts under `v2`; to `v1` it clears the ratio
+                // the server refuses off a `v2` point (design decision 3). A
+                // value outside `CALC_DIALECTS` returns the row unchanged, so
+                // the cast cannot store a label the engine does not know.
+                onChange={(event) =>
+                  setRows((current) =>
+                    current.map((entry, position) =>
+                      position === index
+                        ? setFormulaDialect(entry, event.target.value as CalcDialect)
+                        : entry,
+                    ),
+                  )
+                }
+                className={fieldClass(!editable, undefined)}
+              >
+                {dialectOptions().map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {isV2 ? (
+              // The teaching ADR 0055 decision 6 buys: which reference form
+              // answers which question. From `V2_REFERENCE_FORMS`, whose
+              // examples the parser is proven to accept.
+              <ul className="mt-1 space-y-0.5 text-[11px] text-bms-muted">
+                {V2_REFERENCE_FORMS.map((form) => (
+                  <li key={form.form}>
+                    <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
+                    <code className="rounded bg-gray-100 px-1">{form.example}</code>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <label className="mt-3 block space-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
                 Formula
               </span>
               <FormulaEditorLazy
                 mode="derived"
                 points={siblings}
                 selfPointKey={row.pointKey}
-                // The formula's own dialect, not this editor's. Under
-                // `bms-calc-v2` the linter must admit a derived sibling and
-                // completion must offer one (ADR 0055 decision 7); under `v1`
+                // The formula's own dialect — the Grammar select's value, not
+                // this editor's default. Under `bms-calc-v2` the linter must
+                // admit a derived sibling and completion must offer one, and
+                // the `@` scopes (ADR 0055 decision 7; `F2.22` T5); under `v1`
                 // both stay exactly as decision 3 freezes them.
-                dialect={row.formulaDialect ?? CALC_DIALECT}
+                dialect={dialect}
                 value={row.formula ?? ""}
                 // ADR 0038 decision 3's one load-bearing line, expressed
                 // through the named rule rather than through `!editable`.
@@ -181,17 +259,19 @@ export function CalculationsTab({
                   update(index, {
                     formula: next,
                     // **The row's own dialect, defaulting to `v1` only when it
-                    // has none.** There is no dialect control on this tab (one
-                    // is `F2.22`'s), so this line is not a choice the author
-                    // makes — it is what an edit preserves.
+                    // has none.** The Grammar select above is the one control
+                    // that changes a row's dialect, and only on the author's
+                    // action (design decision 2); this line is not a choice —
+                    // it is what a formula edit preserves.
                     //
                     // Stamping `CALC_DIALECT` unconditionally silently
                     // downgraded a stored `bms-calc-v2` formula to `v1` on the
                     // first keystroke, and the API then refused its own syntax
                     // at the `@` of the aggregate it had itself stored. A
                     // control that damages a row it did not author is the worst
-                    // shape this tab can take.
-                    formulaDialect: row.formulaDialect ?? CALC_DIALECT,
+                    // shape this tab can take. `calculations-tab.spec.tsx`
+                    // case 3 holds it.
+                    formulaDialect: dialect,
                   })
                 }
               />
@@ -202,13 +282,20 @@ export function CalculationsTab({
             {problemFor("formula") ? (
               <p className="mt-1 text-[11px] text-red-700">{problemFor("formula")}</p>
             ) : null}
+            {/* ADR 0038 decision 5. Unconditional here, where the KPIs tab
+                gates on a checked dialect (decision 9): a derived formula is
+                always checked — `isCheckedDialect` is `true` for every
+                `"derived"` surface — and `dialect` is already a real
+                `CalcDialect`. Disabled on a frozen version, not absent. */}
+            <FormulaPreview expression={row.formula ?? ""} dialect={dialect} disabled={!editable} />
 
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <label className="block space-y-1">
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
                   Runs
                 </span>
                 <select
+                  aria-label={`Runs for ${row.pointKey}`}
                   value={row.calcTrigger ?? ""}
                   disabled={!editable}
                   // Through `setCalcTrigger`, never a direct write: switching to
@@ -233,11 +320,20 @@ export function CalculationsTab({
                   className={fieldClass(!editable, problemFor("calcTrigger"))}
                 >
                   <option value="">Choose…</option>
-                  <option value="streaming">on every reading</option>
+                  {/* Disabled under `v2`, not hidden (design decision 5): a
+                      stored streaming `v2` row keeps its value visible while
+                      `calcConfigErrors`' server sentence names the problem.
+                      Hiding it would blank the select the instant a row flips. */}
+                  <option value="streaming" disabled={isV2}>
+                    on every reading
+                  </option>
                   <option value="scheduled">on a schedule</option>
                 </select>
                 {problemFor("calcTrigger") ? (
                   <span className="block text-[11px] text-red-700">{problemFor("calcTrigger")}</span>
+                ) : null}
+                {isV2 ? (
+                  <span className="block text-[11px] text-bms-muted">{V2_TRIGGER_LATENCY_HINT}</span>
                 ) : null}
               </label>
 
@@ -295,6 +391,40 @@ export function CalculationsTab({
                   </span>
                 ) : null}
               </label>
+
+              {/* Only under `v2` (ADR 0055 decision 11): the ratio is the
+                  coverage of an aggregate's member set, and the server refuses
+                  one on any other point. `setFormulaDialect` clears it on the
+                  way to `v1`, so the field and its value leave together. */}
+              {isV2 ? (
+                <label className="block space-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                    Minimum coverage
+                  </span>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0"
+                    max="1"
+                    aria-label={`Minimum coverage for ${row.pointKey}`}
+                    value={row.minCoverageRatio ?? ""}
+                    disabled={!editable}
+                    // The placeholder says what empty means, because on this
+                    // field it is the strict setting, not the lax one.
+                    placeholder="fail closed"
+                    onChange={(event) =>
+                      update(index, { minCoverageRatio: parseOptionalRatio(event.target.value) })
+                    }
+                    className={fieldClass(!editable, problemFor("minCoverageRatio"))}
+                  />
+                  {problemFor("minCoverageRatio") ? (
+                    <span className="block text-[11px] text-red-700">
+                      {problemFor("minCoverageRatio")}
+                    </span>
+                  ) : null}
+                  <span className="block text-[11px] text-bms-muted">{COVERAGE_RATIO_HINT}</span>
+                </label>
+              ) : null}
             </div>
           </section>
         );

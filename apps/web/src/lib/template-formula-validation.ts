@@ -3,11 +3,12 @@
  * (`F2.5`, ADR 0038 decision 4 — Unit 4).
  *
  * The two surfaces are a **derived point's `formula`** (Calculations tab) and a
- * **KPI's `expression`** (KPIs tab). They share the `bms-calc-v1` parser and
- * share nothing else: a derived formula may only reference *measured* siblings,
- * while a KPI carries its own `pointKeys` array that must agree with the
- * expression in both directions. One function each, one private checker under
- * the KPI pair.
+ * **KPI's `expression`** (KPIs tab). They share the calc parser — under
+ * whichever member of `CALC_DIALECTS` the row names, `bms-calc-v1` by default —
+ * and share nothing else: a `v1` derived formula may only reference *measured*
+ * siblings, while a KPI carries its own `pointKeys` array that must agree with
+ * the expression's **local** references in both directions. One function each,
+ * one private checker under the KPI pair.
  *
  * **This does not replace the server's validation and must not drift from it.**
  * Every rule below mirrors one the API already enforces
@@ -84,7 +85,7 @@ export type KpiFormulaInput = {
 
 /**
  * The two derived-reference messages, copied from
- * `apps/api/src/admin/asset-templates/asset-templates.schema.ts:159–171`.
+ * `apps/api/src/admin/asset-templates/asset-templates.schema.ts:304-307`.
  *
  * `apps/web` may not import from `apps/api`, so these are string literals on
  * both sides of the boundary — stated here rather than left for a reader to
@@ -97,7 +98,7 @@ const DERIVED_SELF_REFERENCE_MESSAGE =
 const DERIVED_SIBLING_REFERENCE_MESSAGE =
   "This point's formula references another derived point — a derived formula may only reference measured points";
 
-/** Copied from `templateKpiSchema.superRefine` (`asset-templates-content.schema.ts:230`). */
+/** Copied from `templateKpiSchema.superRefine` (`asset-templates-content.schema.ts:349`). */
 const UNUSED_POINT_KEYS_MESSAGE =
   "Every entry in pointKeys must be referenced by expression at least once";
 
@@ -180,8 +181,11 @@ function wholeText(formula: string, message: string): FormulaDiagnostic {
  *
  * What replaces the ban under `v2` is a **cycle** check on the real dependency
  * graph, which needs membership resolution and therefore lives on the server
- * (`F2.9` Task 12). This function cannot do it and does not pretend to; the
- * editor mirror of those diagnostics is `F2.22`'s.
+ * (`F2.9` Task 12). This function cannot do it and does not pretend to. The
+ * within-template subset — the only part a template can see, because it has no
+ * asset — is `template-calc-cycles.ts`'s job, as a client re-implementation
+ * that is wording, not authority (`F2.22`, the owner's Q5 ruling), so nothing
+ * here will grow a cycle scan.
  *
  * `dialect` defaults to `v1`, so every caller that predates `F2.9` is unchanged
  * without restating it.
@@ -291,8 +295,13 @@ function checkKpiExpression(
  * Resolved through `CALC_DIALECTS` rather than compared to the two literals:
  * `TemplateKpi["dialect"]` widened with the Q3 ruling and a third member would
  * otherwise be read as `"unvalidated"` by a check nobody remembered to extend.
+ *
+ * Exported since `F2.22` so `template-kpi-form.ts` asks the same question the
+ * same way — which of a row's fields are derived, and which sentence names a
+ * missing key, both turn on it — instead of restating the ternary against one
+ * literal, which is exactly the drift the vocabulary lookup exists to prevent.
  */
-function checkedDialect(dialect: TemplateKpi["dialect"]): CalcDialect | null {
+export function checkedDialect(dialect: TemplateKpi["dialect"]): CalcDialect | null {
   return CALC_DIALECTS.find((known) => known === dialect) ?? null;
 }
 

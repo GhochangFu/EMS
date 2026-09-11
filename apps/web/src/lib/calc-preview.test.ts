@@ -7,8 +7,11 @@ import {
   runNegativeZeroTests,
   runNonFiniteInputIsTreatedAsMissingTests,
   runPreviewComputesTests,
+  runPreviewCrossRefsTests,
   runPreviewInputKeyTests,
   runUnparsedIsSilentTests,
+  runV2MissingCrossInputTests,
+  runV2PreviewComputesTests,
 } from "./calc-preview.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -43,5 +46,17 @@ describe("calc live preview", () => {
 
   it("lists the input keys a formula needs, deduplicated in source order", () => {
     runPreviewInputKeyTests();
+  });
+
+  it("evaluates a bms-calc-v2 formula with one sample value per cross-asset reference", () => {
+    runV2PreviewComputesTests();
+  });
+
+  it("reports a cross-asset reference with no sample value, positioned on the aggregate", () => {
+    runV2MissingCrossInputTests();
+  });
+
+  it("lists the cross-asset references under v2, none under v1, and keeps the local list local", () => {
+    runPreviewCrossRefsTests();
   });
 });

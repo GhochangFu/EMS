@@ -7,9 +7,10 @@
  * `tests/adr-0038-formula-editor.test.ts` asserts that; the bundler does not.
  *
  * One component serves both authored-formula surfaces — a derived point's
- * `formula` and a KPI's `expression` (decision 4) — because they share the
- * `bms-calc-v1` parser. They share nothing else, so `FormulaEditorRules` is a
- * discriminated union rather than a flag.
+ * `formula` and a KPI's `expression` (decision 4) — because they share one
+ * parser, `parseFormula`, run under the dialect each surface carries in its
+ * rules (`bms-calc-v1` or `bms-calc-v2`, ADR 0055). They share nothing else,
+ * so `FormulaEditorRules` is a discriminated union rather than a flag.
  *
  * **Composed from `minimalSetup`, never `basicSetup`** (ADR 0038 Amendment 1).
  * `basicSetup` imports and uses `highlightSelectionMatches` and `searchKeymap`,
@@ -46,6 +47,7 @@ import {
   editorDiagnosticRanges,
   flattenNewlines,
   isCheckedDialect,
+  scopeCompletions,
   validateEditorFormula,
   type FormulaEditorRules,
 } from "../../lib/formula-editor-rules";
@@ -218,10 +220,42 @@ function buildExtensions(
     };
   };
 
+  // `F2.22` T5: the `@` scope source, beside the `{` one. `scopeCompletions`
+  // is `[]` unless the surface's dialect is `bms-calc-v2`, and an empty list
+  // returns `null` rather than a result with no options — under `v1` there is
+  // no `@` grammar, so there is nothing to open a popup for. The `{` source
+  // above returns its (possibly empty) key list instead, because a `{` is
+  // grammar under both dialects and the popup is right to open there.
+  //
+  // `[a-z]*` and not `\w*`: a scope name is lowercase letters only
+  // (`CALC_SCOPE_KINDS`, matched case-sensitively by the tokenizer), so the
+  // run the popup filters on is the run the grammar will read. Whether the
+  // matcher fires where an author types is a browser claim (T10), not this
+  // file's — nothing here is reachable by a test.
+  const scopes = (context: CompletionContext): CompletionResult | null => {
+    const opened = context.matchBefore(/@[a-z]*/);
+    if (!opened) {
+      return null;
+    }
+    const options = scopeCompletions(propsRef.current);
+    if (options.length === 0) {
+      return null;
+    }
+    return {
+      from: opened.from,
+      options: options.map((scope) => ({
+        label: scope.label,
+        type: "keyword",
+        apply: scope.apply,
+        info: scope.info,
+      })),
+    };
+  };
+
   return [
     ...singleLine,
     minimalSetup,
-    autocompletion({ override: [completions] }),
+    autocompletion({ override: [completions, scopes] }),
     linter(lintSource),
     highlight,
     calcTheme,
@@ -236,7 +270,8 @@ function buildExtensions(
 }
 
 /**
- * A controlled CodeMirror field for one `bms-calc-v1` expression.
+ * A controlled CodeMirror field for one calc expression, lexed, linted and
+ * completed under the dialect its rules carry (`bms-calc-v1` or `bms-calc-v2`).
  *
  * Import it through `formula-editor-lazy.tsx`, never directly.
  */

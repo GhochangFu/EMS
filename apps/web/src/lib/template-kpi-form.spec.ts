@@ -13,6 +13,7 @@ import {
   kpiFormErrors,
   kpiRowsFrom,
   kpisHaveChanged,
+  setKpiDialect,
   validateKpiRow,
   type TemplateKpiRow,
 } from "./template-kpi-form";
@@ -251,6 +252,61 @@ export function runPointKeyDerivationTests(): void {
 }
 
 /**
+ * A checked `bms-calc-v2` KPI derives its **local** point keys (`F2.22` item
+ * 8; the owner's `F2.9` Q3b ruling), exactly as a `v1` one does.
+ *
+ * Every stored array below is one its own expression cannot produce, so a
+ * result that matches the expression can only have come from derivation. That
+ * is what makes each assertion sensitive to the branch it exists for: with the
+ * dialect test inverted, `effectivePointKeys` returns the stored array
+ * unchanged, and a `v2` fixture stored as `[]` would then pass by coincidence.
+ */
+export function runV2PointKeyDerivationTests(): void {
+  const mixed = row({
+    dialect: CALC_DIALECT_V2,
+    expression: "{FLOW} / sum({FLOW} @site)",
+    pointKeys: ["OLD"],
+  });
+  assert(
+    effectivePointKeys(mixed).join(",") === "FLOW",
+    `a v2 KPI derives its local keys and ignores the stored array — got ` +
+      JSON.stringify(effectivePointKeys(mixed)),
+  );
+
+  // The member key of an aggregate is not a local reference (`F2.22` plan
+  // correction 1): `sum({kw} @site)` reads `kw` on other assets, not here.
+  const crossOnly = row({
+    dialect: CALC_DIALECT_V2,
+    expression: "sum({kw} @site)",
+    pointKeys: ["OLD"],
+  });
+  assert(
+    effectivePointKeys(crossOnly).length === 0,
+    `a cross-only v2 KPI reads no local point, whatever the stored array says — got ` +
+      JSON.stringify(effectivePointKeys(crossOnly)),
+  );
+
+  // The manual list here is one the expression cannot derive, so keeping it is
+  // the only way this passes.
+  const manual = row({
+    dialect: "unvalidated",
+    expression: "{FLOW}",
+    pointKeys: ["CHW_SUPPLY_T"],
+  });
+  assert(
+    effectivePointKeys(manual).join(",") === "CHW_SUPPLY_T",
+    `an unvalidated KPI keeps its manual list — got ${JSON.stringify(effectivePointKeys(manual))}`,
+  );
+
+  // What is sent is the derived list, so a stale array can never reach the API.
+  const [sent] = buildKpiPayload([mixed]);
+  assert(
+    sent.pointKeys.join(",") === "FLOW",
+    `the payload carries a v2 KPI's derived keys — got ${JSON.stringify(sent.pointKeys)}`,
+  );
+}
+
+/**
  * Decision 9's atomicity.
  *
  * On failure `upgradeKpiToCalcDialect` returns the input reference, so nothing
@@ -288,6 +344,75 @@ export function runValidateActionTests(): void {
 }
 
 /**
+ * The dialect control (`F2.22` design decision 2): a KPI changes dialect only
+ * when its expression validates under the target.
+ *
+ * On failure the returned row is the **input**, not the candidate. The
+ * candidate `validateKpiRow` builds already reads `target`, so returning it
+ * would hand the caller a row that claims a dialect its expression does not
+ * satisfy — which is why this suite asserts the row and not only the state.
+ * The assertions run dialect → keys → identity, because the first failure
+ * masks the rest.
+ */
+export function runSetKpiDialectTests(): void {
+  const declared = ["A", "B"];
+
+  const v1 = row({ dialect: CALC_DIALECT, expression: "{A} + {B}", pointKeys: ["A", "B"] });
+  const up = setKpiDialect(v1, CALC_DIALECT_V2, declared);
+  assert(
+    up.validation.state === "ok",
+    `a v1 expression validates under v2 — got ${JSON.stringify(up.validation)}`,
+  );
+  assert(up.row.dialect === CALC_DIALECT_V2, `…and the row now reads v2 — got ${up.row.dialect}`);
+  assert(
+    up.row.pointKeys.join(",") === "A,B",
+    `…with its keys unchanged — got ${JSON.stringify(up.row.pointKeys)}`,
+  );
+
+  // The atomicity control: `v2` syntax cannot be relabelled `v1`. The stored
+  // keys are the row's correct derived value, and the `v1` parse fails at the
+  // `@` and derives `[]` — so a returned candidate would show as `v1` with
+  // empty keys, and both assertions below tell the two apart.
+  const v2 = row({
+    dialect: CALC_DIALECT_V2,
+    expression: "{A} / sum({A} @site)",
+    pointKeys: ["A"],
+  });
+  const down = setKpiDialect(v2, CALC_DIALECT, declared);
+  assert(down.validation.state === "error", "v2 syntax does not validate under v1");
+  assert(
+    down.row.dialect === CALC_DIALECT_V2,
+    `a refused change leaves the dialect where it was — got ${down.row.dialect}`,
+  );
+  assert(
+    down.row.pointKeys.join(",") === "A",
+    `…and the keys untouched — got ${JSON.stringify(down.row.pointKeys)}`,
+  );
+  assert(
+    down.row === v2,
+    "…because the returned row is the input itself, so an unconditional write writes nothing new",
+  );
+
+  // An unvalidated row goes straight to `v2` through `validateKpiRow`, so the
+  // same rules run as for Validate — including derivation over the manual list.
+  const fresh = row({
+    dialect: "unvalidated",
+    expression: "{A} / sum({A} @site)",
+    pointKeys: ["B"],
+  });
+  const checked = setKpiDialect(fresh, CALC_DIALECT_V2, declared);
+  assert(
+    checked.validation.state === "ok",
+    `an unvalidated row validates under v2 — got ${JSON.stringify(checked.validation)}`,
+  );
+  assert(checked.row.dialect === CALC_DIALECT_V2, `…and reads v2 — got ${checked.row.dialect}`);
+  assert(
+    checked.row.pointKeys.join(",") === "A",
+    `…with keys derived rather than the manual list — got ${JSON.stringify(checked.row.pointKeys)}`,
+  );
+}
+
+/**
  * **A stored `bms-calc-v2` KPI must not make the tab unsaveable, and Validate
  * must not rewrite it to `v1`.**
  *
@@ -318,16 +443,38 @@ export function runV2KpiIsSaveableAndKeepsItsDialectTests(): void {
       JSON.stringify(kpiFormErrors([crossOnly], DECLARED)),
   );
 
-  // The narrowing is not a hole: with no cross-asset reference either, an empty
-  // `pointKeys` is still a KPI that reads nothing.
-  const readsNothing = row({ expression: "{FLOW}", pointKeys: [], dialect: CALC_DIALECT_V2 });
+  // The narrowing is not a hole: with no local reference and no cross-asset
+  // reference either, a `v2` KPI reads nothing and is refused — with the
+  // "references no points" sentence, because its keys are derived from the
+  // expression and there is no manual list the author could fill in instead.
+  const readsNothing = row({ expression: "1 + 1", pointKeys: [], dialect: CALC_DIALECT_V2 });
+  const readsNothingProblems = kpiFormErrors([readsNothing], DECLARED);
   assert(
-    kpiFormErrors([readsNothing], DECLARED).some((problem) => problem.field === "pointKeys"),
+    readsNothingProblems.some((problem) => problem.field === "pointKeys"),
     "a v2 KPI with no local keys and no cross-asset reference reads nothing and is refused",
   );
+  assert(
+    readsNothingProblems.some((problem) => problem.message.includes("references no points")),
+    `a checked KPI is told its expression reads nothing, not to choose points — got ` +
+      JSON.stringify(readsNothingProblems),
+  );
 
-  // Validate leaves the dialect where it is, and — the case a null-ish fixture
-  // would miss — keeps the local keys a mixed expression really reads.
+  // Why the fixture above is `1 + 1` and not `{FLOW}` beside an empty array:
+  // since `F2.22` the stored array no longer decides. A `v2` row whose
+  // expression reads `{FLOW}` derives `["FLOW"]` and is saveable, whatever it
+  // was stored with.
+  const staleEmpty = row({ expression: "{FLOW}", pointKeys: [], dialect: CALC_DIALECT_V2 });
+  assert(
+    kpiFormErrors([staleEmpty], DECLARED).length === 0,
+    `a v2 KPI with a stale empty array derives its keys and is saveable — got ` +
+      JSON.stringify(kpiFormErrors([staleEmpty], DECLARED)),
+  );
+
+  // Validate leaves the dialect where it is and keeps the local key a mixed
+  // expression really reads. Since `F2.22` that `["FLOW"]` is **derived** from
+  // the expression under `v2`, not survived from the stored array — the values
+  // are unchanged, the mechanism is not; `runV2PointKeyDerivationTests` holds
+  // the stale-array case that tells the two apart.
   const mixed = row({
     code: "SHARE",
     name: "Share of site",

@@ -516,19 +516,21 @@ const ERROR_MESSAGES: Readonly<Record<CalcErrorCode, string>> = {
   bad_arity: "wrong number of arguments",
   unknown_reference: "reference to an unknown point",
   // `bms-calc-v2` lexical codes (ADR 0055) — one line each, no echo, forced
-  // here by the `Record<CalcErrorCode, string>` type. Author guidance beyond
-  // this is `F2.22`'s.
-  unknown_scope: "unknown scope",
-  unterminated_string: "unterminated string",
-  empty_string: "empty string",
-  malformed_qualified_reference: "malformed qualified point reference",
+  // here by the `Record<CalcErrorCode, string>` type. `F2.22` rewrote these
+  // ten sentences to name the fix, not just the fault.
+  unknown_scope: "unknown scope after @ — a scope is site, domain('code') or group('code')",
+  unterminated_string: "unterminated quoted code — close the scope's code with a second quote",
+  empty_string: "empty quoted code — domain('…') and group('…') need a code between the quotes",
+  malformed_qualified_reference:
+    "malformed qualified reference — write {ASSET_CODE.point_key}, one dot between the asset code and the point key",
   // `bms-calc-v2` parser codes (ADR 0055; `F2.9` Task 2) — same rule.
-  malformed_scope: "malformed scope",
-  scope_required: "an aggregate needs a scope after its point reference",
-  scope_not_allowed: "a scope is only allowed inside an aggregate",
-  aggregate_needs_point_reference: "an aggregate takes exactly one point reference",
-  qualified_reference_in_aggregate: "an aggregate cannot take a qualified point reference",
-  too_many_cross_refs: "the formula has too many distinct cross-asset references",
+  malformed_scope: "malformed scope — @site takes no code; @domain and @group take one quoted code in parentheses",
+  scope_required: "an aggregate needs a scope after its point reference: @site, @domain('code') or @group('code')",
+  scope_not_allowed: "a scope belongs inside an aggregate only — put the reference in an aggregate, or remove the scope",
+  aggregate_needs_point_reference: "an aggregate takes exactly one {point_key} reference, then its scope",
+  qualified_reference_in_aggregate:
+    "an aggregate cannot take a qualified {ASSET_CODE.point_key} reference — its scope already names the assets",
+  too_many_cross_refs: `the formula has more than ${MAX_FORMULA_CROSS_REFS} distinct cross-asset references (aggregates and qualified references)`,
 };
 
 /**

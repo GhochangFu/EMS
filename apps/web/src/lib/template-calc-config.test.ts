@@ -3,9 +3,12 @@ import { describe, it } from "vitest";
 import {
   runBoundsCheckTests,
   runBoundsComeFromSharedTests,
+  runCoverageRatioTests,
+  runDialectOptionsTests,
   runGridPassTests,
   runIntervalOnlyWhenScheduledTests,
   runParseOptionalSecondsTests,
+  runSetFormulaDialectTests,
   runTriggerChangeTests,
   runV2IsScheduledOnlyTests,
   runValidConfigTests,
@@ -43,5 +46,17 @@ describe("template calc config", () => {
 
   it("refuses a streaming bms-calc-v2 point, and only that one (ADR 0055 decision 10)", () => {
     runV2IsScheduledOnlyTests();
+  });
+
+  it("flips streaming to scheduled on the way to v2, and clears the ratio on the way to v1", () => {
+    runSetFormulaDialectTests();
+  });
+
+  it("bounds the coverage ratio to (0, 1] and refuses one off a v2 row with the server's sentence", () => {
+    runCoverageRatioTests();
+  });
+
+  it("builds the dialect options from CALC_DIALECTS, never the two literals", () => {
+    runDialectOptionsTests();
   });
 });

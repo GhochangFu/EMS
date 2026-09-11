@@ -1,18 +1,17 @@
-import {
-  CALC_DIALECT,
-  CALC_DIALECTS,
-  CALC_DIALECT_V2,
-  MAX_FORMULA_POINT_REFS,
-  parseFormula,
-} from "@bms/shared";
-import type { TemplateKpi } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, CALC_DIALECT_V2, MAX_FORMULA_POINT_REFS } from "@bms/shared";
+import type { CalcDialect, TemplateKpi } from "@bms/shared";
 
-import { previewInputKeys } from "./calc-preview";
-import { upgradeKpiToCalcDialect, type FormulaValidation } from "./template-formula-validation";
+import { previewCrossRefs, previewInputKeys } from "./calc-preview";
+import {
+  checkedDialect,
+  upgradeKpiToCalcDialect,
+  type FormulaValidation,
+} from "./template-formula-validation";
 import type { PointGridProblem } from "./template-points-grid";
 
 /**
- * The KPIs tab's form rules (`F2.5`, ADR 0038 decision 9 — Unit 9d).
+ * The KPIs tab's form rules (`F2.5`, ADR 0038 decision 9 — Unit 9d; `v2`
+ * authoring in `F2.22`).
  *
  * ## `unit` and `higherIsBetter` are `.optional()`, not `.nullish()`
  *
@@ -29,31 +28,50 @@ import type { PointGridProblem } from "./template-points-grid";
  * …inside a `.strict()` object. So "not set" must make the **key absent**, not
  * present-and-null. `buildKpiPayload` builds those two conditionally.
  *
- * ## `pointKeys` is derived once the dialect is `bms-calc-v1`, and manual before
+ * ## `pointKeys` is derived once the dialect is a checked one, and manual before
  *
  * `templateKpiSchema`'s `superRefine` demands exact two-way correspondence
- * under `bms-calc-v1`: every `{ref}` in the expression must appear in
- * `pointKeys`, and every entry in `pointKeys` must be used. A hand-maintained
- * array cannot survive that — each expression edit silently invalidates it, and
- * the author's only feedback is a Zod path on a field they never touched.
+ * under either member of `CALC_DIALECTS`: every **local** `{ref}` in the
+ * expression must appear in `pointKeys`, and every entry in `pointKeys` must be
+ * used by a local reference. A hand-maintained array cannot survive that — each
+ * expression edit silently invalidates it, and the author's only feedback is a
+ * Zod path on a field they never touched.
  *
- * So a validated KPI's `pointKeys` is **computed from its expression**, on
- * every edit and not only when Validate is pressed. An `"unvalidated"` KPI
- * keeps its manual list, because its expression need not parse and there is
- * nothing to derive from. That asymmetry is the decision, not an oversight.
+ * So a checked KPI's `pointKeys` is **computed from its expression**, on every
+ * edit and not only when Validate is pressed, and under the dialect the row
+ * names. Under `bms-calc-v2` that means the local keys only (the owner's `F2.9`
+ * Q3b ruling): the `kw` in `sum({kw} @site)` and the `kwh` in `{TX_01.kwh}`
+ * belong to other assets and never appear here, so a KPI whose every reference
+ * is cross-asset correctly derives `[]`. An `"unvalidated"` KPI keeps its
+ * manual list, because its expression need not parse and there is nothing to
+ * derive from. That asymmetry is the decision, not an oversight.
  *
  * ## Decision 9's atomicity is Unit 5's, and stays there
  *
  * `upgradeKpiToCalcDialect` returns **the input reference itself** when
  * validation fails, so a caller that writes its result unconditionally writes
  * nothing new — not the dialect, not the expression. `validateKpiRow` builds a
- * candidate and hands it to that function rather than reimplementing the rule.
+ * candidate and hands it to that function rather than reimplementing the rule,
+ * and `setKpiDialect` (`F2.22` design decision 2) extends the same guarantee to
+ * a dialect change: the row moves only when its expression validates under the
+ * target, and a refused change returns the input row.
  */
 
 /** `contentEnvelopeSchema` caps every section at 200 entries. */
 export const MAX_KPI_ENTRIES = 200;
 
-/** `pointKeys` is `.min(1).max(MAX_FORMULA_POINT_REFS)`. */
+/**
+ * `pointKeys` is `z.array(pointKeyRef).max(MAX_KPI_POINT_REFS)`, with
+ * `MAX_KPI_POINT_REFS = MAX_FORMULA_POINT_REFS`
+ * (`asset-templates-content.schema.ts`, `templateKpiSchema`).
+ *
+ * There is no `.min(1)` on the array any more (`F2.9` correction 13): a `v2`
+ * KPI whose every reference is cross-asset has no local key, so the lower bound
+ * moved into the `superRefine`, where it can see the expression. An
+ * `"unvalidated"` KPI must still name at least one key; a parsed KPI is refused
+ * only when it has no local key **and** no cross-asset reference.
+ * `kpiFormErrors` mirrors that pair below.
+ */
 export const MAX_KPI_POINT_KEYS = MAX_FORMULA_POINT_REFS;
 
 const LIMITS = { code: 64, name: 255, unit: 32, expression: 1000 } as const;
@@ -127,23 +145,30 @@ export function blankKpiRow(): TemplateKpiRow {
 /**
  * The point keys a row declares.
  *
- * Derived from the expression once the dialect is `bms-calc-v1`, so a validated
- * KPI can never carry a stale array; the manual list while unvalidated, because
- * an expression that does not parse yields nothing to derive.
+ * Derived from the expression once the dialect is a checked one, under that
+ * dialect, so a checked KPI can never carry a stale array; the manual list
+ * while `"unvalidated"`, because an expression that does not parse yields
+ * nothing to derive.
  *
- * A `bms-calc-v2` KPI takes the manual branch too, and that is the deliberate
- * direction rather than an oversight: deriving its keys needs a `v2` parse, and
- * `previewInputKeys` is `v1`-only, so deriving here would return `[]` for
- * `sum({kw} @site) + {kw}` and drop a local key the KPI really reads. Keeping
- * the stored array changes nothing about a `v2` row; threading the dialect
- * through the preview is `F2.22`'s, with the rest of the `v2` authoring
- * surface.
+ * Under `bms-calc-v2` the derived list is the **local** keys only (`F2.22`; the
+ * owner's `F2.9` Q3b ruling): `previewInputKeys` returns `parsed.refs`, and the
+ * member key of an aggregate or the key of a qualified reference is a
+ * `crossRefs` entry, never a ref. So `{FLOW} / sum({FLOW} @site)` derives
+ * `["FLOW"]` for the one local read, and `sum({kw} @site)` derives `[]` —
+ * which is the correct value for a KPI that reads nothing on this asset, and
+ * `referencesAnotherAsset` is what keeps `kpiFormErrors` from reading it as a
+ * KPI that reads nothing at all.
+ *
+ * The gate is `checkedDialect`, not a comparison to a literal, so a third
+ * member of `CALC_DIALECTS` derives on the day it is added rather than being
+ * read as manual by a check nobody remembered to extend.
  */
 export function effectivePointKeys(row: TemplateKpiRow): string[] {
-  if (row.dialect !== CALC_DIALECT) {
+  const dialect = checkedDialect(row.dialect);
+  if (dialect === null) {
     return [...row.pointKeys];
   }
-  return previewInputKeys(row.expression);
+  return previewInputKeys(row.expression, dialect);
 }
 
 /**
@@ -157,15 +182,14 @@ export function effectivePointKeys(row: TemplateKpiRow): string[] {
  * array is refused only when the parse also found no cross-asset reference.
  *
  * False for every other dialect, so `v1` and `"unvalidated"` reach the same
- * refusal they always did. `parseFormula` is used rather than `previewInputKeys`
- * because the preview is `v1`-only and would fail at the first `@`.
+ * refusal they always did — a `v1` row is never parsed under `v2` here, so an
+ * `@` it cannot legally contain never earns it the exemption.
  */
 function referencesAnotherAsset(row: TemplateKpiRow): boolean {
   if (row.dialect !== CALC_DIALECT_V2) {
     return false;
   }
-  const parsed = parseFormula(row.expression.trim(), { dialect: CALC_DIALECT_V2 });
-  return parsed.ok && parsed.crossRefs.length > 0;
+  return previewCrossRefs(row.expression.trim(), CALC_DIALECT_V2).length > 0;
 }
 
 /**
@@ -179,15 +203,12 @@ function referencesAnotherAsset(row: TemplateKpiRow): boolean {
  *
  * The refs are derived here rather than trusted from `row.pointKeys`, because
  * this is the moment the two must start agreeing and the author has had no
- * field in which to make them agree.
- *
- * **Except under `bms-calc-v2`, where the stored array is kept** — the same
- * split `effectivePointKeys` makes, for the same reason. `previewInputKeys` is
- * `v1`-only, so re-deriving would hand `sum({kw} @site) + {kw}` an empty
- * `pointKeys`; the `v2` parse would then refuse the local `{kw}` as an unknown
- * reference, and this function writes `result.kpi.pointKeys` onto the row on
- * **either** outcome — so pressing Validate would blank a correct array and
- * report a problem it had just created.
+ * field in which to make them agree. They are derived under the dialect the
+ * candidate will be checked under — `checkedDialect(row.dialect) ?? CALC_DIALECT`,
+ * the same resolution `upgradeKpiToCalcDialect` makes — so a `v2` row's
+ * `sum({kw} @site) + {kw}` derives `["kw"]` and validates, where a `v1`-only
+ * derivation would have handed it `[]` and then refused the `{kw}` it had just
+ * dropped.
  */
 export function validateKpiRow(
   row: TemplateKpiRow,
@@ -196,8 +217,7 @@ export function validateKpiRow(
   const candidate: TemplateKpi = {
     code: row.code,
     name: row.name,
-    pointKeys:
-      row.dialect === CALC_DIALECT_V2 ? [...row.pointKeys] : previewInputKeys(row.expression),
+    pointKeys: previewInputKeys(row.expression, checkedDialect(row.dialect) ?? CALC_DIALECT),
     expression: row.expression,
     dialect: row.dialect,
   };
@@ -206,6 +226,36 @@ export function validateKpiRow(
     validation: result.validation,
     row: { ...row, dialect: result.kpi.dialect, pointKeys: [...result.kpi.pointKeys] },
   };
+}
+
+/**
+ * The dialect control (`F2.22` design decision 2).
+ *
+ * A KPI's dialect gates whether any check runs on it at all, so the select
+ * cannot simply write `target` and let the linter object: a `v2` expression
+ * relabelled `v1` would sit unparsed behind a label it does not satisfy. The
+ * change is therefore applied only when the expression validates under the
+ * target — `validateKpiRow` over the row as it would read, so the same rules run
+ * as for Validate, including derivation of `pointKeys` under the target.
+ *
+ * **On failure the returned row is the input itself**, not the candidate. This
+ * differs from `validateKpiRow`, whose candidate keeps the row's own dialect
+ * and so is safe to hand back; the candidate here already reads `target`, and
+ * returning it would give the caller a row that claims a dialect its expression
+ * does not satisfy. Returning the input reference is Unit 5's guarantee
+ * restated at this level: a caller that writes the result unconditionally
+ * writes nothing new.
+ */
+export function setKpiDialect(
+  row: TemplateKpiRow,
+  target: CalcDialect,
+  declaredPointKeys: readonly string[],
+): { validation: FormulaValidation; row: TemplateKpiRow } {
+  const result = validateKpiRow({ ...row, dialect: target }, declaredPointKeys);
+  if (result.validation.state !== "ok") {
+    return { validation: result.validation, row };
+  }
+  return result;
 }
 
 /**
@@ -294,11 +344,13 @@ export function kpiFormErrors(
     // is. Without it a stored `v2` KPI made the whole tab unsaveable — an
     // author who opened it to rename a different KPI could not press Save.
     if (keys.length === 0 && !referencesAnotherAsset(row)) {
+      // A checked row's keys are derived, so the only thing the author can
+      // change is the expression; an unvalidated row has a list to fill in.
       problems.push({
         row: index,
         field: "pointKeys",
         message:
-          row.dialect === CALC_DIALECT
+          checkedDialect(row.dialect) !== null
             ? "This expression references no points. Every KPI must read at least one."
             : "Choose the points this KPI reads.",
       });

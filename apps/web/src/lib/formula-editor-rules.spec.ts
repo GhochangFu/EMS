@@ -6,17 +6,19 @@
  * `apps/web` Vitest project runs `environment: "node"` over
  * `src/**\/*.test.ts`, and the coverage gate does not look above `src/lib`.
  */
-import { CALC_DIALECT, CALC_DIALECT_V2 } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2, CALC_SCOPE_KINDS, parseFormula } from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import {
   EMPTY_DERIVED_FORMULA_MESSAGE,
   EMPTY_KPI_EXPRESSION_MESSAGE,
+  V2_REFERENCE_FORMS,
   completionKeys,
   decorationDialect,
   editorDiagnosticRanges,
   flattenNewlines,
   isCheckedDialect,
+  scopeCompletions,
   validateEditorFormula,
   type FormulaEditorRules,
 } from "./formula-editor-rules";
@@ -278,6 +280,133 @@ export function runDecorationDialectTests(): void {
     decorationDialect(kpi("unvalidated")) === CALC_DIALECT,
     'an "unvalidated" KPI is not a grammar and must never reach tokenize as one',
   );
+}
+
+/**
+ * `@` completion offers one scope per `CALC_SCOPE_KINDS` member on a `v2`
+ * derived formula, and nothing on a `v1` one (`F2.22` T5, ADR 0055 decision 1).
+ *
+ * The list is compared to the constant, **not** to three literals: the claim
+ * is "every scope the grammar admits", and a fourth member added to the
+ * constant must redden this the moment it lands. A label carries the trailing
+ * `(` for the two scopes that take a code, so the comparison strips it — the
+ * exact shape of `apply` is its own assertion below, and `site`'s label is
+ * asserted whole because it is the one that must **not** carry a paren.
+ *
+ * `v1` has no `@` at all (`tokenizer.ts` admits a scope under `v2` only), so
+ * offering one there would insert text the linter underlines at once — the
+ * same failure the `v1` sibling filter in `completionKeys` exists to prevent.
+ */
+export function runScopeCompletionTests(): void {
+  const v2 = scopeCompletions({ ...DERIVED, dialect: CALC_DIALECT_V2 });
+  assert(
+    v2.length === CALC_SCOPE_KINDS.length,
+    `v2 must offer every scope kind (${CALC_SCOPE_KINDS.length}), got ${v2.length}`,
+  );
+  const bareLabels = v2.map((scope) => scope.label.replace(/\($/, "")).join(",");
+  const expected = CALC_SCOPE_KINDS.map((kind) => `@${kind}`).join(",");
+  assert(
+    bareLabels === expected,
+    `labels must be "@" + each CALC_SCOPE_KINDS member in order, got ${bareLabels}`,
+  );
+  const site = v2.find((scope) => scope.label === "@site");
+  assert(site !== undefined, "@site takes no code, so its label is exactly @site");
+  assert(site?.apply === "@site", `@site applies as itself, got ${JSON.stringify(site?.apply)}`);
+  for (const kind of CALC_SCOPE_KINDS.filter((candidate) => candidate !== "site")) {
+    const scope = v2.find((candidate) => candidate.label === `@${kind}(`);
+    assert(scope !== undefined, `@${kind} takes a code, so its label ends with "("`);
+    assert(
+      scope?.apply === `@${kind}('`,
+      `@${kind} must apply with its opening quote, got ${JSON.stringify(scope?.apply)}`,
+    );
+  }
+  for (const scope of v2) {
+    assert(scope.info.length > 0, `${scope.label} must carry a one-line info`);
+    assert(!scope.info.includes("\n"), `${scope.label}'s info must stay on one line`);
+  }
+
+  const v1 = scopeCompletions(DERIVED);
+  assert(v1.length === 0, `v1 has no @ scopes, got ${JSON.stringify(v1)}`);
+}
+
+/**
+ * The KPI arm is gated on the same dialect, not on the surface.
+ *
+ * Kept apart from the derived arm so that a gate written as `mode ===
+ * "derived"` reddens **this** suite by name — in one suite the derived-arm
+ * assertion would throw first and the KPI claim would never run. A KPI at
+ * `"unvalidated"` is free text (ADR 0038 decision 9) and gets nothing; a KPI
+ * at `v2` (the owner's Q3 ruling, ADR 0055 decision 2) gets every scope.
+ */
+export function runKpiScopeCompletionTests(): void {
+  const unvalidated = scopeCompletions(kpi("unvalidated"));
+  assert(
+    unvalidated.length === 0,
+    `an "unvalidated" KPI is not a grammar and gets no scopes, got ${JSON.stringify(unvalidated)}`,
+  );
+  const v2 = scopeCompletions(kpi(CALC_DIALECT_V2));
+  assert(
+    v2.length === CALC_SCOPE_KINDS.length,
+    `a v2 KPI must offer every scope kind (${CALC_SCOPE_KINDS.length}), got ${v2.length}`,
+  );
+  const v1 = scopeCompletions(kpi(CALC_DIALECT));
+  assert(v1.length === 0, `a v1 KPI has no @ scopes, got ${JSON.stringify(v1)}`);
+}
+
+/**
+ * The two reference forms ADR 0055 decision 6 buys, and the examples that
+ * teach them.
+ *
+ * Exactly two, named: an aggregate answers a total or ratio over a set, a
+ * qualified reference answers a balance between named assets (Q1's ruling —
+ * "each form answers one of them"). A third entry would be a third form the
+ * grammar does not carry.
+ *
+ * Each example is **grammar, not prose**: it is parsed under `v2` here, and
+ * the parse must yield a cross reference of the kind the form names — an
+ * `aggregate` node for the aggregate, a `qref` for the qualified form — so a
+ * later grammar change cannot leave the tabs teaching a formula the parser
+ * refuses, or one that teaches the other form.
+ *
+ * The negative control is **not** "fails under `v1`". The qualified example
+ * parses under `v1` too, as a local reference to a point key named
+ * `TX_01.kwh` (a `v1` key may hold anything except a brace), so a parse
+ * failure would be the wrong discriminator. What `v1` can never produce is a
+ * cross reference, so the control is `crossRefs` empty under `v1` — refused or
+ * read as local, either way the example means something else there.
+ */
+export function runReferenceFormsTests(): void {
+  assert(
+    V2_REFERENCE_FORMS.length === 2,
+    `decision 6 buys two forms, got ${V2_REFERENCE_FORMS.length}`,
+  );
+  const forms = V2_REFERENCE_FORMS.map((entry) => entry.form).join(",");
+  assert(forms === "aggregate,qualified", `the forms are aggregate then qualified, got ${forms}`);
+  const nodeKindByForm = { aggregate: "aggregate", qualified: "qref" } as const;
+  for (const entry of V2_REFERENCE_FORMS) {
+    const v2 = parseFormula(entry.example, { dialect: CALC_DIALECT_V2 });
+    assert(
+      v2.ok,
+      `the ${entry.form} example ${JSON.stringify(entry.example)} must parse under v2: ${
+        v2.ok ? "" : JSON.stringify(v2.errors)
+      }`,
+    );
+    const kinds = v2.ok ? v2.crossRefs.map((node) => node.kind) : [];
+    assert(
+      kinds.length > 0 && kinds.every((kind) => kind === nodeKindByForm[entry.form]),
+      `the ${entry.form} example must read only ${nodeKindByForm[entry.form]} cross references, got ${JSON.stringify(kinds)}`,
+    );
+    assert(
+      v2.ok && v2.refs.length === 0,
+      `the ${entry.form} example teaches a cross-asset form, so it must read no local point`,
+    );
+    const v1 = parseFormula(entry.example, { dialect: CALC_DIALECT });
+    assert(
+      !v1.ok || v1.crossRefs.length === 0,
+      `v1 has no cross-asset form, so the ${entry.form} example must yield none there — the gate would be vacuous`,
+    );
+    assert(entry.answers.length > 0, `the ${entry.form} form must say what it answers`);
+  }
 }
 
 /**

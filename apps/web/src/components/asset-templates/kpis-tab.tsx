@@ -13,10 +13,22 @@
  * turn every pre-existing KPI into a blocker on a tab the author opened to
  * change a name.
  *
- * **Validate this expression** is the only path to `bms-calc-v1`. On success
- * the dialect flips, the derived `pointKeys` are written, and the field gains
- * highlighting, the preview and the two-way check. On failure the error renders
- * and nothing is written — the row is replaced only when the validation is ok.
+ * **Validate this expression** is the only path out of `"unvalidated"`. It
+ * checks the expression under the grammar the row's **Grammar** select names —
+ * `bms-calc-v1` unless the author chose otherwise (`F2.22`; the select is a
+ * target on an unvalidated row, not a stored value). On success the dialect
+ * flips, the derived `pointKeys` are written, and the field gains highlighting,
+ * the preview and the two-way check. On failure the error renders and nothing
+ * is written — the row is replaced only when the validation is ok.
+ *
+ * ## A checked row's Grammar moves it between dialects, atomically
+ *
+ * On a checked row the same select is the one control that changes the stored
+ * dialect (`F2.22` design decision 2), and it does so through `setKpiDialect`:
+ * the row moves only when its expression validates under the target, otherwise
+ * the diagnostic renders and the select keeps showing the stored dialect. A
+ * `bms-calc-v2` row's `pointKeys` are the derived **local** keys, so a KPI whose
+ * every reference is cross-asset reads "nothing" here and is still saveable.
  *
  * ## This is the first tab that writes `content`
  *
@@ -28,16 +40,20 @@
  *
  * A KPI is a read-time display value. It has no write path and no staleness
  * policy, so ADR 0037's `calcTrigger` and friends do not apply — that split is
- * ADR 0038 decision 4's, and the Calculations tab owns those fields.
+ * ADR 0038 decision 4's, and the Calculations tab owns those fields. No KPI is
+ * evaluated anywhere yet — `F2.33`. Nothing on this tab may read as a computed
+ * value.
  */
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import type { AdminAssetTemplateDto, TemplateKpi } from "@bms/shared";
-import { CALC_DIALECT } from "@bms/shared";
+import type { AdminAssetTemplateDto, CalcDialect, TemplateKpi } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2 } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { validateEditorFormula } from "../../lib/formula-editor-rules";
+import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-editor-rules";
+import { dialectOptions } from "../../lib/template-calc-config";
+import { checkedDialect } from "../../lib/template-formula-validation";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
   mergeTemplateContent,
@@ -51,10 +67,11 @@ import {
   kpiFormErrors,
   kpiRowsFrom,
   kpisHaveChanged,
-  validateKpiRow,
+  setKpiDialect,
   type TemplateKpiRow,
 } from "../../lib/template-kpi-form";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
+import { FormulaPreview } from "./formula-preview";
 import { Field } from "./field";
 
 type KpisTabProps = {
@@ -74,15 +91,23 @@ function storedKpis(template: AdminAssetTemplateDto): TemplateKpi[] | undefined 
 export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabProps) {
   const [rows, setRows] = useState<TemplateKpiRow[]>(() => kpiRowsFrom(storedKpis(template)));
   const [error, setError] = useState<string | null>(null);
-  // Keyed by row index. A failed validation is a message about one field, not a
-  // reason to block the form — the row is still `"unvalidated"` and still valid.
+  // Keyed by row index. A failed validation — Validate on an `"unvalidated"`
+  // row, or a refused Grammar change on a checked one — is a message about one
+  // field, not a reason to block the form: the row is exactly as it was, and
+  // still valid.
   const [validationErrors, setValidationErrors] = useState<Record<number, string>>({});
+  // Keyed by row index, like `validationErrors`. The grammar an `"unvalidated"`
+  // row will be checked under when Validate is pressed — UI state, never saved,
+  // because the row has no dialect to store until it validates (ADR 0038
+  // decision 9). Absent means `bms-calc-v1`, decision 9's path unchanged.
+  const [validateTargets, setValidateTargets] = useState<Record<number, CalcDialect>>({});
 
   // Keyed on the row id and the lifecycle status — see `details-tab.tsx`.
   useEffect(() => {
     setRows(kpiRowsFrom(storedKpis(template)));
     setError(null);
     setValidationErrors({});
+    setValidateTargets({});
   }, [template.id, template.status]);
 
   const declaredPointKeys = template.points.map((point) => point.pointKey);
@@ -123,13 +148,20 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
     );
   }
 
-  function validate(index: number) {
-    const result = validateKpiRow(rows[index], declaredPointKeys);
+  /**
+   * Both dialect moves — Validate on an `"unvalidated"` row, and the Grammar
+   * select on a checked one — are one action: check the expression under
+   * `target` and write the row only when it passes. For an `"unvalidated"` row
+   * with the default target this is exactly what Validate did before `F2.22`
+   * (`validateKpiRow` resolves `"unvalidated"` to `bms-calc-v1` itself).
+   */
+  function applyDialect(index: number, target: CalcDialect) {
+    const result = setKpiDialect(rows[index], target, declaredPointKeys);
     if (result.validation.state === "ok") {
       // Only on success. Writing `result.row` either way would still be safe —
-      // `upgradeKpiToCalcDialect` returns its input on failure — but gating
-      // here keeps decision 9 visible at the call site rather than resting on a
-      // property of a function two modules away.
+      // `setKpiDialect` returns its input row on failure (`F2.22` correction
+      // 6) — but gating here keeps decision 9 visible at the call site rather
+      // than resting on a property of a function one module away.
       update(index, { dialect: result.row.dialect, pointKeys: result.row.pointKeys });
       setValidationErrors((current) => {
         const next = { ...current };
@@ -183,7 +215,17 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
         const problemFor = (field: string) =>
           rowProblems.find((problem) => problem.field === field)?.message;
         const keys = effectivePointKeys(kpi);
-        const validated = kpi.dialect === CALC_DIALECT;
+        // Through the vocabulary, never a comparison to the `v1` literal: a
+        // stored `bms-calc-v2` KPI was read as unvalidated by exactly that
+        // comparison (`F2.22` finding 2) — "Not checked", a manual points list
+        // whose value never reached the payload, and a Validate button — while
+        // its editor already lexed it as checked. `null` is `"unvalidated"`;
+        // a `CalcDialect` is what the preview below is rendered under.
+        const checked = checkedDialect(kpi.dialect);
+        const validated = checked !== null;
+        // What the Grammar select reads: the stored dialect on a checked row,
+        // the Validate target on an unvalidated one.
+        const grammar = checked ?? validateTargets[index] ?? CALC_DIALECT;
         const live = validateEditorFormula(
           {
             mode: "kpi",
@@ -249,6 +291,52 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
 
             <label className="mt-3 block space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                Grammar
+              </span>
+              <select
+                aria-label={`Grammar for ${kpi.code || "this KPI"}`}
+                value={grammar}
+                disabled={!editable}
+                // On a checked row, through `applyDialect` and never a direct
+                // write: the row moves only when its expression validates under
+                // the target (design decision 2). On an unvalidated row the
+                // choice is only remembered — Validate is what applies it. The
+                // options come from `dialectOptions()`, so the cast cannot
+                // store a label the engine does not know.
+                onChange={(event) => {
+                  const target = event.target.value as CalcDialect;
+                  if (validated) {
+                    applyDialect(index, target);
+                    return;
+                  }
+                  setValidateTargets((current) => ({ ...current, [index]: target }));
+                }}
+                className={fieldClass(!editable, undefined)}
+              >
+                {dialectOptions().map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {kpi.dialect === CALC_DIALECT_V2 ? (
+              // The teaching ADR 0055 decision 6 buys: which reference form
+              // answers which question. From `V2_REFERENCE_FORMS`, whose
+              // examples the parser is proven to accept — the same list the
+              // Calculations tab renders, so the two tabs read as one surface.
+              <ul className="mt-1 space-y-0.5 text-[11px] text-bms-muted">
+                {V2_REFERENCE_FORMS.map((form) => (
+                  <li key={form.form}>
+                    <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
+                    <code className="rounded bg-gray-100 px-1">{form.example}</code>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <label className="mt-3 block space-y-1">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
                 Expression
               </span>
               <FormulaEditorLazy
@@ -275,6 +363,14 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             {validationErrors[index] ? (
               <p className="mt-1 text-[11px] text-red-700">{validationErrors[index]}</p>
             ) : null}
+            {/* Decision 9 again: an unvalidated expression shows no preview —
+                it is free text the parser has never met, and the panel would
+                either lint it or evaluate it under a grammar it was not stored
+                under. `checked` is both the gate and the dialect it runs under.
+                Disabled on a frozen version, not absent. */}
+            {checked !== null ? (
+              <FormulaPreview expression={kpi.expression} dialect={checked} disabled={!editable} />
+            ) : null}
 
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <span className="text-[11px] text-bms-muted">
@@ -285,7 +381,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
               {editable && !validated ? (
                 <button
                   type="button"
-                  onClick={() => validate(index)}
+                  onClick={() => applyDialect(index, grammar)}
                   className="rounded border border-gray-200 px-3 py-1 text-[11px] font-semibold text-bms-ink"
                 >
                   Validate this expression
@@ -303,8 +399,12 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                     // validated. Cleared rather than reindexed — an error is a
                     // statement about an expression at a moment, and after a
                     // structural edit the honest state is "not validated",
-                    // which re-running Validate costs nothing to restore.
+                    // which re-running Validate costs nothing to restore. The
+                    // Validate targets are keyed the same way and cleared for
+                    // the same reason — a remembered grammar under the wrong
+                    // row is a worse surprise than the default.
                     setValidationErrors({});
+                    setValidateTargets({});
                   }}
                   className="rounded border border-red-200 px-3 py-1 text-[11px] font-semibold text-red-700"
                 >

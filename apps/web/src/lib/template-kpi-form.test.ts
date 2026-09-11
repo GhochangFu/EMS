@@ -8,8 +8,10 @@ import {
   runPointKeyDerivationTests,
   runPointKeyResolutionTests,
   runSeedTests,
+  runSetKpiDialectTests,
   runStoredV2KpiSurvivesTests,
   runV2KpiIsSaveableAndKeepsItsDialectTests,
+  runV2PointKeyDerivationTests,
   runValidateActionTests,
   runValidatedRowCannotSaveBrokenTests,
 } from "./template-kpi-form.spec";
@@ -32,8 +34,16 @@ describe("template KPI form", () => {
     runPointKeyDerivationTests();
   });
 
+  it("derives a bms-calc-v2 KPI's local point keys, not its stored array (F2.22)", () => {
+    runV2PointKeyDerivationTests();
+  });
+
   it("flips the dialect only when the expression validates", () => {
     runValidateActionTests();
+  });
+
+  it("changes a KPI's dialect only when the expression validates under the target (F2.22)", () => {
+    runSetKpiDialectTests();
   });
 
   it("keeps a stored v2 KPI saveable and leaves its dialect alone (F2.9)", () => {
