@@ -2,10 +2,11 @@
 
 ## Status
 
-Proposed — drafted 2026-09-11 under `F2.23`. Two scope questions are put to
-the owner below (§"Gate questions"); nothing in this record is built until
-they are ruled and the record is approved as a whole (AGENTS.md §10,
-`backlog-cycle` step 2).
+Accepted — drafted and ruled 2026-09-11 under `F2.23`. The two scope
+questions (§"Gate questions": one class or one per column; what the
+migration does to a violating row) were put to the owner and ruled that day,
+each as recommended; the owner approved the record as a whole the same day,
+before any implementation code (AGENTS.md §10, `backlog-cycle` step 2).
 
 ## Context
 
@@ -107,7 +108,7 @@ ADR copies both.
 ## Decision
 
 1. **One character class, `^[A-Za-z0-9_-]+$`, for both columns** (question 1,
-   recommended). Letters of either case, digits, `_` and `-`; nothing else, and
+   ruled). Letters of either case, digits, `_` and `-`; nothing else, and
    in particular no `.`, no whitespace, no `{ } ( ) @ '` and no non-ASCII
    character. It admits every row in every source in §2 and refuses every
    character the two dialects give a meaning to. The class is declared once, as
@@ -127,7 +128,7 @@ ADR copies both.
    catalog's class theirs by construction.
 
 3. **The migration validates existing rows and fails loudly on a violator**
-   (question 2, recommended). A plain `ADD CONSTRAINT` scans the table; a row
+   (question 2, ruled). A plain `ADD CONSTRAINT` scans the table; a row
    outside the class stops the migration with Postgres's own
    `check constraint "…" of relation "…" is violated by some row`, and the
    operator repairs that row by hand before re-running. §2 is the evidence
