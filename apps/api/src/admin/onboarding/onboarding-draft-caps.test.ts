@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertCatalogCodeSlug,
   assertCellLengthProblem,
   assertCutToBound,
   assertCutToBoundWithHashSuffix,
@@ -33,5 +34,9 @@ describe("onboarding draft count caps (F4.103)", () => {
 
   it("hash-suffixes a cut globally unique identifier, and only a cut one (F4.104)", () => {
     assertCutToBoundWithHashSuffix();
+  });
+
+  it("reduces a location name to the catalog code class (F2.23, ADR 0065 decision 4)", () => {
+    assertCatalogCodeSlug();
   });
 });

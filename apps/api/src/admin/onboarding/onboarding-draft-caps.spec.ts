@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import {
+  CATALOG_CODE_PATTERN,
   MAX_ONBOARDING_ASSET_POINTS,
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
@@ -10,6 +11,7 @@ import {
 import type { OnboardingDraft } from "@bms/shared";
 
 import {
+  catalogCodeSlug,
   cellLengthProblem,
   cutToBound,
   cutToBoundWithHashSuffix,
@@ -462,4 +464,38 @@ export function assertCutToBoundWithHashSuffix(): void {
     cutToBoundWithHashSuffix("x".repeat(20), 4, "lower").length === 4,
     "a bound smaller than the suffix budget returns something inside the bound rather than throwing",
   );
+}
+
+/**
+ * `catalogCodeSlug` reduces a free-text name to the catalog code class
+ * `[A-Za-z0-9_-]` (ADR 0065 decision 4), so what the chat producer builds the
+ * asset code from is legal before it is upper-cased and cut.
+ *
+ * A literal table rather than a property: each row pins one step of the
+ * derivation — the illegal-run replacement, the `-` collapse, the trim at each
+ * end, a non-ASCII letter, the all-illegal case, and the identity inside the
+ * class — so the mutation that drops a step reddens the row that names it.
+ */
+export function assertCatalogCodeSlug(): void {
+  const rows: readonly [input: string, output: string, pins: string][] = [
+    ["St. Mary's Works", "St-Mary-s-Works", "every illegal run becomes one `-`"],
+    ["Plant #1 (East)", "Plant-1-East", "a trailing `-` is trimmed"],
+    ["a - b", "a-b", "a run of `-` collapses to one"],
+    ["-x-", "x", "a `-` at either end is trimmed"],
+    ["Straße", "Stra-e", "`ß` is outside the class"],
+    ["\u{1F600}\u{1F600}", "", "an all-illegal name collapses to nothing"],
+    ["TX_01", "TX_01", "a name inside the class is byte-identical"],
+  ];
+  for (const [input, output, pins] of rows) {
+    const result = catalogCodeSlug(input);
+    assert(
+      result === output,
+      `${pins}: catalogCodeSlug(${JSON.stringify(input)}) must be ${JSON.stringify(output)}, ` +
+        `got ${JSON.stringify(result)}`,
+    );
+    assert(
+      result === "" || CATALOG_CODE_PATTERN.test(result),
+      `every non-empty result is inside CATALOG_CODE_PATTERN, got ${JSON.stringify(result)}`,
+    );
+  }
 }

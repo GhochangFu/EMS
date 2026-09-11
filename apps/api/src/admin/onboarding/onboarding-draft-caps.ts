@@ -367,3 +367,46 @@ export function cutToBoundWithHashSuffix(
   const prefix = cutToBound(value, prefixBound).replace(/-+$/, "");
   return `${prefix}${HASH_SEPARATOR}${suffix}`;
 }
+
+/**
+ * A run of one or more characters outside the catalog code class. The class is
+ * `CATALOG_CODE_PATTERN`'s (`@bms/shared`), restated here in its negated form
+ * because a full-match regex cannot drive a replacement; the spec's per-row
+ * `CATALOG_CODE_PATTERN.test(result)` is what keeps the two in step.
+ */
+const OUTSIDE_CATALOG_CODE_CLASS = /[^A-Za-z0-9_-]+/g;
+
+/**
+ * `value` reduced to the catalog code class `[A-Za-z0-9_-]` (ADR 0065
+ * decision 4): every run of characters outside the class becomes one `-`, runs
+ * of `-` collapse to one, and a `-` at either end is trimmed. A value already
+ * inside the class comes back byte-identical; a value with nothing inside it
+ * comes back empty, and the caller's own marker (`-ASSET-1`) is then the whole
+ * code — legal, and the operator's to rename.
+ *
+ * **Why this and not `.replace(/\s+/g, "-")`.** The chat producer builds
+ * `assets[].code` from the stored location name, and `F4.104` bounded its
+ * length without bounding its alphabet: `St. Mary's Works` gave
+ * `ST.-MARY'S-WORKS-ASSET-1`, which decision 1's class refuses at
+ * `assets.0.code` when `validate` re-parses the draft — a permanent per-field
+ * error no chat instruction can clear, the shape `F4.104` closed for length.
+ * The name is free text on purpose; the code is an identifier both calc
+ * dialects read inside `{CODE.key}`, so the producer, not the operator, pays
+ * for the difference.
+ *
+ * **Slug before `toUpperCase()`, never after.** `"ß".toUpperCase()` is `"SS"`
+ * and `"ſ".toUpperCase()` is `"S"`: upper-casing first folds letters outside
+ * the class into letters inside it, so the same name would yield a different
+ * code depending on the order. The class is safe either way; which code a name
+ * yields is not, and `Straße Works` → `STRA-E-WORKS-ASSET-1` is the pinned one.
+ *
+ * Beside `cutToBoundWithHashSuffix` because they are two halves of one
+ * derivation: this makes the value legal, that makes it fit, and its suffix
+ * (`-` plus upper-case hex) is inside the class, so the composition is closed.
+ */
+export function catalogCodeSlug(value: string): string {
+  return value
+    .replace(OUTSIDE_CATALOG_CODE_CLASS, HASH_SEPARATOR)
+    .replace(/-{2,}/g, HASH_SEPARATOR)
+    .replace(/^-+|-+$/g, "");
+}

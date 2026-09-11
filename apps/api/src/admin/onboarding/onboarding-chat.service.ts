@@ -21,7 +21,7 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { MAX_ECHOED_ITEMS, echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
-import { cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
+import { catalogCodeSlug, cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 // F4.107: the draft goes into the prompt through this, not through
 // `redactDraftForLlm` directly — the redaction says nothing about size, and
@@ -567,12 +567,25 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       //
       // `siteName` takes the plain surrogate-safe cut: `bms.assets.site_name` is
       // not unique, so there is nothing for a hash to protect.
+      //
+      // **Slugified to the catalog class first** (F2.23, ADR 0065 decision 4).
+      // F4.104 bounded this code's length and not its alphabet: replacing only
+      // whitespace let `St. Mary's Works` produce `ST.-MARY'S-WORKS-ASSET-1`,
+      // which decision 1's `CATALOG_CODE_PATTERN` refuses at `assets.0.code` when
+      // `validate` re-parses the draft — the same permanent, chat-unclearable
+      // error, reopened for charset. `catalogCodeSlug` turns every run outside
+      // `[A-Za-z0-9_-]` into one `-`, collapses and trims, and runs **before**
+      // `toUpperCase()` because `"ß".toUpperCase()` is `"SS"` — the order
+      // decides which code a name yields, and the spec pins it. The hash suffix
+      // `cutToBoundWithHashSuffix` appends is `-` plus upper-case hex, inside the
+      // class, so the composition stays legal. A name with nothing inside the
+      // class yields `-ASSET-1` alone: legal, and the operator's to rename.
       const site = draft.location?.name ?? orgName;
       patch.assets = [
         {
           rtuIndex: 0,
           code: cutToBoundWithHashSuffix(
-            `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`,
+            `${catalogCodeSlug(site).toUpperCase()}-ASSET-1`,
             ONBOARDING_DRAFT_STRING_MAX["assets.code"],
             "upper",
           ),
