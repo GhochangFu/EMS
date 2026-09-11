@@ -252,6 +252,51 @@ export class CalcDependencyService {
     return members;
   }
 
+  /**
+   * `F2.22` item 9 — the qualified codes in `crossRefs` that resolve to **no
+   * active asset at `assetId`'s location** (ADR 0055 decision 12), once each,
+   * in first-appearance order.
+   *
+   * **Why a separate question from `checkCandidates`.** A code that resolves
+   * nowhere draws no edge, so the cycle check passes it silently — the graph
+   * cannot refuse a reference it never saw. And `checkCandidates` already
+   * resolves this same map but returns only cycle members; widening its
+   * return would make `asset-templates-migrate-calc.ts` and two specs carry a
+   * check migrate deliberately does not make (an asset deleted after a save is
+   * decision 8's evaluation-time case, counted as `unknown_asset_reference`;
+   * refusing a migrate for it would strand the asset).
+   *
+   * **`null` is the resolver's answer, not absence.** `resolveMembership` sets
+   * one entry per qualified code the owner names — the asset id, or `null`
+   * when no active asset at the owner's location carries the code — so an
+   * absent entry cannot come from the resolver. It is still read as
+   * unresolved: a guard on a tenancy boundary fails closed, and "the resolver
+   * did not answer" is not a resolution.
+   *
+   * **No read without a `qref`.** The early return is on the reference kind,
+   * not on `crossRefs.length`: an `@site` sum is a cross reference with no
+   * code to resolve, and the save path must not reload the estate for it.
+   *
+   * @returns the unresolved codes, empty when every qualified code resolves
+   *   or the formula holds none
+   */
+  async unresolvedQualifiedCodes(assetId: string, crossRefs: readonly CalcCrossRef[]): Promise<string[]> {
+    const codes: string[] = [];
+    for (const ref of crossRefs) {
+      if (ref.kind === "qref" && !codes.includes(ref.assetCode)) {
+        codes.push(ref.assetCode);
+      }
+    }
+    if (codes.length === 0) {
+      return [];
+    }
+    // A copy, as `checkCandidates` makes one: `MembershipDefinition` inherits a
+    // mutable `crossRefs` from `CalcDefinition`, and a parse result is readonly.
+    const { qualified } = await this.scope.resolveMembership([{ assetId, crossRefs: [...crossRefs] }]);
+    const resolvedByCode = qualified.get(assetId);
+    return codes.filter((code) => (resolvedByCode?.get(code) ?? null) === null);
+  }
+
   /** `bms.assets.code` for the reported members only — one batched read, and
    * only on the path that has already found a cycle. */
   private async readAssetCodes(assetIds: readonly AssetId[]): Promise<Map<AssetId, string>> {

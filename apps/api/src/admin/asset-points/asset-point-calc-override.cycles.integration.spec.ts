@@ -37,7 +37,8 @@ import type { AssetPointCalcOverrideService } from "./asset-point-calc-override.
  * That last pair is the point of `assertQualifiedReferenceIsConfinedToLocation`.
  * `bms.assets.code` is globally unique, so a lookup by code alone finds `W`
  * from location 1; only decision 12's `location_id` filter stops it. The same
- * override text is therefore refused against `V` and accepted against `W`.
+ * override text is therefore refused against both — as a cycle against `V`,
+ * and as a code that resolves nowhere against `W` (`F2.22` item 9).
  */
 
 /** Per-run, so two instances of this file never delete each other's rows
@@ -311,19 +312,47 @@ export async function assertV2OverrideRefusesAMembershipCycle(
   );
 }
 
+/** The sentence each of the two guards on the `v2` save path owns. Asserted as
+ * a pair, so a refusal is also checked for the neighbour's absence. */
+const UNRESOLVED_CODE = /resolve to no active asset/;
+const DEPENDENCY_CYCLE = /dependency cycle/;
+
 /**
- * ADR 0055 decision 12 through the detector: `{CODE.key}` resolves only at the
- * **owner's** location, so a cycle that would exist if it did not is not one.
+ * ADR 0055 decision 12 at the override author, both halves. `F2.22` item 9
+ * over the `F2.9` Task 12 case it supersedes on this path: the same text used
+ * to be *stored* against `W`, and the sweep counted it as
+ * `unknown_asset_reference` on every tick.
  *
  * `V` and `W` are pinned to the same template and carry the identical formula
- * `{Y.KW}`; `V` is at `Y`'s location and `W` is not. The same override text on
- * `Y.KW` is therefore accepted against `W` and refused against `V`. Asserting
- * only the acceptance would be vacuous — a detector that never ran would also
- * accept — so the refusing half is the control, in the same case, on the same
- * row.
+ * `{Y.KW}`; `V` is at `Y`'s location and `W` is not. On `Y.KW`:
  *
- * The second call also proves the refusal precedes the **update** path, not
- * just the insert: the row already exists, and it must come back unchanged.
+ * - `{W.TOTAL}` resolves to **no** active asset at `Y`'s location —
+ *   `assets.code` is globally unique, so only decision 12's `location_id`
+ *   filter makes that true — and is refused as an unresolved code.
+ * - `{V.TOTAL}` resolves, closes `Y.KW → V.TOTAL → Y.KW`, and is refused as a
+ *   cycle.
+ *
+ * **One error class, two guards**, so each refusal also asserts the
+ * neighbour's sentence is absent — a 400 alone cannot say which guard fired.
+ *
+ * **The order is proved by the mixed formula**, not by either alone. A code
+ * that resolves nowhere draws no edge, so the cycle check passes `{W.TOTAL}`
+ * silently and falls through to the code check whichever runs first; only a
+ * formula that is *both* unresolved and cyclic tells the orders apart, and it
+ * must name the code — the defect the author can fix without a graph.
+ *
+ * **The tenancy boundary.** `W` exists, at another location. A code that
+ * exists nowhere must draw the *same* refusal, code for code: `assets.code` is
+ * unique across organizations, so a sentence that distinguished "elsewhere"
+ * from "nowhere" would confirm another tenant's code (plan design decision 8).
+ * Held by comparison rather than by wording — the two messages are identical
+ * once the echoed code is masked.
+ *
+ * **The control.** The `F2.9` case anchored its "untouched row" checks on the
+ * stored `{W.TOTAL}`, which no longer stores. `{X.MEASURED}` — same location,
+ * a measured point, so no edge — is the value that does, and every refusal
+ * after it must leave it in place. The first refusal runs before any row
+ * exists, so the new guard is also shown to precede the eager create.
  */
 export async function assertQualifiedReferenceIsConfinedToLocation(
   pool: pg.Pool,
@@ -331,37 +360,102 @@ export async function assertQualifiedReferenceIsConfinedToLocation(
   svc: AssetPointCalcOverrideService,
 ): Promise<void> {
   const fixture = await seedCycleFixture(pool, fx);
-
+  const override = (formula: string) =>
+    svc.setOverride(fx.adminJwt, fixture.y, KEY_KW, {
+      ...NOTHING,
+      formula,
+      formulaDialect: CALC_DIALECT_V2,
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 60,
+    });
   const acrossLocations = `{${CODE_W}.${KEY_TOTAL}}`;
-  await svc.setOverride(fx.adminJwt, fixture.y, KEY_KW, {
-    ...NOTHING,
-    formula: acrossLocations,
-    formulaDialect: CALC_DIALECT_V2,
-    calcTrigger: "scheduled",
-    calcIntervalSeconds: 60,
-  });
+
+  // 1 — before any row exists: the refusal precedes the eager create.
+  await expectRejection(
+    () => override(acrossLocations),
+    UNRESOLVED_CODE,
+    "a qualified code at another location, on the insert path",
+    400,
+  );
   assert(
-    (await formulaOf(pool, fixture.y, KEY_KW)) === acrossLocations,
-    "W is at another location, so neither reference resolves and there is no cycle to refuse. " +
-      "assets.code is globally unique — only decision 12's location_id filter makes this true.",
+    (await formulaOf(pool, fixture.y, KEY_KW)) === undefined,
+    "the code refusal must precede the eager create — no asset_points row may exist afterwards",
   );
 
-  await expectRejection(
-    () =>
-      svc.setOverride(fx.adminJwt, fixture.y, KEY_KW, {
-        ...NOTHING,
-        formula: `{${CODE_V}.${KEY_TOTAL}}`,
-        formulaDialect: CALC_DIALECT_V2,
-        calcTrigger: "scheduled",
-        calcIntervalSeconds: 60,
-      }),
-    /dependency cycle/,
+  // 2 — the control: a same-location, non-cyclic qualified reference stores.
+  const control = `{${CODE_X}.${KEY_MEASURED}}`;
+  await override(control);
+  assert(
+    (await formulaOf(pool, fixture.y, KEY_KW)) === control,
+    "anti-vacuity: a qualified reference that resolves at the owner's location and closes no " +
+      "cycle must be stored verbatim, or every refusal below is also satisfied by refusing all v2",
+  );
+
+  // 3 — the far-location code, on the update path.
+  const farMessage = await expectRejection(
+    () => override(acrossLocations),
+    UNRESOLVED_CODE,
+    "a qualified code at another location, on the update path",
+    400,
+  );
+  assert(
+    !DEPENDENCY_CYCLE.test(farMessage),
+    `W draws no edge, so the cycle guard has nothing to say — the code guard must own this refusal, got: ${farMessage}`,
+  );
+  assert(
+    farMessage.includes(CODE_W),
+    `the refusal names the code the author typed so it can be fixed, got: ${farMessage}`,
+  );
+  assert(
+    (await formulaOf(pool, fixture.y, KEY_KW)) === control,
+    "the code refusal must precede the update too — the stored control must be untouched",
+  );
+
+  // 4 — a code that exists nowhere draws the identical sentence.
+  const nowhere = `${TEST_CODE}-NOWHERE`;
+  const nowhereMessage = await expectRejection(
+    () => override(`{${nowhere}.${KEY_TOTAL}}`),
+    UNRESOLVED_CODE,
+    "a qualified code no asset carries",
+    400,
+  );
+  assert(
+    farMessage.replace(CODE_W, "<code>") === nowhereMessage.replace(nowhere, "<code>"),
+    "the message must not say whether a code exists at another location — assets.code is " +
+      `globally unique, and a different sentence would confirm another tenant's code. Got:\n${farMessage}\n${nowhereMessage}`,
+  );
+
+  // 5 — the same-location code that closes a cycle.
+  const cycleMessage = await expectRejection(
+    () => override(`{${CODE_V}.${KEY_TOTAL}}`),
+    DEPENDENCY_CYCLE,
     "the same formula against the same template at the owner's own location",
     400,
   );
   assert(
-    (await formulaOf(pool, fixture.y, KEY_KW)) === acrossLocations,
-    "the refusal must precede the update too — the existing row must be untouched",
+    !UNRESOLVED_CODE.test(cycleMessage),
+    `V resolves at Y's location, so the code guard must pass it to the cycle guard, got: ${cycleMessage}`,
+  );
+  assert(
+    (await formulaOf(pool, fixture.y, KEY_KW)) === control,
+    "the cycle refusal must precede the update too — the stored control must be untouched",
+  );
+
+  // 6 — both defects in one formula: the code is named, not the cycle.
+  const mixedMessage = await expectRejection(
+    () => override(`${acrossLocations} + {${CODE_V}.${KEY_TOTAL}}`),
+    UNRESOLVED_CODE,
+    "a formula that both names an unresolved code and closes a cycle",
+    400,
+  );
+  assert(
+    !DEPENDENCY_CYCLE.test(mixedMessage),
+    "the code check runs before the cycle check: an author is told about the code they can fix " +
+      `without a graph, and the fleet-wide graph read is not paid for a formula already refused. Got: ${mixedMessage}`,
+  );
+  assert(
+    (await formulaOf(pool, fixture.y, KEY_KW)) === control,
+    "the stored control must be untouched after the mixed refusal",
   );
 }
 
@@ -441,5 +535,53 @@ export async function assertTheCalcPointsReadCarriesTheRecordedRefusal(
   assert(
     written?.lastOutcome === "written" && written.lastSkipReason === null,
     `a written outcome carries a null reason — the value the pill branches on, got ${JSON.stringify(written)}`,
+  );
+}
+
+/**
+ * `F2.22` item 4 on the override panel (the plan's Q3 ruling): the calc-points
+ * read carries the template point's `min_coverage_ratio`, read-only. ADR 0055
+ * decision 11 puts the ratio on the template point and nowhere else; the DTO
+ * carries it beside `template`/`override`/`effective` rather than inside them
+ * because there is no override role for it to take.
+ *
+ * Three reads, because "a nullable number" is the easy thing to get wrong: the
+ * point reads `null` **before** the column is set (a field that is always
+ * `null` satisfies the contract and every other case here); it reads the stored
+ * `0.5` after; and another asset's point, whose template never set one, still
+ * reads `null` — which is what makes this the template *point's* value rather
+ * than one number for the estate.
+ */
+export async function assertTheCalcPointsReadCarriesTheTemplateRatio(
+  pool: pg.Pool,
+  fx: Fixtures,
+  svc: AssetPointCalcOverrideService,
+): Promise<void> {
+  const fixture = await seedCycleFixture(pool, fx);
+  const totalOfX = async () =>
+    (await svc.listCalcPoints(fx.adminJwt, fixture.x)).items.find((item) => item.pointKey === KEY_TOTAL);
+
+  const before = await totalOfX();
+  assert(before !== undefined, `the aggregate point ${KEY_TOTAL} must be listed for X`);
+  assert(
+    before?.minCoverageRatio === null,
+    `a template point with no ratio reads null — fail closed, decision 11 — got ${JSON.stringify(before?.minCoverageRatio)}`,
+  );
+
+  await pool.query(`UPDATE bms.template_points SET min_coverage_ratio = 0.5 WHERE id = $1`, [
+    before?.templatePointId,
+  ]);
+
+  const after = await totalOfX();
+  assert(
+    after?.minCoverageRatio === 0.5,
+    `the template's ratio reaches the read verbatim, got ${JSON.stringify(after?.minCoverageRatio)}`,
+  );
+
+  const kwOfY = (await svc.listCalcPoints(fx.adminJwt, fixture.y)).items.find((item) => item.pointKey === KEY_KW);
+  assert(kwOfY !== undefined, `the derived point ${KEY_KW} must be listed for Y`);
+  assert(
+    kwOfY?.minCoverageRatio === null,
+    `Y's template never set a ratio — the read is per template point, not one number for the estate, got ${JSON.stringify(kwOfY?.minCoverageRatio)}`,
   );
 }

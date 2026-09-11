@@ -21,6 +21,7 @@ import {
   KEY_TOTAL,
   assertQualifiedReferenceIsConfinedToLocation,
   assertTheCalcPointsReadCarriesTheRecordedRefusal,
+  assertTheCalcPointsReadCarriesTheTemplateRatio,
   assertV2OverrideRefusesAMembershipCycle,
   cleanup,
 } from "./asset-point-calc-override.cycles.integration.spec";
@@ -89,7 +90,7 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 override cycle refusal"
     await assertV2OverrideRefusesAMembershipCycle(pool, fx, svc);
   });
 
-  it("resolves {CODE.key} only at the owner's location (ADR 0055 decision 12)", async () => {
+  it("refuses a {CODE.key} that resolves nowhere at the owner's location, and the cycle one that does (ADR 0055 decision 12, F2.22 item 9)", async () => {
     if (!pool) throw new Error("pool required");
     await assertQualifiedReferenceIsConfinedToLocation(pool, fx, svc);
   });
@@ -97,5 +98,10 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 override cycle refusal"
   it("carries a recorded dependency_cycle refusal into the calc-points read (Task 16)", async () => {
     if (!pool) throw new Error("pool required");
     await assertTheCalcPointsReadCarriesTheRecordedRefusal(pool, fx, svc, status);
+  });
+
+  it("carries the template point's min_coverage_ratio into the calc-points read, read-only (F2.22 item 4)", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertTheCalcPointsReadCarriesTheTemplateRatio(pool, fx, svc);
   });
 });

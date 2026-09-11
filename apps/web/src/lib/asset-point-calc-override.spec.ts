@@ -72,6 +72,9 @@ function config(
       calcIntervalSeconds: ov.calcIntervalSeconds ?? template.calcIntervalSeconds,
       maxInputAgeSeconds: ov.maxInputAgeSeconds ?? template.maxInputAgeSeconds,
     },
+    // `F2.22` item 4 — template-only and read-only (ADR 0055 decision 11);
+    // nothing in this module's rules reads it.
+    minCoverageRatio: null,
     // `F2.9` Task 16 — the panel's own rules do not read it, and the pill's
     // label is asserted on the field directly in `runRuntimePillLabelTests`.
     runtime: null,

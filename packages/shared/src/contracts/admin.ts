@@ -565,6 +565,16 @@ export const assetPointCalcConfigDtoSchema = z.object({
   override: assetPointCalcOverrideFieldsSchema,
   effective: assetPointCalcOverrideFieldsSchema,
   /**
+   * The template point's `min_coverage_ratio` (`F2.22` item 4 on the override
+   * panel). **Template-only, and beside the three roles rather than a sixth
+   * field inside them:** ADR 0055 decision 11 puts the ratio on the template
+   * point and refuses a per-asset override, so it has no override role and no
+   * merge. `null` is the stored value and means fail closed, not "no limit".
+   * No bound here, by this DTO's own rule above — the `(0, 1]` bound is the
+   * write side's, in `apps/api`.
+   */
+  minCoverageRatio: z.number().nullable(),
+  /**
    * What the calc engine last did with this point (`F2.9`, ADR 0055 decision
    * 8 — plan design decision 9, layer 3), or `null` when the API process
    * serving this read has not evaluated it.

@@ -2,6 +2,7 @@ import { expect } from "vitest";
 
 import type { BmsDb } from "@bms/db";
 import { CALC_DIALECT_V2 } from "@bms/shared";
+import type { CalcCrossRef } from "@bms/shared";
 
 import { MetricsService } from "../observability/metrics.service";
 import type { TemplatePointCalcRow } from "./calc-definition";
@@ -9,6 +10,7 @@ import { CalcDefinitionsService } from "./calc-definitions.service";
 import { CalcDependencyService } from "./calc-dependency.service";
 import type { CalcCandidate } from "./calc-dependency.service";
 import { CalcScopeService } from "./calc-scope.service";
+import type { MembershipDefinition } from "./calc-scope.service";
 
 /**
  * `F2.9` Task 12 — `CalcDependencyService`, the save-time cycle detector
@@ -408,4 +410,99 @@ export async function assertACandidateOffEveryCycleReportsNothing(): Promise<voi
     "plan design decision 7 and the Q6 ruling: only the cycle's own members are refused. A " +
       "formula that merely reads one is not on it, and must save.",
   ).toEqual([]);
+}
+
+/**
+ * A `CalcScopeService` whose `resolveMembership` answers from a fixed map and
+ * counts its calls. The database underneath throws, as in `scopeOverNoDatabase`,
+ * so an answer can only have come from the fake — and a call count of zero can
+ * only mean the early return fired before any read.
+ */
+function countingScope(qualified: ReadonlyMap<string, ReadonlyMap<string, string | null>>): {
+  scope: CalcScopeService;
+  calls: MembershipDefinition[][];
+} {
+  const calls: MembershipDefinition[][] = [];
+  const scope = scopeOverNoDatabase();
+  scope.resolveMembership = async (definitions) => {
+    calls.push([...definitions]);
+    return { qualified, members: new Map() };
+  };
+  return { scope, calls };
+}
+
+const qref = (assetCode: string, position: number): CalcCrossRef => ({
+  kind: "qref",
+  assetCode,
+  pointKey: "TOTAL",
+  position,
+});
+
+/**
+ * `F2.22` item 9 — **only the codes the resolver answered `null` for are
+ * reported**, once each, in first-appearance order.
+ *
+ * `resolveMembership` sets one entry per qualified code the owner names —
+ * the asset id at the owner's location, or `null` when no active asset there
+ * carries the code (ADR 0055 decision 12). `V` resolves and must not be named;
+ * `W` twice is one code; the aggregate beside them is not a qualified reference
+ * and contributes nothing to the answer. The definition handed to the resolver
+ * is asserted too, because a resolver asked about the wrong asset answers
+ * about the wrong location.
+ */
+export async function assertUnresolvedQualifiedCodesNamesOnlyTheNullEntries(): Promise<void> {
+  const resolvedV = "22222222-2222-4222-8222-222222222222";
+  const { scope, calls } = countingScope(
+    new Map([
+      [
+        ASSET,
+        new Map<string, string | null>([
+          ["W", null],
+          ["V", resolvedV],
+        ]),
+      ],
+    ]),
+  );
+  const detector = new CalcDependencyService(stubDb([]), new CalcDefinitionsService(stubDb([]), recordingMetrics().metrics), scope);
+
+  const crossRefs: CalcCrossRef[] = [
+    qref("W", 0),
+    { kind: "aggregate", fn: "sum", pointKey: "KW", scope: { kind: "site" }, position: 12 },
+    qref("V", 30),
+    qref("W", 42),
+  ];
+  const unresolved = await detector.unresolvedQualifiedCodes(ASSET, crossRefs);
+
+  expect(
+    unresolved,
+    "W resolves nowhere at the owner's location and is named once; V resolves and is not named; " +
+      "the aggregate is not a qualified reference",
+  ).toEqual(["W"]);
+  expect(calls.length, "one membership resolution for the check").toBe(1);
+  expect(calls[0], "the resolver is asked about this asset's own cross references").toEqual([
+    { assetId: ASSET, crossRefs },
+  ]);
+}
+
+/**
+ * **No qualified reference, no read.** The early return is asserted on the
+ * fake's call count, not on the answer: `[]` is also what a resolver that ran
+ * and found every code would return. The control holds one aggregate rather
+ * than an empty list, so an implementation that tests `crossRefs.length` — and
+ * would read the estate for every `@site` sum — is told apart from one that
+ * looks for a `qref`.
+ */
+export async function assertUnresolvedQualifiedCodesReadsNothingWithoutAQualifiedReference(): Promise<void> {
+  const { scope, calls } = countingScope(new Map());
+  const detector = new CalcDependencyService(stubDb([]), new CalcDefinitionsService(stubDb([]), recordingMetrics().metrics), scope);
+
+  const aggregateOnly = await detector.unresolvedQualifiedCodes(ASSET, [
+    { kind: "aggregate", fn: "sum", pointKey: "KW", scope: { kind: "site" }, position: 0 },
+  ]);
+  expect(aggregateOnly, "an aggregate is not a qualified reference, and nothing is unresolved").toEqual([]);
+  expect(calls.length, "an aggregate-only formula must not resolve membership on the save path").toBe(0);
+
+  const none = await detector.unresolvedQualifiedCodes(ASSET, []);
+  expect(none).toEqual([]);
+  expect(calls.length, "no cross references, no read").toBe(0);
 }
