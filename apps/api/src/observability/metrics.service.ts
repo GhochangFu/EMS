@@ -96,6 +96,29 @@ export class MetricsService {
   });
 
   /**
+   * Whether the `bms_alarms` NOTIFY listener is currently subscribed (`F3.11`,
+   * ADR 0064 Amendment 1 A3), mirrored from the telemetry pair above.
+   *
+   * Before ADR 0064 an `api`-side raise reached `api`'s own sockets with no
+   * listener in the path; since it, every `created` on a screen depends on
+   * `LISTEN bms_alarms` being up, and the reason `F4.34` gives for the
+   * telemetry gauge applies verbatim: a dropped listener means alarms landing
+   * in `bms.alarms` while every alarm rail sits silent. `/health` is left
+   * alone for the same reason.
+   */
+  private readonly alarmListenerConnected = new Gauge({
+    name: "bms_api_alarm_listener_connected",
+    help: "1 when the API is subscribed to the bms_alarms NOTIFY channel, 0 otherwise.",
+    registers: [this.registry],
+  });
+
+  private readonly alarmListenerReconnects = new Counter({
+    name: "bms_api_alarm_listener_reconnects_total",
+    help: "Reconnect attempts made by the bms_alarms NOTIFY listener.",
+    registers: [this.registry],
+  });
+
+  /**
    * Readings refused by validation before broadcast (`F4.36`).
    *
    * Non-zero means something is publishing to `bms_telemetry` in a shape the
@@ -198,6 +221,29 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * One completed `rules-sweep` job's wall time (`F3.11`, ADR 0064 decision
+   * 8), observed by the worker as the sweep finishes — so like `queueJobs`
+   * the series lives in the WORKER's registry and stays empty on the API.
+   * The buckets reach 60 s because a sweep that runs longer than the
+   * default `RULE_SWEEP_INTERVAL_MS` delays the next tick (decision 7), and
+   * that is the thing this histogram exists to show. No `bms_api_` prefix,
+   * as the ADR spells the name.
+   */
+  private readonly ruleSweepDuration = new Histogram({
+    name: "bms_rule_sweep_duration_seconds",
+    help: "Wall time of one completed rules-sweep job on the worker, in seconds.",
+    buckets: [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60],
+    registers: [this.registry],
+  });
+
+  /** Alarms the sweep raised, summed over sweeps (ADR 0064 decision 8). Counts only — no rule label, so no rule code reaches `/metrics`. */
+  private readonly ruleSweepRaised = new Counter({
+    name: "bms_rule_sweep_raised_total",
+    help: "Alarms raised by completed rules-sweep jobs on the worker.",
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({
       service: process.env.OTEL_SERVICE_NAME ?? "bms-api",
@@ -249,6 +295,16 @@ export class MetricsService {
     this.telemetryListenerReconnects.inc();
   }
 
+  /** Records whether the alarm NOTIFY listener is subscribed right now (`F3.11`). */
+  setAlarmListenerConnected(connected: boolean): void {
+    this.alarmListenerConnected.set(connected ? 1 : 0);
+  }
+
+  /** Records one reconnect attempt by the alarm NOTIFY listener (`F3.11`). */
+  countAlarmListenerReconnect(): void {
+    this.alarmListenerReconnects.inc();
+  }
+
   /** Records readings refused by NOTIFY payload validation. */
   countTelemetryReadingsDropped(count: number): void {
     this.telemetryReadingsDropped.inc(count);
@@ -287,5 +343,11 @@ export class MetricsService {
   /** Records one job the worker finished, by queue and outcome. */
   countQueueJob(queue: string, outcome: "completed" | "failed"): void {
     this.queueJobs.labels(queue, outcome).inc();
+  }
+
+  /** Records one completed rules sweep: its wall time in SECONDS (the caller converts from `durationMs`) and how many alarms it raised. */
+  observeRuleSweep(durationSeconds: number, raised: number): void {
+    this.ruleSweepDuration.observe(durationSeconds);
+    this.ruleSweepRaised.inc(raised);
   }
 }

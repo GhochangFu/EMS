@@ -7,7 +7,6 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import { AlarmRaiser } from "./alarm-raise.service";
 import type { AlarmRaiseRule } from "./alarm-raise.service";
-import type { AlarmsGateway } from "./alarms.gateway";
 import {
   assertRaiseRefusesCrossOrgUnderRealRls,
   assertRaiseStampsBothOrgsUnderRealRls,
@@ -38,10 +37,6 @@ const FOREIGN_ORG = "00000000-0000-4000-8000-0000000000fe";
 
 const RUN = Date.now();
 const PREFIX = "E71B-AR-";
-
-function stubGateway(): AlarmsGateway {
-  return { broadcastCreated: () => undefined } as unknown as AlarmsGateway;
-}
 
 describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real RLS", () => {
   let ownerPool: pg.Pool;
@@ -150,7 +145,7 @@ describe.skipIf(!connectionString)("E7.1b — AlarmRaiser stamps org under real 
     });
 
     ctx = {
-      raiser: new AlarmRaiser(createDb(tenantPool), stubGateway()),
+      raiser: new AlarmRaiser(createDb(tenantPool)),
       ownerPool,
       organizationId,
       stampAssetId: stamp.assetId,

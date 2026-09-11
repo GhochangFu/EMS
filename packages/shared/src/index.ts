@@ -234,6 +234,8 @@ export type QueueDepth = z.infer<typeof He.queueDepthSchema>;
 export type QueueHealth = z.infer<typeof He.queueHealthSchema>;
 /** `GET /health` on the API and on the worker. `degraded` still answers 200. */
 export type LivenessResponse = z.infer<typeof He.livenessResponseSchema>;
+/** `F3.11` (ADR 0064 decision 8) — the last completed rule sweep as the worker wrote it; `lastRuleSweep` on `GET /health`. Counts only. */
+export type RuleSweepSummary = z.infer<typeof He.ruleSweepSummarySchema>;
 /** One plotted bucket — the same `{ t, v }` shape the chart renderer already takes. */
 export type PointAggregateBucket = z.infer<typeof E.pointAggregateBucketSchema>;
 /** The scalar half: totals, extremes, the weighted mean, and when the peak fell. */

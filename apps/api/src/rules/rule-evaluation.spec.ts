@@ -2,6 +2,7 @@ import { BadRequestException } from "@nestjs/common";
 
 import {
   compare,
+  evaluateRule,
   evaluateThresholdRule,
   evaluateTimeWindowRule,
   parseTime,
@@ -248,6 +249,38 @@ function testUnsupported(): void {
   assert(result.trace.ruleType === "anomaly", "the trace carries the type");
 }
 
+async function testEvaluateRuleThreshold(): Promise<void> {
+  const probe = loader({ time: EPOCH, value: 150, unit: "kW" });
+  const result = await evaluateRule(ruleRow(), probe.load, new Date());
+  assert(result.status === "matched", "a threshold row routes to evaluateThresholdRule");
+  assert(probe.calls() === 1, "the loader is consulted exactly once");
+}
+
+async function testEvaluateRuleTimeWindow(): Promise<void> {
+  // 2026-01-04 is a Sunday. If `now` is ever replaced by `new Date()` inside
+  // evaluateRule, this assertion passes only when the suite happens to run on
+  // a Sunday between 02:00 and 04:00 local time — any other moment reddens it.
+  const row = ruleRow({
+    ruleType: "time_window",
+    condition: { days: ["sun"], startTime: "02:00", endTime: "04:00" },
+  });
+  const probe = loader({ time: EPOCH, value: 150, unit: "kW" });
+  const result = await evaluateRule(row, probe.load, new Date(2026, 0, 4, 3, 0));
+  assert(result.status === "matched", "Sunday 03:00 is inside the 02:00-04:00 window");
+  assert(probe.calls() === 0, "a time-window rule must not consult the loader");
+}
+
+async function testEvaluateRuleUnsupported(): Promise<void> {
+  const probe = loader({ time: EPOCH, value: 150, unit: "kW" });
+  const result = await evaluateRule(ruleRow({ ruleType: "bogus" }), probe.load, new Date());
+  assert(result.status === "error", "an unsupported rule type is an error");
+  assert(
+    result.message === "Unsupported rule type bogus",
+    "the message names the unsupported type exactly",
+  );
+  assert(probe.calls() === 0, "an unsupported rule type must not consult the loader");
+}
+
 /** Assertions for the rule engine's pure decision logic (ADR 0014, §4.6). */
 export async function runRuleEvaluationTests(): Promise<void> {
   testCompare();
@@ -255,4 +288,7 @@ export async function runRuleEvaluationTests(): Promise<void> {
   await testThresholdRule();
   testTimeWindowRule();
   testUnsupported();
+  await testEvaluateRuleThreshold();
+  await testEvaluateRuleTimeWindow();
+  await testEvaluateRuleUnsupported();
 }

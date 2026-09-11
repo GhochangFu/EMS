@@ -172,3 +172,18 @@ export function unsupportedRuleType(row: RuleRow): EvaluationResult {
     trace: { ruleType: row.ruleType },
   };
 }
+
+/** Routes a rule to its evaluator. The caller supplies the loader and the clock; nothing here reads a database or `Date.now()`. */
+export async function evaluateRule(
+  row: RuleRow,
+  loadSample: LatestSampleLoader,
+  now: Date,
+): Promise<EvaluationResult> {
+  if (row.ruleType === "threshold") {
+    return evaluateThresholdRule(row, loadSample);
+  }
+  if (row.ruleType === "time_window") {
+    return evaluateTimeWindowRule(row, now);
+  }
+  return unsupportedRuleType(row);
+}

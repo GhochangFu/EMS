@@ -11,7 +11,8 @@ export class HealthController {
    * Liveness probe for local dev and orchestration, served by both processes
    * — the API on `PORT` and the worker on `WORKER_PORT` — with the queue
    * section ADR 0063 decision 10 adds (`configured`, `connected`, per-queue
-   * depths, `lastHeartbeatAt`, `heartbeatStale`).
+   * depths, `lastHeartbeatAt`, `heartbeatStale`) and, since `F3.11`, ADR 0064
+   * decision 8's `lastRuleSweep` — outside the verdict.
    *
    * **Always HTTP 200, and `status: "degraded"` is in the body** (plan §15
    * ruling 1, ADR 0063 Amendment 1). This route is a *liveness* probe: an

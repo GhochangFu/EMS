@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
-import { alarms, assets, ruleExecutions } from "@bms/db";
+import { alarms, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { TENANT_DRIZZLE } from "../database/database.tokens";
@@ -10,8 +10,7 @@ import type { AlarmMessageRule } from "../rules/alarm-message";
 import { composeAlarmMessage } from "../rules/alarm-message";
 import { defaultAlarmSeverity } from "../rules/alarm-severity-default";
 import type { EvaluationResult, RuleRow } from "../rules/rules.types";
-import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
-import { AlarmsGateway } from "./alarms.gateway";
+import { ALARM_NOTIFY_CHANNEL, encodeAlarmNotification } from "./alarm-notify-channel";
 
 /**
  * Gates *whether* a rule evaluation should raise an alarm — the decision
@@ -128,10 +127,23 @@ export type AlarmRaiseResult = {
 /**
  * The one writer of `bms.alarms` (F3.6 / ADR 0033).
  *
- * Both engines — the streaming threshold cache (`AlarmEngineService`,
- * task 4) and the on-demand evaluator (`RulesService.evaluateEnabledRules`,
- * task 5) — call this instead of inserting directly, so a shared condition
- * raises exactly one open alarm no matter which path reaches it first.
+ * Every engine — the streaming threshold cache (`AlarmEngineService`,
+ * task 4), the on-demand evaluator (`RulesService.evaluateEnabledRules`,
+ * task 5) and, since `F3.11`, the worker's `RuleSweepService` (ADR 0064) —
+ * calls this instead of inserting directly, so a shared condition raises
+ * exactly one open alarm no matter which path reaches it first.
+ *
+ * **It tells the sockets nothing directly** (ADR 0064 decision 4). The raise
+ * announces itself with `pg_notify('bms_alarms', …)` as the last statement of
+ * its own tenant transaction — ids only, `alarm-notify-channel.ts` — and
+ * Postgres delivers a transactional `NOTIFY` on commit and drops it on
+ * rollback, so a refused, deduped or rolled-back raise notifies nobody. The
+ * `created` broadcast is the listener's: `AlarmNotifyService` in
+ * `AlarmsModule` runs `LISTEN bms_alarms` in every API process and calls the
+ * gateway's `broadcastCreated` from there (Unit 3). That is what lets
+ * `AlarmRaiseModule` be loop-free and live on the worker without a gateway,
+ * and what makes a raise on the worker reach the sockets of both API
+ * processes.
  *
  * The dedupe is `alarms_open_per_rule_uidx` (migration 0032), enforced by the
  * database, not by a SELECT-then-INSERT read here: `ensureAlarm`'s pre-merge
@@ -159,30 +171,37 @@ export type AlarmRaiseResult = {
 export class AlarmRaiser {
   private readonly logger = new Logger(AlarmRaiser.name);
 
-  constructor(
-    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
-    private readonly gateway: AlarmsGateway,
-  ) {}
+  constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
 
   /**
    * @param organizationId the asset's organization — the tenant the alarm is
    *   filed under (`alarms.organization_id`) and the org the whole write runs
-   *   inside via `withTenant`. Both engines derive it from the asset, since
-   *   neither carries a JWT.
+   *   inside via `withTenant`. Every engine derives it from the asset, since
+   *   none carries a JWT.
    * @param opts.recordTrace Default `true` — writes one `bms.rule_executions`
    *   row on a successful raise (ADR 0033 decision 3). `RulesService`'s
    *   on-demand evaluator (task 5) passes `false`: it already writes a richer
    *   trace for every rule it evaluates, matched or not, and this insert
    *   would otherwise duplicate it. `AlarmEngineService`'s streaming path has
    *   no other mechanism to record why an alarm fired, so it takes the
-   *   default.
+   *   default; so does the worker's sweep (ADR 0064 decision 5).
+   * @param opts.raisedBy Default `"alarm_engine"` — what the trace's
+   *   `raisedBy` reads, so an operator asking "why did this alarm fire" can
+   *   tell a sweep raise (`"rule_sweep"`) from a streaming one, and both from
+   *   a press, whose trace carries `evaluatedBy` instead. It names the trace
+   *   only: it never forces one under `recordTrace: false`, and it does not
+   *   reach the `NOTIFY` payload, which is ids only.
+   *
+   * A successful raise ends with `pg_notify` inside the same transaction, so
+   * the announcement commits with the row or not at all; nothing is
+   * broadcast from here after commit — see the class doc.
    */
   async raise(
     assetId: string,
     organizationId: string,
     rule: AlarmRaiseRule,
     value: number,
-    opts: { recordTrace?: boolean } = {},
+    opts: { recordTrace?: boolean; raisedBy?: "alarm_engine" | "rule_sweep" } = {},
   ): Promise<AlarmRaiseResult> {
     // Above the guard, not below it: both are pure and both are part of the
     // result on every path (F3.7 D1), refused or deduped included.
@@ -204,10 +223,11 @@ export class AlarmRaiser {
       return { raised: false, alarmId: null, severity, message };
     }
 
-    // One tenant transaction: the dedupe insert, the read-back and the trace all
+    // One tenant transaction: the dedupe insert, the trace and the NOTIFY all
     // run inside withTenant(asset org) so every write satisfies the 0047 policy.
-    // The broadcast is deferred until after commit — a rolled-back transaction
-    // must not announce an alarm that does not exist.
+    // Nothing is announced from outside it — a transactional NOTIFY commits
+    // with the row or is dropped with it, so a rolled-back transaction cannot
+    // announce an alarm that does not exist (ADR 0064 decision 4).
     const outcome = await withTenant(this.db, organizationId, async (tx) => {
       const inserted = await tx
         .insert(alarms)
@@ -225,16 +245,9 @@ export class AlarmRaiser {
       const row = inserted[0];
       if (!row) {
         // Already active (raised, not yet cleared) for this (asset, rule) —
-        // the dedupe, not a failure.
-        return { raised: false as const, alarmId: null as string | null, broadcast: null };
+        // the dedupe, not a failure. No trace, no NOTIFY.
+        return { raised: false as const, alarmId: null as string | null };
       }
-
-      const [full] = await tx
-        .select(alarmListItemColumns)
-        .from(alarms)
-        .innerJoin(assets, eq(alarms.assetId, assets.id))
-        .where(eq(alarms.id, row.id))
-        .limit(1);
 
       // Traced only on a raise (ADR 0033 decision 3) — bms.rule_executions has
       // no retention policy, and an every-evaluation trace is (readings × rules)
@@ -256,16 +269,27 @@ export class AlarmRaiser {
           matched: true,
           observedValue: value,
           message,
-          trace: { assetId, alarmId: row.id, raisedBy: "alarm_engine" },
+          trace: { assetId, alarmId: row.id, raisedBy: opts.raisedBy ?? "alarm_engine" },
         });
       }
 
-      return { raised: true as const, alarmId: row.id, broadcast: full ?? null };
-    });
+      // The announcement, last, and outside the `recordTrace` guard: the
+      // on-demand press raises with `recordTrace: false` and its alarm still
+      // has to reach the sockets. Both arguments are bound parameters — the
+      // channel name and the payload never enter the SQL text. `pg_notify`
+      // needs no grant (a channel name is not a schema object), and
+      // `alarm-raise.service.rls.integration.test.ts` runs this as
+      // `bms_tenant`, which is the gate that it needs none.
+      await tx.execute(
+        sql`select pg_notify(${ALARM_NOTIFY_CHANNEL}, ${encodeAlarmNotification({
+          type: "created",
+          alarmId: row.id,
+          organizationId,
+        })})`,
+      );
 
-    if (outcome.broadcast) {
-      this.gateway.broadcastCreated(toAlarmListItem(outcome.broadcast));
-    }
+      return { raised: true as const, alarmId: row.id };
+    });
 
     return { raised: outcome.raised, alarmId: outcome.alarmId, severity, message };
   }

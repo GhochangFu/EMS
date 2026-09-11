@@ -1,5 +1,5 @@
 import type { BmsDb } from "@bms/db";
-import type { LivenessResponse, QueueHealth } from "@bms/shared";
+import type { LivenessResponse, QueueHealth, RuleSweepSummary } from "@bms/shared";
 import { Worker, type Queue } from "bullmq";
 import { z } from "zod";
 
@@ -18,6 +18,12 @@ import {
 import { livenessFrom, QUEUE_HEALTH_TIMEOUT_MS, readQueueHealth } from "./queue-health";
 import { runProcessor } from "./queue-processor";
 import { defineQueue, enqueue, upsertSchedule } from "./queue-registry";
+import {
+  RULE_SWEEP_SCHEDULER_ID,
+  recordRuleSweep,
+  ruleSweepKey,
+  rulesSweepQueue,
+} from "./rules-sweep";
 import { startQueueWorkers, type WorkerHost } from "./worker-host";
 
 /**
@@ -32,9 +38,15 @@ import { startQueueWorkers, type WorkerHost } from "./worker-host";
  *
  * **Isolation.** Every key lives under a per-run prefix
  * (`bms-test-<pid>-<ms>`), never `bms`, so the running stack's own queue is
- * untouched. `closeQueueSuite` obliterates every queue, removes the
- * scheduler, deletes the tick key and then sweeps the prefix — the suite
- * leaves zero keys behind by construction, not by hand.
+ * untouched. `closeQueueSuite` obliterates every queue, removes both
+ * schedulers, deletes the tick and sweep keys and then sweeps the prefix —
+ * the suite leaves zero keys behind by construction, not by hand.
+ *
+ * **`F3.11` (ADR 0064 decisions 2, 8) adds the `rules-sweep` declaration to
+ * the client, a recording processor for it, the real `lastRuleSweep` read
+ * (`readSweep` is the same `GET` `QueueHealthService` makes, on the queue's
+ * own connection), and two rows: the second scheduler firing beside the
+ * heartbeat's, and `recordRuleSweep` → the key → `readQueueHealth`.
  *
  * **Shape.** One scenario runner per row of plan §9's table returns an
  * outcome; one exported assert per claim reads it. The worker and the
@@ -81,8 +93,8 @@ export const failingQueue = defineQueue({
   retry: { attempts: 1 },
 });
 
-/** Every declaration the suite's client carries — the two throwaways plus the real heartbeat. */
-export const SUITE_QUEUES = [roundTripQueue, failingQueue, heartbeatQueue] as const;
+/** Every declaration the suite's client carries — the two throwaways plus the real heartbeat and the real sweep. */
+export const SUITE_QUEUES = [roundTripQueue, failingQueue, heartbeatQueue, rulesSweepQueue] as const;
 
 export class RecordingMetrics implements Pick<MetricsService, "countQueueJob" | "setQueueDepth"> {
   readonly jobs: { queue: string; outcome: "completed" | "failed" }[] = [];
@@ -128,7 +140,12 @@ export type QueueSuite = {
   readonly received: Marked[];
   readonly workerWarnings: string[];
   readonly host: WorkerHost;
+  /** How many times the `rules-sweep` processor ran — the recording handler, not `RuleSweepService`. */
+  readonly sweepRuns: { count: number };
   readTick(): Promise<string | null>;
+  /** The last-sweep key, read the way `QueueHealthService.readSweep` reads it. */
+  readSweep(): Promise<string | null>;
+  writeSweep(value: string): Promise<void>;
 };
 
 function handle(suite: Pick<QueueSuite, "client">, name: string) {
@@ -152,6 +169,8 @@ export async function openQueueSuite(url: string, prefix: string): Promise<Queue
   const workerWarnings: string[] = [];
   const dbs = { tenantDb: noDatabase, fleetDb: noDatabase };
   const tickKey = heartbeatKey(prefix);
+  const sweepKey = ruleSweepKey(prefix);
+  const sweepRuns = { count: 0 };
 
   const registrations = [
     runProcessor(roundTripQueue, dbs, async (payload) => {
@@ -171,6 +190,13 @@ export async function openQueueSuite(url: string, prefix: string): Promise<Queue
         now: Date.now,
       }),
     ),
+    // A recording handler, not `RuleSweepService`: the row is about the
+    // scheduler → worker chain for a second repeatable job on one client,
+    // and the sweep body has its own database suite
+    // (`rules/rule-sweep.integration.spec.ts`).
+    runProcessor(rulesSweepQueue, dbs, async () => {
+      sweepRuns.count += 1;
+    }),
   ];
 
   const host = startQueueWorkers(client, registrations, {
@@ -192,28 +218,40 @@ export async function openQueueSuite(url: string, prefix: string): Promise<Queue
     received,
     workerWarnings,
     host,
+    sweepRuns,
     readTick: async () => {
       const redis = await handle({ client }, heartbeatQueue.name).client;
       return redis.get(tickKey);
+    },
+    readSweep: async () => {
+      const redis = await handle({ client }, rulesSweepQueue.name).client;
+      return redis.get(sweepKey);
+    },
+    writeSweep: async (value) => {
+      const redis = await handle({ client }, rulesSweepQueue.name).client;
+      await redis.set(sweepKey, value);
     },
   };
 }
 
 /**
- * Workers first (so nothing is mid-job), then the scheduler, then every
- * queue's keys, then the tick, then a sweep of anything else under the
- * prefix, then the client. The sweep is what makes "zero `bms-test-*` keys"
- * a property of the code rather than of whoever last ran it.
+ * Workers first (so nothing is mid-job), then both schedulers, then every
+ * queue's keys, then the tick and the sweep key, then a sweep of anything
+ * else under the prefix, then the client. The sweep is what makes "zero
+ * `bms-test-*` keys" a property of the code rather than of whoever last ran
+ * it.
  */
 export async function closeQueueSuite(suite: QueueSuite): Promise<void> {
   await suite.host.close();
   const heartbeat = suite.queues.get(heartbeatQueue.name);
   await heartbeat?.removeJobScheduler(HEARTBEAT_SCHEDULER_ID);
+  const sweep = suite.queues.get(rulesSweepQueue.name);
+  await sweep?.removeJobScheduler(RULE_SWEEP_SCHEDULER_ID);
   for (const queue of suite.queues.values()) {
     await queue.obliterate({ force: true });
   }
   const redis = await handle(suite, heartbeatQueue.name).client;
-  await redis.del(heartbeatKey(suite.prefix));
+  await redis.del(heartbeatKey(suite.prefix), ruleSweepKey(suite.prefix));
   let cursor = "0";
   do {
     const [next, keys] = await redis.scan(cursor, { MATCH: `${suite.prefix}*`, COUNT: 100 });
@@ -229,6 +267,7 @@ function readHealth(suite: QueueSuite, timeoutMs = QUEUE_HEALTH_TIMEOUT_MS): Pro
   return readQueueHealth(suite.client, {
     now: Date.now,
     readTick: () => suite.readTick(),
+    readSweep: () => suite.readSweep(),
     metrics: suite.metrics,
     timeoutMs,
   });
@@ -513,6 +552,10 @@ export async function runTimeoutGuard(suite: QueueSuite): Promise<TimeoutOutcome
         await pending;
         return slow.get(heartbeatKey(suite.prefix));
       },
+      // The real read: it resolves at once, and the hang under test is the
+      // tick's. A stub here would let a sweep read that itself blocked go
+      // unnoticed by the guard.
+      readSweep: () => suite.readSweep(),
       metrics,
       timeoutMs: SLOW_READ_BUDGET_MS,
     });
@@ -543,5 +586,138 @@ export function assertASlowReadLeavesTheGaugeAlone(outcome: TimeoutOutcome): voi
   assert(
     outcome.depthWrites === 0,
     `a timed-out read must publish no depth gauge; got ${outcome.depthWrites} writes`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Row 6 — ADR 0064 decision 2: a second scheduler, beside the heartbeat's
+// ---------------------------------------------------------------------------
+
+export type RuleSweepScheduleOutcome = {
+  readonly sweepRuns: number;
+  readonly heartbeatCompletedDelta: number;
+  readonly health: QueueHealth;
+};
+
+/**
+ * `everyMs: 1_000`, not `RULE_SWEEP_INTERVAL_MS` — the mechanism under test
+ * is a second repeatable job on the same client and the same worker set as
+ * the heartbeat's (row 4 upserted that one, and it is still firing). The
+ * heartbeat's completed count is read before and after the wait, so "two
+ * schedulers coexist" is a claim about both firing in the same window, not
+ * about the sweep alone.
+ */
+export async function runRuleSweepSchedule(suite: QueueSuite): Promise<RuleSweepScheduleOutcome> {
+  const heartbeatBefore = suite.metrics.count(heartbeatQueue.name, "completed");
+  await upsertSchedule(
+    suite.client,
+    rulesSweepQueue,
+    { schedulerId: RULE_SWEEP_SCHEDULER_ID, everyMs: 1_000 },
+    {},
+  );
+  await until(() => suite.sweepRuns.count >= 2, {
+    timeoutMs: 5_000,
+    label: "the rules-sweep processor ran twice",
+  });
+  await until(() => suite.metrics.count(heartbeatQueue.name, "completed") - heartbeatBefore >= 1, {
+    timeoutMs: 5_000,
+    label: "the heartbeat kept firing beside the sweep",
+  });
+  return {
+    sweepRuns: suite.sweepRuns.count,
+    heartbeatCompletedDelta: suite.metrics.count(heartbeatQueue.name, "completed") - heartbeatBefore,
+    health: await readHealth(suite),
+  };
+}
+
+export function assertTheSweepSchedulerRanTheProcessorRepeatedly(
+  outcome: RuleSweepScheduleOutcome,
+): void {
+  assert(
+    outcome.sweepRuns >= 2,
+    `the rules-sweep scheduler at every: 1000 must run the processor at least twice within 5 s; got ${outcome.sweepRuns}`,
+  );
+}
+
+export function assertTheHeartbeatKeptFiringBesideTheSweep(outcome: RuleSweepScheduleOutcome): void {
+  assert(
+    outcome.heartbeatCompletedDelta >= 1,
+    `the heartbeat scheduler must keep completing jobs while the sweep scheduler runs on the same ` +
+      `client; its completed count moved by ${outcome.heartbeatCompletedDelta}`,
+  );
+}
+
+export function assertHealthListsTheSweepQueue(outcome: RuleSweepScheduleOutcome): void {
+  const depth = depthOf(outcome.health, rulesSweepQueue.name);
+  assert(
+    outcome.health.connected && depth !== undefined && depth.failed === 0,
+    `health must list "rules-sweep" connected with failed: 0; got ${JSON.stringify(outcome.health.queues)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Row 7 — ADR 0064 decision 8: the last-sweep key, written and read back
+// ---------------------------------------------------------------------------
+
+export type RuleSweepSummaryOutcome = {
+  readonly summary: RuleSweepSummary;
+  readonly observed: { durationSeconds: number; raised: number }[];
+  readonly logged: string[];
+  /** Health read after `recordRuleSweep`. */
+  readonly recorded: QueueHealth;
+  /** Health read after the key was overwritten with garbage. */
+  readonly corrupted: QueueHealth;
+};
+
+/**
+ * `recordRuleSweep` through the suite's `writeSweep` — the same `SET` on the
+ * same key `WorkerHostService.writeKey` performs — then `readQueueHealth`
+ * through the real `readSweep`. The garbage overwrite is the live-Redis twin
+ * of `queue-health.spec.ts`'s "corrupt key is not a disconnection" row.
+ */
+export async function runRuleSweepSummary(suite: QueueSuite): Promise<RuleSweepSummaryOutcome> {
+  const summary: RuleSweepSummary = {
+    finishedAt: new Date().toISOString(),
+    evaluated: 289,
+    raised: 2,
+    durationMs: 412,
+  };
+  const observed: { durationSeconds: number; raised: number }[] = [];
+  const logged: string[] = [];
+  await recordRuleSweep(summary, {
+    writeSummary: (json) => suite.writeSweep(json),
+    metrics: {
+      observeRuleSweep: (durationSeconds, raised) => {
+        observed.push({ durationSeconds, raised });
+      },
+    },
+    logger: {
+      log: (message: string) => {
+        logged.push(message);
+      },
+    },
+  });
+  const recorded = await readHealth(suite);
+  await suite.writeSweep("not json");
+  const corrupted = await readHealth(suite);
+  return { summary, observed, logged, recorded, corrupted };
+}
+
+export function assertHealthReadsBackTheRecordedSweep(outcome: RuleSweepSummaryOutcome): void {
+  assert(
+    outcome.recorded.connected &&
+      JSON.stringify(outcome.recorded.lastRuleSweep) === JSON.stringify(outcome.summary),
+    `health must read back the summary recordRuleSweep wrote, connected; got ` +
+      `${JSON.stringify({ connected: outcome.recorded.connected, lastRuleSweep: outcome.recorded.lastRuleSweep })}`,
+  );
+}
+
+export function assertACorruptSweepKeyReadsAsNullNotDisconnected(
+  outcome: RuleSweepSummaryOutcome,
+): void {
+  assert(
+    outcome.corrupted.lastRuleSweep === null && outcome.corrupted.connected === true,
+    `garbage on the sweep key must read as lastRuleSweep: null with connected: true; got ` +
+      `${JSON.stringify({ connected: outcome.corrupted.connected, lastRuleSweep: outcome.corrupted.lastRuleSweep })}`,
   );
 }

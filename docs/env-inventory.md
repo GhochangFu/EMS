@@ -53,9 +53,11 @@ the API's `JWT_SECRET`/`AUTH_MODE`/OIDC variables apply here.
 | `WORKER_PORT` | No | `4100` | HTTP port for the worker's own `/health` and `/metrics`. |
 | `LOG_LEVEL` | No | `info` | Pino log level, same values as the API. |
 | `OTEL_SERVICE_NAME` | No | `bms-worker` in compose | Service name on OpenTelemetry spans and the `service` label on Prometheus default metrics — note `MetricsService` still emits `bms_api_process_*` metric names regardless of this label (a recorded wart, not renamed by this row). |
-| `CREDENTIAL_ENCRYPTION_KEY` | **Secret** | unset (interpolated from compose `.env`) | Passed through in the same shape as `api`/`ingest`. The worker reads none of the three key variables yet (ADR 0063 Consequences) — carried now so the day dispatch moves here is a code change, not a compose change. |
-| `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | **Secret** — rotation only | unset (interpolated from compose `.env`) | See above. Unread today. |
-| `CREDENTIAL_ENCRYPTION_KEY_VERSION` | No | unset (interpolated from compose `.env`) | See above. Unread today. |
+| `RULE_SWEEP_INTERVAL_MS` | No | `60000` | ADR 0064 decision 6: how often the `rules-sweep` job walks every enabled, published rule. `readWorkerConfig` requires an integer between `10000` and `3600000` inclusive; any other value — non-integer, out of range, or unparsable — is a `QueueConfigError` and the worker refuses to start. There is no "off" value (a deployer who does not want scheduled evaluation does not run the worker profile). |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_SECURE`, `NOTIFY_RATE_LIMIT_PER_HOUR`, `NOTIFY_WEBHOOK_ALLOW_INSECURE`, `NOTIFY_STEP_MAX_LATENESS_MINUTES` | No | unset | Read by the worker since `F3.11` (`buildConfig(process.env)`, `notifications.config.ts:96-119`) — a sweep-raised alarm dispatches through the same transports a streaming raise does. Set the same values as `api`, or a sweep-raised alarm's email delivery reads `skipped_unconfigured` while a streaming raise's sends. Compose sets none of these on either service (`tests/adr-0041-notification-invariants.test.ts`). |
+| `CREDENTIAL_ENCRYPTION_KEY` | **Secret** | unset (interpolated from compose `.env`) | Passed through in the same shape as `api`/`ingest`. Read since `F3.11` (a webhook secret is decrypted on dispatch); the worker does not refuse to boot on a missing key — parity with `api`, which also reads it as decryption-optional (ADR 0064 Amendment 1 A5). |
+| `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | **Secret** — rotation only | unset (interpolated from compose `.env`) | See above. Read since `F3.11`, decryption only, during a rotation window (ADR 0062). |
+| `CREDENTIAL_ENCRYPTION_KEY_VERSION` | No | unset (interpolated from compose `.env`) | See above. Read since `F3.11`. |
 
 ## Web
 

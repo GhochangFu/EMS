@@ -248,6 +248,16 @@ export const queueDepthSchema = z
   })
   .strict();
 
+/** The last completed sweep, as the worker wrote it (ADR 0064 decision 8). Counts only — never a rule code. */
+export const ruleSweepSummarySchema = z
+  .object({
+    finishedAt: z.string().datetime({ offset: true }),
+    evaluated: z.number().int().nonnegative(),
+    raised: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative(),
+  })
+  .strict();
+
 /**
  * The `queue` section of the liveness body.
  *
@@ -262,6 +272,11 @@ export const queueDepthSchema = z
  * when `lastHeartbeatAt` is `null` (ruling 5 — a fresh Redis the worker has
  * never ticked is a queue with no consumer) and when the tick is older than
  * `HEARTBEAT_STALE_TICKS` ticks.
+ *
+ * `lastRuleSweep` (`F3.11`, ADR 0064 decision 8) is read from the same Redis
+ * as the tick and reported beside it. It is NOT part of the `status` verdict:
+ * the ADR names the field and no staleness rule for it, so `livenessFrom`
+ * never reads it.
  */
 export const queueHealthSchema = z
   .object({
@@ -271,6 +286,8 @@ export const queueHealthSchema = z
     lastHeartbeatAt: z.string().datetime({ offset: true }).nullable(),
     /** `true` when `lastHeartbeatAt` is null or older than HEARTBEAT_STALE_TICKS ticks — the reason `status` reads `degraded`. */
     heartbeatStale: z.boolean(),
+    /** `null` when the worker has never completed a sweep or the key is unreadable (absent, corrupt, or not the schema). Not part of the `status` verdict. */
+    lastRuleSweep: ruleSweepSummarySchema.nullable(),
   })
   .strict();
 

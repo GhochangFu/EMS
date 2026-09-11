@@ -49,6 +49,13 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
     this.logger.log("WebSocket namespace /ws/alarms ready");
   }
 
+  /**
+   * `F3.11` / ADR 0064 decision 4: the one caller is `AlarmNotifyService`,
+   * fed by `LISTEN bms_alarms` (Unit 3) — not `AlarmRaiser`, which announces a
+   * raise with a transactional `pg_notify` and holds no reference to this
+   * gateway. That is what lets a raise on the worker, on `api` or on
+   * `api-replica` reach the sockets of every API process: each one listens.
+   */
   broadcastCreated(alarm: AlarmListItem): void {
     this.emitScoped(alarm, "created");
     this.metrics.countWebsocketEvent("/ws/alarms", "alarm");
@@ -68,11 +75,15 @@ export class AlarmsGateway implements OnGatewayInit, OnGatewayConnection {
    * event, so the rail drains without a reload.
    *
    * No unit case asserts this method: every spec that touches `AlarmsGateway`
-   * stubs it (`{ broadcastCreated: () => undefined } as unknown as
-   * AlarmsGateway`), so nothing here is ever constructed with a fake
-   * namespace, and a stub cannot prove the scoping. `U7`'s
-   * `AlarmLifecycleService` spec asserts the call through its deps fake, and
-   * the scoping itself is `emitScoped`'s, shared with the two broadcasts above.
+   * stubs it with a no-op object cast `as unknown as AlarmsGateway`, so
+   * nothing here is ever constructed with a fake namespace, and a stub cannot
+   * prove the scoping. Since `F3.11` the only such stubs are the ones the
+   * lifecycle and alarms-service suites hold; the raiser suites construct
+   * `AlarmRaiser` without one, because the `created` broadcast now comes from
+   * the `LISTEN bms_alarms` path (`AlarmNotifyService`, Unit 3) rather than
+   * from the raise. `U7`'s `AlarmLifecycleService` spec asserts the call
+   * through its deps fake, and the scoping itself is `emitScoped`'s, shared
+   * with the two broadcasts above.
    */
   broadcastCleared(alarm: AlarmListItem): void {
     this.emitScoped(alarm, "cleared");

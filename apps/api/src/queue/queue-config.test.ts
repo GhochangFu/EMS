@@ -2,17 +2,25 @@ import { describe, it } from "vitest";
 
 import {
   assertBlankRedisUrlIsUnconfigured,
+  assertBlankRuleSweepIntervalIsUnset,
   assertCredentialRefusalDoesNotEchoThePassword,
   assertCredentialsAndDbAreParsed,
+  assertInvalidRuleSweepIntervalThrowsNamingOnlyRuleSweep,
   assertInvalidUrlThrowsItsOwnMessageWithoutEchoingTheValue,
+  assertInvalidWorkerPortRefusalFiresBeforeRuleSweepGuard,
   assertInvalidWorkerPortThrowsNamingWorkerPortNotRedisUrl,
   assertMinimalUrlParsesToHostAndPortOnly,
+  assertMissingRedisUrlRefusalFiresBeforeRuleSweepGuard,
   assertQueueConfigErrorNameIsStable,
   assertRedissSchemeMapsToTlsAndDefaultPort,
+  assertRuleSweepIntervalDefaultsTo60000,
+  assertRuleSweepIntervalHonoursCeiling,
+  assertRuleSweepIntervalHonoursFloor,
   assertUnsetRedisUrlIsUnconfigured,
   assertWorkerConfigDefaultsPortTo4100,
   assertWorkerConfigHonoursExplicitPort,
   assertWorkerConfigRefusesMissingRedisUrlNamingOnlyRedisUrl,
+  INVALID_RULE_SWEEP_INTERVALS,
   INVALID_URL_ROWS,
   INVALID_WORKER_PORTS,
 } from "./queue-config.spec";
@@ -75,5 +83,36 @@ describe("F4.24 — queue and worker configuration readers", () => {
 
   it("gives QueueConfigError a stable name", () => {
     assertQueueConfigErrorNameIsStable();
+  });
+
+  it("defaults ruleSweepIntervalMs to 60000", () => {
+    assertRuleSweepIntervalDefaultsTo60000();
+  });
+
+  it("reads a whitespace-only RULE_SWEEP_INTERVAL_MS as unset", () => {
+    assertBlankRuleSweepIntervalIsUnset();
+  });
+
+  it("accepts the RULE_SWEEP_INTERVAL_MS floor of 10000", () => {
+    assertRuleSweepIntervalHonoursFloor();
+  });
+
+  it("accepts the RULE_SWEEP_INTERVAL_MS ceiling of 3600000", () => {
+    assertRuleSweepIntervalHonoursCeiling();
+  });
+
+  it.each(INVALID_RULE_SWEEP_INTERVALS)(
+    "refuses RULE_SWEEP_INTERVAL_MS=%s naming only RULE_SWEEP_INTERVAL_MS",
+    (raw) => {
+      assertInvalidRuleSweepIntervalThrowsNamingOnlyRuleSweep(raw);
+    },
+  );
+
+  it("refuses a missing REDIS_URL before checking RULE_SWEEP_INTERVAL_MS", () => {
+    assertMissingRedisUrlRefusalFiresBeforeRuleSweepGuard();
+  });
+
+  it("refuses an invalid WORKER_PORT before checking RULE_SWEEP_INTERVAL_MS", () => {
+    assertInvalidWorkerPortRefusalFiresBeforeRuleSweepGuard();
   });
 });

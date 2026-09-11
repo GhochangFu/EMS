@@ -173,7 +173,6 @@ export function buildHarness(db: BmsDb, options: HarnessOptions = {}): Harness {
   );
   const clearedBroadcasts: string[] = [];
   const gateway = {
-    broadcastCreated: () => undefined,
     broadcastAcknowledged: () => undefined,
     broadcastCleared: (alarm: { id: string }) => {
       clearedBroadcasts.push(alarm.id);
@@ -182,7 +181,7 @@ export function buildHarness(db: BmsDb, options: HarnessOptions = {}): Harness {
 
   return {
     lifecycle: new AlarmLifecycleService(db, db, notifications, channels, gateway),
-    raiser: new AlarmRaiser(db, gateway),
+    raiser: new AlarmRaiser(db),
     alarmsService: new AlarmsService(db, db, gateway),
     notifications,
     sent,

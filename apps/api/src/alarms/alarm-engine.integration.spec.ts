@@ -26,7 +26,6 @@ import { TelemetryBroadcastHub } from "../telemetry/telemetry-broadcast.hub";
 import { AlarmEngineService } from "./alarm-engine.service";
 import type { AlarmRaiseResult } from "./alarm-raise.service";
 import { AlarmRaiser } from "./alarm-raise.service";
-import type { AlarmsGateway } from "./alarms.gateway";
 
 /**
  * `F3.7` — the streaming path against a real database.
@@ -50,10 +49,6 @@ function assert(condition: boolean, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
-}
-
-function stubGateway(): AlarmsGateway {
-  return { broadcastCreated: () => undefined } as unknown as AlarmsGateway;
 }
 
 async function withRollback(
@@ -224,7 +219,7 @@ export async function assertStreamingRaiseDispatchesOnce(db: BmsDb): Promise<voi
     // The real raiser (ADR 0033's one writer of `bms.alarms`), wrapped so the
     // spec can see what it reported. The wrapper is the only way to observe
     // the second batch's refusal: nothing else changes when a raise dedupes.
-    const raiser = new AlarmRaiser(tx, stubGateway());
+    const raiser = new AlarmRaiser(tx);
     const raises: AlarmRaiseResult[] = [];
     const recording = {
       raise: async (...args: Parameters<AlarmRaiser["raise"]>): Promise<AlarmRaiseResult> => {

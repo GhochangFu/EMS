@@ -1,4 +1,4 @@
-import type { QueueHealth } from "@bms/shared";
+import type { QueueHealth, RuleSweepSummary } from "@bms/shared";
 
 import { MetricsService } from "../observability/metrics.service";
 import { livenessFrom, readQueueHealth, type QueueHealthDeps } from "./queue-health";
@@ -19,10 +19,18 @@ import type { QueueClient, QueueHandle } from "./queue-registry";
  * — the tick arrives through `deps.readTick()` — and a fake that lacks
  * `client` is what proves it.
  *
- * The last two rows construct the REAL `MetricsService`: no spec enumerates
+ * The last rows construct the REAL `MetricsService`: no spec enumerates
  * the registry's metric names (`calc-metrics.spec.ts` covers the calc
  * family only), so decision 11's two names, without the `bms_api_` prefix,
- * are pinned here.
+ * are pinned here — and since `F3.11` so are ADR 0064 decision 8's two
+ * sweep metrics, because `rules-sweep.spec.ts` fakes `observeRuleSweep`
+ * and nothing else executes the real method.
+ *
+ * `F3.11` (ADR 0064 decision 8): `lastRuleSweep` rides the same read. The
+ * rows under "the sweep summary" pin that a corrupt key reads `null` while
+ * `connected` stays `true` — the negative control against collapsing a bad
+ * parse to `disconnected()` — and that a rejecting `readSweep` IS a
+ * disconnection (it is the same Redis as the tick).
  */
 
 function assert(condition: boolean, message: string): void {
@@ -38,6 +46,13 @@ function assert(condition: boolean, message: string): void {
 const NOW_MS = Date.UTC(2026, 8, 11, 12, 0, 0, 0);
 const FRESH_TICK = new Date(NOW_MS - 30_000).toISOString();
 const STALE_TICK = new Date(NOW_MS - 180_001).toISOString();
+
+const SWEEP: RuleSweepSummary = {
+  finishedAt: new Date(NOW_MS - 45_000).toISOString(),
+  evaluated: 12,
+  raised: 2,
+  durationMs: 412,
+};
 
 type Counts = { waiting: number; active: number; failed: number };
 
@@ -96,6 +111,7 @@ function deps(
   return {
     now: () => NOW_MS,
     readTick: async () => FRESH_TICK,
+    readSweep: async () => null,
     metrics,
     ...overrides,
   };
@@ -107,6 +123,7 @@ const DISCONNECTED_SHAPE = JSON.stringify({
   queues: [],
   lastHeartbeatAt: null,
   heartbeatStale: true,
+  lastRuleSweep: null,
 });
 
 // ---------------------------------------------------------------------------
@@ -122,6 +139,7 @@ export async function assertUnconfiguredShapeIsExact(): Promise<void> {
     queues: [],
     lastHeartbeatAt: null,
     heartbeatStale: false,
+    lastRuleSweep: null,
   });
   assert(
     JSON.stringify(health) === expected,
@@ -197,6 +215,96 @@ export async function assertNullTickIsReportedNullAndStale(): Promise<void> {
   assert(
     health.connected === true && health.lastHeartbeatAt === null && health.heartbeatStale === true,
     `expected connected with a null tick read as stale (ruling 5), got ${JSON.stringify(health)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// readQueueHealth — the sweep summary (F3.11, ADR 0064 decision 8)
+// ---------------------------------------------------------------------------
+
+export async function assertValidSweepIsReportedAsWritten(): Promise<void> {
+  const health = await readQueueHealth(
+    cannedClient(),
+    deps(recordingMetrics(), { readSweep: async () => JSON.stringify(SWEEP) }),
+  );
+  assert(
+    JSON.stringify(health.lastRuleSweep) === JSON.stringify(SWEEP),
+    `expected lastRuleSweep ${JSON.stringify(SWEEP)}, got ${JSON.stringify(health.lastRuleSweep)}`,
+  );
+}
+
+export async function assertValidSweepReadsAsConnected(): Promise<void> {
+  const health = await readQueueHealth(
+    cannedClient(),
+    deps(recordingMetrics(), { readSweep: async () => JSON.stringify(SWEEP) }),
+  );
+  assert(
+    health.connected === true,
+    `expected connected true beside a valid sweep, got ${JSON.stringify(health)}`,
+  );
+}
+
+export async function assertAbsentSweepKeyReadsNull(): Promise<void> {
+  const health = await readQueueHealth(
+    cannedClient(),
+    deps(recordingMetrics(), { readSweep: async () => null }),
+  );
+  assert(
+    health.lastRuleSweep === null,
+    `expected lastRuleSweep null for an absent key, got ${JSON.stringify(health.lastRuleSweep)}`,
+  );
+}
+
+export async function assertAbsentSweepKeyReadsAsConnected(): Promise<void> {
+  const health = await readQueueHealth(
+    cannedClient(),
+    deps(recordingMetrics(), { readSweep: async () => null }),
+  );
+  assert(
+    health.connected === true,
+    `expected connected true beside an absent sweep key (the worker has never swept), got ${JSON.stringify(health)}`,
+  );
+}
+
+export async function assertGarbageSweepKeyReadsNull(): Promise<void> {
+  const health = await readQueueHealth(
+    cannedClient(),
+    deps(recordingMetrics(), { readSweep: async () => "{not json" }),
+  );
+  assert(
+    health.lastRuleSweep === null,
+    `expected lastRuleSweep null for a corrupt key, got ${JSON.stringify(health.lastRuleSweep)}`,
+  );
+}
+
+/**
+ * The negative control against collapsing a bad parse to `disconnected()`:
+ * a corrupt sweep key is a bad VALUE, not a lost connection — the counts and
+ * the tick were read, and they must still be reported.
+ */
+export async function assertGarbageSweepKeyIsNotADisconnection(): Promise<void> {
+  const health = await readQueueHealth(
+    cannedClient(),
+    deps(recordingMetrics(), { readSweep: async () => "{not json" }),
+  );
+  assert(
+    health.connected === true && health.lastHeartbeatAt === FRESH_TICK,
+    `expected connected true with the tick still reported beside a corrupt sweep key, got ${JSON.stringify(health)}`,
+  );
+}
+
+export async function assertRejectingSweepReadsAsDisconnected(): Promise<void> {
+  const health = await readQueueHealth(
+    cannedClient(),
+    deps(recordingMetrics(), {
+      readSweep: async () => {
+        throw new Error("Connection is closed.");
+      },
+    }),
+  );
+  assert(
+    JSON.stringify(health) === DISCONNECTED_SHAPE,
+    `expected exactly ${DISCONNECTED_SHAPE} — the sweep key is on the same Redis as the tick — got ${JSON.stringify(health)}`,
   );
 }
 
@@ -296,8 +404,18 @@ function queueHealth(overrides: Partial<QueueHealth>): QueueHealth {
     queues: [],
     lastHeartbeatAt: FRESH_TICK,
     heartbeatStale: false,
+    lastRuleSweep: SWEEP,
     ...overrides,
   };
+}
+
+/** The field does not decide (ADR 0064 decision 8 names it and no verdict): a fresh heartbeat with no sweep on record is `ok`. */
+export function assertNullSweepWithFreshHeartbeatIsOk(): void {
+  const liveness = livenessFrom(queueHealth({ lastRuleSweep: null }));
+  assert(
+    liveness.status === "ok",
+    `expected "ok" for connected, fresh heartbeat and no sweep on record — lastRuleSweep is not part of the verdict — got "${liveness.status}"`,
+  );
 }
 
 export function assertUnconfiguredIsOk(): void {
@@ -417,5 +535,65 @@ export async function assertNeitherQueueMetricCarriesTheApiPrefix(): Promise<voi
       names.includes("bms_queue_depth") &&
       names.includes("bms_queue_jobs_total"),
     `expected bms_queue_depth and bms_queue_jobs_total registered and no bms_api_queue_* name, got ${JSON.stringify(names.filter((n) => n.includes("queue")))}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MetricsService — the two sweep metrics (F3.11, ADR 0064 decision 8)
+// ---------------------------------------------------------------------------
+
+/**
+ * These rows execute the REAL `observeRuleSweep`; `rules-sweep.spec.ts`
+ * fakes it through `Pick<MetricsService, "observeRuleSweep">`, so without
+ * them a swap of the two arguments inside the method — the histogram fed
+ * the raised count, the counter fed the seconds — would stay green
+ * everywhere. Unlabelled series carry only the registry's default label, so
+ * the line is found by its name prefix rather than a label set.
+ */
+function unlabelledValue(text: string, seriesName: string): number | undefined {
+  const line = text
+    .split("\n")
+    .find((l) => (l.startsWith(`${seriesName}{`) || l.startsWith(`${seriesName} `)) && !l.startsWith("#"));
+  const match = line?.match(/\s(-?\d+(?:\.\d+)?)\s*$/);
+  return match ? Number(match[1]) : undefined;
+}
+
+export async function assertRuleSweepDurationHistogramObservesTheSeconds(): Promise<void> {
+  const metrics = new MetricsService();
+  metrics.observeRuleSweep(0.412, 2);
+  const text = await metrics.registry.getSingleMetricAsString("bms_rule_sweep_duration_seconds");
+  const sum = unlabelledValue(text, "bms_rule_sweep_duration_seconds_sum");
+  assert(
+    sum === 0.412,
+    `expected bms_rule_sweep_duration_seconds_sum 0.412 after observeRuleSweep(0.412, 2), got ${sum}:\n${text}`,
+  );
+}
+
+export async function assertRuleSweepRaisedCounterAddsTheRaisedCount(): Promise<void> {
+  const metrics = new MetricsService();
+  const before = unlabelledValue(
+    await metrics.registry.getSingleMetricAsString("bms_rule_sweep_raised_total"),
+    "bms_rule_sweep_raised_total",
+  );
+  metrics.observeRuleSweep(0.412, 2);
+  const text = await metrics.registry.getSingleMetricAsString("bms_rule_sweep_raised_total");
+  const after = unlabelledValue(text, "bms_rule_sweep_raised_total");
+  assert(
+    before === 0 && after === 2,
+    `expected bms_rule_sweep_raised_total 0 before and 2 after observeRuleSweep(0.412, 2), got ${before} → ${after}:\n${text}`,
+  );
+}
+
+export async function assertNeitherSweepMetricCarriesTheApiPrefix(): Promise<void> {
+  const metrics = new MetricsService();
+  const registered = await metrics.registry.getMetricsAsJSON();
+  const names = registered.map((m) => m.name);
+  const prefixed = names.filter((n) => n.startsWith("bms_api_rule_sweep_"));
+  // `type` is prom-client's string enum `MetricType`; `String()` compares the value, not the enum member.
+  const histogram = String(registered.find((m) => m.name === "bms_rule_sweep_duration_seconds")?.type);
+  const counter = String(registered.find((m) => m.name === "bms_rule_sweep_raised_total")?.type);
+  assert(
+    prefixed.length === 0 && histogram === "histogram" && counter === "counter",
+    `expected bms_rule_sweep_duration_seconds (histogram) and bms_rule_sweep_raised_total (counter) and no bms_api_rule_sweep_* name, got ${JSON.stringify(registered.filter((m) => m.name.includes("rule_sweep")).map((m) => [m.name, m.type]))}`,
   );
 }
