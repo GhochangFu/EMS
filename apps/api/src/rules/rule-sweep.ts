@@ -61,6 +61,13 @@ export type RuleSweepDeps = {
   now(): number;
 };
 
+/**
+ * One sweep over `deps.readRules()` with the streaming engine's write policy
+ * (ADR 0064 decisions 1, 5, 9; Amendment 1 A4): a raise, a trace and a
+ * dispatch only on `raised: true`, every raise bounded by sample freshness,
+ * per-rule isolation, then one `last_evaluated_at` stamp per organization.
+ * Pure over its deps — `RuleSweepService.run` supplies the pools.
+ */
 export async function runRuleSweep(deps: RuleSweepDeps): Promise<RuleSweepSummary> {
   const started = deps.now();
   const rows = (await deps.readRules()).filter(
