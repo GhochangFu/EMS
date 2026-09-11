@@ -155,3 +155,68 @@ export async function assertAssetsTurnKeepsACutCodeInsideTheClass(): Promise<voi
   assert(/-[0-9A-F]{8}$/.test(code), `a cut code ends in the upper-case hex suffix, got "${code}"`);
   assert(CATALOG_CODE_PATTERN.test(code), `a cut code stays inside the class, got "${code}"`);
 }
+
+/**
+ * Security review of `F2.23` (M1, declined with this gate): the slug widens
+ * which location names share an asset code — `Plant 1`, `Plant.1`,
+ * `Plant (1)` and `Plant-1` all yield `PLANT-1-ASSET-1`, and every name with
+ * nothing inside the class yields `-ASSET-1` — on a column that is unique
+ * across tenants (`assets_code_unique`). The reason it is not a new
+ * cross-tenant refusal: **an equal asset code implies an equal location
+ * slug**, the `location` branch derives that slug from the same name with a
+ * coarser class (`[^a-z0-9]+`, `_` included), `locations_slug_unique` is
+ * global, and `OnboardingCommitService` inserts the location before any
+ * asset. So the second tenant is refused on the slug — translated, not a 500
+ * — before its asset code is ever written. This drives both real branches
+ * over a pool and asserts the implication; the positive control keeps it
+ * from passing vacuously.
+ */
+export async function assertAnAssetCodeCollisionIsAlreadyASlugCollision(): Promise<void> {
+  const names = [
+    "Plant 1",
+    "Plant.1",
+    "Plant (1)",
+    "Plant-1",
+    "Plant_1",
+    "कारखाना",
+    "工厂",
+    "a_b",
+    "a-b",
+    "a b",
+    "AB",
+    "A_B",
+    "St. Mary's Works",
+    "Straße Works",
+  ];
+  const derived: Array<{ name: string; code: string; slug: string }> = [];
+  for (const name of names) {
+    const location = await ruleBasedTurn(name, {}, "location");
+    const slug = location.draftPatch.location?.slug;
+    if (slug === undefined) {
+      throw new Error(`the location branch must yield a slug for ${JSON.stringify(name)}`);
+    }
+    const { code } = await assetCodeFromLocation(name);
+    derived.push({ name, code, slug });
+  }
+  let collisions = 0;
+  for (const a of derived) {
+    for (const b of derived) {
+      if (a === b || a.code !== b.code) continue;
+      collisions += 1;
+      assert(
+        a.slug === b.slug,
+        `${JSON.stringify(a.name)} and ${JSON.stringify(b.name)} share the asset code ` +
+          `"${a.code}" but not the slug ("${a.slug}" vs "${b.slug}") — the location ` +
+          `insert would no longer refuse the second tenant first`,
+      );
+    }
+  }
+  assert(
+    collisions >= 2,
+    `the pool must contain at least one colliding pair for the implication to be tested, got ${collisions}`,
+  );
+  assert(
+    derived.filter((d) => d.code === "-ASSET-1").every((d) => d.slug === "location"),
+    "every all-illegal name must land on the shared `location` slug the branch already falls back to",
+  );
+}

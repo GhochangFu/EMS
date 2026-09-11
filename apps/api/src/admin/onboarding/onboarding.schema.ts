@@ -97,7 +97,9 @@ export const draftRtuSchema = z
 
 export const draftPointKeySchema = z
   .object({
-    // F2.23 / ADR 0065 decision 1: the catalog class, after the length bound.
+    // F2.23 / ADR 0065 decision 1: the catalog class, beside the length bound.
+    // Zod runs every check and reports every issue, so `.max()` does not gate
+    // the regex; the class is one anchored character class and linear anyway.
     code: z
       .string()
       .min(1)
@@ -118,7 +120,9 @@ export const draftPointKeySchema = z
 export const draftAssetSchema = z
   .object({
     rtuIndex: z.number().int().min(0),
-    // F2.23 / ADR 0065 decision 1: the catalog class, after the length bound.
+    // F2.23 / ADR 0065 decision 1: the catalog class, beside the length bound.
+    // Zod runs every check and reports every issue, so `.max()` does not gate
+    // the regex; the class is one anchored character class and linear anyway.
     code: z
       .string()
       .min(2)

@@ -22,9 +22,10 @@ import {
  *    (`tests/f3.60-withrollback-cases-roll-back.test.ts`'s lesson), so this
  *    file issues its own `ROLLBACK` and counts the tables afterwards.
  *
- * Runs as `bms_fleet` (the gate's default, BYPASSRLS) unless `UPDATE
- * bms.assets` turns out to be refused for that role, in which case switch to
- * `connection: "superuser"` — measured live below.
+ * Runs as `bms_fleet`, the gate's default. Measured on the live compose
+ * database on 2026-09-11: `bms_fleet` holds SELECT, INSERT, UPDATE and DELETE
+ * on both `bms.assets` and `bms.point_keys` and has `rolbypassrls = t`, so
+ * the `UPDATE` positive control needs no superuser fallback.
  *
  * **Assertions inline, no `.spec` sibling** — the top-level `tests/`
  * carve-out (§4.6). Every row this suite writes is rolled back, never
@@ -68,8 +69,8 @@ describe.skipIf(!connectionString)("F2.23 catalog code charset (migration 0070)"
 
   it("pg_get_constraintdef reports the class for both constraints", async () => {
     if (!pool) throw new Error("pool not initialised");
-    const { rows } = await pool.query<{ conname: string; definition: string }>(
-      `SELECT conname, pg_get_constraintdef(oid) AS definition
+    const { rows } = await pool.query<{ conname: string; definition: string; validated: boolean }>(
+      `SELECT conname, pg_get_constraintdef(oid) AS definition, convalidated AS validated
          FROM pg_constraint
         WHERE conname IN ('assets_code_charset_check', 'point_keys_code_charset_check')
         ORDER BY conname`,
@@ -80,6 +81,10 @@ describe.skipIf(!connectionString)("F2.23 catalog code charset (migration 0070)"
     ).toBe(2);
     for (const row of rows) {
       expect(row.definition).toContain("~ '^[A-Za-z0-9_-]+$'");
+      // `pg_get_constraintdef` renders a `NOT VALID` constraint with the same
+      // text plus a suffix, so the line above passes on the state decision 3
+      // refuses; `convalidated` is the column that tells them apart.
+      expect(row.validated, `${row.conname} must be validated, not NOT VALID`).toBe(true);
     }
   });
 
@@ -124,9 +129,15 @@ describe.skipIf(!connectionString)("F2.23 catalog code charset (migration 0070)"
       await client.query("ROLLBACK TO SAVEPOINT before_ok_asset");
     } finally {
       // Explicit ROLLBACK, written by hand — a case that only returns
-      // COMMITS proves nothing leaked.
-      await client.query("ROLLBACK");
-      client.release();
+      // COMMITS proves nothing leaked. `release()` in its own `finally`: a
+      // ROLLBACK that throws on a dropped connection must not keep the client
+      // checked out, or `pool.end()` in `afterAll` waits until the suite
+      // times out.
+      try {
+        await client.query("ROLLBACK");
+      } finally {
+        client.release();
+      }
     }
   });
 

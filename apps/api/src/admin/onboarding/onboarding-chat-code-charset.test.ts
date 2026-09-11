@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAnAssetCodeCollisionIsAlreadyASlugCollision,
   assertAssetsTurnFromAnAllIllegalName,
   assertAssetsTurnKeepsACutCodeInsideTheClass,
   assertAssetsTurnPatchSatisfiesTheSchema,
@@ -28,5 +29,9 @@ describe("OnboardingChatService.handleTurn, assets branch — the catalog code c
 
   it("keeps a cut code inside the bound and the class", async () => {
     await assertAssetsTurnKeepsACutCodeInsideTheClass();
+  });
+
+  it("never collides two tenants on an asset code without colliding them on the slug first", async () => {
+    await assertAnAssetCodeCollisionIsAlreadyASlugCollision();
   });
 });
