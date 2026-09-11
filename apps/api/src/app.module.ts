@@ -17,6 +17,7 @@ import { MaintenanceModule } from "./maintenance/maintenance.module";
 import { MapModule } from "./map/map.module";
 import { NotificationsModule } from "./notifications/notifications.module";
 import { ObservabilityModule } from "./observability/observability.module";
+import { QueueModule } from "./queue/queue.module";
 import { ReportsModule } from "./reports/reports.module";
 import { RulesModule } from "./rules/rules.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
@@ -28,6 +29,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     LoggerModule.forRoot({ pinoHttp: pinoHttpOptions }),
     DatabaseModule,
     ObservabilityModule,
+    QueueModule,
     HealthModule,
     AuthModule,
     AdminModule,

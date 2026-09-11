@@ -6,6 +6,7 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main.js",
+    "worker": "node dist/worker.js",
     "rotate-credentials": "node dist/security/rotate-credentials.cli.js"
   },
   "dependencies": {

@@ -6,6 +6,7 @@ import { LocationsAdminService } from "../admin/locations/locations.service";
 import { TelemetryImportService } from "../admin/telemetry-import/telemetry-import.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
+import { WorkerHostService } from "../queue/worker-host.service";
 import { ReportsService } from "../reports/reports.service";
 import { RulesService } from "../rules/rules.service";
 import { CredentialRotationService } from "../security/credential-rotation.service";
@@ -25,7 +26,11 @@ import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "./database.tokens";
  *    `maintenance`, `rules`), which inject **both** a fleet and a tenant token —
  *    and whose slot order is deliberately **not** uniform (`AlarmsService` and
  *    `RulesService` take tenant first; `WorkOrdersService` and
- *    `MaintenanceService` take fleet first).
+ *    `MaintenanceService` take fleet first);
+ *  - `F4.24`'s `WorkerHostService` (ADR 0063 decision 6), which hands both
+ *    pools to `runProcessor` as `{ tenantDb, fleetDb }` — no test boots
+ *    `WorkerModule` (Amendment 1), so this is the only gate that the tenant
+ *    pool lands in slot 1 and the fleet pool in slot 2.
  *
  * The `.rls.integration` proofs each construct their service with explicit
  * pools, so none gates the `@Inject` token itself: reverting or swapping a
@@ -81,4 +86,17 @@ export function assertConformedServiceSlots(): void {
   expect(injectedToken(MaintenanceService, 1)).toBe(TENANT_DRIZZLE);
   expect(injectedToken(RulesService, 0)).toBe(TENANT_DRIZZLE);
   expect(injectedToken(RulesService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F4.24` — `WorkerHostService(client, tenantDb, fleetDb, metrics)`. Two
+ * claims, one function each: `expect` throws, so a bundled pair would only
+ * ever report the first slot.
+ */
+export function assertWorkerHostTenantSlot(): void {
+  expect(injectedToken(WorkerHostService, 1)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertWorkerHostFleetSlot(): void {
+  expect(injectedToken(WorkerHostService, 2)).toBe(FLEET_DRIZZLE);
 }
