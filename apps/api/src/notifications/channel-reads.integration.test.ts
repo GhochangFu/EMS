@@ -7,6 +7,7 @@ import type { BmsDb } from "@bms/db";
 
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
+  assertBothChannelReadsProjectTheSameColumns,
   assertAQuietRuleHasNoEntryAndIsNotUnread,
   assertEachGroupIsLoadForRulesList,
   assertEachStatementBindsItsOwnBatch,
@@ -68,5 +69,9 @@ describe.skipIf(!connectionString)("F3.60 — the batched rule-channel read agai
 
   it("CI6 — binds each statement to its own batch, so two batches do not duplicate a group", async () => {
     await assertEachStatementBindsItsOwnBatch(db);
+  }, 60_000);
+
+  it("CI7 — projects the same columns as the other read that feeds toChannelRow", async () => {
+    await assertBothChannelReadsProjectTheSameColumns(db);
   }, 60_000);
 });
