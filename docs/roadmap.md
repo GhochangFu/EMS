@@ -1123,6 +1123,15 @@ Process (`AGENTS.md` §10).
   Amendment 3**, which also discharges Resolved decision 5's "confirm against the
   production pilot" caveat — the database the pilot writes to is the compose
   `postgres` service, so the database needing confirmation was the pilot's.
+- **Still unretired on 2026-09-11, and now honest rather than silent.** `E8.4`
+  shipped under ADR 0062 and kept the fallback (decision 10): the table was
+  re-measured at **0 rows** as a superuser, so the condition ADR 0016 set for
+  retirement is still unmet and the blocker is still data. What changed is that
+  `resolveMqttConnection` now reports `credentialSource: "env"` when it hands
+  back the environment's account, and the host logs one warning per RTU per
+  process naming it — so an operator can see which RTUs still share the global
+  broker account instead of inferring it. **`E8.4` stays open on this one
+  action**, and ADR 0016 Amendment 6 records that the file itself changed.
 
   **Two structural guarantees are now repo invariants**, because no behavioural
   test can fail when a second entry point merely *appears* or when an
@@ -1284,9 +1293,51 @@ Process (`AGENTS.md` §10).
   the OpenAI path can write nothing while reporting success — fails closed, on a
   path compose never enables), a cap on transcript length, and coverage of the
   `reconcile → attach → commit` composition through the real `mergeDraft`, which
-  is currently tested function-by-function only. Key rotation, pino's unredacted
-  `authorization` header, the discarded `keyVersion`, and binding a credential to
-  a resolved endpoint rather than to an RTU *name* all belong to **E8.4**.
+  is currently tested function-by-function only. **This list named four things as
+  belonging to `E8.4`, and ADR 0062 took two of them.** Key rotation shipped
+  2026-09-11, and the discarded `keyVersion` is gone — the version now travels
+  with every ciphertext carrier, the draft blob included. Pino's unredacted
+  `authorization` header and binding a credential to a resolved endpoint rather
+  than to an RTU *name* were **explicitly out of scope** for that ADR and belong
+  to no row yet; the header is separately held by
+  `tests/logger-redaction.test.ts`.
+
+### Credential key rotation (E8.4) — partial by design, and the remainder is blocked on data
+
+- **Status:** 🟡 **2026-09-11** under **ADR 0062** (Accepted 2026-09-10, eleven
+  decisions, plus **Amendment 1** recording two owner rulings that widened
+  decision 5), PR [#423](https://github.com/GhochangFu/EMS/pull/423), squash
+  `876265c8`. Seven build tasks, three review gates, 22 commits. Plan:
+  `docs/plans/e8.4-credential-key-rotation.md`.
+- **Shipped (decisions 1–9 and 11).** One key resolver in `packages/shared`,
+  used by both applications — the ingest carries its own AES-GCM implementation,
+  so the *cipher* stays duplicated and the *key selection* does not. `decrypt`
+  selects by the **stored** version and refuses any other rather than trying
+  both: an AES-GCM tag check would make a guess *succeed*. The version travels
+  with every ciphertext carrier. `rotate-credentials` re-encrypts both credential
+  tables as `bms_fleet`, selected on ciphertext, compare-and-set, failures
+  collected. An unconfigured key no longer reports a stored credential.
+- **Not shipped — decision 10, and this is why the row is not done.** The
+  `MQTT_USERNAME`/`MQTT_PASSWORD` fallback stays; `bms.rtu_connection_configs`
+  held **0 rows** re-measured as a superuser, so ADR 0016's retirement condition
+  is still unmet. The fallback is now *honest*, not retired.
+- **Verified on the running stack**, images rebuilt `--no-cache` and confirmed to
+  carry the code first: both applications refuse a dead window at boot; a planted
+  row rotated v1→v2 with changed bytes and then decrypted under the **new key
+  alone**; an unknown version failed with its class while the walk continued; the
+  ingest logged the fallback at the reload that first served the row and not
+  again.
+- **Notable — the false green was reproduced deliberately.** Rotating against a
+  container still holding the old window prints `skipped == scanned`,
+  `failures: []`, exit 0 — bit for bit the runbook's completion signature, with
+  nothing rotated. Only `currentVersion` distinguishes it. The runbook now makes
+  the operator check that field, and the command refuses outright when no key is
+  configured. A code review found it; no test could have, because the command
+  cannot know what the operator intended.
+- **Owed:** four follow-ups, none a defect of this work — the draft-blob carrier
+  the walk does not visit, a wrong key reporting `error: "Error"`,
+  `credentialSource` reading `"db"` when only one field came from the row, and
+  the ingest env table in `docs/ingest-host.md` listing one variable of three.
 
 ### Telemetry continuous aggregates (F4.1) — done
 
