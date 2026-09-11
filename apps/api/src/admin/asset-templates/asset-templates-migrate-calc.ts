@@ -28,11 +28,11 @@ import { CALC_FIELDS, calcFieldsOf, type StoredTemplatePoint } from "./template-
  * read-time refusals in `toActiveDefinition` and `CalcDefinitionsService.reload()`
  * bound the damage; they do not stop the migration that causes it.
  *
- * **Two gates, because `PUT /admin/assets/:id/calc-points/:key` runs two.**
+ * **Two of the three gates `PUT /admin/assets/:id/calc-points/:key` runs.**
  * `validateMergedCalcOverride` is that endpoint's own function and
- * `CalcDependencyService` is its own detector — imported, not
- * restated, because two copies of one rule is how they drift. The endpoint
- * calls `checkCandidate` because it has one candidate; this calls
+ * `CalcDependencyService.checkCandidates`' cycle check is its own detector —
+ * imported, not restated, because two copies of one rule is how they drift.
+ * The endpoint calls `checkCandidate` because it has one candidate; this calls
  * `checkCandidates` because it has a batch, and the first is written in terms
  * of the second, so "the same detector" stays literally true. Re-running one of
  * the two would have been the more dangerous half-measure: it reads like parity
@@ -40,6 +40,14 @@ import { CALC_FIELDS, calcFieldsOf, type StoredTemplatePoint } from "./template-
  * mode — an asset holding a legal `v2` override, repointed onto a version that
  * closes a cycle through it, stops computing permanently. Counted and fail
  * closed, but stopped.
+ *
+ * **The endpoint's third gate, `CalcDependencyService.unresolvedQualifiedCodes`
+ * (`F2.22` item 9), is deliberately not run here.** That method's own docblock,
+ * in `calc-dependency.service.ts`, records why: an asset deleted after a save
+ * is ADR 0055 decision 8's evaluation-time case, counted as
+ * `unknown_asset_reference` by the tick rather than refused at write time, and
+ * refusing a migrate for the same case would strand the asset instead of
+ * leaving it to the sweep that already handles it.
  *
  * Both gates inherit the first function's boundary: an override that states
  * neither `formula` nor `formulaDialect` does not re-parse the stored formula,
@@ -49,10 +57,15 @@ import { CALC_FIELDS, calcFieldsOf, type StoredTemplatePoint } from "./template-
  *
  * **What the pair of gates claims, and what it does not.** Both resolve against
  * the estate *as it stands now*, exactly as the endpoint resolves them, so the
- * honest statement is a parity one: a merged pair migration admits is a pair the
- * override endpoint would also admit at this instant, and one it refuses the
- * endpoint would refuse. That is all it is. It is **not** a claim that the
- * post-migration graph is acyclic — `CalcDefinitionsService.reload()` resolves
+ * honest statement is a parity one, with one exception: a merged pair migration
+ * admits is a pair the override endpoint would also admit at this instant, and
+ * one it refuses the endpoint would refuse — **except** a `v2` formula whose
+ * qualified code resolves to no active asset at the asset's own location. The
+ * endpoint refuses that at save time (item 9's third gate); migration admits it,
+ * and the tick counts it as `unknown_asset_reference` rather than leaving the
+ * asset stranded on a refused migrate. That is all the parity claim is, and
+ * beyond that one exception it is **not** a claim that the post-migration graph
+ * is acyclic — `CalcDefinitionsService.reload()` resolves
  * every asset through its *current* `template_id`, so the target version's own
  * derived points enter the graph only once the pin moves, and a cycle closed
  * purely between those new points and this override is invisible here. ADR 0055

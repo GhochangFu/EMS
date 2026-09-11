@@ -525,7 +525,7 @@ export const deferralReason = (code: StockEntryCode): string =>
  * fourth derived row appended without a ruling still fails here. Its six
  * DEFERRED codes are untouched by `F2.8` — `losses_pct` is a Σ over the site's
  * feeders, which `v2` can now *express*, but the tag list's definition needs the
- * feeder SET, which is `F2.22`-era content.
+ * feeder SET, which is `F2.12`-era content — `F2.22` closed without naming it.
  *
  * Restated here rather than imported, because `stock-catalog.spec.ts` keeps its
  * own `FEEDER_CODE` for the transcription half of the feeder block that did not

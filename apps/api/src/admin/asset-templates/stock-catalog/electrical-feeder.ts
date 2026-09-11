@@ -55,9 +55,9 @@ import type { StockAssetTemplateEntry } from "./types";
  *    express a cross-asset Σ — `F2.8`'s `site_kw` below is one — so the grammar
  *    is no longer the obstacle. It stays deferred because the tag list's own
  *    definition needs the FEEDER SET the incomer is measured against, and
- *    naming that set is `F2.22`-era content. A formula summing the wrong scope
- *    would compute a real number under the wrong name, which is worse than a
- *    named deferral.
+ *    naming that set is `F2.12`-era content — `F2.22` closed without it, out of
+ *    that row's own plan scope. A formula summing the wrong scope would compute
+ *    a real number under the wrong name, which is worse than a named deferral.
  *
  * **Three `kind: "derived"` points since `F2.8`, and no `content.kpis`.** They
  * are not tag-list rows and not promotions of the six above: they are ruling 1
