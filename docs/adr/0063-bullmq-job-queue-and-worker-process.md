@@ -203,6 +203,7 @@ the cost of the pairing and is recorded rather than hidden.
   process holds two Redis client libraries (Context 6). Consolidating on one is
   possible only by replacing the adapter's client, which is ADR 0002's to
   reopen and is not worth it for this.
+  Resolved 2026-09-11 to bullmq 5.81.5, vendoring ioredis 5.11.1.
 - No schema change. No migration. The queue's state lives in Redis by design;
   the rows a job acts on (`F3.11`'s executions, `F3.12`'s `commands` and
   `command_results`) are those rows' own ADRs.
