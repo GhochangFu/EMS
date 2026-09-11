@@ -35,12 +35,7 @@ import { notifyOnRaise } from "./rule-actions";
 // The three modules extracted for AGENTS.md §4.5 (1000-line cap). Each holds
 // pure logic — no database, no clock — which is why it sits outside the service
 // and carries its own spec instead of needing one here.
-import {
-  evaluateThresholdRule,
-  evaluateTimeWindowRule,
-  unsupportedRuleType,
-  type LatestSampleLoader,
-} from "./rule-evaluation";
+import { evaluateRule } from "./rule-evaluation";
 import { assertArmable } from "./rule-arming";
 import { insertRuleAuditLog, resolveActorId } from "./rule-audit";
 import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
@@ -68,7 +63,7 @@ import type {
   RuleToggleBody,
   RuleUpdateBody,
 } from "./rules.schema";
-import type { EvaluationResult, RuleDraftValues, RuleRow } from "./rules.types";
+import type { RuleDraftValues, RuleRow } from "./rules.types";
 
 @Injectable()
 export class RulesService {
@@ -266,7 +261,8 @@ export class RulesService {
     // here and left to the authoritative check in `createDraft`.
     const values = await this.validateRuleDraft(dto, dto.id, null);
     const actorId = await resolveActorId(this.fleetDb, actor);
-    const result = await this.evaluateRule({
+    const result = await evaluateRule(
+      {
       id: dto.id ?? "00000000-0000-0000-0000-000000000000",
       code: values.code ?? "DRAFT",
       name: values.name,
@@ -299,7 +295,10 @@ export class RulesService {
       duplicatedFromRuleId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-    });
+      },
+      (assetId, pointKey) => latestPointValue(this.db, assetId, pointKey),
+      new Date(),
+    );
 
     // E7.1c (item D) — the AUDIT ROW's org, not the evaluation's. The synthetic
     // row handed to `evaluateRule` above stays `organizationId: null` on
@@ -640,7 +639,7 @@ export class RulesService {
       }
       const ruleOrg = row.organizationId;
 
-      const result = await this.evaluateRule(row, sampleLookup);
+      const result = await evaluateRule(row, sampleLookup, new Date());
 
       // Raise before the trace insert below, so a successful raise's
       // `alarmId` has somewhere to land in the SAME trace row rather than a
@@ -819,28 +818,6 @@ export class RulesService {
     return row;
   }
 
-  /**
-   * Routes a rule to its evaluator. The service supplies the two things the
-   * evaluators cannot have — the telemetry loader and the clock — and owns
-   * nothing else about the decision.
-   *
-   * `loader` defaults to one query per call — fine for `previewRule`, a
-   * single rule. `evaluateEnabledRules` passes its own batched loader
-   * (`batchedLatestPointValues`) instead, so evaluating N rules costs one
-   * query rather than N.
-   */
-  private async evaluateRule(row: RuleRow, loader?: LatestSampleLoader): Promise<EvaluationResult> {
-    if (row.ruleType === "threshold") {
-      return evaluateThresholdRule(
-        row,
-        loader ?? ((assetId, pointKey) => latestPointValue(this.db, assetId, pointKey)),
-      );
-    }
-    if (row.ruleType === "time_window") {
-      return evaluateTimeWindowRule(row, new Date());
-    }
-    return unsupportedRuleType(row);
-  }
 
   /**
    * `organizationId` is required, not optional, on purpose: `null` means "skip
