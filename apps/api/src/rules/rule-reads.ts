@@ -131,6 +131,34 @@ export async function selectRuleRowById(db: BmsTx, id: string): Promise<RuleRow 
 }
 
 /**
+ * `F3.11` / ADR 0064 decision 5 — the sweep's `last_evaluated_at` stamp: **one
+ * statement per organization**, `id = ANY($1)` over that organization's rule
+ * ids, on the caller's `withTenant(organizationId)` transaction so the `0047`
+ * FORCE policy scopes the write. `sql.param` binds the whole array as the one
+ * parameter (the `calc-dependency.service.ts` shape); a bare `${ruleIds}` in a
+ * drizzle template expands to `($1, $2, …)`, which is neither one bind nor a
+ * valid `ANY` operand.
+ *
+ * **`updated_at` is not stamped** (Amendment 1 A4, ruled): a sweep every minute
+ * bumping it would make every rule read "updated one minute ago". The
+ * on-demand press keeps its own per-rule statement that does.
+ *
+ * The caller guards the empty list: `ANY('{}')` matches nothing, so an empty
+ * call is a wasted round trip rather than a wrong one, and `runRuleSweep` only
+ * groups ids it has.
+ */
+export async function stampRulesEvaluated(
+  tx: BmsTx,
+  ruleIds: readonly string[],
+  at: Date,
+): Promise<void> {
+  await tx
+    .update(automationRules)
+    .set({ lastEvaluatedAt: at })
+    .where(sql`${automationRules.id} = ANY(${sql.param(ruleIds)}::uuid[])`);
+}
+
+/**
  * Narrows rule rows to the caller's readable assets. `null`/`undefined` is the
  * unrestricted admin sentinel. Under `withReadScope` this is the sub-org
  * narrowing on top of the RLS backstop (a location-scoped operator sees only
