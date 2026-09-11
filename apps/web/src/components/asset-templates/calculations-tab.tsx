@@ -2,9 +2,10 @@
  * The Calculations tab (`F2.5`, ADR 0038 Unit 9c).
  *
  * Wiring only. The formula field is Unit 5's `FormulaEditorLazy` in `"derived"`
- * mode; the trigger, dialect and coverage rules are
- * `src/lib/template-calc-config.ts`; the within-template cycle mirror is
- * `src/lib/template-calc-cycles.ts`; the payload is Unit 9b's
+ * mode; the live preview under it is `formula-preview.tsx` (ADR 0038 decision
+ * 5, first rendered in `F2.22` — item 6); the trigger, dialect and coverage
+ * rules are `src/lib/template-calc-config.ts`; the within-template cycle
+ * mirror is `src/lib/template-calc-cycles.ts`; the payload is Unit 9b's
  * `buildPointsPayload`, because the server replaces the whole point set from
  * whichever tab saves and this one edits six fields of it — the formula, its
  * dialect, the three trigger fields, and since `F2.22` the coverage ratio.
@@ -52,6 +53,7 @@ import {
   type TemplatePointRow,
 } from "../../lib/template-points-grid";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
+import { FormulaPreview } from "./formula-preview";
 
 type CalculationsTabProps = {
   template: AdminAssetTemplateDto;
@@ -280,6 +282,12 @@ export function CalculationsTab({
             {problemFor("formula") ? (
               <p className="mt-1 text-[11px] text-red-700">{problemFor("formula")}</p>
             ) : null}
+            {/* ADR 0038 decision 5. Unconditional here, where the KPIs tab
+                gates on a checked dialect (decision 9): a derived formula is
+                always checked — `isCheckedDialect` is `true` for every
+                `"derived"` surface — and `dialect` is already a real
+                `CalcDialect`. Disabled on a frozen version, not absent. */}
+            <FormulaPreview expression={row.formula ?? ""} dialect={dialect} disabled={!editable} />
 
             <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <label className="block space-y-1">

@@ -289,10 +289,14 @@ export async function aFrozenVersionDisablesEveryControl(): Promise<void> {
 
   const controls = [...container.querySelectorAll<HTMLElement>("input, select, textarea")];
   const own = controls.filter((field) => !/^Formula for /.test(field.getAttribute("aria-label") ?? ""));
-  // Three fields on the `v1` row (Grammar, Runs, input age) and five on the
-  // `v2` row (plus the interval and the coverage) — the positive control that
-  // the sweep below is reading a rendered tab and not an empty one.
-  expect(own).toHaveLength(8);
+  // Four fields on the `v1` row (Grammar, Runs, input age, and the preview's
+  // one sample input for `kw`) and six on the `v2` row (plus the interval, the
+  // coverage, and the preview's one sample input for `sum(kw) @site` — the
+  // aggregate is one row, not a member list) — the positive control that the
+  // sweep below is reading a rendered tab and not an empty one. `F2.22` T8
+  // moved this from 8: the preview renders disabled on a frozen version, not
+  // absent, so its inputs are swept too.
+  expect(own).toHaveLength(10);
   expect(
     own.filter((field) => !(field as HTMLInputElement).disabled).map((field) => field.outerHTML),
   ).toEqual([]);

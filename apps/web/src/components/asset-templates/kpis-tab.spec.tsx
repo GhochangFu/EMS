@@ -273,10 +273,13 @@ export async function aFrozenVersionDisablesEveryControl(): Promise<void> {
   const own = controls.filter(
     (field) => !/^Expression for /.test(field.getAttribute("aria-label") ?? ""),
   );
-  // Five on the checked row (Code, Name, Unit, Direction, Grammar) and six on
-  // the unvalidated row (plus the manual points list) — the positive control
-  // that the sweep below is reading a rendered tab and not an empty one.
-  expect(own).toHaveLength(11);
+  // Six on the checked row (Code, Name, Unit, Direction, Grammar, and the
+  // preview's one sample input for `sum(kw) @site`) and six on the
+  // unvalidated row (plus the manual points list, and no preview — ADR 0038
+  // decision 9) — the positive control that the sweep below is reading a
+  // rendered tab and not an empty one. `F2.22` T8 moved this from 11: the
+  // preview renders disabled on a frozen version, not absent.
+  expect(own).toHaveLength(12);
   expect(
     own.filter((field) => !(field as HTMLInputElement).disabled).map((field) => field.outerHTML),
   ).toEqual([]);

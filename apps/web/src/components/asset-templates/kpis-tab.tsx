@@ -17,9 +17,9 @@
  * checks the expression under the grammar the row's **Grammar** select names —
  * `bms-calc-v1` unless the author chose otherwise (`F2.22`; the select is a
  * target on an unvalidated row, not a stored value). On success the dialect
- * flips, the derived `pointKeys` are written, and the field gains highlighting
- * and the two-way check. On failure the error renders and nothing is written —
- * the row is replaced only when the validation is ok.
+ * flips, the derived `pointKeys` are written, and the field gains highlighting,
+ * the preview and the two-way check. On failure the error renders and nothing
+ * is written — the row is replaced only when the validation is ok.
  *
  * ## A checked row's Grammar moves it between dialects, atomically
  *
@@ -71,6 +71,7 @@ import {
   type TemplateKpiRow,
 } from "../../lib/template-kpi-form";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
+import { FormulaPreview } from "./formula-preview";
 import { Field } from "./field";
 
 type KpisTabProps = {
@@ -218,11 +219,13 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
         // stored `bms-calc-v2` KPI was read as unvalidated by exactly that
         // comparison (`F2.22` finding 2) — "Not checked", a manual points list
         // whose value never reached the payload, and a Validate button — while
-        // its editor already lexed it as checked.
-        const validated = checkedDialect(kpi.dialect) !== null;
+        // its editor already lexed it as checked. `null` is `"unvalidated"`;
+        // a `CalcDialect` is what the preview below is rendered under.
+        const checked = checkedDialect(kpi.dialect);
+        const validated = checked !== null;
         // What the Grammar select reads: the stored dialect on a checked row,
         // the Validate target on an unvalidated one.
-        const grammar = checkedDialect(kpi.dialect) ?? validateTargets[index] ?? CALC_DIALECT;
+        const grammar = checked ?? validateTargets[index] ?? CALC_DIALECT;
         const live = validateEditorFormula(
           {
             mode: "kpi",
@@ -359,6 +362,14 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
             ) : null}
             {validationErrors[index] ? (
               <p className="mt-1 text-[11px] text-red-700">{validationErrors[index]}</p>
+            ) : null}
+            {/* Decision 9 again: an unvalidated expression shows no preview —
+                it is free text the parser has never met, and the panel would
+                either lint it or evaluate it under a grammar it was not stored
+                under. `checked` is both the gate and the dialect it runs under.
+                Disabled on a frozen version, not absent. */}
+            {checked !== null ? (
+              <FormulaPreview expression={kpi.expression} dialect={checked} disabled={!editable} />
             ) : null}
 
             <div className="mt-2 flex flex-wrap items-center gap-3">
