@@ -7,7 +7,10 @@ import {
   runEmptyDerivedFormulaTests,
   runEmptyKpiExpressionTests,
   runFlattenNewlinesTests,
+  runKpiScopeCompletionTests,
+  runReferenceFormsTests,
   runRoutesToTheRightValidatorTests,
+  runScopeCompletionTests,
   runUnvalidatedKpiStillSilentTests,
   runV2CompletionKeyTests,
 } from "./formula-editor-rules.spec";
@@ -40,6 +43,18 @@ describe("formula editor rules", () => {
 
   it("highlights a v2 formula under v2, and never lexes \"unvalidated\"", () => {
     runDecorationDialectTests();
+  });
+
+  it("offers every @ scope on a v2 derived formula and none on a v1 one", () => {
+    runScopeCompletionTests();
+  });
+
+  it("gates @ scopes on the KPI's dialect, not on the surface", () => {
+    runKpiScopeCompletionTests();
+  });
+
+  it("teaches exactly two v2 reference forms, and each example parses under v2 only", () => {
+    runReferenceFormsTests();
   });
 
   it("clamps diagnostic ranges and widens the invisible ones", () => {
