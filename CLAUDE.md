@@ -80,10 +80,11 @@ pnpm install                       # postinstall builds @bms/shared and @bms/db
 # superuser, so FORCE ROW LEVEL SECURITY binds it).
 pnpm --filter @bms/db roles && pnpm db:migrate && pnpm db:seed
 
-# Dev (three processes):
+# Dev (four processes since ADR 0063):
 pnpm --filter api dev              # NestJS on :4000
 pnpm --filter web dev              # Vite on :5173
 pnpm --filter sim start            # telemetry simulator
+pnpm --filter api worker           # BullMQ worker on :4100 (needs REDIS_URL; runs dist/worker.js, build first)
 
 pnpm build                         # builds shared → db → api → web
 pnpm typecheck                     # alias of build

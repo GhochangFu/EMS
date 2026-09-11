@@ -255,6 +255,13 @@ PORT=4000
 LOG_LEVEL=info
 # Optional — indicative Energy Centre cost (ZAR/kWh); default 2.15 in code
 # ENERGY_TARIFF_ZAR_PER_KWH=2.15
+
+# ADR 0063 (F4.24). Optional for the API — unset, `GET /health` reports
+# `queue.configured: false` and `enqueue` rejects `QueueUnavailableError`
+# rather than the API failing to boot. **Required for the worker process**
+# (step 10 below): `apps/api/src/worker.ts` refuses to start without it.
+# REDIS_URL=redis://localhost:6379
+# WORKER_PORT=4100
 ```
 
 Create `apps/web/.env` (do not commit):
@@ -292,7 +299,19 @@ pnpm db:seed                    # demo users, assets, locations, scopes, alarms,
 pnpm --filter api dev    # NestJS on :4000
 pnpm --filter web dev    # Vite on :5173
 pnpm --filter sim start  # telemetry simulator
+
+# Optional fourth terminal — the BullMQ worker process (F4.24, ADR 0063)
+pnpm --filter api worker  # runs dist/worker.js on :WORKER_PORT (default 4100)
 ```
+
+`pnpm --filter api worker` runs `node dist/worker.js`, not a watcher: it does
+not hot-reload. `nest-cli.json` sets `deleteOutDir: true`, so a second
+`nest start --watch` process would wipe the `dist/` the first is running from
+— build once (`pnpm --filter api build`, or let `pnpm --filter api dev` emit
+it) and re-run the `worker` script after each change. Without a local Redis,
+`REDIS_URL` is unset, the API still starts with `queue.configured: false`,
+and the worker process refuses to start at all (ADR 0063 decision 9) — it is
+optional only for the API.
 
 `pnpm install` also runs `pnpm hooks:install`, which points git at the
 committed `.githooks/` directory. See §10a below — if you skip `pnpm install`
@@ -457,7 +476,8 @@ Install Docker Engine or Docker Desktop with WSL integration, then from
 the repo root:
 
 ```bash
-# Core app path: Postgres/TimescaleDB, Redis, Keycloak, migrations/seed, API, and web.
+# Core app path: Postgres/TimescaleDB, Redis, Keycloak, migrations/seed, API,
+# the BullMQ worker (F4.24, ADR 0063; :4100), and web.
 docker compose --profile core up --build
 
 # Optional explicit migration/seed run. Keep `--build`: unlike `up`,
@@ -500,7 +520,7 @@ Prometheus is available at `http://localhost:9090`, Loki at
 `http://localhost:3100`, and simulator metrics at
 `http://localhost:9101/metrics`.
 
-For a demo-like run with API, web, simulator, and migration/seed ordering:
+For a demo-like run with API, the worker, web, simulator, and migration/seed ordering:
 
 ```bash
 docker compose --profile pilot up --build

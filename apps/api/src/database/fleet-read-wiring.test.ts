@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   assertConformedServiceSlots,
   assertUnconditionalFleetReadSlots,
+  assertWorkerHostFleetSlot,
+  assertWorkerHostTenantSlot,
 } from "./fleet-read-wiring.spec";
 
 /**
@@ -16,5 +18,13 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("the four conformed decision-1 services inject both tokens in the right slots", () => {
     assertConformedServiceSlots();
+  });
+
+  it("F4.24 WorkerHostService injects the tenant pool in slot 1", () => {
+    assertWorkerHostTenantSlot();
+  });
+
+  it("F4.24 WorkerHostService injects the fleet pool in slot 2", () => {
+    assertWorkerHostFleetSlot();
   });
 });

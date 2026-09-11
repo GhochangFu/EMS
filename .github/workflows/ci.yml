@@ -31,6 +31,19 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        # Same tag as docker-compose.yml (ADR 0063 decision 13, on ADR 0023
+        # decision 4's reasoning): CI runs the engine compose runs. The queue
+        # integration spec would otherwise skip here, and a green run that ran
+        # nothing is what F4.28's gate exists to refuse.
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
 
     env:
       # ADR 0045 decision 3 (E7.1a). `DATABASE_URL` names `bms_owner`, the
@@ -53,6 +66,11 @@ jobs:
       BMS_AUTH_PASSWORD: bms_auth_dev
       BMS_TENANT_PASSWORD: bms_tenant_dev
       BMS_FLEET_PASSWORD: bms_fleet_dev
+      # ADR 0063 decision 13 (F4.24). Enables `apps/api/src/queue/queue.integration.test.ts`,
+      # which `integration-redis-gate.ts` refuses to skip under CI — an unset
+      # value here is a workflow break, not an environment choice. No other spec
+      # reads this variable; the API is never booted in this job.
+      REDIS_URL: redis://localhost:6379
 
     steps:
       - name: Checkout
