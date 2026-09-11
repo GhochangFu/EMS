@@ -149,12 +149,16 @@ earlier job is retained; the sweep's row is the alarm, and it already is.
 
 4. **Broadcast: Postgres `NOTIFY bms_alarms`, and the gateway emits from
    `LISTEN`** (ruled, Q2). `AlarmRaiser` stops calling `AlarmsGateway`
-   directly. Inside the raise transaction it runs `SELECT pg_notify('bms_alarms',
-   $1)` with a payload of `{ "type": "created", "alarmId": "<uuid>",
-   "organizationId": "<uuid>" }` — ids only, never the alarm body, well under
-   the 8000-byte limit and inside the `MAX_NOTIFY_UTF8_BYTES` discipline of
-   ADR 0016 §2. `pg_notify` inside a transaction is delivered on commit and
-   dropped on rollback, so a refused raise notifies nobody. In the API, a new
+   directly. `raise` already runs the dedupe insert, the read-back and the
+   trace inside **one** `withTenant(asset org)` transaction and defers the
+   broadcast until after commit (`alarm-raise.service.ts:207–267`); the
+   `pg_notify` rides in that same transaction, as the last statement after
+   the trace insert, with a payload of `{ "type": "created", "alarmId":
+   "<uuid>", "organizationId": "<uuid>" }` — ids only, never the alarm body,
+   well under the 8000-byte limit and inside the `MAX_NOTIFY_UTF8_BYTES`
+   discipline of ADR 0016 §2. Postgres delivers a transactional `NOTIFY` on
+   commit and drops it on rollback, so a refused raise notifies nobody and a
+   listener never reads an id before the row is visible. In the API, a new
    `AlarmNotifyService` in `AlarmsModule` runs a `LISTEN bms_alarms` client on
    the `telemetry-listener.ts` loop shape (`F4.34`: error handler, bounded
    reconnect, backoff reset on the first delivery), reads the alarm by id on
@@ -163,6 +167,14 @@ earlier job is retained; the sweep's row is the alarm, and it already is.
    raised on the worker, on `api` or on `api-replica` reaches the sockets of
    both API processes. `AlarmRaiser` loses its `AlarmsGateway` dependency,
    which is what lets `AlarmRaiseModule` be loop-free without a fake gateway.
+   Six existing specs construct `AlarmRaiser` with a fake gateway and some
+   assert `broadcastCreated` on raise — `alarm-raise.integration.spec.ts`,
+   `alarm-raise.service.rls.integration.test.ts`,
+   `alarm-engine.integration.spec.ts`, `alarm-lifecycle.integration.spec.ts`,
+   `rules/evaluate-enabled-rules.integration.spec.ts` and
+   `rules/rules.service.rls.integration.test.ts`; each moves its assertion to
+   the notification (or drops the fake), and that reddening is expected, not
+   a regression.
    `acknowledged` and `cleared` keep their direct emits; moving them onto the
    same channel is `F4.132`. No new package (AGENTS.md §9.4): `pg` already
    carries `LISTEN`, and *"a channel name is not a schema object"* — no grant,
@@ -243,17 +255,17 @@ in the `rule_executions.trace` JSONB column, which carries no CHECK, and a
   is the first real consumer of the queue after the heartbeat, and the module
   split (decision 3) is the shape `F3.12` and the ADR 0041 dispatch follow-up
   reuse — each stays its own row.
-- **What it uncovers and does not own.** `F4.132` (filed with this ADR):
+- **What it uncovers and does not own.** `F4.132` (filed in `docs/BACKLOG.md` with this ADR, Wave 2, P2, `Depends: F3.11`):
   `acknowledged` and `cleared` are still per-process emits, so an
   acknowledgement made through `api-replica` reaches no socket held by `api`.
   Decision 4 leaves the channel and the listener in place for that row to
   extend.
-- **Effort.** The board's 4 weeks predates ADR 0063 and the closure
-  measurement in Context 3. With no service moving and the queue primitives
-  in place, the work is the two modules, the listener, the sweep body, the
-  config field, the health/metrics surface and their gates — closer to one
-  week than four. The row's Effort cell is corrected when it closes, with the
-  measured figure.
+- **Effort.** The board's 4 weeks predates ADR 0063 and the closure walk in
+  Context 3, which is what changes the shape: no service moves, and the queue
+  primitives exist. What remains is the two modules, the listener, the sweep
+  body, the config field, the health/metrics surface and their gates. The
+  row's Effort cell is corrected when it closes, with the measured figure,
+  not with an estimate here.
 - **Volumes are to be measured, not estimated.** The closure row records, from
   the running stack: sweep duration against the seeded 337 rules, the
   `rule_executions` and `notification_deliveries` row counts after one hour
