@@ -4,6 +4,7 @@ import { automationRuleOperatorSchema } from "@bms/shared";
 // `F3.53`: a type here for the same reason `LostLedgerRows` is one below —
 // this module reads the instance off the phase input and never constructs one.
 // `runLifecycleSweep` owns the single per-tick instance.
+import type { RuleChannelsRead } from "../notifications/channel-reads";
 import type { ClosedCeilings } from "../notifications/closed-ceilings";
 import { buildDedupeKey } from "../notifications/dedupe-key";
 import { MAX_EVENT_ATTEMPTS } from "../notifications/dispatch-policy";
@@ -72,7 +73,7 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * TYPES only, so the emitted JavaScript holds no edge back to the service and
  * there is no runtime cycle.
  *
- * **No suite imports this module, and SEVEN UNIT suites gate it** — plus
+ * **No suite imports this module, and EIGHT UNIT suites gate it** — plus
  * `alarm-lifecycle.integration.spec.ts`, which drives the same phases through
  * `AlarmLifecycleService.sweep` against a real database and holds the one claim
  * no fake can: that the service's `dispatchToChannels` adapter forwards the
@@ -82,11 +83,12 @@ import { isSampleFreshEnoughToRaise } from "./alarm-raise.service";
  * `alarm-lifecycle-raise-retry.spec.ts` (23 sweeps),
  * `alarm-lifecycle.service.spec.ts` (21),
  * `alarm-lifecycle-cleared-no-recipients.spec.ts` (9),
+ * `alarm-lifecycle-raise-retry-channel-batch.spec.ts` (8),
  * `alarm-lifecycle-escalation-lost-rows.spec.ts` (6),
  * `alarm-lifecycle-closed-ceilings.spec.ts` (5),
  * `alarm-lifecycle-raise-retry-evidence-guard.spec.ts` (3) and
  * `alarm-lifecycle-escalation-staleness.spec.ts` (2). **Run the directory, not
- * a file.** 48 of the 69 sweeps are outside `alarm-lifecycle.service.spec.ts`,
+ * a file.** 56 of the 77 sweeps are outside `alarm-lifecycle.service.spec.ts`,
  * and `runRaiseRetryPhase`'s invariants are almost entirely in the first — so
  * `vitest run alarm-lifecycle.service` is green on a change it never exercised.
  *
@@ -304,6 +306,18 @@ type RetryCandidate = {
 };
 
 /**
+ * `F3.60` — a candidate whose organization-filtered evidence is non-empty, with
+ * that evidence carried on it.
+ *
+ * The field exists so the filter is computed once and READ twice rather than
+ * computed twice: the pre-pass builds it, the rule-id set is derived from these
+ * candidates, and `channelsOwedTheRaise` is handed this very array. It is on
+ * this type rather than on {@link RetryCandidate} so that a loop rewritten over
+ * the unfiltered `candidates` does not compile.
+ */
+type EvidencedCandidate = RetryCandidate & { evidence: readonly RaiseAttemptRow[] };
+
+/**
  * `F3.51` — the third phase (ADR 0041 Amendment 5, ADR 0057 Amendment 5).
  *
  * A raise notification that did not send was lost for the life of the alarm.
@@ -338,12 +352,18 @@ type RetryCandidate = {
  *
  * Reads per tick: `ceil(eligible / RAISE_ATTEMPT_BATCH_SIZE)` ledger
  * statements — one before the `F3.51` review, chunked since, so a fleet under
- * 500 open eligible alarms still pays exactly one — plus one channel query per
- * distinct rule that has at least one eligible alarm holding a ledger row under
- * its raise key in the RULE's organization (`F3.59`, ADR 0057 Amendment 9: case
- * R13 holds the memo, R20 the evidence guard). A rule none of whose alarms
- * holds such a row costs no channel query at all, because ruling 3 answers "not
- * owed" for any channel list against an empty row group.
+ * 500 open eligible alarms still pays exactly one — plus
+ * `ceil(evidenced rules / RULE_CHANNEL_BATCH_SIZE)` channel statements
+ * (`F3.60`, ADR 0041 Amendment 10: case R23 holds the count). An "evidenced"
+ * rule is one with at least one eligible alarm holding a ledger row under its
+ * raise key in the RULE's organization (`F3.59`, ADR 0057 Amendment 9: R20
+ * holds the guard, R27 holds the organization filter). A rule none of whose
+ * alarms holds such a row costs nothing at all — it never enters the id list —
+ * because ruling 3 answers "not owed" for any channel list against an empty row
+ * group. **The per-rule memo is gone**, and it is not merely replaced: the
+ * distinct-id `Set` collapses the alarms sharing a rule exactly as the memo
+ * did, and the batch then collapses the rules too, which the memo never could.
+ * A tick with no evidenced candidate issues neither read (R28).
  */
 export async function runRaiseRetryPhase(
   deps: AlarmLifecycleDeps,
@@ -444,25 +464,15 @@ export async function runRaiseRetryPhase(
     rowsByAlarm.set(row.alarmId, forAlarm);
   }
 
-  // One channel read per rule per tick, however many of its alarms are owed —
-  // `loadStepChannels`'s cache shape, keyed on the rule id. Since `F3.59` the
-  // memo is reached only for a rule with an evidence-bearing alarm, so the
-  // count is one per distinct SUCH rule and not one per distinct candidate
-  // rule; a rule none of whose alarms holds a row never enters it.
-  const channelsByRule = new Map<string, Promise<NotificationChannelRow[]>>();
-  const loadRuleChannels = (ruleId: string): Promise<NotificationChannelRow[]> => {
-    let pending = channelsByRule.get(ruleId);
-    if (!pending) {
-      pending = deps.loadRuleChannels(ruleId);
-      channelsByRule.set(ruleId, pending);
-    }
-    return pending;
-  };
-
-  // Warned once per tick below, not once per pair: at the cap the fleet is in
-  // one state, and one line saying so is what an operator can act on.
-  let refusedByTheCap = 0;
-
+  // **The pre-pass** (`F3.60`). Both guards below are applied ONCE, here, in
+  // `F3.59`'s order, and the organization-filtered array each one produces is
+  // STORED on the candidate. The loop further down is handed that array — it
+  // does not recompute the filter. Two copies of a predicate that agree on
+  // every input a suite drives are invisible to mutation, which is a lesson
+  // this repository has already paid for; `EvidencedCandidate.evidence` does
+  // not exist on `RetryCandidate`, so a loop rewritten over `candidates` does
+  // not compile.
+  const evidenced: EvidencedCandidate[] = [];
   for (const candidate of candidates) {
     // This alarm's batch did not return, so the phase decides NOTHING about
     // it — not "owed" and not "not owed", which is `RaiseAttemptsRead.unread`'s
@@ -491,8 +501,8 @@ export async function runRaiseRetryPhase(
     // the skip is behaviour-preserving FOR THE OWED SET by construction and not
     // merely conservative. **Not for the warn stream, and the qualifier is
     // there because both reviews asked for it**: a no-evidence candidate no
-    // longer enters the `try` below, so a rejecting `loadRuleChannels` that used
-    // to warn once per such candidate — 78 lines on the seeded fleet — now warns
+    // longer enters the `try` below, so a rejecting channel read that used to
+    // warn once per such candidate — 78 lines on the seeded fleet — now warns
     // none. No decision changes and no message about a channel that was actually
     // owed is lost, because nothing was owed.
     //
@@ -522,28 +532,102 @@ export async function runRaiseRetryPhase(
     // misconfiguration to report, and one line per alarm per tick would be 78
     // lines every 30 s on the seeded stack.
     //
-    // **What it does not save.** An alarm whose raise landed holds a `sent`
-    // row, so on a configured fleet the read is still paid and the predicate
-    // answers "not owed" after it; the saving is the never-dispatched class.
-    // Batching the reads that remain into one round trip is a different defect
-    // on this same line — round-trip count, not deadness — and is filed as its
-    // own backlog row (owner ruling 1, 2026-09-10).
+    // **What this guard does not save, and what `F3.60` did about it.** An
+    // alarm whose raise landed holds a `sent` row, so on a CONFIGURED fleet it
+    // has evidence, the read is still paid, and the predicate answers "not
+    // owed" after it; this guard's saving is the never-dispatched class alone.
+    // That remaining cost was the round-trip COUNT rather than deadness, and it
+    // is what the batched read below removes. The two are complementary and
+    // neither subsumes the other: where few rules join a channel this guard
+    // saves nearly all of it, and where raises send the batch does.
     const evidence = (rowsByAlarm.get(candidate.alarm.id) ?? []).filter(
       (row) => row.organizationId === candidate.ref.organizationId,
     );
     if (evidence.length === 0) {
       continue;
     }
+    evidenced.push({ ...candidate, evidence });
+  }
+  if (evidenced.length === 0) {
+    return;
+  }
+
+  // **One read for every evidenced rule** (`F3.60`, ADR 0041 Amendment 10).
+  // This was one round trip per distinct such rule, serially, every tick — the
+  // memo collapsed only alarms sharing a rule, and the `Set` below does that
+  // same collapsing for free. Measured as `bms_fleet` from inside `bms-api-1`:
+  // 78 sequential reads cost 125–135 ms and one batched statement over the same
+  // 78 rule ids cost 2.6–3.6 ms, both against an empty `rule_notifications`, so
+  // what that compares is the round-trip hop rather than the statement.
+  const ruleIds = [...new Set(evidenced.map((candidate) => candidate.rule.id))];
+  let channelsRead: RuleChannelsRead<NotificationChannelRow>;
+  try {
+    channelsRead = await deps.loadRuleChannels(ruleIds);
+  } catch (err) {
+    // Warn and RETURN, the ledger read's shape and its reason: never fall back
+    // to treating every channel as owed. The `return` is inside the phase, so
+    // `runEscalationPhase` still runs in the same tick. §9.6: a count and a
+    // cause, no rule ids — the list is unbounded at a few hundred open alarms.
+    deps.logger.warn(
+      `alarm lifecycle: raise-retry channel read failed for ${ruleIds.length} rule(s): ${reasonOf(err)}`,
+    );
+    return;
+  }
+
+  // One BATCH failed, not the whole read. The rules it bound are decided about
+  // in no way this tick; every other rule's alarms are decided below. §9.6:
+  // counts and the first cause only.
+  if (channelsRead.reasons.length > 0) {
+    deps.logger.warn(
+      `alarm lifecycle: raise-retry channel read failed for ${channelsRead.reasons.length} batch(es), ` +
+        `${channelsRead.unread.size} of ${ruleIds.length} rule(s) not decided this tick: ${channelsRead.reasons[0] ?? ""}`,
+    );
+  }
+
+  // Warned once per tick below, not once per pair: at the cap the fleet is in
+  // one state, and one line saying so is what an operator can act on.
+  let refusedByTheCap = 0;
+
+  for (const candidate of evidenced) {
+    // **The rule's channels were never read, so decide nothing about its
+    // alarms** — `RuleChannelsRead.unread`'s contract, and the same answer the
+    // alarm-level skip above gives for the same reason. The next tick asks
+    // again; the cost is 30 s of latency, which is the bound ADR 0041
+    // Amendment 5 already accepts for a ceiling-refused dispatch.
+    //
+    // It is never treated as "no channels": that is a silent "not owed", and in
+    // the log it is indistinguishable from a rule with no `rule_notifications`
+    // join, which ADR 0057 Amendment 6 calls the ordinary seeded shape — an
+    // operator could not tell a failing read from an unconfigured rule. It is
+    // never treated as "owed" either: there is no channel list to send to.
+    //
+    // **What it buys in production today is nothing, and that is recorded
+    // rather than hidden.** A rule whose batch threw has no entry in `byRule`,
+    // so the `?? []` and the `channels.length === 0` exit one line below reach
+    // the same outcome. This line is kept for the reason ADR 0057 Amendment 9
+    // keeps the alarm-level one: it states the contract at the one place that
+    // could violate it, and it is what stops a silent "not owed" if `byRule`
+    // ever gains empty groups for returned batches or the `?? []` moves. Its
+    // gate is R24, whose fixture is a read shape this reader cannot produce —
+    // deliberately, and that case says so. Deleting this line leaves R25 green.
+    if (channelsRead.unread.has(candidate.rule.id)) {
+      continue;
+    }
     // Caught per alarm, the escalation phase's shape: one bad alarm must not
     // abort the tick, and the next tick retries this one.
     try {
-      const channels = await loadRuleChannels(candidate.rule.id);
+      // No entry means the batch returned and the rule joins no enabled
+      // channel — the ordinary seeded shape, and the same exit this line has
+      // always taken. "Never read" is the skip above, never this.
+      const channels = channelsRead.byRule.get(candidate.rule.id) ?? [];
       if (channels.length === 0) {
         continue;
       }
       const owed = channelsOwedTheRaise({
         channels,
-        rows: evidence,
+        // The array the pre-pass stored, never a second filter over
+        // `rowsByAlarm` — see the pre-pass.
+        rows: candidate.evidence,
         maxAttempts: MAX_EVENT_ATTEMPTS,
         processStartedAt: PROCESS_STARTED_AT,
       });

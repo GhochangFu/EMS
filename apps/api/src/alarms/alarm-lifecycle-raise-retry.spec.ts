@@ -578,10 +578,21 @@ async function testAnOrganizationlessRuleWarnsAndIsSkipped(): Promise<void> {
 }
 
 /**
- * R13 — the channel read is memoised per rule for the tick. Two alarms on one
- * rule cost one `loadRuleChannels` call, which is the claim the phase's
- * comment makes about its per-tick read cost; without a case, that sentence
- * would be an ungated generalisation.
+ * R13 — two alarms on one rule are asked about once.
+ *
+ * **The memo this case was written for no longer exists** (`F3.60`). The phase
+ * read `loadRuleChannels(rule.id)` from inside the loop and cached the promise
+ * per rule; it now derives a DISTINCT id list in a pre-pass and reads it in one
+ * call, so the `Set` does the collapsing the memo did.
+ *
+ * The assertion below is unchanged and still true, because
+ * `recorded.ruleChannelLoads` is flattened across calls — but **it no longer
+ * gates the read COUNT**: a per-rule read and one batched read flatten to the
+ * same list, so this case stays green under the mutation that restores the
+ * memo. R23 in `alarm-lifecycle-raise-retry-channel-batch.spec.ts` owns that
+ * claim now, over `recorded.ruleChannelReads`, and it was measured doing so.
+ * What survives here is the narrower claim: a rule appears once however many of
+ * its alarms are eligible.
  */
 async function testRuleChannelsAreReadOncePerRulePerTick(): Promise<void> {
   const { deps, recorded } = fakeDeps({

@@ -1523,3 +1523,132 @@ flip, not a correction.
 **What this does not fix.** A rule with at least one evidence-bearing alarm still
 costs one channel query per distinct rule per tick, and on a configured fleet
 that is most of them. That cost is the filed batching row's, not this one's.
+
+## Amendment 10 — `F3.60`: the raise-retry phase reads every evidenced rule's channels in one round trip, and decides nothing about a rule whose batch did not return (2026-09-10)
+
+**Status: Accepted — 2026-09-11.** Ruled by the repository owner.
+
+Amendment 9 closed with a sentence naming what it did not fix: *"A rule with at
+least one evidence-bearing alarm still costs one channel query per distinct rule
+per tick, and on a configured fleet that is most of them."* `F3.60` is that
+filed row. The read itself is ADR 0041 Amendment 10's; what follows is the
+phase's half.
+
+### The pre-pass
+
+`runRaiseRetryPhase` applies both guards **once**, in Amendment 9's order — the
+alarm-level `unread` skip, then the organization-filtered evidence filter — and
+stores each surviving candidate's evidence on it as an `EvidencedCandidate`. The
+distinct rule ids are derived from those candidates, read in one call, and the
+loop then runs over the same array.
+
+**The evidence is computed once and read twice, deliberately.** Two copies of a
+predicate that agree on every input a suite happens to drive are invisible to
+mutation, which this repository has already paid for. `channelsOwedTheRaise` is
+handed the very array the pre-pass built, and `EvidencedCandidate.evidence` does
+not exist on `RetryCandidate`, so a loop rewritten over the unfiltered
+`candidates` does not compile.
+
+**The per-rule memo is gone, and it is not merely replaced.** The distinct-id
+`Set` collapses the alarms sharing a rule exactly as the memo did; the batch then
+collapses the rules too, which the memo never could.
+
+### The safe answer for a rule whose batch did not return
+
+Its alarms are **skipped: nothing is decided about them this tick**, and the
+next tick asks again. The cost is 30 s of latency, the bound ADR 0041 Amendment
+5 already accepts for a ceiling-refused dispatch.
+
+It is never treated as "no channels" — that is a silent "not owed", and in the
+log it is indistinguishable from a rule with no `rule_notifications` join, which
+Amendment 6 calls the ordinary seeded shape; an operator could not tell a
+failing read from an unconfigured rule. It is never treated as "owed" either:
+there is no channel list to send to, and one from memory would be stale.
+
+**What that line buys in production today is nothing, and this records it rather
+than hiding it.** A rule whose batch threw has no entry in `byRule`, so the
+`?? []` and the `channels.length === 0` exit one line later reach the same
+outcome. It is kept for the reason Amendment 9 keeps the alarm-level skip: it
+states the contract at the one place that could violate it, and it is what stops
+a silent "not owed" if `byRule` ever gains empty groups for returned batches or
+the `?? []` default moves. Its gate is R24, whose fixture is a read shape
+`loadEnabledChannelsForRules` **cannot produce** — a failed batch contributes no
+group, and the batches are disjoint after de-duplication. AGENTS.md §4.6
+authorises the synthetic input: the claim is about the phase's reading of the
+contract, not about the reader. A later reader must not make that fixture
+producible — made producible it is R25's, and the skip has no gate at all.
+
+### Reads per tick, restated
+
+`ceil(eligible / RAISE_ATTEMPT_BATCH_SIZE)` ledger statements plus
+`ceil(distinct evidenced rules / RULE_CHANNEL_BATCH_SIZE)` channel statements. A
+tick with no evidenced candidate issues neither (R28).
+
+### Unchanged
+
+Amendment 5's four rulings, Amendment 9's evidence guard, and the per-alarm
+`catch` around the dispatch. The phase-level `catch` on the channel read warns
+and returns **from the phase**, so `runEscalationPhase` still runs in the same
+tick — R26 holds both halves.
+
+### What gates it
+
+R23–R28, one `it()` per case. Thirteen mutations run; ten killed by the case
+that owns the claim, three by the compiler (`TS2454` on a `catch` that falls
+through without `return`; `TS2322` twice on the adapter, for dropping
+`toChannelRow` and for dropping `unread`/`reasons`). **Two survived the first
+pass and both were real gaps**, which is the part of this record worth keeping:
+
+- **M16** — the loop reading a fresh, unfiltered `rowsByAlarm.get(...)` instead
+  of the stored array left every existing case green. R21 does not reach it: its
+  alarm's only row is foreign, so the pre-pass drops the alarm and both readings
+  agree. The disagreement needs an alarm holding evidence in its own
+  organization **and** a foreign row — R27's fixture — where a foreign `sent`
+  row would otherwise block a legitimate retry, silently and across tenants.
+- **M23** — deleting the `evidenced.length === 0` early return changed no
+  decision, only an extra empty adapter call per quiet tick. R28 asserts the
+  absence with a twin as its positive control.
+
+### Step 6 — measured on a running sweep, on a scratch database
+
+The suites gate the call count at the dep boundary; they cannot see a round
+trip. This is the count of SQL **statements** a real
+`AlarmLifecycleService.sweep` issues against `bms.rule_notifications`, read from
+the server's own `log_statement='all'` output.
+
+The fixture is four rules, each with one open unacknowledged alarm, one enabled
+joined channel and one `failed` delivery row under the alarm's raise key — the
+evidence Amendment 9's guard demands before the read is reached at all. Without
+that row the measurement would count zero in both arms and prove nothing.
+
+| Arm | Statements over 3 ticks | Per tick |
+|---|---|---|
+| control — the adapter reading one rule at a time, the pre-`F3.60` shape | **12** | 4 |
+| this change | **3** | **1** |
+
+Four evidenced rules, so the control's 4 per tick is one per rule and this
+change's is one per tick. The reduction at this fleet is 4×; what matters is
+that the control is linear in the rule count and this is constant.
+
+**A scratch Postgres, not the shared stack**, and for a reason worth recording:
+the fixture must be COMMITTED, because the sweep reads on its own connections
+and a rollback-isolated fixture is invisible to it — and a concurrent session
+was live on `notification_channels` in the shared database throughout. The
+scratch instance was brought up empty and taken through the full documented cold
+start (`roles`, the `docker-init` schema script, `db:migrate`, `db:seed`, 47
+tables), so this doubles as the cold-start gate.
+
+**One false reading was found and is recorded rather than dropped.** The first
+attempt counted `pg_stat_all_tables` scans and read **4 per tick for both
+arms**. Two separate faults: `pg_stat_clear_snapshot()` and the counter read
+were landing on different pooled backends, so the delta read 0 inside the
+script; and `idx_scan` counts one index descent per `= ANY(array)` element, so
+it reports 4 for a single statement binding four ids. Scans are the wrong
+instrument for a round-trip claim. Statement logging is the right one, and it is
+what the table above uses.
+
+### Owed to the `chore(agents):` sweep, not this branch
+
+`docs/BACKLOG.md`'s `F3.60` row and status, the Wave-2 Track D sentences in
+`docs/roadmap.md`, and `AGENTS.md` §2's lifecycle line counts — re-measured, not
+copied. §9.10 keeps them off the feature branch.
