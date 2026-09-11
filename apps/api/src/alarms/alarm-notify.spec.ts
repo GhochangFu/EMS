@@ -365,8 +365,8 @@ export async function assertAfterARejectedReadTheNextValidPayloadStillBroadcasts
 }
 
 /**
- * `cleared` (and `acknowledged`) are `F4.132`'s: today the schema's literal
- * refuses them, so the listener neither reads nor broadcasts. When `F4.132`
+ * `cleared` (and `acknowledged`) are `F4.133`'s: today the schema's literal
+ * refuses them, so the listener neither reads nor broadcasts. When `F4.133`
  * widens the literal this row reddens — deliberately: it is the reminder that
  * the handler then needs a `type` switch, not a wider read.
  */

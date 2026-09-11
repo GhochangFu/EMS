@@ -29,7 +29,7 @@ import { ALARM_NOTIFY_CHANNEL, decodeAlarmNotification } from "./alarm-notify-ch
  * **`organizationId` is validated and not yet read.** The schema requires it
  * so the producer cannot drop it, but nothing here scopes on it: the read is
  * fleet-wide (see `readAlarmListItem`) and the per-socket scope is the
- * gateway's. It is the payload `F4.132` extends when `acknowledged` and
+ * gateway's. It is the payload `F4.133` extends when `acknowledged` and
  * `cleared` move onto this channel; until then the schema's `created`
  * literal is the only kind that decodes, so no `type` switch exists here —
  * `alarm-notify.spec.ts`'s `cleared` row reddens the day the literal widens.

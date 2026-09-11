@@ -21,7 +21,7 @@ import { z } from "zod";
 export const ALARM_NOTIFY_CHANNEL = "bms_alarms";
 
 /**
- * `F4.132` widens `type` to `z.enum([...])` when `acknowledged` and `cleared`
+ * `F4.133` widens `type` to `z.enum([...])` when `acknowledged` and `cleared`
  * move onto this channel; today the listener acts on `created` only, so the
  * literal is the whole vocabulary. `.strict()`: a producer that grows the body
  * without widening the schema is refused at the consumer, not silently read.

@@ -64,7 +64,7 @@ export function assertRejectsNonJson(): void {
   assert(decoded === null, `expected null for a non-JSON payload; got ${JSON.stringify(decoded)}`);
 }
 
-/** `F4.132` widens the literal; until then a `cleared` notification is not one the listener acts on. */
+/** `F4.133` widens the literal; until then a `cleared` notification is not one the listener acts on. */
 export function assertRejectsAnUnknownType(): void {
   const decoded = decodeAlarmNotification(
     JSON.stringify({ type: "cleared", alarmId: ALARM_ID, organizationId: ORG_ID }),

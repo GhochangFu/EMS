@@ -68,7 +68,7 @@ describe("alarm-notify (F3.11, ADR 0064 decision 4)", () => {
     await assertAfterARejectedReadTheNextValidPayloadStillBroadcasts();
   });
 
-  it("neither reads nor broadcasts a cleared payload (F4.132's kind)", async () => {
+  it("neither reads nor broadcasts a cleared payload (F4.133's kind)", async () => {
     await assertAClearedPayloadIsNeitherReadNorBroadcast();
   });
 

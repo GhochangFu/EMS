@@ -81,7 +81,7 @@ reaches no screen until the next `GET /alarms`. And — pre-existing, measured
 from the same loop — an alarm raised on `api-replica` (a streaming raise, an
 on-demand press, a lifecycle `cleared`) never reaches a socket held by `api`,
 and vice versa. The second is not this row's defect; decision 4 fixes the
-`created` case as a side effect and `F4.132` records the rest.
+`created` case as a side effect and `F4.133` records the rest.
 
 **5. The queue registry already has everything a repeatable sweep needs.**
 `defineQueue` (name, tenancy, Zod payload, retry policy), `upsertSchedule`
@@ -182,7 +182,7 @@ earlier job is retained; the sweep's row is the alarm, and it already is.
    a no-op — so each site drops one constructor argument and nothing moves.*
    The `NOTIFY`-reaches-the-gateway claim gets its own integration spec.
    `acknowledged` and `cleared` keep their direct emits; moving them onto the
-   same channel is `F4.132`. No new package (AGENTS.md §9.4): `pg` already
+   same channel is `F4.133`. No new package (AGENTS.md §9.4): `pg` already
    carries `LISTEN`, and *"a channel name is not a schema object"* — no grant,
    no migration.
 
@@ -261,7 +261,7 @@ in the `rule_executions.trace` JSONB column, which carries no CHECK, and a
   is the first real consumer of the queue after the heartbeat, and the module
   split (decision 3) is the shape `F3.12` and the ADR 0041 dispatch follow-up
   reuse — each stays its own row.
-- **What it uncovers and does not own.** `F4.132` (filed in `docs/BACKLOG.md` with this ADR, Wave 2, P2, `Depends: F3.11`):
+- **What it uncovers and does not own.** `F4.133` (filed in `docs/BACKLOG.md` with this ADR, Wave 2, P2, `Depends: F3.11`):
   `acknowledged` and `cleared` are still per-process emits, so an
   acknowledgement made through `api-replica` reaches no socket held by `api`.
   Decision 4 leaves the channel and the listener in place for that row to
@@ -280,7 +280,7 @@ in the `rule_executions.trace` JSONB column, which carries no CHECK, and a
   now, by design).
 - **Deferred.** Per-rule schedules (Context 1); a retention policy for
   `bms.rule_executions` (ADR 0033 decision 3, still not justified by traffic
-  under decision 5); moving `acknowledged`/`cleared` to `NOTIFY` (`F4.132`);
+  under decision 5); moving `acknowledged`/`cleared` to `NOTIFY` (`F4.133`);
   a second worker replica (decision 7).
 
 ## Amendment 1 — the worker's module graph, the listener seam, and three corrections (2026-09-11)

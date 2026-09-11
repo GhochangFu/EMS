@@ -27,7 +27,7 @@ describe("alarm-notify-channel", () => {
     assertRejectsNonJson();
   });
 
-  it("decodes a type other than created to null until F4.132 widens the literal", () => {
+  it("decodes a type other than created to null until F4.133 widens the literal", () => {
     assertRejectsAnUnknownType();
   });
 
