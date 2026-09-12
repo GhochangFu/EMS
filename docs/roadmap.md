@@ -5066,3 +5066,58 @@ owed — the T0+60 min quiet-plant row counts — was voided when the local
 Postgres container was stopped mid-window; `F4.134` carries what the outage
 revealed instead: a sweep that cannot reach the database fails every retry
 while `GET /health` still reads `ok`.
+
+### `F4.59` — `telemetrySource` moves with `ingest_enabled` ✅ 2026-09-12
+
+**Two writers, one point.** The seed maintained an invariant the whole
+telemetry path depends on — an RTU is `mqtt` on both `rtus.source_type` and its
+assets' `meta.telemetrySource`, or on neither — because `apps/sim` skips
+exactly the assets marked `mqtt`. The admin screen did not: nothing under
+`apps/api/src` wrote `telemetrySource` at all. Enabling an RTU in the UI left
+its assets on `catalog`, so the simulator kept writing them while ingest wrote
+them too — two producers on one `(time, asset, point_key)`, resolved by
+whichever upsert landed second. Silent data corruption, not a visible failure.
+Disabling one left the assets on `mqtt` and the points went dead.
+
+`RtusAdminService.update` now moves them in the **same transaction**. The owner
+chose that over deriving the value from a view, which is the better fix and a
+schema change wanting its own ADR.
+
+**The naive fix made one case worse, and the guard for it was wrong twice.**
+Handing assets to ingest unconditionally strands the ones whose RTU cannot bind:
+they leave the simulator and ingest never takes them. The first guard tested
+`source_type !== 'catalog'` — but the enum has three members and
+`packages/shared/src/ingest.ts` records that `simulator` and `catalog` both
+have no adapter. On the seeded fleet that mistake covered **44 RTUs owning 99 of
+the 147 attached assets**, the largest group. The shipped gate is positive
+membership in `INGEST_PROTOCOLS`, or a `rtu_connection_configs` row, so a fourth
+source type that gains an adapter is handled with no edit.
+
+**What the reviews added.** The security pass settled tenancy by execution
+rather than argument: a rolled-back `bms_tenant` probe attached a foreign asset
+to the RTU and showed the write **silently skips** it — no cross-tenant write is
+possible, so the explicit organization predicate is defence in depth. The audit
+row now records `assetsMoved`, the count only.
+
+**Still open:** `F4.139` (`AssetsAdminService` reaches the same invariant from
+the asset end), `F4.140` (`OnboardingCommitService` is a third writer that sets
+no `telemetrySource` at all), `F4.137` (no constraint makes `assets.rtu_id`
+respect the organization) and `F4.138` (the gate reads the location's
+organization while the write uses the RTU's).
+
+### `F4.55` — the probe aggregate's refresh policy ⬜ still open
+
+**A regression guard shipped; the row did not close.** `0a208935` adds
+`assertProbeAggregatesCarryNoRefreshPolicy`, because the deadlock the row
+describes is **not reproducible against committed code**:
+`add_continuous_aggregate_policy` appears in three commits repo-wide and none
+put one on a probe, and the live database carries exactly four policies, all
+`point_values_*`. Option (a) is already how the file works.
+
+The provenance holds, so the row stays open rather than closing on a fix that
+fixed nothing: PR #130 is `feat(f2.6)`, merged 2026-08-22, and the row says the
+wedge happened *during* that work. The incident and its measured detail are
+real — 16 minutes of mutual blocking, 59 backends queued, a silently wrong
+`energySummary` of 200.76 against a raw 208.58. Only the cause is misassigned.
+If it recurs, look at the teardown contending with the **production** refresh
+jobs, which options (b) and (c) address and (a) does not.
