@@ -230,7 +230,7 @@ export type CommitDuplicateFixtures = {
  * entry it looked up and hard-coded `location` would leave this case green,
  * because `location` is the field under test. That mutation belongs to
  * `assertEveryMappedConstraintBecomesItsOwnFieldError` in the unit spec, which
- * walks all nine. The §4.3 sentinels live there too, where a synthetic error can
+ * walks all ten. The §4.3 sentinels live there too, where a synthetic error can
  * carry the `detail` this path withholds.
  */
 export async function assertCommitAnswersADuplicateLocationCodeWithAFieldError(
@@ -270,6 +270,90 @@ export async function assertCommitAnswersADuplicateLocationCodeWithAFieldError(
     [locationCode, organizationId],
   );
   expect(rows.length, "the refused commit wrote no second location and rolled back").toBe(1);
+}
+
+/** What the `F4.60` duplicate-`rtuCode` proof needs. */
+export type CommitDuplicateRtuCodeFixtures = {
+  commitSvc: OnboardingCommitService;
+  ownerPool: pg.Pool;
+  /** A commit-ready draft with a fresh location whose one RTU carries `rtuCode`. */
+  sessionId: string;
+  /** The `rtu_code` carried by both a pre-existing RTU and the draft's RTU. */
+  rtuCode: string;
+  /** The draft's own location code, which no seeded row holds. */
+  draftLocationCode: string;
+};
+
+/**
+ * `F4.60` — a duplicate `rtuCode` reaches the commit's catch and is answered as
+ * a per-field `400` naming `rtus`.
+ *
+ * **This case exists for one failure the unit spec cannot see: the map key.**
+ * `onboarding-commit-conflict.spec.ts` reads `COMMIT_UNIQUE_CONFLICTS` on both
+ * sides of every assertion, so a key misspelt as `rtus_rtucode_idx` — in the map
+ * and in `REACHABLE_CONSTRAINTS` alike — leaves all eight of its cases green
+ * while production answers `500`. Only a real Postgres says what the constraint
+ * is actually called, and this is where that string is compared.
+ *
+ * It differs from the `locations_org_code_idx` case above in what makes it
+ * reachable, and the difference is the point. That constraint's key includes
+ * `location_id`, and the location is created inside the same transaction, so
+ * only two RTUs *within one draft* can collide. `rtus_rtu_code_idx` is keyed on
+ * the bare column, so a draft with a perfectly fresh location still collides
+ * with an RTU that belongs to a different location — and, since the key carries
+ * no `organization_id`, potentially to a different organization. The fixture
+ * plants the pre-existing RTU deliberately outside the draft.
+ *
+ * Measured while writing this: as `bms_tenant`, the role `withTenant` connects
+ * as, the refusal carries `code`, `constraint`, `table` and `schema` but **no
+ * `detail`** — `BuildIndexValueDescription` returns NULL on a policied relation.
+ * So the `rtuCode` the caller sent cannot leak back through this path even if
+ * the message were built from `detail`, which it is not.
+ */
+export async function assertCommitAnswersADuplicateRtuCodeWithAFieldError(
+  ctx: CommitDuplicateRtuCodeFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { commitSvc, ownerPool, sessionId, rtuCode, draftLocationCode } = ctx;
+
+  const conflict = COMMIT_UNIQUE_CONFLICTS.get("rtus_rtu_code_idx");
+  if (!conflict) {
+    throw new Error("F4.60: rtus_rtu_code_idx is not in COMMIT_UNIQUE_CONFLICTS");
+  }
+
+  let raised: unknown;
+  try {
+    await commitSvc.commit(jwt, sessionId);
+  } catch (error) {
+    raised = error;
+  }
+
+  const answered =
+    raised instanceof BadRequestException
+      ? JSON.stringify(raised.getResponse())
+      : `not a BadRequestException: ${String(raised)} ${JSON.stringify(raised)}`;
+
+  expect(
+    answered,
+    "a duplicate rtuCode is answered as a per-field 400 naming rtus, not a 500",
+  ).toBe(JSON.stringify({ formErrors: [], fieldErrors: { rtus: [conflict.message] } }));
+
+  // The whole commit rolled back, so the draft's own location — which nothing
+  // else creates — must not exist. This is the positive control for the
+  // assertion above: without it, a commit that refused for some unrelated
+  // earlier reason would answer the same way and prove nothing about the RTU
+  // insert being reached at all.
+  const { rows } = await ownerPool.query<{ id: string }>(
+    `SELECT id FROM bms.locations WHERE code = $1`,
+    [draftLocationCode],
+  );
+  expect(rows.length, "the refused commit wrote no location and rolled back").toBe(0);
+
+  const still = await ownerPool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM bms.rtus WHERE rtu_code = $1`,
+    [rtuCode],
+  );
+  expect(still.rows[0]?.n, "exactly the one pre-existing RTU still holds the code").toBe(1);
 }
 
 /** What the ADR 0062 decision 3 key-version proof needs. */

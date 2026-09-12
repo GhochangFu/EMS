@@ -28,7 +28,7 @@
  * key of the tuple being *inserted*, so the value is the caller's own — equal to
  * the colliding row's on those columns, because that equality is why it
  * collided, but not read out of that row. The second draft said that value
- * reaches this function. **On eight of the nine constraints it does not reach it
+ * reaches this function. **On nine of the ten constraints it does not reach it
  * at all.**
  *
  * `BuildIndexValueDescription` returns NULL when RLS is enabled on the relation,
@@ -46,6 +46,15 @@
  * exists.` So `point_keys_code_unique` is the **one** mapped constraint on which
  * the no-echo rule is load-bearing rather than belt-and-braces, and it is the
  * one already reachable only as a race.
+ *
+ * `F4.60`'s `rtus_rtu_code_idx` joins the silent majority, and that was measured
+ * on the same server rather than assumed from the pattern: as `bms_tenant` — the
+ * role `withTenant` actually connects as — and as `bms_owner`, a duplicate
+ * `rtu_code` yields `code`, `constraint`, `table` and `schema` with **no `DETAIL`
+ * line emitted at all**; as `bms_fleet` the same insert yields
+ * `Key (rtu_code)=(f4.60-dcode) already exists.` `bms.rtus` keeps its policy, so
+ * `BuildIndexValueDescription` returns NULL exactly as it does for the other
+ * eight.
  *
  * Passing nothing on is right either way, and neither correction weakens it.
  * §4.3 forbids echoing the input back in a refusal, and `detail` is the input.
@@ -73,14 +82,14 @@
  * and a pure function with no logger is one fewer place for `detail` to be
  * added later by someone who reads a `Logger` field as an invitation.
  *
- * ## The ten constraints, and the one that is not here
+ * ## The eleven constraints, and the one that is not here
  *
  * Measured from `pg_constraint` and `pg_indexes`, a commit's six *draft-derived*
- * inserts sit under ten unique constraints. Six is the count of inserts that
+ * inserts sit under eleven unique constraints. Six is the count of inserts that
  * write a value the draft supplied; the transaction runs two more — the
  * `audit.write(…, tx)` calls at `onboarding-commit.service.ts:423` and `:441` —
  * and neither can collide, because every column they key on is a
- * `defaultRandom()` primary key. **Nine of the ten are mapped. The tenth,
+ * `defaultRandom()` primary key. **Ten of the eleven are mapped. The eleventh,
  * `rtu_connection_configs_rtu_id_key` `(rtu_id)`, is unreachable from this
  * path** and is deliberately absent rather than mapped for symmetry:
  * `onboarding-commit.service.ts:320` is the only write to that table in the
@@ -97,7 +106,7 @@
  * `UNIQUE` is named `<table>_<column>_key` by the server. It was probed live to
  * confirm the constraint exists and fires under a duplicate `rtu_id`.
  *
- * Reachability of the nine, stated per constraint because the brief asked for
+ * Reachability of the ten, stated per constraint because the brief asked for
  * it rather than for a list copied across:
  *
  * - `locations_org_code_idx`, `locations_slug_unique` — the draft supplies both
@@ -110,6 +119,14 @@
  * - `rtus_location_code_unique` — the location is created by this same
  *   transaction, so no pre-existing RTU shares its id; what reaches this is two
  *   RTUs in one draft with one code.
+ * - `rtus_rtu_code_idx` — `F4.60`, migration `0071`. A partial unique index on a
+ *   bare column (`WHERE rtu_code IS NOT NULL AND rtu_code <> ''`), fed straight
+ *   from `rtus[].rtuCode`, which `onboarding.schema.ts:91` accepts as free text
+ *   with no database read behind it. Reachable **two** ways where the three
+ *   above are reachable one: two RTUs in one draft carrying one `rtuCode`, and a
+ *   draft whose `rtuCode` an RTU outside this transaction already holds — the
+ *   fresh-`location_id` argument that narrows `rtus_location_code_unique` does
+ *   not apply, because this key does not mention the location.
  * - `asset_points_asset_id_point_key_unique`,
  *   `asset_points_asset_source_key_idx` — likewise `asset_id` is fresh, so what
  *   reaches these is two points on one draft asset.
@@ -119,11 +136,21 @@
  *   concurrent commit whose insert is invisible under READ COMMITTED until it
  *   commits. The message says so.
  *
- * **Five of the nine are cross-tenant, not the four the row's brief states**
- * (its own table marks three). `rtus_external_rtu_idx` and `rtus_mqtt_topic_idx`
- * are unique on one bare column with no `organization_id` in the key —
- * migration `0016` lines 65 and 67 — so they refuse across organizations
- * exactly as `locations_slug_unique` does, and they carry `scope: "global"`.
+ * **Six of the ten are cross-tenant** — five when this paragraph was first
+ * written, and `F4.60` adds the sixth. `rtus_external_rtu_idx` and
+ * `rtus_mqtt_topic_idx` are unique on one bare column with no `organization_id`
+ * in the key — migration `0016` lines 65 and 67 — so they refuse across
+ * organizations exactly as `locations_slug_unique` does, and they carry
+ * `scope: "global"`. `rtus_rtu_code_idx` (migration `0071`) is the same shape
+ * for the same reason, and the reason is written down rather than inherited:
+ * `BINDING_QUERY` in `apps/ingest/src/host/bindings.ts` selects across the whole
+ * fleet with no `organization_id` filter, so a key scoped per organization would
+ * not have closed the defect `F4.60` exists to close.
+ *
+ * Re-measured from `pg_constraint` and `pg_indexes` on 2026-09-12 after `0071`
+ * applied, rather than incremented: the six tables carry 17 unique indexes, 6 of
+ * them primary keys, leaving 11. `locations_org_code_idx` is still the only one
+ * whose key mentions `organization_id`.
  *
  * ## The other translation of `assets_code_unique`
  *
@@ -228,6 +255,16 @@ export const COMMIT_UNIQUE_CONFLICTS: ReadonlyMap<string, CommitUniqueConflict> 
       field: "rtus",
       scope: "global",
       message: "An MQTT topic in this draft is already taken. Choose a different topic.",
+    },
+  ],
+  [
+    "rtus_rtu_code_idx",
+    {
+      field: "rtus",
+      scope: "global",
+      message:
+        "An rtuCode in this draft is already taken. It is the device key the ingest host " +
+        "routes by, so two RTUs cannot share one. Choose a different rtuCode.",
     },
   ],
   [
