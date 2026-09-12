@@ -11,6 +11,7 @@ import {
 import type { OnboardingDraft } from "@bms/shared";
 
 import {
+  catalogCodeFromLocationName,
   catalogCodeSlug,
   cellLengthProblem,
   cutToBound,
@@ -503,4 +504,72 @@ export function assertCatalogCodeSlug(): void {
       `every non-empty result is inside CATALOG_CODE_PATTERN, got ${JSON.stringify(result)}`,
     );
   }
+}
+
+/**
+ * `catalogCodeCarriesTheNameApartFromTheClass` — the property the `F2.23`
+ * post-merge sweep found removed, and this is its gate.
+ *
+ * `F4.104` owner ruling 6 established it: a derived value that lands on
+ * `bms.assets.code`, unique across every tenant, must stay distinct when the
+ * derivation drops information, because the commit has no `onConflict` and the
+ * second organisation to reach the same code cannot commit at all.
+ * `cutToBoundWithHashSuffix` held it for the LENGTH cut. `catalogCodeSlug`
+ * (ADR 0065 decision 4) then began dropping every character outside the class
+ * **before** that function measures the length, so two names that differ only
+ * outside the class collapsed to one code and never reached the cut. Measured
+ * on the merged commit: `北京第一水处理厂 Plant A` and `上海第二水处理厂 Plant A`
+ * both gave `PLANT-A-ASSET-1`.
+ *
+ * So the discriminator now follows the **information loss**, not the length:
+ * whenever the slug is not the value it was given, the hash of the ORIGINAL
+ * name is appended. Hashing the slug would defeat it — the slug is exactly
+ * what the colliding names share.
+ */
+export function assertCatalogCodeCarriesTheNameApartFromTheClass(): void {
+  const collide: readonly [string, string][] = [
+    ["北京第一水处理厂 Plant A", "上海第二水处理厂 Plant A"],
+    ["水".repeat(200) + " Plant", "処".repeat(200) + " Plant"],
+    ["Plant 1", "Plant.1"],
+    ["Мурманск Works", "Астрахань Works"],
+    // Empty against an all-illegal name: both slug to nothing, so only the
+    // hash of the original can tell them apart. Written by codepoint — §4.5
+    // refuses an emoji literal in source.
+    ["", "\u{1F600}"],
+  ];
+  for (const [a, b] of collide) {
+    const codeA = catalogCodeFromLocationName(a);
+    const codeB = catalogCodeFromLocationName(b);
+    assert(
+      codeA !== codeB,
+      `two location names differing only outside the class must not share a code: ` +
+        `${JSON.stringify(a.slice(0, 12))} and ${JSON.stringify(b.slice(0, 12))} both gave "${codeA}"`,
+    );
+    for (const [name, code] of [
+      [a, codeA],
+      [b, codeB],
+    ] as const) {
+      assert(
+        CATALOG_CODE_PATTERN.test(code),
+        `every derived code stays inside the class, got ${JSON.stringify(code)} from ${JSON.stringify(name.slice(0, 12))}`,
+      );
+      assert(
+        code.length <= ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+        `every derived code stays inside the bound, got ${code.length} from ${JSON.stringify(name.slice(0, 12))}`,
+      );
+    }
+  }
+
+  // A name already inside the class loses nothing, so it takes NO hash — an
+  // operator who types a clean name still reads a clean code. This is the
+  // positive control: without it the assertions above pass by hashing
+  // everything, which would be a different defect.
+  assert(
+    catalogCodeFromLocationName("Berhampur") === "BERHAMPUR-ASSET-1",
+    `a name already inside the class is untouched, got "${catalogCodeFromLocationName("Berhampur")}"`,
+  );
+  assert(
+    catalogCodeFromLocationName("Plant_A-2") === "PLANT_A-2-ASSET-1",
+    `every character the class admits survives, got "${catalogCodeFromLocationName("Plant_A-2")}"`,
+  );
 }

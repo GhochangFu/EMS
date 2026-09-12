@@ -4,6 +4,7 @@ import {
   ONBOARDING_DRAFT_STRING_MAX,
 } from "@bms/shared";
 
+import { catalogCodeSlug } from "./onboarding-draft-caps";
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { draftBeforeAssets, ruleBasedTurn } from "./onboarding-chat.service.spec";
 import { onboardingDraftSchema } from "./onboarding.schema";
@@ -54,7 +55,7 @@ async function assetCodeFromLocation(name: string): Promise<{
 export async function assertAssetsTurnSlugifiesTheLocationName(): Promise<void> {
   const { code } = await assetCodeFromLocation("St. Mary's Works");
   assert(
-    code === "ST-MARY-S-WORKS-ASSET-1",
+    code === "ST-MARY-S-WORKS-95289584-ASSET-1",
     `each illegal run becomes one "-" before the upper-case and the marker, got "${code}"`,
   );
 }
@@ -106,23 +107,26 @@ export async function assertAssetsTurnPatchSatisfiesTheSchema(): Promise<void> {
 export async function assertAssetsTurnSlugifiesBeforeUpperCasing(): Promise<void> {
   const { code } = await assetCodeFromLocation("Straße Works");
   assert(
-    code === "STRA-E-WORKS-ASSET-1",
+    code === "STRA-E-WORKS-7271CB65-ASSET-1",
     `"ß" is outside the class and becomes "-" before the upper-case, got "${code}"`,
   );
   assert(
-    code !== "STRASSE-WORKS-ASSET-1",
+    code !== "STRASSE-WORKS-7271CB65-ASSET-1",
     "upper-casing first folds ß into SS and yields the wrong code for this name",
   );
 }
 
 /**
- * A name with nothing inside the class collapses to the empty slug, and the
- * code the producer yields is the marker alone — legal under `.min(2)` and the
- * class. Stated executably rather than inherited from the plan's arithmetic.
+ * A name with nothing inside the class collapses to the empty slug, so the
+ * code is the hash of that name plus the marker — legal under `.min(2)` and
+ * the class, and distinct from every other all-illegal name. Before the
+ * post-merge fix it was the marker alone, which every such name shared on a
+ * globally unique column. Stated executably rather than inherited from the
+ * plan's arithmetic.
  */
 export async function assertAssetsTurnFromAnAllIllegalName(): Promise<void> {
   const { code, patch } = await assetCodeFromLocation("\u{1F600}\u{1F600}");
-  assert(code === "-ASSET-1", `an all-illegal name yields the marker alone, got "${code}"`);
+  assert(code === "91AD485B-ASSET-1", `an all-illegal name yields the hash of that name plus the marker, got "${code}"`);
   const parsed = onboardingDraftSchema.safeParse(patch);
   assert(
     parsed.success,
@@ -158,33 +162,25 @@ export async function assertAssetsTurnKeepsACutCodeInsideTheClass(): Promise<voi
 }
 
 /**
- * Security review of `F2.23` (M1). The slug widens which location names share
- * an asset code — `Plant 1`, `Plant.1`, `Plant (1)` and `Plant-1` all yield
- * `PLANT-1-ASSET-1`, and every name with nothing inside the class yields
- * `-ASSET-1` — on a column unique across tenants (`assets_code_unique`).
+ * The `F2.23` security review (M1) asked whether the slug's collisions are a
+ * new cross-tenant refusal. The post-merge sweep then found the sharper
+ * problem underneath: the slug removed the distinctness `F4.104` owner
+ * ruling 6 established, because `cutToBoundWithHashSuffix` appends its
+ * discriminator only when the LENGTH cut fires and the slug shortens the
+ * value before the length is measured. Measured on `3e3b4c86`, five location
+ * names produced three codes.
  *
- * **The first version of this gate asserted the wrong mechanism**, and the
- * code review refuted it by execution. It claimed an equal asset code implies
- * an equal location slug, so the location insert always refuses the second
- * tenant first. The two derivations fold case in opposite orders — the
- * location branch lower-cases then strips (`onboarding-chat.service.ts`
- * `[^a-z0-9]+`), the asset branch strips then upper-cases — so a character
- * whose lower-case is ASCII breaks it: `İ` (U+0130) gives slug `i` and code
- * `-ASSET-1`, while `U+1F600` gives slug `location` and the same code. Two tenants
- * can therefore share an asset code and not share a slug. The original pool
- * held no such name, so the claim stayed green.
+ * `catalogCodeFromLocationName` now hashes the original name whenever the
+ * slug drops anything, so **two distinct names no longer share a code at
+ * all**. This drives the real rule-based branch over a pool built to collide
+ * under the old producer and asserts exactly that.
  *
- * **What is true, and what this gate now asserts:** a shared derived asset
- * code is always refused with a *translated 400* — on `locations_slug_unique`
- * when the slugs also collide, otherwise on `assets_code_unique`, which
- * `COMMIT_UNIQUE_CONFLICTS` maps (`onboarding-commit-conflict.ts`). Never an
- * untranslated 500, which is what M1 asked about. The residual it leaves is
- * usability, not security: the operator is refused on a code they never typed.
- * That is filed as its own row rather than fixed here, because deriving the
- * code from `location.slug` instead of the name would change ADR 0065
- * decision 4 and needs the owner.
+ * The translation check stays, and it is not redundant: two tenants can still
+ * reach one code by choosing the *same* location name, which no derivation
+ * can separate. That case must remain a translated 400 rather than an
+ * untranslated 500, on either constraint.
  */
-export async function assertASharedAssetCodeIsAlwaysATranslatedRefusal(): Promise<void> {
+export async function assertDistinctNamesNoLongerShareADerivedCode(): Promise<void> {
   const names = [
     "Plant 1",
     "Plant.1",
@@ -193,51 +189,39 @@ export async function assertASharedAssetCodeIsAlwaysATranslatedRefusal(): Promis
     "Plant_1",
     "कारखाना",
     "工厂",
-    "İ", // the counterexample: slug `i`, code `-ASSET-1`
+    "İ",
     "İstanbul Works",
-    "a_b",
-    "a-b",
-    "a b",
     "St. Mary's Works",
     "Straße Works",
   ];
-  const derived: Array<{ name: string; code: string; slug: string }> = [];
+  const seen = new Map();
   for (const name of names) {
-    const location = await ruleBasedTurn(name, {}, "location");
-    const slug = location.draftPatch.location?.slug;
-    if (slug === undefined) {
-      throw new Error(`the location branch must yield a slug for ${JSON.stringify(name)}`);
-    }
     const { code } = await assetCodeFromLocation(name);
-    derived.push({ name, code, slug });
+    const prior = seen.get(code);
+    assert(
+      prior === undefined,
+      `two distinct location names must no longer derive one code: ` +
+        `${JSON.stringify(prior)} and ${JSON.stringify(name)} both gave "${code}"`,
+    );
+    seen.set(code, name);
   }
-
-  let codePairs = 0;
-  let pairsTheSlugDoesNotCatch = 0;
-  for (const a of derived) {
-    for (const b of derived) {
-      if (a === b || a.code !== b.code) continue;
-      codePairs += 1;
-      if (a.slug !== b.slug) pairsTheSlugDoesNotCatch += 1;
-    }
-  }
-  assert(
-    codePairs >= 2,
-    `the pool must contain a colliding pair or this proves nothing, got ${codePairs}`,
+  // Positive control: the pool has to be one the OLD producer collapsed, or
+  // the assertion above is satisfied by any pool at all.
+  const oldCodes = new Set(
+    names.map((n) => `${catalogCodeSlug(n).toUpperCase()}-ASSET-1`),
   );
-  // The counterexample must be IN the pool, or the sentence above is untested
-  // prose again. This is the positive control for the correction itself.
   assert(
-    pairsTheSlugDoesNotCatch >= 2,
-    "the pool must contain a pair that shares a code and not a slug — without one " +
-      "this gate re-asserts the implication the code review refuted",
+    oldCodes.size < names.length,
+    `the pool must collide under the pre-fix producer, or this proves nothing: ` +
+      `${oldCodes.size} codes for ${names.length} names`,
   );
 
-  // Whichever constraint fires, the commit answers a translated 400.
+  // Whichever constraint an identical-name collision reaches, the commit
+  // answers a translated 400 rather than an untranslated 500.
   for (const constraint of ["assets_code_unique", "locations_slug_unique"]) {
     const mapped = COMMIT_UNIQUE_CONFLICTS.get(constraint);
     if (mapped === undefined) {
-      throw new Error(`${constraint} must be translated, or a derived-code collision is a 500`);
+      throw new Error(`${constraint} must be translated, or a shared code is a 500`);
     }
     assert(
       mapped.message.length > 0,

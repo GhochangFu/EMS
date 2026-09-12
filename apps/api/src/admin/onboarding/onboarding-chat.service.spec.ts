@@ -4,7 +4,7 @@ import type { OnboardingDraft, OnboardingPhase } from "@bms/shared";
 import { MAX_ECHOED_CELL_CHARS, MAX_ECHOED_ITEMS } from "../spreadsheet-guard";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import type { ChatTurnResult } from "./onboarding-chat.service";
-import { catalogCodeSlug } from "./onboarding-draft-caps";
+import { catalogCodeFromLocationName, catalogCodeSlug } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { onboardingDraftSchema } from "./onboarding.schema";
@@ -511,9 +511,14 @@ export function draftBeforeAssets(locationName: string): OnboardingDraft {
  */
 const LEGAL_LOCATION_NAME = "Berhampur Water Treatment Plant ".repeat(3).trim();
 
-/** What the `assets` branch builds its code from, before any cut (F2.23: slug, then upper). */
+/**
+ * The code the `assets` branch actually stores — the real producer, bound and
+ * all. It was the pre-cut value until the `F2.23` post-merge sweep; the fix
+ * folds the loss-hash into the same function, so a spec that rebuilt the
+ * pre-cut form by hand would be asserting its own arithmetic.
+ */
 function assetCodeFor(site: string): string {
-  return `${catalogCodeSlug(site).toUpperCase()}-ASSET-1`;
+  return catalogCodeFromLocationName(site);
 }
 
 /**
@@ -646,7 +651,8 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
   // error no chat instruction could clear.
   assert(
     LEGAL_LOCATION_NAME.length <= ONBOARDING_DRAFT_STRING_MAX["location.name"] &&
-      assetCodeFor(LEGAL_LOCATION_NAME).length > ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+      catalogCodeSlug(LEGAL_LOCATION_NAME).length + "-ASSET-1".length >
+        ONBOARDING_DRAFT_STRING_MAX["assets.code"],
     "this case needs a location name that is legal and still overflows the asset code",
   );
   const legalSite = await ruleBasedTurn("One asset", draftBeforeAssets(LEGAL_LOCATION_NAME), "assets");
@@ -687,13 +693,14 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
       legalParsed.error?.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
     )}`,
   );
+  const overLongCode = `${catalogCodeSlug(LEGAL_LOCATION_NAME).toUpperCase()}-ASSET-1`;
   const uncutCode = onboardingDraftSchema.safeParse({
-    assets: [{ ...legalAsset, code: assetCodeFor(LEGAL_LOCATION_NAME) }],
+    assets: [{ ...legalAsset, code: overLongCode }],
   });
   assert(
     !uncutCode.success &&
       (uncutCode.error?.issues ?? []).some((issue) => issue.path.join(".") === "assets.0.code"),
-    "the schema must refuse the uncut asset code, or this parse proves nothing",
+    "the schema must refuse an uncut code of this shape, or this parse proves nothing",
   );
 
   // --- the assets branch, from a stored name written before any bound --------
@@ -728,11 +735,10 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
     twinSite.draftPatch.assets?.[0],
     "this case must reach the rule-based assets branch, or it measures the OpenAI one",
   );
+  const slugOf = (n: string): string => catalogCodeSlug(n).toUpperCase();
   assert(
-    assetCodeFor(twinName).startsWith(
-      assetCodeFor(storedName).slice(0, ONBOARDING_DRAFT_STRING_MAX["assets.code"]),
-    ),
-    "this case needs two names that agree past the bound, or it asserts nothing",
+    slugOf(twinName).startsWith(slugOf(storedName).slice(0, ONBOARDING_DRAFT_STRING_MAX["assets.code"])),
+    "this case needs two names whose slugs agree past the bound, or it asserts nothing",
   );
   assert(
     twinAsset.code !== storedAsset.code,
@@ -863,8 +869,9 @@ export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
       `${JSON.stringify(astralAsset.siteName).slice(0, 80)}`,
   );
   assert(
-    astralAsset.code === "BERHAMPUR-ASSET-1",
-    `the emoji run collapses to one "-" and is trimmed, got ${JSON.stringify(astralAsset.code)}`,
+    astralAsset.code === "BERHAMPUR-691F771F-ASSET-1",
+    `the astral run collapses and the name it dropped is carried by the hash, ` +
+      `got ${JSON.stringify(astralAsset.code)}`,
   );
   const assetsParsed = onboardingDraftSchema.safeParse(assetsTurn.draftPatch);
   assert(

@@ -34,9 +34,12 @@ import type { CalcCrossRef, CalcScope } from "./ast";
  * enforced the class `^[A-Za-z0-9_-]+$` on `bms.assets.code` and
  * `bms.point_keys.code` (`assets_code_charset_check` /
  * `point_keys_code_charset_check`, mirrored at the five Zod write sites),
- * which settles *resolution* — which asset or group a code names — but this
- * prefix's injectivity claim never depended on that charset and still does
- * not.
+ * which settles *resolution* — which asset a code names — but this prefix's
+ * injectivity claim never depended on that charset and still does not.
+ * **Not groups:** a group or domain code lives in the quoted `@group('…')` /
+ * `@domain('…')` argument (`CalcScope.code`), never in a qualified reference's
+ * `assetCode`, and ADR 0065 lists `bms.asset_groups.code` and
+ * `bms.asset_domains.code` under "Not in this ADR".
  *
  * `position` is deliberately not part of the key: the same reference at two
  * offsets is one input.

@@ -82,11 +82,31 @@ describe("F2.23 catalog code charset (ADR 0065 decisions 2, 3, 5)", () => {
 
   const names = ["assets_code_charset_check", "point_keys_code_charset_check"];
 
-  it.each(names)("guards %s with an idempotent IF NOT EXISTS check", (name) => {
-    const guardRe = new RegExp(
-      `IF NOT EXISTS \\(\\s*SELECT 1 FROM pg_constraint[\\s\\S]*?conname = '${name}'`,
+  // Split on the block delimiter FIRST. The earlier form matched
+  // `IF NOT EXISTS … [\s\S]*? conname = '<name>'` across the whole file, so the
+  // assets block's guard could pair with the point_keys block's `conname`, and
+  // the test could not see which guard belonged to which constraint. Proved by
+  // mutation on 2026-09-12: swapping BOTH guard names left 12/12 green. A
+  // swapped guard is not cosmetic — on a database where one constraint got in
+  // and the other did not, the present one's block runs `ADD CONSTRAINT` a
+  // second time and the migration dies with "already exists", which is the
+  // exact re-run decision 3 depends on.
+  const blocks = sql.split(/\bDO \$\$/).slice(1);
+
+  it("has one DO block per constraint", () => {
+    expect(blocks).toHaveLength(names.length);
+  });
+
+  it.each(names)("guards %s inside that constraint's own DO block", (name) => {
+    const owning = blocks.filter((block) =>
+      new RegExp(`ADD CONSTRAINT\\s+${name}\\b`).test(block),
     );
-    expect(sql).toMatch(guardRe);
+    expect(owning, `exactly one DO block must add ${name}`).toHaveLength(1);
+    const block = owning[0] ?? "";
+    expect(block).toMatch(/IF NOT EXISTS \(\s*SELECT 1 FROM pg_constraint/);
+    // The guard's name, read from the SAME block, must be this constraint's.
+    const guarded = block.match(/conname = '([^']+)'/);
+    expect(guarded?.[1], `the guard in ${name}'s block must name ${name}`).toBe(name);
   });
 
   it("extracts exactly two ADD CONSTRAINT ... CHECK (code ~ '<class>') clauses, byte-identical to CATALOG_CODE_PATTERN.source", () => {

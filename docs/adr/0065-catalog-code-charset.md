@@ -261,3 +261,52 @@ ruling, with the `VALIDATE` step filed as its own row.
   the tokenizer.
 - AGENTS.md §6 lists nothing this promotes; the `chore(agents):` sweep at
   closure records the row and the ADR in §2 and the status line only.
+
+## Amendment 1 — the slug must carry what it drops (2026-09-12)
+
+**Status:** Accepted, ruled 2026-09-12 by the owner on the post-merge review
+sweep of `3e3b4c86`.
+
+**Decision 4 shipped a regression of an earlier owner ruling, and neither the
+four pre-merge reviews nor this ADR saw it.** `F4.104` owner ruling 6
+established that a value derived onto `bms.assets.code` — unique across every
+tenant, and inserted with no `onConflict` — must stay distinct when the
+derivation drops information. `cutToBoundWithHashSuffix` held that property by
+appending a hash of the whole pre-cut value, but **only when the length cut
+fired**. Decision 4 put `catalogCodeSlug` in front of it, and the slug deletes
+every character outside the class *before* the length is measured. Two names
+that differ only outside the class therefore collapsed to one code and never
+reached the cut.
+
+Measured on the merged commit with the shipped functions:
+
+| location name | code as merged | code before `F2.23` |
+|---|---|---|
+| `北京第一水处理厂 Plant A` | `PLANT-A-ASSET-1` | `北京第一水处理厂-PLANT-A-ASSET-1` |
+| `上海第二水处理厂 Plant A` | `PLANT-A-ASSET-1` | `上海第二水处理厂-PLANT-A-ASSET-1` |
+| `Мурманск Works` | `WORKS-ASSET-1` | `МУРМАНСК-WORKS-ASSET-1` |
+
+Five distinct names produced three codes. Every name with no character in the
+class produced the same `-ASSET-1`, so one tenant committing it blocked that
+whole equivalence class for every other tenant.
+
+**Amendment: the discriminator follows the information loss, not the length.**
+`catalogCodeFromLocationName` (`onboarding-draft-caps.ts`) appends the
+eight-character hash of the **original name** whenever `catalogCodeSlug`
+changed the value, then applies the length bound as before. The hash is taken
+over the original name and never over the slug — the slug is exactly what the
+colliding names share. A name already inside the class loses nothing and takes
+no suffix, so an ordinary name still yields an ordinary code
+(`Berhampur` → `BERHAMPUR-ASSET-1`).
+
+**What this does not change.** Decision 1's class, decision 2's constraints,
+decision 3's failure mode and decision 5's refusal of automatic repair all
+stand. The grammar is still untouched.
+
+**Consequences.** Three pinned test values move, and they are the visible cost:
+`St. Mary's Works` now yields `ST-MARY-S-WORKS-95289584-ASSET-1` rather than
+`ST-MARY-S-WORKS-ASSET-1`. That is the trade the ruling makes — a code an
+operator can still recognise by its prefix, that no other tenant can already
+hold. `F4.136` (an operator refused on a code they never typed) is largely
+closed by this amendment; what remains of it is the readability of the suffix,
+not a refusal.

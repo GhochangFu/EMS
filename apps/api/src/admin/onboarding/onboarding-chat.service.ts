@@ -21,7 +21,11 @@ import { CredentialCryptoService } from "../../security/credential-crypto.servic
 import { MAX_ECHOED_ITEMS, echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { cloneJson } from "../stack-safe-json";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
-import { catalogCodeSlug, cutToBound, cutToBoundWithHashSuffix } from "./onboarding-draft-caps";
+import {
+  catalogCodeFromLocationName,
+  cutToBound,
+  cutToBoundWithHashSuffix,
+} from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 // F4.107: the draft goes into the prompt through this, not through
 // `redactDraftForLlm` directly — the redaction says nothing about size, and
@@ -584,11 +588,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       patch.assets = [
         {
           rtuIndex: 0,
-          code: cutToBoundWithHashSuffix(
-            `${catalogCodeSlug(site).toUpperCase()}-ASSET-1`,
-            ONBOARDING_DRAFT_STRING_MAX["assets.code"],
-            "upper",
-          ),
+          code: catalogCodeFromLocationName(site),
           name: "Primary Device",
           siteName: cutToBound(site, ONBOARDING_DRAFT_STRING_MAX["assets.siteName"]),
           domain: "electrical",

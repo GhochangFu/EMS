@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertCatalogCodeCarriesTheNameApartFromTheClass,
   assertCatalogCodeSlug,
   assertCellLengthProblem,
   assertCutToBound,
@@ -38,5 +39,9 @@ describe("onboarding draft count caps (F4.103)", () => {
 
   it("reduces a location name to the catalog code class (F2.23, ADR 0065 decision 4)", () => {
     assertCatalogCodeSlug();
+  });
+
+  it("keeps two names apart when the slug drops what differs between them", () => {
+    assertCatalogCodeCarriesTheNameApartFromTheClass();
   });
 });
