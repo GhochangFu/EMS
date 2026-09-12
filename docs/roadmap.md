@@ -2094,10 +2094,22 @@ Process (`AGENTS.md` §10).
   deliberately outside: `asset_groups.code`, `asset_domains.code`,
   `locations.code`, `rtus.code`, `asset_templates.code`, case-insensitive
   resolution, and any charset rule in the grammar.
-- **Still open:** `F4.135` (the LLM chat branch drops a whole draft patch on an
+- **Amendment 1, 2026-09-12 — the post-merge sweep found a third defect, and it
+  was in decision 4 itself** (`fe98c02f`, PR #441).
+  `cutToBoundWithHashSuffix` appends its distinctness hash only when the LENGTH
+  cut fires; the slug shortens the name before the length is measured, so the
+  hash never fired and `F4.104` owner ruling 6 was silently removed. Five
+  distinct location names produced three codes, and every name with no
+  character in the class produced the same `-ASSET-1` on a column unique across
+  tenants. `catalogCodeFromLocationName` now hashes the original name whenever
+  the slug drops anything. The same PR repaired two gates that did not gate:
+  the migration's guard-pairing assertion passed with both guard names swapped,
+  and a `cross-ref.ts` docblock claimed the row settles group codes, which
+  ADR 0065 lists as out of scope. **Four pre-merge reviews missed all three.**
+- **Still open:** `F4.135` (the LLM chat path drops a whole draft patch on an
   illegal code and still says it updated the draft — inert while
-  `OPENAI_API_KEY` is absent) and `F4.136` (an operator refused on a derived
-  asset code they never typed).
+  `OPENAI_API_KEY` is absent) and `F4.136`, now narrowed to the readability of
+  the hash suffix rather than a refusal.
 
 ### Template authoring UI + formula editor (`F2.5`, ADR 0038) — done
 
