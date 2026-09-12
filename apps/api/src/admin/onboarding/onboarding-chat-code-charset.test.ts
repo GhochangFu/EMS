@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
-  assertASharedAssetCodeIsAlwaysATranslatedRefusal,
+  assertDistinctNamesNoLongerShareADerivedCode,
   assertAssetsTurnFromAnAllIllegalName,
   assertAssetsTurnKeepsACutCodeInsideTheClass,
   assertAssetsTurnPatchSatisfiesTheSchema,
@@ -31,7 +31,7 @@ describe("OnboardingChatService.handleTurn, assets branch — the catalog code c
     await assertAssetsTurnKeepsACutCodeInsideTheClass();
   });
 
-  it("answers a translated 400 for a shared derived asset code, on either constraint", async () => {
-    await assertASharedAssetCodeIsAlwaysATranslatedRefusal();
+  it("no longer derives one code from two distinct location names", async () => {
+    await assertDistinctNamesNoLongerShareADerivedCode();
   });
 });

@@ -51,6 +51,7 @@ import {
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
+  ONBOARDING_DRAFT_STRING_MAX,
 } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
@@ -425,4 +426,53 @@ export function catalogCodeSlug(value: string): string {
     .replace(OUTSIDE_CATALOG_CODE_CLASS, HASH_SEPARATOR)
     .replace(/-{2,}/g, HASH_SEPARATOR)
     .replace(/^-+|-+$/g, "");
+}
+
+/** The marker the rule-based chat appends to a location-derived asset code. */
+const DERIVED_ASSET_MARKER = "-ASSET-1";
+
+/**
+ * The asset code the rule-based onboarding chat derives from a location name:
+ * slugified to the catalog class, upper-cased, marked, and bounded — and made
+ * **distinct** whenever the slug had to drop something.
+ *
+ * **Why the hash follows the information loss rather than the length.**
+ * `cutToBoundWithHashSuffix` appends its discriminator only when the LENGTH cut
+ * fires, which held `F4.104` owner ruling 6 while the only lossy step was the
+ * cut. ADR 0065 decision 4 put {@link catalogCodeSlug} in front of it, and the
+ * slug deletes every character outside the class before the length is ever
+ * measured — so two names that differ only outside the class collapsed to one
+ * code and never reached the cut. Measured on `3e3b4c86`:
+ * `北京第一水处理厂 Plant A` and `上海第二水处理厂 Plant A` both produced
+ * `PLANT-A-ASSET-1`. `bms.assets.code` is unique across every tenant
+ * (`assets_code_unique`) and `OnboardingCommitService` has no `onConflict`, so
+ * the second organisation to derive that code cannot commit at all.
+ *
+ * The hash is taken over the **whole original name**, never over the slug: the
+ * slug is precisely what the colliding names share, so hashing it would
+ * reproduce the collision it is there to break.
+ *
+ * A name already inside the class loses nothing and takes no suffix, so an
+ * operator who types an ordinary name still reads an ordinary code. The length
+ * bound is applied last, by `cutToBoundWithHashSuffix`, which may add a second
+ * discriminator of its own — that is correct and not double work: one
+ * distinguishes what the class dropped, the other what the bound dropped.
+ */
+export function catalogCodeFromLocationName(name: string): string {
+  const slug = catalogCodeSlug(name);
+  const upper = slug.toUpperCase();
+  const digest = createHash("sha256")
+    .update(name, "utf8")
+    .digest("hex")
+    .slice(0, HASH_SUFFIX_CHARS)
+    .toUpperCase();
+  // An all-illegal name slugs to nothing, so the hash stands alone rather than
+  // after a separator — `-A1B2C3D4-ASSET-1` would carry a leading `-` that says
+  // nothing and reads like a typo.
+  const base = slug === name ? upper : upper === "" ? digest : `${upper}${HASH_SEPARATOR}${digest}`;
+  return cutToBoundWithHashSuffix(
+    `${base}${DERIVED_ASSET_MARKER}`,
+    ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+    "upper",
+  );
 }
