@@ -672,6 +672,37 @@ export async function assertRefreshPoliciesHaveNotFailed(pool: pg.Pool): Promise
 }
 
 /**
+ * `F4.55` regression guard: the probes must carry **no** refresh policy — that
+ * is what deadlocked `afterAll`'s `DROP ... CASCADE` in the original incident.
+ * Probes are refreshed only by the explicit, awaited {@link refreshProbes}
+ * `CALL`. Needs a positive control, or a `WHERE`-clause mismatch would let the
+ * probe half pass vacuously.
+ */
+export async function assertProbeAggregatesCarryNoRefreshPolicy(pool: pg.Pool): Promise<void> {
+  const { rows } = await pool.query<{ hypertable_name: string }>(
+    `SELECT j.hypertable_name
+     FROM timescaledb_information.jobs j
+     WHERE j.proc_name = 'policy_refresh_continuous_aggregate'
+       AND j.hypertable_schema = 'telemetry'`,
+  );
+
+  const production = rows.filter((r) => /^point_values_(1m|5m|1h|1d)$/.test(r.hypertable_name));
+  assert(
+    production.length === 4,
+    `expected 4 production refresh policies visible via this query (positive control), found ` +
+      `${production.length} — a query change here would make the probe check below vacuous`,
+  );
+
+  const probes = rows.filter((r) => /^f4\d+_probe/.test(r.hypertable_name));
+  assert(
+    probes.length === 0,
+    `found a refresh policy on a probe aggregate (${probes.map((r) => r.hypertable_name).join(", ")}) ` +
+      "— this is the F4.55 deadlock. Probes must be refreshed only by the explicit, awaited " +
+      "CALL in refreshProbes, never by add_continuous_aggregate_policy.",
+  );
+}
+
+/**
  * **The only assertion that executes the converted read site.**
  *
  * `assertProbeMatchesRaw` proves the aggregates are right; it does not prove

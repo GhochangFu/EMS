@@ -13,6 +13,7 @@ import {
   assertEnergySummaryMatchesRaw,
   assertEveryShippedAggregateIsOwnedByTheRollupRole,
   assertNaiveFormWouldFail,
+  assertProbeAggregatesCarryNoRefreshPolicy,
   assertProbeMatchesRaw,
   assertProductionShapeMatchesProbe,
   assertRealtimeEnabled,
@@ -89,6 +90,11 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
 
   it("has refresh policies that have not failed", async () => {
     await assertRefreshPoliciesHaveNotFailed(pool as pg.Pool);
+  });
+
+  // F4.55 regression guard: a policy on a probe deadlocks afterAll's DROP.
+  it("carries no refresh policy on the throwaway probe aggregates", async () => {
+    await assertProbeAggregatesCarryNoRefreshPolicy(pool as pg.Pool);
   });
 
   // E7.1a / ADR 0045 Amendment 2. Guards against a *future* continuous
