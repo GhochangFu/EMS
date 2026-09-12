@@ -17,11 +17,13 @@ import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import {
   assertCommitAnswersADuplicateLocationCodeWithAFieldError,
+  assertCommitAnswersADuplicateRtuCodeWithAFieldError,
   assertCommitRefusesAContradictingPointKey,
   assertCommitStampsOrgOnEveryTenantRow,
   assertCommitWritesTheKeyVersionForEachCredentialState,
   type CommitConflictFixtures,
   type CommitDuplicateFixtures,
+  type CommitDuplicateRtuCodeFixtures,
   type CommitIds,
   type CommitKeyVersionFixtures,
   type CommitRlsFixtures,
@@ -82,6 +84,31 @@ const DUPE_DRAFT_LOCATION_SLUG = `e71b-obd-draft-${RUN}`;
 const DUPE_RTU_CODE = `E71B-OBD-RTU-${RUN}`;
 const DUPE_ASSET_CODE = `E71B-OBD-AS-${RUN}`;
 const DUPE_POINT_KEY_CODE = `E71B_OBD_PK_${RUN}`;
+
+// `F4.60` — a fifth draft, on its own codes again, and the one pre-existing RTU
+// its `rtus[0].rtuCode` collides with.
+//
+// **Its location code and slug are BOTH fresh**, which is the opposite of the
+// `F4.109` draft above and is what makes the case measure the right constraint.
+// `rtus_rtu_code_idx` is keyed on the bare `rtu_code` column with no
+// `location_id` and no `organization_id`, so the collision does not need — and
+// must not have — anything else in common with an existing row. If the location
+// code collided too, `locations_org_code_idx` would raise first, the commit
+// would never reach its RTU insert, and the case would pass having proved
+// nothing about `F4.60` at all.
+//
+// `RTUDUP_DEVICE_CODE` is the `rtus.rtu_code` value; `RTUDUP_RTU_CODE` is the
+// location-scoped `rtus.code`. Two different columns, and conflating them is
+// exactly how this case would go vacuous.
+const RTUDUP_LOCATION_CODE = `E71B-OBR-${RUN}`;
+const RTUDUP_LOCATION_SLUG = `e71b-obr-${RUN}`;
+const RTUDUP_RTU_CODE = `E71B-OBR-RTU-${RUN}`;
+const RTUDUP_ASSET_CODE = `E71B-OBR-AS-${RUN}`;
+const RTUDUP_POINT_KEY_CODE = `E71B_OBR_PK_${RUN}`;
+const RTUDUP_DEVICE_CODE = `E71B-OBR-DEV-${RUN}`;
+const RTUDUP_SEEDED_LOCATION_CODE = `E71B-OBR-SEED-${RUN}`;
+const RTUDUP_SEEDED_LOCATION_SLUG = `e71b-obr-seed-${RUN}`;
+const RTUDUP_SEEDED_RTU_CODE = `E71B-OBR-SEED-RTU-${RUN}`;
 
 // ADR 0062 decision 3 — a fourth draft, on its own codes and its own location,
 // with three RTUs and no assets or point keys: nothing here exercises those,
@@ -169,6 +196,33 @@ const CONFLICT_CODES: DraftCodes = {
   pointKeyCode: SHARED_POINT_KEY_CODE,
   pointKeyUnit: "kW",
 };
+
+const RTUDUP_CODES: DraftCodes = {
+  locationCode: RTUDUP_LOCATION_CODE,
+  locationSlug: RTUDUP_LOCATION_SLUG,
+  rtuCode: RTUDUP_RTU_CODE,
+  assetCode: RTUDUP_ASSET_CODE,
+  pointKeyCode: RTUDUP_POINT_KEY_CODE,
+  pointKeyUnit: "kW",
+};
+
+/**
+ * `F4.60` — `commitReadyDraft` with the device key set on its one RTU.
+ *
+ * `DraftCodes.rtuCode` is `rtus[].code`, the location-scoped name. The column
+ * `0071` constrains is `rtus[].rtuCode`, which the base draft never sets, so it
+ * is added here rather than by widening `DraftCodes` — four other drafts use
+ * that type and none of them wants a device key.
+ */
+function draftWithDeviceKey(domain: string, codes: DraftCodes, deviceKey: string): OnboardingDraft {
+  const draft = commitReadyDraft(domain, codes);
+  const [rtu] = draft.rtus ?? [];
+  if (!rtu) {
+    throw new Error("F4.60: commitReadyDraft produced no RTU to hang a device key on");
+  }
+  rtu.rtuCode = deviceKey;
+  return draft;
+}
 
 const DUPE_CODES: DraftCodes = {
   locationCode: DUPE_LOCATION_CODE,
@@ -287,10 +341,14 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
   let ctx: CommitRlsFixtures;
   let conflictCtx: CommitConflictFixtures;
   let dupeCtx: CommitDuplicateFixtures;
+  let rtuDupCtx: CommitDuplicateRtuCodeFixtures;
   let sessionId = "";
   let conflictSessionId = "";
   let dupeSessionId = "";
   let dupeLocationId = "";
+  let rtuDupSessionId = "";
+  let rtuDupSeedLocationId = "";
+  let rtuDupSeedRtuId = "";
   let removeSharedPointKey: (() => Promise<void>) | undefined;
   let committed: CommitIds | undefined;
   let keyVerCtx: CommitKeyVersionFixtures;
@@ -362,6 +420,9 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
     sessionId = await seedSession(commitReadyDraft(domain, STAMPING_CODES));
     conflictSessionId = await seedSession(commitReadyDraft(domain, CONFLICT_CODES));
     dupeSessionId = await seedSession(commitReadyDraft(domain, DUPE_CODES));
+    rtuDupSessionId = await seedSession(
+      draftWithDeviceKey(domain, RTUDUP_CODES, RTUDUP_DEVICE_CODE),
+    );
 
     // ADR 0062 decision 3 — build the two credential blobs the key-version
     // draft carries, each under its own env-loaded key, before the draft is
@@ -406,6 +467,26 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
     );
     dupeLocationId = dupeLocation.rows[0].id;
 
+    // `F4.60` — the RTU whose `rtu_code` the fifth draft collides with, on its
+    // own location so the collision is on the device key ALONE. Written here on
+    // `ownerPool` (BYPASSRLS) for the same reasons as the row above.
+    const rtuDupLocation = await ownerPool.query<{ id: string }>(
+      `INSERT INTO bms.locations
+         (organization_id, code, slug, name, type, latitude, longitude)
+       VALUES ($1, $2, $3, 'F4.60 duplicate-rtu_code probe', 'smoc_campus', 0, 0)
+       RETURNING id`,
+      [organizationId, RTUDUP_SEEDED_LOCATION_CODE, RTUDUP_SEEDED_LOCATION_SLUG],
+    );
+    rtuDupSeedLocationId = rtuDupLocation.rows[0].id;
+    const rtuDupRtu = await ownerPool.query<{ id: string }>(
+      `INSERT INTO bms.rtus
+         (organization_id, location_id, code, display_name, rtu_code)
+       VALUES ($1, $2, $3, 'F4.60 duplicate-rtu_code probe', $4)
+       RETURNING id`,
+      [organizationId, rtuDupSeedLocationId, RTUDUP_SEEDED_RTU_CODE, RTUDUP_DEVICE_CODE],
+    );
+    rtuDupSeedRtuId = rtuDupRtu.rows[0].id;
+
     // The catalog row the second draft contradicts. `registerFixturePointKeys`
     // writes `(code, name, active)` only, so the unit is NULL — Amendment 1
     // decision 3's case, and the one the four seeded orphans are in.
@@ -435,6 +516,13 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       organizationId,
       locationCode: DUPE_LOCATION_CODE,
     };
+    rtuDupCtx = {
+      commitSvc,
+      ownerPool,
+      sessionId: rtuDupSessionId,
+      rtuCode: RTUDUP_DEVICE_CODE,
+      draftLocationCode: RTUDUP_LOCATION_CODE,
+    };
     keyVerCtx = {
       commitSvc,
       ownerPool,
@@ -452,6 +540,7 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
   afterAll(async () => {
     // `F4.109` — set by the sweep below, reported after every delete has run.
     let dupeProbeRowMissing = false;
+    let rtuDupProbeRowMissing = false;
     // children first, on the BYPASSRLS fleet connection. Delete by the ids the
     // commit returned; the session row is removed by its own id regardless.
     if (ownerPool) {
@@ -601,6 +690,56 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
       // seed count with no cause. The report happens after every delete has run.
       dupeProbeRowMissing = dupeLocationId !== "" && dupeLocationIds.length === 0;
     }
+    // `F4.60` — the same shape once more. Two sweeps, because this case plants
+    // rows under TWO locations: the seeded probe (`E71B-OBR-SEED*`, holding the
+    // RTU the draft collides with) and the draft's own (`E71B-OBR-*`), which
+    // exists only if a regression let the commit through. Assets and RTUs go
+    // before their locations; `rtu_connection_configs` before its RTU.
+    if (ownerPool) {
+      const rtuDupAssets = await ownerPool.query<{ id: string }>(
+        `SELECT id FROM bms.assets WHERE code = $1`,
+        [RTUDUP_ASSET_CODE],
+      );
+      const rtuDupAssetIds = rtuDupAssets.rows.map((r) => r.id);
+      if (rtuDupAssetIds.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.asset_points WHERE asset_id = ANY($1)`, [
+          rtuDupAssetIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.asset_group_members WHERE asset_id = ANY($1)`, [
+          rtuDupAssetIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [rtuDupAssetIds]);
+      }
+      // By `rtu_code`, not by `code`: that catches BOTH the seeded probe RTU and
+      // any stray the commit wrote, since sharing this value is the whole point
+      // of the case. A sweep by `code` alone would leave one of them behind, and
+      // a left-behind row here poisons the NEXT run of this same suite — its
+      // fresh draft would collide with the stray instead of with its own probe.
+      const rtuDupRtus = await ownerPool.query<{ id: string }>(
+        `SELECT id FROM bms.rtus WHERE rtu_code = $1 OR code = $2`,
+        [RTUDUP_DEVICE_CODE, RTUDUP_RTU_CODE],
+      );
+      const rtuDupRtuIds = rtuDupRtus.rows.map((r) => r.id);
+      if (rtuDupRtuIds.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.rtu_connection_configs WHERE rtu_id = ANY($1)`, [
+          rtuDupRtuIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.rtus WHERE id = ANY($1)`, [rtuDupRtuIds]);
+      }
+      const rtuDupLocations = await ownerPool.query<{ id: string }>(
+        `SELECT id FROM bms.locations WHERE code = ANY($1)`,
+        [[RTUDUP_SEEDED_LOCATION_CODE, RTUDUP_LOCATION_CODE]],
+      );
+      const rtuDupLocationIds = rtuDupLocations.rows.map((r) => r.id);
+      if (rtuDupLocationIds.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1)`, [
+          rtuDupLocationIds,
+        ]);
+        await ownerPool.query(`DELETE FROM bms.locations WHERE id = ANY($1)`, [rtuDupLocationIds]);
+      }
+      await ownerPool.query(`DELETE FROM bms.point_keys WHERE code = $1`, [RTUDUP_POINT_KEY_CODE]);
+      rtuDupProbeRowMissing = rtuDupSeedRtuId !== "" && rtuDupRtuIds.length === 0;
+    }
     // Last, because the asset_points above reference it (migration `0057`).
     // This row is inserted in `beforeAll`, not by a commit, so no `committed`
     // id would ever reach it.
@@ -617,6 +756,12 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
           "something else removed it, and the duplicate-code case measured nothing",
       );
     }
+    if (rtuDupProbeRowMissing) {
+      throw new Error(
+        `F4.60: the seeded probe RTU carrying rtu_code ${RTUDUP_DEVICE_CODE} was gone before ` +
+          "cleanup — something else removed it, and the duplicate-rtuCode case measured nothing",
+      );
+    }
   });
 
   it("stamps the session org on the location, point keys, RTUs, assets and asset points", async () => {
@@ -629,6 +774,10 @@ describe.skipIf(!connectionString)("E7.1b — onboarding commit stamps org under
 
   it("answers a duplicate location code with a per-field 400 rather than a 500 (F4.109)", async () => {
     await assertCommitAnswersADuplicateLocationCodeWithAFieldError(dupeCtx, jwt);
+  });
+
+  it("answers a duplicate rtuCode with a per-field 400 naming rtus (F4.60)", async () => {
+    await assertCommitAnswersADuplicateRtuCodeWithAFieldError(rtuDupCtx, jwt);
   });
 
   it("writes the key version with the ciphertext, never a literal (ADR 0062 decision 3)", async () => {

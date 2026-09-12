@@ -23,14 +23,23 @@ const JWT: JwtPayload = {
 };
 
 /**
- * The nine constraints a commit can violate, **as authored on 2026-09-10** from
- * a live census of `pg_constraint` and `pg_indexes` over the six tables the
- * commit inserts into. Listed here rather than read back from the map — a
- * set-equality assertion that derived both sides from the map would be an
- * identity and could not fail. It is a transcript of a census, not a query: a
- * later migration can make it stale, and nothing in this file will say so.
+ * The ten constraints a commit can violate, **re-authored on 2026-09-12** from a
+ * live census of `pg_constraint` and `pg_indexes` over the six tables the commit
+ * inserts into. Listed here rather than read back from the map — a set-equality
+ * assertion that derived both sides from the map would be an identity and could
+ * not fail. It is a transcript of a census, not a query: a later migration can
+ * make it stale, and nothing in this file will say so.
  *
- * `rtu_connection_configs_rtu_id_key` is the tenth constraint on the commit's
+ * **That last sentence came true, and it is worth recording how.** `F4.60`'s
+ * migration `0071` added `rtus_rtu_code_idx`, and this list did not know. What
+ * caught it was not this file noticing — it cannot — but the set-equality
+ * assertion going red the moment the map gained the entry, naming the new
+ * constraint in its own failure message. So the pairing works in one direction
+ * only: a map entry added without a census entry fails loudly, while a
+ * *migration* added without either passes in silence. A future index on these
+ * six tables that nobody maps is still invisible here.
+ *
+ * `rtu_connection_configs_rtu_id_key` is the eleventh constraint on the commit's
  * six inserts and is deliberately absent; the module header carries why it is
  * unreachable.
  */
@@ -44,6 +53,7 @@ const REACHABLE_CONSTRAINTS = [
   "rtus_external_rtu_idx",
   "rtus_location_code_unique",
   "rtus_mqtt_topic_idx",
+  "rtus_rtu_code_idx",
 ];
 
 /**
@@ -236,9 +246,12 @@ export async function assertACommitCollisionIsAFieldErrorNotAServerFault(): Prom
  * lists.
  *
  * Owner ruling 2 asks for one map read by one catch. The failure this pins is
- * the quiet one: a tenth entry added without a reachability argument, or one of
- * the nine dropped by a refactor, both of which leave every other case here
+ * the quiet one: an eleventh entry added without a reachability argument, or one
+ * of the ten dropped by a refactor, both of which leave every other case here
  * green because each of those tests only the entries that exist.
+ *
+ * It did its job once already: `F4.60` added `rtus_rtu_code_idx` to the map and
+ * this was the single assertion that went red, naming the constraint.
  *
  * **The name says "the authored list", not "reachable", and the distinction is
  * the whole limit of this case.** Both sides are source in this repository:
@@ -254,7 +267,7 @@ export function assertTheMapMatchesTheAuthoredReachableList(): void {
   const mapped = [...COMMIT_UNIQUE_CONFLICTS.keys()].sort();
   assert(
     JSON.stringify(mapped) === JSON.stringify(REACHABLE_CONSTRAINTS),
-    `the map holds exactly the nine names REACHABLE_CONSTRAINTS lists, got ${JSON.stringify(mapped)}`,
+    `the map holds exactly the ten names REACHABLE_CONSTRAINTS lists, got ${JSON.stringify(mapped)}`,
   );
 }
 
@@ -262,7 +275,7 @@ export function assertTheMapMatchesTheAuthoredReachableList(): void {
  * `F4.109` — every mapped constraint answers with **its own** field and **its
  * own** sentence.
  *
- * One map entry wired to the right field proves nothing about the other eight.
+ * One map entry wired to the right field proves nothing about the other nine.
  * The mutation is a translation that ignores the entry it just looked up —
  * hard-coding `location`, or the first entry's message — which leaves the
  * wiring case above green because that case *is* the location one.
@@ -287,11 +300,13 @@ export function assertEveryMappedConstraintBecomesItsOwnFieldError(): void {
  * taken" is what such a caller may be told; naming a second tenant — even
  * anonymously — turns a duplicate into a disclosure that one exists.
  *
- * **Five entries carry `scope: "global"`, not the four the row's brief states**
- * and not the three its table marks: `rtus_external_rtu_idx` and
+ * **Six entries carry `scope: "global"`** — five when this paragraph was
+ * written, and `F4.60` adds the sixth. `rtus_external_rtu_idx` and
  * `rtus_mqtt_topic_idx` are unique on one bare column (migration `0016` lines
  * 65 and 67) and refuse across organizations exactly as `locations_slug_unique`
- * does.
+ * does; `rtus_rtu_code_idx` (migration `0071`) is the same shape, keyed on
+ * `rtu_code` alone because the ingest host's `BINDING_QUERY` reads the whole
+ * fleet with no organization filter.
  *
  * **Named for what it measures.** The mutation is a message that says "already
  * used in another organization"; what reddens is a word match, so a phrasing
@@ -319,7 +334,7 @@ export function assertNoGlobalMessageUsesTheObviousCrossTenantPhrasing(): void {
  * `F4.109` / §4.3 — no part of the driver's error reaches the client.
  *
  * `err.detail` is the dangerous one — `Key (slug)=(rsmoc-eastern-cape) already
- * exists.` echoes the value the caller supplied, which on the five global
+ * exists.` echoes the value the caller supplied, which on the six global
  * constraints is equal to one in a row belonging to an organization it cannot
  * see. `table`, `schema` and the driver's own message are checked beside it
  * because a later edit reaching for "a more helpful message" reaches for

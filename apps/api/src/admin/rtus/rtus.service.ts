@@ -16,6 +16,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { translateRtuCodeCollision } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 
 /**
@@ -173,6 +174,25 @@ export class RtusAdminService {
         tx,
       );
       return row;
+    }).catch((err: unknown) => {
+      // `F4.60` — migration `0071` makes `rtus.rtu_code` unique fleet-wide when
+      // it is set, and this insert carries no `onConflict` (a duplicate is
+      // refused, never merged). Without this the driver's `23505` reached Nest's
+      // default handler and became a 500 for a value the caller chose.
+      //
+      // `.catch` on the returned promise rather than a `try` around the block,
+      // the shape `commit()` in `onboarding-commit.service.ts` uses, for the same
+      // reason: wrapping would reindent the whole transaction body and hide a
+      // two-line change in a diff nobody can read. Drizzle rolls the transaction
+      // back and re-throws the driver's own error object, so `code` and
+      // `constraint` survive to here.
+      //
+      // `translateRtuCodeCollision` is narrow on both axes and returns anything
+      // else unchanged, so this `throw` re-throws the original object with its
+      // stack intact: `rtus_location_code_unique`, `rtus_external_rtu_idx`,
+      // `rtus_mqtt_topic_idx`, a foreign-key violation and a dropped connection
+      // all still answer exactly as they did.
+      throw translateRtuCodeCollision(err);
     });
 
     return this.fetchRow(created.id);
@@ -354,6 +374,18 @@ export class RtusAdminService {
         },
         tx,
       );
+    }).catch((err: unknown) => {
+      // `F4.60` — the same translation `create` applies, for the same index and
+      // in the same `.catch` shape. Justified in full there.
+      //
+      // The `.set()` above restates `rtu_code` on every PATCH, including when
+      // the body does not mention it. That is **not** a self-collision: Postgres
+      // recognises the old tuple as the row's own prior version, so an update
+      // that writes a row's existing `rtu_code` back is not a duplicate.
+      // `rtus.rtu-code-conflict.integration.spec.ts` fences that, because a
+      // pre-check written here instead — `SELECT … WHERE rtu_code = $1` without
+      // excluding this row — would refuse every edit of an ingest-bound RTU.
+      throw translateRtuCodeCollision(err);
     });
     return this.fetchRow(id);
   }
