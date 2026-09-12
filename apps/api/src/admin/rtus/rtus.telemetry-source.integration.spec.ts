@@ -54,21 +54,42 @@ let fixtureSeq = 0;
  * The caller states the starting `telemetrySource` so each direction begins in
  * the state its assertion rejects — a disable case starting at `catalog` would
  * pass without the service doing anything.
+ *
+ * `sourceType` defaults to `mqtt` because the move onto ingest is gated on the
+ * RTU declaring what it speaks: a `catalog` RTU with no connection config
+ * cannot bind, and the service leaves its assets with the simulator. The cases
+ * that assert the plain `ingest_enabled` move therefore need a fixture that can
+ * bind; the two that assert the gate itself state `catalog` explicitly.
  */
 async function createRtuWithAsset(
   ctx: TelemetrySourceCtx,
   jwt: JwtPayload,
-  start: { ingestEnabled: boolean; telemetrySource: string },
+  start: {
+    ingestEnabled: boolean;
+    telemetrySource: string;
+    sourceType?: "mqtt" | "catalog";
+    withConnectionConfig?: boolean;
+  },
 ): Promise<{ rtuId: string; assetId: string }> {
   const tag = `f4-59-${Date.now()}-${fixtureSeq++}`;
   const rtu = await ctx.svc.create(jwt, {
     locationId: ctx.locationId,
     code: tag,
     displayName: `F4.59 ${tag}`,
-    sourceType: "catalog",
+    sourceType: start.sourceType ?? "mqtt",
     ingestEnabled: start.ingestEnabled,
   });
   ctx.createdRtuIds.push(rtu.id);
+
+  if (start.withConnectionConfig === true) {
+    // Deleted by the `rtus` cascade in the wrapper's cleanup
+    // (`rtu_connection_configs.rtu_id` is `ON DELETE CASCADE`).
+    await ctx.fixturePool.query(
+      `INSERT INTO bms.rtu_connection_configs (organization_id, rtu_id, protocol, config)
+       VALUES ($1, $2, 'mqtt', '{}'::jsonb)`,
+      [ctx.organizationId, rtu.id],
+    );
+  }
 
   // `telemetryEnabled` and `phe` are the sibling keys the merge must preserve.
   // Neither is decoration: `apps/sim/src/index.js` filters on
@@ -123,6 +144,10 @@ async function readMeta(ctx: TelemetrySourceCtx, assetId: string): Promise<Asset
  * Without this the simulator keeps writing points the MQTT host is also
  * writing, and the value stored for a `(time, asset, point_key)` is whichever
  * upsert lands second.
+ *
+ * The fixture's `source_type` is `mqtt`, so this is also the control for the
+ * first disjunct of the protocol gate below: a non-`catalog` RTU moves its
+ * assets with no connection config row at all.
  */
 export async function assertEnablingIngestMovesAssetsToMqtt(
   ctx: TelemetrySourceCtx,
@@ -212,4 +237,57 @@ export async function assertOnlyTheUpdatedRtusAssetsMove(
 
   expect((await readMeta(ctx, target.assetId)).telemetrySource).toBe("mqtt");
   expect((await readMeta(ctx, neighbour.assetId)).telemetrySource).toBe("catalog");
+}
+
+/**
+ * An RTU that has not said what it speaks keeps its assets with the simulator.
+ *
+ * `planEndpoints` resolves the protocol as
+ * `rtu_connection_configs.protocol ?? rtus.source_type` and skips `catalog` as
+ * `unsupported-protocol` (`bindings.spec.ts`), so this RTU binds nothing
+ * however its switch is set. Moving its assets onto `mqtt` would take them off
+ * the simulator and hand them to a host that is not listening — simulated
+ * becomes dead, which is worse than the double-write the move exists to close.
+ *
+ * The RTU *is* ingest-enabled here. The claim is about the protocol
+ * declaration, not about the switch.
+ */
+export async function assertAnUndeclaredRtuKeepsItsAssetsOnCatalog(
+  ctx: TelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { rtuId, assetId } = await createRtuWithAsset(ctx, jwt, {
+    ingestEnabled: false,
+    telemetrySource: "catalog",
+    sourceType: "catalog",
+  });
+
+  await ctx.svc.update(jwt, rtuId, { ingestEnabled: true });
+
+  expect((await readMeta(ctx, assetId)).telemetrySource).toBe("catalog");
+}
+
+/**
+ * A connection config is the other way to declare a protocol.
+ *
+ * The positive control for the gate above, and the disjunct that matters in
+ * production: `rtu_connection_configs.protocol` is what `planEndpoints` prefers,
+ * so an RTU whose `source_type` still reads `catalog` binds perfectly well once
+ * a config row exists. Without this case the gate could be "never move a
+ * `catalog` RTU", which would strand every configured one on the simulator.
+ */
+export async function assertAConnectionConfigLetsTheAssetsMove(
+  ctx: TelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { rtuId, assetId } = await createRtuWithAsset(ctx, jwt, {
+    ingestEnabled: false,
+    telemetrySource: "catalog",
+    sourceType: "catalog",
+    withConnectionConfig: true,
+  });
+
+  await ctx.svc.update(jwt, rtuId, { ingestEnabled: true });
+
+  expect((await readMeta(ctx, assetId)).telemetrySource).toBe("mqtt");
 }

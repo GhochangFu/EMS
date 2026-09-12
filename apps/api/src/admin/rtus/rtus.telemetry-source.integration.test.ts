@@ -10,6 +10,8 @@ import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { RtusAdminService } from "./rtus.service";
 import {
+  assertAConnectionConfigLetsTheAssetsMove,
+  assertAnUndeclaredRtuKeepsItsAssetsOnCatalog,
   assertDisablingIngestMovesAssetsOffMqtt,
   assertEnablingIngestMovesAssetsToMqtt,
   assertOnlyTheUpdatedRtusAssetsMove,
@@ -138,5 +140,13 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
 
   it("leaves another RTU's assets alone", async () => {
     await assertOnlyTheUpdatedRtusAssetsMove(ctx, jwt);
+  }, 30_000);
+
+  it("leaves the assets of an RTU that declares no protocol on catalog", async () => {
+    await assertAnUndeclaredRtuKeepsItsAssetsOnCatalog(ctx, jwt);
+  }, 30_000);
+
+  it("moves them when a connection config declares the protocol instead", async () => {
+    await assertAConnectionConfigLetsTheAssetsMove(ctx, jwt);
   }, 30_000);
 });

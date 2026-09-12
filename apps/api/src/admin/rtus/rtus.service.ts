@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, locations, organizations, rtus } from "@bms/db";
+import { assets, locations, organizations, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AdminRtuDto, AdminRtuSummaryDto, JwtPayload } from "@bms/shared";
 
@@ -253,14 +253,46 @@ export class RtusAdminService {
       // asset an operator had switched off. (The seed replaces `assets.meta`
       // wholesale; it can, because it writes every key it finds there.)
       //
-      // **Unconditional, not gated on a change of `ingest_enabled`**, exactly as
+      // **The write is unconditional, not gated on a change of
+      // `ingest_enabled`** (its *value* is conditional — see below), exactly as
       // the `.set()` above restates every column on every PATCH. It makes the
       // invariant a postcondition of `update` rather than a delta rule, so a row
       // already split — by a switch thrown before this fix — is repaired by the
       // next edit of its RTU. The rewrite is a no-op for both readers when the
       // value does not change, including the seeded `simulator` value, which
       // means the same thing as `catalog` to a filter testing `<> 'mqtt'`.
-      const telemetrySource = nextIngestEnabled ? "mqtt" : "catalog";
+      // **The move onto `mqtt` is conditional; the move back is not.** Handing
+      // an asset to the ingest host is only safe if a host will take it.
+      // `planEndpoints` resolves an RTU's protocol as
+      // `rtu_connection_configs.protocol ?? rtus.source_type` and skips
+      // `catalog` as `unsupported-protocol` — so an operator who switches
+      // `ingest_enabled` on while the RTU still says `catalog` and has no
+      // connection config would, with an unconditional move, take those assets
+      // off the simulator and get nothing in return. Simulated became **dead**,
+      // which is a worse failure than the double-write this fix exists to close.
+      // In doubt, alive beats dead: the assets stay on `catalog` and the
+      // simulator keeps them going until the RTU says what it speaks.
+      //
+      // **The predicate is deliberately coarser than the host's own check** —
+      // "the operator has said what this RTU speaks", not "the host can bind it
+      // today". Restating `isIngestProtocol` or the adapter registry here would
+      // put the ingest host's protocol vocabulary in the API, where it would go
+      // stale the day an adapter lands: a Modbus RTU would keep its assets on
+      // the simulator because this file had not heard of Modbus. A declared
+      // protocol is a stable fact this service legitimately owns; whether an
+      // adapter exists for it is the host's business, and its `no-adapter` skip
+      // is the honest place for that answer.
+      const handsOverToIngest =
+        nextIngestEnabled &&
+        ((body.sourceType ?? existing.sourceType) !== "catalog" ||
+          (
+            await tx
+              .select({ present: sql<number>`1` })
+              .from(rtuConnectionConfigs)
+              .where(eq(rtuConnectionConfigs.rtuId, id))
+              .limit(1)
+          ).length > 0);
+      const telemetrySource = handsOverToIngest ? "mqtt" : "catalog";
       await tx
         .update(assets)
         .set({
