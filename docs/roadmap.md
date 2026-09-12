@@ -2035,7 +2035,8 @@ Process (`AGENTS.md` §10).
   so seven demo incomers stay silent (`F4.95`).
 - **Still open:** `F4.95` (demo simulator coverage), `F4.96` (an open
   baseline draft blocks the next `compose up`). `F2.22` (the `v2` authoring
-  affordances) closed 2026-09-11 — the section below.
+  affordances) closed 2026-09-11 and `F2.23` (the catalog code class) closed
+  2026-09-12 — the two sections below.
 
 ### `bms-calc-v2` authoring affordances (`F2.22`, ADR 0055) — done
 
@@ -2057,9 +2058,46 @@ Process (`AGENTS.md` §10).
   imported it — so the owner ruled it into this row. No template KPI
   evaluates at all, `v1` included (`F2.33`, ADR-gated). And `F2.23`'s
   charset trap became reachable from the UI: a dotted point key is re-read
-  as a qualified reference on a Grammar flip.
+  as a qualified reference on a Grammar flip — **closed 2026-09-12 by `F2.23`**,
+  which stops the catalog holding such a key at all.
 - **Not promoted.** Nothing new entered scope; ADR 0055 already governed
   the grammar, and no `AGENTS.md` §6 line moves.
+
+### One character class for the catalog codes (`F2.23`, ADR 0065) — done
+
+- **Status:** merged 2026-09-12 as `3e3b4c86`, PR #437; plan
+  `docs/plans/f2.23-catalog-code-charset.md`.
+- **What it was.** ADR 0055's Q1 ruling made `bms-calc-v2` split a qualified
+  reference `{CODE.key}` at the **first** `.`, and deferred the charset that
+  makes the split unambiguous to a follow-up row. This is that row.
+  `bms.point_keys.code` and `bms.assets.code` accepted any character: no
+  `CHECK`, no Zod rule at any of the five write sites, no normalisation in any
+  producer.
+- **What shipped.** One class — letters of either case, digits, `_` and `-`,
+  anchored at both ends — written down twice and proved identical:
+  `CATALOG_CODE_PATTERN` in `@bms/shared` and migration `0070`'s two `CHECK`
+  constraints, with a test pinning the SQL string byte-identical to the
+  constant. `.regex()` at the five Zod sites. `catalogCodeSlug`, because the
+  rule-based onboarding chat derived an asset code from the location name and
+  `St. Mary's Works` produced `ST.-MARY'S-WORKS-ASSET-1`. A DB probe on
+  SQLSTATE 23514. The tokenizer, the parser and the resolver are untouched —
+  ADR 0055 decisions 3 and 4 freeze `v1` meaning, and a reference to a key the
+  catalog can no longer hold is already `missing_input`.
+- **What the row found, and it was in the row's own text.** It claimed three
+  `F2.9` findings pointed here; finding 27 is the stock-catalog `v1`/`v2`
+  parity scan and no charset closes it, so it was two. It also claimed no
+  seeded or stock code contains a dot — true of the seeds, false of two RLS
+  suites whose fixture codes spell the suite id (`e7.1b-…`, `f3.39-…`). The new
+  `CHECK` refused them and four tests went red, caught only by the full suite
+  under `DATABASE_URL`. **A unit-only run cannot gate a `CHECK`.**
+- **Not promoted.** Nothing entered scope; `AGENTS.md` §6 moves no line. Left
+  deliberately outside: `asset_groups.code`, `asset_domains.code`,
+  `locations.code`, `rtus.code`, `asset_templates.code`, case-insensitive
+  resolution, and any charset rule in the grammar.
+- **Still open:** `F4.135` (the LLM chat branch drops a whole draft patch on an
+  illegal code and still says it updated the draft — inert while
+  `OPENAI_API_KEY` is absent) and `F4.136` (an operator refused on a derived
+  asset code they never typed).
 
 ### Template authoring UI + formula editor (`F2.5`, ADR 0038) — done
 

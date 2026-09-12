@@ -293,6 +293,14 @@
 > and bound to loopback, a Redis service in CI (**ADR 0063** + Amendments 1–2,
 > `F4.24`, 2026-09-11) — which promotes the queue and **no consumer of it**:
 > `F3.11`, `F3.12` and the ADR 0041 dispatch follow-up stay behind their rows.
+> And **one character class for the two catalog code columns** — `bms.point_keys.code`
+> and `bms.assets.code` match `^[A-Za-z0-9_-]+` anchored at both ends, written
+> once as `CATALOG_CODE_PATTERN` in `@bms/shared`, applied at the five Zod write
+> sites and enforced by `assets_code_charset_check` /
+> `point_keys_code_charset_check` (migration `0070`), so a `bms-calc-v2`
+> qualified reference `{CODE.key}` cannot be split at a dot the catalog itself
+> put there (**ADR 0065**, `F2.23`, 2026-09-12). It promotes nothing out of §6
+> and does not touch the grammar.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
