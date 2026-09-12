@@ -129,7 +129,7 @@ describe.skipIf(!connectionString)("F4.60 — a duplicate rtu_code is 409", () =
     await assertCreateRefusesATakenRtuCode(ctx, jwt);
   }, 30_000);
 
-  it("refuses an update whose rtuCode is already held, and rolls the row back", async () => {
+  it("refuses an update whose rtuCode is already held, and writes no part of it", async () => {
     await assertUpdateRefusesATakenRtuCode(ctx, jwt);
   }, 30_000);
 
