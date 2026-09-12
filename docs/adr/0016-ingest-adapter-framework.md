@@ -1454,3 +1454,76 @@ reader needs beside it.
    **honest** — `resolveMqttConnection` reports `credentialSource: "env"` when
    it hands back the environment's credentials, and the host logs it — rather
    than retired. `E8.4` stays open on that action.
+
+---
+
+## Amendment 7 — `rtus.rtu_code` is unique fleet-wide where it is set (`F4.60`, 2026-09-12)
+
+**Status:** Accepted, ruled 2026-09-12 by the owner. The uniqueness itself was
+ruled to need no new ADR at `F4.60`'s step-2 gate; this amendment was then
+raised by the migration review and ruled to land after the merge, because the
+part that is genuinely new is **not** the uniqueness.
+
+**What §3 already said, and what it did not.** §3 (line 428) says `deviceKey`
+resolves to `rtus.rtu_code` — "No new column, no new concept — the existing
+routing key, named." A routing key that does not route is a defect against that
+sentence, which is why migration `0071` needed no new decision. But §3 never
+says **unique**, and it never decides what happens when two *organizations*
+claim one device identity. That second question is a tenancy decision, and it
+is the one recorded here.
+
+**What two RTUs sharing a `rtu_code` actually did.** Not merely duplicate
+`stale rtu=<code>` reporting, which is how `F1.7`'s review filed it.
+`bindings.ts:644` reads `group.index.get(deviceKey)` and **merges** the point
+targets of both RTUs under that one key, so a payload from either device writes
+**both** RTUs' assets on every shared `source_data_key` — telemetry attributed
+to a station that never sent it.
+
+**Decision — the key is `(rtu_code)`, not `(organization_id, rtu_code)`.**
+Migration `0071` creates `rtus_rtu_code_idx`, unique on the bare column, partial
+on `WHERE rtu_code IS NOT NULL AND rtu_code <> ''`.
+
+Two measurements decide it, and they are recorded because the shape is the
+opposite of the direction ADR 0043 moved two other identity keys:
+
+1. **`BINDING_QUERY` (`bindings.ts:112-144`) carries no `organization_id`
+   filter.** The ingest host reads the whole fleet and groups it by
+   `(protocol, endpointKey)`. A key scoped per organization would therefore
+   leave the merge above reachable across two tenants that share one broker —
+   it would not close the defect this migration exists to close.
+2. **The two sibling identity keys on this same table are already global**
+   partial uniques on a bare column: `rtus_mqtt_topic_idx` and
+   `rtus_external_rtu_idx`, migration `0016` lines 65 and 67.
+
+**Why this is not ADR 0043 decisions 6 and 7.** Those moved identity keys to
+`(organization_id, code)` for names an *operator* chooses inside their own
+estate, where two tenants may legitimately both use `GW-01`. A `rtu_code` is
+not that: it is the identifier a device puts **on the wire**, matched against
+the payload's `dev_id`, and for the PHE fleet it is the station's IMEI. Two
+tenants cannot both own one wire identity on a shared broker without the
+merge above. The distinction is *operator-chosen name* versus *wire identity*,
+and only the first is tenant-scoped.
+
+**The accepted cost, stated rather than hidden.** A collision across an
+organization boundary refuses a write against a row the caller cannot see.
+Postgres withholds the offending value — `BuildIndexValueDescription` returns
+NULL on a policied relation — so as `bms_tenant` (the role `withTenant`
+connects as) and as `bms_owner`, the `23505` arrives with `code`, `constraint`,
+`table` and `schema` and **no `DETAIL` at all**; only a `BYPASSRLS` role sees
+the key. The refusal is therefore a bare existence signal, and both refusal
+messages are constants that never imply a second organization exists. This is
+the same exposure `rtus_mqtt_topic_idx`, `rtus_external_rtu_idx` and
+`locations_slug_unique` already ship, and it is accepted on the same terms.
+
+**The predicate excludes `''`, and that is load-bearing.** `bindings.ts:414`
+skips an RTU whose `rtu_code` is `NULL` **or** `''` as `missing-rtu-code`, so
+to the host `''` means *no code*. `rtus.schema.ts` has no `.min(1)` and the
+PATCH body is optional-but-not-nullable, which makes `''` the only way an
+operator can clear the column. A predicate of `WHERE rtu_code IS NOT NULL`
+alone — which is how `F4.60` was filed — would make two *cleared* RTUs collide.
+That `''` remains writable at all is the open tension recorded as `F4.143`.
+
+**Consequence for the adapters still to come.** `F1.2`–`F1.6` bring RTUs whose
+`mqtt_topic` is NULL, which the partial index on that column does not constrain
+at all. This amendment is what stops two Modbus gateways sharing one
+`deviceKey`, which is the case `F1.7`'s review raised and could not reach.
