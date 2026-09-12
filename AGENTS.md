@@ -291,8 +291,14 @@
 > entrypoint of `apps/api`** and starts no loop the API starts, one
 > `heartbeat` queue reported on both `GET /health` surfaces, Redis AOF-persisted
 > and bound to loopback, a Redis service in CI (**ADR 0063** + Amendments 1–2,
-> `F4.24`, 2026-09-11) — which promotes the queue and **no consumer of it**:
-> `F3.11`, `F3.12` and the ADR 0041 dispatch follow-up stay behind their rows.
+> `F4.24`, 2026-09-11) — which promoted the queue and no consumer of it. **Its
+> first consumer is now promoted too**: scheduled rule evaluation as a second
+> queue, `rules-sweep`, one repeatable job on the worker evaluating every
+> enabled published rule, with `NOTIFY bms_alarms` carrying the `created`
+> broadcast so a raise from either process reaches every process's sockets
+> (**ADR 0064** + Amendment 1, `F3.11`, 2026-09-11). `F3.12` still does not
+> start before Redis is authenticated (ADR 0063 Amendment 2), and the ADR 0041
+> dispatch follow-up is still not a row — §6 carries both.
 > And **one character class for the two catalog code columns** — `bms.point_keys.code`
 > and `bms.assets.code` match `^[A-Za-z0-9_-]+` anchored at both ends, written
 > once as `CATALOG_CODE_PATTERN` in `@bms/shared`, applied at the five Zod write
