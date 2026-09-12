@@ -42,7 +42,7 @@ import {
  *
  * **Assertions inline, no `.spec` sibling** — the top-level `tests/`
  * carve-out (§4.6). Every row this suite writes is rolled back, never
- * committed, and every one carries an `f4.60-` prefix so a leak names its
+ * committed, and every one carries the `PREFIX` below so a leak names its
  * author.
  */
 
@@ -61,8 +61,25 @@ type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
 
 type SqlError = Error & { code?: string; constraint?: string };
 
-/** The row prefix every probe uses, so a leaked row names this suite. */
-const PREFIX = "f4.60-";
+/**
+ * The row prefix every probe uses, so a leaked row names this suite.
+ *
+ * **`f4.60idx-`, not `f4.60-`, and the distinction is a defect this file had.**
+ * `apps/api/src/admin/rtus/rtus.rtu-code-conflict.integration.spec.ts` tags its
+ * fixtures `f4.60-<pid>-<ms>-<n>` and writes them through the service, so those
+ * rows are COMMITTED until its own `afterAll` removes them. It runs in the
+ * `apps/api` project while this file runs in `repo`, the two interleave under
+ * `maxWorkers: 2`, and the leak count below reads as `bms_fleet`, which sees
+ * them. A `LIKE 'f4.60-%'` therefore counted a live sibling suite's rows and
+ * reddened this assertion for a leak that never happened — a false RED, blaming
+ * a `withRollback` defect that does not exist.
+ *
+ * That spec reasoned about the same hazard and closed only its own half: it made
+ * its counts safe against this file, and did not notice that its tag matches
+ * this file's prefix. Two suites each narrowing their own side is not enough
+ * when one side's pattern is a prefix of the other's.
+ */
+const PREFIX = "f4.60idx-";
 
 async function refusal(
   query: () => Promise<unknown>,

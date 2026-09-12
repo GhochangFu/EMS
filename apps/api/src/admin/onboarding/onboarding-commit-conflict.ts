@@ -35,9 +35,15 @@
  * so the server omits the key description before it ever reaches the wire.
  * Probed live, same INSERT and same server, two roles:
  *
- * - as `bms_owner` — the role the API connects as, which `FORCE ROW LEVEL
- *   SECURITY` binds — `err.detail` is `undefined`. `code`, `constraint`, `table`
- *   and `schema` all arrive; only the value is gone.
+ * - as `bms_owner`, which `FORCE ROW LEVEL SECURITY` binds — `err.detail` is
+ *   `undefined`. `code`, `constraint`, `table` and `schema` all arrive; only the
+ *   value is gone. (This bullet used to say `bms_owner` is "the role the API
+ *   connects as". It is not: `commit` runs inside `withTenant(this.tenantDb, …)`
+ *   and therefore connects as **`bms_tenant`**, which is `rolbypassrls = f` and
+ *   is bound by the same policy. `F4.60` measured `bms_tenant` directly and it
+ *   withholds `detail` exactly as `bms_owner` does, so the conclusion this
+ *   paragraph draws is unchanged — but the role named in it was wrong, and the
+ *   whole §4.3 argument below rests on which role the server withholds from.)
  * - as `bms_fleet`, which holds `BYPASSRLS`, the same insert yields
  *   `Key (organization_id, code)=(1ddf7041-…, RSMOC-EC) already exists.`
  *

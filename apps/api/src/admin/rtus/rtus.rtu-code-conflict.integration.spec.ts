@@ -100,6 +100,15 @@ async function readRtuCode(
 }
 
 /** How many rows fleet-wide hold this exact `rtu_code`. */
+/** The target's `display_name`, so a partial commit is observable. */
+async function readDisplayName(ctx: RtuCodeConflictCtx, id: string): Promise<string | null> {
+  const res = await ctx.fixturePool.query<{ display_name: string | null }>(
+    "SELECT display_name FROM bms.rtus WHERE id = $1",
+    [id],
+  );
+  return res.rows[0]?.display_name ?? null;
+}
+
 async function countRowsHolding(
   ctx: RtuCodeConflictCtx,
   rtuCode: string,
@@ -124,9 +133,15 @@ async function rejectionOf(run: Promise<unknown>): Promise<unknown> {
 /**
  * `create` refuses a taken `rtuCode` with the ruled 409.
  *
- * The second expectation is the one that says the refusal was a *refusal*: a
- * translation that answered 409 while the row went in anyway would satisfy the
- * first on its own. The count is fleet-wide because the index is.
+ * **The row count is a control, not a gate**, and the sentence it replaces
+ * claimed otherwise. It read: "a translation that answered 409 while the row
+ * went in anyway would satisfy the first on its own." That state is
+ * unreachable. To arrive at a `ConflictException` the driver must have raised
+ * `23505`, which means the INSERT did not happen; remove the `.catch` and the
+ * first expectation fails before this one is evaluated; drop the index and
+ * `rejectionOf` throws instead. No mutation of this change discriminates on it.
+ * It is kept because it is cheap and it documents the fleet-wide shape of the
+ * key — the count is unqualified by organization because the index is.
  */
 export async function assertCreateRefusesATakenRtuCode(
   ctx: RtuCodeConflictCtx,
@@ -154,9 +169,14 @@ export async function assertCreateRefusesATakenRtuCode(
 /**
  * `update` refuses a taken `rtuCode` with the same 409, and changes nothing.
  *
- * The second expectation is the rollback: the `.set()` restates every column, so
- * a failed `update` that had not rolled back would leave the target renamed
- * without its `rtu_code`.
+ * **The PATCH carries a `displayName` it does not need, and that is what makes
+ * the rollback claim gate anything.** With a body of `{ rtuCode }` alone, every
+ * other column in `update`'s `.set()` is restated from `existing`, so the only
+ * column that changes is the one whose write failed — and Postgres cannot commit
+ * a failed statement. The assertion would then hold under every mutation,
+ * including one that never rolled back at all. Sending a second, *valid* field
+ * makes a non-rollback observable: if the transaction did not unwind, the row
+ * keeps the new `displayName` while the refusal says nothing was written.
  */
 export async function assertUpdateRefusesATakenRtuCode(
   ctx: RtuCodeConflictCtx,
@@ -167,11 +187,22 @@ export async function assertUpdateRefusesATakenRtuCode(
   const mine = tag();
   const target = await createRtu(ctx, jwt, mine);
 
-  const error = await rejectionOf(ctx.svc.update(jwt, target.id, { rtuCode: taken }));
+  const renamed = `F4.60 renamed ${tag()}`;
+  const error = await rejectionOf(
+    ctx.svc.update(jwt, target.id, { rtuCode: taken, displayName: renamed }),
+  );
 
   expect(error).toBeInstanceOf(ConflictException);
   expect((error as ConflictException).message).toBe(RTU_CODE_TAKEN_MESSAGE);
   expect(await readRtuCode(ctx, target.id)).toBe(mine);
+  // Positive, not `.not.toBe(renamed)`: an absence check passes for any reason
+  // the row failed to change, including one that never wrote anything. Asserting
+  // the ORIGINAL value is what says the row is intact.
+  expect(
+    await readDisplayName(ctx, target.id),
+    "the whole PATCH must roll back, not just the column that collided — the row " +
+      "must still carry the display name createRtu gave it",
+  ).toBe(`F4.60 ${target.code}`);
 }
 
 /**

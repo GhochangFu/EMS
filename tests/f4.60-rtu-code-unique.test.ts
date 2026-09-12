@@ -103,7 +103,7 @@ describe("F4.60 rtus.rtu_code partial unique index (ADR 0016 §3)", () => {
       /ON bms\.rtus\s*\(\s*rtu_code\s*\)/.test(sql),
       "0071 must key on (rtu_code) alone. BINDING_QUERY (bindings.ts:112-144) has " +
         "no organization_id filter — the ingest host reads the whole fleet — so a " +
-        "per-organization key leaves the deviceKey merge at bindings.ts:643 reachable " +
+        "per-organization key leaves the deviceKey merge at bindings.ts:644 reachable " +
         "across two tenants at one broker.",
     ).toBe(true);
     expect(
@@ -160,7 +160,11 @@ describe("F4.60 rtus.rtu_code partial unique index (ADR 0016 §3)", () => {
     expect(
       sql.includes("SET LOCAL lock_timeout = '5s';"),
       "0071 must bound its lock as 0069 and 0070 do. Building this index holds SHARE " +
-        "on bms.rtus, which blocks every ingest and admin write to the table.",
+        "on bms.rtus, which blocks the admin API's writes and the seed. NOT the " +
+        "ingest host: 0071's own header says it blocks 'every ingest and admin write', " +
+        "and that half is wrong — apps/ingest only SELECTs this table (BINDING_QUERY), " +
+        "taking ACCESS SHARE, which does not conflict with SHARE. The header is a " +
+        "committed migration and cannot be corrected; this is where the correction lives.",
     ).toBe(true);
     expect(sql.includes("RESET lock_timeout;"), "0071 must reset lock_timeout.").toBe(true);
   });

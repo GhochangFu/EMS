@@ -215,10 +215,12 @@ const RTUDUP_CODES: DraftCodes = {
  * that type and none of them wants a device key.
  */
 function draftWithDeviceKey(domain: string, codes: DraftCodes, deviceKey: string): OnboardingDraft {
-  const draft = commitReadyDraft(domain, codes) as OnboardingDraft & {
-    rtus: Array<Record<string, unknown>>;
-  };
-  draft.rtus[0].rtuCode = deviceKey;
+  const draft = commitReadyDraft(domain, codes);
+  const [rtu] = draft.rtus ?? [];
+  if (!rtu) {
+    throw new Error("F4.60: commitReadyDraft produced no RTU to hang a device key on");
+  }
+  rtu.rtuCode = deviceKey;
   return draft;
 }
 
