@@ -93,12 +93,12 @@
  * Measured from `pg_constraint` and `pg_indexes`, a commit's six *draft-derived*
  * inserts sit under eleven unique constraints. Six is the count of inserts that
  * write a value the draft supplied; the transaction runs two more — the
- * `audit.write(…, tx)` calls at `onboarding-commit.service.ts:423` and `:441` —
+ * `audit.write(…, tx)` calls at `onboarding-commit.service.ts:430` and `:448` —
  * and neither can collide, because every column they key on is a
  * `defaultRandom()` primary key. **Ten of the eleven are mapped. The eleventh,
  * `rtu_connection_configs_rtu_id_key` `(rtu_id)`, is unreachable from this
  * path** and is deliberately absent rather than mapped for symmetry:
- * `onboarding-commit.service.ts:320` is the only write to that table in the
+ * `onboarding-commit.service.ts:346` is the only write to that table in the
  * transaction, it inserts exactly one row per loop iteration, and the `rtuId`
  * it uses is the `id` the `rtus` insert on the line above just returned from
  * `defaultRandom()`. Two iterations cannot share one, and no pre-existing row

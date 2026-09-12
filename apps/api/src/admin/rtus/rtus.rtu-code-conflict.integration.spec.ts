@@ -99,8 +99,7 @@ async function readRtuCode(
   return row.rtu_code;
 }
 
-/** How many rows fleet-wide hold this exact `rtu_code`. */
-/** The target's `display_name`, so a partial commit is observable. */
+/** The target's `display_name`, so a second write in the same PATCH is observable. */
 async function readDisplayName(ctx: RtuCodeConflictCtx, id: string): Promise<string | null> {
   const res = await ctx.fixturePool.query<{ display_name: string | null }>(
     "SELECT display_name FROM bms.rtus WHERE id = $1",
@@ -109,6 +108,7 @@ async function readDisplayName(ctx: RtuCodeConflictCtx, id: string): Promise<str
   return res.rows[0]?.display_name ?? null;
 }
 
+/** How many rows fleet-wide hold this exact `rtu_code`. */
 async function countRowsHolding(
   ctx: RtuCodeConflictCtx,
   rtuCode: string,
@@ -169,14 +169,20 @@ export async function assertCreateRefusesATakenRtuCode(
 /**
  * `update` refuses a taken `rtuCode` with the same 409, and changes nothing.
  *
- * **The PATCH carries a `displayName` it does not need, and that is what makes
- * the rollback claim gate anything.** With a body of `{ rtuCode }` alone, every
- * other column in `update`'s `.set()` is restated from `existing`, so the only
- * column that changes is the one whose write failed — and Postgres cannot commit
- * a failed statement. The assertion would then hold under every mutation,
- * including one that never rolled back at all. Sending a second, *valid* field
- * makes a non-rollback observable: if the transaction did not unwind, the row
- * keeps the new `displayName` while the refusal says nothing was written.
+ * **The PATCH carries a `displayName` it does not need, and the reason is
+ * narrower than the sentence this replaces claimed.** That sentence said the
+ * second field makes a *non-rollback* observable. It does not, and cannot:
+ * `rtus.service.ts` writes `display_name` and `rtu_code` in ONE `.set()`, so the
+ * index refuses a single statement and Postgres discards all of it. Statement
+ * atomicity — not the transaction — is what keeps the row intact here, with the
+ * `.catch` or without it, inside a transaction or outside one.
+ *
+ * What the second field actually fences is a **future** change that splits that
+ * one `.set()` into two writes, at which point the first would commit and the
+ * refusal would be a lie about what was written. The mutation that proves it
+ * has power is exactly that split: moving the `displayName` write out of the
+ * transaction reddens this assertion and nothing else. Keep the field; it costs
+ * one column and guards a real edit someone will one day make.
  */
 export async function assertUpdateRefusesATakenRtuCode(
   ctx: RtuCodeConflictCtx,
