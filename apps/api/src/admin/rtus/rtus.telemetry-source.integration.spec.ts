@@ -3,6 +3,7 @@ import { expect } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
 
+import type { CreateRtuBody } from "./rtus.schema";
 import type { RtusAdminService } from "./rtus.service";
 
 /**
@@ -26,6 +27,22 @@ import type { RtusAdminService } from "./rtus.service";
  */
 export type TelemetrySourceCtx = {
   readonly svc: RtusAdminService;
+  /**
+   * The same service with a `BYPASSRLS` connection as its tenant channel.
+   *
+   * The organization term in the asset update is **defence in depth**, and a
+   * second layer is unobservable while the first one holds: under `bms_tenant`
+   * the `tenant_isolation` policy on `assets` (migration `0047`, `FORCE`) hides
+   * a foreign-organization row from the `UPDATE` whatever its `WHERE` says, so
+   * dropping the term changes nothing that a test can see. That is precisely
+   * why the coordinator's own mutation left all seven cases green.
+   *
+   * Running the identical code path on `bms_fleet` removes the first layer and
+   * leaves the predicate as the only thing standing. It is not the production
+   * wiring, and it is not pretending to be: it is the only way to make the
+   * second layer fail when it is broken.
+   */
+  readonly svcOnABypassingTenantChannel: RtusAdminService;
   /** `bms_fleet` (BYPASSRLS) — fixture rows and read-back only. */
   readonly fixturePool: pg.Pool;
   readonly organizationId: string;
@@ -67,7 +84,12 @@ async function createRtuWithAsset(
   start: {
     ingestEnabled: boolean;
     telemetrySource: string;
-    sourceType?: "mqtt" | "catalog";
+    /**
+     * The whole vocabulary, not a two-value convenience type. It was
+     * `"mqtt" | "catalog"` for one commit, and the case that would have caught
+     * the `simulator` defect could not even be written down.
+     */
+    sourceType?: CreateRtuBody["sourceType"];
     withConnectionConfig?: boolean;
   },
 ): Promise<{ rtuId: string; assetId: string }> {
@@ -251,20 +273,75 @@ export async function assertOnlyTheUpdatedRtusAssetsMove(
  *
  * The RTU *is* ingest-enabled here. The claim is about the protocol
  * declaration, not about the switch.
+ *
+ * **The fixture starts at `mqtt`, so the assertion needs a write.** Starting it
+ * at `catalog` — as the first draft did — let the case pass against a service
+ * that did nothing at all, which is the one thing a guard's test must not do.
  */
 export async function assertAnUndeclaredRtuKeepsItsAssetsOnCatalog(
   ctx: TelemetrySourceCtx,
   jwt: JwtPayload,
 ): Promise<void> {
   const { rtuId, assetId } = await createRtuWithAsset(ctx, jwt, {
-    ingestEnabled: false,
-    telemetrySource: "catalog",
+    ingestEnabled: true,
+    telemetrySource: "mqtt",
     sourceType: "catalog",
   });
 
   await ctx.svc.update(jwt, rtuId, { ingestEnabled: true });
 
   expect((await readMeta(ctx, assetId)).telemetrySource).toBe("catalog");
+}
+
+/**
+ * A `simulator` RTU is not an ingest source either.
+ *
+ * `rtus.source_type` has three values and `INGEST_PROTOCOLS`
+ * (`packages/shared/src/ingest.ts`) holds neither `simulator` nor `catalog` —
+ * they are onboarding sources with no adapter, as that file says in as many
+ * words. A predicate written as `!== 'catalog'` passes this RTU, and the seeded
+ * fleet's simulator RTUs own the majority of its RTU-attached assets, so the
+ * blast radius of getting it wrong is most of the plant going dark.
+ *
+ * Same shape as the case above: the asset starts on `mqtt` and the switch is
+ * already on, so only a write can satisfy the assertion.
+ */
+export async function assertASimulatorRtuKeepsItsAssetsOnCatalog(
+  ctx: TelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { rtuId, assetId } = await createRtuWithAsset(ctx, jwt, {
+    ingestEnabled: true,
+    telemetrySource: "mqtt",
+    sourceType: "simulator",
+  });
+
+  await ctx.svc.update(jwt, rtuId, { ingestEnabled: true });
+
+  expect((await readMeta(ctx, assetId)).telemetrySource).toBe("catalog");
+}
+
+/**
+ * A PATCH that says nothing about ingest still repairs a split row.
+ *
+ * The service comment claims the write is a postcondition of `update` rather
+ * than a delta rule, and that an already-split row — one left behind by a
+ * switch thrown before this fix — is repaired by the next edit of its RTU.
+ * Nothing asserted that: every other case sends `ingestEnabled` explicitly.
+ * This one renames the RTU and nothing else.
+ */
+export async function assertARenameRepairsASplitRow(
+  ctx: TelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { rtuId, assetId } = await createRtuWithAsset(ctx, jwt, {
+    ingestEnabled: true,
+    telemetrySource: "catalog",
+  });
+
+  await ctx.svc.update(jwt, rtuId, { displayName: "F4.59 renamed, ingest untouched" });
+
+  expect((await readMeta(ctx, assetId)).telemetrySource).toBe("mqtt");
 }
 
 /**
@@ -276,6 +353,143 @@ export async function assertAnUndeclaredRtuKeepsItsAssetsOnCatalog(
  * a config row exists. Without this case the gate could be "never move a
  * `catalog` RTU", which would strand every configured one on the simulator.
  */
+/**
+ * An RTU in one organization with an asset from another hung off it.
+ *
+ * **The row has to be inserted directly.** `AssetsAdminService` will not create
+ * it: `assertRtuLocation` refuses an RTU outside the asset's location, so the
+ * shape cannot be reached through the API at all. Nothing in the schema forbids
+ * it today either — `assets.rtu_id` and `assets.organization_id` are
+ * independent foreign keys, and the composite key that would make the state
+ * impossible is a schema change with its own row. So the fixture writes what a
+ * migration, an import or a future bug could write, which is the only way to
+ * find out what this service does when it meets one.
+ */
+async function attachAForeignOrgAsset(
+  ctx: TelemetrySourceCtx,
+  rtuId: string,
+): Promise<string> {
+  const foreign = await ctx.fixturePool.query<{
+    organization_id: string;
+    location_id: string;
+  }>(
+    `SELECT l.organization_id, l.id AS location_id
+       FROM bms.locations l
+      WHERE l.organization_id <> $1 AND l.active = true
+      ORDER BY l.organization_id, l.created_at, l.code
+      LIMIT 1`,
+    [ctx.organizationId],
+  );
+  const row = foreign.rows[0];
+  if (row === undefined) {
+    throw new Error(
+      "F4.59: the database has only one organization with an active location — " +
+        "the cross-organization case cannot be built. Run pnpm db:seed.",
+    );
+  }
+
+  const tag = `f4-59-foreign-${Date.now()}-${fixtureSeq++}`;
+  const inserted = await ctx.fixturePool.query<{ id: string }>(
+    `INSERT INTO bms.assets
+       (organization_id, code, name, site_name, location_id, rtu_id, domain, meta)
+     VALUES ($1, $2, $3, 'F4.59 foreign site', $4, $5, 'electrical',
+             '{"telemetrySource":"catalog"}'::jsonb)
+     RETURNING id`,
+    [row.organization_id, tag, `F4.59 foreign asset ${tag}`, row.location_id, rtuId],
+  );
+  const assetId = inserted.rows[0]?.id;
+  if (assetId === undefined) {
+    throw new Error("F4.59: foreign-organization fixture asset insert returned no id");
+  }
+  ctx.createdAssetIds.push(assetId);
+  return assetId;
+}
+
+/**
+ * The organization term in the asset update, gated where it can be seen.
+ *
+ * The first expectation is the positive control: the caller's own asset still
+ * moves, so a service that wrote nothing could not satisfy the claim. The
+ * second is the claim — the foreign row stays where it is because the `WHERE`
+ * says so, not because row-level security is holding.
+ *
+ * Read `svcOnABypassingTenantChannel`'s docblock before changing this: under
+ * the production tenant role the policy makes the predicate invisible, and this
+ * case would pass with the term deleted.
+ */
+export async function assertAForeignOrgAssetIsNotMovedByThePredicate(
+  ctx: TelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const own = await createRtuWithAsset(ctx, jwt, {
+    ingestEnabled: false,
+    telemetrySource: "catalog",
+  });
+  const foreignAssetId = await attachAForeignOrgAsset(ctx, own.rtuId);
+
+  await ctx.svcOnABypassingTenantChannel.update(jwt, own.rtuId, { ingestEnabled: true });
+
+  expect((await readMeta(ctx, own.assetId)).telemetrySource).toBe("mqtt");
+  expect((await readMeta(ctx, foreignAssetId)).telemetrySource).toBe("catalog");
+}
+
+/**
+ * The audit row counts the assets the statement actually moved.
+ *
+ * The same mutation from the other side, and the one an operator would see:
+ * with the organization term dropped this reads 2, and the record of the
+ * request would claim it moved an asset in an organization the caller cannot
+ * even name. The count only — never the ids (ADR 0021, AGENTS.md §9.6).
+ */
+export async function assertTheAuditCountsOnlyTheAssetsItMoved(
+  ctx: TelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const own = await createRtuWithAsset(ctx, jwt, {
+    ingestEnabled: false,
+    telemetrySource: "catalog",
+  });
+  await attachAForeignOrgAsset(ctx, own.rtuId);
+
+  await ctx.svcOnABypassingTenantChannel.update(jwt, own.rtuId, { ingestEnabled: true });
+
+  const audit = await ctx.fixturePool.query<{ assets_moved: number | null }>(
+    `SELECT (payload->>'assetsMoved')::int AS assets_moved
+       FROM bms.audit_log
+      WHERE action = 'master.rtu.update' AND entity_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1`,
+    [own.rtuId],
+  );
+  expect(audit.rows[0]?.assets_moved).toBe(1);
+}
+
+/**
+ * The endpoint answers rather than throwing when it meets such a row.
+ *
+ * Production wiring this time, so row-level security is the control and the
+ * foreign row is invisible to the statement. **This case passes with or without
+ * the organization term** — it is not a gate on the predicate, and it is not
+ * offered as one. What it fixes is the behaviour the service comment describes:
+ * the request succeeds and the foreign asset is silently left behind. A future
+ * change that decided to refuse instead would have to come past this
+ * assertion.
+ */
+export async function assertACrossOrgAssetDoesNotBreakTheUpdate(
+  ctx: TelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const own = await createRtuWithAsset(ctx, jwt, {
+    ingestEnabled: false,
+    telemetrySource: "catalog",
+  });
+  await attachAForeignOrgAsset(ctx, own.rtuId);
+
+  const updated = await ctx.svc.update(jwt, own.rtuId, { ingestEnabled: true });
+
+  expect(updated.ingestEnabled).toBe(true);
+}
+
 export async function assertAConnectionConfigLetsTheAssetsMove(
   ctx: TelemetrySourceCtx,
   jwt: JwtPayload,

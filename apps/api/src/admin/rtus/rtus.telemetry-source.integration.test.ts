@@ -11,7 +11,12 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { RtusAdminService } from "./rtus.service";
 import {
   assertAConnectionConfigLetsTheAssetsMove,
+  assertACrossOrgAssetDoesNotBreakTheUpdate,
+  assertAForeignOrgAssetIsNotMovedByThePredicate,
   assertAnUndeclaredRtuKeepsItsAssetsOnCatalog,
+  assertARenameRepairsASplitRow,
+  assertASimulatorRtuKeepsItsAssetsOnCatalog,
+  assertTheAuditCountsOnlyTheAssetsItMoved,
   assertDisablingIngestMovesAssetsOffMqtt,
   assertEnablingIngestMovesAssetsToMqtt,
   assertOnlyTheUpdatedRtusAssetsMove,
@@ -95,12 +100,21 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
 
     const tenantDb = createDb(tenantPool);
     const fleetDb = createDb(fixturePool);
+    const accessControl = new AccessControlService(createDb(authPool), fleetDb);
     ctx = {
       svc: new RtusAdminService(
         fleetDb,
         tenantDb,
-        new AccessControlService(createDb(authPool), fleetDb),
+        accessControl,
         new MasterDataAuditService(tenantDb, fleetDb),
+      ),
+      // `bms_fleet` in the tenant slot — see `TelemetrySourceCtx`. The graph is
+      // otherwise identical, so the case exercises the same code path.
+      svcOnABypassingTenantChannel: new RtusAdminService(
+        fleetDb,
+        fleetDb,
+        accessControl,
+        new MasterDataAuditService(fleetDb, fleetDb),
       ),
       fixturePool,
       organizationId: org.rows[0].id,
@@ -119,6 +133,12 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
       await fixturePool.query("DELETE FROM bms.assets WHERE id = ANY($1)", [createdAssetIds]);
     }
     if (createdRtuIds.length > 0) {
+      // The audit rows these cases wrote go too. They are this suite's own
+      // exhaust, not history anyone wants, and `bms.audit_log` is on the shared
+      // 5433 database with every other suite's.
+      await fixturePool.query("DELETE FROM bms.audit_log WHERE entity_id = ANY($1)", [
+        createdRtuIds,
+      ]);
       await fixturePool.query("DELETE FROM bms.rtus WHERE id = ANY($1)", [createdRtuIds]);
     }
     await Promise.all([fixturePool?.end(), authPool?.end(), tenantPool?.end()]);
@@ -146,7 +166,27 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
     await assertAnUndeclaredRtuKeepsItsAssetsOnCatalog(ctx, jwt);
   }, 30_000);
 
+  it("leaves the assets of a simulator RTU on catalog", async () => {
+    await assertASimulatorRtuKeepsItsAssetsOnCatalog(ctx, jwt);
+  }, 30_000);
+
+  it("repairs a split row on a PATCH that does not mention ingest", async () => {
+    await assertARenameRepairsASplitRow(ctx, jwt);
+  }, 30_000);
+
   it("moves them when a connection config declares the protocol instead", async () => {
     await assertAConnectionConfigLetsTheAssetsMove(ctx, jwt);
+  }, 30_000);
+
+  it("leaves a foreign organization's asset behind on the predicate alone", async () => {
+    await assertAForeignOrgAssetIsNotMovedByThePredicate(ctx, jwt);
+  }, 30_000);
+
+  it("audits the number of assets it actually moved", async () => {
+    await assertTheAuditCountsOnlyTheAssetsItMoved(ctx, jwt);
+  }, 30_000);
+
+  it("still answers 200 with a foreign organization's asset attached", async () => {
+    await assertACrossOrgAssetDoesNotBreakTheUpdate(ctx, jwt);
   }, 30_000);
 });
