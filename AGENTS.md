@@ -7,7 +7,12 @@
 > onboarding wizard, and the PHE MQTT real-ingestion pilot (ADR 0007–0012);
 > the Vitest gate (ADR 0014), asset templates and instantiation
 > (ADR 0015), the ingest adapter framework **and its host, now the sole ingest
-> entry point** (ADR 0016, §6 complete through commit 4), the
+> entry point** (ADR 0016, §6 complete through commit 4; **Amendment 7**
+> makes `bms.rtus.rtu_code` — §3's `deviceKey`, the wire routing key — unique
+> **fleet-wide** where it is set, migration `0071`, `F4.60`; deliberately not
+> ADR 0043 decision 6/7's `(organization_id, code)` shape, because
+> `BINDING_QUERY` reads every organization's RTUs and a per-tenant key would
+> leave two tenants on one broker merging each other's telemetry), the
 > operations write matrix (ADR 0017), the asset source-axis separation
 > (ADR 0018), the template content model (ADR 0019), the audit read API
 > (ADR 0021), onboarding credential capture off the chat transcript

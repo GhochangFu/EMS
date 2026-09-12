@@ -5121,3 +5121,42 @@ real — 16 minutes of mutual blocking, 59 backends queued, a silently wrong
 `energySummary` of 200.76 against a raw 208.58. Only the cause is misassigned.
 If it recurs, look at the teardown contending with the **production** refresh
 jobs, which options (b) and (c) address and (a) does not.
+
+### `F4.60` — `rtus.rtu_code` is unique fleet-wide where it is set ✅ 2026-09-12
+
+**A routing key that could not route.** ADR 0016 §3 names
+`bms.rtus.rtu_code` the ingest host's `deviceKey` — "the existing routing key,
+named" — and the column carried no unique constraint. The `F1.7` review filed
+the consequence as duplicate `stale rtu=<code>` lines and a loose
+topic-attribution `Set`. Measured in the source, it is worse:
+`bindings.ts:644` **merges** the point targets of both RTUs under the one key,
+so a payload from either device writes **both** RTUs' assets on every shared
+`source_data_key`. Telemetry attributed to a station that never sent it.
+
+Migration `0071` adds `rtus_rtu_code_idx`, and both write paths now answer the
+resulting `23505` instead of letting it become a `500`: `409` on the admin RTU
+routes, and the existing per-field `400` on the onboarding commit.
+
+**The key is global, and ADR 0016 Amendment 7 records why**, because it is the
+opposite of the direction ADR 0043 decisions 6 and 7 moved two other identity
+keys. `BINDING_QUERY` carries no `organization_id` filter — the ingest host
+reads the whole fleet — so a per-tenant key would leave two tenants on one
+broker merging each other's telemetry. A `rtu_code` is not an operator-chosen
+name like `GW-01`; it is the identifier a device puts on the wire, and for the
+PHE fleet it is the station's IMEI.
+
+**The row's own specification was wrong twice, and both corrections were
+measurements rather than arguments.** Its predicate, `WHERE rtu_code IS NOT
+NULL`, would make two *cleared* RTUs collide — `bindings.ts:414` reads `''` as
+*no code*, and `''` is the only way a PATCH can clear the column. And the
+`'' → NULL` backfill had to run **outside** the `SET ROLE bms_owner` bracket:
+under `FORCE ROW LEVEL SECURITY` that role sees 0 of 56 rows and the statement
+reports `UPDATE 0`, normalising nothing, silently.
+
+**The first index migration in this repo with a live-enforcement gate.** Its
+two precedents assert the `.sql` text and stop, which cannot tell a written
+migration from an applied one, nor a `UNIQUE` index from a plain one. A
+negative control alone would not have gated it either — "a duplicate is
+refused" is true under every predicate this item considered, including the two
+that are wrong — so two positive controls carry it, and mutating the live index
+to the row's own predicate reddens the `''` one alone.
