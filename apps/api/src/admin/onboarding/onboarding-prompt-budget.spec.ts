@@ -96,7 +96,7 @@ function demoEstateDraft(): unknown {
     ingestEnabled: true,
   }));
   const pointKeys = Array.from({ length: 40 }, (_, k) => ({
-    code: `electrical.feeder.metric.${k}`,
+    code: `electrical_feeder_metric_${k}`,
     name: `Feeder metric ${k}`,
     domain: "electrical",
     unit: units[k % units.length],
@@ -241,7 +241,7 @@ export function assertOverBudgetThenShedsOverLongStrings(): void {
   const draft = {
     location: { name: "Berhampur", code: "BERHAMPUR" },
     pointKeys: Array.from({ length: 200 }, (_, k) => ({
-      code: `electrical.feeder.metric.${k}`,
+      code: `electrical_feeder_metric_${k}`,
       name: `Feeder metric ${k}`,
       description: "D".repeat(ONBOARDING_DRAFT_STRING_MAX["pointKeys.description"]),
     })),
@@ -261,7 +261,7 @@ export function assertOverBudgetThenShedsOverLongStrings(): void {
     keys.filter((key) => key.description === PROMPT_OMITTED_MARKER).length === 200,
     "every description longer than the widest name column must be shed",
   );
-  assert(keys[0]?.code === "electrical.feeder.metric.0", "a point key's code is vocabulary and stays");
+  assert(keys[0]?.code === "electrical_feeder_metric_0", "a point key's code is vocabulary and stays");
   assert(keys[0]?.name === "Feeder metric 0", "and so is its name");
   assert(
     bytes(out) <= PROMPT_DRAFT_BUDGET_BYTES,
@@ -450,7 +450,7 @@ export function assertTheMarkerEchoesNothing(): void {
 
   const withString = (blob: string): unknown => ({
     location: { name: "Berhampur", code: "BERHAMPUR" },
-    pointKeys: [{ code: "electrical.feeder.metric.0", name: "Feeder metric 0", description: blob }],
+    pointKeys: [{ code: "electrical_feeder_metric_0", name: "Feeder metric 0", description: blob }],
   });
   const stringA = serialiseDraftForPrompt(withString("A".repeat(300_000)));
   const stringB = serialiseDraftForPrompt(withString("B".repeat(600_000)));
@@ -618,7 +618,7 @@ function replyWithDescription(description: string): string {
     assistantMessage: "I've updated the point keys.",
     draftPatch: {
       pointKeys: [
-        { code: "electrical.feeder.metric.0", name: "Feeder metric 0", description },
+        { code: "electrical_feeder_metric_0", name: "Feeder metric 0", description },
       ],
     },
     currentPhase: "point_keys",

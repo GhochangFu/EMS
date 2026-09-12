@@ -222,6 +222,8 @@ export const assets = bmsSchema.table("assets", {
   organizationId: uuid("organization_id")
     .notNull()
     .references(() => organizations.id),
+  // ADR 0065 decision 2 — `assets_code_charset_check` (migration 0070)
+  // constrains this column to `^[A-Za-z0-9_-]+$`; no `check()` here (plan D4).
   code: varchar("code", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
   siteName: varchar("site_name", { length: 255 }).notNull(),
@@ -390,6 +392,8 @@ export const userOrganizationAccess = bmsSchema.table("user_organization_access"
  */
 export const pointKeys = bmsSchema.table("point_keys", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // ADR 0065 decision 2 — `point_keys_code_charset_check` (migration 0070)
+  // constrains this column to `^[A-Za-z0-9_-]+$`; no `check()` here (plan D4).
   code: varchar("code", { length: 128 }).notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   domain: varchar("domain", { length: 64 }),

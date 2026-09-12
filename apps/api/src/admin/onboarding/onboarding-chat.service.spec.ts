@@ -4,6 +4,7 @@ import type { OnboardingDraft, OnboardingPhase } from "@bms/shared";
 import { MAX_ECHOED_CELL_CHARS, MAX_ECHOED_ITEMS } from "../spreadsheet-guard";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import type { ChatTurnResult } from "./onboarding-chat.service";
+import { catalogCodeSlug } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { onboardingDraftSchema } from "./onboarding.schema";
@@ -437,7 +438,7 @@ function ruleBasedChatService(): OnboardingChatService {
  *    protocol *and* a question word is answered by `protocolService` before the
  *    dispatch below is reached.
  */
-async function ruleBasedTurn(
+export async function ruleBasedTurn(
   message: string,
   draft: OnboardingDraft,
   phase: OnboardingPhase,
@@ -485,7 +486,7 @@ function locationNamed(name: string): NonNullable<OnboardingDraft["location"]> {
  * the first branch that matches, so the location, RTU and point-key branches
  * above it all have to be satisfied first.
  */
-function draftBeforeAssets(locationName: string): OnboardingDraft {
+export function draftBeforeAssets(locationName: string): OnboardingDraft {
   return {
     location: locationNamed(locationName),
     rtus: [
@@ -510,9 +511,9 @@ function draftBeforeAssets(locationName: string): OnboardingDraft {
  */
 const LEGAL_LOCATION_NAME = "Berhampur Water Treatment Plant ".repeat(3).trim();
 
-/** What the `assets` branch builds its code from, before any cut. */
+/** What the `assets` branch builds its code from, before any cut (F2.23: slug, then upper). */
 function assetCodeFor(site: string): string {
-  return `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`;
+  return `${catalogCodeSlug(site).toUpperCase()}-ASSET-1`;
 }
 
 /**
@@ -840,13 +841,17 @@ export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
     )}`,
   );
 
-  // --- the other three cut sites, each driven through its own branch ---------
+  // --- the other cut sites, each driven through its own branch ---------------
   // The location branch alone is not coverage. Every fixture in the two
-  // functions above is ASCII, so putting `.slice()` back at `assets[].code`,
-  // `assets[].siteName` or `config.topic` would leave all of them green — the
-  // "asserted in one direction only" shape this file has already been corrected
-  // for once. Each branch below carries the same astral payload and the same
-  // `JSON.stringify` oracle.
+  // functions above is ASCII, so putting `.slice()` back at `assets[].siteName`
+  // or `config.topic` would leave all of them green — the "asserted in one
+  // direction only" shape this file has already been corrected for once. Each
+  // branch below carries the same astral payload and the same `JSON.stringify`
+  // oracle. `assets[].code` is no longer one of the sites: since F2.23 (ADR
+  // 0065 decision 4) `catalogCodeSlug` reduces the name to ASCII before the
+  // cut, so the code cannot carry a surrogate at all, and the length case in
+  // `assertRuleBasedTurnBoundsDerivedDraftStrings` is its gate. What this
+  // branch asserts on the code is the exact value the slug yields.
   const assetsTurn = await ruleBasedTurn("One asset", draftBeforeAssets(astral), "assets");
   const astralAsset = requiredItem(
     assetsTurn.draftPatch.assets?.[0],
@@ -854,8 +859,12 @@ export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
   );
   assert(
     !/\\u[dD][89abAB][0-9a-fA-F]{2}/.test(JSON.stringify(assetsTurn.draftPatch)),
-    `assets[].code and assets[].siteName must be cut on whole characters too, got code ` +
-      `${JSON.stringify(astralAsset.code)}`,
+    `assets[].siteName must be cut on whole characters too, got siteName ` +
+      `${JSON.stringify(astralAsset.siteName).slice(0, 80)}`,
+  );
+  assert(
+    astralAsset.code === "BERHAMPUR-ASSET-1",
+    `the emoji run collapses to one "-" and is trimmed, got ${JSON.stringify(astralAsset.code)}`,
   );
   const assetsParsed = onboardingDraftSchema.safeParse(assetsTurn.draftPatch);
   assert(
@@ -864,37 +873,6 @@ export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
       assetsParsed.error?.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
     )}`,
   );
-
-  // `assets[].code` needs a fixture of its own, and the reason is parity. A cut
-  // straddles a pair only when an odd number of the astral run's code units fall
-  // inside it, so for one ASCII prefix length `255 - prefix` and `64 - prefix`
-  // can never both be odd — 255 and 64 differ in parity. The turn above holds
-  // `siteName` at 255; this one moves the prefix by one character so the 64
-  // lands mid-pair. Without it, putting `.slice(0, 64)` back at the code site
-  // leaves every case above green.
-  const oddPrefixName = `Berhampurx ${"\u{1F600}".repeat(200)}`;
-  assert(
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(
-      `${oddPrefixName.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`.slice(
-        0,
-        ONBOARDING_DRAFT_STRING_MAX["assets.code"],
-      ),
-    ),
-    "this fixture must straddle a pair at the asset code's own bound, or it asserts nothing — " +
-      "repair the fixture, not the assertion",
-  );
-  const oddTurn = await ruleBasedTurn("One asset", draftBeforeAssets(oddPrefixName), "assets");
-  assert(
-    !/\\u[dD][89abAB][0-9a-fA-F]{2}/.test(JSON.stringify(oddTurn.draftPatch)),
-    `assets[].code must be cut on whole characters, got ${JSON.stringify(
-      oddTurn.draftPatch.assets?.[0]?.code,
-    )}`,
-  );
-  assert(
-    onboardingDraftSchema.safeParse(oddTurn.draftPatch).success,
-    "the asset code fixture must still satisfy the draft schema",
-  );
-
   // `config.topic` has no schema oracle at all — `config` is `z.record(z.unknown())`
   // in both copies (owner ruling 3) — so the serialisation check is the whole
   // assertion, and it is the one the database actually applies.

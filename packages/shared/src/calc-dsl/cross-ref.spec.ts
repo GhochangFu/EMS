@@ -73,13 +73,17 @@ export function runCrossRefKeyTests(): void {
   // reason. The old argument here — an aggregate key always contains `(`, a
   // qref key introduces none of its own, so the two meet only through a code
   // containing `(`…`)@`, "which no catalog-shaped code does" — was refuted:
-  // nothing enforces that charset (the tokenizer admits every character but
-  // `{` and `}` inside braces; `bms.assets.code` has no regex at the column or
-  // at the write boundary), and `runCrossRefCollisionTests` below shows the
-  // collision reached through `parseFormula`. The pool therefore now includes
-  // `(`, `)`, `@` and `:` — the exact characters the refuted claim assumed
-  // away — so the property is asserted over inputs that would break it if the
-  // prefix were removed. The Q1 charset row is still owed, for *resolution*.
+  // nothing enforced that charset at the tokenizer, which admits every
+  // character but `{` and `}` inside braces. As of ADR 0065, `bms.assets.code`
+  // and `bms.point_keys.code` DO carry a charset —
+  // `assets_code_charset_check` / `point_keys_code_charset_check`, mirrored at
+  // the five Zod write sites — but it is the class `^[A-Za-z0-9_-]+$`, which
+  // excludes `(`, `)`, `@` and `:` outright. The pool below keeps those
+  // out-of-class characters on purpose (ADR 0065 decision 6; plan D7): the
+  // injectivity proof is the one-character kind prefix (`q:`/`a:`), not the
+  // class, so testing over a pool the class would now refuse is what makes
+  // this a stronger test than one that trusts the class to do the work. This
+  // closes F2.9 finding 8.
   //
   // `.` stays out of the pool: it is the qualified form's own separator.
 
@@ -136,12 +140,17 @@ export function runCrossRefKeyTests(): void {
  * injective by construction** (security review of PR 1, MEDIUM).
  *
  * The docblock used to argue the two forms could only meet through a code
- * containing `(`, `)` or `@`, "which no catalog-shaped code does". Nothing in
- * the repository enforces that charset: the tokenizer accepts every character
- * except `{` and `}` inside braces, `bms.assets.code` is
- * `varchar(64).notNull().unique()` with no regex, and the write boundary is
- * `z.string().min(2).max(64)` with no regex either. A claim that rests on a
- * convention nobody enforces is not an invariant.
+ * containing `(`, `)` or `@`, "which no catalog-shaped code does". At the
+ * time nothing in the repository enforced that charset: the tokenizer
+ * accepts every character except `{` and `}` inside braces, and neither
+ * `bms.assets.code` nor the write boundary carried a regex. ADR 0065 has
+ * since added `assets_code_charset_check` / `point_keys_code_charset_check`
+ * and the matching `.regex(CATALOG_CODE_PATTERN)` at the five Zod sites, but
+ * that class (`^[A-Za-z0-9_-]+$`) is narrower than the pool this test uses —
+ * it excludes `(`, `)` and `@` — so the collision below is still reachable
+ * only in principle by a code the charset would refuse. The invariant this
+ * test pins does not rest on the charset either way: it is the kind prefix,
+ * asserted directly below.
  *
  * What it costs when it breaks: `dedupeCrossRefs` keeps the first node per key
  * and drops the rest, silently. The dropped node then never reaches

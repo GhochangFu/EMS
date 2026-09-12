@@ -31,7 +31,7 @@ export async function assertAssetWriteLifecycleSurvivesRealRls(
 ): Promise<string> {
   const { svc, ownerPool, organizationId, locationId, domain } = ctx;
   const created = await svc.create(jwt, {
-    code: `e7.1b-rls-${Date.now()}`,
+    code: `e7-1b-rls-${Date.now()}`,
     name: "E7.1b RLS write-path check",
     siteName: "E7.1b RLS site",
     locationId,
@@ -80,7 +80,7 @@ export async function assertRefusesCrossOrgRelocation(
 ): Promise<void> {
   const { svc, ownerPool, locationId, domain, foreignLocationId } = ctx;
   const created = await svc.create(adminJwt, {
-    code: `e7.1b-move-${Date.now()}`,
+    code: `e7-1b-move-${Date.now()}`,
     name: "E7.1b relocation guard",
     siteName: "E7.1b move site",
     locationId,

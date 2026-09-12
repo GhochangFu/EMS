@@ -51,11 +51,17 @@ function assert(condition: boolean, message: string): void {
  * **Ref-pool scope (design decision 10; ADR 0055 Q1).** The pool below
  * includes `-`, `/` and a space — all legal `v1` point-key characters
  * (`tokenizer.spec.ts` proves `{a.b-c/d e}` tokenizes intact as one `v1`
- * ref). It excludes `.`, because `v2`'s qualified-reference form splits a
- * `{…}` body at the FIRST `.`, so a `v1` point key containing `.` would
- * change meaning under `v2` — no seeded or stock catalog code has one
- * (design decision 10), and this test proves the superset property only for
- * point keys WITHOUT a dot. It also excludes `{` and `}`, which the
+ * ref). The superset property is stated over the catalog class
+ * (`^[A-Za-z0-9_-]+$`, ADR 0065), which the pool **samples** rather than
+ * covers: it draws lower-case letters, digits and `-`, and no `A-Z` or `_`.
+ * `/` and a space are outside that class,
+ * and stay in the pool as a deliberate over-approximation, the same reasoning
+ * as `cross-ref.spec.ts`'s `codePool` (ADR 0065 decision 6; plan D7). The pool
+ * excludes `.`, because `v2`'s qualified-reference form splits a `{…}` body
+ * at the FIRST `.`, so a `v1` point key containing `.` would change meaning
+ * under `v2` — `.` is now outside the catalog class as well (it was merely
+ * unseeded before ADR 0065), and this test proves the superset property only
+ * for point keys WITHOUT a dot. It also excludes `{` and `}`, which the
  * tokenizer's brace scanner treats as a reference terminator under both
  * dialects (irrelevant to the property, and they only inflate the refusal
  * count against the anti-vacuity floor). A pool of `[a-z0-9_]` alone would

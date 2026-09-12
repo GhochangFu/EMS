@@ -1,9 +1,12 @@
-import { assetDomainCodeSchema } from "@bms/shared";
+import { assetDomainCodeSchema, CATALOG_CODE_MESSAGE, CATALOG_CODE_PATTERN } from "@bms/shared";
 import { z } from "zod";
 
 export const createAssetBodySchema = z
   .object({
-    code: z.string().min(2).max(64),
+    // F2.23 / ADR 0065 decision 1: the catalog class, beside the length bound.
+    // Zod runs every check and reports every issue, so `.max()` does not gate
+    // the regex; the class is one anchored character class and linear anyway.
+    code: z.string().min(2).max(64).regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE),
     name: z.string().min(2).max(255),
     siteName: z.string().min(2).max(255),
     locationId: z.string().uuid(),

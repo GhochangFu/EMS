@@ -1,5 +1,8 @@
 import {
   assetDomainCodeSchema,
+  // F2.23 / ADR 0065 decision 1: the one catalog character class and its sentence.
+  CATALOG_CODE_MESSAGE,
+  CATALOG_CODE_PATTERN,
   // F4.103: the four draft count caps, imported rather than restated. The
   // numbers and their derivation live once, beside the shared contract's copy
   // of this schema (§4.8 — "a vocabulary is declared once and everything else
@@ -94,7 +97,14 @@ export const draftRtuSchema = z
 
 export const draftPointKeySchema = z
   .object({
-    code: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["pointKeys.code"]),
+    // F2.23 / ADR 0065 decision 1: the catalog class, beside the length bound.
+    // Zod runs every check and reports every issue, so `.max()` does not gate
+    // the regex; the class is one anchored character class and linear anyway.
+    code: z
+      .string()
+      .min(1)
+      .max(ONBOARDING_DRAFT_STRING_MAX["pointKeys.code"])
+      .regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE),
     name: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["pointKeys.name"]),
     domain: z.string().max(ONBOARDING_DRAFT_STRING_MAX["pointKeys.domain"]).optional(),
     unit: z.string().max(ONBOARDING_DRAFT_STRING_MAX["pointKeys.unit"]).optional(),
@@ -110,7 +120,14 @@ export const draftPointKeySchema = z
 export const draftAssetSchema = z
   .object({
     rtuIndex: z.number().int().min(0),
-    code: z.string().min(2).max(ONBOARDING_DRAFT_STRING_MAX["assets.code"]),
+    // F2.23 / ADR 0065 decision 1: the catalog class, beside the length bound.
+    // Zod runs every check and reports every issue, so `.max()` does not gate
+    // the regex; the class is one anchored character class and linear anyway.
+    code: z
+      .string()
+      .min(2)
+      .max(ONBOARDING_DRAFT_STRING_MAX["assets.code"])
+      .regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE),
     name: z.string().min(2).max(ONBOARDING_DRAFT_STRING_MAX["assets.name"]),
     siteName: z.string().min(2).max(ONBOARDING_DRAFT_STRING_MAX["assets.siteName"]),
     // ADR 0031 Amendment 1: shape only — the live vocabulary is

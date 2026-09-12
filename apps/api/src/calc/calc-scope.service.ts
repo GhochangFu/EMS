@@ -289,9 +289,17 @@ function scopeRequest(locationId: string, ref: CalcAggregate): ScopeRequest {
   };
 }
 
-/** A JSON tuple, not a joined string: point keys and group codes are
- * unconstrained text (the Q1 charset row is still owed), so no separator is
- * safe, and only a real encoding keeps the request key injective. */
+/** A JSON tuple, not a joined string. **Both members are unconstrained text
+ * here**, and the reason is sharper than the charset row: ADR 0065 constrains
+ * what the CATALOG stores, while `pointKey` at this site is `ref.pointKey`
+ * from a parsed `CalcAggregate` — formula text the tokenizer admits with every
+ * character but `{` and `}` (ADR 0065 §"Context" 5 keeps the grammar still),
+ * and `validateFormula` skips `crossRefs` on purpose. Measured 2026-09-11:
+ * `parseFormula("sum({a\"b,c] d} @domain('x'))", { dialect: "bms-calc-v2" })`
+ * returns `ok` with `crossRefs[0].pointKey === 'a"b,c] d'`. `scopeCode` is a
+ * group or domain code (`asset_groups.code`, `asset_domains.code`), both
+ * explicitly outside that ADR. So no separator is safe, and only a real
+ * encoding keeps the request key injective. */
 function scopeRequestKey(request: ScopeRequest): string {
   return JSON.stringify([request.locationId, request.pointKey, request.scopeKind, request.scopeCode]);
 }

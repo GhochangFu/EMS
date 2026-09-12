@@ -19,6 +19,27 @@
 /** Separator between asset UUID and point key in `pointRef` URLs. */
 export const TELEMETRY_POINT_REF_SEP = "::";
 
+/**
+ * ADR 0065 decision 1 — the one character class for `bms.point_keys.code` and
+ * `bms.assets.code`, declared here so it is stated once. No flags: the
+ * database side (`0070_catalog_code_charset.sql`, `code ~ '…'`) is
+ * case-sensitive and an `i` here would widen Zod against it;
+ * `tests/f2.23-catalog-code-charset.test.ts` holds `.source` and the SQL class
+ * byte-identical. The five Zod sites that admit a code apply it after their
+ * `.max()`: `createAssetBodySchema` (and `updateAssetBodySchema` through
+ * `.partial()`), `instantiateAssetBodySchema.code`, `createPointKeyBodySchema`,
+ * `draftAssetSchema.code` and `draftPointKeySchema.code`. The two shared
+ * response contracts (`contracts/onboarding.ts`) carry no regex on purpose: a
+ * draft stored before the rule must stay readable so `validate` can name the
+ * field. Length bounds are untouched; the class refuses `.`, whitespace,
+ * `{ } ( ) @ '` and every non-ASCII character — everything either calc dialect
+ * gives a meaning to inside `{CODE.key}`.
+ */
+export const CATALOG_CODE_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+/** The one refusal sentence every site above shows, in the `asset-roles.schema.ts` style. */
+export const CATALOG_CODE_MESSAGE = "letters, digits, '_' and '-' only — like TX_01 or kwh_total";
+
 /** Electrical domain point keys written by `apps/sim` (keep in sync with simulator). */
 export const ELECTRICAL_POINT_KEYS = [
   "voltage_l1_v",
