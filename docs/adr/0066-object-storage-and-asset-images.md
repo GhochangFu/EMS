@@ -2,10 +2,11 @@
 
 ## Status
 
-Proposed — drafted 2026-09-15 under `F3.3`. Five gate questions (§"Gate
-questions") are put to the owner one at a time, in order, before any
-implementation code (AGENTS.md §10, `backlog-cycle` step 2). Until the owner
-rules, nothing in this record is in scope.
+Accepted — drafted and ruled 2026-09-15 under `F3.3`. The five gate
+questions (§"Gate questions") were put to the owner one at a time, in order,
+and each was ruled **as drafted**, before any implementation code (AGENTS.md
+§10, `backlog-cycle` step 2). One clarification was asked at Q1 and is
+recorded there.
 
 ## Context
 
@@ -250,10 +251,15 @@ code obligations.
   decision (BACKLOG §5, *Encryption-at-rest boundary*) is the same boundary;
   this ADR's Q4 is one instance of it and does not settle the general case.
 
-## Gate questions
+## Gate questions, and the rulings (2026-09-15)
 
-Put to the owner one at a time, in this order. Each is asked with the
-recommendation first, per `backlog-cycle` step 2.
+All five were ruled **as drafted**, one at a time, in the order below. The
+alternatives are kept so a later reader can see what was declined and why.
+At Q1 the owner asked whether having no AWS credential affects the choice.
+It does not: `@aws-sdk/client-s3` is a library that speaks the S3 protocol,
+it authenticates against the compose MinIO with the MinIO root user and
+password, and it never contacts AWS unless `OBJECT_STORAGE_ENDPOINT` names an
+AWS endpoint. The ruling followed that answer.
 
 | # | Decision | As drafted (recommended) | The alternative, and what it costs |
 |---|---|---|---|
