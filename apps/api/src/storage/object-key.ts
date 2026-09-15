@@ -37,9 +37,17 @@ function requireUuid(part: keyof ObjectKeyParts, value: string): string {
   return value;
 }
 
+/**
+ * The first segment of every key, exported so that a leak assertion can look
+ * for a partial key ("the warn must not carry the prefix") without writing
+ * the literal a second time. Unit 8's invariant allows the literal in this
+ * file and in `object-key.spec.ts` alone.
+ */
+export const OBJECT_KEY_PREFIX = "org/";
+
 export function buildObjectKey(parts: ObjectKeyParts): string {
   const organizationId = requireUuid("organizationId", parts.organizationId);
   const assetId = requireUuid("assetId", parts.assetId);
   const imageId = requireUuid("imageId", parts.imageId);
-  return `org/${organizationId}/assets/${assetId}/${imageId}`;
+  return `${OBJECT_KEY_PREFIX}${organizationId}/assets/${assetId}/${imageId}`;
 }

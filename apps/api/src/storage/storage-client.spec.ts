@@ -1,6 +1,7 @@
 import type { Logger } from "@nestjs/common";
 import { Readable } from "node:stream";
 
+import { buildObjectKey } from "./object-key";
 import type { StorageConfig } from "./storage-config";
 import {
   createStorageClient,
@@ -166,7 +167,17 @@ async function callsDuring(state: FakeState, run: () => Promise<unknown>): Promi
   return state.calls.slice(before);
 }
 
-const KEY = "org/11111111-1111-4111-8111-111111111111/assets/22222222-2222-4222-8222-222222222222/33333333-3333-4333-8333-333333333333";
+/**
+ * Built through the one key authority rather than written out (ADR 0066
+ * decision 4): the `org/` literal lives in `object-key.ts` and in its own
+ * spec alone, which `tests/f3.3-object-storage-invariants.test.ts` holds.
+ * The client treats the key as an opaque string, so any valid key serves.
+ */
+const KEY = buildObjectKey({
+  organizationId: "11111111-1111-4111-8111-111111111111",
+  assetId: "22222222-2222-4222-8222-222222222222",
+  imageId: "33333333-3333-4333-8333-333333333333",
+});
 
 export function assertUnconfiguredClientWarnsOnceAndBuildsNoOps(): void {
   const { client, warns, createOpsCalls } = makeFixture(UNCONFIGURED);

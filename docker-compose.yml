@@ -77,6 +77,60 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    # `F3.3` / ADR 0066 decisions 8 and 9. The S3-compatible object store the
+    # API writes asset images to. `core` carries it because the API's storage
+    # section on `/health` and both image routes are part of the default
+    # stack; `realtime-smoke` carries it because `api-replica` depends on it
+    # `service_healthy` under that profile (ADR 0066 Amendment 1, Q-C) — the
+    # same reason `redis` and `keycloak` carry it.
+    profiles: ["core", "pilot", "phe", "realtime-smoke"]
+    # Pinned, and on **quay.io** — Docker Hub no longer hosts `minio/minio`
+    # (`GET https://hub.docker.com/v2/repositories/minio/minio/` returns 404,
+    # measured twice on 2026-09-15; ADR 0066 Amendment 1, registry note).
+    # `quay.io` is MinIO's own registry and the image is the same build. The
+    # tag is dated rather than `latest` for ADR 0023 decision 4's reason: a
+    # `docker compose pull` must not swap the object store under a running
+    # pilot. `.github/workflows/ci.yml` runs this exact string, and
+    # `tests/f3.3-object-storage-invariants.test.ts` compares the two.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # The image's entrypoint is `minio` with no default server command, so
+    # this line is not optional. `--console-address` pins the browser console
+    # off the S3 port; without it MinIO picks a random one and the published
+    # 9001 below would point at nothing.
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # DEV CREDENTIALS, exactly like the database passwords above: they are
+      # interpolated from the compose `.env` and default to a value committed
+      # in this file. `api` and `api-replica` read the same two defaults, so
+      # overriding one without the other breaks the pair. MinIO refuses a
+      # root password under 8 characters.
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-bms_minio_dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-bms_minio_dev_secret}
+    ports:
+      # Loopback only, and this is the decision-8 boundary. The bucket holds
+      # tenant image bytes in plaintext, the API talks to it over plain http
+      # on the compose network, and neither the objects nor the connection
+      # are encrypted here — SSE and TLS are deployer requirements on a
+      # hosted deployment (docs/security/encryption-at-rest.md §7). Nothing
+      # off-host may reach either port. `api`, `api-replica` and the
+      # integration spec reach `minio:9000` on the compose network; these
+      # publications exist for host-side native runs and for the console.
+      - "127.0.0.1:9000:9000" # S3 API
+      - "127.0.0.1:9001:9001" # browser console
+    volumes:
+      - bms-minio-data:/data
+    healthcheck:
+      # The pulled image ships both `curl` and `mc` (measured 2026-09-15,
+      # ADR 0066 Amendment 1). `curl` is used because it needs no `mc alias`
+      # configuration inside the container. `api` and `api-replica` wait for
+      # this to pass before they boot, because `StorageBootstrap` creates the
+      # bucket at `onModuleInit` and a throw there refuses the boot.
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   keycloak:
     # `realtime-smoke` joined this list on 2026-09-09 with `F3.47`: that
     # profile's `api-replica` now verifies tokens against this realm's JWKS
@@ -191,12 +245,35 @@ services:
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
       CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: ${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}
       CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-}
+      # `F3.3` / ADR 0066 decision 3. All six, or none: an endpoint with a
+      # missing bucket or key is a boot error, not a half-configured API
+      # (`readStorageConfig`). Unset entirely — a native run without MinIO —
+      # reads `storage: { configured: false }` on `/health` and answers 503
+      # on both image routes, which is a chosen state rather than a failure.
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: bms-asset-images
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-bms_minio_dev}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-bms_minio_dev_secret}
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
+      # ADR 0066 decision 8, and the only line here that a hosted deployment
+      # must NOT copy. The API refuses an `http://` endpoint unless this is
+      # the exact string `true`; the flag exists so that plaintext is a
+      # deliberate, greppable choice rather than a silent default. A hosted
+      # deployment sets `OBJECT_STORAGE_ENDPOINT` to an `https://` endpoint
+      # with SSE enabled on the bucket and leaves this unset.
+      OBJECT_STORAGE_ALLOW_INSECURE: "true"
     ports:
       - "4000:4000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      # `StorageBootstrap` creates the bucket at `onModuleInit` and a throw
+      # there refuses the boot (ADR 0066 decision 9), so the store has to be
+      # answering before this container starts — `service_started` would race.
+      minio:
         condition: service_healthy
       keycloak:
         condition: service_started
@@ -257,12 +334,27 @@ services:
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
       CREDENTIAL_ENCRYPTION_KEY_PREVIOUS: ${CREDENTIAL_ENCRYPTION_KEY_PREVIOUS:-}
       CREDENTIAL_ENCRYPTION_KEY_VERSION: ${CREDENTIAL_ENCRYPTION_KEY_VERSION:-}
+      # Identical to `api` above (ADR 0066 decisions 3 and 8). The replica is
+      # a second API process against the same database and the same bucket:
+      # `ensureBucket` is idempotent and a `BucketAlreadyOwnedByYou` from a
+      # race with `api` is success, so both may boot together.
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: bms-asset-images
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-bms_minio_dev}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-bms_minio_dev_secret}
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
+      OBJECT_STORAGE_ALLOW_INSECURE: "true"
     ports:
       - "4001:4001"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      # ADR 0066 Amendment 1 Q-C: this dependency is why the minio service
+      # carries the `realtime-smoke` profile at all.
+      minio:
         condition: service_healthy
       # Added with AUTH_MODE above: the replica now verifies against the
       # realm's JWKS, so it needs the same dependency `api` declares.
@@ -527,6 +619,11 @@ services:
 volumes:
   bms-postgres-data:
   redis-data:
+  # `F3.3` / ADR 0066 decision 9: the bucket's bytes outlive `up`/`down`. A
+  # container's own writable layer would not, and an image whose row exists
+  # in `bms.asset_images` with no object behind it is the orphan case
+  # decision 11 deferred a sweep for.
+  bms-minio-data:
   bms-prometheus-data:
   bms-loki-data:
   bms-grafana-data:

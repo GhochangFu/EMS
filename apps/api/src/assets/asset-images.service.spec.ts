@@ -4,6 +4,7 @@ import { vi } from "vitest";
 
 import type { BmsDb } from "@bms/db";
 
+import { buildObjectKey, OBJECT_KEY_PREFIX } from "../storage/object-key";
 import type { S3Ops, StorageClient } from "../storage/storage-client";
 import { dbBlindTo } from "../testing/blinded-db";
 import { AssetImagesService } from "./asset-images.service";
@@ -23,8 +24,9 @@ import { AssetImagesService } from "./asset-images.service";
  * throw. The database halves — the `0072` policy, the cascade, a real 404
  * against a real row — are the integration spec's (Unit 7).
  *
- * The fixture row's key is a **fixed literal whose last segment is not the
- * image id**, so "the warn names the image id" and "the warn never carries
+ * The fixture row's key is **a real key whose last segment is not the image
+ * id** — built by `buildObjectKey` from `OTHER_ID` — so "the warn names the
+ * image id" and "the warn never carries
  * the key" are two independent claims: a real key ends in the image id, and
  * a fixture that copied that shape would let a warn that logged the key
  * pass the id check.
@@ -38,7 +40,18 @@ const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const ASSET_ID = "22222222-2222-4222-8222-222222222222";
 const IMAGE_ID = "33333333-3333-4333-8333-333333333333";
 const OTHER_ID = "44444444-4444-4444-8444-444444444444";
-export const FIXTURE_KEY = `org/${ORG_ID}/assets/${ASSET_ID}/${OTHER_ID}`;
+/**
+ * Built through the one authority rather than from the `org/` literal
+ * (ADR 0066 decision 4; the literal lives in `object-key.ts` and its own
+ * spec alone, held by `tests/f3.3-object-storage-invariants.test.ts`). The
+ * last segment is `OTHER_ID`, not `IMAGE_ID`, for the reason the docblock
+ * above gives — the leak claim and the id claim stay independent.
+ */
+export const FIXTURE_KEY = buildObjectKey({
+  organizationId: ORG_ID,
+  assetId: ASSET_ID,
+  imageId: OTHER_ID,
+});
 const BYTES = Buffer.from("png-bytes");
 
 type FixtureRow = {
@@ -287,7 +300,7 @@ export async function assertListDtoHasNoObjectKey(): Promise<void> {
 
 export async function assertListDtoNeverCarriesTheKeyValue(): Promise<void> {
   const { dtos } = await runList();
-  assert(!JSON.stringify(dtos).includes("org/"), "no DTO field may carry the object key value");
+  assert(!JSON.stringify(dtos).includes(OBJECT_KEY_PREFIX), "no DTO field may carry the object key value");
 }
 
 export async function assertListSerialisesCreatedAtAsIso(): Promise<void> {
@@ -367,7 +380,7 @@ export async function assertContentWithNoObjectWarnNamesTheImageId(): Promise<vo
 
 export async function assertContentWithNoObjectWarnNeverCarriesTheKey(): Promise<void> {
   const { warns } = await runContentRejecting([fixtureRow()], noObject);
-  assert(!warns.join("\n").includes("org/"), `the warn must not carry the object key: ${warns.join(" | ")}`);
+  assert(!warns.join("\n").includes(OBJECT_KEY_PREFIX), `the warn must not carry the object key: ${warns.join(" | ")}`);
 }
 
 export async function assertContentWithNoObjectAskedStorageForTheRowsKey(): Promise<void> {
@@ -400,12 +413,12 @@ export async function assertTransportErrorWarnNamesTheImageIdAndTheErrorName(): 
 /** The fake error's own message carries the key, so a warn that quoted `err.message` reddens here. */
 export async function assertTransportErrorWarnNeverCarriesTheKey(): Promise<void> {
   const { warns } = await runContentRejecting([fixtureRow()], transportDown);
-  assert(!warns.join("\n").includes("org/"), `the warn must not carry the object key: ${warns.join(" | ")}`);
+  assert(!warns.join("\n").includes(OBJECT_KEY_PREFIX), `the warn must not carry the object key: ${warns.join(" | ")}`);
 }
 
 export async function assertTransportErrorResponseNeverCarriesTheKey(): Promise<void> {
   const { err } = await runContentRejecting([fixtureRow()], transportDown);
-  assert(!errorMessage(err).includes("org/"), `the 503 must not carry the object key: ${errorMessage(err)}`);
+  assert(!errorMessage(err).includes(OBJECT_KEY_PREFIX), `the 503 must not carry the object key: ${errorMessage(err)}`);
 }
 
 export async function assertContentReturnsTheDtoAndTheBody(): Promise<void> {
