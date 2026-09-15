@@ -11,6 +11,7 @@ import type { Readable } from "node:stream";
 import { assetImages } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { assetImageContentTypeSchema } from "@bms/shared";
+import { parseStoredContract } from "../common/parse-stored-contract";
 import type { AssetImageDto } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
@@ -179,13 +180,20 @@ function selectRows(tx: BmsTx, where: ReturnType<typeof eq> | ReturnType<typeof 
  * `asset_images_content_type_check` (Q-E) in SQL, and **parsed** through the
  * same schema here rather than cast: the ADR 0030 derivation is
  * load-bearing, so a row outside the vocabulary throws instead of being
- * served as a typed value it is not.
+ * served as a typed value it is not. The parse goes through
+ * `parseStoredContract` (ADR 0060, `F4.108`): a stored row that breaks its
+ * contract is the server's fault, a 500 with the context logged, never the
+ * 400 a bare `.parse()` would hand the global `ZodErrorFilter`.
  */
 function toDto(row: StoredRow): AssetImageDto {
   return {
     id: row.id,
     assetId: row.assetId,
-    contentType: assetImageContentTypeSchema.parse(row.contentType),
+    contentType: parseStoredContract(
+      assetImageContentTypeSchema,
+      row.contentType,
+      "asset_images.to_dto.content_type",
+    ),
     byteSize: row.byteSize,
     sha256: row.sha256,
     originalFilename: row.originalFilename,

@@ -78,6 +78,7 @@ const STOCK_SERVICE = "apps/api/src/admin/asset-templates/asset-templates-stock.
 const TEMPLATES_SERVICE = "apps/api/src/admin/dashboard-templates/dashboard-templates.service.ts";
 const INSTANTIATE_SERVICE =
   "apps/api/src/admin/dashboard-templates/dashboard-templates-instantiate.service.ts";
+const ASSET_IMAGES_SERVICE = "apps/api/src/assets/asset-images.service.ts";
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
 /**
@@ -516,9 +517,9 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       declared.length,
       "the StoredContractContext union no longer parses as a list of string literals, so the " +
         "per-site counts below would be vacuous",
-    ).toBe(8);
+    ).toBe(9);
 
-    const callSites = [STOCK_SERVICE, TEMPLATES_SERVICE, INSTANTIATE_SERVICE]
+    const callSites = [STOCK_SERVICE, TEMPLATES_SERVICE, INSTANTIATE_SERVICE, ASSET_IMAGES_SERVICE]
       .map((rel) => blankCommentsAndStrings(read(rel), false))
       .join("\n");
 

@@ -480,7 +480,10 @@ export async function assertContentIsServedWhenTheLengthIs(
  * `toDto` parses `content_type` through `assetImageContentTypeSchema` rather
  * than casting: the CHECK backs the enum in SQL, but the derivation (ADR
  * 0030) is load-bearing in the code as well — a row outside the vocabulary
- * must throw, never be served as a typed value it is not.
+ * must throw, never be served as a typed value it is not. It throws the
+ * `parseStoredContract` 500 (ADR 0060): the row is the server's, so a
+ * `ZodError` reaching the global filter would answer 400 for a fault the
+ * caller cannot correct (`tests/f4.108-service-parses-are-guarded.test.ts`).
  */
 export async function assertARowOutsideTheContentTypeEnumThrows(): Promise<void> {
   const fleet = fleetDbFake([{ organizationId: ORG_ID }]);
@@ -488,7 +491,18 @@ export async function assertARowOutsideTheContentTypeEnumThrows(): Promise<void>
   const { ops } = opsFake(async () => null);
   const service = new AssetImagesService(tenant.db, fleet, configured(ops));
   const err = await captureRejection(() => service.list(ASSET_ID));
-  assert(errorName(err) === "ZodError", `a row with content_type image/gif threw ${errorName(err)}, not ZodError`);
+  assert(
+    errorName(err) === "InternalServerErrorException",
+    `a row with content_type image/gif threw ${errorName(err)}, not the stored-contract 500`,
+  );
+  assert(
+    errorName(err) !== "ZodError",
+    "a bare ZodError would reach the global filter and answer 400 for the server's own row",
+  );
+  assert(
+    String((err as Error).message).includes("asset_images.to_dto.content_type"),
+    `the 500 must name the stored-contract context, got: ${String((err as Error).message)}`,
+  );
 }
 
 export async function assertContentReturnsTheDtoAndTheBody(): Promise<void> {

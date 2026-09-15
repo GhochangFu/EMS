@@ -43,13 +43,12 @@ import { ZodError } from "zod";
  * time a sixth module needs it — so the two files ADR 0060 adds (this and
  * `zod-error.filter.ts`) open one.
  *
- * ## Writing a spec against this helper: reach `@bms/shared` through `createRequire`
+ * ## Why the catch classifies by shape, not by `instanceof`
  *
- * **Under Vitest this helper degrades silently, and a spec that asserts what it
- * observes would encode the inverse of ruling 2 with the suite green.** All
- * eight sites parse a schema declared in `packages/shared/src/contracts/`,
- * while the `err instanceof ZodError` below resolves `zod` from `apps/api`.
- * Measured both ways rather than reasoned about:
+ * **Under Vitest a `@bms/shared` schema's `ZodError` is not `instanceof` the
+ * `ZodError` this file imports.** All the sites parse a schema declared in
+ * `packages/shared/src/contracts/`, while this file resolves `zod` from
+ * `apps/api`. Measured both ways rather than reasoned about:
  *
  * | resolution | a `@bms/shared` schema's error `instanceof` the `ZodError` this file imports |
  * |---|---|
@@ -63,17 +62,20 @@ import { ZodError } from "zod";
  * `apps/api` compiles to CommonJS and runs as `node dist/main.js`, where both
  * sides resolve `zod/index.cjs` and the identity holds.
  *
- * **The consequence for a spec author**: driven under Vitest through a static
- * `import { someSchema } from "@bms/shared"`, this helper takes the
- * `!(err instanceof ZodError)` branch and re-throws the bare `ZodError` instead
- * of raising the 500 — which `ZodErrorFilter` would then answer **400**. An
- * author asserting the observed 400 would write ruling 2 down backwards. So a
- * spec exercising this helper against a `@bms/shared` schema must reach that
- * schema through `createRequire(join(repoRoot(), "apps/api/package.json"))`,
- * never a static import: that asks the question production asks.
- * `zod-error.filter.spec.ts`'s
- * `assertZodIsOneClassForTheResolutionTheApiRunsUnder` is the gate on the
- * identity itself, and carries the same table.
+ * Until `F3.3` (2026-09-15) the catch below read `err instanceof ZodError`,
+ * so under Vitest every site degraded silently: the bare `ZodError` escaped,
+ * `ZodErrorFilter` answered 400, and a spec asserting what it observed would
+ * have written ruling 2 down backwards. The prescribed workaround was to reach
+ * the schema through `createRequire(join(repoRoot(), "apps/api/package.json"))`
+ * in the spec — which cannot help a spec that drives the parse *through a
+ * service* whose own import of `@bms/shared` is static, and
+ * `asset-images.service.spec.ts` was the first to do that. The catch now
+ * recognises a `ZodError` by shape — `name` and an `issues` array — which is
+ * true of both module instances, so the helper answers the same 500 under
+ * either resolution and a spec may import the schema statically.
+ * `zod-error.filter.spec.ts`'s `assertZodIsOneClassForTheResolutionTheApiRunsUnder`
+ * still gates the identity that the *filter* relies on, and carries the same
+ * table.
  */
 
 /**
@@ -97,7 +99,8 @@ export type StoredContractContext =
   | "dashboard_templates.map.content"
   | "dashboard_templates.map_summary.content"
   | "dashboard_templates_instantiate.instantiate.content"
-  | "dashboard_templates_instantiate.read_back.dto";
+  | "dashboard_templates_instantiate.read_back.dto"
+  | "asset_images.to_dto.content_type";
 
 const logger = new Logger("StoredContract");
 
@@ -108,6 +111,17 @@ const logger = new Logger("StoredContract");
  */
 export interface StoredContractSchema<T> {
   parse: (value: unknown) => T;
+}
+
+/**
+ * A `ZodError` from either zod module instance (the docblock above). The
+ * `instanceof` short-circuit keeps the common case cheap; the shape check is
+ * what makes the Vitest resolution answer the same as production.
+ */
+function isZodErrorByShape(err: unknown): err is ZodError {
+  if (err instanceof ZodError) return true;
+  if (!(err instanceof Error) || err.name !== "ZodError") return false;
+  return Array.isArray((err as { issues?: unknown }).issues);
 }
 
 /**
@@ -138,7 +152,7 @@ export function parseStoredContract<T>(
   try {
     return schema.parse(value);
   } catch (err) {
-    if (!(err instanceof ZodError)) {
+    if (!isZodErrorByShape(err)) {
       throw err;
     }
     const codes = [...new Set(err.issues.map((issue) => issue.code))].sort();

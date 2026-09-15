@@ -138,3 +138,47 @@ export function assertANonZodThrowPassesThroughUnchanged(): void {
   };
   expect(() => parseStoredContract(exploding, CORRUPT_ROW, CONTEXT)).toThrow(boom);
 }
+
+/**
+ * The dual-package hazard the helper's docblock measures: under Vitest a
+ * `@bms/shared` schema throws a `ZodError` that is not `instanceof` this
+ * file's. The catch classifies by shape, so such an error is still a
+ * contract violation — a 500, never the bare error the filter turns into 400.
+ * The foreign instance is modelled as a plain `Error` named `ZodError` with an
+ * `issues` array, which is exactly what the other module instance looks like
+ * from here.
+ */
+export function assertAZodErrorFromAnotherModuleInstanceIsStillAContractViolation(): void {
+  const foreign = Object.assign(new Error("foreign zod"), {
+    name: "ZodError",
+    issues: [{ code: "invalid_enum_value", path: ["contentType"], message: "nope" }],
+  });
+  const throwing = {
+    parse: (): never => {
+      throw foreign;
+    },
+  };
+  let thrown: unknown;
+  try {
+    parseStoredContract(throwing, CORRUPT_ROW, CONTEXT);
+  } catch (err) {
+    thrown = err;
+  }
+  expect(
+    thrown,
+    "a ZodError from the other zod module instance must still become the 500 — an " +
+      "instanceof-only catch re-throws it bare and ZodErrorFilter answers 400 for the server's own row",
+  ).toBeInstanceOf(HttpException);
+  expect((thrown as HttpException).getStatus()).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+}
+
+/** The shape check needs both halves: a name alone is not a ZodError. */
+export function assertAnErrorMerelyNamedZodErrorPassesThroughUnchanged(): void {
+  const impostor = Object.assign(new Error("not zod"), { name: "ZodError" });
+  const throwing = {
+    parse: (): never => {
+      throw impostor;
+    },
+  };
+  expect(() => parseStoredContract(throwing, CORRUPT_ROW, CONTEXT)).toThrow(impostor);
+}

@@ -152,7 +152,7 @@ describe("F3.3 — AssetImagesService over fakes", () => {
     await assertContentIsServedWhenTheLengthIs(scenario);
   });
 
-  it("a row whose content_type is outside the enum throws ZodError", async () => {
+  it("a row whose content_type is outside the enum answers the stored-contract 500, never a bare ZodError", async () => {
     await assertARowOutsideTheContentTypeEnumThrows();
   });
 });

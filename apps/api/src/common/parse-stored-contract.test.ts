@@ -6,6 +6,8 @@ import {
   assertAValidStoredValueIsReturned,
   assertTheLogCarriesTheContextAndNoRowData,
   assertTheMessageNamesTheContextAndEchoesNothingFromTheValue,
+  assertAZodErrorFromAnotherModuleInstanceIsStillAContractViolation,
+  assertAnErrorMerelyNamedZodErrorPassesThroughUnchanged,
 } from "./parse-stored-contract.spec";
 
 /** `F4.108` / ADR 0060 ruling 2 — Vitest entry point (§4.6). */
@@ -24,6 +26,14 @@ describe("ADR 0060 ruling 2 — a stored row that breaks its contract is a serve
 
   it("logs the context and the issue codes, and no row data", () => {
     assertTheLogCarriesTheContextAndNoRowData();
+  });
+
+  it("treats a ZodError from the other zod module instance as a contract violation", () => {
+    assertAZodErrorFromAnotherModuleInstanceIsStillAContractViolation();
+  });
+
+  it("re-throws an error merely named ZodError, with no issues, unchanged", () => {
+    assertAnErrorMerelyNamedZodErrorPassesThroughUnchanged();
   });
 
   it("re-throws a non-Zod failure unchanged", () => {
