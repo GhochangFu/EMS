@@ -56,6 +56,9 @@ describe("F3.3 — bms.asset_images schema (migration 0072)", () => {
     expect(entry?.idx).toBe(72);
     expect(entry?.tag).toBe("0072_asset_images");
     expect(entry?.when as number).toBeGreaterThan(1789217764145);
+    // The F4.94 class: a stamp ahead of the wall clock sorts after a later
+    // real-clock stamp and is silently skipped wherever the later one applies.
+    expect(entry?.when as number).toBeLessThan(Date.now());
   });
 
   it("is not scanning an empty or misnamed file", () => {
@@ -93,14 +96,25 @@ describe("F3.3 — bms.asset_images schema (migration 0072)", () => {
     expect(migration).toContain(`ALTER TABLE bms.${TABLE} FORCE ROW LEVEL SECURITY;`);
   });
 
-  it("the policy checks the own column and the parent asset's organization", () => {
+  it("the policy checks the own column and the parent asset's organization, in USING and in WITH CHECK", () => {
     const migration = read(MIGRATION_REL);
     const policy = policyBlock(migration, TABLE);
+    // One `toContain` over the whole block is satisfied by one occurrence, so
+    // a policy that dropped its WITH CHECK half would still pass. Split the
+    // block and hold each half to both legs (the F3.3 migration review).
+    const split = policy.indexOf("WITH CHECK");
+    expect(split, "the policy must carry a WITH CHECK clause").toBeGreaterThan(0);
+    const using = policy.slice(0, split);
+    const withCheck = policy.slice(split);
 
-    expect(policy).toContain(
-      "organization_id = nullif(current_setting('app.current_organization', true), '')::uuid",
-    );
-    expect(policy).toContain("EXISTS (SELECT 1 FROM bms.assets");
+    for (const [name, half] of [["USING", using], ["WITH CHECK", withCheck]] as const) {
+      expect(half, `${name} must check the own organization_id`).toContain(
+        "organization_id = nullif(current_setting('app.current_organization', true), '')::uuid",
+      );
+      expect(half, `${name} must check the parent asset's organization`).toContain(
+        "EXISTS (SELECT 1 FROM bms.assets",
+      );
+    }
   });
 
   it("admits no NULL-org disjunct in the policy", () => {
