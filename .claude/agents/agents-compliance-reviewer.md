@@ -27,7 +27,10 @@ Review the diff against these AGENTS.md sections, in priority order:
 
 - **§6 Out of Scope / scope creep (highest priority).** Flag anything that
   implements a deferred item (real protocol adapters beyond the promoted PHE
-  MQTT pilot, EMQX, MinIO, two-way commanding, audit hash-chaining, Three.js
+  MQTT pilot, EMQX, object storage beyond ADR 0066 — presigned URLs,
+  multipart, thumbnails, KES/TLS in compose (MinIO itself, the S3 client and
+  `bms.asset_images` are promoted, `F3.3`), two-way commanding, audit
+  hash-chaining, Three.js
   3D, general site-wide AI copilot, multi-tenancy/RLS, etc.). Cross-check
   against ADRs before flagging — the PHE MQTT pilot (ADR 0007), the scoped
   onboarding wizard (ADR 0011), and the master-data admin (ADR 0008–0010) are

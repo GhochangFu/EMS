@@ -313,8 +313,9 @@ Process (`AGENTS.md` §10).
 ### Phase 5 — Operations modules (~3 weeks)
 - **Status:** Sprint J/K/L/M/N Location and Access hardening open
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
-  reports. MinIO / object storage graduates only when report files need
-  persisted storage.
+  reports. MinIO / object storage **graduated on 2026-09-15 under ADR 0066
+  (`F3.3`)** — its trigger was never report files (PDF reports are §6) but a
+  row that stores a file, and `F3.4` is that row.
 - **Goal:** add operational workflows on top of existing assets, alarms,
   simulator telemetry, and Energy Centre data while real ingestion remains
   paused.
@@ -419,7 +420,9 @@ Process (`AGENTS.md` §10).
 - **Status:** skipped for now — revisit later if persisted report history is needed
 - **Goal:** persist generated report files only after reports are useful.
 - **Deliverables**
-  - Promote MinIO/object storage if persisted report files are required.
+  - ~~Promote MinIO/object storage if persisted report files are required.~~
+    **Promoted 2026-09-15 by ADR 0066 (`F3.3`)** for asset images; a report
+    file store would reuse `apps/api/src/storage/` and needs no new promotion.
   - Store generated report files.
   - Report history page.
   - Download previous reports.
@@ -682,8 +685,10 @@ Process (`AGENTS.md` §10).
   fail-closed on an unset `CREDENTIAL_ENCRYPTION_KEY`.
 - **Deliberately not built:** full-disk / volume / KMS encryption is a deployer
   action and not implementable in this repo. **Object-storage bucket encryption
-  (`F3.3`, ADR required) and automated encrypted backups (`E8.2`) are deferred
-  to their own backlog items, not cancelled** — see the ownership table in
+  was settled by ADR 0066 decision 8 on 2026-09-15 (`F3.3`: SSE and TLS to the
+  store are deployer requirements, the API refuses `http://` without an
+  explicit flag); automated encrypted backups (`E8.2`) stay deferred to their
+  own backlog item, not cancelled** — see the ownership table in
   `docs/security/encryption-at-rest.md`. Its review raised **E8.3** and **E8.4**
   as new backlog scope.
 - **Owed:** a retro ADR recording the boundary, or an explicit documented
@@ -4867,6 +4872,51 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   naming the parameter.
 - **Unblocks:** `F3.60`, which this row filed and which closed 2026-09-11.
 
+### Object storage on the S3 API, MinIO in the stack, `bms.asset_images` (`F3.3`, ADR 0066 + Amendment 1) — done
+- **Status:** merged 2026-09-15 — PR
+  [#451](https://github.com/GhochangFu/EMS/pull/451) (`3c617a0f`), 21
+  commits over `a0af1824` (the ADR, PR #450, accepted the same morning with
+  five gate questions ruled as drafted). The last Wave 0 enabler; Wave 0 is
+  closed. One dependency (`@aws-sdk/client-s3` 3.1132.0, §9.4), one migration
+  (`0072`), no `apps/web` change.
+- **What the owner ruled first.** Start now and retire §4 rule 13's
+  report-file trigger (PDF reports are themselves §6; the consumers are `F3.4`
+  and `E3.2`); `@aws-sdk/client-s3` over the `minio` client; API-proxied reads
+  with MinIO on loopback rather than presigned URLs; `F3.3`/`F3.4` stay two
+  rows; SSE and TLS are deployer requirements. Seven plan questions followed
+  (Amendment 1), two of them the owner's: `minio` also carries the
+  `realtime-smoke` profile, and CI runs MinIO with a `docker run` step because
+  a GitHub Actions `services:` entry accepts no `command:`.
+- **What the build measured that the plan could not.** Docker Hub no longer
+  hosts `minio/minio` (registry API 404) — the image is pinned on `quay.io`.
+  The SDK's "missing" names against real MinIO: `NoSuchKey` on GetObject,
+  `NotFound` on HeadObject and HeadBucket, `BucketAlreadyOwnedByYou` (409) on
+  the lost create race, `SignatureDoesNotMatch` on a wrong secret. A fixture
+  inside a rollback transaction 404s for the wrong reason, because
+  `withReadScope` opens its own tenant transaction — the round-trip rows
+  commit one fixture and delete it by id.
+- **What shipped:** `apps/api/src/storage/` — a config reader that mirrors
+  `queue-config.ts`, the one `buildObjectKey`, an `S3Ops` seam, a bounded
+  `ensureBucket` at boot, and `storage` on the API's `/health` (absent on the
+  worker); `bms.asset_images` under FORCE RLS with a policy that checks the
+  parent asset in USING and WITH CHECK; `GET /api/v1/assets/:assetId/images`
+  and `…/:imageId/content` — JWT, `canReadAsset` before the service, an
+  API-proxied stream with `nosniff`, a row/object length mismatch treated as a
+  missing object; `minio` in compose and CI, where the storage integration
+  spec refuses to skip; 37 static invariants. **Four reviews applied:** the
+  code review's stream teardown on client abort and Content-Length authority,
+  the security review's overridable compose flags and the docblock that had
+  called RLS a backstop on routes whose tenant context comes from the path
+  asset (`canReadAsset` is the gate, and it is organization-bounded). The M4
+  finding — the API authenticates as the MinIO root user — is `F4.144`.
+- **A latent defect found on the way:** `parseStoredContract` classified a
+  `ZodError` by `instanceof`, which is false under Vitest for a `@bms/shared`
+  schema (the dual-package hazard its own docblock had measured), so every
+  stored-contract violation driven through a service degraded to a bare
+  `ZodError` and a 400. It now classifies by shape; two spec rows hold it.
+- **Unblocks:** `F3.4` (upload, delete, audit, UI). `E3.2` still waits on
+  `E3.1` and `F3.20`.
+
 ### A BullMQ job queue and a `worker` process, split out of the infra bundle (`F4.24`, ADR 0063 + Amendments 1–2) — done
 - **Status:** merged 2026-09-11 — PR
   [#429](https://github.com/GhochangFu/EMS/pull/429) (`7c4e933f`), fifteen
@@ -4993,7 +5043,7 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 | Real protocol adapters (BACnet, Modbus, SNMP, OPC-UA, MQTT) | Phase 2 — MQTT promoted for one RTU (ADR 0007); the `IngestAdapter` **interface, its host and the MQTT adapter** are promoted (ADR 0016 §6 commit 2); each *further* protocol implementation still needs its own ADR |
 | EMQX broker | Phase 2 |
 | Redis cache and pub/sub | Phase 1 — pub/sub promoted (ADR 0002); **the BullMQ job queue and `worker` process promoted 2026-09-11 (ADR 0063, `F4.24`)**; caching still unpromoted |
-| MinIO / object storage | Phase 5 Sprint F only if persisted report storage is needed |
+| MinIO / object storage | **Promoted 2026-09-15 (ADR 0066, `F3.3`)** — the S3 client, MinIO in compose and `bms.asset_images`. Still unpromoted: presigned URLs, multipart, thumbnails, the orphan sweep, KES/TLS in compose |
 | Two-way commanding with approval workflow | Phase 4 |
 | Audit hash-chaining | Phase 4 |
 | Maintenance / work orders / rule-engine UI | Phase 5 |

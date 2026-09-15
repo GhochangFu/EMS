@@ -304,6 +304,17 @@
 > (**ADR 0064** + Amendment 1, `F3.11`, 2026-09-11). `F3.12` still does not
 > start before Redis is authenticated (ADR 0063 Amendment 2), and the ADR 0041
 > dispatch follow-up is still not a row — §6 carries both.
+> And **object storage** — the S3 API through `@aws-sdk/client-s3` behind one
+> `apps/api/src/storage/` seam, MinIO in compose on loopback ports (pinned on
+> `quay.io`, since Docker Hub no longer hosts `minio/minio`), the tenant table
+> `bms.asset_images` under FORCE RLS with a policy that checks the parent
+> asset, two API-proxied read routes under `canReadAsset`, `storage` on the
+> API's `GET /health` and absent on the worker's, and a storage integration
+> spec that **refuses to skip in CI** (**ADR 0066** + Amendment 1, `F3.3`,
+> 2026-09-15 — the last Wave 0 enabler). It promotes the store and the read
+> half only: the upload, delete, audit rows and the first UI are `F3.4`'s, and
+> presigned URLs, multipart, thumbnails, the orphan sweep and KES/TLS in
+> compose stay deferred by name (§4 rule 13).
 > And **one character class for the two catalog code columns** — `bms.point_keys.code`
 > and `bms.assets.code` match `^[A-Za-z0-9_-]+` anchored at both ends, written
 > once as `CATALOG_CODE_PATTERN` in `@bms/shared`, applied at the five Zod write
@@ -414,8 +425,16 @@ The current planning direction is:
    index, and collapsible shell, and do not call the sprint complete until
    a clean migration/seed run, Keycloak realm verification, automated access
    tests, and page-wise role walkthrough are done.
-13. Defer MinIO/object storage until persisted report files are actually
-   needed.
+13. Object storage is **promoted** (ADR 0066, `F3.3`, 2026-09-15): the API
+   talks the S3 API through `@aws-sdk/client-s3` behind the one
+   `apps/api/src/storage/` seam, MinIO is the compose backend on a loopback
+   port, and `bms.asset_images` is the metadata table. The old trigger —
+   "until persisted report files are needed" — was wrong on its own terms
+   (PDF reports are §6); the row that stores a file is `F3.4`. Never add a
+   second S3 client, never accept an object key from a client, and keep the
+   deferrals by name: presigned URLs, `lib-storage`/multipart, thumbnails,
+   the orphan sweep, KES/SSE and TLS in compose (ADR 0066 decisions 2, 6, 8,
+   11).
 14. Plan Phase 6 as Three.js Control Room only.
 15. Keep general AI Copilot / chatbot out of scope for site navigation. The
    **scoped AI onboarding wizard** (admin ingestion only, ADR 0011) is merged
@@ -506,6 +525,7 @@ entry **D-0001**.
 | CI/CD        | GitHub Actions: install, build/typecheck, `typecheck:tests`, **the `apps/ingest` image build**, migration validation, **`db:seed` against a fresh schema**, **`db:refresh-aggregates`** (ADR 0023 — a no-op on a fresh database, since `db:seed` writes zero telemetry rows; it runs so the backfill path cannot rot unexercised), and `test:coverage` (ADR 0014). The Postgres service image is **pinned** to the same tag as `docker-compose.yml`, because the aggregate suite asserts behaviour measured on TimescaleDB 2.29.1. The image build is there because no workflow built one, so `apps/ingest/Dockerfile` sat broken on `main` while CI stayed green — it is the only ingest image gated, being the only one that installs before COPYing sources |
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
 | Cache / pub-sub / jobs | Redis 7 for Socket.IO adapter fan-out (ADR 0002) **and the BullMQ job queue** (ADR 0063, `F4.24`) — AOF-persisted, `noeviction`, host port on loopback only. Caching stays out of scope. |
+| Object storage | S3 API through `@aws-sdk/client-s3` (ADR 0066, `F3.3`), MinIO in compose (`quay.io/minio/minio`, pinned; host ports on loopback only; `core`/`pilot`/`phe`/`realtime-smoke`), one bucket, keys `org/<org>/assets/<asset>/<image>` built server-side only. `bms.asset_images` (migration `0072`, FORCE RLS, policy checks the parent asset) is the authority: an object without a row is never served. Reads are **API-proxied** under the JWT guard and `canReadAsset`; `GET /health` carries `storage` on the API and not on the worker. Unset `OBJECT_STORAGE_ENDPOINT` = unconfigured (routes answer 503), half-configured = boot refusal, `http://` refused without `OBJECT_STORAGE_ALLOW_INSECURE=true`. SSE/TLS are deployer requirements (decision 8). See §4 rule 13 for the deferrals. |
 | Local dev    | WSL2 Ubuntu 22.04; native Postgres remains supported, Docker Compose is optional |
 
 No new dependencies may be added without an ADR in `docs/adr/`.
@@ -647,6 +667,12 @@ bms/
 │   │                            (F4.24): defineQueue with a Zod payload
 │   │                            schema, enqueue guards, tenancy-bound
 │   │                            processors, the heartbeat, the health reader.
+│   │                            src/storage/ is the ADR 0066 object-storage
+│   │                            seam (F3.3): the config reader, the ONE
+│   │                            buildObjectKey, the S3Ops seam over
+│   │                            @aws-sdk/client-s3, ensureBucket at boot, the
+│   │                            storage health reader. Imported by AppModule
+│   │                            only — never by worker.module.ts.
 │   │                            src/worker.ts is the SECOND ENTRYPOINT of this
 │   │                            package (dist/worker.js, compose service
 │   │                            `worker`, :4100) — a second root that starts
@@ -2260,7 +2286,11 @@ These are intentionally deferred. Do not implement them yet:
   `review`, which raises the alarm and pages nobody until someone joins a
   channel to the rule on purpose
 - EMQX broker (PHE pilot connects directly over MQTT TLS; no broker)
-- MinIO / object storage
+- **Object storage beyond ADR 0066** — presigned URLs, `@aws-sdk/lib-storage`
+  / multipart upload, thumbnails (`sharp`), an orphan-object sweep, and MinIO
+  KES / SSE-KMS or TLS inside the compose stack. **MinIO itself, the S3
+  client and `bms.asset_images` left this list on 2026-09-15** (ADR 0066,
+  `F3.3`); the upload, delete, audit rows and the first UI are `F3.4`'s
 - Two-way commanding with approval workflows
 - Audit **hash-chaining and append-only storage** (`F4.15`). `bms.audit_log` is
   now *readable* under ADR 0021, but it is not tamper-evident: nothing prevents
@@ -2390,14 +2420,19 @@ authenticated (ADR 0063 Amendment 2), the ADR 0041 dispatch follow-up is still
 not a row, and a per-rule schedule, a `bms.rule_executions` retention policy
 and a second worker replica are named deferred in ADR 0064's Consequences. **It
 narrowed the row rather than the bundle**: EMQX and Traefik stay in the list
-above with no row and no dependant; MinIO is `F3.3`'s ADR. The three
+above with no row and no dependant; MinIO was `F3.3`'s ADR and **ADR 0066
+promoted it on 2026-09-15**. The three
 in-process sweeps stay in the API process (`F4.128` records their doubling
 under `api-replica`).
 Application-layer encryption at rest
 is in scope (ADR 0012); **full-disk / volume / KMS encryption is a deployer
 action and not implementable in this repo**. Object-storage bucket encryption
-(`F3.3`, ADR required) and automated encrypted backups (`E8.2`) remain **live
-backlog scope** — they are deferred, not cancelled. The boundary itself is
+was settled the same way by ADR 0066 decision 8 (`F3.3`, 2026-09-15): SSE and
+TLS to the store are deployer requirements, the bucket is private, credentials
+come from the environment, and the API refuses an `http://` endpoint unless
+`OBJECT_STORAGE_ALLOW_INSECURE=true` is set explicitly. Automated encrypted
+backups (`E8.2`) remain **live backlog scope** — deferred, not cancelled. The
+boundary itself is
 still an open human decision; see `docs/security/encryption-at-rest.md` and
 `docs/BACKLOG.md` §5.
 
@@ -2489,8 +2524,11 @@ new scope-sensitive features.
    onboarding chat transcript** (`onboarding_sessions.messages`) — it is user
    free text that once carried pasted broker passwords, and it is scrubbed on
    the way out to the client as well as refused on the way in (ADR 0022).
-7. Do not introduce EMQX, MinIO, or any item from §6 without a Promotion
-   PR (see §10). Redis is approved for Socket.IO fan-out and for the BullMQ
+7. Do not introduce EMQX or any item from §6 without a Promotion PR (see
+   §10). MinIO / object storage is promoted (ADR 0066): reach it only through
+   `apps/api/src/storage/` — one S3 client, one `buildObjectKey`, keys never
+   from a client — and read §4 rule 13 for what stays deferred. Redis is
+   approved for Socket.IO fan-out and for the BullMQ
    job queue (ADR 0063) — every new queue is declared in
    `apps/api/src/queue/queues.ts` with a Zod payload schema and a tenancy, and
    `F3.12` does not start before Redis is authenticated (ADR 0063 Amendment
