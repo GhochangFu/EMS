@@ -16,13 +16,30 @@ import type { StorageConfig } from "./storage-config";
  * `S3Ops` over `@aws-sdk/client-s3` (ADR 0066 decision 2) — the only file
  * in the API that imports the SDK. Six commands, one per operation.
  *
- * **The "missing" mapping is a hypothesis until Unit 7 measures it against
- * real MinIO.** S3 answers `HeadBucket`/`HeadObject` with a bodiless 404
- * the SDK surfaces as `err.name === "NotFound"`, and `GetObject` with
- * `NoSuchKey` (or `NoSuchBucket` when the bucket is gone); the
- * `$metadata.httpStatusCode === 404` arm catches a server that names the
- * error differently. The SDK docs are not the gate — the integration spec's
- * row 7 (`getObject`/`headObject` on a random key return `null`) is.
+ * **The "missing" mapping is MEASURED, not assumed.**
+ * `storage.integration.spec.ts` drives the raw SDK against MinIO
+ * `RELEASE.2025-09-07T16-13-09Z` (`@aws-sdk/client-s3` 3.1132.0) and reads
+ * the names back, 2026-09-15:
+ *
+ * | call | key/bucket | `err.name` | `err.Code` | `$metadata.httpStatusCode` |
+ * |---|---|---|---|---|
+ * | `GetObject` | absent key | `NoSuchKey` | `NoSuchKey` | 404 |
+ * | `HeadObject` | absent key | `NotFound` | *(none)* | 404 |
+ * | `HeadBucket` | absent bucket | `NotFound` | *(none)* | 404 |
+ * | `GetObject` | absent bucket | `NoSuchBucket` | `NoSuchBucket` | 404 |
+ *
+ * The two HEADs carry no `Code` because the response has no body — that is
+ * why the name arm cannot be replaced by a `Code` check. The
+ * `$metadata.httpStatusCode === 404` arm stays as the catch for a server
+ * that names the error differently; every measured case above matches a
+ * name arm as well, so no case depends on it alone.
+ *
+ * **What this map must NOT swallow**, measured in the same run: a client
+ * with a wrong secret answers `SignatureDoesNotMatch` / **403**, and that
+ * has to keep throwing. Widened to "any error is missing", the integration
+ * suite's wrong-credentials row is the one that reddens — an authentication
+ * failure would otherwise reach the operator as an image that does not
+ * exist.
  *
  * Wiring, uncovered like `main.ts`; Unit 7's integration spec runs it in
  * CI. **Nothing here logs or throws the endpoint or a credential**
