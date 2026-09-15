@@ -221,7 +221,18 @@ code obligations.
   justification. Version resolved at build time and recorded here by
   amendment, ADR 0063's pattern. No other package: not `minio`, not
   `@aws-sdk/lib-storage`, not `sharp` (no thumbnailing — a later row, with a
-  size number that justifies it).
+  size number that justifies it). Resolved 2026-09-15 to
+  `@aws-sdk/client-s3 3.1132.0`. **MinIO image pin blocked, not resolved:**
+  `docker pull minio/minio:latest` fails locally, and the unauthenticated
+  Docker Hub API confirms it is not a rate-limit — `GET
+  https://hub.docker.com/v2/repositories/minio/minio/` returns `404` and the
+  repository does not exist on Docker Hub under that name. The identical
+  image is published at `quay.io/minio/minio` (`RELEASE.2025-09-07T16-13-09Z`
+  proved with `docker manifest inspect`, exit 0; ships both `curl` and `mc`
+  for the healthcheck). Decision 9 names `minio/minio:RELEASE.*` explicitly,
+  so swapping the registry is a decision-9 amendment and is left for an
+  owner ruling before Unit 8 writes the compose/CI image reference, rather
+  than decided here.
 - Migration `0072` and one new drizzle schema file (decision 5). The
   migration adds one table and one policy; it touches no existing table.
 - Compose: one new service, one volume, two changed services (decision 9).
@@ -268,3 +279,14 @@ AWS endpoint. The ruling followed that answer.
 | Q2 | 6 | API-proxied content route; MinIO on loopback; no presigned URLs. | Presigned GET/PUT URLs so the browser talks to MinIO directly. Cheaper API CPU per byte, and it needs MinIO reachable from the browser, a CORS policy, a public hostname in the compose stack, and a URL that outlives the request and carries no RLS. Deferred until a measured payload size makes proxying costly. |
 | Q3 | 7 | `F3.3` = infra + table + storage service + read routes; `F3.4` = upload, delete, audit, UI. | Fold `F3.4` into `F3.3` (its effort is already `incl.`). One PR proves the whole path in a browser, and the row grows from an enabler into a feature with a UI surface that the mockups do not specify — the shape §5 asks a design ruling for. |
 | Q4 | 8 | §7 items 1 and 2 become deployer requirements; the API refuses `http://` without an explicit insecure flag. | Meet §7 as written: MinIO KES plus a KMS and TLS certificates in compose. It is the E8.1 boundary reopened for one service, adds two containers and a certificate workflow to `core`, and no other service in the stack meets the same bar. |
+
+## Amendment 1 — plan rulings (2026-09-15)
+
+Seven questions were raised by the step-3 plan (`docs/plans/f3.3-object-storage.md` §1) and ruled before code: two by the owner, five by the orchestrator as routine calls under the ADR.
+- Q-C (owner): the `minio` service also carries the `realtime-smoke` profile, so `api-replica` can depend on it `service_healthy`; decision 9's profile list becomes `core`, `pilot`, `phe`, `realtime-smoke`.
+- Q-D (owner): CI runs MinIO with a `docker run` step using the same image tag as compose plus a readiness loop, because a GitHub Actions `services:` entry accepts no `command:` and `minio/minio` needs `server /data`. The invariant test compares the two tag strings.
+- Q-A: `storage` is optional on `livenessResponseSchema`; the worker's `/health` body has no `storage` key.
+- Q-B: `configured && !reachable` reads `status: "degraded"` (HTTP 200), mirroring the queue rule; unconfigured reads `ok`.
+- Q-E: `asset_images_content_type_check` backs the closed content-type vocabulary in SQL (§4.8).
+- Q-F: a transport failure on the content route answers 503 "Object storage is unreachable", with a `warn` naming the image id.
+- Q-G: `withRollback` is extracted to `apps/api/src/testing/with-rollback.ts` for new suites only; the eleven existing private copies stay.
