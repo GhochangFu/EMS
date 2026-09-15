@@ -645,10 +645,9 @@ as step 9 shows.
 To keep Phase 1 lean and laptop-friendly:
 
 - No EMQX / Mosquitto
-- No MinIO
 
-Redis, Keycloak, Prometheus, Grafana, Loki, and Promtail are now in scope
-for Phase 1 Sprint B-D. The remaining items arrive in later add-on
+Redis, Keycloak, Prometheus, Grafana, Loki, Promtail and (since `F3.3`, ADR
+0066) MinIO are now in scope. The remaining items arrive in later add-on
 sprints and phases. Until then, do not install or wire them up, even "just
 to try" — they are blocked by `AGENTS.md` §9 rule 7 and require a
 Promotion PR to enter the codebase.

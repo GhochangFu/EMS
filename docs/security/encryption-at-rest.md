@@ -544,8 +544,15 @@ compose stack the same way Postgres and Redis cannot (§4.1, §4.4).
 
 3. **Buckets private by default**, no public-read, no anonymous listing. The
    API is the only S3 client (decision 6): there is no presigned URL and no
-   public bucket policy, so nothing outside the API's own request path can
-   read or list an object.
+   public bucket policy, so **on a hosted deployment** — where the S3
+   endpoint is reachable only by the API's credentials — nothing outside
+   the API's own request path can read or list an object. Two
+   qualifications, so the sentence is not read as more than it is: "private
+   by default" is MinIO's bucket default, not code — `ensureBucket` creates
+   the bucket and sets no bucket policy — and on the compose stack the S3
+   port is published on loopback (`127.0.0.1:9000`) with the committed dev
+   credentials, so anyone on the host is a bucket reader; that is the same
+   posture as the compose database and is what §4.3 exists for.
 4. **Object-store credentials injected from the secret store, never committed
    and never baked into an image** (§3, §8). `OBJECT_STORAGE_ACCESS_KEY` and
    `OBJECT_STORAGE_SECRET_KEY` are read from the environment exactly like
