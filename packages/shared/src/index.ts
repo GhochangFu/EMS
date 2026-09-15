@@ -25,6 +25,7 @@
 import type { z } from "zod";
 
 import type * as A from "./contracts/admin";
+import type * as AI from "./contracts/asset-images";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
 import type * as Db from "./contracts/dashboard-builder";
@@ -236,6 +237,12 @@ export type QueueHealth = z.infer<typeof He.queueHealthSchema>;
 export type LivenessResponse = z.infer<typeof He.livenessResponseSchema>;
 /** `F3.11` (ADR 0064 decision 8) — the last completed rule sweep as the worker wrote it; `lastRuleSweep` on `GET /health`. Counts only. */
 export type RuleSweepSummary = z.infer<typeof He.ruleSweepSummarySchema>;
+/** `F3.3` (ADR 0066) — the `storage` section of `GET /health`, absent on the worker. */
+export type StorageHealth = z.infer<typeof He.storageHealthSchema>;
+/** `F3.3` (ADR 0066 decision 7) — one of the three content types an asset image may carry. */
+export type AssetImageContentType = z.infer<typeof AI.assetImageContentTypeSchema>;
+/** `F3.3` (ADR 0066 decision 5) — one row of `bms.asset_images`, sans `objectKey` (decision 4). */
+export type AssetImageDto = z.infer<typeof AI.assetImageDtoSchema>;
 /** One plotted bucket — the same `{ t, v }` shape the chart renderer already takes. */
 export type PointAggregateBucket = z.infer<typeof E.pointAggregateBucketSchema>;
 /** The scalar half: totals, extremes, the weighted mean, and when the peak fell. */
