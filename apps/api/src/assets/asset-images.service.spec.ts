@@ -500,9 +500,92 @@ export async function assertARowOutsideTheContentTypeEnumThrows(): Promise<void>
     "a bare ZodError would reach the global filter and answer 400 for the server's own row",
   );
   assert(
-    String((err as Error).message).includes("asset_images.to_dto.content_type"),
+    String((err as Error).message).includes("asset_images.to_dto.row"),
     `the 500 must name the stored-contract context, got: ${String((err as Error).message)}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Post-merge sweep (2026-09-15): the WHOLE DTO is parsed, not one column
+// ---------------------------------------------------------------------------
+
+/**
+ * `0072` constrains `content_type` and nothing else: `sha256`,
+ * `original_filename` and `caption` are `text`. Until the sweep `toDto`
+ * parsed only the enum, so a stored `sha256` carrying a CR reached the
+ * controller's `res.setHeader("ETag", …)`, which throws
+ * `ERR_INVALID_CHAR` **before** `pipeline` — and the MinIO stream
+ * `content()` had already opened was never consumed or destroyed. Each row
+ * here breaks one field `assetImageDtoSchema` bounds and `0072` does not,
+ * and expects the stored-contract 500 (ADR 0060 ruling 2) from `list`.
+ */
+export const CONTRACT_BREAKING_ROWS = [
+  { label: "sha256 with a carriage return", patch: { sha256: `${"a".repeat(63)}\r` } },
+  { label: "originalFilename of 256 chars", patch: { originalFilename: "f".repeat(256) } },
+  { label: "caption of 1001 chars", patch: { caption: "c".repeat(1001) } },
+] as const;
+
+export async function assertAContractBreakingRowThrowsTheStoredContract500(
+  scenario: (typeof CONTRACT_BREAKING_ROWS)[number],
+): Promise<void> {
+  const fleet = fleetDbFake([{ organizationId: ORG_ID }]);
+  const tenant = tenantDbFake([{ ...fixtureRow(), ...scenario.patch }]);
+  const { ops } = opsFake(async () => null);
+  const service = new AssetImagesService(tenant.db, fleet, configured(ops));
+  const err = await captureRejection(() => service.list(ASSET_ID));
+  assert(
+    errorName(err) === "InternalServerErrorException",
+    `a row with ${scenario.label} threw ${errorName(err)}, not the stored-contract 500`,
+  );
+  assert(
+    String((err as Error).message).includes("asset_images.to_dto.row"),
+    `the 500 must name the whole-row context, got: ${String((err as Error).message)}`,
+  );
+}
+
+/** An `S3Ops` whose body is recorded, so a test can ask whether it was left open. */
+function recordingObject(): { getObject: S3Ops["getObject"]; body: () => Readable | undefined } {
+  let body: Readable | undefined;
+  return {
+    getObject: async () => {
+      body = Readable.from([BYTES]);
+      return { body, contentLength: BYTES.length };
+    },
+    body: () => body,
+  };
+}
+
+/**
+ * The stream half of the defect: on `content`, a row that breaks its
+ * contract must not leave the object stream open. Either the bucket was
+ * never asked (the parse ran first) or the body it answered is destroyed —
+ * a body that exists and is not destroyed is the leaked socket.
+ */
+export async function assertAContractBreakingRowOnContentLeavesNoBodyOpen(): Promise<void> {
+  const fleet = fleetDbFake([{ organizationId: ORG_ID }]);
+  const tenant = tenantDbFake([{ ...fixtureRow(), sha256: `${"a".repeat(63)}\r` }]);
+  const recorded = recordingObject();
+  const { ops } = opsFake(recorded.getObject);
+  const service = new AssetImagesService(tenant.db, fleet, configured(ops));
+  const err = await captureRejection(() => service.content(ASSET_ID, IMAGE_ID));
+  assert(errorName(err) === "InternalServerErrorException", `content threw ${errorName(err)}`);
+  const body = recorded.body();
+  assert(
+    body === undefined || body.destroyed,
+    "the object stream was opened for a row that cannot be served, and it was left open",
+  );
+}
+
+/** The positive control for the recording fake: a valid row is served and its body is live. */
+export async function assertAValidRowOnContentIsServedWithALiveBody(): Promise<void> {
+  const fleet = fleetDbFake([{ organizationId: ORG_ID }]);
+  const tenant = tenantDbFake([fixtureRow()]);
+  const recorded = recordingObject();
+  const { ops } = opsFake(recorded.getObject);
+  const service = new AssetImagesService(tenant.db, fleet, configured(ops));
+  const { row, body } = await service.content(ASSET_ID, IMAGE_ID);
+  assert(row.sha256 === "a".repeat(64), `a valid row must be served; got sha256 ${row.sha256}`);
+  assert(recorded.body() === body && !body.destroyed, "the served body must be the bucket's, and live");
 }
 
 export async function assertContentReturnsTheDtoAndTheBody(): Promise<void> {

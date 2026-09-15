@@ -579,9 +579,13 @@ compose stack the same way Postgres and Redis cannot (§4.1, §4.4).
    half of this it can: it **refuses** an `http://` endpoint at boot unless
    `OBJECT_STORAGE_ALLOW_INSECURE=true` is also set (decision 8), so a
    deployment that forgets to set `https://` fails loudly instead of shipping
-   plaintext silently. Compose sets `OBJECT_STORAGE_ALLOW_INSECURE=true`
-   because its MinIO is loopback-only plaintext by design; a hosted
-   deployment must not set that flag.
+   plaintext silently. **"Fails loudly" is true only because the compose
+   default for the flag is empty** (`${OBJECT_STORAGE_ALLOW_INSECURE:-}`,
+   ADR 0066 Amendment 2): until the post-merge sweep the file defaulted it to
+   `true`, so a deployer who followed §9 and left the variable unset shipped
+   plaintext with no refusal. The dev `.env` (copied from `.env.example`)
+   sets it `true` because the compose MinIO is loopback-only plaintext by
+   design; a hosted deployment leaves it unset.
 
 See `docs/env-inventory.md` for the six `OBJECT_STORAGE_*` variables and the
 two `MINIO_ROOT_*` variables, and ADR 0066 decisions 3, 4, 6, 8 and 9 for the
@@ -659,13 +663,17 @@ Before a pilot or production deployment:
 - [ ] No `.env` is committed; no key is in an image layer — §3, §8
 - [ ] Images were rebuilt after the `.dockerignore` fix; pre-fix secrets rotated — §8
 - [ ] Every default credential in §4.3 has been changed
+- [ ] `MINIO_ROOT_USER` and `MINIO_ROOT_PASSWORD` are changed from the committed
+      dev values (`bms_minio_dev` / `bms_minio_dev_secret`); the API still
+      authenticates as that root user until `F4.144` provisions a scoped key — §7
 - [ ] Seeded demo users removed or disabled outside demos — §4.3
 - [ ] Keycloak runs on a real database behind TLS, not `start-dev` — §5.3
 - [ ] `sslmode=verify-full` set if Postgres is not on the same host — §4.4
 - [ ] Access to `bms.onboarding_sessions` is restricted; any credential pasted
       into a wizard chat has been rotated — §5.1
 - [ ] A backup strategy exists (E8.2 is not delivered — §6)
-- [ ] `OBJECT_STORAGE_ENDPOINT` is `https://` and `OBJECT_STORAGE_ALLOW_INSECURE` is unset — §7
+- [ ] `OBJECT_STORAGE_ENDPOINT` is `https://` and `OBJECT_STORAGE_ALLOW_INSECURE`
+      is unset (compose defaults it empty; only a dev `.env` sets it) — §7
 
 ## 10. Scope boundary
 

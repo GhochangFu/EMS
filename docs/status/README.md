@@ -143,7 +143,7 @@ the other two are wrapped by `standalone()`.
    `E7.2` as unblocked by `F1.1` when it actually needs `F1.10`. A dashboard
    that reproduces that bug ships a wrong "next" list to management.
 3. **Eligible is not startable.** A dependency-clear item can still be held by
-   AGENTS.md §6 (every further protocol adapter, MinIO, EMQX/BullMQ, MFA, RLS,
+   AGENTS.md §6 (every further protocol adapter, EMQX/BullMQ, MFA, RLS,
    K8s, Three.js, hash-chained audit) or by an unanswered client question
    (`E5.1`). Those constraints live in no column, so they are declared in the
    `GATES` table at the top of `backlog-status.mjs`, each with a citation.

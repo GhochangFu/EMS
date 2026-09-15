@@ -99,12 +99,23 @@ export class AssetImagesController {
     }
     const { row, body } = await this.images.content(assetId, imageId);
 
-    res.setHeader("Content-Type", row.contentType);
-    res.setHeader("ETag", `"${row.sha256}"`);
-    res.setHeader("Cache-Control", "private, max-age=0, must-revalidate");
-    res.setHeader("Content-Disposition", "inline");
-    res.setHeader("Content-Length", String(row.byteSize));
-    res.setHeader("X-Content-Type-Options", "nosniff");
+    // From here until `pipeline` owns it, `body` is an open socket to the
+    // bucket that nothing else will close. The service parses the whole
+    // row before it opens the stream, so a header value Node refuses
+    // (`ERR_INVALID_CHAR`) cannot come from a stored row any more — but a
+    // throw here for any reason must still release the socket first
+    // (ADR 0066 Amendment 2, defence in depth).
+    try {
+      res.setHeader("Content-Type", row.contentType);
+      res.setHeader("ETag", `"${row.sha256}"`);
+      res.setHeader("Cache-Control", "private, max-age=0, must-revalidate");
+      res.setHeader("Content-Disposition", "inline");
+      res.setHeader("Content-Length", String(row.byteSize));
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    } catch (err) {
+      body.destroy();
+      throw err;
+    }
 
     pipeline(body, res, (err) => {
       if (err) {

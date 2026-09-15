@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertABodyErrorAfterHeadersWarnsWithTheImageId,
+  assertAHeaderThrowDestroysTheBodyAndPropagates,
   assertAllowedContentCallsTheServiceOnceAndStreamsTheBytes,
   assertAllowedContentSendsNosniff,
   assertAllowedListCallsTheServiceOnce,
@@ -121,5 +122,9 @@ describe("F3.3 — asset-images controller over stubs (the guard, measured)", ()
 
   it("a body error after the headers warns once, naming the image id and never err.message", async () => {
     await assertABodyErrorAfterHeadersWarnsWithTheImageId();
+  });
+
+  it("a res.setHeader that throws destroys the body before the error propagates", async () => {
+    await assertAHeaderThrowDestroysTheBodyAndPropagates();
   });
 });

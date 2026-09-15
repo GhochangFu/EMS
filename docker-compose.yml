@@ -252,23 +252,29 @@ services:
       # on both image routes, which is a chosen state rather than a failure.
       # Overridable from `.env`: a pilot sets `OBJECT_STORAGE_ENDPOINT` to
       # its `https://` endpoint there and leaves `OBJECT_STORAGE_ALLOW_INSECURE`
-      # unset, without editing this file.
+      # unset, without editing this file. The compose default for the flag
+      # is empty (below), so this `http://minio:9000` default boots only
+      # with the dev `.env` in place.
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: bms-asset-images
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-bms_minio_dev}
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-bms_minio_dev_secret}
       OBJECT_STORAGE_REGION: us-east-1
       OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
-      # ADR 0066 decision 8, and the only line here that a hosted deployment
-      # must NOT copy. The API refuses an `http://` endpoint unless this is
-      # the exact string `true`; the flag exists so that plaintext is a
-      # deliberate, greppable choice rather than a silent default. A hosted
-      # deployment sets `OBJECT_STORAGE_ENDPOINT` to an `https://` endpoint
-      # with SSE enabled on the bucket and leaves this unset in its `.env`:
-      # the flag gates an `http://` endpoint only, so against `https://` the
-      # `${…:-true}` default is inert. Overridable so the same file serves
-      # both without an edit.
-      OBJECT_STORAGE_ALLOW_INSECURE: "${OBJECT_STORAGE_ALLOW_INSECURE:-true}"
+      # ADR 0066 decision 8 (Amendment 2). The API refuses an `http://`
+      # endpoint unless this is the exact string `true`; the flag exists so
+      # that plaintext is a deliberate, greppable choice rather than a silent
+      # default. The compose default is EMPTY, the ADR 0041
+      # `${CREDENTIAL_ENCRYPTION_KEY:-}` precedent: dev sets
+      # `OBJECT_STORAGE_ALLOW_INSECURE=true` in the root `.env` (copied from
+      # `.env.example`), and a stale `.env` without it fails loudly at boot —
+      # "OBJECT_STORAGE_ENDPOINT uses plain http; set
+      # OBJECT_STORAGE_ALLOW_INSECURE=true to accept it (ADR 0066 decision
+      # 8)". A hosted deployment sets `OBJECT_STORAGE_ENDPOINT` to an
+      # `https://` endpoint with SSE enabled on the bucket and leaves this
+      # unset, and the empty default keeps it closed; `${…:-true}` here
+      # defaulted the flag OPEN for exactly that deployer.
+      OBJECT_STORAGE_ALLOW_INSECURE: "${OBJECT_STORAGE_ALLOW_INSECURE:-}"
     ports:
       - "4000:4000"
     depends_on:
@@ -345,15 +351,16 @@ services:
       # `ensureBucket` is idempotent and a `BucketAlreadyOwnedByYou` from a
       # race with `api` is success, so both may boot together. The endpoint
       # and the insecure flag are overridable from `.env` for the same
-      # reason as on `api`: a pilot sets an `https://` endpoint and leaves
-      # the flag unset.
+      # reason as on `api`, and the flag's default is EMPTY for the same
+      # reason (Amendment 2): dev sets it `true` in the root `.env`; a pilot
+      # sets an `https://` endpoint and leaves it unset.
       OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: bms-asset-images
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-bms_minio_dev}
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-bms_minio_dev_secret}
       OBJECT_STORAGE_REGION: us-east-1
       OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
-      OBJECT_STORAGE_ALLOW_INSECURE: "${OBJECT_STORAGE_ALLOW_INSECURE:-true}"
+      OBJECT_STORAGE_ALLOW_INSECURE: "${OBJECT_STORAGE_ALLOW_INSECURE:-}"
     ports:
       - "4001:4001"
     depends_on:

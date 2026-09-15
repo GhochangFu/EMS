@@ -372,6 +372,34 @@ export async function assertABodyErrorAfterHeadersWarnsWithTheImageId(): Promise
   assert(!run.warns[0]?.includes("fake transport failure"), `the warn must not carry err.message (§9.6): ${run.warns[0]}`);
 }
 
+/**
+ * Post-merge sweep (2026-09-15), defence in depth beside the service's
+ * whole-DTO parse: anything that throws between `content()` returning and
+ * `pipeline()` starting — `res.setHeader` on a header value Node refuses
+ * (`ERR_INVALID_CHAR`) is the measured case — must destroy the body before
+ * the error propagates, or the MinIO socket stays open until the SDK times
+ * it out. The fake's `setHeader` throws on the first call; the body is a
+ * `Readable` whose `destroyed` flag is the assertion.
+ */
+export async function assertAHeaderThrowDestroysTheBodyAndPropagates(): Promise<void> {
+  const { access } = accessStub({ canReadAsset: true });
+  const body = Readable.from([BYTES]);
+  const { images } = imagesStub(() => body);
+  const controller = new AssetImagesController(images, access);
+  const fake = responseFake();
+  const headerError = new TypeError("fake ERR_INVALID_CHAR");
+  Object.assign(fake.res, {
+    setHeader: () => {
+      throw headerError;
+    },
+  });
+  const err = await rejects(() =>
+    controller.content(USER, { assetId: ASSET_ID, imageId: IMAGE_ID }, fake.res),
+  );
+  assert(err === headerError, `the header error must propagate unchanged, got ${errorName(err)}`);
+  assert(body.destroyed, "the object body was left open after res.setHeader threw");
+}
+
 export function assertControllerDoesNotHandleIfNoneMatch(): void {
   assert(!source().includes("if-none-match"), "If-None-Match is a possible F3.4 follow-up, not F3.3");
 }

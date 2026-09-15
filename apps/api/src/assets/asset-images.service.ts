@@ -10,7 +10,7 @@ import type { Readable } from "node:stream";
 
 import { assetImages } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { assetImageContentTypeSchema } from "@bms/shared";
+import { assetImageDtoSchema } from "@bms/shared";
 import { parseStoredContract } from "../common/parse-stored-contract";
 import type { AssetImageDto } from "@bms/shared";
 
@@ -51,9 +51,14 @@ import { STORAGE_CLIENT } from "../storage/storage.tokens";
  * `organization_admin` in PHEWB, sees none of the other organization's
  * assets in `scope.assetIds`, with the fixture-not-vacuous control) and
  * `assertLocationScope` (`canReadAsset` answers `false` for an asset
- * `readableAssetIds` excluded — the two paths agree). The constructor order
- * (tenant, fleet) is pinned by `database/fleet-read-wiring.spec.ts`:
- * `withReadScope` reads its pools positionally and a swap silently unscopes.
+ * `readableAssetIds` excluded — the two paths agree). That organization
+ * bound is a property of the **grant data**, not of a constraint: nothing
+ * in the schema forbids a `user_location_access` row that pairs a user with
+ * a location in another organization, so a future grant-write endpoint must
+ * re-check the location's organization before it inserts (ADR 0066
+ * Amendment 2, L-1). The constructor order (tenant, fleet) is pinned by
+ * `database/fleet-read-wiring.spec.ts`: `withReadScope` reads its pools
+ * positionally and a swap silently unscopes.
  *
  * **The row is the authority (decision 4).** `objectKey` is read and used
  * to address the bucket and appears in no DTO, no thrown message and no log
@@ -115,6 +120,9 @@ export class AssetImagesService {
     if (!row) {
       throw new NotFoundException("Asset image not found");
     }
+    // The contract parse runs BEFORE the bucket is asked: a row that cannot
+    // be served never opens an object stream that would then need destroying.
+    const dto = toDto(row);
 
     let object: Awaited<ReturnType<typeof getObject>>;
     try {
@@ -137,7 +145,7 @@ export class AssetImagesService {
       );
       throw new NotFoundException("Asset image not found");
     }
-    return { row: toDto(row), body: object.body };
+    return { row: dto, body: object.body };
   }
 }
 
@@ -176,31 +184,35 @@ function selectRows(tx: BmsTx, where: ReturnType<typeof eq> | ReturnType<typeof 
 
 /**
  * Picks the DTO's fields by name — never a spread, so `objectKey` cannot ride
- * along. `contentType` is a `text` column bound to the DTO's closed enum by
- * `asset_images_content_type_check` (Q-E) in SQL, and **parsed** through the
- * same schema here rather than cast: the ADR 0030 derivation is
- * load-bearing, so a row outside the vocabulary throws instead of being
- * served as a typed value it is not. The parse goes through
- * `parseStoredContract` (ADR 0060, `F4.108`): a stored row that breaks its
- * contract is the server's fault, a 500 with the context logged, never the
- * 400 a bare `.parse()` would hand the global `ZodErrorFilter`.
+ * along — and then parses the **whole** assembled DTO through
+ * `assetImageDtoSchema` rather than casting it: the ADR 0030 derivation is
+ * load-bearing, so a row outside the contract throws instead of being served
+ * as a typed value it is not. `0072` constrains only `content_type`
+ * (`asset_images_content_type_check`, Q-E); `sha256`, `original_filename`
+ * and `caption` are `text`, and the DTO schema is the only bound on them
+ * (64 lowercase hex, 255 and 1000 chars). The post-merge sweep (ADR 0066
+ * Amendment 2) found that parsing the enum alone let a stored `sha256` with
+ * a CR reach `res.setHeader("ETag", …)`, which throws before `pipeline` and
+ * leaves the object stream open. The parse goes through `parseStoredContract`
+ * (ADR 0060, `F4.108`): a stored row that breaks its contract is the
+ * server's fault, a 500 with the context logged, never the 400 a bare
+ * `.parse()` would hand the global `ZodErrorFilter`.
  */
 function toDto(row: StoredRow): AssetImageDto {
-  return {
+  // `satisfies` pins the key set to the DTO's without asserting a type the
+  // parse has not yet earned — no cast anywhere on this path.
+  const candidate = {
     id: row.id,
     assetId: row.assetId,
-    contentType: parseStoredContract(
-      assetImageContentTypeSchema,
-      row.contentType,
-      "asset_images.to_dto.content_type",
-    ),
+    contentType: row.contentType,
     byteSize: row.byteSize,
     sha256: row.sha256,
     originalFilename: row.originalFilename,
     caption: row.caption,
     createdBy: row.createdBy,
     createdAt: row.createdAt.toISOString(),
-  };
+  } satisfies Record<keyof AssetImageDto, unknown>;
+  return parseStoredContract(assetImageDtoSchema, candidate, "asset_images.to_dto.row");
 }
 
 function errorName(err: unknown): string {

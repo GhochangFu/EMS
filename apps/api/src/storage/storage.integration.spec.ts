@@ -361,8 +361,18 @@ async function runRoundTrip(fx: StorageFixtures): Promise<RoundTrip> {
     const listed = await service.list(fx.committedAssetId);
     return { imageId, bytes, fetched, row: content.row, listed };
   } finally {
-    await fx.fleetDb.delete(assetImages).where(eq(assetImages.id, imageId));
-    await deleteObject(fx.client, objectKey).catch(() => undefined);
+    // Both teardowns run whatever the other does (post-merge sweep,
+    // 2026-09-15): sequenced, a DB delete that threw skipped the object
+    // delete and the docblock's "every row that puts an object removes it on
+    // the way out" was false. The DB failure is still rethrown; the object
+    // delete's is swallowed as before.
+    const [dbDelete] = await Promise.allSettled([
+      fx.fleetDb.delete(assetImages).where(eq(assetImages.id, imageId)),
+      deleteObject(fx.client, objectKey),
+    ]);
+    if (dbDelete.status === "rejected") {
+      throw dbDelete.reason;
+    }
   }
 }
 
