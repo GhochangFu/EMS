@@ -559,11 +559,46 @@ export default defineConfig({
       // the two hazards above are unchanged, so the extra tenth or two is
       // insurance against CI's fresh database reproducing a little less of the
       // calc state than this machine's long-lived one.
+      //
+      // `F3.3` (2026-09-15) — object storage on the S3 API (ADR 0066), Unit 8.
+      // Measured against the live database, a live Redis AND a live MinIO
+      // (`docker compose --profile core up -d minio`, the six
+      // `OBJECT_STORAGE_*` variables exported, so
+      // `storage.integration.test.ts` RAN rather than skipping) on a full
+      // run, 533/533 files and 3395/3395 tests, none skipped, exit 0:
+      // 81.25 statements · 78.43 branches · 82.37 functions · 81.44 lines.
+      //
+      // One condition on that run, recorded because it is not the plain
+      // command: `--testTimeout=30000`. At the default 5 s,
+      // `admin/asset-points/mapping-sheet-rows.test.ts`'s row-cap `it()`
+      // times out on this machine under full parallel load — twice, in
+      // consecutive runs — while the same file passes alone in ~21 s. It
+      // parses a `MAX_IMPORT_ROWS` workbook and imports nothing this row
+      // touches, so it is a local load ceiling rather than a defect of
+      // `F3.3`. **Measured, not assumed:** the three most recent `main` runs
+      // (34931886654, 34702549276, 34700148964) each show that file passing
+      // in 6.4–9.7 s with no "timed out in" line, so CI's bare
+      // `pnpm test:coverage` is not near this ceiling and the ratchet below
+      // does not rest on the flag. Nothing in the repository was
+      // changed for it, and the flag changes no threshold.
+      //
+      // A ~0.35-point rise, and this row's own share is small: seven new
+      // spec-paired files under `apps/api/src/storage/**` and
+      // `assets/asset-images.*` against three deliberately uncovered wiring
+      // files (`storage.module.ts`, `aws-s3-ops.ts`, `storage-health.
+      // service.ts` — Nest composition and the SDK adapter, like `main.ts`),
+      // of which `aws-s3-ops.ts` is now exercised by the integration spec in
+      // CI. Margin held at ~1.0 per axis, exactly as `F4.24` set it and for
+      // the same reason — CI's fresh database reproduces a little less calc
+      // state than this machine's long-lived one — plus one new hazard: CI
+      // runs MinIO from a `docker run` step, so a runner that fails the
+      // readiness loop fails the job rather than quietly dropping the
+      // storage spec out of the numerator.
       thresholds: {
-        statements: 79.9,
-        branches: 77.0,
-        functions: 81.2,
-        lines: 80.1,
+        statements: 80.2,
+        branches: 77.4,
+        functions: 81.3,
+        lines: 80.4,
       },
     },
   },
