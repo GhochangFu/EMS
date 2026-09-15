@@ -3,6 +3,7 @@ import { Global, Inject, Injectable, Logger, Module, type OnModuleInit } from "@
 import { createAwsS3Ops } from "./aws-s3-ops";
 import { createStorageClient, ensureBucket, type StorageClient } from "./storage-client";
 import { readStorageConfig } from "./storage-config";
+import { StorageHealthService } from "./storage-health.service";
 import { STORAGE_CLIENT } from "./storage.tokens";
 
 /**
@@ -26,8 +27,13 @@ import { STORAGE_CLIENT } from "./storage.tokens";
  * from `ensureBucket` (anything but a lost `CreateBucket` race) refuses
  * the boot: a set endpoint is a claim that the store is reachable.
  *
- * `StorageHealthService` is Unit 5's — it joins `providers` and `exports`
- * there, and `HealthController` injects it `@Optional()`.
+ * `StorageHealthService` is provided and exported here, and
+ * `HealthController` injects it `@Optional()` — so the same controller
+ * serves both processes and only the API's body carries a `storage` key
+ * (Q-A). The service itself imports only the token, the pure reader and
+ * types, because `health.controller.ts` is in the worker's import closure;
+ * importing it from **this** file would drag `aws-s3-ops` and the SDK in
+ * behind it.
  *
  * Nest wiring, uncovered like `main.ts`; the config reader and the client
  * are specced in `storage-config.spec.ts` and `storage-client.spec.ts`.
@@ -59,7 +65,8 @@ export class StorageBootstrap implements OnModuleInit {
         }),
     },
     StorageBootstrap,
+    StorageHealthService,
   ],
-  exports: [STORAGE_CLIENT],
+  exports: [STORAGE_CLIENT, StorageHealthService],
 })
 export class StorageModule {}
