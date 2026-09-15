@@ -3,7 +3,10 @@ import {
   MAX_ASSET_IMAGE_BYTES,
   assetImageDtoSchema,
 } from "./asset-images";
-import { livenessResponseSchema, type QueueHealth } from "./health";
+import { z } from "zod";
+import { livenessResponseSchema, queueHealthSchema } from "./health";
+
+type QueueHealth = z.infer<typeof queueHealthSchema>;
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
