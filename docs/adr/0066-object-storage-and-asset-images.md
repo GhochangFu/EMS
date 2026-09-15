@@ -222,17 +222,15 @@ code obligations.
   amendment, ADR 0063's pattern. No other package: not `minio`, not
   `@aws-sdk/lib-storage`, not `sharp` (no thumbnailing — a later row, with a
   size number that justifies it). Resolved 2026-09-15 to
-  `@aws-sdk/client-s3 3.1132.0`. **MinIO image pin blocked, not resolved:**
-  `docker pull minio/minio:latest` fails locally, and the unauthenticated
-  Docker Hub API confirms it is not a rate-limit — `GET
-  https://hub.docker.com/v2/repositories/minio/minio/` returns `404` and the
-  repository does not exist on Docker Hub under that name. The identical
-  image is published at `quay.io/minio/minio` (`RELEASE.2025-09-07T16-13-09Z`
-  proved with `docker manifest inspect`, exit 0; ships both `curl` and `mc`
-  for the healthcheck). Decision 9 names `minio/minio:RELEASE.*` explicitly,
-  so swapping the registry is a decision-9 amendment and is left for an
-  owner ruling before Unit 8 writes the compose/CI image reference, rather
-  than decided here.
+  `@aws-sdk/client-s3 3.1132.0`. **MinIO image pinned to
+  `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`** (Amendment 1, registry).
+  `docker pull minio/minio:latest` fails, and the unauthenticated Docker Hub
+  API confirms it is not a rate limit — `GET
+  https://hub.docker.com/v2/repositories/minio/minio/` returns `404`; the
+  repository does not exist on Docker Hub under that name. Both facts were
+  measured twice on 2026-09-15 (the Unit 1 builder, then the orchestrator).
+  The tag on `quay.io` is proved with `docker manifest inspect` (exit 0) and
+  the image ships both `curl` and `mc` for the healthcheck.
 - Migration `0072` and one new drizzle schema file (decision 5). The
   migration adds one table and one policy; it touches no existing table.
 - Compose: one new service, one volume, two changed services (decision 9).
@@ -290,3 +288,4 @@ Seven questions were raised by the step-3 plan (`docs/plans/f3.3-object-storage.
 - Q-E: `asset_images_content_type_check` backs the closed content-type vocabulary in SQL (§4.8).
 - Q-F: a transport failure on the content route answers 503 "Object storage is unreachable", with a `warn` naming the image id.
 - Q-G: `withRollback` is extracted to `apps/api/src/testing/with-rollback.ts` for new suites only; the eleven existing private copies stay.
+- Registry (orchestrator, measured): decision 9's `minio/minio:RELEASE.*` reads `quay.io/minio/minio:RELEASE.*`. Docker Hub no longer hosts the repository (404 on the registry API); `quay.io` is MinIO's own registry and the image is the same build. The intent of decision 9 — one pinned official MinIO image, byte-identical in compose and CI — is unchanged. Unit 8's invariant regex matches the `quay.io/` prefix.
