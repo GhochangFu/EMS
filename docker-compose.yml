@@ -250,7 +250,10 @@ services:
       # (`readStorageConfig`). Unset entirely — a native run without MinIO —
       # reads `storage: { configured: false }` on `/health` and answers 503
       # on both image routes, which is a chosen state rather than a failure.
-      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      # Overridable from `.env`: a pilot sets `OBJECT_STORAGE_ENDPOINT` to
+      # its `https://` endpoint there and leaves `OBJECT_STORAGE_ALLOW_INSECURE`
+      # unset, without editing this file.
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: bms-asset-images
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-bms_minio_dev}
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-bms_minio_dev_secret}
@@ -261,8 +264,11 @@ services:
       # the exact string `true`; the flag exists so that plaintext is a
       # deliberate, greppable choice rather than a silent default. A hosted
       # deployment sets `OBJECT_STORAGE_ENDPOINT` to an `https://` endpoint
-      # with SSE enabled on the bucket and leaves this unset.
-      OBJECT_STORAGE_ALLOW_INSECURE: "true"
+      # with SSE enabled on the bucket and leaves this unset in its `.env`:
+      # the flag gates an `http://` endpoint only, so against `https://` the
+      # `${…:-true}` default is inert. Overridable so the same file serves
+      # both without an edit.
+      OBJECT_STORAGE_ALLOW_INSECURE: "${OBJECT_STORAGE_ALLOW_INSECURE:-true}"
     ports:
       - "4000:4000"
     depends_on:
@@ -337,14 +343,17 @@ services:
       # Identical to `api` above (ADR 0066 decisions 3 and 8). The replica is
       # a second API process against the same database and the same bucket:
       # `ensureBucket` is idempotent and a `BucketAlreadyOwnedByYou` from a
-      # race with `api` is success, so both may boot together.
-      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      # race with `api` is success, so both may boot together. The endpoint
+      # and the insecure flag are overridable from `.env` for the same
+      # reason as on `api`: a pilot sets an `https://` endpoint and leaves
+      # the flag unset.
+      OBJECT_STORAGE_ENDPOINT: ${OBJECT_STORAGE_ENDPOINT:-http://minio:9000}
       OBJECT_STORAGE_BUCKET: bms-asset-images
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-bms_minio_dev}
       OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-bms_minio_dev_secret}
       OBJECT_STORAGE_REGION: us-east-1
       OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
-      OBJECT_STORAGE_ALLOW_INSECURE: "true"
+      OBJECT_STORAGE_ALLOW_INSECURE: "${OBJECT_STORAGE_ALLOW_INSECURE:-true}"
     ports:
       - "4001:4001"
     depends_on:

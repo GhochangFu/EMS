@@ -1,6 +1,8 @@
 import {
   ASSET_IMAGE_CONTENT_TYPES,
   MAX_ASSET_IMAGE_BYTES,
+  MAX_ASSET_IMAGE_CAPTION_CHARS,
+  MAX_ASSET_IMAGE_FILENAME_CHARS,
   assetImageDtoSchema,
 } from "./asset-images";
 import { z } from "zod";
@@ -71,6 +73,41 @@ export function assertDtoRefusesObjectKey(): void {
   assert(
     withKey.success === false,
     "assetImageDtoSchema must refuse a payload carrying objectKey (ADR 0066 decision 4) — the server-generated key never reaches a response DTO",
+  );
+}
+
+/**
+ * The two string bounds (review finding D, 2026-09-15): `originalFilename`
+ * and `caption` are `text` in SQL (`0072` is frozen), so the DTO's `.max()`
+ * and `F3.4`'s write path are the only gates. Each bound is exercised at the
+ * bound (parses) and one over (refused), and each exported number is
+ * asserted so the constants cannot drift from the schema.
+ */
+export const STRING_BOUNDS = [
+  { field: "originalFilename", max: MAX_ASSET_IMAGE_FILENAME_CHARS, expected: 255 },
+  { field: "caption", max: MAX_ASSET_IMAGE_CAPTION_CHARS, expected: 1000 },
+] as const;
+
+export function assertStringBoundConstantIs(bound: (typeof STRING_BOUNDS)[number]): void {
+  assert(
+    bound.max === bound.expected,
+    `${bound.field}'s bound must be ${bound.expected}, got ${bound.max}`,
+  );
+}
+
+export function assertStringAtTheBoundParses(bound: (typeof STRING_BOUNDS)[number]): void {
+  const result = assetImageDtoSchema.safeParse({ ...VALID_IMAGE, [bound.field]: "x".repeat(bound.max) });
+  assert(
+    result.success === true,
+    `${bound.field} of exactly ${bound.max} chars must parse, got ${JSON.stringify(result.success === false ? result.error.issues : null)}`,
+  );
+}
+
+export function assertStringOneOverTheBoundIsRefused(bound: (typeof STRING_BOUNDS)[number]): void {
+  const result = assetImageDtoSchema.safeParse({ ...VALID_IMAGE, [bound.field]: "x".repeat(bound.max + 1) });
+  assert(
+    result.success === false,
+    `${bound.field} of ${bound.max + 1} chars must be refused — the SQL column is text, so this is the gate`,
   );
 }
 

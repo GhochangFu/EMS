@@ -28,6 +28,17 @@ import { z } from "zod";
  */
 export const MAX_ASSET_IMAGE_BYTES: number = 10 * 1024 * 1024;
 
+/**
+ * Bounds on the two free-text fields (review finding, 2026-09-15). The SQL
+ * columns `original_filename` and `caption` stay `text` — migration `0072` is
+ * frozen — so the DTO's `.max()` here and `F3.4`'s write path, which reads
+ * these two constants, are the gate. 255 is the common filesystem name limit;
+ * 1000 is a caption, not a document. Annotated `: number` for the `TS2367`
+ * reason above.
+ */
+export const MAX_ASSET_IMAGE_FILENAME_CHARS: number = 255;
+export const MAX_ASSET_IMAGE_CAPTION_CHARS: number = 1000;
+
 /** The closed content-type vocabulary an asset image may carry (ADR 0066 decision 7). */
 export const assetImageContentTypeSchema = z.enum(["image/jpeg", "image/png", "image/webp"]);
 
@@ -45,8 +56,8 @@ export const assetImageDtoSchema = z
     contentType: assetImageContentTypeSchema,
     byteSize: z.number().int().positive(),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
-    originalFilename: z.string(),
-    caption: z.string().nullable(),
+    originalFilename: z.string().max(MAX_ASSET_IMAGE_FILENAME_CHARS),
+    caption: z.string().max(MAX_ASSET_IMAGE_CAPTION_CHARS).nullable(),
     createdBy: z.string().uuid().nullable(),
     createdAt: z.string().datetime({ offset: true }),
   })

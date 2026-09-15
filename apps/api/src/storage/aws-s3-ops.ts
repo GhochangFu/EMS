@@ -27,8 +27,12 @@ import type { StorageConfig } from "./storage-config";
  * | `HeadObject` | absent key | `NotFound` | *(none)* | 404 |
  * | `HeadBucket` | absent bucket | `NotFound` | *(none)* | 404 |
  * | `GetObject` | absent bucket | `NoSuchBucket` | `NoSuchBucket` | 404 |
+ * | `CreateBucket` | existing bucket, same owner | `BucketAlreadyOwnedByYou` | `BucketAlreadyOwnedByYou` | 409 |
  *
- * The two HEADs carry no `Code` because the response has no body — that is
+ * The `CreateBucket` row is the lost-race name `ensureBucket` swallows
+ * (`BUCKET_RACE_NAMES` in `storage-client.ts`); `BucketAlreadyExists` is the
+ * other-owner name AWS documents and MinIO did not produce here, kept in the
+ * set for a hosted S3. The two HEADs carry no `Code` because the response has no body — that is
  * why the name arm cannot be replaced by a `Code` check. The
  * `$metadata.httpStatusCode === 404` arm stays as the catch for a server
  * that names the error differently; every measured case above matches a

@@ -23,6 +23,7 @@ import { createAwsS3Ops } from "./aws-s3-ops";
 import { buildObjectKey } from "./object-key";
 import type { ConfiguredStorageConfig } from "../testing/integration-storage-gate";
 import {
+  BUCKET_RACE_NAMES,
   deleteObject,
   ensureBucket,
   getObject,
@@ -271,6 +272,33 @@ export async function assertEnsureBucketCreatesAMissingBucket(fx: StorageFixture
   assert(
     run.calls.filter((c) => c === "createBucket").length === 1,
     `the first ensureBucket must create the bucket exactly once; calls: ${run.calls.join(", ")}`,
+  );
+}
+
+/**
+ * The lost-race name, MEASURED (review finding C, 2026-09-15). `ensureBucket`
+ * treats `BucketAlreadyOwnedByYou` and `BucketAlreadyExists` from
+ * `createBucket` as success, and until this row those two names were asserted
+ * only against an in-memory fake. Here the real ops create the bucket that
+ * `beforeAll` already ensured — the exact call the second replica makes when
+ * it loses the race — and the outcome must be one of the two names or a
+ * resolution (MinIO can answer a same-owner re-create with 200). Anything
+ * else is a name the boot path would rethrow, and this row says which.
+ */
+export async function assertCreateBucketOnAnExistingBucketIsALostRace(fx: StorageFixtures): Promise<void> {
+  let resolved = false;
+  let thrown: unknown;
+  try {
+    await fx.ops.createBucket(fx.config.bucket);
+    resolved = true;
+  } catch (err) {
+    thrown = err;
+  }
+  assert(
+    resolved || BUCKET_RACE_NAMES.has(errorName(thrown)),
+    `CreateBucket on an existing bucket must resolve or reject with one of ` +
+      `${[...BUCKET_RACE_NAMES].join("/")}; it rejected with ${errorName(thrown)} — ` +
+      "ensureBucket would rethrow that and refuse the boot of a second replica",
   );
 }
 

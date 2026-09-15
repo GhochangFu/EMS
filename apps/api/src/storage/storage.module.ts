@@ -25,7 +25,13 @@ import { STORAGE_CLIENT } from "./storage.tokens";
  * `StorageBootstrap` is decision 9's "the API creates the bucket at module
  * init when it is missing" — no init container, no `mc` script. A throw
  * from `ensureBucket` (anything but a lost `CreateBucket` race) refuses
- * the boot: a set endpoint is a claim that the store is reachable.
+ * the boot: a set endpoint is a claim that the store is reachable. **The
+ * wait is bounded** by `STORAGE_BOOTSTRAP_TIMEOUT_MS` (review finding,
+ * 2026-09-15): an endpoint that accepts the connection and never answers
+ * would otherwise hold `onModuleInit` forever with no log line and a
+ * container that is neither healthy nor dead. The refusal names the
+ * timeout, never the endpoint (§9.6). `storage.bootstrap.spec.ts` drives
+ * it with fake timers.
  *
  * `StorageHealthService` is provided and exported here, and
  * `HealthController` injects it `@Optional()` — so the same controller
@@ -38,6 +44,15 @@ import { STORAGE_CLIENT } from "./storage.tokens";
  * Nest wiring, uncovered like `main.ts`; the config reader and the client
  * are specced in `storage-config.spec.ts` and `storage-client.spec.ts`.
  */
+/**
+ * How long the boot waits for `ensureBucket` (a `HeadBucket`, and at most one
+ * `CreateBucket`) before refusing. Ten seconds is generous for two round
+ * trips on a healthy store and short enough that a blackholed endpoint fails
+ * the container within its first health window. Annotated `: number` for the
+ * `TS2367` reason `queue-config.ts` records.
+ */
+export const STORAGE_BOOTSTRAP_TIMEOUT_MS: number = 10_000;
+
 @Injectable()
 export class StorageBootstrap implements OnModuleInit {
   private readonly logger = new Logger(StorageBootstrap.name);
@@ -48,7 +63,21 @@ export class StorageBootstrap implements OnModuleInit {
     if (this.client.kind === "unconfigured") {
       return;
     }
-    await ensureBucket(this.client);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new Error(
+            `object storage bootstrap exceeded ${STORAGE_BOOTSTRAP_TIMEOUT_MS} ms: ensureBucket did not settle, refusing the boot (ADR 0066 decision 9)`,
+          ),
+        );
+      }, STORAGE_BOOTSTRAP_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([ensureBucket(this.client), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
     this.logger.log(`object storage bucket "${this.client.bucket}" ensured (ADR 0066 decision 9)`);
   }
 }

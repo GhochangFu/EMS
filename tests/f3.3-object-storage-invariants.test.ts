@@ -235,6 +235,22 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
     it("the worker service sets no OBJECT_STORAGE_ variable at all (decision 9)", () => {
       expect(workerBlock()).not.toMatch(/OBJECT_STORAGE_/);
     });
+
+    // Review finding E (2026-09-15): a pilot points the same compose file at
+    // an `https://` endpoint and leaves the insecure flag unset in its
+    // `.env`, so both lines must be `${VAR:-default}` — a bare literal
+    // cannot be overridden without editing the committed file.
+    it.each(["api", "api-replica"])("%s reads OBJECT_STORAGE_ENDPOINT as ${OBJECT_STORAGE_ENDPOINT:-…}", (name) => {
+      expect(serviceBlock(compose, name)).toMatch(
+        /^\s*OBJECT_STORAGE_ENDPOINT:\s*"?\$\{OBJECT_STORAGE_ENDPOINT:-http:\/\/minio:9000\}"?\s*$/m,
+      );
+    });
+
+    it.each(["api", "api-replica"])("%s reads OBJECT_STORAGE_ALLOW_INSECURE as ${OBJECT_STORAGE_ALLOW_INSECURE:-…}", (name) => {
+      expect(serviceBlock(compose, name)).toMatch(
+        /^\s*OBJECT_STORAGE_ALLOW_INSECURE:\s*"?\$\{OBJECT_STORAGE_ALLOW_INSECURE:-true\}"?\s*$/m,
+      );
+    });
   });
 
   describe("CI runs the engine compose runs (decision 10, Amendment 1 Q-D)", () => {
@@ -258,8 +274,20 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
       expect(missing, `variables the CI job does not set: ${missing.join(", ")}`).toEqual([]);
     });
 
-    it("ci.yml waits for /minio/health/live before it runs the tests", () => {
-      expect(ci).toMatch(/\/minio\/health\/live/);
+    it("ci.yml's MinIO readiness loop is a step that precedes the Run tests step", () => {
+      // The order, not the mere presence: the readiness loop lives inside the
+      // "Start MinIO" step, and that step must come before "Run tests" so the
+      // storage spec never races the container.
+      const startAt = ci.indexOf("- name: Start MinIO");
+      const liveAt = ci.indexOf("/minio/health/live");
+      const testsAt = ci.indexOf("- name: Run tests");
+      expect(
+        { startAt, liveAt, testsAt },
+        "ci.yml must have a Start MinIO step, a /minio/health/live readiness loop inside it, and a Run tests step, in that order",
+      ).toSatisfy(
+        ({ startAt: s, liveAt: l, testsAt: t }: { startAt: number; liveAt: number; testsAt: number }) =>
+          s > -1 && l > s && t > l,
+      );
     });
   });
 

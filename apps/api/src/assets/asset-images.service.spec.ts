@@ -421,6 +421,76 @@ export async function assertTransportErrorResponseNeverCarriesTheKey(): Promise<
   assert(!errorMessage(err).includes(OBJECT_KEY_PREFIX), `the 503 must not carry the object key: ${errorMessage(err)}`);
 }
 
+// ---------------------------------------------------------------------------
+// Review findings (2026-09-15): Content-Length authority, and the enum parse
+// ---------------------------------------------------------------------------
+
+/** The bucket answers a body whose `contentLength` is what the scenario says; `BYTES` is 9 bytes. */
+function objectOfLength(contentLength: number | null): S3Ops["getObject"] {
+  return async () => ({ body: Readable.from([BYTES]), contentLength });
+}
+
+/**
+ * The row is the authority (decision 4) — and `Content-Length` is sent from
+ * the row. An object whose reported length differs from `byte_size` would
+ * make the API send a header the body cannot honour: the client sees a
+ * truncated or over-long stream under a 200. That is the decision-4
+ * missing-object case, not a happy path: 404, and one warn naming the image
+ * id and both numbers.
+ */
+export async function assertContentLengthMismatchRejectsNotFound(): Promise<void> {
+  const { err } = await runContentRejecting([fixtureRow()], objectOfLength(BYTES.length + 1));
+  assert(errorName(err) === "NotFoundException", `a length mismatch threw ${errorName(err)}`);
+}
+
+export async function assertContentLengthMismatchWarnNamesTheImageIdAndBothNumbers(): Promise<void> {
+  const { warns } = await runContentRejecting([fixtureRow()], objectOfLength(BYTES.length + 1));
+  assert(warns.length === 1, `expected one warn, saw ${warns.length}: ${warns.join(" | ")}`);
+  const warn = warns[0] ?? "";
+  assert(
+    warn.includes(IMAGE_ID) && warn.includes(String(BYTES.length)) && warn.includes(String(BYTES.length + 1)),
+    `the warn must name the image id, the row's byteSize and the object's length: ${warn}`,
+  );
+}
+
+export async function assertContentLengthMismatchWarnNeverCarriesTheKey(): Promise<void> {
+  const { warns } = await runContentRejecting([fixtureRow()], objectOfLength(BYTES.length + 1));
+  assert(!warns.join("\n").includes(OBJECT_KEY_PREFIX), `the warn must not carry the object key: ${warns.join(" | ")}`);
+}
+
+/** The two served cases: an equal length, and a bucket that reports none. */
+export const SERVED_CONTENT_LENGTHS = [
+  { label: "equal to byteSize", contentLength: BYTES.length },
+  { label: "null (unreported)", contentLength: null },
+] as const;
+
+export async function assertContentIsServedWhenTheLengthIs(
+  scenario: (typeof SERVED_CONTENT_LENGTHS)[number],
+): Promise<void> {
+  const fleet = fleetDbFake([{ organizationId: ORG_ID }]);
+  const tenant = tenantDbFake([fixtureRow()]);
+  const { ops } = opsFake(objectOfLength(scenario.contentLength));
+  const service = new AssetImagesService(tenant.db, fleet, configured(ops));
+  const { result, warns } = await capturingWarns(() => service.content(ASSET_ID, IMAGE_ID));
+  assert(result.row.id === IMAGE_ID, `a length ${scenario.label} must be served; got row ${result.row.id}`);
+  assert(warns.length === 0, `a length ${scenario.label} must not warn: ${warns.join(" | ")}`);
+}
+
+/**
+ * `toDto` parses `content_type` through `assetImageContentTypeSchema` rather
+ * than casting: the CHECK backs the enum in SQL, but the derivation (ADR
+ * 0030) is load-bearing in the code as well — a row outside the vocabulary
+ * must throw, never be served as a typed value it is not.
+ */
+export async function assertARowOutsideTheContentTypeEnumThrows(): Promise<void> {
+  const fleet = fleetDbFake([{ organizationId: ORG_ID }]);
+  const tenant = tenantDbFake([{ ...fixtureRow(), contentType: "image/gif" }]);
+  const { ops } = opsFake(async () => null);
+  const service = new AssetImagesService(tenant.db, fleet, configured(ops));
+  const err = await captureRejection(() => service.list(ASSET_ID));
+  assert(errorName(err) === "ZodError", `a row with content_type image/gif threw ${errorName(err)}, not ZodError`);
+}
+
 export async function assertContentReturnsTheDtoAndTheBody(): Promise<void> {
   const fleet = fleetDbFake([{ organizationId: ORG_ID }]);
   const tenant = tenantDbFake([fixtureRow()]);

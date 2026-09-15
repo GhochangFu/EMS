@@ -19,6 +19,7 @@ import {
   assertAnotherTenantSeesNoRow,
   assertContentHashMatchesTheRow,
   assertContentReturnsTheStoredBytes,
+  assertCreateBucketOnAnExistingBucketIsALostRace,
   assertDeletingTheAssetRemovesTheImageRow,
   assertEnsureBucketCreatesAMissingBucket,
   assertEnsureBucketIsIdempotent,
@@ -181,6 +182,10 @@ describe.skipIf(!connectionString || !storageConfig)(
 
     it("creates nothing on a second ensureBucket", async () => {
       await assertEnsureBucketIsIdempotent(fx);
+    });
+
+    it("measures CreateBucket on an existing bucket as a lost race (resolves or a BUCKET_RACE_NAMES name)", async () => {
+      await assertCreateBucketOnAnExistingBucketIsALostRace(fx);
     });
 
     it("streams back the bytes that were put (decision 10)", async () => {

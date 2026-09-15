@@ -1,7 +1,13 @@
 import { describe, it } from "vitest";
 
 import {
+  assertARowOutsideTheContentTypeEnumThrows,
   assertBlindedFleetReadIsReachedWhenConfigured,
+  assertContentIsServedWhenTheLengthIs,
+  assertContentLengthMismatchRejectsNotFound,
+  assertContentLengthMismatchWarnNamesTheImageIdAndBothNumbers,
+  assertContentLengthMismatchWarnNeverCarriesTheKey,
+  SERVED_CONTENT_LENGTHS,
   assertContentReturnsTheDtoAndTheBody,
   assertContentWithNoObjectAskedStorageForTheRowsKey,
   assertContentWithNoObjectRejectsNotFound,
@@ -128,5 +134,25 @@ describe("F3.3 — AssetImagesService over fakes", () => {
 
   it("content returns the DTO and streams the bytes", async () => {
     await assertContentReturnsTheDtoAndTheBody();
+  });
+
+  it("a Content-Length that differs from the row's byteSize rejects NotFoundException", async () => {
+    await assertContentLengthMismatchRejectsNotFound();
+  });
+
+  it("the length-mismatch warn names the image id and both numbers", async () => {
+    await assertContentLengthMismatchWarnNamesTheImageIdAndBothNumbers();
+  });
+
+  it("the length-mismatch warn never carries the key", async () => {
+    await assertContentLengthMismatchWarnNeverCarriesTheKey();
+  });
+
+  it.each(SERVED_CONTENT_LENGTHS)("content is served when the object's length is $label", async (scenario) => {
+    await assertContentIsServedWhenTheLengthIs(scenario);
+  });
+
+  it("a row whose content_type is outside the enum throws ZodError", async () => {
+    await assertARowOutsideTheContentTypeEnumThrows();
   });
 });

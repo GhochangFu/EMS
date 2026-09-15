@@ -8,6 +8,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Response } from "express";
+import { pipeline } from "node:stream";
 
 import type { AssetImageDto, JwtPayload } from "@bms/shared";
 
@@ -34,11 +35,22 @@ import { AssetImagesService } from "./asset-images.service";
  * value for Nest to serialise. Decision 6's headers, from the row and never
  * from the object: `Content-Type` is the stored `content_type`, `ETag` is
  * the stored `sha256` quoted, `Cache-Control: private, max-age=0,
- * must-revalidate`, `Content-Disposition: inline`, and `Content-Length` is
- * the stored `byte_size` (the row is the authority, decision 4). A stream
- * error after the headers have gone cannot become a status, so the response
- * is destroyed — the client sees a truncated body, never a 200 that lies —
- * and one `warn` names the image id.
+ * must-revalidate`, `Content-Disposition: inline`, `Content-Length` is
+ * the stored `byte_size` (the row is the authority, decision 4), and
+ * `X-Content-Type-Options: nosniff` so a browser cannot sniff the stored
+ * bytes into another type. Every header is set **before** the body is
+ * handed to `pipeline` — a header after the first chunk is a throw — and
+ * the spec pins that order.
+ *
+ * **`pipeline`, never `body.pipe(res)`.** `pipe` does not destroy its
+ * source when the destination goes away, so a client that disconnected
+ * mid-download left the object stream's socket to MinIO open until the SDK
+ * timed it out. `pipeline` tears down both ends on either side's failure:
+ * a body error after the headers have gone cannot become a status, so the
+ * response is destroyed — the client sees a truncated body, never a 200
+ * that lies — and a client abort destroys the body. Either way one `warn`
+ * names the image id and the error's `code`/`name`, never its message
+ * (§9.6).
  *
  * **No `If-None-Match` handling.** The `ETag` is sent so a browser cache
  * can revalidate; answering 304 to a matching tag is a possible `F3.4`
@@ -92,13 +104,26 @@ export class AssetImagesController {
     res.setHeader("Cache-Control", "private, max-age=0, must-revalidate");
     res.setHeader("Content-Disposition", "inline");
     res.setHeader("Content-Length", String(row.byteSize));
+    res.setHeader("X-Content-Type-Options", "nosniff");
 
-    body.on("error", () => {
-      // Headers may already be on the wire: a status cannot change, so the
-      // socket is closed instead of ending a short body as if it were whole.
-      this.logger.warn(`asset image ${imageId}: body stream failed after headers were sent`);
-      res.destroy();
+    pipeline(body, res, (err) => {
+      if (err) {
+        // Headers may already be on the wire: a status cannot change.
+        // `pipeline` has destroyed both streams — the object socket is
+        // released whichever side failed, including a client that went away.
+        this.logger.warn(
+          `asset image ${imageId}: stream ended early after headers were sent (${errorCodeOrName(err)})`,
+        );
+      }
     });
-    body.pipe(res);
   }
+}
+
+/** `err.code` (e.g. `ERR_STREAM_PREMATURE_CLOSE`) or `err.name` — never `err.message` (§9.6). */
+function errorCodeOrName(err: unknown): string {
+  if (typeof err !== "object" || err === null) {
+    return "Error";
+  }
+  const { code, name } = err as { code?: unknown; name?: unknown };
+  return typeof code === "string" ? code : typeof name === "string" ? name : "Error";
 }

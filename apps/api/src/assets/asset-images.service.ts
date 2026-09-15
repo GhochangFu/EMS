@@ -10,6 +10,7 @@ import type { Readable } from "node:stream";
 
 import { assetImages } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { assetImageContentTypeSchema } from "@bms/shared";
 import type { AssetImageDto } from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
@@ -28,23 +29,43 @@ import { STORAGE_CLIENT } from "../storage/storage.tokens";
  * (decision 3, "two routes that answer 503") and never opens a transaction
  * for a list it cannot serve.
  *
- * **The read runs under the request's RLS.** Both reads go through
- * `withReadScope(tenantDb, fleetDb, [assetId], …)`: one asset id always
- * resolves to a single organization, so the read runs inside `withTenant`
- * with the GUC set and the `0072` `FORCE` policy scoping it — a tenant read
- * inside a transaction, never on a bare connection (AGENTS.md §4.4). The
- * controller has already refused an asset outside the caller's scope, so
- * the policy is the backstop, not the gate. The constructor order (tenant,
- * fleet) is pinned by `database/fleet-read-wiring.spec.ts`: `withReadScope`
- * reads its pools positionally and a swap silently unscopes.
+ * **The read runs under the request's RLS — and the policy is not the
+ * tenant-isolation gate here.** Both reads go through
+ * `withReadScope(tenantDb, fleetDb, [assetId], …)`, which resolves the tenant
+ * GUC **from the path asset** on the fleet pool and then runs the read inside
+ * `withTenant` with that GUC set (a tenant read inside a transaction, never
+ * on a bare connection — AGENTS.md §4.4). Because the GUC comes from the
+ * asset and not from the caller, the `0072` `FORCE` policy scopes the read
+ * to *that asset's* organization: it filters a row mis-stamped with another
+ * organization (the integration spec's scoped-list rows), but it cannot
+ * refuse a caller from organization B asking for organization A's asset —
+ * for that request the GUC is A. The isolation gate is
+ * `AccessControlService.canReadAsset` in the controller, which runs before
+ * this service and is organization-bounded for every non-admin:
+ * `readableAssetIds` walks `scopeForUser`'s grant sources
+ * (`auth/access-control.service.ts`), and no source but the admin-only
+ * `global` one reaches an asset outside the caller's organizations. That is
+ * proved behaviourally by `auth/access-control.integration.spec.ts`:
+ * `assertOrganizationScope` (the seeded `phe-admin@bms.local`,
+ * `organization_admin` in PHEWB, sees none of the other organization's
+ * assets in `scope.assetIds`, with the fixture-not-vacuous control) and
+ * `assertLocationScope` (`canReadAsset` answers `false` for an asset
+ * `readableAssetIds` excluded — the two paths agree). The constructor order
+ * (tenant, fleet) is pinned by `database/fleet-read-wiring.spec.ts`:
+ * `withReadScope` reads its pools positionally and a swap silently unscopes.
  *
  * **The row is the authority (decision 4).** `objectKey` is read and used
  * to address the bucket and appears in no DTO, no thrown message and no log
  * line. A row whose object is missing is a 404 with one `warn` naming the
- * **image id**; a transport failure (MinIO down, configured) is a 503
- * "Object storage is unreachable" with one `warn` naming the image id and
- * `err.name` (Q-F) — never `err.message`, which an SDK error may stuff with
- * the key or the endpoint (§9.6).
+ * **image id**; so is an object whose reported `contentLength` differs from
+ * the row's `byte_size` — the controller sends `Content-Length` from the
+ * row, and a body of another length under that header is a 200 that lies,
+ * so the mismatch is treated as the missing-object case (warn names the
+ * image id and both numbers; an unreported length is trusted). A transport
+ * failure (MinIO down, configured) is a 503 "Object storage is unreachable"
+ * with one `warn` naming the image id and `err.name` (Q-F) — never
+ * `err.message`, which an SDK error may stuff with the key or the endpoint
+ * (§9.6).
  *
  * `content` reads the row inside the transaction and fetches the object
  * **after** it commits, so a streaming body never holds a tenant
@@ -107,6 +128,14 @@ export class AssetImagesService {
       this.logger.warn(`asset image ${imageId} has no object in the bucket (ADR 0066 decision 4)`);
       throw new NotFoundException("Asset image not found");
     }
+    if (object.contentLength !== null && object.contentLength !== row.byteSize) {
+      // The socket behind the body is open; release it before refusing.
+      object.body.destroy();
+      this.logger.warn(
+        `asset image ${imageId}: the object's length ${object.contentLength} differs from the row's byteSize ${row.byteSize}; treated as missing (ADR 0066 decision 4)`,
+      );
+      throw new NotFoundException("Asset image not found");
+    }
     return { row: toDto(row), body: object.body };
   }
 }
@@ -147,13 +176,16 @@ function selectRows(tx: BmsTx, where: ReturnType<typeof eq> | ReturnType<typeof 
 /**
  * Picks the DTO's fields by name — never a spread, so `objectKey` cannot ride
  * along. `contentType` is a `text` column bound to the DTO's closed enum by
- * `asset_images_content_type_check` (Q-E), so the cast is backed in SQL.
+ * `asset_images_content_type_check` (Q-E) in SQL, and **parsed** through the
+ * same schema here rather than cast: the ADR 0030 derivation is
+ * load-bearing, so a row outside the vocabulary throws instead of being
+ * served as a typed value it is not.
  */
 function toDto(row: StoredRow): AssetImageDto {
   return {
     id: row.id,
     assetId: row.assetId,
-    contentType: row.contentType as AssetImageDto["contentType"],
+    contentType: assetImageContentTypeSchema.parse(row.contentType),
     byteSize: row.byteSize,
     sha256: row.sha256,
     originalFilename: row.originalFilename,

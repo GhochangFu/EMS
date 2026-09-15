@@ -1,22 +1,30 @@
 import { describe, it } from "vitest";
 
 import {
+  assertABodyErrorAfterHeadersWarnsWithTheImageId,
+  assertAllowedContentCallsTheServiceOnceAndStreamsTheBytes,
+  assertAllowedContentSendsNosniff,
+  assertAllowedListCallsTheServiceOnce,
   assertBothHandlersRefuseWithTheScopeMessage,
   assertContentChecksAccessBeforeTheService,
-  assertContentDestroysTheResponseOnAStreamError,
   assertContentHandlerTakesRes,
-  assertContentPipesTheBody,
+  assertContentPipelinesTheBodyToRes,
   assertContentRouteIsDeclaredAtALineStart,
   assertContentSetsContentLengthFromTheRow,
+  assertContentSetsEveryHeaderBeforeThePipeline,
   assertContentSetsHeader,
+  assertContentWarnsInThePipelineCallback,
   assertControllerDoesNotHandleIfNoneMatch,
   assertControllerIsGuardedByJwt,
+  assertDeniedHandlerNeverCallsTheService,
+  assertDeniedHandlerThrowsForbidden,
   assertListChecksAccessBeforeTheService,
   assertListHandlerDoesNotTakeRes,
   assertNoHandlerArgumentIsNamedKey,
   assertScanFindsBothHandlers,
   assertScanFindsTheAssetIdParam,
   DECISION_6_HEADERS,
+  HANDLERS,
 } from "./asset-images.controller.spec";
 
 /**
@@ -61,12 +69,16 @@ describe("F3.3 — asset-images controller source scan", () => {
     assertContentSetsContentLengthFromTheRow();
   });
 
-  it("content pipes the body", () => {
-    assertContentPipesTheBody();
+  it("content pipelines the body to res, never body.pipe(res)", () => {
+    assertContentPipelinesTheBodyToRes();
   });
 
-  it("content destroys the response on a stream error", () => {
-    assertContentDestroysTheResponseOnAStreamError();
+  it("content sets every header before the pipeline call", () => {
+    assertContentSetsEveryHeaderBeforeThePipeline();
+  });
+
+  it("content warns with the image id in the pipeline callback", () => {
+    assertContentWarnsInThePipelineCallback();
   });
 
   it("does not handle If-None-Match", () => {
@@ -83,5 +95,31 @@ describe("F3.3 — asset-images controller source scan", () => {
 
   it("the controller is JWT-guarded under assets/:assetId/images", () => {
     assertControllerIsGuardedByJwt();
+  });
+});
+
+describe("F3.3 — asset-images controller over stubs (the guard, measured)", () => {
+  it.each(HANDLERS)("%s throws ForbiddenException when canReadAsset is false", async (handler) => {
+    await assertDeniedHandlerThrowsForbidden(handler);
+  });
+
+  it.each(HANDLERS)("%s never calls the service when canReadAsset is false", async (handler) => {
+    await assertDeniedHandlerNeverCallsTheService(handler);
+  });
+
+  it("list calls the service once when allowed (positive control)", async () => {
+    await assertAllowedListCallsTheServiceOnce();
+  });
+
+  it("content calls the service once when allowed and streams the bytes (positive control)", async () => {
+    await assertAllowedContentCallsTheServiceOnceAndStreamsTheBytes();
+  });
+
+  it("content sends X-Content-Type-Options: nosniff", async () => {
+    await assertAllowedContentSendsNosniff();
+  });
+
+  it("a body error after the headers warns once, naming the image id and never err.message", async () => {
+    await assertABodyErrorAfterHeadersWarnsWithTheImageId();
   });
 });

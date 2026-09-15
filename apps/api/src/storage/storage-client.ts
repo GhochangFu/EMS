@@ -50,8 +50,13 @@ export class StorageUnavailableError extends Error {
   override readonly name = "StorageUnavailableError";
 }
 
-/** The names S3 answers a `CreateBucket` that lost a race with; either means the bucket is there. */
-const BUCKET_RACE_NAMES: ReadonlySet<string> = new Set(["BucketAlreadyOwnedByYou", "BucketAlreadyExists"]);
+/**
+ * The names S3 answers a `CreateBucket` that lost a race with; either means
+ * the bucket is there. Exported so `storage.integration.spec.ts` can measure
+ * the real answer against the set rather than against a fake (see the
+ * `aws-s3-ops.ts` measurement table).
+ */
+export const BUCKET_RACE_NAMES: ReadonlySet<string> = new Set(["BucketAlreadyOwnedByYou", "BucketAlreadyExists"]);
 
 export function createStorageClient(
   config: StorageConfig,
