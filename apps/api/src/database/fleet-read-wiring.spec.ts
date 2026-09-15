@@ -6,6 +6,7 @@ import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import { AlarmsService } from "../alarms/alarms.service";
 import { LocationsAdminService } from "../admin/locations/locations.service";
 import { TelemetryImportService } from "../admin/telemetry-import/telemetry-import.service";
+import { AssetImagesService } from "../assets/asset-images.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { WorkerHostService } from "../queue/worker-host.service";
@@ -131,4 +132,17 @@ export function assertAlarmRaiserTenantSlot(): void {
 /** `F3.11` — `AlarmNotifyService(fleetDb, gateway, metrics)`: the fleet pool in slot 0, for the read-by-id after `NOTIFY`. */
 export function assertAlarmNotifyServiceFleetSlot(): void {
   expect(injectedToken(AlarmNotifyService, 0)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F3.3` — `AssetImagesService(tenantDb, fleetDb, client)` (ADR 0066 decision 6):
+ * a conformed `withReadScope` reader, tenant first. Two claims, one function
+ * each, as for `WorkerHostService`.
+ */
+export function assertAssetImagesServiceTenantSlot(): void {
+  expect(injectedToken(AssetImagesService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertAssetImagesServiceFleetSlot(): void {
+  expect(injectedToken(AssetImagesService, 1)).toBe(FLEET_DRIZZLE);
 }
