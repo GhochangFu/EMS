@@ -434,7 +434,10 @@ The current planning direction is:
    second S3 client, never accept an object key from a client, and keep the
    deferrals by name: presigned URLs, `lib-storage`/multipart, thumbnails,
    the orphan sweep, KES/SSE and TLS in compose (ADR 0066 decisions 2, 6, 8,
-   11).
+   11, and thumbnails in its Dependencies section). The `http://` refusal
+   is the code's; compose defaults `OBJECT_STORAGE_ALLOW_INSECURE` **empty**
+   since Amendment 2, so a dev `.env` sets it and a stale one fails the boot
+   loudly.
 14. Plan Phase 6 as Three.js Control Room only.
 15. Keep general AI Copilot / chatbot out of scope for site navigation. The
    **scoped AI onboarding wizard** (admin ingestion only, ADR 0011) is merged
