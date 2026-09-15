@@ -292,13 +292,36 @@ export const queueHealthSchema = z
   .strict();
 
 /**
+ * The `storage` section of the liveness body (`F3.3`, ADR 0066 decisions 3, 9).
+ *
+ * `configured: false` is the native-dev path — no `OBJECT_STORAGE_ENDPOINT`,
+ * mirroring `queue`'s `configured` field — and is never a degradation.
+ * `reachable: false` while configured is: a bounded `HeadBucket` could not be
+ * answered inside the health timeout. `bucket` is the configured bucket name,
+ * `null` when unconfigured.
+ */
+export const storageHealthSchema = z
+  .object({
+    configured: z.boolean(),
+    reachable: z.boolean(),
+    bucket: z.string().nullable(),
+  })
+  .strict();
+
+/**
  * `GET /health` on both processes. `degraded` still answers HTTP 200 (plan
  * §15 ruling 1): the route is a liveness probe, and a dead worker is not a
  * reason for an orchestrator to restart a process that serves traffic.
+ *
+ * `storage` is **optional** (ADR 0066 Q-A): the worker has no `StorageModule`
+ * and injects no `StorageHealthService`, so its response body carries no
+ * `storage` key at all — never `{ configured: false, ... }`, which would
+ * claim a state the worker never reads.
  */
 export const livenessResponseSchema = z
   .object({
     status: z.enum(["ok", "degraded"]),
     queue: queueHealthSchema,
+    storage: storageHealthSchema.optional(),
   })
   .strict();

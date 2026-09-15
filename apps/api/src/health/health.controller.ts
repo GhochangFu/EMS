@@ -1,11 +1,16 @@
 import type { LivenessResponse } from "@bms/shared";
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Optional } from "@nestjs/common";
 
 import { QueueHealthService } from "../queue/queue-health.service";
+import { withStorageVerdict } from "../storage/storage-health";
+import { StorageHealthService } from "../storage/storage-health.service";
 
 @Controller("health")
 export class HealthController {
-  constructor(private readonly queueHealth: QueueHealthService) {}
+  constructor(
+    private readonly queueHealth: QueueHealthService,
+    @Optional() private readonly storageHealth?: StorageHealthService,
+  ) {}
 
   /**
    * Liveness probe for local dev and orchestration, served by both processes
@@ -25,9 +30,23 @@ export class HealthController {
    *
    * An unconfigured queue (no `REDIS_URL`, ADR 0002's native-dev path) reads
    * `ok` — a chosen state, not a degradation.
+   *
+   * **`storage` is present on the API and absent on the worker** (`F3.3`,
+   * ADR 0066 decision 9, plan Q-A). Only `AppModule` imports
+   * `StorageModule`, so only the API process can resolve
+   * `StorageHealthService`; the worker resolves `undefined` for the
+   * `@Optional()` parameter and its body carries no `storage` key at all —
+   * never `{ configured: false, … }`, which would claim a state the worker
+   * never reads. `withStorageVerdict` then applies the same 200-with-a-body
+   * rule to the store: a configured but unreachable bucket reads
+   * `degraded` (Q-B), an unconfigured one leaves the verdict alone.
    */
   @Get()
-  getHealth(): Promise<LivenessResponse> {
-    return this.queueHealth.read();
+  async getHealth(): Promise<LivenessResponse> {
+    const base = await this.queueHealth.read();
+    if (!this.storageHealth) {
+      return base;
+    }
+    return withStorageVerdict(base, await this.storageHealth.read());
   }
 }

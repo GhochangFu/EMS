@@ -69,8 +69,9 @@ VMs. Use profiles so an 8 GB laptop does not need to run every service
 all day.
 
 ```bash
-# Build and start Postgres/TimescaleDB, Redis, Keycloak, migrations/seed,
-# API, the BullMQ worker (F4.24, ADR 0063; :4100), and web.
+# Build and start Postgres/TimescaleDB, Redis, Keycloak, MinIO (F3.3, ADR
+# 0066), migrations/seed, API, the BullMQ worker (F4.24, ADR 0063; :4100),
+# and web.
 docker compose --profile core up --build
 
 # Optional: run migrations and seed data explicitly. Keep `--build`: unlike
@@ -85,7 +86,8 @@ docker compose --profile sim up --build sim
 
 Open `http://localhost:5173`. The compose database is exposed on
 `localhost:5432`; the API is exposed on `localhost:4000`; Keycloak is
-exposed on `localhost:8080`.
+exposed on `localhost:8080`; MinIO S3 on `127.0.0.1:9000`, console on
+`127.0.0.1:9001` (loopback only, F3.3, ADR 0066).
 
 With the compose path, sign in through Keycloak as `admin@bms.local` /
 `admin123`. Native WSL can still use the local login form when

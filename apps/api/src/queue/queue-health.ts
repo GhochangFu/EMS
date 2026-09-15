@@ -24,7 +24,11 @@ import { parseRuleSweepSummary } from "./rules-sweep";
  * timer — collapses to one `connected: false` shape with the gauges
  * untouched: a partial read must not publish half a picture.
  *
- * `livenessFrom` is the one place the verdict is decided. An unconfigured
+ * `livenessFrom` decides the queue half of the verdict, and since `F3.3`
+ * (ADR 0066 Q-B) it is no longer the whole of it: `HealthController` passes
+ * its result through `withStorageVerdict` (`storage/storage-health.ts`),
+ * which can tighten `ok` to `degraded` for an unreachable object store and
+ * never the other way. Two steps, in that order. An unconfigured
  * queue is `ok` — a chosen state (ADR 0002's native-dev path), not a
  * degradation — and a configured one degrades when it cannot be read or when
  * the heartbeat is stale (which includes the never-ticked null, plan §15
@@ -164,7 +168,7 @@ export async function readQueueHealth(
   };
 }
 
-/** The one place the verdict is decided: `degraded` when a configured queue is unreadable or its heartbeat is stale, `ok` otherwise. */
+/** The queue half of the verdict: `degraded` when a configured queue is unreadable or its heartbeat is stale, `ok` otherwise — then `withStorageVerdict` (`storage/storage-health.ts`, `F3.3`) may tighten it for the object store. */
 export function livenessFrom(queue: QueueHealth): LivenessResponse {
   const degraded = queue.configured && (!queue.connected || queue.heartbeatStale);
   return { status: degraded ? "degraded" : "ok", queue };

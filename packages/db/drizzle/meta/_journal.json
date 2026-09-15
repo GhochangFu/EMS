@@ -498,6 +498,13 @@
       "when": 1789217764145,
       "tag": "0071_rtu_code_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1789451212123,
+      "tag": "0072_asset_images",
+      "breakpoints": true
     }
   ]
 }

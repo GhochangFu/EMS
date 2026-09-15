@@ -221,7 +221,16 @@ code obligations.
   justification. Version resolved at build time and recorded here by
   amendment, ADR 0063's pattern. No other package: not `minio`, not
   `@aws-sdk/lib-storage`, not `sharp` (no thumbnailing — a later row, with a
-  size number that justifies it).
+  size number that justifies it). Resolved 2026-09-15 to
+  `@aws-sdk/client-s3 3.1132.0`. **MinIO image pinned to
+  `quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z`** (Amendment 1, registry).
+  `docker pull minio/minio:latest` fails, and the unauthenticated Docker Hub
+  API confirms it is not a rate limit — `GET
+  https://hub.docker.com/v2/repositories/minio/minio/` returns `404`; the
+  repository does not exist on Docker Hub under that name. Both facts were
+  measured twice on 2026-09-15 (the Unit 1 builder, then the orchestrator).
+  The tag on `quay.io` is proved with `docker manifest inspect` (exit 0) and
+  the image ships both `curl` and `mc` for the healthcheck.
 - Migration `0072` and one new drizzle schema file (decision 5). The
   migration adds one table and one policy; it touches no existing table.
 - Compose: one new service, one volume, two changed services (decision 9).
@@ -268,3 +277,25 @@ AWS endpoint. The ruling followed that answer.
 | Q2 | 6 | API-proxied content route; MinIO on loopback; no presigned URLs. | Presigned GET/PUT URLs so the browser talks to MinIO directly. Cheaper API CPU per byte, and it needs MinIO reachable from the browser, a CORS policy, a public hostname in the compose stack, and a URL that outlives the request and carries no RLS. Deferred until a measured payload size makes proxying costly. |
 | Q3 | 7 | `F3.3` = infra + table + storage service + read routes; `F3.4` = upload, delete, audit, UI. | Fold `F3.4` into `F3.3` (its effort is already `incl.`). One PR proves the whole path in a browser, and the row grows from an enabler into a feature with a UI surface that the mockups do not specify — the shape §5 asks a design ruling for. |
 | Q4 | 8 | §7 items 1 and 2 become deployer requirements; the API refuses `http://` without an explicit insecure flag. | Meet §7 as written: MinIO KES plus a KMS and TLS certificates in compose. It is the E8.1 boundary reopened for one service, adds two containers and a certificate workflow to `core`, and no other service in the stack meets the same bar. |
+
+## Amendment 1 — plan rulings (2026-09-15)
+
+Seven questions were raised by the step-3 plan (`docs/plans/f3.3-object-storage.md` §1) and ruled before code: two by the owner, five by the orchestrator as routine calls under the ADR.
+- Q-C (owner): the `minio` service also carries the `realtime-smoke` profile, so `api-replica` can depend on it `service_healthy`; decision 9's profile list becomes `core`, `pilot`, `phe`, `realtime-smoke`.
+- Q-D (owner): CI runs MinIO with a `docker run` step using the same image tag as compose plus a readiness loop, because a GitHub Actions `services:` entry accepts no `command:` and `minio/minio` needs `server /data`. The invariant test compares the two tag strings.
+- Q-A: `storage` is optional on `livenessResponseSchema`; the worker's `/health` body has no `storage` key.
+- Q-B: `configured && !reachable` reads `status: "degraded"` (HTTP 200), mirroring the queue rule; unconfigured reads `ok`.
+- Q-E: `asset_images_content_type_check` backs the closed content-type vocabulary in SQL (§4.8).
+- Q-F: a transport failure on the content route answers 503 "Object storage is unreachable", with a `warn` naming the image id.
+- Q-G: `withRollback` is extracted to `apps/api/src/testing/with-rollback.ts` for new suites only; the eleven existing private copies stay.
+- Registry (orchestrator, measured): decision 9's `minio/minio:RELEASE.*` reads `quay.io/minio/minio:RELEASE.*`. Docker Hub no longer hosts the repository (404 on the registry API); `quay.io` is MinIO's own registry and the image is the same build. The intent of decision 9 — one pinned official MinIO image, byte-identical in compose and CI — is unchanged. Unit 8's invariant regex matches the `quay.io/` prefix.
+- Superseded by Q-D: decision 10's "one pinned `minio` entry in the integration job's `services:`" and the Dependencies section's "CI: one `services:` entry (decision 10)" both describe the option Q-D declined — `ci.yml` runs a `docker run -d` step plus a readiness loop instead, because GitHub Actions `services:` accepts no `command:`. The gate Q-D and decision 10 both protect — the storage spec runs in CI and never silently skips — is unchanged.
+
+**Review findings applied 2026-09-15** (pre-merge review of the feature branch; each is gated by a test that reddened under mutation):
+- A — `asset-images.controller.ts`: the content route streams through `pipeline(body, res, cb)` rather than `body.pipe(res)`, so a client that disconnects mid-download destroys the object stream instead of leaving its socket open; every header is set before the pipeline call (order pinned by the spec); `X-Content-Type-Options: nosniff` joins decision 6's headers; and the guard is now measured over stubs (denied → 403 and the service is never called), not only read by the source scan.
+- B — `asset-images.service.ts`: an object whose reported `Content-Length` differs from the row's `byte_size` is the decision-4 missing-object case (404 and one warn naming the image id and both numbers; an unreported length is trusted); `content_type` is parsed through `assetImageContentTypeSchema` rather than cast; and the docblock no longer calls the `0072` policy "the backstop" for tenant isolation — on these routes the GUC is resolved from the path asset, so the policy scopes the read to that asset's organization and `canReadAsset` in the controller is the isolation gate, proved by the existing `access-control.integration.spec.ts` rows (`assertOrganizationScope`, `assertLocationScope`).
+- C — `storage/`: the `CreateBucket` lost-race name is measured against real MinIO (`BucketAlreadyOwnedByYou` / 409, recorded in `aws-s3-ops.ts`'s table; `BUCKET_RACE_NAMES` is exported for the row), and `StorageBootstrap.onModuleInit` is bounded by `STORAGE_BOOTSTRAP_TIMEOUT_MS` (10 s) so a silent endpoint refuses the boot with a message naming the timeout, never the endpoint.
+- D — `packages/shared/src/contracts/asset-images.ts`: `originalFilename` and `caption` are bounded (`MAX_ASSET_IMAGE_FILENAME_CHARS` = 255, `MAX_ASSET_IMAGE_CAPTION_CHARS` = 1000, exported for `F3.4`'s write path); the SQL columns stay `text` because `0072` is frozen.
+- E — `docker-compose.yml`: `OBJECT_STORAGE_ENDPOINT` and `OBJECT_STORAGE_ALLOW_INSECURE` are `${…:-default}` on `api` and `api-replica`, so a pilot sets an `https://` endpoint in its `.env` without editing the file; the CI invariant now asserts the readiness step precedes `Run tests` rather than that the URL appears somewhere.
+- F — docs: `encryption-at-rest.md` §7 item 3 is qualified to the hosted case (on compose the S3 port is on loopback with committed dev credentials, and "private by default" is MinIO's bucket default, not code); `local-setup.md` §14 no longer lists MinIO as not installed.
+- Not solved here, filed as a backlog row by the closure commit: **M4** — the API authenticates to MinIO as the root user (`MINIO_ROOT_USER`), and a scoped service key with a bucket-only policy needs provisioning outside this repository.

@@ -71,6 +71,27 @@ jobs:
       # value here is a workflow break, not an environment choice. No other spec
       # reads this variable; the API is never booted in this job.
       REDIS_URL: redis://localhost:6379
+      # ADR 0066 decision 10 (F3.3), on the REDIS_URL comment's reasoning
+      # directly above. These six enable
+      # `apps/api/src/storage/storage.integration.test.ts`, which
+      # `integration-storage-gate.ts` REFUSES to skip under CI — an unset
+      # value here throws at import rather than reporting a green run that
+      # exercised no object store. The endpoint is the `docker run` step
+      # below, not a `services:` entry: a services entry accepts no
+      # `command:` and the MinIO image needs `server /data` (Amendment 1,
+      # Q-D). The API is never booted in this job; only the spec reads these.
+      #
+      # `OBJECT_STORAGE_ALLOW_INSECURE` is `"true"` here for the same reason
+      # it is in docker-compose.yml and no other: the endpoint is plain http
+      # on the runner's own loopback. A hosted deployment sets an `https://`
+      # endpoint and leaves the flag unset (ADR 0066 decision 8).
+      OBJECT_STORAGE_ENDPOINT: http://localhost:9000
+      OBJECT_STORAGE_BUCKET: bms-asset-images
+      OBJECT_STORAGE_ACCESS_KEY: bms_minio_dev
+      OBJECT_STORAGE_SECRET_KEY: bms_minio_dev_secret
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
+      OBJECT_STORAGE_ALLOW_INSECURE: "true"
 
     steps:
       - name: Checkout
@@ -187,6 +208,37 @@ jobs:
       # no compression policy compresses anything here.
       - name: Validate the aggregate backfill script
         run: pnpm db:refresh-aggregates
+
+      # ADR 0066 decision 10 and Amendment 1 Q-D (F3.3). A `docker run` STEP,
+      # not a `services:` entry: a services entry accepts no `command:`, and
+      # this image's entrypoint has no default server command — `minio` alone
+      # prints usage and exits, so a services entry would report "started"
+      # for a container that is not serving. The tag is byte-identical to
+      # docker-compose.yml's, on ADR 0023 decision 4's reasoning as ADR 0063
+      # decision 13 applied it to Redis: CI runs the engine compose runs, and
+      # `tests/f3.3-object-storage-invariants.test.ts` reads both files and
+      # compares the two strings.
+      #
+      # The readiness loop is bounded and FAILS THE JOB if the store never
+      # answers. Without it the storage spec would race the container and
+      # fail with a transport error that reads like a code defect.
+      - name: Start MinIO for the storage integration spec
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=bms_minio_dev \
+            -e MINIO_ROOT_PASSWORD=bms_minio_dev_secret \
+            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+          for attempt in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live; then
+              echo "MinIO is live after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MinIO did not answer /minio/health/live within 60s."
+          docker logs minio
+          exit 1
 
       # Deliberately last. Vitest fails fast, so running it earlier would let a
       # single broken unit test abort the job before db:seed ever executes —
