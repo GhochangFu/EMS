@@ -4876,9 +4876,10 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
 - **Status:** merged 2026-09-15 — PR
   [#451](https://github.com/GhochangFu/EMS/pull/451) (`3c617a0f`), 21
   commits over `a0af1824` (the ADR, PR #450, accepted the same morning with
-  five gate questions ruled as drafted). The last Wave 0 enabler; Wave 0 is
-  closed. One dependency (`@aws-sdk/client-s3` 3.1132.0, §9.4), one migration
-  (`0072`), no `apps/web` change.
+  five gate questions ruled as drafted). The last Wave 0 star; `E8.1`,
+  `E8.2`, `E8.4` and `F4.123` stay open in Wave 0. One dependency
+  (`@aws-sdk/client-s3` 3.1132.0, §9.4), one migration (`0072`), no
+  `apps/web` change.
 - **What the owner ruled first.** Start now and retire §4 rule 13's
   report-file trigger (PDF reports are themselves §6; the consumers are `F3.4`
   and `E3.2`); `@aws-sdk/client-s3` over the `minio` client; API-proxied reads
@@ -4903,7 +4904,9 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   and `…/:imageId/content` — JWT, `canReadAsset` before the service, an
   API-proxied stream with `nosniff`, a row/object length mismatch treated as a
   missing object; `minio` in compose and CI, where the storage integration
-  spec refuses to skip; 37 static invariants. **Four reviews applied:** the
+  spec refuses to skip; 42 static invariant rows (44 cases) in
+  `tests/f3.3-object-storage-invariants.test.ts` after the post-merge sweep
+  (ADR 0066 Amendment 2). **Four reviews applied:** the
   code review's stream teardown on client abort and Content-Length authority,
   the security review's overridable compose flags and the docblock that had
   called RLS a backstop on routes whose tenant context comes from the path
