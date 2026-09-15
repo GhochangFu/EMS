@@ -478,24 +478,30 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
   });
 
   /**
-   * The eight actually moved.
+   * The eight actually moved — and the ninth `F3.3` added.
    *
    * The absence assertion above goes quiet either way: once a site reads
    * `parseStoredContract(schema, …)` there is no `.parse(` left at it to find,
-   * so "no offenders" is equally true of eight converted sites and of eight
+   * so "no offenders" is equally true of nine converted sites and of nine
    * sites deleted. This counts the positive.
    */
-  it("routes all eight stored-data parses through parseStoredContract", () => {
+  it("routes all nine stored-data parses through parseStoredContract", () => {
     const occurrences = (rel: string): number =>
       (blankCommentsAndStrings(read(rel)).match(/parseStoredContract\(/g) ?? []).length;
 
     expect(
-      { stock: occurrences(STOCK_SERVICE), templates: occurrences(TEMPLATES_SERVICE), instantiate: occurrences(INSTANTIATE_SERVICE) },
+      {
+        stock: occurrences(STOCK_SERVICE),
+        templates: occurrences(TEMPLATES_SERVICE),
+        instantiate: occurrences(INSTANTIATE_SERVICE),
+        assetImages: occurrences(ASSET_IMAGES_SERVICE),
+      },
       "ADR 0060 Amendment 1 enumerates eight stored-data parses: one in the stock service, " +
-        "five in dashboard-templates.service.ts and two in the instantiate service. A site " +
-        "reverted to a bare .parse() answers 400 under the filter, which is ruling 2's " +
-        "failure mode exactly.",
-    ).toEqual({ stock: 1, templates: 5, instantiate: 2 });
+        "five in dashboard-templates.service.ts and two in the instantiate service; F3.3 " +
+        "added a ninth, the whole-DTO parse in asset-images.service.ts. A site reverted to " +
+        "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
+        "exactly.",
+    ).toEqual({ stock: 1, templates: 5, instantiate: 2, assetImages: 1 });
   });
 
   /**

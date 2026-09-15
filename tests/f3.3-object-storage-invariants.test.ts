@@ -246,10 +246,24 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
       );
     });
 
-    it.each(["api", "api-replica"])("%s reads OBJECT_STORAGE_ALLOW_INSECURE as ${OBJECT_STORAGE_ALLOW_INSECURE:-…}", (name) => {
+    // Post-merge sweep, security M-1 (2026-09-15): `${…:-true}` defaulted
+    // the flag OPEN whenever a deployer left it unset — which is exactly
+    // what `encryption-at-rest.md` §9 tells a deployer to do. The default
+    // is now EMPTY (the ADR 0041 `${CREDENTIAL_ENCRYPTION_KEY:-}` shape):
+    // an `http://` endpoint with the flag unset refuses the boot with the
+    // decision-8 message, and only a dev `.env` sets it to `true`. The plan's
+    // recorded refusal proof used a compose override that bypassed this
+    // interpolation, so it proved the code guard and not the deployer path;
+    // this row proves the path.
+    it.each(["api", "api-replica"])("%s reads OBJECT_STORAGE_ALLOW_INSECURE as ${OBJECT_STORAGE_ALLOW_INSECURE:-} — an EMPTY default", (name) => {
       expect(serviceBlock(compose, name)).toMatch(
-        /^\s*OBJECT_STORAGE_ALLOW_INSECURE:\s*"?\$\{OBJECT_STORAGE_ALLOW_INSECURE:-true\}"?\s*$/m,
+        /^\s*OBJECT_STORAGE_ALLOW_INSECURE:\s*"?\$\{OBJECT_STORAGE_ALLOW_INSECURE:-\}"?\s*$/m,
       );
+    });
+
+    it("the root .env.example carries an uncommented OBJECT_STORAGE_ALLOW_INSECURE=true (the dev value)", () => {
+      const envExample = readFileSync(join(repoRoot, ".env.example"), "utf8");
+      expect(envExample).toMatch(/^OBJECT_STORAGE_ALLOW_INSECURE=true\s*$/m);
     });
   });
 
@@ -357,6 +371,21 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
     it("health.controller.ts imports neither storage.module, aws-s3-ops nor @aws-sdk", () => {
       expect(source("health/health.controller.ts")).not.toMatch(
         /storage\.module|aws-s3-ops|@aws-sdk/,
+      );
+    });
+
+    // Post-merge sweep (2026-09-15): `health.controller.ts` VALUE-imports
+    // `withStorageVerdict` from `storage/storage-health.ts`, so the worker
+    // loads that file too — the SDK-absence claim was one file short.
+    it("storage/storage-health.ts imports neither storage.module, aws-s3-ops nor @aws-sdk", () => {
+      expect(source("storage/storage-health.ts")).not.toMatch(
+        /storage\.module|aws-s3-ops|@aws-sdk/,
+      );
+    });
+
+    it("positive control: health.controller.ts does value-import storage/storage-health.ts", () => {
+      expect(source("health/health.controller.ts")).toMatch(
+        /^import\s*\{[^}]*\}\s*from\s*["']\.\.\/storage\/storage-health["']/m,
       );
     });
 

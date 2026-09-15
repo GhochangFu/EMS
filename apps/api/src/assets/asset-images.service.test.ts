@@ -1,7 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAContractBreakingRowOnContentLeavesNoBodyOpen,
+  assertAContractBreakingRowThrowsTheStoredContract500,
   assertARowOutsideTheContentTypeEnumThrows,
+  assertAValidRowOnContentIsServedWithALiveBody,
+  CONTRACT_BREAKING_ROWS,
   assertBlindedFleetReadIsReachedWhenConfigured,
   assertContentIsServedWhenTheLengthIs,
   assertContentLengthMismatchRejectsNotFound,
@@ -154,5 +158,17 @@ describe("F3.3 — AssetImagesService over fakes", () => {
 
   it("a row whose content_type is outside the enum answers the stored-contract 500, never a bare ZodError", async () => {
     await assertARowOutsideTheContentTypeEnumThrows();
+  });
+
+  it.each(CONTRACT_BREAKING_ROWS)("a row with $label answers the stored-contract 500 (0072 does not bound it)", async (scenario) => {
+    await assertAContractBreakingRowThrowsTheStoredContract500(scenario);
+  });
+
+  it("content on a row with a CR in sha256 leaves no object stream open", async () => {
+    await assertAContractBreakingRowOnContentLeavesNoBodyOpen();
+  });
+
+  it("content on a valid row is served with a live body (positive control)", async () => {
+    await assertAValidRowOnContentIsServedWithALiveBody();
   });
 });

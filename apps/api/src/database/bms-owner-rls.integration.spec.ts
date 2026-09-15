@@ -33,6 +33,13 @@ export const FORCED_TABLES = [
   "user_organization_access",
   "asset_templates",
   "onboarding_sessions",
+  // `F3.3` / migration `0072` (ADR 0066; added by the post-merge sweep,
+  // 2026-09-15). The live `relforcerowsecurity` check covers it from here;
+  // the count-0 check below is VACUOUS for this table until `F3.4` writes a
+  // row — nothing on `main` inserts into `bms.asset_images`, so 0 is what an
+  // unforced table answers too. `storage.integration.spec.ts` holds the
+  // non-vacuous half against a committed row, as `bms_tenant`.
+  "asset_images",
 ] as const;
 
 function assert(condition: boolean, message: string): void {

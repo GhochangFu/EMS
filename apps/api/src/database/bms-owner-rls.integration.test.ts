@@ -50,7 +50,7 @@ describe.skipIf(!connectionString)("E7.1a — FORCE ROW LEVEL SECURITY binds bms
     await assertTheOwnerIsNotPrivilegedOutOfItsOwnPolicies(pool as pg.Pool);
   });
 
-  it("has ENABLE and FORCE row level security on all five tenant tables", async () => {
+  it("has ENABLE and FORCE row level security on every table in FORCED_TABLES", async () => {
     await assertForceIsSetOnEveryTenantTable(pool as pg.Pool);
   });
 
