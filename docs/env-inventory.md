@@ -31,6 +31,13 @@ provide.
 | `LOG_LEVEL` | No | `info` | Pino log level. |
 | `ENERGY_TARIFF_ZAR_PER_KWH` | No | `2.15` | Indicative Energy Centre cost calculation. |
 | `REDIS_URL` | No | `redis://redis:6379` in compose | Enables Socket.IO Redis fan-out, and the BullMQ job queue (`F4.24`, ADR 0063). Native WSL may omit it for in-process Socket.IO fallback; absent, `GET /health` reports `queue.configured: false` and `enqueue` rejects `QueueUnavailableError` rather than the API failing to boot. |
+| `OBJECT_STORAGE_ENDPOINT` | No | `http://minio:9000` in compose | ADR 0066 decision 3. Unset or whitespace-only reads as unconfigured: the API boots, `GET /health` reports `storage: { configured: false }`, and both asset-image routes answer 503. Set, it must be a valid `http:`/`https:` URL, and `http:` is refused unless `OBJECT_STORAGE_ALLOW_INSECURE=true` is also set. |
+| `OBJECT_STORAGE_BUCKET` | Required if `OBJECT_STORAGE_ENDPOINT` is set | `bms-asset-images` in compose | ADR 0066 decision 3. The one bucket every asset image lives in (`org/<organization_id>/assets/<asset_id>/<image_id>` keys, decision 4). Missing while the endpoint is set is a boot error, not a silent fallback. |
+| `OBJECT_STORAGE_ACCESS_KEY` | Required if `OBJECT_STORAGE_ENDPOINT` is set | `${MINIO_ROOT_USER:-bms_minio_dev}` in compose | ADR 0066 decision 3. Never appears in a thrown configuration message (§9.6). |
+| `OBJECT_STORAGE_SECRET_KEY` | **Secret** — required if `OBJECT_STORAGE_ENDPOINT` is set | `${MINIO_ROOT_PASSWORD:-bms_minio_dev_secret}` in compose | ADR 0066 decision 3. Never appears in a thrown configuration message (§9.6). |
+| `OBJECT_STORAGE_REGION` | No | `us-east-1` | ADR 0066 decision 3. MinIO accepts the default; a hosted S3 deployment sets its real region. |
+| `OBJECT_STORAGE_FORCE_PATH_STYLE` | No | `true` in compose | ADR 0066 decision 3. MinIO needs path-style addressing; AWS S3 does not. `"true"`/blank → `true`, `"false"` → `false`, any other value is a boot error. |
+| `OBJECT_STORAGE_ALLOW_INSECURE` | No | `"true"` in compose | ADR 0066 decision 8. Only the exact string `true` lets the API accept a plain `http://` `OBJECT_STORAGE_ENDPOINT` — compose sets it because the MinIO service is plaintext on a loopback port; a hosted deployment never sets it and uses `https://`. |
 | `CREDENTIAL_ENCRYPTION_KEY` | **Secret** — RTU credentials only | unset (interpolated from compose `.env`) | **32-byte base64** AES-256-GCM key for RTU connection credentials (ADR 0012). Empty means not configured and the API declines to store credentials rather than storing plaintext. Must match the `ingest` service's key. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
 | `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | **Secret** — rotation only | unset (interpolated from compose `.env`) | 32-byte base64 key accepted for **decryption only**, during a rotation window (ADR 0062). Never encrypts. Refuses to boot if set while `CREDENTIAL_ENCRYPTION_KEY` is unset, or while `CREDENTIAL_ENCRYPTION_KEY_VERSION` is `1` (that would make it version 0, which no row can hold). Set on `api`, `api-replica` **and** `ingest`. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
 | `CREDENTIAL_ENCRYPTION_KEY_VERSION` | No | unset (default `1`) | The version `CREDENTIAL_ENCRYPTION_KEY` writes; a stored credential's `key_version` selects which of the two keys reads it. Must be a positive integer. Set on `api`, `api-replica` **and** `ingest`. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
@@ -42,7 +49,10 @@ provide.
 `F4.24` / ADR 0063's second entrypoint (`dist/worker.js`). Runs only with the
 `core` / `pilot` / `phe` compose profiles, or natively via
 `pnpm --filter api worker`. `WorkerModule` imports no `AuthModule`, so none of
-the API's `JWT_SECRET`/`AUTH_MODE`/OIDC variables apply here.
+the API's `JWT_SECRET`/`AUTH_MODE`/OIDC variables apply here. Since `F3.3`
+(ADR 0066 decision 9), the worker also reads none of the six
+`OBJECT_STORAGE_*` variables — `worker.module.ts` has no `StorageModule`
+import, and the compose `worker` service sets none of them.
 
 | Variable | Required | Default / compose value | Purpose |
 |----------|----------|-------------------------|---------|
@@ -82,6 +92,18 @@ re-login during demos.
 | `KEYCLOAK_ADMIN_PASSWORD` | Yes | `admin` | Local Keycloak admin password. Development only. |
 | `KC_HOSTNAME_STRICT` | No | `false` | Allows localhost browser access during development. |
 | `KC_HTTP_ENABLED` | No | `true` | Enables HTTP for local compose development. |
+
+## MinIO Container
+
+`F3.3`, ADR 0066 decision 9. The S3-compatible object store `api` and
+`api-replica` authenticate against; `worker` gets neither variable (decision
+9). Loopback-only ports, plaintext on the compose network (decision 8, see
+[`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §7).
+
+| Variable | Required | Default / compose value | Purpose |
+|----------|----------|-------------------------|---------|
+| `MINIO_ROOT_USER` | Yes | `bms_minio_dev` | Root username the `minio` service starts with, and the value `OBJECT_STORAGE_ACCESS_KEY` defaults to on `api`/`api-replica`. Development only. |
+| `MINIO_ROOT_PASSWORD` | **Secret** | `bms_minio_dev_secret` | Root password the `minio` service starts with, and the value `OBJECT_STORAGE_SECRET_KEY` defaults to on `api`/`api-replica`. MinIO refuses a root password under 8 characters. Development only. |
 
 ## Simulator
 

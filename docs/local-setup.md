@@ -263,6 +263,22 @@ LOG_LEVEL=info
 # REDIS_URL=redis://localhost:6379
 # WORKER_PORT=4100
 # RULE_SWEEP_INTERVAL_MS=60000
+
+# Object storage (`F3.3`, ADR 0066 decisions 3 and 8). All commented, and an
+# unset endpoint is a supported state: the API boots, `/health` reads
+# `storage: { configured: false }`, and both asset-image routes answer 503.
+# Uncomment them to run natively against the compose MinIO
+# (`docker compose --profile core up -d minio`). If the endpoint is set, all
+# of bucket, access key and secret key must be set too — a half-configured
+# store is a boot error, never a silent fallback.
+# OBJECT_STORAGE_ENDPOINT=http://127.0.0.1:9000
+# OBJECT_STORAGE_BUCKET=bms-asset-images
+# OBJECT_STORAGE_ACCESS_KEY=bms_minio_dev
+# OBJECT_STORAGE_SECRET_KEY=bms_minio_dev_secret
+# OBJECT_STORAGE_REGION=us-east-1
+# OBJECT_STORAGE_FORCE_PATH_STYLE=true
+# Only the exact string `true` lets the API accept a plain-http endpoint.
+# OBJECT_STORAGE_ALLOW_INSECURE=true
 ```
 
 Create `apps/web/.env` (do not commit):
@@ -319,6 +335,17 @@ published rule once per `RULE_SWEEP_INTERVAL_MS` (default 60 s) and raises
 through the same `AlarmRaiser` the streaming engine uses. A native run
 without the worker process has no scheduled evaluation — only the streaming
 engine's on-ingest evaluation runs.
+
+Since `F3.3` (ADR 0066), object storage is optional for a native `pnpm
+--filter api dev` run the same way `REDIS_URL` is. Without the six
+`OBJECT_STORAGE_*` variables, the API still boots: `GET /health` reports
+`storage: { configured: false }`, and both asset-image routes
+(`GET /api/v1/assets/:assetId/images` and
+`GET /api/v1/assets/:assetId/images/:imageId/content`) answer 503. To
+exercise them natively, run `docker compose --profile core up -d minio` and
+uncomment the six variables in `apps/api/.env` above. The worker process
+reads none of them — `worker.module.ts` has no `StorageModule` import
+(decision 9).
 
 `pnpm install` also runs `pnpm hooks:install`, which points git at the
 committed `.githooks/` directory. See §10a below — if you skip `pnpm install`
@@ -483,8 +510,9 @@ Install Docker Engine or Docker Desktop with WSL integration, then from
 the repo root:
 
 ```bash
-# Core app path: Postgres/TimescaleDB, Redis, Keycloak, migrations/seed, API,
-# the BullMQ worker (F4.24, ADR 0063; :4100), and web.
+# Core app path: Postgres/TimescaleDB, Redis, Keycloak, MinIO (F3.3, ADR
+# 0066), migrations/seed, API, the BullMQ worker (F4.24, ADR 0063; :4100),
+# and web.
 docker compose --profile core up --build
 
 # Optional explicit migration/seed run. Keep `--build`: unlike `up`,
@@ -518,8 +546,11 @@ fails if a second service acquires it.
 Open `http://localhost:5173`. Compose uses Keycloak/OIDC by default:
 click **Sign in with Keycloak** and use `admin@bms.local` / `admin123`.
 The Keycloak admin console is available at `http://localhost:8080` with
-`admin` / `admin`. Compose variables are documented in
-[`docs/env-inventory.md`](./env-inventory.md).
+`admin` / `admin`. The MinIO console (F3.3, ADR 0066) is available at
+`http://127.0.0.1:9001` with `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`
+(dev defaults `bms_minio_dev` / `bms_minio_dev_secret`); the S3 API answers
+on `127.0.0.1:9000`, and both bind loopback only. Compose variables are
+documented in [`docs/env-inventory.md`](./env-inventory.md).
 
 For observability, open Grafana at `http://localhost:3000` with
 `admin` / `admin`, then open the **BMS Pilot Overview** dashboard.

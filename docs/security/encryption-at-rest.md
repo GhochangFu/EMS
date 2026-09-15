@@ -4,7 +4,7 @@
 > E8.2 automated backup & recovery · F3.3 object storage · ADR 0012 encrypted
 > RTU credentials.
 > **Audience:** whoever deploys and operates a TRINETRA instance.
-> **Last verified against `main`:** 2026-09-11.
+> **Last verified against `main`:** 2026-09-15.
 
 ## 0. Read this first
 
@@ -42,7 +42,7 @@ encrypts two credential fields. The rest is §4's job.
 | Prometheus / Loki / Grafana volumes | **Plaintext unless the host encrypts it** | deployer, §4.1 |
 | Keycloak realm + users | **Not persisted at all** (dev `start-dev`, embedded H2) — §5.3 | n/a |
 | Backups | **No backup mechanism exists** — §6 | n/a (E8.2) |
-| Object storage / uploaded files | **No object storage exists** — §7 | n/a (F3.3) |
+| Object storage / uploaded files | **Plaintext on the compose stack (MinIO on loopback); SSE and TLS are deployer requirements** — §7 | n/a (F3.3) |
 
 ---
 
@@ -532,23 +532,53 @@ deliberately stays out of that lane. When E8.2 lands it **must** satisfy:
 4. **Restores are exercised, not assumed.** An untested backup is not a backup.
 5. **Backup transport is encrypted** and off-host storage is access-controlled.
 
-## 7. Object storage — does not exist yet (F3.3)
+## 7. Object storage — `F3.3`, ADR 0066
 
-There is no MinIO or S3 integration, and no `asset_images` table. Introducing
-one is **F3.3**, and per AGENTS.md §6 + §9.4 it needs its own dependency ADR
-before any code lands. It is deliberately not added here.
+`F3.3` (ADR 0066) added object storage over the S3 API: `@aws-sdk/client-s3`
+in `apps/api`, MinIO as the compose backend, and `bms.asset_images`. This
+section previously pre-wrote five requirements before the row existed;
+decision 8 amends it here, because two of the five cannot be met on the
+compose stack the same way Postgres and Redis cannot (§4.1, §4.4).
 
-When it lands it **must** satisfy:
+**Met by the code, no deployer action needed:**
 
-1. **Server-side encryption enabled by default on every bucket** — SSE-S3 at
-   minimum, SSE-KMS where a CMK is available; MinIO KES for self-hosted.
-2. **TLS for all client traffic**; no plaintext `http://` endpoints.
-3. **Buckets private by default**, no public-read, no anonymous listing.
-4. **Object-store credentials injected from the secret store**, never committed
-   and never baked into an image (§3).
-5. **Uploaded files inherit the volume requirement in §4.1** when MinIO is
-   self-hosted — MinIO's own disks need host-level encryption exactly like
-   Postgres does.
+3. **Buckets private by default**, no public-read, no anonymous listing. The
+   API is the only S3 client (decision 6): there is no presigned URL and no
+   public bucket policy, so nothing outside the API's own request path can
+   read or list an object.
+4. **Object-store credentials injected from the secret store, never committed
+   and never baked into an image** (§3, §8). `OBJECT_STORAGE_ACCESS_KEY` and
+   `OBJECT_STORAGE_SECRET_KEY` are read from the environment exactly like
+   `CREDENTIAL_ENCRYPTION_KEY`, and no thrown configuration message ever
+   carries either value or the endpoint URL (decision 3, §9.6).
+5. **Uploaded files inherit the volume requirement in §4.1.** MinIO's data
+   directory is the named compose volume `bms-minio-data`; it needs the same
+   host-level encryption as `bms_bms-postgres-data` when self-hosted — see
+   §4.1's table, which now applies to this volume too.
+
+**Deployer requirements, not code — added to §4 (decision 8):**
+
+1. **Server-side encryption enabled by default on every bucket.** The compose
+   `minio` service ships **no** SSE and **no** KES/KMS: encrypting the
+   bucket's own storage on top of §4.1's volume encryption is a self-hosted
+   deployer's action, exactly like `4.2`/`4.3` are for the other services. On
+   AWS S3, enable default bucket encryption (SSE-S3 or SSE-KMS) when
+   provisioning the bucket.
+2. **TLS for all client traffic; no plaintext `http://` endpoints.** The
+   compose stack ships plaintext MinIO on a loopback port — like Postgres and
+   Redis, its traffic never leaves the Docker bridge network on a single
+   host. **A hosted deployment sets `OBJECT_STORAGE_ENDPOINT` to an
+   `https://` endpoint with SSE enabled on the bucket.** The API enforces the
+   half of this it can: it **refuses** an `http://` endpoint at boot unless
+   `OBJECT_STORAGE_ALLOW_INSECURE=true` is also set (decision 8), so a
+   deployment that forgets to set `https://` fails loudly instead of shipping
+   plaintext silently. Compose sets `OBJECT_STORAGE_ALLOW_INSECURE=true`
+   because its MinIO is loopback-only plaintext by design; a hosted
+   deployment must not set that flag.
+
+See `docs/env-inventory.md` for the six `OBJECT_STORAGE_*` variables and the
+two `MINIO_ROOT_*` variables, and ADR 0066 decisions 3, 4, 6, 8 and 9 for the
+full design.
 
 ---
 
@@ -628,6 +658,7 @@ Before a pilot or production deployment:
 - [ ] Access to `bms.onboarding_sessions` is restricted; any credential pasted
       into a wizard chat has been rotated — §5.1
 - [ ] A backup strategy exists (E8.2 is not delivered — §6)
+- [ ] `OBJECT_STORAGE_ENDPOINT` is `https://` and `OBJECT_STORAGE_ALLOW_INSECURE` is unset — §7
 
 ## 10. Scope boundary
 
@@ -641,7 +672,7 @@ unconfigured or dead key — §3, §3.1.
 | Not covered | Owner |
 |-------------|-------|
 | Automated encrypted backups and tested restores | **E8.2** |
-| Object storage and its bucket encryption | **F3.3** (ADR required) |
+| Object storage and its bucket encryption | Code half (client, config, buckets private-by-default, credentials from the environment) delivered by **F3.3** (ADR 0066); SSE and TLS on the bucket are **the deployer** — §7 |
 | Full-disk / volume / KMS encryption | **The deployer** — §4, not implementable in this repo |
 | Row-level security | **F4.16** |
 | Retiring the `MQTT_USERNAME`/`MQTT_PASSWORD` fallback | **E8.4**, blocked on data (decision 10) — §3 |
