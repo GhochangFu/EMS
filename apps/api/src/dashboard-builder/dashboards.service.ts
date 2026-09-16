@@ -335,7 +335,15 @@ export class DashboardsService {
             )`,
           })
           .from(dashboards)
-          .leftJoin(assets, eq(assets.id, dashboards.assetId))
+          .leftJoin(
+            assets,
+            // The organization predicate is part of the JOIN, not merely of the tenant policy.
+            // On the FLEET branch this query runs as `bms_fleet` (`BYPASSRLS`), so nothing else
+            // stops a dashboard from reporting another organization's asset code once an
+            // `asset_id` has been mis-stamped: the join would resolve it and the badge would
+            // read it out. On the tenant branch it is redundant with RLS and costs nothing.
+            and(eq(assets.id, dashboards.assetId), eq(assets.organizationId, dashboards.organizationId)),
+          )
           .where(conditions.length > 0 ? and(...conditions) : undefined)
           .orderBy(asc(dashboards.slug));
         return {
@@ -453,7 +461,7 @@ export class DashboardsService {
       );
       return this.loadFullDto(tx, row.id);
     }).catch((err: unknown) => {
-      throw this.translateSlugConflict(err, body.slug);
+      throw this.translateWriteError(err, body.slug, scope);
     });
   }
 
@@ -540,6 +548,14 @@ export class DashboardsService {
           locationId: nextLocationId,
           assetGroupId: nextAssetGroupId,
           assetId: nextAssetId,
+          // Review (security Medium / migration High) — the stamp FOLLOWS the asset, in the
+          // same UPDATE. `asset_template_id` says "instantiated from that template version for
+          // THAT asset" (ADR 0067 decision 3). Clearing `assetId` while leaving it behind hits
+          // `dashboards_asset_stamp_check` and reached the caller as a 500; moving the row to
+          // another asset kept a stamp the database still accepts and the backfill's skip
+          // query still believes — forged provenance, and an asset that never gets its
+          // defaults. Nothing re-stamps: only the instantiator writes this column.
+          assetTemplateId: nextAssetId === existing.assetId ? existing.assetTemplateId : null,
           updatedAt: new Date(),
         })
         .where(eq(dashboards.id, id));
@@ -558,7 +574,7 @@ export class DashboardsService {
 
       return this.loadFullDto(tx, id);
     }).catch((err: unknown) => {
-      throw this.translateSlugConflict(err, body.slug ?? existing.slug);
+      throw this.translateWriteError(err, body.slug ?? existing.slug, nextScope);
     });
   }
 
@@ -729,6 +745,8 @@ export class DashboardsService {
       );
 
       return this.loadFullDto(tx, id);
+    }).catch((err: unknown) => {
+      throw this.translateWriteError(err, existing.slug, scope);
     });
   }
 
@@ -747,6 +765,72 @@ export class DashboardsService {
    * owns, and return every other error unchanged — including a `23505` on a different
    * constraint, which must reach the caller exactly as the driver raised it.
    */
+  /**
+   * The one error translation every write on this service goes through: the slug 409 first,
+   * then the scope refusals below, then the driver's error unchanged.
+   *
+   * **One function, not two chained `.catch`es.** A second handler only ever sees what the
+   * first re-threw, so the order of two catches decides which translation is reachable — and
+   * the losing one is silently dead.
+   *
+   * Two states reach a caller as a 500 without this (review, security Low):
+   *
+   * - `42501` — `tenant_isolation`'s `WITH CHECK` on `bms.dashboards`, which migration `0073`
+   *   re-created to check the `asset_id` and `asset_template_id` parents as well. A scope id
+   *   from another organization is refused there, never by the foreign key (`0050`'s header:
+   *   `WITH CHECK` runs before the FK's `AFTER` trigger).
+   * - `23514` on `dashboards_scope_check` / `dashboards_asset_stamp_check` — the two CHECKs the
+   *   service's own guards are supposed to reach first. A 400 here is the backstop for a state
+   *   a guard missed, not a replacement for the guard.
+   *
+   * The field named is the scope axis this write actually set, taken from the merged scope the
+   * caller already computed — the error itself carries no column. `putWidgets` passes the
+   * STORED scope: it writes no scope column at all, so a translation can only fire there on an
+   * unrelated policy, and inferring a field from a widget body would misattribute it.
+   */
+  private translateWriteError(err: unknown, slug: string, scope: DashboardScope): unknown {
+    const translatedSlug = this.translateSlugConflict(err, slug);
+    if (translatedSlug !== err) {
+      return translatedSlug;
+    }
+    const code = (err as { code?: string } | null)?.code;
+    const constraint = (err as { constraint?: string } | null)?.constraint;
+    // FIRST, and independent of the scope axes: this CHECK is about `asset_template_id`, a
+    // column no request body carries and `scope` does not either. Naming a scope axis here
+    // would attribute the refusal to a field that is not the offending one — the item-1
+    // mutation run produced exactly that sentence before this branch was split out.
+    if (code === "23514" && constraint === "dashboards_asset_stamp_check") {
+      return new BadRequestException(
+        "This dashboard still carries an asset-template stamp, which describes nothing once it " +
+          "names no asset. The stamp is cleared together with the asset scope.",
+      );
+    }
+    const field =
+      scope.assetId !== null
+        ? "assetId"
+        : scope.assetGroupId !== null
+          ? "assetGroupId"
+          : scope.locationId !== null
+            ? "locationId"
+            : null;
+    if (field === null) {
+      return err;
+    }
+    if (code === "42501") {
+      return new BadRequestException(
+        `The ${field} you supplied does not belong to this dashboard's organization — the ` +
+          "write was refused by this table's row-level security policy.",
+      );
+    }
+    if (code === "23514" && constraint === "dashboards_scope_check") {
+      return new BadRequestException(
+        `The ${field} you supplied leaves this dashboard in a scope the database refuses: ` +
+          SCOPE_REFUSAL_MESSAGE,
+      );
+    }
+    return err;
+  }
+
   private translateSlugConflict(err: unknown, slug: string): unknown {
     const constraint = (err as { constraint?: string } | null)?.constraint;
     if (constraint === "dashboards_organization_slug_key") {

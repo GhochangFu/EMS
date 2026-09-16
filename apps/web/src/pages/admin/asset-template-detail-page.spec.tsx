@@ -323,3 +323,47 @@ export async function theInstantiateDialogStaysOpenAndShowsTheSummary(): Promise
   expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /^Build/ })).not.toBeInTheDocument();
 }
+
+/**
+ * Review (code) — a running backfill disables the OTHER actions on this page.
+ *
+ * `busy` is the page's one "an action is in flight" flag and it listed four
+ * mutations, not five: the backfill was missing, so while it ran every
+ * lifecycle button stayed live. Archiving or drafting a version mid-backfill is
+ * exactly the race the flag exists to prevent — the backfill writes across
+ * every location of the organization from the version it started with.
+ *
+ * Asserted on **Archive**, never on the backfill button itself: that one
+ * already carried `|| defaultDashboardsM.isPending` of its own, so it is
+ * disabled with or without this fix and would prove nothing. The enabled
+ * assertion before the click is the positive control — without it, a render
+ * that failed to reach the actions at all would pass the disabled assertion.
+ */
+export async function aRunningBackfillDisablesTheLifecycleActions(): Promise<void> {
+  let release: (() => void) | undefined;
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()),
+    createDefaultDashboardsFromAdminAssetTemplate: () =>
+      new Promise((resolve) => {
+        release = () => resolve(BACKFILL_RESULT);
+      }),
+  });
+  renderPage(admin);
+
+  expect(await screen.findByRole("button", { name: "Archive" })).toBeEnabled();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Create default dashboards" }));
+
+  expect(
+    await screen.findByRole("button", { name: "Creating default dashboards…" }),
+    "the backfill must report itself as running",
+  ).toBeDisabled();
+  expect(
+    screen.getByRole("button", { name: "Archive" }),
+    "a lifecycle action must not stay clickable while the backfill runs — " +
+      "defaultDashboardsM.isPending belongs in `busy`",
+  ).toBeDisabled();
+
+  release?.();
+  await screen.findByText("Created dashboards for 1 asset · 1 already had one");
+}

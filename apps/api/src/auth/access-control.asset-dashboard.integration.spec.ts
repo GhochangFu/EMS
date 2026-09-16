@@ -499,3 +499,55 @@ export function assertFixturesAreDistinct(f: AssetDashboardFixtures): void {
     f.assetInOwnLocationId,
   );
 }
+
+/**
+ * A11 (review, security Low) — the asset arm's LOCATION must be proved to belong to the
+ * organization, not merely to be one the actor holds.
+ *
+ * `assetBelongsToOrganization` proves the ASSET's organization and hands back
+ * `assets.location_id`; `canManageLocation` then answers "may this user manage that location",
+ * which for a `location_admin` is a walk of its own `user_location_access` rows with **no
+ * organization predicate at all** (`writableLocationIds`). Neither half asks whether the
+ * location belongs to the organization the dashboard is stamped with, so one inconsistent
+ * asset row — organization B, sitting at a location of organization A — turns a location admin
+ * of A into an authorized writer of B's asset-scoped dashboards. This is A5's shape one column
+ * over: A5 is refused by the organization check before the location check is ever reached,
+ * which is why it left this hole green.
+ *
+ * **The database permits the inconsistent row, and that was the open question.** Checked on
+ * the running stack: `bms.assets` carries `assets_location_id_locations_id_fk` to
+ * `bms.locations(id)` and `assets_organization_id_fkey` to `bms.organizations(id)`, but no
+ * CHECK, no composite foreign key and no trigger relates the two — so the row inserts, and the
+ * refusal has to come from this service.
+ *
+ * One asset, inserted on the fleet pool and deleted in a `finally` (the A7b precedent). Nothing
+ * seeded is mutated: a grant row added to `wc-admin@bms.local` would be read by other suites'
+ * unordered `user_location_access` fixtures in the same parallel run.
+ */
+export async function assertA11InconsistentAssetLocationDoesNotAuthorize(
+  svc: AccessControlService,
+  pool: pg.Pool,
+  f: AssetDashboardFixtures,
+): Promise<void> {
+  const code = `f32-a11-${Date.now()}`;
+  const asset = await one<{ id: string }>(
+    pool,
+    `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+     VALUES ($1, $2, $3, 'F3.2 A11 inconsistent-location proof', 'F3.2 A11', 'hvac')
+     RETURNING id`,
+    [f.phewbOrgId, f.locationAdminLocationId, code],
+    "the inconsistent fixture asset (organization B, located in organization A)",
+  );
+  try {
+    const locationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+    expect(
+      await svc.canManageDashboard(locationAdmin, f.phewbOrgId, assetScope(asset.id)),
+      "an asset of ANOTHER organization that happens to sit at this location admin's own " +
+        "location must not authorize that organization's asset-scoped dashboard — " +
+        "canManageLocation never asks which organization the location belongs to, so the " +
+        "locationBelongsToOrganization check is the only thing that refuses it",
+    ).toBe(false);
+  } finally {
+    await pool.query(`DELETE FROM bms.assets WHERE id = $1`, [asset.id]);
+  }
+}

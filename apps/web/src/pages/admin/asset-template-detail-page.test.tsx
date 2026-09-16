@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aRunningBackfillDisablesTheLifecycleActions,
   aTruncatedViewNamesItsOmittedCount,
   draftDoesNotOfferCreateDefaultDashboards,
   locationAdminIsNotOfferedCreateDefaultDashboards,
@@ -40,6 +41,10 @@ describe("F3.2 asset template detail page", () => {
 
   it("names a truncated view's omitted count, and says nothing on an intact one", async () => {
     await aTruncatedViewNamesItsOmittedCount();
+  });
+
+  it("disables the lifecycle actions while the backfill runs", async () => {
+    await aRunningBackfillDisablesTheLifecycleActions();
   });
 
   it("keeps the instantiate dialog open on success, with the summary and Close", async () => {

@@ -40,6 +40,15 @@ type DbUser = {
 };
 
 /**
+ * One resolved dashboard scope axis (`F3.2`, ADR 0067 decision 2). Collapsed to one member with
+ * a union `kind` rather than three members with a literal each: the three-member union forced
+ * `resolveScopeTarget` to cast its own return value back to itself, and a cast is the one
+ * construct that keeps compiling when the arms stop agreeing. No caller depends on `kind` and
+ * `id` being correlated — each reads `kind` first, then `id`.
+ */
+type ScopeAxis = { kind: "location" | "assetGroup" | "asset"; id: string };
+
+/**
  * `F4.16` / ADR 0043 (Amendments 2–4) — scope resolution runs **before** any
  * tenant context exists, so it cannot name an organization with `SET LOCAL
  * app.current_organization`: finding the organization is this service's job, and
@@ -402,6 +411,16 @@ export class AccessControlService {
         if (asset === undefined) {
           return false;
         }
+        // The asset's LOCATION must belong to this organization too (review, security Low).
+        // `assets.location_id` names a row in `bms.locations` and nothing in the schema relates
+        // that row's organization to the asset's — no composite foreign key, no CHECK, no
+        // trigger — while `writableLocationIds` walks this role's grants with no organization
+        // predicate of its own. Without this, ONE inconsistent asset row (organization B at a
+        // location of organization A) makes A's location admin an authorized writer of B's
+        // asset-scoped dashboards. A11 is the case.
+        if (!(await this.locationBelongsToOrganization(asset.locationId, organizationId))) {
+          return false;
+        }
         return this.canManageLocation(jwt, asset.locationId);
       }
       if (target.kind !== "location") {
@@ -500,20 +519,17 @@ export class AccessControlService {
     locationId: string | null;
     assetGroupId: string | null;
     assetId: string | null;
-  }):
-    | { kind: "location"; id: string }
-    | { kind: "assetGroup"; id: string }
-    | { kind: "asset"; id: string }
-    | { kind: "invalid" } {
+  }): ScopeAxis | { kind: "invalid" } {
     // Counted, never written as pairwise comparisons. With three axes the pairwise form needs
     // three `&&` chains per arm and silently admits `{location, asset}` the moment one is
     // forgotten — which is precisely the hole the `F3.2` A9 case exists to catch. This is the
     // same count form migration `0073` gave `dashboards_scope_check`.
-    const set = [
+    const axes: { kind: ScopeAxis["kind"]; id: string | null }[] = [
       { kind: "location", id: scope.locationId },
       { kind: "assetGroup", id: scope.assetGroupId },
       { kind: "asset", id: scope.assetId },
-    ].filter((axis): axis is { kind: string; id: string } => axis.id !== null);
+    ];
+    const set = axes.filter((axis): axis is ScopeAxis => axis.id !== null);
 
     if (set.length > 1) {
       return { kind: "invalid" };
@@ -526,10 +542,7 @@ export class AccessControlService {
           "removed",
       );
     }
-    return only as
-      | { kind: "location"; id: string }
-      | { kind: "assetGroup"; id: string }
-      | { kind: "asset"; id: string };
+    return only;
   }
 
   /**

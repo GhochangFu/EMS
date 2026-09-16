@@ -21,6 +21,9 @@ import { DashboardsService } from "./dashboards.service";
 import {
   assertAddingALocationToAnAssetScopedDashboardIs400,
   assertAssetScopedCreateLandsTheAssetAndNoStamp,
+  assertClearingTheAssetScopeAlsoClearsTheStamp,
+  assertCrossOrgAssetScopeIs400NamingAssetId,
+  assertMovingTheAssetClearsTheStamp,
   assertCreateAuditRowStamped,
   assertCreateRoutesOnTenantPoolOnly,
   assertCrossOrgLocationScopeRefusedByRls,
@@ -62,6 +65,9 @@ const OWN_LOCATION_SLUG = `f31d-own-location-${RUN}`;
 const ASSET_SCOPE_SLUG = `f32-asset-scope-${RUN}`;
 const ASSET_CONFLICT_SLUG = `f32-asset-conflict-${RUN}`;
 const ASSET_CODE_SLUG = `f32-asset-code-${RUN}`;
+const STAMP_CLEAR_SLUG = `f32-stamp-clear-${RUN}`;
+const STAMP_MOVE_SLUG = `f32-stamp-move-${RUN}`;
+const XORG_ASSET_SLUG = `f32-xorg-asset-${RUN}`;
 
 describe.skipIf(!connectionString)(
   "F3.1b — DashboardsService pool routing, audit stamping, cross-tenant read/write",
@@ -81,6 +87,12 @@ describe.skipIf(!connectionString)(
     let eskomLocationAdminLocationId: string;
     /** `F3.2` — an ESKOM asset the asset-scoped dashboards below are scoped to. */
     let eskomAssetId: string;
+    /** `F3.2` review — a SECOND ESKOM asset, the destination of the "move the scope" case. */
+    let otherEskomAssetId: string;
+    /** `F3.2` review — an ESKOM asset-template version row, the stamp those cases write. */
+    let eskomAssetTemplateId: string;
+    /** `F3.2` review — an asset of the OTHER organization, for the cross-tenant create. */
+    let phewbAssetId: string;
     let leakOrgIdForCleanup: string | undefined;
     let multiOrgUserIdForCleanup: string | undefined;
     /** Set only when the seed supplied no PHEWB asset group and this suite made one. */
@@ -202,6 +214,36 @@ describe.skipIf(!connectionString)(
           "F3.2: the seeded asset CR-HVAC-1 is not in ESKOM — the seed moved it; name another " +
             "seeded code rather than reading one by position",
         );
+      }
+
+      // `F3.2` review — every one of these is NAMED, for the reason above. `CR-HVAC-2` is the
+      // second Western Cape control-room HVAC asset; `PHE-MFM-000000001` is written by
+      // `seedPheCatalog` from the committed `phe-catalog.json`.
+      otherEskomAssetId = await resolveSeededAssetByCode(ownerPool, "CR-HVAC-2");
+      phewbAssetId = await resolveSeededAssetByCode(ownerPool, "PHE-MFM-000000001");
+      const phewbAssetOrg = await ownerPool.query<{ organization_id: string }>(
+        `SELECT organization_id FROM bms.assets WHERE id = $1`,
+        [phewbAssetId],
+      );
+      if (phewbAssetOrg.rows[0]?.organization_id !== phewbOrgId) {
+        throw new Error(
+          "F3.2: the seeded asset PHE-MFM-000000001 is not in PHEWB — the cross-organization " +
+            "case below would assert nothing",
+        );
+      }
+
+      // The stamp fixture. Named by template code, never `ORDER BY created_at LIMIT 1` over
+      // `bms.asset_templates`: other suites commit template versions into ESKOM in the same
+      // parallel run and delete them again.
+      const eskomTemplate = await ownerPool.query<{ id: string }>(
+        `SELECT id FROM bms.asset_templates
+          WHERE organization_id = $1 AND code = 'BASELINE-IT'
+          ORDER BY version LIMIT 1`,
+        [eskomOrgId],
+      );
+      eskomAssetTemplateId = eskomTemplate.rows[0]?.id ?? "";
+      if (!eskomAssetTemplateId) {
+        throw new Error("F3.2: ESKOM has no BASELINE-IT asset template — run pnpm db:seed");
       }
     }, 60_000);
 
@@ -486,6 +528,71 @@ describe.skipIf(!connectionString)(
         assetScoped.id,
         eskomLocationAdminLocationId,
       );
+    }, 60_000);
+
+    it("F3.2 review — clearing assetId also clears the asset_template_id stamp", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      const stamped = await service.create(globalAdmin, {
+        organizationId: eskomOrgId,
+        slug: STAMP_CLEAR_SLUG,
+        name: "F3.2 stamp-clearing proof",
+        assetId: eskomAssetId,
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(stamped.id);
+
+      await assertClearingTheAssetScopeAlsoClearsTheStamp(
+        service,
+        fleetDb,
+        globalAdmin,
+        stamped.id,
+        eskomAssetTemplateId,
+        eskomLocationAdminLocationId,
+      );
+    }, 60_000);
+
+    it("F3.2 review — moving the scope to another asset clears the stamp too", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      const stamped = await service.create(globalAdmin, {
+        organizationId: eskomOrgId,
+        slug: STAMP_MOVE_SLUG,
+        name: "F3.2 stamp-move proof",
+        assetId: eskomAssetId,
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(stamped.id);
+
+      await assertMovingTheAssetClearsTheStamp(
+        service,
+        fleetDb,
+        globalAdmin,
+        stamped.id,
+        eskomAssetTemplateId,
+        otherEskomAssetId,
+      );
+    }, 60_000);
+
+    it("F3.2 review — an ESKOM dashboard scoped to a PHEWB asset is a 400 naming assetId", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      await assertCrossOrgAssetScopeIs400NamingAssetId(
+        service,
+        fleetDb,
+        globalAdmin,
+        eskomOrgId,
+        phewbAssetId,
+        XORG_ASSET_SLUG,
+      );
+      // No id to push: the insert was refused, nothing landed.
     }, 60_000);
 
     it("F3.2 — list() reports the asset's own code for an asset-scoped row, on the tenant branch", async () => {

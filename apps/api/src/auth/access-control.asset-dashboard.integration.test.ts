@@ -7,6 +7,7 @@ import { createDb } from "@bms/db";
 import { AccessControlService } from "./access-control.service";
 import {
   assertA10AllNullScopeIsStillRefusedNotThrown,
+  assertA11InconsistentAssetLocationDoesNotAuthorize,
   assertA1AdminManagesAnyAssetScope,
   assertA2OrganizationAdminIsBoundToItsOwnOrganization,
   assertA3LocationAdminManagesAnAssetAtItsOwnLocation,
@@ -112,5 +113,9 @@ describe.skipIf(!connectionString)("F3.2 — canManageDashboard's asset arm", ()
 
   it("A10 — an all-null scope is still refused by the ruling-2 guard, never thrown", async () => {
     await assertA10AllNullScopeIsStillRefusedNotThrown(svc, fixtures);
+  }, 60_000);
+
+  it("A11 — an asset of another organization at this admin's own location does not authorize", async () => {
+    await assertA11InconsistentAssetLocationDoesNotAuthorize(svc, pool as pg.Pool, fixtures);
   }, 60_000);
 });

@@ -344,7 +344,14 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
     runners[pending.action]();
   }
   const busy =
-    publishM.isPending || archiveM.isPending || draftM.isPending || deleteM.isPending;
+    publishM.isPending ||
+    archiveM.isPending ||
+    draftM.isPending ||
+    deleteM.isPending ||
+    // `F3.2` review — the backfill is a mutation on this page like any other, and it is the
+    // longest-running one: archiving or drafting the version while it walks every asset of the
+    // organization is the race this flag exists to prevent.
+    defaultDashboardsM.isPending;
 
   // Hoisted rather than inlined into the render: a `?.templateId === template.id`
   // test does not narrow the optional away, and the table reads four fields off
