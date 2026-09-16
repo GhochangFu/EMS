@@ -223,7 +223,12 @@ A new file, `apps/api/src/admin/asset-templates/asset-dashboards-instantiate.ser
 sibling to the ADR 0049 service and shaped on it. Given one asset, its
 published template version row, and a transaction:
 
-- **One `dashboards` row per view** in `content.dashboards`, in record order.
+- **One `dashboards` row per view** in `content.dashboards`, in code-point
+  order of the view name. *(The first draft said "record order". Task 6 found
+  that `asset_templates.content` is `jsonb`, which does not keep key order —
+  the fixture came back `trends, overview` — so record order is not a property
+  the store has. Corrected 2026-09-16 before merge; the sort is documented in
+  the service.)*
   `organization_id` the asset's; `asset_id` the asset; `asset_template_id`
   the version row; `location_id`, `asset_group_id`, `template_id` NULL.
   `name = "<asset.name> · <viewName>"`, truncated to 255.

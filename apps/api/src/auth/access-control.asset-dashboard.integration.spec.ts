@@ -3,6 +3,7 @@ import type pg from "pg";
 
 import type { AccessControlService } from "./access-control.service";
 import { jwtFor, SEEDED } from "./access-control.integration.spec";
+import { resolveSeededAssetByCode } from "../testing/integration-fixtures";
 
 /**
  * `F3.2` Task 4 — `canManageDashboard`'s ASSET arm (ADR 0067 decision 2, plan D9).
@@ -11,16 +12,40 @@ import { jwtFor, SEEDED } from "./access-control.integration.spec";
  * is at 975 of the 1000-line whole-file cap the pre-commit hook enforces, so the ten claims
  * below could not live there. The two share `jwtFor`/`SEEDED` rather than restating them.
  *
- * **Every id is read from the database, never hardcoded.** A uuid literal in a test is a
- * fixture that stops existing the first time the seed changes, and the failure it then
- * produces ("no such asset") looks like the feature being broken rather than the test.
+ * **Every id is read from the database, never hardcoded, and every ASSET is named rather than
+ * positioned.** A uuid literal in a test stops existing the first time the seed changes; an
+ * `ORDER BY … LIMIT 1` on `bms.assets` is worse, because it silently adopts whichever row
+ * currently sorts first — another suite's committed fixture as often as the seed — and that
+ * suite's `afterAll` then deletes the row mid-test. `tests/integration-fixture-isolation.test.ts`
+ * gates exactly this, and it flagged four reads in the first draft of this file. Each is now
+ * `resolveSeededAssetByCode()` against a code `packages/db/src/eskom-assets-seed.ts` or
+ * `phe-pilot-seed.ts` writes by name.
  *
- * Reads use `ORDER BY created_at, id LIMIT 1` for the `F4.53` reason the sibling suites give:
- * the oldest row is a seeded one, and a seeded row is the only row a concurrent integration
- * suite cannot delete out from under this fixture — several are in flight in the same run.
+ * Naming a row is not the same as knowing what it is, so every named asset is then verified —
+ * id-scoped — against the property the claim it serves actually needs: the location it sits at,
+ * the organization it belongs to, and its membership or non-membership of the group under test.
+ * A seed that moved `CR-HVAC-1` to another site must fail here with a sentence saying so, not
+ * turn A3 into a claim about nothing.
  *
- * Read-only: nothing here inserts, updates or deletes.
+ * Read-only apart from `assertA7bGroupInAnotherOrganizationDoesNotAuthorize`, which creates one
+ * cross-organization group and deletes it in a `finally`.
  */
+
+/**
+ * `wc-admin@bms.local`'s own site: the Western Cape control room. All three are written by
+ * `packages/db/src/eskom-assets-seed.ts` under those exact codes.
+ *
+ * `CR-HVAC-1` is an `hvac` group member (`asset-groups-seed.ts` maps the `hvac` domain to that
+ * group); `CR-UPS-1` is not — it is an `ups-battery` member, which is a group
+ * `wc-hvac-admin@bms.local` does not hold. Both facts are re-checked below rather than trusted.
+ */
+const MEMBER_ASSET_CODE = "CR-HVAC-1";
+const OWN_LOCATION_ASSET_CODE = "CR-HVAC-2";
+const NON_MEMBER_ASSET_CODE = "CR-UPS-1";
+/** The same ESKOM organization, a different site (`RSMOC-EC`) — the A4 target. */
+const OTHER_LOCATION_ASSET_CODE = "EC-CR-HVAC-1";
+/** PHEWB, seeded by `seedPheCatalog` from the committed `phe-catalog.json`. */
+const FOREIGN_ORG_ASSET_CODE = "PHE-MFM-000000001";
 
 export type AssetDashboardFixtures = {
   readonly eskomOrgId: string;
@@ -55,6 +80,79 @@ async function one<T extends Record<string, unknown>>(
   return row;
 }
 
+/**
+ * Verifies what a NAMED asset actually is, id-scoped.
+ *
+ * Naming the row closes the "whose fixture did I just adopt" race; it does not say the row
+ * still sits where the claim needs it. A seed that moves `CR-HVAC-1` to another site would
+ * otherwise turn A3 from "a location admin manages an asset at its own location" into a claim
+ * about a site it does not hold — green, and about nothing. The read is `WHERE id = $1`, so it
+ * is not a positional read of `bms.assets` at all.
+ */
+async function assertAssetSitsAt(
+  pool: pg.Pool,
+  assetId: string,
+  code: string,
+  expected: { organizationId: string; locationId?: string; notLocationId?: string },
+): Promise<void> {
+  const row = await one<{ organization_id: string; location_id: string }>(
+    pool,
+    `SELECT organization_id, location_id FROM bms.assets WHERE id = $1`,
+    [assetId],
+    `the seeded asset ${code}`,
+  );
+  if (row.organization_id !== expected.organizationId) {
+    throw new Error(
+      `F3.2: the seeded asset ${code} is in organization ${row.organization_id}, but this ` +
+        `fixture needs it in ${expected.organizationId}. The seed moved it — pick another ` +
+        "named code; do not widen this back to a positional read.",
+    );
+  }
+  if (expected.locationId !== undefined && row.location_id !== expected.locationId) {
+    throw new Error(
+      `F3.2: the seeded asset ${code} is at location ${row.location_id}, but this fixture ` +
+        `needs it at ${expected.locationId} (${SEEDED.locationAdmin}'s own site).`,
+    );
+  }
+  if (expected.notLocationId !== undefined && row.location_id === expected.notLocationId) {
+    throw new Error(
+      `F3.2: the seeded asset ${code} is at ${row.location_id}, the very location this fixture ` +
+        "needs it NOT to be at — the A4 case would assert nothing.",
+    );
+  }
+}
+
+/**
+ * Verifies that a named asset is (or is not) a member of ANY group the asset-group admin holds.
+ *
+ * Against the actor's whole grant set, not against one group id: `canManageDashboard`'s
+ * membership join is keyed on `userAssetGroupAccess.userId`, so a "non-member" that happens to
+ * sit in a SECOND group the same user holds would make A7 assert the opposite of what it says.
+ */
+async function assertGroupMembership(
+  pool: pg.Pool,
+  assetId: string,
+  code: string,
+  expected: boolean,
+): Promise<void> {
+  const { rows } = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n
+       FROM bms.asset_group_members m
+       JOIN bms.user_asset_group_access uaga ON uaga.asset_group_id = m.asset_group_id
+       JOIN bms.users u ON u.id = uaga.user_id
+      WHERE m.asset_id = $1 AND u.email = $2`,
+    [assetId, SEEDED.assetGroupAdmin],
+  );
+  const isMember = Number(rows[0]?.n ?? "0") > 0;
+  if (isMember !== expected) {
+    throw new Error(
+      `F3.2: the seeded asset ${code} is ${isMember ? "" : "not "}a member of a group ` +
+        `${SEEDED.assetGroupAdmin} holds, but this fixture needs it ${expected ? "" : "not "}` +
+        "to be. The seed's group mapping changed — pick another named code.",
+    );
+  }
+}
+
 export async function resolveAssetDashboardFixtures(pool: pg.Pool): Promise<AssetDashboardFixtures> {
   const eskom = await one<{ id: string }>(
     pool,
@@ -79,26 +177,20 @@ export async function resolveAssetDashboardFixtures(pool: pg.Pool): Promise<Asse
     [SEEDED.locationAdmin],
     `${SEEDED.locationAdmin}'s location grant`,
   );
-  const ownLocationAsset = await one<{ id: string }>(
-    pool,
-    `SELECT id FROM bms.assets WHERE organization_id = $1 AND location_id = $2
-      ORDER BY created_at, id LIMIT 1`,
-    [eskom.id, location.id],
-    "an asset at the location admin's own location",
-  );
-  const otherLocationAsset = await one<{ id: string }>(
-    pool,
-    `SELECT id FROM bms.assets WHERE organization_id = $1 AND location_id <> $2
-      ORDER BY created_at, id LIMIT 1`,
-    [eskom.id, location.id],
-    "an asset at another location of the same organization",
-  );
-  const foreignAsset = await one<{ id: string }>(
-    pool,
-    `SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
-    [phewb.id],
-    "an asset in the other organization",
-  );
+  const ownLocationAssetId = await resolveSeededAssetByCode(pool, OWN_LOCATION_ASSET_CODE);
+  await assertAssetSitsAt(pool, ownLocationAssetId, OWN_LOCATION_ASSET_CODE, {
+    organizationId: eskom.id,
+    locationId: location.id,
+  });
+  const otherLocationAssetId = await resolveSeededAssetByCode(pool, OTHER_LOCATION_ASSET_CODE);
+  await assertAssetSitsAt(pool, otherLocationAssetId, OTHER_LOCATION_ASSET_CODE, {
+    organizationId: eskom.id,
+    notLocationId: location.id,
+  });
+  const foreignAssetId = await resolveSeededAssetByCode(pool, FOREIGN_ORG_ASSET_CODE);
+  await assertAssetSitsAt(pool, foreignAssetId, FOREIGN_ORG_ASSET_CODE, {
+    organizationId: phewb.id,
+  });
   const group = await one<{ id: string; organization_id: string }>(
     pool,
     `SELECT ag.id, ag.organization_id
@@ -110,40 +202,27 @@ export async function resolveAssetDashboardFixtures(pool: pg.Pool): Promise<Asse
     [SEEDED.assetGroupAdmin],
     `${SEEDED.assetGroupAdmin}'s asset-group grant`,
   );
-  const memberAsset = await one<{ id: string }>(
-    pool,
-    `SELECT a.id
-       FROM bms.asset_group_members m
-       JOIN bms.assets a ON a.id = m.asset_id
-      WHERE m.asset_group_id = $1
-      ORDER BY a.created_at, a.id LIMIT 1`,
-    [group.id],
-    "a member asset of the asset-group admin's group",
-  );
-  const nonMemberAsset = await one<{ id: string }>(
-    pool,
-    `SELECT a.id
-       FROM bms.assets a
-      WHERE a.organization_id = $1
-        AND NOT EXISTS (
-              SELECT 1 FROM bms.asset_group_members m
-               WHERE m.asset_id = a.id AND m.asset_group_id = $2
-            )
-      ORDER BY a.created_at, a.id LIMIT 1`,
-    [group.organization_id, group.id],
-    "a non-member asset in the same organization",
-  );
+  const memberAssetId = await resolveSeededAssetByCode(pool, MEMBER_ASSET_CODE);
+  await assertAssetSitsAt(pool, memberAssetId, MEMBER_ASSET_CODE, {
+    organizationId: group.organization_id,
+  });
+  await assertGroupMembership(pool, memberAssetId, MEMBER_ASSET_CODE, true);
+  const nonMemberAssetId = await resolveSeededAssetByCode(pool, NON_MEMBER_ASSET_CODE);
+  await assertAssetSitsAt(pool, nonMemberAssetId, NON_MEMBER_ASSET_CODE, {
+    organizationId: group.organization_id,
+  });
+  await assertGroupMembership(pool, nonMemberAssetId, NON_MEMBER_ASSET_CODE, false);
 
   return {
     eskomOrgId: eskom.id,
     phewbOrgId: phewb.id,
     locationAdminLocationId: location.id,
-    assetInOwnLocationId: ownLocationAsset.id,
-    assetInOtherLocationId: otherLocationAsset.id,
-    foreignOrgAssetId: foreignAsset.id,
+    assetInOwnLocationId: ownLocationAssetId,
+    assetInOtherLocationId: otherLocationAssetId,
+    foreignOrgAssetId: foreignAssetId,
     assetGroupAdminGroupId: group.id,
-    memberAssetId: memberAsset.id,
-    nonMemberAssetId: nonMemberAsset.id,
+    memberAssetId,
+    nonMemberAssetId,
   };
 }
 

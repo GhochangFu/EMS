@@ -15,6 +15,7 @@ import {
   resolveIntegrationRoleUrl,
 } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { resolveSeededAssetByCode } from "../testing/integration-fixtures";
 import { countingDb, countingDbMethod } from "../testing/counting-db";
 import { DashboardsService } from "./dashboards.service";
 import {
@@ -180,18 +181,27 @@ describe.skipIf(!connectionString)(
         throw new Error("F3.1d: wc-admin@bms.local has no location grant — run pnpm db:seed");
       }
 
-      // `F3.2` — an asset AT wc-admin's own granted location, so the list() proof below runs
-      // with a genuinely single-organization, location-scoped reader (the TENANT branch).
-      // ORDER BY created_at, id for the F4.53 reason the reads above give: the oldest row is a
-      // seeded one, which no concurrent suite can delete out from under this fixture.
-      const eskomAsset = await ownerPool.query<{ id: string }>(
-        `SELECT id FROM bms.assets WHERE organization_id = $1 AND location_id = $2
-          ORDER BY created_at, id LIMIT 1`,
-        [eskomOrgId, eskomLocationAdminLocationId],
+      // `F3.2` — an ESKOM asset, resolved BY NAME. `CR-HVAC-1` is written under that exact
+      // code by `packages/db/src/eskom-assets-seed.ts`, at the Western Cape control room.
+      //
+      // Not `ORDER BY created_at, id LIMIT 1`: `tests/integration-fixture-isolation.test.ts`
+      // refuses a positional read of `bms.assets`, and refuses it for a reason this suite is
+      // exposed to — seven other integration suites commit and then delete fixture assets in
+      // the same parallel run, so "the row that sorts first" is one of theirs as often as it
+      // is the seed's, and it disappears mid-test when it is.
+      eskomAssetId = await resolveSeededAssetByCode(ownerPool, "CR-HVAC-1");
+      // The dashboards below are stamped with `eskomOrgId`, and `tenant_isolation`'s WITH
+      // CHECK would refuse an asset from another organization with a bare RLS error rather
+      // than a sentence naming the fixture. Checked here, id-scoped, so the failure says why.
+      const assetOrg = await ownerPool.query<{ organization_id: string }>(
+        `SELECT organization_id FROM bms.assets WHERE id = $1`,
+        [eskomAssetId],
       );
-      eskomAssetId = eskomAsset.rows[0]?.id ?? "";
-      if (!eskomAssetId) {
-        throw new Error("F3.2: ESKOM has no asset at wc-admin's location — run pnpm db:seed");
+      if (assetOrg.rows[0]?.organization_id !== eskomOrgId) {
+        throw new Error(
+          "F3.2: the seeded asset CR-HVAC-1 is not in ESKOM — the seed moved it; name another " +
+            "seeded code rather than reading one by position",
+        );
       }
     }, 60_000);
 
