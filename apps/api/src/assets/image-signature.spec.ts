@@ -141,6 +141,37 @@ export function assertBlankFilenameIsRefused(): void {
   assert(result.success === false, "expected a whitespace-only filename to be refused");
 }
 
+/**
+ * Post-merge sweep (security Low) — the request-path mirror of the shared
+ * DTO's control-character refusal.
+ *
+ * The control character is **interior** on purpose: `assetImageFilenameSchema`
+ * trims first, so a trailing `\r\n` never reaches the pattern and a row that
+ * put it there would gate nothing. The two accepted rows are the positive
+ * controls — a pattern that refused everything outside ASCII would pass both
+ * refusals and break the names `decodeMulterFilename` exists to recover.
+ */
+export const REQUEST_CONTROL_CHARACTER_ROWS = [
+  { label: "a filename with an interior CR LF is refused", value: "a\r\nb.png", field: "filename", accepted: false },
+  { label: "a caption with BEL is refused", value: "alarm", field: "caption", accepted: false },
+  { label: "café.png is accepted", value: "café.png", field: "filename", accepted: true },
+  // The emoji is written as an escape, not a literal glyph (§4.5's no-emoji rule).
+  { label: "a caption with an emoji is accepted", value: "Pump room \u{1F6B0}", field: "caption", accepted: true },
+] as const;
+
+export function assertRequestSchemaControlCharacterRow(
+  row: (typeof REQUEST_CONTROL_CHARACTER_ROWS)[number],
+): void {
+  const result =
+    row.field === "filename"
+      ? assetImageFilenameSchema.safeParse(row.value)
+      : assetImageUploadFieldsSchema.safeParse({ caption: row.value });
+  assert(
+    result.success === row.accepted,
+    `${row.label}: safeParse returned success=${result.success}`,
+  );
+}
+
 export function assertFilenameTrims(): void {
   const result = assetImageFilenameSchema.safeParse(" a.png ");
   assert(

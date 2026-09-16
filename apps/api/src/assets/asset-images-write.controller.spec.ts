@@ -111,6 +111,29 @@ export function assertBothHandlersRefuseWithTheScopeMessage(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Post-merge sweep C1: the filename is decoded before it is parsed
+// ---------------------------------------------------------------------------
+
+/**
+ * `decodeMulterFilename(` must be spelled **before**
+ * `assetImageFilenameSchema.parse(` inside `upload`.
+ *
+ * The order is the whole claim: busboy gives the name as latin1 code units,
+ * so a 90-character CJK name is 270 of them and `.max(255)` refuses it. Parse
+ * first and the decode repairs a name the request never got to send.
+ *
+ * The scan is inside `uploadBody` and not over the whole file, so the
+ * docblock that describes the same two calls cannot satisfy it.
+ */
+export function assertUploadDecodesTheFilenameBeforeParsingIt(): void {
+  const body = uploadBody(source());
+  const decode = body.indexOf("decodeMulterFilename(");
+  const parse = body.indexOf("assetImageFilenameSchema.parse(");
+  assert(decode > -1 && parse > -1, "upload must call decodeMulterFilename( and assetImageFilenameSchema.parse(");
+  assert(decode < parse, `upload parses the filename (at ${parse}) before decoding it (at ${decode})`);
+}
+
+// ---------------------------------------------------------------------------
 // Route declarations and status codes
 // ---------------------------------------------------------------------------
 
@@ -376,6 +399,22 @@ export async function assertAllowedUploadPassesTheBufferAndFilename(): Promise<v
   assert(
     uploads[0]?.originalFilename === FILE.originalname,
     `originalFilename must be file.originalname, got ${uploads[0]?.originalFilename}`,
+  );
+}
+
+/**
+ * The behavioural half of the C1 row: a file whose `originalname` is the
+ * latin1 form busboy produces reaches the service decoded.
+ *
+ * `assertAllowedUploadPassesTheBufferAndFilename` above is the positive
+ * control — `"pump.png"` passes through untouched, so this row cannot be
+ * satisfied by a controller that rewrites every name.
+ */
+export async function assertAMojibakeFilenameReachesTheServiceDecoded(): Promise<void> {
+  const { uploads } = await runAllowedUpload({ ...FILE, originalname: "cafÃ©.png" }, undefined);
+  assert(
+    uploads[0]?.originalFilename === "café.png",
+    `the service must receive "café.png", got ${JSON.stringify(uploads[0]?.originalFilename)}`,
   );
 }
 

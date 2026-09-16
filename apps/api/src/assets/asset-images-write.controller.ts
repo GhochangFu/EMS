@@ -23,6 +23,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 
 import { assetIdParamSchema, assetImageFilenameSchema, assetImageParamsSchema, assetImageUploadFieldsSchema } from "./asset-images.schema";
 import { AssetImagesWriteService } from "./asset-images-write.service";
+import { decodeMulterFilename } from "./multer-filename";
 
 /**
  * What multer hands `@UploadedFile()` — structural, not `Express.Multer.File`,
@@ -131,7 +132,13 @@ export class AssetImagesWriteController {
     }
     const image = requireFile(file);
     const { caption } = assetImageUploadFieldsSchema.parse(body ?? {});
-    const originalFilename = assetImageFilenameSchema.parse(image.originalname);
+    // Post-merge sweep C1: busboy hands the filename over as latin1 code
+    // units, so the decode runs BEFORE the parse — the `.max(255)` bound must
+    // count characters, not UTF-8 bytes. Two statements, not a nested call:
+    // the spec's order scan reads the text and a nested `parse(decode(...))`
+    // spells `parse` first.
+    const decodedName = decodeMulterFilename(image.originalname);
+    const originalFilename = assetImageFilenameSchema.parse(decodedName);
     return this.writes.upload(user, id, {
       buffer: image.buffer,
       declaredType: image.mimetype,

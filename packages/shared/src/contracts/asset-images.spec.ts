@@ -113,6 +113,33 @@ export function assertStringOneOverTheBoundIsRefused(bound: (typeof STRING_BOUND
 }
 
 /**
+ * `F3.4` post-merge sweep (security Low) — neither free-text field may carry
+ * a C0/C1 control character.
+ *
+ * The two refusals are the finding; the two acceptances are their positive
+ * controls, and they are not decoration: a regex that refused everything
+ * outside ASCII would pass both refusals while breaking every accented and
+ * CJK filename the C1 decode exists to preserve.
+ */
+export const CONTROL_CHARACTER_ROWS = [
+  { label: "originalFilename with CR LF", patch: { originalFilename: "a\r\nb.png" }, accepted: false },
+  { label: "caption with BEL", patch: { caption: "alarm" }, accepted: false },
+  { label: "originalFilename café.png", patch: { originalFilename: "café.png" }, accepted: true },
+  // The emoji is written as an escape, not a literal glyph (§4.5's no-emoji rule).
+  { label: "caption with an emoji", patch: { caption: "Pump room \u{1F6B0}" }, accepted: true },
+] as const;
+
+export function assertControlCharacterRow(row: (typeof CONTROL_CHARACTER_ROWS)[number]): void {
+  const result = assetImageDtoSchema.safeParse({ ...VALID_IMAGE, ...row.patch });
+  assert(
+    result.success === row.accepted,
+    `${row.label} must ${row.accepted ? "parse" : "be refused"}, got ${JSON.stringify(
+      result.success === false ? result.error.issues : result.data,
+    )}`,
+  );
+}
+
+/**
  * `F3.4` — the per-asset cap (R-3, owner Q-3): 20, answered 409 on overflow.
  */
 export function assertPerAssetCapIsTwenty(): void {

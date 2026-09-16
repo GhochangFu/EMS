@@ -523,6 +523,11 @@ export const CONTRACT_BREAKING_ROWS = [
   { label: "sha256 with a carriage return", patch: { sha256: `${"a".repeat(63)}\r` } },
   { label: "originalFilename of 256 chars", patch: { originalFilename: "f".repeat(256) } },
   { label: "caption of 1001 chars", patch: { caption: "c".repeat(1001) } },
+  // Post-merge sweep (security Low): the contract now refuses a C0/C1
+  // control character in either free-text field, so a row stored before the
+  // regex landed — or written around the API — is a server fault, exactly
+  // like the three above.
+  { label: "originalFilename with a carriage return", patch: { originalFilename: "pump\r.png" } },
 ] as const;
 
 export async function assertAContractBreakingRowThrowsTheStoredContract500(
@@ -573,6 +578,29 @@ export async function assertAContractBreakingRowOnContentLeavesNoBodyOpen(): Pro
   assert(
     body === undefined || body.destroyed,
     "the object stream was opened for a row that cannot be served, and it was left open",
+  );
+}
+
+/**
+ * The stream half for the sweep's own field: a stored `original_filename`
+ * carrying a CR must not leave the object stream open either.
+ *
+ * It is a separate row rather than a parameter of the one above because that
+ * one's fixture is the `sha256` Amendment 2 measured; a shared fixture would
+ * hide which field the parse caught.
+ */
+export async function assertAControlCharacterFilenameOnContentLeavesNoBodyOpen(): Promise<void> {
+  const fleet = fleetDbFake([{ organizationId: ORG_ID }]);
+  const tenant = tenantDbFake([{ ...fixtureRow(), originalFilename: "pump\r.png" }]);
+  const recorded = recordingObject();
+  const { ops } = opsFake(recorded.getObject);
+  const service = new AssetImagesService(tenant.db, fleet, configured(ops));
+  const err = await captureRejection(() => service.content(ASSET_ID, IMAGE_ID));
+  assert(errorName(err) === "InternalServerErrorException", `content threw ${errorName(err)}`);
+  const body = recorded.body();
+  assert(
+    body === undefined || body.destroyed,
+    "a filename with a control character opened the object stream and left it open",
   );
 }
 

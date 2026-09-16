@@ -126,6 +126,16 @@ export type Scenario = {
    * in this file.
    */
   fleetCountRows?: { count: unknown }[];
+  /**
+   * The rows the **committed-row re-check** answers with (sweep C3). The
+   * default is empty — the row really did roll back — so every existing
+   * insert-failure row still sees `[putObject, deleteObject]`. The
+   * projection is `{ imageId: … }`, not `{ id: … }`, because `id` is
+   * already `resolveActorId`'s shape in this fake.
+   */
+  committedRows?: { imageId: string }[];
+  /** Makes the committed-row re-check itself throw, the way the dropped connection's pool would. */
+  committedCheckError?: Error;
   txAssetRows?: { id: string }[];
   txCount?: number;
   insertError?: Error;
@@ -160,6 +170,10 @@ export function harness(scenario: Scenario = {}): Harness {
         if (shape === "organizationId") return scenario.orgRows ?? [{ organizationId: ORG_ID }];
         if (shape === "count") return scenario.fleetCountRows ?? [{ count: scenario.fleetCount ?? 0 }];
         if (shape === "id") return [{ id: ACTOR_ID }];
+        if (shape === "imageId") {
+          if (scenario.committedCheckError) throw scenario.committedCheckError;
+          return scenario.committedRows ?? [];
+        }
         throw new Error(`fleet fake: unexpected select shape ${shape}`);
       });
     },
@@ -486,6 +500,92 @@ export async function assertCleanupFailureWarnsOnceNamingTheImageIdAndErrorName(
 export async function assertCleanupFailureWarnNeverCarriesTheKey(): Promise<void> {
   const { warns } = await runUploadRejecting(cleanupDown());
   assert(!warns.join("\n").includes(OBJECT_KEY_PREFIX), `the cleanup warn must not carry the object key: ${warns.join(" | ")}`);
+}
+
+// ---------------------------------------------------------------------------
+// Post-merge sweep C3: a rejection that arrives after the COMMIT keeps the object
+// ---------------------------------------------------------------------------
+
+/**
+ * `withTenant` rejects, **and** the fleet re-check finds the row.
+ *
+ * That is the lost commit acknowledgement: the server committed, the
+ * connection dropped before the answer arrived, and the driver rejected. The
+ * pre-sweep cleanup deleted the object under a live row — decision 4's bad
+ * state. The three rows below are one claim each: no `deleteObject`, one
+ * warn, and the warn names the id.
+ *
+ * `assertInsertFailurePutsThenDeletesTheObject` above is the positive
+ * control for all three: the same `insertError`, with the re-check finding
+ * nothing, still deletes. The scenarios differ in exactly one field.
+ */
+const lostCommitAck = (): Scenario => ({
+  insertError: namedError("FakeConnectionReset"),
+  committedRows: [{ imageId: "the row is present, whatever its id" }],
+});
+
+export async function assertACommittedRowKeepsTheObject(): Promise<void> {
+  const { h } = await runUploadRejecting(lostCommitAck());
+  assert(
+    JSON.stringify(h.calls) === JSON.stringify(["putObject"]),
+    `a committed row must leave the object in place; calls were [${h.calls.join(", ")}]`,
+  );
+}
+
+export async function assertACommittedRowStillRethrowsTheOriginalError(): Promise<void> {
+  const { err } = await runUploadRejecting(lostCommitAck());
+  assert(errorName(err) === "FakeConnectionReset", `the original error must surface, got ${errorName(err)}`);
+}
+
+export async function assertACommittedRowWarnsOnce(): Promise<void> {
+  const { warns } = await runUploadRejecting(lostCommitAck());
+  assert(warns.length === 1, `expected one warn, saw ${warns.length}: ${warns.join(" | ")}`);
+}
+
+/** The id is the one the service generated, never the fixture's — `randomUUID()` decides it. */
+export async function assertACommittedRowWarnNamesTheGeneratedImageId(): Promise<void> {
+  const { warns, h } = await runUploadRejecting(lostCommitAck());
+  const imageId = h.insertedIds[0] ?? "";
+  assert(imageId.length === 36, `the harness must have recorded the generated id, got ${JSON.stringify(imageId)}`);
+  assert(warns[0]?.includes(imageId) === true, `the warn must name the image id ${imageId}: ${warns[0]}`);
+}
+
+/** §9.6: the key ends in that same id, so only the prefix check tells a logged key from a logged id. */
+export async function assertACommittedRowWarnNeverCarriesTheKey(): Promise<void> {
+  const { warns } = await runUploadRejecting(lostCommitAck());
+  assert(!warns.join("\n").includes(OBJECT_KEY_PREFIX), `the committed-row warn must not carry the key: ${warns.join(" | ")}`);
+}
+
+/**
+ * The re-check itself fails — the same pool the transaction just lost.
+ *
+ * "Cannot prove the row absent" is not "the row rolled back", so the object
+ * is kept here too, and the caller still sees the original error.
+ */
+const lostCommitAckAndABlindRecheck = (): Scenario => ({
+  insertError: namedError("FakeConnectionReset"),
+  committedCheckError: namedError("FakeRecheckError"),
+});
+
+export async function assertAFailedRecheckKeepsTheObjectAndRethrows(): Promise<void> {
+  const { h, err } = await runUploadRejecting(lostCommitAckAndABlindRecheck());
+  assert(
+    JSON.stringify(h.calls) === JSON.stringify(["putObject"]),
+    `a failed re-check must leave the object in place; calls were [${h.calls.join(", ")}]`,
+  );
+  assert(errorName(err) === "FakeConnectionReset", `the original error must surface, got ${errorName(err)}`);
+}
+
+/** §9.6 again: `namedError` stuffs the key into `err.message`, so a warn that quoted it reddens here. */
+export async function assertAFailedRecheckWarnNeverCarriesTheKey(): Promise<void> {
+  const { warns } = await runUploadRejecting(lostCommitAckAndABlindRecheck());
+  assert(!warns.join("\n").includes(OBJECT_KEY_PREFIX), `the failed-re-check warn must not carry the key: ${warns.join(" | ")}`);
+}
+
+export async function assertAFailedRecheckWarnsNamingTheErrorName(): Promise<void> {
+  const { warns } = await runUploadRejecting(lostCommitAckAndABlindRecheck());
+  assert(warns.length === 1, `expected one warn, saw ${warns.length}: ${warns.join(" | ")}`);
+  assert(warns[0]?.includes("FakeRecheckError") === true, `the warn must name err.name: ${warns[0]}`);
 }
 
 // ---------------------------------------------------------------------------

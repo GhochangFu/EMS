@@ -9,6 +9,7 @@ import {
   assertHighBitRiffWebpLookalikeIsNull,
   assertJpegPrefixSniffsAsJpeg,
   assertPngSignatureSniffsAsPng,
+  assertRequestSchemaControlCharacterRow,
   assertReturnedValueIsAMemberOfTheSharedEnum,
   assertRiffWaveIsNull,
   assertRiffWebpSniffsAsWebp,
@@ -17,6 +18,7 @@ import {
   assertUploadFieldsExtraFieldIsRefused,
   assertUploadFieldsOverlongCaptionIsRefused,
   assertUploadFieldsWithoutCaptionParses,
+  REQUEST_CONTROL_CHARACTER_ROWS,
 } from "./image-signature.spec";
 
 /**
@@ -89,5 +91,9 @@ describe("F3.4 — assetImageUploadFieldsSchema / assetImageFilenameSchema", () 
 
   it("trims a filename", () => {
     assertFilenameTrims();
+  });
+
+  it.each(REQUEST_CONTROL_CHARACTER_ROWS)("$label", (row) => {
+    assertRequestSchemaControlCharacterRow(row);
   });
 });

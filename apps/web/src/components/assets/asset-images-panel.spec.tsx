@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
@@ -111,6 +111,19 @@ function chooseFile(file: File): void {
   const input = screen.getByLabelText("Image file") as HTMLInputElement;
   Object.defineProperty(input, "files", { value: [file], configurable: true });
   fireEvent.change(input);
+}
+
+/**
+ * The grid cell whose label line reads `label` — each cell renders
+ * `caption ?? originalFilename`, so the two fixtures are distinguishable and
+ * a per-image claim can name its image.
+ */
+function cellOf(label: string): ReturnType<typeof within> {
+  const cell = screen.getByText(label).closest("li");
+  if (cell === null) {
+    throw new Error(`no grid cell renders the label ${label}`);
+  }
+  return within(cell);
 }
 
 function uploadButton(): HTMLElement {
@@ -369,22 +382,48 @@ export async function aDeleteInFlightDisablesThatImagesButton(): Promise<void> {
 }
 
 /**
- * A12b — a second delete started while the first is still open keeps its own
- * button disabled when the first one finishes.
+ * A12b — two deletes open at once: each button is disabled on its own account.
  *
- * `deletingId` holds one id, and React Query runs `onSettled` once **per
- * mutation call**. With an unconditional `setDeletingId(null)` the first
- * delete to settle cleared the second's flag while its request was still
- * open: the button went back to "Delete", enabled, and a second press would
- * have asked the API to delete a row already on its way out. `onSettled` now
- * clears only the id it was started for.
+ * `deletingId` held **one** id and `onMutate` overwrote it, so pressing
+ * Delete on A and then B put A's button back to "Delete", enabled, while A's
+ * request was still open — an invitation to press it again and get a 404 on a
+ * row already on its way out. The state is a list since the post-merge sweep
+ * (C2), and this row reads the two buttons at the same moment.
  *
- * A13 is not this claim: there one delete is in flight and the return to
- * "Delete" is what it asserts. Releasing B at the end is the positive control
- * here — a panel that disabled the button for ever would otherwise pass.
+ * Neither promise is released here, so the claim is a positive state and not
+ * an absence: exactly two buttons say "Deleting…" and both are disabled.
  */
-export async function aSettledDeleteDoesNotReEnableASecondOneStillInFlight(): Promise<void> {
-  const list = stubList([FIRST, SECOND]);
+export async function twoDeletesInFlightDisableBothButtons(): Promise<void> {
+  stubList([FIRST, SECOND]);
+  stubThumbnails();
+  vi.spyOn(assetImagesApi, "deleteAssetImage").mockReturnValue(new Promise<void>(() => {}));
+
+  renderPanel();
+  const buttons = await screen.findAllByRole("button", { name: "Delete" });
+  await userEvent.click(buttons[0] as HTMLElement);
+  // Only the second image's button still says "Delete", so this cannot press
+  // the same button twice.
+  await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+  await waitFor(() => {
+    expect(screen.getAllByRole("button", { name: "Deleting…" })).toHaveLength(2);
+  });
+  for (const button of screen.getAllByRole("button", { name: "Deleting…" })) {
+    expect(button).toBeDisabled();
+  }
+}
+
+/**
+ * A12c — releasing one of the two deletes re-enables that image's button and
+ * only that one.
+ *
+ * The second release is the positive control: a panel that disabled both
+ * buttons for ever satisfies everything before it. The remaining "Deleting…"
+ * is located inside the **second** image's cell, so "one of each" cannot pass
+ * with the two states on the wrong images.
+ */
+export async function releasingOneDeleteFreesOnlyThatImagesButton(): Promise<void> {
+  stubList([FIRST, SECOND]);
   stubThumbnails();
   const releases = new Map<string, () => void>();
   vi.spyOn(assetImagesApi, "deleteAssetImage").mockImplementation(
@@ -397,37 +436,20 @@ export async function aSettledDeleteDoesNotReEnableASecondOneStillInFlight(): Pr
   renderPanel();
   const buttons = await screen.findAllByRole("button", { name: "Delete" });
   await userEvent.click(buttons[0] as HTMLElement);
-  // Only the second image's button still says "Delete" — the first says
-  // "Deleting…" — so this cannot press the same button twice.
   await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
-  const refetches = list.mock.calls.length;
   releases.get(FIRST.id)?.();
-
-  // The claim is that a state change does **not** happen, so every pending
-  // step of the first delete has to run before anything is read: a `waitFor`
-  // on the state itself would pass on its first attempt, before the settle it
-  // is about. The refetch the first delete's `onSuccess` awaits is the
-  // witness that it got that far, and the flush below carries it through
-  // `onSettled` and the render that would follow.
   await waitFor(() => {
-    expect(list.mock.calls.length - refetches).toBe(1);
+    expect(screen.getAllByRole("button", { name: "Deleting…" })).toHaveLength(1);
   });
-  await act(async () => {
-    for (let tick = 0; tick < 10; tick += 1) {
-      await Promise.resolve();
-    }
-  });
+  expect(cellOf("Front panel").getByRole("button", { name: "Delete" })).toBeEnabled();
+  expect(cellOf("rear.png").getByRole("button", { name: "Deleting…" })).toBeDisabled();
 
-  expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
-  expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(1);
-
-  // The positive control: a panel that disabled the button for ever passes
-  // everything above.
   releases.get(SECOND.id)?.();
   await waitFor(() => {
     expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2);
   });
+  expect(screen.queryAllByRole("button", { name: "Deleting…" })).toHaveLength(0);
 }
 
 /**

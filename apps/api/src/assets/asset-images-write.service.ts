@@ -62,7 +62,10 @@ export type AssetImageUploadInput = {
  * decision 11 already accepts orphans. The tenant transaction never holds a
  * connection across an S3 call (the F3.3 read-path rule). On any failure
  * after `putObject`, `deleteObject` runs best-effort; a failed cleanup is
- * one `warn` naming the image id and `err.name`.
+ * one `warn` naming the image id and `err.name`. **Since the post-merge
+ * sweep (C3) the cleanup first re-reads the row on `fleetDb`**: a rejection
+ * that arrived after the server committed must not delete the object under a
+ * live row. See `discardObjectUnlessTheRowCommitted`.
  *
  * **R-3 — the cap, checked twice.** `MAX_ASSET_IMAGES_PER_ASSET` is a state
  * of the resource, so exceeding it is 409, not 400. A cheap fleet-pool
@@ -111,7 +114,9 @@ export type AssetImageUploadInput = {
  * object-less image (the 404 that lies). The method resolves either way.
  *
  * **§9.6.** No key, no filename, no caption and no endpoint in any log line
- * or thrown message. Every warn names the image id and `err.name` — never
+ * or thrown message. Every warn names the image id, and every warn that has
+ * an error to describe names `err.name` — the C3 committed-row warn has no
+ * error, so it names the image id and the reason only — never
  * `err.message`, which an SDK error may stuff with the key. The audit
  * payload carries ids, a code and numbers only.
  */
@@ -205,8 +210,9 @@ export class AssetImagesWriteService {
         return inserted;
       });
     } catch (err) {
-      // R-2: best-effort cleanup of the object the failed row would have served.
-      await this.discardObject(imageId, key);
+      // R-2: best-effort cleanup of the object the failed row would have
+      // served — but only after the row is proved absent (sweep C3).
+      await this.discardObjectUnlessTheRowCommitted(imageId, key);
       throw err;
     }
     return toAssetImageDto(row);
@@ -255,6 +261,52 @@ export class AssetImagesWriteService {
         `This asset already has ${MAX_ASSET_IMAGES_PER_ASSET} images; delete one before uploading another`,
       );
     }
+  }
+
+  /**
+   * Post-merge sweep C3 — discard the object only when the row really is
+   * absent.
+   *
+   * `withTenant` rejects on any failure of the tenant transaction, and one of
+   * those failures is **not** a rollback: if the connection drops between the
+   * server's `COMMIT` and the acknowledgement reaching us, the row is
+   * committed and the driver still rejects. Discarding then produced exactly
+   * decision 4's bad state — a live row whose object is gone, a 404 that lies
+   * and a warn on every read — while the orphan object it was avoiding is the
+   * failure decision 4 calls tolerable. The asymmetry decides the branch: when
+   * the row cannot be proved absent, keep the object.
+   *
+   * The re-read is on `fleetDb` (BYPASSRLS) because the tenant connection is
+   * the one that just failed. A failure of the re-read itself is also "cannot
+   * prove absent", so it keeps the object as well; either way the original
+   * error is what the caller sees, because this method never throws.
+   *
+   * The projection is named `imageId` rather than `id` on purpose: the spec's
+   * fleet fake dispatches on the projection's key shape, and `id` is already
+   * `resolveActorId`'s.
+   */
+  private async discardObjectUnlessTheRowCommitted(imageId: string, key: string): Promise<void> {
+    let committed: boolean;
+    try {
+      const rows = await this.fleetDb
+        .select({ imageId: assetImages.id })
+        .from(assetImages)
+        .where(eq(assetImages.id, imageId))
+        .limit(1);
+      committed = rows.length > 0;
+    } catch (err) {
+      this.logger.warn(
+        `asset image ${imageId}: the committed-row re-check failed with ${errorName(err)}; the object is kept (ADR 0066 decision 4)`,
+      );
+      return;
+    }
+    if (committed) {
+      this.logger.warn(
+        `asset image ${imageId}: the row committed but the transaction reported failure; the object is kept (ADR 0066 decision 4)`,
+      );
+      return;
+    }
+    await this.discardObject(imageId, key);
   }
 
   /** R-2: cleanup after a failed row; a failure here is one warn (image id and `err.name`), never a throw. */

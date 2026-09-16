@@ -75,7 +75,10 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
   const [file, setFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  // One entry per delete in flight (post-merge sweep C2). A single id was one
+  // too few: `onMutate` overwrote it, so pressing Delete on A and then B put
+  // A's button back to "Delete" — enabled — while A's request was still open.
+  const [deletingIds, setDeletingIds] = useState<readonly string[]>([]);
 
   // The same query key the gallery below subscribes to, so the count and the
   // grid are one cache entry and one request — not two views that can disagree.
@@ -119,7 +122,9 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
   const deleteMutation = useMutation({
     mutationFn: async (image: AssetImageDto) => deleteAssetImage(asset.id, image.id),
     onMutate: (image: AssetImageDto) => {
-      setDeletingId(image.id);
+      // Append, never replace: two deletes can be open at once, and each owns
+      // its own entry.
+      setDeletingIds((current) => (current.includes(image.id) ? current : [...current, image.id]));
     },
     onSuccess: async () => {
       setError(null);
@@ -129,13 +134,11 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
     // `onSettled` rather than the two arms: a failed delete that left the
     // button saying "Deleting…" for ever would look like a hung request.
     //
-    // It clears only **its own** id. React Query runs one `onSettled` per
-    // mutation call, so two deletes in flight settle twice: an unconditional
-    // `setDeletingId(null)` let the first to finish re-enable the second's
-    // button while that request was still open, inviting a second press and a
-    // 404 on an image already gone.
+    // It removes only **its own** id. React Query runs one `onSettled` per
+    // mutation call, so two deletes in flight settle twice; each removes the
+    // entry it added and leaves the other one's alone.
     onSettled: (_data, _error, image: AssetImageDto) =>
-      setDeletingId((current) => (current === image.id ? null : current)),
+      setDeletingIds((current) => current.filter((id) => id !== image.id)),
   });
 
   return (
@@ -160,7 +163,7 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
         <AssetImageGallery
           assetId={asset.id}
           onDelete={(image) => deleteMutation.mutate(image)}
-          deletingId={deletingId}
+          deletingIds={deletingIds}
         />
 
         <form

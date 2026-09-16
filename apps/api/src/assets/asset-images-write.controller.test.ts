@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertAbsentBodyBecomesNullCaption,
   assertAllowedRemoveCallsTheServiceWithBothIds,
+  assertAMojibakeFilenameReachesTheServiceDecoded,
   assertAllowedUploadCallsTheServiceOnce,
   assertAllowedUploadPassesANonEmptyCaption,
   assertAllowedUploadPassesTheBufferAndFilename,
@@ -35,6 +36,7 @@ import {
   assertUnknownFieldEscapesAsZodError,
   assertUploadChecksAccessBeforeRequireFile,
   assertUploadChecksAccessBeforeTheService,
+  assertUploadDecodesTheFilenameBeforeParsingIt,
   HANDLERS,
   INTERCEPTOR_LIMITS,
 } from "./asset-images-write.controller.spec";
@@ -102,6 +104,10 @@ describe("F3.4 — asset-images write controller source scan", () => {
     assertFileInterceptorFieldIsFile();
   });
 
+  it("upload decodes the multer filename before parsing it", () => {
+    assertUploadDecodesTheFilenameBeforeParsingIt();
+  });
+
   it("no handler argument is named key or objectKey", () => {
     assertNoHandlerArgumentIsNamedKey();
   });
@@ -138,6 +144,10 @@ describe("F3.4 — asset-images write controller over stubs (the guard, measured
 
   it("upload passes file.buffer and file.originalname through", async () => {
     await assertAllowedUploadPassesTheBufferAndFilename();
+  });
+
+  it('upload decodes a latin1 "cafÃ©.png" to "café.png" before the service sees it', async () => {
+    await assertAMojibakeFilenameReachesTheServiceDecoded();
   });
 
   it("upload passes a non-empty caption unchanged (positive control)", async () => {

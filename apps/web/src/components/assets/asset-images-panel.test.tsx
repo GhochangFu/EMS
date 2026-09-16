@@ -8,7 +8,8 @@ import {
   aDeleteRefetchesTheList,
   aGifDisablesUploadAndNamesTheAcceptedTypes,
   aRefusedOversizeUploadRendersTheTenMbSentence,
-  aSettledDeleteDoesNotReEnableASecondOneStillInFlight,
+  releasingOneDeleteFreesOnlyThatImagesButton,
+  twoDeletesInFlightDisableBothButtons,
   aSuccessfulUploadRefetchesTheList,
   aValidFileEnablesUpload,
   anOversizeFileDisablesUploadAndNamesTheLimit,
@@ -88,8 +89,12 @@ describe("F3.4 admin asset images panel (Q-0, Q-2, R-7)", () => {
     await aDeleteInFlightDisablesThatImagesButton();
   });
 
-  it("keeps a second in-flight delete's button disabled when the first one settles", async () => {
-    await aSettledDeleteDoesNotReEnableASecondOneStillInFlight();
+  it("disables both buttons while two deletes are in flight", async () => {
+    await twoDeletesInFlightDisableBothButtons();
+  });
+
+  it("re-enables only the released image's button when one of the two settles", async () => {
+    await releasingOneDeleteFreesOnlyThatImagesButton();
   });
 
   it("counts the asset's images against the shared cap in its pill", async () => {

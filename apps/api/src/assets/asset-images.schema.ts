@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { MAX_ASSET_IMAGE_CAPTION_CHARS, MAX_ASSET_IMAGE_FILENAME_CHARS } from "@bms/shared";
+import { MAX_ASSET_IMAGE_CAPTION_CHARS, MAX_ASSET_IMAGE_FILENAME_CHARS, NO_CONTROL_CHARACTERS } from "@bms/shared";
 
 /**
  * `F3.3` (ADR 0066 decision 6) — the path parameters of the two asset-image
@@ -47,16 +47,30 @@ export const assetIdParamSchema = z.string().uuid();
  * `.refine` has nothing to hold here.
  */
 export const assetImageUploadFieldsSchema = z
-  .object({ caption: z.string().trim().max(MAX_ASSET_IMAGE_CAPTION_CHARS).optional() })
+  .object({
+    caption: z.string().trim().max(MAX_ASSET_IMAGE_CAPTION_CHARS).regex(NO_CONTROL_CHARACTERS).optional(),
+  })
   .strict();
 
 export type AssetImageUploadFields = z.infer<typeof assetImageUploadFieldsSchema>;
 
-/** The filename multer reports on `file.originalname`. */
+/**
+ * The filename multer reports on `file.originalname`, after
+ * `decodeMulterFilename` has undone busboy's latin1 decode.
+ *
+ * **The control-character refusal (post-merge sweep, security Low)** mirrors
+ * the shared DTO's, through the **same imported pattern** — a second copy of
+ * a security regex drifts in silence (§4.8). It matters here as well as in
+ * the DTO because `.trim()` only removes *surrounding* whitespace: `a\r\nb
+ * .png` keeps its interior CR LF and would otherwise be stored and read back
+ * verbatim. `.min(1)` stays: an empty name is a missing name, not a
+ * control character.
+ */
 export const assetImageFilenameSchema = z
   .string()
   .trim()
   .min(1)
-  .max(MAX_ASSET_IMAGE_FILENAME_CHARS);
+  .max(MAX_ASSET_IMAGE_FILENAME_CHARS)
+  .regex(NO_CONTROL_CHARACTERS);
 
 export type AssetImageFilename = z.infer<typeof assetImageFilenameSchema>;
