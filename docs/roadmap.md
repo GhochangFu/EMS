@@ -5228,15 +5228,15 @@ the caller's tenant transaction; the merge keeps the caller's bag and the
 derived value wins.
 
 **Three rulings, one review finding, one gap the tests found.** Detach leaves
-the stored value alone; the asset audit payloads carry the derived value; an
+the stored value alone; the asset audit payloads carry the stored value; an
 onboarded non-ingest asset carries an explicit `catalog`. The security
 review's Low — a caller could set `telemetrySource: "mqtt"` on an asset with
 no RTU and silence the simulator — is fixed by stripping the caller's key on
 that branch while the stored one survives. And a dropped null guard survived
-fifteen cases, which is why the sixteenth exists: a mutation that survives is
+fifteen cases, which is why A15 exists: a mutation that survives is
 a missing test, not a passing one.
 
-**Verification.** 49 new or refactored cases across six files, one claim per
+**Verification.** 45 new or refactored cases across six files, one claim per
 `it()`, every mutation named with the case it reddened; the full
 `pnpm test:coverage` gate green against the compose database. Browser layer
 N/A (no `apps/web` change). API response shape unchanged (ADR 0030 N/A).
