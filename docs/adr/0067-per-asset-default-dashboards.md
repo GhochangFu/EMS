@@ -142,6 +142,18 @@ that imported a class before `F3.2` keeps its copy without a view, and a later
 content release bumps every version at once. Recorded as a residual in the
 closure.
 
+**Q7 — The backfill on a large estate** (raised by the step-6 code review,
+2026-09-17). The batch bound of decision 3 (8,000 widget rows per call)
+made `POST …/default-dashboards` a dead end for an organization with more
+pinned assets than one transaction may hold — 889 on the stock `overview`
+view — and the route takes no batch size to split. Ruled: **chunked,
+resumable**. The backfill processes assets in code order in chunks that fit
+the bound, one transaction per chunk, stops at the first failure, and
+reports what each chunk created; a re-run skips the stamped assets, so the
+skip set is what makes it resumable. Decision 4's "one transaction" now
+reads per chunk. The asset-creation trigger is unchanged: one transaction,
+refused by the bound when the batch does not fit.
+
 ## Decision
 
 ### 1. `bms.dashboards` gains an asset scope and an asset-template stamp (migration `0073`)
@@ -280,8 +292,10 @@ published template version row, and a transaction:
   **any version of this template code** — a plant pinned to v1 still deserves v2's
   layout when the administrator asks for it — and **skips an asset that
   already carries a dashboard with `asset_template_id` in that version set**,
-  reporting it `skipped_existing`. The rest instantiate from `:id` in one
-  transaction. Permission is `AssetTemplatesAdminService.assertCanAuthor`
+  reporting it `skipped_existing`. The rest instantiate from `:id` in
+  chunks that fit decision 3's bound, one transaction per chunk, in asset
+  code order; the first failing chunk stops the call and the response
+  reports what the earlier chunks created (Q7). Permission is `AssetTemplatesAdminService.assertCanAuthor`
   (organization-level, `location_admin` excluded per ADR 0015 §7): the
   backfill writes across every location of the organization, which is not a
   location admin's scope. Declared as a two-segment `@Post(":id/…")`, below
@@ -323,6 +337,11 @@ row at instantiation and a manual point is always skipped, so either would
 instantiate as a hole by construction.
 
 ### 7. The UI is the smallest surface that makes the rows reachable
+
+None of the three surfaces has a mockup analogue in `ESKOM_SMOC.html` or
+`TRINETRA.html`: each is an addition to a page that already exists, in that
+page's own components (`SectionCard`, `PageHeader`, the scope badge cell),
+so §5's reference obligation is met by the host page, not by a new route.
 
 - `/dashboards` (`dashboards-page.tsx`) renders an **Asset** scope badge with
   the asset code beside the existing location / asset-group badges; the viewer
@@ -399,3 +418,9 @@ decision 7 already ships for rule codes.
   moves** — `F3.2` is not a §6 item (Context 7), and the sweep must not create
   one.
 - **`docs/roadmap.md`** mirrors the closure when the row closes, not now.
+- **A deactivated asset keeps its default dashboards.** `bms.assets` has no
+  hard-delete path in the API (ADR 0009), so decision 1's cascade serves
+  test teardown and administrative SQL only; an asset set `active = false`
+  stays listed with its dashboards, which remain openable. Hiding or
+  removing them on deactivation is out of scope here and belongs with the
+  version-drift row decision 8 names.
