@@ -88,7 +88,7 @@ function stubObjectUrls(): ObjectUrlStub {
 
 function renderGallery(props: {
   onDelete?: (image: AssetImageDto) => void;
-  deletingId?: string | null;
+  deletingIds?: readonly string[];
 }): ReturnType<typeof render> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -268,18 +268,25 @@ export async function withOnDeleteTheButtonPassesTheDto(): Promise<void> {
   expect(onDelete).toHaveBeenCalledWith(UNCAPTIONED);
 }
 
-/** A10 — the image whose delete is in flight is disabled and says so; its neighbour is not. */
+/**
+ * A10 — an image named in `deletingIds` is disabled and says so; its
+ * neighbour is not.
+ *
+ * The prop is a list since the post-merge sweep (C2): the panel can hold two
+ * deletes open at once. One id is passed here, so the neighbour stays the
+ * positive control for the membership test.
+ */
 export async function aMatchingDeletingIdDisablesThatButton(): Promise<void> {
   vi.spyOn(assetImagesApi, "fetchAssetImages").mockResolvedValue([CAPTIONED, UNCAPTIONED]);
   stubBlobReads();
   stubObjectUrls();
 
-  renderGallery({ onDelete: vi.fn(), deletingId: CAPTIONED.id });
+  renderGallery({ onDelete: vi.fn(), deletingIds: [CAPTIONED.id] });
 
   const busy = await screen.findByRole("button", { name: "Deleting…" });
   expect(busy).toBeDisabled();
   // The neighbour is the positive control: it proves the sentence and the
-  // disabled flag followed `deletingId`, not the presence of `onDelete`.
+  // disabled flag followed `deletingIds`, not the presence of `onDelete`.
   expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
 }
 

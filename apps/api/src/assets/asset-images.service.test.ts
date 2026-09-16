@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertAContractBreakingRowOnContentLeavesNoBodyOpen,
+  assertAControlCharacterFilenameOnContentLeavesNoBodyOpen,
   assertAContractBreakingRowThrowsTheStoredContract500,
   assertARowOutsideTheContentTypeEnumThrows,
   assertAValidRowOnContentIsServedWithALiveBody,
@@ -166,6 +167,10 @@ describe("F3.3 — AssetImagesService over fakes", () => {
 
   it("content on a row with a CR in sha256 leaves no object stream open", async () => {
     await assertAContractBreakingRowOnContentLeavesNoBodyOpen();
+  });
+
+  it("content on a row with a CR in original_filename leaves no object stream open", async () => {
+    await assertAControlCharacterFilenameOnContentLeavesNoBodyOpen();
   });
 
   it("content on a valid row is served with a live body (positive control)", async () => {

@@ -40,6 +40,26 @@ export const MAX_ASSET_IMAGE_FILENAME_CHARS: number = 255;
 export const MAX_ASSET_IMAGE_CAPTION_CHARS: number = 1000;
 
 /**
+ * `F3.4` post-merge sweep (2026-09-16, security Low) — no C0/C1 control
+ * character in either free-text field.
+ *
+ * Both fields were bounded by **length only**, so `a\r\nb.png` was stored and
+ * read back verbatim. Nothing harmful follows from that today, and the reason
+ * is narrow: the content route sends the constant `Content-Disposition:
+ * inline` with no `filename=` parameter. That is the exact shape of Amendment
+ * 2's `sha256`→`ETag` case, where a stored CR reached `res.setHeader` and
+ * threw `ERR_INVALID_CHAR` — the field was harmless until one header quoted
+ * it. The gate belongs on the field, not on the current set of readers.
+ *
+ * `\p{Cc}` is the Unicode "Other, control" category: U+0000–U+001F and
+ * U+007F–U+009F. Everything else — accents, CJK, emoji — is accepted, so a
+ * legitimate name keeps parsing. The pattern is **exported and imported**
+ * rather than restated in `apps/api/src/assets/asset-images.schema.ts`
+ * (§4.8): two copies of a security pattern drift in silence.
+ */
+export const NO_CONTROL_CHARACTERS = /^[^\p{Cc}]*$/u;
+
+/**
  * `F3.4` — the per-asset image cap (R-3, owner Q-3). Exceeding it is a state
  * of the resource, not a malformed body — the write path answers 409
  * Conflict, not the 400 a `.max()` bound on a request field would give (the
@@ -68,8 +88,8 @@ export const assetImageDtoSchema = z
     contentType: assetImageContentTypeSchema,
     byteSize: z.number().int().positive(),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
-    originalFilename: z.string().max(MAX_ASSET_IMAGE_FILENAME_CHARS),
-    caption: z.string().max(MAX_ASSET_IMAGE_CAPTION_CHARS).nullable(),
+    originalFilename: z.string().max(MAX_ASSET_IMAGE_FILENAME_CHARS).regex(NO_CONTROL_CHARACTERS),
+    caption: z.string().max(MAX_ASSET_IMAGE_CAPTION_CHARS).regex(NO_CONTROL_CHARACTERS).nullable(),
     createdBy: z.string().uuid().nullable(),
     createdAt: z.string().datetime({ offset: true }),
   })

@@ -22,8 +22,11 @@ export type AssetImageGalleryProps = {
   assetId: string;
   /** When given, each thumbnail gains a Delete action that calls this with its DTO. */
   onDelete?: (image: AssetImageDto) => void;
-  /** The image whose delete is in flight, if any. */
-  deletingId?: string | null;
+  /**
+   * Every image whose delete is in flight — more than one can be, so this is
+   * a list and not a single id (post-merge sweep C2).
+   */
+  deletingIds?: readonly string[];
 };
 
 /**
@@ -73,13 +76,13 @@ function AssetImageThumbnail({ image }: { image: AssetImageDto }): JSX.Element {
 function AssetImageCell({
   image,
   onDelete,
-  deletingId,
+  deletingIds,
 }: {
   image: AssetImageDto;
   onDelete?: (image: AssetImageDto) => void;
-  deletingId: string | null;
+  deletingIds: readonly string[];
 }): JSX.Element {
-  const deleting = deletingId === image.id;
+  const deleting = deletingIds.includes(image.id);
 
   return (
     <li className="flex w-24 flex-col gap-1">
@@ -105,7 +108,7 @@ function AssetImageCell({
 export function AssetImageGallery({
   assetId,
   onDelete,
-  deletingId = null,
+  deletingIds = [],
 }: AssetImageGalleryProps): JSX.Element {
   const query = useAssetImages(assetId);
 
@@ -129,7 +132,7 @@ export function AssetImageGallery({
   return (
     <ul className="flex flex-wrap gap-3">
       {query.data.map((image) => (
-        <AssetImageCell key={image.id} image={image} onDelete={onDelete} deletingId={deletingId} />
+        <AssetImageCell key={image.id} image={image} onDelete={onDelete} deletingIds={deletingIds} />
       ))}
     </ul>
   );

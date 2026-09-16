@@ -5,6 +5,14 @@ import {
   assertAnUnreadableCountRejectsConflict,
   assertBlindedFleetReadIsReachedWhenConfigured,
   assertCleanupFailureStillThrowsTheOriginalError,
+  assertACommittedRowKeepsTheObject,
+  assertACommittedRowStillRethrowsTheOriginalError,
+  assertACommittedRowWarnNamesTheGeneratedImageId,
+  assertACommittedRowWarnNeverCarriesTheKey,
+  assertACommittedRowWarnsOnce,
+  assertAFailedRecheckKeepsTheObjectAndRethrows,
+  assertAFailedRecheckWarnNeverCarriesTheKey,
+  assertAFailedRecheckWarnsNamingTheErrorName,
   assertCleanupFailureWarnNeverCarriesTheKey,
   assertCleanupFailureWarnsOnceNamingTheImageIdAndErrorName,
   assertDeclaredTextPlainMakesNoStorageCall,
@@ -152,6 +160,38 @@ describe("F3.4 — AssetImagesWriteService.upload over fakes", () => {
 
   it("the cleanup warn never carries the key (the F4.145 positive control)", async () => {
     await assertCleanupFailureWarnNeverCarriesTheKey();
+  });
+
+  it("a rejection after the row committed keeps the object (sweep C3)", async () => {
+    await assertACommittedRowKeepsTheObject();
+  });
+
+  it("a rejection after the row committed still rethrows the original error", async () => {
+    await assertACommittedRowStillRethrowsTheOriginalError();
+  });
+
+  it("a rejection after the row committed warns exactly once", async () => {
+    await assertACommittedRowWarnsOnce();
+  });
+
+  it("the committed-row warn names the generated image id", async () => {
+    await assertACommittedRowWarnNamesTheGeneratedImageId();
+  });
+
+  it("the committed-row warn never carries the key", async () => {
+    await assertACommittedRowWarnNeverCarriesTheKey();
+  });
+
+  it("a failed committed-row re-check keeps the object and rethrows the original error", async () => {
+    await assertAFailedRecheckKeepsTheObjectAndRethrows();
+  });
+
+  it("a failed committed-row re-check warns naming err.name", async () => {
+    await assertAFailedRecheckWarnsNamingTheErrorName();
+  });
+
+  it("the failed-re-check warn never carries the key", async () => {
+    await assertAFailedRecheckWarnNeverCarriesTheKey();
   });
 
   it("a put failure rejects 503 Object storage is unreachable", async () => {
