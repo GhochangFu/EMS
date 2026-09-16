@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -128,6 +129,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-ro` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §2, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (feed_flow_klh, permeate_flow_klh, reject_flow_klh, feed_pressure_bar, feed_conductivity_uscm, permeate_conductivity_uscm, feed_ph, hp_pump_status), plus one
+ * `chart` trending feed_conductivity_uscm, permeate_conductivity_uscm. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const WATER_RO: StockAssetTemplateEntry = {
   code: "water-ro",
@@ -331,6 +340,103 @@ export const WATER_RO: StockAssetTemplateEntry = {
           "failure that costs a membrane set.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["feed_flow_klh", "permeate_flow_klh", "reject_flow_klh", "feed_pressure_bar", "feed_conductivity_uscm", "permeate_conductivity_uscm", "feed_ph", "hp_pump_status"],
+        widgets: [
+          {
+            title: "Feed water flow",
+            widgetType: "value_tile",
+            pointKeys: ["feed_flow_klh"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Permeate flow",
+            widgetType: "value_tile",
+            pointKeys: ["permeate_flow_klh"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Concentrate / reject flow",
+            widgetType: "value_tile",
+            pointKeys: ["reject_flow_klh"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Feed pressure (post HP pump)",
+            widgetType: "value_tile",
+            pointKeys: ["feed_pressure_bar"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Feed conductivity",
+            widgetType: "value_tile",
+            pointKeys: ["feed_conductivity_uscm"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Permeate conductivity",
+            widgetType: "value_tile",
+            pointKeys: ["permeate_conductivity_uscm"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Feed pH",
+            widgetType: "value_tile",
+            pointKeys: ["feed_ph"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "HP pump run status",
+            widgetType: "value_tile",
+            pointKeys: ["hp_pump_status"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Salt rejection (conductivity) trend",
+            widgetType: "chart",
+            pointKeys: ["feed_conductivity_uscm", "permeate_conductivity_uscm"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "feed_flow_klh", label: "Feed water flow", unit: "KL/hr", required: true, sortOrder: 0, meta: CORE },

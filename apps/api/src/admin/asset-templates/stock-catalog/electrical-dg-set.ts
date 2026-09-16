@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -145,6 +146,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `electrical-dg-set` **v1** (2026-09-02, `F2.12`): authored from
  *    `electrical-derived-taglist-v1.md` §3, PROVISIONAL — derived, not
  *    client-confirmed. The client-confirmed release is v2.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (dg_status, dg_on_load, dg_alarm, dg_shutdown, gen_kw, fuel_level_pct, coolant_temp_c, oil_pressure_bar), plus one
+ * `chart` trending gen_kw. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const ELECTRICAL_DG_SET: StockAssetTemplateEntry = {
   code: "electrical-dg-set",
@@ -347,6 +356,103 @@ export const ELECTRICAL_DG_SET: StockAssetTemplateEntry = {
           "where specific_fuel_l_kwh reads a meaningful figure.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["dg_status", "dg_on_load", "dg_alarm", "dg_shutdown", "gen_kw", "fuel_level_pct", "coolant_temp_c", "oil_pressure_bar"],
+        widgets: [
+          {
+            title: "Engine running",
+            widgetType: "value_tile",
+            pointKeys: ["dg_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Generator breaker closed",
+            widgetType: "value_tile",
+            pointKeys: ["dg_on_load"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Warning active",
+            widgetType: "value_tile",
+            pointKeys: ["dg_alarm"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Shutdown / trip active",
+            widgetType: "value_tile",
+            pointKeys: ["dg_shutdown"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Generator active power",
+            widgetType: "value_tile",
+            pointKeys: ["gen_kw"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Day-tank fuel level",
+            widgetType: "value_tile",
+            pointKeys: ["fuel_level_pct"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Coolant temperature",
+            widgetType: "value_tile",
+            pointKeys: ["coolant_temp_c"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Lube oil pressure",
+            widgetType: "value_tile",
+            pointKeys: ["oil_pressure_bar"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Generator output trend",
+            widgetType: "chart",
+            pointKeys: ["gen_kw"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "dg_status", label: "Engine running", unit: null, required: true, sortOrder: 0, meta: CORE },

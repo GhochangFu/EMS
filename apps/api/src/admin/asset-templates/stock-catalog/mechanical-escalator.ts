@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -189,6 +190,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-escalator` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §8b, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (esc_status, esc_mode, esc_fault, esc_emergency_stop, controller_comms_ok, step_speed_ms), plus one
+ * `chart` trending motor_current_a. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
   code: "mechanical-escalator",
@@ -675,6 +684,83 @@ export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
           "rather than beside the annual inspection.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["esc_status", "esc_mode", "esc_fault", "esc_emergency_stop", "controller_comms_ok", "step_speed_ms"],
+        widgets: [
+          {
+            title: "Running / stopped / standby (slow)",
+            widgetType: "value_tile",
+            pointKeys: ["esc_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Normal / inspection / energy-save / out of service",
+            widgetType: "value_tile",
+            pointKeys: ["esc_mode"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Fault active",
+            widgetType: "value_tile",
+            pointKeys: ["esc_fault"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "E-stop pressed",
+            widgetType: "value_tile",
+            pointKeys: ["esc_emergency_stop"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Gateway ↔ escalator controller link healthy",
+            widgetType: "value_tile",
+            pointKeys: ["controller_comms_ok"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Step / pallet speed",
+            widgetType: "value_tile",
+            pointKeys: ["step_speed_ms"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Motor current trend",
+            widgetType: "chart",
+            pointKeys: ["motor_current_a"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     // ---- Service, mode and fault. §8b prints one flat table with no

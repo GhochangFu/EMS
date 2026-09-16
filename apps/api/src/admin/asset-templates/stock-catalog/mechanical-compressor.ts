@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -152,6 +153,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-compressor` **v1** (2026-09-03, `E5.2`): authored from
  *    `e5.2-derived-taglist-v1.md` §3, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (comp_status, comp_load_state, comp_fault, outlet_pressure_bar, element_outlet_temp_c, motor_current_a, run_hours_h, loaded_hours_h), plus one
+ * `chart` trending outlet_pressure_bar. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const MECHANICAL_COMPRESSOR: StockAssetTemplateEntry = {
   code: "mechanical-compressor",
@@ -429,6 +438,103 @@ export const MECHANICAL_COMPRESSOR: StockAssetTemplateEntry = {
           "to fix.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["comp_status", "comp_load_state", "comp_fault", "outlet_pressure_bar", "element_outlet_temp_c", "motor_current_a", "run_hours_h", "loaded_hours_h"],
+        widgets: [
+          {
+            title: "Run status",
+            widgetType: "value_tile",
+            pointKeys: ["comp_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Stopped / unloaded / loaded",
+            widgetType: "value_tile",
+            pointKeys: ["comp_load_state"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Shutdown / fault active",
+            widgetType: "value_tile",
+            pointKeys: ["comp_fault"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Air outlet (discharge) pressure",
+            widgetType: "value_tile",
+            pointKeys: ["outlet_pressure_bar"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Compression element outlet temperature",
+            widgetType: "value_tile",
+            pointKeys: ["element_outlet_temp_c"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Main motor current",
+            widgetType: "value_tile",
+            pointKeys: ["motor_current_a"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Total running hours",
+            widgetType: "value_tile",
+            pointKeys: ["run_hours_h"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Loaded hours",
+            widgetType: "value_tile",
+            pointKeys: ["loaded_hours_h"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Discharge pressure trend",
+            widgetType: "chart",
+            pointKeys: ["outlet_pressure_bar"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "comp_status", label: "Run status", unit: null, required: true, sortOrder: 0, meta: CORE },

@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -125,6 +126,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `electrical-derived-taglist-v1.md` §6, PROVISIONAL — derived, not
  *    client-confirmed. The client-confirmed release is v2; its redline
  *    candidate is the attribute pair recorded above.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (apfc_status, apfc_alarm, actual_pf, steps_on_count, target_pf, kvar_connected, kvar_required, bus_voltage_v), plus one
+ * `chart` trending actual_pf, target_pf. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const ELECTRICAL_APFC: StockAssetTemplateEntry = {
   code: "electrical-apfc",
@@ -254,6 +263,103 @@ export const ELECTRICAL_APFC: StockAssetTemplateEntry = {
           "capacitance fastest hot, so heat is the failure mode behind most of the others.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["apfc_status", "apfc_alarm", "actual_pf", "steps_on_count", "target_pf", "kvar_connected", "kvar_required", "bus_voltage_v"],
+        widgets: [
+          {
+            title: "Controller in auto / manual",
+            widgetType: "value_tile",
+            pointKeys: ["apfc_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Controller alarm active",
+            widgetType: "value_tile",
+            pointKeys: ["apfc_alarm"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Measured PF at the bus",
+            widgetType: "value_tile",
+            pointKeys: ["actual_pf"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Capacitor steps switched in",
+            widgetType: "value_tile",
+            pointKeys: ["steps_on_count"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "PF setpoint",
+            widgetType: "value_tile",
+            pointKeys: ["target_pf"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Connected reactive power",
+            widgetType: "value_tile",
+            pointKeys: ["kvar_connected"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Reactive power still required",
+            widgetType: "value_tile",
+            pointKeys: ["kvar_required"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Bus voltage",
+            widgetType: "value_tile",
+            pointKeys: ["bus_voltage_v"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Power factor trend",
+            widgetType: "chart",
+            pointKeys: ["actual_pf", "target_pf"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "apfc_status", label: "Controller in auto / manual", unit: null, required: true, sortOrder: 0, meta: CORE },

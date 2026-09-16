@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -144,6 +145,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *    client-confirmed, and carrying one point key (`cell_voltage_spread_v`)
  *    the document does not name, by owner ruling. The client-confirmed release
  *    is v2; its redline candidate is recorded above.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (ups_status, ups_alarm, on_battery, load_pct, battery_charge_pct, backup_min, battery_v, battery_temp_c), plus one
+ * `chart` trending load_pct, battery_charge_pct. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const ELECTRICAL_UPS: StockAssetTemplateEntry = {
   code: "electrical-ups",
@@ -318,6 +327,103 @@ export const ELECTRICAL_UPS: StockAssetTemplateEntry = {
           "alarm sends the load down.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["ups_status", "ups_alarm", "on_battery", "load_pct", "battery_charge_pct", "backup_min", "battery_v", "battery_temp_c"],
+        widgets: [
+          {
+            title: "Output source: normal / on battery / bypass / off",
+            widgetType: "value_tile",
+            pointKeys: ["ups_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Any alarm present",
+            widgetType: "value_tile",
+            pointKeys: ["ups_alarm"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Output on battery",
+            widgetType: "value_tile",
+            pointKeys: ["on_battery"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Output load",
+            widgetType: "value_tile",
+            pointKeys: ["load_pct"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Battery charge remaining",
+            widgetType: "value_tile",
+            pointKeys: ["battery_charge_pct"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Estimated minutes remaining",
+            widgetType: "value_tile",
+            pointKeys: ["backup_min"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Battery bus voltage",
+            widgetType: "value_tile",
+            pointKeys: ["battery_v"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Battery temperature",
+            widgetType: "value_tile",
+            pointKeys: ["battery_temp_c"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Load and battery charge trend",
+            widgetType: "chart",
+            pointKeys: ["load_pct", "battery_charge_pct"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "ups_status", label: "Output source: normal / on battery / bypass / off", unit: null, required: true, sortOrder: 0, meta: CORE },

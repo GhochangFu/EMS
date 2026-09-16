@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -125,6 +126,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-cooling-tower` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §4, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (supply_temp_c, return_temp_c, circ_flow_klh, makeup_flow_klh, basin_level_pct, circ_conductivity_uscm, circ_ph, fan_status), plus one
+ * `chart` trending supply_temp_c, return_temp_c. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const WATER_COOLING_TOWER: StockAssetTemplateEntry = {
   code: "water-cooling-tower",
@@ -354,6 +363,103 @@ export const WATER_COOLING_TOWER: StockAssetTemplateEntry = {
           "alarms with it — the calibration is what keeps a computed number honest.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["supply_temp_c", "return_temp_c", "circ_flow_klh", "makeup_flow_klh", "basin_level_pct", "circ_conductivity_uscm", "circ_ph", "fan_status"],
+        widgets: [
+          {
+            title: "Cold (basin/supply) water temperature",
+            widgetType: "value_tile",
+            pointKeys: ["supply_temp_c"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Hot (return) water temperature",
+            widgetType: "value_tile",
+            pointKeys: ["return_temp_c"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Circulation flow",
+            widgetType: "value_tile",
+            pointKeys: ["circ_flow_klh"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Make-up water flow",
+            widgetType: "value_tile",
+            pointKeys: ["makeup_flow_klh"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Basin level",
+            widgetType: "value_tile",
+            pointKeys: ["basin_level_pct"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Circulating water conductivity",
+            widgetType: "value_tile",
+            pointKeys: ["circ_conductivity_uscm"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Circulating water pH",
+            widgetType: "value_tile",
+            pointKeys: ["circ_ph"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Fan run status (per cell)",
+            widgetType: "value_tile",
+            pointKeys: ["fan_status"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Supply/return temperature trend",
+            widgetType: "chart",
+            pointKeys: ["supply_temp_c", "return_temp_c"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "supply_temp_c", label: "Cold (basin/supply) water temperature", unit: "°C", required: true, sortOrder: 0, meta: CORE },

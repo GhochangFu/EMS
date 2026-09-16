@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MANUAL, MEASURED, derived } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -172,6 +173,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `environment-iaq-node` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §6, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (temperature_c, humidity_pct, co2_ppm, pm25_ugm3, sensor_online), plus one
+ * `chart` trending co2_ppm. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const ENVIRONMENT_IAQ_NODE: StockAssetTemplateEntry = {
   code: "environment-iaq-node",
@@ -404,6 +413,73 @@ export const ENVIRONMENT_IAQ_NODE: StockAssetTemplateEntry = {
           "little.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["temperature_c", "humidity_pct", "co2_ppm", "pm25_ugm3", "sensor_online"],
+        widgets: [
+          {
+            title: "Air temperature",
+            widgetType: "value_tile",
+            pointKeys: ["temperature_c"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Relative humidity",
+            widgetType: "value_tile",
+            pointKeys: ["humidity_pct"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "CO₂ (ventilation adequacy)",
+            widgetType: "value_tile",
+            pointKeys: ["co2_ppm"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "PM2.5",
+            widgetType: "value_tile",
+            pointKeys: ["pm25_ugm3"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Node reporting",
+            widgetType: "value_tile",
+            pointKeys: ["sensor_online"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "CO2 trend",
+            widgetType: "chart",
+            pointKeys: ["co2_ppm"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     // Reused from CONTROL_ROOM_ENVIRONMENT_POINT_KEYS and referenced, never

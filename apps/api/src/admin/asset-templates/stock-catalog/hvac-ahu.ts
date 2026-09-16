@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -178,6 +179,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `hvac-ahu` **v1** (2026-09-03, `E5.2`): authored from
  *    `e5.2-derived-taglist-v1.md` §6, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (ahu_status, ahu_fault, supply_air_temp_c, supply_air_temp_sp_c, return_air_temp_c, duct_static_pa, fan_speed_pct, filter_dp_pa), plus one
+ * `chart` trending supply_air_temp_c, supply_air_temp_sp_c, return_air_temp_c. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const HVAC_AHU: StockAssetTemplateEntry = {
   code: "hvac-ahu",
@@ -504,6 +513,103 @@ export const HVAC_AHU: StockAssetTemplateEntry = {
           "immediate finding, not a work order for later.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["ahu_status", "ahu_fault", "supply_air_temp_c", "supply_air_temp_sp_c", "return_air_temp_c", "duct_static_pa", "fan_speed_pct", "filter_dp_pa"],
+        widgets: [
+          {
+            title: "Unit run status",
+            widgetType: "value_tile",
+            pointKeys: ["ahu_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Unit fault / trip",
+            widgetType: "value_tile",
+            pointKeys: ["ahu_fault"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Supply air temperature",
+            widgetType: "value_tile",
+            pointKeys: ["supply_air_temp_c"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Supply air temperature setpoint",
+            widgetType: "value_tile",
+            pointKeys: ["supply_air_temp_sp_c"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Return air temperature",
+            widgetType: "value_tile",
+            pointKeys: ["return_air_temp_c"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Supply duct static pressure",
+            widgetType: "value_tile",
+            pointKeys: ["duct_static_pa"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Supply fan speed command",
+            widgetType: "value_tile",
+            pointKeys: ["fan_speed_pct"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Filter differential pressure",
+            widgetType: "value_tile",
+            pointKeys: ["filter_dp_pa"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Supply air temperature trend",
+            widgetType: "chart",
+            pointKeys: ["supply_air_temp_c", "supply_air_temp_sp_c", "return_air_temp_c"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "ahu_status", label: "Unit run status", unit: null, required: true, sortOrder: 0, meta: CORE },

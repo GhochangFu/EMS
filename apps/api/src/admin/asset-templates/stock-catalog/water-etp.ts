@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -133,6 +134,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-etp` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §6, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (influent_flow_klh, discharge_flow_klh, neutralization_ph, discharge_ph, bio_mlss_mgl, bio_do_mgl, transfer_pump_status), plus one
+ * `chart` trending influent_flow_klh, discharge_flow_klh. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const WATER_ETP: StockAssetTemplateEntry = {
   code: "water-etp",
@@ -381,6 +390,93 @@ export const WATER_ETP: StockAssetTemplateEntry = {
           "plan. guard_pond_level_pct reports the level and nothing reports the bund.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["influent_flow_klh", "discharge_flow_klh", "neutralization_ph", "discharge_ph", "bio_mlss_mgl", "bio_do_mgl", "transfer_pump_status"],
+        widgets: [
+          {
+            title: "Raw effluent inlet flow",
+            widgetType: "value_tile",
+            pointKeys: ["influent_flow_klh"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Final discharge flow",
+            widgetType: "value_tile",
+            pointKeys: ["discharge_flow_klh"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Neutralization tank pH",
+            widgetType: "value_tile",
+            pointKeys: ["neutralization_ph"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Final discharge pH",
+            widgetType: "value_tile",
+            pointKeys: ["discharge_ph"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Biological treatment MLSS",
+            widgetType: "value_tile",
+            pointKeys: ["bio_mlss_mgl"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Biological tank DO",
+            widgetType: "value_tile",
+            pointKeys: ["bio_do_mgl"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Inter-stage transfer pump status",
+            widgetType: "value_tile",
+            pointKeys: ["transfer_pump_status"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Flow trend",
+            widgetType: "chart",
+            pointKeys: ["influent_flow_klh", "discharge_flow_klh"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "influent_flow_klh", label: "Raw effluent inlet flow", unit: "KL/hr", required: true, sortOrder: 0, meta: CORE },

@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -146,6 +147,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `electrical-derived-taglist-v1.md` §2, PROVISIONAL — derived, not
  *    client-confirmed. The client-confirmed release is v2; its redline
  *    candidates are recorded above (a loading row, C₂H₄ and C₂H₆).
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (top_oil_temp_c, winding_temp_c, oil_level_low, buchholz_alarm, oti_alarm, wti_alarm, tap_position, cooling_fan_status), plus one
+ * `chart` trending top_oil_temp_c, winding_temp_c. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const ELECTRICAL_TRANSFORMER: StockAssetTemplateEntry = {
   code: "electrical-transformer",
@@ -372,6 +381,103 @@ export const ELECTRICAL_TRANSFORMER: StockAssetTemplateEntry = {
           "cooling_pump_status respond — the two points the cooling alarms bind to.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["top_oil_temp_c", "winding_temp_c", "oil_level_low", "buchholz_alarm", "oti_alarm", "wti_alarm", "tap_position", "cooling_fan_status"],
+        widgets: [
+          {
+            title: "Top-oil temperature (OTI)",
+            widgetType: "value_tile",
+            pointKeys: ["top_oil_temp_c"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Winding temperature (WTI, hottest phase)",
+            widgetType: "value_tile",
+            pointKeys: ["winding_temp_c"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Oil level low switch",
+            widgetType: "value_tile",
+            pointKeys: ["oil_level_low"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Buchholz gas alarm",
+            widgetType: "value_tile",
+            pointKeys: ["buchholz_alarm"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "OTI alarm contact",
+            widgetType: "value_tile",
+            pointKeys: ["oti_alarm"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "WTI alarm contact",
+            widgetType: "value_tile",
+            pointKeys: ["wti_alarm"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "OLTC tap position",
+            widgetType: "value_tile",
+            pointKeys: ["tap_position"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "ONAF fan(s) running",
+            widgetType: "value_tile",
+            pointKeys: ["cooling_fan_status"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Oil and winding temperature trend",
+            widgetType: "chart",
+            pointKeys: ["top_oil_temp_c", "winding_temp_c"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "top_oil_temp_c", label: "Top-oil temperature (OTI)", unit: "°C", required: true, sortOrder: 0, meta: CORE },

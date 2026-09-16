@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -134,6 +135,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-fire-panel` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §2, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (fire_alarm_state, fire_fault_state, fire_isolate_state, panel_ac_ok, panel_battery_ok, panel_comms_ok, zone_alarm_state, zone_fault_state), plus one
+ * `chart` trending hydrant_header_pressure_bar. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_FIRE_PANEL: StockAssetTemplateEntry = {
   code: "facility-fire-panel",
@@ -483,6 +492,103 @@ export const FACILITY_FIRE_PANEL: StockAssetTemplateEntry = {
           "and this round is also what tells a reader that a run seen on the panel was planned.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["fire_alarm_state", "fire_fault_state", "fire_isolate_state", "panel_ac_ok", "panel_battery_ok", "panel_comms_ok", "zone_alarm_state", "zone_fault_state"],
+        widgets: [
+          {
+            title: "Fire alarm active (any zone)",
+            widgetType: "value_tile",
+            pointKeys: ["fire_alarm_state"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Fault / trouble active (any)",
+            widgetType: "value_tile",
+            pointKeys: ["fire_fault_state"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Any zone / device isolated (disabled)",
+            widgetType: "value_tile",
+            pointKeys: ["fire_isolate_state"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Panel mains supply healthy",
+            widgetType: "value_tile",
+            pointKeys: ["panel_ac_ok"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Panel standby battery healthy",
+            widgetType: "value_tile",
+            pointKeys: ["panel_battery_ok"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Gateway ↔ panel link healthy",
+            widgetType: "value_tile",
+            pointKeys: ["panel_comms_ok"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Alarm, per zone / loop",
+            widgetType: "value_tile",
+            pointKeys: ["zone_alarm_state"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Fault, per zone / loop",
+            widgetType: "value_tile",
+            pointKeys: ["zone_fault_state"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Hydrant header pressure trend",
+            widgetType: "chart",
+            pointKeys: ["hydrant_header_pressure_bar"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "fire_alarm_state", label: "Fire alarm active (any zone)", unit: null, required: true, sortOrder: 0, meta: CORE },

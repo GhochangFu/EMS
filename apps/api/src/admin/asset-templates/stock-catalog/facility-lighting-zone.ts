@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -110,6 +111,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-lighting-zone` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §1, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (lighting_state, lighting_level_pct, lighting_mode, occupancy_state, schedule_active), plus one
+ * `chart` trending lighting_level_pct. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_LIGHTING_ZONE: StockAssetTemplateEntry = {
   code: "facility-lighting-zone",
@@ -282,6 +291,73 @@ export const FACILITY_LIGHTING_ZONE: StockAssetTemplateEntry = {
           "so the clean is done before anything is judged to need relamping.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["lighting_state", "lighting_level_pct", "lighting_mode", "occupancy_state", "schedule_active"],
+        widgets: [
+          {
+            title: "Zone on / off",
+            widgetType: "value_tile",
+            pointKeys: ["lighting_state"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Dimming level (DALI arc power)",
+            widgetType: "value_tile",
+            pointKeys: ["lighting_level_pct"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Auto (schedule/sensor) / manual override / off",
+            widgetType: "value_tile",
+            pointKeys: ["lighting_mode"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Occupancy detected (PIR / microwave)",
+            widgetType: "value_tile",
+            pointKeys: ["occupancy_state"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Schedule currently commanding the zone",
+            widgetType: "value_tile",
+            pointKeys: ["schedule_active"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Dimming level trend",
+            widgetType: "chart",
+            pointKeys: ["lighting_level_pct"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "lighting_state", label: "Zone on / off", unit: null, required: true, sortOrder: 0, meta: CORE },

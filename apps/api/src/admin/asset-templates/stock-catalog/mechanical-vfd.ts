@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -118,6 +119,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-vfd` **v1** (2026-09-03, `E5.2`): authored from
  *    `e5.2-derived-taglist-v1.md` §2, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (vfd_status, vfd_fault, vfd_fault_code, vfd_output_freq_hz, vfd_speed_ref_pct, vfd_output_current_a, vfd_run_hours_h), plus one
+ * `chart` trending vfd_output_current_a. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const MECHANICAL_VFD: StockAssetTemplateEntry = {
   code: "mechanical-vfd",
@@ -361,6 +370,93 @@ export const MECHANICAL_VFD: StockAssetTemplateEntry = {
           "trip and is the only record of the faults that cleared themselves.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["vfd_status", "vfd_fault", "vfd_fault_code", "vfd_output_freq_hz", "vfd_speed_ref_pct", "vfd_output_current_a", "vfd_run_hours_h"],
+        widgets: [
+          {
+            title: "Drive run status",
+            widgetType: "value_tile",
+            pointKeys: ["vfd_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Drive fault active",
+            widgetType: "value_tile",
+            pointKeys: ["vfd_fault"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Active fault code",
+            widgetType: "value_tile",
+            pointKeys: ["vfd_fault_code"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Output frequency",
+            widgetType: "value_tile",
+            pointKeys: ["vfd_output_freq_hz"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Speed reference / setpoint",
+            widgetType: "value_tile",
+            pointKeys: ["vfd_speed_ref_pct"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Motor current",
+            widgetType: "value_tile",
+            pointKeys: ["vfd_output_current_a"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Drive run hours",
+            widgetType: "value_tile",
+            pointKeys: ["vfd_run_hours_h"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Motor current trend",
+            widgetType: "chart",
+            pointKeys: ["vfd_output_current_a"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "vfd_status", label: "Drive run status", unit: null, required: true, sortOrder: 0, meta: CORE },

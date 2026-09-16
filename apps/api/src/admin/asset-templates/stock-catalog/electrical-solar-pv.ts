@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -146,6 +147,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *    client-confirmed. The client-confirmed release is v2; a redline candidate
  *    is per-string metering, which would make `string_current_deviation_pct`
  *    expressible and give the deferred alarm bullet a parameter.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (inv_status, inv_fault, ac_power_kw, dc_power_kw, energy_today_kwh, energy_total_kwh, ac_frequency_hz, dc_voltage_v), plus one
+ * `chart` trending ac_power_kw, dc_power_kw. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const ELECTRICAL_SOLAR_PV: StockAssetTemplateEntry = {
   code: "electrical-solar-pv",
@@ -295,6 +304,103 @@ export const ELECTRICAL_SOLAR_PV: StockAssetTemplateEntry = {
           "table sees it.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["inv_status", "inv_fault", "ac_power_kw", "dc_power_kw", "energy_today_kwh", "energy_total_kwh", "ac_frequency_hz", "dc_voltage_v"],
+        widgets: [
+          {
+            title: "Operating state",
+            widgetType: "value_tile",
+            pointKeys: ["inv_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Fault active",
+            widgetType: "value_tile",
+            pointKeys: ["inv_fault"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "AC output active power",
+            widgetType: "value_tile",
+            pointKeys: ["ac_power_kw"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "DC input power",
+            widgetType: "value_tile",
+            pointKeys: ["dc_power_kw"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Energy today",
+            widgetType: "value_tile",
+            pointKeys: ["energy_today_kwh"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Lifetime energy yield",
+            widgetType: "value_tile",
+            pointKeys: ["energy_total_kwh"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Grid frequency",
+            widgetType: "value_tile",
+            pointKeys: ["ac_frequency_hz"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "DC input voltage",
+            widgetType: "value_tile",
+            pointKeys: ["dc_voltage_v"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "AC/DC power trend",
+            widgetType: "chart",
+            pointKeys: ["ac_power_kw", "dc_power_kw"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "inv_status", label: "Operating state", unit: null, required: true, sortOrder: 0, meta: CORE },

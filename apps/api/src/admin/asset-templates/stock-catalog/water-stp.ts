@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -128,6 +129,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-stp` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §5, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (influent_flow_klh, effluent_flow_klh, aeration_do_mgl, mlss_mgl, effluent_turbidity_ntu, effluent_ph, effluent_cl2_residual_mgl, blower_status), plus one
+ * `chart` trending influent_flow_klh, effluent_flow_klh. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const WATER_STP: StockAssetTemplateEntry = {
   code: "water-stp",
@@ -401,6 +410,103 @@ export const WATER_STP: StockAssetTemplateEntry = {
           "where no UV stage is fitted.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["influent_flow_klh", "effluent_flow_klh", "aeration_do_mgl", "mlss_mgl", "effluent_turbidity_ntu", "effluent_ph", "effluent_cl2_residual_mgl", "blower_status"],
+        widgets: [
+          {
+            title: "Influent flow",
+            widgetType: "value_tile",
+            pointKeys: ["influent_flow_klh"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Treated effluent flow",
+            widgetType: "value_tile",
+            pointKeys: ["effluent_flow_klh"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Aeration tank dissolved oxygen",
+            widgetType: "value_tile",
+            pointKeys: ["aeration_do_mgl"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Mixed liquor suspended solids",
+            widgetType: "value_tile",
+            pointKeys: ["mlss_mgl"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Effluent turbidity",
+            widgetType: "value_tile",
+            pointKeys: ["effluent_turbidity_ntu"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Effluent pH",
+            widgetType: "value_tile",
+            pointKeys: ["effluent_ph"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Disinfection residual chlorine",
+            widgetType: "value_tile",
+            pointKeys: ["effluent_cl2_residual_mgl"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Air blower run status",
+            widgetType: "value_tile",
+            pointKeys: ["blower_status"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Flow trend",
+            widgetType: "chart",
+            pointKeys: ["influent_flow_klh", "effluent_flow_klh"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "influent_flow_klh", label: "Influent flow", unit: "KL/hr", required: true, sortOrder: 0, meta: CORE },
