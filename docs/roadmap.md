@@ -5324,3 +5324,45 @@ reaches two credential tables and not a bucket; the resolver has no purpose
 parameter, so one key would cover both a dump and the ciphertext inside it;
 and CI sets no key, so the restore drill must make its own. The `E8.2` row
 carries them in full.
+
+### `F3.2` — per-asset default dashboards instantiated from an asset template (ADR 0067) ✅ 2026-09-17
+
+**The row five template ADRs pointed at.** ADR 0015 made `asset_type` *"the
+axis `F3.2` groups by"*; ADR 0019 authored `content.dashboards` and said the
+materialisation *"needs its own gate"*; ADR 0047 declined to spend that gate
+inside `F3.1e`; ADRs 0048, 0049 and 0052 each named `F3.2` the owner of
+instantiating a template dashboard into `bms.dashboard_widgets`. No §5 entry
+existed, so [ADR 0067](adr/0067-per-asset-default-dashboards.md) was drafted
+and ruled in-session on 2026-09-16, one question at a time. PR
+[#463](https://github.com/GhochangFu/EMS/pull/463).
+
+**What ships.** `bms.dashboards` gains an asset scope and an asset-template
+version stamp (migration `0073`, a three-way scope check, two stamp checks, the
+tenant policy re-created with five parent legs). A template's views
+materialise into dashboard, widget and point rows for each asset — inside the
+asset-instantiation transaction after the rule seed, and through
+`POST /admin/asset-templates/:id/default-dashboards`, which backfills pinned
+assets in chunked, resumable transactions and skips the ones already stamped.
+Every one of the 27 stock classes gains an `overview` view, gated at build time.
+The dashboards list shows `Asset · <code>`; a published template carries a
+*Create default dashboards* action with its report; the instantiate dialog
+shows a result line, the first surface `ruleCount` ever reached.
+
+**Seven owner rulings**, three at the gate (materialise rows; both triggers;
+stock content), three at the plan (`assetCode` on the summary DTO; the result
+line; no `stockVersion` bump) and one at review (the chunked backfill — the
+8,000-row bound had made the route a dead end above 889 assets). **Four
+reviews, none blocking, every finding applied**: the PATCH that kept a stamp
+when the asset moved; RLS and CHECK refusals surfacing as 500s; a location
+arm that trusted `assets.location_id` without proving its organization; a
+repeated point key that would have hit a unique constraint on every
+instantiation; a backfill that reported `created` having written nothing; a
+batch-bound control whose fixture failed before the bound.
+
+**Verified on every layer** — the full gate with the database, Redis and
+object storage set (565 files, 3810 tests, no skips); the migration's recorded
+hash equal to the file's; a cold start on an empty volume; API probes from
+the logged-in SPA tab; a `browser-verifier` pass on the new bundle. The
+`chore(agents):` sweep is owed separately and touches the status line and §2
+only — `F3.2` is not a §6 item. `F3.31` unblocks; `F3.45` follows this row on
+the stock catalog files.
