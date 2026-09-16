@@ -566,6 +566,8 @@ export class DashboardTemplatesInstantiateService {
       description: row.description,
       locationId: row.locationId,
       assetGroupId: row.assetGroupId,
+      assetId: row.assetId,
+      assetTemplateId: row.assetTemplateId,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       widgets,

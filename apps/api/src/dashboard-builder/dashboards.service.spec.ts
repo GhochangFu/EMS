@@ -40,6 +40,10 @@ const dashboardRow = {
   // `F3.36` / ADR 0049 decision 2 — the template version stamp. NULL is the hand-built
   // dashboard, which is what this fixture is.
   templateId: null,
+  // `F3.2` / ADR 0067 decision 1 — the asset scope arm. NULL: this fixture stays
+  // organization-wide.
+  assetId: null,
+  assetTemplateId: null,
   createdAt: new Date("2026-08-01T00:00:00.000Z"),
   updatedAt: new Date("2026-08-02T00:00:00.000Z"),
 };
@@ -79,7 +83,7 @@ export function runDashboardsServiceUnitTests(): void {
   // The row -> DTO mappers' output parses against the shared contract — the
   // one thing catching API drift from the contract without a database.
   // -------------------------------------------------------------------------
-  const summary = mapDashboardSummary(dashboardRow, 3);
+  const summary = mapDashboardSummary(dashboardRow, 3, null);
   const summaryParsed = dashboardSummaryDtoSchema.safeParse(summary);
   assert(
     summaryParsed.success === true,

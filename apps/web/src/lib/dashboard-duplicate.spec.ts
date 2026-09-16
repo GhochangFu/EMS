@@ -50,6 +50,8 @@ function sourceDashboard(widgets: DashboardWidgetDto[]): DashboardDto {
     description: "Original description",
     locationId: "loc-1",
     assetGroupId: null,
+    assetId: null,
+    assetTemplateId: null,
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
     widgets,

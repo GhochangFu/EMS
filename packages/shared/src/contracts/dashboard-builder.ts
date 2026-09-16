@@ -791,6 +791,15 @@ export const dashboardDtoSchema = z
     description: z.string().nullable(),
     locationId: z.string().uuid().nullable(),
     assetGroupId: z.string().uuid().nullable(),
+    // `F3.2` / ADR 0067 decision 1 — the fourth scope arm and the stamp that
+    // names the asset template a per-asset default was built from. At most
+    // one of `locationId`/`assetGroupId`/`assetId` is non-null
+    // (`dashboards_scope_check`); `assetTemplateId` implies `assetId`
+    // (`dashboards_asset_stamp_check`) and is mutually exclusive with
+    // `templateId` (`dashboards_template_stamp_check`) — CHECKs the migration
+    // enforces and this contract does not re-derive.
+    assetId: z.string().uuid().nullable(),
+    assetTemplateId: z.string().uuid().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
     widgets: z.array(dashboardWidgetDtoSchema),
@@ -814,6 +823,14 @@ export const dashboardSummaryDtoSchema = z
     description: z.string().nullable(),
     locationId: z.string().uuid().nullable(),
     assetGroupId: z.string().uuid().nullable(),
+    // `F3.2` / ADR 0067 decision 1, and §13's ruling on plan §12 Q1 — the
+    // asset scope arm and stamp (see `dashboardDtoSchema`'s docblock for the
+    // CHECKs), plus `assetCode` so the list badge can read "Asset · <code>"
+    // without a second fetch. `assetCode` is on the summary DTO only —
+    // `dashboardDtoSchema` does not gain it (§13).
+    assetId: z.string().uuid().nullable(),
+    assetTemplateId: z.string().uuid().nullable(),
+    assetCode: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
     widgetCount: z.number().int().min(0),

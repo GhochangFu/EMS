@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runDashboardAssetScopeFieldsTests,
   runDashboardBuilderTests,
   runDashboardGridTests,
   runDashboardWidgetPointDtoTests,
@@ -76,5 +77,11 @@ describe("F3.35 Stage A — aggregation and presentation on the tile and chart c
 
   it("narrows the new fields through the discriminated spec union too", () => {
     runStageASpecUnionCarriesTheNewFieldsTests();
+  });
+});
+
+describe("F3.2 — dashboardDto/dashboardSummaryDto gain the asset scope arm (ADR 0067)", () => {
+  it("rejects a dashboard or summary row missing assetId; the summary alone also carries assetCode", () => {
+    runDashboardAssetScopeFieldsTests();
   });
 });

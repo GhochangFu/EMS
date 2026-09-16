@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runAssetInstantiationResultDashboardFieldsTests,
   runAssetInstantiationResultSeededRulesTests,
   runSeededRuleDriftVerdictTests,
   runSeededRuleValuesPhilosophyRowTests,
@@ -18,5 +19,11 @@ describe("E2.4 — the instantiate result reports seeded rules (ADR 0058 decisio
 
   it("accepts a philosophy row's all-null operator/threshold baseline", () => {
     runSeededRuleValuesPhilosophyRowTests();
+  });
+});
+
+describe("F3.2 — dashboardCount and per-asset dashboards report (ADR 0067 decision 5)", () => {
+  it("rejects a result missing dashboardCount, or an asset entry missing dashboards", () => {
+    runAssetInstantiationResultDashboardFieldsTests();
   });
 });

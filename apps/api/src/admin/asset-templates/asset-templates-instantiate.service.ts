@@ -438,6 +438,8 @@ export class AssetTemplateInstantiationService {
         // lookups above, which throw because a missing id there is a real
         // outcome (the database's `RETURNING` decides that one, not this code).
         seededRules: created.seededByCode.get(plan.entry.code) ?? [],
+        // F3.2 Task 6 (ADR 0067 decision 4) replaces this with the per-asset report.
+        dashboards: [],
       };
     });
 
@@ -453,6 +455,8 @@ export class AssetTemplateInstantiationService {
       pointCount: created.pointCount,
       ruleCount: created.ruleCount,
       disabledRuleCount: created.disabledRuleCount,
+      // F3.2 Task 6 (ADR 0067 decision 4) replaces this with the count of rows written.
+      dashboardCount: 0,
     };
   }
 

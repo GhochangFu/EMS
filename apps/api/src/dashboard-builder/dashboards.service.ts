@@ -40,7 +40,11 @@ type DashboardScope = { readonly locationId: string | null; readonly assetGroupI
 
 /** Row -> DTO. Parses against `dashboardSummaryDtoSchema` in the caller's own test — this
  * function only builds the shape. */
-export function mapDashboardSummary(row: DashboardRow, widgetCount: number): DashboardSummaryDto {
+export function mapDashboardSummary(
+  row: DashboardRow,
+  widgetCount: number,
+  assetCode: string | null,
+): DashboardSummaryDto {
   return {
     id: row.id,
     organizationId: row.organizationId,
@@ -49,6 +53,9 @@ export function mapDashboardSummary(row: DashboardRow, widgetCount: number): Das
     description: row.description,
     locationId: row.locationId,
     assetGroupId: row.assetGroupId,
+    assetId: row.assetId,
+    assetTemplateId: row.assetTemplateId,
+    assetCode,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     widgetCount,
@@ -306,7 +313,12 @@ export class DashboardsService {
           .from(dashboards)
           .where(conditions.length > 0 ? and(...conditions) : undefined)
           .orderBy(asc(dashboards.slug));
-        return { items: rows.map((row) => mapDashboardSummary(row.dashboard, row.widgetCount)) };
+        // `F3.2` Task 3 adds the `leftJoin(assets)` this list needs to report a real
+        // `assetCode` (D10/§13); until then every row reports `null`, which
+        // `dashboardSummaryDtoSchema` accepts.
+        return {
+          items: rows.map((row) => mapDashboardSummary(row.dashboard, row.widgetCount, null)),
+        };
       },
     );
   }
@@ -798,6 +810,8 @@ export class DashboardsService {
       description: effective.description,
       locationId: effective.locationId,
       assetGroupId: effective.assetGroupId,
+      assetId: effective.assetId,
+      assetTemplateId: effective.assetTemplateId,
       createdAt: effective.createdAt.toISOString(),
       updatedAt: effective.updatedAt.toISOString(),
       widgets: widgetRows.map((widget) =>
