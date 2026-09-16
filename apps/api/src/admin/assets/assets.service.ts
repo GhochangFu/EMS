@@ -16,7 +16,15 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { resolveTelemetrySource, withTelemetrySource } from "../telemetry-source";
 import type { CreateAssetBody, UpdateAssetBody } from "./assets.schema";
+
+/**
+ * `bms.assets.meta` as this service holds it. Drizzle types a `jsonb` column as
+ * `unknown`, so the stored bag needs the same narrowing `mapRow` applies before
+ * it can be merged over.
+ */
+type MetaBag = Record<string, unknown> | null;
 
 /**
  * `F4.16` / `E7.1b` / ADR 0043 — `assets` (and `asset_points`) gain
@@ -31,10 +39,11 @@ import type { CreateAssetBody, UpdateAssetBody } from "./assets.schema";
  * an asset cannot cross organizations (`update` refuses a destination in another
  * org — the RLS `USING`/`WITH CHECK` pair cannot span two orgs under one
  * `SET LOCAL`, so the move would otherwise be a silent zero-row no-op post-0047).
- * The RTU consistency read stays **inside** the tenant GUC, never on `fleetDb`:
- * a valid gateway shares the asset's location and org, so the tenant context
- * sees it, while a foreign RTU reads as absent rather than as an existence
- * oracle across tenants.
+ * The RTU read stays **inside** the tenant GUC, never on `fleetDb`: a valid
+ * gateway shares the asset's location and org, so the tenant context sees it,
+ * while a foreign RTU reads as absent rather than as an existence oracle across
+ * tenants. Since `F4.139` that one read serves two purposes — the location
+ * consistency check and the `meta.telemetrySource` derivation below.
  */
 @Injectable()
 export class AssetsAdminService {
@@ -149,7 +158,12 @@ export class AssetsAdminService {
     const organizationId = await this.resolveLocationOrg(body.locationId);
 
     const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
-      await this.assertRtuLocation(body.rtuId, body.locationId, tx);
+      const rtu = await this.assertRtuLocation(body.rtuId, body.locationId, tx);
+      // `F4.139` — an asset attached to an RTU takes its `telemetrySource` from
+      // that RTU, never from the caller: see `admin/telemetry-source.ts` for the
+      // invariant, the predicate and why the derived value wins the merge. With
+      // no RTU there is nothing to derive from and the bag is stored as sent.
+      const telemetrySource = rtu === null ? null : await resolveTelemetrySource(tx, rtu);
       const [row] = await tx
         .insert(assets)
         .values({
@@ -160,7 +174,10 @@ export class AssetsAdminService {
           rtuId: body.rtuId ?? null,
           domain: body.domain,
           organizationId,
-          meta: body.meta ?? null,
+          meta:
+            telemetrySource === null
+              ? (body.meta ?? null)
+              : withTelemetrySource(body.meta, telemetrySource),
           active: true,
         })
         .returning();
@@ -174,7 +191,11 @@ export class AssetsAdminService {
           entityType: "asset",
           entityId: row.id,
           organizationId,
-          payload: body,
+          // `F4.139` — the derived value (or `null` for an unattached asset)
+          // beside the body, because the response DTO does not carry it: the
+          // audit row is the only record of what this write decided. A value,
+          // never an id (ADR 0021).
+          payload: { ...body, telemetrySource },
         },
         tx,
       );
@@ -241,7 +262,15 @@ export class AssetsAdminService {
     }
 
     await withTenant(this.tenantDb, organizationId, async (tx) => {
-      await this.assertRtuLocation(nextRtuId, nextLocationId, tx);
+      const rtu = await this.assertRtuLocation(nextRtuId, nextLocationId, tx);
+      // `F4.139` — restated on every update that leaves an RTU attached, not
+      // only on the ones that mention `rtuId`: the invariant is a postcondition,
+      // so a row already split is repaired by the next edit, and a PATCH that
+      // replaces `meta` cannot drop the key by omission. On detach the stored
+      // bag is left exactly as it is (owner ruling, 2026-09-16). The predicate
+      // and its reasoning live in `admin/telemetry-source.ts`.
+      const telemetrySource = rtu === null ? null : await resolveTelemetrySource(tx, rtu);
+      const nextMeta = body.meta !== undefined ? body.meta : (existing.meta as MetaBag);
       await tx
         .update(assets)
         .set({
@@ -252,7 +281,8 @@ export class AssetsAdminService {
           rtuId: nextRtuId,
           domain: body.domain ?? existing.domain,
           organizationId,
-          meta: body.meta !== undefined ? body.meta : existing.meta,
+          meta:
+            telemetrySource === null ? nextMeta : withTelemetrySource(nextMeta, telemetrySource),
         })
         .where(eq(assets.id, id));
 
@@ -263,7 +293,9 @@ export class AssetsAdminService {
           entityType: "asset",
           entityId: id,
           organizationId,
-          payload: body,
+          // `F4.139` — as in `create`: the derived value, or `null` when this
+          // update leaves the asset with no RTU.
+          payload: { ...body, telemetrySource },
         },
         tx,
       );
@@ -319,24 +351,34 @@ export class AssetsAdminService {
   }
 
   /**
-   * Asserts an asset's gateway lives in the same location as the asset.
+   * Asserts an asset's gateway lives in the same location as the asset, and
+   * returns the gateway row the caller derives `meta.telemetrySource` from.
    *
    * ADR 0018 made the gateway optional, so a null id is not an error — it means
-   * the asset's points are hand-entered or computed. There is nothing to check.
+   * the asset's points are hand-entered or computed. There is nothing to check
+   * and nothing to derive from, hence `null` rather than a throw.
+   *
+   * `F4.139` widened the select from `locationId` alone. The two columns it adds
+   * are exactly the ones `resolveTelemetrySource` needs, so the derivation costs
+   * no second query and runs on the same tenant transaction as the check.
    */
   private async assertRtuLocation(
     rtuId: string | null | undefined,
     locationId: string,
     tx: BmsTx,
-  ): Promise<void> {
+  ): Promise<{ id: string; ingestEnabled: boolean; sourceType: string } | null> {
     if (!rtuId) {
-      return;
+      return null;
     }
     // Read inside the caller's tenant GUC (never fleetDb): a valid gateway
     // shares this location, hence this org, so the tenant context sees it; a
     // foreign RTU reads as absent below rather than as a cross-tenant oracle.
     const [rtu] = await tx
-      .select({ locationId: rtus.locationId })
+      .select({
+        locationId: rtus.locationId,
+        ingestEnabled: rtus.ingestEnabled,
+        sourceType: rtus.sourceType,
+      })
       .from(rtus)
       .where(eq(rtus.id, rtuId))
       .limit(1);
@@ -346,6 +388,7 @@ export class AssetsAdminService {
     if (rtu.locationId !== locationId) {
       throw new BadRequestException("RTU must belong to the selected location");
     }
+    return { id: rtuId, ingestEnabled: rtu.ingestEnabled, sourceType: rtu.sourceType };
   }
 
   /**
