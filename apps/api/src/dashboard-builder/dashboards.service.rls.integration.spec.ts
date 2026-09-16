@@ -164,6 +164,14 @@ export async function assertAssetScopedCreateLandsTheAssetAndNoStamp(
   organizationId: string,
   assetId: string,
   slug: string,
+  /**
+   * Called with the new row's id BEFORE any assertion runs. The two rows this
+   * helper leaked on 2026-09-16 were created by a reviewer's mutation runs: the
+   * assertion below threw, the id never reached the caller's cleanup list, and
+   * the row outlived the run. A helper that creates must hand the id back
+   * before it judges the row.
+   */
+  track: (id: string) => void,
 ): Promise<{ id: string }> {
   const dto = await service.create(actor, {
     organizationId,
@@ -171,6 +179,7 @@ export async function assertAssetScopedCreateLandsTheAssetAndNoStamp(
     name: "F3.2 asset-scoped create proof",
     assetId,
   } as Parameters<DashboardsService["create"]>[1]);
+  track(dto.id);
 
   // The RETURNED DTO as well as the committed row. `loadFullDto` builds it from a re-read of
   // the row, so a hardcoded `assetId: null` there would typecheck, commit the correct row, and

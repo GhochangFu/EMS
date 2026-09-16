@@ -497,15 +497,15 @@ describe.skipIf(!connectionString)(
       const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
       const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
 
-      const { id } = await assertAssetScopedCreateLandsTheAssetAndNoStamp(
+      await assertAssetScopedCreateLandsTheAssetAndNoStamp(
         service,
         fleetDb,
         globalAdmin,
         eskomOrgId,
         eskomAssetId,
         ASSET_SCOPE_SLUG,
+        (id) => dashboardIds.push(id),
       );
-      dashboardIds.push(id);
     }, 60_000);
 
     it("F3.2 — PATCHing a locationId onto an asset-scoped dashboard is a 400 naming assetId", async () => {
