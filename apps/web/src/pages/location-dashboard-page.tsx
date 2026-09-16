@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import type { LocationDashboardDto } from "@bms/shared";
 
 import { fetchLocationDashboard } from "../api/locations";
+import {
+  AssetImagesRow,
+  AssetImagesToggleButton,
+} from "../components/assets/asset-images-row-toggle";
 import { KpiTile } from "../components/kpi-tile";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
@@ -18,6 +22,23 @@ type LocationDashboardPageProps = {
 type LocationAssetRow = LocationDashboardDto["assets"]["items"][number];
 
 const pageSizeOptions = [10, 25, 50] as const;
+
+/**
+ * The asset table's columns, in order.
+ *
+ * Declared here rather than written out in the `<thead>` so that the F3.4
+ * gallery row's `colSpan` is **derived** from the same list the headers come
+ * from: a seventh column added to the header would otherwise leave the
+ * full-width row one cell short, and nothing would say so.
+ */
+const assetTableColumns: ReadonlyArray<{ label: string; align?: "right" }> = [
+  { label: "Asset" },
+  { label: "RTU" },
+  { label: "Telemetry" },
+  { label: "Freshness" },
+  { label: "Alarms & warnings" },
+  { label: "Work orders", align: "right" },
+];
 
 function freshnessLabel(freshness: LocationAssetRow["freshness"]): string {
   if (freshness === "live") {
@@ -95,6 +116,13 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof pageSizeOptions)[number]>(10);
   const [rtuFilter, setRtuFilter] = useState<string>("all");
+  // F3.4 Q-1: **one** open gallery, not a set of them. Two readers' galleries
+  // on screen at once is not a state anyone asked for, and each open row holds
+  // an authenticated blob read plus an object URL per thumbnail, so the single
+  // id is both the simpler state and the cheaper one. It is also the shape the
+  // admin panel uses on `/admin/assets` (`imagesFor`), so the two surfaces read
+  // the same way.
+  const [openImagesFor, setOpenImagesFor] = useState<string | null>(null);
 
   useEffect(() => {
     setPage(1);
@@ -325,17 +353,20 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-gray-50 text-xs uppercase tracking-wide text-bms-muted">
                       <tr>
-                        <th className="px-3 py-2">Asset</th>
-                        <th className="px-3 py-2">RTU</th>
-                        <th className="px-3 py-2">Telemetry</th>
-                        <th className="px-3 py-2">Freshness</th>
-                        <th className="px-3 py-2">Alarms & warnings</th>
-                        <th className="px-3 py-2 text-right">Work orders</th>
+                        {assetTableColumns.map((column) => (
+                          <th
+                            key={column.label}
+                            className={`px-3 py-2${column.align === "right" ? " text-right" : ""}`}
+                          >
+                            {column.label}
+                          </th>
+                        ))}
                       </tr>
                     </thead>
                     <tbody>
                       {(location?.assets.items ?? []).map((asset) => (
-                        <tr key={asset.id} className="border-t border-gray-100">
+                        <Fragment key={asset.id}>
+                        <tr className="border-t border-gray-100">
                           <td className="px-3 py-2">
                             <div className="font-semibold text-bms-ink">{asset.name}</div>
                             <div className="font-mono text-xs text-bms-muted">
@@ -344,6 +375,13 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                             <div className="mt-1 text-[11px] uppercase tracking-wide text-bms-muted">
                               {asset.domain}
                             </div>
+                            <AssetImagesToggleButton
+                              assetId={asset.id}
+                              open={openImagesFor === asset.id}
+                              onToggle={(id) =>
+                                setOpenImagesFor((current) => (current === id ? null : id))
+                              }
+                            />
                           </td>
                           <td className="px-3 py-2 text-xs text-bms-muted">
                             {asset.rtuDisplayName}
@@ -411,6 +449,17 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
                             )}
                           </td>
                         </tr>
+                        {/*
+                          Rendered unconditionally: the row returns `null` while
+                          closed, which is what keeps the gallery — and its
+                          image requests — unmounted until a reader asks (Q-1).
+                        */}
+                        <AssetImagesRow
+                          assetId={asset.id}
+                          colSpan={assetTableColumns.length}
+                          open={openImagesFor === asset.id}
+                        />
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
