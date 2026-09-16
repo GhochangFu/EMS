@@ -30,6 +30,7 @@ import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { resolveTelemetrySource, withTelemetrySource, type TelemetrySource } from "../telemetry-source";
 import { translateCommitUniqueConflict } from "./onboarding-commit-conflict";
 import { distinctAssetDomains, draftCountProblem } from "./onboarding-draft-caps";
 import {
@@ -299,6 +300,17 @@ export class OnboardingCommitService {
       }
 
       const rtuIds: string[] = [];
+      // `F4.140` — one `resolveTelemetrySource` read per RTU, keyed by the id
+      // this loop just inserted; the asset loop below looks it up instead of
+      // resolving per asset. The connection-config disjunct
+      // (`resolveTelemetrySource`'s second `||` arm) is reachable here — the
+      // config row lands a few lines down, in this same iteration and `tx` —
+      // but never decisive today: `protocolToSourceType` above and the
+      // `ingestEnabled` clause on the insert below force `ingestEnabled =
+      // false` for every non-`mqtt` protocol, so the predicate's first arm
+      // already decides every case. See the helper's docblock
+      // (`../telemetry-source.ts`) for why the read still happens unconditionally.
+      const telemetrySourceByRtuId = new Map<string, TelemetrySource>();
       for (let i = 0; i < (draft.rtus ?? []).length; i++) {
         const rtuDraft = draft.rtus![i];
         const config = rtuDraft.config ?? {};
@@ -353,6 +365,8 @@ export class OnboardingCommitService {
           keyVersion,
           updatedAt: sql`now()`,
         });
+
+        telemetrySourceByRtuId.set(rtuRow.id, await resolveTelemetrySource(tx, rtuRow));
       }
 
       const assetIds: string[] = [];
@@ -375,7 +389,7 @@ export class OnboardingCommitService {
             rtuId,
             domain: assetDraft.domain,
             active: true,
-            meta: assetDraft.meta ?? null,
+            meta: withTelemetrySource(assetDraft.meta, telemetrySourceByRtuId.get(rtuId)!),
           })
           .returning();
         assetIds.push(assetRow.id);
