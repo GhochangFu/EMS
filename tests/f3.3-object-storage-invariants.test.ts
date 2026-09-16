@@ -21,8 +21,11 @@ import { describe, expect, it } from "vitest";
  *    a literal in this file: a third copy would be a third thing to drift.
  * 3. **One key authority** (decision 4). Exactly one `function
  *    buildObjectKey(` exists, no other file builds or matches a key from the
- *    `org/` literal, and no controller takes a `key`/`objectKey` parameter —
- *    a key is derived from the row, never accepted from a client.
+ *    `org/` literal, no controller takes a `key`/`objectKey` parameter — a
+ *    key is derived from the row, never accepted from a client — and
+ *    `OBJECT_KEY_PREFIX` (exported for the leak assertions) is imported by
+ *    `*.spec.ts` files only, closing the gap `F4.145` named against the two
+ *    rows above (F3.4 Unit 6).
  * 4. **The worker gets no storage** (decision 9). `worker.module.ts` reaches
  *    nothing under `./storage/`, the two files in the worker's import
  *    closure pull in neither the module nor the SDK, and
@@ -152,6 +155,10 @@ const TAG = /quay\.io\/minio\/minio:RELEASE\.[0-9TZ-]+/;
 
 /** A string literal that STARTS with the key prefix — not `org/` mid-sentence in a test name. */
 const KEY_LITERAL = /["'`]org\//;
+
+/** A named import of `OBJECT_KEY_PREFIX` from an `object-key` module (F4.145). */
+const OBJECT_KEY_PREFIX_IMPORT =
+  /import\s*\{[^}]*\bOBJECT_KEY_PREFIX\b[^}]*\}\s*from\s*["'][^"']*object-key["']/;
 
 describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9, 10)", () => {
   describe("the minio service (decision 9, Amendment 1 Q-C and the registry note)", () => {
@@ -354,6 +361,32 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
     it("positive control: the controller scan opened asset-images.controller.ts", () => {
       const controllers = sources.filter((f) => f.rel.endsWith(".controller.ts")).map((f) => f.rel);
       expect(controllers).toContain("assets/asset-images.controller.ts");
+    });
+
+    it("OBJECT_KEY_PREFIX is imported by *.spec.ts files only (F4.145)", () => {
+      const offenders = sources
+        .filter((f) => OBJECT_KEY_PREFIX_IMPORT.test(f.code))
+        .filter((f) => !f.rel.endsWith(".spec.ts"))
+        .map((f) => f.rel);
+      expect(
+        offenders,
+        "a production module that imports the prefix and concatenates its own key carries neither " +
+          "`function buildObjectKey(` nor the `org/` literal, so the two rows above cannot see it " +
+          "(F4.145):\n" +
+          offenders.join("\n"),
+      ).toEqual([]);
+    });
+
+    it("positive control: asset-images.service.spec.ts imports OBJECT_KEY_PREFIX", () => {
+      const importers = sources
+        .filter((f) => OBJECT_KEY_PREFIX_IMPORT.test(f.code))
+        .map((f) => f.rel);
+      expect(importers.length, "the scan must see at least one importer, or the row above is vacuous").toBeGreaterThan(0);
+      expect(
+        importers.every((rel) => rel.endsWith(".spec.ts")),
+        `every importer must be a *.spec.ts file: ${importers.join(", ")}`,
+      ).toBe(true);
+      expect(importers).toContain("assets/asset-images.service.spec.ts");
     });
   });
 
