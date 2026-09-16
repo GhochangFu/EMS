@@ -87,11 +87,26 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
                   <tr key={dashboard.id} className="border-b border-gray-100">
                     <td className="px-3 py-2 font-medium">{dashboard.name}</td>
                     <td className="px-3 py-2 text-xs text-bms-muted">
-                      {dashboard.locationId
-                        ? "Location"
-                        : dashboard.assetGroupId
-                          ? "Asset group"
-                          : "Organization-wide"}
+                      {/* `F3.2` / ADR 0067 decision 7 and Q4 — the asset arm is
+                          FIRST, because `dashboards_scope_check` allows at most
+                          one of the three and an asset-scoped row is the
+                          narrowest audience of the four. Reading it last would
+                          label such a row "Organization-wide", the widest, on
+                          the one column an operator reads to judge audience —
+                          the defect `F3.1d` already fixed once for asset
+                          groups. `assetCode` rides the summary DTO (Q4) so the
+                          badge needs no second fetch; it is nullable, and the
+                          badge then says "Asset" alone rather than printing an
+                          empty separator. */}
+                      {dashboard.assetId
+                        ? dashboard.assetCode
+                          ? `Asset · ${dashboard.assetCode}`
+                          : "Asset"
+                        : dashboard.locationId
+                          ? "Location"
+                          : dashboard.assetGroupId
+                            ? "Asset group"
+                            : "Organization-wide"}
                     </td>
                     <td className="px-3 py-2 text-xs">{dashboard.widgetCount}</td>
                     <td className="px-3 py-2 text-right">

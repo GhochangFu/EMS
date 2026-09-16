@@ -4,6 +4,8 @@ import { cleanup } from "@testing-library/react";
 
 import {
   anAssetGroupRowIsLabelledAssetGroupNotOrganizationWide,
+  anAssetScopedRowIsLabelledAssetWithItsCode,
+  anAssetScopedRowWithNoCodeStillReadsAsset,
   anAuthoringRoleSeesTheManageLink,
   assetGroupAdminSeesNoManageLinkDespiteCanAuthorDashboards,
   rendersEveryRowTheApiReturns,
@@ -39,5 +41,13 @@ describe("F3.1d dashboards page", () => {
 
   it("labels an asset-group row 'Asset group', not 'Organization-wide'", async () => {
     await anAssetGroupRowIsLabelledAssetGroupNotOrganizationWide();
+  });
+
+  it("labels an asset-scoped row 'Asset · <code>', not 'Organization-wide'", async () => {
+    await anAssetScopedRowIsLabelledAssetWithItsCode();
+  });
+
+  it("labels an asset-scoped row with no code 'Asset'", async () => {
+    await anAssetScopedRowWithNoCodeStillReadsAsset();
   });
 });

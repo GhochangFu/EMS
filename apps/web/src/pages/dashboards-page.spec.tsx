@@ -149,3 +149,66 @@ export async function anAssetGroupRowIsLabelledAssetGroupNotOrganizationWide(): 
   expect(screen.getByText("Asset group")).toBeInTheDocument();
   expect(screen.queryByText("Organization-wide")).not.toBeInTheDocument();
 }
+
+/**
+ * `F3.2` / ADR 0067 decision 7 and Q4 — the fourth scope. A default dashboard
+ * built for one asset carries `assetId` and, on the summary DTO only,
+ * `assetCode`; the badge reads `Asset · <code>`.
+ *
+ * Like the asset-group case above this builds its OWN row with `locationId`
+ * and `assetGroupId` explicitly `null`, rather than spreading the fixture's
+ * location id. That is what makes the mutation reach this assertion: swap the
+ * asset arm out of first place in the ternary chain and the cell falls through
+ * to "Organization-wide", which this case asserts is absent. Spreading the
+ * fixture would have produced "Location" instead and left the ordering
+ * unproven.
+ */
+export async function anAssetScopedRowIsLabelledAssetWithItsCode(): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({
+    items: [
+      {
+        ...RESPONSE.items[0]!,
+        id: "aaaaaaaa-0000-0000-0000-000000000003",
+        name: "Feeder TX-01 overview",
+        locationId: null,
+        assetGroupId: null,
+        assetId: "55555555-5555-4555-8555-555555555555",
+        assetTemplateId: "66666666-6666-4666-8666-666666666666",
+        assetCode: "TX-01",
+      },
+    ],
+  });
+  renderPage(asUser("operator"));
+
+  expect(await screen.findByText("Feeder TX-01 overview")).toBeInTheDocument();
+  expect(screen.getByText("Asset · TX-01")).toBeInTheDocument();
+  expect(screen.queryByText("Organization-wide")).not.toBeInTheDocument();
+}
+
+/**
+ * `assetCode` is nullable on the contract (Q4 — the join is a `leftJoin`), so
+ * the badge must survive a null rather than print a dangling separator. This
+ * row still sets `assetId`, so it also holds the arm's condition: the code is
+ * decoration, the id is the scope.
+ */
+export async function anAssetScopedRowWithNoCodeStillReadsAsset(): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({
+    items: [
+      {
+        ...RESPONSE.items[0]!,
+        id: "aaaaaaaa-0000-0000-0000-000000000004",
+        name: "Codeless asset board",
+        locationId: null,
+        assetGroupId: null,
+        assetId: "55555555-5555-4555-8555-555555555556",
+        assetTemplateId: null,
+        assetCode: null,
+      },
+    ],
+  });
+  renderPage(asUser("operator"));
+
+  expect(await screen.findByText("Codeless asset board")).toBeInTheDocument();
+  expect(screen.getByText("Asset")).toBeInTheDocument();
+  expect(screen.queryByText("Organization-wide")).not.toBeInTheDocument();
+}

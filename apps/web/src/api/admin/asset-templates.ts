@@ -17,6 +17,7 @@ import {
   adminAssetTemplateDtoSchema,
   assetInstantiationResultDtoSchema,
   assetTemplatesListResponseSchema,
+  defaultDashboardsBackfillResultDtoSchema,
   stockAssetTemplatesListResponseSchema,
   templateDraftDeletedResponseSchema,
   templateMigrationPreviewResponseSchema,
@@ -31,6 +32,7 @@ import type {
   AssetTemplateStatus,
   CalcDialect,
   CalcTrigger,
+  DefaultDashboardsBackfillResultDto,
   QualityPolicy,
   StockAssetTemplatesListResponse,
   TemplateDraftDeletedResponse,
@@ -44,6 +46,7 @@ import { adminFetch } from "./client";
 
 export type {
   AssetTemplatesListResponse,
+  DefaultDashboardsBackfillResultDto,
   StockAssetTemplatesListResponse,
   TemplateDraftDeletedResponse,
   TemplateMigrationPreviewResponse,
@@ -248,6 +251,28 @@ export async function instantiateFromAdminAssetTemplate(
     headers: jsonHeaders,
     body: JSON.stringify(input),
   });
+}
+
+/**
+ * `F3.2` / ADR 0067 decision 4 — builds the template's `content.dashboards`
+ * views for every asset already pinned to any version of this code, skipping
+ * the assets that already carry a dashboard stamped from that version set.
+ *
+ * **No request body**, like `publish` and `archive`: the template id in the
+ * path names the version the new rows are stamped with, and the population is
+ * derived by the server (every active asset on the code's version set, ADR 0067
+ * Q3). The *response* is decision 5's report, one entry per asset with its
+ * outcome — a 201 that carries `createdCount 0` is the normal second call, not
+ * a failure.
+ */
+export async function createDefaultDashboardsFromAdminAssetTemplate(
+  id: string,
+): Promise<DefaultDashboardsBackfillResultDto> {
+  return adminFetch(
+    `/admin/asset-templates/${id}/default-dashboards`,
+    defaultDashboardsBackfillResultDtoSchema,
+    { method: "POST" },
+  );
 }
 
 /**

@@ -60,6 +60,7 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import {
   archiveAdminAssetTemplate,
+  createDefaultDashboardsFromAdminAssetTemplate,
   createDraftFromAdminAssetTemplate,
   deleteAdminAssetTemplateDraft,
   fetchAdminAssetTemplate,
@@ -72,6 +73,10 @@ import {
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import {
+  backfillSummary,
+  instantiationSummary,
+} from "../../lib/default-dashboards-report";
 import { TemplateTabBody } from "../../components/asset-templates/template-tab-body";
 import { TemplateTabStrip } from "../../components/asset-templates/template-tab-strip";
 import { PageHeader } from "../../components/page-header";
@@ -198,6 +203,37 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
     onSuccess: afterChange,
     onError: onActionError,
   });
+  /**
+   * `F3.2` / ADR 0067 decisions 4 and 7 — the backfill.
+   *
+   * Not a `TemplateLifecycleAction`: `capabilities()` returns the four
+   * lifecycle transitions plus `instantiate`, and this changes no status at
+   * all. It is also not guarded by `guardLifecycleAction`, because it neither
+   * reads nor writes this template's content — an unsaved tab cannot be lost by
+   * it, and prompting about one would be a prompt with nothing behind it.
+   *
+   * The report is read off `defaultDashboardsM.data`, **matched against the
+   * template on screen before it is rendered**. `afterChange` navigates to a
+   * new draft on the same route path, so React Router reconciles this very
+   * element and every piece of local state — this mutation's `data` included —
+   * survives the move. Without the match, clicking *Create default dashboards*
+   * on a published version and then *Edit this version* left the first
+   * template's report table sitting under the new draft, describing rows that
+   * have nothing to do with the version named above it. The response carries
+   * its own `templateId`, so the check is the report proving it belongs here
+   * rather than a second flag to keep in step.
+   */
+  const defaultDashboardsM = useMutation({
+    mutationFn: () => createDefaultDashboardsFromAdminAssetTemplate(templateId ?? ""),
+    onSuccess: () => {
+      setActionError(null);
+      // The new rows are asset-scoped dashboards; the list this administrator
+      // may open next reads `GET /dashboards`.
+      void queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+    },
+    onError: onActionError,
+  });
+
   const deleteM = useMutation({
     mutationFn: () => deleteAdminAssetTemplateDraft(templateId ?? ""),
     onSuccess: () => {
@@ -310,6 +346,13 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   const busy =
     publishM.isPending || archiveM.isPending || draftM.isPending || deleteM.isPending;
 
+  // Hoisted rather than inlined into the render: a `?.templateId === template.id`
+  // test does not narrow the optional away, and the table reads four fields off
+  // the result.
+  const backfillResult = defaultDashboardsM.data;
+  const dashboardsReport =
+    backfillResult && backfillResult.templateId === template.id ? backfillResult : null;
+
   const actions = lifecycle.actions.filter((action) =>
     action === "instantiate" ? mayInstantiate : mayAuthor,
   );
@@ -350,6 +393,28 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
             >
               Versions &amp; migration
             </Link>
+            {/* `F3.2` / ADR 0067 decision 7 — the first action of its kind on
+                this page, and it sets the shape a later seeded-rules re-apply
+                button reuses. Two conditions, both required: a **published**
+                version (the route 409s on a draft, ADR 0067 decision 4) and a
+                role that may author (`assertCanAuthor` refuses
+                `location_admin`, which `canAuthorTemplates` mirrors here — the
+                same gate the lifecycle buttons use). */}
+            {template.status === "published" && mayAuthor ? (
+              <button
+                type="button"
+                disabled={busy || defaultDashboardsM.isPending}
+                onClick={() => {
+                  setActionError(null);
+                  defaultDashboardsM.mutate();
+                }}
+                className="rounded border border-bms-green px-3 py-1.5 text-xs font-semibold text-bms-green disabled:opacity-60"
+              >
+                {defaultDashboardsM.isPending
+                  ? "Creating default dashboards…"
+                  : "Create default dashboards"}
+              </button>
+            ) : null}
             {actions.map((action) => (
               <button
                 key={action}
@@ -373,6 +438,66 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
         <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           {actionError}
         </p>
+      ) : null}
+
+      {/* ADR 0067 decision 5's report. One row per asset the backfill
+          considered, `skipped_existing` included: "nothing happened to these
+          three" is the half of the answer a summary count alone does not give,
+          and it is what makes a second call's `createdCount 0` readable as
+          normal rather than as a failure. The per-view cell names the slug the
+          row was written under, with the two counts the server took from the
+          inserted rows. */}
+      {dashboardsReport ? (
+        <SectionCard title="Default dashboards">
+          <p className="text-xs text-bms-muted">{backfillSummary(dashboardsReport)}</p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-left text-xs">
+              <thead className="border-b border-gray-100 text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
+                <tr>
+                  <th className="py-1 pr-3">Asset</th>
+                  <th className="py-1 pr-3">Outcome</th>
+                  <th className="py-1">Dashboards</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboardsReport.assets.map((asset) => (
+                  <tr key={asset.assetId} className="border-b border-gray-100 align-top">
+                    <td className="py-1 pr-3 font-medium">{asset.code}</td>
+                    <td className="py-1 pr-3 text-bms-muted">
+                      {asset.outcome === "created" ? "Created" : "Already had one"}
+                    </td>
+                    <td className="py-1">
+                      {asset.dashboards.length === 0 ? (
+                        <span className="text-bms-muted">—</span>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {asset.dashboards.map((dashboard) => (
+                            <li key={dashboard.slug}>
+                              {dashboard.slug} · {dashboard.widgetCount} widgets ·{" "}
+                              {dashboard.boundPoints} points
+                              {/* ADR 0067 decision 3 and 5 — the view-level cut.
+                                  A `featured` list longer than
+                                  `MAX_DASHBOARD_WIDGETS` instantiates its first
+                                  40 keys, and without this clause a view that
+                                  dropped 10 of 50 reads exactly like one that
+                                  dropped none. Printed only when there is
+                                  something to report: " · 0 omitted" on every
+                                  ordinary row would bury the one row that
+                                  matters. */}
+                              {dashboard.omittedFeatured > 0
+                                ? ` · ${dashboard.omittedFeatured} omitted`
+                                : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </SectionCard>
       ) : null}
 
       {!lifecycle.editable ? (
@@ -540,7 +665,10 @@ function InstantiateDialog({
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "assets"] });
-      onClose();
+      // **`onClose()` used to be here** — ADR 0067 Q5 moves it to the Close
+      // button below, so the counts the server returned survive long enough to
+      // be read. `ruleCount` (ADR 0058 decision 10) had never reached a screen
+      // before this, and `dashboardCount` is new in this row.
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
@@ -550,6 +678,38 @@ function InstantiateDialog({
   // builder would refuse.
   const targetChosen = hasTarget(selection);
   const named = namedCount(rows);
+
+  /**
+   * The result state (ADR 0067 Q5). A whole separate render rather than a
+   * banner above the form, and deliberately: the batch has already been built,
+   * so leaving the Build button on screen beside the result would offer a
+   * second click that builds a **second** batch of assets — an affordance that
+   * did not exist while the dialog closed on success. The form is gone; Close
+   * is the only way out, exactly as the ruling describes.
+   */
+  if (instantiateM.data) {
+    return (
+      <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
+        <div className="w-full max-w-2xl space-y-3 rounded-lg bg-white p-4 shadow-lg">
+          <h2 className="font-condensed text-base font-bold text-bms-ink">
+            Instantiate {template.code} v{template.version}
+          </h2>
+          <p className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+            {instantiationSummary(instantiateM.data)}
+          </p>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
