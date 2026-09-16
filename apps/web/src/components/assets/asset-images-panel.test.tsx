@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aConflictRendersTheApiSentenceUnwrapped,
+  aDeleteInFlightDisablesThatImagesButton,
   aDeleteRefetchesTheList,
   aGifDisablesUploadAndNamesTheAcceptedTypes,
   aRefusedOversizeUploadRendersTheTenMbSentence,
@@ -80,6 +81,10 @@ describe("F3.4 admin asset images panel (Q-0, Q-2, R-7)", () => {
 
   it("refetches the list after a delete", async () => {
     await aDeleteRefetchesTheList();
+  });
+
+  it("disables the button of the image being deleted while the request is in flight", async () => {
+    await aDeleteInFlightDisablesThatImagesButton();
   });
 
   it("counts the asset's images against the shared cap in its pill", async () => {

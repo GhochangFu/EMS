@@ -67,7 +67,7 @@ function twentyImages(): AssetImageDto[] {
 
 /** A `File` the panel should accept. */
 function pngFile(name = "front.png"): File {
-  return new File(["PNG"], name, { type: "image/png" });
+  return new File(["png-bytes"], name, { type: "image/png" });
 }
 
 /** A `File` whose reported size is over `MAX_ASSET_IMAGE_BYTES`, without allocating 12 MiB. */
@@ -333,7 +333,43 @@ export async function aDeleteRefetchesTheList(): Promise<void> {
 }
 
 /**
- * A12 — the pill counts this asset's images against the shared cap.
+ * A12 — while a delete is in flight, that image's button says so and refuses a
+ * second press.
+ *
+ * **The only row that observes the intermediate state.** Every other delete row
+ * resolves immediately, so `onMutate` and `onSettled` flush in the same tick
+ * and `deletingId` is never read; with them alone, deleting the `onMutate` that
+ * sets it leaves the whole suite green. The gallery's own
+ * `aMatchingDeletingIdDisablesThatButton` does not cover it either — it passes
+ * the prop by hand, which proves the gallery and not this panel's wiring.
+ *
+ * The promise is held open by the test, and the return to "Delete" after it
+ * resolves is the positive control: without it a panel that disabled the button
+ * for ever would pass.
+ */
+export async function aDeleteInFlightDisablesThatImagesButton(): Promise<void> {
+  stubList([FIRST]);
+  stubThumbnails();
+  let release: () => void = () => {};
+  vi.spyOn(assetImagesApi, "deleteAssetImage").mockReturnValue(
+    new Promise<void>((resolve) => {
+      release = () => resolve();
+    }),
+  );
+
+  renderPanel();
+  await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+
+  expect(await screen.findByRole("button", { name: "Deleting…" })).toBeDisabled();
+
+  release();
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+  });
+}
+
+/**
+ * A13 — the pill counts this asset's images against the shared cap.
  *
  * Two images, not one: `1 / 20` would also be produced by a panel that
  * rendered the length of a hardcoded single-element array.
@@ -347,7 +383,7 @@ export async function thePillCountsTheImagesAgainstTheCap(): Promise<void> {
   expect(await screen.findByText("2 / 20")).toBeInTheDocument();
 }
 
-/** A13 — the heading names the asset the row was opened from. */
+/** A14 — the heading names the asset the row was opened from. */
 export async function theHeadingNamesTheAssetCodeAndName(): Promise<void> {
   stubList([]);
   stubThumbnails();
@@ -358,7 +394,7 @@ export async function theHeadingNamesTheAssetCodeAndName(): Promise<void> {
   expect(screen.getByText("Transformer 1")).toBeInTheDocument();
 }
 
-/** A14 — Close hands control back to the page; the panel does not close itself. */
+/** A15 — Close hands control back to the page; the panel does not close itself. */
 export async function closeCallsOnClose(): Promise<void> {
   stubList([]);
   stubThumbnails();
