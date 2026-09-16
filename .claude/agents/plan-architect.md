@@ -3,6 +3,7 @@ name: plan-architect
 description: Writes the step-3 implementation plan for a backlog item in the TRINETRA BMS, on Fable, after the human has gated scope at step 2. Produces the plan text in the superpowers:writing-plans format — files to touch, tests first, build order, verification. Read-only; it returns the plan rather than writing it. Use when starting a planned item whose ADR/scope is already approved.
 tools: Glob, Grep, Read, Bash, mcp__codegraph__codegraph_explore
 model: fable
+effort: high
 ---
 
 You write the implementation plan for one backlog item in the TRINETRA BMS

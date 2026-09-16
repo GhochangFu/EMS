@@ -54,9 +54,12 @@ Infer the mode from the request; ask only if genuinely ambiguous.
 4. Follow the operating model: plan → TDD → build, and **route each step to its
    own model** (`build-operating-model.md` §2) — the plan to `plan-architect`
    (Fable-pinned since 2026-09-03; pass `model: "fable"`), the build to `implementer` with `model:` chosen **per unit by
-   the nature of the task** — Fable, Opus or Sonnet per the §2 ladder, Opus
-   pinned as the default (ruled 2026-09-02) — whenever the unit is
-   plan-described and self-contained. Never let a spawned agent inherit the
+   the nature of the task** — Opus or Sonnet per the §2 ladder, Opus pinned as
+   the default (ruled 2026-09-02); **Fable only when the dispatch states a
+   critical reason** (ruled 2026-09-16) — whenever the unit is plan-described
+   and self-contained. Effort is pinned in each agent's frontmatter (plan
+   `high`, build `medium`, reviews `high`/`medium`) and is never raised above
+   `high`, nor is an ultra mode used, unless the owner instructs it. Never let a spawned agent inherit the
    session model: pass `model:` on every `Agent` call. Fan out to subagents
    **only** for independent, well-specified siblings that touch non-overlapping
    files, each in its own worktree; never for ⭐ enablers.

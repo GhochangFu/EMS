@@ -44,15 +44,15 @@ onto the human.
 Every pending-feature item goes through the same cycle (this is AGENTS.md §10 +
 the superpowers skills, made concrete):
 
-| Step | Who | Model | Skill / tool | Human touch? |
-|------|-----|-------|--------------|--------------|
-| 1. **Pick** next *unblocked* item (enablers first) | Claude | **Haiku**, delegated | `backlog-cycle`, `BACKLOG.md` | — |
-| 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | **Opus**, inline | `superpowers:brainstorming`, `new-adr` — **requires `/model opus` first** | ✅ **gate** |
-| 3. **Plan** — written, reviewable | Claude | **Fable 5.1**, delegated | `plan-architect` agent (Fable-pinned since 2026-09-03) | 👀 skim |
-| 4. **Build via TDD** | Claude (+ subagents) | **Per unit** — Fable, Opus or Sonnet by the nature of the task (the ladder below) | `implementer` agent (Opus-pinned as the default; every dispatch passes its own `model:`), `superpowers:test-driven-development` | — |
-| 5. **Review** — parallel passes | Subagents | **Opus** ×3, **Sonnet** ×1 | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
-| 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | `docker compose`, psql, and **`browser-verifier`** for the browser half (§3) | — |
-| 7. **Approve & merge** | Human | — | — | ✅ **gate** |
+| Step | Who | Model | Effort | Skill / tool | Human touch? |
+|------|-----|-------|--------|--------------|--------------|
+| 1. **Pick** next *unblocked* item (enablers first) | Claude | **Haiku**, delegated | inherits the session (≤ `high`) | `backlog-cycle`, `BACKLOG.md` | — |
+| 2. **Brainstorm + ADR** — scope, deps, interface | Human + Claude | **Opus**, inline | the session's (≤ `high`) | `superpowers:brainstorming`, `new-adr` — **requires `/model opus` first** | ✅ **gate** |
+| 3. **Plan** — written, reviewable | Claude | **Fable 5.1**, delegated | **`high`**, pinned | `plan-architect` agent (Fable-pinned since 2026-09-03) | 👀 skim |
+| 4. **Build via TDD** | Claude (+ subagents) | **Per unit** — Opus or Sonnet by the nature of the task; **Fable only when the dispatch states a critical reason** (the ladder below, revised 2026-09-16) | **`medium`**, pinned | `implementer` agent (Opus-pinned as the default; every dispatch passes its own `model:`), `superpowers:test-driven-development` | — |
+| 5. **Review** — parallel passes | Subagents | **Opus** ×3, **Sonnet** ×1 | **`high`** ×3, **`medium`** ×1, pinned | `code-reviewer`, `security-reviewer`, `agents-compliance-reviewer`, plus `migration-reviewer` for anything under `packages/db` | 👀 batched |
+| 6. **Verify against the running Docker stack** | Claude | **Sonnet** for the evidence, session model for the reading | **`medium`** for `browser-verifier`, pinned; an ad-hoc evidence dispatch inherits the session (≤ `high`) | `docker compose`, psql, and **`browser-verifier`** for the browser half (§3) | — |
+| 7. **Approve & merge** | Human | — | — | — | ✅ **gate** |
 
 The human owns **steps 2 and 7** only. Everything else Claude carries.
 
@@ -101,10 +101,14 @@ chosen so that fewer passes are needed.
 
 The ladder for step 4, applied per unit:
 
-- **Fable 5.1** — the unit defines a seam other work hangs off (a DI token, an
-  entry type a later pack extends, a route beside a known ordering trap), or it
-  spans several plan tasks in one pass, or it touches an auth/RLS surface in
-  production code.
+- **Fable 5.1 — only when the dispatch states why the unit is critical**
+  (revised 2026-09-16, next subsection). Until that date this rung read "the
+  unit defines a seam other work hangs off (a DI token, an entry type a later
+  pack extends, a route beside a known ordering trap), or it spans several plan
+  tasks in one pass, or it touches an auth/RLS surface in production code".
+  Those are now the *reasons to consider* Fable, not the rule: the default for
+  such a unit is Opus, and Fable is used only when the dispatch names what a
+  wrong seam would cost that an Opus review-fix loop could not repair.
 - **Opus** — ordinary multi-file feature work against the plan where judgment
   is needed in the execution: a service with its integration spec, a page with
   its jsdom spec, a refactor across a module.
@@ -114,10 +118,63 @@ The ladder for step 4, applied per unit:
 
 | Model | Gets | Why |
 |-------|------|-----|
-| **Fable 5.1** (premium) | **Step 3 plan** (`plan-architect`, ruled 2026-09-03) · step 4 units that define a seam, span several tasks, or touch auth/RLS production code | The plan is what every later pass transcribes, and the seam is what the next items hang off; both land under review. A wrong plan or a wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. **When the Fable limit is reached, these run on Opus** — see the subsection below. |
+| **Fable 5.1** (premium) | **Step 3 plan** (`plan-architect`, ruled 2026-09-03) · step 4 units **only when the dispatch states a critical reason** (revised 2026-09-16; the default for a seam or an auth/RLS unit is Opus) | The plan is what every later pass transcribes, and the seam is what the next items hang off; both land under review. A wrong plan or a wrong seam costs a review-fix loop and the owner's attention at step 7 — more than the rate difference. **When the Fable limit is reached, these run on Opus** — see the subsection below. |
 | **Opus** | Step 2 scope/ADR · step 4 units that need judgment in the execution, and the **default pin** when a dispatch omits `model:` · step 5 `code-reviewer`, `security-reviewer`, `migration-reviewer` · root-cause debugging that survived one pass | These either decide, or they gate the human's merge. A weak review does not save money — it moves the cost onto the owner's attention. |
 | **Sonnet** | Step 4 mechanical units · step 5 `agents-compliance-reviewer` · doc writing · step 6 evidence gathering | Well-specified work against a plan or a written checklist; a wrong answer is cheap to spot. |
 | **Haiku** | Step 1 pick · locating a file · grepping a symbol · reading a config · summarising one file | Mechanical and verifiable; a wrong answer is cheap to spot. |
+
+### Fable is not the implementer's model (revised 2026-09-16)
+
+**Ruled by the owner mid-`F3.4`, in their words: "I do not want to use Fable
+until and unless it's very critical to save the tokens."** The 2026-09-02
+ladder sent a seam, a multi-task unit or an auth/RLS unit to Fable by rule;
+`F3.4` ran two of its ten units there (the write service and the write
+controller) before the ruling. From this date:
+
+- **Step 4 defaults to Opus or Sonnet**, chosen per unit by the nature of the
+  task exactly as before. The seam / multi-task / auth-RLS tests still decide
+  *Opus versus Sonnet*; they no longer reach Fable on their own.
+- **A Fable implementer needs a stated critical reason in the dispatch** — what
+  a wrong seam would cost that the step-5 review and one fix pass could not
+  repair. "It touches RLS" is not that sentence; every asset write touches RLS.
+  If the dispatcher cannot write the sentence, the unit runs on Opus.
+- **The plan stays on Fable** (step 3, ruled 2026-09-03). That ruling is
+  unchanged: the plan is the one document every later pass transcribes.
+- The Fable-exhaustion fallback below still applies to the plan, and to the
+  rare critical unit.
+
+### Which effort runs which step (added 2026-09-16)
+
+The same ruling asked that the **effort** be named beside the model, so a
+dispatch carries both. The mechanism differs from the model's in one way that
+matters:
+
+- **Effort is a property of the agent definition, not of the dispatch.** A
+  subagent's frontmatter carries `effort:` (`low`, `medium`, `high`,
+  `xhigh`, `max`); the `Agent` tool has **no per-dispatch override**, unlike
+  `model:`. A definition without the key **inherits the session's effort**, the
+  same silent inheritance §2 forbids for the model. So every agent under
+  `.claude/agents/` pins `effort:`, and a step that dispatches a bare
+  `general-purpose` or `Explore` agent (steps 1 and 6) runs at the session's
+  effort, which the cap below bounds.
+- **The cap is `high`.** Owner's words: "the max effort you can do is high
+  not more no xi no max no ultra code until I specifically instruct you." No
+  definition, no settings key and no session flip goes above `high`, and no
+  `ultra` mode (`/code-review ultra`, an ultracode workflow) is used, until the
+  owner instructs it for a specific job. A dispatch that would need more is
+  reported to the owner, not raised.
+
+| Agent | Model | Effort | Why this effort |
+|-------|-------|--------|-----------------|
+| `plan-architect` | Fable | `high` | The plan is where the measurements are made (row counts, set intersections, guard bounds) and where the pass-and-model split is argued; it is the cap, and it is the one place the cap is spent by default. |
+| `implementer` | Opus (default pin) / Sonnet / Fable by dispatch | `medium` | An approved plan has already done the thinking; the unit is plan-described and self-contained, and TDD plus the named mutations catch what reasoning would. A unit that turns out to need more is the plan's defect — fix the plan, do not raise the effort. |
+| `code-reviewer`, `security-reviewer`, `migration-reviewer` | Opus | `high` | They gate the merge (step 5 "never routes down"); a shallow review moves the cost onto the owner's attention. |
+| `agents-compliance-reviewer` | Sonnet | `medium` | It matches a diff against a written checklist. |
+| `browser-verifier` | Sonnet | `medium` | It follows the `verify` skill's ladder (find → click → assert) and returns a pass/fail table; judgement about what a failure means stays in the session. |
+
+The frontmatter is the record: a reader who wants the effort a step ran at
+reads the agent file at that commit, the way the model has been read since
+2026-09-02.
 
 ### When Fable is exhausted, the work moves to Opus — it does not wait
 
@@ -152,7 +209,10 @@ unaffected: step 5 never routes down, exhausted or not.
 **Never let a dispatch inherit.** `Explore` and `general-purpose` declare no model
 of their own, so an unpinned fan-out runs on whatever the session is set to —
 which is now the *expensive* direction, and silently so. Pass `model:` on every
-`Agent` call. `subagent_type: "fork"` ignores the override and always runs the
+`Agent` call. The same inheritance applies to **effort**, and there the dispatch
+cannot override it: pin `effort:` in every repo agent's frontmatter (the table
+above), and keep the session's own effort at or under `high` so the two
+unpinned dispatches (steps 1 and 6) inherit a bounded value. `subagent_type: "fork"` ignores the override and always runs the
 parent model, and it carries the whole conversation into the build instead of
 the plan — so it is not the mechanism for step 4 either, whatever the parent
 runs.
@@ -179,30 +239,35 @@ Per step:
   that comes out of that dialogue — a subagent drafting it would invert the
   gate. So Claude states that Opus is required and stops until the operator runs
   `/model opus`. It does not brainstorm or draft an ADR on a cheaper model.
-- **Step 3 (Plan) — Fable, delegated.** `plan-architect` is pinned
-  `model: fable` in its own frontmatter (Opus until 2026-09-03), is read-only,
+- **Step 3 (Plan) — Fable at `high`, delegated.** `plan-architect` is pinned
+  `model: fable` and `effort: high` in its own frontmatter (Opus until
+  2026-09-03), is read-only,
   and returns the plan text for the caller to transcribe. It refuses to plan
   past the step-2 gate. Pass `model: "fable"` on the dispatch as well — the
   rule that no dispatch inherits applies to the plan too. If the Fable limit is
   reached, dispatch `plan-architect` with `model: "opus"` and say so — the
   agent's frontmatter pin is a default, and the override is what the caller
   passes.
-- **Step 4 (Build) — per unit, delegated.** Hand the unit to the `implementer`
-  agent with `model:` on the `Agent` call chosen by the ladder above, and name
-  the reason in the dispatch so the choice is reviewable. The agent's own
+- **Step 4 (Build) — per unit at `medium`, delegated.** Hand the unit to the
+  `implementer` agent (pinned `effort: medium`) with `model:` on the `Agent`
+  call chosen by the ladder above — Opus or Sonnet; Fable only with the stated
+  critical reason the subsection above asks for — and name the reason in the
+  dispatch so the choice is reviewable. The agent's own
   frontmatter pins `model: opus` as the default, so a dispatch that forgets the
   override lands in the middle of the ladder rather than at either end.
   Fallback, where the unit is too small or too entangled to hand off cold:
   build inline on the session model.
 - **Step 5 (Review) — split, and it never routes down.** `code-reviewer`,
-  `security-reviewer` and `migration-reviewer` stay pinned `model: opus`.
-  `agents-compliance-reviewer` is pinned `model: sonnet` because it matches a
-  diff against a written checklist. These four are what let the human trust a
+  `security-reviewer` and `migration-reviewer` stay pinned `model: opus` and
+  `effort: high`. `agents-compliance-reviewer` is pinned `model: sonnet` and
+  `effort: medium` because it matches a diff against a written checklist. These four are what let the human trust a
   diff they did not read line by line, so cheapening them defeats the delegation
   they exist to enable.
 - **Step 6 (Verify) — Sonnet for the evidence, session model for the reading.**
   Collecting container state, `psql` output and page reads is delegable.
-  Deciding what that output *means* is not.
+  Deciding what that output *means* is not. `browser-verifier` is pinned
+  `effort: medium`; an ad-hoc evidence dispatch has no definition and inherits
+  the session's effort, which stays at or under `high`.
 
 ### Step 4 is delegated only when the unit pays for the cold start
 
@@ -413,13 +478,16 @@ the critical path, and merge approvals.
 ```
 [ ] 1. Confirm the next item is UNBLOCKED (BACKLOG.md Depends + ADR gate). [Haiku, delegated]
 [ ] 2. Brainstorm -> open an ADR (new-adr). Human approves scope + deps.   [Opus, inline]
-[ ] 3. plan-architect writes the plan. Human skims.              [Fable, or Opus if limited]
-[ ] 4. TDD build. Delegate to implementer; pick model: per unit (§2).   [Fable/Opus/Sonnet]
+[ ] 3. plan-architect writes the plan. Human skims.       [Fable high, or Opus if limited]
+[ ] 4. TDD build. Delegate to implementer; pick model: per unit (§2).
+       Opus or Sonnet at medium; Fable only with a stated critical reason.
        Fan out to worktrees ONLY for independent siblings.
 [ ] 5. code-reviewer + security-reviewer + agents-compliance-reviewer,
        + migration-reviewer if the diff touches packages/db.
-       One message, scoped to the diff.                         [Opus x3, Sonnet x1]
+       One message, scoped to the diff.           [Opus x3 high, Sonnet x1 medium]
 [ ] 6. Verify against the running stack. Record which layers were N/A.
+       browser-verifier for the browser half.               [Sonnet medium]
+       Effort never above high anywhere, and no ultra mode, unless the owner says so.
 [ ] 7. Human approves. Merge. Mirror into docs/roadmap.md.
        Clear the context, then the next item.
 ```
