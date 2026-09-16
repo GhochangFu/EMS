@@ -5263,3 +5263,21 @@ negative control alone would not have gated it either — "a duplicate is
 refused" is true under every predicate this item considered, including the two
 that are wrong — so two positive controls carry it, and mutating the live index
 to the row's own predicate reddens the `''` one alone.
+
+### `F4.123` — what `E8.2` actually waits on ✅ 2026-09-16
+
+**A ruling written back into the board, not code.** `F4.123` was raised on
+2026-09-10 because `E8.2` (automated backup and recovery) showed an empty
+`Depends` cell while the repository had neither a scheduler nor a backup
+destination, so the board offered it as ready on a false premise. By the time
+the row was picked, both capabilities had landed: `F4.24` (BullMQ worker,
+2026-09-11) and `F3.3` (MinIO, 2026-09-15).
+
+The owner ruled the first of the row's two admissible outputs: `E8.2` depends
+on `F3.3` and `F4.24`. The backup runs as a scheduled worker job, ships to the
+MinIO bucket, and is encrypted with a key that the `E8.4` key resolver
+(ADR 0062) selects, so no second backup key is invented. `E8.4` itself is not
+a dependency: its one open item is the MQTT password fallback, which the
+backup key does not use. A compose-level `pg_dump` into a host volume was
+offered and rejected because it leaves no off-host copy. `E8.2` stays ⬜ and
+ready; it still owes its own ADR before it starts.
