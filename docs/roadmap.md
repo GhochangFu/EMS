@@ -4878,7 +4878,8 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   [#451](https://github.com/GhochangFu/EMS/pull/451) (`3c617a0f`), 21
   commits over `a0af1824` (the ADR, PR #450, accepted the same morning with
   five gate questions ruled as drafted). The last Wave 0 star; `E8.1`,
-  `E8.2`, `E8.4` and `F4.123` stay open in Wave 0. One dependency
+  `E8.2`, `E8.4` and `F4.123` stayed open in Wave 0 (`F4.123` closed
+  2026-09-16, PR #459, ruling `E8.2`'s `Depends`). One dependency
   (`@aws-sdk/client-s3` 3.1132.0, §9.4), one migration (`0072`), no
   `apps/web` change.
 - **What the owner ruled first.** Start now and retire §4 rule 13's
@@ -5269,22 +5270,23 @@ to the row's own predicate reddens the `''` one alone.
 **A ruling written back into the board, not code.** `F4.123` was raised on
 2026-09-10 because `E8.2` (automated backup and recovery) showed an empty
 `Depends` cell while the repository had neither a scheduler nor a backup
-destination, so the board offered it as ready on a false premise. By the time
-the row was picked, both capabilities had landed: `F4.24` (BullMQ worker,
+destination, so the board offered it as ready by an empty cell rather than by
+a ruling. By the time the row was picked, both capabilities had landed: `F4.24` (BullMQ worker,
 2026-09-11) and `F3.3` (MinIO, 2026-09-15).
 
 The owner ruled the first of the row's two admissible outputs: `E8.2` depends
-on `F3.3` and `F4.24`. The backup runs as a scheduled worker job, ships to the
-MinIO bucket, and is encrypted with a key that the `E8.4` key resolver
+on `F3.3` and `F4.24`. The backup runs as a scheduled worker job, ships to a
+new S3 bucket through the `F3.3` client, and is encrypted with a key that the `E8.4` key resolver
 (ADR 0062) selects, so no second backup key is invented. `E8.4` itself is not
 a dependency: its one open item is the MQTT password fallback, which the
 backup key does not use. A compose-level `pg_dump` into a host volume was
-offered and rejected because it leaves no off-host copy. `E8.2` stays ⬜ and
+offered and rejected because it leaves no off-host copy and no path to one;
+the S3 endpoint is that path once it points off the host. `E8.2` stays ⬜ and
 ready; it still owes its own ADR before it starts.
 
 **The security review of the ruling handed four questions to that ADR**, each
 verified against the code rather than argued: the key window holds two
-versions while backup retention outlives two rotations; the rotation walk
+versions, so a retention longer than two rotations orphans dumps; the rotation walk
 reaches two credential tables and not a bucket; the resolver has no purpose
 parameter, so one key would cover both a dump and the ciphertext inside it;
 and CI sets no key, so the restore drill must make its own. The `E8.2` row
