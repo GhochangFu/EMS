@@ -5282,7 +5282,8 @@ a dependency: its one open item is the MQTT password fallback, which the
 backup key does not use. A compose-level `pg_dump` into a host volume was
 offered and rejected because it leaves no off-host copy and no path to one;
 the S3 endpoint is that path once it points off the host. `E8.2` stays ⬜ and
-ready; it still owes its own ADR before it starts.
+dependency-clear, and a `GATES` entry now holds it for its own ADR, so the
+board shows it as gated rather than ready.
 
 **The security review of the ruling handed four questions to that ADR**, each
 verified against the code rather than argued: the key window holds two

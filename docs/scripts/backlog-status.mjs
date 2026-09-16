@@ -122,6 +122,18 @@ const GATES = [
   // rule — left in place, `held` would have shown a ruled row as waiting on a
   // decision.
   {
+    ids: ["E8.2"],
+    kind: "adr",
+    reason:
+      "F4.123 ruled its Depends (F3.3, F4.24 — both done) on 2026-09-16, and the " +
+      "same ruling says the row does not start before its own ADR: a new worker " +
+      "job, a new S3 bucket and a restore drill are §10 scope, and the security " +
+      "review handed that ADR four key-handling questions the row carries.",
+    clientReason:
+      "Held for a decision on the backup design — schedule, destination and how backups are encrypted and restored.",
+    source: "BACKLOG.md E8.2 row (F4.123 ruling) · PR #459",
+  },
+  {
     ids: ["F4.15"],
     kind: "adr",
     reason:
