@@ -190,7 +190,7 @@ EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge age
 |-----------------|--------------|----------|---------|-----|
 | Time-series DB | **Implemented** | TimescaleDB hypertable `telemetry.point_values` (1-day chunks), four hierarchical continuous aggregates (ADR 0023), compression at 7 d and retention at 730 d/735 d (ADR 0024) | 9/10 | Per-tenant retention override; tiered/object-storage archive |
 | Relational data | **Implemented** | PostgreSQL `bms.*` — orgs, locations, RTUs, assets, mappings, rules, work orders | 7/10 | Asset templates table |
-| Image / binary storage | **Partial** | Object store (S3 API, MinIO in compose), `bms.asset_images` under FORCE RLS and the two read routes delivered under ADR 0066 (`F3.3`, 2026-09-15); the upload API stays `F3.4` | 5/10 | Upload API + asset linkage (`F3.4`) |
+| Image / binary storage | **Delivered** | Object store (S3 API, MinIO in compose), `bms.asset_images` under FORCE RLS and the two read routes under ADR 0066 (`F3.3`, 2026-09-15); the upload and delete API with audit rows, an admin Images panel on `/admin/assets` and a read-only gallery on the location dashboard (`F3.4`, 2026-09-16, ADR 0066 Amendment 3). Sniffed content type, a 20-images-per-asset cap, API-proxied bytes. Deferred by name: presigned URLs, thumbnails, the orphan sweep | 9/10 | Thumbnails and the orphan sweep are later rows with their own justification |
 | Raw message archive | **Missing** | Ingest drops unmapped payloads silently | 0/10 | Debug/archive table (optional) |
 
 **As-is score: 55%** (excluding images: 73%)  

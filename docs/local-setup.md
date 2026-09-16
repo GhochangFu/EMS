@@ -339,9 +339,13 @@ engine's on-ingest evaluation runs.
 Since `F3.3` (ADR 0066), object storage is optional for a native `pnpm
 --filter api dev` run the same way `REDIS_URL` is. Without the six
 `OBJECT_STORAGE_*` variables, the API still boots: `GET /health` reports
-`storage: { configured: false }`, and both asset-image routes
-(`GET /api/v1/assets/:assetId/images` and
-`GET /api/v1/assets/:assetId/images/:imageId/content`) answer 503. To
+`storage: { configured: false }`, and all four asset-image routes answer
+503 — the two reads (`GET /api/v1/assets/:assetId/images` and
+`GET /api/v1/assets/:assetId/images/:imageId/content`, `F3.3`) and the two
+writes (`POST /api/v1/assets/:assetId/images` and
+`DELETE /api/v1/assets/:assetId/images/:imageId`, `F3.4`). With MinIO
+configured but stopped, the list still answers 200 and the other three 503
+(measured 2026-09-16, ADR 0066 Amendment 3). To
 exercise them natively, run `docker compose --profile core up -d minio` and
 uncomment the six variables in `apps/api/.env` above. The worker process
 reads none of them — `worker.module.ts` has no `StorageModule` import
