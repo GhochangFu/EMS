@@ -37,11 +37,15 @@ export function sniffImageContentType(buffer: Buffer): AssetImageContentType | n
 }
 
 function asContentType(candidate: string): AssetImageContentType {
-  const options: readonly string[] = assetImageContentTypeSchema.options;
-  if (!options.includes(candidate)) {
+  // `safeParse`, not `.parse()`: the candidate is a literal this file owns,
+  // never stored data and never caller input, so it belongs in neither of
+  // the two classes `tests/f4.108-service-parses-are-guarded.test.ts` admits
+  // for a bare parse. A miss is a programming error in this file (a literal
+  // that left the shared enum), thrown as such — it hands back a value of
+  // the shared enum without a cast (R-1).
+  const result = assetImageContentTypeSchema.safeParse(candidate);
+  if (!result.success) {
     throw new Error(`sniffImageContentType: "${candidate}" is not a member of the shared enum`);
   }
-  // Membership was just checked above, so this parse cannot fail; it hands
-  // back a value of the shared enum without a cast (R-1).
-  return assetImageContentTypeSchema.parse(candidate);
+  return result.data;
 }
