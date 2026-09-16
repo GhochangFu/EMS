@@ -21,6 +21,7 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { AssetImagesPanel } from "../../components/assets/asset-images-panel";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
@@ -38,6 +39,10 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminAssetDto | null>(null);
+  // `F3.4` (owner ruling Q-0): the asset whose image panel is docked open, or
+  // `null`. One at a time — the panel is the right-hand dock, not a per-row
+  // expansion, and the asset it names is the one whose action was pressed.
+  const [imagesFor, setImagesFor] = useState<AdminAssetDto | null>(null);
   const [form, setForm] = useState({
     code: "",
     name: "",
@@ -246,6 +251,18 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                     >
                       Edit
                     </button>
+                    {/*
+                      `F3.4` — inside this cell, whose `onClick` stops the
+                      row's navigation to the points screen. Outside it, every
+                      press would open the panel and leave the page at once.
+                    */}
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-bms-green"
+                      onClick={() => setImagesFor(item)}
+                    >
+                      Images
+                    </button>
                     <button
                       type="button"
                       className="text-xs font-semibold text-bms-muted"
@@ -260,6 +277,10 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
           </tbody>
         </table>
       </SectionCard>
+
+      {imagesFor !== null ? (
+        <AssetImagesPanel asset={imagesFor} onClose={() => setImagesFor(null)} />
+      ) : null}
 
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

@@ -12,6 +12,7 @@ import {
   megabytesIsTenFromTheSharedConstant,
   noFileNamesItself,
   theAcceptStringIsDerivedFromTheThreeTypes,
+  theCapReasonIsTheSentenceAtTwentyAndNullBelow,
   theCapSentenceNamesTwenty,
 } from "./asset-images-view.spec";
 
@@ -35,6 +36,10 @@ describe("F3.4 asset-images-view", () => {
 
   it("names 20 at the cap and says to delete one first", () => {
     theCapSentenceNamesTwenty();
+  });
+
+  it("names the cap on its own at 20 and nothing at 19", () => {
+    theCapReasonIsTheSentenceAtTwentyAndNullBelow();
   });
 
   it("refuses a type outside the closed vocabulary", () => {

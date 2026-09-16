@@ -4,6 +4,7 @@ import { MAX_ASSET_IMAGE_BYTES, ASSET_IMAGE_CONTENT_TYPES } from "@bms/shared";
 
 import {
   ASSET_IMAGE_ACCEPT,
+  assetImageCapReason,
   assetImageMegabytes,
   describeAssetImageUploadError,
   describeGalleryError,
@@ -39,6 +40,21 @@ export function noFileNamesItself(): void {
 export function theCapSentenceNamesTwenty(): void {
   const file = { type: "image/png", size: 1024 };
   expect(uploadBlockedReason({ file, imageCount: 20 })).toBe(
+    "This asset already has 20 images; delete one before uploading another.",
+  );
+}
+
+/**
+ * `U8` — the cap alone, with no file in hand, is the sentence and nothing else.
+ *
+ * The 19 case is the positive control and is asserted **first**: `expect`
+ * throws, so a `null` check placed after a broken sentence would never run,
+ * and a `>=` turned into `>` has to land somewhere. The two sides also pin the
+ * boundary — 19 is open, 20 is closed.
+ */
+export function theCapReasonIsTheSentenceAtTwentyAndNullBelow(): void {
+  expect(assetImageCapReason(19)).toBeNull();
+  expect(assetImageCapReason(20)).toBe(
     "This asset already has 20 images; delete one before uploading another.",
   );
 }

@@ -40,6 +40,26 @@ export type UploadBlockCheck = {
 };
 
 /**
+ * The cap sentence when the asset already holds `MAX_ASSET_IMAGES_PER_ASSET`
+ * images, else `null`.
+ *
+ * Extracted from `uploadBlockedReason` by `U8`. The behaviour of that function
+ * is unchanged and the sentence is still written once (§4.8). The panel needs
+ * this branch **on its own** because it renders before a file is chosen:
+ * `uploadBlockedReason` answers "Choose an image to upload." first — and does
+ * so deliberately, since nothing about an unchosen file can be asked — which on
+ * a full asset invites a click the API can only answer with a 409. The panel
+ * asks the cap first and falls back to `uploadBlockedReason`, and this is also
+ * what disables its file input.
+ */
+export function assetImageCapReason(imageCount: number): string | null {
+  if (imageCount >= MAX_ASSET_IMAGES_PER_ASSET) {
+    return `This asset already has ${MAX_ASSET_IMAGES_PER_ASSET} images; delete one before uploading another.`;
+  }
+  return null;
+}
+
+/**
  * The reason the Upload button is disabled, or `null` when a click would go
  * through (R-7: "disables … and says so", the `mapping-sheet-panel` rule).
  *
@@ -52,8 +72,9 @@ export function uploadBlockedReason({ file, imageCount }: UploadBlockCheck): str
   if (file === null) {
     return "Choose an image to upload.";
   }
-  if (imageCount >= MAX_ASSET_IMAGES_PER_ASSET) {
-    return `This asset already has ${MAX_ASSET_IMAGES_PER_ASSET} images; delete one before uploading another.`;
+  const capped = assetImageCapReason(imageCount);
+  if (capped !== null) {
+    return capped;
   }
   if (!ASSET_IMAGE_CONTENT_TYPES.includes(file.type as (typeof ASSET_IMAGE_CONTENT_TYPES)[number])) {
     return "Only JPEG, PNG or WebP images are accepted.";
