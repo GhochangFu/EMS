@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -200,6 +201,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `hvac-chiller` **v1** (2026-09-03, `E5.2`): authored from
  *    `e5.2-derived-taglist-v1.md` §4, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (chiller_status, chiller_alarm, chw_supply_temp_c, chw_return_temp_c, chw_setpoint_c, cooling_kw, compressor_load_pct, chw_flow_lps), plus one
+ * `chart` trending chw_supply_temp_c, chw_return_temp_c, chw_setpoint_c. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const HVAC_CHILLER: StockAssetTemplateEntry = {
   code: "hvac-chiller",
@@ -543,6 +552,103 @@ export const HVAC_CHILLER: StockAssetTemplateEntry = {
           "also tests is the evaporator's freeze protection.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["chiller_status", "chiller_alarm", "chw_supply_temp_c", "chw_return_temp_c", "chw_setpoint_c", "cooling_kw", "compressor_load_pct", "chw_flow_lps"],
+        widgets: [
+          {
+            title: "Run status",
+            widgetType: "value_tile",
+            pointKeys: ["chiller_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Chiller alarm / fault active",
+            widgetType: "value_tile",
+            pointKeys: ["chiller_alarm"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Chilled water leaving (supply) temperature",
+            widgetType: "value_tile",
+            pointKeys: ["chw_supply_temp_c"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Chilled water entering (return) temperature",
+            widgetType: "value_tile",
+            pointKeys: ["chw_return_temp_c"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "CHW leaving temperature setpoint",
+            widgetType: "value_tile",
+            pointKeys: ["chw_setpoint_c"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Chiller input power",
+            widgetType: "value_tile",
+            pointKeys: ["cooling_kw"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Compressor load / IGV / slide valve",
+            widgetType: "value_tile",
+            pointKeys: ["compressor_load_pct"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Chilled water flow",
+            widgetType: "value_tile",
+            pointKeys: ["chw_flow_lps"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Chilled water temperature trend",
+            widgetType: "chart",
+            pointKeys: ["chw_supply_temp_c", "chw_return_temp_c", "chw_setpoint_c"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "chiller_status", label: "Run status", unit: null, required: true, sortOrder: 0, meta: CORE },

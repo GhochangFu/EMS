@@ -8,6 +8,7 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 import { AccessControlService } from "../../auth/access-control.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { instantiateAssetsBodySchema } from "./asset-templates.schema";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
@@ -96,12 +97,23 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
     // time. This fixture carries no alarms, so the check returns before it asks
     // the database anything — the service is wired here exactly as `AdminModule`
     // wires it, and nothing in this suite's timings changes.
+    // F3.2 / ADR 0067 decision 4 — the REAL dashboards service, never a stub.
+    // The constructor parameter is required, so a stub here would leave the
+    // instantiate hook inert in every suite that builds the service by hand.
+    const assetDashboards = new AssetDashboardsInstantiateService(
+      fleetDb,
+      tenantDb,
+      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      audit,
+      access,
+    );
     const instantiation = new AssetTemplateInstantiationService(
       fleetDb,
       tenantDb,
       access,
       audit,
       vocabularies,
+      assetDashboards,
     );
     svc = {
       templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),

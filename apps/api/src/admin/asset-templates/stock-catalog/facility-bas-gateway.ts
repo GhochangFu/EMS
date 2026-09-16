@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -171,6 +172,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-bas-gateway` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §7, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (device_online, last_seen_age_s, comms_error_count, points_stale_count, cpu_pct), plus one
+ * `chart` trending last_seen_age_s. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_BAS_GATEWAY: StockAssetTemplateEntry = {
   code: "facility-bas-gateway",
@@ -432,6 +441,73 @@ export const FACILITY_BAS_GATEWAY: StockAssetTemplateEntry = {
           "comms errors, clock drift and restarts nobody can explain.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["device_online", "last_seen_age_s", "comms_error_count", "points_stale_count", "cpu_pct"],
+        widgets: [
+          {
+            title: "Controller / gateway reachable",
+            widgetType: "value_tile",
+            pointKeys: ["device_online"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Seconds since last good message",
+            widgetType: "value_tile",
+            pointKeys: ["last_seen_age_s"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Protocol errors",
+            widgetType: "value_tile",
+            pointKeys: ["comms_error_count"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Points not updated within their deadband",
+            widgetType: "value_tile",
+            pointKeys: ["points_stale_count"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Controller CPU load",
+            widgetType: "value_tile",
+            pointKeys: ["cpu_pct"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Comms freshness trend",
+            widgetType: "chart",
+            pointKeys: ["last_seen_age_s"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     // §7's 13 rows in the document's own order. The two C rows are the two ways

@@ -7,6 +7,8 @@ import {
   WIDGET_SOURCE_CARDINALITY,
   chartConfigSchema,
   chartSeriesKindSchema,
+  dashboardDtoSchema,
+  dashboardSummaryDtoSchema,
   dashboardWidgetDtoSchema,
   dashboardWidgetPointDtoSchema,
   dashboardWidgetSourceDtoSchema,
@@ -693,5 +695,84 @@ export function runStageASpecUnionCarriesTheNewFieldsTests(): void {
     dashboardWidgetSpecSchema,
     { widgetType: "chart", config: { series: "area", aggregate: "max", footerStats: true } },
     "the spec union must carry the chart's new fields",
+  );
+}
+
+const validSummary = {
+  id: "11111111-1111-4111-8111-111111111111",
+  organizationId: "22222222-2222-4222-8222-222222222222",
+  slug: "tx-01-overview",
+  name: "TX-01 · Overview",
+  description: null,
+  locationId: null,
+  assetGroupId: null,
+  assetId: "33333333-3333-4333-8333-333333333333",
+  assetTemplateId: "44444444-4444-4444-8444-444444444444",
+  assetCode: "TX-01",
+  createdAt: new Date(0).toISOString(),
+  updatedAt: new Date(0).toISOString(),
+  widgetCount: 3,
+};
+
+const validDashboard = {
+  id: "11111111-1111-4111-8111-111111111111",
+  organizationId: "22222222-2222-4222-8222-222222222222",
+  slug: "tx-01-overview",
+  name: "TX-01 · Overview",
+  description: null,
+  locationId: null,
+  assetGroupId: null,
+  assetId: "33333333-3333-4333-8333-333333333333",
+  assetTemplateId: "44444444-4444-4444-8444-444444444444",
+  createdAt: new Date(0).toISOString(),
+  updatedAt: new Date(0).toISOString(),
+  widgets: [],
+};
+
+/**
+ * `F3.2` / ADR 0067 decision 1, §13 — `dashboardSummaryDtoSchema` and
+ * `dashboardDtoSchema` both gain the asset scope arm (`assetId`,
+ * `assetTemplateId`); the summary DTO alone also gains `assetCode` so the list
+ * badge can read "Asset · <code>" without a second fetch.
+ */
+export function runDashboardAssetScopeFieldsTests(): void {
+  expectAccepts(
+    dashboardSummaryDtoSchema,
+    validSummary,
+    "a summary row with both asset stamps and an asset code",
+  );
+  const { assetId: _assetId, ...summaryWithoutAssetId } = validSummary;
+  expectRejects(
+    dashboardSummaryDtoSchema,
+    summaryWithoutAssetId,
+    "a summary row missing assetId",
+  );
+  // A missing `assetCode` key is a required-field violation, not silently
+  // accepted — this is the assertion that reddens if the field is ever
+  // dropped from the schema (an accept-only test with an extra unused key in
+  // the fixture would not: `dashboardSummaryDtoSchema` is not `.strict()`,
+  // so a schema missing the field simply ignores it rather than refusing).
+  const { assetCode: _assetCode, ...summaryWithoutAssetCode } = validSummary;
+  expectRejects(
+    dashboardSummaryDtoSchema,
+    summaryWithoutAssetCode,
+    "a summary row missing assetCode",
+  );
+  expectAccepts(
+    dashboardSummaryDtoSchema,
+    { ...validSummary, assetId: null, assetTemplateId: null, assetCode: null },
+    "an organization-wide summary row — every asset field null",
+  );
+
+  expectAccepts(
+    dashboardDtoSchema,
+    validDashboard,
+    "a dashboard with both asset stamps present",
+  );
+  const { assetId: _dashAssetId, ...dashboardWithoutAssetId } = validDashboard;
+  expectRejects(
+    dashboardDtoSchema,
+    dashboardWithoutAssetId,
+    "a dashboard missing assetId",
   );
 }

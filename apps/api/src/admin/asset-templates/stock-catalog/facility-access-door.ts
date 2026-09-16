@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MEASURED, derived } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -157,6 +158,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-access-door` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §3, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (door_state, lock_state, door_forced_state, door_held_state, controller_comms_ok), plus one
+ * `chart` trending access_granted_count, access_denied_count. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_ACCESS_DOOR: StockAssetTemplateEntry = {
   code: "facility-access-door",
@@ -400,6 +409,73 @@ export const FACILITY_ACCESS_DOOR: StockAssetTemplateEntry = {
           "input and confirm the doors resecure before leaving.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["door_state", "lock_state", "door_forced_state", "door_held_state", "controller_comms_ok"],
+        widgets: [
+          {
+            title: "Door open / closed (contact)",
+            widgetType: "value_tile",
+            pointKeys: ["door_state"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Lock engaged / released",
+            widgetType: "value_tile",
+            pointKeys: ["lock_state"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Door forced open",
+            widgetType: "value_tile",
+            pointKeys: ["door_forced_state"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Door held open beyond timer",
+            widgetType: "value_tile",
+            pointKeys: ["door_held_state"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Controller ↔ head-end link healthy",
+            widgetType: "value_tile",
+            pointKeys: ["controller_comms_ok"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Access event trend",
+            widgetType: "chart",
+            pointKeys: ["access_granted_count", "access_denied_count"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "door_state", label: "Door open / closed (contact)", unit: null, required: true, sortOrder: 0, meta: CORE },

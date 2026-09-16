@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -171,6 +172,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-boiler` **v1** (2026-09-03, `E5.2`): authored from
  *    `e5.2-derived-taglist-v1.md` §7, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (boiler_status, boiler_trip, steam_pressure_bar, drum_level_pct, flue_gas_temp_c, feed_pump_status, run_hours_h), plus one
+ * `chart` trending steam_pressure_bar. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const MECHANICAL_BOILER: StockAssetTemplateEntry = {
   code: "mechanical-boiler",
@@ -600,6 +609,93 @@ export const MECHANICAL_BOILER: StockAssetTemplateEntry = {
           "the plant to make steam at all.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["boiler_status", "boiler_trip", "steam_pressure_bar", "drum_level_pct", "flue_gas_temp_c", "feed_pump_status", "run_hours_h"],
+        widgets: [
+          {
+            title: "Burner firing / run status",
+            widgetType: "value_tile",
+            pointKeys: ["boiler_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Safety trip (low water, flame fail, high pressure)",
+            widgetType: "value_tile",
+            pointKeys: ["boiler_trip"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Steam header / drum pressure",
+            widgetType: "value_tile",
+            pointKeys: ["steam_pressure_bar"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Drum / shell water level",
+            widgetType: "value_tile",
+            pointKeys: ["drum_level_pct"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Stack / flue gas temperature",
+            widgetType: "value_tile",
+            pointKeys: ["flue_gas_temp_c"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Feed pump run status",
+            widgetType: "value_tile",
+            pointKeys: ["feed_pump_status"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Firing hours",
+            widgetType: "value_tile",
+            pointKeys: ["run_hours_h"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Steam pressure trend",
+            widgetType: "chart",
+            pointKeys: ["steam_pressure_bar"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "boiler_status", label: "Burner firing / run status", unit: null, required: true, sortOrder: 0, meta: CORE },

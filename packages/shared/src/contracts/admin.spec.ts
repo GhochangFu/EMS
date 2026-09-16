@@ -42,6 +42,7 @@ const validAsset = {
   pointCount: 3,
   skippedPoints: [],
   seededRules: ["CR_BATT_1_TEMP_WARNING"],
+  dashboards: [],
 };
 
 const validResult = {
@@ -56,6 +57,7 @@ const validResult = {
   pointCount: 3,
   ruleCount: 1,
   disabledRuleCount: 0,
+  dashboardCount: 0,
 };
 
 /** `assetInstantiationResultDtoSchema` REJECTS a payload missing either new field. */
@@ -78,6 +80,33 @@ export function runAssetInstantiationResultSeededRulesTests(): void {
   );
 
   expectAccepts(instantiatedAssetDtoSchema, validAsset, "an asset entry with seededRules");
+}
+
+/** `F3.2` / ADR 0067 decision 5 — `assetInstantiationResultDtoSchema` gains
+ * `dashboardCount` and `instantiatedAssetDtoSchema` gains `dashboards`; both
+ * REJECT a payload missing the new field. */
+export function runAssetInstantiationResultDashboardFieldsTests(): void {
+  expectAccepts(
+    assetInstantiationResultDtoSchema,
+    validResult,
+    "a full result carrying dashboardCount",
+  );
+
+  const { dashboardCount: _dashboardCount, ...withoutDashboardCount } = validResult;
+  expectRejects(
+    assetInstantiationResultDtoSchema,
+    withoutDashboardCount,
+    "a result missing dashboardCount",
+  );
+
+  const { dashboards: _dashboards, ...assetWithoutDashboards } = validAsset;
+  expectRejects(
+    assetInstantiationResultDtoSchema,
+    { ...validResult, assets: [assetWithoutDashboards] },
+    "an asset entry missing dashboards",
+  );
+
+  expectAccepts(instantiatedAssetDtoSchema, validAsset, "an asset entry carrying dashboards: []");
 }
 
 const validValues = {

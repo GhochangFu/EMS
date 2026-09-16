@@ -146,6 +146,152 @@ export async function assertPutWidgetsDtoReflectsTheWrite(
   ).toBe(1);
 }
 
+/**
+ * `F3.2` Task 3 — an ASSET-scoped create actually lands `asset_id`, and lands NOTHING in
+ * `asset_template_id`.
+ *
+ * Read back on a separate fleet connection with independent SQL, never from the returned DTO:
+ * a service asserted against its own queries proves only that it is self-consistent, which a
+ * mapper that echoes the request body also is. The `asset_template_id IS NULL` half is the
+ * sharp one — that column is the INSTANTIATION stamp (ADR 0067 decision 2), and a hand-built
+ * dashboard claiming to have been generated from a template version would make the backfill's
+ * skip query silently skip an asset that never received its defaults.
+ */
+export async function assertAssetScopedCreateLandsTheAssetAndNoStamp(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  actor: JwtPayload,
+  organizationId: string,
+  assetId: string,
+  slug: string,
+  /**
+   * Called with the new row's id BEFORE any assertion runs. The two rows this
+   * helper leaked on 2026-09-16 were created by a reviewer's mutation runs: the
+   * assertion below threw, the id never reached the caller's cleanup list, and
+   * the row outlived the run. A helper that creates must hand the id back
+   * before it judges the row.
+   */
+  track: (id: string) => void,
+): Promise<{ id: string }> {
+  const dto = await service.create(actor, {
+    organizationId,
+    slug,
+    name: "F3.2 asset-scoped create proof",
+    assetId,
+  } as Parameters<DashboardsService["create"]>[1]);
+  track(dto.id);
+
+  // The RETURNED DTO as well as the committed row. `loadFullDto` builds it from a re-read of
+  // the row, so a hardcoded `assetId: null` there would typecheck, commit the correct row, and
+  // still hand the caller a DTO that denies the scope it just wrote — invisible to the
+  // independent-SQL half below, which is why both halves are asserted.
+  expect(dto.assetId, "the returned DTO must report the asset scope it just wrote").toBe(assetId);
+  expect(dto.assetTemplateId, "a hand-built dashboard carries no instantiation stamp").toBeNull();
+
+  const rows = await fleetDb.execute(
+    sql`SELECT asset_id, asset_template_id, location_id, asset_group_id
+          FROM bms.dashboards WHERE id = ${dto.id}`,
+  );
+  const row = rows.rows[0] as
+    | {
+        asset_id: string | null;
+        asset_template_id: string | null;
+        location_id: string | null;
+        asset_group_id: string | null;
+      }
+    | undefined;
+  expect(row, "the asset-scoped dashboard did not commit").toBeDefined();
+  expect(row?.asset_id, "create() must write body.assetId into dashboards.asset_id").toBe(assetId);
+  expect(
+    row?.asset_template_id,
+    "asset_template_id is the instantiation stamp — a hand-built create must never set it",
+  ).toBeNull();
+  expect(row?.location_id, "an asset-scoped dashboard must carry no location scope").toBeNull();
+  expect(row?.asset_group_id, "an asset-scoped dashboard must carry no group scope").toBeNull();
+
+  return { id: dto.id };
+}
+
+/**
+ * `F3.2` Task 3 — PATCHing a `locationId` onto a row whose STORED scope is an asset is refused
+ * by the merged three-way guard with a 400 that names `assetId`.
+ *
+ * **The message text is the assertion, not merely the status.** With the guard still counting
+ * two axes, the merge passes it, the `UPDATE` reaches `dashboards_scope_check` (migration
+ * 0073's count form), and the caller gets a bare `23514` carrying a constraint name — a 500,
+ * or at best a 400 that says nothing about which fields conflict. Asserting on the sentence is
+ * what tells those two outcomes apart.
+ */
+export async function assertAddingALocationToAnAssetScopedDashboardIs400(
+  service: DashboardsService,
+  actor: JwtPayload,
+  assetScopedDashboardId: string,
+  locationId: string,
+): Promise<void> {
+  let caught: unknown;
+  try {
+    await service.update(actor, assetScopedDashboardId, { locationId });
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught, "setting a locationId on an asset-scoped dashboard must be refused").toBeDefined();
+  expect(caught, "the refusal must be the service's own 400, not the database's 23514").toMatchObject({
+    status: 400,
+  });
+  const message = String((caught as Error)?.message ?? caught);
+  expect(
+    message,
+    `the 400 must name assetId as one of the conflicting axes, got: ${message}`,
+  ).toContain("assetId");
+  expect(
+    message,
+    "must NOT surface the constraint name — that is the shape a missing guard produces",
+  ).not.toContain("dashboards_scope_check");
+}
+
+/**
+ * `F3.2` Task 3 — `list()` reports the asset's OWN code for an asset-scoped row (ADR 0067
+ * §"Gate questions" Q4: the badge reads `Asset · <code>`).
+ *
+ * **Run with a single-organization actor on purpose.** A multi-organization caller takes
+ * `withOrganizationReadScope`'s FLEET branch, which runs as `bms_fleet` (`BYPASSRLS`) — it
+ * would pass over a `leftJoin(assets)` that `bms_tenant` has no grant or no policy for. The
+ * tenant branch is the one every scoped caller uses, so it is the one this proves.
+ *
+ * The expected code is read by independent SQL from `bms.assets`, never taken from the
+ * fixture's own variable.
+ */
+export async function assertListReportsTheAssetCode(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  singleOrgActor: JwtPayload,
+  assetScopedDashboardId: string,
+  assetId: string,
+): Promise<void> {
+  const codeRows = await fleetDb.execute(sql`SELECT code FROM bms.assets WHERE id = ${assetId}`);
+  const expectedCode = (codeRows.rows[0] as { code: string } | undefined)?.code;
+  expect(expectedCode, "the fixture asset must exist — run pnpm db:seed").toBeTruthy();
+
+  const listed = await service.list(singleOrgActor);
+  const item = listed.items.find((candidate) => candidate.id === assetScopedDashboardId);
+  expect(item, "a scoped reader must still see the asset-scoped dashboard — read is org-wide").toBeDefined();
+  expect(item?.assetId, "the summary must carry the asset scope").toBe(assetId);
+  expect(
+    item?.assetCode,
+    "the summary must carry the JOINED asset code, not null — the leftJoin(assets) is missing",
+  ).toBe(expectedCode);
+
+  // The positive control's neighbour: a row with no asset scope must still list, with a null
+  // code. Without this, an inner join that dropped every organization-wide dashboard would
+  // leave the assertion above perfectly green.
+  const organizationWide = listed.items.find((candidate) => candidate.assetId === null);
+  expect(
+    organizationWide,
+    "a non-asset-scoped dashboard must still be listed — leftJoin, never an inner join",
+  ).toBeDefined();
+  expect(organizationWide?.assetCode, "a non-asset-scoped row reports a null assetCode").toBeNull();
+}
+
 async function slugFor(fleetDb: BmsDb, dashboardId: string): Promise<string> {
   const rows = await fleetDb.execute(sql`SELECT slug FROM bms.dashboards WHERE id = ${dashboardId}`);
   return (rows.rows[0] as { slug: string }).slug;
@@ -360,4 +506,146 @@ export async function assertLocationAdminMayStillUpdateItsOwnLocationDashboard(
   expect(after.name, "an authorized in-scope PATCH must still succeed and be reflected in the DTO").toBe(
     newName,
   );
+}
+
+/**
+ * `F3.2` review (security Medium / migration High) — moving a stamped dashboard's scope OFF its
+ * asset clears `asset_template_id` in the SAME `UPDATE`.
+ *
+ * `asset_template_id` is provenance: it says "this dashboard was instantiated from that asset
+ * template version, for THAT asset". `dashboards_asset_stamp_check` (migration `0073`) encodes
+ * half of it — a stamp implies an asset — so a PATCH that clears `assetId` while leaving the
+ * stamp behind hits the CHECK and reaches the caller as a raw `23514`. The other half is not a
+ * constraint at all and cannot be: moving the row to ANOTHER asset keeps the stamp valid to the
+ * database while making it a lie, and the backfill's skip query reads exactly that column to
+ * decide which assets already have their defaults.
+ *
+ * The stamp is written here by direct SQL because no request body may set it (ADR 0067
+ * decision 2: only the instantiator does), and it is read back before the PATCH so the case
+ * cannot pass by having stamped nothing.
+ */
+export async function assertClearingTheAssetScopeAlsoClearsTheStamp(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  actor: JwtPayload,
+  dashboardId: string,
+  assetTemplateId: string,
+  locationId: string,
+): Promise<void> {
+  await stampAssetTemplate(fleetDb, dashboardId, assetTemplateId);
+
+  const dto = await service.update(actor, dashboardId, { locationId, assetId: null });
+
+  expect(dto.assetId, "the PATCH must move the scope off the asset").toBeNull();
+  expect(dto.locationId, "the PATCH must land the new location scope").toBe(locationId);
+  expect(
+    dto.assetTemplateId,
+    "a dashboard that no longer names an asset must not still claim an asset-template stamp",
+  ).toBeNull();
+  await expectStamp(fleetDb, dashboardId, { assetId: null, assetTemplateId: null });
+}
+
+/**
+ * The same clause, the other direction: a PATCH that MOVES the dashboard to a different asset
+ * must not carry the old asset's stamp with it. The database permits this row — the CHECK only
+ * asks that a stamp has SOME asset — so nothing but the service refuses the forged provenance.
+ */
+export async function assertMovingTheAssetClearsTheStamp(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  actor: JwtPayload,
+  dashboardId: string,
+  assetTemplateId: string,
+  otherAssetId: string,
+): Promise<void> {
+  await stampAssetTemplate(fleetDb, dashboardId, assetTemplateId);
+
+  const dto = await service.update(actor, dashboardId, { assetId: otherAssetId });
+
+  expect(dto.assetId, "the PATCH must move the scope to the other asset").toBe(otherAssetId);
+  expect(
+    dto.assetTemplateId,
+    "a dashboard moved to another asset must not keep the stamp of the asset it came from — " +
+      "the backfill's skip query would then skip an asset that never received its defaults",
+  ).toBeNull();
+  await expectStamp(fleetDb, dashboardId, { assetId: otherAssetId, assetTemplateId: null });
+}
+
+/** Writes the instantiation stamp no request body may set, and proves it landed. */
+async function stampAssetTemplate(
+  fleetDb: BmsDb,
+  dashboardId: string,
+  assetTemplateId: string,
+): Promise<void> {
+  await fleetDb.execute(
+    sql`UPDATE bms.dashboards SET asset_template_id = ${assetTemplateId} WHERE id = ${dashboardId}`,
+  );
+  const rows = await fleetDb.execute(
+    sql`SELECT asset_template_id FROM bms.dashboards WHERE id = ${dashboardId}`,
+  );
+  expect(
+    (rows.rows[0] as { asset_template_id: string | null } | undefined)?.asset_template_id,
+    "the fixture stamp did not land — the case below would assert that nothing was cleared",
+  ).toBe(assetTemplateId);
+}
+
+/** The committed row, read on a separate fleet connection rather than off the returned DTO. */
+async function expectStamp(
+  fleetDb: BmsDb,
+  dashboardId: string,
+  expected: { assetId: string | null; assetTemplateId: string | null },
+): Promise<void> {
+  const rows = await fleetDb.execute(
+    sql`SELECT asset_id, asset_template_id FROM bms.dashboards WHERE id = ${dashboardId}`,
+  );
+  const row = rows.rows[0] as { asset_id: string | null; asset_template_id: string | null } | undefined;
+  expect(row, "the dashboard row is gone").toBeDefined();
+  expect(row?.asset_id, "the committed asset scope").toBe(expected.assetId);
+  expect(row?.asset_template_id, "the committed asset-template stamp").toBe(expected.assetTemplateId);
+}
+
+/**
+ * `F3.2` review (security Low) — a cross-organization `assetId` on create is refused by the
+ * SERVICE with a 400 that names the field, not by an untranslated database error.
+ *
+ * `canManageDashboard` admits a global `admin` for any organization and never looks at the
+ * asset's own organization for that role, so the only thing standing between this body and a
+ * committed row is `tenant_isolation`'s `WITH CHECK` on `bms.dashboards` (re-created by
+ * migration `0073` to check the asset parent as well). That refusal is correct and it surfaces
+ * as a 500: the caller cannot tell a mistyped `assetId` from an outage.
+ *
+ * Asserted on the STATUS and the field name, and on the absence of a row read back by slug on
+ * the FLEET pool — a tenant-pool count returns 0 under FORCE RLS whether or not a foreign-org
+ * row landed, so it would pass either way.
+ */
+export async function assertCrossOrgAssetScopeIs400NamingAssetId(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  actor: JwtPayload,
+  organizationId: string,
+  foreignOrgAssetId: string,
+  slug: string,
+): Promise<void> {
+  let caught: unknown;
+  try {
+    await service.create(actor, {
+      organizationId,
+      slug,
+      name: "F3.2 cross-organization asset scope proof",
+      assetId: foreignOrgAssetId,
+    } as Parameters<DashboardsService["create"]>[1]);
+  } catch (err) {
+    caught = err;
+  }
+
+  expect(caught, "an asset from another organization must be refused").toBeDefined();
+  expect(
+    caught,
+    "the refusal must be the service's own 400, not the driver's untranslated error surfacing as a 500",
+  ).toMatchObject({ status: 400 });
+  const message = String((caught as Error)?.message ?? caught);
+  expect(message, `the 400 must name assetId, got: ${message}`).toContain("assetId");
+
+  const rows = await fleetDb.execute(sql`SELECT id FROM bms.dashboards WHERE slug = ${slug}`);
+  expect(rows.rows.length, "no dashboard row may exist for a refused create").toBe(0);
 }

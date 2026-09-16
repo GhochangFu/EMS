@@ -8,6 +8,7 @@ import { AssetPointCalcOverrideService } from "./asset-points/asset-point-calc-o
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
 import { MappingSheetService } from "./asset-points/mapping-sheet.service";
+import { AssetDashboardsInstantiateService } from "./asset-templates/asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates/asset-templates-instantiate.service";
 import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
 import { AssetTemplateSeededRulesService } from "./asset-templates/asset-templates-seeded-rules.service";
@@ -101,6 +102,9 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetRolesAdminService,
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
+    // F3.2 / ADR 0067 decision 4 — the two triggers that write per-asset
+    // default dashboards: the instantiate hook and POST :id/default-dashboards.
+    AssetDashboardsInstantiateService,
     AssetTemplateMigrationService,
     // E2.4 / ADR 0058 decision 8 — the seeded-rules drift list and re-apply.
     AssetTemplateSeededRulesService,

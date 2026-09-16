@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { dashboards, dashboardWidgetPoints, dashboardWidgetSources, dashboardWidgets } from "@bms/db";
+import { assets, dashboards, dashboardWidgetPoints, dashboardWidgetSources, dashboardWidgets } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   DashboardDto,
@@ -25,13 +25,24 @@ import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
+import { SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
 import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody, WidgetWriteBody } from "./dashboards.schema";
 
 type DashboardRow = typeof dashboards.$inferSelect;
 type WidgetRow = typeof dashboardWidgets.$inferSelect;
 
-/** One scoped-write authorization target: the two nullable scope columns together. */
-type DashboardScope = { readonly locationId: string | null; readonly assetGroupId: string | null };
+/**
+ * One scoped-write authorization target: the three nullable scope columns together.
+ *
+ * `assetId` is `F3.2` / ADR 0067 decision 1's third axis, and it is a REQUIRED field rather
+ * than an optional one on purpose: an optional parameter at an adapter is invisible — every
+ * call site keeps compiling while the new arm is never reached, so the feature ships inert.
+ */
+type DashboardScope = {
+  readonly locationId: string | null;
+  readonly assetGroupId: string | null;
+  readonly assetId: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Pure functions — no database. Exported so dashboards.service.spec.ts covers
@@ -40,7 +51,11 @@ type DashboardScope = { readonly locationId: string | null; readonly assetGroupI
 
 /** Row -> DTO. Parses against `dashboardSummaryDtoSchema` in the caller's own test — this
  * function only builds the shape. */
-export function mapDashboardSummary(row: DashboardRow, widgetCount: number): DashboardSummaryDto {
+export function mapDashboardSummary(
+  row: DashboardRow,
+  widgetCount: number,
+  assetCode: string | null,
+): DashboardSummaryDto {
   return {
     id: row.id,
     organizationId: row.organizationId,
@@ -49,6 +64,9 @@ export function mapDashboardSummary(row: DashboardRow, widgetCount: number): Das
     description: row.description,
     locationId: row.locationId,
     assetGroupId: row.assetGroupId,
+    assetId: row.assetId,
+    assetTemplateId: row.assetTemplateId,
+    assetCode,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     widgetCount,
@@ -295,18 +313,44 @@ export class DashboardsService {
         if (organizationIdFilter) {
           conditions.push(inArray(dashboards.organizationId, organizationIdFilter));
         }
+        // `F3.2` / ADR 0067 §"Gate questions" Q4 — the badge reads `Asset · <code>`, and the
+        // summary DTO has no code of its own, so the code is joined here.
+        //
+        // **A LEFT join, never an inner one.** Every organization-wide, location-scoped and
+        // group-scoped dashboard has `asset_id IS NULL`; an inner join would silently drop
+        // every row this list exists to return. A null `assetCode` is the contract's own
+        // "this dashboard is not asset-scoped" value.
+        //
+        // The tenant branch runs as `bms_tenant` under FORCE RLS, which holds SELECT on
+        // `bms.assets` with the same `app.current_organization` GUC already set — verified
+        // against the dev database rather than assumed, because a missing grant here would
+        // 500 `GET /dashboards` for every scoped caller, including the org-wide rows.
         const rows = await tx
           .select({
             dashboard: dashboards,
+            assetCode: assets.code,
             widgetCount: sql<number>`(
               SELECT COUNT(*)::int FROM ${dashboardWidgets}
                WHERE ${dashboardWidgets.dashboardId} = ${dashboards.id}
             )`,
           })
           .from(dashboards)
+          .leftJoin(
+            assets,
+            // The organization predicate is part of the JOIN, not merely of the tenant policy.
+            // On the FLEET branch this query runs as `bms_fleet` (`BYPASSRLS`), so nothing else
+            // stops a dashboard from reporting another organization's asset code once an
+            // `asset_id` has been mis-stamped: the join would resolve it and the badge would
+            // read it out. On the tenant branch it is redundant with RLS and costs nothing.
+            and(eq(assets.id, dashboards.assetId), eq(assets.organizationId, dashboards.organizationId)),
+          )
           .where(conditions.length > 0 ? and(...conditions) : undefined)
           .orderBy(asc(dashboards.slug));
-        return { items: rows.map((row) => mapDashboardSummary(row.dashboard, row.widgetCount)) };
+        return {
+          items: rows.map((row) =>
+            mapDashboardSummary(row.dashboard, row.widgetCount, row.assetCode),
+          ),
+        };
       },
     );
   }
@@ -366,7 +410,11 @@ export class DashboardsService {
    */
   async create(jwt: JwtPayload, body: CreateDashboardBody): Promise<DashboardDto> {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
-    const scope: DashboardScope = { locationId: body.locationId ?? null, assetGroupId: body.assetGroupId ?? null };
+    const scope: DashboardScope = {
+      locationId: body.locationId ?? null,
+      assetGroupId: body.assetGroupId ?? null,
+      assetId: body.assetId ?? null,
+    };
     if (!(await this.accessControl.canManageDashboard(jwt, body.organizationId, scope))) {
       throw new ForbiddenException("You may not create a dashboard with this scope");
     }
@@ -385,6 +433,11 @@ export class DashboardsService {
           description: body.description ?? null,
           locationId: scope.locationId,
           assetGroupId: scope.assetGroupId,
+          // `F3.2` — the scope axis only. `asset_template_id` stays NULL on every hand-built
+          // dashboard: it is the instantiation stamp, and
+          // `dashboards_asset_stamp_check` (migration 0073) is what keeps a stamp from
+          // existing without an asset.
+          assetId: scope.assetId,
         })
         .returning();
 
@@ -397,13 +450,18 @@ export class DashboardsService {
           entityType: "dashboard",
           entityId: row.id,
           organizationId: body.organizationId,
-          payload: { slug: body.slug, locationId: scope.locationId, assetGroupId: scope.assetGroupId },
+          payload: {
+            slug: body.slug,
+            locationId: scope.locationId,
+            assetGroupId: scope.assetGroupId,
+            assetId: scope.assetId,
+          },
         },
         tx,
       );
       return this.loadFullDto(tx, row.id);
     }).catch((err: unknown) => {
-      throw this.translateSlugConflict(err, body.slug);
+      throw this.translateWriteError(err, body.slug, scope);
     });
   }
 
@@ -433,10 +491,19 @@ export class DashboardsService {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     const existing = await this.fetchRowForWrite(id);
 
-    const storedScope: DashboardScope = { locationId: existing.locationId, assetGroupId: existing.assetGroupId };
+    const storedScope: DashboardScope = {
+      locationId: existing.locationId,
+      assetGroupId: existing.assetGroupId,
+      assetId: existing.assetId,
+    };
     const nextLocationId = body.locationId !== undefined ? body.locationId : existing.locationId;
     const nextAssetGroupId = body.assetGroupId !== undefined ? body.assetGroupId : existing.assetGroupId;
-    const nextScope: DashboardScope = { locationId: nextLocationId, assetGroupId: nextAssetGroupId };
+    const nextAssetId = body.assetId !== undefined ? body.assetId : existing.assetId;
+    const nextScope: DashboardScope = {
+      locationId: nextLocationId,
+      assetGroupId: nextAssetGroupId,
+      assetId: nextAssetId,
+    };
 
     // Authorization BEFORE the scope-validity check, and deliberately in this order. Same
     // message whether this dashboard belongs to another organization or does not exist —
@@ -458,13 +525,17 @@ export class DashboardsService {
       throw new NotFoundException("Dashboard not found");
     }
 
-    if (nextLocationId !== null && nextAssetGroupId !== null) {
-      // The merged row, not just this request's body — a PATCH that sets only one of the two
-      // columns cannot see the other's already-stored value, so this check must run after the
-      // merge or dashboards_scope_check would refuse it as a bare 500 instead.
-      throw new BadRequestException(
-        "at most one of locationId or assetGroupId may be set — both null is organization-wide",
-      );
+    // The merged row, not just this request's body — a PATCH that sets only one of the three
+    // columns cannot see the others' already-stored values, so this check must run after the
+    // merge or dashboards_scope_check would refuse it as a bare 500 instead.
+    //
+    // Counted, not written pairwise: `F3.2` made this three axes, and the three pairwise
+    // comparisons a reader is tempted to write here are exactly what migration 0073 replaced
+    // in SQL with `(location_id IS NOT NULL)::int + … <= 1`. The sentence is IMPORTED from
+    // `dashboards.schema.ts` rather than restated — it used to be restated verbatim, and one
+    // rule stated twice is one reword away from two different 400s.
+    if ([nextLocationId, nextAssetGroupId, nextAssetId].filter((value) => value !== null).length > 1) {
+      throw new BadRequestException(SCOPE_REFUSAL_MESSAGE);
     }
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
@@ -476,6 +547,15 @@ export class DashboardsService {
           description: body.description !== undefined ? body.description : existing.description,
           locationId: nextLocationId,
           assetGroupId: nextAssetGroupId,
+          assetId: nextAssetId,
+          // Review (security Medium / migration High) — the stamp FOLLOWS the asset, in the
+          // same UPDATE. `asset_template_id` says "instantiated from that template version for
+          // THAT asset" (ADR 0067 decision 3). Clearing `assetId` while leaving it behind hits
+          // `dashboards_asset_stamp_check` and reached the caller as a 500; moving the row to
+          // another asset kept a stamp the database still accepts and the backfill's skip
+          // query still believes — forged provenance, and an asset that never gets its
+          // defaults. Nothing re-stamps: only the instantiator writes this column.
+          assetTemplateId: nextAssetId === existing.assetId ? existing.assetTemplateId : null,
           updatedAt: new Date(),
         })
         .where(eq(dashboards.id, id));
@@ -494,7 +574,7 @@ export class DashboardsService {
 
       return this.loadFullDto(tx, id);
     }).catch((err: unknown) => {
-      throw this.translateSlugConflict(err, body.slug ?? existing.slug);
+      throw this.translateWriteError(err, body.slug ?? existing.slug, nextScope);
     });
   }
 
@@ -507,7 +587,11 @@ export class DashboardsService {
   async remove(jwt: JwtPayload, id: string): Promise<void> {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     const existing = await this.fetchRowForWrite(id);
-    const scope: DashboardScope = { locationId: existing.locationId, assetGroupId: existing.assetGroupId };
+    const scope: DashboardScope = {
+      locationId: existing.locationId,
+      assetGroupId: existing.assetGroupId,
+      assetId: existing.assetId,
+    };
     if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope))) {
       throw new NotFoundException("Dashboard not found");
     }
@@ -533,7 +617,11 @@ export class DashboardsService {
   async putWidgets(jwt: JwtPayload, id: string, body: PutDashboardWidgetsBody): Promise<DashboardDto> {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     const existing = await this.fetchRowForWrite(id);
-    const scope: DashboardScope = { locationId: existing.locationId, assetGroupId: existing.assetGroupId };
+    const scope: DashboardScope = {
+      locationId: existing.locationId,
+      assetGroupId: existing.assetGroupId,
+      assetId: existing.assetId,
+    };
     if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope))) {
       throw new NotFoundException("Dashboard not found");
     }
@@ -657,6 +745,8 @@ export class DashboardsService {
       );
 
       return this.loadFullDto(tx, id);
+    }).catch((err: unknown) => {
+      throw this.translateWriteError(err, existing.slug, scope);
     });
   }
 
@@ -675,6 +765,72 @@ export class DashboardsService {
    * owns, and return every other error unchanged — including a `23505` on a different
    * constraint, which must reach the caller exactly as the driver raised it.
    */
+  /**
+   * The one error translation every write on this service goes through: the slug 409 first,
+   * then the scope refusals below, then the driver's error unchanged.
+   *
+   * **One function, not two chained `.catch`es.** A second handler only ever sees what the
+   * first re-threw, so the order of two catches decides which translation is reachable — and
+   * the losing one is silently dead.
+   *
+   * Two states reach a caller as a 500 without this (review, security Low):
+   *
+   * - `42501` — `tenant_isolation`'s `WITH CHECK` on `bms.dashboards`, which migration `0073`
+   *   re-created to check the `asset_id` and `asset_template_id` parents as well. A scope id
+   *   from another organization is refused there, never by the foreign key (`0050`'s header:
+   *   `WITH CHECK` runs before the FK's `AFTER` trigger).
+   * - `23514` on `dashboards_scope_check` / `dashboards_asset_stamp_check` — the two CHECKs the
+   *   service's own guards are supposed to reach first. A 400 here is the backstop for a state
+   *   a guard missed, not a replacement for the guard.
+   *
+   * The field named is the scope axis this write actually set, taken from the merged scope the
+   * caller already computed — the error itself carries no column. `putWidgets` passes the
+   * STORED scope: it writes no scope column at all, so a translation can only fire there on an
+   * unrelated policy, and inferring a field from a widget body would misattribute it.
+   */
+  private translateWriteError(err: unknown, slug: string, scope: DashboardScope): unknown {
+    const translatedSlug = this.translateSlugConflict(err, slug);
+    if (translatedSlug !== err) {
+      return translatedSlug;
+    }
+    const code = (err as { code?: string } | null)?.code;
+    const constraint = (err as { constraint?: string } | null)?.constraint;
+    // FIRST, and independent of the scope axes: this CHECK is about `asset_template_id`, a
+    // column no request body carries and `scope` does not either. Naming a scope axis here
+    // would attribute the refusal to a field that is not the offending one — the item-1
+    // mutation run produced exactly that sentence before this branch was split out.
+    if (code === "23514" && constraint === "dashboards_asset_stamp_check") {
+      return new BadRequestException(
+        "This dashboard still carries an asset-template stamp, which describes nothing once it " +
+          "names no asset. The stamp is cleared together with the asset scope.",
+      );
+    }
+    const field =
+      scope.assetId !== null
+        ? "assetId"
+        : scope.assetGroupId !== null
+          ? "assetGroupId"
+          : scope.locationId !== null
+            ? "locationId"
+            : null;
+    if (field === null) {
+      return err;
+    }
+    if (code === "42501") {
+      return new BadRequestException(
+        `The ${field} you supplied does not belong to this dashboard's organization — the ` +
+          "write was refused by this table's row-level security policy.",
+      );
+    }
+    if (code === "23514" && constraint === "dashboards_scope_check") {
+      return new BadRequestException(
+        `The ${field} you supplied leaves this dashboard in a scope the database refuses: ` +
+          SCOPE_REFUSAL_MESSAGE,
+      );
+    }
+    return err;
+  }
+
   private translateSlugConflict(err: unknown, slug: string): unknown {
     const constraint = (err as { constraint?: string } | null)?.constraint;
     if (constraint === "dashboards_organization_slug_key") {
@@ -798,6 +954,8 @@ export class DashboardsService {
       description: effective.description,
       locationId: effective.locationId,
       assetGroupId: effective.assetGroupId,
+      assetId: effective.assetId,
+      assetTemplateId: effective.assetTemplateId,
       createdAt: effective.createdAt.toISOString(),
       updatedAt: effective.updatedAt.toISOString(),
       widgets: widgetRows.map((widget) =>

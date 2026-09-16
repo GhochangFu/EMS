@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -188,6 +189,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-lift` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §8a, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (lift_in_service, lift_mode, lift_fault, fire_recall_state, passenger_alarm, controller_comms_ok, overload_state, car_position_floor), plus one
+ * `chart` trending motor_current_a. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
   code: "mechanical-lift",
@@ -727,6 +736,103 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
           "the supply goes, and ard_state reports that the device ran, never that it still can.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["lift_in_service", "lift_mode", "lift_fault", "fire_recall_state", "passenger_alarm", "controller_comms_ok", "overload_state", "car_position_floor"],
+        widgets: [
+          {
+            title: "Available for normal passenger service",
+            widgetType: "value_tile",
+            pointKeys: ["lift_in_service"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Normal / inspection / maintenance / fire service / emergency power / earthquake / out of service / independent / attendant",
+            widgetType: "value_tile",
+            pointKeys: ["lift_mode"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Fault active (controller general fault)",
+            widgetType: "value_tile",
+            pointKeys: ["lift_fault"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Fire service recall active (Phase 1)",
+            widgetType: "value_tile",
+            pointKeys: ["fire_recall_state"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "In-car alarm button pressed",
+            widgetType: "value_tile",
+            pointKeys: ["passenger_alarm"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Gateway ↔ lift controller link healthy",
+            widgetType: "value_tile",
+            pointKeys: ["controller_comms_ok"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Overload — car will not depart",
+            widgetType: "value_tile",
+            pointKeys: ["overload_state"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Current floor (landing index)",
+            widgetType: "value_tile",
+            pointKeys: ["car_position_floor"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Motor current trend",
+            widgetType: "chart",
+            pointKeys: ["motor_current_a"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     // ---- Service state — the seven C rows are here and in Motion, and they

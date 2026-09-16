@@ -11,6 +11,7 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { RulesService } from "../../rules/rules.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { loadFixtures } from "./asset-templates.instantiate.integration.spec";
 import { instantiateAssetsBodySchema } from "./asset-templates.schema";
@@ -95,12 +96,23 @@ describe.skipIf(!connectionString)("F3.49 — the picker offers what the validat
     const access = new AccessControlService(createDb(authPool), fleetDb);
     const audit = new MasterDataAuditService(tenantDb, fleetDb);
     const vocabularies = new VocabulariesService(tenantDb);
+    // F3.2 / ADR 0067 decision 4 — the REAL dashboards service, never a stub.
+    // The constructor parameter is required, so a stub here would leave the
+    // instantiate hook inert in every suite that builds the service by hand.
+    const assetDashboards = new AssetDashboardsInstantiateService(
+      fleetDb,
+      tenantDb,
+      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      audit,
+      access,
+    );
     const instantiation = new AssetTemplateInstantiationService(
       fleetDb,
       tenantDb,
       access,
       audit,
       vocabularies,
+      assetDashboards,
     );
     // Real pools for both halves of `RulesService`: `getBuilderCatalog` and
     // `updateRule` are the two things under test and both are database

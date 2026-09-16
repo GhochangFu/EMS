@@ -25,6 +25,7 @@
 import type { z } from "zod";
 
 import type * as A from "./contracts/admin";
+import type * as AD from "./contracts/asset-dashboards";
 import type * as AI from "./contracts/asset-images";
 import type * as Au from "./contracts/auth";
 import type * as D from "./contracts/dashboard";
@@ -500,6 +501,19 @@ export type SeededRuleDto = z.infer<typeof SR.seededRuleDtoSchema>;
 export type SeededRulesListResponse = z.infer<typeof SR.seededRulesListResponseSchema>;
 export type ReapplySeededRulesResponse = z.infer<
   typeof SR.reapplySeededRulesResponseSchema
+>;
+
+// `F3.2` / ADR 0067 — per-asset default dashboards instantiated from an asset
+// template: the per-view report and the on-demand backfill's response.
+export type InstantiatedDashboardDto = z.infer<typeof AD.instantiatedDashboardDtoSchema>;
+export type DefaultDashboardsBackfillOutcome = z.infer<
+  typeof AD.defaultDashboardsBackfillOutcomeSchema
+>;
+export type DefaultDashboardsBackfillAssetDto = z.infer<
+  typeof AD.defaultDashboardsBackfillAssetDtoSchema
+>;
+export type DefaultDashboardsBackfillResultDto = z.infer<
+  typeof AD.defaultDashboardsBackfillResultDtoSchema
 >;
 
 // `F2.6` template version lifecycle (ADR 0039).

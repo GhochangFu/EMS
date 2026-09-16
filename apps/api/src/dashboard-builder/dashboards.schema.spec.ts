@@ -19,6 +19,7 @@ import {
   createDashboardBodySchema,
   pointBindingWriteSchema,
   putDashboardWidgetsBodySchema,
+  SCOPE_REFUSAL_MESSAGE,
   updateDashboardBodySchema,
   widgetWriteSchema,
 } from "./dashboards.schema";
@@ -72,6 +73,8 @@ function expectRejectsAt(
 const ORG_ID = "11111111-1111-4111-8111-111111111111";
 const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
 const GROUP_ID = "33333333-3333-4333-8333-333333333333";
+/** `F3.2` / ADR 0067 decision 1 — the third scope axis. */
+const ASSET_ID = "77777777-7777-4777-8777-777777777777";
 const POINT_A = "44444444-4444-4444-8444-444444444444";
 const POINT_B = "55555555-5555-4555-8555-555555555555";
 const POINT_C = "66666666-6666-4666-8666-666666666666";
@@ -188,6 +191,71 @@ export function runDashboardsSchemaTests(): void {
     ["assetGroupId"],
     ["one of locationId"],
     "both scope columns set on update",
+  );
+
+  // -------------------------------------------------------------------------
+  // 3b. `F3.2` Task 3 — `assetId` is the THIRD scope axis (ADR 0067 decision 1,
+  //     `dashboards_scope_check`'s count form in migration 0073). The refusal
+  //     message is asserted as literal text rather than against the imported
+  //     constant: a constant compared to itself is a tautology, and this
+  //     sentence is the one a caller reads, so a silent reword must redden.
+  // -------------------------------------------------------------------------
+  const SCOPE_SENTENCE =
+    "at most one of locationId, assetGroupId or assetId may be set — all null is organization-wide";
+  assert(
+    SCOPE_REFUSAL_MESSAGE === SCOPE_SENTENCE,
+    `the exported SCOPE_REFUSAL_MESSAGE must be exactly the sentence DashboardsService.update ` +
+      `also throws, got "${SCOPE_REFUSAL_MESSAGE}"`,
+  );
+  expectAccepts(
+    createDashboardBodySchema,
+    { ...validCreateBody, assetId: ASSET_ID },
+    "an asset-scoped create (assetId alone) must parse",
+  );
+  expectRejectsAt(
+    createDashboardBodySchema,
+    { ...validCreateBody, assetId: ASSET_ID, locationId: LOCATION_ID },
+    ["assetGroupId"],
+    [SCOPE_SENTENCE],
+    "assetId AND locationId set on create",
+  );
+  expectRejectsAt(
+    createDashboardBodySchema,
+    { ...validCreateBody, assetId: ASSET_ID, assetGroupId: GROUP_ID },
+    ["assetGroupId"],
+    [SCOPE_SENTENCE],
+    "assetId AND assetGroupId set on create",
+  );
+  // `assetTemplateId` is the INSTANTIATION STAMP, written only by
+  // `AssetDashboardsInstantiateService` — never by a request body. `.strict()`
+  // is what refuses it, and `unrecognized_keys` is the code that proves the
+  // refusal came from strictness rather than from the scope refinement.
+  {
+    const stamped = createDashboardBodySchema.safeParse({
+      ...validCreateBody,
+      assetId: ASSET_ID,
+      assetTemplateId: "88888888-8888-4888-8888-888888888888",
+    }) as { success: boolean; error?: { issues: { code?: string; keys?: string[] }[] } };
+    assert(stamped.success === false, "assetTemplateId on a create body must be refused");
+    const unrecognized = (stamped.error?.issues ?? []).find(
+      (issue) => issue.code === "unrecognized_keys",
+    );
+    assert(
+      unrecognized !== undefined && (unrecognized.keys ?? []).includes("assetTemplateId"),
+      `assetTemplateId must be refused as an unrecognized key, got ${JSON.stringify(stamped.error?.issues)}`,
+    );
+  }
+  expectAccepts(
+    updateDashboardBodySchema,
+    { assetId: null },
+    "clearing the asset scope on update (assetId: null) must parse",
+  );
+  expectRejectsAt(
+    updateDashboardBodySchema,
+    { assetId: ASSET_ID, locationId: LOCATION_ID },
+    ["assetGroupId"],
+    [SCOPE_SENTENCE],
+    "assetId AND locationId set on update",
   );
 
   // -------------------------------------------------------------------------

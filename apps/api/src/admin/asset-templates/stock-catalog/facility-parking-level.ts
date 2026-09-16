@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MEASURED, derived } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -142,6 +143,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-parking-level` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §5, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (bays_total, bays_occupied, bays_free, co_ppm, jet_fan_status), plus one
+ * `chart` trending co_ppm. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_PARKING_LEVEL: StockAssetTemplateEntry = {
   code: "facility-parking-level",
@@ -410,6 +419,73 @@ export const FACILITY_PARKING_LEVEL: StockAssetTemplateEntry = {
           "that is not in the sensors.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["bays_total", "bays_occupied", "bays_free", "co_ppm", "jet_fan_status"],
+        widgets: [
+          {
+            title: "Bays on level",
+            widgetType: "value_tile",
+            pointKeys: ["bays_total"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Occupied bays (ultrasonic / camera)",
+            widgetType: "value_tile",
+            pointKeys: ["bays_occupied"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Free bays",
+            widgetType: "value_tile",
+            pointKeys: ["bays_free"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Basement CO (ventilation control)",
+            widgetType: "value_tile",
+            pointKeys: ["co_ppm"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Ventilation / jet fan run",
+            widgetType: "value_tile",
+            pointKeys: ["jet_fan_status"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "CO level trend",
+            widgetType: "chart",
+            pointKeys: ["co_ppm"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "bays_total", label: "Bays on level", unit: null, required: true, sortOrder: 0, meta: CORE },

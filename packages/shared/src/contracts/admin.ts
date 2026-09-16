@@ -10,6 +10,7 @@
 import { z } from "zod";
 
 import { CALC_DIALECTS, CALC_TRIGGERS } from "../calc-dsl";
+import { instantiatedDashboardDtoSchema } from "./asset-dashboards";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
 import { assetRoleCodeSchema } from "./operations";
 import { pointMetadataFieldsSchema, pointMetadataShape } from "./point-metadata";
@@ -472,6 +473,10 @@ export const instantiatedAssetDtoSchema = z.object({
   pointCount: z.number(),
   skippedPoints: z.array(z.string()),
   seededRules: z.array(z.string()),
+  /** `F3.2` / ADR 0067 decision 5 — one report per view of the asset
+   * template's `content.dashboards` this asset received, empty when the
+   * template carries none. */
+  dashboards: z.array(instantiatedDashboardDtoSchema),
 });
 
 /** The result of one instantiate call — the whole batch or nothing. */
@@ -499,6 +504,9 @@ export const assetInstantiationResultDtoSchema = z.object({
    */
   ruleCount: z.number().int(),
   disabledRuleCount: z.number().int(),
+  /** `F3.2` / ADR 0067 decision 5 — how many `bms.dashboards` rows this call
+   * wrote across the whole batch. */
+  dashboardCount: z.number().int(),
 });
 
 // Compile-time guard: the narrowing above must still describe exactly

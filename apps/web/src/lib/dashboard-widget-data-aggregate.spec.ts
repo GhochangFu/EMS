@@ -350,6 +350,8 @@ export function runAggregateRequestListTests(): void {
     description: null,
     locationId: null,
     assetGroupId: null,
+    assetId: null,
+    assetTemplateId: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
     widgets,

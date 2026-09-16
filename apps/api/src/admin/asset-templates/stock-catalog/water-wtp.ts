@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -122,6 +123,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-wtp` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §1, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (raw_water_flow_klh, treated_water_flow_klh, raw_turbidity_ntu, filtered_turbidity_ntu, treated_cl2_residual_mgl, clearwell_level_pct, filter_dp_bar, intake_pump_status), plus one
+ * `chart` trending raw_turbidity_ntu, filtered_turbidity_ntu. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const WATER_WTP: StockAssetTemplateEntry = {
   code: "water-wtp",
@@ -322,6 +331,103 @@ export const WATER_WTP: StockAssetTemplateEntry = {
           "drifted instrument moves a derived point as well as its own alarm.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["raw_water_flow_klh", "treated_water_flow_klh", "raw_turbidity_ntu", "filtered_turbidity_ntu", "treated_cl2_residual_mgl", "clearwell_level_pct", "filter_dp_bar", "intake_pump_status"],
+        widgets: [
+          {
+            title: "Raw water intake flow",
+            widgetType: "value_tile",
+            pointKeys: ["raw_water_flow_klh"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Treated water outlet flow",
+            widgetType: "value_tile",
+            pointKeys: ["treated_water_flow_klh"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Raw water turbidity",
+            widgetType: "value_tile",
+            pointKeys: ["raw_turbidity_ntu"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Filter outlet turbidity",
+            widgetType: "value_tile",
+            pointKeys: ["filtered_turbidity_ntu"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Treated water residual chlorine",
+            widgetType: "value_tile",
+            pointKeys: ["treated_cl2_residual_mgl"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Clear water reservoir level",
+            widgetType: "value_tile",
+            pointKeys: ["clearwell_level_pct"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Filter differential pressure / head loss",
+            widgetType: "value_tile",
+            pointKeys: ["filter_dp_bar"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Intake pump run status",
+            widgetType: "value_tile",
+            pointKeys: ["intake_pump_status"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Turbidity removal trend",
+            widgetType: "chart",
+            pointKeys: ["raw_turbidity_ntu", "filtered_turbidity_ntu"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "raw_water_flow_klh", label: "Raw water intake flow", unit: "KL/hr", required: true, sortOrder: 0, meta: CORE },

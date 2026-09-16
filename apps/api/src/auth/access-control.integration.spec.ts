@@ -878,14 +878,14 @@ export async function assertCanManageDashboard(
     throw new Error("F3.1b: need a second organization to prove the group's own org does not authorize a foreign org's dashboard");
   }
 
-  const orgWide = { locationId: null, assetGroupId: null };
+  const orgWide = { locationId: null, assetGroupId: null, assetId: null };
 
   // admin: true for every organization and scope, including organization-wide.
   const admin = jwtFor(SEEDED.globalAdmin, "admin");
   if (!(await svc.canManageDashboard(admin, orgAId, orgWide))) {
     throw new Error("admin must manage an organization-wide dashboard");
   }
-  if (!(await svc.canManageDashboard(admin, orgBId, { locationId: locId, assetGroupId: null }))) {
+  if (!(await svc.canManageDashboard(admin, orgBId, { locationId: locId, assetGroupId: null, assetId: null }))) {
     throw new Error("admin must manage a location-scoped dashboard in any organization");
   }
 
@@ -901,7 +901,7 @@ export async function assertCanManageDashboard(
 
   // location_admin: true for a dashboard scoped to a location it holds.
   const locationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
-  if (!(await svc.canManageDashboard(locationAdmin, locOrgId, { locationId: locId, assetGroupId: null }))) {
+  if (!(await svc.canManageDashboard(locationAdmin, locOrgId, { locationId: locId, assetGroupId: null, assetId: null }))) {
     throw new Error("location_admin must manage a dashboard scoped to its own location");
   }
   // FALSE for an organization-wide dashboard in its OWN organization — the
@@ -920,7 +920,7 @@ export async function assertCanManageDashboard(
   // own locationId passed authorization for an ORG_B dashboard, contained only later by the
   // database rather than by this gate.
   if (
-    await svc.canManageDashboard(locationAdmin, locForeignOrgId, { locationId: locId, assetGroupId: null })
+    await svc.canManageDashboard(locationAdmin, locForeignOrgId, { locationId: locId, assetGroupId: null, assetId: null })
   ) {
     throw new Error(
       "location_admin's own location must NOT authorize a dashboard stamped with ANOTHER " +
@@ -930,11 +930,11 @@ export async function assertCanManageDashboard(
 
   // asset_group_admin: true for a group whose location it holds, false otherwise.
   const groupAdmin = jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin");
-  if (!(await svc.canManageDashboard(groupAdmin, groupOrgId, { locationId: null, assetGroupId: groupId }))) {
+  if (!(await svc.canManageDashboard(groupAdmin, groupOrgId, { locationId: null, assetGroupId: groupId, assetId: null }))) {
     throw new Error("asset_group_admin must manage a dashboard scoped to its own group");
   }
   if (
-    await svc.canManageDashboard(groupAdmin, groupOrgId, { locationId: null, assetGroupId: foreignGroupId })
+    await svc.canManageDashboard(groupAdmin, groupOrgId, { locationId: null, assetGroupId: foreignGroupId, assetId: null })
   ) {
     throw new Error("asset_group_admin must be refused a dashboard scoped to a foreign group");
   }
@@ -944,7 +944,7 @@ export async function assertCanManageDashboard(
   // Finding 4 (review): the group it holds authorizing a FOREIGN organization's dashboard —
   // the asset-group analogue of the location_admin case above.
   if (
-    await svc.canManageDashboard(groupAdmin, groupForeignOrgId, { locationId: null, assetGroupId: groupId })
+    await svc.canManageDashboard(groupAdmin, groupForeignOrgId, { locationId: null, assetGroupId: groupId, assetId: null })
   ) {
     throw new Error(
       "asset_group_admin's own group must NOT authorize a dashboard stamped with ANOTHER " +
@@ -957,7 +957,7 @@ export async function assertCanManageDashboard(
   // resolving a seeded admin/org-admin row that would make this vacuous.
   for (const role of ["viewer", "operator"] as const) {
     const jwt = jwtFor(`f3.1b-no-grants-${role}@integration.invalid`, role);
-    if (await svc.canManageDashboard(jwt, orgAId, { locationId: locId, assetGroupId: null })) {
+    if (await svc.canManageDashboard(jwt, orgAId, { locationId: locId, assetGroupId: null, assetId: null })) {
       throw new Error(`${role} must be refused canManageDashboard on any scope`);
     }
     if (await svc.canManageDashboard(jwt, orgAId, orgWide)) {

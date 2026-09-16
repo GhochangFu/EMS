@@ -1,3 +1,4 @@
+import { DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -145,6 +146,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-pump` **v1** (2026-09-03, `E5.2`): authored from
  *    `e5.2-derived-taglist-v1.md` §1, PROVISIONAL — derived, not
  *    client-confirmed.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (pump_status, pump_mode, pump_trip, current_a, discharge_pressure_bar, run_hours_h), plus one
+ * `chart` trending current_a. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const MECHANICAL_PUMP: StockAssetTemplateEntry = {
   code: "mechanical-pump",
@@ -456,6 +465,83 @@ export const MECHANICAL_PUMP: StockAssetTemplateEntry = {
           "failure gives before it gives any other.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["pump_status", "pump_mode", "pump_trip", "current_a", "discharge_pressure_bar", "run_hours_h"],
+        widgets: [
+          {
+            title: "Run status",
+            widgetType: "value_tile",
+            pointKeys: ["pump_status"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Auto / manual / off selector",
+            widgetType: "value_tile",
+            pointKeys: ["pump_mode"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Trip / fault (overload, dry-run, VFD fault)",
+            widgetType: "value_tile",
+            pointKeys: ["pump_trip"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Motor current",
+            widgetType: "value_tile",
+            pointKeys: ["current_a"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Discharge pressure",
+            widgetType: "value_tile",
+            pointKeys: ["discharge_pressure_bar"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Cumulative run hours",
+            widgetType: "value_tile",
+            pointKeys: ["run_hours_h"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Motor current trend",
+            widgetType: "chart",
+            pointKeys: ["current_a"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "pump_status", label: "Run status", unit: null, required: true, sortOrder: 0, meta: CORE },

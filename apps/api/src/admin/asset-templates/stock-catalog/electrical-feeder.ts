@@ -1,4 +1,4 @@
-import { CALC_DIALECT_V2 } from "@bms/shared";
+import { CALC_DIALECT_V2, DASHBOARD_GRID } from "@bms/shared";
 
 import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
@@ -142,6 +142,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *         site-level role. On a panel or a sub-meter these three rows simply
  *         compute the same site figures again; a tenant that does not want
  *         that deletes them from the draft.
+ *
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
+ * class's headline measured points as `value_tile`s in table order (kw, kva, pf, current_a, frequency_hz, kwh_today, breaker_main, meter_comms_ok), plus one
+ * `chart` trending kw, kva. Every key is a declared `kind: "measured"` point with
+ * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
+ * always bind (a manual row is never populated at instantiation; a derived key has no
+ * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
+ * for this content addition (plan §12 Q9, ADR 0067 §13).
  */
 export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
   code: "electrical-feeder",
@@ -240,6 +248,103 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
         message: "Meter unreachable — no readings arriving from the energy meter.",
       },
     ],
+    dashboards: {
+      overview: {
+        featured: ["kw", "kva", "pf", "current_a", "frequency_hz", "kwh_today", "breaker_main", "meter_comms_ok"],
+        widgets: [
+          {
+            title: "Active power, total",
+            widgetType: "value_tile",
+            pointKeys: ["kw"],
+            config: {},
+            gridX: 0,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Apparent power, total",
+            widgetType: "value_tile",
+            pointKeys: ["kva"],
+            config: {},
+            gridX: 3,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Power factor, total",
+            widgetType: "value_tile",
+            pointKeys: ["pf"],
+            config: {},
+            gridX: 6,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Average / total current",
+            widgetType: "value_tile",
+            pointKeys: ["current_a"],
+            config: {},
+            gridX: 9,
+            gridY: 0,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Frequency",
+            widgetType: "value_tile",
+            pointKeys: ["frequency_hz"],
+            config: {},
+            gridX: 0,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Energy today",
+            widgetType: "value_tile",
+            pointKeys: ["kwh_today"],
+            config: {},
+            gridX: 3,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Breaker closed / open",
+            widgetType: "value_tile",
+            pointKeys: ["breaker_main"],
+            config: {},
+            gridX: 6,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Meter reachable",
+            widgetType: "value_tile",
+            pointKeys: ["meter_comms_ok"],
+            config: {},
+            gridX: 9,
+            gridY: 2,
+            gridW: 3,
+            gridH: 2,
+          },
+          {
+            title: "Power trend",
+            widgetType: "chart",
+            pointKeys: ["kw", "kva"],
+            config: { series: "line" },
+            gridX: 0,
+            gridY: 4,
+            gridW: DASHBOARD_GRID.columns,
+            gridH: 4,
+          },
+        ],
+      },
+    },
   },
   points: [
     { ...MEASURED, pointKey: "voltage_vry", label: "Line voltage R–Y", unit: "V", required: true, sortOrder: 0, meta: CORE },

@@ -90,6 +90,8 @@ function dto(): DashboardDto {
     description: null,
     locationId: null,
     assetGroupId: null,
+    assetId: null,
+    assetTemplateId: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
     widgets: [
@@ -217,6 +219,8 @@ export function runUnsetFieldsAreOmittedTests(): void {
     description: null,
     locationId: null,
     assetGroupId: null,
+    assetId: null,
+    assetTemplateId: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
     widgets: [
