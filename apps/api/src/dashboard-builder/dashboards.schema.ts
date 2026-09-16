@@ -52,14 +52,30 @@ import type { MetricCatalogKey } from "@bms/shared";
 // bms.dashboards — create / update
 // ---------------------------------------------------------------------------
 
-/** At most one of `locationId`/`assetGroupId` — `dashboards_scope_check` in SQL. */
-const SCOPE_REFUSAL_MESSAGE =
-  "at most one of locationId or assetGroupId may be set — both null is organization-wide";
+/**
+ * At most one of `locationId`/`assetGroupId`/`assetId` — `dashboards_scope_check` in SQL,
+ * which migration `0073` re-created in its count form
+ * (`(location_id IS NOT NULL)::int + … <= 1`) when `F3.2` added the asset axis.
+ *
+ * **Exported since `F3.2` Task 3.** `DashboardsService.update` throws this same sentence for
+ * the MERGED row (stored + PATCH), which the schema alone cannot see; it used to restate the
+ * text verbatim, and two copies of one sentence is one reword away from two different 400s
+ * for one rule.
+ */
+export const SCOPE_REFUSAL_MESSAGE =
+  "at most one of locationId, assetGroupId or assetId may be set — all null is organization-wide";
 
+/**
+ * `!= null`, not `!== null`, on all three: every field is `.nullable().optional()`, so an
+ * ABSENT field arrives as `undefined` — a strict `!== null` would count it as set and refuse a
+ * body that names only one axis.
+ */
 const scopeIsSingular = (data: {
   locationId?: string | null;
   assetGroupId?: string | null;
-}): boolean => !(data.locationId != null && data.assetGroupId != null);
+  assetId?: string | null;
+}): boolean =>
+  [data.locationId, data.assetGroupId, data.assetId].filter((value) => value != null).length <= 1;
 
 /**
  * The raw fields, undecorated — `updateDashboardBodySchema` is built from this by
@@ -81,6 +97,11 @@ const dashboardFieldsSchema = z
     description: z.string().max(4000).nullable().optional(),
     locationId: z.string().uuid().nullable().optional(),
     assetGroupId: z.string().uuid().nullable().optional(),
+    // `F3.2` / ADR 0067 decision 1 — the third scope axis. `assetTemplateId` is deliberately
+    // NOT here: it is the instantiation stamp, written only by
+    // `AssetDashboardsInstantiateService`, and `.strict()` refusing it as an unrecognized key
+    // is the gate that keeps a hand-built request from claiming a provenance it does not have.
+    assetId: z.string().uuid().nullable().optional(),
   })
   .strict();
 
@@ -88,9 +109,11 @@ export const createDashboardBodySchema = dashboardFieldsSchema
   .refine(scopeIsSingular, { message: SCOPE_REFUSAL_MESSAGE, path: ["assetGroupId"] })
   .describe(
     "A dashboard is addressed by (organizationId, slug). At most one of locationId/" +
-      "assetGroupId may be set; both null is an organization-wide dashboard, and ADR 0047 " +
-      "Amendment 2 ruling 2 restricts who may create one of those to admin/organization_admin " +
-      "— DashboardsService.create enforces that half, not this schema.",
+      "assetGroupId/assetId may be set; all three null is an organization-wide dashboard, and " +
+      "ADR 0047 Amendment 2 ruling 2 restricts who may create one of those to " +
+      "admin/organization_admin — DashboardsService.create enforces that half, not this " +
+      "schema. assetId is the F3.2 asset scope (ADR 0067 decision 1); the companion " +
+      "assetTemplateId stamp is not accepted here at all, because only instantiation writes it.",
   );
 
 /**
@@ -109,9 +132,9 @@ export const updateDashboardBodySchema = dashboardFieldsSchema
   .refine(scopeIsSingular, { message: SCOPE_REFUSAL_MESSAGE, path: ["assetGroupId"] })
   .describe(
     "Every field is optional; organizationId cannot be changed here. At most one of " +
-      "locationId/assetGroupId may be set BY THIS REQUEST — DashboardsService also checks the " +
-      "row that results after merging with what is already stored, since a PATCH that sets " +
-      "only one of the two columns cannot see the other's stored value.",
+      "locationId/assetGroupId/assetId may be set BY THIS REQUEST — DashboardsService also " +
+      "checks the row that results after merging with what is already stored, since a PATCH " +
+      "that sets only one of the three columns cannot see the others' stored values.",
   );
 
 export type CreateDashboardBody = z.infer<typeof createDashboardBodySchema>;

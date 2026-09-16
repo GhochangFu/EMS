@@ -171,6 +171,11 @@ export class DashboardTemplatesInstantiateService {
       !(await this.accessControl.canManageDashboard(jwt, template.organizationId, {
         locationId: null,
         assetGroupId: body.assetGroupId,
+        // `F3.2` — a section template instantiates into an ASSET GROUP, never an asset
+        // (ADR 0067 decision 1 gives the asset axis its own writer). Explicitly null rather
+        // than omitted: the field is required on the scope, so a later asset-scoped caller
+        // here has to state its intent instead of inheriting a default.
+        assetId: null,
       }))
     ) {
       throw new ForbiddenException("Asset group is outside your access scope");

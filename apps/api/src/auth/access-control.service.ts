@@ -365,7 +365,7 @@ export class AccessControlService {
   async canManageDashboard(
     jwt: JwtPayload,
     organizationId: string,
-    scope: { locationId: string | null; assetGroupId: string | null },
+    scope: { locationId: string | null; assetGroupId: string | null; assetId: string | null },
   ): Promise<boolean> {
     const user = await this.resolveDbUser(jwt);
     if (user.role === "admin") {
@@ -385,12 +385,25 @@ export class AccessControlService {
     // block changed no test outcome). `resolveScopeTarget` THROWS instead if it is ever
     // reached with both null, so deleting this guard now surfaces as a crash on the ruling-2
     // test case rather than a second silent refusal.
-    if (scope.locationId === null && scope.assetGroupId === null) {
+    // `F3.2` — THREE axes since ADR 0067 decision 1. A guard that still counted two would let
+    // `{null, null, assetId}`'s organization-wide sibling through to the throw below.
+    if (scope.locationId === null && scope.assetGroupId === null && scope.assetId === null) {
       return false;
     }
     const target = this.resolveScopeTarget(scope);
 
     if (user.role === "location_admin") {
+      // `F3.2` / plan D9 — the asset arm. An asset lives at exactly one location
+      // (`assets.location_id` is NOT NULL, ADR 0018), so a location admin's authority over an
+      // asset IS its authority over that asset's location. The row is read ONCE and both
+      // halves come out of it: the organization check and the location the next call needs.
+      if (target.kind === "asset") {
+        const asset = await this.assetBelongsToOrganization(target.id, organizationId);
+        if (asset === undefined) {
+          return false;
+        }
+        return this.canManageLocation(jwt, asset.locationId);
+      }
       if (target.kind !== "location") {
         return false;
       }
@@ -400,6 +413,34 @@ export class AccessControlService {
       return this.canManageLocation(jwt, target.id);
     }
     if (user.role === "asset_group_admin") {
+      // `F3.2` / plan D9 — the asset arm, and it is a MEMBERSHIP question, not a location one.
+      // This role's grant lives on the group (`user_asset_group_access`), so the asset is
+      // admitted only when some group the actor holds has it as a member. One join across the
+      // three tables, with the organization predicate spelled out on `asset_groups`: the
+      // `assetBelongsToOrganization` read already proved the ASSET's organization, and this
+      // proves the granting GROUP's, so neither side can authorize across a tenant boundary.
+      if (target.kind === "asset") {
+        if ((await this.assetBelongsToOrganization(target.id, organizationId)) === undefined) {
+          return false;
+        }
+        const [member] = await this.fleetDb
+          .select({ id: assetGroupMembers.id })
+          .from(assetGroupMembers)
+          .innerJoin(
+            userAssetGroupAccess,
+            eq(userAssetGroupAccess.assetGroupId, assetGroupMembers.assetGroupId),
+          )
+          .innerJoin(assetGroups, eq(assetGroups.id, assetGroupMembers.assetGroupId))
+          .where(
+            and(
+              eq(assetGroupMembers.assetId, target.id),
+              eq(userAssetGroupAccess.userId, user.id),
+              eq(assetGroups.organizationId, organizationId),
+            ),
+          )
+          .limit(1);
+        return member !== undefined;
+      }
       if (target.kind !== "assetGroup") {
         return false;
       }
@@ -439,16 +480,17 @@ export class AccessControlService {
    * Discriminates a `canManageDashboard` scope, given that the "both null" case has already
    * been refused by the ruling-2 guard immediately above the one call site. Three outcomes:
    *
-   * - `{location, null}` / `{null, assetGroup}` — the ordinary, valid cases; every dashboard
-   *   this API can WRITE satisfies "at most one of locationId/assetGroupId" (Task 3's
-   *   `scopeIsSingular` request-schema refinement on create).
-   * - `{kind: "invalid"}` for `{location, assetGroup}` (both set) — refused, but NOT via a
+   * - exactly one of `location`/`assetGroup`/`asset` set — the ordinary, valid cases; every
+   *   dashboard this API can WRITE satisfies "at most one of locationId, assetGroupId or
+   *   assetId" (`scopeIsSingular`, the request-schema refinement on create, and
+   *   `dashboards_scope_check`'s count form in migration `0073`).
+   * - `{kind: "invalid"}` when TWO OR MORE are set — refused, but NOT via a
    *   throw. `DashboardsService.update` deliberately calls `canManageDashboard` with the
    *   MERGED scope (existing row + PATCH body) BEFORE its own "both set" 400 check, precisely
    *   so an unauthorized caller is refused with the same 404 as a nonexistent id rather than a
    *   400 that discloses the row exists and what its stored scope is (finding 5, review) — so
    *   this state genuinely reaches here in normal operation and must resolve gracefully.
-   * - throws for `{null, null}` — this is the one state that should NEVER reach this function,
+   * - throws when ALL are null — this is the one state that should NEVER reach this function,
    *   because the ruling-2 guard at the call site refuses it first. Throwing rather than
    *   returning a sentinel here is what makes that guard load-bearing: delete it and this
    *   throws on the exact case it exists to refuse, instead of a second branch quietly
@@ -457,20 +499,37 @@ export class AccessControlService {
   private resolveScopeTarget(scope: {
     locationId: string | null;
     assetGroupId: string | null;
-  }): { kind: "location"; id: string } | { kind: "assetGroup"; id: string } | { kind: "invalid" } {
-    if (scope.locationId !== null && scope.assetGroupId === null) {
-      return { kind: "location", id: scope.locationId };
-    }
-    if (scope.assetGroupId !== null && scope.locationId === null) {
-      return { kind: "assetGroup", id: scope.assetGroupId };
-    }
-    if (scope.locationId !== null && scope.assetGroupId !== null) {
+    assetId: string | null;
+  }):
+    | { kind: "location"; id: string }
+    | { kind: "assetGroup"; id: string }
+    | { kind: "asset"; id: string }
+    | { kind: "invalid" } {
+    // Counted, never written as pairwise comparisons. With three axes the pairwise form needs
+    // three `&&` chains per arm and silently admits `{location, asset}` the moment one is
+    // forgotten — which is precisely the hole the `F3.2` A9 case exists to catch. This is the
+    // same count form migration `0073` gave `dashboards_scope_check`.
+    const set = [
+      { kind: "location", id: scope.locationId },
+      { kind: "assetGroup", id: scope.assetGroupId },
+      { kind: "asset", id: scope.assetId },
+    ].filter((axis): axis is { kind: string; id: string } => axis.id !== null);
+
+    if (set.length > 1) {
       return { kind: "invalid" };
     }
-    throw new Error(
-      "canManageDashboard: reached resolveScopeTarget with both locationId and assetGroupId " +
-        "null — the ruling-2 guard immediately above this call must have been removed",
-    );
+    const only = set[0];
+    if (only === undefined) {
+      throw new Error(
+        "canManageDashboard: reached resolveScopeTarget with locationId, assetGroupId and " +
+          "assetId all null — the ruling-2 guard immediately above this call must have been " +
+          "removed",
+      );
+    }
+    return only as
+      | { kind: "location"; id: string }
+      | { kind: "assetGroup"; id: string }
+      | { kind: "asset"; id: string };
   }
 
   /**
@@ -488,6 +547,35 @@ export class AccessControlService {
       .where(eq(locations.id, locationId))
       .limit(1);
     return row !== undefined && row.organizationId === organizationId;
+  }
+
+  /**
+   * `F3.2` / plan D9 — the asset analogue of {@link locationBelongsToOrganization}, except that
+   * it returns the ROW rather than a boolean.
+   *
+   * That is the whole point of it: the `location_admin` arm needs `assets.location_id` right
+   * after the organization check, and a boolean helper would force a second read of the same
+   * row for a column the first read already had in hand. `undefined` means "no such asset, or
+   * it belongs to another organization" — one value for both, because a caller that could tell
+   * them apart would have a cross-tenant existence oracle.
+   */
+  private async assetBelongsToOrganization(
+    assetId: string,
+    organizationId: string,
+  ): Promise<{ id: string; locationId: string } | undefined> {
+    const [row] = await this.fleetDb
+      .select({
+        id: assets.id,
+        organizationId: assets.organizationId,
+        locationId: assets.locationId,
+      })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .limit(1);
+    if (row === undefined || row.organizationId !== organizationId) {
+      return undefined;
+    }
+    return { id: row.id, locationId: row.locationId };
   }
 
   /** The asset-group analogue of {@link locationBelongsToOrganization}. */

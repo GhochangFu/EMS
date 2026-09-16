@@ -28,6 +28,8 @@ const WIDGET_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const WIDGET_C = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const POINT_A = "44444444-4444-4444-8444-444444444444";
 const ASSET_A = "55555555-5555-4555-8555-555555555555";
+/** `F3.2` — the asset-template version a default dashboard is stamped with. */
+const ASSET_TEMPLATE_A = "99999999-9999-4999-8999-999999999999";
 
 const dashboardRow = {
   id: DASHBOARD_ID,
@@ -92,6 +94,37 @@ export function runDashboardsServiceUnitTests(): void {
     )}`,
   );
   assert(summary.widgetCount === 3, "mapDashboardSummary must carry the passed widget count");
+
+  // `F3.2` Task 3 — the asset scope and the instantiation stamp must be COPIED FROM THE ROW,
+  // not defaulted. A mapper that hardcodes `assetId: null` survives every assertion the
+  // organization-wide fixture above can make, so the claim needs a row where both columns are
+  // non-null and an assertion on the exact values (memory: a shared fixture hides a whole
+  // mutation class). `assetCode` is the joined column, not a row column — asserted as the
+  // exact string for the same reason.
+  const assetScopedSummary = mapDashboardSummary(
+    { ...dashboardRow, assetId: ASSET_A, assetTemplateId: ASSET_TEMPLATE_A },
+    0,
+    "WC-CHW-01",
+  );
+  assert(
+    assetScopedSummary.assetId === ASSET_A,
+    `mapDashboardSummary must copy assetId from the row, got ${String(assetScopedSummary.assetId)}`,
+  );
+  assert(
+    assetScopedSummary.assetTemplateId === ASSET_TEMPLATE_A,
+    `mapDashboardSummary must copy assetTemplateId from the row, got ${String(assetScopedSummary.assetTemplateId)}`,
+  );
+  assert(
+    assetScopedSummary.assetCode === "WC-CHW-01",
+    `mapDashboardSummary must carry the joined assetCode, got ${String(assetScopedSummary.assetCode)}`,
+  );
+  const assetScopedParsed = dashboardSummaryDtoSchema.safeParse(assetScopedSummary);
+  assert(
+    assetScopedParsed.success === true,
+    `an asset-scoped summary must parse against dashboardSummaryDtoSchema: ${JSON.stringify(
+      assetScopedParsed.success ? null : assetScopedParsed.error.issues,
+    )}`,
+  );
 
   const widget = mapDashboardWidget(widgetRow, [resolvedPoint]);
   const widgetParsed = dashboardWidgetDtoSchema.safeParse(widget);

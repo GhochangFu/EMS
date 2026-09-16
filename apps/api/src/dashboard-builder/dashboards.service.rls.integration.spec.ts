@@ -146,6 +146,143 @@ export async function assertPutWidgetsDtoReflectsTheWrite(
   ).toBe(1);
 }
 
+/**
+ * `F3.2` Task 3 — an ASSET-scoped create actually lands `asset_id`, and lands NOTHING in
+ * `asset_template_id`.
+ *
+ * Read back on a separate fleet connection with independent SQL, never from the returned DTO:
+ * a service asserted against its own queries proves only that it is self-consistent, which a
+ * mapper that echoes the request body also is. The `asset_template_id IS NULL` half is the
+ * sharp one — that column is the INSTANTIATION stamp (ADR 0067 decision 2), and a hand-built
+ * dashboard claiming to have been generated from a template version would make the backfill's
+ * skip query silently skip an asset that never received its defaults.
+ */
+export async function assertAssetScopedCreateLandsTheAssetAndNoStamp(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  actor: JwtPayload,
+  organizationId: string,
+  assetId: string,
+  slug: string,
+): Promise<{ id: string }> {
+  const dto = await service.create(actor, {
+    organizationId,
+    slug,
+    name: "F3.2 asset-scoped create proof",
+    assetId,
+  } as Parameters<DashboardsService["create"]>[1]);
+
+  // The RETURNED DTO as well as the committed row. `loadFullDto` builds it from a re-read of
+  // the row, so a hardcoded `assetId: null` there would typecheck, commit the correct row, and
+  // still hand the caller a DTO that denies the scope it just wrote — invisible to the
+  // independent-SQL half below, which is why both halves are asserted.
+  expect(dto.assetId, "the returned DTO must report the asset scope it just wrote").toBe(assetId);
+  expect(dto.assetTemplateId, "a hand-built dashboard carries no instantiation stamp").toBeNull();
+
+  const rows = await fleetDb.execute(
+    sql`SELECT asset_id, asset_template_id, location_id, asset_group_id
+          FROM bms.dashboards WHERE id = ${dto.id}`,
+  );
+  const row = rows.rows[0] as
+    | {
+        asset_id: string | null;
+        asset_template_id: string | null;
+        location_id: string | null;
+        asset_group_id: string | null;
+      }
+    | undefined;
+  expect(row, "the asset-scoped dashboard did not commit").toBeDefined();
+  expect(row?.asset_id, "create() must write body.assetId into dashboards.asset_id").toBe(assetId);
+  expect(
+    row?.asset_template_id,
+    "asset_template_id is the instantiation stamp — a hand-built create must never set it",
+  ).toBeNull();
+  expect(row?.location_id, "an asset-scoped dashboard must carry no location scope").toBeNull();
+  expect(row?.asset_group_id, "an asset-scoped dashboard must carry no group scope").toBeNull();
+
+  return { id: dto.id };
+}
+
+/**
+ * `F3.2` Task 3 — PATCHing a `locationId` onto a row whose STORED scope is an asset is refused
+ * by the merged three-way guard with a 400 that names `assetId`.
+ *
+ * **The message text is the assertion, not merely the status.** With the guard still counting
+ * two axes, the merge passes it, the `UPDATE` reaches `dashboards_scope_check` (migration
+ * 0073's count form), and the caller gets a bare `23514` carrying a constraint name — a 500,
+ * or at best a 400 that says nothing about which fields conflict. Asserting on the sentence is
+ * what tells those two outcomes apart.
+ */
+export async function assertAddingALocationToAnAssetScopedDashboardIs400(
+  service: DashboardsService,
+  actor: JwtPayload,
+  assetScopedDashboardId: string,
+  locationId: string,
+): Promise<void> {
+  let caught: unknown;
+  try {
+    await service.update(actor, assetScopedDashboardId, { locationId });
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught, "setting a locationId on an asset-scoped dashboard must be refused").toBeDefined();
+  expect(caught, "the refusal must be the service's own 400, not the database's 23514").toMatchObject({
+    status: 400,
+  });
+  const message = String((caught as Error)?.message ?? caught);
+  expect(
+    message,
+    `the 400 must name assetId as one of the conflicting axes, got: ${message}`,
+  ).toContain("assetId");
+  expect(
+    message,
+    "must NOT surface the constraint name — that is the shape a missing guard produces",
+  ).not.toContain("dashboards_scope_check");
+}
+
+/**
+ * `F3.2` Task 3 — `list()` reports the asset's OWN code for an asset-scoped row (ADR 0067
+ * §"Gate questions" Q4: the badge reads `Asset · <code>`).
+ *
+ * **Run with a single-organization actor on purpose.** A multi-organization caller takes
+ * `withOrganizationReadScope`'s FLEET branch, which runs as `bms_fleet` (`BYPASSRLS`) — it
+ * would pass over a `leftJoin(assets)` that `bms_tenant` has no grant or no policy for. The
+ * tenant branch is the one every scoped caller uses, so it is the one this proves.
+ *
+ * The expected code is read by independent SQL from `bms.assets`, never taken from the
+ * fixture's own variable.
+ */
+export async function assertListReportsTheAssetCode(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  singleOrgActor: JwtPayload,
+  assetScopedDashboardId: string,
+  assetId: string,
+): Promise<void> {
+  const codeRows = await fleetDb.execute(sql`SELECT code FROM bms.assets WHERE id = ${assetId}`);
+  const expectedCode = (codeRows.rows[0] as { code: string } | undefined)?.code;
+  expect(expectedCode, "the fixture asset must exist — run pnpm db:seed").toBeTruthy();
+
+  const listed = await service.list(singleOrgActor);
+  const item = listed.items.find((candidate) => candidate.id === assetScopedDashboardId);
+  expect(item, "a scoped reader must still see the asset-scoped dashboard — read is org-wide").toBeDefined();
+  expect(item?.assetId, "the summary must carry the asset scope").toBe(assetId);
+  expect(
+    item?.assetCode,
+    "the summary must carry the JOINED asset code, not null — the leftJoin(assets) is missing",
+  ).toBe(expectedCode);
+
+  // The positive control's neighbour: a row with no asset scope must still list, with a null
+  // code. Without this, an inner join that dropped every organization-wide dashboard would
+  // leave the assertion above perfectly green.
+  const organizationWide = listed.items.find((candidate) => candidate.assetId === null);
+  expect(
+    organizationWide,
+    "a non-asset-scoped dashboard must still be listed — leftJoin, never an inner join",
+  ).toBeDefined();
+  expect(organizationWide?.assetCode, "a non-asset-scoped row reports a null assetCode").toBeNull();
+}
+
 async function slugFor(fleetDb: BmsDb, dashboardId: string): Promise<string> {
   const rows = await fleetDb.execute(sql`SELECT slug FROM bms.dashboards WHERE id = ${dashboardId}`);
   return (rows.rows[0] as { slug: string }).slug;
