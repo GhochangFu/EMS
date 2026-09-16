@@ -20,6 +20,7 @@ import { withReadScope } from "../database/tenant-read-scope";
 import { getObject } from "../storage/storage-client";
 import type { StorageClient } from "../storage/storage-client";
 import { STORAGE_CLIENT } from "../storage/storage.tokens";
+import { requireStorageConfigured } from "./require-storage";
 
 /**
  * `F3.3` (ADR 0066 decisions 3, 4, 6; Amendment 1 Q-F) — the read half of
@@ -87,13 +88,9 @@ export class AssetImagesService {
     @Inject(STORAGE_CLIENT) private readonly client: StorageClient,
   ) {}
 
-  /** Decision 3: a 503 that names the variable, before any pool is touched. */
+  /** Decision 3: a 503 that names the variable, before any pool is touched (`require-storage.ts`, shared with `F3.4`). */
   private requireStorage(): void {
-    if (this.client.kind === "unconfigured") {
-      throw new ServiceUnavailableException(
-        "Object storage is not configured: OBJECT_STORAGE_ENDPOINT is unset (ADR 0066 decision 3)",
-      );
-    }
+    requireStorageConfigured(this.client);
   }
 
   async list(assetId: string): Promise<AssetImageDto[]> {
@@ -105,7 +102,7 @@ export class AssetImagesService {
       () => [] as StoredRow[],
       (tx) => selectRows(tx, eq(assetImages.assetId, assetId)),
     );
-    return rows.map(toDto);
+    return rows.map(toAssetImageDto);
   }
 
   async content(assetId: string, imageId: string): Promise<{ row: AssetImageDto; body: Readable }> {
@@ -122,7 +119,7 @@ export class AssetImagesService {
     }
     // The contract parse runs BEFORE the bucket is asked: a row that cannot
     // be served never opens an object stream that would then need destroying.
-    const dto = toDto(row);
+    const dto = toAssetImageDto(row);
 
     let object: Awaited<ReturnType<typeof getObject>>;
     try {
@@ -197,8 +194,12 @@ function selectRows(tx: BmsTx, where: ReturnType<typeof eq> | ReturnType<typeof 
  * (ADR 0060, `F4.108`): a stored row that breaks its contract is the
  * server's fault, a 500 with the context logged, never the 400 a bare
  * `.parse()` would hand the global `ZodErrorFilter`.
+ *
+ * Exported for `F3.4`'s write service, which maps the row it inserted
+ * through the same function — the one `parseStoredContract` site
+ * `tests/f4.108-service-parses-are-guarded.test.ts` counts as `assetImages: 1`.
  */
-function toDto(row: StoredRow): AssetImageDto {
+export function toAssetImageDto(row: StoredRow): AssetImageDto {
   // `satisfies` pins the key set to the DTO's without asserting a type the
   // parse has not yet earned — no cast anywhere on this path.
   const candidate = {
