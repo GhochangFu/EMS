@@ -132,3 +132,36 @@ export function withTelemetrySource(
 ): Record<string, unknown> {
   return { ...(meta ?? {}), telemetrySource: source };
 }
+
+/**
+ * Strips `telemetrySource` from a caller's `meta` bag. Pure.
+ *
+ * The counterpart of `withTelemetrySource`, for the paths where there is no RTU
+ * to derive from. `withTelemetrySource` protects an *attached* asset by letting
+ * the derived value win the merge; an **unattached** one had no such protection,
+ * because the write simply stored `body.meta` as sent. A caller could therefore
+ * post `meta: { telemetrySource: "mqtt" }` with `rtuId: null` and hand its
+ * points to the ingest host — which has no binding for an RTU-less asset — while
+ * `apps/sim` skips exactly the rows marked `mqtt`. The points just stop, and no
+ * RTU edit repairs it: `RtusAdminService.update` only touches `rtu_id = $1`.
+ *
+ * Only this key is removed. `bms.assets.meta` is a shared bag and the rest of it
+ * — `telemetryEnabled` among others — is the caller's to set.
+ *
+ * **`null` in, `null` out, and `undefined` in, `null` out.** The callers store
+ * the return value straight into a nullable column, and "no bag" is not "an
+ * empty bag": returning `{}` would rewrite every unattached asset's NULL on the
+ * first edit that touched it.
+ *
+ * **The input is never mutated** — a `delete meta.telemetrySource` would edit a
+ * bag the caller may still be reading (`existing.meta` is one such row object).
+ */
+export function omitTelemetrySource(
+  meta: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (meta === null || meta === undefined) {
+    return null;
+  }
+  const { telemetrySource: _dropped, ...rest } = meta;
+  return rest;
+}

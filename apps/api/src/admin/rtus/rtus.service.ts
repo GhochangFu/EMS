@@ -144,18 +144,33 @@ export class RtusAdminService {
           // against, an enabled RTU that declares no ingest source: there are no
           // assets here for that to strand.
           //
-          // The asset gains its `rtu_id` later, through `AssetsAdminService`
-          // (`F4.139` — `assertRtuLocation` reads the RTU it is attaching to and
-          // derives `meta.telemetrySource` from it with the shared
-          // `resolveTelemetrySource`) or through `OnboardingCommitService`
-          // (`F4.140`). Before those two rows an asset attached to an RTU that
-          // was **both** enabled and declaring an ingest protocol arrived on
-          // `catalog` and stayed there until someone next edited the RTU, with
-          // the simulator and the ingest host both writing it. For a
-          // `simulator` or `catalog` RTU, `catalog` is the correct answer and
-          // not a hole, which is why this names the declared case rather than
-          // "an already-enabled RTU". Either way it is a second file; it is not
-          // this one.
+          // The asset gains its `rtu_id` later, in one of **three** other
+          // services. The count is enumerated from source, not remembered:
+          // `\.insert\(assets\)|\.update\(assets\)` for the Drizzle builders and
+          // `bms\.assets` filtered to INSERT/UPDATE for raw SQL, over
+          // `apps/api/src`. Every other hit either leaves `rtu_id` alone
+          // (`asset-templates-migrate.service.ts` sets `template_id`;
+          // `deactivate`/`reactivate` set `active`), is a test fixture
+          // (`testing/integration-fixtures.ts`), or is a docblock recipe
+          // (`calc/calc.module.ts`). The three that write it:
+          //
+          // - `AssetsAdminService.create`/`update` (`F4.139`) — `assertRtuLocation`
+          //   reads the RTU it is attaching to and derives `meta.telemetrySource`
+          //   from it with the shared `resolveTelemetrySource`.
+          // - `OnboardingCommitService.commit` (`F4.140`) — one resolve per RTU
+          //   it has just inserted, looked up per asset.
+          // - `AssetTemplateInstantiationService.instantiate` (found by review and
+          //   fixed with `F4.139`) — one resolve for the whole batch, applied to
+          //   every asset the template deploys onto that RTU.
+          //
+          // Before those three an asset attached to an RTU that was **both**
+          // enabled and declaring an ingest protocol arrived on `catalog` — or,
+          // from the template path, with no key at all — and stayed there until
+          // someone next edited the RTU, with the simulator and the ingest host
+          // both writing it. For a `simulator` or `catalog` RTU, `catalog` is the
+          // correct answer and not a hole, which is why this names the declared
+          // case rather than "an already-enabled RTU". Either way it is a second
+          // file; it is not this one.
           ingestEnabled: body.ingestEnabled ?? false,
           organizationId,
           meta: body.meta ?? null,

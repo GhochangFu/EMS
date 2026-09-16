@@ -1,4 +1,4 @@
-import { withTelemetrySource } from "./telemetry-source";
+import { omitTelemetrySource, withTelemetrySource } from "./telemetry-source";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -55,13 +55,81 @@ export function assertTheDerivedValueWinsAndTheSiblingKeySurvives(): void {
  * The input carries `telemetrySource: "catalog"` on purpose: an
  * `Object.assign(meta, …)` implementation would leave a `{ foo: "bar" }` input
  * looking untouched on every key the assertion could name.
+ *
+ * Split from the identity claim below on review: `assert` throws, so the two
+ * together would have hidden the second one exactly as this file's header says
+ * it must not.
  */
 export function assertTheInputBagIsNotMutated(): void {
   const input = { telemetrySource: "catalog", telemetryEnabled: "false" };
-  const merged = withTelemetrySource(input, "mqtt");
+  withTelemetrySource(input, "mqtt");
   assert(
     input.telemetrySource === "catalog",
     `expected the caller's bag to still read "catalog", got ${input.telemetrySource}`,
   );
+}
+
+/** And the merge hands back a new object rather than the caller's own bag. */
+export function assertTheMergeReturnsANewObject(): void {
+  const input = { telemetrySource: "catalog", telemetryEnabled: "false" };
+  const merged = withTelemetrySource(input, "mqtt");
   assert(merged !== input, "expected a new object, not the caller's own bag");
+}
+
+/**
+ * `omitTelemetrySource` strips the key a caller had no right to set.
+ *
+ * The security half of the review: with no RTU attached there is nothing to
+ * derive from, so before this the API accepted a caller-supplied
+ * `meta.telemetrySource` verbatim and stored it — a supported way to write a
+ * row `apps/sim` and the ingest host disagree about.
+ */
+export function assertOmitRemovesTheKey(): void {
+  const stripped = omitTelemetrySource({ telemetrySource: "mqtt", foo: "bar" });
+  assert(
+    stripped !== null && !("telemetrySource" in stripped),
+    `expected no telemetrySource key, got ${JSON.stringify(stripped)}`,
+  );
+}
+
+/** It strips that one key only; every sibling is kept. */
+export function assertOmitKeepsTheSiblingKeys(): void {
+  const stripped = omitTelemetrySource({ telemetrySource: "mqtt", foo: "bar" });
+  assert(
+    JSON.stringify(stripped) === JSON.stringify({ foo: "bar" }),
+    `expected exactly { foo: "bar" }, got ${JSON.stringify(stripped)}`,
+  );
+}
+
+/**
+ * A null bag stays null rather than becoming `{}`.
+ *
+ * `bms.assets.meta` is nullable and "no bag" is not "an empty bag": the
+ * callers store this value directly, and `{}` would rewrite every unattached
+ * asset's NULL on the first edit.
+ */
+export function assertOmitLeavesANullBagNull(): void {
+  const stripped = omitTelemetrySource(null);
+  assert(stripped === null, `expected null, got ${JSON.stringify(stripped)}`);
+}
+
+/** An absent bag is null too — `create` stores the return value as it is. */
+export function assertOmitLeavesAnAbsentBagNull(): void {
+  const stripped = omitTelemetrySource(undefined);
+  assert(stripped === null, `expected null, got ${JSON.stringify(stripped)}`);
+}
+
+/**
+ * The caller's object is not mutated.
+ *
+ * A `delete meta.telemetrySource` implementation passes every assertion above
+ * and still edits a bag another statement may still read.
+ */
+export function assertOmitDoesNotMutateTheInput(): void {
+  const input = { telemetrySource: "mqtt", foo: "bar" };
+  omitTelemetrySource(input);
+  assert(
+    input.telemetrySource === "mqtt",
+    `expected the caller's bag to still read "mqtt", got ${input.telemetrySource}`,
+  );
 }

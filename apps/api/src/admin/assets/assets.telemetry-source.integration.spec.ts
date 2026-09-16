@@ -42,6 +42,7 @@ type AssetMeta = {
   telemetrySource?: string;
   telemetryEnabled?: string;
   foo?: string;
+  x?: number;
 };
 
 let fixtureSeq = 0;
@@ -398,4 +399,120 @@ export async function assertTheCreateAuditRecordsTheDerivedSource(
     throw new Error(`F4.139: no master.asset.create audit row for ${assetId}`);
   }
   expect(res.rows[0].telemetrySource).toBe("mqtt");
+}
+
+/**
+ * A12 — and so does the `update` payload (owner ruling 2, second half).
+ *
+ * Added on review: A11 gated `create` only, so reverting `update`'s payload to
+ * the bare `body` left no case red. `update` is the path that *changes* an
+ * asset's producer, which makes its audit row the more load-bearing of the two.
+ */
+export async function assertTheUpdateAuditRecordsTheDerivedSource(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const rtuId = await createIngestRtu(ctx);
+  const assetId = await createAssetThroughService(ctx, jwt, {});
+
+  await ctx.svc.update(jwt, assetId, { rtuId });
+
+  const res = await ctx.fixturePool.query<{ telemetrySource: string | null }>(
+    `SELECT payload->>'telemetrySource' AS "telemetrySource"
+       FROM bms.audit_log
+      WHERE entity_id = $1 AND action = 'master.asset.update'
+      LIMIT 1`,
+    [assetId],
+  );
+  if (res.rows[0] === undefined) {
+    throw new Error(`F4.139: no master.asset.update audit row for ${assetId}`);
+  }
+  expect(res.rows[0].telemetrySource).toBe("mqtt");
+}
+
+/**
+ * A13 — `create` with no RTU refuses a caller-supplied `telemetrySource`.
+ *
+ * The security half of the review. A5 proves the rest of the bag is stored as
+ * sent; this proves the one key the RTU owns is not. Without an RTU there is
+ * nothing to override the caller with, so the key is dropped rather than
+ * replaced: inventing `catalog` would claim an answer the operator never gave
+ * (ADR 0018), and honouring `mqtt` would hand the asset to a host that has no
+ * binding for it.
+ */
+export async function assertCreateWithoutAnRtuDropsACallerSuppliedSource(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const assetId = await createAssetThroughService(ctx, jwt, {
+    meta: { telemetrySource: "mqtt", foo: "bar" },
+  });
+
+  const meta = await readMeta(ctx, assetId);
+  expect(meta).toEqual({ foo: "bar" });
+}
+
+/**
+ * A14 — nor can an `update` on a detached asset overwrite the stored value.
+ *
+ * Owner ruling 1 says a detach leaves the stored `telemetrySource` alone. That
+ * ruling and the security fix meet here: the caller's key never lands, and the
+ * value the last attached write derived survives the PATCH that tried to
+ * replace it.
+ *
+ * `x` is the positive control — without it a service that ignored `body.meta`
+ * entirely would pass. It is asserted in its own `it()`; `expect` throws.
+ */
+export async function assertADetachedUpdateKeepsTheCallersOtherMetaKeys(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const assetId = await insertFixtureAsset(ctx, {
+    rtuId: null,
+    meta: { telemetrySource: "mqtt" },
+  });
+
+  await ctx.svc.update(jwt, assetId, { meta: { telemetrySource: "catalog", x: 1 } });
+
+  const meta = await readMeta(ctx, assetId);
+  expect(meta.x).toBe(1);
+}
+
+/**
+ * A15 — a detached asset that stores **no bag at all** takes the caller's.
+ *
+ * The other side of A14, and the branch A13 and A14 between them leave open: an
+ * asset created with no RTU and no `meta` stores SQL `NULL`, and the next PATCH
+ * of `meta` on it — still detached — is the one input where "put the stored
+ * value back" has no stored value to read. Without this case a guard written as
+ * `"telemetrySource" in existingMeta` alone passes every other case here and
+ * throws `TypeError: Cannot use 'in' operator` on the first operator who edits
+ * a hand-entered asset.
+ */
+export async function assertADetachedUpdateAcceptsAMetaBagOverNull(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const assetId = await createAssetThroughService(ctx, jwt, {});
+
+  await ctx.svc.update(jwt, assetId, { meta: { foo: "bar" } });
+
+  const meta = await readMeta(ctx, assetId);
+  expect(meta).toEqual({ foo: "bar" });
+}
+
+/** A14's claim: the stored value survives, the caller's is discarded. */
+export async function assertADetachedUpdateKeepsTheStoredTelemetrySource(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const assetId = await insertFixtureAsset(ctx, {
+    rtuId: null,
+    meta: { telemetrySource: "mqtt" },
+  });
+
+  await ctx.svc.update(jwt, assetId, { meta: { telemetrySource: "catalog", x: 1 } });
+
+  const meta = await readMeta(ctx, assetId);
+  expect(meta.telemetrySource).toBe("mqtt");
 }

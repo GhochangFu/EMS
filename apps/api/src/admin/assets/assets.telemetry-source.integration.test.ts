@@ -11,14 +11,19 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetsAdminService } from "./assets.service";
 import {
+  assertADetachedUpdateAcceptsAMetaBagOverNull,
+  assertADetachedUpdateKeepsTheCallersOtherMetaKeys,
+  assertADetachedUpdateKeepsTheStoredTelemetrySource,
   assertARenameRepairsASplitRow,
   assertCreateDerivesMqttFromTheAttachedRtu,
   assertCreateKeepsTheCallersOtherMetaKeys,
   assertCreateLeavesASimulatorRtusAssetOnCatalog,
   assertCreateOverridesACallerSuppliedTelemetrySource,
+  assertCreateWithoutAnRtuDropsACallerSuppliedSource,
   assertCreateWithoutAnRtuLeavesTheMetaAlone,
   assertDetachLeavesTheStoredTelemetrySource,
   assertTheCreateAuditRecordsTheDerivedSource,
+  assertTheUpdateAuditRecordsTheDerivedSource,
   assertUpdateDerivesFromTheNewRtuOnAChange,
   assertUpdateDerivesOnAttach,
   assertUpdateReappliesTheKeyWhenMetaIsPatched,
@@ -190,5 +195,25 @@ describe.skipIf(!connectionString)("F4.139 — AssetsAdminService derives teleme
 
   it("records the derived telemetrySource in the create audit payload", async () => {
     await assertTheCreateAuditRecordsTheDerivedSource(ctx, jwt);
+  }, 30_000);
+
+  it("records the derived telemetrySource in the update audit payload", async () => {
+    await assertTheUpdateAuditRecordsTheDerivedSource(ctx, jwt);
+  }, 30_000);
+
+  it("drops a caller-supplied telemetrySource on create when no RTU is attached", async () => {
+    await assertCreateWithoutAnRtuDropsACallerSuppliedSource(ctx, jwt);
+  }, 30_000);
+
+  it("stores the caller's other meta keys when updating a detached asset", async () => {
+    await assertADetachedUpdateKeepsTheCallersOtherMetaKeys(ctx, jwt);
+  }, 30_000);
+
+  it("keeps the stored telemetrySource when a detached asset's meta is patched", async () => {
+    await assertADetachedUpdateKeepsTheStoredTelemetrySource(ctx, jwt);
+  }, 30_000);
+
+  it("stores a meta bag over a detached asset that had none", async () => {
+    await assertADetachedUpdateAcceptsAMetaBagOverNull(ctx, jwt);
   }, 30_000);
 });

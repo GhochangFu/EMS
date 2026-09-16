@@ -16,7 +16,12 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import { resolveTelemetrySource, withTelemetrySource } from "../telemetry-source";
+import {
+  omitTelemetrySource,
+  resolveTelemetrySource,
+  withTelemetrySource,
+  type TelemetrySource,
+} from "../telemetry-source";
 import type { CreateAssetBody, UpdateAssetBody } from "./assets.schema";
 
 /**
@@ -162,7 +167,12 @@ export class AssetsAdminService {
       // `F4.139` — an asset attached to an RTU takes its `telemetrySource` from
       // that RTU, never from the caller: see `admin/telemetry-source.ts` for the
       // invariant, the predicate and why the derived value wins the merge. With
-      // no RTU there is nothing to derive from and the bag is stored as sent.
+      // no RTU there is nothing to derive from, so the key is **stripped** rather
+      // than stored (review fix): letting a caller set it with `rtuId: null` was
+      // a supported way to write a row `apps/sim` and the ingest host disagree
+      // about, and no RTU edit would ever repair it — `RtusAdminService.update`
+      // moves the assets of `rtu_id = $1` only. The rest of the bag is stored
+      // exactly as sent.
       const telemetrySource = rtu === null ? null : await resolveTelemetrySource(tx, rtu);
       const [row] = await tx
         .insert(assets)
@@ -176,7 +186,7 @@ export class AssetsAdminService {
           organizationId,
           meta:
             telemetrySource === null
-              ? (body.meta ?? null)
+              ? omitTelemetrySource(body.meta)
               : withTelemetrySource(body.meta, telemetrySource),
           active: true,
         })
@@ -270,7 +280,7 @@ export class AssetsAdminService {
       // bag is left exactly as it is (owner ruling, 2026-09-16). The predicate
       // and its reasoning live in `admin/telemetry-source.ts`.
       const telemetrySource = rtu === null ? null : await resolveTelemetrySource(tx, rtu);
-      const nextMeta = body.meta !== undefined ? body.meta : (existing.meta as MetaBag);
+      const nextMeta = this.nextAssetMeta(body.meta, existing.meta as MetaBag, telemetrySource);
       await tx
         .update(assets)
         .set({
@@ -281,8 +291,7 @@ export class AssetsAdminService {
           rtuId: nextRtuId,
           domain: body.domain ?? existing.domain,
           organizationId,
-          meta:
-            telemetrySource === null ? nextMeta : withTelemetrySource(nextMeta, telemetrySource),
+          meta: nextMeta,
         })
         .where(eq(assets.id, id));
 
@@ -325,6 +334,45 @@ export class AssetsAdminService {
       );
     });
     return this.fetchRow(id);
+  }
+
+  /**
+   * `F4.139` — the `meta` bag `update` stores, on all three of its shapes.
+   *
+   * Extracted from the `set({ … })` above on review, because the detach branch
+   * stopped being expressible as one ternary once the caller lost the right to
+   * set `telemetrySource` with no RTU attached.
+   *
+   * - **RTU attached.** The derived value wins over both the caller's bag and
+   *   the stored one. Unconditional, so a row already split is repaired by the
+   *   next edit whether or not it mentioned `rtuId`.
+   * - **Detached, `meta` not sent.** The stored bag is returned untouched — a
+   *   PATCH of unrelated fields is not an edit of `meta` (owner ruling 1).
+   * - **Detached, `meta` sent.** The caller's key is stripped and the *stored*
+   *   one, if the row has one, is put back. Both halves matter: the ruling says
+   *   a detach leaves the derived value alone, and the fix says a caller may
+   *   never choose it. So a PATCH that replaces the bag keeps the answer the
+   *   last attached write derived, and discards the one it was sent.
+   */
+  private nextAssetMeta(
+    bodyMeta: Record<string, unknown> | undefined,
+    existingMeta: MetaBag,
+    telemetrySource: TelemetrySource | null,
+  ): MetaBag {
+    if (telemetrySource !== null) {
+      return withTelemetrySource(bodyMeta !== undefined ? bodyMeta : existingMeta, telemetrySource);
+    }
+    if (bodyMeta === undefined) {
+      return existingMeta;
+    }
+    const stripped = omitTelemetrySource(bodyMeta);
+    // `in`, not a truthiness test on the value: a stored `null` is still a
+    // stored answer, and treating it as absent would let the caller's PATCH
+    // remove a key it is not allowed to set.
+    if (existingMeta === null || !("telemetrySource" in existingMeta)) {
+      return stripped;
+    }
+    return { ...(stripped ?? {}), telemetrySource: existingMeta.telemetrySource };
   }
 
   /** Reactivates an asset. */

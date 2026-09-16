@@ -41,6 +41,32 @@ import {
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
+/**
+ * `F4.140` — the `telemetrySource` the RTU loop resolved for this `rtuId`.
+ *
+ * A named throw rather than the `!` non-null assertion this replaced (review
+ * fix). The two loops are only in step because the asset loop re-reads
+ * `rtuIds[assetDraft.rtuIndex]`, and `!` would have turned a future edit that
+ * broke that into `withTelemetrySource(meta, undefined)` — which writes
+ * `telemetrySource: undefined`, a key `jsonb` stores as absent. The failure
+ * would have been a whole onboarding batch arriving with no source, read as
+ * `sim` by the simulator and as `mqtt` by the ingest host, with nothing in the
+ * logs. `rtuId` is in the message because a partial map is the interesting case.
+ */
+function telemetrySourceFor(
+  byRtuId: ReadonlyMap<string, TelemetrySource>,
+  rtuId: string,
+): TelemetrySource {
+  const source = byRtuId.get(rtuId);
+  if (source === undefined) {
+    throw new Error(
+      `onboarding commit: no telemetrySource resolved for RTU ${rtuId}. The RTU loop sets one ` +
+        "per inserted id; a miss means the asset loop is reading an id that loop never wrote.",
+    );
+  }
+  return source;
+}
+
 /** Maps onboarding protocol to RTU source_type column. */
 function protocolToSourceType(protocol: string): "mqtt" | "simulator" | "catalog" {
   if (protocol === "mqtt") {
@@ -389,7 +415,10 @@ export class OnboardingCommitService {
             rtuId,
             domain: assetDraft.domain,
             active: true,
-            meta: withTelemetrySource(assetDraft.meta, telemetrySourceByRtuId.get(rtuId)!),
+            meta: withTelemetrySource(
+              assetDraft.meta,
+              telemetrySourceFor(telemetrySourceByRtuId, rtuId),
+            ),
           })
           .returning();
         assetIds.push(assetRow.id);

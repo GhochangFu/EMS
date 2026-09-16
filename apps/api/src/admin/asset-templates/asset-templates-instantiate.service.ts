@@ -28,6 +28,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { resolveTelemetrySource, withTelemetrySource } from "../telemetry-source";
 import { parseStoredTemplateContent } from "./asset-templates-content.schema";
 import type {
   InstantiateAssetBody,
@@ -91,6 +92,15 @@ type InstantiationTarget = {
   locationName: string;
   organizationId: string;
   rtuId: string | null;
+  /**
+   * `F4.139` — the gateway row `resolveTelemetrySource` derives
+   * `assets.meta.telemetrySource` from, or `null` on the location branch.
+   *
+   * A row rather than three more nullable fields beside `rtuId`: the two are set
+   * and cleared together by construction, and the helper takes a row. A location
+   * target has no RTU to derive from and its assets get no key at all.
+   */
+  rtu: { id: string; ingestEnabled: boolean; sourceType: string } | null;
 };
 
 /** One asset's plan, computed before anything is written. */
@@ -252,6 +262,18 @@ export class AssetTemplateInstantiationService {
     // different org than the template (above) — so the write runs inside
     // `withTenant(template.org)` and stamps that org onto every row.
     const created = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
+        // `F4.139` — the third writer of `assets.rtu_id`, and the only one that
+        // writes N of them at once. Before this, a batch deployed onto an
+        // ingest-enabled RTU carried no `meta` at all, which `apps/sim` reads as
+        // `sim` and the ingest host reads as `mqtt` — two producers on every row
+        // of the batch, from the one screen that creates assets in bulk. The
+        // invariant and the predicate live in `admin/telemetry-source.ts`.
+        //
+        // Resolved **once** for the whole batch, not per asset: one target means
+        // one RTU, so a per-row call would be the same read N times. It runs on
+        // `tx` and never `fleetDb`, for the reason that file gives.
+        const telemetrySource =
+          target.rtu === null ? null : await resolveTelemetrySource(tx, target.rtu);
         const inserted = await tx
           .insert(assets)
           .values(
@@ -264,6 +286,13 @@ export class AssetTemplateInstantiationService {
               domain: template.domain,
               templateId: template.id,
               organizationId: template.organizationId,
+              // `undefined` as the base and not a caller bag: `instantiateAssetBody`
+              // has no `meta` field, so an instantiated asset's bag is exactly
+              // this key or nothing at all.
+              meta:
+                telemetrySource === null
+                  ? null
+                  : withTelemetrySource(undefined, telemetrySource),
               active: true,
             })),
           )
@@ -451,6 +480,11 @@ export class AssetTemplateInstantiationService {
           rtuId: rtus.id,
           rtuActive: rtus.active,
           locationActive: locations.active,
+          // `F4.139` — the two columns the `telemetrySource` predicate needs,
+          // added to the select this branch already runs rather than as a
+          // second query against the row it has just read.
+          rtuIngestEnabled: rtus.ingestEnabled,
+          rtuSourceType: rtus.sourceType,
         })
         .from(rtus)
         .innerJoin(locations, eq(rtus.locationId, locations.id))
@@ -469,6 +503,11 @@ export class AssetTemplateInstantiationService {
         locationName: row.locationName,
         organizationId: row.organizationId,
         rtuId: row.rtuId,
+        rtu: {
+          id: row.rtuId,
+          ingestEnabled: row.rtuIngestEnabled,
+          sourceType: row.rtuSourceType,
+        },
       };
     }
 
@@ -493,6 +532,10 @@ export class AssetTemplateInstantiationService {
       locationName: row.locationName,
       organizationId: row.organizationId,
       rtuId: null,
+      // `F4.139` — gateway-less (ADR 0018). No RTU means no `telemetrySource`
+      // on the assets this batch writes: `catalog` here would claim an answer
+      // nobody gave, and the invariant is over RTU-attached assets only.
+      rtu: null,
     };
   }
 
