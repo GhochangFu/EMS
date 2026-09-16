@@ -78,9 +78,11 @@ else's ADR"* — has one precedent for how that ADR looks.
 therefore implies a location transitively, the same way an asset-group scope
 does — the fact `dashboards_scope_check`'s docblock gives as its reason.
 
-**6. There is no authored content to instantiate.** All 34 stock asset
+**6. There is no authored content to instantiate.** All 27 stock asset
 templates in `apps/api/src/admin/asset-templates/stock-catalog/` omit
-`dashboards`; `docs/plans/f2.12-electrical-class-templates.md` says so in
+`dashboards` (27 non-spec modules, one `stockVersion:` literal each — the first
+draft of this ADR said 34, having counted spec and type files too; corrected
+before the plan was written); `docs/plans/f2.12-electrical-class-templates.md` says so in
 words (*"No `content.dashboards` key on any entry. A dashboard is that row's
 shape to choose"*), and `E5.1` fenced dashboards out under ADR 0040 decision
 8. No seed carries a view. On a seeded stack `F3.2`'s mechanism would have
@@ -112,11 +114,33 @@ stack — get one. Idempotent: an asset already carrying a dashboard stamped
 from *any* version of the template code is skipped and reported.
 
 **Q3 — Content: does `F3.2` author stock views?** Ruled **one `overview`
-view per stock class, in `F3.2`**. All 34 entries gain a view built from the
+view per stock class, in `F3.2`**. All 27 entries gain a view built from the
 points each already declares, so the §4.6 browser pass has a real asset
 dashboard to verify. Effort `3–4` → `5–6`, and the increment is this ruling.
 `F3.45` edits the same catalog files, so the two rows are **not
 parallel-safe**.
+
+Three more, raised by the step-3 plan (`docs/plans/f3.2-per-asset-default-dashboards.md`
+§12) and put to the owner the same day, each ruled **as recommended**:
+
+**Q4 — The Asset badge's code.** Decision 7 promised the asset code on the
+badge and decision 2 added no field to carry it. Ruled: `dashboardSummaryDto`
+gains `assetCode: string | null`, filled by a left join on `assets` in the list
+query; the badge reads `Asset · <code>`. The full `dashboardDto` does not gain
+it — the viewer has the asset id and no badge.
+
+**Q5 — Where `dashboardCount` appears.** The instantiate dialog closes on
+success today and renders no result, so `ruleCount` (ADR 0058 decision 10) has
+never reached a screen. Ruled: on success the dialog stays open and shows one
+summary sentence — *"Built 2 assets · 8 points · 3 rules · 2 dashboards"* —
+with a Close button. A toast was declined: it cannot be asserted in the
+browser layer and vanishes before an operator reads a count.
+
+**Q6 — `stockVersion`.** ADR 0052 decision 6 makes a stock content change a
+release. Ruled: **no bump** for the 27 entries in this row; an organization
+that imported a class before `F3.2` keeps its copy without a view, and a later
+content release bumps every version at once. Recorded as a residual in the
+closure.
 
 ## Decision
 
@@ -162,7 +186,8 @@ pass.
 
 - **Contract** (`packages/shared/src/contracts/dashboard-builder.ts`, ADR 0030):
   `dashboardSummaryDto` and `dashboardDto` gain `assetId: uuid | null` and
-  `assetTemplateId: uuid | null`. The OpenAPI document changes with it.
+  `assetTemplateId: uuid | null`; `dashboardSummaryDto` alone also gains
+  `assetCode: string | null` (Q4). The OpenAPI document changes with it.
 - **Bodies** (`apps/api/src/dashboard-builder/dashboards.schema.ts`):
   `create` and `update` accept `assetId: uuid | null | undefined`;
   `scopeIsSingular` counts three; `SCOPE_REFUSAL_MESSAGE` names three.
@@ -228,8 +253,8 @@ published template version row, and a transaction:
 - **A view with no `widgets[]` instantiates its `featured` keys as
   `value_tile`s**, 3 columns wide by 2 rows tall, four per grid row, in
   `featured` order, capped at `MAX_DASHBOARD_WIDGETS` (40) — so a 50-key
-  `featured` list instantiates its first 40 and the view's report says
-  `truncated` with the omitted count. `featured` exists precisely as *"what a
+  `featured` list instantiates its first 40 and the view's report carries the
+  omitted count as `omittedFeatured` (decision 5). `featured` exists precisely as *"what a
   consumer with no widget support"* renders (the schema's own docblock); this
   is that consumer.
 - **No `dashboard_widget_sources` rows.** A template widget has no
@@ -246,8 +271,8 @@ published template version row, and a transaction:
 - **On demand.** `POST /admin/asset-templates/:id/default-dashboards`, `201`.
   `:id` is a **published** version (a draft is refused with ADR 0039's
   `draftRequiredMessage` shape, as `:id/instantiate` refuses one). The service
-  selects every asset of the organization whose `template_id` is **any
-  version of this template code** — a plant pinned to v1 still deserves v2's
+  selects every **active** asset of the organization whose `template_id` is
+  **any version of this template code** — a plant pinned to v1 still deserves v2's
   layout when the administrator asks for it — and **skips an asset that
   already carries a dashboard with `asset_template_id` in that version set**,
   reporting it `skipped_existing`. The rest instantiate from `:id` in one
@@ -261,9 +286,15 @@ published template version row, and a transaction:
 ### 5. Both paths report what they wrote (ADR 0058 decision 10's pattern)
 
 - `instantiatedAssetDto` gains `dashboards: InstantiatedDashboardDto[]` —
-  `{ slug, view, widgetCount, boundPoints, resolutions }` per view, where
-  `resolutions` is ADR 0049's `templateWidgetResolutionDto[]`, imported rather
-  than restated. `assetInstantiationResultDto` gains `dashboardCount`.
+  `{ slug, view, widgetCount, boundPoints, omittedFeatured, resolutions }` per
+  view, where `resolutions` is ADR 0049's `templateWidgetResolutionDto[]`,
+  imported rather than restated. That DTO requires a `widgetKey` and a template
+  widget has none, so the key is `"<view>#<index>"`, with `assetRoleCodes: []`
+  and `matchedMembers: 1` (one asset, no role). A widget never has more
+  candidates than keys for one asset, so its outcome is `bound`, `partial` or
+  `unresolved`; the view-level cut of decision 3's featured fallback is
+  `omittedFeatured`, not a per-widget `truncated`. (Plan §12 Q2–Q3, ruled as
+  recommended.) `assetInstantiationResultDto` gains `dashboardCount`.
 - `POST …/default-dashboards` returns `defaultDashboardsBackfillResultDto`:
   `{ templateId, templateCode, templateVersion, assets: [{ assetId, code,
   outcome: "created" | "skipped_existing", dashboards }], createdCount,
@@ -272,7 +303,7 @@ published template version row, and a transaction:
 
 ### 6. The stock catalog gains one `overview` view per class
 
-Each of the 34 entries under `stock-catalog/` gains `content.dashboards.overview`:
+Each of the 27 entries under `stock-catalog/` gains `content.dashboards.overview`:
 `featured` lists the class's headline points in reading order, and `widgets[]`
 lays out value tiles for them plus one `chart` on the class's primary trend,
 inside the 12-column grid, using only points that entry already declares. The
@@ -281,7 +312,10 @@ content schema's reference validation (ADR 0019 decision 6) and
 gate: an authored key that names no declared point fails the suite. Which
 points are "headline" is the implementer's call per class from each entry's
 existing docblocks; it is content, not contract, and a later content row may
-revise it without touching this ADR.
+revise it without touching this ADR. `stockVersion` is **not** bumped (Q6).
+Only measured, non-manual keys are bound: a derived key has no `asset_points`
+row at instantiation and a manual point is always skipped, so either would
+instantiate as a hole by construction.
 
 ### 7. The UI is the smallest surface that makes the rows reachable
 
@@ -294,7 +328,9 @@ revise it without touching this ADR.
   gave the API a seeded-rules re-apply route and **no web surface** (nothing
   under `apps/web/src` names it), so this is the first template-page action
   of its kind and sets the shape a later re-apply button reuses.
-- The instantiate dialog's result shows `dashboardCount` beside `ruleCount`.
+- The instantiate dialog stays open on success and shows one summary sentence
+  carrying asset, point, rule and dashboard counts, with a Close button (Q5).
+  This is the first surface `ruleCount` reaches.
 - **Declined:** an asset picker in the builder's scope fields
   (`dashboard-scope-fields.tsx`). The API accepts `assetId` on create (decision
   2) so the contract is complete, but no row asks a human to hand-build an
@@ -349,8 +385,10 @@ decision 7 already ships for rule codes.
   whose point was skipped; a second that runs the backfill twice and asserts
   the second call creates nothing; a scope test that proves the new
   `dashboards_scope_check` refuses `asset_id` + `location_id` together; and an
-  RLS test on the fleet pool that proves a foreign `asset_id` is refused by the
-  re-created policy — the `0056` lesson, as a test rather than a comment.
+  RLS test **as `bms_tenant`** (`bms_fleet` holds `BYPASSRLS`, so a fleet-pool
+  test proves nothing about a policy) that proves a foreign `asset_id` is
+  refused by the re-created policy — the `0056` lesson, as a test rather than
+  a comment.
 - **`chore(agents):` sweep owed, separately** (§9.10): AGENTS.md's status
   line and its §2 *Configurable dashboards* row gain this ADR. **No §6 line
   moves** — `F3.2` is not a §6 item (Context 7), and the sweep must not create
