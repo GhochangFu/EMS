@@ -307,7 +307,25 @@ export class AssetsAdminService {
       // bag is left exactly as it is (owner ruling, 2026-09-16). The predicate
       // and its reasoning live in `admin/telemetry-source.ts`.
       const telemetrySource = rtu === null ? null : await resolveTelemetrySource(tx, rtu);
-      const nextMeta = this.nextAssetMeta(body.meta, existing.meta as MetaBag, telemetrySource);
+      // Post-merge sweep of #461: `existing` was read on `fleetDb` before this
+      // transaction opened, and the detach branch of `nextAssetMeta` writes
+      // that snapshot's `telemetrySource` back. An RTU disable that landed in
+      // between (`RtusAdminService.update` SQL-merges `catalog` onto its
+      // assets) would be undone here, leaving a detached row marked `mqtt`
+      // that no RTU edit can repair. Re-read the bag under the row lock the
+      // UPDATE below takes anyway; the other `existing` columns are caller
+      // fallbacks, not derived state, so they can stay as they were.
+      const [current] = await tx
+        .select({ meta: assets.meta })
+        .from(assets)
+        .where(eq(assets.id, id))
+        .for("update")
+        .limit(1);
+      const nextMeta = this.nextAssetMeta(
+        body.meta,
+        (current?.meta ?? existing.meta) as MetaBag,
+        telemetrySource,
+      );
       await tx
         .update(assets)
         .set({

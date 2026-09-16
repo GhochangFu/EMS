@@ -11,8 +11,9 @@ import type { BmsTx } from "../database/tenant-context";
  * Extracted verbatim from `RtusAdminService.update` (`F4.59`), which was the
  * only writer of this key under `apps/api/src` until now. It moved here because
  * `AssetsAdminService.create/update` (`F4.139`) and `OnboardingCommitService`
- * (`F4.140`) attach `assets.rtu_id` too, and a second and third copy of the
- * reasoning below would have gone stale one at a time.
+ * (`F4.140`) and `AssetTemplateInstantiationService` attach `assets.rtu_id`
+ * too, and three more copies of the reasoning below would have gone stale one
+ * at a time.
  *
  * ## The invariant
  *
