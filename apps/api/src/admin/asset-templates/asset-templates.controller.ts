@@ -252,7 +252,13 @@ export class AssetTemplatesAdminController {
    * trusted, and why a two-segment `:id` POST is the safe shape here.
    *
    * No body, so `REQUEST_SCHEMAS` gains no entry (`publish` and `archive` are
-   * the precedent).
+   * the precedent) — including no batch size: the service chunks the estate
+   * itself, **one transaction per chunk** (ADR 0067 Q7). The call is therefore
+   * resumable rather than atomic. A version that declares no dashboard view is
+   * refused with a `409` naming the code and version, before anything is read
+   * or written. A chunk that fails stops the call with its
+   * own error, the chunks before it stay committed, and running the route again
+   * skips those assets because they now carry the stamp.
    */
   @Post(":id/default-dashboards")
   @HttpCode(HttpStatus.CREATED)

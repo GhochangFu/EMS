@@ -129,6 +129,7 @@ describe.skipIf(!connectionString)("F4.139 — instantiate derives telemetrySour
       tenantDb,
       new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
       audit,
+      access,
     );
     const instantiation = new AssetTemplateInstantiationService(
       fleetDb,

@@ -84,6 +84,12 @@ describe("F3.2 asset default dashboards (ADR 0067 decision 1)", () => {
       "F4.94: journal when must not run ahead of the clock, but it must be strictly " +
         "greater than 0072's 1789451212123.",
     ).toBeGreaterThan(1789451212123);
+    // The other half of the sentence above, and it was missing: a `when` in the
+    // future orders correctly against 0072 and still breaks `F4.94`'s rule.
+    expect(
+      entry?.when ?? 0,
+      "F4.94: a journal `when` ahead of the clock is repaired by hand, never deleted.",
+    ).toBeLessThanOrEqual(Date.now());
   });
 
   // S2

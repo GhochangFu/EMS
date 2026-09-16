@@ -16,43 +16,49 @@ import { AssetTemplatesAdminService } from "./asset-templates.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { loadFixtures as loadBaseFixtures } from "./asset-templates.instantiate.integration.spec";
 import {
-  assertARepeatedPointKeyInstantiatesOnce,
-  assertInstantiateAuditCarriesDashboardCount,
-  assertOneAssetGetsBothViews,
-  assertSlugCollisionRollsBackTheBatch,
-  assertTemplateWithoutDashboardsWritesNone,
   cleanup,
   loadDashboardFixtures,
   publishFixtureTemplate,
   publishPlainTemplate,
-  publishRepeatedKeyTemplate,
   type Fixtures,
   type Services,
 } from "./asset-templates.instantiate.dashboards.integration.spec";
+import {
+  assertAFailingChunkKeepsTheEarlierChunks,
+  assertBackfillAuditRow,
+  assertBackfillCreatesAndSkips,
+  assertBackfillOfAViewlessTemplateIsRefused,
+  assertBackfillRefusesDraftAndLocationAdmin,
+  type BackfilledVersion,
+} from "./asset-templates.instantiate.dashboards-backfill.integration.spec";
 
 /**
- * `F3.2` / ADR 0067 — Vitest entry point for the per-asset default dashboards.
+ * `F3.2` / ADR 0067 decision 4 and Q7 — Vitest entry point for the backfill.
  * Assertions live in the sibling `.spec` (§4.6 / ADR 0014); this file owns the
  * database lifecycle.
  *
- * The **backfill** family — G2, G2b–G2f — lives in the sibling pair
- * `asset-templates.instantiate.dashboards-backfill.integration.*`, split out
- * under §4.2 on 2026-09-17 when this spec reached 1002 lines against §4.5's cap
- * of 1000. This file keeps the instantiate trigger and owns the fixture
- * builders both import.
+ * A pair of its own since the §4.2 split of 2026-09-17 — see that spec's
+ * docblock. It builds the same services and the same fixture template as
+ * `asset-templates.instantiate.dashboards.integration.test.ts`, from that
+ * file's own exported builders, and its per-run code suffixes are evaluated in
+ * this file's module registry, so the two runs sweep only their own rows.
+ *
+ * The cases are **ordered**: G2 publishes the second version G2f, G2c and G2d
+ * all take, and G2d grades the audit rows G2's call left. Each still names its
+ * own asset codes, so a failure says which claim broke.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.2",
-  label: "per-asset default dashboard tests",
+  label: "per-asset default dashboard backfill tests",
   because:
-    "every claim here is a row: which dashboards exist after an instantiate, which columns " +
-    "they carry, how many dashboard_widget_points a partially resolved chart wrote, and — " +
-    "the one that matters most — that a taken slug leaves NO asset, point, rule or dashboard " +
-    "behind. The report is compared against independent SQL precisely so a service that " +
-    "grades its own work cannot pass.",
+    "every claim here is a row: which assets the backfill created for and which it skipped, " +
+    "which version its dashboards are stamped with, that a chunk committed before a failing " +
+    "one survives the failure, and that a re-run resumes rather than duplicating. The report " +
+    "is compared against independent SQL precisely so a service that grades its own work " +
+    "cannot pass.",
 });
 
-describe.skipIf(!connectionString)("F3.2 — per-asset default dashboards", () => {
+describe.skipIf(!connectionString)("F3.2 — the per-asset default dashboard backfill", () => {
   let pool: pg.Pool | undefined;
   let authPool: pg.Pool | undefined;
   let tenantPool: pg.Pool | undefined;
@@ -61,7 +67,7 @@ describe.skipIf(!connectionString)("F3.2 — per-asset default dashboards", () =
   let fx: Fixtures;
   let template: AdminAssetTemplateDto;
   let plain: AdminAssetTemplateDto;
-  let repeated: AdminAssetTemplateDto;
+  let backfilled: BackfilledVersion;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -117,7 +123,6 @@ describe.skipIf(!connectionString)("F3.2 — per-asset default dashboards", () =
     await cleanup(created);
     template = await publishFixtureTemplate(svc, fx);
     plain = await publishPlainTemplate(svc, fx);
-    repeated = await publishRepeatedKeyTemplate(svc, fx);
   });
 
   afterAll(async () => {
@@ -127,23 +132,23 @@ describe.skipIf(!connectionString)("F3.2 — per-asset default dashboards", () =
     await Promise.all([pool?.end(), authPool?.end(), tenantPool?.end(), fleetPool?.end()]);
   });
 
-  it("writes one dashboard per view, stamped and scoped to the asset (G1, G1b, G1c)", async () => {
-    await assertOneAssetGetsBothViews(svc, fx, pool as pg.Pool, template);
+  it("refuses the backfill of a version that declares no dashboard view (G2e)", async () => {
+    await assertBackfillOfAViewlessTemplateIsRefused(svc, fx, pool as pg.Pool, plain);
   });
 
-  it("records the dashboard count on the instantiate audit row (G1d)", async () => {
-    await assertInstantiateAuditCarriesDashboardCount(pool as pg.Pool, template);
+  it("backfills the unstamped, skips the stamped, and stamps the version asked for (G2, G2b)", async () => {
+    backfilled = await assertBackfillCreatesAndSkips(svc, fx, pool as pg.Pool, template);
   });
 
-  it("writes nothing for a template whose content declares no dashboards (G1e)", async () => {
-    await assertTemplateWithoutDashboardsWritesNone(svc, fx, pool as pg.Pool, plain);
+  it("keeps the chunks committed before a failing one, and resumes on a re-run (G2f)", async () => {
+    await assertAFailingChunkKeepsTheEarlierChunks(svc, fx, pool as pg.Pool, backfilled.version);
   });
 
-  it("instantiates a widget that repeats a point key, binding it once (G1g)", async () => {
-    await assertARepeatedPointKeyInstantiatesOnce(svc, fx, pool as pg.Pool, repeated);
+  it("refuses a draft, and refuses a location admin before disclosing it (G2c)", async () => {
+    await assertBackfillRefusesDraftAndLocationAdmin(svc, fx, backfilled.version);
   });
 
-  it("rolls the whole batch back when a slug is already taken (G1f)", async () => {
-    await assertSlugCollisionRollsBackTheBatch(svc, fx, pool as pg.Pool, template);
+  it("leaves a master.dashboard.backfill audit row (G2d)", async () => {
+    await assertBackfillAuditRow(pool as pg.Pool, backfilled);
   });
 });

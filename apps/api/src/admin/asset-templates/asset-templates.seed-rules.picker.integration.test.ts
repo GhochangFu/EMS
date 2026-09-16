@@ -104,6 +104,7 @@ describe.skipIf(!connectionString)("F3.49 — the picker offers what the validat
       tenantDb,
       new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
       audit,
+      access,
     );
     const instantiation = new AssetTemplateInstantiationService(
       fleetDb,

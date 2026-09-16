@@ -17,15 +17,16 @@ import type {
   TemplateDashboardView,
 } from "@bms/shared";
 
+import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import type { BmsTx } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
-  assertDashboardBatchFits,
   dashboardName,
   dashboardSlug,
   dashboardWidgetRowsFor,
+  MAX_DASHBOARD_WIDGET_ROWS,
   planView,
 } from "./asset-dashboards-plan";
 import type { ViewPlan } from "./asset-dashboards-plan";
@@ -47,8 +48,12 @@ import { AssetTemplatesAdminService } from "./asset-templates.service";
  *   transaction rather than opening one, for ADR 0058 decision 9's reason: a
  *   dashboard written outside that transaction could survive a rolled-back batch
  *   as a dashboard of an asset that does not exist.
- * - {@link backfill}, the `POST :id/default-dashboards` path, which opens the one
- *   transaction itself.
+ * - {@link backfill}, the `POST :id/default-dashboards` path, which opens the
+ *   transactions itself — **one per chunk** of assets, sized to fit
+ *   `MAX_DASHBOARD_WIDGET_ROWS` (ADR 0067 Q7, 2026-09-17). It is resumable
+ *   rather than atomic: the first failing chunk stops the call, the chunks
+ *   before it stay committed, and a re-run skips them because they are now
+ *   stamped. The bound refuses nothing here; it sizes the chunk.
  *
  * **The report is counted from the rows the database returned, never from the
  * plan.** `widgetCount` and `boundPoints` are the lengths of `.returning()`
@@ -96,6 +101,10 @@ export class AssetDashboardsInstantiateService {
     // rule is how the two doors drift apart.
     private readonly templates: AssetTemplatesAdminService,
     private readonly audit: MasterDataAuditService,
+    // ADR 0017's operations-write matrix, for the backfill's §4.7 gate. Injected
+    // by type, as `AssetTemplatesAdminService` takes it — `AdminModule` needs no
+    // edit, Nest already provides this class to that provider.
+    private readonly accessControl: AccessControlService,
   ) {}
 
   /**
@@ -170,14 +179,44 @@ export class AssetDashboardsInstantiateService {
    * Every **active** asset of the organization pinned to any version of this
    * template's code gets this version's dashboards — ADR 0067 decision 4.
    *
+   * A published version whose content declares **no** dashboard views is
+   * refused with a 409 naming the code and version, before the estate is
+   * selected and before any transaction or audit row: there is nothing to
+   * build, and a call that reports assets it wrote nothing for is a report that
+   * lies (code review of 2026-09-17).
+   *
+   * **Chunked and resumable** (ADR 0067 Q7): the assets to create are processed
+   * in code order, `MAX_DASHBOARD_WIDGET_ROWS / widgets per asset` at a time,
+   * one `withTenant` transaction and one audit row per chunk. A failing chunk
+   * propagates its error — the 409 naming the slug — after the earlier chunks
+   * have committed, and the message says how many assets they created.
+   *
    * The order of the first three steps is the security property, not house
    * style: `assertCanAuthor` runs **before any read of `status`**, so a caller
    * outside the organization learns nothing about the version's lifecycle state.
    * A draft id with a `location_admin` JWT is a 403, never a 409.
    */
-  async backfill(jwt: JwtPayload, templateId: string): Promise<DefaultDashboardsBackfillResultDto> {
+  async backfill(
+    jwt: JwtPayload,
+    templateId: string,
+    // The cap is a parameter with the constant as its default so a case can
+    // drive the chunk loop: reaching the real ceiling needs 8,000 widget rows,
+    // and an arithmetic that is only ever exercised with one chunk is an
+    // arithmetic no test has run. No caller passes it — the route does not
+    // take a batch size (ADR 0067 Q7).
+    maxWidgetRows: number = MAX_DASHBOARD_WIDGET_ROWS,
+  ): Promise<DefaultDashboardsBackfillResultDto> {
     const template = await this.fetchTemplate(templateId);
     await this.templates.assertCanAuthor(jwt, template.organizationId);
+    // AGENTS.md §4.7 / ADR 0017 — additive, and it runs on the role in
+    // `bms.users` rather than on the JWT claim. Every role that clears
+    // `assertCanAuthor` for a template (admin, organization_admin; ADR 0015 §7
+    // excludes location_admin) also clears `configuration` today, so this gate
+    // refuses nothing the line above accepts. It is written for the same reason
+    // §4.7 asks for it everywhere: the matrix is the one place a role's writes
+    // are decided, and a mutating route that never consults it is the route
+    // that keeps its access when the matrix changes.
+    await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     if (template.status !== "published") {
       throw new ConflictException(draftRefusedMessage(template.status));
     }
@@ -195,34 +234,85 @@ export class AssetDashboardsInstantiateService {
       );
     }
     const views = parsed.content.dashboards ?? {};
+    // A version with no views has nothing to build, and saying so is the honest
+    // answer to `POST :id/default-dashboards`. Before this refusal the call
+    // walked the whole estate, opened a transaction per chunk and left an audit
+    // row per chunk, all to write nothing — and the report graded every asset
+    // against an empty plan. Raised **here**: before the estate is selected,
+    // before any transaction, before any audit row. A 409 rather than a 400
+    // because the caller's request is well formed and the stored version is
+    // what cannot satisfy it — the same reading as the draft refusal above, and
+    // a published version is immutable, so the way forward is a new version.
+    if (Object.keys(views).length === 0) {
+      throw new ConflictException(
+        `${template.code} v${template.version} declares no dashboard views, so there are no ` +
+          "default dashboards to create. Publish a version whose content carries a " +
+          "dashboards key, then run this again.",
+      );
+    }
 
     const versionIds = await this.versionIds(template);
     const targets = await this.pinnedAssets(template.organizationId, versionIds);
     const stamped = await this.assetsAlreadyStamped(versionIds, targets);
     const toCreate = targets.filter((target) => !stamped.has(target.id));
-    assertDashboardBatchFits(toCreate.length, dashboardWidgetRowsFor(views));
 
-    const created = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
-      const byCode = await this.instantiateForAssets(tx, template, views, toCreate);
-      await this.audit.write(
-        {
-          actor: jwt,
-          action: "master.dashboard.backfill",
-          entityType: "asset_template",
-          entityId: template.id,
-          organizationId: template.organizationId,
-          payload: {
-            templateCode: template.code,
-            templateVersion: template.version,
-            createdCount: toCreate.length,
-            skippedCount: stamped.size,
-            assetIds: toCreate.map((target) => target.id),
-          },
-        },
-        tx,
-      );
-      return byCode;
-    });
+    // ADR 0067 Q7 — **chunked, and one transaction per chunk.** The single
+    // transaction this replaced was refused by `assertDashboardBatchFits` as
+    // soon as the estate outgrew the bound (889 assets on the stock `overview`
+    // view), and the route takes no batch size, so the refusal was a dead end
+    // rather than an instruction. The bound still governs: it now sizes the
+    // chunk instead of refusing the call. `assertDashboardBatchFits` stays on
+    // the asset-CREATION path, where one transaction is the requirement (ADR
+    // 0067 decision 3 — no partial batch of assets).
+    const widgetsPerAsset = dashboardWidgetRowsFor(views);
+    const chunkSize = Math.max(1, Math.floor(maxWidgetRows / Math.max(1, widgetsPerAsset)));
+    const chunks: DashboardTargetAsset[][] = [];
+    for (let start = 0; start < toCreate.length; start += chunkSize) {
+      chunks.push(toCreate.slice(start, start + chunkSize));
+    }
+
+    const created = new Map<string, InstantiatedDashboardDto[]>();
+    let createdCount = 0;
+    for (const [chunkIndex, chunk] of chunks.entries()) {
+      try {
+        const byCode = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
+          const chunkResult = await this.instantiateForAssets(tx, template, views, chunk);
+          await this.audit.write(
+            {
+              actor: jwt,
+              action: "master.dashboard.backfill",
+              entityType: "asset_template",
+              entityId: template.id,
+              organizationId: template.organizationId,
+              payload: {
+                templateCode: template.code,
+                templateVersion: template.version,
+                // The rows this chunk actually wrote for, not the assets it was
+                // handed: a template with no views writes nothing, and an audit
+                // row claiming otherwise is the durable copy of the defect.
+                createdCount: [...chunkResult.values()].filter((list) => list.length > 0).length,
+                skippedCount: stamped.size,
+                chunkIndex,
+                chunkCount: chunks.length,
+                assetIds: chunk.map((target) => target.id),
+              },
+            },
+            tx,
+          );
+          return chunkResult;
+        });
+        // Merged, never reassigned: an earlier chunk is committed and its
+        // dashboards belong in the report as much as the last chunk's.
+        for (const [code, list] of byCode) {
+          created.set(code, list);
+          if (list.length > 0) {
+            createdCount += 1;
+          }
+        }
+      } catch (err) {
+        throw this.chunkFailure(err, createdCount, toCreate.length);
+      }
+    }
 
     return {
       templateId: template.id,
@@ -231,12 +321,47 @@ export class AssetDashboardsInstantiateService {
       assets: targets.map((target) => ({
         assetId: target.id,
         code: target.code,
-        outcome: stamped.has(target.id) ? ("skipped_existing" as const) : ("created" as const),
+        // Read off what was written, not off the skip set. An asset handed to a
+        // chunk that wrote no view for it (a template that declares no
+        // `dashboards`) was not created, and calling it `created` is the code
+        // review's finding of 2026-09-17. It falls to the other member of the
+        // enum, which widening would be a contract change this row does not
+        // own; `createdCount` and `skippedCount` both exclude it, so the counts
+        // stay true to the rows.
+        outcome:
+          (created.get(target.code) ?? []).length > 0
+            ? ("created" as const)
+            : ("skipped_existing" as const),
         dashboards: created.get(target.code) ?? [],
       })),
-      createdCount: toCreate.length,
+      createdCount,
       skippedCount: stamped.size,
     };
+  }
+
+  /**
+   * The error a failing chunk propagates, with the resumable half stated.
+   *
+   * The class is rebuilt rather than replaced: a slug collision is the ADR 0049
+   * 409 naming the slug, and wrapping it in a bare `Error` would reach the
+   * client as a 500. Anything that is not a conflict passes through untouched —
+   * a connection failure is not a sentence about how many assets were created.
+   */
+  private chunkFailure(err: unknown, createdCount: number, total: number): unknown {
+    if (err instanceof ConflictException) {
+      return new ConflictException(
+        `${err.message} ${createdCount} of ${total} assets already have their default ` +
+          "dashboards; those chunks are committed. Fix the conflict and run this call again " +
+          "to continue from there.",
+      );
+    }
+    if (err instanceof Error) {
+      err.message =
+        `${err.message} ${createdCount} of ${total} assets already have their default ` +
+        "dashboards; those chunks are committed.";
+      return err;
+    }
+    return err;
   }
 
   /**

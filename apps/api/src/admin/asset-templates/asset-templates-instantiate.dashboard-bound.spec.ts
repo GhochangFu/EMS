@@ -112,9 +112,26 @@ function answersForTheBound(): unknown[][] {
     [{ locationId: LOCATION_ID, locationName: "Bound Site", organizationId: ORG, active: true }],
     // the template's points — two measured, so the POINT bound stays clear and
     // the dashboard term is the only one that can refuse this batch.
+    // The patterns are load-bearing: with `sourceDataKeyPattern: null` a
+    // required measured point has no resolvable source key, and the in-bound
+    // case below never reaches the write at all — it failed on the point
+    // instead, and its "not refused by the bound" claim passed for the wrong
+    // reason. Found on 2026-09-17 by adding the positive control.
     [
-      { pointKey: "a_0", kind: "measured", required: true, unit: null, sourceDataKeyPattern: null },
-      { pointKey: "a_1", kind: "measured", required: true, unit: null, sourceDataKeyPattern: null },
+      {
+        pointKey: "a_0",
+        kind: "measured",
+        required: true,
+        unit: null,
+        sourceDataKeyPattern: "{asset_code}_A0",
+      },
+      {
+        pointKey: "a_1",
+        kind: "measured",
+        required: true,
+        unit: null,
+        sourceDataKeyPattern: "{asset_code}_A1",
+      },
     ],
     // assertCatalogActive — both keys still live.
     [
@@ -221,4 +238,9 @@ export async function assertABatchInsideTheBoundIsNotRefused(): Promise<void> {
     message = err instanceof Error ? err.message : String(err);
   }
   expect(message).not.toContain("dashboard widgets");
+  // The positive half, and without it the case passes on a service that failed
+  // for any other reason before the write — including one that refused the
+  // batch with a different sentence. `WROTE` is the fake's sentinel: reaching
+  // it is the proof that the bound let this batch through.
+  expect(message).toContain(WROTE);
 }

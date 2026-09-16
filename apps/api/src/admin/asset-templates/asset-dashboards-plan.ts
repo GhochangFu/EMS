@@ -241,19 +241,48 @@ function resolutionFor(
   };
 }
 
-/** The keys of one widget that the asset actually carries, in template order. */
+/**
+ * The keys of one widget that the asset actually carries, in template order,
+ * **once each**.
+ *
+ * The dedupe is a schema constraint rather than tidiness.
+ * `dashboard_widget_points` is unique on `(widget_id, point_id, role)` and every
+ * binding of one planned widget carries the same role, so a template widget
+ * authored `pointKeys: ["kw", "kw"]` — which the content contract accepts, since
+ * it bounds the array's length per type and nothing else — would write two
+ * identical rows and make **every** instantiation of that template a 500 naming
+ * a constraint. Found by the code review of 2026-09-17.
+ *
+ * Keyed by the resolved **point id**, not by the key string: two keys that
+ * resolved to one point would collide in the same column triple, and the id is
+ * what the constraint counts.
+ */
 function resolvePoints(
   pointKeys: readonly string[],
   pointIdByPointKey: ReadonlyMap<string, string>,
 ): PlannedPoint[] {
   const resolved: PlannedPoint[] = [];
+  const bound = new Set<string>();
   for (const pointKey of pointKeys) {
     const pointId = pointIdByPointKey.get(pointKey);
-    if (pointId !== undefined) {
+    if (pointId !== undefined && !bound.has(pointId)) {
+      bound.add(pointId);
       resolved.push({ pointKey, pointId });
     }
   }
   return resolved;
+}
+
+/**
+ * What a widget actually asked for — the count its report is graded against.
+ *
+ * Distinct, because {@link resolvePoints} binds distinct points: grading a
+ * deduped binding count against the raw `pointKeys.length` would report
+ * `partial` for `["kw", "kw"]` with `kw` resolved, which is a widget short of
+ * nothing.
+ */
+function requestedKeyCount(pointKeys: readonly string[]): number {
+  return new Set(pointKeys).size;
 }
 
 /** A view's own widgets, one planned widget each, layout and config verbatim. */
@@ -280,7 +309,9 @@ function planAuthoredWidgets(
       pointRole: pointRoleFor(widget.widgetType),
       points,
     });
-    resolutions.push(resolutionFor(viewName, index, widget.pointKeys.length, points.length));
+    resolutions.push(
+      resolutionFor(viewName, index, requestedKeyCount(widget.pointKeys), points.length),
+    );
   }
 
   // Not `featured.length - planned.length`: `featured` is not the source on this

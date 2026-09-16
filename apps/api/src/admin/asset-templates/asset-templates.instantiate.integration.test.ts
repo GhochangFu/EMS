@@ -105,6 +105,7 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
       tenantDb,
       new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
       audit,
+      access,
     );
     const instantiation = new AssetTemplateInstantiationService(
       fleetDb,

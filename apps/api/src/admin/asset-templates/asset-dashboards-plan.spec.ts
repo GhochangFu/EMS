@@ -449,6 +449,58 @@ export function assertWidgetKeysAreTheViewAndIndexAndUnique(): void {
   );
 }
 
+/**
+ * P13 — a widget that repeats a point key plans ONE binding, and reads `bound`.
+ *
+ * The content schema accepts `pointKeys: ["kw", "kw"]` (it bounds the array's
+ * length per type and nothing else), and `dashboard_widget_points` is unique on
+ * `(widget_id, point_id, role)`, so a second planned binding for the same point
+ * makes every instantiation of that template a 500 on a constraint name. Both
+ * halves are asserted: the plan carries one point, and the requested count the
+ * report is graded against is the count of DISTINCT keys — a dedupe that kept
+ * the raw length would report `partial` for a widget that is short of nothing.
+ */
+export function assertARepeatedPointKeyBindsOnceAndReadsBound(): void {
+  const view: TemplateDashboardView = {
+    featured: ["kw"],
+    widgets: [chart(["kw", "kw", "kva"])],
+  };
+  const plan = planView("overview", view, points("kw", "kva"));
+
+  const widget = plan.widgets[0];
+  assert(widget !== undefined, "the repeated-key widget must still be planned");
+  sameNumber(widget?.points.length ?? -1, 2, "a repeated key binds its point once");
+  sameString(
+    (widget?.points ?? []).map((point) => point.pointKey).join(","),
+    "kw,kva",
+    "the first occurrence keeps its place in template key order",
+  );
+  sameNumber(
+    new Set((widget?.points ?? []).map((point) => point.pointId)).size,
+    widget?.points.length ?? -1,
+    "no two planned bindings of one widget carry the same point id",
+  );
+  sameString(
+    plan.resolutions[0]?.outcome ?? "",
+    "bound",
+    "every DISTINCT key resolved, so the widget is short of nothing",
+  );
+  sameNumber(plan.resolutions[0]?.boundPoints ?? -1, 2, "the report counts the bindings planned");
+}
+
+/** P13 — and a repeated key whose point is missing is still `unresolved`. */
+export function assertARepeatedMissingKeyReadsUnresolved(): void {
+  const view: TemplateDashboardView = { featured: ["kw"], widgets: [chart(["gone", "gone"])] };
+  const plan = planView("overview", view, points("kw"));
+
+  sameNumber(plan.widgets[0]?.points.length ?? -1, 0, "a missing key binds nothing, twice over");
+  sameString(
+    plan.resolutions[0]?.outcome ?? "",
+    "unresolved",
+    "a widget whose only distinct key missed is unresolved, not bound",
+  );
+}
+
 /** P11 — the batch counts the fallback's tiles as well as the authored widgets. */
 export function assertWidgetRowsCountsTheFallbackAndTheWidgets(): void {
   const views: Record<string, TemplateDashboardView> = {

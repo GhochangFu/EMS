@@ -293,6 +293,77 @@ describe.skipIf(!has)("F3.2 — asset default dashboards against a live database
     }
   });
 
+  // I6 (owed guard 4, second half)
+  it("as bms_tenant, refuses a dashboard stamped with another organization's asset template", async () => {
+    await client.query("BEGIN");
+    try {
+      await client.query("SET LOCAL ROLE bms_owner");
+      await client.query(`SET LOCAL app.current_organization = '${orgA}'`);
+      const run = (sql: string, params?: unknown[]) => client.query(sql, params);
+      const assetA = await seedAsset(run, orgA, `I6A-${RUN}`);
+      const templateA = await seedAssetTemplate(run, orgA, `I6A-${RUN}`);
+      await client.query(`SET LOCAL app.current_organization = '${orgB}'`);
+      const templateB = await seedAssetTemplate(run, orgB, `I6B-${RUN}`);
+
+      await client.query("SET LOCAL ROLE bms_tenant");
+      await client.query(`SET LOCAL app.current_organization = '${orgA}'`);
+
+      // Positive control first. `asset_template_id` is checked by the policy and
+      // by nothing else — a foreign key runs with row security OFF (the 0056
+      // lesson) — so without this the case below would pass on a policy that
+      // refused every stamp, including the legitimate one.
+      expect(
+        (
+          await run(
+            `INSERT INTO bms.dashboards (organization_id, slug, name, asset_id, asset_template_id)
+             VALUES ($1, $2, 'own-stamp', $3, $4) RETURNING id`,
+            [orgA, `i6-own-${RUN}`, assetA, templateA],
+          )
+        ).rows.length,
+        "an own-organization asset template stamp must be accepted under bms_tenant",
+      ).toBe(1);
+
+      await refusesRls(
+        run,
+        `INSERT INTO bms.dashboards (organization_id, slug, name, asset_id, asset_template_id)
+         VALUES ($1, $2, 'cross-stamp', $3, $4)`,
+        [orgA, `i6-cross-${RUN}`, assetA, templateB],
+      );
+    } finally {
+      await client.query("ROLLBACK");
+    }
+  });
+
+  // I7
+  it("refuses to delete an asset template a dashboard still stamps", async () => {
+    await inTx(async (run) => {
+      const assetId = await seedAsset(run, orgA, `I7-${RUN}`);
+      const templateId = await seedAssetTemplate(run, orgA, `I7-${RUN}`);
+      await run(
+        `INSERT INTO bms.dashboards (organization_id, slug, name, asset_id, asset_template_id)
+         VALUES ($1, $2, 'stamped', $3, $4)`,
+        [orgA, `i7-${RUN}`, assetId, templateId],
+      );
+
+      // The stamp has no `ON DELETE` clause (ADR 0067 decision 1), unlike
+      // `asset_id`'s cascade: provenance a delete would orphan must fail loudly.
+      await run("SAVEPOINT probe");
+      let code: string | undefined;
+      let message = "";
+      try {
+        await run(`DELETE FROM bms.asset_templates WHERE id = $1`, [templateId]);
+      } catch (err) {
+        code = (err as NodeJS.ErrnoException | undefined)?.code;
+        message = err instanceof Error ? err.message : String(err);
+      }
+      await run("ROLLBACK TO SAVEPOINT probe");
+      expect(code, "a stamped asset template must refuse deletion with 23503").toBe("23503");
+      expect(message, "the refusal must name the stamp's own foreign key").toContain(
+        "dashboards_asset_template_id_fkey",
+      );
+    });
+  });
+
   // I5
   it("cascades a dashboard's deletion when its asset is deleted", async () => {
     await inTx(async (run) => {

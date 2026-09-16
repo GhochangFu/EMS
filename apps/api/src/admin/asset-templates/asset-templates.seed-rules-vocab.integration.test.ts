@@ -99,6 +99,7 @@ describe.skipIf(!connectionString)("E2.4 — a vocabulary retired after publish"
       tenantDb,
       new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
       audit,
+      access,
     );
     const instantiation = new AssetTemplateInstantiationService(
       fleetDb,

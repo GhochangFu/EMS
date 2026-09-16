@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   assertADegenerateSlugIsPaddedToTwoCharacters,
   assertAChartBindsSeriesAndATilePrimary,
+  assertARepeatedMissingKeyReadsUnresolved,
+  assertARepeatedPointKeyBindsOnceAndReadsBound,
   assertAnAstralPairAtTheCutIsNotSplit,
   assertAnOverflowingSlugIsTruncatedAndHashed,
   assertAPartlyResolvedWidgetReportsPartial,
@@ -108,6 +110,16 @@ describe("F3.2 — the per-asset dashboard plan (ADR 0067)", () => {
 
     it("P10: keys every resolution as `<view>#<index>`, unique within the view", () => {
       assertWidgetKeysAreTheViewAndIndexAndUnique();
+    });
+  });
+
+  describe("a widget that repeats a point key (code review #1)", () => {
+    it("P13: plans one binding per distinct key and reads bound", () => {
+      assertARepeatedPointKeyBindsOnceAndReadsBound();
+    });
+
+    it("P13: still reads unresolved when the repeated key names no point", () => {
+      assertARepeatedMissingKeyReadsUnresolved();
     });
   });
 

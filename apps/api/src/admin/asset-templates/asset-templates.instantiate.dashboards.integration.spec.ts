@@ -39,7 +39,7 @@ export const TEST_TEMPLATE_CODE = `F32-DASH-TEST-${randomUUID().slice(0, 8).toUp
 export const TEST_ASSET_PREFIX = `F32-DASH-${randomUUID().slice(0, 8).toUpperCase()}-`;
 
 /** The `content.dashboards` keys this fixture declares, in record order. */
-const VIEW_OVERVIEW = "overview";
+export const VIEW_OVERVIEW = "overview";
 const VIEW_TRENDS = "trends";
 
 export type Services = {
@@ -59,13 +59,13 @@ export type Fixtures = BaseFixtures & {
   severityCode: string;
 };
 
-function assert(condition: boolean, message: string): void {
+export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-async function expectRejection(
+export async function expectRejection(
   run: () => Promise<unknown>,
   match: RegExp,
   what: string,
@@ -84,7 +84,7 @@ async function expectRejection(
 }
 
 /** The rejection's **class**, which `expectRejection`'s message match cannot see. */
-async function expectRejectionNamed(
+export async function expectRejectionNamed(
   run: () => Promise<unknown>,
   className: string,
   what: string,
@@ -262,6 +262,52 @@ export async function publishFixtureTemplate(
   return svc.templates.publish(fx.adminJwt, draft.id);
 }
 
+/**
+ * A published template whose chart repeats one point key — code review #1.
+ *
+ * The content schema accepts it (it bounds `pointKeys` by length per type and
+ * says nothing about repetition), and `dashboard_widget_points` is unique on
+ * `(widget_id, point_id, role)`, so before the dedupe this template made every
+ * instantiation a 500. The fixture is the shape a human authors by accident,
+ * not a hand-built plan object, which is why it belongs here as well as in
+ * `asset-dashboards-plan.spec.ts` (P13).
+ */
+export async function publishRepeatedKeyTemplate(
+  svc: Services,
+  fx: Fixtures,
+): Promise<AdminAssetTemplateDto> {
+  const [k0, k1] = fx.pointKeys.map((row) => row.code);
+  const draft = await svc.templates.create(fx.adminJwt, {
+    organizationId: fx.organizationId,
+    code: `${TEST_TEMPLATE_CODE}-DUP`,
+    name: "Repeated Key Fixture",
+    assetType: "test_skid",
+    domain: "water",
+    points: fixturePoints(fx),
+    content: {
+      contentVersion: 1,
+      dashboards: {
+        [VIEW_OVERVIEW]: {
+          featured: [k0, k1],
+          widgets: [
+            {
+              title: "Repeated trend",
+              widgetType: "chart" as const,
+              pointKeys: [k0, k0, k1],
+              config: { series: "line" as const },
+              gridX: 0,
+              gridY: 0,
+              gridW: 12,
+              gridH: 4,
+            },
+          ],
+        },
+      },
+    },
+  });
+  return svc.templates.publish(fx.adminJwt, draft.id);
+}
+
 /** A second published template of the same shape whose content declares **no** `dashboards`. */
 export async function publishPlainTemplate(
   svc: Services,
@@ -279,7 +325,7 @@ export async function publishPlainTemplate(
   return svc.templates.publish(fx.adminJwt, draft.id);
 }
 
-type DashboardRow = {
+export type DashboardRow = {
   id: string;
   slug: string;
   name: string;
@@ -292,7 +338,7 @@ type DashboardRow = {
 };
 
 /** Every dashboard this run wrote, by independent SQL, in slug order. */
-async function dashboardsOf(pool: pg.Pool, assetCode: string): Promise<DashboardRow[]> {
+export async function dashboardsOf(pool: pg.Pool, assetCode: string): Promise<DashboardRow[]> {
   const { rows } = await pool.query<DashboardRow>(
     `SELECT d.id, d.slug, d.name, d.asset_id, d.asset_template_id, d.template_id,
             d.location_id, d.asset_group_id, d.organization_id
@@ -591,153 +637,44 @@ export async function assertSlugCollisionRollsBackTheBatch(
 }
 
 /**
- * G2 and G2b — the backfill creates for the unstamped, skips the stamped, and
- * stamps from the version it was asked for rather than from the one the asset
- * is pinned to.
+ * G1g — a chart that repeats a point key instantiates, and binds that point
+ * ONCE (code review #1).
+ *
+ * Asserted on the rows: `dashboard_widget_points` is unique on
+ * `(widget_id, point_id, role)`, so before the dedupe this call was a 500 on
+ * that constraint name and no dashboard existed at all.
  */
-export async function assertBackfillCreatesAndSkips(
+export async function assertARepeatedPointKeyInstantiatesOnce(
   svc: Services,
   fx: Fixtures,
   pool: pg.Pool,
-  template: AdminAssetTemplateDto,
-): Promise<AdminAssetTemplateDto> {
-  const codes = ["G2A", "G2B", "G2C"].map((suffix) => `${TEST_ASSET_PREFIX}${suffix}`);
-  await svc.instantiate(fx.adminJwt, template.id, {
+  repeated: AdminAssetTemplateDto,
+): Promise<void> {
+  const code = `${TEST_ASSET_PREFIX}G1G`;
+  const result = await svc.instantiate(fx.adminJwt, repeated.id, {
     rtuId: fx.rtuId,
-    assets: codes.map((code) => ({ code, name: `Backfill ${code}` })),
+    assets: [{ code, name: "Dashboard Skid G1g" }],
   });
 
-  // Two of the three lose their defaults, which is the state the backfill
-  // exists for: assets pinned to a version whose dashboards they do not have.
-  for (const code of codes.slice(0, 2)) {
-    await pool.query(
-      `DELETE FROM bms.dashboards WHERE asset_id IN (SELECT id FROM bms.assets WHERE code = $1)`,
-      [code],
-    );
-  }
-
-  // A NEW version of the same code. The three assets stay pinned to v1.
-  const v2Draft = await svc.templates.createDraftFrom(fx.adminJwt, template.id);
-  const v2 = await svc.templates.publish(fx.adminJwt, v2Draft.id);
-  assert(v2.version > template.version, "the fixture's second version must outrank the first");
-
-  // Asserted per code, not on the totals alone: earlier cases in this file also
-  // leave assets pinned to this template code, and a total that happened to
-  // match would say nothing about which asset was skipped and why.
-  const result = await svc.dashboards.backfill(fx.adminJwt, v2.id);
-  const outcomes = new Map(result.assets.map((entry) => [entry.code, entry.outcome]));
+  const rows = await dashboardsOf(pool, code);
+  assert(rows.length === 1, `expected one dashboard for ${code}, found ${rows.length}`);
+  const widgets = await pointRowsOf(pool, (rows[0] as DashboardRow).id);
   assert(
-    outcomes.get(codes[0]) === "created" &&
-      outcomes.get(codes[1]) === "created" &&
-      outcomes.get(codes[2]) === "skipped_existing",
-    `outcomes must follow the stamp, got ${[...outcomes].map(([c, o]) => `${c}=${o}`).join(" ")}`,
+    widgets.length === 1 && widgets[0]?.widget_type === "chart",
+    "the repeated-key view writes its one chart",
   );
   assert(
-    result.createdCount === result.assets.filter((e) => e.outcome === "created").length,
-    `createdCount ${result.createdCount} disagrees with the per-asset outcomes`,
-  );
-  assert(
-    result.skippedCount === result.assets.filter((e) => e.outcome === "skipped_existing").length,
-    `skippedCount ${result.skippedCount} disagrees with the per-asset outcomes`,
-  );
-  assert(
-    result.createdCount === 2,
-    `exactly the two assets whose dashboards were deleted must be created, got ${result.createdCount}`,
+    widgets[0]?.points === 2,
+    `the chart must bind its two DISTINCT keys once each, found ${String(widgets[0]?.points)} rows`,
   );
 
-  // G2b — an asset pinned to v1 carries **v2**'s stamp after the backfill.
-  const created = await dashboardsOf(pool, codes[0]);
-  assert(created.length === 2, `the backfilled asset must carry both views, got ${created.length}`);
+  const resolution = result.assets[0]?.dashboards[0]?.resolutions[0];
   assert(
-    created.every((row) => row.asset_template_id === v2.id),
-    "the backfill stamps the version it was called on, not the version the asset is pinned to",
-  );
-  const { rows: pinned } = await pool.query<{ template_id: string | null }>(
-    `SELECT template_id FROM bms.assets WHERE code = $1`,
-    [codes[0]],
+    resolution?.outcome === "bound",
+    `a widget whose distinct keys all resolved is bound, got "${String(resolution?.outcome)}"`,
   );
   assert(
-    pinned[0]?.template_id === template.id,
-    "the backfill must not re-pin the asset — only its dashboards are new",
-  );
-
-  // The second call is the idempotence claim, by row count as well as by report.
-  const { rows: countBefore } = await pool.query<{ n: string }>(
-    `SELECT COUNT(*)::text AS n FROM bms.dashboards WHERE slug LIKE $1`,
-    [`${TEST_ASSET_PREFIX.toLowerCase()}%`],
-  );
-  const again = await svc.dashboards.backfill(fx.adminJwt, v2.id);
-  assert(
-    again.createdCount === 0,
-    `the second call must create nothing, got ${again.createdCount}`,
-  );
-  const repeat = new Map(again.assets.map((entry) => [entry.code, entry.outcome]));
-  assert(
-    codes.every((code) => repeat.get(code) === "skipped_existing"),
-    `every asset must now be skipped, got ${[...repeat].map(([c, o]) => `${c}=${o}`).join(" ")}`,
-  );
-  const { rows: countAfter } = await pool.query<{ n: string }>(
-    `SELECT COUNT(*)::text AS n FROM bms.dashboards WHERE slug LIKE $1`,
-    [`${TEST_ASSET_PREFIX.toLowerCase()}%`],
-  );
-  assert(
-    countBefore[0].n === countAfter[0].n,
-    `the second call changed the dashboard count from ${countBefore[0].n} to ${countAfter[0].n}`,
-  );
-  return v2;
-}
-
-/** G2c — permission is decided BEFORE the status is read. */
-export async function assertBackfillRefusesDraftAndLocationAdmin(
-  svc: Services,
-  fx: Fixtures,
-  v2: AdminAssetTemplateDto,
-): Promise<void> {
-  const draft = await svc.templates.createDraftFrom(fx.adminJwt, v2.id);
-
-  await expectRejection(
-    () => svc.dashboards.backfill(fx.adminJwt, draft.id),
-    /Only a published template can be instantiated/,
-    "a draft version must be refused with the lifecycle sentence",
-  );
-  await expectRejectionNamed(
-    () => svc.dashboards.backfill(fx.adminJwt, draft.id),
-    "ConflictException",
-    "a draft version is a 409",
-  );
-
-  // The SAME draft id with a location admin's JWT. A 403 and not the 409 above
-  // is the whole claim: a caller who may not author learns nothing about the
-  // version's lifecycle state.
-  await expectRejectionNamed(
-    () => svc.dashboards.backfill(fx.locationAdminJwt, draft.id),
-    "ForbiddenException",
-    "a location admin must be refused BEFORE the draft status is disclosed",
-  );
-}
-
-/** G2d — the backfill leaves its own audit row. */
-export async function assertBackfillAuditRow(
-  pool: pg.Pool,
-  v2: AdminAssetTemplateDto,
-): Promise<void> {
-  const { rows } = await pool.query<{
-    entity_type: string;
-    payload: { createdCount?: number; templateCode?: string };
-  }>(
-    `SELECT entity_type, payload FROM bms.audit_log
-      WHERE action = 'master.dashboard.backfill' AND entity_id = $1
-      ORDER BY created_at ASC LIMIT 1`,
-    [v2.id],
-  );
-  const row = rows[0];
-  assert(row !== undefined, "the backfill must write a master.dashboard.backfill audit row");
-  assert(
-    row.entity_type === "asset_template",
-    `the audit row's entity is the template, got ${row.entity_type}`,
-  );
-  assert(
-    row.payload.createdCount === 2,
-    `the audit payload must carry createdCount 2, got ${String(row.payload.createdCount)}`,
+    resolution?.boundPoints === 2,
+    `the report must count the two rows written, got ${String(resolution?.boundPoints)}`,
   );
 }
