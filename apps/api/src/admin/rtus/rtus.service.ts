@@ -7,15 +7,15 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, locations, organizations, rtuConnectionConfigs, rtus } from "@bms/db";
+import { assets, locations, organizations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { INGEST_PROTOCOLS } from "@bms/shared";
 import type { AdminRtuDto, AdminRtuSummaryDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { resolveTelemetrySource } from "../telemetry-source";
 import { translateRtuCodeCollision } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 
@@ -144,15 +144,33 @@ export class RtusAdminService {
           // against, an enabled RTU that declares no ingest source: there are no
           // assets here for that to strand.
           //
-          // The asset gains its `rtu_id` later, through `AssetsAdminService`,
-          // which does not write `telemetrySource` at all. So an asset attached
-          // to an RTU that is **both** enabled and declaring an ingest protocol
-          // arrives on `catalog` and stays there until someone next edits the
-          // RTU — the simulator and the ingest host then both write it. For a
-          // `simulator` or `catalog` RTU, `catalog` is the correct answer and
-          // not a hole, which is why this names the declared case rather than
-          // "an already-enabled RTU". Either way it is a second file; it is not
-          // this one.
+          // The asset gains its `rtu_id` later, in one of **three** other
+          // services. The count is enumerated from source, not remembered:
+          // `\.insert\(assets\)|\.update\(assets\)` for the Drizzle builders and
+          // `bms\.assets` filtered to INSERT/UPDATE for raw SQL, over
+          // `apps/api/src`. Every other hit either leaves `rtu_id` alone
+          // (`asset-templates-migrate.service.ts` sets `template_id`;
+          // `deactivate`/`reactivate` set `active`), is a test fixture
+          // (`testing/integration-fixtures.ts`), or is a docblock recipe
+          // (`calc/calc.module.ts`). The three that write it:
+          //
+          // - `AssetsAdminService.create`/`update` (`F4.139`) — `assertRtuLocation`
+          //   reads the RTU it is attaching to and derives `meta.telemetrySource`
+          //   from it with the shared `resolveTelemetrySource`.
+          // - `OnboardingCommitService.commit` (`F4.140`) — one resolve per RTU
+          //   it has just inserted, looked up per asset.
+          // - `AssetTemplateInstantiationService.instantiate` (found by review and
+          //   fixed with `F4.139`) — one resolve for the whole batch, applied to
+          //   every asset the template deploys onto that RTU.
+          //
+          // Before those three an asset attached to an RTU that was **both**
+          // enabled and declaring an ingest protocol arrived on `catalog` — or,
+          // from the template path, with no key at all — and stayed there until
+          // someone next edited the RTU, with the simulator and the ingest host
+          // both writing it. For a `simulator` or `catalog` RTU, `catalog` is the
+          // correct answer and not a hole, which is why this names the declared
+          // case rather than "an already-enabled RTU". Either way it is a second
+          // file; it is not this one.
           ingestEnabled: body.ingestEnabled ?? false,
           organizationId,
           meta: body.meta ?? null,
@@ -303,40 +321,20 @@ export class RtusAdminService {
       // In doubt, alive beats dead: the assets stay on `catalog` and the
       // simulator keeps them going until the RTU says what it speaks.
       //
-      // **The predicate is deliberately coarser than the host's own check** —
-      // "the operator has said what this RTU speaks", not "the host can bind it
-      // today". Restating `isIngestProtocol` or the adapter registry here would
-      // put the ingest host's protocol vocabulary in the API, where it would go
-      // stale the day an adapter lands: a Modbus RTU would keep its assets on
-      // the simulator because this file had not heard of Modbus. A declared
-      // protocol is a stable fact this service legitimately owns; whether an
-      // adapter exists for it is the host's business, and its `no-adapter` skip
-      // is the honest place for that answer.
-      //
-      // **Positive membership, not a list of exclusions.** `rtus.source_type`
-      // has three values and only one of them has an adapter: an earlier draft
-      // of this predicate tested `!== 'catalog'` and so handed every
-      // `simulator` RTU's assets to a host that will never bind them —
-      // 99 of the 147 RTU-attached assets in the seeded fleet, and precisely
-      // the dead-points failure the paragraph above exists to prevent.
-      // `INGEST_PROTOCOLS` is the vocabulary that says which sources have an
-      // adapter at all, and `packages/shared/src/ingest.ts` records why
-      // `simulator` and `catalog` are not in it. A fourth source type that
-      // gains an adapter is then right here with no edit. Today only `mqtt`
-      // qualifies on this disjunct; a `modbus_tcp` RTU reaches the second one
-      // through its connection-config row.
-      const declaredSource = body.sourceType ?? existing.sourceType;
-      const handsOverToIngest =
-        nextIngestEnabled &&
-        ((INGEST_PROTOCOLS as readonly string[]).includes(declaredSource) ||
-          (
-            await tx
-              .select({ present: sql<number>`1` })
-              .from(rtuConnectionConfigs)
-              .where(eq(rtuConnectionConfigs.rtuId, id))
-              .limit(1)
-          ).length > 0);
-      const telemetrySource = handsOverToIngest ? "mqtt" : "catalog";
+      // **The predicate itself now lives in `../telemetry-source.ts`**
+      // (`F4.139`), because `AssetsAdminService` and `OnboardingCommitService`
+      // attach `assets.rtu_id` too and need the same answer. Its docblock
+      // carries the rest of the reasoning this comment used to: why the check
+      // is deliberately coarser than the ingest host's own, and why it tests
+      // positive membership of `INGEST_PROTOCOLS` rather than `!== 'catalog'`
+      // (an earlier draft did, and handed every `simulator` RTU's assets to a
+      // host that will never bind them). It reads the connection-config row on
+      // this transaction, so an uncommitted config row counts.
+      const telemetrySource = await resolveTelemetrySource(tx, {
+        id,
+        ingestEnabled: nextIngestEnabled,
+        sourceType: body.sourceType ?? existing.sourceType,
+      });
       // The organization predicate is explicit, and it is defence in depth
       // rather than the control. RLS already confines this write: a probe as
       // `bms_tenant` (F4.59 security review) attached a PHEWB asset to an ESKOM

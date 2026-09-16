@@ -26,8 +26,11 @@ import type { AssetInstantiationResultDto, JwtPayload } from "@bms/shared";
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import type { BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { resolveTelemetrySource, withTelemetrySource } from "../telemetry-source";
+import type { TelemetrySource } from "../telemetry-source";
 import { parseStoredTemplateContent } from "./asset-templates-content.schema";
 import type {
   InstantiateAssetBody,
@@ -90,6 +93,17 @@ type InstantiationTarget = {
   locationId: string;
   locationName: string;
   organizationId: string;
+  /**
+   * The gateway the batch attaches to, or `null` on the location branch.
+   *
+   * **The id only, never the RTU's flags** (`F4.139` second pass). `resolveTarget`
+   * runs on `fleetDb`, before `withTenant` opens the transaction the batch is
+   * written in; carrying `ingest_enabled`/`source_type` across that boundary made
+   * half of the `telemetrySource` predicate read a row from outside the write's
+   * transaction, so an operator disabling the RTU between the two reads got a
+   * batch derived from the flags as they were before the write began. The flags
+   * are re-read on the tenant transaction instead (`deriveTelemetrySource`).
+   */
   rtuId: string | null;
 };
 
@@ -252,6 +266,20 @@ export class AssetTemplateInstantiationService {
     // different org than the template (above) — so the write runs inside
     // `withTenant(template.org)` and stamps that org onto every row.
     const created = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
+        // `F4.139` — the third writer of `assets.rtu_id`, and the only one that
+        // writes N of them at once. Before this, a batch deployed onto an
+        // ingest-enabled RTU carried no `meta` at all, which `apps/sim` reads as
+        // `sim` and the ingest host reads as `mqtt` — two producers on every row
+        // of the batch, from the one screen that creates assets in bulk. The
+        // invariant and the predicate live in `admin/telemetry-source.ts`.
+        //
+        // Resolved **once** for the whole batch, not per asset: one target means
+        // one RTU, so a per-row call would be the same read N times. Every read
+        // it needs runs on `tx` and never `fleetDb` — including the RTU's own
+        // flags, which is why `deriveTelemetrySource` re-reads them here rather
+        // than taking the row `resolveTarget` saw (second pass).
+        const telemetrySource =
+          target.rtuId === null ? null : await this.deriveTelemetrySource(tx, target.rtuId);
         const inserted = await tx
           .insert(assets)
           .values(
@@ -264,6 +292,13 @@ export class AssetTemplateInstantiationService {
               domain: template.domain,
               templateId: template.id,
               organizationId: template.organizationId,
+              // `undefined` as the base and not a caller bag: `instantiateAssetBody`
+              // has no `meta` field, so an instantiated asset's bag is exactly
+              // this key or nothing at all.
+              meta:
+                telemetrySource === null
+                  ? null
+                  : withTelemetrySource(undefined, telemetrySource),
               active: true,
             })),
           )
@@ -492,8 +527,47 @@ export class AssetTemplateInstantiationService {
       locationId: row.locationId,
       locationName: row.locationName,
       organizationId: row.organizationId,
+      // `F4.139` — gateway-less (ADR 0018). No RTU means no `telemetrySource`
+      // on the assets this batch writes, and no read either: `catalog` here
+      // would claim an answer nobody gave, and the invariant is over
+      // RTU-attached assets only.
       rtuId: null,
     };
+  }
+
+  /**
+   * `F4.139` (second pass) — the batch's `telemetrySource`, derived **entirely**
+   * on the transaction that writes it.
+   *
+   * `resolveTarget` runs on `fleetDb` before `withTenant` opens that transaction,
+   * so the `ingest_enabled`/`source_type` it read are from another connection at
+   * an earlier moment. `resolveTelemetrySource` reads `rtu_connection_configs` on
+   * `tx` for the reason `admin/telemetry-source.ts` gives, and feeding it flags
+   * from `fleetDb` left the predicate split across two snapshots: an operator who
+   * disabled the RTU while a commissioning batch was in flight got N assets
+   * marked `mqtt` behind an RTU the ingest host no longer binds — dead points,
+   * and no RTU edit repairs them because the assets did not exist when it ran.
+   *
+   * The row is re-read, not re-validated: `resolveTarget` has already refused an
+   * inactive or out-of-organization RTU, and this read exists only to take the
+   * two flags from inside the write. A missing row here is therefore not a user
+   * error but a gateway deleted between the two reads, and the message says so
+   * rather than repeating `resolveTarget`'s 404 text.
+   */
+  private async deriveTelemetrySource(tx: BmsTx, rtuId: string): Promise<TelemetrySource> {
+    const [row] = await tx
+      .select({
+        id: rtus.id,
+        ingestEnabled: rtus.ingestEnabled,
+        sourceType: rtus.sourceType,
+      })
+      .from(rtus)
+      .where(eq(rtus.id, rtuId))
+      .limit(1);
+    if (!row) {
+      throw new NotFoundException("RTU disappeared while the batch was being written");
+    }
+    return resolveTelemetrySource(tx, row);
   }
 
   /**
