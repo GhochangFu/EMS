@@ -3,6 +3,7 @@ import {
   MAX_ASSET_IMAGE_BYTES,
   MAX_ASSET_IMAGE_CAPTION_CHARS,
   MAX_ASSET_IMAGE_FILENAME_CHARS,
+  MAX_ASSET_IMAGES_PER_ASSET,
   assetImageDtoSchema,
 } from "./asset-images";
 import { z } from "zod";
@@ -108,6 +109,16 @@ export function assertStringOneOverTheBoundIsRefused(bound: (typeof STRING_BOUND
   assert(
     result.success === false,
     `${bound.field} of ${bound.max + 1} chars must be refused — the SQL column is text, so this is the gate`,
+  );
+}
+
+/**
+ * `F3.4` — the per-asset cap (R-3, owner Q-3): 20, answered 409 on overflow.
+ */
+export function assertPerAssetCapIsTwenty(): void {
+  assert(
+    MAX_ASSET_IMAGES_PER_ASSET === 20,
+    `MAX_ASSET_IMAGES_PER_ASSET must be 20, got ${MAX_ASSET_IMAGES_PER_ASSET}`,
   );
 }
 

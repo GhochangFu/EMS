@@ -4,6 +4,7 @@ import {
   assertContentTypesAreExactlyTheThree,
   assertDtoRefusesObjectKey,
   assertMaxBytesIsTenMiB,
+  assertPerAssetCapIsTwenty,
   assertStorageSectionIsOptionalOnLiveness,
   assertStringAtTheBoundParses,
   assertStringBoundConstantIs,
@@ -39,5 +40,9 @@ describe("F3.3 — asset-image constants and contracts (ADR 0066)", () => {
 
   it("makes storage optional on the liveness body, and still validates it when present", () => {
     assertStorageSectionIsOptionalOnLiveness();
+  });
+
+  it("caps an asset at 20 images (F3.4, R-3)", () => {
+    assertPerAssetCapIsTwenty();
   });
 });

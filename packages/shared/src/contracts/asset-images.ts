@@ -39,6 +39,18 @@ export const MAX_ASSET_IMAGE_BYTES: number = 10 * 1024 * 1024;
 export const MAX_ASSET_IMAGE_FILENAME_CHARS: number = 255;
 export const MAX_ASSET_IMAGE_CAPTION_CHARS: number = 1000;
 
+/**
+ * `F3.4` — the per-asset image cap (R-3, owner Q-3). Exceeding it is a state
+ * of the resource, not a malformed body — the write path answers 409
+ * Conflict, not the 400 a `.max()` bound on a request field would give (the
+ * `F4.103` distinction). Annotated `: number` for the `TS2367` reason above.
+ *
+ * **§4.8 encoding:** nothing composed here — a bare number, no `.merge()`,
+ * no `z.intersection`, no `.readonly()` — so the flattening scan has nothing
+ * to see.
+ */
+export const MAX_ASSET_IMAGES_PER_ASSET: number = 20;
+
 /** The closed content-type vocabulary an asset image may carry (ADR 0066 decision 7). */
 export const assetImageContentTypeSchema = z.enum(["image/jpeg", "image/png", "image/webp"]);
 

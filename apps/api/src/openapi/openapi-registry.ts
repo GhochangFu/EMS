@@ -141,8 +141,12 @@ import {
  * (`F2.7`, ADR 0056 decision 7) are the same case again — the uploaded
  * `MAPPINGS` workbook is the `file` field, and their one query parameter is
  * registered on the sibling download, `_exportMappingSheet`, which is not
- * multipart. Documenting multipart shape properly is a generator change, out of
- * scope here.
+ * multipart. `AssetImagesWriteController_upload` (`F3.4`, ADR 0066 decision 7)
+ * is the sixth absence by the same rule — a `file` part plus an optional
+ * `caption` field — and its sibling `AssetImagesWriteController_remove` is
+ * absent because it takes no body and no query, the
+ * `EscalationProfilesController_remove` case below. Documenting multipart
+ * shape properly is a generator change, out of scope here.
  */
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,

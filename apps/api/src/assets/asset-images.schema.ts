@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { MAX_ASSET_IMAGE_CAPTION_CHARS, MAX_ASSET_IMAGE_FILENAME_CHARS } from "@bms/shared";
+
 /**
  * `F3.3` (ADR 0066 decision 6) — the path parameters of the two asset-image
  * read routes.
@@ -28,3 +30,33 @@ export type AssetImageParams = z.infer<typeof assetImageParamsSchema>;
 
 /** `:assetId` on the list route. */
 export const assetIdParamSchema = z.string().uuid();
+
+/**
+ * `F3.4` (ADR 0066 Amendment 3, R-8) — the multipart upload's non-file
+ * field, and the sniffed-from-`file.originalname` filename.
+ *
+ * **Named `*FieldsSchema`/`*FilenameSchema`, not `*BodySchema`.** The upload
+ * route is multipart, and `openapi-registry.ts`'s "multipart routes are
+ * deliberately absent" paragraph (ADR 0029 decisions 1 and 3) describes only
+ * a JSON `*BodySchema`/`*QuerySchema` pair; `tests/adr-0029-openapi-contract
+ * .test.ts` forbids exactly those two suffixes inline in a controller. These
+ * two schemas carry neither suffix and live in this `*.schema.ts` file, not
+ * inline in a controller, so the scan has nothing to flag either way.
+ *
+ * No `.refine` on either schema, so decision 10's `.describe()` rule on a
+ * `.refine` has nothing to hold here.
+ */
+export const assetImageUploadFieldsSchema = z
+  .object({ caption: z.string().trim().max(MAX_ASSET_IMAGE_CAPTION_CHARS).optional() })
+  .strict();
+
+export type AssetImageUploadFields = z.infer<typeof assetImageUploadFieldsSchema>;
+
+/** The filename multer reports on `file.originalname`. */
+export const assetImageFilenameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_ASSET_IMAGE_FILENAME_CHARS);
+
+export type AssetImageFilename = z.infer<typeof assetImageFilenameSchema>;

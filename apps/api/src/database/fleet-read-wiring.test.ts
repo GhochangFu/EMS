@@ -5,6 +5,8 @@ import {
   assertAlarmRaiserTenantSlot,
   assertAssetImagesServiceFleetSlot,
   assertAssetImagesServiceTenantSlot,
+  assertAssetImagesWriteServiceFleetSlot,
+  assertAssetImagesWriteServiceTenantSlot,
   assertConformedServiceSlots,
   assertRuleSweepServiceTenantSlot,
   assertUnconditionalFleetReadSlots,
@@ -51,5 +53,13 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("F3.3 AssetImagesService injects the fleet pool in slot 1", () => {
     assertAssetImagesServiceFleetSlot();
+  });
+
+  it("F3.4 AssetImagesWriteService injects the tenant pool in slot 0", () => {
+    assertAssetImagesWriteServiceTenantSlot();
+  });
+
+  it("F3.4 AssetImagesWriteService injects the fleet pool in slot 1", () => {
+    assertAssetImagesWriteServiceFleetSlot();
   });
 });

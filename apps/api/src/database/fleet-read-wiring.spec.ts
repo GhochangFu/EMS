@@ -7,6 +7,7 @@ import { AlarmsService } from "../alarms/alarms.service";
 import { LocationsAdminService } from "../admin/locations/locations.service";
 import { TelemetryImportService } from "../admin/telemetry-import/telemetry-import.service";
 import { AssetImagesService } from "../assets/asset-images.service";
+import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { WorkerHostService } from "../queue/worker-host.service";
@@ -145,4 +146,19 @@ export function assertAssetImagesServiceTenantSlot(): void {
 
 export function assertAssetImagesServiceFleetSlot(): void {
   expect(injectedToken(AssetImagesService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F3.4` — `AssetImagesWriteService(tenantDb, fleetDb, client, audit)` (ADR
+ * 0066 Amendment 3, R-6): the insert runs under `withTenant` on slot 0 and
+ * the asset's organization, the pre-checks and the actor lookup on slot 1.
+ * A swap would insert on the BYPASSRLS pool, which `0072`'s `WITH CHECK`
+ * could never refuse. Two claims, one function each.
+ */
+export function assertAssetImagesWriteServiceTenantSlot(): void {
+  expect(injectedToken(AssetImagesWriteService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertAssetImagesWriteServiceFleetSlot(): void {
+  expect(injectedToken(AssetImagesWriteService, 1)).toBe(FLEET_DRIZZLE);
 }
