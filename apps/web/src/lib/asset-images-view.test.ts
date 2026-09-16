@@ -9,6 +9,10 @@ import {
   anUnsupportedTypeIsRefused,
   galleryFiveHundredShowsTheGenericSentence,
   galleryFiveOhThreeShowsTheApiSentence,
+  galleryFiveOhThreeWithANonEnvelopeBodyShowsTheStorageSentence,
+  galleryFiveOhThreeWithAnArrayMessageShowsTheJoinedSentence,
+  galleryFiveOhThreeWithATruncatedJsonBodyShowsTheStorageSentence,
+  galleryFiveOhThreeWithNoBodyShowsTheStorageSentence,
   megabytesIsTenFromTheSharedConstant,
   noFileNamesItself,
   theAcceptStringIsDerivedFromTheThreeTypes,
@@ -64,6 +68,22 @@ describe("F3.4 asset-images-view", () => {
 
   it("shows the API's own sentence on a gallery 503", () => {
     galleryFiveOhThreeShowsTheApiSentence();
+  });
+
+  it("shows the storage sentence on a gallery 503 with an empty body", () => {
+    galleryFiveOhThreeWithNoBodyShowsTheStorageSentence();
+  });
+
+  it("shows the storage sentence on a gallery 503 whose body is not an envelope", () => {
+    galleryFiveOhThreeWithANonEnvelopeBodyShowsTheStorageSentence();
+  });
+
+  it("shows the storage sentence on a gallery 503 whose body is truncated JSON", () => {
+    galleryFiveOhThreeWithATruncatedJsonBodyShowsTheStorageSentence();
+  });
+
+  it("joins an envelope whose message is an array on a gallery 503", () => {
+    galleryFiveOhThreeWithAnArrayMessageShowsTheJoinedSentence();
   });
 
   it("shows the generic sentence on any other gallery status", () => {

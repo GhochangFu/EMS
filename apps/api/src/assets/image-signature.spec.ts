@@ -62,6 +62,24 @@ export function assertRiffWaveIsNull(): void {
   assert(result === null, `expected null for a RIFF/WAVE buffer, got ${JSON.stringify(result)}`);
 }
 
+/**
+ * The high-bit twin of the RIFF/WEBP signature, which is not an image at all.
+ *
+ * Node's `ascii` decoder masks bit 7 instead of refusing the byte, so
+ * `D2 C9 C6 C6` decodes to "RIFF" and `D7 C5 C2 D0` to "WEBP". A sniff
+ * written with `buffer.toString("ascii", …)` therefore stored these twelve
+ * bytes as `image/webp` — and the route served them back under that type.
+ * Only a numeric comparison of the sixteen signature bytes refuses them.
+ */
+export function assertHighBitRiffWebpLookalikeIsNull(): void {
+  const buffer = Buffer.from([0xd2, 0xc9, 0xc6, 0xc6, 0, 0, 0, 0, 0xd7, 0xc5, 0xc2, 0xd0]);
+  const result = sniffImageContentType(buffer);
+  assert(
+    result === null,
+    `expected null for the high-bit RIFF/WEBP lookalike, got ${JSON.stringify(result)}`,
+  );
+}
+
 export function assertShortPngPrefixIsNull(): void {
   const full = padded([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const short = full.subarray(0, 11);

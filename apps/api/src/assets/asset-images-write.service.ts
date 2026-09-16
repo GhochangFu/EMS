@@ -85,7 +85,13 @@ export type AssetImageUploadInput = {
  * even under a cross-organization grant the row is stamped consistently
  * with its parent and `0072`'s `WITH CHECK` holds; the exposure L-1 names
  * is the same one every existing asset write carries through
- * `canManageAsset`, and it is the grant data's, not this row's.
+ * `canManageAsset`, and it is the grant data's, not this row's. What keeps
+ * that true today is that **no API path writes `user_location_access` at
+ * all** — every reference to it in `access-control.service.ts` is a read — so
+ * a cross-organization grant can only arrive by hand in the database; F3.4
+ * turns the same grant from a read exposure into a write one, and L-1's
+ * organization re-check must therefore land **together with** whatever
+ * endpoint first writes a grant, not after it.
  *
  * **R-6 — the RLS path for the insert.** `withTenant(tenantDb,
  * assetOrganizationId, tx => …)` with the org resolved from `bms.assets` on

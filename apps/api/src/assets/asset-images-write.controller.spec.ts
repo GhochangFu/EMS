@@ -25,8 +25,8 @@ import type { AssetImageUploadInput, AssetImagesWriteService } from "./asset-ima
  *    with a positive control that the scan found both handlers;
  *  - the `FileInterceptor(` call expression carries decision 7's three
  *    limits as exact strings — `tests/f4.102-file-interceptor-limits.test.ts`
- *    holds only that `fileSize` is *named*, so `files: 1` and `fields: 2`
- *    are gated here or nowhere;
+ *    holds only that `fileSize` is *named*, so `files: 1`, `fields: 2` and
+ *    `fieldSize: 4096` are gated here or nowhere;
  *  - `@HttpCode(HttpStatus.NO_CONTENT)` precedes `async remove(` and
  *    `@HttpCode(HttpStatus.CREATED)` precedes `async upload(`;
  *  - no `@Param`/`@Query`/`@Body` argument is named `key` or `objectKey`
@@ -184,6 +184,9 @@ export const INTERCEPTOR_LIMITS: readonly string[] = [
   "fileSize: MAX_ASSET_IMAGE_BYTES",
   "files: 1",
   "fields: 2",
+  // Multer's default is 1 MB per field, so `fields: 2` alone bounded the
+  // count and not the bytes. Nothing else in the repository holds this.
+  "fieldSize: 4096",
 ];
 
 /** The positive control for the three rows below: the call expression was found and names `limits:`. */

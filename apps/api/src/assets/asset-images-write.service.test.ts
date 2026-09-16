@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAnUnreadableCountMakesNoStorageCall,
+  assertAnUnreadableCountRejectsConflict,
   assertBlindedFleetReadIsReachedWhenConfigured,
   assertCleanupFailureStillThrowsTheOriginalError,
   assertCleanupFailureWarnNeverCarriesTheKey,
@@ -106,6 +108,14 @@ describe("F3.4 — AssetImagesWriteService.upload over fakes", () => {
 
   it("a fleet pre-count at the cap makes no storage call", async () => {
     await assertFleetPreCountAtCapMakesNoStorageCall();
+  });
+
+  it("a count that reads back as NaN rejects ConflictException (the compare is fail-closed)", async () => {
+    await assertAnUnreadableCountRejectsConflict();
+  });
+
+  it("a count that reads back as NaN makes no storage call", async () => {
+    await assertAnUnreadableCountMakesNoStorageCall();
   });
 
   it("a tenant-transaction count at the cap (the race) rejects ConflictException", async () => {

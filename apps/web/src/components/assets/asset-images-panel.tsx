@@ -128,7 +128,14 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
     // `onSettled` rather than the two arms: a failed delete that left the
     // button saying "Deleting…" for ever would look like a hung request.
-    onSettled: () => setDeletingId(null),
+    //
+    // It clears only **its own** id. React Query runs one `onSettled` per
+    // mutation call, so two deletes in flight settle twice: an unconditional
+    // `setDeletingId(null)` let the first to finish re-enable the second's
+    // button while that request was still open, inviting a second press and a
+    // 404 on an image already gone.
+    onSettled: (_data, _error, image: AssetImageDto) =>
+      setDeletingId((current) => (current === image.id ? null : current)),
   });
 
   return (

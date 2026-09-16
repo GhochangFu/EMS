@@ -117,6 +117,15 @@ export type Scenario = {
   blindOrgRead?: boolean;
   orgRows?: { organizationId: string | null }[];
   fleetCount?: number;
+  /**
+   * The rows the fleet count query answers with, verbatim — the one way to
+   * reach a **non-numeric** count. `fleetCount` can only ever supply a
+   * number, so with it alone `countImages`' `Number(row?.count)` never
+   * returns `NaN` and the fail-closed compare the service's docblock claims
+   * (`!(n < cap)`) is asserted by nothing: `current >= cap` passes every row
+   * in this file.
+   */
+  fleetCountRows?: { count: unknown }[];
   txAssetRows?: { id: string }[];
   txCount?: number;
   insertError?: Error;
@@ -149,7 +158,7 @@ export function harness(scenario: Scenario = {}): Harness {
       const shape = shapeOf(projection);
       return chain(async () => {
         if (shape === "organizationId") return scenario.orgRows ?? [{ organizationId: ORG_ID }];
-        if (shape === "count") return [{ count: scenario.fleetCount ?? 0 }];
+        if (shape === "count") return scenario.fleetCountRows ?? [{ count: scenario.fleetCount ?? 0 }];
         if (shape === "id") return [{ id: ACTOR_ID }];
         throw new Error(`fleet fake: unexpected select shape ${shape}`);
       });
@@ -380,6 +389,32 @@ export async function assertFleetPreCountAtCapRejectsConflict(): Promise<void> {
 export async function assertFleetPreCountAtCapMakesNoStorageCall(): Promise<void> {
   const { h } = await runUploadRejecting({ fleetCount: CAP });
   assert(h.calls.length === 0, `the pre-count refusal reached storage: ${h.calls.join(", ")}`);
+}
+
+/**
+ * A count that is not a number refuses the upload rather than admitting it.
+ *
+ * The service's docblock claims the compare is fail-closed — `!(n < cap)`, so
+ * an unreadable count refuses — and until this row every scenario handed the
+ * fake a real number, which `current >= cap` satisfies just as well. An empty
+ * result set makes `Number(row?.count)` `NaN`; every comparison against `NaN`
+ * is false, so `>=` would let the upload through with the cap unchecked. Two
+ * asserts, because the first throws: the refusal and the untouched bucket are
+ * separate claims.
+ */
+const unreadableFleetCount = (): Scenario => ({ fleetCountRows: [] });
+
+export async function assertAnUnreadableCountRejectsConflict(): Promise<void> {
+  const { err } = await runUploadRejecting(unreadableFleetCount());
+  assert(
+    errorName(err) === "ConflictException",
+    `a NaN count must refuse the upload (!(n < cap)); it threw ${errorName(err)}: ${errorMessage(err)}`,
+  );
+}
+
+export async function assertAnUnreadableCountMakesNoStorageCall(): Promise<void> {
+  const { h } = await runUploadRejecting(unreadableFleetCount());
+  assert(h.calls.length === 0, `a NaN count reached storage: ${h.calls.join(", ")}`);
 }
 
 export async function assertTenantCountAtCapRejectsConflict(): Promise<void> {

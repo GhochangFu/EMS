@@ -15,6 +15,7 @@ import { asRole } from "../testing/role-urls";
 import {
   assertAFailedRowWriteLeavesNoRow,
   assertAFailedRowWriteRejectsWithTheOriginalError,
+  assertARefusedForeignRemoveLeavesTheRowAndTheObject,
   assertAFailedRowWriteRemovesTheObject,
   assertAnInsertStampedWithAnotherOrganizationIsRefused,
   assertContentStreamsTheUploadedBytes,
@@ -23,6 +24,7 @@ import {
   assertRemoveDeletesTheRow,
   assertRemoveResolvesWhenTheObjectDeleteFails,
   assertRemoveWritesTheDeleteAuditRow,
+  assertRemovingAnotherAssetsImageIsNotFound,
   assertTheCapLeavesExactlyTwentyRows,
   assertTheCorrectlyStampedInsertIsAccepted,
   assertTheCreateAuditPayloadOmitsTheFilenameAndCaption,
@@ -51,7 +53,7 @@ import {
  * a set-but-broken value fails in both. `describe.skipIf` takes both, so a
  * machine with a database and no MinIO skips rather than failing.
  *
- * **Two committed fixture assets, deleted by id.** The write service resolves
+ * **Three committed fixture assets, deleted by id.** The write service resolves
  * the asset's organization on the fleet pool and then writes on a second
  * connection, so an uncommitted fixture is invisible to it — these rows cannot
  * use the rollback style, and the one row that can (`0072`'s refusal) builds
@@ -60,6 +62,8 @@ import {
  * fixtures (`tests/integration-fixture-isolation.test.ts`) — and `ON DELETE
  * CASCADE` takes any surviving image row with them. The cap row owns the
  * second asset alone: sharing one would make its 21st upload's 409 ambiguous.
+ * The third belongs to the cross-asset refusal row for the same reason — it
+ * uploads an image it expects to survive, and the cap row counts rows.
  *
  * **The audit rows this suite commits are swept by the fixtures' own asset
  * ids.** `bms.audit_log` has no cascade to `bms.assets`, so the two actions
@@ -154,7 +158,7 @@ describe.skipIf(!connectionString || !storageConfig)(
         role: actorRow.role as JwtPayload["role"],
       };
 
-      committedAssetIds = await createFixtureAssets(fleetDb, 2, "f3-4", locationA);
+      committedAssetIds = await createFixtureAssets(fleetDb, 3, "f3-4", locationA);
 
       const client = createStorageClient(config, {
         createOps: () => createAwsS3Ops(config),
@@ -174,6 +178,7 @@ describe.skipIf(!connectionString || !storageConfig)(
         actorId: actorRow.id,
         assetId: committedAssetIds[0] as string,
         capAssetId: committedAssetIds[1] as string,
+        foreignAssetId: committedAssetIds[2] as string,
       };
     });
 
@@ -287,6 +292,14 @@ describe.skipIf(!connectionString || !storageConfig)(
 
     it("leaves the orphan object in the bucket (decision 11)", async () => {
       await assertTheOrphanObjectStaysInTheBucket(fx);
+    });
+
+    it("refuses to delete an image that belongs to another asset of the same organization", async () => {
+      await assertRemovingAnotherAssetsImageIsNotFound(fx);
+    });
+
+    it("leaves that other asset's row and object in place after the refusal", async () => {
+      await assertARefusedForeignRemoveLeavesTheRowAndTheObject(fx);
     });
   },
 );

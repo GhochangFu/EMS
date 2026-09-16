@@ -76,7 +76,10 @@ export function uploadBlockedReason({ file, imageCount }: UploadBlockCheck): str
   if (capped !== null) {
     return capped;
   }
-  if (!ASSET_IMAGE_CONTENT_TYPES.includes(file.type as (typeof ASSET_IMAGE_CONTENT_TYPES)[number])) {
+  // `readonly string[]`, not a cast on `file.type`: a `File`'s type is any
+  // string the browser reports, and asserting it into the closed vocabulary
+  // to ask whether it is a member of that vocabulary assumes the answer.
+  if (!(ASSET_IMAGE_CONTENT_TYPES as readonly string[]).includes(file.type)) {
     return "Only JPEG, PNG or WebP images are accepted.";
   }
   if (file.size > MAX_ASSET_IMAGE_BYTES) {
@@ -101,10 +104,53 @@ export function describeAssetImageUploadError(status: number, bodyText: string):
   return apiErrorMessage(bodyText);
 }
 
-/** The sentence for a failed gallery read (R-7): the API's own words on a 503, else the generic line. */
-export function describeGalleryError(status: number, bodyText: string): string {
-  if (status === 503) {
-    return apiErrorMessage(bodyText) || "Object storage is unavailable.";
+/**
+ * Whether the body is Nest's error envelope carrying a usable `message`.
+ *
+ * `apiErrorMessage` deliberately falls back to the **raw text** for anything
+ * else — a proxy's HTML page, a bare status line — because on the admin pages
+ * a wrong-looking sentence beats a blank one. A gallery tile is not that
+ * screen: `adminFetch` throws `admin /assets/<uuid>/images 503` for a body
+ * with no JSON at all, and rendering that under a thumbnail shows an operator
+ * an internal path instead of what to do. So the envelope is checked here
+ * first, and only the envelope's own sentence is unwrapped — by
+ * `apiErrorMessage`, which stays the one unwrapper (§4.8).
+ */
+function isEnvelopeWithMessage(bodyText: string): boolean {
+  const trimmed = bodyText.trim();
+  if (!trimmed.startsWith("{")) {
+    return false;
   }
-  return "Images unavailable.";
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return false;
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    return false;
+  }
+  const { message } = parsed as { message?: unknown };
+  if (Array.isArray(message)) {
+    return message.some((part) => typeof part === "string" && part.trim() !== "");
+  }
+  return typeof message === "string" && message.trim() !== "";
+}
+
+/**
+ * The sentence for a failed gallery read (R-7), in the shape
+ * `describeAssetImageUploadError` already uses: the API's own words when the
+ * body is an envelope that has them, a fixed sentence otherwise.
+ *
+ * The first version read `apiErrorMessage(bodyText) || "Object storage is
+ * unavailable."`. That fallback was dead — `apiErrorMessage("")` answers
+ * "The request failed.", never `""` — so an empty 503 body rendered the
+ * generic failure line and a non-envelope 503 rendered `adminFetch`'s own
+ * `admin /assets/<uuid>/images 503` text.
+ */
+export function describeGalleryError(status: number, bodyText: string): string {
+  if (status !== 503) {
+    return "Images unavailable.";
+  }
+  return isEnvelopeWithMessage(bodyText) ? apiErrorMessage(bodyText) : "Object storage is unavailable.";
 }

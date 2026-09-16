@@ -26,9 +26,19 @@ export function sniffImageContentType(buffer: Buffer): AssetImageContentType | n
     return asContentType("image/png");
   }
 
+  // `RIFF` at 0-3 and `WEBP` at 8-11, compared as numbers.
+  //
+  // Never `buffer.toString("ascii", …)`: Node's `ascii` decoder masks the
+  // high bit rather than refusing the byte, so `D2 C9 C6 C6` decodes to
+  // "RIFF" and `D7 C5 C2 D0` to "WEBP" — measured. Twelve bytes that are not
+  // a RIFF container at all would have been stored as `image/webp` and
+  // served back with that content type. Every other check in this file
+  // already compares bytes; this one now does too.
+  const riff = [0x52, 0x49, 0x46, 0x46];
+  const webp = [0x57, 0x45, 0x42, 0x50];
   if (
-    buffer.toString("ascii", 0, 4) === "RIFF" &&
-    buffer.toString("ascii", 8, 12) === "WEBP"
+    riff.every((byte, index) => buffer[index] === byte) &&
+    webp.every((byte, index) => buffer[index + 8] === byte)
   ) {
     return asContentType("image/webp");
   }

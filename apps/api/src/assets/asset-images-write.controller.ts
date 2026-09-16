@@ -71,7 +71,19 @@ type UploadedImage = { buffer: Buffer; mimetype: string; originalname: string } 
  * which Nest's multer map turns into a 413; `files`, `fields` and an
  * unexpected part are 400s (`@nestjs/platform-express` `multer.utils`). The
  * service re-checks the byte cap on the buffer as well (R-4) — each parser
- * keeps its own cap.
+ * keeps its own cap. `fieldSize` is there because multer bounds the non-file
+ * fields at 1 MB **each** by default: the field *count* was capped and the
+ * field *bytes* were not.
+ *
+ * **Recorded, not fixed (review finding Sec L-2).** `canManageAsset` reaches
+ * `assertMasterDataRole`, which **throws** rather than answering false, so a
+ * viewer or operator is refused with a 403 from that helper — after multer
+ * has already buffered up to `MAX_ASSET_IMAGE_BYTES`. The cost is the same
+ * one the paragraph above accepts for a scoped-out admin, and it is paid by
+ * every authenticated role. `apps/api/src` has no throttler of any kind, so
+ * nothing else bounds the repetition rate either. Accepted for F3.4: a fix
+ * needs the asset id resolved before the interceptor runs, which is the same
+ * second read path the paragraph above declined.
  *
  * **No handler argument is a key** (decision 4): the path parameters are
  * `assetId` and `imageId`, the body carries only `caption`
@@ -99,8 +111,13 @@ export class AssetImagesWriteController {
   // Multer defaults `fields` to Infinity at 1 MB each, otherwise unbounded
   // regardless of `fileSize`. A third non-file field is a 400 from multer;
   // a part over `fileSize` is a 413 through Nest's multer error map.
+  // `fieldSize: 4096` caps each of those two fields: multer's default is
+  // 1 MB **per field**, so `fields: 2` alone still admitted 2 MB of caption
+  // to be buffered and handed to a `.max(1000)` parse that then refused it.
   @UseInterceptors(
-    FileInterceptor("file", { limits: { fileSize: MAX_ASSET_IMAGE_BYTES, files: 1, fields: 2 } }),
+    FileInterceptor("file", {
+      limits: { fileSize: MAX_ASSET_IMAGE_BYTES, files: 1, fields: 2, fieldSize: 4096 },
+    }),
   )
   async upload(
     @CurrentUser() user: JwtPayload,

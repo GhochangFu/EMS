@@ -107,6 +107,54 @@ export function galleryFiveOhThreeShowsTheApiSentence(): void {
   expect(describeGalleryError(503, body)).toBe("Object storage is unreachable");
 }
 
+/**
+ * A 503 with no body at all still names the storage, not the request.
+ *
+ * `apiErrorMessage("")` answers "The request failed." — never `""` — so the
+ * `|| "Object storage is unavailable."` fallback this function used to carry
+ * could not fire, and an empty 503 showed the generic failure line instead.
+ */
+export function galleryFiveOhThreeWithNoBodyShowsTheStorageSentence(): void {
+  expect(describeGalleryError(503, "")).toBe("Object storage is unavailable.");
+}
+
+/**
+ * A 503 whose body is not a Nest envelope shows the storage sentence, never
+ * the raw text.
+ *
+ * `adminFetch` throws `admin <path> <status>` when the response carries no
+ * usable body, and `apiErrorMessage` hands any non-envelope text straight
+ * back — so this exact string used to be rendered under the thumbnails,
+ * showing an operator an internal path and a uuid.
+ */
+export function galleryFiveOhThreeWithANonEnvelopeBodyShowsTheStorageSentence(): void {
+  const body = "admin /assets/11111111-1111-4111-8111-111111111111/images 503";
+  expect(describeGalleryError(503, body)).toBe("Object storage is unavailable.");
+}
+
+/**
+ * A 503 body that starts like JSON and is not JSON shows the storage
+ * sentence — a proxy that truncated the response mid-object, which is the one
+ * shape that reaches the `JSON.parse` failure arm.
+ */
+export function galleryFiveOhThreeWithATruncatedJsonBodyShowsTheStorageSentence(): void {
+  expect(describeGalleryError(503, '{"message":"Object storage is unre')).toBe(
+    "Object storage is unavailable.",
+  );
+}
+
+/**
+ * An envelope whose `message` is an **array** is still an envelope.
+ *
+ * Nest sends that shape for a validation failure and `apiErrorMessage` joins
+ * the parts, so the envelope check has to admit it or the API's own sentence
+ * would be replaced by the generic one.
+ */
+export function galleryFiveOhThreeWithAnArrayMessageShowsTheJoinedSentence(): void {
+  const body = JSON.stringify({ message: ["Object storage is unreachable"] });
+  expect(describeGalleryError(503, body)).toBe("Object storage is unreachable");
+}
+
 /** Every other gallery status shows the generic sentence. */
 export function galleryFiveHundredShowsTheGenericSentence(): void {
   expect(describeGalleryError(500, "")).toBe("Images unavailable.");

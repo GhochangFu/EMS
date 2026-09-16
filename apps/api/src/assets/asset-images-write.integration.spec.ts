@@ -51,9 +51,9 @@ import { AssetImagesWriteService } from "./asset-images-write.service";
  *   `tests/f3.60-withrollback-cases-roll-back.test.ts`).
  * - Every other row drives the real service, which opens its own transactions
  *   on its own pools and cannot see an uncommitted fixture. Those rows use the
- *   two committed fixture assets the `.test.ts` creates and deletes **by id**
- *   in `afterAll`; each row deletes its own image rows and its own objects in
- *   `finally`, whatever the assertion did.
+ *   three committed fixture assets the `.test.ts` creates and deletes **by
+ *   id** in `afterAll`; each row deletes its own image rows and its own
+ *   objects in `finally`, whatever the assertion did.
  *
  * **A real PNG, not a text buffer.** R-1's sniff reads the eight signature
  * bytes, so the bytes have to be a real image; `PNG_BYTES` is a 67-byte 1x1
@@ -82,6 +82,13 @@ export type AssetImageWriteFixtures = {
   readonly assetId: string;
   /** A second one, used by the cap row alone. */
   readonly capAssetId: string;
+  /**
+   * A third, in the **same** organization and location as `assetId` — the one
+   * the cross-asset refusal row uploads to. It cannot be `capAssetId`: a row
+   * this suite failed to clean up there would turn the cap row's 21st upload
+   * into a 409 raised by 21 rows rather than by the cap.
+   */
+  readonly foreignAssetId: string;
 };
 
 /**
@@ -919,4 +926,55 @@ export async function assertTheOrphanObjectStaysInTheBucket(fx: AssetImageWriteF
     "the object must still exist after a failed delete — decision 11 tolerates the orphan, and a " +
       "null head here would mean the delete that 'failed' actually removed it",
   );
+}
+
+// ---------------------------------------------------------------------------
+// Row 8 — remove refuses an image that belongs to another asset (review Sec M-1)
+// ---------------------------------------------------------------------------
+
+/**
+ * An image of one asset, asked for through **another** asset's delete route.
+ *
+ * `remove`'s `and(eq(id, imageId), eq(assetId, assetId))` is the only control
+ * that scopes a delete **inside** one organization: both assets here live in
+ * organization A and in `locationA`, so the tenant GUC, `0072`'s policy and
+ * `canManageAsset` are all satisfied for both and none of them can refuse
+ * this call. Drop the `assetId` conjunct and the row is deleted and audited
+ * under an asset it never belonged to, and its object with it — a caller who
+ * can manage any one asset can delete any image in the organization by id.
+ *
+ * Two asserts, because the first throws: the refusal and the survival of the
+ * row and the object are separate claims.
+ */
+async function runForeignRemove(
+  fx: AssetImageWriteFixtures,
+): Promise<{ err: unknown; rowAfter: number; head: { contentLength: number } | null }> {
+  const recorder = recordingClient(fx.client);
+  const service = writeService(fx, recorder.client);
+  const dto = await uploadOnce(service, fx, fx.foreignAssetId);
+  const key = recorder.putKeys[0] as string;
+  try {
+    const err = await captureRejection(() => service.remove(fx.actor, fx.assetId, dto.id));
+    return { err, rowAfter: await countImageRow(fx.fleetDb, dto.id), head: await headObject(fx.client, key) };
+  } finally {
+    await discard(fx, dto.id, key);
+  }
+}
+
+/** Another asset's image is not found on this asset's route. */
+export async function assertRemovingAnotherAssetsImageIsNotFound(fx: AssetImageWriteFixtures): Promise<void> {
+  const run = await runForeignRemove(fx);
+  assert(
+    errorName(run.err) === "NotFoundException",
+    `removing an image of ${fx.foreignAssetId} through ${fx.assetId} threw ${errorName(run.err)}`,
+  );
+}
+
+/** …and the refusal really refused: the row and the object both survive it. */
+export async function assertARefusedForeignRemoveLeavesTheRowAndTheObject(
+  fx: AssetImageWriteFixtures,
+): Promise<void> {
+  const run = await runForeignRemove(fx);
+  assert(run.rowAfter === 1, `the other asset's image row must survive the refusal; the fleet count is ${run.rowAfter}`);
+  assert(run.head !== null, "the other asset's object must survive the refusal; headObject answered null");
 }

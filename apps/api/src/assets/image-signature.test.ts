@@ -6,6 +6,7 @@ import {
   assertFilenameOverlongIsRefused,
   assertFilenameTrims,
   assertGifHeaderIsNull,
+  assertHighBitRiffWebpLookalikeIsNull,
   assertJpegPrefixSniffsAsJpeg,
   assertPngSignatureSniffsAsPng,
   assertReturnedValueIsAMemberOfTheSharedEnum,
@@ -38,6 +39,10 @@ describe("F3.4 — sniffImageContentType", () => {
 
   it("returns null for RIFF/????/WAVE (proves bytes 8-11 are read)", () => {
     assertRiffWaveIsNull();
+  });
+
+  it("returns null for the high-bit RIFF/WEBP lookalike (the bytes are compared numerically)", () => {
+    assertHighBitRiffWebpLookalikeIsNull();
   });
 
   it("returns null for an 11-byte PNG prefix", () => {

@@ -25,7 +25,10 @@ import { describe, expect, it } from "vitest";
  *    key is derived from the row, never accepted from a client — and
  *    `OBJECT_KEY_PREFIX` (exported for the leak assertions) is imported by
  *    `*.spec.ts` files only, closing the gap `F4.145` named against the two
- *    rows above (F3.4 Unit 6).
+ *    rows above (F3.4 Unit 6). That last row asks the question in two halves
+ *    — an import statement from an `object-key` module, in **any** shape, and
+ *    the constant named in the body — because the first version matched a
+ *    named import alone and a namespace import read the prefix past it.
  * 4. **The worker gets no storage** (decision 9). `worker.module.ts` reaches
  *    nothing under `./storage/`, the two files in the worker's import
  *    closure pull in neither the module nor the SDK, and
@@ -156,9 +159,32 @@ const TAG = /quay\.io\/minio\/minio:RELEASE\.[0-9TZ-]+/;
 /** A string literal that STARTS with the key prefix — not `org/` mid-sentence in a test name. */
 const KEY_LITERAL = /["'`]org\//;
 
-/** A named import of `OBJECT_KEY_PREFIX` from an `object-key` module (F4.145). */
-const OBJECT_KEY_PREFIX_IMPORT =
-  /import\s*\{[^}]*\bOBJECT_KEY_PREFIX\b[^}]*\}\s*from\s*["'][^"']*object-key["']/;
+/**
+ * Any import statement whose source is an `object-key` module — named,
+ * namespace or default (F4.145).
+ *
+ * The first shape of this row matched a **named** import alone, so
+ * `import * as objectKey from "../storage/object-key"` followed by
+ * `objectKey.OBJECT_KEY_PREFIX` walked straight past it — the exact leak the
+ * row exists to stop. `[^;]` keeps the match inside one statement, so a later
+ * `from "…/object-key"` in a different import cannot be paired with an
+ * earlier `import` keyword.
+ */
+const OBJECT_KEY_IMPORT = /^[ \t]*import\s[^;]*?from\s*["'][^"']*object-key["']/m;
+
+/** The prefix named anywhere in the comment-stripped body — the use, whatever the import shape brought it in under. */
+const OBJECT_KEY_PREFIX_USE = /\bOBJECT_KEY_PREFIX\b/;
+
+/**
+ * A file is an importer of the prefix when it takes **something** from an
+ * `object-key` module and names `OBJECT_KEY_PREFIX` in its code. Both halves
+ * are needed: `storage/object-key.ts` defines the constant and imports
+ * nothing from itself (so it is not an offender and needs no allowlist), and
+ * the several modules that import `buildObjectKey` alone never name it.
+ */
+function importsTheKeyPrefix(file: SourceFile): boolean {
+  return OBJECT_KEY_IMPORT.test(file.code) && OBJECT_KEY_PREFIX_USE.test(file.code);
+}
 
 describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9, 10)", () => {
   describe("the minio service (decision 9, Amendment 1 Q-C and the registry note)", () => {
@@ -365,7 +391,7 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
 
     it("OBJECT_KEY_PREFIX is imported by *.spec.ts files only (F4.145)", () => {
       const offenders = sources
-        .filter((f) => OBJECT_KEY_PREFIX_IMPORT.test(f.code))
+        .filter(importsTheKeyPrefix)
         .filter((f) => !f.rel.endsWith(".spec.ts"))
         .map((f) => f.rel);
       expect(
@@ -378,9 +404,7 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
     });
 
     it("positive control: asset-images.service.spec.ts imports OBJECT_KEY_PREFIX", () => {
-      const importers = sources
-        .filter((f) => OBJECT_KEY_PREFIX_IMPORT.test(f.code))
-        .map((f) => f.rel);
+      const importers = sources.filter(importsTheKeyPrefix).map((f) => f.rel);
       expect(importers.length, "the scan must see at least one importer, or the row above is vacuous").toBeGreaterThan(0);
       expect(
         importers.every((rel) => rel.endsWith(".spec.ts")),
