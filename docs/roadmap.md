@@ -5203,11 +5203,43 @@ to the RTU and showed the write **silently skips** it — no cross-tenant write 
 possible, so the explicit organization predicate is defence in depth. The audit
 row now records `assetsMoved`, the count only.
 
-**Still open:** `F4.139` (`AssetsAdminService` reaches the same invariant from
-the asset end), `F4.140` (`OnboardingCommitService` is a third writer that sets
-no `telemetrySource` at all), `F4.137` (no constraint makes `assets.rtu_id`
-respect the organization) and `F4.138` (the gate reads the location's
-organization while the write uses the RTU's).
+**Still open:** `F4.137` (no constraint makes `assets.rtu_id` respect the
+organization) and `F4.138` (the gate reads the location's organization while
+the write uses the RTU's). `F4.139` and `F4.140` closed 2026-09-16 (PR #461,
+next section).
+
+### `F4.139` + `F4.140` — one `telemetrySource` predicate, four writers ✅ 2026-09-16
+
+**The invariant `F4.59` closed at the RTU end is now closed at every asset
+end.** `F4.59` moved `assets.meta.telemetrySource` when `ingest_enabled`
+flipped, and left its predicate inline. Three other paths set `assets.rtu_id`
+without writing the key: the admin asset create/update (`F4.139`), the
+onboarding commit (`F4.140`) and — found by the correctness review, fixed here
+on the owner's ruling — template instantiation, which inserted a whole batch
+with `rtu_id` and no `meta`. Each left the simulator and the ingest host with
+opposite defaults for an absent key, so both wrote the same points.
+
+The predicate now lives once, in `apps/api/src/admin/telemetry-source.ts`:
+ingest enabled **and** (the declared source has an adapter **or** a
+connection-config row exists) → `mqtt`, else `catalog`. Positive membership,
+not exclusion — `F4.59`'s first draft tested `!== "catalog"` and would have
+handed 99 simulator assets to a host that never binds them. The read runs on
+the caller's tenant transaction; the merge keeps the caller's bag and the
+derived value wins.
+
+**Three rulings, one review finding, one gap the tests found.** Detach leaves
+the stored value alone; the asset audit payloads carry the derived value; an
+onboarded non-ingest asset carries an explicit `catalog`. The security
+review's Low — a caller could set `telemetrySource: "mqtt"` on an asset with
+no RTU and silence the simulator — is fixed by stripping the caller's key on
+that branch while the stored one survives. And a dropped null guard survived
+fifteen cases, which is why the sixteenth exists: a mutation that survives is
+a missing test, not a passing one.
+
+**Verification.** 49 new or refactored cases across six files, one claim per
+`it()`, every mutation named with the case it reddened; the full
+`pnpm test:coverage` gate green against the compose database. Browser layer
+N/A (no `apps/web` change). API response shape unchanged (ADR 0030 N/A).
 
 ### `F4.55` — the probe aggregate's refresh policy ⬜ still open
 
