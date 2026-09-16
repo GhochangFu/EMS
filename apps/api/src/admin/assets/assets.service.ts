@@ -32,6 +32,26 @@ import type { CreateAssetBody, UpdateAssetBody } from "./assets.schema";
 type MetaBag = Record<string, unknown> | null;
 
 /**
+ * `F4.139` (second pass) — the `telemetrySource` an audit payload records: the
+ * one in the bag this write actually stored, or `null` when the bag has none.
+ *
+ * Not the derived value. `create` and `update` both derive `null` when no RTU is
+ * attached, but `nextAssetMeta` keeps the *stored* key on a detach (owner ruling
+ * 1), so the derivation and the row disagree on exactly the path an auditor cares
+ * about: the edit that took an asset off its gateway while leaving it marked
+ * `mqtt`. The audit row is the only API-side record of what that write decided,
+ * and a record of a decision the row does not show is worse than none.
+ *
+ * `typeof`, not a cast: a bag written by hand (or by a pre-`F4.139` release) can
+ * hold anything under this key, and this reports what is there rather than
+ * asserting a type over it.
+ */
+function storedSource(meta: MetaBag): string | null {
+  const value = meta === null ? undefined : meta.telemetrySource;
+  return typeof value === "string" ? value : null;
+}
+
+/**
  * `F4.16` / `E7.1b` / ADR 0043 — `assets` (and `asset_points`) gain
  * `organization_id` + a `tenant_isolation` policy + `FORCE` in migration `0047`.
  *
@@ -174,6 +194,10 @@ export class AssetsAdminService {
       // moves the assets of `rtu_id = $1` only. The rest of the bag is stored
       // exactly as sent.
       const telemetrySource = rtu === null ? null : await resolveTelemetrySource(tx, rtu);
+      const storedMeta =
+        telemetrySource === null
+          ? omitTelemetrySource(body.meta)
+          : withTelemetrySource(body.meta, telemetrySource);
       const [row] = await tx
         .insert(assets)
         .values({
@@ -184,10 +208,7 @@ export class AssetsAdminService {
           rtuId: body.rtuId ?? null,
           domain: body.domain,
           organizationId,
-          meta:
-            telemetrySource === null
-              ? omitTelemetrySource(body.meta)
-              : withTelemetrySource(body.meta, telemetrySource),
+          meta: storedMeta,
           active: true,
         })
         .returning();
@@ -201,11 +222,17 @@ export class AssetsAdminService {
           entityType: "asset",
           entityId: row.id,
           organizationId,
-          // `F4.139` — the derived value (or `null` for an unattached asset)
-          // beside the body, because the response DTO does not carry it: the
-          // audit row is the only record of what this write decided. A value,
-          // never an id (ADR 0021).
-          payload: { ...body, telemetrySource },
+          // `F4.139` — the `telemetrySource` beside the body, because the
+          // response DTO does not carry it: the audit row is the only record of
+          // what this write decided. A value, never an id (ADR 0021).
+          //
+          // **The stored bag, not the caller's** (second pass). `...body` spread
+          // `body.meta` as *sent*, so a caller whose `telemetrySource` this path
+          // strips (A13) was audited as though the key had landed — the audit row
+          // then reads as evidence of exactly the split row the strip prevents.
+          // Both keys therefore come from `storedMeta`: the payload records what
+          // is in `bms.assets`, never what was asked for.
+          payload: { ...body, meta: storedMeta, telemetrySource: storedSource(storedMeta) },
         },
         tx,
       );
@@ -302,9 +329,13 @@ export class AssetsAdminService {
           entityType: "asset",
           entityId: id,
           organizationId,
-          // `F4.139` — as in `create`: the derived value, or `null` when this
-          // update leaves the asset with no RTU.
-          payload: { ...body, telemetrySource },
+          // `F4.139` — as in `create`, and the second pass matters more here:
+          // the *derived* value is `null` on a detach while `nextAssetMeta`
+          // deliberately keeps the stored one (owner ruling 1), so a payload
+          // built from the derivation recorded `telemetrySource: null` for a row
+          // that still says `mqtt`. `storedMeta` is the row this statement just
+          // wrote, and it answers both keys.
+          payload: { ...body, meta: nextMeta, telemetrySource: storedSource(nextMeta) },
         },
         tx,
       );

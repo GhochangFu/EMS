@@ -22,7 +22,11 @@ import {
   assertCreateWithoutAnRtuDropsACallerSuppliedSource,
   assertCreateWithoutAnRtuLeavesTheMetaAlone,
   assertDetachLeavesTheStoredTelemetrySource,
+  assertTheCreateAuditMetaDropsTheRefusedSource,
+  assertTheCreateAuditRecordsNullWithoutAnRtu,
   assertTheCreateAuditRecordsTheDerivedSource,
+  assertTheDetachUpdateAuditMetaKeepsTheStoredSource,
+  assertTheDetachUpdateAuditRecordsTheStoredSource,
   assertTheUpdateAuditRecordsTheDerivedSource,
   assertUpdateDerivesFromTheNewRtuOnAChange,
   assertUpdateDerivesOnAttach,
@@ -215,5 +219,21 @@ describe.skipIf(!connectionString)("F4.139 — AssetsAdminService derives teleme
 
   it("stores a meta bag over a detached asset that had none", async () => {
     await assertADetachedUpdateAcceptsAMetaBagOverNull(ctx, jwt);
+  }, 30_000);
+
+  it("records the stored telemetrySource in a detaching update's audit payload", async () => {
+    await assertTheDetachUpdateAuditRecordsTheStoredSource(ctx, jwt);
+  }, 30_000);
+
+  it("audits the meta that was written, not the caller's, on a detaching update", async () => {
+    await assertTheDetachUpdateAuditMetaKeepsTheStoredSource(ctx, jwt);
+  }, 30_000);
+
+  it("never audits a telemetrySource the create refused", async () => {
+    await assertTheCreateAuditMetaDropsTheRefusedSource(ctx, jwt);
+  }, 30_000);
+
+  it("records a null telemetrySource when create attaches no RTU", async () => {
+    await assertTheCreateAuditRecordsNullWithoutAnRtu(ctx, jwt);
   }, 30_000);
 });

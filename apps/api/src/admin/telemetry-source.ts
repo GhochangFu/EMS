@@ -80,10 +80,14 @@ export type TelemetrySource = "mqtt" | "catalog";
 /**
  * The `F4.59` predicate: does this RTU hand its assets to the ingest host?
  *
- * Row-shaped rather than id-shaped because all three callers already hold the
- * row — `RtusAdminService.update` holds the next `ingest_enabled` and the
- * declared source, onboarding holds the `.returning()` row, and
- * `assertRtuLocation` reads one anyway. Nothing here re-reads `bms.rtus`.
+ * Row-shaped rather than id-shaped because the callers hold the row already —
+ * `RtusAdminService.update` holds the next `ingest_enabled` and the declared
+ * source, onboarding holds the `.returning()` row, and `assertRtuLocation` reads
+ * one anyway. Nothing here re-reads `bms.rtus`; a caller that does not hold the
+ * row on its own transaction reads it there itself, which is what
+ * `AssetTemplateInstantiationService.deriveTelemetrySource` exists for — a row
+ * read on `fleetDb` before `withTenant` is a second snapshot, and the whole
+ * predicate belongs to one.
  *
  * `tx` is the **caller's** transaction, never `fleetDb`: in onboarding the
  * connection-config row is inserted in the same uncommitted transaction, and a

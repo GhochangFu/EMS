@@ -13,6 +13,7 @@ import {
   assertALocationTargetWritesNoTelemetrySource,
   assertInstantiateDerivesCatalogForASimulatorRtu,
   assertInstantiateDerivesMqttForEveryAssetInTheBatch,
+  assertTheBatchDerivesFromTheRtuAsItIsAtInsertTime,
   FIXTURE_PREFIX,
   type InstantiateTelemetrySourceCtx,
 } from "./asset-templates-instantiate.telemetry-source.integration.spec";
@@ -200,5 +201,9 @@ describe.skipIf(!connectionString)("F4.139 — instantiate derives telemetrySour
 
   it("writes no telemetrySource at all for a gateway-less location target", async () => {
     await assertALocationTargetWritesNoTelemetrySource(ctx, jwt);
+  }, 30_000);
+
+  it("derives from the RTU row as it is at insert time", async () => {
+    await assertTheBatchDerivesFromTheRtuAsItIsAtInsertTime(ctx, jwt);
   }, 30_000);
 });

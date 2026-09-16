@@ -501,6 +501,153 @@ export async function assertADetachedUpdateAcceptsAMetaBagOverNull(
   expect(meta).toEqual({ foo: "bar" });
 }
 
+/**
+ * A16 — the `update` audit payload records the `telemetrySource` that was
+ * **stored**, not the one this write derived.
+ *
+ * Second pass. The payload was `{ ...body, telemetrySource }` and
+ * `telemetrySource` is the *derived* value, which is `null` on a detach —
+ * while `nextAssetMeta` deliberately keeps the stored key (owner ruling 1). So
+ * the one edit an auditor most wants a record of, "this asset left its gateway
+ * and is still marked `mqtt`", was recorded as `null`: an audit row that
+ * contradicts the row it describes.
+ */
+export async function assertTheDetachUpdateAuditRecordsTheStoredSource(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const assetId = await createDetachedWithAStoredSource(ctx, jwt);
+
+  const row = await readUpdateAudit(ctx, assetId);
+  expect(row.telemetrySource).toBe("mqtt");
+}
+
+/**
+ * A16, second claim — and `payload.meta` is the bag that was written, so the
+ * key the service refused never appears in the audit either.
+ *
+ * `...body` spread `body.meta` as *sent*. A caller may not choose this key
+ * (A13/A14), so auditing `"catalog"` here recorded a value that never reached
+ * `bms.assets` — and recorded it under the same name as the real one, which is
+ * how an audit trail becomes evidence for the wrong answer. Its own `it()`:
+ * `expect` throws.
+ */
+export async function assertTheDetachUpdateAuditMetaKeepsTheStoredSource(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const assetId = await createDetachedWithAStoredSource(ctx, jwt);
+
+  const row = await readUpdateAudit(ctx, assetId);
+  expect(row.metaTelemetrySource).toBe("mqtt");
+}
+
+/**
+ * A17 — a `create` with no RTU audits **no** `telemetrySource` inside `meta`.
+ *
+ * The create half of the same defect, and the discriminating claim of the two:
+ * on this path the derived value and the stored one always agree (`create`
+ * strips the key exactly when it derives `null`), so only `payload.meta`
+ * distinguishes the old payload from the new. A13 proves the key does not reach
+ * the row; this proves it does not reach the audit trail that describes the row.
+ */
+export async function assertTheCreateAuditMetaDropsTheRefusedSource(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const assetId = await createAssetThroughService(ctx, jwt, {
+    meta: { telemetrySource: "mqtt", foo: "bar" },
+  });
+
+  const res = await ctx.fixturePool.query<{ hasKey: boolean; foo: string | null }>(
+    `SELECT payload->'meta' ? 'telemetrySource' AS "hasKey", payload->'meta'->>'foo' AS foo
+       FROM bms.audit_log
+      WHERE entity_id = $1 AND action = 'master.asset.create'
+      LIMIT 1`,
+    [assetId],
+  );
+  const row = res.rows[0];
+  if (row === undefined) {
+    throw new Error(`F4.139: no master.asset.create audit row for ${assetId}`);
+  }
+  // The positive control, in the same `expect`: `foo` proves the payload
+  // carries the caller's bag at all, so an absent `telemetrySource` is the
+  // service dropping one key rather than `payload.meta` being missing.
+  expect(row).toEqual({ hasKey: false, foo: "bar" });
+}
+
+/**
+ * A17, second claim — and the top-level `telemetrySource` is `null` there.
+ *
+ * **A tripwire, not a gate.** It passes before the fix too: `create` derives
+ * `null` exactly when it strips the key, so the old payload answered this one
+ * correctly. It is here because that agreement is a property of `create`'s
+ * branches and not of the payload, and a future edit that reintroduced a
+ * caller-chosen source would break it silently.
+ */
+export async function assertTheCreateAuditRecordsNullWithoutAnRtu(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const assetId = await createAssetThroughService(ctx, jwt, {
+    meta: { telemetrySource: "mqtt", foo: "bar" },
+  });
+
+  const res = await ctx.fixturePool.query<{ telemetrySource: string | null }>(
+    `SELECT payload->>'telemetrySource' AS "telemetrySource"
+       FROM bms.audit_log
+      WHERE entity_id = $1 AND action = 'master.asset.create'
+      LIMIT 1`,
+    [assetId],
+  );
+  if (res.rows[0] === undefined) {
+    throw new Error(`F4.139: no master.asset.create audit row for ${assetId}`);
+  }
+  expect(res.rows[0].telemetrySource).toBeNull();
+}
+
+/**
+ * A16's fixture: an asset that stores `mqtt`, detached by a PATCH that also
+ * sends a `telemetrySource` of its own.
+ *
+ * Built through the service on both steps, so the stored `mqtt` is one this
+ * code derived rather than one the fixture asserted into place.
+ */
+async function createDetachedWithAStoredSource(
+  ctx: AssetsTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<string> {
+  const rtuId = await createIngestRtu(ctx);
+  const assetId = await createAssetThroughService(ctx, jwt, { rtuId });
+
+  await ctx.svc.update(jwt, assetId, { rtuId: null, meta: { telemetrySource: "catalog", x: 1 } });
+
+  return assetId;
+}
+
+/** The single `master.asset.update` row this asset's one PATCH wrote. */
+async function readUpdateAudit(
+  ctx: AssetsTelemetrySourceCtx,
+  assetId: string,
+): Promise<{ telemetrySource: string | null; metaTelemetrySource: string | null }> {
+  const res = await ctx.fixturePool.query<{
+    telemetrySource: string | null;
+    metaTelemetrySource: string | null;
+  }>(
+    `SELECT payload->>'telemetrySource' AS "telemetrySource",
+            payload->'meta'->>'telemetrySource' AS "metaTelemetrySource"
+       FROM bms.audit_log
+      WHERE entity_id = $1 AND action = 'master.asset.update'
+      LIMIT 1`,
+    [assetId],
+  );
+  const row = res.rows[0];
+  if (row === undefined) {
+    throw new Error(`F4.139: no master.asset.update audit row for ${assetId}`);
+  }
+  return row;
+}
+
 /** A14's claim: the stored value survives, the caller's is discarded. */
 export async function assertADetachedUpdateKeepsTheStoredTelemetrySource(
   ctx: AssetsTelemetrySourceCtx,

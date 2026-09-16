@@ -165,6 +165,40 @@ export async function assertInstantiateDerivesCatalogForASimulatorRtu(
 }
 
 /**
+ * I4 — the batch derives from the RTU row as it stands when the assets are
+ * written, not from a copy taken earlier.
+ *
+ * **A tripwire, not a gate** — say so plainly: the flag is flipped before the
+ * call, so `resolveTarget` and the tenant transaction both see it and the
+ * pre-fix code passes this case too. What it holds is the *outcome* — a
+ * disabled RTU's batch is `catalog` — over the same fixture RTU that answered
+ * `mqtt` a moment earlier, so a derivation that cached the flags per RTU, or
+ * read them once per process, fails here. The connection the flags are read on
+ * is gated structurally instead, in the sibling non-integration spec: the split
+ * this second pass closes needs a flag change to commit *between* two reads
+ * inside one `instantiate` call, and the service offers no seam to interleave on.
+ *
+ * The first instantiate is the positive control. Without it a fixture RTU that
+ * had been disabled all along would pass, and the case would say nothing about
+ * re-reading.
+ */
+export async function assertTheBatchDerivesFromTheRtuAsItIsAtInsertTime(
+  ctx: InstantiateTelemetrySourceCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const rtuId = await createFixtureRtu(ctx, { sourceType: "mqtt", ingestEnabled: true });
+  const before = await instantiateOnto(ctx, jwt, { rtuId });
+
+  await ctx.fixturePool.query("UPDATE bms.rtus SET ingest_enabled = false WHERE id = $1", [rtuId]);
+  const after = await instantiateOnto(ctx, jwt, { rtuId });
+
+  const sources = [...(await readMetas(ctx, before)), ...(await readMetas(ctx, after))].map(
+    (meta) => meta?.telemetrySource,
+  );
+  expect(sources).toEqual(["mqtt", "mqtt", "catalog", "catalog"]);
+}
+
+/**
  * I3 — a location target writes no key at all.
  *
  * The gateway-less path (ADR 0018): there is no RTU to derive from, and
