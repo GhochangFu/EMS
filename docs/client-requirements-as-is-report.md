@@ -154,7 +154,7 @@ Verified from `AGENTS.md`, `package.json`, `docker-compose.yml`, and application
 
 ### Explicitly deferred (per `AGENTS.md`)
 
-EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge agents (beyond pilot MQTT), general site AI copilot, mobile apps, OTA firmware, two-way commanding, PDF/XLSX report storage.
+EMQX broker, Kubernetes manifests, multi-protocol edge agents (beyond pilot MQTT), general site AI copilot, mobile apps, OTA firmware, two-way commanding, PDF/XLSX report storage.
 
 ### Local development
 
@@ -193,8 +193,8 @@ EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge age
 | Image / binary storage | **Delivered** | Object store (S3 API, MinIO in compose), `bms.asset_images` under FORCE RLS and the two read routes under ADR 0066 (`F3.3`, 2026-09-15); the upload and delete API with audit rows, an admin Images panel on `/admin/assets` and a read-only gallery on the location dashboard (`F3.4`, 2026-09-16, ADR 0066 Amendment 3). Sniffed content type, a 20-images-per-asset cap, API-proxied bytes. Deferred by name: presigned URLs, thumbnails, the orphan sweep | 9/10 | Thumbnails and the orphan sweep are later rows with their own justification |
 | Raw message archive | **Missing** | Ingest drops unmapped payloads silently | 0/10 | Debug/archive table (optional) |
 
-**As-is score: 55%** (excluding images: 73%)  
-**Gap effort: 8–12 pw** (object storage 8–12; retention/aggregates **done** 2026-08-10, ADR 0023 + ADR 0024)
+**As-is score: 63%** (the mean of the four quality scores, 25/40; images moved 5/10 → 9/10 on 2026-09-16)  
+**Gap effort: 2–4 pw** (re-estimated 2026-09-16: the per-tenant retention override and the optional raw-message archive; object storage **done** 2026-09-15/16, ADR 0066 `F3.3` + `F3.4`; retention/aggregates **done** 2026-08-10, ADR 0023 + ADR 0024)
 
 ---
 
@@ -311,7 +311,7 @@ EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge age
 | # | Client Requirement | As-Is % | Status | Quality | Gap Effort (pw) | Priority |
 |---|-------------------|---------|--------|---------|-----------------|----------|
 | 1 | Data connect SCADA/PLC/DCS/IoT → cloud | 25% | Partial | 4/10 | 40–55 | **P0** |
-| 2 | TS + images + relational storage | 55% | Partial | 6/10 | 12–18 | **P0** |
+| 2 | TS + images + relational storage | 63% | Partial | 8/10 | 2–4 | **P0** |
 | 3 | Streaming / manual / CSV·Excel TS feed | 25% | Partial | 4/10 | 6–10 | **P0** |
 | 4 | Tags on assets | 70% | Mostly done | 7/10 | 3–5 | P1 |
 | 5 | Asset templates (I/O/calc tags) | 5% | Missing | 1/10 | 10–14 | **P0** |
@@ -358,7 +358,6 @@ EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge age
 | Capability |
 |------------|
 | DCS protocol adapter |
-| Image/binary object storage |
 | Manual time-series entry |
 | Telemetry bulk import (CSV/Excel) |
 | Asset template engine |
@@ -432,8 +431,8 @@ EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge age
 
 | # | Deliverable | Effort | Req |
 |---|-------------|--------|-----|
-| D1 | Object storage (S3/MinIO) + image metadata | 8–10 | 2 |
-| D2 | Image upload API + linkage to assets | 3–4 | 2 |
+| D1 | Object storage (S3/MinIO) + image metadata — **done 2026-09-15** (`F3.3`, ADR 0066) | 8–10 | 2 |
+| D2 | Image upload API + linkage to assets — **done 2026-09-16** (`F3.4`, ADR 0066 Amendment 3) | 3–4 | 2 |
 | D3 | ML feature pipeline (multivariate TS export) | 8–10 | 7 |
 | D4 | Anomaly detection service (pilot points) | 10–12 | 7 |
 | D5 | Vision inference hook (external model API) | 8–10 | 7 |
@@ -458,7 +457,7 @@ EMQX broker, MinIO/object storage, Kubernetes manifests, multi-protocol edge age
 | Client req | Zoho matrix items leveraged | Notes |
 |------------|---------------------------|-------|
 | 1 Data connect | Modbus, BACnet, OPC-UA, MQTT, Edge Agent rows | Client DCS may exceed Zoho catalog |
-| 2 Storage | TS DB, raw messages; add images (not in Zoho core) | MinIO was deferred in AGENTS.md |
+| 2 Storage | TS DB, raw messages; add images (not in Zoho core) | MinIO and the image API promoted under ADR 0066 (`F3.3`, `F3.4`) |
 | 3 TS feeds | Data Explorer, aggregation API | CSV TS upload is client-specific |
 | 4–6 Tags/templates/mapping | Models, datapoints, mapping | **BMS onboarding now covers much of mapping** |
 | 7 Calculations | Computed/KPI datapoints, AI features | ML/vision is client stretch |
