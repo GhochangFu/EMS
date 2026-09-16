@@ -12,6 +12,8 @@ import {
 import {
   assetGroups,
   assetPoints,
+  assets,
+  assetTemplates,
   bmsSchema,
   locations,
   organizations,
@@ -191,6 +193,31 @@ export const dashboards = bmsSchema.table(
     // consults the parent's policy — a `templateId` with no policy leg would let a tenant stamp
     // its dashboard with another organization's template id.
     templateId: uuid("template_id").references(() => dashboardTemplates.id),
+    // F3.2 / ADR 0067 decision 1, migration 0073 — the asset scope. CASCADE, unlike
+    // templateId above: a section-template instance outlives its template (the stamp is
+    // provenance, and a delete that would orphan it must fail loudly), but a per-asset default
+    // dashboard is ABOUT one asset and has no meaning without it — keeping it after the asset
+    // is gone would leave a dashboard whose every binding cascaded away already
+    // (dashboardWidgetPoints.pointId ON DELETE CASCADE).
+    //
+    // Migration 0073 re-creates tenant_isolation to check this new parent too, for the same
+    // reason 0056 gives for templateId: Postgres runs referential-integrity checks with row
+    // security off, so a foreign key never consults the parent's policy — an unchecked
+    // assetId would let a tenant stamp its dashboard with another organization's asset.
+    assetId: uuid("asset_id").references(() => assets.id, { onDelete: "cascade" }),
+    // F3.2 / ADR 0067 decision 1, migration 0073 — the asset-template stamp, mirroring
+    // templateId exactly: no onDelete, and it points at the VERSION ROW whose identity is
+    // (organizationId, code, version), so there is no second assetTemplateVersion column
+    // (ADR 0049 decision 2's reasoning, verbatim). Never written through the dashboard bodies
+    // — only the instantiate/backfill service sets it, as only the ADR 0049 service sets
+    // templateId.
+    //
+    // CHECKs are not mirrored here, following this file's own convention above:
+    // dashboards_scope_check (at most one of locationId/assetGroupId/assetId non-null),
+    // dashboards_template_stamp_check (templateId and assetTemplateId are mutually exclusive)
+    // and dashboards_asset_stamp_check (assetTemplateId implies assetId) all live in migration
+    // 0073 and are pinned by tests/f3.2-asset-dashboards-schema.test.ts.
+    assetTemplateId: uuid("asset_template_id").references(() => assetTemplates.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -505,6 +505,13 @@
       "when": 1789451212123,
       "tag": "0072_asset_images",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789575341238,
+      "tag": "0073_asset_default_dashboards",
+      "breakpoints": true
     }
   ]
 }
