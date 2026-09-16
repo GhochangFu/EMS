@@ -334,8 +334,14 @@ export class AssetsAdminService {
           // deliberately keeps the stored one (owner ruling 1), so a payload
           // built from the derivation recorded `telemetrySource: null` for a row
           // that still says `mqtt`. `storedMeta` is the row this statement just
-          // wrote, and it answers both keys.
-          payload: { ...body, meta: nextMeta, telemetrySource: storedSource(nextMeta) },
+          // wrote, and it answers both keys. `meta` is restated only when the
+          // caller sent one: a bare rename must not audit a bag it never
+          // touched, or the payload stops saying what the caller sent.
+          payload: {
+            ...body,
+            ...(body.meta !== undefined ? { meta: nextMeta } : {}),
+            telemetrySource: storedSource(nextMeta),
+          },
         },
         tx,
       );
