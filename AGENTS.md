@@ -311,10 +311,17 @@
 > asset, two API-proxied read routes under `canReadAsset`, `storage` on the
 > API's `GET /health` and absent on the worker's, and a storage integration
 > spec that **refuses to skip in CI** (**ADR 0066** + Amendment 1, `F3.3`,
-> 2026-09-15 — the last Wave 0 enabler). It promotes the store and the read
-> half only: the upload, delete, audit rows and the first UI are `F3.4`'s, and
-> presigned URLs, multipart, thumbnails, the orphan sweep and KES/TLS in
-> compose stay deferred by name (§4 rule 13).
+> 2026-09-15 — the last Wave 0 enabler). It promoted the store and the read
+> half; **`F3.4` shipped the write half on 2026-09-16** (ADR 0066 Amendment
+> 3): the upload route (the content type sniffed from the bytes and required
+> to agree with the declared one, `sha256`/`byte_size` from the buffer, the
+> object put first and the row inserted under the asset's own tenant GUC,
+> `MAX_ASSET_IMAGES_PER_ASSET = 20` → 409), the delete route (row, commit,
+> then the object — an orphan is tolerated and warned, decision 11), audit
+> rows for both, an admin Images side panel on `/admin/assets` and a
+> read-only gallery on the location dashboard's asset table. Presigned URLs,
+> multipart, thumbnails, the orphan sweep and KES/TLS in compose stay
+> deferred by name (§4 rule 13).
 > And **one character class for the two catalog code columns** — `bms.point_keys.code`
 > and `bms.assets.code` match `^[A-Za-z0-9_-]+` anchored at both ends, written
 > once as `CATALOG_CODE_PATTERN` in `@bms/shared`, applied at the five Zod write
@@ -430,7 +437,11 @@ The current planning direction is:
    `apps/api/src/storage/` seam, MinIO is the compose backend on a loopback
    port, and `bms.asset_images` is the metadata table. The old trigger —
    "until persisted report files are needed" — was wrong on its own terms
-   (PDF reports are §6); the row that stores a file is `F3.4`. Never add a
+   (PDF reports are §6); the row that stores a file was `F3.4`, closed
+   2026-09-16 (ADR 0066 Amendment 3), so the store has its producer: the
+   upload sniffs the content type from the bytes and never trusts the
+   declared label, and the `F4.145` invariant allows `OBJECT_KEY_PREFIX`
+   imports in `*.spec.ts` files only. Never add a
    second S3 client, never accept an object key from a client, and keep the
    deferrals by name: presigned URLs, `lib-storage`/multipart, thumbnails,
    the orphan sweep, KES/SSE and TLS in compose (ADR 0066 decisions 2, 6, 8,
@@ -2293,7 +2304,8 @@ These are intentionally deferred. Do not implement them yet:
   / multipart upload, thumbnails (`sharp`), an orphan-object sweep, and MinIO
   KES / SSE-KMS or TLS inside the compose stack. **MinIO itself, the S3
   client and `bms.asset_images` left this list on 2026-09-15** (ADR 0066,
-  `F3.3`); the upload, delete, audit rows and the first UI are `F3.4`'s
+  `F3.3`), **and the upload, delete, audit rows and the two image surfaces
+  left it on 2026-09-16** (`F3.4`, Amendment 3)
 - Two-way commanding with approval workflows
 - Audit **hash-chaining and append-only storage** (`F4.15`). `bms.audit_log` is
   now *readable* under ADR 0021, but it is not tamper-evident: nothing prevents

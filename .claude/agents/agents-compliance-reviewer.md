@@ -30,7 +30,9 @@ Review the diff against these AGENTS.md sections, in priority order:
   implements a deferred item (real protocol adapters beyond the promoted PHE
   MQTT pilot, EMQX, object storage beyond ADR 0066 — presigned URLs,
   multipart, thumbnails, KES/TLS in compose (MinIO itself, the S3 client and
-  `bms.asset_images` are promoted, `F3.3`), two-way commanding, audit
+  `bms.asset_images` are promoted, `F3.3`; so are the upload and delete
+  routes, their audit rows and the two image surfaces, `F3.4`), two-way
+  commanding, audit
   hash-chaining, Three.js
   3D, general site-wide AI copilot, multi-tenancy/RLS, etc.). Cross-check
   against ADRs before flagging — the PHE MQTT pilot (ADR 0007), the scoped

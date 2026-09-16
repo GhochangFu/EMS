@@ -315,7 +315,8 @@ Process (`AGENTS.md` §10).
 - **Graduates:** Maintenance / work orders, basic rule-engine UI, energy
   reports. MinIO / object storage **graduated on 2026-09-15 under ADR 0066
   (`F3.3`)** — its trigger was never report files (PDF reports are §6) but a
-  row that stores a file, and `F3.4` is that row.
+  row that stores a file, and `F3.4` closed that row on 2026-09-16
+  (Amendment 3).
 - **Goal:** add operational workflows on top of existing assets, alarms,
   simulator telemetry, and Energy Centre data while real ingestion remains
   paused.
@@ -4917,8 +4918,57 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   schema (the dual-package hazard its own docblock had measured), so every
   stored-contract violation driven through a service degraded to a bare
   `ZodError` and a 400. It now classifies by shape; two spec rows hold it.
-- **Unblocks:** `F3.4` (upload, delete, audit, UI). `E3.2` still waits on
-  `E3.1` and `F3.20`.
+- **Unblocks:** `F3.4` (upload, delete, audit, UI) — closed 2026-09-16, the
+  next section. `E3.2` still waits on `E3.1` and `F3.20`.
+
+### Image upload and delete, audit rows, an admin Images panel and a reader gallery (`F3.4`, ADR 0066 decision 7 + Amendment 3) — done
+- **Status:** merged 2026-09-16 — PR
+  [#456](https://github.com/GhochangFu/EMS/pull/456) (`a8979c48`), fourteen
+  commits over `182fe4e6`: ten plan units, one review-fix pass and the closure
+  docs, planned on Fable (`docs/plans/f3.4-asset-image-upload.md`) and built
+  on Sonnet and Opus — and, for the write service and the write controller,
+  on Fable, before the owner ruled the same day that Fable is not the
+  implementer's model (PR #455). No dependency, no migration: `0072` was
+  sufficient. `F4.145` closed with it.
+- **What the owner ruled.** Two UI surfaces, not one: an admin "Images" side
+  panel on `/admin/assets` and a **read-only gallery** for every reader with
+  `canReadAsset`. The gallery lives on the **location dashboard's asset
+  table** — the ruling first named the dashboard's asset-health section, which
+  renders one donut per scope and carries no asset id. The panel is the
+  right-docked `<aside>`, not the page's modal. `MAX_ASSET_IMAGES_PER_ASSET =
+  20`, answered 409 past it.
+- **What shipped.** `POST /api/v1/assets/:assetId/images` (multipart,
+  `fileSize`/`files: 1`/`fields: 2`/`fieldSize: 4096`; `canManageAsset` before
+  any read; the content type **sniffed** from the bytes and required to agree
+  with the declared one — the sniffed type is stored and the declared label is
+  never echoed; `sha256`/`byte_size` from the buffer; the object put first and
+  the row inserted under `withTenant` with the asset's own organization after
+  `SELECT … FOR UPDATE` on the asset; any later throw deletes the object).
+  `DELETE …/:imageId` (row in a tenant transaction, commit, then the object;
+  an object-delete failure is one `warn` naming the image id and leaves an
+  orphan — decision 11, proved on the stack with MinIO stopped).
+  `master.asset_image.create`/`.delete` audit rows carrying ids, a code and
+  numbers only. Every thumbnail is an authenticated `fetch` → `Blob` →
+  `URL.createObjectURL`, revoked on unmount, because a bare `<img src>` cannot
+  carry the JWT.
+- **What the reviews found before merge** (each fixed with a row that reddens
+  under mutation): the WebP sniff compared through Node's `ascii` decoder,
+  which strips the high bit, so eight aliased bytes passed the allowlist
+  (High); the `F4.145` row missed a namespace import; the fail-closed cap
+  compare had no reaching test; the delete's asset conjunct was the only
+  intra-organization scope control and nothing gated it; multer's per-field
+  size was unbounded; a second in-flight delete re-enabled its button; the
+  gallery's 503 fallback was dead.
+- **Verified (§4.6) — database, API, browser, object store; N/A: none.**
+  Integration against real MinIO and the compose DB, 50 cases with 0 skips;
+  the full suite with coverage thresholds green; on the stack 21 HTTP/UI
+  claims as admin, 403/201/204 as a location admin, `bms_tenant` counts 1/0
+  under owning/other organization with a row present, and with MinIO stopped:
+  upload 503 after ~10 s, **list 200** (the storage gate checks configuration
+  only), content 503, delete 204 plus the orphan warn without `org/`.
+- **Deferred by name, unchanged:** presigned URLs, thumbnails/`sharp`,
+  `If-None-Match`/304, the orphan sweep, the scoped MinIO key (`F4.144`).
+- **Unblocks:** nothing directly; `E3.2` still waits on `E3.1` and `F3.20`.
 
 ### A BullMQ job queue and a `worker` process, split out of the infra bundle (`F4.24`, ADR 0063 + Amendments 1–2) — done
 - **Status:** merged 2026-09-11 — PR
