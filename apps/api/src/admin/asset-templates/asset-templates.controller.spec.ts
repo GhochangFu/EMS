@@ -93,6 +93,28 @@ export function runAssetTemplatesControllerTests(): void {
       "the first three-segment :id POST this controller has",
   ).toBeLessThan(seededReapplyAt);
 
+  // `F3.2` / ADR 0067 decision 4 — the backfill is a TWO-segment `:id` POST and
+  // sits after the three-segment reapply, so no future `@Post(":id/:verb")`
+  // ordering question is created by it; the stock import still precedes it.
+  const defaultDashboardsAt = decoratorAt(source, '@Post(":id/default-dashboards")');
+  const listVersionsAt = decoratorAt(source, '@Get(":id/versions")');
+  expect(
+    defaultDashboardsAt,
+    'the controller must declare @Post(":id/default-dashboards") (ADR 0067 decision 4)',
+  ).toBeGreaterThan(-1);
+  expect(
+    defaultDashboardsAt,
+    '@Post(":id/default-dashboards") must be declared after @Post(":id/seeded-rules/reapply")',
+  ).toBeGreaterThan(seededReapplyAt);
+  expect(
+    defaultDashboardsAt,
+    '@Post(":id/default-dashboards") must be declared before @Get(":id/versions")',
+  ).toBeLessThan(listVersionsAt);
+  expect(
+    stockImportAt,
+    '@Post("stock/:code/import") must be declared BEFORE @Post(":id/default-dashboards")',
+  ).toBeLessThan(defaultDashboardsAt);
+
   // **The guard on `GET stock` is proven here, not only exercised.** The
   // integration suite's `assertListNeedsAMasterDataRole` calls the *service*
   // method, so a refactor that drops the `assertCanList` line from the handler

@@ -29,6 +29,7 @@ import {
   templateStatusQuerySchema,
   updateAssetTemplateBodySchema,
 } from "./asset-templates.schema";
+import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { migrateAssetsBodySchema } from "./asset-templates-migrate.schema";
 import { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
@@ -63,6 +64,8 @@ export class AssetTemplatesAdminController {
     private readonly migration: AssetTemplateMigrationService,
     private readonly stock: AssetTemplatesStockService,
     private readonly seededRules: AssetTemplateSeededRulesService,
+    // F3.2 / ADR 0067 decision 4 — the on-demand backfill.
+    private readonly assetDashboards: AssetDashboardsInstantiateService,
   ) {}
 
   @Get()
@@ -236,6 +239,25 @@ export class AssetTemplatesAdminController {
       }
       throw err;
     }
+  }
+
+  /**
+   * `F3.2` / ADR 0067 decision 4 — builds the per-asset default dashboards of
+   * this published version for every **active** asset pinned to any version of
+   * its code, skipping an asset that already carries a stamped set.
+   *
+   * `201` rather than `200`, matching `@Post(":id/instantiate")`: it creates
+   * rows. **Two segments**, declared below `@Post("stock/:code/import")` — see
+   * `importStock`'s docblock for why that order is asserted rather than
+   * trusted, and why a two-segment `:id` POST is the safe shape here.
+   *
+   * No body, so `REQUEST_SCHEMAS` gains no entry (`publish` and `archive` are
+   * the precedent).
+   */
+  @Post(":id/default-dashboards")
+  @HttpCode(HttpStatus.CREATED)
+  async createDefaultDashboards(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.assetDashboards.backfill(user, idParamSchema.parse(id));
   }
 
   /**

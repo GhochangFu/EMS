@@ -17,6 +17,7 @@ import {
   FIXTURE_PREFIX,
   type InstantiateTelemetrySourceCtx,
 } from "./asset-templates-instantiate.telemetry-source.integration.spec";
+import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { instantiateAssetsBodySchema } from "./asset-templates.schema";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
@@ -120,12 +121,22 @@ describe.skipIf(!connectionString)("F4.139 — instantiate derives telemetrySour
       audit,
       vocabularies,
     );
+    // F3.2 / ADR 0067 decision 4 — the REAL dashboards service, never a stub.
+    // The constructor parameter is required, so a stub here would leave the
+    // instantiate hook inert in every suite that builds the service by hand.
+    const assetDashboards = new AssetDashboardsInstantiateService(
+      fleetDb,
+      tenantDb,
+      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      audit,
+    );
     const instantiation = new AssetTemplateInstantiationService(
       fleetDb,
       tenantDb,
       access,
       audit,
       vocabularies,
+      assetDashboards,
     );
 
     // One measured point, no alarms: this suite asserts `bms.assets.meta` only,

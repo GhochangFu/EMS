@@ -31,7 +31,11 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { resolveTelemetrySource, withTelemetrySource } from "../telemetry-source";
 import type { TelemetrySource } from "../telemetry-source";
+import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
+import type { DashboardTargetAsset } from "./asset-dashboards-instantiate.service";
+import { assertDashboardBatchFits, dashboardWidgetRowsFor } from "./asset-dashboards-plan";
 import { parseStoredTemplateContent } from "./asset-templates-content.schema";
+import type { TemplateContentParsed } from "./asset-templates-content.schema";
 import type {
   InstantiateAssetBody,
   InstantiateAssetsBody,
@@ -155,6 +159,8 @@ export class AssetTemplateInstantiationService {
     // uncached by design there, which is what makes a retirement visible to the
     // very next instantiate rather than after a restart.
     private readonly vocabularies: VocabulariesService,
+    // `F3.2` / ADR 0067 d4 — required; an optional adapter would be inert.
+    private readonly assetDashboards: AssetDashboardsInstantiateService,
   ) {}
 
   /**
@@ -232,7 +238,9 @@ export class AssetTemplateInstantiationService {
     // content no longer parses fails here rather than instantiating assets with
     // silently zero rules — the one outcome ADR 0058 names as worse than a
     // refusal, because nobody inspects a batch that reported success.
-    const alarms = this.parseTemplateAlarms(template);
+    const content = this.parseTemplateContent(template);
+    const alarms = content.alarms ?? [];
+    const views = content.dashboards ?? {};
     // `E2.4`, and the same reason `assertCatalogActive` above exists: a template
     // published six months ago can name a *vocabulary* value retired last week.
     // Before the seed there was no consumer of a template alarm, so a retired
@@ -251,7 +259,12 @@ export class AssetTemplateInstantiationService {
       ]),
     );
     const measured = points.filter((point) => point.kind === "measured");
-    this.assertBatchFits(body.assets.length, measured.length, alarms.length);
+    this.assertBatchFits(
+      body.assets.length,
+      measured.length,
+      alarms.length,
+      dashboardWidgetRowsFor(views),
+    );
 
     await this.assertAssetCodesFree(jwt, body.assets);
     await this.assertRuleCodesFree(template.organizationId, body.assets, alarms);
@@ -343,11 +356,14 @@ export class AssetTemplateInstantiationService {
         // rather than a second derivation that could disagree with it.
         const seededByCode = new Map<string, string[]>();
         const ruleValues: SeededRuleInsert[] = [];
+        // `F3.2` — collected here, not in a second `plans.map`.
+        const dashboardTargets: DashboardTargetAsset[] = [];
         for (const plan of plans) {
           const assetId = idByCode.get(plan.entry.code);
           if (!assetId) {
             throw new Error(`instantiate: no id returned for asset ${plan.entry.code}`);
           }
+          dashboardTargets.push({ id: assetId, code: plan.entry.code, name: plan.entry.name });
           const rows = alarms.map((alarm) =>
             seededRuleValues({
               alarm,
@@ -369,6 +385,16 @@ export class AssetTemplateInstantiationService {
           await tx.insert(automationRules).values(ruleValues);
         }
         const disabledRuleCount = ruleValues.filter((row) => row.enabled === false).length;
+        // `F3.2` / ADR 0067 d4 — after the rule seed and INSIDE this transaction
+        // (ADR 0058 d9): a dashboard written outside it could survive a
+        // rolled-back batch, owned by an asset that never existed.
+        const byCode = await this.assetDashboards.instantiateForAssets(
+          tx,
+          template,
+          views,
+          dashboardTargets,
+        );
+        const dashboardCount = [...byCode.values()].reduce((n, r) => n + r.length, 0);
 
         // E7.1c (item D): folded into this transaction so the stamped
         // organizationId matches the GUC the strict WITH CHECK now demands.
@@ -394,6 +420,8 @@ export class AssetTemplateInstantiationService {
               // limits it left owed. The response is transient; this is not.
               ruleCount: ruleValues.length,
               disabledRuleCount,
+              // `F3.2` / ADR 0067 decision 5, for decision 10's reason.
+              dashboardCount,
             },
           },
           tx,
@@ -404,6 +432,8 @@ export class AssetTemplateInstantiationService {
           seededByCode,
           ruleCount: ruleValues.length,
           disabledRuleCount,
+          dashboardsByCode: byCode,
+          dashboardCount,
         };
       })
       .catch((err: unknown) => {
@@ -438,8 +468,9 @@ export class AssetTemplateInstantiationService {
         // lookups above, which throw because a missing id there is a real
         // outcome (the database's `RETURNING` decides that one, not this code).
         seededRules: created.seededByCode.get(plan.entry.code) ?? [],
-        // F3.2 Task 6 (ADR 0067 decision 4) replaces this with the per-asset report.
-        dashboards: [],
+        // `F3.2` / ADR 0067 d5 — the views written for this asset, counted off
+        // the returned rows. The `??` is unreachable for `seededRules`' reason.
+        dashboards: created.dashboardsByCode.get(plan.entry.code) ?? [],
       };
     });
 
@@ -455,8 +486,7 @@ export class AssetTemplateInstantiationService {
       pointCount: created.pointCount,
       ruleCount: created.ruleCount,
       disabledRuleCount: created.disabledRuleCount,
-      // F3.2 Task 6 (ADR 0067 decision 4) replaces this with the count of rows written.
-      dashboardCount: 0,
+      dashboardCount: created.dashboardCount,
     };
   }
 
@@ -612,7 +642,8 @@ export class AssetTemplateInstantiationService {
   }
 
   /**
-   * The alarms the published version carries — ADR 0058 D7.
+   * The parsed content the published version carries — ADR 0058 D7. Since
+   * `F3.2` both the alarms and the dashboard views come from this one parse.
    *
    * A 409 and not the publish path's 400, because the two failures have
    * different remedies. Publishing is refused so the author can `PATCH` the
@@ -621,7 +652,7 @@ export class AssetTemplateInstantiationService {
    * batch that reported success is a batch nobody inspects, and the missing
    * rules would be found the first time a limit was breached and no alarm rose.
    */
-  private parseTemplateAlarms(template: TemplateRow): TemplateAlarm[] {
+  private parseTemplateContent(template: TemplateRow): TemplateContentParsed {
     const parsed = parseStoredTemplateContent(template.content);
     if (!parsed.ok) {
       throw new ConflictException(
@@ -631,7 +662,7 @@ export class AssetTemplateInstantiationService {
           `and publish that version instead. ${parsed.detail}`,
       );
     }
-    return parsed.content.alarms ?? [];
+    return parsed.content;
   }
 
   /**
@@ -697,7 +728,12 @@ export class AssetTemplateInstantiationService {
   }
 
   /** Keeps one statement under the Postgres bind-parameter ceiling. */
-  private assertBatchFits(assetCount: number, measuredCount: number, alarmCount: number): void {
+  private assertBatchFits(
+    assetCount: number,
+    measuredCount: number,
+    alarmCount: number,
+    dashboardWidgetCount: number,
+  ): void {
     const rows = assetCount * measuredCount;
     if (rows > MAX_POINT_ROWS) {
       throw new BadRequestException(
@@ -720,6 +756,10 @@ export class AssetTemplateInstantiationService {
           "Split it into smaller batches.",
       );
     }
+    // `F3.2` / ADR 0067 d4 — the third term, and the only one bounding the
+    // TRANSACTION rather than a bind-parameter count. Last, so an over-large
+    // batch names the bound it breached first.
+    assertDashboardBatchFits(assetCount, dashboardWidgetCount);
   }
 
   /**
