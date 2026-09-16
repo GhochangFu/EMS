@@ -5281,3 +5281,11 @@ a dependency: its one open item is the MQTT password fallback, which the
 backup key does not use. A compose-level `pg_dump` into a host volume was
 offered and rejected because it leaves no off-host copy. `E8.2` stays ⬜ and
 ready; it still owes its own ADR before it starts.
+
+**The security review of the ruling handed four questions to that ADR**, each
+verified against the code rather than argued: the key window holds two
+versions while backup retention outlives two rotations; the rotation walk
+reaches two credential tables and not a bucket; the resolver has no purpose
+parameter, so one key would cover both a dump and the ciphertext inside it;
+and CI sets no key, so the restore drill must make its own. The `E8.2` row
+carries them in full.
