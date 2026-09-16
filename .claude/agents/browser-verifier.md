@@ -3,6 +3,7 @@ name: browser-verifier
 description: Runs the browser half of an AGENTS.md §4.6 verification against the running stack and returns a pass/fail table. Use when a change needs checking in a real browser — an admin screen renders and routes, a write persists across a hard reload, a served bundle is actually the new one. Exists so the screenshots stay out of the calling session's context. Not for design judgement, not for exploratory clicking, and it never edits files.
 tools: Bash, Read, Grep, ToolSearch, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__find, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__get_page_text, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__resize_window, mcp__claude-in-chrome__form_input
 model: sonnet
+effort: medium
 ---
 
 **Load your tools in ONE `ToolSearch` call before anything else.** The
