@@ -4,10 +4,12 @@ import { Link, useNavigate } from "react-router-dom";
 
 import type { DashboardDto, UserRole } from "@bms/shared";
 
+import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { fetchAdminLocations } from "../../api/admin/locations";
 import { createDashboard, fetchDashboard, fetchDashboards, putDashboardWidgets } from "../../api/dashboards";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { duplicatePayload, freeSlug, type DuplicateDashboardTarget } from "../../lib/dashboard-duplicate";
+import { isScopeChosen, scopeColumns, scopeFromDashboard } from "../../lib/dashboard-scope";
 import { DashboardScopeFields, type DashboardScopeValue } from "./dashboard-scope-fields";
 
 export type DuplicateDashboardDialogProps = {
@@ -45,9 +47,12 @@ export class DuplicateWidgetsCopyFailure extends Error {
  * organization: `DashboardScopeFields` is fed a synthesized one-item organization list, the same
  * "nothing to choose" idiom `dashboard-builder-edit-page.tsx` uses, because a dashboard's tenant is
  * fixed at creation and `assertBoundPointsInOrganization` requires it to match the copied
- * bindings' own organization. The scope itself — organization-wide vs. a location within it — IS
- * a choice, restricted the same way the builder restricts it (`DashboardScopeFields` already reads
- * `canCreateOrganizationWideDashboard`).
+ * bindings' own organization. The scope itself — organization-wide, a location within it, or an
+ * asset group within it (`F3.34`, ADR 0047 Amendment 5) — IS a choice, restricted the same way
+ * the builder restricts it (`DashboardScopeFields` reads `canCreateOrganizationWideDashboard`
+ * and `canChooseAssetGroupDashboardScope`). The prefill is three-way (`scopeFromDashboard`):
+ * before `F3.34` a group source was read as "organization" and the copy silently landed
+ * organization-wide.
  *
  * **Not atomic, and this dialog does not hide that.** If the widget copy fails, the dashboard
  * already created stays (`DuplicateWidgetsCopyFailure`). No compensating `DELETE` is issued — the
@@ -87,6 +92,15 @@ export function DuplicateDashboardDialog({
     enabled: source !== undefined,
   });
 
+  // `F3.34` — the asset-group picker, narrowed to the source's organization here because the
+  // endpoint filters by location only. Keyed on the exported key so the cache is shared.
+  const assetGroupsQ = useQuery({
+    queryKey: adminAssetGroupsQueryKey(),
+    queryFn: () => fetchAdminAssetGroups(),
+    enabled: source !== undefined,
+  });
+  const assetGroups = (assetGroupsQ.data?.items ?? []).filter((group) => group.organizationId === sourceOrganizationId);
+
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [scope, setScope] = useState<DashboardScopeValue>({
@@ -104,11 +118,8 @@ export function DuplicateDashboardDialog({
     }
     setName(`${source.name} (copy)`);
     setSlug(freeSlug(source.slug, siblingsQ.data.items.map((item) => item.slug)));
-    setScope(
-      source.locationId
-        ? { kind: "location", organizationId: source.organizationId, locationId: source.locationId }
-        : { kind: "organization", organizationId: source.organizationId },
-    );
+    // Three-way (`F3.34`): a group source prefills as a group and is duplicated as one.
+    setScope(scopeFromDashboard(source));
     setPrefilled(true);
   }, [source, siblingsQ.data, prefilled]);
 
@@ -119,10 +130,8 @@ export function DuplicateDashboardDialog({
       }
       const target: DuplicateDashboardTarget = {
         organizationId: source.organizationId,
-        scope:
-          scope.kind === "location"
-            ? { locationId: scope.locationId, assetGroupId: null }
-            : { locationId: null, assetGroupId: null },
+        // Exactly one non-null, or both null — `scopeColumns` is structurally this field's type.
+        scope: scopeColumns(scope),
         slug: slug.trim(),
         name: name.trim(),
       };
@@ -145,7 +154,7 @@ export function DuplicateDashboardDialog({
   const widgetsFailure = duplicateM.error instanceof DuplicateWidgetsCopyFailure ? duplicateM.error : null;
   const otherFailure = duplicateM.isError && !widgetsFailure ? apiErrorMessage(duplicateM.error) : null;
 
-  const scopeChosen = scope.kind === "organization" ? scope.organizationId !== "" : scope.locationId !== "";
+  const scopeChosen = isScopeChosen(scope);
   const blocked = !source || name.trim() === "" || slug.trim() === "" || !scopeChosen || duplicateM.isPending;
 
   return (
@@ -194,6 +203,7 @@ export function DuplicateDashboardDialog({
             onChange={setScope}
             organizations={[{ id: source.organizationId, name: "This dashboard's organization" }]}
             locations={locationsQ.data?.items ?? []}
+            assetGroups={assetGroups}
           />
 
           {widgetsFailure ? (

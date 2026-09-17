@@ -1,11 +1,18 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { DashboardDto, DashboardSummaryDto, DashboardWidgetDto, UserRole } from "@bms/shared";
+import type {
+  AdminAssetGroupDto,
+  DashboardDto,
+  DashboardSummaryDto,
+  DashboardWidgetDto,
+  UserRole,
+} from "@bms/shared";
 
+import * as assetGroupsApi from "../../api/admin/asset-groups";
 import * as locationsApi from "../../api/admin/locations";
 import * as dashboardsApi from "../../api/dashboards";
 import { DuplicateDashboardDialog } from "./duplicate-dashboard-dialog";
@@ -115,10 +122,45 @@ function summaryFor(dto: DashboardDto, overrides: Partial<DashboardSummaryDto> =
   };
 }
 
-function stubLoads(siblings: DashboardSummaryDto[] = []): void {
-  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(SOURCE);
+/** The same dashboard scoped to an asset group (`F3.34`) — `locationId` NULL, `assetGroupId` set. */
+const GROUP_SOURCE: DashboardDto = { ...SOURCE, locationId: null, assetGroupId: "grp-1" };
+
+/** `fetchAdminAssetGroups`'s real response shape — the full `AdminAssetGroupDto`, no cast. */
+const GROUP: AdminAssetGroupDto = {
+  id: "grp-1",
+  code: "hvac",
+  name: "Hvac",
+  description: null,
+  locationId: "loc-1",
+  locationName: "Site 1",
+  organizationId: SOURCE_ORG,
+  memberCount: 3,
+  createdAt: new Date(0).toISOString(),
+};
+/** A group in another organization — the dialog narrows the unfiltered list to the source's. */
+const FOREIGN_GROUP: AdminAssetGroupDto = {
+  ...GROUP,
+  id: "grp-foreign",
+  locationId: "loc-9",
+  locationName: "Elsewhere",
+  organizationId: "33333333-3333-4333-8333-333333333333",
+};
+
+/** Stubs every load the dialog issues. The source is explicit at every call so a group case
+ * cannot stay green against the location fixture. */
+function stubLoads({
+  source,
+  siblings = [],
+  groups = [GROUP],
+}: {
+  source: DashboardDto;
+  siblings?: DashboardSummaryDto[];
+  groups?: readonly AdminAssetGroupDto[];
+}): void {
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(source);
   vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({ items: siblings });
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: LOCATIONS });
+  vi.spyOn(assetGroupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [...groups] });
 }
 
 /** Renders wherever `navigate()` sent us, so a real route change is observable
@@ -160,7 +202,7 @@ function renderDialog(role: UserRole, onClose: () => void = () => {}): void {
 /** Plan §8 Unit 9's second "state rather than hide" behaviour: a copy carries the
  * source's bindings, and the dialog must say so in visible text. */
 export async function showsTheBindingsCarryOverWarning(): Promise<void> {
-  stubLoads();
+  stubLoads({ source: SOURCE });
   renderDialog("admin");
 
   expect(
@@ -172,16 +214,75 @@ export async function showsTheBindingsCarryOverWarning(): Promise<void> {
  * no organization-wide option here either, the same "forms, not buttons" rule
  * `dashboard-scope-fields.spec.tsx` pins directly. */
 export async function locationAdminGetsNoOrganizationWideOption(): Promise<void> {
-  stubLoads();
+  stubLoads({ source: SOURCE });
   renderDialog("location_admin");
 
   await screen.findByRole("radio", { name: "Location" });
   expect(screen.queryByRole("radio", { name: "Organization-wide" })).not.toBeInTheDocument();
 }
 
+/** The `Asset group` radio is absent from a `location_admin`'s dialog. The source is a
+ * location dashboard — a group source is unreachable for this role (`update`'s stored-scope
+ * check refuses the group arm, plan §4.4). The `Location` radio found first is the positive
+ * control that the fields rendered at all. */
+export async function locationAdminGetsNoAssetGroupOption(): Promise<void> {
+  stubLoads({ source: SOURCE });
+  renderDialog("location_admin");
+
+  await screen.findByRole("radio", { name: "Location" });
+  expect(screen.queryByRole("radio", { name: "Asset group" })).not.toBeInTheDocument();
+}
+
+/**
+ * **The dialog half of the `F3.34` defect** (ADR 0047 Amendment 5). A two-way prefill read a
+ * group source as "organization" and the body was `{ locationId: null, assetGroupId: null }`
+ * — the copy silently landed organization-wide. The prefill is `scopeFromDashboard` and the
+ * target's scope is `scopeColumns(scope)`, so the group is carried.
+ */
+export async function duplicatingAnAssetGroupDashboardKeepsTheGroup(): Promise<void> {
+  stubLoads({ source: GROUP_SOURCE, groups: [GROUP] });
+  const createSpy = vi.spyOn(dashboardsApi, "createDashboard").mockResolvedValue({
+    ...GROUP_SOURCE,
+    id: "new-dash-id",
+    slug: "feed-pumps-copy",
+    name: "Feed pumps (copy)",
+    widgets: [],
+  });
+  vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue({
+    ...GROUP_SOURCE,
+    id: "new-dash-id",
+    slug: "feed-pumps-copy",
+    name: "Feed pumps (copy)",
+  });
+
+  renderDialog("admin");
+  await screen.findByDisplayValue("Feed pumps (copy)");
+  await userEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+
+  await screen.findByText(/landed on \/admin\/dashboards\/feed-pumps-copy/);
+  expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ assetGroupId: "grp-1", locationId: null }));
+}
+
+/** The group list is narrowed to the source's own organization — one option besides the
+ * placeholder when the stub returns one own group and one foreign group. */
+export async function theGroupListIsTheSourcesOrganizationOnly(): Promise<void> {
+  stubLoads({ source: GROUP_SOURCE, groups: [GROUP, FOREIGN_GROUP] });
+  renderDialog("admin");
+
+  await screen.findByDisplayValue("Feed pumps (copy)");
+  const values = within(screen.getByRole("combobox", { name: "Asset group" }))
+    .getAllByRole("option")
+    .map((option) => (option as HTMLOptionElement).value)
+    .filter((value) => value !== "");
+  expect(values).toEqual(["grp-1"]);
+}
+
 /** `freeSlug` is fed the already-fetched sibling list (Task 0.2) and skips a taken candidate. */
 export async function prefillsNameAndSlugSkippingATakenCandidate(): Promise<void> {
-  stubLoads([summaryFor(SOURCE), summaryFor(SOURCE, { id: "sibling", slug: "feed-pumps-copy" })]);
+  stubLoads({
+    source: SOURCE,
+    siblings: [summaryFor(SOURCE), summaryFor(SOURCE, { id: "sibling", slug: "feed-pumps-copy" })],
+  });
   renderDialog("admin");
 
   expect(await screen.findByDisplayValue("Feed pumps (copy)")).toBeInTheDocument();
@@ -195,7 +296,7 @@ export async function prefillsNameAndSlugSkippingATakenCandidate(): Promise<void
  * new dashboard's builder.
  */
 export async function duplicatesAndNavigatesIntoTheNewDashboardsBuilder(): Promise<void> {
-  stubLoads();
+  stubLoads({ source: SOURCE });
   const createSpy = vi.spyOn(dashboardsApi, "createDashboard").mockResolvedValue({
     ...SOURCE,
     id: "new-dash-id",
@@ -233,7 +334,7 @@ export async function duplicatesAndNavigatesIntoTheNewDashboardsBuilder(): Promi
  * — right here, not lost behind a silent navigate — with a way into the builder to finish.
  */
 export async function widgetCopyFailureRendersInlineWithoutDeletingTheHalfMadeCopy(): Promise<void> {
-  stubLoads();
+  stubLoads({ source: SOURCE });
   vi.spyOn(dashboardsApi, "createDashboard").mockResolvedValue({
     ...SOURCE,
     id: "new-dash-id",
