@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
+import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { fetchAdminLocations } from "../../api/admin/locations";
 import {
   fetchDashboard,
@@ -10,6 +11,7 @@ import {
   type UpdateDashboardPayload,
 } from "../../api/dashboards";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { isScopeChosen, scopeColumns, scopeFromDashboard } from "../../lib/dashboard-scope";
 import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
@@ -87,11 +89,9 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     }
     setName(dto.name);
     setDescription(dto.description ?? "");
-    setScope(
-      dto.locationId
-        ? { kind: "location", organizationId: dto.organizationId, locationId: dto.locationId }
-        : { kind: "organization", organizationId: dto.organizationId },
-    );
+    // Three-way (`F3.34`): an asset-group dashboard prefills as one. Before this row the
+    // prefill was two-way and a rename silently widened a group dashboard to the tenant.
+    setScope(scopeFromDashboard(dto));
     setRows(dashboardRowsFromDto(dto));
     setSelected(null);
   }, [dto]);
@@ -101,20 +101,27 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     queryFn: () => fetchAdminLocations("true", dto?.organizationId),
     enabled: !!dto,
   });
+  // `F3.34` — the asset-group picker. The endpoint filters by location only, so the list is
+  // narrowed to the dashboard's own organization here (the locations query above is narrowed
+  // the same way, server-side). Keyed on the exported key so the cache is shared.
+  const assetGroupsQ = useQuery({
+    queryKey: adminAssetGroupsQueryKey(),
+    queryFn: () => fetchAdminAssetGroups(),
+    enabled: !!dto,
+  });
+  const assetGroups = (assetGroupsQ.data?.items ?? []).filter((group) => group.organizationId === dto?.organizationId);
 
   const problems = dashboardBuilderErrors(rows);
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
   // a set-level problem or another widget's problem must surface somewhere else, or `Save`
   // disables with a reason nothing on the page shows.
   const summaryProblems = unselectedDashboardBuilderProblems(problems, selected);
-  const scopeChanged = dto
-    ? scope.kind !== (dto.locationId ? "location" : "organization") ||
-      (scope.kind === "location" && scope.locationId !== dto.locationId)
-    : false;
+  const columns = scopeColumns(scope);
+  const scopeChanged = dto ? columns.locationId !== dto.locationId || columns.assetGroupId !== dto.assetGroupId : false;
   const fieldsChanged = dto ? name !== dto.name || description !== (dto.description ?? "") || scopeChanged : false;
   const widgetsChanged = dto ? builderHasChanged(rows, dto) : false;
   const changed = fieldsChanged || widgetsChanged;
-  const scopeChosen = scope.kind === "organization" ? scope.organizationId !== "" : scope.locationId !== "";
+  const scopeChosen = isScopeChosen(scope);
   const blocked = !dto || name.trim() === "" || !scopeChosen || problems.length > 0 || !changed;
 
   const saveM = useMutation({
@@ -122,16 +129,20 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
       if (!dto) {
         throw new Error("Dashboard has not loaded yet");
       }
+      // Both scope columns are sent explicitly on every save (`F3.34`, plan §10 Q1).
+      // `updateDashboard`'s body merges on presence, so an explicit `null` clears a column —
+      // which is correct here because the prefill is three-way (`scopeFromDashboard`) and this
+      // form now renders the asset-group control: a group source round-trips its own id, and a
+      // null is only ever sent for the axis the author did not choose. `scopeColumns` never
+      // yields two non-nulls, so `DashboardsService.update`'s merged singularity guard holds;
+      // `assetId` (ADR 0067) is never sent, so an asset-scoped row keeps it. A `location_admin`
+      // never renders a group-scoped dashboard at all — `update`'s stored-scope check refuses
+      // the role on the group arm before the form can load — so the `assetGroupId: null` it
+      // sends for a location dashboard clears nothing.
       const body: UpdateDashboardPayload = {
         name: name.trim(),
         description: description.trim() === "" ? null : description.trim(),
-        locationId: scope.kind === "location" ? scope.locationId : null,
-        // `assetGroupId` is deliberately OMITTED, never sent as `null`. `updateDashboard`'s
-        // body merges on presence, not truthiness, so an explicit `null` would CLEAR the
-        // column on every save — widening a plant-area dashboard to the whole tenant with
-        // no signal anywhere on the page (the class ADR 0047 Amendment 1 rejected `ON DELETE
-        // SET NULL` for). `DashboardScopeFields` offers no asset-group control on this page,
-        // so this page has no authority to touch that column at all.
+        ...columns,
       };
       const updated = await updateDashboard(dto.id, body);
       return putDashboardWidgets(updated.id, buildPutWidgetsPayload(rows));
@@ -212,6 +223,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                   onChange={setScope}
                   organizations={[{ id: dto.organizationId, name: "This dashboard's organization" }]}
                   locations={locationsQ.data?.items ?? []}
+                  assetGroups={assetGroups}
                 />
               </div>
               <div className="mt-3 border-t border-gray-100 pt-3">
