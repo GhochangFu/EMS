@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   anUneditedGroupScopedDashboardIsNotDirty,
   choosingADifferentGroupMakesItDirty,
+  choosingADifferentLocationMakesItDirty,
   movingALocationDashboardOntoAGroupSendsTheGroupAndClearsTheLocation,
   renamingAGroupScopedDashboardKeepsItsGroup,
   theGroupListIsTheDashboardsOrganizationOnly,
@@ -35,6 +36,10 @@ describe("F3.1d dashboard builder edit page", () => {
 
   it("choosing a different group makes it dirty (F3.34)", async () => {
     await choosingADifferentGroupMakesItDirty();
+  });
+
+  it("choosing a different location makes it dirty (F3.34 sweep)", async () => {
+    await choosingADifferentLocationMakesItDirty();
   });
 
   it("the group list is the dashboard's organization only (F3.34)", async () => {

@@ -8,6 +8,7 @@ import {
   assetGroupAdminNeverSeesTheAssetGroupOption,
   assetGroupAdminNeverSeesTheOrganizationWideOptionEither,
   choosingAGroupDecidesTheOrganization,
+  clickingTheAssetGroupRadioAloneDecidesTheOrganization,
   forALocationAdminAnAssetGroupValueClampsToLocation,
   forALocationAdminAnOrganizationWideValueClampsToLocation,
   forAdminAnAssetGroupValueIsNotClamped,
@@ -74,6 +75,10 @@ describe("F3.34 asset-group scope kind", () => {
 
   it("decides the organization from the chosen group", async () => {
     await choosingAGroupDecidesTheOrganization();
+  });
+
+  it("clicking the Asset group radio alone pre-selects the first group and its organization", async () => {
+    await clickingTheAssetGroupRadioAloneDecidesTheOrganization();
   });
 
   it("names the location in the option text", () => {

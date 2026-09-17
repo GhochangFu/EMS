@@ -1,13 +1,15 @@
 /**
  * `F3.34` — the pure dashboard-scope model (ADR 0047 Amendment 5, plan §4.2).
  *
- * Before this row the `kind` switch was written nine times across the create page, the edit
- * page, the duplicate dialog and the fields component, and the two callers that prefill from a
+ * Before this row the `kind` switch was written nine times across the three callers — the
+ * create page (2), the edit page (4) and the duplicate dialog (3); the fields component keeps
+ * its own switches, which are the rendering — and the two callers that prefill from a
  * stored dashboard read it TWO-way — so an asset-group dashboard prefilled as "organization"
  * and a rename or a duplicate silently widened it to the whole tenant. The three helpers here
  * are the single place the fourth arm lives; every caller composes them.
  *
- * `assetId` (ADR 0067) has no form representation: the instantiator is its only writer, and an
+ * `assetId` (ADR 0067) has no form representation: the instantiator is its only writer in this
+ * app (`PATCH /dashboards/:id` accepts it for a direct caller), and an
  * asset-scoped row prefills as organization exactly as it did before this row (plan §10 Q2,
  * folded into `F3.63`).
  */

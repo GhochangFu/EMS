@@ -106,9 +106,17 @@ function asUser(role: UserRole): AuthUser {
 
 /** Stubs every load the page issues. `dto` and `groups` are explicit at each group case so a
  * case cannot stay green against the wrong fixture. */
-function stubLoads({ dto, groups }: { dto: DashboardDto; groups: readonly AdminAssetGroupDto[] }): void {
+function stubLoads({
+  dto,
+  groups,
+  locations = [LOCATION],
+}: {
+  dto: DashboardDto;
+  groups: readonly AdminAssetGroupDto[];
+  locations?: readonly (typeof LOCATION)[];
+}): void {
   vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(dto);
-  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [LOCATION] });
+  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [...locations] });
   vi.spyOn(assetGroupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [...groups] });
 }
 
@@ -201,6 +209,23 @@ export async function choosingADifferentGroupMakesItDirty(): Promise<void> {
 
   await screen.findByLabelText("Name");
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Asset group" }), "grp-2");
+
+  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
+}
+
+/** The LOCATION half of the rewritten dirty check (post-merge sweep, Medium). The row rewrote
+ * `scopeChanged` to compare both columns and pinned only the group half: with the location
+ * comparison dropped, moving a dashboard from one location to another showed "No changes yet."
+ * and Save stayed disabled, and every case stayed green. Mutation: compare `assetGroupId`
+ * only ⇒ red. */
+export async function choosingADifferentLocationMakesItDirty(): Promise<void> {
+  const SECOND_LOCATION = { ...LOCATION, id: "loc-2", code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
+  stubLoads({ dto: DTO, groups: [GROUP], locations: [LOCATION, SECOND_LOCATION] });
+
+  renderPage(asUser("admin"));
+
+  await screen.findByLabelText("Name");
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Location" }), "loc-2");
 
   expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
 }

@@ -161,9 +161,25 @@ export async function choosingAGroupDecidesTheOrganization(): Promise<void> {
 }
 
 /**
- * The seed names every location's groups identically (`Electrical`, `Hvac`, … at each
- * location — plan §3 0.3), so the option text carries the location. Mutation: render `name`
- * alone ⇒ red.
+ * Clicking the `Asset group` RADIO alone — no select afterwards — pre-selects the first group
+ * and takes the organization from it (post-merge sweep, Low). Every other case that clicks the
+ * radio then calls `selectOptions`, which overwrites the radio's value, so the radio's own
+ * derivation was unpinned: with it broken, an author who accepts the pre-selected group sends
+ * `organizationId: ""` and gets a 400 behind an enabled Create. Mutation: derive `""` ⇒ red.
+ */
+export async function clickingTheAssetGroupRadioAloneDecidesTheOrganization(): Promise<void> {
+  const onChange = vi.fn();
+  renderFields("admin", locationValue(), onChange);
+
+  await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
+
+  expect(onChange).toHaveBeenCalledWith({ kind: "assetGroup", organizationId: "org-1", assetGroupId: "grp-1" });
+}
+
+/**
+ * The seed creates a group per asset domain at every location that holds assets, so a name
+ * such as `Hvac` repeats across sites (plan §3 0.3); the option text carries the location.
+ * Mutation: render `name` alone ⇒ red.
  */
 export function theOptionTextNamesTheLocation(): void {
   renderFields("admin", { kind: "assetGroup", organizationId: "", assetGroupId: "" });
