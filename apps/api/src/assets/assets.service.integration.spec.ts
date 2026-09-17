@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import type pg from "pg";
 
-import { organizations } from "@bms/db";
+import { assets, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 // `@bms/shared`, not `@bms/shared/contracts`: apps/api compiles with
 // moduleResolution "node" and ignores the exports map (ADR 0030 Amendment 2).
@@ -10,6 +10,7 @@ import { assetListRowSchema } from "@bms/shared";
 import { jwtFor, SEEDED } from "../auth/access-control.integration.spec";
 import { AccessControlService } from "../auth/access-control.service";
 import { resolveSeededAssetByCode } from "../testing/integration-fixtures";
+import { withRollback } from "../testing/with-rollback";
 import { AssetsService } from "./assets.service";
 
 /**
@@ -265,4 +266,41 @@ export async function assertListAllStaysInsideLocationAdminScope(
     leaked.length === 0,
     `the join must not widen scope; out-of-grant assets in the list: ${leaked.map((f) => f.id).join(", ")}`,
   );
+}
+
+/**
+ * G3 — a mis-stamped `rtu_id` (an RTU of another organization) reports
+ * `rtuDisplayName: null`, never the foreign name. The read runs on the fleet
+ * pool (BYPASSRLS) and the FK is plain, so the organization predicate on the
+ * join is the only thing that holds this (security review L1). The stamp
+ * itself is still reported — `rtuId` equals what was written — so the guard
+ * measures the join, not the column. Written inside a rolled-back transaction;
+ * the service is handed the transaction as its database.
+ */
+export async function assertListAllHidesAForeignOrganizationsRtu(
+  pool: pg.Pool,
+  db: BmsDb,
+): Promise<void> {
+  const { manualId } = await seededPair(pool);
+  const { rows: foreignRtus } = await pool.query<{ id: string }>(
+    `SELECT r.id
+       FROM bms.rtus r
+      WHERE r.organization_id = (SELECT id FROM bms.organizations WHERE code = 'PHEWB')
+      ORDER BY r.code`,
+  );
+  const foreignRtuId = foreignRtus[0]?.id;
+  assert(foreignRtuId !== undefined, "control: PHEWB holds at least one seeded RTU");
+
+  await withRollback(db, async (tx) => {
+    await tx.update(assets).set({ rtuId: foreignRtuId }).where(eq(assets.id, manualId));
+    const rows = await new AssetsService(tx as unknown as BmsDb).listAll([manualId]);
+    const row = rows[0];
+    assert(rows.length === 1 && row !== undefined, `the mis-stamped asset must still list, got ${rows.length} rows`);
+    assert(row?.rtuId === foreignRtuId, "control: the stamp is reported as written");
+    assert(
+      row?.rtuDisplayName === null,
+      `a foreign organization's RTU must not be named, got ${JSON.stringify(row?.rtuDisplayName)}`,
+    );
+    tx.rollback();
+  });
 }

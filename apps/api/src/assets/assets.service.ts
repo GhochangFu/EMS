@@ -71,7 +71,13 @@ export class AssetsService {
       })
       .from(assets)
       .innerJoin(locations, eq(assets.locationId, locations.id))
-      .leftJoin(rtus, eq(assets.rtuId, rtus.id));
+      // The organization predicate rides on the join, not only the FK: this
+      // reads on the fleet pool (BYPASSRLS), and `assets_rtu_id_fk` is a plain
+      // FK to `rtus(id)` — only `assertRtuLocation` at write time keeps an
+      // asset's RTU inside its organization. A mis-stamped `rtu_id` therefore
+      // reports `null`, never a foreign organization's display name. The same
+      // shape as `dashboards.service.ts`'s `assets` join (ADR 0043).
+      .leftJoin(rtus, and(eq(assets.rtuId, rtus.id), eq(rtus.organizationId, assets.organizationId)));
 
     return conditions.length > 0
       ? base.where(and(...conditions)).orderBy(asc(assets.siteName), asc(assets.code))

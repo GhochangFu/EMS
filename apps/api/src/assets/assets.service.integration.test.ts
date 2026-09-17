@@ -7,6 +7,7 @@ import type { BmsDb } from "@bms/db";
 
 import {
   assertListAllComposesAssetIdsAndOrganization,
+  assertListAllHidesAForeignOrganizationsRtu,
   assertListAllKeepsUnwiredRowWithNulls,
   assertListAllReportsWiredRowColumns,
   assertListAllScopesByOrganization,
@@ -83,5 +84,9 @@ describe.skipIf(!connectionString)("E2.1 follow-up — AssetsService organizatio
 
   it("F3.31 G2 — a location_admin's rows stay inside its grants after the join", async () => {
     await assertListAllStaysInsideLocationAdminScope(pool, authDb, db);
+  }, 60_000);
+
+  it("F3.31 G3 — a mis-stamped rtu_id never names another organization's RTU", async () => {
+    await assertListAllHidesAForeignOrganizationsRtu(pool, db);
   }, 60_000);
 });
