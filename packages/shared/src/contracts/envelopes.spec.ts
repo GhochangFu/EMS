@@ -8,6 +8,11 @@ import {
   pointAggregateResponseSchema,
   pointAggregateStatsSchema,
 } from "./envelopes";
+// The whole module as a record, for the "old name is gone" assertion. A static
+// namespace import rather than `await import("./envelopes")`: `typecheck:tests`
+// runs this file under `moduleResolution: nodenext`, where a dynamic relative
+// import without an extension is TS2835.
+import * as envelopesModule from "./envelopes";
 import {
   notificationDeliveryEventSchema,
   notificationDeliveryStatusSchema,
@@ -399,7 +404,7 @@ export async function assetListResponseSchemaAndNoOldNameSurvives(): Promise<voi
     "assetListResponseSchema must parse an array of one valid row",
   );
 
-  const E: Record<string, unknown> = await import("./envelopes");
+  const E: Record<string, unknown> = envelopesModule;
   assert(
     "assetPickerRowSchema" in E === false,
     "assetPickerRowSchema must be gone from the module, not merely unused — no alias",
