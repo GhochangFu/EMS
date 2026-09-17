@@ -127,6 +127,17 @@ function stubSave() {
   return updateSpy;
 }
 
+/**
+ * Waits until the page has applied the loaded dto — the scope radio it prefills is checked.
+ * `findByLabelText("Name")` is NOT that wait: the Name input renders before the dto arrives
+ * (state `""`), so it resolves at once and a synchronous `getByRole("combobox", …)` after it
+ * races the dto effect — the race CI lost once on the sweep PR (#476). The groups query is a
+ * second async load; assertions on the option list wait for it separately.
+ */
+async function waitForPrefill(kind: "Location" | "Asset group"): Promise<void> {
+  await screen.findByRole("radio", { name: kind, checked: true });
+}
+
 function renderPage(user: AuthUser): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -179,9 +190,9 @@ export async function movingALocationDashboardOntoAGroupSendsTheGroupAndClearsTh
 
   renderPage(asUser("admin"));
 
-  await screen.findByLabelText("Name");
+  await waitForPrefill("Location");
   await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Asset group" }), "grp-1");
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), "grp-1");
   await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
 
   await waitFor(() => {
@@ -196,7 +207,7 @@ export async function anUneditedGroupScopedDashboardIsNotDirty(): Promise<void> 
 
   renderPage(asUser("admin"));
 
-  await screen.findByLabelText("Name");
+  await waitForPrefill("Asset group");
   expect(screen.getByText("No changes yet.")).toBeInTheDocument();
 }
 
@@ -207,8 +218,8 @@ export async function choosingADifferentGroupMakesItDirty(): Promise<void> {
 
   renderPage(asUser("admin"));
 
-  await screen.findByLabelText("Name");
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Asset group" }), "grp-2");
+  await waitForPrefill("Asset group");
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), "grp-2");
 
   expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
 }
@@ -224,8 +235,8 @@ export async function choosingADifferentLocationMakesItDirty(): Promise<void> {
 
   renderPage(asUser("admin"));
 
-  await screen.findByLabelText("Name");
-  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Location" }), "loc-2");
+  await waitForPrefill("Location");
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Location" }), "loc-2");
 
   expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
 }
@@ -237,10 +248,13 @@ export async function theGroupListIsTheDashboardsOrganizationOnly(): Promise<voi
 
   renderPage(asUser("admin"));
 
-  await screen.findByLabelText("Name");
-  const values = within(screen.getByRole("combobox", { name: "Asset group" }))
-    .getAllByRole("option")
-    .map((option) => (option as HTMLOptionElement).value)
-    .filter((value) => value !== "");
-  expect(values).toEqual(["grp-1"]);
+  await waitForPrefill("Asset group");
+  // The option list fills when the groups query resolves — a second async load after the dto.
+  await waitFor(() => {
+    const values = within(screen.getByRole("combobox", { name: "Asset group" }))
+      .getAllByRole("option")
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter((value) => value !== "");
+    expect(values).toEqual(["grp-1"]);
+  });
 }
