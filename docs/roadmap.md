@@ -5392,6 +5392,34 @@ Database is N/A. The `chore(agents):` sweep is owed separately and touches
 the status line and §2 only — `F3.31` is not a §6 item. No row depends on
 it.
 
+### `F3.44` — a read-only viewer for stock dashboard-template entries ✅ 2026-09-17
+
+PR [#471](https://github.com/GhochangFu/EMS/pull/471), sweep
+[#472](https://github.com/GhochangFu/EMS/pull/472). The stock card on
+`/admin/dashboard-templates` showed one summary line and one Import button
+per entry; nothing let an administrator read an entry's widgets before
+importing it. A View link per entry now opens
+`/admin/dashboard-templates/stock/:code`, which renders the entry through
+the same `DashboardCanvas` and `WidgetEditor` the authoring page uses, with
+`editable={false}`, and carries Import (behind `mayAuthor`) that lands on
+the new draft. Web-only; no ADR (ADR 0049 decision 3 already rules the
+catalog read-only).
+
+**The decision differs from `F2.14`**: every header control on the detail
+page is status-gated, so no synthetic status is safe and no adapter is
+built — the shared seam is `WidgetEditor` itself, moved to
+`components/dashboard-templates/`. **Four rulings**, all as recommended:
+View for every master-data role (the server admits `location_admin`),
+Import navigates, the `sources` gap is row `F3.61`, the subtitle count is
+derived.
+
+**Verified on every layer that applies** — CI green on both PRs; the full
+suite with the compose database; three mutations and a three-way red on the
+guard; the browser as `admin` (7/7, a real Import and its cleanup) and as
+`location_admin` (claim 7). Database and API N/A. The post-merge sweep
+found the stock card rendering a raw error body and a false binding count,
+fixed in #472. No `chore(agents):` line is owed. Unblocks `F3.61`.
+
 ### `F3.45` — water, STP and ETP stock templates rebound to the E5.1 codes ✅ 2026-09-17
 
 PR [#469](https://github.com/GhochangFu/EMS/pull/469). The three water
