@@ -4,12 +4,12 @@ import { useNavigate } from "react-router-dom";
 
 import type { WidgetType } from "@bms/shared";
 
-import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
-import { fetchAdminLocations } from "../../api/admin/locations";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { createDashboard, putDashboardWidgets, type CreateDashboardPayload } from "../../api/dashboards";
+import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-options";
+import { canCreateOrganizationWideDashboard } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { isScopeChosen, scopeColumns } from "../../lib/dashboard-scope";
+import { isScopeChosen, scopeColumns, type ChosenScopeValue } from "../../lib/dashboard-scope";
 import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
@@ -44,12 +44,21 @@ type WidgetTile = CanvasTile & { row: DashboardWidgetRow; index: number };
  * call leaves an empty dashboard, which is `F3.1d` Unit 9's problem to state
  * rather than hide; this row does not implement the duplicate flow that
  * raises it.
+ *
+ * **The scope state is `ChosenScopeValue`, not `DashboardScopeValue`** (`F3.63`, plan §4.1
+ * point 3): a create body can never carry ADR 0067's `assetId`, and typing the state to the
+ * three chosen kinds makes that a compile-time fact — `scopeColumns` takes only this type. The
+ * option lists come from `useDashboardScopeOptions` by role (ADR 0047 Amendment 6 §Q1 point
+ * 2): an `asset_group_admin` reaches this page through `DashboardAuthorRoute`, is offered the
+ * group kind only, and its list is `/auth/me`'s `scope.assetGroups` — none of the three
+ * `/admin/*` reads fire for it, since each is a 403 for the role. `organizationId` on the body
+ * is the scope value's, which for the group kind is the chosen group's own.
  */
 export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
   const navigate = useNavigate();
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const [scope, setScope] = useState<DashboardScopeValue>({
+  const [scope, setScope] = useState<ChosenScopeValue>({
     kind: "location",
     organizationId: "",
     locationId: "",
@@ -58,21 +67,16 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Only the roles offered the organization-wide kind read the organization list — for the
+  // two others it is a 403 nothing on the form would display.
   const organizationsQ = useQuery({
     queryKey: ["admin", "organizations", "for-dashboard-create"],
     queryFn: () => fetchAdminOrganizations("true"),
+    enabled: canCreateOrganizationWideDashboard(user.role),
   });
-  const locationsQ = useQuery({
-    queryKey: ["admin", "locations", "for-dashboard-create"],
-    queryFn: () => fetchAdminLocations("true"),
-  });
-  // `F3.34` — the asset-group picker (ADR 0047 Amendment 5). Keyed on the exported key so the
-  // cache is shared with every other consumer of the unfiltered list. For `admin` the list is
-  // fleet-wide; for `organization_admin` the endpoint's own gate narrows it (plan §3 0.1).
-  const assetGroupsQ = useQuery({
-    queryKey: adminAssetGroupsQueryKey(),
-    queryFn: () => fetchAdminAssetGroups(),
-  });
+  // No organization narrows the lists here: the location or group the author picks is what
+  // DECIDES this dashboard's organization.
+  const { locations, assetGroups } = useDashboardScopeOptions({ role: user.role });
 
   const problems = dashboardBuilderErrors(rows);
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
@@ -167,10 +171,15 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
             <DashboardScopeFields
               role={user.role}
               value={scope}
-              onChange={setScope}
+              // The fields never emit the `asset` kind (no radio, no select renders it, and
+              // the clamp rewrites only to a chosen kind); the prop is typed to the full union
+              // for the edit page, whose state can hold that kind.
+              onChange={setScope as (value: DashboardScopeValue) => void}
               organizations={organizationsQ.data?.items ?? []}
-              locations={locationsQ.data?.items ?? []}
-              assetGroups={assetGroupsQ.data?.items ?? []}
+              locations={locations}
+              assetGroups={assetGroups}
+              // This state type cannot hold the `asset` kind, so there is never an asset to name.
+              assets={[]}
             />
           </div>
         </SectionCard>
@@ -228,6 +237,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
         {selected !== null && selectedRow ? (
           <WidgetInspector
             row={selectedRow}
+            role={user.role}
             problems={problems.filter((problem) => problem.widget === selected)}
             organizationId={scope.organizationId}
             onChange={(patch) => updateWidget(selected, patch)}
