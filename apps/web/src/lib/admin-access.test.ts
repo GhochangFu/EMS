@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runAdminAccessTests,
+  runAssetGroupScopePredicateTests,
   runAssetTemplateTabTests,
   runDashboardAuthoringPredicateTests,
   runNotificationTabTests,
@@ -23,5 +24,9 @@ describe("admin-access", () => {
 
   it("gates dashboard authoring and the organization-wide scope by role", () => {
     runDashboardAuthoringPredicateTests();
+  });
+
+  it("offers the asset-group dashboard scope to admin and organization_admin only", () => {
+    runAssetGroupScopePredicateTests();
   });
 });

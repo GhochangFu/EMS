@@ -1,6 +1,7 @@
 import {
   canAccessOnboarding,
   canAuthorDashboards,
+  canChooseAssetGroupDashboardScope,
   canCreateOrganizationWideDashboard,
   canManageNotificationChannels,
   masterDataTabs,
@@ -241,4 +242,31 @@ export function runDashboardAuthoringPredicateTests(): void {
   );
   assert(!canCreateOrganizationWideDashboard("operator"), "operator may not create an organization-wide dashboard");
   assert(!canCreateOrganizationWideDashboard("viewer"), "viewer may not create an organization-wide dashboard");
+}
+
+/**
+ * `F3.34` (ADR 0047 Amendment 5) — the asset-group scope option renders for the two roles the
+ * API's group arm admits for any group of the organization. Its body is identical to
+ * `canCreateOrganizationWideDashboard` today and it is deliberately a SECOND predicate: `F3.63`
+ * widens this one to `asset_group_admin` and must not move the organization-wide one.
+ */
+export function runAssetGroupScopePredicateTests(): void {
+  assert(canChooseAssetGroupDashboardScope("admin"), "admin may choose the asset-group scope");
+  assert(
+    canChooseAssetGroupDashboardScope("organization_admin"),
+    "organization_admin may choose the asset-group scope",
+  );
+  // Named individually so widening the list is a decision, not a fallthrough.
+  assert(
+    !canChooseAssetGroupDashboardScope("location_admin"),
+    "location_admin may not choose the asset-group scope — the API's group arm refuses the role " +
+      "(canManageDashboard: target.kind !== \"location\"), so the option would buy a 403",
+  );
+  assert(
+    !canChooseAssetGroupDashboardScope("asset_group_admin"),
+    "asset_group_admin may not choose the asset-group scope YET — widening it to that role is " +
+      "F3.63's, with its own §10 gate (ADR 0047 Amendment 5)",
+  );
+  assert(!canChooseAssetGroupDashboardScope("operator"), "operator may not choose the asset-group scope");
+  assert(!canChooseAssetGroupDashboardScope("viewer"), "viewer may not choose the asset-group scope");
 }
