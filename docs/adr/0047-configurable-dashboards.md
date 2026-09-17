@@ -902,3 +902,139 @@ Wave 2 row that the umbrella exists to unblock.
 - **No schema change and no `0051`.** Same reason Amendment 2 gave for its own
   ruling 2: this is an application-surface decision, and `0050` already permits
   every row the viewer reads.
+
+## Amendment 5 — the asset-group scope becomes authorable by the two roles the API already admits, and the `asset_group_admin` UI path is deferred (2026-09-17)
+
+Ruled by the owner at `F3.34`'s §10 gate, **before any implementation code**,
+and raised by rebuilding the row's refusal inventory from source rather than
+by trusting it. The row was written 2026-08-29 at `F3.1d`'s step-3 plan;
+[ADR 0049](0049-section-dashboard-templates.md) (`F3.37`) and
+[ADR 0067](0067-per-asset-default-dashboards.md) (`F3.2`) landed since, and
+each moved one of the facts the row rests on.
+
+### The question
+
+`docs/BACKLOG.md` row `F3.34` records that the asset-group dashboard scope is
+*"unauthorable in both directions"* and names a **threefold** block: (1)
+`AdminRoute` refuses `asset_group_admin` through `isMasterDataAdmin`; (2)
+`GET /admin/asset-points` refuses it through `requireMasterDataUser`; (3)
+*"`apps/api` exposes no asset-groups list endpoint at all"*, so the three roles
+that reach the builder have no group to pick. `dashboard-scope-fields.tsx`'s
+docblock carries the matching owner ruling — *"No asset-group option, for any
+role"* — and gives (3) as its reason.
+
+**Re-read against `main` at `954bcebf`, the inventory is half decayed:**
+
+- (1) and (2) still hold, verbatim (`admin-access.ts:4-10`,
+  `admin-route.tsx:36`, `asset-points.service.ts:67`).
+- (3) is **false**. `GET /admin/asset-groups` exists
+  (`asset-groups.controller.ts:25`, ADR 0049 decision 5), gated on
+  `requireMasterDataUser` plus the caller's writable locations and
+  organizations — which admits exactly the three roles the row said had
+  nothing to pick from.
+- **A fourth surface the row never named is already open.**
+  `AccessControlService.canManageDashboard` admits `asset_group_admin` on the
+  **group** arm by `user_asset_group_access` membership (`F3.1b`, lines
+  434-494) and on the **asset** arm by the same membership through
+  `asset_group_members` (ADR 0067 decision 2). The API-side boundary the row
+  describes as *"closed on purpose"* is `isMasterDataRole`'s — master-data
+  administration — and a dashboard is a `configuration` write that
+  `canPerformOperationsWrite` grants the role already. So the API has an
+  authorization path for this role that no page routes a human to
+  (`dashboards-page.tsx:28` and `dashboard-viewer-page.tsx:34` hide the
+  Manage and Edit links from it, because `AdminRoute` would redirect).
+- **`location_admin` is refused the group arm**: `target.kind !== "location"`
+  returns `false` at line 426-428, so a group option shown to that role would
+  buy a 403 — the "buttons, not forms" shape §6.2 exists to prevent.
+
+Four rulings were put to the owner, with the first recommended:
+
+- **A — open the authoring path for `asset_group_admin`**: a dashboard-specific
+  route guard (not `isMasterDataRole`), a group-scoped point read (not
+  `/admin/asset-points`), and the group option for every role the API admits.
+- **B — the asset-group scope option for `admin` and `organization_admin`
+  only**, fed by the endpoint that now exists. No permission changes.
+- **C — a UI route for the asset-scoped dashboards ADR 0067 already lets the
+  role author**, with no group picker.
+- **D — keep the boundary closed and drop the row**, retracting ruling 2's
+  sentence.
+
+### The ruling: B — no permission moves, and the option renders only where the API already says yes
+
+**`DashboardScopeFields` gains a third scope kind, `assetGroup`, rendered for
+`admin` and `organization_admin` only** — absent from the DOM for every other
+role, on this ADR's forms-not-buttons rule, and populated from
+`GET /admin/asset-groups`. That is the whole permission story: `isMasterDataRole`,
+`isMasterDataAdmin`, `AdminRoute`, `requireMasterDataUser` and
+`canManageDashboard` are **not edited**. The option appears for precisely the
+two roles whose `canManageDashboard` path reaches the group arm and returns
+true for any group of the organization.
+
+**Why not `location_admin`.** Amendment 2 ruling 2 says a `location_admin`
+authors *"inside its own scope"*, and a group lives at one location
+(`bms.asset_groups.location_id` is NOT NULL). But the API's group arm refuses
+the role today, and this amendment moves no permission — a UI option gated
+wider than the server's rule ships a 403 behind an enabled Save. If a later
+row wants the group arm opened to `location_admin`, that is one predicate in
+`canManageDashboard` plus one line in the web mirror, and it takes its own
+gate.
+
+**Ruling 2's sentence describes the API, not a page.** *"A `location_admin`
+and an `asset_group_admin` still author freely inside their own scope"* is
+true of `canManageDashboard` and was true of no UI for `asset_group_admin` on
+the day it was written. It is not retracted: the role's UI path — a route
+guard that is not `AdminRoute`, a point read that is not master-data
+administration, and the group option widened to the role — **is deferred to a
+new row, `F3.63`, with its own §10 gate**, and `docs/BACKLOG.md` §5's *"`asset_group_admin`
+authoring boundary"* question moves from `F3.34` to that row. A and C were
+declined *for now* rather than refused: A reopens a boundary two docblocks
+close on purpose and is the only ruling that must cover three surfaces at
+once; C delivers a partial path with no picker. Either is `F3.63`'s to argue.
+D was declined because it retracts a promise the API already keeps.
+
+### What `F3.34` is, and what it is not
+
+- **It is the third radio and its select**, in `DashboardScopeFields`; the
+  three-way prefill in the two callers that today read the source scope
+  two-way (`duplicate-dashboard-dialog.tsx:108-110`,
+  `dashboard-builder-edit-page.tsx:92-93`) — an asset-group source prefilled
+  as *"organization"* is clamped or, worse, duplicated as organization-wide
+  by the dialog's `{ locationId: null, assetGroupId: null }` body; the create
+  page's body gaining `assetGroupId`; and the docblock that cites the absent
+  endpoint corrected to cite this amendment.
+- **It is the API's existing contract.** `POST /dashboards` and
+  `PATCH /dashboards/:slug` already accept `assetGroupId`
+  (`dashboards.schema.ts`), `scopeIsSingular` already counts it, and
+  `dashboards-page.tsx:107` already labels it *"Asset group"*. No route, no
+  DTO field, no migration.
+- **It is not the asset scope.** ADR 0067 decision 3's instantiator is the only
+  writer of `assetId`, and the form does not offer it. Unchanged.
+- **It is not a widening of `GET /admin/asset-groups`.** The picker reads the
+  list the caller may already administer; the endpoint's own gate is the
+  filter.
+- **It is not `F3.63`.** Nothing in this row routes `asset_group_admin`
+  anywhere it cannot go today.
+
+### Consequences
+
+- **`F3.34`'s title and effort narrow.** *"The `asset_group_admin` dashboard
+  authoring path"* becomes *"The asset-group dashboard scope, authorable by
+  `admin` and `organization_admin`"*; effort `3–4` → `1–2`. The row's cell
+  keeps its 2026-08-29 text as the record of what was believed and appends
+  this ruling as the correction, on the `F3.1d` precedent.
+- **`F3.63` is created**, Wave 2, P2, effort `3–4`, depends on `F3.34`, and
+  inherits the ⚠ ADR-first marker and the §5 question. Its dependency is
+  real: the group option must exist before a role can be widened onto it.
+- **The `dashboard-scope-fields.tsx` docblock is corrected in the feature
+  commit**, because it states a fact about `apps/api` that is no longer true
+  and a reader would act on it. The row-cell prose in `docs/BACKLOG.md` that
+  states the same fact is corrected by the append above, not rewritten.
+- **§4.6 for this row: database and API are gated by the existing
+  integration suite** (`canManageDashboard`'s group arm and the singular-scope
+  refusal already have cases); the browser layer is the one this row adds and
+  the one it must show — the option present for `admin`, absent for
+  `location_admin`, and a save that lands `asset_group_id` set with the other
+  two scope columns NULL.
+- **No schema change, no dependency, no `AGENTS.md` §6 line moves.** The
+  `chore(agents):` sweep after close has nothing to soften; it records the
+  amendment in the status line's ADR roll only.

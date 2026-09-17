@@ -4,10 +4,12 @@ import { useNavigate } from "react-router-dom";
 
 import type { WidgetType } from "@bms/shared";
 
+import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { fetchAdminLocations } from "../../api/admin/locations";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import { createDashboard, putDashboardWidgets, type CreateDashboardPayload } from "../../api/dashboards";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { isScopeChosen, scopeColumns } from "../../lib/dashboard-scope";
 import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
@@ -64,22 +66,32 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
     queryKey: ["admin", "locations", "for-dashboard-create"],
     queryFn: () => fetchAdminLocations("true"),
   });
+  // `F3.34` — the asset-group picker (ADR 0047 Amendment 5). Keyed on the exported key so the
+  // cache is shared with every other consumer of the unfiltered list. For `admin` the list is
+  // fleet-wide; for `organization_admin` the endpoint's own gate narrows it (plan §3 0.1).
+  const assetGroupsQ = useQuery({
+    queryKey: adminAssetGroupsQueryKey(),
+    queryFn: () => fetchAdminAssetGroups(),
+  });
 
   const problems = dashboardBuilderErrors(rows);
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
   // a set-level problem or another widget's problem must surface somewhere else, or `Save`
   // disables with a reason nothing on the page shows.
   const summaryProblems = unselectedDashboardBuilderProblems(problems, selected);
-  const scopeChosen = scope.kind === "organization" ? scope.organizationId !== "" : scope.locationId !== "";
+  const scopeChosen = isScopeChosen(scope);
   const blocked = name.trim() === "" || slug.trim() === "" || !scopeChosen || problems.length > 0;
 
   const saveM = useMutation({
     mutationFn: async () => {
+      // Both scope columns are sent explicitly, exactly one non-null or both null
+      // (`scopeColumns`). An organization-wide create sends two nulls where it once omitted
+      // `locationId`; `create` reads `body.locationId ?? null`, so the two are equivalent.
       const body: CreateDashboardPayload = {
         organizationId: scope.organizationId,
         slug: slug.trim(),
         name: name.trim(),
-        ...(scope.kind === "location" ? { locationId: scope.locationId } : {}),
+        ...scopeColumns(scope),
       };
       const created = await createDashboard(body);
       await putDashboardWidgets(created.id, buildPutWidgetsPayload(rows));
@@ -158,6 +170,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
               onChange={setScope}
               organizations={organizationsQ.data?.items ?? []}
               locations={locationsQ.data?.items ?? []}
+              assetGroups={assetGroupsQ.data?.items ?? []}
             />
           </div>
         </SectionCard>

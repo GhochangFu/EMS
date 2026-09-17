@@ -904,6 +904,28 @@ export async function assertCanManageDashboard(
   if (!(await svc.canManageDashboard(locationAdmin, locOrgId, { locationId: locId, assetGroupId: null, assetId: null }))) {
     throw new Error("location_admin must manage a dashboard scoped to its own location");
   }
+  // `F3.34` / ADR 0047 Amendment 5 — FALSE for a dashboard scoped to an asset group, even a
+  // group AT ITS OWN LOCATION. The group arm admits `asset_group_admin` by membership only; the
+  // `location_admin` arm answers `target.kind !== "location"` with a refusal. The web mirror
+  // (`dashboard-scope-fields.tsx`) omits the asset-group option for this role because of this
+  // line, and nothing pinned it before this case: the positive control is the assertion just
+  // above (same actor, same location, location arm → true).
+  const ownLocationGroup = await pool.query<{ id: string }>(
+    `SELECT ag.id FROM bms.asset_groups ag WHERE ag.location_id = $1 LIMIT 1`,
+    [locId],
+  );
+  const ownLocationGroupId = ownLocationGroup.rows[0]?.id;
+  if (!ownLocationGroupId) {
+    throw new Error(`F3.34: ${SEEDED.locationAdmin}'s location has no asset group — the seed creates six per location`);
+  }
+  if (
+    await svc.canManageDashboard(locationAdmin, locOrgId, { locationId: null, assetGroupId: ownLocationGroupId, assetId: null })
+  ) {
+    throw new Error(
+      "location_admin must be refused a dashboard scoped to an asset group, even one at its own location " +
+        "— ADR 0047 Amendment 5: the group arm admits asset_group_admin by membership only",
+    );
+  }
   // FALSE for an organization-wide dashboard in its OWN organization — the
   // carrier of ADR 0047 Amendment 2 ruling 2, and the assertion a refactor is
   // most likely to lose (every other location_admin assertion here is about a

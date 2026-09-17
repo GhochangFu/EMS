@@ -26,6 +26,7 @@ import {
   assertMovingTheAssetClearsTheStamp,
   assertCreateAuditRowStamped,
   assertCreateRoutesOnTenantPoolOnly,
+  assertCrossOrgAssetGroupScopeIs400NamingAssetGroupId,
   assertCrossOrgLocationScopeRefusedByRls,
   assertCrossTenantSlugReadIs404,
   assertFleetBranchExcludesAForeignOrganization,
@@ -57,6 +58,8 @@ const CREATE_SLUG = `f31b-create-${RUN}`;
 const WIDGETS_SLUG = `f31b-widgets-${RUN}`;
 const FOREIGN_UPDATE_SLUG = `f31b-foreign-${RUN}`;
 const CROSS_ORG_SCOPE_SLUG = `f31b-scope-${RUN}`;
+const CROSS_ORG_GROUP_CREATE_SLUG = `f334-group-scope-${RUN}`;
+const CROSS_ORG_GROUP_UPDATE_SLUG = `f334-group-target-${RUN}`;
 const LEAK_ORG_CODE = `F31B-LEAK-${RUN}`;
 const LEAK_SLUG = `f31b-leak-${RUN}`;
 const MULTI_ORG_EMAIL = `f31b-multiorg-${RUN}@integration.invalid`;
@@ -389,6 +392,32 @@ describe.skipIf(!connectionString)(
         CROSS_ORG_SCOPE_SLUG,
       );
       // No id to push to dashboardIds: the insert was refused, nothing landed.
+    }, 60_000);
+
+    it("F3.34 — an ESKOM dashboard given a PHEWB assetGroupId is refused by RLS on create and on update, naming assetGroupId", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      // The update leg needs a row that exists: an organization-wide ESKOM dashboard the
+      // global admin then tries to move onto a PHEWB group.
+      const eskomTarget = await service.create(globalAdmin, {
+        organizationId: eskomOrgId,
+        slug: CROSS_ORG_GROUP_UPDATE_SLUG,
+        name: "F3.34 cross-org group update target",
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(eskomTarget.id);
+
+      await assertCrossOrgAssetGroupScopeIs400NamingAssetGroupId(
+        service,
+        globalAdmin,
+        eskomOrgId,
+        phewbAssetGroupId,
+        CROSS_ORG_GROUP_CREATE_SLUG,
+        eskomTarget.id,
+      );
+      // The create leg landed nothing; the update leg left eskomTarget organization-wide.
     }, 60_000);
 
     it("finding 1 (HIGH) — a two-organization caller's fleet-branch read excludes a third organization", async () => {

@@ -2,7 +2,13 @@
 import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
-import { savingDoesNotSendAnAssetGroupIdKey } from "./dashboard-builder-edit-page.spec";
+import {
+  anUneditedGroupScopedDashboardIsNotDirty,
+  choosingADifferentGroupMakesItDirty,
+  movingALocationDashboardOntoAGroupSendsTheGroupAndClearsTheLocation,
+  renamingAGroupScopedDashboardKeepsItsGroup,
+  theGroupListIsTheDashboardsOrganizationOnly,
+} from "./dashboard-builder-edit-page.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
@@ -15,7 +21,23 @@ describe("F3.1d dashboard builder edit page", () => {
     vi.restoreAllMocks();
   });
 
-  it("never sends an assetGroupId key when saving", async () => {
-    await savingDoesNotSendAnAssetGroupIdKey();
+  it("renaming a group-scoped dashboard keeps its group (F3.34)", async () => {
+    await renamingAGroupScopedDashboardKeepsItsGroup();
+  });
+
+  it("moving a location dashboard onto a group sends the group and clears the location (F3.34)", async () => {
+    await movingALocationDashboardOntoAGroupSendsTheGroupAndClearsTheLocation();
+  });
+
+  it("an unedited group-scoped dashboard is not dirty (F3.34)", async () => {
+    await anUneditedGroupScopedDashboardIsNotDirty();
+  });
+
+  it("choosing a different group makes it dirty (F3.34)", async () => {
+    await choosingADifferentGroupMakesItDirty();
+  });
+
+  it("the group list is the dashboard's organization only (F3.34)", async () => {
+    await theGroupListIsTheDashboardsOrganizationOnly();
   });
 });

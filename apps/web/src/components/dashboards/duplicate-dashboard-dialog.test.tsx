@@ -4,9 +4,12 @@ import { cleanup } from "@testing-library/react";
 
 import {
   duplicatesAndNavigatesIntoTheNewDashboardsBuilder,
+  duplicatingAnAssetGroupDashboardKeepsTheGroup,
+  locationAdminGetsNoAssetGroupOption,
   locationAdminGetsNoOrganizationWideOption,
   prefillsNameAndSlugSkippingATakenCandidate,
   showsTheBindingsCarryOverWarning,
+  theGroupListIsTheSourcesOrganizationOnly,
   widgetCopyFailureRendersInlineWithoutDeletingTheHalfMadeCopy,
 } from "./duplicate-dashboard-dialog.spec";
 
@@ -27,6 +30,18 @@ describe("F3.1d Unit 9 — DuplicateDashboardDialog", () => {
 
   it("gives a location_admin no organization-wide option", async () => {
     await locationAdminGetsNoOrganizationWideOption();
+  });
+
+  it("gives a location_admin no asset-group option (F3.34)", async () => {
+    await locationAdminGetsNoAssetGroupOption();
+  });
+
+  it("duplicating an asset-group dashboard keeps the group (F3.34)", async () => {
+    await duplicatingAnAssetGroupDashboardKeepsTheGroup();
+  });
+
+  it("the group list is the source's organization only (F3.34)", async () => {
+    await theGroupListIsTheSourcesOrganizationOnly();
   });
 
   it("prefills name and slug from the source, skipping an already-taken candidate", async () => {
