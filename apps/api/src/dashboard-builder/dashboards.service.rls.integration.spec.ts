@@ -670,6 +670,15 @@ export async function assertCrossOrgAssetScopeIs400NamingAssetId(
  * SQL on the FLEET pool (a tenant-pool read returns 0 rows under FORCE RLS whether or not P
  * exists), then the call RESOLVES with an empty list. A `rejects` here is ruling 4's refused
  * shape — a 403 would confirm the id exists.
+ *
+ * **What T2 holds and what it does not.** On the tenant branch the empty list comes from
+ * FORCE RLS, not from the `assetId` predicate: probed as `bms_tenant` under ESKOM, P counts 0
+ * with and without the predicate. So T2 proves ruling 4's SHAPE (resolves, never throws) and
+ * cannot redden for a filter that widens scope on the FLEET branch — a refactor that puts the
+ * `assetId` condition outside `and(...conditions)` keeps T1 and T2 green and leaks for a
+ * two-organization caller. That case needs a third organization with an asset carrying the
+ * filtered id (an org → location → asset fixture chain this suite does not build); it is
+ * recorded as a residual in the `F3.31` closure row, not claimed here.
  */
 export async function assertListFiltersByAssetIdWithinScope(
   service: DashboardsService,
@@ -716,6 +725,6 @@ export async function assertListFiltersByAssetIdWithinScope(
   const outOfScope = await service.list(singleOrgActor, undefined, fixtures.phewbAssetId);
   expect(
     outOfScope.items.length,
-    "an out-of-scope assetId answers [] — never P (scope widened), never a throw (ruling 4)",
+    "an out-of-scope assetId answers [] on the tenant branch — never a throw (ruling 4)",
   ).toBe(0);
 }

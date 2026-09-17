@@ -304,14 +304,18 @@ export async function panelCarriesNoWriteAffordance(): Promise<void> {
   const { container } = renderPage();
 
   await clickRow("FEED-PUMP-2");
-  await screen.findByRole("heading", { name: "Asset · FEED-PUMP-2" });
+  const heading = await screen.findByRole("heading", { name: "Asset · FEED-PUMP-2" });
 
-  // `set` and `command` are the words ADR 0068 decision 6 excludes by name.
-  // Word-anchored: the nav link "Assets" contains "set".
+  // Scoped to the panel, never `screen`: the page renders the whole AppShell,
+  // and the nav carries "Asset Points" (matches /points/) for an admin — a
+  // document-wide query is red on a correct page. `set` and `command` are the
+  // words ADR 0068 decision 6 excludes by name; word-anchored because the nav
+  // link "Assets" contains "set".
+  const panel = within(heading.closest("aside") as HTMLElement);
   const writeWord = /\b(edit|attach|upload|delete|points|set|command)\b/i;
-  expect(screen.queryAllByRole("button", { name: writeWord })).toHaveLength(0);
-  expect(screen.queryAllByRole("link", { name: writeWord })).toHaveLength(0);
-  expect(container.querySelector('input[type="file"]')).toBeNull();
+  expect(panel.queryAllByRole("button", { name: writeWord })).toHaveLength(0);
+  expect(panel.queryAllByRole("link", { name: writeWord })).toHaveLength(0);
+  expect(container.querySelector("aside input[type=\"file\"]")).toBeNull();
 }
 
 /** P8 — column mapping: a null RTU and source read `—`; the source is reported as stored. */

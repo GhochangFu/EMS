@@ -222,6 +222,12 @@ export async function assertListAllKeepsUnwiredRowWithNulls(
  * grant set and the out-of-scope set are both read by independent SQL keyed on
  * `location_id` (set reads, never positional); both are non-empty as controls
  * so the two "nothing outside" checks cannot pass vacuously.
+ *
+ * What this proves is `readableAssetIds` containment through `listAll`, and it
+ * reddens when the `inArray(assets.id, assetIds)` term is dropped. It cannot
+ * redden for "the join widened the rows": a LEFT JOIN on `rtus.id` (a primary
+ * key) adds columns, never rows. G3 (its own suite) covers the join's other
+ * failure — a foreign RTU's name on a mis-stamped row.
  */
 export async function assertListAllStaysInsideLocationAdminScope(
   pool: pg.Pool,
