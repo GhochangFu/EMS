@@ -145,6 +145,50 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
   // -------------------------------------------------------------------------
   // Water — raw intake, pump house, treatment, tanks, distribution.
   // -------------------------------------------------------------------------
+  /**
+   * `F3.45` — the E5.1 rebinding, and what one plant asset resolves.
+   *
+   * The water, STP and ETP entries below bind six `E5.1` codes (ADR 0040
+   * decision 2), one reading per role, each taken from the asset-side stock
+   * catalog's own label for the same point:
+   *
+   *  - `raw-intake` → `raw_water_flow_klh` ("Raw water intake flow",
+   *    `asset-templates/stock-catalog/water-wtp.ts:433`).
+   *  - `pump-house` → `treated_water_flow_klh` (owner ruling, 2026-09-17:
+   *    "Pump House Output" is the treated stream, `water-wtp.ts:443`).
+   *  - `inlet-screen` → `influent_flow_klh` (`water-stp.ts:512`).
+   *  - `aeration` → `aeration_do_mgl` (`water-stp.ts:514`).
+   *  - `neutralization` → `neutralization_ph` (`water-etp.ts:420`).
+   *  - `biological` → `effluent_cod_mgl` — the only COD code, filed under §5
+   *    STP and shared with §6 ETP (`packages/shared/src/constants.ts:749-750`).
+   *    Reading the ETP's biological stage as effluent COD is a **stated
+   *    assumption**: on an STP plant the same code is a `MANUAL` row
+   *    (`water-stp.ts:526`), which the `E5.1` closure records never gets an
+   *    `asset_points` row, so this entry's COD widgets are meant for an ETP
+   *    asset.
+   *
+   * `pump-house` / `kw` (below, unchanged) is electrical and stays outside
+   * this rebinding; none of the three water plant templates carries a `kw`
+   * point, so that tile resolves only on a plant commissioned with one
+   * outside the water pack.
+   *
+   * **The v1 consequence, recorded, not designed around** — the same shape
+   * `asset-groups-seed.ts:69-87` records for the electrical `pump` role. ADR
+   * 0040 ruling 5 makes a plant one asset, and
+   * `asset_group_members_group_asset_idx` (migration `0010:69`) is UNIQUE on
+   * `(asset_group_id, asset_id)`, so a v1 plant holds exactly one role per
+   * group. Each entry above binds two roles, so on a v1 plant the widgets of
+   * the *other* role report `unresolved` — one widget on `stp-overview` and
+   * on `etp-overview` (whichever role the plant holds), and on
+   * `water-overview` either `raw-intake-tile` or both `pump-house` widgets.
+   * Reported by the resolution report
+   * (`dashboard-templates-instantiate.service.ts:478`), never silent — a
+   * parent-child train is the v2 shape behind `F2.10`.
+   *
+   * `E5.1` had ADR 0040 decision 8 fence this catalog out on purpose, which
+   * is why these keys stayed wrong for the two weeks between the vocabulary
+   * landing and this row.
+   */
   {
     code: "water-overview",
     name: "Water Overview",
@@ -197,11 +241,11 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [
-            { assetRoleCode: "raw-intake", pointKey: "flow_rate", pointRole: "primary", sortOrder: 0 },
+            { assetRoleCode: "raw-intake", pointKey: "raw_water_flow_klh", pointRole: "primary", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "value_tile",
-          config: { icon: "drop", unit: "m3/h" },
+          config: { icon: "drop", unit: "KL/hr" },
         },
         {
           key: "pump-house-tile",
@@ -228,7 +272,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: HALF_CANVAS_W,
           gridH: LOWER_ROW_H,
           bindings: [
-            { assetRoleCode: "pump-house", pointKey: "flow_rate", pointRole: "series", sortOrder: 0 },
+            { assetRoleCode: "pump-house", pointKey: "treated_water_flow_klh", pointRole: "series", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "chart",
@@ -307,14 +351,14 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [
             {
               assetRoleCode: "inlet-screen",
-              pointKey: "flow_rate",
+              pointKey: "influent_flow_klh",
               pointRole: "primary",
               sortOrder: 0,
             },
           ],
           sources: [],
           widgetType: "value_tile",
-          config: { icon: "drop", unit: "m3/h" },
+          config: { icon: "drop", unit: "KL/hr" },
         },
         {
           key: "aeration-tile",
@@ -326,7 +370,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [
             {
               assetRoleCode: "aeration",
-              pointKey: "dissolved_oxygen",
+              pointKey: "aeration_do_mgl",
               pointRole: "primary",
               sortOrder: 0,
             },
@@ -338,7 +382,8 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
         // `aeration` trains commonly run more than one basin per train, the
         // same shape `0051`'s header calls out for HT panels and pump houses
         // — one authored binding, resolved against however many the target
-        // asset group's membership actually holds.
+        // asset group's membership actually holds: one under ADR 0040
+        // ruling 5, several once `F2.10` lands a train.
         {
           key: "aeration-chart",
           title: "Aeration DO Trend",
@@ -349,7 +394,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [
             {
               assetRoleCode: "aeration",
-              pointKey: "dissolved_oxygen",
+              pointKey: "aeration_do_mgl",
               pointRole: "series",
               sortOrder: 0,
             },
@@ -429,11 +474,11 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [
-            { assetRoleCode: "neutralization", pointKey: "ph", pointRole: "primary", sortOrder: 0 },
+            { assetRoleCode: "neutralization", pointKey: "neutralization_ph", pointRole: "primary", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "value_tile",
-          config: { icon: "drop" },
+          config: { icon: "drop", unit: "pH" },
         },
         {
           key: "biological-tile",
@@ -443,7 +488,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [
-            { assetRoleCode: "biological", pointKey: "cod", pointRole: "primary", sortOrder: 0 },
+            { assetRoleCode: "biological", pointKey: "effluent_cod_mgl", pointRole: "primary", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "value_tile",
@@ -457,7 +502,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: HALF_CANVAS_W,
           gridH: LOWER_ROW_H,
           bindings: [
-            { assetRoleCode: "biological", pointKey: "cod", pointRole: "series", sortOrder: 0 },
+            { assetRoleCode: "biological", pointKey: "effluent_cod_mgl", pointRole: "series", sortOrder: 0 },
           ],
           sources: [],
           widgetType: "chart",
