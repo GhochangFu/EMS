@@ -235,8 +235,9 @@ A new file, `apps/api/src/admin/asset-templates/asset-dashboards-instantiate.ser
 sibling to the ADR 0049 service and shaped on it. Given one asset, its
 published template version row, and a transaction:
 
-- **One `dashboards` row per view** in `content.dashboards`, in code-point
-  order of the view name. *(The first draft said "record order". Task 6 found
+- **One `dashboards` row per view** in `content.dashboards`, in code-unit
+  order of the view name (a plain `<` comparison; Amendment 1 corrected
+  "code-point"). *(The first draft said "record order". Task 6 found
   that `asset_templates.content` is `jsonb`, which does not keep key order —
   the fixture came back `trends, overview` — so record order is not a property
   the store has. Corrected 2026-09-16 before merge; the sort is documented in
@@ -249,9 +250,14 @@ published template version row, and a transaction:
   **hash-suffixed** exactly as ADR 0058 decision 7 derives rule codes — a cut
   alone is not unique and `slice()` splits surrogates. `assets.code` is
   globally unique and the view name is unique within a template, so the slug
-  is deterministic and collides only with a hand-made dashboard. A collision
-  is the ADR 0049 service's 409 naming the slug, and **the whole call fails**
-  — one transaction, no partial batch (the `F2.2` rule, ADR 0015 §6).
+  is deterministic. It is **not** collision-free: the class filter folds
+  `TX-01`, `TX_01` and `TX 01` to one slug, and a dashboard moved off its
+  asset by PATCH keeps the slug its asset derived (Amendment 1 corrected the
+  first draft's "collides only with a hand-made dashboard"). On the
+  asset-creation trigger a collision is the ADR 0049 service's 409 naming the
+  slug, and **the whole call fails** — one transaction, no partial batch (the
+  `F2.2` rule, ADR 0015 §6). On the backfill it is a per-asset outcome
+  (Amendment 1, Q8).
 - **Widgets copy their own layout.** `gridX/gridY/gridW/gridH`, `widgetType`,
   `config` and `title` — the fields `templateWidgetIdentityFields` already
   carries — transfer verbatim; `dashboard_widgets_grid_bounds_check` and the template schema's
@@ -260,8 +266,10 @@ published template version row, and a transaction:
   only, by `(asset_id, point_key)`. A key with no active point is **a widget
   with fewer bindings, reported, never a refused instantiation** — ADR 0049
   decision 6 and Amendment 2's outcomes (`bound` / `truncated` / `partial` /
-  `unresolved`), reused as the same DTO shape; `truncated` is what a 50-key
-  `featured` list produces under the next bullet. A published template already guarantees every
+  `unresolved`), reused as the same DTO shape; this feature emits `bound`,
+  `partial` and `unresolved` only — the view-level cut of a 50-key `featured`
+  list is `omittedFeatured` (decision 5), never a per-widget `truncated`
+  (Amendment 1 removed the sentence that said otherwise). A published template already guarantees every
   key names a `template_points` row (ADR 0019 decision 6); the gap this covers
   is an optional measured point whose source pattern did not resolve
   (`InstantiatedAssetDto.skippedPoints`), and a dashboard that instantiates
@@ -332,9 +340,11 @@ gate: an authored key that names no declared point fails the suite. Which
 points are "headline" is the implementer's call per class from each entry's
 existing docblocks; it is content, not contract, and a later content row may
 revise it without touching this ADR. `stockVersion` is **not** bumped (Q6).
-Only measured, non-manual keys are bound: a derived key has no `asset_points`
-row at instantiation and a manual point is always skipped, so either would
-instantiate as a hole by construction.
+Only measured, non-manual, **required** keys are bound: a derived key has no
+`asset_points` row at instantiation, a manual point is always skipped, and an
+optional point with no source pattern is skipped too, so any of the three
+would instantiate as a hole by construction (Amendment 1, Q9, added the third
+condition and removed the thirteen optional keys the first draft carried).
 
 ### 7. The UI is the smallest surface that makes the rows reachable
 
@@ -382,7 +392,7 @@ to overturn at the plan gate.
 
 1. `asset_id` cascades on asset delete; `asset_template_id` does not (decision 1).
 2. A view without `widgets[]` materialises as value tiles, 3×2, four per row, capped at 40 (decision 3).
-3. A slug collision fails the whole call with a 409, in both triggers (decision 3).
+3. A slug collision fails the whole call with a 409, in both triggers (decision 3). *(Amendment 1: on the backfill it is a per-asset outcome instead.)*
 4. The backfill selects assets pinned to *any* version of the code and requires template-author permission (decision 4).
 5. No binding restriction on an asset-scoped dashboard; read visibility not narrowed (decision 2).
 6. No asset picker in the builder; the template page carries the action (decision 7).
@@ -424,3 +434,97 @@ decision 7 already ships for rule codes.
   stays listed with its dashboards, which remain openable. Hiding or
   removing them on deactivation is out of scope here and belongs with the
   version-drift row decision 8 names.
+
+## Amendment 1 — the backfill reports a slug collision per asset; a stock tile binds only a required point (2026-09-17)
+
+### Context
+
+The post-merge review sweep of PR #463 (`d0c40edc`) found one High, two
+Medium and two false sentences in this record, all in the code written last
+and reviewed least.
+
+**The High.** A dashboard moved from asset `A` to asset `B` by PATCH loses
+its stamp (decision 2, as the security review ruled) but **keeps the slug
+`a-code-overview`**. The next backfill no longer finds `A` stamped, derives
+the same slug for it, hits `dashboards_organization_slug_key`, and the Q7
+chunk loop stopped at the first failure — so on a large estate one moved
+dashboard left every asset in every later chunk with no defaults. The
+closure row had recorded only the narrower cleared-and-restored form.
+
+**The two Mediums.** Every chunk's audit row carried the call-wide
+`skippedCount`, so a sum over the trail double-counted the skip set. And
+the non-conflict branch of the chunk-failure handler appended a sentence to
+a caught error's `message` — which mutates the object and, for a Nest
+`HttpException`, never reaches the wire, because Nest snapshots the
+response at construction.
+
+**The two false sentences.** Decision 3 said the slug *"collides only with a
+hand-made dashboard"*: the class filter folds `TX-01`, `TX_01` and `TX 01` to
+one slug, and the moved dashboard above is a second non-hand-made collider.
+Decision 5 said `truncated` *"is what a 50-key `featured` list produces"*
+while decision 5 itself ruled the cut is `omittedFeatured` — the resolver
+emits `bound`, `partial` and `unresolved` only. And decision 3's "code-point
+order" is a plain `<` comparison, which is code-unit order.
+
+**A false gate.** The stock-catalog gate (decision 6) claimed a featured key
+names a point *"the service can ever bind a value into"*, and checked `kind`
+and tier only. Thirteen featured keys across seven classes were `required:
+false` with no source pattern, which `planAsset` skips — so every asset built
+from those classes carried an empty tile by construction.
+
+### Gate questions
+
+Put to the owner one at a time, 2026-09-17, each ruled **as recommended**.
+
+**Q8 — a slug collision in the backfill.** Ruled: **per-asset savepoint,
+reported**. Each asset's writes run in a savepoint inside the chunk
+transaction; a collision rolls back that asset only and reports it as
+`skipped_slug_conflict`; the chunk and every later chunk continue; the
+backfill raises no 409 for a collision. The asset-creation trigger keeps its
+all-or-nothing 409. Declined: collecting failing chunks (the other assets in
+the failing chunk still get nothing), and re-deriving the slug on a move
+(the dashboard's URL would change silently, and a later instantiation of
+`B` collides instead).
+
+**Q9 — the thirteen optional featured keys.** Ruled: **drop them and gate on
+`required`**. `target_pf`, `kvar_connected`, `kvar_required`, `bus_voltage_v`
+(apfc); `tap_position`, `cooling_fan_status` (transformer);
+`comms_error_count`, `points_stale_count`, `cpu_pct` (BAS gateway);
+`occupancy_count`, `zone_rh_pct` (occupancy zone); `step_speed_ms`
+(escalator); `car_position_floor` (lift); `outlet_hardness_mgl` (softener)
+leave their views, and C2 asserts `required === true`. Every stock default
+dashboard is then complete by construction. Declined: keeping them with an
+honest docblock — decision 3 accepts a hole beside a report of it, but a
+hole on every asset of a class is a shipped defect, not a report.
+
+### Decision
+
+1. **Decision 3 amended**: on the backfill, a `23505` on
+   `dashboards_organization_slug_key` for one asset rolls back that asset's
+   savepoint and reports `skipped_slug_conflict`; nothing else in the chunk
+   is affected. `defaultDashboardsBackfillOutcome` gains the value; the
+   result DTO gains `conflictCount`; `skippedCount` counts
+   `skipped_existing` only.
+2. **Decision 4 / Q7 amended**: a chunk stops only on an error the handler
+   does not own, which passes through **untouched** — no message is appended
+   to a caught error. Resumability comes from the skip set, not from the
+   message.
+3. **The per-chunk audit row** carries `createdCount` and `conflictCount`
+   for its own chunk; `skippedCount` is written on chunk 0 only.
+4. **Decision 6 amended**: a stock `overview` view binds only required,
+   measured, non-manual keys, and the build-time gate asserts all three.
+5. **Wording**: "code-unit order" replaces "code-point order" in decision 3
+   and in the service; the two false sentences are corrected in place above
+   with a note naming this amendment.
+
+### Consequences
+
+- Every change lands in one `fix(F3.2)` PR with the tests the sweep asked
+  for: the per-asset collision case at unit and integration level, the
+  `skippedCount` claim across chunks, and C2's `required` arm with its
+  positive control.
+- The closure row's collision residual is discharged; the ADR's two false
+  sentences are recorded as corrected so a later reader does not find them
+  by grep and believe them.
+- The `chore(agents):` sweep for this amendment is one sentence in the §2
+  row and lands with the next sweep, not as its own PR.
