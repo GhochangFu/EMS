@@ -135,10 +135,14 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
       // form now renders the asset-group control: a group source round-trips its own id, and a
       // null is only ever sent for the axis the author did not choose. `scopeColumns` never
       // yields two non-nulls, so `DashboardsService.update`'s merged singularity guard holds;
-      // `assetId` (ADR 0067) is never sent, so an asset-scoped row keeps it. A `location_admin`
-      // never renders a group-scoped dashboard at all — `update`'s stored-scope check refuses
-      // the role on the group arm before the form can load — so the `assetGroupId: null` it
-      // sends for a location dashboard clears nothing.
+      // `assetId` (ADR 0067) is never sent, so an asset-scoped row keeps it — the spec pins the
+      // key's absence exactly, because the merge-on-presence would read `assetId: null` as
+      // "clear the provenance". A `location_admin` CAN open a group-scoped dashboard here (the
+      // read is `getBySlug`, organization-wide by ADR 0047 Amendment 2, and `AdminRoute` admits
+      // the role), but two controls hold: the fields' clamp rewrites a kind the role is not
+      // offered to an unchosen location, so Save stays disabled until a location is picked, and
+      // the PATCH that then follows meets `update`'s STORED-scope check first, which refuses the
+      // role on the group arm with a 404 (review finding — the refusal is at save, not at load).
       const body: UpdateDashboardPayload = {
         name: name.trim(),
         description: description.trim() === "" ? null : description.trim(),

@@ -136,6 +136,13 @@ function renderPage(user: AuthUser): void {
  * **The load-bearing assertion of `F3.34`** — the silent widening ADR 0047 Amendment 5 names.
  * A group-scoped dashboard, renamed and saved, must send its own group back: a two-way
  * prefill reads it as "organization" and the PATCH body would carry `{ null, null }`.
+ *
+ * The body is matched **exactly**, not with `objectContaining` (review finding). The key that
+ * must stay absent is `assetId`: `updateDashboard` merges on presence, so an `assetId: null`
+ * in this body would clear an instantiated asset dashboard's provenance on a rename
+ * (`DashboardsService.update`'s forged-provenance case). `tsc` refuses that key today because
+ * `UpdateDashboardPayload` lacks it, but that gate disappears the day the type gains the field
+ * (`F3.63`), so the spec pins it too — mutation: spread `assetId: null` into the body ⇒ red.
  */
 export async function renamingAGroupScopedDashboardKeepsItsGroup(): Promise<void> {
   stubLoads({ dto: GROUP_DTO, groups: [GROUP] });
@@ -147,10 +154,12 @@ export async function renamingAGroupScopedDashboardKeepsItsGroup(): Promise<void
   await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
 
   await waitFor(() => {
-    expect(updateSpy).toHaveBeenCalledWith(
-      GROUP_DTO.id,
-      expect.objectContaining({ assetGroupId: "grp-1", locationId: null }),
-    );
+    expect(updateSpy).toHaveBeenCalledWith(GROUP_DTO.id, {
+      name: `${GROUP_DTO.name} (renamed)`,
+      description: null,
+      locationId: null,
+      assetGroupId: "grp-1",
+    });
   });
 }
 

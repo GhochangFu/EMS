@@ -222,9 +222,10 @@ export async function locationAdminGetsNoOrganizationWideOption(): Promise<void>
 }
 
 /** The `Asset group` radio is absent from a `location_admin`'s dialog. The source is a
- * location dashboard — a group source is unreachable for this role (`update`'s stored-scope
- * check refuses the group arm, plan §4.4). The `Location` radio found first is the positive
- * control that the fields rendered at all. */
+ * location dashboard, the ordinary case for this role; a group source is reachable too (the
+ * list read is organization-wide), and the fields' clamp then rewrites the prefill to an
+ * unchosen location, so the same absence holds. The `Location` radio found first is the
+ * positive control that the fields rendered at all. */
 export async function locationAdminGetsNoAssetGroupOption(): Promise<void> {
   stubLoads({ source: SOURCE });
   renderDialog("location_admin");

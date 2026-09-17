@@ -30,6 +30,8 @@ export function anAssetGroupDashboardPrefillsAsAssetGroup(): void {
   );
 }
 
+/** The location arm, unchanged by the row. With the case below it pins the arm ORDER: a row
+ * with a location prefills as location whatever the group column says. */
 export function aLocationDashboardPrefillsAsLocation(): void {
   same(
     scopeFromDashboard({ organizationId: "org-1", locationId: "l1", assetGroupId: null }),
@@ -63,10 +65,24 @@ export function aChosenAssetGroupIsChosen(): void {
   );
 }
 
-export function theOtherTwoKindsAreChosenByTheirOwnId(): void {
+/** The organization kind is chosen by its own id — the pre-`F3.34` rule, kept. One claim per
+ * function: `assert` throws, so a second claim in the same body would never redden. */
+export function aChosenOrganizationIsChosen(): void {
   assert(isScopeChosen({ kind: "organization", organizationId: "org-1" }), "organization with an id is chosen");
+}
+
+/** Mutation: return `true` for the organization arm ⇒ red. */
+export function anUnchosenOrganizationIsNotChosen(): void {
   assert(!isScopeChosen({ kind: "organization", organizationId: "" }), "organization without an id is not chosen");
+}
+
+/** The location kind is chosen by its own id, never by `organizationId` alone. */
+export function aChosenLocationIsChosen(): void {
   assert(isScopeChosen({ kind: "location", organizationId: "org-1", locationId: "l1" }), "location with an id is chosen");
+}
+
+/** Mutation: read `organizationId` for the location arm ⇒ red (the id is set, the location is not). */
+export function anUnchosenLocationIsNotChosen(): void {
   assert(
     !isScopeChosen({ kind: "location", organizationId: "org-1", locationId: "" }),
     "location without an id is not chosen",
@@ -91,6 +107,8 @@ export function aLocationValueYieldsTheLocationColumn(): void {
   );
 }
 
+/** The organization-wide body is two explicit nulls — the create page now sends them rather
+ * than omitting `locationId`; both spellings are legal to `dashboards.schema.ts`. */
 export function anOrganizationValueYieldsTwoNulls(): void {
   same(
     scopeColumns({ kind: "organization", organizationId: "org-1" }),

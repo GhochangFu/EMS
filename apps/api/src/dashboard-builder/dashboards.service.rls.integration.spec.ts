@@ -386,6 +386,61 @@ export async function assertCrossOrgLocationScopeRefusedByRls(
 }
 
 /**
+ * `F3.34` (security review, Medium) — the **group axis** of the case above, on `create` AND on
+ * `update`. The row lets an `admin` or `organization_admin` pick an asset group in the UI, and
+ * for those two roles `canManageDashboard` answers before `assetGroupBelongsToOrganization`
+ * ever runs (`admin` is unconditionally true; `organization_admin` is `canManageOrganization`),
+ * so the ONLY server-side refusal of a foreign `assetGroupId` is `tenant_isolation`'s
+ * `WITH CHECK` on `bms.dashboards` (`0073`: `asset_group_id IS NULL OR EXISTS (… g.organization_id
+ * = current org)`), translated by `translateWriteError` to a 400 that names `assetGroupId`.
+ * The location axis had this proof; the group axis did not, so a migration that re-created
+ * the policy without the group `EXISTS` clause would have turned no test red. Both legs assert
+ * the 400 names the field and not the foreign key.
+ */
+export async function assertCrossOrgAssetGroupScopeIs400NamingAssetGroupId(
+  service: DashboardsService,
+  eskomAdmin: JwtPayload,
+  eskomOrgId: string,
+  phewbAssetGroupId: string,
+  createSlug: string,
+  existingEskomDashboardId: string,
+): Promise<void> {
+  let createCaught: unknown;
+  try {
+    await service.create(eskomAdmin, {
+      organizationId: eskomOrgId,
+      slug: createSlug,
+      name: "F3.34 cross-org group scope proof",
+      assetGroupId: phewbAssetGroupId,
+    } as Parameters<DashboardsService["create"]>[1]);
+  } catch (err) {
+    createCaught = err;
+  }
+  expect(createCaught, "an ESKOM dashboard created with a PHEWB assetGroupId must be refused").toBeDefined();
+  const createMessage = String((createCaught as Error)?.message ?? createCaught);
+  expect(createMessage, `create: expected the RLS 400 naming assetGroupId, got: ${createMessage}`).toMatch(
+    /assetGroupId .* row-level security/i,
+  );
+  expect(createMessage, "create: must NOT name the foreign key").not.toMatch(/asset_group_id_fkey/i);
+
+  let updateCaught: unknown;
+  try {
+    await service.update(eskomAdmin, existingEskomDashboardId, {
+      locationId: null,
+      assetGroupId: phewbAssetGroupId,
+    });
+  } catch (err) {
+    updateCaught = err;
+  }
+  expect(updateCaught, "an ESKOM dashboard moved onto a PHEWB assetGroupId must be refused").toBeDefined();
+  const updateMessage = String((updateCaught as Error)?.message ?? updateCaught);
+  expect(updateMessage, `update: expected the RLS 400 naming assetGroupId, got: ${updateMessage}`).toMatch(
+    /assetGroupId .* row-level security/i,
+  );
+  expect(updateMessage, "update: must NOT name the foreign key").not.toMatch(/asset_group_id_fkey/i);
+}
+
+/**
  * **Finding 1 (review, HIGH) — the fleet-branch negative.** `assertCrossTenantSlugReadIs404`-
  * style tests that use a SINGLE-organization actor exercise only the TENANT branch, where the
  * `0047` `FORCE` RLS policy masks a missing caller-side filter — which is exactly how the

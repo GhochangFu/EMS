@@ -9,7 +9,10 @@ import {
   anAssetGroupValueYieldsTheGroupColumn,
   anOrganizationValueYieldsTwoNulls,
   anUnchosenAssetGroupIsNotChosen,
-  theOtherTwoKindsAreChosenByTheirOwnId,
+  aChosenOrganizationIsChosen,
+  anUnchosenOrganizationIsNotChosen,
+  aChosenLocationIsChosen,
+  anUnchosenLocationIsNotChosen,
 } from "./dashboard-scope.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/dashboard-duplicate.test.ts` (ADR 0014). */
@@ -34,8 +37,20 @@ describe("F3.34 dashboard scope model", () => {
     aChosenAssetGroupIsChosen();
   });
 
-  it("reads the organization and location kinds as chosen by their own id", () => {
-    theOtherTwoKindsAreChosenByTheirOwnId();
+  it("reads an organization value with an id as chosen", () => {
+    aChosenOrganizationIsChosen();
+  });
+
+  it("reads an organization value with an empty id as not chosen", () => {
+    anUnchosenOrganizationIsNotChosen();
+  });
+
+  it("reads a location value with an id as chosen", () => {
+    aChosenLocationIsChosen();
+  });
+
+  it("reads a location value with an empty locationId as not chosen", () => {
+    anUnchosenLocationIsNotChosen();
   });
 
   it("carries an assetGroup value as assetGroupId with locationId null", () => {
