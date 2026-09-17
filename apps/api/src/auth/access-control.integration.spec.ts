@@ -497,6 +497,8 @@ export async function assertAssetGroupScope(
       `asset group admin can read ${leaked.length} same-location asset(s) outside their group`,
     );
   }
+  // Amendment 6: organizationId travels with the group, for the authoring picker.
+  for (const g of scope.assetGroups) if (g.organizationId !== (await pool.query<{ organization_id: string }>(`SELECT organization_id FROM bms.asset_groups WHERE id = $1`, [g.id])).rows[0]?.organization_id) throw new Error(`asset group ${g.id} organizationId does not match bms.asset_groups`);
 }
 
 /**

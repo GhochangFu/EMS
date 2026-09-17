@@ -888,6 +888,10 @@ export class AccessControlService {
           locationId: assetGroups.locationId,
           code: assetGroups.code,
           name: assetGroups.name,
+          // ADR 0047 Amendment 6: carried into the response so the
+          // asset_group_admin authoring path's group picker can derive a
+          // create body's `organizationId` without a second fetch.
+          organizationId: assetGroups.organizationId,
         })
         .from(userAssetGroupAccess)
         .innerJoin(assetGroups, eq(userAssetGroupAccess.assetGroupId, assetGroups.id))
@@ -945,6 +949,7 @@ export class AccessControlService {
           locationId: row.locationId,
           code: row.code,
           name: row.name,
+          organizationId: row.organizationId,
         })),
         assetIds: assetRows.map((row) => row.id),
       };
