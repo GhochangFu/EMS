@@ -149,8 +149,9 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
    * `F3.45` — the E5.1 rebinding, and what one plant asset resolves.
    *
    * The water, STP and ETP entries below bind six `E5.1` codes (ADR 0040
-   * decision 2), one reading per role, each taken from the asset-side stock
-   * catalog's own label for the same point:
+   * decision 2), one reading per role. Four are taken from the asset-side
+   * stock catalog's own label for the same point; `pump-house` is an owner
+   * ruling and `biological` a stated assumption, each marked as such below:
    *
    *  - `raw-intake` → `raw_water_flow_klh` ("Raw water intake flow",
    *    `asset-templates/stock-catalog/water-wtp.ts:433`).
@@ -164,8 +165,9 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
    *    Reading the ETP's biological stage as effluent COD is a **stated
    *    assumption**: on an STP plant the same code is a `MANUAL` row
    *    (`water-stp.ts:526`), which the `E5.1` closure records never gets an
-   *    `asset_points` row, so this entry's COD widgets are meant for an ETP
-   *    asset.
+   *    `asset_points` row *from instantiation* (`POST /admin/asset-points`
+   *    still admits it by hand), so this entry's COD widgets are meant for an
+   *    ETP asset.
    *
    * `pump-house` / `kw` (below, unchanged) is electrical and stays outside
    * this rebinding; none of the three water plant templates carries a `kw`
