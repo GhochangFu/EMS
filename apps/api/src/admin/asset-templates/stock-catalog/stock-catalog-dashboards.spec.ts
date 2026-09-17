@@ -44,13 +44,21 @@ import type { StockAssetTemplateEntry } from "./types";
  *    checker that validates nothing.
  */
 
-/** One declared point, reduced to the two fields C2 cares about. */
-type DeclaredPoint = { readonly kind: string; readonly tier: string | undefined };
+/** One declared point, reduced to the three fields C2 cares about. */
+type DeclaredPoint = {
+  readonly kind: string;
+  readonly tier: string | undefined;
+  readonly required: boolean;
+};
 
 function declaredPointIndex(entry: StockAssetTemplateEntry): Map<string, DeclaredPoint> {
   const index = new Map<string, DeclaredPoint>();
   for (const point of entry.points) {
-    index.set(point.pointKey, { kind: point.kind, tier: point.meta?.tier });
+    index.set(point.pointKey, {
+      kind: point.kind,
+      tier: point.meta?.tier,
+      required: point.required,
+    });
   }
   return index;
 }
@@ -80,6 +88,18 @@ export function assertDashboardPointKeysResolve(entry: StockAssetTemplateEntry):
         point.tier !== "manual",
         `${entry.code}/${viewName}: ${where} key "${key}" is tier "manual" — a manual row is never ` +
           "populated at instantiation",
+      );
+      // Q9 (ruled 2026-09-17). `required: false` is what
+      // `AssetTemplateInstantiationService` reads to DROP a point whose source
+      // pattern did not resolve, so an optional key is a tile that is empty on
+      // every asset built from a real RTU map — the same hole `kind` and
+      // `tier` are checked for, one field over. The gate checked two of the
+      // three and let 13 optional keys through.
+      assert(
+        point.required === true,
+        `${entry.code}/${viewName}: ${where} key "${key}" is optional (required: false) — an ` +
+          "optional point is dropped when its source pattern does not resolve, so the tile " +
+          "would be empty on a real asset",
       );
     };
     view.featured.forEach((key) => checkKey(key, "featured"));
@@ -198,6 +218,33 @@ const UNDECLARED_KEY_FIXTURE: StockAssetTemplateEntry = {
   ],
 };
 
+/**
+ * The second control, for Q9's arm: every key is declared, measured and
+ * non-manual, and the one in `featured` is **optional**. Without this, C2's new
+ * `required` check passing over the real catalog would be indistinguishable
+ * from a check that never runs.
+ */
+const OPTIONAL_KEY_FIXTURE: StockAssetTemplateEntry = {
+  ...UNDECLARED_KEY_FIXTURE,
+  code: "f32-spec-optional-dashboard-key",
+  name: "Spec fixture — optional dashboard key",
+  description: "Q9 C5 fixture — proves the required check is not vacuous.",
+  content: {
+    contentVersion: 1,
+    dashboards: { overview: { featured: ["spare_kw"] } },
+  },
+  points: [
+    ...UNDECLARED_KEY_FIXTURE.points,
+    {
+      ...UNDECLARED_KEY_FIXTURE.points[0]!,
+      pointKey: "spare_kw",
+      label: "Spare active power",
+      required: false,
+      sortOrder: 1,
+    },
+  ],
+};
+
 export function assertC5(): void {
   let refused: string | null = null;
   try {
@@ -209,6 +256,32 @@ export function assertC5(): void {
     refused !== null && /does not declare/.test(refused),
     `C5: an entry whose featured array names an undeclared point key must be refused, naming the rule — ` +
       `got ${String(refused)}`,
+  );
+}
+
+/**
+ * C5b — Q9's arm of the positive control.
+ *
+ * Two assertions, and the second is the one that matters: the message must name
+ * the **optional** rule and must NOT match `/does not declare/`. One checker
+ * raises four different refusals; a case that only proved "something threw"
+ * could not tell which guard fired, and would stay green if the optional key
+ * were rejected as undeclared instead.
+ */
+export function assertC5b(): void {
+  let refused: string | null = null;
+  try {
+    assertDashboardPointKeysResolve(OPTIONAL_KEY_FIXTURE);
+  } catch (err) {
+    refused = err instanceof Error ? err.message : String(err);
+  }
+  assert(
+    refused !== null && /is optional \(required: false\)/.test(refused),
+    `C5b: a featured key on an OPTIONAL point must be refused, naming the rule — got ${String(refused)}`,
+  );
+  assert(
+    refused !== null && !/does not declare/.test(refused),
+    `C5b: the refusal must be the optional rule, not the undeclared one — got ${String(refused)}`,
   );
 }
 

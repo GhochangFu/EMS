@@ -785,8 +785,15 @@ export class DashboardsService {
    *
    * The field named is the scope axis this write actually set, taken from the merged scope the
    * caller already computed — the error itself carries no column. `putWidgets` passes the
-   * STORED scope: it writes no scope column at all, so a translation can only fire there on an
-   * unrelated policy, and inferring a field from a widget body would misattribute it.
+   * STORED scope because it writes no scope column of its own, and naming a field from a widget
+   * body would misattribute the refusal.
+   *
+   * **What protects `putWidgets` is not this translation.** A foreign `pointId` in a widget body
+   * is refused by `assertBoundPointsInOrganization`, which runs inside the same transaction
+   * **before any insert** and raises a 400 counting how many bindings were outside the
+   * organization without echoing an id back (§9.6). By the time a `42501` could fire here, that
+   * guard has already returned; this method is the backstop for a state the guard does not
+   * cover, not the control.
    */
   private translateWriteError(err: unknown, slug: string, scope: DashboardScope): unknown {
     const translatedSlug = this.translateSlugConflict(err, slug);

@@ -395,6 +395,53 @@ export function planView(
 }
 
 /**
+ * The order the views of one template are written in — ADR 0067 decision 3.
+ *
+ * **A stated order, because there is no stored one.** `asset_templates.content`
+ * is `jsonb`, which does NOT preserve the authored key order: Postgres stores
+ * object keys by length and then bytewise, so a template authored
+ * `overview, trends` comes back `trends, overview`. Record order is therefore
+ * unrecoverable at any cost, and the choice is between Postgres' internal
+ * ordering and one this repository states. A stated one, because the report's
+ * array order and the order the rows are written in are both observable, and
+ * pinning them to a storage detail would make them change under a Postgres
+ * upgrade with no line of this repository edited.
+ *
+ * **Code points, not code units, and not `localeCompare`.** The ADR says code
+ * point, and the two differ: `<` on strings compares UTF-16 code units, which
+ * sorts every astral character (a `D800`–`DBFF` lead surrogate) below `U+E000`
+ * and above — `U+1F600` before `U+FB00`. ICU collation is refused for the same
+ * reason the order is stated at all: it moves with the Node build.
+ *
+ * Lives here rather than in the service because it is a function of its
+ * argument, and a sort no test can reach is a sort that drifts.
+ */
+export function sortedViewNames(views: Readonly<Record<string, unknown>>): string[] {
+  return Object.keys(views).sort(compareByCodePoint);
+}
+
+/**
+ * `a` against `b`, one code point at a time.
+ *
+ * Written as a loop over `Array.from` rather than as a comparison of the two
+ * arrays: `[...a] < [...b]` coerces both back to strings and compares code
+ * units again, which is the bug this function exists to avoid.
+ */
+function compareByCodePoint(left: string, right: string): number {
+  const a = Array.from(left);
+  const b = Array.from(right);
+  const shared = Math.min(a.length, b.length);
+  for (let index = 0; index < shared; index += 1) {
+    const x = a[index]?.codePointAt(0) ?? 0;
+    const y = b[index]?.codePointAt(0) ?? 0;
+    if (x !== y) {
+      return x - y;
+    }
+  }
+  return a.length - b.length;
+}
+
+/**
  * How many `dashboard_widgets` rows one asset costs, across every view.
  *
  * Counted with the same branch `planView` takes, so the bound below is measured

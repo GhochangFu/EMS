@@ -1,12 +1,18 @@
 import { describe, it } from "vitest";
 
 import {
-  assertAFailingChunkReportsWhatEarlierChunksCreated,
   assertAnAssetWithNoViewsWrittenIsNotReportedCreated,
+  assertANonConflictErrorStopsTheCallUntouched,
+  assertASlugConflictIsCountedSeparatelyFromTheSkipSet,
+  assertASlugConflictSkipsOneAssetAndTheCallCarriesOn,
   assertEveryChunkLeavesItsOwnAuditRow,
+  assertEveryChunkStillRunsAfterASlugConflict,
   assertTheBackfillAsksForTheConfigurationWriteRole,
   assertTheBackfillSplitsIntoChunksThatFitTheCap,
+  assertTheChunkAuditRowCountsItsOwnConflicts,
+  assertTheConflictingAssetReportsNoDashboards,
   assertTheResultCarriesEveryChunksDashboards,
+  assertTheSkipSetIsStampedOnTheFirstChunkOnly,
 } from "./asset-dashboards-backfill.spec";
 
 /**
@@ -26,6 +32,10 @@ describe("F3.2 — the backfill runs in chunks that fit the widget-row bound", (
     await assertEveryChunkLeavesItsOwnAuditRow();
   });
 
+  it("B1d: stamps the call-wide skip set on the first chunk's audit row only", async () => {
+    await assertTheSkipSetIsStampedOnTheFirstChunkOnly();
+  });
+
   it("B1c: returns every chunk's dashboards, not the last chunk's alone", async () => {
     await assertTheResultCarriesEveryChunksDashboards();
   });
@@ -34,8 +44,28 @@ describe("F3.2 — the backfill runs in chunks that fit the widget-row bound", (
     await assertAnAssetWithNoViewsWrittenIsNotReportedCreated();
   });
 
-  it("B3: stops at the first failing chunk and says how many assets were created", async () => {
-    await assertAFailingChunkReportsWhatEarlierChunksCreated();
+  it("B3: lets an error that is not a slug collision stop the call, untouched", async () => {
+    await assertANonConflictErrorStopsTheCallUntouched();
+  });
+
+  it("B5: skips only the asset whose slug is taken, and carries on", async () => {
+    await assertASlugConflictSkipsOneAssetAndTheCallCarriesOn();
+  });
+
+  it("B5b: runs every chunk after a slug collision", async () => {
+    await assertEveryChunkStillRunsAfterASlugConflict();
+  });
+
+  it("B5c: counts a slug collision apart from the skip set", async () => {
+    await assertASlugConflictIsCountedSeparatelyFromTheSkipSet();
+  });
+
+  it("B5d: reports no dashboards for the conflicting asset alone", async () => {
+    await assertTheConflictingAssetReportsNoDashboards();
+  });
+
+  it("B5e: counts each chunk's own conflicts on its own audit row", async () => {
+    await assertTheChunkAuditRowCountsItsOwnConflicts();
   });
 
   it("B4: asks for the configuration write role before it reads the estate", async () => {

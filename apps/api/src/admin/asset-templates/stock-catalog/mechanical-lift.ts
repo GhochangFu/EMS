@@ -190,13 +190,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `e5.3-derived-taglist-v1.md` §8a, PROVISIONAL — derived, not
  *    client-confirmed.
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (lift_in_service, lift_mode, lift_fault, fire_recall_state, passenger_alarm, controller_comms_ok, overload_state, car_position_floor), plus one
- * `chart` trending motor_current_a. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
+ * view, tiling the class's headline measured points as `value_tile`s in table order
+ * (lift_in_service, lift_mode, lift_fault, fire_recall_state, passenger_alarm, controller_comms_ok, overload_state), plus one `chart` trending lift_in_service. Every key is a
+ * declared `kind: "measured"` point with `meta.tier !== "manual"` **and `required: true`**
+ * on this entry — the only kind F3.2's instantiation hook can always bind (a manual row is
+ * never populated at instantiation; a derived key has no `asset_points` row to read; an
+ * OPTIONAL point is dropped when its source pattern does not resolve, so its tile would be
+ * empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17).** `car_position_floor` left the view, and the chart's series `motor_current_a` went with it — both are optional. The replacement is `lift_in_service`, the nearest **required** measured key on this entry (`sortOrder 0`): availability over time is the lift trend an operator reads first. Seven tiles still occupy the first two lattice rows, so the chart stays at `gridY 4`. No `stockVersion` bump — the owner did not rule a
+ * release for this content change (plan §12 Q9, ADR 0067 §13).
  */
 export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
   code: "mechanical-lift",
@@ -738,7 +742,7 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
     ],
     dashboards: {
       overview: {
-        featured: ["lift_in_service", "lift_mode", "lift_fault", "fire_recall_state", "passenger_alarm", "controller_comms_ok", "overload_state", "car_position_floor"],
+        featured: ["lift_in_service", "lift_mode", "lift_fault", "fire_recall_state", "passenger_alarm", "controller_comms_ok", "overload_state"],
         widgets: [
           {
             title: "Available for normal passenger service",
@@ -811,19 +815,9 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
             gridH: 2,
           },
           {
-            title: "Current floor (landing index)",
-            widgetType: "value_tile",
-            pointKeys: ["car_position_floor"],
-            config: {},
-            gridX: 9,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "Motor current trend",
+            title: "In-service trend",
             widgetType: "chart",
-            pointKeys: ["motor_current_a"],
+            pointKeys: ["lift_in_service"],
             config: { series: "line" },
             gridX: 0,
             gridY: 4,

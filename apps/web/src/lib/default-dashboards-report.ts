@@ -52,9 +52,19 @@ export function instantiationSummary(result: AssetInstantiationResultDto): strin
  * the sentence is then constant, which is what the browser layer asserts by
  * exact match; a "none already had one" arm would be wording no document rules
  * on and no cheaper gate could check. "already had one" does not inflect.
+ *
+ * **The third clause is conditional, and that is not an inconsistency with the
+ * second.** Q8 (ruled 2026-09-17) makes a slug collision a per-asset skip the
+ * call carries on past, so `conflictCount` is `0` on every ordinary run —
+ * printing "· 0 slug collisions" there would bury the one sentence that asks
+ * an operator to do something (rename or delete the dashboard holding the
+ * slug). A skipped asset asks for nothing.
  */
 export function backfillSummary(result: DefaultDashboardsBackfillResultDto): string {
-  return `Created dashboards for ${count(result.createdCount, "asset")} · ${
+  const sentence = `Created dashboards for ${count(result.createdCount, "asset")} · ${
     result.skippedCount
   } already had one`;
+  return result.conflictCount > 0
+    ? `${sentence} · ${count(result.conflictCount, "slug collision")}`
+    : sentence;
 }

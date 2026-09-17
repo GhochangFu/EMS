@@ -136,13 +136,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `e5.3-derived-taglist-v1.md` §2, PROVISIONAL — derived, not
  *    client-confirmed.
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (fire_alarm_state, fire_fault_state, fire_isolate_state, panel_ac_ok, panel_battery_ok, panel_comms_ok, zone_alarm_state, zone_fault_state), plus one
- * `chart` trending hydrant_header_pressure_bar. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
+ * view, tiling the class's headline measured points as `value_tile`s in table order
+ * (fire_alarm_state, fire_fault_state, fire_isolate_state, panel_ac_ok, panel_battery_ok, panel_comms_ok, zone_alarm_state, zone_fault_state), plus one `chart` trending fire_alarm_state. Every key is a
+ * declared `kind: "measured"` point with `meta.tier !== "manual"` **and `required: true`**
+ * on this entry — the only kind F3.2's instantiation hook can always bind (a manual row is
+ * never populated at instantiation; a derived key has no `asset_points` row to read; an
+ * OPTIONAL point is dropped when its source pattern does not resolve, so its tile would be
+ * empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17).** No tile changed — all eight featured keys are required. What changed is the chart: its series was `hydrant_header_pressure_bar`, which is optional, so a panel with no hydrant header instrumented would render an empty trend. The replacement is `fire_alarm_state`, the nearest **required** measured key on this entry (`sortOrder 0`). No `stockVersion` bump — the owner did not rule a
+ * release for this content change (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_FIRE_PANEL: StockAssetTemplateEntry = {
   code: "facility-fire-panel",
@@ -577,9 +581,9 @@ export const FACILITY_FIRE_PANEL: StockAssetTemplateEntry = {
             gridH: 2,
           },
           {
-            title: "Hydrant header pressure trend",
+            title: "Fire alarm state trend",
             widgetType: "chart",
-            pointKeys: ["hydrant_header_pressure_bar"],
+            pointKeys: ["fire_alarm_state"],
             config: { series: "line" },
             gridX: 0,
             gridY: 4,

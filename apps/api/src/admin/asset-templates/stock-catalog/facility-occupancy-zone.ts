@@ -153,13 +153,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `e5.3-derived-taglist-v1.md` §4, PROVISIONAL — derived, not
  *    client-confirmed.
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (occupancy_state, zone_temp_c, occupancy_count, zone_rh_pct), plus one
- * `chart` trending zone_temp_c. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
+ * view, tiling the class's headline measured points as `value_tile`s in table order
+ * (occupancy_state, zone_temp_c), plus one `chart` trending zone_temp_c. Every key is a
+ * declared `kind: "measured"` point with `meta.tier !== "manual"` **and `required: true`**
+ * on this entry — the only kind F3.2's instantiation hook can always bind (a manual row is
+ * never populated at instantiation; a derived key has no `asset_points` row to read; an
+ * OPTIONAL point is dropped when its source pattern does not resolve, so its tile would be
+ * empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17).** `occupancy_count` and `zone_rh_pct` left the view — both are optional. The two remaining tiles share one lattice row, which is where they already were, so the chart stays at `gridY 2`. No `stockVersion` bump — the owner did not rule a
+ * release for this content change (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_OCCUPANCY_ZONE: StockAssetTemplateEntry = {
   code: "facility-occupancy-zone",
@@ -323,7 +327,7 @@ export const FACILITY_OCCUPANCY_ZONE: StockAssetTemplateEntry = {
     ],
     dashboards: {
       overview: {
-        featured: ["occupancy_state", "zone_temp_c", "occupancy_count", "zone_rh_pct"],
+        featured: ["occupancy_state", "zone_temp_c"],
         widgets: [
           {
             title: "Zone occupied (presence)",
@@ -341,26 +345,6 @@ export const FACILITY_OCCUPANCY_ZONE: StockAssetTemplateEntry = {
             pointKeys: ["zone_temp_c"],
             config: {},
             gridX: 3,
-            gridY: 0,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "People in zone (counter / camera analytics)",
-            widgetType: "value_tile",
-            pointKeys: ["occupancy_count"],
-            config: {},
-            gridX: 6,
-            gridY: 0,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "Zone relative humidity",
-            widgetType: "value_tile",
-            pointKeys: ["zone_rh_pct"],
-            config: {},
-            gridX: 9,
             gridY: 0,
             gridW: 3,
             gridH: 2,

@@ -150,6 +150,28 @@ const BACKFILL_RESULT = {
   ],
   createdCount: 1,
   skippedCount: 1,
+  conflictCount: 0,
+};
+
+/**
+ * Q8's third outcome, on its own fixture: three assets, one of each state.
+ *
+ * Separate from {@link BACKFILL_RESULT} rather than added to it, because that
+ * fixture is the one the summary-sentence case matches whole — a third asset
+ * would change the counts in that sentence and grade two rules in one case.
+ */
+const BACKFILL_WITH_CONFLICT = {
+  ...BACKFILL_RESULT,
+  assets: [
+    ...BACKFILL_RESULT.assets,
+    {
+      assetId: "44444444-4444-4444-8444-444444444446",
+      code: "TX-03",
+      outcome: "skipped_slug_conflict",
+      dashboards: [],
+    },
+  ],
+  conflictCount: 1,
 };
 
 /**
@@ -224,6 +246,49 @@ export async function theBackfillReportRendersASummaryAndARowPerAsset(): Promise
   expect(screen.getByText("TX-02")).toBeInTheDocument();
   expect(screen.getByText(/tx-01-overview · 3 widgets · 5 points/)).toBeInTheDocument();
   expect(screen.getByText("Already had one")).toBeInTheDocument();
+}
+
+/**
+ * Q8 — the third outcome renders as **Slug taken**, not as "Already had one".
+ *
+ * The cell used to be a binary ternary, so a third outcome fell to the `else`
+ * arm and told an operator the asset already had its dashboards while a
+ * hand-made row was blocking them. It typechecked, which is why this case
+ * exists rather than a type.
+ *
+ * The two other cells are asserted in the same case as the positive controls
+ * on the three-way: a cell that printed "Slug taken" for everything would pass
+ * the first assertion alone.
+ */
+export async function theBackfillReportNamesASlugConflictRow(): Promise<void> {
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()),
+    createDefaultDashboardsFromAdminAssetTemplate: () =>
+      Promise.resolve(BACKFILL_WITH_CONFLICT),
+  });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Create default dashboards" }));
+
+  expect(await screen.findByText("Slug taken")).toBeInTheDocument();
+  expect(screen.getByText("Created")).toBeInTheDocument();
+  expect(screen.getByText("Already had one")).toBeInTheDocument();
+}
+
+/** Q8 — the summary sentence carries the collision clause on the same result. */
+export async function theBackfillSummaryNamesTheSlugCollision(): Promise<void> {
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()),
+    createDefaultDashboardsFromAdminAssetTemplate: () =>
+      Promise.resolve(BACKFILL_WITH_CONFLICT),
+  });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Create default dashboards" }));
+
+  expect(
+    await screen.findByText("Created dashboards for 1 asset · 1 already had one · 1 slug collision"),
+  ).toBeInTheDocument();
 }
 
 /**

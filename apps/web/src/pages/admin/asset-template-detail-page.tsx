@@ -471,7 +471,18 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                   <tr key={asset.assetId} className="border-b border-gray-100 align-top">
                     <td className="py-1 pr-3 font-medium">{asset.code}</td>
                     <td className="py-1 pr-3 text-bms-muted">
-                      {asset.outcome === "created" ? "Created" : "Already had one"}
+                      {/* Three arms, not two (ADR 0067 Q8). A binary ternary
+                          rendered `skipped_slug_conflict` as "Already had one",
+                          which is the one thing it does not mean: the asset has
+                          no dashboards and a hand-made row is holding its slug.
+                          "Slug taken" is the operator's instruction in two
+                          words — the sentence that says what to do about it is
+                          the summary line above. */}
+                      {asset.outcome === "created"
+                        ? "Created"
+                        : asset.outcome === "skipped_slug_conflict"
+                          ? "Slug taken"
+                          : "Already had one"}
                     </td>
                     <td className="py-1">
                       {asset.dashboards.length === 0 ? (

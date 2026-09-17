@@ -40,8 +40,22 @@ const JWT: JwtPayload = {
   role: "admin",
 } as JwtPayload;
 
-/** The lowered cap the cases drive the loop with — see the docblock. */
+/** The lowered cap the cases drive the loop with — see the docblock. Ten widget
+ * rows per asset, so this is two assets per chunk. */
 const CAP = 20;
+
+/**
+ * Three assets per chunk, for the case that needs an asset with a neighbour on
+ * EACH side inside one chunk (B5).
+ *
+ * The cap moved out of the module-level constant and into the call for that
+ * case alone: `CAP` still gives B1–B4 their 2/2/1 split, and a case that needs
+ * a middle asset cannot get one from a chunk of two.
+ */
+const CAP_THREE_PER_CHUNK = 30;
+
+/** The unique index a duplicate dashboard slug violates. */
+const SLUG_CONSTRAINT = "dashboards_organization_slug_key";
 
 /** Ten featured keys per view: ten widget rows per asset, so `CAP` fits two. */
 const CONTENT = {
@@ -62,8 +76,10 @@ type Harness = {
   service: AssetDashboardsInstantiateService;
   /** One entry per chunk transaction that ran, in order. */
   audits: AuditRow[];
-  /** The asset codes each call to `instantiateForAssets` received. */
-  chunks: string[][];
+  /** The asset codes each call to `instantiateForAssets` received — ONE call
+   * per asset since Q8, because each asset's writes run in their own savepoint.
+   * The chunk split is read off `audits[].assetIds` instead. */
+  batches: string[][];
   /** Every `(jwt, writeClass)` pair the write-role gate was asked about. */
   writeRoleCalls: string[];
 };
@@ -80,12 +96,32 @@ function fakeFleetDb(answers: unknown[][]): never {
   return { select: () => builder, selectDistinct: () => builder } as never;
 }
 
-/** `withTenant` opens a transaction and sets the GUC on it; both are answered here. */
+/**
+ * `withTenant` opens a transaction and sets the GUC on it; both are answered here.
+ *
+ * The transaction object carries a `transaction` method of its own, because
+ * that is what drizzle gives back and it is what the per-asset **savepoint**
+ * (Q8) calls: `tx.transaction(fn)` on pg issues `SAVEPOINT spN`, and
+ * `ROLLBACK TO SAVEPOINT spN` when `fn` throws. The fake reproduces only the
+ * control flow — run the callback, let a throw propagate — because the rollback
+ * itself is a database property and belongs to the integration case.
+ */
 function fakeTenantDb(): never {
+  const tx: Record<string, unknown> = { execute: async () => undefined };
+  tx.transaction = async <T>(fn: (sp: unknown) => Promise<T>): Promise<T> => fn(tx);
   return {
-    transaction: async <T>(fn: (tx: unknown) => Promise<T>): Promise<T> =>
-      fn({ execute: async () => undefined }),
+    transaction: async <T>(fn: (handle: unknown) => Promise<T>): Promise<T> => fn(tx),
   } as never;
+}
+
+/** Assets that are already stamped, named apart from {@link targetsOf} so a
+ * case cannot seed one set from the other by accident. */
+function stampedTargets(count: number): DashboardTargetAsset[] {
+  return Array.from({ length: count }, (_unused, index) => ({
+    id: `stamped-${index}`,
+    code: `F32-STAMPED-${index}`,
+    name: `Stamped ${index}`,
+  }));
 }
 
 function targetsOf(count: number): DashboardTargetAsset[] {
@@ -107,9 +143,14 @@ function harness(options: {
   viewsPerAsset?: (code: string) => number;
   writeRoleThrows?: boolean;
   failOnCode?: string;
+  /** Assets that are pinned but already stamped: they join the estate the reads
+   * return, and the skip set, so they never reach a chunk. */
+  stamped?: DashboardTargetAsset[];
+  /** The asset whose write raises the `23505` a taken slug raises (Q8). */
+  conflictOnCode?: string;
 }): Harness {
   const audits: AuditRow[] = [];
-  const chunks: string[][] = [];
+  const batches: string[][] = [];
   const writeRoleCalls: string[] = [];
 
   const templateRow = {
@@ -127,10 +168,10 @@ function harness(options: {
       [templateRow],
       // versionIds
       [{ id: TEMPLATE_ID }],
-      // pinnedAssets
-      options.targets,
-      // assetsAlreadyStamped — nothing is stamped, so every target is created.
-      [],
+      // pinnedAssets — the estate is every pinned asset, stamped ones included.
+      [...options.targets, ...(options.stamped ?? [])],
+      // assetsAlreadyStamped — only what the case says is stamped.
+      (options.stamped ?? []).map((target) => ({ assetId: target.id })),
     ]),
     fakeTenantDb(),
     { assertCanAuthor: async () => undefined } as unknown as AssetTemplatesAdminService,
@@ -158,11 +199,21 @@ function harness(options: {
       _views: unknown,
       batch: readonly DashboardTargetAsset[],
     ) => {
-      chunks.push(batch.map((target) => target.code));
+      batches.push(batch.map((target) => target.code));
       const byCode = new Map<string, InstantiatedDashboardDto[]>();
       for (const target of batch) {
         if (options.failOnCode === target.code) {
-          throw new Error(`collision on ${target.code}`);
+          throw new Error(`unrelated failure on ${target.code}`);
+        }
+        if (options.conflictOnCode === target.code) {
+          // The DRIVER's shape, not a NestJS exception: the predicate the
+          // service uses must recognise the raw `23505` as well as the
+          // `ConflictException` `writeView` translates it into, and a fake that
+          // raised only the translated one would never exercise the raw arm.
+          throw Object.assign(
+            new Error(`duplicate key value violates unique constraint "${SLUG_CONSTRAINT}"`),
+            { code: "23505", constraint: SLUG_CONSTRAINT },
+          );
         }
         const views = options.viewsPerAsset?.(target.code) ?? 1;
         byCode.set(
@@ -181,29 +232,116 @@ function harness(options: {
     },
   });
 
-  return { service, audits, chunks, writeRoleCalls };
+  return { service, audits, batches, writeRoleCalls };
 }
 
 /**
  * B1 — five assets at ten widget rows each, under a cap of twenty, run as
  * three chunks of 2, 2 and 1 **in code order**.
+ *
+ * The split is read off the audit payloads' `assetIds`, and that is forced
+ * rather than chosen: since Q8 each asset's writes run in their own savepoint,
+ * so `instantiateForAssets` is called once per ASSET and its argument no longer
+ * shows the chunk split. One audit row per chunk transaction still does.
  */
 export async function assertTheBackfillSplitsIntoChunksThatFitTheCap(): Promise<void> {
   const fixture = harness({ targets: targetsOf(5) });
   await fixture.service.backfill(JWT, TEMPLATE_ID, CAP);
 
-  expect(fixture.chunks.map((chunk) => chunk.length)).toEqual([2, 2, 1]);
-  expect(fixture.chunks.flat()).toEqual(targetsOf(5).map((target) => target.code));
+  const chunked = fixture.audits.map((payload) => payload.assetIds as string[]);
+  expect(chunked.map((chunk) => chunk.length)).toEqual([2, 2, 1]);
+  expect(fixture.batches.flat()).toEqual(targetsOf(5).map((target) => target.code));
 }
 
 /** B1b — one audit row per chunk, each naming its index and the chunk count. */
 export async function assertEveryChunkLeavesItsOwnAuditRow(): Promise<void> {
-  const fixture = harness({ targets: targetsOf(5) });
+  const fixture = harness({ targets: targetsOf(5), stamped: stampedTargets(2) });
   await fixture.service.backfill(JWT, TEMPLATE_ID, CAP);
 
   expect(fixture.audits.map((payload) => payload.chunkIndex)).toEqual([0, 1, 2]);
   expect(fixture.audits.map((payload) => payload.chunkCount)).toEqual([3, 3, 3]);
   expect(fixture.audits.map((payload) => payload.createdCount)).toEqual([2, 2, 1]);
+}
+
+/**
+ * B1d — the call-wide skip set is stamped **once**, on chunk 0 (sweep item 2).
+ *
+ * `skippedCount` counts what the whole call skipped and does not change between
+ * chunks; repeating it on every row made an audit trail where three rows each
+ * claiming two skipped assets read as six. The value asserted is NON-ZERO and
+ * equals the skip set the harness seeded, so a `0` hardcoded on chunk 0 reddens
+ * this as surely as a repeat on chunks 1 and 2 does.
+ */
+export async function assertTheSkipSetIsStampedOnTheFirstChunkOnly(): Promise<void> {
+  const fixture = harness({ targets: targetsOf(5), stamped: stampedTargets(2) });
+  await fixture.service.backfill(JWT, TEMPLATE_ID, CAP);
+
+  expect(fixture.audits.map((payload) => payload.skippedCount)).toEqual([2, undefined, undefined]);
+}
+
+/**
+ * B5 — Q8: a slug collision is **per asset, reported, and never a stop**.
+ *
+ * Nine assets in three chunks of three, with the collision on the MIDDLE asset
+ * of the FIRST chunk: the asset after it inside the same transaction, and both
+ * later chunks, all have to carry on — which is the whole of the ruling. The
+ * collision is raised as the driver's raw `23505`, so the service's predicate
+ * is exercised on the shape a real conflict has.
+ */
+export async function assertASlugConflictSkipsOneAssetAndTheCallCarriesOn(): Promise<void> {
+  const fixture = harness({ targets: targetsOf(9), conflictOnCode: "F32-CHUNK-1" });
+  const result = await fixture.service.backfill(JWT, TEMPLATE_ID, CAP_THREE_PER_CHUNK);
+
+  expect(result.assets.map((entry) => entry.outcome)).toEqual([
+    "created",
+    "skipped_slug_conflict",
+    ...Array.from({ length: 7 }, () => "created" as const),
+  ]);
+}
+
+/** B5b — every chunk ran: the collision stopped neither the one it happened in
+ * nor the two after it. */
+export async function assertEveryChunkStillRunsAfterASlugConflict(): Promise<void> {
+  const fixture = harness({ targets: targetsOf(9), conflictOnCode: "F32-CHUNK-1" });
+  await fixture.service.backfill(JWT, TEMPLATE_ID, CAP_THREE_PER_CHUNK);
+
+  expect(fixture.audits.map((payload) => payload.chunkIndex)).toEqual([0, 1, 2]);
+}
+
+/**
+ * B5c — the collision is counted as its own thing.
+ *
+ * `conflictCount` is 1 and `skippedCount` is 0: folding a conflict into the
+ * skip count is the mutation this case exists for, and it would leave the
+ * counts looking complete while telling an operator that an asset already had
+ * the dashboards a hand-made row is blocking.
+ */
+export async function assertASlugConflictIsCountedSeparatelyFromTheSkipSet(): Promise<void> {
+  const fixture = harness({ targets: targetsOf(9), conflictOnCode: "F32-CHUNK-1" });
+  const result = await fixture.service.backfill(JWT, TEMPLATE_ID, CAP_THREE_PER_CHUNK);
+
+  expect(result.conflictCount).toBe(1);
+  expect(result.skippedCount).toBe(0);
+  expect(result.createdCount).toBe(8);
+}
+
+/** B5d — the conflicting asset's own report carries no dashboards, and the
+ * asset written beside it in the same transaction keeps its own. */
+export async function assertTheConflictingAssetReportsNoDashboards(): Promise<void> {
+  const fixture = harness({ targets: targetsOf(9), conflictOnCode: "F32-CHUNK-1" });
+  const result = await fixture.service.backfill(JWT, TEMPLATE_ID, CAP_THREE_PER_CHUNK);
+
+  expect(result.assets[1]?.dashboards).toEqual([]);
+  expect(result.assets[2]?.dashboards.length).toBe(1);
+}
+
+/** B5e — the per-chunk audit row counts the conflicts of ITS chunk. */
+export async function assertTheChunkAuditRowCountsItsOwnConflicts(): Promise<void> {
+  const fixture = harness({ targets: targetsOf(9), conflictOnCode: "F32-CHUNK-1" });
+  await fixture.service.backfill(JWT, TEMPLATE_ID, CAP_THREE_PER_CHUNK);
+
+  expect(fixture.audits.map((payload) => payload.conflictCount)).toEqual([1, 0, 0]);
+  expect(fixture.audits.map((payload) => payload.createdCount)).toEqual([2, 3, 3]);
 }
 
 /**
@@ -247,11 +385,21 @@ export async function assertAnAssetWithNoViewsWrittenIsNotReportedCreated(): Pro
 }
 
 /**
- * B3 — a failing chunk stops the call, and the error says how many assets were
- * created before it. The earlier chunk's audit row survives, which is what
- * makes "re-run it" a true instruction.
+ * B3 — an error that is **not** a slug collision stops the call, and reaches
+ * the caller **untouched** (sweep item 3).
+ *
+ * The sentence the service used to append — "2 of 5 assets already have their
+ * default dashboards" — is gone, and its absence is asserted by an exact
+ * equality that doubles as the positive control on the original message. Two
+ * reasons it went: Nest snapshots a response at construction, so mutating
+ * `err.message` afterwards never reached the wire at all; and with Q8 the
+ * collision it was written for no longer stops anything, so resumability comes
+ * from the skip set rather than from a sentence.
+ *
+ * The earlier chunk's audit row still survives, which is what makes "run it
+ * again" a true instruction.
  */
-export async function assertAFailingChunkReportsWhatEarlierChunksCreated(): Promise<void> {
+export async function assertANonConflictErrorStopsTheCallUntouched(): Promise<void> {
   const fixture = harness({ targets: targetsOf(5), failOnCode: "F32-CHUNK-2" });
   let message = "";
   try {
@@ -260,11 +408,10 @@ export async function assertAFailingChunkReportsWhatEarlierChunksCreated(): Prom
     message = err instanceof Error ? err.message : String(err);
   }
 
-  expect(message).toContain("collision on F32-CHUNK-2");
-  expect(message).toContain("2 of 5");
+  expect(message).toBe("unrelated failure on F32-CHUNK-2");
   // The first chunk committed and left its record; the third never ran.
   expect(fixture.audits.length).toBe(1);
-  expect(fixture.chunks.map((chunk) => chunk.length)).toEqual([2, 2]);
+  expect(fixture.batches.flat()).toEqual(["F32-CHUNK-0", "F32-CHUNK-1", "F32-CHUNK-2"]);
 }
 
 /**
@@ -286,5 +433,5 @@ export async function assertTheBackfillAsksForTheConfigurationWriteRole(): Promi
   expect(message).toContain(ROLE_REFUSED);
   expect(fixture.writeRoleCalls).toEqual(["configuration"]);
   // Refused before any chunk opened a transaction.
-  expect(fixture.chunks.length).toBe(0);
+  expect(fixture.batches.length).toBe(0);
 }

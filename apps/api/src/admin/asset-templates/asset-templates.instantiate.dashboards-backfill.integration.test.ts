@@ -24,7 +24,7 @@ import {
   type Services,
 } from "./asset-templates.instantiate.dashboards.integration.spec";
 import {
-  assertAFailingChunkKeepsTheEarlierChunks,
+  assertASlugConflictSkipsOneAssetAndKeepsTheRest,
   assertBackfillAuditRow,
   assertBackfillCreatesAndSkips,
   assertBackfillOfAViewlessTemplateIsRefused,
@@ -33,7 +33,7 @@ import {
 } from "./asset-templates.instantiate.dashboards-backfill.integration.spec";
 
 /**
- * `F3.2` / ADR 0067 decision 4 and Q7 — Vitest entry point for the backfill.
+ * `F3.2` / ADR 0067 decision 4, Q7 and Q8 — Vitest entry point for the backfill.
  * Assertions live in the sibling `.spec` (§4.6 / ADR 0014); this file owns the
  * database lifecycle.
  *
@@ -52,8 +52,9 @@ const connectionString = requireIntegrationDb({
   label: "per-asset default dashboard backfill tests",
   because:
     "every claim here is a row: which assets the backfill created for and which it skipped, " +
-    "which version its dashboards are stamped with, that a chunk committed before a failing " +
-    "one survives the failure, and that a re-run resumes rather than duplicating. The report " +
+    "which version its dashboards are stamped with, that an asset whose slug is taken rolls " +
+    "back alone while the assets around it keep their rows, and that a re-run resumes rather " +
+    "than duplicating. The report " +
     "is compared against independent SQL precisely so a service that grades its own work " +
     "cannot pass.",
 });
@@ -140,8 +141,8 @@ describe.skipIf(!connectionString)("F3.2 — the per-asset default dashboard bac
     backfilled = await assertBackfillCreatesAndSkips(svc, fx, pool as pg.Pool, template);
   });
 
-  it("keeps the chunks committed before a failing one, and resumes on a re-run (G2f)", async () => {
-    await assertAFailingChunkKeepsTheEarlierChunks(svc, fx, pool as pg.Pool, backfilled.version);
+  it("skips only the asset whose slug is taken, and keeps the other chunks (G2f)", async () => {
+    await assertASlugConflictSkipsOneAssetAndKeepsTheRest(svc, fx, pool as pg.Pool, backfilled.version);
   });
 
   it("refuses a draft, and refuses a location admin before disclosing it (G2c)", async () => {

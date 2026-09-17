@@ -191,13 +191,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `e5.3-derived-taglist-v1.md` §8b, PROVISIONAL — derived, not
  *    client-confirmed.
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (esc_status, esc_mode, esc_fault, esc_emergency_stop, controller_comms_ok, step_speed_ms), plus one
- * `chart` trending motor_current_a. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
+ * view, tiling the class's headline measured points as `value_tile`s in table order
+ * (esc_status, esc_mode, esc_fault, esc_emergency_stop, controller_comms_ok), plus one `chart` trending esc_status. Every key is a
+ * declared `kind: "measured"` point with `meta.tier !== "manual"` **and `required: true`**
+ * on this entry — the only kind F3.2's instantiation hook can always bind (a manual row is
+ * never populated at instantiation; a derived key has no `asset_points` row to read; an
+ * OPTIONAL point is dropped when its source pattern does not resolve, so its tile would be
+ * empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17).** `step_speed_ms` left the view, and the chart's series `motor_current_a` went with it — both are optional, and a chart bound to a key a real asset may not carry trends nothing. The replacement is `esc_status`, the nearest **required** measured key on this entry (`sortOrder 0`): running / stopped over time is the trend an escalator's operator reads first. Five tiles still fill the first lattice row and a half, so the chart stays at `gridY 4`. No `stockVersion` bump — the owner did not rule a
+ * release for this content change (plan §12 Q9, ADR 0067 §13).
  */
 export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
   code: "mechanical-escalator",
@@ -686,7 +690,7 @@ export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
     ],
     dashboards: {
       overview: {
-        featured: ["esc_status", "esc_mode", "esc_fault", "esc_emergency_stop", "controller_comms_ok", "step_speed_ms"],
+        featured: ["esc_status", "esc_mode", "esc_fault", "esc_emergency_stop", "controller_comms_ok"],
         widgets: [
           {
             title: "Running / stopped / standby (slow)",
@@ -739,19 +743,9 @@ export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
             gridH: 2,
           },
           {
-            title: "Step / pallet speed",
-            widgetType: "value_tile",
-            pointKeys: ["step_speed_ms"],
-            config: {},
-            gridX: 3,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "Motor current trend",
+            title: "Running state trend",
             widgetType: "chart",
-            pointKeys: ["motor_current_a"],
+            pointKeys: ["esc_status"],
             config: { series: "line" },
             gridX: 0,
             gridY: 4,

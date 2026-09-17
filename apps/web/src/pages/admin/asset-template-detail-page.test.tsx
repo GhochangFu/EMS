@@ -8,7 +8,9 @@ import {
   draftDoesNotOfferCreateDefaultDashboards,
   locationAdminIsNotOfferedCreateDefaultDashboards,
   publishedVersionOffersCreateDefaultDashboards,
+  theBackfillReportNamesASlugConflictRow,
   theBackfillReportRendersASummaryAndARowPerAsset,
+  theBackfillSummaryNamesTheSlugCollision,
   theInstantiateDialogStaysOpenAndShowsTheSummary,
 } from "./asset-template-detail-page.spec";
 
@@ -37,6 +39,14 @@ describe("F3.2 asset template detail page", () => {
 
   it("renders the backfill summary and one row per asset", async () => {
     await theBackfillReportRendersASummaryAndARowPerAsset();
+  });
+
+  it("renders a slug-conflict outcome as Slug taken", async () => {
+    await theBackfillReportNamesASlugConflictRow();
+  });
+
+  it("names the slug collision in the summary sentence", async () => {
+    await theBackfillSummaryNamesTheSlugCollision();
   });
 
   it("names a truncated view's omitted count, and says nothing on an intact one", async () => {

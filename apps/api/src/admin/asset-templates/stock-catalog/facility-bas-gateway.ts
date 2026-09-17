@@ -173,13 +173,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `e5.3-derived-taglist-v1.md` §7, PROVISIONAL — derived, not
  *    client-confirmed.
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (device_online, last_seen_age_s, comms_error_count, points_stale_count, cpu_pct), plus one
- * `chart` trending last_seen_age_s. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
+ * view, tiling the class's headline measured points as `value_tile`s in table order
+ * (device_online, last_seen_age_s), plus one `chart` trending last_seen_age_s. Every key is a
+ * declared `kind: "measured"` point with `meta.tier !== "manual"` **and `required: true`**
+ * on this entry — the only kind F3.2's instantiation hook can always bind (a manual row is
+ * never populated at instantiation; a derived key has no `asset_points` row to read; an
+ * OPTIONAL point is dropped when its source pattern does not resolve, so its tile would be
+ * empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17).** `comms_error_count`, `points_stale_count` and `cpu_pct` left the view — all three are optional. Two tiles remain on one lattice row, so the chart moved up to `gridY 2`; its series, `last_seen_age_s`, is required. No `stockVersion` bump — the owner did not rule a
+ * release for this content change (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_BAS_GATEWAY: StockAssetTemplateEntry = {
   code: "facility-bas-gateway",
@@ -443,7 +447,7 @@ export const FACILITY_BAS_GATEWAY: StockAssetTemplateEntry = {
     ],
     dashboards: {
       overview: {
-        featured: ["device_online", "last_seen_age_s", "comms_error_count", "points_stale_count", "cpu_pct"],
+        featured: ["device_online", "last_seen_age_s"],
         widgets: [
           {
             title: "Controller / gateway reachable",
@@ -466,42 +470,12 @@ export const FACILITY_BAS_GATEWAY: StockAssetTemplateEntry = {
             gridH: 2,
           },
           {
-            title: "Protocol errors",
-            widgetType: "value_tile",
-            pointKeys: ["comms_error_count"],
-            config: {},
-            gridX: 6,
-            gridY: 0,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "Points not updated within their deadband",
-            widgetType: "value_tile",
-            pointKeys: ["points_stale_count"],
-            config: {},
-            gridX: 9,
-            gridY: 0,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "Controller CPU load",
-            widgetType: "value_tile",
-            pointKeys: ["cpu_pct"],
-            config: {},
-            gridX: 0,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
             title: "Comms freshness trend",
             widgetType: "chart",
             pointKeys: ["last_seen_age_s"],
             config: { series: "line" },
             gridX: 0,
-            gridY: 4,
+            gridY: 2,
             gridW: DASHBOARD_GRID.columns,
             gridH: 4,
           },

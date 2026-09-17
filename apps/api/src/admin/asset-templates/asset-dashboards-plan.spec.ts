@@ -14,6 +14,7 @@ import {
   dashboardWidgetRowsFor,
   MAX_DASHBOARD_WIDGET_ROWS,
   planView,
+  sortedViewNames,
   TILE_H,
   TILE_W,
   TILES_PER_ROW,
@@ -542,6 +543,32 @@ export function assertTheBatchBoundAcceptsTheLimitAndRefusesOneMore(): void {
 }
 
 /** P12 — and the refusal is the API's 400, not a bare `Error`. */
+/**
+ * P14 — the view order is **code-point** order, which is what ADR 0067
+ * decision 3 states (sweep item 5).
+ *
+ * `Array.prototype.sort` with `<` compares UTF-16 **code units**, and the two
+ * orders disagree for every astral character: `U+1F600` is the surrogate pair
+ * `D83D DE00`, so a code-unit comparison sorts it BEFORE `U+FB00` (ﬀ) while its
+ * code point is far above. The fixture is exactly that pair, so this case
+ * cannot pass under the comparison it replaced — a pair of ASCII names would
+ * sort the same either way and prove nothing.
+ */
+export function assertViewNamesSortByCodePoint(): void {
+  const order = sortedViewNames({ "\u{1F600}-emoji": 1, "ﬀ-ligature": 1, overview: 1 });
+  assert(
+    order.join("|") === `overview|ﬀ-ligature|\u{1F600}-emoji`,
+    `code-point order expected, got ${order.map((name) => `U+${(name.codePointAt(0) ?? 0).toString(16)}`).join(" ")}`,
+  );
+}
+
+/** P14b — the ordinary case still holds: ASCII names sort ascending, and an
+ * identical pair of names compares equal rather than swapping. */
+export function assertAsciiViewNamesKeepAscendingOrder(): void {
+  const order = sortedViewNames({ trends: 1, overview: 1, alarms: 1 });
+  assert(order.join(",") === "alarms,overview,trends", `ASCII order wrong: ${order.join(",")}`);
+}
+
 export function assertTheBatchBoundThrowsABadRequest(): void {
   let status = 0;
   try {

@@ -28,6 +28,7 @@ import {
   dashboardWidgetRowsFor,
   MAX_DASHBOARD_WIDGET_ROWS,
   planView,
+  sortedViewNames,
 } from "./asset-dashboards-plan";
 import type { ViewPlan } from "./asset-dashboards-plan";
 import { parseStoredTemplateContent } from "./asset-templates-content.schema";
@@ -50,10 +51,19 @@ import { AssetTemplatesAdminService } from "./asset-templates.service";
  *   as a dashboard of an asset that does not exist.
  * - {@link backfill}, the `POST :id/default-dashboards` path, which opens the
  *   transactions itself — **one per chunk** of assets, sized to fit
- *   `MAX_DASHBOARD_WIDGET_ROWS` (ADR 0067 Q7, 2026-09-17). It is resumable
- *   rather than atomic: the first failing chunk stops the call, the chunks
- *   before it stay committed, and a re-run skips them because they are now
- *   stamped. The bound refuses nothing here; it sizes the chunk.
+ *   `MAX_DASHBOARD_WIDGET_ROWS` (ADR 0067 Q7, 2026-09-17), and **one savepoint
+ *   per asset inside each** (Q8, 2026-09-17). It is resumable rather than
+ *   atomic: a taken slug rolls back that asset alone and is reported
+ *   `skipped_slug_conflict`, every other error stops the call with the chunks
+ *   before it committed, and a re-run skips whatever is now stamped. The bound
+ *   refuses nothing here; it sizes the chunk.
+ *
+ * **Resumability comes from the skip set, not from a message.** An earlier
+ * version appended "N of M assets already have their default dashboards" to the
+ * failing chunk's error. It could not work: Nest snapshots a response at
+ * construction, so mutating `err.message` afterwards never reached the wire —
+ * and with Q8 the collision that sentence was written for no longer stops
+ * anything. Whatever stops the call now propagates **untouched**.
  *
  * **The report is counted from the rows the database returned, never from the
  * plan.** `widgetCount` and `boundPoints` are the lengths of `.returning()`
@@ -69,6 +79,38 @@ export interface DashboardTargetAsset {
   readonly id: string;
   readonly code: string;
   readonly name: string;
+}
+
+/**
+ * The unique index a repeated dashboard slug violates, and the one error the
+ * backfill's savepoint arm handles (Q8, ruled 2026-09-17).
+ *
+ * Named once and read by both {@link slugConflict} and {@link isSlugConflict},
+ * so the string the translation is keyed on and the string the recogniser looks
+ * for cannot drift apart.
+ */
+const SLUG_CONSTRAINT = "dashboards_organization_slug_key";
+
+/**
+ * The 409 a taken slug raises, **carrying the constraint that caused it**.
+ *
+ * The property is what lets {@link isSlugConflict} be ONE predicate over two
+ * shapes: the driver's raw `23505`, and this translated exception. Without it
+ * the backfill would have to recognise a conflict by matching the sentence it
+ * wrote, which is the weakest possible test of "is this the error I handle".
+ *
+ * `Object.assign` on a `ConflictException` rather than a subclass, deliberately:
+ * `expectRejectionNamed` in the integration specs grades `err.constructor.name`,
+ * and a subclass would rename the class those cases already assert without
+ * changing the status code the client sees.
+ */
+function slugConflict(message: string): ConflictException {
+  return Object.assign(new ConflictException(message), { constraint: SLUG_CONSTRAINT });
+}
+
+/** True for a duplicate dashboard slug, raw from the driver or translated. */
+function isSlugConflict(err: unknown): boolean {
+  return (err as { constraint?: string } | null)?.constraint === SLUG_CONSTRAINT;
 }
 
 /**
@@ -114,6 +156,12 @@ export class AssetDashboardsInstantiateService {
    * Returns the per-asset report keyed by **asset code**, because that is the
    * key `AssetTemplateInstantiationService` builds its per-asset DTOs from and a
    * second keying would be a second derivation of one fact.
+   *
+   * **No savepoint here, and that is Q8's ruling rather than an omission.** A
+   * caller that needs one asset's collision not to take the others opens it
+   * around the call ({@link backfill} does, one per asset); the asset-creation
+   * trigger must NOT, because its contract is all-or-nothing — a batch that
+   * half-built its assets is the state ADR 0067 decision 3 refuses.
    */
   async instantiateForAssets(
     tx: BmsTx,
@@ -124,23 +172,12 @@ export class AssetDashboardsInstantiateService {
     const byCode = new Map<string, InstantiatedDashboardDto[]>(
       targets.map((target) => [target.code, [] as InstantiatedDashboardDto[]]),
     );
-    // **Sorted, and not `Object.keys(views)` as it comes.** ADR 0067 decision 3
-    // says "in record order"; `asset_templates.content` is `jsonb`, which does
-    // NOT preserve the authored key order — Postgres stores object keys by
-    // length and then bytewise, so a template authored `overview, trends` comes
-    // back `trends, overview`. Record order is therefore unrecoverable here at
-    // any cost, and the choice is between Postgres' internal ordering and a
-    // stated one. A stated one, because the report's array order and the order
-    // the rows are written in are both observable, and pinning them to a
-    // storage detail would make them change under a Postgres upgrade with no
-    // line of this repository edited. Flagged for the owner at closure.
-    //
-    // **Code-point order, not `localeCompare`.** The argument above is that an
-    // observable order must not ride on something that moves without a repo
-    // edit, and ICU collation moves with the Node build.
-    const viewNames = Object.keys(views).sort((left, right) =>
-      left < right ? -1 : left > right ? 1 : 0,
-    );
+    // **Sorted, and not `Object.keys(views)` as it comes** — the derivation and
+    // its whole argument live in `sortedViewNames`, which is where a test can
+    // reach them. The comparison this replaced was written inline here and
+    // compared UTF-16 code units while its own comment claimed code points
+    // (sweep item 5).
+    const viewNames = sortedViewNames(views);
     if (viewNames.length === 0 || targets.length === 0) {
       return byCode;
     }
@@ -187,9 +224,13 @@ export class AssetDashboardsInstantiateService {
    *
    * **Chunked and resumable** (ADR 0067 Q7): the assets to create are processed
    * in code order, `MAX_DASHBOARD_WIDGET_ROWS / widgets per asset` at a time,
-   * one `withTenant` transaction and one audit row per chunk. A failing chunk
-   * propagates its error — the 409 naming the slug — after the earlier chunks
-   * have committed, and the message says how many assets they created.
+   * one `withTenant` transaction and one audit row per chunk.
+   *
+   * **A slug collision is per asset** (Q8): each asset's writes run in their own
+   * savepoint, so a `23505` on `dashboards_organization_slug_key` rolls that
+   * asset back, reports it `skipped_slug_conflict`, and the chunk — and every
+   * later chunk — carries on. Any other error still stops the call, unchanged,
+   * with the chunks before it committed.
    *
    * The order of the first three steps is the security property, not house
    * style: `assertCanAuthor` runs **before any read of `status`**, so a caller
@@ -272,45 +313,86 @@ export class AssetDashboardsInstantiateService {
     }
 
     const created = new Map<string, InstantiatedDashboardDto[]>();
+    const conflicted = new Set<string>();
     let createdCount = 0;
     for (const [chunkIndex, chunk] of chunks.entries()) {
-      try {
-        const byCode = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
-          const chunkResult = await this.instantiateForAssets(tx, template, views, chunk);
-          await this.audit.write(
-            {
-              actor: jwt,
-              action: "master.dashboard.backfill",
-              entityType: "asset_template",
-              entityId: template.id,
-              organizationId: template.organizationId,
-              payload: {
-                templateCode: template.code,
-                templateVersion: template.version,
-                // The rows this chunk actually wrote for, not the assets it was
-                // handed: a template with no views writes nothing, and an audit
-                // row claiming otherwise is the durable copy of the defect.
-                createdCount: [...chunkResult.values()].filter((list) => list.length > 0).length,
-                skippedCount: stamped.size,
-                chunkIndex,
-                chunkCount: chunks.length,
-                assetIds: chunk.map((target) => target.id),
-              },
-            },
-            tx,
-          );
-          return chunkResult;
-        });
-        // Merged, never reassigned: an earlier chunk is committed and its
-        // dashboards belong in the report as much as the last chunk's.
-        for (const [code, list] of byCode) {
-          created.set(code, list);
-          if (list.length > 0) {
-            createdCount += 1;
+      const byCode = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
+        const chunkResult = new Map<string, InstantiatedDashboardDto[]>();
+        let chunkConflicts = 0;
+        for (const target of chunk) {
+          // Q8 (ruled 2026-09-17) — **one savepoint per asset**. `tx.transaction`
+          // nests on pg as `SAVEPOINT spN` … `ROLLBACK TO SAVEPOINT spN`
+          // (drizzle `pg-core/session.js`), so a taken slug undoes THAT asset's
+          // dashboard, widget and binding rows and nothing else: the assets
+          // written before it in this same transaction keep their rows, and the
+          // transaction stays usable for the ones after it. Without the
+          // savepoint the whole chunk transaction is aborted by the `23505` and
+          // every later statement on it fails with `25P02`.
+          //
+          // **One asset per call**, which is what makes the savepoint per asset
+          // rather than per chunk. The cost is that `loadPointIds` now runs once
+          // per asset instead of once per chunk — one indexed read of one
+          // asset's points against a per-asset rollback that keeps the rest of
+          // the estate moving.
+          try {
+            await tx.transaction(async (savepoint) => {
+              const one = await this.instantiateForAssets(savepoint, template, views, [target]);
+              for (const [code, list] of one) {
+                chunkResult.set(code, list);
+              }
+            });
+          } catch (err) {
+            // Only the handled conflict is absorbed. Anything else — a dropped
+            // connection, a CHECK the planner should have satisfied — still
+            // stops the call, and reaches the caller exactly as it was raised.
+            if (!isSlugConflict(err)) {
+              throw err;
+            }
+            chunkResult.delete(target.code);
+            conflicted.add(target.code);
+            chunkConflicts += 1;
           }
         }
-      } catch (err) {
-        throw this.chunkFailure(err, createdCount, toCreate.length);
+        await this.audit.write(
+          {
+            actor: jwt,
+            action: "master.dashboard.backfill",
+            entityType: "asset_template",
+            entityId: template.id,
+            organizationId: template.organizationId,
+            payload: {
+              templateCode: template.code,
+              templateVersion: template.version,
+              // The rows this chunk actually wrote for, not the assets it was
+              // handed: a template with no views writes nothing, and an audit
+              // row claiming otherwise is the durable copy of the defect.
+              createdCount: [...chunkResult.values()].filter((list) => list.length > 0).length,
+              // **This chunk's** collisions. Per chunk, unlike `skippedCount`
+              // below, because a collision happens inside a chunk and a reader
+              // of one row is entitled to know what that transaction met.
+              conflictCount: chunkConflicts,
+              // The call-wide skip set, stamped on the FIRST chunk only (sweep
+              // item 2). It does not change between chunks, and repeating it
+              // made three rows each claiming the same two skipped assets read
+              // as six. Absent rather than zero on the later rows: a `0` would
+              // be a second claim about the same call, and a false one.
+              ...(chunkIndex === 0 ? { skippedCount: stamped.size } : {}),
+              chunkIndex,
+              chunkCount: chunks.length,
+              assetIds: chunk.map((target) => target.id),
+            },
+          },
+          tx,
+        );
+        return chunkResult;
+      });
+      // Merged, never reassigned: an earlier chunk is committed and its
+      // dashboards belong in the report as much as the last chunk's.
+      for (const [code, list] of byCode) {
+        created.set(code, list);
+        if (list.length > 0) {
+          createdCount += 1;
+        }
       }
     }
 
@@ -328,40 +410,20 @@ export class AssetDashboardsInstantiateService {
         // enum, which widening would be a contract change this row does not
         // own; `createdCount` and `skippedCount` both exclude it, so the counts
         // stay true to the rows.
-        outcome:
-          (created.get(target.code) ?? []).length > 0
+        // Q8 first: an asset whose slug was taken wrote nothing, and reading
+        // that off the empty dashboard list alone would call it
+        // `skipped_existing` — the one outcome it is not.
+        outcome: conflicted.has(target.code)
+          ? ("skipped_slug_conflict" as const)
+          : (created.get(target.code) ?? []).length > 0
             ? ("created" as const)
             : ("skipped_existing" as const),
         dashboards: created.get(target.code) ?? [],
       })),
       createdCount,
       skippedCount: stamped.size,
+      conflictCount: conflicted.size,
     };
-  }
-
-  /**
-   * The error a failing chunk propagates, with the resumable half stated.
-   *
-   * The class is rebuilt rather than replaced: a slug collision is the ADR 0049
-   * 409 naming the slug, and wrapping it in a bare `Error` would reach the
-   * client as a 500. Anything that is not a conflict passes through untouched —
-   * a connection failure is not a sentence about how many assets were created.
-   */
-  private chunkFailure(err: unknown, createdCount: number, total: number): unknown {
-    if (err instanceof ConflictException) {
-      return new ConflictException(
-        `${err.message} ${createdCount} of ${total} assets already have their default ` +
-          "dashboards; those chunks are committed. Fix the conflict and run this call again " +
-          "to continue from there.",
-      );
-    }
-    if (err instanceof Error) {
-      err.message =
-        `${err.message} ${createdCount} of ${total} assets already have their default ` +
-        "dashboards; those chunks are committed.";
-      return err;
-    }
-    return err;
   }
 
   /**
@@ -370,8 +432,15 @@ export class AssetDashboardsInstantiateService {
    * The `23505` translation is `DashboardTemplatesInstantiateService`'s, copied
    * with its reason: drizzle THROWS on a duplicate key, so an `if (!row)` guard
    * after `.returning()` is unreachable and a repeated slug would reach the
-   * client as a 500 carrying a constraint name. The whole caller transaction
-   * rolls back — no asset, no point, no rule and no other view's dashboard.
+   * client as a 500 carrying a constraint name.
+   *
+   * **What rolls back is the caller's business, not this method's.** On the
+   * asset-CREATION path the whole transaction goes — no asset, no point, no
+   * rule and no other view's dashboard, which is the `F2.2` all-or-nothing rule
+   * ADR 0067 decision 3 keeps. On the backfill path the caller has wrapped this
+   * asset in a savepoint (Q8), so the same throw undoes this asset alone. The
+   * exception carries its `constraint` either way, which is how the backfill
+   * recognises it without matching on the sentence.
    */
   private async writeView(
     tx: BmsTx,
@@ -398,9 +467,8 @@ export class AssetDashboardsInstantiateService {
       })
       .returning({ id: dashboards.id })
       .catch((err: unknown) => {
-        const constraint = (err as { constraint?: string } | null)?.constraint;
-        if (constraint === "dashboards_organization_slug_key") {
-          throw new ConflictException(
+        if (isSlugConflict(err)) {
+          throw slugConflict(
             `A dashboard with slug "${slug}" already exists in this organization, so the ` +
               `default dashboards for ${target.code} cannot be created. Nothing was written. ` +
               "Rename or delete that dashboard and retry.",
