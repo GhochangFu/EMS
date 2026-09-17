@@ -7,7 +7,7 @@ import {
   anAssetScopedRowIsLabelledAssetWithItsCode,
   anAssetScopedRowWithNoCodeStillReadsAsset,
   anAuthoringRoleSeesTheManageLink,
-  assetGroupAdminSeesNoManageLinkDespiteCanAuthorDashboards,
+  assetGroupAdminSeesTheManageLink,
   rendersEveryRowTheApiReturns,
   viewerRoleSeesNoAuthoringAffordance,
 } from "./dashboards-page.spec";
@@ -35,8 +35,8 @@ describe("F3.1d dashboards page", () => {
     await rendersEveryRowTheApiReturns();
   });
 
-  it("shows an asset_group_admin no Manage dashboards link, despite canAuthorDashboards", async () => {
-    await assetGroupAdminSeesNoManageLinkDespiteCanAuthorDashboards();
+  it("shows an asset_group_admin the Manage dashboards link", async () => {
+    await assetGroupAdminSeesTheManageLink();
   });
 
   it("labels an asset-group row 'Asset group', not 'Organization-wide'", async () => {

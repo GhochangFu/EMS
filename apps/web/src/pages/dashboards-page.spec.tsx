@@ -93,20 +93,19 @@ export async function anAuthoringRoleSeesTheManageLink(): Promise<void> {
 }
 
 /**
- * Review finding (HIGH) — `canAuthorDashboards` admits `asset_group_admin`, but `/admin/dashboards`
- * is wrapped in `<AdminRoute>`, which guards on `isMasterDataAdmin` and excludes that role
- * (`admin-route.tsx`). Gating the link on `canAuthorDashboards` alone hands this role a link
- * that redirects it to `/` with no message the moment it is clicked — seeded
- * `wc-hvac-admin@bms.local` reproduces it. **Do not widen `canAuthorDashboards`'s membership**
- * (plan §15 Q1 leaves that gap with the owner); gate on the predicate that actually guards the
- * route instead.
+ * `F3.63`, ADR 0047 Amendment 6 — `/admin/dashboards` is now wrapped in `DashboardAuthorRoute`,
+ * which guards on the same `canAuthorDashboards` predicate as this link, so an `asset_group_admin`
+ * reaches the builder rather than being sent into a silent redirect (the defect this case used to
+ * pin, before the route guard changed under it). Seeded `wc-hvac-admin@bms.local` is this role.
  */
-export async function assetGroupAdminSeesNoManageLinkDespiteCanAuthorDashboards(): Promise<void> {
+export async function assetGroupAdminSeesTheManageLink(): Promise<void> {
   vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue(RESPONSE);
   renderPage(asUser("asset_group_admin"));
 
   expect(await screen.findByText("Site A Overview")).toBeInTheDocument();
-  expect(screen.queryByRole("link", { name: /Manage dashboards/i })).not.toBeInTheDocument();
+  const link = screen.getByRole("link", { name: /Manage dashboards/i });
+  expect(link).toBeInTheDocument();
+  expect(link).toHaveAttribute("href", "/admin/dashboards");
 }
 
 /** Renders whatever the API returns — no client-side re-derivation of read visibility. */

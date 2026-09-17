@@ -25,6 +25,7 @@ import { ControlRoomBatteryPage } from "./pages/control-room-battery-page";
 import { ControlRoomHvacPage } from "./pages/control-room-hvac-page";
 import { ControlRoomEnvPage } from "./pages/control-room-env-page";
 import { AdminRoute } from "./components/admin-route";
+import { DashboardAuthorRoute } from "./components/dashboard-author-route";
 import { AdminHubPage } from "./pages/admin/admin-hub-page";
 import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
 import { DashboardBuilderEditPage } from "./pages/admin/dashboard-builder-edit-page";
@@ -643,9 +644,9 @@ export function App() {
         path="/admin/dashboards"
         element={
           accessToken && user ? (
-            <AdminRoute user={user}>
+            <DashboardAuthorRoute user={user}>
               <DashboardBuilderPage user={user} />
-            </AdminRoute>
+            </DashboardAuthorRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -655,9 +656,9 @@ export function App() {
         path="/admin/dashboards/:slug"
         element={
           accessToken && user ? (
-            <AdminRoute user={user}>
+            <DashboardAuthorRoute user={user}>
               <DashboardBuilderEditPage user={user} />
-            </AdminRoute>
+            </DashboardAuthorRoute>
           ) : (
             <Navigate to="/login" replace />
           )

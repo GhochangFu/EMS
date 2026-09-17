@@ -16,11 +16,10 @@ import { DashboardViewerPage } from "./dashboard-viewer-page";
  * point and carries the `@vitest-environment jsdom` docblock (ADR 0014, ADR
  * 0042 decision 2).
  *
- * **The load-bearing assertion in this file (review, HIGH).** `canAuthorDashboards` admits
- * `asset_group_admin`, but `/admin/dashboards/:slug` is wrapped in `<AdminRoute>`, which guards
- * on `isMasterDataAdmin` and excludes that role. Gating "Edit dashboard" on `canAuthorDashboards`
- * alone hands this role a link into a silent redirect — seeded `wc-hvac-admin@bms.local`
- * reproduces it.
+ * **The load-bearing assertion in this file.** `F3.63`, ADR 0047 Amendment 6 —
+ * `/admin/dashboards/:slug` is now wrapped in `DashboardAuthorRoute`, which guards on the same
+ * `canAuthorDashboards` predicate as this link, so an `asset_group_admin` reaches the edit page
+ * rather than a silent redirect. Seeded `wc-hvac-admin@bms.local` is this role.
  */
 
 const DTO: DashboardDto = {
@@ -60,12 +59,12 @@ function renderPage(user: AuthUser): void {
   );
 }
 
-export async function assetGroupAdminSeesNoEditLinkDespiteCanAuthorDashboards(): Promise<void> {
+export async function assetGroupAdminSeesTheEditLink(): Promise<void> {
   vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DTO);
   renderPage(asUser("asset_group_admin"));
 
   expect(await screen.findByRole("heading", { name: "Site A Overview" })).toBeInTheDocument();
-  expect(screen.queryByRole("link", { name: /Edit dashboard/i })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: /Edit dashboard/i })).toBeInTheDocument();
 }
 
 export async function aLocationAdminStillSeesTheEditLink(): Promise<void> {
