@@ -357,6 +357,14 @@
 > qualified reference `{CODE.key}` cannot be split at a dot the catalog itself
 > put there (**ADR 0065**, `F2.23`, 2026-09-12). It promotes nothing out of §6
 > and does not touch the grammar.
+> And **the asset-group dashboard scope is authorable** by `admin` and
+> `organization_admin` — a third scope kind in `DashboardScopeFields`, fed by
+> `GET /admin/asset-groups`, absent from the DOM for every other role
+> (**ADR 0047** Amendment 5, `F3.34`, 2026-09-17, PRs #475/#476). **No
+> permission moved**: `isMasterDataRole`, `AdminRoute`, `requireMasterDataUser`
+> and `canManageDashboard` are unedited; the amendment found the API already
+> admits `asset_group_admin` on the group and asset arms and defers that
+> role's UI path to `F3.63`. Not a §6 promotion.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
