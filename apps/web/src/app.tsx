@@ -34,6 +34,7 @@ import { AssetTemplateStockViewPage } from "./pages/admin/asset-template-stock-v
 import { AssetTemplateVersionsPage } from "./pages/admin/asset-template-versions-page";
 import { AssetTemplatesAdminPage } from "./pages/admin/asset-templates-page";
 import { DashboardTemplateDetailPage } from "./pages/admin/dashboard-template-detail-page";
+import { DashboardTemplateStockViewPage } from "./pages/admin/dashboard-template-stock-view-page";
 import { DashboardTemplatesAdminPage } from "./pages/admin/dashboard-templates-page";
 import { AssetsAdminPage } from "./pages/admin/assets-page";
 import { LocationsAdminPage } from "./pages/admin/locations-page";
@@ -562,6 +563,28 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <DashboardTemplateDetailPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/*
+        F3.44 — the read-only stock viewer. Four segments against the
+        three-segment `:templateId` sibling above, so React Router ranks them
+        apart and the F2.14 ordering trap does not exist here today. The rule
+        for the future: any four-segment
+        `/admin/dashboard-templates/:templateId/<x>` route added later is
+        declared AFTER this one; `tests/f3.44-stock-dashboard-view-reachable`
+        checks it. `AdminRoute` and not `mayAuthor`: every master-data role may
+        read the stock list (plan §5.4).
+      */}
+      <Route
+        path="/admin/dashboard-templates/stock/:code"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <DashboardTemplateStockViewPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />
