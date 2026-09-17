@@ -34,8 +34,8 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * water key ever reached this scan without a vocabulary to be checked against.
  * The list this file was told to write is one it must not write: an entry on it
  * would exempt a key the check at the foot of this file is now enforcing.
- * `f3.38`'s `stillOutside` clock keeps running on four DASHBOARD-template keys,
- * which are a different catalog and a separate backlog row.
+ * `f3.38` carried such a list for four DASHBOARD-template keys until `F3.45`
+ * rebound them and deleted it — a different catalog and a separate backlog row.
  */
 
 /** The one directory every stock catalog file lives in, packs and classes alike. */

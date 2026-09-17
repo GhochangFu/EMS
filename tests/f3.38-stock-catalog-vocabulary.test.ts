@@ -224,64 +224,19 @@ const scanCatalog = (
 
 /**
  * ---------------------------------------------------------------------------
- * THE ONE EXCEPTION, AND IT IS WRITTEN TO CLEAR ITSELF.
+ * `KEYS_AWAITING_A_VOCABULARY` lived here from 2026-08 until `F3.45`.
  * ---------------------------------------------------------------------------
  *
- * Four process-chemistry keys have **no vocabulary to be in**, and that is a
- * different fault from the camelCase one. These four are bound by the water,
- * STP and ETP sections of the **dashboard** stock catalog, at 8 sites.
- *
- * **THE PREMISE OF THIS EXCEPTION CHANGED WITH `E5.1`, AND THE ANSWER DID
- * NOT.** Until 2026-09-03 there was no water or process key set at all, and
- * these four were *"waiting on a vocabulary decision that is the owner's §10
- * gate, not a defect fix"*. That decision was taken: ADR 0040 was accepted and
- * `E5.1` landed `WATER_CLASS_POINT_KEYS` — **98 codes, filed under the `water`
- * domain, and it adopted none of these four spellings.** The water vocabulary
- * names the same physical quantities specifically, one code per stream:
- * `raw_water_flow_klh` / `feed_flow_klh` / `influent_flow_klh` /
- * `discharge_flow_klh` rather than `flow_rate`; `raw_ph` / `feed_ph` /
- * `effluent_ph` / `circ_ph` / `neutralization_ph` / `discharge_ph` rather than
- * `ph`; `effluent_cod_mgl` rather than `cod`; `aeration_do_mgl` / `bio_do_mgl`
- * rather than `dissolved_oxygen`. Verified by set intersection: none of the
- * four joins the 98.
- *
- * So the four keys really are **still outside the vocabulary**, and the eight
- * dashboard bindings that name them still resolve nothing. What changed is
- * *why*: they are no longer waiting on a decision — the decision went the other
- * way, and rebinding them is now ordinary work. It is not this row's work.
- * `dashboard-templates/stock-catalog.ts` is a different catalog from the asset
- * templates `E5.1` ships, ADR 0040 decision 8 fences it out, and rebinding also
- * needs an `assetRoleCode` ruling per binding against the sixteen water-train
- * roles `0051` seeds — nothing has done that. **A backlog row created at
- * `E5.1`'s closure owns all three**, and deleting these four entries is the
- * first thing that row does.
- *
- * One fact from the paragraph this replaced is unchanged and kept because a
- * reader will ask: **`bms.asset_domains` still carries no `stp` or `etp`
- * code.** Migration `0029` seeds exactly five — `electrical`, `hvac`, `it`,
- * `environment` and `water` — and `E5.1` added none, because ADR 0051
- * Amendment 6 decision 3 rules that `domain` is the filing domain and not an
- * exclusivity: an STP, an ETP and a cooling tower are all water-treatment
- * plants and all file under `water`. `E5.2` then added the sixth,
- * `mechanical`, through the seed path ADR 0031 Amendment 1 A1.1 prescribes
- * (`packages/db/src/asset-domains-seed.ts`, ADR 0053 decision 2) — the first
- * code not from `0029` — and still no `stp` or `etp`. `E5.3` added the
- * seventh, `facility`, the same way.
- *
- * They were renamed to snake_case here when the list was written, so the
- * catalog already spells its keys the way every real code is spelled.
- *
- * **`stillOutside` below is what makes this list temporary.** The moment one of
- * these four appears in the vocabulary, its test fails and tells the author to
- * delete the entry. An allowlist without that check is a permanent one that
- * nobody revisits.
+ * It exempted four process-chemistry keys — `flow_rate`, `ph`, `cod`,
+ * `dissolved_oxygen` — bound by the water, STP and ETP sections of the
+ * **dashboard** stock catalog, at 8 sites, while there was no water or
+ * process vocabulary for them to join. `E5.1` landed one (ADR 0040,
+ * `WATER_CLASS_POINT_KEYS`) and adopted none of these four spellings, so
+ * `F3.45` rebound all eight sites to the codes `E5.1` did adopt and deleted
+ * the list, rather than leaving it empty. An empty allowlist still passes a
+ * clock — `expect([]).toEqual([])` is green forever — and a clock that can
+ * never ring is not a check; deleting it is the only shape that stays honest.
  */
-const KEYS_AWAITING_A_VOCABULARY: readonly string[] = [
-  "flow_rate",
-  "ph",
-  "cod",
-  "dissolved_oxygen",
-];
 
 describe("F3.38 the stock template catalog binds names that exist", () => {
   const stockSources = STOCK_RELS.map((rel) => read(rel));
@@ -390,9 +345,8 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
    * resolution report — which says `unresolved` and does not say why.
    */
   it("every stock pointKey is a code the point-key catalog can seed", () => {
-    const awaiting = new Set(KEYS_AWAITING_A_VOCABULARY);
     const unknown = pointKeys
-      .filter((entry) => !vocabulary.has(entry.value) && !awaiting.has(entry.value))
+      .filter((entry) => !vocabulary.has(entry.value))
       .map((entry) => `${entry.section} → ${entry.value}`);
 
     expect(
@@ -421,25 +375,6 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
   });
 
   /**
-   * The exception list is temporary, and this is the clock on it.
-   *
-   * A key listed as "awaiting a vocabulary" that has since *joined* the
-   * vocabulary is no longer an exception — it is an entry that now hides a real
-   * check. Fail, and say so.
-   */
-  it("no key still on the awaiting-a-vocabulary list has since joined the vocabulary", () => {
-    const stillOutside = KEYS_AWAITING_A_VOCABULARY.filter((key) => !vocabulary.has(key));
-
-    expect(
-      stillOutside,
-      "a key on KEYS_AWAITING_A_VOCABULARY now exists in a *_POINT_KEYS array. The " +
-        "water/process vocabulary it was waiting for has landed, so delete it from " +
-        "that list — leaving it there exempts a key that the check above should now " +
-        "be enforcing.",
-    ).toEqual([...KEYS_AWAITING_A_VOCABULARY]);
-  });
-
-  /**
    * The renames are only half a fix if the label keeps the old unit.
    *
    * `tons` became `cooling_kw` and `loadPercent` became `kw`; both changed the
@@ -462,5 +397,33 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
         "no seeded electrical asset registers load_pct; the transformer tile therefore " +
         "reads kW, not a percentage.",
     ).toBe(false);
+  });
+
+  // `F3.45`: the two water/STP flow tiles read `m3/h` while their point keys
+  // were unresolvable; `point-keys-seed.ts` seeds the flow codes' unit as
+  // `KL/hr`, so the label must change with the key. Two it()s, one claim each
+  // — `expect` throws, so a second claim in the it() above would be reachable
+  // only once every earlier claim passed (AGENTS.md §4.6).
+  it("no flow tile still advertises m3/h", () => {
+    expect(
+      stock.includes('unit: "m3/h"'),
+      `${STOCK_LABEL} still labels a flow widget "m3/h". The seeded unit for ` +
+        "raw_water_flow_klh, treated_water_flow_klh and influent_flow_klh is KL/hr.",
+    ).toBe(false);
+  });
+
+  // The positive control for the absence check above, anchored per tile: a
+  // bare `includes('KL/hr')` is true once one tile carries the label and stays
+  // green when the other loses it. Each flow tile's `pointKey` must be followed
+  // by its `unit` inside the same widget literal (the `percentUnitOnKw` shape).
+  it("both rebound flow tiles carry the seeded KL/hr unit", () => {
+    const tilesMissingKlh = ["raw_water_flow_klh", "influent_flow_klh"].filter(
+      (key) => !new RegExp(`pointKey:\\s*"${key}"[\\s\\S]{0,400}?unit:\\s*"KL/hr"`).test(stock),
+    );
+    expect(
+      tilesMissingKlh,
+      `${STOCK_LABEL} binds a flow tile whose widget carries no "KL/hr" unit. The ` +
+        "rebound flow tiles must carry the seeded unit, not just lose the old one.",
+    ).toEqual([]);
   });
 });
