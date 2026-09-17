@@ -321,23 +321,42 @@ export const energyTopConsumersResponseSchema = z.object({
 export const dashboardKpisResponseSchema = dashboardKpisSchema;
 
 /**
- * `GET /api/v1/assets` — the asset picker's row.
+ * `GET /api/v1/assets` — the asset list row (ADR 0068 decision 2, `F3.31`).
  *
- * Found in `apps/web/src/api/assets.ts` as a local `AssetRow`, with **no
- * counterpart in `@bms/shared` at all**: not a row type shared and an envelope
- * stranded, but a whole response contract that only one app had ever written
- * down. Named `assetPickerRow` here rather than `AssetRow` because the bare
- * name says nothing about which of the several asset shapes it is.
+ * The affected-asset picker (`apps/web/src/lib/asset-picker.ts`) is one
+ * consumer of this row, not its owner: the `/assets` operator browser
+ * (`F3.31`) is the second, and it needs the wider shape below. Found
+ * originally in `apps/web/src/api/assets.ts` as a local `AssetRow`, with no
+ * counterpart in `@bms/shared` at all — this is that contract, written down
+ * and widened.
+ *
+ * Plain `z.object`, not `.strict()`: the picker must survive an additive
+ * field here without change, the way every response contract in this
+ * directory tolerates a field it does not name (§4.8).
+ *
+ * `telemetrySource` is `z.string().nullable()`, not an enum, because the dev
+ * database stores `"simulator"` in `meta.telemetrySource` beside `"mqtt"` and
+ * `"catalog"` (the `storedSource` rule, `admin/assets/assets.service.ts`) —
+ * the value is reported exactly as stored, never derived or restricted to a
+ * closed set the seed already violates.
  */
-export const assetPickerRowSchema = z.object({
+export const assetListRowSchema = z.object({
   id: z.string(),
   code: z.string(),
   name: z.string(),
   siteName: z.string(),
   domain: z.string(),
+  locationId: z.string().uuid(),
+  locationName: z.string(),
+  rtuId: z.string().uuid().nullable(),
+  rtuDisplayName: z.string().nullable(),
+  // Reported, never derived — see the docblock above.
+  telemetrySource: z.string().nullable(),
+  active: z.boolean(),
+  templateId: z.string().uuid().nullable(), // §12 Q1 — ruled in
 });
 
-export const assetPickerResponseSchema = z.array(assetPickerRowSchema);
+export const assetListResponseSchema = z.array(assetListRowSchema);
 
 // --- notifications (`F3.8`, ADR 0041) ---------------------------------------
 //

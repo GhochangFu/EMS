@@ -1,6 +1,8 @@
 import { expect } from "vitest";
 
 import {
+  assetListResponseSchema,
+  assetListRowSchema,
   notificationDeliveriesResponseSchema,
   pointAggregateBucketSchema,
   pointAggregateResponseSchema,
@@ -310,5 +312,100 @@ export function deliveryEventIsRequiredOnEveryRow(): void {
     notificationDeliveriesResponseSchema,
     { items: [withoutEvent] },
     "a delivery row with no `event` must be refused — the field is required, not optional",
+  );
+}
+
+/**
+ * `F3.31` — the wired shape of `assetListRowSchema` (ADR 0068 decision 2).
+ *
+ * `rtuId`, `rtuDisplayName`, `telemetrySource` and `templateId` all carry a
+ * real value here — the companion case below carries all four as `null`. Two
+ * rows, not one with optional fields, so a schema change that makes a field
+ * optional instead of nullable is caught by E3, not silently accepted here.
+ */
+const wiredAssetListRow = {
+  id: "00000000-0000-4000-8000-000000000001",
+  code: "CR-HVAC-1",
+  name: "Control Room HVAC 1",
+  siteName: "RSMOC Western Cape",
+  domain: "hvac",
+  locationId: "00000000-0000-4000-8000-000000000002",
+  locationName: "Western Cape control room",
+  rtuId: "00000000-0000-4000-8000-000000000003",
+  rtuDisplayName: "RTU 1",
+  telemetrySource: "mqtt",
+  active: true,
+  templateId: "00000000-0000-4000-8000-000000000004",
+};
+
+export function assetListRowAcceptsAFullyWiredRow(): void {
+  expectAccepts(
+    assetListRowSchema,
+    wiredAssetListRow,
+    "a fully wired row — every nullable field carrying a real value — must parse",
+  );
+}
+
+/**
+ * `F4.139`'s pre-existing shape: an asset created by hand carries no RTU, no
+ * reported source and no template. All four nullable fields go `null`
+ * together — never omitted, so E3 stays the case that catches "made optional".
+ */
+export function assetListRowAcceptsAnUnwiredRow(): void {
+  expectAccepts(
+    assetListRowSchema,
+    {
+      ...wiredAssetListRow,
+      rtuId: null,
+      rtuDisplayName: null,
+      telemetrySource: null,
+      templateId: null,
+    },
+    "an unwired, hand-created row — every nullable field null — must parse",
+  );
+}
+
+/**
+ * A required field made optional would pass every "accepts" case above by
+ * simply being left off the literal — so this is the case that actually
+ * exercises the boundary, one field omitted at a time.
+ */
+export function assetListRowRefusesAMissingRequiredField(): void {
+  const withoutActive: Record<string, unknown> = { ...wiredAssetListRow };
+  delete withoutActive.active;
+  expectRejects(
+    assetListRowSchema,
+    withoutActive,
+    "a row with no `active` must be refused — it is required, not optional",
+  );
+
+  const withoutLocationName: Record<string, unknown> = { ...wiredAssetListRow };
+  delete withoutLocationName.locationName;
+  expectRejects(
+    assetListRowSchema,
+    withoutLocationName,
+    "a row with no `locationName` must be refused — it is required, not optional",
+  );
+}
+
+/**
+ * The rename left no alias: `assetPickerRowSchema` is gone from the module,
+ * not merely unused (ADR 0068 decision 2, ruling 2). A `describe`/`it` running
+ * the async import needs no connection — this is still a plain module check.
+ */
+export async function assetListResponseSchemaAndNoOldNameSurvives(): Promise<void> {
+  assert(
+    assetListResponseSchema.parse([wiredAssetListRow]).length === 1,
+    "assetListResponseSchema must parse an array of one valid row",
+  );
+
+  const E: Record<string, unknown> = await import("./envelopes");
+  assert(
+    "assetPickerRowSchema" in E === false,
+    "assetPickerRowSchema must be gone from the module, not merely unused — no alias",
+  );
+  assert(
+    "assetPickerResponseSchema" in E === false,
+    "assetPickerResponseSchema must be gone from the module too",
   );
 }

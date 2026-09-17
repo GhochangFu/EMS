@@ -639,8 +639,8 @@ export type ConvertMaintenanceResponse = z.infer<typeof E.convertMaintenanceResp
 export type RulesResponse = z.infer<typeof E.rulesResponseSchema>;
 export type RuleExecutionsResponse = z.infer<typeof E.ruleExecutionsResponseSchema>;
 export type RuleBuilderCatalogResponse = z.infer<typeof E.ruleBuilderCatalogResponseSchema>;
-/** `GET /api/v1/assets` — the asset picker's row (was `AssetRow` in `apps/web`). */
-export type AssetPickerRow = z.infer<typeof E.assetPickerRowSchema>;
+/** `GET /api/v1/assets` — the asset list row (ADR 0068 decision 2; was `AssetRow` in `apps/web`). */
+export type AssetListRow = z.infer<typeof E.assetListRowSchema>;
 
 // ---------------------------------------------------------------------------
 // Notifications (`F3.8`, ADR 0041)
