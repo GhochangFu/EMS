@@ -158,7 +158,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
    *    "Pump House Output" is the treated stream, `water-wtp.ts:443`).
    *  - `inlet-screen` → `influent_flow_klh` (`water-stp.ts:512`).
    *  - `aeration` → `aeration_do_mgl` (`water-stp.ts:514`).
-   *  - `neutralization` → `neutralization_ph` (`water-etp.ts:420`).
+   *  - `neutralization` → `neutralization_ph` (`water-etp.ts:485`).
    *  - `biological` → `effluent_cod_mgl` — the only COD code, filed under §5
    *    STP and shared with §6 ETP (`packages/shared/src/constants.ts:749-750`).
    *    Reading the ETP's biological stage as effluent COD is a **stated
@@ -178,9 +178,10 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
    * `asset_group_members_group_asset_idx` (migration `0010:69`) is UNIQUE on
    * `(asset_group_id, asset_id)`, so a v1 plant holds exactly one role per
    * group. Each entry above binds two roles, so on a v1 plant the widgets of
-   * the *other* role report `unresolved` — one widget on `stp-overview` and
-   * on `etp-overview` (whichever role the plant holds), and on
-   * `water-overview` either `raw-intake-tile` or both `pump-house` widgets.
+   * the *other* role report `unresolved` — on `stp-overview` and
+   * `etp-overview` one widget or two, since each binds its first role once
+   * and its second role on a tile and a chart, and on `water-overview` either
+   * `raw-intake-tile` or both `pump-house` widgets.
    * Reported by the resolution report
    * (`dashboard-templates-instantiate.service.ts:478`), never silent — a
    * parent-child train is the v2 shape behind `F2.10`.

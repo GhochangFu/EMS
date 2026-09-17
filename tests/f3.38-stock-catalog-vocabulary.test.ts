@@ -397,21 +397,33 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
         "no seeded electrical asset registers load_pct; the transformer tile therefore " +
         "reads kW, not a percentage.",
     ).toBe(false);
+  });
 
-    // `F3.45`: the two water/STP flow tiles read `m3/h` while their point keys
-    // were unresolvable; `point-keys-seed.ts` seeds the flow codes' unit as
-    // `KL/hr`, so the label must change with the key. An absence check alone
-    // would pass on a file that lost both labels — the positive control below
-    // is what proves `KL/hr` actually landed, not merely that `m3/h` left.
+  // `F3.45`: the two water/STP flow tiles read `m3/h` while their point keys
+  // were unresolvable; `point-keys-seed.ts` seeds the flow codes' unit as
+  // `KL/hr`, so the label must change with the key. Two it()s, one claim each
+  // — `expect` throws, so a second claim in the it() above would be reachable
+  // only once every earlier claim passed (AGENTS.md §4.6).
+  it("no flow tile still advertises m3/h", () => {
     expect(
       stock.includes('unit: "m3/h"'),
       `${STOCK_LABEL} still labels a flow widget "m3/h". The seeded unit for ` +
         "raw_water_flow_klh, treated_water_flow_klh and influent_flow_klh is KL/hr.",
     ).toBe(false);
+  });
+
+  // The positive control for the absence check above, anchored per tile: a
+  // bare `includes('KL/hr')` is true once one tile carries the label and stays
+  // green when the other loses it. Each flow tile's `pointKey` must be followed
+  // by its `unit` inside the same widget literal (the `percentUnitOnKw` shape).
+  it("both rebound flow tiles carry the seeded KL/hr unit", () => {
+    const tilesMissingKlh = ["raw_water_flow_klh", "influent_flow_klh"].filter(
+      (key) => !new RegExp(`pointKey:\\s*"${key}"[\\s\\S]{0,400}?unit:\\s*"KL/hr"`).test(stock),
+    );
     expect(
-      stock.includes('unit: "KL/hr"'),
-      `${STOCK_LABEL} names no widget "KL/hr". The rebound flow tiles must carry the ` +
-        "seeded unit, not just lose the old one.",
-    ).toBe(true);
+      tilesMissingKlh,
+      `${STOCK_LABEL} binds a flow tile whose widget carries no "KL/hr" unit. The ` +
+        "rebound flow tiles must carry the seeded unit, not just lose the old one.",
+    ).toEqual([]);
   });
 });

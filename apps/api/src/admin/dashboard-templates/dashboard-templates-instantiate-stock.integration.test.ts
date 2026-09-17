@@ -191,7 +191,7 @@ describe.skipIf(!connectionString)(
         assetGroupId: groupId,
         slug: DASHBOARD_SLUG,
         name: "F3.45 stp-overview resolution proof",
-      } as Parameters<DashboardTemplatesInstantiateService["instantiate"]>[2]);
+      });
       dashboardIds.push(response.dashboard.id);
     }, 60_000);
 
@@ -204,7 +204,10 @@ describe.skipIf(!connectionString)(
           dashboardIds,
         ]);
       }
-      await ownerPool.query(`DELETE FROM bms.dashboards WHERE slug = $1`, [DASHBOARD_SLUG]);
+      await ownerPool.query(
+        `DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`,
+        [eskomOrgId, DASHBOARD_SLUG],
+      );
       if (templateIds.length > 0) {
         await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [
           templateIds,
