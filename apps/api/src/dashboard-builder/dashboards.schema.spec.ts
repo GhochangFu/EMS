@@ -17,6 +17,7 @@ import type { MetricCatalogKey } from "@bms/shared";
 
 import {
   createDashboardBodySchema,
+  listDashboardsQuerySchema,
   pointBindingWriteSchema,
   putDashboardWidgetsBodySchema,
   SCOPE_REFUSAL_MESSAGE,
@@ -679,4 +680,29 @@ export function runDashboardsSchemaSourceShapeTests(): void {
         "a type that admits none must name none",
     );
   }
+}
+
+/**
+ * `F3.31` Task 3 — `GET /dashboards?assetId=` (ADR 0068 decision 4).
+ *
+ * **The accept case reads the PARSED value, not `success`.** `listDashboardsQuerySchema` is a
+ * plain `z.object`, which strips unknown keys: before the field existed,
+ * `safeParse({ assetId })` already succeeded with `assetId` stripped, so a success-only
+ * assertion is green with or without the field. Only `parsed.assetId === ASSET_ID` reddens
+ * when the field is missing.
+ */
+export function runListDashboardsQueryTests(): void {
+  const parsed = listDashboardsQuerySchema.parse({ assetId: ASSET_ID });
+  assert(
+    parsed.assetId === ASSET_ID,
+    `assetId must survive the parse — got ${String(parsed.assetId)} (the field is missing)`,
+  );
+  expectAccepts(listDashboardsQuerySchema, {}, "assetId is optional — an empty query still parses");
+  expectRejectsAt(
+    listDashboardsQuerySchema,
+    { assetId: "x" },
+    ["assetId"],
+    ["uuid"],
+    "a non-uuid assetId must be refused at the field",
+  );
 }

@@ -298,7 +298,11 @@ export class DashboardsService {
    * Amendment 2 ruling 2 says they must see. `organizationIdFilter` is the caller-side
    * isolation control the fleet branch needs — see `withOrganizationReadScope`'s own docblock.
    */
-  async list(jwt: JwtPayload, organizationId?: string): Promise<{ items: DashboardSummaryDto[] }> {
+  async list(
+    jwt: JwtPayload,
+    organizationId?: string,
+    assetId?: string,
+  ): Promise<{ items: DashboardSummaryDto[] }> {
     const orgIds = await this.accessControl.readableOrganizationIds(jwt);
     return withOrganizationReadScope(
       this.tenantDb,
@@ -312,6 +316,11 @@ export class DashboardsService {
         }
         if (organizationIdFilter) {
           conditions.push(inArray(dashboards.organizationId, organizationIdFilter));
+        }
+        // `F3.31` / ADR 0068 decision 4 — ANDed beside the organization conditions, so it narrows
+        // within the read scope and cannot widen it: an out-of-scope id answers `[]`, never 403.
+        if (assetId) {
+          conditions.push(eq(dashboards.assetId, assetId));
         }
         // `F3.2` / ADR 0067 §"Gate questions" Q4 — the badge reads `Asset · <code>`, and the
         // summary DTO has no code of its own, so the code is joined here.

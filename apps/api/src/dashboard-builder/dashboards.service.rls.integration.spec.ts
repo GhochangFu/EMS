@@ -649,3 +649,73 @@ export async function assertCrossOrgAssetScopeIs400NamingAssetId(
   const rows = await fleetDb.execute(sql`SELECT id FROM bms.dashboards WHERE slug = ${slug}`);
   expect(rows.rows.length, "no dashboard row may exist for a refused create").toBe(0);
 }
+
+/**
+ * `F3.31` Task 3 — `list(jwt, organizationId?, assetId?)` narrows WITHIN the caller's read
+ * scope and never widens it (ADR 0068 decision 4, ruling 4).
+ *
+ * **Run as `bms_tenant` on purpose.** `singleOrgActor` is `wc-admin@bms.local`, a
+ * single-organization, location-scoped reader: that is what routes `list()` onto
+ * `withOrganizationReadScope`'s TENANT branch (`bms_tenant` under FORCE RLS) rather than the
+ * fleet one (`bms_fleet`, `BYPASSRLS`). The out-of-scope case below is only a proof on the
+ * branch every scoped caller uses.
+ *
+ * T1 — filtered to `eskomAssetId`: B (the SAME-organization neighbour on another asset) is
+ * asserted absent FIRST, because with the `eq(dashboards.assetId, …)` push removed the
+ * organization-wide rows (`assetId: null`) would also fail the every-item claim, and the
+ * reddened assertion must name the leak, not the neighbour it hides. B is asserted present in
+ * the UNFILTERED list first, so its absence is the filter's doing and not invisibility.
+ *
+ * T2 — filtered to `phewbAssetId`: P is proven to exist with that `asset_id` by independent
+ * SQL on the FLEET pool (a tenant-pool read returns 0 rows under FORCE RLS whether or not P
+ * exists), then the call RESOLVES with an empty list. A `rejects` here is ruling 4's refused
+ * shape — a 403 would confirm the id exists.
+ */
+export async function assertListFiltersByAssetIdWithinScope(
+  service: DashboardsService,
+  fleetDb: BmsDb,
+  singleOrgActor: JwtPayload,
+  fixtures: {
+    readonly eskomAssetId: string;
+    readonly dashboardAId: string;
+    readonly dashboardBId: string;
+    readonly phewbAssetId: string;
+    readonly dashboardPId: string;
+  },
+): Promise<void> {
+  const unfiltered = await service.list(singleOrgActor);
+  expect(
+    unfiltered.items.some((item) => item.id === fixtures.dashboardBId),
+    "control: the unfiltered list must contain B, or its absence below proves nothing",
+  ).toBe(true);
+
+  const filtered = await service.list(singleOrgActor, undefined, fixtures.eskomAssetId);
+  expect(
+    filtered.items.some((item) => item.id === fixtures.dashboardBId),
+    "B is scoped to ANOTHER asset in the same organization and must not be listed — the " +
+      "assetId filter is not applied",
+  ).toBe(false);
+  expect(
+    filtered.items.some((item) => item.id === fixtures.dashboardAId),
+    "A is scoped to the requested asset and must be listed",
+  ).toBe(true);
+  for (const item of filtered.items) {
+    expect(item.assetId, `item ${item.id} is not scoped to the requested asset`).toBe(
+      fixtures.eskomAssetId,
+    );
+  }
+
+  const control = await fleetDb.execute(
+    sql`SELECT asset_id FROM bms.dashboards WHERE id = ${fixtures.dashboardPId}`,
+  );
+  const pRow = control.rows[0] as { asset_id: string | null } | undefined;
+  expect(pRow?.asset_id, "control: P must exist with asset_id = the PHEWB asset").toBe(
+    fixtures.phewbAssetId,
+  );
+
+  const outOfScope = await service.list(singleOrgActor, undefined, fixtures.phewbAssetId);
+  expect(
+    outOfScope.items.length,
+    "an out-of-scope assetId answers [] — never P (scope widened), never a throw (ruling 4)",
+  ).toBe(0);
+}

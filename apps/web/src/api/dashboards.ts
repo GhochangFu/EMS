@@ -50,8 +50,16 @@ async function dashboardsFetch<S extends ContractSchema>(
   return checkResponse(schema, await res.json(), endpoint);
 }
 
-function organizationQuery(organizationId?: string): string {
-  return organizationId ? `?organizationId=${encodeURIComponent(organizationId)}` : "";
+/** `?k=v&…` over the keys of `params` that carry a value, in insertion order; `""` when none
+ * does, so an unfiltered path carries no `?` at all. An empty string is "no filter", exactly as
+ * the `organizationQuery` this replaced treated it — `""` is never a uuid the API would accept. */
+function queryString(params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const encoded = search.toString();
+  return encoded ? `?${encoded}` : "";
 }
 
 function jsonInit(method: "POST" | "PATCH" | "PUT", body: unknown): RequestInit {
@@ -80,18 +88,23 @@ export type CreateDashboardPayload = {
  * than silently ignoring it). */
 export type UpdateDashboardPayload = Partial<Omit<CreateDashboardPayload, "organizationId">>;
 
-/** `GET /dashboards`, optionally narrowed to one organization. An admin/multi-organization
- * caller sees every readable organization's dashboards when it is omitted — `Amendment 4`'s read
- * visibility, unchanged by this client. */
-export async function fetchDashboards(organizationId?: string): Promise<DashboardsListResponse> {
-  const path = `/dashboards${organizationQuery(organizationId)}`;
+/** `GET /dashboards`, optionally narrowed to one organization and/or one asset. An
+ * admin/multi-organization caller sees every readable organization's dashboards when
+ * `organizationId` is omitted — `Amendment 4`'s read visibility, unchanged by this client.
+ * `assetId` (`F3.31`, ADR 0068 decision 4) narrows within that scope; an out-of-scope id answers
+ * `{ items: [] }`, never a 403. */
+export async function fetchDashboards(
+  organizationId?: string,
+  assetId?: string,
+): Promise<DashboardsListResponse> {
+  const path = `/dashboards${queryString({ organizationId, assetId })}`;
   return dashboardsFetch(path, dashboardsListResponseSchema, "dashboards");
 }
 
 /** `GET /dashboards/:slug` — `organizationId` disambiguates a slug that matches more than one
  * organization's dashboard on the fleet pool (D5). */
 export async function fetchDashboard(slug: string, organizationId?: string): Promise<DashboardDto> {
-  const path = `/dashboards/${encodeURIComponent(slug)}${organizationQuery(organizationId)}`;
+  const path = `/dashboards/${encodeURIComponent(slug)}${queryString({ organizationId })}`;
   return dashboardsFetch(path, dashboardDtoSchema, "dashboards/:slug");
 }
 

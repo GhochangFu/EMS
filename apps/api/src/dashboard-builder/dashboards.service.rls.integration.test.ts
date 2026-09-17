@@ -32,6 +32,7 @@ import {
   assertForeignOrgIdUpdateIs404SameAsNonexistent,
   assertLocationAdminCannotRehomeOrganizationWideDashboard,
   assertLocationAdminMayStillUpdateItsOwnLocationDashboard,
+  assertListFiltersByAssetIdWithinScope,
   assertListReportsTheAssetCode,
   assertPutWidgetsDtoReflectsTheWrite,
   assertUnauthorizedUpdateWithScopeConflictIs404,
@@ -68,6 +69,9 @@ const ASSET_CODE_SLUG = `f32-asset-code-${RUN}`;
 const STAMP_CLEAR_SLUG = `f32-stamp-clear-${RUN}`;
 const STAMP_MOVE_SLUG = `f32-stamp-move-${RUN}`;
 const XORG_ASSET_SLUG = `f32-xorg-asset-${RUN}`;
+const F331_A_SLUG = `f331-a-${RUN}`;
+const F331_B_SLUG = `f331-b-${RUN}`;
+const F331_PHEWB_SLUG = `f331-phewb-${RUN}`;
 
 describe.skipIf(!connectionString)(
   "F3.1b — DashboardsService pool routing, audit stamping, cross-tenant read/write",
@@ -620,6 +624,37 @@ describe.skipIf(!connectionString)(
         assetScoped.id,
         eskomAssetId,
       );
+    }, 60_000);
+
+    it("F3.31 — list(…, assetId) narrows within scope on the tenant branch; an out-of-scope id answers []", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      const createScoped = async (organizationId: string, slug: string, assetId: string) => {
+        const created = await service.create(globalAdmin, {
+          organizationId,
+          slug,
+          name: `F3.31 assetId filter proof ${slug}`,
+          assetId,
+        } as Parameters<DashboardsService["create"]>[1]);
+        dashboardIds.push(created.id);
+        return created.id;
+      };
+      const dashboardAId = await createScoped(eskomOrgId, F331_A_SLUG, eskomAssetId);
+      const dashboardBId = await createScoped(eskomOrgId, F331_B_SLUG, otherEskomAssetId);
+      const dashboardPId = await createScoped(phewbOrgId, F331_PHEWB_SLUG, phewbAssetId);
+
+      // wc-admin@bms.local — single-organization, so list() takes the TENANT branch.
+      const eskomLocationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+      await assertListFiltersByAssetIdWithinScope(service, fleetDb, eskomLocationAdmin, {
+        eskomAssetId,
+        dashboardAId,
+        dashboardBId,
+        phewbAssetId,
+        dashboardPId,
+      });
     }, 60_000);
   },
 );
