@@ -10,7 +10,7 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 /**
  * `GET /api/v1/assets`'s row, widened by ADR 0068 decision 2 (`F3.31`). Two
  * consumers: the affected-asset picker (`lib/asset-picker.ts`, ADR 0034
- * decision 4), which reads only its original five fields, and the `/assets`
+ * decision 4), which reads only its original five fields, and the `/asset-browser`
  * operator browser (`F3.31`), which reads all of them.
  */
 export type AssetRow = AssetListRow;

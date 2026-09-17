@@ -10,7 +10,7 @@ import { AssetHealthCard } from "../asset-health/asset-health-card";
 import { StatusPill } from "../status-pill";
 
 /**
- * `F3.31` — the read-only detail panel of the `/assets` browser (ADR 0068
+ * `F3.31` — the read-only detail panel of the `/asset-browser` route (ADR 0068
  * decision 3, ruling 5): a right-docked `<aside>` on the same route, the
  * `asset-images-panel.tsx` shape.
  *

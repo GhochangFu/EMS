@@ -179,7 +179,7 @@ export function App() {
         }
       />
       <Route
-        path="/assets"
+        path="/asset-browser"
         element={
           accessToken && user ? (
             <AssetsPage user={user} />

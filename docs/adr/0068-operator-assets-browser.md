@@ -68,7 +68,7 @@ add it under *Operations* now.** The entry moves when the IA decision lands,
 and that move is the IA row's work, not a regression of this one.
 
 **Q2 — New read-only route, or a scoped view of `/admin/assets`.** **Ruled: a
-new read-only route `/assets`.** The existing page is an editor whose chrome
+new read-only route (`/asset-browser`, ruling 8).** The existing page is an editor whose chrome
 and access predicate are both master-data-shaped; a read-only mode bolted on
 would still render inside `MasterDataLayout` and still need the tab strip's
 predicate opened.
@@ -85,19 +85,19 @@ named below as the thing this ADR does not decide.
 readable list. **Ruled: `assetId` on the query.** The full list grows with
 every instantiated asset (27 stock classes × one view each, per asset).
 
-**Q5 — Who can open `/assets`.** Every authenticated user within
+**Q5 — Who can open the route.** Every authenticated user within
 `readableAssetIds`, or operations roles only. **Ruled: every authenticated
 user, within `readableAssetIds`** — the gate `GET /assets` and
 `GET /asset-health/summary` already apply.
 
 ## Decision
 
-### 1. A new route `/assets` in `apps/web`, outside `MasterDataLayout`
+### 1. A new route `/asset-browser` in `apps/web`, outside `MasterDataLayout`
 
-`apps/web/src/pages/assets-page.tsx` (new), routed at `/assets` in `app.tsx`
+`apps/web/src/pages/assets-page.tsx` (new), routed at `/asset-browser` in `app.tsx`
 with the same `accessToken && user` guard every operator route uses, rendered
 in `AppShell` directly. `moduleGroups` in `app-shell.tsx` gains
-`{ label: "Assets", path: "/assets" }` in the **Operations** group (Q1). The
+`{ label: "Assets", path: "/asset-browser" }` in the **Operations** group (Q1). The
 `/admin/assets` editor and its nav entry are untouched.
 
 The page is a **table with client-side filters** over the one list response:
@@ -251,6 +251,13 @@ dashboards query type), `apps/api` (`assets/assets.service.ts`,
    plain FK; G3 (`assets.service.rtu-organization.integration.spec.ts`) writes a
    foreign stamp inside a rolled-back transaction and asserts the name is null
    (2026-09-17).
+8. The route is `/asset-browser`, not `/assets` (decision 1). The §4.6
+   browser pass found that Vite emits the bundle under `dist/assets/`, so on
+   the nginx image `GET /assets` is a real directory: 301 → `/assets/` (the
+   port dropped) → 403, and `try_files` never reaches `index.html`. No cheaper
+   gate could see it — the jsdom router does not go through nginx. R4 in
+   `tests/f3.31-assets-browser-reachable.test.ts` keeps every later route off
+   `build.assetsDir` (2026-09-17).
 
 ## Ruled here without a question
 
@@ -265,7 +272,7 @@ to overturn at the plan gate.
    (decision 2).
 4. An out-of-scope `assetId` on `GET /dashboards` answers `[]`, not 403
    (decision 4).
-5. The panel is a side panel on the same route, not a `/assets/:id` route —
+5. The panel is a side panel on the same route, not a `/asset-browser/:id` route —
    nothing deep-links to one asset today, and a route can be added when
    something does (decision 3).
 

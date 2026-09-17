@@ -27,7 +27,7 @@ export class AssetsController {
    * caller could see, which is confusing and not what "affected assets"
    * means for one alarm.
    *
-   * `F3.31` / ADR 0068 — the same list also feeds the operator `/assets`
+   * `F3.31` / ADR 0068 — the same list also feeds the operator `/asset-browser`
    * browser beside the picker. Each row carries `locationName`, `rtuId`,
    * `rtuDisplayName`, `telemetrySource`, `active` and `templateId`
    * (`assetListRowSchema`); the route, the guard and the `readableAssetIds`

@@ -15,7 +15,7 @@ import type { AuthUser } from "../stores/auth-store";
 import { AssetsPage } from "./assets-page";
 
 /**
- * `F3.31` — the `/assets` operator browser (ADR 0068 decisions 1, 3 and 5).
+ * `F3.31` — the `/asset-browser` operator browser (ADR 0068 decisions 1, 3 and 5).
  *
  * Assertions live here; `assets-page.test.tsx` is the Vitest entry point and
  * carries `@vitest-environment jsdom` (ADR 0014 / ADR 0042 decision 2).
@@ -168,7 +168,7 @@ function precedes(a: Element, b: Element): boolean {
 }
 
 /**
- * P1 (owed guard 4) — "Assets" renders for a `viewer`, points at `/assets`,
+ * P1 (owed guard 4) — "Assets" renders for a `viewer`, points at `/asset-browser`,
  * and sits in the *Operations* group: its group label precedes it in the DOM
  * and the next group's label follows it. An admin sees a second "Assets" link
  * (`/admin/assets`) and this one beside it.
@@ -182,7 +182,7 @@ export async function viewerSeesAssetsUnderOperations(): Promise<void> {
   renderPage(asUser("viewer"));
 
   const link = await screen.findByRole("link", { name: "Assets" });
-  expect(link).toHaveAttribute("href", "/assets");
+  expect(link).toHaveAttribute("href", "/asset-browser");
   const sidebar = link.closest("aside") as HTMLElement;
   const operations = within(sidebar).getByText("Operations");
   const controlRoom = within(sidebar).getByText("Control Room 2D");
@@ -195,7 +195,7 @@ export async function adminSeesBothAssetsLinks(): Promise<void> {
   renderPage(asUser("admin"));
 
   const links = await screen.findAllByRole("link", { name: "Assets" });
-  expect(links.some((l) => l.getAttribute("href") === "/assets")).toBe(true);
+  expect(links.some((l) => l.getAttribute("href") === "/asset-browser")).toBe(true);
   expect(links.some((l) => l.getAttribute("href") === "/admin/assets")).toBe(true);
 }
 

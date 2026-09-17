@@ -25,8 +25,9 @@ type AssetsPageProps = {
 const NONE = "—";
 
 /**
- * `F3.31` — the operator-facing Assets browser at `/assets` (ADR 0068
- * decisions 1, 3 and 5).
+ * `F3.31` — the operator-facing Assets browser at `/asset-browser` (ADR 0068
+ * decisions 1, 3 and 5; ruling 8 for the path — `/assets` is Vite's build
+ * output directory, and nginx answers 301 → 403 for it before the SPA loads).
  *
  * **This file shares its basename with `pages/admin/assets-page.tsx` and is
  * not that page.** ADR 0068 Q2 ruled a NEW read-only route over a scoped view
