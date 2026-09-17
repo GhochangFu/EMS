@@ -31,10 +31,13 @@ import { DashboardTemplateStockViewPage } from "./dashboard-template-stock-view-
  *
  * The fixtures are parsed through `stockDashboardTemplateDtoSchema`, so they
  * are real `StockDashboardTemplateDto`s rather than hand-typed lookalikes.
- * `PUMPING` mirrors `electrical-metered-pumping`'s measured shape (ten widgets,
- * eight bound, one source each) and `NO_BINDINGS` mirrors
+ * `PUMPING` mirrors `electrical-metered-pumping`'s measured shape in what the
+ * editor renders (ten widgets, eight bound) and `NO_BINDINGS` mirrors
  * `sustainability-overview` (four widgets, zero bindings) — the zero-binding
- * edge every metric-catalog-only entry has.
+ * edge every metric-catalog-only entry has. The fixtures carry one `sources`
+ * entry per widget; the live entries carry four for the whole entry. The
+ * difference is inert here because `WidgetEditor` renders no `sources`
+ * (`F3.61`); the fixture carries them only so a widget is not a bare tile.
  */
 
 const admin: AuthUser = {
@@ -114,6 +117,20 @@ const NO_BINDINGS: StockDashboardTemplateDto = stockDashboardTemplateDtoSchema.p
   },
 });
 
+/**
+ * No live entry has zero widgets; the branch exists because the contract
+ * allows it, and case 3b keeps it from rotting (review Q2).
+ */
+const NO_WIDGETS_CODE = "empty-overview";
+const NO_WIDGETS: StockDashboardTemplateDto = stockDashboardTemplateDtoSchema.parse({
+  code: NO_WIDGETS_CODE,
+  name: "Empty overview",
+  section: "sustainability",
+  description: null,
+  stockVersion: 1,
+  content: { widgets: [] },
+});
+
 const IMPORTED_DRAFT = {
   id: DRAFT_ID,
   organizationId: "org-1",
@@ -184,7 +201,13 @@ function renderViewer(path: string, user: AuthUser = admin): HTMLElement {
 const IMPORT_ORG_LABEL = "Import into organization";
 const READ_ONLY_PILL = "Stock catalog · read only";
 
-/** Every button the authoring detail page can render and this page must not. */
+/**
+ * Every button the authoring detail page can render and this page must not.
+ * The last two are `DashboardCanvas`'s drag handles: it renders them only
+ * when it is given `onArrange`, and the viewer must never pass one — a later
+ * `onArrange={…}` would put two drag affordances on a read-only screen with
+ * every other case still green (review F1).
+ */
 const AUTHORING_BUTTONS = [
   "Save canvas",
   "Publish",
@@ -194,6 +217,8 @@ const AUTHORING_BUTTONS = [
   "Edit this version",
   "Add widget",
   "Remove",
+  "Move widget",
+  "Resize widget",
 ] as const;
 
 function canvasCard(): HTMLElement {
@@ -264,7 +289,9 @@ export async function theHeaderNamesTheEntry(): Promise<void> {
   expect(text).toContain(PUMPING_CODE);
   expect(text).toContain("stock v1");
   expect(text).toContain(`${PUMPING_WIDGET_COUNT} widgets`);
-  expect(text).toContain("electrical");
+  // `electrical` alone is satisfied by the eyebrow's code; the section claim
+  // is the subtitle's `section · stock vN` pair (review F3).
+  expect(text).toContain("electrical · stock v1");
   expect(screen.getByText(READ_ONLY_PILL)).toBeInTheDocument();
   expect(screen.getByText(PUMPING.description as string)).toBeInTheDocument();
 }
@@ -293,8 +320,28 @@ export async function theZeroBindingEntryRenders(): Promise<void> {
 }
 
 /**
- * Case 4 — Import lands on the new draft (§5.5). The code sent is the
- * **resolved entry's**, never the raw URL parameter.
+ * Case 3b — the zero-widget entry renders the empty-state sentence and no
+ * editor. The header's `0 widgets` is the positive control that the entry
+ * resolved; the absent `Bindings` label is the claim.
+ */
+export async function theZeroWidgetEntryRendersTheEmptyState(): Promise<void> {
+  stubApi([NO_WIDGETS]);
+  renderViewer(`/admin/dashboard-templates/stock/${NO_WIDGETS_CODE}`);
+
+  const heading = await screen.findByRole("heading", { level: 1, name: "Empty overview" });
+  expect(heading.closest("header")?.textContent ?? "").toContain("0 widgets");
+  const card = canvasCard();
+  expect(within(card).getByText("This template has no widgets.")).toBeInTheDocument();
+  expect(within(card).queryAllByText("Bindings")).toHaveLength(0);
+}
+
+/**
+ * Case 4 — Import lands on the new draft (§5.5). The assertion on the call is
+ * a call-shape check (`(code, organizationId)`), not a proof that the resolved
+ * code is sent rather than the URL parameter: `findStockEntry` matches on
+ * strict equality, so on every branch where Import renders the two strings
+ * are identical and no test can tell them apart (review F2). That property
+ * holds by construction of the lookup, and the page docblock says so.
  */
 export async function importLandsOnTheNewDraft(): Promise<void> {
   stubApi();

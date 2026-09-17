@@ -11,6 +11,7 @@ import {
   importLandsOnTheNewDraft,
   theHeaderNamesTheEntry,
   theZeroBindingEntryRenders,
+  theZeroWidgetEntryRendersTheEmptyState,
 } from "./dashboard-template-stock-view-page.spec";
 
 /**
@@ -34,6 +35,10 @@ describe("F3.44 the read-only viewer for a stock dashboard-template entry", () =
 
   it("renders the zero-binding entry", async () => {
     await theZeroBindingEntryRenders();
+  });
+
+  it("renders the empty state for a zero-widget entry", async () => {
+    await theZeroWidgetEntryRendersTheEmptyState();
   });
 
   it("imports the resolved entry code and lands on the new draft", async () => {

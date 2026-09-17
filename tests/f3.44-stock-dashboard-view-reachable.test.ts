@@ -47,6 +47,14 @@ const read = (rel: string): string => {
  * case below is written as a fail-closed disjunction rather than an index
  * comparison — `siblingAt === -1` (no such route exists) is the legitimate
  * state today, and the day one is added it must sort after `stockAt`.
+ *
+ * **Residual, stated so it is not mistaken for coverage:** the sibling scan
+ * matches the literal form `path="/admin/dashboard-templates/:templateId/`.
+ * A sibling declared as `path={"…"}`, through a constant, or with a template
+ * literal yields `-1` and passes this case silently. Every route in `app.tsx`
+ * is a bare string attribute today (the F2.14 guard depends on the same form
+ * and asserts its sibling exists, so a form change there fails loudly); this
+ * one cannot, because it has no sibling to anchor on.
  */
 
 const APP_TSX = "apps/web/src/app.tsx";

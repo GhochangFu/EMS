@@ -136,6 +136,22 @@ export async function stockRowLinksToTheViewer(): Promise<void> {
   expect(await screen.findByText("1 repository default (ADR 0049 decision 3)")).toBeInTheDocument();
 }
 
+/**
+ * `F3.44` review C1 — a failed stock fetch must not read as "0 repository
+ * defaults" over an empty list. The count renders only on success; pending
+ * and error get the same lines the templates card above already has.
+ * `stubApi` first, then the stock stub is overridden to reject.
+ */
+export async function aFailedStockFetchDoesNotCountZeroDefaults(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "fetchAdminStockDashboardTemplates").mockRejectedValue(new Error("stock boom"));
+  renderPage();
+
+  expect(await screen.findByText("stock boom")).toBeInTheDocument();
+  expect(screen.queryByText(/0 repository defaults/)).not.toBeInTheDocument();
+  expect(screen.getByText("Repository defaults (ADR 0049 decision 3)")).toBeInTheDocument();
+}
+
 /** Importing requires an organization, then calls the API and refreshes the list. */
 export async function importCallsTheApiWithTheChosenOrganization(): Promise<void> {
   stubApi();

@@ -32,9 +32,11 @@
  * ## `:code` is validated by the lookup, not by a regex
  *
  * The entry is either in the already-fetched list response or it is not, and
- * an absent one renders the not-found panel. **The load-bearing rule is the
- * other one: Import sends the resolved `entry.code`, never the raw URL
- * parameter.**
+ * an absent one renders the not-found panel. Import sends the resolved
+ * `entry.code`. That it is never the raw URL parameter holds by construction:
+ * `findStockEntry` matches on strict equality, so wherever Import renders the
+ * two strings are the same, and no test can distinguish them — the spec's
+ * case 4 is a call-shape check, not a proof of this sentence.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
