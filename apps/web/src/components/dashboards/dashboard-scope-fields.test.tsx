@@ -3,12 +3,19 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  adminSeesTheAssetGroupOption,
   adminSeesTheOrganizationWideOption,
+  assetGroupAdminNeverSeesTheAssetGroupOption,
   assetGroupAdminNeverSeesTheOrganizationWideOptionEither,
+  choosingAGroupDecidesTheOrganization,
+  forALocationAdminAnAssetGroupValueClampsToLocation,
   forALocationAdminAnOrganizationWideValueClampsToLocation,
+  forAdminAnAssetGroupValueIsNotClamped,
+  locationAdminNeverSeesTheAssetGroupOption,
   locationAdminNeverSeesTheOrganizationWideOption,
-  noRoleIsOfferedAnAssetGroupOption,
+  organizationAdminSeesTheAssetGroupOption,
   organizationAdminSeesTheOrganizationWideOption,
+  theOptionTextNamesTheLocation,
 } from "./dashboard-scope-fields.spec";
 
 /**
@@ -38,11 +45,46 @@ describe("F3.1d dashboard scope fields", () => {
     adminSeesTheOrganizationWideOption();
   });
 
-  it("offers no role an asset-group option", () => {
-    noRoleIsOfferedAnAssetGroupOption();
-  });
-
   it("clamps a location_admin fed an organization-wide value back to an unchosen location", () => {
     forALocationAdminAnOrganizationWideValueClampsToLocation();
+  });
+});
+
+describe("F3.34 asset-group scope kind", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("shows admin the asset-group option", () => {
+    adminSeesTheAssetGroupOption();
+  });
+
+  it("shows an organization_admin the asset-group option", () => {
+    organizationAdminSeesTheAssetGroupOption();
+  });
+
+  it("never shows a location_admin the asset-group option", () => {
+    locationAdminNeverSeesTheAssetGroupOption();
+  });
+
+  it("never shows an asset_group_admin the asset-group option", () => {
+    assetGroupAdminNeverSeesTheAssetGroupOption();
+  });
+
+  it("decides the organization from the chosen group", async () => {
+    await choosingAGroupDecidesTheOrganization();
+  });
+
+  it("names the location in the option text", () => {
+    theOptionTextNamesTheLocation();
+  });
+
+  it("clamps a location_admin fed an assetGroup value back to an unchosen location", () => {
+    forALocationAdminAnAssetGroupValueClampsToLocation();
+  });
+
+  it("does not clamp an assetGroup value for admin", () => {
+    forAdminAnAssetGroupValueIsNotClamped();
   });
 });
