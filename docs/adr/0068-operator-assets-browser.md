@@ -115,6 +115,14 @@ cost on the same response; pagination is not decided here.
 (`rtus.display_name`), `telemetrySource`, `active` and `templateId`. The response stays a
 bare array and the route, guard and `organizationId` filter are unchanged.
 
+The join carries an organization predicate —
+`rtus.organization_id = assets.organization_id` — not only the FK (ruling 7).
+The read runs on the fleet pool, which bypasses RLS, and `assets_rtu_id_fk` is
+a plain FK to `rtus(id)`; only `assertRtuLocation` at write time keeps an
+asset's RTU inside its organization. A mis-stamped `rtu_id` therefore reports
+`rtuDisplayName: null`, never a foreign organization's name. The same shape as
+`dashboards.service.ts`'s `assets` join (ADR 0043).
+
 `assetPickerRowSchema` / `assetPickerResponseSchema` (`envelopes.ts`) are
 **renamed** `assetListRowSchema` / `assetListResponseSchema` and widened —
 the old name said "which of the several asset shapes it is", and after this
@@ -143,7 +151,9 @@ hand-written `AssetRow` type in `apps/web/src/api/assets.ts` becomes the
 inferred type of the new schema and keeps its name; its six importers
 (`asset-picker.ts` and its spec, `schematic-access.ts`,
 `maintenance-schedules-panel.tsx`, `location-dashboard-page.tsx`) read only
-the fields they read today, so none changes.
+the fields they read today, so none changes — except the picker spec's
+fixture literals, which gain the new fields by hand (no gate type-checks that
+file).
 
 ### 3. The detail panel is three existing reads and one new filter
 
@@ -156,7 +166,10 @@ row, shows for one asset:
   with the three absence states ADR 0050 names rendered as text rather than
   as a zero;
 - **default dashboards** — `GET /dashboards?assetId=<id>`, each row a link to
-  `/dashboards/<slug>` with its `name` and `widgetCount`; an empty list reads
+  `/dashboards/<slug>?organizationId=<id>` with its `name` and `widgetCount`
+  (the query rides on the link as it does on the dashboards page: on the fleet
+  pool one slug can live in two organizations, and the viewer disambiguates by
+  it — `dashboards.schema.ts` D5); an empty list reads
   "No dashboards for this asset" and, when `templateId` is null on the asset,
   the sentence says why (a hand-created asset has no template to instantiate
   from).
@@ -233,6 +246,11 @@ dashboards query type), `apps/api` (`assets/assets.service.ts`,
 6. `templateId` joins the list row (decision 2). The step-3 plan found that
    decision 3 reads it while decision 2 did not carry it; the owner ruled the
    field in rather than dropping the sentence (2026-09-17).
+7. The `rtus` join carries `rtus.organization_id = assets.organization_id`
+   (decision 2). The step-5 security review found the fleet-pool read trusted a
+   plain FK; G3 (`assets.service.rtu-organization.integration.spec.ts`) writes a
+   foreign stamp inside a rolled-back transaction and asserts the name is null
+   (2026-09-17).
 
 ## Ruled here without a question
 
@@ -270,7 +288,7 @@ None. No new npm package.
   entry to move; neither is unblocked by this ADR.
 - **No collision with `F3.45`** — this row touches nothing under
   `stock-catalog/*.ts`.
-- **The guard this row owes**: an API test that `GET /assets` carries the five
+- **The guard this row owes**: an API test that `GET /assets` carries the six
   new fields for a wired asset and nulls for an unwired one, and that a
   location-scoped caller still sees only their scope; an API test that
   `GET /dashboards?assetId=` returns only that asset's rows and `[]` for an

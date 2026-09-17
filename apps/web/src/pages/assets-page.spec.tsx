@@ -306,8 +306,11 @@ export async function panelCarriesNoWriteAffordance(): Promise<void> {
   await clickRow("FEED-PUMP-2");
   await screen.findByRole("heading", { name: "Asset · FEED-PUMP-2" });
 
-  expect(screen.queryAllByRole("button", { name: /edit|attach|upload|delete|points/i })).toHaveLength(0);
-  expect(screen.queryAllByRole("link", { name: /edit|attach|upload|delete|points/i })).toHaveLength(0);
+  // `set` and `command` are the words ADR 0068 decision 6 excludes by name.
+  // Word-anchored: the nav link "Assets" contains "set".
+  const writeWord = /\b(edit|attach|upload|delete|points|set|command)\b/i;
+  expect(screen.queryAllByRole("button", { name: writeWord })).toHaveLength(0);
+  expect(screen.queryAllByRole("link", { name: writeWord })).toHaveLength(0);
   expect(container.querySelector('input[type="file"]')).toBeNull();
 }
 

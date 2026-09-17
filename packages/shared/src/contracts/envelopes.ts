@@ -353,7 +353,7 @@ export const assetListRowSchema = z.object({
   // Reported, never derived — see the docblock above.
   telemetrySource: z.string().nullable(),
   active: z.boolean(),
-  templateId: z.string().uuid().nullable(), // §12 Q1 — ruled in
+  templateId: z.string().uuid().nullable(), // ADR 0068 ruling 6 (plan §12 Q1)
 });
 
 export const assetListResponseSchema = z.array(assetListRowSchema);
