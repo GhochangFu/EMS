@@ -16,9 +16,9 @@ import { fetchDashboards } from "./dashboards";
  * An optional parameter at an adapter is invisible to `tsc` and to every fake: a
  * `fetchDashboards(org?, assetId?)` that drops `assetId` on the floor compiles, and every
  * consumer spec that stubs `fetchDashboards` stays green. The only place the argument is
- * observable is the URL handed to `fetch`, so each row below pins the exact string. No gate
- * type-checks this file (`apps/web/tsconfig.json` excludes `src/**\/*.spec.ts`), so the second
- * argument reaching the wire is proven only here, at run time.
+ * observable is the URL handed to `fetch`, so each row below pins the exact string. The
+ * compiler proves only that the argument is accepted (`tsc --noEmit` reaches this file through
+ * its `.test.ts` wrapper); that it reaches the wire is proven only here, at run time.
  */
 
 const ORG_ID = "11111111-1111-4111-8111-111111111111";

@@ -172,6 +172,12 @@ export async function assertListAllReportsWiredRowColumns(
   assert(wired !== undefined, "CR-HVAC-1 must be in the list");
   const expected = await readListRowColumns(pool, wiredId);
   assert(expected.rtuId !== null, "control: the seed wires CR-HVAC-1 to an RTU");
+  // Without this, a seed that drops the key makes the loop compare null to
+  // null and a mis-typed projection (`->>'telemetry_source'`) goes unseen.
+  assert(
+    expected.telemetrySource !== null,
+    "control: the seed stamps CR-HVAC-1 with a meta.telemetrySource",
+  );
   for (const column of LIST_ROW_COLUMNS) {
     assert(
       wired?.[column] === expected[column],

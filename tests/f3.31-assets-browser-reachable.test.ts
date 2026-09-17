@@ -52,6 +52,11 @@ describe("F3.31 — the assets browser is reachable and ungated in the web app",
     expect(element).toContain("AssetsPage");
     expect(element).not.toContain("AdminRoute");
     expect(element).not.toContain("requireNotificationAdmin");
+    // The gate can also be inlined into the guard expression
+    // (`accessToken && user && isMasterDataAdmin(user.role)`), which passes the
+    // two checks above and P1 (the nav link is the shell's) while a viewer is
+    // bounced. Every predicate `admin-access.ts` exports is refused here.
+    expect(element).not.toMatch(/isMasterDataAdmin|isGlobalAdmin|canWritePointKeys|canManage/);
   });
 
   it("R2 — offers the operator path in the Operations group of the app shell (ADR 0068 Q1)", () => {

@@ -8,10 +8,11 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-// `F3.31` widened `AssetRow`; these three literals are typed against it but
-// no gate type-checks this file (`apps/web/tsconfig.json` excludes
-// `src/**/*.spec.ts`, and vitest strips types), so the added fields below are
-// kept honest by hand, not enforced.
+// `F3.31` widened `AssetRow`; these three literals are typed against it.
+// `apps/web/tsconfig.json` excludes `src/**/*.spec.ts`, but the `.test.ts`
+// wrapper imports this file back in, so `tsc --noEmit` (the first half of
+// `pnpm --filter web build`) type-checks it — measured with `--listFiles`
+// in the F3.31 post-merge sweep after this comment first claimed otherwise.
 const ASSETS: AssetRow[] = [
   { id: "1", code: "KZN-CR-UTILITY", name: "KwaZulu-Natal Control Room Utility Incomer", siteName: "RSMOC KwaZulu-Natal", domain: "electrical", locationId: "loc-1", locationName: "KwaZulu-Natal control room", rtuId: null, rtuDisplayName: null, telemetrySource: null, active: true, templateId: null },
   { id: "2", code: "GP-HVAC-01", name: "Gauteng CRAC Unit 1", siteName: "RSMOC Gauteng", domain: "hvac", locationId: "loc-2", locationName: "Gauteng control room", rtuId: null, rtuDisplayName: null, telemetrySource: null, active: true, templateId: null },

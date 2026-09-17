@@ -8,6 +8,7 @@ import {
   activeLabel,
   domainLabel,
   filterAssetRows,
+  NONE,
   siteOptions,
 } from "../lib/asset-browser";
 import { AppShell } from "../layouts/app-shell";
@@ -20,9 +21,6 @@ import type { AuthUser } from "../stores/auth-store";
 type AssetsPageProps = {
   user: AuthUser;
 };
-
-/** A null RTU or source reads the em dash the rest of the UI uses for "nothing to show". */
-const NONE = "—";
 
 /**
  * `F3.31` — the operator-facing Assets browser at `/asset-browser` (ADR 0068
@@ -149,6 +147,13 @@ export function AssetsPage({ user }: AssetsPageProps) {
                   </tr>
                 </thead>
                 <tbody>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-4 text-xs text-bms-muted">
+                        No assets match the current filters.
+                      </td>
+                    </tr>
+                  ) : null}
                   {filtered.map((row) => (
                     <tr
                       key={row.id}

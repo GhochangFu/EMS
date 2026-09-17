@@ -5,7 +5,7 @@ import type { AssetRow } from "../../api/assets";
 import { fetchDashboards } from "../../api/dashboards";
 import { useAssetHealth } from "../../hooks/use-asset-health";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { activeLabel, noDashboardsSentence } from "../../lib/asset-browser";
+import { activeLabel, NONE, noDashboardsSentence } from "../../lib/asset-browser";
 import { AssetHealthCard } from "../asset-health/asset-health-card";
 import { StatusPill } from "../status-pill";
 
@@ -35,9 +35,6 @@ export type AssetDetailPanelProps = {
   domainLabel: string;
   onClose: () => void;
 };
-
-/** A null RTU or source reads the em dash the rest of the UI uses for "nothing to show". */
-const NONE = "—";
 
 export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPanelProps): JSX.Element {
   const healthQ = useAssetHealth(asset.id);

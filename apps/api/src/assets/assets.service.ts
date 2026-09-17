@@ -14,7 +14,7 @@ import { FLEET_DRIZZLE } from "../database/database.tokens";
  * an unchanged, already-scoped query.
  *
  * `F3.31` / ADR 0068 decision 2 adds a `LEFT JOIN bms.rtus` and six columns
- * for the operator `/assets` browser. The pool stays `fleetDb` for the same
+ * for the operator `/asset-browser` route. The pool stays `fleetDb` for the same
  * reason: the controller narrows by `readableAssetIds` first, and the join
  * adds columns to rows the caller already reads, never rows.
  */
