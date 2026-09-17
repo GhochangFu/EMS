@@ -117,6 +117,25 @@ export async function sectionFilterComesFromTheVocabularyFetch(): Promise<void> 
   });
 }
 
+/**
+ * `F3.44` — the stock row links to the read-only viewer, not gated on
+ * `mayAuthor` (plan §5.4 / ADR 0049 decision 3 Q1), and the subtitle derives
+ * its count from `stockRows.length` rather than a hardcoded number (Q4).
+ */
+export async function stockRowLinksToTheViewer(): Promise<void> {
+  stubApi();
+  renderPage();
+
+  const link = await screen.findByRole("link", { name: "View Electrical (stock)" });
+  expect(link).toHaveAttribute("href", "/admin/dashboard-templates/stock/electrical-default");
+
+  const importButton = screen.getByRole("button", { name: "Import Electrical (stock)" });
+  expect(importButton).toBeInTheDocument();
+  expect(importButton).toBeDisabled();
+
+  expect(await screen.findByText("1 repository default (ADR 0049 decision 3)")).toBeInTheDocument();
+}
+
 /** Importing requires an organization, then calls the API and refreshes the list. */
 export async function importCallsTheApiWithTheChosenOrganization(): Promise<void> {
   stubApi();

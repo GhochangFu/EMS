@@ -6,6 +6,7 @@ import {
   importCallsTheApiWithTheChosenOrganization,
   rendersTemplatesAndStockCatalog,
   sectionFilterComesFromTheVocabularyFetch,
+  stockRowLinksToTheViewer,
 } from "./dashboard-templates-page.spec";
 
 /**
@@ -29,5 +30,9 @@ describe("F3.36 dashboard templates list page", () => {
 
   it("imports a stock entry into the chosen organization", async () => {
     await importCallsTheApiWithTheChosenOrganization();
+  });
+
+  it("links the stock row to the read-only viewer", async () => {
+    await stockRowLinksToTheViewer();
   });
 });
