@@ -32,9 +32,9 @@ export type ChosenScopeValue =
 /** `asset` is ADR 0067's kind: prefilled from a stored row, never chosen on a form. */
 export type DashboardScopeValue = ChosenScopeValue | { kind: "asset"; organizationId: string; assetId: string };
 
-/** A pared-down asset-group row (`F3.34`; `organizationId` added `F3.63`). Structurally identical
- * to `dashboard-scope-fields.tsx`'s `ScopeAssetGroupOption`, which re-exports the value union from
- * here — a future unit may swap that component's own declaration for an import of this one. */
+/** A pared-down asset-group row (`F3.34`; `organizationId` added `F3.63`). Defined here rather
+ * than in `dashboard-scope-fields.tsx`, which re-exports it, so that `scopeAssetGroupOptions`
+ * below does not import a component from a lib. */
 export type ScopeAssetGroupOption = {
   readonly id: string;
   readonly name: string;
