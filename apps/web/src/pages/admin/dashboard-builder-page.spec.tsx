@@ -1,13 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { UserRole } from "@bms/shared";
 
+import * as assetGroupsApi from "../../api/admin/asset-groups";
 import * as locationsApi from "../../api/admin/locations";
 import * as organizationsApi from "../../api/admin/organizations";
+import * as dashboardsApi from "../../api/dashboards";
 import type { AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderPage } from "./dashboard-builder-page";
 
@@ -51,9 +53,27 @@ const LOCATION = {
   updatedAt: new Date(0).toISOString(),
 };
 
+/** `fetchAdminAssetGroups`'s real response shape — the full `AdminAssetGroupDto`, no cast, so a
+ * missing `organizationId` (the field "choosing a group decides the organization" rests on) fails
+ * the compiler rather than the run. */
+const ASSET_GROUP = {
+  id: "grp-1",
+  code: "hvac",
+  name: "Hvac",
+  description: null,
+  locationId: "loc-1",
+  locationName: "Kolkata Works",
+  organizationId: "org-1",
+  memberCount: 3,
+  createdAt: new Date(0).toISOString(),
+};
+
+/** Stubs every master-data query the page issues — including `fetchAdminAssetGroups` (`F3.34`),
+ * without which the asset-groups query hits `fetch` in jsdom and logs an unhandled rejection. */
 function stubMasterData(): void {
   vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({ items: ORGANIZATIONS });
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [LOCATION] });
+  vi.spyOn(assetGroupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [ASSET_GROUP] });
 }
 
 function renderPage(user: AuthUser): void {
@@ -75,6 +95,50 @@ export async function locationAdminGetsNoOrganizationWideOptionOnTheComposedPage
 
   await screen.findByRole("radio", { name: "Location" });
   expect(screen.queryByRole("radio", { name: "Organization-wide" })).not.toBeInTheDocument();
+}
+
+/** `F3.34` (ADR 0047 Amendment 5) — the create page's body gains `assetGroupId`. Choosing a group
+ * sends its id, sends `locationId: null`, and takes the organization from the group DTO. */
+export async function creatingWithAnAssetGroupSendsAssetGroupIdAndNoLocationId(): Promise<void> {
+  stubMasterData();
+  const createSpy = vi.spyOn(dashboardsApi, "createDashboard").mockResolvedValue({
+    id: "dash-1",
+    organizationId: "org-1",
+    slug: "hvac-kolkata",
+    name: "HVAC Kolkata",
+    description: null,
+    locationId: null,
+    assetGroupId: "grp-1",
+    assetId: null,
+    assetTemplateId: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    widgets: [],
+  });
+  vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue({} as never);
+  renderPage(asUser("admin"));
+
+  await userEvent.type(await screen.findByLabelText("Name"), "HVAC Kolkata");
+  await userEvent.type(screen.getByLabelText("Slug"), "hvac-kolkata");
+  await userEvent.click(screen.getByRole("radio", { name: "Asset group" }));
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Asset group" }), "grp-1");
+  await userEvent.click(screen.getByRole("button", { name: "Create dashboard" }));
+
+  await waitFor(() => {
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: "org-1", assetGroupId: "grp-1", locationId: null }),
+    );
+  });
+}
+
+/** The `Asset group` radio is absent from a `location_admin`'s composed create page — the
+ * `Location` radio found first is the positive control that the fields rendered at all. */
+export async function locationAdminGetsNoAssetGroupOptionOnTheComposedPage(): Promise<void> {
+  stubMasterData();
+  renderPage(asUser("location_admin"));
+
+  await screen.findByRole("radio", { name: "Location" });
+  expect(screen.queryByRole("radio", { name: "Asset group" })).not.toBeInTheDocument();
 }
 
 /** Adding a widget places a tile on the canvas and opens it for editing. */
