@@ -7,6 +7,7 @@ import {
   WIDGET_SOURCE_CARDINALITY,
 } from "@bms/shared";
 
+import { stockCodeParamSchema } from "../admin.schema";
 import { readRepoFile } from "../../testing/repo-root";
 import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
 
@@ -253,6 +254,26 @@ export function runStockCatalogTests(): void {
       widget.bindings.length === 0,
       `sustainability's stock template binds a role on ${widget.key} — 0051 seeds no ` +
         "sustainability role band (only the five mock trains), so this must stay catalog-only",
+    );
+  }
+}
+
+/**
+ * `F3.44` post-merge sweep (security L2) — every catalog code passes the
+ * server's `stockCodeParamSchema` (`^[a-z0-9-]+$`, max 64). The web stock
+ * card interpolates `entry.code` into a route path unencoded, and the shared
+ * DTO bounds the code by length only, so this is the one gate that ties the
+ * catalog's charset to the route's. A separate `it` so a failure here is
+ * named, not hidden behind the first `assert` of `runStockCatalogTests`.
+ */
+export function runStockCatalogCodesMatchTheParamCharsetTests(): void {
+  assert(STOCK_DASHBOARD_TEMPLATE_CATALOG.length > 0, "the catalog is empty — a vacuous pass");
+  for (const entry of STOCK_DASHBOARD_TEMPLATE_CATALOG) {
+    const result = stockCodeParamSchema.safeParse(entry.code);
+    assert(
+      result.success,
+      `stock code ${JSON.stringify(entry.code)} does not pass stockCodeParamSchema — ` +
+        "the card links to /admin/dashboard-templates/stock/<code> unencoded",
     );
   }
 }
