@@ -543,16 +543,16 @@ export type ElectricalClassPointKey = (typeof ELECTRICAL_CLASS_POINT_KEYS)[numbe
  *    `transfer_pump_status` do not clash with `METERED_PUMPING_POINT_KEYS`,
  *    which holds meter codes and `chlorine_pump_on` only.
  *  - `flow_rate`, `ph`, `cod`, `dissolved_oxygen` — the four legacy spellings
- *    `dashboard-templates/stock-catalog.ts` binds at 8 sites — are **not**
- *    adopted. The water list spells them
+ *    `dashboard-templates/stock-catalog.ts` bound at 8 sites until `F3.45` —
+ *    are **not** adopted. The water list spells them
  *    `raw_water_flow_klh`/`feed_flow_klh`/`influent_flow_klh`/…,
  *    `raw_ph`/`feed_ph`/`effluent_ph`/`circ_ph`/`neutralization_ph`/`discharge_ph`,
  *    `effluent_cod_mgl`, and `aeration_do_mgl`/`bio_do_mgl`. None of the four
  *    legacy spellings joins this array, verified by set intersection against
  *    the final 98. `tests/f3.38-stock-catalog-vocabulary.test.ts`'s
- *    `KEYS_AWAITING_A_VOCABULARY` list and its `stillOutside` assertion stay
- *    untouched and green — the four really are still outside the vocabulary
- *    — but its docblock's premise changes in this commit, corrected there.
+ *    `KEYS_AWAITING_A_VOCABULARY` list and its `stillOutside` assertion no
+ *    longer stay untouched and green — `F3.45` deleted both and rebound the
+ *    eight sites to the codes this array does adopt.
  *
  * **Seven promoted derived codes, eight point instances** — the tag list
  * names 21 derived codes across its six sections; these seven are the ones
