@@ -1,9 +1,11 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, locations, rtus } from "@bms/db";
+import { assetPoints, assets, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import type { AdminAssetPointDto } from "@bms/shared";
 
+import { mapAssetPointRow } from "../admin/asset-points/asset-point-row";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 
 /**
@@ -82,5 +84,47 @@ export class AssetsService {
     return conditions.length > 0
       ? base.where(and(...conditions)).orderBy(asc(assets.siteName), asc(assets.code))
       : base.orderBy(asc(assets.siteName), asc(assets.code));
+  }
+
+  /**
+   * `F3.63` (ADR 0047 Amendment 6 §Q1 point 3) — the **active** points of one
+   * asset, in the admin list's shape (`{ items: AdminAssetPointDto[] }`, the
+   * same join and the same `ORDER BY point_key`), for a caller the controller
+   * has already admitted through `canReadAsset`. Active only, with no
+   * parameter: the point picker asks the admin route for `active=true` today
+   * and nothing else needs the inactive rows.
+   *
+   * The `assets` row is read first so an absent id is a 404 rather than an
+   * empty list — the controller's guard is what keeps a non-admin from using
+   * that as an existence oracle (an out-of-scope id is refused before this
+   * runs). The pool is `fleetDb` for the class-docblock reason: the guard is
+   * the isolation control, and this read adds columns to rows the caller may
+   * already read, never rows.
+   */
+  async listPoints(assetId: string): Promise<{ items: AdminAssetPointDto[] }> {
+    const [asset] = await this.db
+      .select({ id: assets.id })
+      .from(assets)
+      .where(eq(assets.id, assetId))
+      .limit(1);
+    if (!asset) {
+      throw new NotFoundException("Asset not found");
+    }
+
+    const rows = await this.db
+      .select({
+        point: assetPoints,
+        assetCode: assets.code,
+        assetName: assets.name,
+        locationId: assets.locationId,
+        locationName: locations.name,
+      })
+      .from(assetPoints)
+      .innerJoin(assets, eq(assetPoints.assetId, assets.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
+      .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.active, true)))
+      .orderBy(asc(assetPoints.pointKey));
+
+    return { items: rows.map((row) => mapAssetPointRow(row)) };
   }
 }

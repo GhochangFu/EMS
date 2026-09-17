@@ -1,6 +1,14 @@
-import { BadRequestException, Controller, Get, Query, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { z, ZodError } from "zod";
-import type { JwtPayload } from "@bms/shared";
+import type { AdminAssetPointDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -11,6 +19,25 @@ import { AssetsService } from "./assets.service";
  * than reached for across the admin/non-admin module boundary. */
 const organizationIdParamSchema = z.string().uuid();
 
+/** `:assetId` on the points route — the same local-schema rule. */
+const assetIdParamSchema = z.string().uuid();
+
+/**
+ * `F3.63` (ADR 0047 Amendment 6 §Q1 point 3) adds `GET /assets/:assetId/points`
+ * beside the list: the point read that is **not** master-data administration.
+ * `GET /admin/asset-points` keeps refusing `asset_group_admin`
+ * (`requireMasterDataUser`); this route is gated on `canReadAsset`, the same
+ * predicate as asset health, asset images and `GET /telemetry/points/…/recent`.
+ *
+ * Order in the handler: parse, then guard, then service — a guard that throws
+ * after reading has already read (the `asset-images.controller.ts` rule). A
+ * non-uuid segment is a `ZodError` for the global `ZodErrorFilter` (400)
+ * before any pool. For a non-admin an unknown id and an out-of-scope id are
+ * both a 403, so the route is no existence oracle; the 404 is the service's,
+ * reached by `admin` (`readableAssetIds` is `null`) or by any caller the guard
+ * admits. The service reads on `fleetDb` because the guard is the isolation
+ * control (ADR 0043's `listAll` shape).
+ */
 @Controller("assets")
 @UseGuards(JwtAuthGuard)
 export class AssetsController {
@@ -49,5 +76,18 @@ export class AssetsController {
       }
       throw err;
     }
+  }
+
+  /** `GET /api/v1/assets/:assetId/points` — the asset's active points, in the admin list's shape. */
+  @Get(":assetId/points")
+  async listPoints(
+    @CurrentUser() user: JwtPayload,
+    @Param("assetId") assetId: string,
+  ): Promise<{ items: AdminAssetPointDto[] }> {
+    const id = assetIdParamSchema.parse(assetId);
+    if (!(await this.accessControl.canReadAsset(user, id))) {
+      throw new ForbiddenException("Asset is outside your access scope");
+    }
+    return this.assets.listPoints(id);
   }
 }

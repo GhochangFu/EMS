@@ -16,6 +16,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { mapAssetPointRow, type AssetPointRow } from "./asset-point-row";
 import type {
   AssetPointBulkPatch,
   AssetPointBulkUpdateBody,
@@ -681,42 +682,9 @@ export class AssetPointsAdminService {
     return rows.map((row) => this.mapRow(row));
   }
 
-  private mapRow(row: {
-    point: typeof assetPoints.$inferSelect;
-    assetCode: string;
-    assetName: string;
-    locationId: string | null;
-    locationName: string | null;
-  }): AdminAssetPointDto {
-    const point = row.point;
-    return {
-      id: point.id,
-      assetId: point.assetId,
-      assetCode: row.assetCode,
-      assetName: row.assetName,
-      locationId: row.locationId,
-      locationName: row.locationName,
-      pointKey: point.pointKey,
-      sourceDataKey: point.sourceDataKey,
-      sensorCode: point.sensorCode,
-      unit: point.unit,
-      active: point.active,
-      // asset_points_source_kind_check guarantees this is one of the four
-      // values; drizzle types the column as the column's raw varchar type.
-      sourceKind: point.sourceKind as AdminAssetPointDto["sourceKind"],
-      // ADR 0018 decision 3 / ADR 0056 Q-H — the wiring, so a client that just
-      // set `rtuId` reads it back rather than inferring it from `sourceKind`.
-      rtuId: point.rtuId,
-      createdAt: point.createdAt.toISOString(),
-      // `F2.7` / ADR 0056 decision 1 — the per-asset override of the five
-      // metadata columns, `null` = inherit the template default. Read straight
-      // off the row.
-      scaleMultiplier: point.scaleMultiplier,
-      scaleOffset: point.scaleOffset,
-      engMin: point.engMin,
-      engMax: point.engMax,
-      qualityPolicy: point.qualityPolicy as QualityPolicy | null,
-    };
+  /** The shared projection (`asset-point-row.ts`), kept as a method so the two call sites read as before. */
+  private mapRow(row: AssetPointRow): AdminAssetPointDto {
+    return mapAssetPointRow(row);
   }
 }
 
