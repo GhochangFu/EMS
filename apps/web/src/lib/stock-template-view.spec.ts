@@ -13,6 +13,7 @@
 import {
   adminAssetTemplateDtoSchema,
   stockAssetTemplateDtoSchema,
+  stockDashboardTemplateDtoSchema,
 } from "@bms/shared/contracts";
 import type { StockAssetTemplateDto } from "@bms/shared";
 
@@ -327,4 +328,26 @@ export function runFindStockEntryTests(): void {
     "an unknown code must resolve to undefined, not throw",
   );
   assert(findStockEntry([], "electrical-feeder") === undefined, "an empty list finds nothing");
+}
+
+/**
+ * 9. `findStockEntry` is generic over the catalog shape (`F3.44` §5.2) — it
+ * must resolve a `StockDashboardTemplateDto`, not just a
+ * `StockAssetTemplateDto`, without a second lookup function.
+ */
+export function runFindStockEntryIsGenericTests(): void {
+  const dashboardEntry = stockDashboardTemplateDtoSchema.parse({
+    code: "electrical-metered-pumping",
+    name: "Electrical — Metered Pumping",
+    section: "electrical",
+    description: null,
+    stockVersion: 1,
+    content: { widgets: [] },
+  });
+  const found = findStockEntry([dashboardEntry], "electrical-metered-pumping");
+  assert(found === dashboardEntry, "findStockEntry must return the dashboard entry with that code");
+  assert(
+    findStockEntry([dashboardEntry], "nope") === undefined,
+    "an unknown code must resolve to undefined for a dashboard catalog too",
+  );
 }

@@ -126,10 +126,16 @@ export function stockEntryAsTemplate(entry: StockAssetTemplateDto): AdminAssetTe
   };
 }
 
-/** The catalog entry with this code, or `undefined` — the lookup is the validation. */
-export function findStockEntry(
-  items: readonly StockAssetTemplateDto[],
+/**
+ * The catalog entry with this code, or `undefined` — the lookup is the validation.
+ *
+ * Generic over the catalog shape so it is shared with the dashboard-template
+ * stock viewer (`F3.44`), which needs no adapter — see that page's docblock
+ * for why.
+ */
+export function findStockEntry<T extends { code: string }>(
+  items: readonly T[],
   code: string,
-): StockAssetTemplateDto | undefined {
+): T | undefined {
   return items.find((entry) => entry.code === code);
 }
