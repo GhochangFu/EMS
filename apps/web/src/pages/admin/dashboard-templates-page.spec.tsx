@@ -144,10 +144,18 @@ export async function stockRowLinksToTheViewer(): Promise<void> {
  */
 export async function aFailedStockFetchDoesNotCountZeroDefaults(): Promise<void> {
   stubApi();
-  vi.spyOn(api, "fetchAdminStockDashboardTemplates").mockRejectedValue(new Error("stock boom"));
+  // `adminFetch` throws the whole response body as the message, so the
+  // rejection is shaped like a Nest envelope — a bare "boom" would pass
+  // whether or not the card unwraps it (post-merge sweep, finding 2).
+  vi.spyOn(api, "fetchAdminStockDashboardTemplates").mockRejectedValue(
+    new Error(
+      JSON.stringify({ message: "stock boom", error: "Forbidden", statusCode: 403 }),
+    ),
+  );
   renderPage();
 
   expect(await screen.findByText("stock boom")).toBeInTheDocument();
+  expect(screen.queryByText(/statusCode/)).not.toBeInTheDocument();
   expect(screen.queryByText(/0 repository defaults/)).not.toBeInTheDocument();
   expect(screen.getByText("Repository defaults (ADR 0049 decision 3)")).toBeInTheDocument();
 }

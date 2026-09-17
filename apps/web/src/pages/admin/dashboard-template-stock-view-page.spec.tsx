@@ -31,8 +31,11 @@ import { DashboardTemplateStockViewPage } from "./dashboard-template-stock-view-
  *
  * The fixtures are parsed through `stockDashboardTemplateDtoSchema`, so they
  * are real `StockDashboardTemplateDto`s rather than hand-typed lookalikes.
- * `PUMPING` mirrors `electrical-metered-pumping`'s measured shape in what the
- * editor renders (ten widgets, eight bound) and `NO_BINDINGS` mirrors
+ * `PUMPING` mirrors `electrical-metered-pumping`'s widget count (ten) and
+ * binding count (eight) — not its distribution: the live entry carries those
+ * eight bindings over six widgets (the phase-current chart holds three), the
+ * fixture one per widget over eight, because the case counts widgets and
+ * lists, never bindings per widget. `NO_BINDINGS` mirrors
  * `sustainability-overview` (four widgets, zero bindings) — the zero-binding
  * edge every metric-catalog-only entry has. The fixtures carry one `sources`
  * entry per widget; the live entries carry four for the whole entry. The

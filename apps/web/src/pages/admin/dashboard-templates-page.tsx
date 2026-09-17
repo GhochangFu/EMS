@@ -192,7 +192,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
         {listQ.isPending ? <p className="text-sm text-bms-muted">Loading templates…</p> : null}
         {listQ.isError ? (
           <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            {(listQ.error as Error).message}
+            {apiErrorMessage(listQ.error)}
           </p>
         ) : null}
         {!listQ.isPending && !listQ.isError && rows.length === 0 ? (
@@ -253,7 +253,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
         {stockQ.isPending ? <p className="text-sm text-bms-muted">Loading the stock catalog…</p> : null}
         {stockQ.isError ? (
           <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-            {(stockQ.error as Error).message}
+            {apiErrorMessage(stockQ.error)}
           </p>
         ) : null}
         {importError ? (
