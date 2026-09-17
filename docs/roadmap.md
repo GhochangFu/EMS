@@ -5391,3 +5391,31 @@ logged-in SPA tab on the rebuilt images; a browser pass on the new bundle.
 Database is N/A. The `chore(agents):` sweep is owed separately and touches
 the status line and §2 only — `F3.31` is not a §6 item. No row depends on
 it.
+
+### `F3.45` — water, STP and ETP stock templates rebound to the E5.1 codes ✅ 2026-09-17
+
+PR [#469](https://github.com/GhochangFu/EMS/pull/469). The three water
+stock dashboard templates bound `flow_rate`, `ph`, `cod` and
+`dissolved_oxygen` at eight sites — four keys no vocabulary holds, so every
+one of those widgets resolved nothing. The sites now bind the six `E5.1`
+codes (`raw_water_flow_klh`, `treated_water_flow_klh`, `influent_flow_klh`,
+`aeration_do_mgl`, `neutralization_ph`, `effluent_cod_mgl`), the tile
+labels match the seeded units, and the `f3.38` allowlist that exempted the
+four is deleted rather than emptied — an empty list with a passing clock
+gates nothing. No ADR: ADR 0040 decision 2 already ruled the vocabulary.
+
+**One ruling** (`pump-house` → `treated_water_flow_klh`) and **one recorded
+consequence**: a v1 plant is one asset holding one role per group, and each
+entry binds two roles, so the other role's widgets report `unresolved` —
+reported, never silent, until `F2.10`'s train. A new integration pair
+instantiates the shipped `stp-overview` against a real `aeration` member
+and proves `bound`, which the text scan cannot.
+
+**Verified on every layer that applies** — CI green; `f3.38` and the pair
+mutation-run; the database layer on the running stack. The API layer is
+**not verified**: the image build was killed for memory, and the catalog is
+a compile-time constant, so the served value follows the built commit.
+Browser N/A. The post-merge sweep found one Low in the pair's `afterAll`
+and three prose defects, fixed in the closure PR. No `chore(agents):` line
+is owed. Unblocks nothing. The demo still shows every water stock widget
+`unresolved` — the seed creates no water asset; that is a candidate row.

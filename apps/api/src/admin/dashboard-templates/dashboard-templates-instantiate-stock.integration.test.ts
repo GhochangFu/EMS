@@ -195,57 +195,68 @@ describe.skipIf(!connectionString)(
       dashboardIds.push(response.dashboard.id);
     }, 60_000);
 
+    // The post-merge sweep (F3.45): vitest runs `afterAll` after a failed
+    // `beforeAll` too. The unguarded slug delete then ran with `eskomOrgId`
+    // `""` and threw `invalid input syntax for type uuid`, which masked the
+    // real `beforeAll` error and skipped every `end()` below. So: every
+    // cleanup step is guarded on the state it needs, and the pools close in
+    // a `finally` whatever the cleanup did.
     afterAll(async () => {
-      if (dashboardIds.length > 0) {
-        await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [
-          dashboardIds,
-        ]);
-        await ownerPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [
-          dashboardIds,
-        ]);
-      }
-      await ownerPool.query(
-        `DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`,
-        [eskomOrgId, DASHBOARD_SLUG],
-      );
-      if (templateIds.length > 0) {
-        await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [
-          templateIds,
-        ]);
-        await ownerPool.query(`DELETE FROM bms.dashboard_templates WHERE id = ANY($1::uuid[])`, [
-          templateIds,
-        ]);
-      }
-      if (assetIds.length > 0) {
-        await ownerPool.query(`DELETE FROM bms.asset_points WHERE asset_id = ANY($1::uuid[])`, [
-          assetIds,
-        ]);
-        await ownerPool.query(
-          `DELETE FROM bms.asset_group_members WHERE asset_id = ANY($1::uuid[])`,
-          [assetIds],
+      try {
+        if (dashboardIds.length > 0) {
+          await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [
+            dashboardIds,
+          ]);
+          await ownerPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [
+            dashboardIds,
+          ]);
+        }
+        if (eskomOrgId) {
+          await ownerPool.query(
+            `DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`,
+            [eskomOrgId, DASHBOARD_SLUG],
+          );
+        }
+        if (templateIds.length > 0) {
+          await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [
+            templateIds,
+          ]);
+          await ownerPool.query(`DELETE FROM bms.dashboard_templates WHERE id = ANY($1::uuid[])`, [
+            templateIds,
+          ]);
+        }
+        if (assetIds.length > 0) {
+          await ownerPool.query(`DELETE FROM bms.asset_points WHERE asset_id = ANY($1::uuid[])`, [
+            assetIds,
+          ]);
+          await ownerPool.query(
+            `DELETE FROM bms.asset_group_members WHERE asset_id = ANY($1::uuid[])`,
+            [assetIds],
+          );
+          await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1::uuid[])`, [assetIds]);
+        }
+        // No `bms.point_keys` delete: `aeration_do_mgl` is the seed's row.
+        // Every dashboard pointing at the group this suite created, not only the
+        // ones in `dashboardIds` — F3.36 records the cross-suite race on a clean
+        // database where another suite adopts "the oldest asset group". Still
+        // scoped to this suite's one group id, never wider.
+        if (groupId) {
+          await ownerPool.query(
+            `DELETE FROM bms.audit_log WHERE entity_id IN (
+               SELECT id FROM bms.dashboards WHERE asset_group_id = $1)`,
+            [groupId],
+          );
+          await ownerPool.query(`DELETE FROM bms.dashboards WHERE asset_group_id = $1`, [groupId]);
+          await ownerPool.query(`DELETE FROM bms.asset_group_members WHERE asset_group_id = $1`, [
+            groupId,
+          ]);
+          await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [groupId]);
+        }
+      } finally {
+        await Promise.all(
+          [ownerPool, tenantPool, authPool, fleetPool].filter(Boolean).map((p) => p.end()),
         );
-        await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1::uuid[])`, [assetIds]);
       }
-      // No `bms.point_keys` delete: `aeration_do_mgl` is the seed's row.
-      // Every dashboard pointing at the group this suite created, not only the
-      // ones in `dashboardIds` — F3.36 records the cross-suite race on a clean
-      // database where another suite adopts "the oldest asset group". Still
-      // scoped to this suite's one group id, never wider.
-      if (groupId) {
-        await ownerPool.query(
-          `DELETE FROM bms.audit_log WHERE entity_id IN (
-             SELECT id FROM bms.dashboards WHERE asset_group_id = $1)`,
-          [groupId],
-        );
-        await ownerPool.query(`DELETE FROM bms.dashboards WHERE asset_group_id = $1`, [groupId]);
-        await ownerPool.query(`DELETE FROM bms.asset_group_members WHERE asset_group_id = $1`, [
-          groupId,
-        ]);
-        await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [groupId]);
-      }
-      await Promise.all(
-        [ownerPool, tenantPool, authPool, fleetPool].filter(Boolean).map((p) => p.end()),
-      );
     }, 60_000);
 
     it("reports every stp-overview widget", () => {

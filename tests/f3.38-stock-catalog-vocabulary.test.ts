@@ -236,6 +236,12 @@ const scanCatalog = (
  * the list, rather than leaving it empty. An empty allowlist still passes a
  * clock — `expect([]).toEqual([])` is green forever — and a clock that can
  * never ring is not a check; deleting it is the only shape that stays honest.
+ *
+ * One fact the old text kept "because a reader will ask" still holds:
+ * `bms.asset_domains` carries no `stp` or `etp` code, because ADR 0051
+ * Amendment 6 decision 3 makes `domain` a filing domain and not an
+ * exclusivity — an STP, an ETP and a cooling tower all file under `water`.
+ * `tests/f3.36-dashboard-templates-schema.test.ts` gates the migration side.
  */
 
 describe("F3.38 the stock template catalog binds names that exist", () => {
