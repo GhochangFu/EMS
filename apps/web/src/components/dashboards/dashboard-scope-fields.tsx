@@ -7,7 +7,12 @@ import {
   canChooseLocationDashboardScope,
   canCreateOrganizationWideDashboard,
 } from "../../lib/admin-access";
-import type { DashboardScopeValue, ScopeAssetGroupOption, ScopeAssetOption } from "../../lib/dashboard-scope";
+import type {
+  ChosenScopeValue,
+  DashboardScopeValue,
+  ScopeAssetGroupOption,
+  ScopeAssetOption,
+} from "../../lib/dashboard-scope";
 import { Field } from "../asset-templates/field";
 
 /** A pared-down organization row — just enough to label the org-wide select
@@ -30,7 +35,10 @@ export type { DashboardScopeValue, ScopeAssetGroupOption, ScopeAssetOption } fro
 type DashboardScopeFieldsProps = {
   role: UserRole;
   value: DashboardScopeValue;
-  onChange: (value: DashboardScopeValue) => void;
+  /** Emits a CHOSEN kind only — the `asset` kind is prefilled, never chosen, so a caller whose
+   * state is `ChosenScopeValue` (the create page, the duplicate dialog) passes its setter without
+   * a cast, and the type says what the component can produce. */
+  onChange: (value: ChosenScopeValue) => void;
   /** Populates the organization-wide branch's own select. Only read when
    * `canCreateOrganizationWideDashboard(role)` — the branch that reads it is
    * absent from the DOM otherwise. */
@@ -39,9 +47,11 @@ type DashboardScopeFieldsProps = {
    * what DECIDES `organizationId` for this dashboard (plan §7), so this list
    * is not filtered by an organization not chosen yet. */
   locations: readonly ScopeLocationOption[];
-  /** Populates the asset-group branch's select (`GET /admin/asset-groups`).
-   * Only read when `canChooseAssetGroupDashboardScope(role)` — the branch is
-   * absent from the DOM otherwise. */
+  /** Populates the asset-group branch's select. The caller decides the source —
+   * `GET /admin/asset-groups` for a master-data role, `GET /auth/me`'s `scope.assetGroups` for
+   * `asset_group_admin` (`useDashboardScopeOptions`, ADR 0047 Amendment 6 §Q1 point 2). Only
+   * read when `canChooseAssetGroupDashboardScope(role)` — the branch is absent from the DOM
+   * otherwise. */
   assetGroups: readonly ScopeAssetGroupOption[];
   /** Names the read-only `asset` line (ADR 0047 Amendment 6 §Q2); the id is the fallback when
    * the list has no match. REQUIRED, not optional — an optional prop at an adapter is invisible

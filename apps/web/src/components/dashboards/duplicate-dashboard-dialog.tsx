@@ -9,7 +9,7 @@ import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-option
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { duplicatePayload, freeSlug, type DuplicateDashboardTarget } from "../../lib/dashboard-duplicate";
 import { isScopeChosen, scopeColumns, scopeForDuplicate, type ChosenScopeValue } from "../../lib/dashboard-scope";
-import { DashboardScopeFields, type DashboardScopeValue } from "./dashboard-scope-fields";
+import { DashboardScopeFields } from "./dashboard-scope-fields";
 
 export type DuplicateDashboardDialogProps = {
   /** The dashboard being copied — a slug and the organization it is known to belong to, the same
@@ -202,7 +202,7 @@ export function DuplicateDashboardDialog({
             // The fields never emit the `asset` kind (no radio, no select renders it, and the
             // clamp rewrites only to a chosen kind); the prop is typed to the full union for
             // the edit page, whose state can hold that kind.
-            onChange={setScope as (value: DashboardScopeValue) => void}
+            onChange={setScope}
             organizations={[{ id: source.organizationId, name: "This dashboard's organization" }]}
             locations={locations}
             assetGroups={assetGroups}

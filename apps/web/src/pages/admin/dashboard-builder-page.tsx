@@ -24,7 +24,7 @@ import { AppShell } from "../../layouts/app-shell";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { DashboardCanvas, type CanvasTile } from "../../components/dashboards/dashboard-canvas";
-import { DashboardScopeFields, type DashboardScopeValue } from "../../components/dashboards/dashboard-scope-fields";
+import { DashboardScopeFields } from "../../components/dashboards/dashboard-scope-fields";
 import { WidgetInspector } from "../../components/dashboards/widget-inspector";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -174,7 +174,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
               // The fields never emit the `asset` kind (no radio, no select renders it, and
               // the clamp rewrites only to a chosen kind); the prop is typed to the full union
               // for the edit page, whose state can hold that kind.
-              onChange={setScope as (value: DashboardScopeValue) => void}
+              onChange={setScope}
               organizations={organizationsQ.data?.items ?? []}
               locations={locations}
               assetGroups={assetGroups}
