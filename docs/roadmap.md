@@ -5447,3 +5447,33 @@ Browser N/A. The post-merge sweep found one Low in the pair's `afterAll`
 and three prose defects, fixed in the closure PR. No `chore(agents):` line
 is owed. Unblocks nothing. The demo still shows every water stock widget
 `unresolved` — the seed creates no water asset; that is a candidate row.
+
+### `F3.34` — the asset-group dashboard scope, authorable by `admin` and `organization_admin` ✅ 2026-09-17
+
+PR [#475](https://github.com/GhochangFu/EMS/pull/475), sweep
+[#476](https://github.com/GhochangFu/EMS/pull/476). The row was created at
+`F3.1d`'s plan as *the `asset_group_admin` authoring path*, with a threefold
+refusal inventory. Re-read from source at its step-2 gate, that inventory
+was half stale: `GET /admin/asset-groups` exists since `F3.37`, and
+`canManageDashboard` already admits the role on the group and asset arms.
+[ADR 0047](./adr/0047-configurable-dashboards.md) **Amendment 5** ruled B of
+four: the `assetGroup` scope kind renders for `admin` and
+`organization_admin` only, fed by the existing endpoint, with **no
+permission moves**; Amendment 2 ruling 2's promise for `asset_group_admin`
+describes the API and its UI path is the new row `F3.63` (⚠ ADR first).
+
+**What it fixed on the way**: the edit page and the duplicate dialog
+prefilled an asset-group dashboard as *organization* and re-saved it
+organization-wide. Three pure helpers replace nine `kind` switches; the
+PATCH sends both scope columns explicitly and its spec matches the body
+exactly so `assetId` can never enter it. Two API proofs added, no API
+source change: `location_admin` is refused the group arm, and a foreign
+`assetGroupId` is refused by RLS on create and update.
+
+**Verified on every layer** — CI green on both PRs; the full suite with the
+compose database; every named mutation killed; the browser as `admin` (5/5,
+a real create, rename and duplicate, read back as `bms_fleet`) and as
+`location_admin` (no option, the `Location` radio as control). None N/A.
+The sweep found two gates that did not gate and CI found five racing
+waits, all fixed in #476. No `chore(agents):` §6 line is owed. Unblocks
+`F3.63`.
