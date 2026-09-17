@@ -108,11 +108,11 @@ Active. Clicking a row opens the detail panel (decision 3). The list is
 unpaginated because `listAll` is unpaginated and the picker already bears that
 cost on the same response; pagination is not decided here.
 
-### 2. `GET /api/v1/assets` gains five nullable columns; the contract is renamed
+### 2. `GET /api/v1/assets` gains six columns; the contract is renamed
 
 `AssetsService.listAll` adds one `LEFT JOIN bms.rtus` and selects
 `locationName` (`locations.name`), `rtuId`, `rtuDisplayName`
-(`rtus.display_name`), `telemetrySource` and `active`. The response stays a
+(`rtus.display_name`), `telemetrySource`, `active` and `templateId`. The response stays a
 bare array and the route, guard and `organizationId` filter are unchanged.
 
 `assetPickerRowSchema` / `assetPickerResponseSchema` (`envelopes.ts`) are
@@ -130,6 +130,9 @@ rtuDisplayName: z.string().nullable(),
 // before `F4.139` can lack it; the browser shows "—", not a guess.
 telemetrySource: z.string().nullable(),
 active: z.boolean(),
+// Plan-gate ruling (2026-09-17): decision 3 reads it and the panel makes no
+// second fetch, so the list row carries it. The column is on `bms.assets`.
+templateId: z.string().uuid().nullable(),
 ```
 
 `telemetrySource` is `z.string().nullable()` rather than
@@ -224,6 +227,12 @@ dashboards query type), `apps/api` (`assets/assets.service.ts`,
   *Operations* and the §5 *Domain-first navigation IA* decision moves it.
 - **The mockup's Load / Reading columns.** Both are live telemetry per asset
   and belong to the same batched read as the band.
+
+## Ruled at the plan gate
+
+6. `templateId` joins the list row (decision 2). The step-3 plan found that
+   decision 3 reads it while decision 2 did not carry it; the owner ruled the
+   field in rather than dropping the sentence (2026-09-17).
 
 ## Ruled here without a question
 
