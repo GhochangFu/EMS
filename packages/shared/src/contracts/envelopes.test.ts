@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  assetListResponseSchemaAndNoOldNameSurvives,
+  assetListRowAcceptsAFullyWiredRow,
+  assetListRowAcceptsAnUnwiredRow,
+  assetListRowRefusesAMissingRequiredField,
   deliveryEventEnvelopeAdmitsEveryKind,
   deliveryEventEnvelopeRefusesAnInventedKind,
   deliveryEventIsRequiredOnEveryRow,
@@ -47,5 +51,23 @@ describe("F3.56 — the deliveries envelope carries the event kind", () => {
 
   it("refuses a row with no `event` at all — the field is required", () => {
     deliveryEventIsRequiredOnEveryRow();
+  });
+});
+
+describe("F3.31 — assetListRowSchema (ADR 0068 decision 2)", () => {
+  it("accepts a fully wired row", () => {
+    assetListRowAcceptsAFullyWiredRow();
+  });
+
+  it("accepts an unwired, hand-created row with every nullable field null", () => {
+    assetListRowAcceptsAnUnwiredRow();
+  });
+
+  it("refuses a row missing a required field", () => {
+    assetListRowRefusesAMissingRequiredField();
+  });
+
+  it("parses a response array, and leaves no assetPickerRowSchema alias behind", async () => {
+    await assetListResponseSchemaAndNoOldNameSurvives();
   });
 });

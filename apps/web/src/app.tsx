@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { fetchCurrentUser } from "./api/login";
 import { AlarmKbPage } from "./pages/alarm-kb-page";
 import { AlarmsPage } from "./pages/alarms-page";
+import { AssetsPage } from "./pages/assets-page";
 import { DashboardPage } from "./pages/dashboard-page";
 import { DashboardsPage } from "./pages/dashboards-page";
 import { DashboardViewerPage } from "./pages/dashboard-viewer-page";
@@ -172,6 +173,16 @@ export function App() {
         element={
           accessToken && user ? (
             <DashboardViewerPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/asset-browser"
+        element={
+          accessToken && user ? (
+            <AssetsPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )

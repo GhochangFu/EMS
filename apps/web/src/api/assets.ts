@@ -1,18 +1,19 @@
+import type { AssetListRow } from "@bms/shared";
 import {
-  assetPickerResponseSchema,
+  assetListResponseSchema,
 } from "@bms/shared/contracts";
 import { withAuth } from "./http";
 import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
-export type AssetRow = {
-  id: string;
-  code: string;
-  name: string;
-  siteName: string;
-  domain: string;
-};
+/**
+ * `GET /api/v1/assets`'s row, widened by ADR 0068 decision 2 (`F3.31`). Two
+ * consumers: the affected-asset picker (`lib/asset-picker.ts`, ADR 0034
+ * decision 4), which reads only its original five fields, and the `/asset-browser`
+ * operator browser (`F3.31`), which reads all of them.
+ */
+export type AssetRow = AssetListRow;
 
 /**
  * GET /api/v1/assets, optionally narrowed to one organization — the
@@ -26,5 +27,5 @@ export async function fetchAssets(organizationId?: string): Promise<AssetRow[]> 
   if (!res.ok) {
     throw new Error(`assets ${res.status}`);
   }
-  return checkResponse(assetPickerResponseSchema, await res.json(), "assets");
+  return checkResponse(assetListResponseSchema, await res.json(), "assets");
 }

@@ -153,9 +153,12 @@ export type UpdateDashboardBody = z.infer<typeof updateDashboardBodySchema>;
 // ---------------------------------------------------------------------------
 
 /** `GET /dashboards` — an optional tenant filter; admin/multi-organization callers see every
- * organization's dashboards when it is omitted. */
+ * organization's dashboards when it is omitted. `assetId` (`F3.31`, ADR 0068 decision 4) narrows
+ * within `readableOrganizationIds` and never widens it: an out-of-scope id answers `[]`, never
+ * 403 (ruling 4 — a 403 would confirm the id exists). */
 export const listDashboardsQuerySchema = z.object({
   organizationId: z.string().uuid().optional(),
+  assetId: z.string().uuid().optional(),
 });
 
 /** `GET /dashboards/:slug` — D5: on the fleet pool a slug may match more than one

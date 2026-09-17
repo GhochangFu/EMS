@@ -7,9 +7,13 @@ import type { BmsDb } from "@bms/db";
 
 import {
   assertListAllComposesAssetIdsAndOrganization,
+  assertListAllKeepsUnwiredRowWithNulls,
+  assertListAllReportsWiredRowColumns,
   assertListAllScopesByOrganization,
+  assertListAllStaysInsideLocationAdminScope,
 } from "./assets.service.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { asRole } from "../testing/role-urls";
 
 /**
  * `E2.1` follow-up — Vitest entry point. Assertions live in the sibling
@@ -19,6 +23,11 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
  * real join to `bms.locations` narrows real seeded rows across the two
  * seeded organizations — a mocked `db` would only prove the mock's own
  * behaviour.
+ *
+ * `F3.31` (ADR 0068 decision 2) adds a second pool: `AccessControlService`
+ * resolves the caller on `bms_auth` (`DATABASE_URL_AUTH`, else derived from the
+ * gate's URL as `dashboards.service.rls.integration.test.ts` does) and the
+ * gate's own `bms_fleet` pool serves the list read, as in the API.
  */
 const connectionString = requireIntegrationDb({
   item: "E2.1 follow-up",
@@ -32,16 +41,27 @@ const connectionString = requireIntegrationDb({
 
 describe.skipIf(!connectionString)("E2.1 follow-up — AssetsService organization scoping", () => {
   let pool: pg.Pool;
+  let authPool: pg.Pool;
   let db: BmsDb;
+  let authDb: BmsDb;
 
   beforeAll(async () => {
-    pool = await openIntegrationPool(connectionString as string, "E2.1 follow-up");
+    const url = connectionString as string;
+    pool = await openIntegrationPool(url, "E2.1 follow-up");
+    authPool = await openIntegrationPool(
+      process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
+      "F3.31",
+    );
     db = createDb(pool);
+    authDb = createDb(authPool);
   });
 
   afterAll(async () => {
     if (pool) {
       await pool.end();
+    }
+    if (authPool) {
+      await authPool.end();
     }
   });
 
@@ -52,4 +72,16 @@ describe.skipIf(!connectionString)("E2.1 follow-up — AssetsService organizatio
   it("composes the assetIds scope and the organizationId filter as AND", async () => {
     await assertListAllComposesAssetIdsAndOrganization(db);
   });
+
+  it("F3.31 G1 — every row parses under assetListRowSchema and the wired row matches SQL", async () => {
+    await assertListAllReportsWiredRowColumns(pool, db);
+  }, 60_000);
+
+  it("F3.31 G1b — an unwired pre-F4.139 row is present and reports nulls", async () => {
+    await assertListAllKeepsUnwiredRowWithNulls(pool, db);
+  }, 60_000);
+
+  it("F3.31 G2 — a location_admin's rows stay inside its grants after the join", async () => {
+    await assertListAllStaysInsideLocationAdminScope(pool, authDb, db);
+  }, 60_000);
 });
