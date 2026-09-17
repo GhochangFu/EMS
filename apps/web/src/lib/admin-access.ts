@@ -78,12 +78,11 @@ export function canCreateLocations(role: UserRole): boolean {
  *
  * Mirrors `canPerformOperationsWrite(role, "configuration")`
  * (`apps/api/src/auth/operations-write.ts`), which is also `DashboardBuilderController`'s own
- * gate on `create`/`update`/`remove`/`putWidgets`. `asset_group_admin` passes this predicate —
- * it may reach a route the API would accept — even though no admin screen in this app routes it
- * there (`AdminRoute` redirects it) and the picker endpoint that now exists,
- * `GET /admin/asset-groups`, refuses the role through `requireMasterDataUser`. That routing
- * question is `F3.63`'s (ADR 0047 Amendment 5), not a reason to narrow this mirror of the API's
- * own rule.
+ * gate on `create`/`update`/`remove`/`putWidgets`. This is the predicate `DashboardAuthorRoute`
+ * gates on (`F3.63`, ADR 0047 Amendment 6) — the route guard that replaced `AdminRoute` on the two
+ * builder routes, beside the master-data boundary rather than through it, so `asset_group_admin`
+ * (already admitted here) now reaches them. `AdminRoute`'s own membership, and every master-data
+ * screen it still guards, are unchanged.
  */
 export function canAuthorDashboards(role: UserRole): boolean {
   return (
@@ -111,23 +110,46 @@ export function canCreateOrganizationWideDashboard(role: UserRole): boolean {
 
 /**
  * Whether the role is offered the ASSET-GROUP dashboard scope — `assetGroupId` set, the other
- * two scope columns null (`F3.34`, ADR 0047 Amendment 5).
+ * two scope columns null (`F3.34`, ADR 0047 Amendment 5; widened to `asset_group_admin` by
+ * `F3.63`, Amendment 6).
  *
- * Mirrors the roles for which `AccessControlService.canManageDashboard`'s group arm returns true
- * for any group of the organization: `admin` and `organization_admin`. A `location_admin` is
- * refused there (`target.kind !== "location"`), so an option shown to it would be a 403 behind
- * an enabled Save; an `asset_group_admin` is admitted by membership only, and no admin screen
- * routes it to the builder — widening this predicate to that role is `F3.63`'s, with its own
- * gate. `dashboard-scope-fields.tsx` reads this to decide whether the asset-group radio and its
- * select exist in the DOM — absent, not disabled, per §6.2's "forms, not buttons".
+ * Mirrors the roles for which `AccessControlService.canManageDashboard`'s group arm returns true:
+ * `admin` and `organization_admin` for any group of the organization, and `asset_group_admin` by
+ * its own membership (`user_asset_group_access`). A `location_admin` is refused there
+ * (`target.kind !== "location"`), so an option shown to it would be a 403 behind an enabled Save.
+ * For `asset_group_admin` the group list comes from `GET /auth/me`'s `scope.assetGroups`
+ * (`scopeAssetGroupOptions`, `dashboard-scope.ts`), never from `GET /admin/asset-groups`, which
+ * stays refused for the role. `dashboard-scope-fields.tsx` reads this to decide whether the
+ * asset-group radio and its select exist in the DOM — absent, not disabled, per §6.2's "forms,
+ * not buttons".
  *
- * **Deliberately its own predicate** although its body is identical to
- * `canCreateOrganizationWideDashboard` today, on the rule `canManageNotificationChannels` above
- * records: the two answer different questions, and `F3.63` will widen THIS one to
- * `asset_group_admin` without moving the organization-wide one.
+ * **Deliberately its own predicate** although its body overlaps `canCreateOrganizationWideDashboard`
+ * for `admin`/`organization_admin`, on the rule `canManageNotificationChannels` above records: the
+ * two answer different questions, and this one now admits a role the other does not.
  */
 export function canChooseAssetGroupDashboardScope(role: UserRole): boolean {
-  return role === "admin" || role === "organization_admin";
+  return role === "admin" || role === "organization_admin" || role === "asset_group_admin";
+}
+
+/**
+ * Whether the role is offered the LOCATION dashboard scope — `locationId` set, the other two
+ * scope columns null (`F3.63`, ADR 0047 Amendment 6).
+ *
+ * Mirrors the roles for which `AccessControlService.canManageDashboard`'s location arm admits a
+ * target: `admin`, `organization_admin` and `location_admin`. `asset_group_admin` is refused
+ * there (`target.kind !== "assetGroup"`), so a location option shown to it would be a 403 behind
+ * an enabled Save — the mirror image of the rule `canChooseAssetGroupDashboardScope` applies to
+ * `location_admin`.
+ *
+ * **Deliberately its own predicate**, on the `canManageNotificationChannels` rule above: its
+ * membership is identical to `isMasterDataAdmin` today, but the two answer different questions —
+ * this one decides whether one form control exists, `isMasterDataAdmin` decides whether a whole
+ * admin screen is reachable at all — and collapsing them would let a future change to either
+ * silently move the other. `dashboard-scope-fields.tsx` reads this to decide whether the location
+ * radio and its select exist in the DOM.
+ */
+export function canChooseLocationDashboardScope(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin" || role === "location_admin";
 }
 
 /** Default admin landing route for a role. */

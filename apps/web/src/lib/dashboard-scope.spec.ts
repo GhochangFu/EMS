@@ -1,9 +1,19 @@
-import { isScopeChosen, scopeColumns, scopeFromDashboard } from "./dashboard-scope";
+import {
+  isScopeChosen,
+  scopeAssetGroupOptions,
+  scopeChanged,
+  scopeColumns,
+  scopeForDuplicate,
+  scopeFromDashboard,
+  scopePatch,
+} from "./dashboard-scope";
+import type { AccessibleScope } from "@bms/shared";
 
 /**
  * `F3.34` Unit 2 — the pure dashboard-scope model (plan §4.2), one exported function per
  * claim so a mutation reddens exactly one `it()`. `dashboard-scope.test.ts` is the Vitest
- * entry point (ADR 0014).
+ * entry point (ADR 0014). `F3.63` Unit 3 (ADR 0047 Amendment 6) added the read-only `asset`
+ * kind and its four new functions, plus `scopeAssetGroupOptions`.
  */
 
 function assert(condition: boolean, message: string): void {
@@ -24,7 +34,7 @@ function same(actual: unknown, expected: unknown, message: string): void {
  */
 export function anAssetGroupDashboardPrefillsAsAssetGroup(): void {
   same(
-    scopeFromDashboard({ organizationId: "org-1", locationId: null, assetGroupId: "g1" }),
+    scopeFromDashboard({ organizationId: "org-1", locationId: null, assetGroupId: "g1", assetId: null }),
     { kind: "assetGroup", organizationId: "org-1", assetGroupId: "g1" },
     "a stored row with assetGroupId set must prefill as the assetGroup kind",
   );
@@ -34,7 +44,7 @@ export function anAssetGroupDashboardPrefillsAsAssetGroup(): void {
  * with a location prefills as location whatever the group column says. */
 export function aLocationDashboardPrefillsAsLocation(): void {
   same(
-    scopeFromDashboard({ organizationId: "org-1", locationId: "l1", assetGroupId: null }),
+    scopeFromDashboard({ organizationId: "org-1", locationId: "l1", assetGroupId: null, assetId: null }),
     { kind: "location", organizationId: "org-1", locationId: "l1" },
     "a stored row with locationId set must prefill as the location kind",
   );
@@ -43,7 +53,7 @@ export function aLocationDashboardPrefillsAsLocation(): void {
 /** Reddens if the organization fallback is lost (e.g. the arms are reordered and one is dropped). */
 export function aScopelessDashboardPrefillsAsOrganization(): void {
   same(
-    scopeFromDashboard({ organizationId: "org-1", locationId: null, assetGroupId: null }),
+    scopeFromDashboard({ organizationId: "org-1", locationId: null, assetGroupId: null, assetId: null }),
     { kind: "organization", organizationId: "org-1" },
     "a stored row with neither column set must prefill as organization-wide",
   );
@@ -114,5 +124,160 @@ export function anOrganizationValueYieldsTwoNulls(): void {
     scopeColumns({ kind: "organization", organizationId: "org-1" }),
     { locationId: null, assetGroupId: null },
     "an organization-wide value must carry two nulls",
+  );
+}
+
+/**
+ * `F3.63` Unit 3 (ADR 0047 Amendment 6 §Q2) — the defect the row fixes: an asset-scoped stored
+ * row used to prefill as "organization" because the prefill was three-way and never read
+ * `assetId`. Mutation: keep the three-way switch ⇒ `organization` ⇒ red.
+ */
+export function anAssetScopedDashboardPrefillsAsAsset(): void {
+  same(
+    scopeFromDashboard({ organizationId: "org-1", locationId: null, assetGroupId: null, assetId: "a1" }),
+    { kind: "asset", organizationId: "org-1", assetId: "a1" },
+    "a stored row with assetId set must prefill as the asset kind",
+  );
+}
+
+/** With the case above, pins that dropping the fallback (rather than just missing the new arm)
+ * still reddens on its own — a scopeless, asset-less row is still organization-wide. */
+export function aScopelessAssetlessDashboardStillPrefillsAsOrganization(): void {
+  same(
+    scopeFromDashboard({ organizationId: "org-1", locationId: null, assetGroupId: null, assetId: null }),
+    { kind: "organization", organizationId: "org-1" },
+    "a stored row with no assetId and no scope column must still prefill as organization-wide",
+  );
+}
+
+/** `F3.63` (Amendment 6 §Q2, last sentence) — duplicating an asset-scoped dashboard still
+ * prefills as its organization, now an explicit fold rather than an accident of a three-way
+ * prefill. The dto here carries `assetId` at runtime, as the dialog's real source dto does — the
+ * function's parameter type just does not declare it. Mutation: pass the asset arm through (e.g.
+ * by widening the dto type to read `assetId`) ⇒ red. */
+export function duplicatingAnAssetScopedDashboardFoldsToOrganization(): void {
+  const source = { organizationId: "org-1", locationId: null, assetGroupId: null, assetId: "a1" };
+  same(
+    scopeForDuplicate(source),
+    { kind: "organization", organizationId: "org-1" },
+    "duplicating an asset-scoped source must fold to organization-wide",
+  );
+}
+
+/** Positive control for the row above: a group-scoped source duplicates as its own group. */
+export function duplicatingAnAssetGroupScopedDashboardKeepsItsGroup(): void {
+  same(
+    scopeForDuplicate({ organizationId: "org-1", locationId: null, assetGroupId: "g1" }),
+    { kind: "assetGroup", organizationId: "org-1", assetGroupId: "g1" },
+    "duplicating a group-scoped source must keep the group kind",
+  );
+}
+
+/** Mutation: return `false` unconditionally for the `asset` arm ⇒ red. */
+export function aChosenAssetIsChosen(): void {
+  assert(
+    isScopeChosen({ kind: "asset", organizationId: "org-1", assetId: "a1" }),
+    "an asset value with an id is chosen",
+  );
+}
+
+/** Mutation: return `true` unconditionally for the `asset` arm ⇒ red. */
+export function anUnchosenAssetIsNotChosen(): void {
+  assert(
+    !isScopeChosen({ kind: "asset", organizationId: "org-1", assetId: "" }),
+    "an asset value with an empty id is not chosen",
+  );
+}
+
+/** `F3.63` (Amendment 6 §Q2) — the edit page's PATCH omits both scope columns for an
+ * asset-scoped row. Mutation: return `{ locationId: null, assetGroupId: null }` ⇒ the `same`
+ * check reds; return `{ locationId: undefined, assetGroupId: undefined }` ⇒ this function's own
+ * `Object.keys` assertion reds (an own property set to `undefined` is not an absent key). */
+export function anAssetValuePatchesToNoKeys(): void {
+  const patch = scopePatch({ kind: "asset", organizationId: "org-1", assetId: "a1" });
+  same(patch, {}, "an asset value must patch to an empty object");
+  assert(Object.keys(patch).length === 0, `an asset value's patch must have no keys — got ${Object.keys(patch)}`);
+}
+
+/** Positive control for the row above: a chosen kind still patches to its two columns. */
+export function aGroupValuePatchesToItsColumn(): void {
+  same(
+    scopePatch({ kind: "assetGroup", organizationId: "org-1", assetGroupId: "g1" }),
+    { locationId: null, assetGroupId: "g1" },
+    "a group value must patch to its own columns, unchanged from scopeColumns",
+  );
+}
+
+/** `F3.63` — an asset-scoped value is never dirty; the form that renders it cannot edit its
+ * scope. Mutation: compare the (nonexistent) columns for the asset arm ⇒ red. */
+export function anAssetValueIsNeverChanged(): void {
+  assert(
+    !scopeChanged({ kind: "asset", organizationId: "org-1", assetId: "a1" }, { locationId: null, assetGroupId: null }),
+    "an asset value must never read as changed",
+  );
+}
+
+/** Positive control: a location value that differs from the stored column IS changed. */
+export function aDifferentLocationValueIsChanged(): void {
+  assert(
+    scopeChanged(
+      { kind: "location", organizationId: "org-1", locationId: "l2" },
+      { locationId: "l1", assetGroupId: null },
+    ),
+    "a location value that differs from the stored column must read as changed",
+  );
+}
+
+/** Positive control: a group value that differs from the stored column IS changed. */
+export function aDifferentAssetGroupValueIsChanged(): void {
+  assert(
+    scopeChanged(
+      { kind: "assetGroup", organizationId: "org-1", assetGroupId: "g2" },
+      { locationId: null, assetGroupId: "g1" },
+    ),
+    "a group value that differs from the stored column must read as changed",
+  );
+}
+
+const SCOPE_FIXTURE: AccessibleScope = {
+  kind: "asset_group",
+  locations: [
+    { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null },
+  ],
+  assetGroups: [
+    { id: "grp-1", locationId: "loc-1", code: "hvac", name: "Hvac", organizationId: "org-1" },
+    { id: "grp-2", locationId: "loc-missing", code: "elec", name: "Electrical", organizationId: "org-1" },
+    { id: "grp-3", locationId: "loc-1", code: "water", name: "Water", organizationId: "org-2" },
+  ],
+  assetIds: [],
+};
+
+/** `F3.63` — `scopeAssetGroupOptions` maps `{id, name, organizationId}` and resolves
+ * `locationName` from `scope.locations` by `locationId`. Mutation: derive `locationName` from
+ * `code` instead of the joined location's `name` ⇒ red. */
+export function scopeAssetGroupOptionsMapsTheGroupAndItsLocationName(): void {
+  const options = scopeAssetGroupOptions(SCOPE_FIXTURE);
+  const grp1 = options.find((option) => option.id === "grp-1");
+  same(
+    grp1,
+    { id: "grp-1", name: "Hvac", organizationId: "org-1", locationName: "Western Cape" },
+    "grp-1 must map to its own fields with the joined location's name",
+  );
+}
+
+/** A group whose `locationId` is absent from `scope.locations` maps to `locationName: null`. */
+export function scopeAssetGroupOptionsNullsAMissingLocation(): void {
+  const options = scopeAssetGroupOptions(SCOPE_FIXTURE);
+  const grp2 = options.find((option) => option.id === "grp-2");
+  assert(grp2 !== undefined && grp2.locationName === null, "grp-2's locationName must be null, not undefined or a code");
+}
+
+/** Mutation: drop the `organizationId` filter ⇒ red (grp-3, a different organization, leaks in). */
+export function scopeAssetGroupOptionsFiltersByOrganization(): void {
+  const options = scopeAssetGroupOptions(SCOPE_FIXTURE, "org-1");
+  same(
+    options.map((option) => option.id).sort(),
+    ["grp-1", "grp-2"],
+    "the organizationId filter must keep only that organization's groups",
   );
 }
