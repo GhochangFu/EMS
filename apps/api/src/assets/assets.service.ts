@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, locations } from "@bms/db";
+import { assets, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { FLEET_DRIZZLE } from "../database/database.tokens";
@@ -12,6 +12,11 @@ import { FLEET_DRIZZLE } from "../database/database.tokens";
  * callers already scope by `assetIds`/`organizationId` before or after this
  * read; there is no caller-widening here, only a change of which pool serves
  * an unchanged, already-scoped query.
+ *
+ * `F3.31` / ADR 0068 decision 2 adds a `LEFT JOIN bms.rtus` and six columns
+ * for the operator `/assets` browser. The pool stays `fleetDb` for the same
+ * reason: the controller narrows by `readableAssetIds` first, and the join
+ * adds columns to rows the caller already reads, never rows.
  */
 @Injectable()
 export class AssetsService {
@@ -24,6 +29,20 @@ export class AssetsService {
    * organization together. `assetIds` (the caller's readable-asset scope)
    * and `organizationId` compose as AND: an id outside the given
    * organization returns nothing, not the asset anyway.
+   *
+   * `F3.31` / ADR 0068 decision 2 — the row also carries `locationName`,
+   * `rtuId`, `rtuDisplayName`, `active`, `templateId` and `telemetrySource`:
+   *
+   * - `locations` stays INNER: an asset always has a location. `rtus` is LEFT:
+   *   an asset need not be wired (ADR 0018), and an INNER join would drop every
+   *   unwired asset from the browser.
+   * - `telemetrySource` is `meta->>'telemetrySource'` in SQL — the stored text,
+   *   reported and never derived (the `storedSource` rule of
+   *   `admin/assets/assets.service.ts`), so the rows still go out unmapped. A
+   *   row written before `F4.139` has no such key and reports `null`; the
+   *   browser shows "—", not a guess.
+   * - The pool is unchanged (`fleetDb`, see the class docblock): the caller
+   *   scopes by `assetIds` first, so the join cannot widen what it reads.
    */
   async listAll(assetIds?: string[] | null, organizationId?: string) {
     if (assetIds !== null && assetIds !== undefined && assetIds.length === 0) {
@@ -43,9 +62,16 @@ export class AssetsService {
         siteName: assets.siteName,
         locationId: assets.locationId,
         domain: assets.domain,
+        locationName: locations.name,
+        rtuId: assets.rtuId,
+        rtuDisplayName: rtus.displayName,
+        active: assets.active,
+        templateId: assets.templateId,
+        telemetrySource: sql<string | null>`${assets.meta}->>'telemetrySource'`,
       })
       .from(assets)
-      .innerJoin(locations, eq(assets.locationId, locations.id));
+      .innerJoin(locations, eq(assets.locationId, locations.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id));
 
     return conditions.length > 0
       ? base.where(and(...conditions)).orderBy(asc(assets.siteName), asc(assets.code))
