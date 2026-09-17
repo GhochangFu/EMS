@@ -24,6 +24,7 @@ const moduleGroups = [
       { label: "Alarm Centre", path: "/alarms" },
       { label: "Alarm Philosophy", path: "/alarm-kb" },
       { label: "Dashboards", path: "/dashboards" },
+      { label: "Assets", path: "/assets" },
       { label: "Sites Map", path: "/map" },
       { label: "Electrical SLD", path: "/sld" },
       { label: "HVAC · CRAC", path: "/crac" },
