@@ -2,8 +2,12 @@ import { useEffect } from "react";
 
 import type { UserRole } from "@bms/shared";
 
-import { canChooseAssetGroupDashboardScope, canCreateOrganizationWideDashboard } from "../../lib/admin-access";
-import type { DashboardScopeValue } from "../../lib/dashboard-scope";
+import {
+  canChooseAssetGroupDashboardScope,
+  canChooseLocationDashboardScope,
+  canCreateOrganizationWideDashboard,
+} from "../../lib/admin-access";
+import type { DashboardScopeValue, ScopeAssetGroupOption, ScopeAssetOption } from "../../lib/dashboard-scope";
 import { Field } from "../asset-templates/field";
 
 /** A pared-down organization row — just enough to label the org-wide select
@@ -17,20 +21,11 @@ export type ScopeOrganizationOption = { readonly id: string; readonly name: stri
  * lets choosing a location DECIDE this dashboard's organization, per plan §7. */
 export type ScopeLocationOption = { readonly id: string; readonly name: string; readonly organizationId: string };
 
-/** A pared-down asset-group row (`F3.34`). `organizationId` decides the
- * dashboard's organization exactly as a location's does; `locationName` is in
- * the option text because the seed names every location's groups identically
- * (`Electrical`, `Hvac`, … at each location — plan §3 0.3). */
-export type ScopeAssetGroupOption = {
-  readonly id: string;
-  readonly name: string;
-  readonly organizationId: string;
-  readonly locationName: string | null;
-};
-
-/** The value union lives in `lib/dashboard-scope.ts` with the three helpers that
- * switch on it; re-exported here so no caller's import line changes for the type alone. */
-export type { DashboardScopeValue } from "../../lib/dashboard-scope";
+/** The value union and the asset-group / asset option rows live in `lib/dashboard-scope.ts`
+ * with the helpers that switch on them (`scopeAssetGroupOptions` builds the group rows from
+ * `/auth/me`, so the lib must not import a component); re-exported here so no caller's import
+ * line changes for the types alone. */
+export type { DashboardScopeValue, ScopeAssetGroupOption, ScopeAssetOption } from "../../lib/dashboard-scope";
 
 type DashboardScopeFieldsProps = {
   role: UserRole;
@@ -48,6 +43,10 @@ type DashboardScopeFieldsProps = {
    * Only read when `canChooseAssetGroupDashboardScope(role)` — the branch is
    * absent from the DOM otherwise. */
   assetGroups: readonly ScopeAssetGroupOption[];
+  /** Names the read-only `asset` line (ADR 0047 Amendment 6 §Q2); the id is the fallback when
+   * the list has no match. REQUIRED, not optional — an optional prop at an adapter is invisible
+   * to `tsc` and to fakes. A caller whose state type cannot hold the kind passes `[]`. */
+  assets: readonly ScopeAssetOption[];
   error?: string;
 };
 
@@ -68,17 +67,32 @@ function assetGroupLabel(group: ScopeAssetGroupOption): string {
  * under exactly the "buttons, not forms" regression this file exists to
  * prevent — the option would still be reachable in the DOM.
  *
- * **The `assetGroup` kind renders for the two roles
- * `canChooseAssetGroupDashboardScope` admits** — `admin` and
- * `organization_admin` (ADR 0047 Amendment 5) — populated from
- * `GET /admin/asset-groups`, and is absent for every other role on the same
- * forms-not-buttons rule. A `location_admin` is refused because the API's own
- * group arm refuses it (`AccessControlService.canManageDashboard`:
- * `target.kind !== "location"`, pinned by `access-control.integration.spec.ts`),
- * so an option shown to it would be a 403 behind an enabled Save. An
- * `asset_group_admin` is admitted by the API by group membership, but no admin
- * screen routes it here; widening the option to that role is `F3.63`'s, with
- * its own gate. `assetId` (ADR 0067) has no control on this form at all.
+ * **Each chosen kind renders behind its own predicate** (ADR 0047 Amendment 6
+ * §Q1 point 2), each mirroring one arm of `AccessControlService.canManageDashboard`:
+ *
+ * - `organization` for the roles `canCreateOrganizationWideDashboard` admits —
+ *   `admin`, `organization_admin`.
+ * - `location` for the roles `canChooseLocationDashboardScope` admits —
+ *   `admin`, `organization_admin`, `location_admin`. An `asset_group_admin` is
+ *   refused because the API's group arm refuses a location target for it
+ *   (`target.kind !== "assetGroup"`), so the option would be a 403 behind an
+ *   enabled Save.
+ * - `assetGroup` for the roles `canChooseAssetGroupDashboardScope` admits —
+ *   `admin`, `organization_admin` (Amendment 5, from `GET /admin/asset-groups`)
+ *   and `asset_group_admin` (Amendment 6, from `/auth/me`'s `scope.assetGroups`
+ *   via `scopeAssetGroupOptions` — the admin list stays refused for the role).
+ *   A `location_admin` is refused on the mirror rule (`target.kind !==
+ *   "location"`, pinned by `access-control.integration.spec.ts`).
+ *
+ * So an `asset_group_admin` sees exactly one radio, and the clamp below rewrites
+ * a kind the role is not offered to its FIRST offered kind, unchosen — a location
+ * where the role has one, else an asset group — never to a kind with no radio.
+ *
+ * **The `asset` kind is read-only** (Amendment 6 §Q2; ADR 0067's instantiator is
+ * `assetId`'s only writer in this app): it renders no radio and no select — not
+ * disabled ones, on the same forms-not-buttons rule — but one line naming the
+ * asset from `assets`, falling back to the id. It is never clamped for any role;
+ * the edit page's `scopePatch` omits both scope columns for it.
  */
 export function DashboardScopeFields({
   role,
@@ -87,9 +101,11 @@ export function DashboardScopeFields({
   organizations,
   locations,
   assetGroups,
+  assets,
   error,
 }: DashboardScopeFieldsProps) {
   const canOrgWide = canCreateOrganizationWideDashboard(role);
+  const canLocation = canChooseLocationDashboardScope(role);
   const canGroup = canChooseAssetGroupDashboardScope(role);
 
   // Review finding (HIGH) — `duplicate-dashboard-dialog.tsx` and `dashboard-builder-edit-page.tsx`
@@ -100,14 +116,38 @@ export function DashboardScopeFields({
   // rather than in every caller that might prefill this value: `locationId` is left EMPTY rather
   // than guessed, so `scopeChosen` reads false and the button is correctly disabled until the
   // author actually picks a location. `F3.34` generalised it from "organization-wide for a role
-  // `canOrgWide` refuses" to "any kind this role is not offered" (plan §4.5).
+  // `canOrgWide` refuses" to "any kind this role is not offered" (plan §4.5); `F3.63` made the
+  // TARGET follow the role too — the first kind it is offered — because for `asset_group_admin`
+  // an unchosen location is a kind with no radio and no select: a dead form (plan §4.4). The
+  // `asset` kind is absent from the disjunction on purpose: no role is offered it, and it is
+  // never clamped.
   useEffect(() => {
     const kindNotOffered =
-      (!canOrgWide && value.kind === "organization") || (!canGroup && value.kind === "assetGroup");
+      (!canOrgWide && value.kind === "organization") ||
+      (!canLocation && value.kind === "location") ||
+      (!canGroup && value.kind === "assetGroup");
     if (kindNotOffered) {
-      onChange({ kind: "location", organizationId: value.organizationId, locationId: "" });
+      onChange(
+        canLocation
+          ? { kind: "location", organizationId: value.organizationId, locationId: "" }
+          : { kind: "assetGroup", organizationId: value.organizationId, assetGroupId: "" },
+      );
     }
-  }, [canOrgWide, canGroup, value, onChange]);
+  }, [canOrgWide, canLocation, canGroup, value, onChange]);
+
+  // After the hook, so the hook count is the same on every render.
+  if (value.kind === "asset") {
+    const asset = assets.find((item) => item.id === value.assetId);
+    return (
+      <fieldset className="space-y-2">
+        <legend className="text-[11px] font-semibold uppercase tracking-wide text-bms-muted">Scope</legend>
+        <p className="text-xs text-bms-muted">
+          {`Scoped to asset ${asset?.name ?? value.assetId}. An asset-scoped dashboard keeps its scope; edit its widgets here.`}
+        </p>
+        {error ? <p className="text-[11px] text-red-700">{error}</p> : null}
+      </fieldset>
+    );
+  }
 
   return (
     <fieldset className="space-y-2">
@@ -129,21 +169,23 @@ export function DashboardScopeFields({
             Organization-wide
           </label>
         ) : null}
-        <label className="flex items-center gap-1.5">
-          <input
-            type="radio"
-            name="dashboard-scope-kind"
-            checked={value.kind === "location"}
-            onChange={() =>
-              onChange({
-                kind: "location",
-                organizationId: locations[0]?.organizationId ?? "",
-                locationId: locations[0]?.id ?? "",
-              })
-            }
-          />
-          Location
-        </label>
+        {canLocation ? (
+          <label className="flex items-center gap-1.5">
+            <input
+              type="radio"
+              name="dashboard-scope-kind"
+              checked={value.kind === "location"}
+              onChange={() =>
+                onChange({
+                  kind: "location",
+                  organizationId: locations[0]?.organizationId ?? "",
+                  locationId: locations[0]?.id ?? "",
+                })
+              }
+            />
+            Location
+          </label>
+        ) : null}
         {canGroup ? (
           <label className="flex items-center gap-1.5">
             <input
@@ -182,7 +224,7 @@ export function DashboardScopeFields({
         </Field>
       ) : null}
 
-      {value.kind === "location" ? (
+      {canLocation && value.kind === "location" ? (
         <Field label="Location">
           <select
             value={value.locationId}
