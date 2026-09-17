@@ -127,13 +127,22 @@ import type { StockAssetTemplateEntry } from "./types";
  *    client-confirmed. The client-confirmed release is v2; its redline
  *    candidate is the attribute pair recorded above.
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (apfc_status, apfc_alarm, actual_pf, steps_on_count, target_pf, kvar_connected, kvar_required, bus_voltage_v), plus one
- * `chart` trending actual_pf, target_pf. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One view,
+ * tiling the class's headline measured points as `value_tile`s in table order (apfc_status,
+ * apfc_alarm, actual_pf, steps_on_count), plus one `chart` trending actual_pf, steps_on_count.
+ * Every key is a declared `kind: "measured"` point with `meta.tier !== "manual"` **and
+ * `required: true`** on this entry — the only kind F3.2's instantiation hook can always bind
+ * (a manual row is never populated at instantiation; a derived key has no `asset_points` row
+ * to read; an OPTIONAL point is dropped when its source pattern does not resolve, so its tile
+ * would be empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17) removed four tier-X keys** — `target_pf`, `kvar_connected`,
+ * `kvar_required` and `bus_voltage_v` — and the tile lattice was re-flowed to stay
+ * contiguous, which moved the chart up to `gridY 2`. The chart's second series was
+ * `target_pf`, the setpoint; it is replaced by `steps_on_count`, the nearest **required**
+ * measured key on this entry, so the trend still reads as "what the bank is doing about the
+ * PF it reaches". No `stockVersion` bump — the owner did not rule a release for this content
+ * change (plan §12 Q9, ADR 0067 §13).
  */
 export const ELECTRICAL_APFC: StockAssetTemplateEntry = {
   code: "electrical-apfc",
@@ -265,7 +274,7 @@ export const ELECTRICAL_APFC: StockAssetTemplateEntry = {
     ],
     dashboards: {
       overview: {
-        featured: ["apfc_status", "apfc_alarm", "actual_pf", "steps_on_count", "target_pf", "kvar_connected", "kvar_required", "bus_voltage_v"],
+        featured: ["apfc_status", "apfc_alarm", "actual_pf", "steps_on_count"],
         widgets: [
           {
             title: "Controller in auto / manual",
@@ -308,52 +317,12 @@ export const ELECTRICAL_APFC: StockAssetTemplateEntry = {
             gridH: 2,
           },
           {
-            title: "PF setpoint",
-            widgetType: "value_tile",
-            pointKeys: ["target_pf"],
-            config: {},
-            gridX: 0,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "Connected reactive power",
-            widgetType: "value_tile",
-            pointKeys: ["kvar_connected"],
-            config: {},
-            gridX: 3,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "Reactive power still required",
-            widgetType: "value_tile",
-            pointKeys: ["kvar_required"],
-            config: {},
-            gridX: 6,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "Bus voltage",
-            widgetType: "value_tile",
-            pointKeys: ["bus_voltage_v"],
-            config: {},
-            gridX: 9,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
             title: "Power factor trend",
             widgetType: "chart",
-            pointKeys: ["actual_pf", "target_pf"],
+            pointKeys: ["actual_pf", "steps_on_count"],
             config: { series: "line" },
             gridX: 0,
-            gridY: 4,
+            gridY: 2,
             gridW: DASHBOARD_GRID.columns,
             gridH: 4,
           },

@@ -159,13 +159,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `e5.3-derived-taglist-v1.md` §3, PROVISIONAL — derived, not
  *    client-confirmed.
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (door_state, lock_state, door_forced_state, door_held_state, controller_comms_ok), plus one
- * `chart` trending access_granted_count, access_denied_count. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
+ * view, tiling the class's headline measured points as `value_tile`s in table order
+ * (door_state, lock_state, door_forced_state, door_held_state, controller_comms_ok), plus one `chart` trending door_state. Every key is a
+ * declared `kind: "measured"` point with `meta.tier !== "manual"` **and `required: true`**
+ * on this entry — the only kind F3.2's instantiation hook can always bind (a manual row is
+ * never populated at instantiation; a derived key has no `asset_points` row to read; an
+ * OPTIONAL point is dropped when its source pattern does not resolve, so its tile would be
+ * empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17).** No tile changed — all five featured keys are required. What changed is the chart: **both** its series, `access_granted_count` and `access_denied_count`, are optional, so the trend was empty by construction on a controller that publishes neither counter. The replacement is `door_state`, the nearest **required** measured key on this entry (`sortOrder 0`). No `stockVersion` bump — the owner did not rule a
+ * release for this content change (plan §12 Q9, ADR 0067 §13).
  */
 export const FACILITY_ACCESS_DOOR: StockAssetTemplateEntry = {
   code: "facility-access-door",
@@ -464,9 +468,9 @@ export const FACILITY_ACCESS_DOOR: StockAssetTemplateEntry = {
             gridH: 2,
           },
           {
-            title: "Access event trend",
+            title: "Door state trend",
             widgetType: "chart",
-            pointKeys: ["access_granted_count", "access_denied_count"],
+            pointKeys: ["door_state"],
             config: { series: "line" },
             gridX: 0,
             gridY: 4,

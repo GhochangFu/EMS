@@ -235,9 +235,11 @@ A new file, `apps/api/src/admin/asset-templates/asset-dashboards-instantiate.ser
 sibling to the ADR 0049 service and shaped on it. Given one asset, its
 published template version row, and a transaction:
 
-- **One `dashboards` row per view** in `content.dashboards`, in code-unit
-  order of the view name (a plain `<` comparison; Amendment 1 corrected
-  "code-point"). *(The first draft said "record order". Task 6 found
+- **One `dashboards` row per view** in `content.dashboards`, in code-point
+  order of the view name (`sortedViewNames` compares `Array.from` code
+  points; the merged code compared UTF-16 code units with `<`, and
+  Amendment 1 made the code match this sentence rather than the reverse).
+  *(The first draft said "record order". Task 6 found
   that `asset_templates.content` is `jsonb`, which does not keep key order —
   the fixture came back `trends, overview` — so record order is not a property
   the store has. Corrected 2026-09-16 before merge; the sort is documented in
@@ -493,7 +495,13 @@ the failing chunk still get nothing), and re-deriving the slug on a move
 `occupancy_count`, `zone_rh_pct` (occupancy zone); `step_speed_ms`
 (escalator); `car_position_floor` (lift); `outlet_hardness_mgl` (softener)
 leave their views, and C2 asserts `required === true`. Every stock default
-dashboard is then complete by construction. Declined: keeping them with an
+dashboard is then complete by construction. *(The build found the sweep's
+list short: C2 gates chart `pointKeys` too, and four chart series in four
+more entries were optional — replaced by each entry's first required
+measured key: apfc `target_pf` → `steps_on_count`, escalator and lift
+`motor_current_a` → `esc_status` / `lift_in_service`, fire panel
+`hydrant_header_pressure_bar` → `fire_alarm_state`, access door's two
+counters → `door_state`. Nine entries changed, not seven.)* Declined: keeping them with an
 honest docblock — decision 3 accepts a hole beside a report of it, but a
 hole on every asset of a class is a shipped defect, not a report.
 
@@ -513,8 +521,11 @@ hole on every asset of a class is a shipped defect, not a report.
    for its own chunk; `skippedCount` is written on chunk 0 only.
 4. **Decision 6 amended**: a stock `overview` view binds only required,
    measured, non-manual keys, and the build-time gate asserts all three.
-5. **Wording**: "code-unit order" replaces "code-point order" in decision 3
-   and in the service; the two false sentences are corrected in place above
+5. **The view sort compares code points**, as decision 3 says: the merged
+   `<` comparison ordered UTF-16 code units, and a view name's charset is
+   unconstrained, so the two orders diverge on an astral character. The
+   sort moved into the pure module as `sortedViewNames`, with a case that
+   reddens under `<`. The two false sentences are corrected in place above
    with a note naming this amendment.
 
 ### Consequences

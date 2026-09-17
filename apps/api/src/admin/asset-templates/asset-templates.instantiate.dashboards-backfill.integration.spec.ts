@@ -197,16 +197,41 @@ export async function assertBackfillOfAViewlessTemplateIsRefused(
 }
 
 /**
- * G2f — ADR 0067 Q7: a failing chunk stops the call, the chunks before it stay
- * committed, and a re-run resumes.
+ * G2f — ADR 0067 Q8 (ruled 2026-09-17): a slug collision is **per asset,
+ * reported, and never a stop**.
  *
  * The cap is lowered to one asset per chunk through {@link backfill}'s third
  * parameter — the real ceiling is 8,000 widget rows and no fixture can seed an
  * estate that large. The collision is seeded on the **second** chunk's asset,
- * so "the first chunk's rows exist afterwards" is a claim about rows that were
- * written and kept, not about rows a single transaction never reached.
+ * so the claim is about three different things at once: the chunk before it
+ * committed, the chunk it happened in rolled back to its savepoint rather than
+ * aborting, and the chunk after it still ran.
+ *
+ * **What this file can and cannot see.** It drives the service, not HTTP, so
+ * the `201` of ADR 0067 decision 4 is not observable here. Nor is it asserted
+ * anywhere else: the controller carries `@HttpCode(HttpStatus.CREATED)` and
+ * `asset-templates.controller.spec.ts` grades only the route's **declaration
+ * order**, so the status code is a step-6 claim, checked against the running
+ * stack. Said here rather than pointed at a gate that does not hold it. What
+ * is observable — and is what the savepoint ruling is actually about — is rows:
+ * which assets have dashboards afterwards, and that the hand-made row that
+ * caused the collision is still exactly as it was.
+ *
+ * This replaces the Q7 case that asserted the call STOPPED at the collision.
+ * That behaviour is gone by ruling, not by regression, and the two cases cannot
+ * both hold.
  */
-export async function assertAFailingChunkKeepsTheEarlierChunks(
+/** How many `master.dashboard.backfill` rows this template version carries. */
+async function backfillAuditCount(pool: pg.Pool, templateId: string): Promise<number> {
+  const { rows } = await pool.query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM bms.audit_log
+      WHERE action = 'master.dashboard.backfill' AND entity_id = $1`,
+    [templateId],
+  );
+  return Number(rows[0].n);
+}
+
+export async function assertASlugConflictSkipsOneAssetAndKeepsTheRest(
   svc: Services,
   fx: Fixtures,
   pool: pg.Pool,
@@ -232,48 +257,98 @@ export async function assertAFailingChunkKeepsTheEarlierChunks(
     `INSERT INTO bms.dashboards (organization_id, slug, name) VALUES ($1, $2, $3)`,
     [fx.organizationId, collision, "Hand-made chunk collision"],
   );
+  const { rows: handMade } = await pool.query<{ id: string; name: string }>(
+    `SELECT id, name FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`,
+    [fx.organizationId, collision],
+  );
+  const auditBefore = await backfillAuditCount(pool, version.id);
+
   try {
     // Five widget rows per asset (three authored + two fallback tiles), so a cap
     // of five is exactly one asset per chunk.
-    let message = "";
-    let name = "";
-    try {
-      await svc.dashboards.backfill(fx.adminJwt, version.id, 5);
-    } catch (err) {
-      message = err instanceof Error ? err.message : String(err);
-      name = err instanceof Error ? err.constructor.name : String(err);
-    }
-    assert(message.includes(collision), `the refusal must name the taken slug: got "${message}"`);
-    // The class, which the message match cannot see: the failing chunk's error
-    // is REBUILT to carry the resumable sentence, and rebuilding it as a bare
-    // `Error` would turn the 409 naming the slug into a 500.
-    assert(name === "ConflictException", `a chunk collision must stay a 409, got a ${name}`);
-    assert(
-      /\b1 of \d+ assets already have their default/.test(message),
-      `the refusal must say how many assets were created before it: got "${message}"`,
-    );
+    const result = await svc.dashboards.backfill(fx.adminJwt, version.id, 5);
 
+    const outcomes = new Map(result.assets.map((entry) => [entry.code, entry.outcome]));
+    assert(
+      outcomes.get(codes[1]) === "skipped_slug_conflict",
+      `the asset whose slug is taken must be reported skipped_slug_conflict, got ${String(outcomes.get(codes[1]))}`,
+    );
+    assert(
+      outcomes.get(codes[0]) === "created" && outcomes.get(codes[2]) === "created",
+      `the other two assets must be created, got ${[...outcomes].map(([c, o]) => `${c}=${o}`).join(" ")}`,
+    );
+    assert(result.conflictCount === 1, `conflictCount must be 1, got ${result.conflictCount}`);
+    // The collision is NOT folded into the skip set. Asserted against the
+    // per-asset outcomes rather than against a literal: earlier cases in this
+    // file leave their own assets stamped under the same template code, so the
+    // estate this call walks is larger than the three assets above and a fixed
+    // number would grade case order instead of the rule.
+    assert(
+      result.skippedCount === result.assets.filter((e) => e.outcome === "skipped_existing").length,
+      `skippedCount ${result.skippedCount} disagrees with the skipped_existing outcomes`,
+    );
+    assert(
+      result.conflictCount ===
+        result.assets.filter((e) => e.outcome === "skipped_slug_conflict").length,
+      `conflictCount ${result.conflictCount} disagrees with the skipped_slug_conflict outcomes`,
+    );
+    assert(result.createdCount === 2, `createdCount must be 2, got ${result.createdCount}`);
+
+    // The report is graded against the rows, because the report is what a
+    // savepoint that silently committed would still get right.
     const first = await dashboardsOf(pool, codes[0]);
     assert(
       first.length === 2,
-      `the committed chunk's dashboards must survive the later failure, found ${first.length}`,
+      `the chunk before the collision must keep its dashboards, found ${first.length}`,
+    );
+    const second = await dashboardsOf(pool, codes[1]);
+    assert(
+      second.length === 0,
+      `the conflicting asset's savepoint must roll back every view, found ${second.length}`,
     );
     const third = await dashboardsOf(pool, codes[2]);
-    assert(third.length === 0, `the chunk after the failure must not have run, found ${third.length}`);
-
-    // The re-run is what "resumable" means: the committed asset is skipped by
-    // its stamp, and the same slug still refuses.
-    let again = "";
-    try {
-      await svc.dashboards.backfill(fx.adminJwt, version.id, 5);
-    } catch (err) {
-      again = err instanceof Error ? err.message : String(err);
-    }
-    assert(again.includes(collision), `the re-run must fail on the same slug: got "${again}"`);
     assert(
-      /\b0 of \d+ assets already have their default/.test(again),
-      `the re-run created nothing before the same failure: got "${again}"`,
+      third.length === 2,
+      `the chunk after the collision must still run, found ${third.length}`,
     );
+
+    // The hand-made row is untouched — same id, same name. The backfill must
+    // never resolve a collision by taking the slug over.
+    const { rows: afterRows } = await pool.query<{ id: string; name: string }>(
+      `SELECT id, name FROM bms.dashboards WHERE organization_id = $1 AND slug = $2`,
+      [fx.organizationId, collision],
+    );
+    assert(
+      afterRows.length === 1 &&
+        afterRows[0].id === handMade[0]?.id &&
+        afterRows[0].name === handMade[0]?.name,
+      "the hand-made dashboard holding the slug must be left exactly as it was",
+    );
+
+    // **The chunk transaction survived its own `ROLLBACK TO SAVEPOINT`.** Three
+    // assets at one per chunk leave three audit rows, and the audit row of the
+    // conflicting chunk is written on the SAME transaction after the rollback —
+    // without the savepoint that statement would fail with `25P02` on an
+    // aborted transaction, so a count of two would be the signature of a chunk
+    // that only looked like it carried on.
+    assert(
+      (await backfillAuditCount(pool, version.id)) - auditBefore === 3,
+      "each of the three chunks must leave its audit row, the conflicting one included",
+    );
+
+    // The second call is the resumable half: the two committed assets are now
+    // stamped, and the third still meets the same slug.
+    const again = await svc.dashboards.backfill(fx.adminJwt, version.id, 5);
+    const repeat = new Map(again.assets.map((entry) => [entry.code, entry.outcome]));
+    assert(
+      repeat.get(codes[0]) === "skipped_existing" && repeat.get(codes[2]) === "skipped_existing",
+      `the created assets must now be skipped_existing, got ${[...repeat].map(([c, o]) => `${c}=${o}`).join(" ")}`,
+    );
+    assert(
+      repeat.get(codes[1]) === "skipped_slug_conflict",
+      `the blocked asset must still be skipped_slug_conflict, got ${String(repeat.get(codes[1]))}`,
+    );
+    assert(again.createdCount === 0, `the re-run must create nothing, got ${again.createdCount}`);
     const stillFirst = await dashboardsOf(pool, codes[0]);
     assert(
       stillFirst.length === 2,

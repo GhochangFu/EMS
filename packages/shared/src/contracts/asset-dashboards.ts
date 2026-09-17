@@ -34,11 +34,24 @@ export const instantiatedDashboardDtoSchema = z
   })
   .readonly();
 
-/** Whether the backfill wrote a fresh set of dashboards for an asset, or found
- * one already stamped from this template's version set and left it alone. */
+/**
+ * What the backfill did with one asset.
+ *
+ * - `created` — it wrote this version's dashboards.
+ * - `skipped_existing` — the asset already carries a dashboard stamped from
+ *   this template's version set, so it was left alone (decision 4).
+ * - `skipped_slug_conflict` — a dashboard slug this asset needs is already
+ *   taken in the organization, so **that asset alone** was rolled back to the
+ *   savepoint it was written in and the call carried on (Q8, ruled
+ *   2026-09-17). A third member rather than a second meaning on
+ *   `skipped_existing`: the two states need different operator actions — one
+ *   is normal, the other asks a human to rename a hand-made dashboard — and a
+ *   count that mixed them could not be read at all.
+ */
 export const defaultDashboardsBackfillOutcomeSchema = z.enum([
   "created",
   "skipped_existing",
+  "skipped_slug_conflict",
 ]);
 
 export const defaultDashboardsBackfillAssetDtoSchema = z.object({
@@ -56,5 +69,11 @@ export const defaultDashboardsBackfillResultDtoSchema = z.object({
   templateVersion: z.number().int(),
   assets: z.array(defaultDashboardsBackfillAssetDtoSchema),
   createdCount: z.number().int(),
+  /** Assets left alone because they are already stamped — `skipped_existing`
+   * only. A slug collision is counted by {@link conflictCount} instead, so the
+   * three counts partition the asset list rather than overlapping. */
   skippedCount: z.number().int(),
+  /** Assets whose write was rolled back to its savepoint because a slug it
+   * needs is taken — `skipped_slug_conflict` (Q8). */
+  conflictCount: z.number().int(),
 });

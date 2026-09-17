@@ -6,6 +6,7 @@ import {
   assertC3,
   assertC4,
   assertC5,
+  assertC5b,
   STOCK_CATALOG_FOR_DASHBOARD_TESTS,
 } from "./stock-catalog-dashboards.spec";
 
@@ -24,6 +25,10 @@ import {
 describe("stock asset-template catalog — the dashboards build-time gate (F3.2 Task 8)", () => {
   it("C5 — a synthetic entry with an undeclared featured key is refused (the checker's own control)", () => {
     assertC5();
+  });
+
+  it("C5b — a synthetic entry whose featured key is OPTIONAL is refused, by the optional rule", () => {
+    assertC5b();
   });
 
   it("C1 — every catalog entry carries content.dashboards.overview", () => {

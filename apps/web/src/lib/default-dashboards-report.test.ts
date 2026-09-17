@@ -1,7 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  backfillSummaryAddsTheConflictClause,
+  backfillSummaryInflectsTheConflictNoun,
   backfillSummaryMatchesTheRuledSentence,
+  backfillSummaryOmitsTheConflictClauseAtZero,
   backfillSummaryPrintsZeroCounts,
   backfillSummarySingularisesTheAssetNoun,
   instantiationSummaryCarriesTheDashboardCount,
@@ -48,5 +51,17 @@ describe("F3.2 default-dashboards report sentences", () => {
 
   it("prints the backfill's zero counts", () => {
     backfillSummaryPrintsZeroCounts();
+  });
+
+  it("adds a slug-collision clause when there is one", () => {
+    backfillSummaryAddsTheConflictClause();
+  });
+
+  it("inflects the slug-collision noun", () => {
+    backfillSummaryInflectsTheConflictNoun();
+  });
+
+  it("prints no slug-collision clause when there are none", () => {
+    backfillSummaryOmitsTheConflictClauseAtZero();
   });
 });

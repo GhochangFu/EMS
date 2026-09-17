@@ -56,6 +56,7 @@ function backfilled(
     assets: [],
     createdCount: 5,
     skippedCount: 3,
+    conflictCount: 0,
     ...overrides,
   } as DefaultDashboardsBackfillResultDto;
 }
@@ -144,5 +145,43 @@ export function backfillSummaryPrintsZeroCounts(): void {
   assert(
     both === "Created dashboards for 0 assets · 0 already had one",
     `zero form wrong: ${both}`,
+  );
+}
+
+/**
+ * Q8 (ruled 2026-09-17) — a third clause, and **only** when there is a
+ * collision to report.
+ *
+ * Unlike the skipped clause, this one is conditional, and the two rules differ
+ * on purpose: "0 already had one" is the normal second call and its constant
+ * shape is what the browser layer matches, while a slug collision is an
+ * exception asking a human to rename a dashboard. Printing "· 0 slug
+ * collisions" on every ordinary call would bury the one sentence that needs
+ * reading.
+ */
+export function backfillSummaryAddsTheConflictClause(): void {
+  const sentence = backfillSummary(backfilled({ conflictCount: 1 }));
+  assert(
+    sentence === "Created dashboards for 5 assets · 3 already had one · 1 slug collision",
+    `conflict clause wrong: ${sentence}`,
+  );
+}
+
+/** The noun inflects, as every other count in this file's sentences does. */
+export function backfillSummaryInflectsTheConflictNoun(): void {
+  const sentence = backfillSummary(backfilled({ conflictCount: 2 }));
+  assert(sentence.endsWith("· 2 slug collisions"), `plural form wrong: ${sentence}`);
+}
+
+/**
+ * The absence half, with its positive control in the same assertion: the
+ * sentence is compared whole, so a clause printed at zero reddens here and a
+ * sentence that lost its other two clauses cannot pass.
+ */
+export function backfillSummaryOmitsTheConflictClauseAtZero(): void {
+  const sentence = backfillSummary(backfilled({ conflictCount: 0 }));
+  assert(
+    sentence === "Created dashboards for 5 assets · 3 already had one",
+    `zero conflicts must print no third clause: ${sentence}`,
   );
 }

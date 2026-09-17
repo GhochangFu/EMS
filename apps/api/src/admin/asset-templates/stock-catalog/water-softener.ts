@@ -113,13 +113,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `e5.1-derived-taglist-v1.md` §3, PROVISIONAL — derived, not
  *    client-confirmed.
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (inlet_flow_klh, outlet_flow_totalizer_kl, regen_status, brine_tank_level_pct, outlet_hardness_mgl), plus one
- * `chart` trending inlet_flow_klh. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
+ * view, tiling the class's headline measured points as `value_tile`s in table order
+ * (inlet_flow_klh, outlet_flow_totalizer_kl, regen_status, brine_tank_level_pct), plus one `chart` trending inlet_flow_klh. Every key is a
+ * declared `kind: "measured"` point with `meta.tier !== "manual"` **and `required: true`**
+ * on this entry — the only kind F3.2's instantiation hook can always bind (a manual row is
+ * never populated at instantiation; a derived key has no `asset_points` row to read; an
+ * OPTIONAL point is dropped when its source pattern does not resolve, so its tile would be
+ * empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17).** `outlet_hardness_mgl` left the view — it is optional, and on a real softener the hardness analyser is the instrument most often absent. Four tiles now fill exactly one lattice row, so the chart moved up to `gridY 2`; its series, `inlet_flow_klh`, is required. No `stockVersion` bump — the owner did not rule a
+ * release for this content change (plan §12 Q9, ADR 0067 §13).
  */
 export const WATER_SOFTENER: StockAssetTemplateEntry = {
   code: "water-softener",
@@ -271,7 +275,7 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     ],
     dashboards: {
       overview: {
-        featured: ["inlet_flow_klh", "outlet_flow_totalizer_kl", "regen_status", "brine_tank_level_pct", "outlet_hardness_mgl"],
+        featured: ["inlet_flow_klh", "outlet_flow_totalizer_kl", "regen_status", "brine_tank_level_pct"],
         widgets: [
           {
             title: "Service inlet flow",
@@ -314,22 +318,12 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
             gridH: 2,
           },
           {
-            title: "Outlet hardness (as CaCO₃)",
-            widgetType: "value_tile",
-            pointKeys: ["outlet_hardness_mgl"],
-            config: {},
-            gridX: 0,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
             title: "Inlet flow trend",
             widgetType: "chart",
             pointKeys: ["inlet_flow_klh"],
             config: { series: "line" },
             gridX: 0,
-            gridY: 4,
+            gridY: 2,
             gridW: DASHBOARD_GRID.columns,
             gridH: 4,
           },

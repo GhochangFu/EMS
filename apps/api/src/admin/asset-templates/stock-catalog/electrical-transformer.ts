@@ -148,13 +148,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    client-confirmed. The client-confirmed release is v2; its redline
  *    candidates are recorded above (a loading row, C₂H₄ and C₂H₆).
  *
- * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
- * class's headline measured points as `value_tile`s in table order (top_oil_temp_c, winding_temp_c, oil_level_low, buchholz_alarm, oti_alarm, wti_alarm, tap_position, cooling_fan_status), plus one
- * `chart` trending top_oil_temp_c, winding_temp_c. Every key is a declared `kind: "measured"` point with
- * `meta.tier !== "manual"` on this entry — the two kinds F3.2's instantiation hook can
- * always bind (a manual row is never populated at instantiation; a derived key has no
- * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
- * for this content addition (plan §12 Q9, ADR 0067 §13).
+ * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
+ * view, tiling the class's headline measured points as `value_tile`s in table order
+ * (top_oil_temp_c, winding_temp_c, oil_level_low, buchholz_alarm, oti_alarm, wti_alarm), plus one `chart` trending top_oil_temp_c, winding_temp_c. Every key is a
+ * declared `kind: "measured"` point with `meta.tier !== "manual"` **and `required: true`**
+ * on this entry — the only kind F3.2's instantiation hook can always bind (a manual row is
+ * never populated at instantiation; a derived key has no `asset_points` row to read; an
+ * OPTIONAL point is dropped when its source pattern does not resolve, so its tile would be
+ * empty on a real asset).
+ *
+ * **Q9 (ruled 2026-09-17).** `tap_position` and `cooling_fan_status` left the view — both are tier X and optional. The six remaining tiles already filled the first six lattice slots, so no tile moved and the chart stays at `gridY 4`; the chart's own two series were required all along. No `stockVersion` bump — the owner did not rule a
+ * release for this content change (plan §12 Q9, ADR 0067 §13).
  */
 export const ELECTRICAL_TRANSFORMER: StockAssetTemplateEntry = {
   code: "electrical-transformer",
@@ -383,7 +387,7 @@ export const ELECTRICAL_TRANSFORMER: StockAssetTemplateEntry = {
     ],
     dashboards: {
       overview: {
-        featured: ["top_oil_temp_c", "winding_temp_c", "oil_level_low", "buchholz_alarm", "oti_alarm", "wti_alarm", "tap_position", "cooling_fan_status"],
+        featured: ["top_oil_temp_c", "winding_temp_c", "oil_level_low", "buchholz_alarm", "oti_alarm", "wti_alarm"],
         widgets: [
           {
             title: "Top-oil temperature (OTI)",
@@ -441,26 +445,6 @@ export const ELECTRICAL_TRANSFORMER: StockAssetTemplateEntry = {
             pointKeys: ["wti_alarm"],
             config: {},
             gridX: 3,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "OLTC tap position",
-            widgetType: "value_tile",
-            pointKeys: ["tap_position"],
-            config: {},
-            gridX: 6,
-            gridY: 2,
-            gridW: 3,
-            gridH: 2,
-          },
-          {
-            title: "ONAF fan(s) running",
-            widgetType: "value_tile",
-            pointKeys: ["cooling_fan_status"],
-            config: {},
-            gridX: 9,
             gridY: 2,
             gridW: 3,
             gridH: 2,

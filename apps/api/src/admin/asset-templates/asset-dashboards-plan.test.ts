@@ -6,6 +6,7 @@ import {
   assertARepeatedMissingKeyReadsUnresolved,
   assertARepeatedPointKeyBindsOnceAndReadsBound,
   assertAnAstralPairAtTheCutIsNotSplit,
+  assertAsciiViewNamesKeepAscendingOrder,
   assertAnOverflowingSlugIsTruncatedAndHashed,
   assertAPartlyResolvedWidgetReportsPartial,
   assertAWidgetWhoseKeysAllMissIsStillPlanned,
@@ -17,6 +18,7 @@ import {
   assertSlugJoinsTheLowerCasedCodeAndView,
   assertTheBatchBoundAcceptsTheLimitAndRefusesOneMore,
   assertTheBatchBoundThrowsABadRequest,
+  assertViewNamesSortByCodePoint,
   assertTheFallbackBindsOneKeyPerTileByVocabulary,
   assertTheFallbackStopsAtTheWidgetCapAndReportsTheOmitted,
   assertTheFeaturedFallbackLaysTilesOnTheLattice,
@@ -120,6 +122,16 @@ describe("F3.2 — the per-asset dashboard plan (ADR 0067)", () => {
 
     it("P13: still reads unresolved when the repeated key names no point", () => {
       assertARepeatedMissingKeyReadsUnresolved();
+    });
+  });
+
+  describe("the order the views are written in (D3)", () => {
+    it("P14: sorts view names by code point, not by UTF-16 code unit", () => {
+      assertViewNamesSortByCodePoint();
+    });
+
+    it("P14b: keeps ordinary ASCII names in ascending order", () => {
+      assertAsciiViewNamesKeepAscendingOrder();
     });
   });
 

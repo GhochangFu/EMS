@@ -66,6 +66,7 @@ const validBackfillResult = {
   assets: [validBackfillAsset],
   createdCount: 1,
   skippedCount: 0,
+  conflictCount: 0,
 };
 
 /** `instantiatedDashboardDtoSchema` accepts the full report shape and rejects one
@@ -92,14 +93,23 @@ export function runInstantiatedDashboardDtoTests(): void {
   );
 }
 
-/** `defaultDashboardsBackfillOutcomeSchema` is closed to exactly the two values
- * decision 4 names. */
+/** `defaultDashboardsBackfillOutcomeSchema` is closed to exactly the three
+ * values decision 4 and Q8 name. */
 export function runDefaultDashboardsBackfillOutcomeTests(): void {
   expectAccepts(defaultDashboardsBackfillOutcomeSchema, "created", "the created outcome");
   expectAccepts(
     defaultDashboardsBackfillOutcomeSchema,
     "skipped_existing",
     "the skipped_existing outcome",
+  );
+  // Q8 (ruled 2026-09-17) — a slug collision is per asset and never a stop, so
+  // the asset it happened to needs an outcome of its own. Folding it into
+  // `skipped_existing` would make a report say an asset already had its
+  // dashboards when a hand-made row is holding its slug.
+  expectAccepts(
+    defaultDashboardsBackfillOutcomeSchema,
+    "skipped_slug_conflict",
+    "the skipped_slug_conflict outcome",
   );
   expectRejects(defaultDashboardsBackfillOutcomeSchema, "skipped", "an unknown outcome");
 }
@@ -118,6 +128,16 @@ export function runDefaultDashboardsBackfillResultDtoTests(): void {
     defaultDashboardsBackfillResultDtoSchema,
     withoutCreatedCount,
     "a result missing createdCount",
+  );
+
+  // Q8 — `conflictCount` is the third count, and it is REQUIRED rather than
+  // optional: a reader who cannot tell "no collision" from "this server does
+  // not report collisions" cannot trust the other two counts either.
+  const { conflictCount: _conflict, ...withoutConflictCount } = validBackfillResult;
+  expectRejects(
+    defaultDashboardsBackfillResultDtoSchema,
+    withoutConflictCount,
+    "a result missing conflictCount",
   );
 
   expectAccepts(
