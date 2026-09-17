@@ -233,11 +233,17 @@ export async function panelListsDashboardsWithSlugLinks(): Promise<void> {
   await clickRow("FEED-PUMP-2");
 
   const link = await screen.findByRole("link", { name: /Feed Pump 2 · overview/ });
-  expect(link).toHaveAttribute("href", "/dashboards/feed-pump-2-overview");
+  // `?organizationId=` rides on the link as it does on the dashboards page:
+  // the fleet pool can hold one slug in two organizations (dashboards.schema.ts
+  // D5), and the viewer disambiguates by that query.
+  expect(link).toHaveAttribute(
+    "href",
+    "/dashboards/feed-pump-2-overview?organizationId=22222222-2222-4222-8222-222222222222",
+  );
   expect(screen.getByText(/5 widgets/)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /Feed Pump 2 · trends/ })).toHaveAttribute(
     "href",
-    "/dashboards/feed-pump-2-trends",
+    "/dashboards/feed-pump-2-trends?organizationId=22222222-2222-4222-8222-222222222222",
   );
   expect(fetchDashboards).toHaveBeenCalledWith(undefined, UNWIRED.id);
 }

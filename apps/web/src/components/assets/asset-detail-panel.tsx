@@ -105,7 +105,12 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
             <ul className="mt-1 space-y-1 text-xs">
               {dashboards.map((dashboard) => (
                 <li key={dashboard.id} className="flex items-baseline gap-1">
-                  <Link to={`/dashboards/${dashboard.slug}`} className="font-semibold text-bms-green hover:underline">
+                  {/* `?organizationId=` as on the dashboards page: on the fleet pool one
+                      slug can live in two organizations, and the viewer reads the query. */}
+                  <Link
+                    to={`/dashboards/${dashboard.slug}?organizationId=${dashboard.organizationId}`}
+                    className="font-semibold text-bms-green hover:underline"
+                  >
                     {dashboard.name}
                   </Link>
                   <span className="text-bms-muted">· {dashboard.widgetCount} widgets</span>
