@@ -1,6 +1,7 @@
-import type { AssetListRow } from "@bms/shared";
+import type { AssetListRow, AssetPointsListResponse } from "@bms/shared";
 import {
   assetListResponseSchema,
+  assetPointsListResponseSchema,
 } from "@bms/shared/contracts";
 import { withAuth } from "./http";
 import { checkResponse } from "./validate";
@@ -28,4 +29,22 @@ export async function fetchAssets(organizationId?: string): Promise<AssetRow[]> 
     throw new Error(`assets ${res.status}`);
   }
   return checkResponse(assetListResponseSchema, await res.json(), "assets");
+}
+
+/**
+ * `GET /api/v1/assets/:assetId/points` — one asset's active points, in the
+ * admin list's `AdminAssetPointDto` shape (`F3.63`, ADR 0047 Amendment 6 §Q1
+ * point 3). Gated server-side on `canReadAsset`, not on the master-data
+ * roles, so it is the point read `PointPicker` uses for an
+ * `asset_group_admin`, who `GET /admin/asset-points` refuses. Same
+ * `fetch` + `withAuth` + `checkResponse` shape as `fetchAssets` above; the
+ * envelope is `{ items }` (`assetPointsListResponseSchema`), where
+ * `fetchAssets`'s is a bare array.
+ */
+export async function fetchAssetPoints(assetId: string): Promise<AssetPointsListResponse> {
+  const res = await fetch(`${base}/api/v1/assets/${encodeURIComponent(assetId)}/points`, withAuth());
+  if (!res.ok) {
+    throw new Error(`asset points ${res.status}`);
+  }
+  return checkResponse(assetPointsListResponseSchema, await res.json(), "asset points");
 }

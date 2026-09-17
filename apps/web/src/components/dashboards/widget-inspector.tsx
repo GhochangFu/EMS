@@ -1,5 +1,5 @@
 import { DASHBOARD_GRID, METRIC_CATALOG } from "@bms/shared";
-import type { AdminAssetPointDto, MetricCatalogKey, WidgetPointRole } from "@bms/shared";
+import type { AdminAssetPointDto, MetricCatalogKey, UserRole, WidgetPointRole } from "@bms/shared";
 
 import { widgetRowAfterRemovingSource } from "../../lib/dashboard-builder-form";
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
@@ -25,6 +25,10 @@ type WidgetInspectorProps = {
   /** Pre-filtered to this widget's own index — `problems.filter(p => p.widget === index)`,
    * the same shape `dashboards-tab.tsx`'s `viewProblems` gives `DashboardViewEditor`. */
   problems: readonly DashboardBuilderProblem[];
+  /** The author's role — `PointPicker` forks its chain on it (`F3.63`, ADR 0047 Amendment 6
+   * §Q1 point 4); required, not optional, so a caller that omits it fails `tsc` rather than
+   * silently rendering the master-data chain to an `asset_group_admin`. */
+  role: UserRole;
   organizationId: string;
   onChange: (patch: Partial<DashboardWidgetRow>) => void;
   onRemove: () => void;
@@ -48,7 +52,7 @@ type WidgetInspectorProps = {
  * mix of both roles, so a role selector would only ever offer one correct
  * answer — not a control worth adding.
  */
-export function WidgetInspector({ row, problems, organizationId, onChange, onRemove }: WidgetInspectorProps) {
+export function WidgetInspector({ row, problems, role, organizationId, onChange, onRemove }: WidgetInspectorProps) {
   const problemFor = (field: string): string | undefined =>
     problems.find((problem) => problem.field === field)?.message;
   const cardinality = WIDGET_CATALOG[row.widgetType].points;
@@ -510,7 +514,7 @@ export function WidgetInspector({ row, problems, organizationId, onChange, onRem
           the server in that state; this only stops the form from producing one.
         */}
         {row.points.length < cardinality.max && row.sources.length === 0 ? (
-          <PointPicker organizationId={organizationId} onAdd={addPoint} />
+          <PointPicker role={role} organizationId={organizationId} onAdd={addPoint} />
         ) : null}
       </Field>
 
