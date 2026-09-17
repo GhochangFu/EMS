@@ -5366,3 +5366,28 @@ the logged-in SPA tab; a `browser-verifier` pass on the new bundle. The
 `chore(agents):` sweep is owed separately and touches the status line and §2
 only — `F3.2` is not a §6 item. `F3.31` unblocks; `F3.45` follows this row on
 the stock catalog files.
+
+### `F3.31` — operator-facing Assets browser (ADR 0068) ✅ 2026-09-17
+
+PR [#466](https://github.com/GhochangFu/EMS/pull/466). A read-only
+`/asset-browser` route under *Operations*, open to every authenticated user
+within `readableAssetIds`: a table of Code · Name · Site · Domain · RTU ·
+Source · Active with text, domain and site filters, and a side panel that
+shows the asset's health and its `F3.2` default dashboards as viewer links.
+`GET /assets` gains six static columns and `GET /dashboards` gains
+`assetId`. No schema change, no new package.
+
+**Eight rulings**, five at the gate (nav placement now, moving with the §5
+navigation-IA decision; a new route over a scoped editor view; static
+columns over a batched band read; `assetId` on the query over a client
+filter; no role predicate) and three later — `templateId` on the row, an
+organization predicate on the `rtus` join (security review), and the route
+name: **`/assets` is Vite's build directory**, and the §4.6 browser pass
+found nginx answering 301 → 403 for it. That last one is the reason the
+browser layer exists as a gate; no jsdom test could have seen it.
+
+**Verified on every layer that applies** — CI green; API probes from the
+logged-in SPA tab on the rebuilt images; a browser pass on the new bundle.
+Database is N/A. The `chore(agents):` sweep is owed separately and touches
+the status line and §2 only — `F3.31` is not a §6 item. No row depends on
+it.
