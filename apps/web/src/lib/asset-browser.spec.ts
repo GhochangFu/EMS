@@ -16,9 +16,8 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-// No gate type-checks this file (`apps/web/tsconfig.json` excludes
-// `src/**/*.spec.ts`, and vitest strips types), so the literals below are kept
-// honest by hand — the same note `asset-picker.spec.ts` carries.
+// Type-checked by `tsc --noEmit` through the `.test.ts` wrapper's import,
+// despite the `src/**/*.spec.ts` exclude — see `asset-picker.spec.ts`.
 const ROWS: AssetRow[] = [
   { id: "1", code: "CR-HVAC-1", name: "Control Room HVAC 1", siteName: "RSMOC Western Cape", domain: "hvac", locationId: "loc-1", locationName: "Western Cape control room", rtuId: null, rtuDisplayName: null, telemetrySource: null, active: true, templateId: null },
   { id: "2", code: "GP-CRAC-01", name: "Gauteng CRAC Unit 1", siteName: "RSMOC Gauteng", domain: "hvac", locationId: "loc-2", locationName: "Gauteng control room", rtuId: null, rtuDisplayName: null, telemetrySource: null, active: true, templateId: null },

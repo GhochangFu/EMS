@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   adminSeesBothAssetsLinks,
   clickingARowOpensThePanelForThatRow,
+  anEmptyFilterResultSaysSo,
   columnsMapToTheRow,
   emptyDashboardsSentenceDependsOnTemplateId,
   filtersNarrowTheTable,
@@ -59,5 +60,9 @@ describe("F3.31 assets browser page", () => {
 
   it("P8 — the columns map to the row", async () => {
     await columnsMapToTheRow();
+  });
+
+  it("P9 — an empty filter result says so in the table", async () => {
+    await anEmptyFilterResultSaysSo();
   });
 });

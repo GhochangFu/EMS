@@ -295,6 +295,24 @@ export async function filtersNarrowTheTable(): Promise<void> {
 }
 
 /**
+ * P9 — a filter that matches nothing says so in the table, not only in the
+ * "0 of N" counter (post-merge sweep). The rows-present state is the positive
+ * control: the sentence is absent while a row still matches.
+ */
+export async function anEmptyFilterResultSaysSo(): Promise<void> {
+  stubApi();
+  renderPage();
+
+  await screen.findByRole("button", { name: "FEED-PUMP-2" });
+  expect(screen.queryByText("No assets match the current filters.")).not.toBeInTheDocument();
+
+  await userEvent.type(screen.getByRole("textbox", { name: "Filter by code or name" }), "zzz-no-such-asset");
+  expect(screen.queryByRole("button", { name: "FEED-PUMP-2" })).not.toBeInTheDocument();
+  expect(screen.getByText("No assets match the current filters.")).toBeInTheDocument();
+  expect(screen.getByText("0 of 2")).toBeInTheDocument();
+}
+
+/**
  * P7 — decision 3's last paragraph: the panel carries no write affordance.
  * The open panel is the positive control and is asserted FIRST; an absence
  * check ahead of it would also pass on a page that rendered nothing.

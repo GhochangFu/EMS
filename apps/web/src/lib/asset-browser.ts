@@ -3,7 +3,7 @@ import type { AssetDomainDto } from "@bms/shared";
 import type { AssetRow } from "../api/assets";
 
 /**
- * `F3.31` — the pure rules behind the `/assets` operator browser (ADR 0068
+ * `F3.31` — the pure rules behind the `/asset-browser` operator route (ADR 0068
  * decisions 1 and 3). Kept out of the `.tsx` files so each rule is a plain
  * function a node spec can call, and so it sits inside the web coverage
  * `include` (`src/lib/**`), which the page and the panel do not.
@@ -62,6 +62,12 @@ export function noDashboardsSentence(templateId: string | null): string {
     ? "No dashboards for this asset — it was created by hand, so there is no template to instantiate them from."
     : "No dashboards for this asset.";
 }
+
+/**
+ * What a null RTU or source reads in the table and the panel — one literal so
+ * the two cannot disagree (the em dash the rest of the UI uses for "nothing").
+ */
+export const NONE = "—";
 
 /** The Active column's pill text. */
 export function activeLabel(active: boolean): string {

@@ -324,7 +324,7 @@ export const dashboardKpisResponseSchema = dashboardKpisSchema;
  * `GET /api/v1/assets` — the asset list row (ADR 0068 decision 2, `F3.31`).
  *
  * The affected-asset picker (`apps/web/src/lib/asset-picker.ts`) is one
- * consumer of this row, not its owner: the `/assets` operator browser
+ * consumer of this row, not its owner: the `/asset-browser` operator route
  * (`F3.31`) is the second, and it needs the wider shape below. Found
  * originally in `apps/web/src/api/assets.ts` as a local `AssetRow`, with no
  * counterpart in `@bms/shared` at all — this is that contract, written down
