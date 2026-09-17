@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runContentAndPointsSurviveTests,
   runFindStockEntryTests,
+  runFindStockEntryIsGenericTests,
   runMetaBridgeTests,
   runNullDescriptionSurvivesTests,
   runParsesAsAdminTemplateTests,
@@ -53,5 +54,9 @@ describe("stock template view", () => {
 
   it("finds a stock entry by code", () => {
     runFindStockEntryTests();
+  });
+
+  it("finds a stock entry by code for a dashboard catalog too", () => {
+    runFindStockEntryIsGenericTests();
   });
 });

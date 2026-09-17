@@ -222,7 +222,16 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
 
       <SectionCard
         title="Stock catalog"
-        subtitle="The six repository defaults (ADR 0049 decision 3)"
+        // The count is derived, and only on success: while the stock query is
+        // pending or errored `stockRows` is `[]`, and "0 repository defaults"
+        // would be a confident false statement over an empty list.
+        subtitle={
+          stockQ.isSuccess
+            ? `${stockRows.length} repository default${
+                stockRows.length === 1 ? "" : "s"
+              } (ADR 0049 decision 3)`
+            : "Repository defaults (ADR 0049 decision 3)"
+        }
         actions={
           mayAuthor ? (
             <select
@@ -241,6 +250,12 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
           ) : null
         }
       >
+        {stockQ.isPending ? <p className="text-sm text-bms-muted">Loading the stock catalog…</p> : null}
+        {stockQ.isError ? (
+          <p className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+            {(stockQ.error as Error).message}
+          </p>
+        ) : null}
         {importError ? (
           <p className="mb-2 rounded border border-red-200 bg-red-50 p-2 text-xs text-red-800">
             {importError}
@@ -255,20 +270,29 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                   {entry.code} · {entry.section} · stock v{entry.stockVersion}
                 </div>
               </div>
-              {mayAuthor ? (
-                <button
-                  type="button"
-                  aria-label={`Import ${entry.name}`}
-                  disabled={importOrgId === "" || importM.isPending}
-                  onClick={() => {
-                    setImportError(null);
-                    importM.mutate(entry.code);
-                  }}
-                  className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+              <div className="flex items-center gap-2">
+                <Link
+                  to={`/admin/dashboard-templates/stock/${entry.code}`}
+                  aria-label={`View ${entry.name}`}
+                  className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:underline"
                 >
-                  Import
-                </button>
-              ) : null}
+                  View
+                </Link>
+                {mayAuthor ? (
+                  <button
+                    type="button"
+                    aria-label={`Import ${entry.name}`}
+                    disabled={importOrgId === "" || importM.isPending}
+                    onClick={() => {
+                      setImportError(null);
+                      importM.mutate(entry.code);
+                    }}
+                    className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                  >
+                    Import
+                  </button>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

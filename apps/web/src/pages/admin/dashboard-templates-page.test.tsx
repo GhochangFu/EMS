@@ -3,9 +3,11 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aFailedStockFetchDoesNotCountZeroDefaults,
   importCallsTheApiWithTheChosenOrganization,
   rendersTemplatesAndStockCatalog,
   sectionFilterComesFromTheVocabularyFetch,
+  stockRowLinksToTheViewer,
 } from "./dashboard-templates-page.spec";
 
 /**
@@ -29,5 +31,13 @@ describe("F3.36 dashboard templates list page", () => {
 
   it("imports a stock entry into the chosen organization", async () => {
     await importCallsTheApiWithTheChosenOrganization();
+  });
+
+  it("links the stock row to the read-only viewer", async () => {
+    await stockRowLinksToTheViewer();
+  });
+
+  it("does not count zero defaults when the stock fetch fails", async () => {
+    await aFailedStockFetchDoesNotCountZeroDefaults();
   });
 });
