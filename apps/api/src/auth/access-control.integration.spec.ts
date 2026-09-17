@@ -916,7 +916,7 @@ export async function assertCanManageDashboard(
   );
   const ownLocationGroupId = ownLocationGroup.rows[0]?.id;
   if (!ownLocationGroupId) {
-    throw new Error(`F3.34: ${SEEDED.locationAdmin}'s location has no asset group — the seed creates six per location`);
+    throw new Error(`F3.34: ${SEEDED.locationAdmin}'s location has no asset group — the seed creates a group per asset domain at every location that holds assets`);
   }
   if (
     await svc.canManageDashboard(locationAdmin, locOrgId, { locationId: null, assetGroupId: ownLocationGroupId, assetId: null })

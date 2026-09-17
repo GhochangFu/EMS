@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -271,11 +271,14 @@ export async function theGroupListIsTheSourcesOrganizationOnly(): Promise<void> 
   renderDialog("admin");
 
   await screen.findByDisplayValue("Feed pumps (copy)");
-  const values = within(screen.getByRole("combobox", { name: "Asset group" }))
-    .getAllByRole("option")
-    .map((option) => (option as HTMLOptionElement).value)
-    .filter((value) => value !== "");
-  expect(values).toEqual(["grp-1"]);
+  // The option list fills when the groups query resolves — an async load after the prefill.
+  await waitFor(() => {
+    const values = within(screen.getByRole("combobox", { name: "Asset group" }))
+      .getAllByRole("option")
+      .map((option) => (option as HTMLOptionElement).value)
+      .filter((value) => value !== "");
+    expect(values).toEqual(["grp-1"]);
+  });
 }
 
 /** `freeSlug` is fed the already-fetched sibling list (Task 0.2) and skips a taken candidate. */
