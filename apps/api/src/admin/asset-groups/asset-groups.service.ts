@@ -39,7 +39,7 @@ import type { SetAssetGroupMemberRoleBody } from "./asset-groups.schema";
  * `isMasterDataRole` excludes it — "widening a role's read scope must never
  * widen its master-data write scope" — so the role that most obviously wants
  * to label its own group's members is refused here. That boundary belongs to
- * `F3.34`, and this row does not widen a permission as a side effect.
+ * `F3.63`, and this row does not widen a permission as a side effect.
  */
 @Injectable()
 export class AssetGroupsAdminService {
