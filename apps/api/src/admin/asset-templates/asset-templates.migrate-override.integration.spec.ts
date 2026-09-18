@@ -797,3 +797,64 @@ export async function assertANonComputedRowIsNotReadAsACalcOverride(
     "the refused asset must still be pinned to version 1",
   );
 }
+
+/**
+ * `E4.1a` / ADR 0070 — the same cycle, on a `bms-calc-v3` target version.
+ * `refuseOverridesThatDoNotSurvive` parses the merged formula under the
+ * **merged** dialect; parsed under the `v2` literal a `v3` formula fails on
+ * its first `$`, the candidate is skipped, and the migration proceeds — the
+ * cycle then surfaces only as a runtime `dependency_cycle` skip. The `$` sits
+ * after the aggregate on purpose, so a `v2` parse cannot yield the node before
+ * failing. The anti-vacuity half migrates onto a `v3` version whose aggregate
+ * closes no cycle.
+ */
+export async function assertAV3OverrideThatWouldCycleOnTheTargetVersionRefuses(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const sourceDerived: DerivedSpec = { formula: `{${MEASURED_KEY}} * 2` };
+  const cycleV3: DerivedSpec = {
+    formula: `sum({${DERIVED_KEY}} @site) * $energy_tariff_per_kwh`,
+    formulaDialect: "bms-calc-v3",
+  };
+  const acyclicV3: DerivedSpec = {
+    formula: `sum({${MEASURED_KEY}} @site) * $energy_tariff_per_kwh`,
+    formulaDialect: "bms-calc-v3",
+  };
+
+  const v1 = await seedVersion(db, fx, { version: 1, derived: sourceDerived });
+  const cyclic = await seedVersion(db, fx, { version: 2, derived: cycleV3 });
+  const acyclic = await seedVersion(db, fx, { version: 3, derived: acyclicV3 });
+  const onCycle = await seedAsset(db, fx, "CYCV3", v1);
+  const control = await seedAsset(db, fx, "CYCV3OK", v1);
+  await seedOverrideRow(db, fx, onCycle, AGE_ONLY);
+  await seedOverrideRow(db, fx, control, AGE_ONLY);
+
+  for (const [label, derived] of [
+    ["version 1", sourceDerived],
+    ["the cyclic v3 target", cycleV3],
+  ] as const) {
+    const problems = validateMergedCalcOverride(AGE_ONLY, templateFieldsOf(derived), DECLARED);
+    assert(problems.length === 0, `fixture defect: gate one already refuses this override on ${label} (${problems.join(" ")})`);
+  }
+
+  const refusals = await expectRefusal(
+    () => svc.migrate(fx.adminJwt, cyclic, { assetIds: [onCycle] }),
+    "an override merged onto a self-referencing v3 site aggregate",
+  );
+  const refusal = refusals.find((r) => r.reason === "calc_override_invalid_on_target");
+  assert(
+    refusal !== undefined && refusal.message.includes("dependency cycle") && refusal.message.includes(DERIVED_KEY),
+    `a v3 target must be refused by the cycle detector naming the point — proof the merged formula was parsed under v3 — got ` +
+      `[${refusals.map((r) => `${r.reason}: ${r.message}`).join(" | ")}]`,
+  );
+  assert((await pinnedVersion(pool, onCycle)) === 1, "the refused asset stays pinned to version 1");
+
+  await svc.migrate(fx.adminJwt, acyclic, { assetIds: [control] });
+  assert(
+    (await pinnedVersion(pool, control)) === 3,
+    "anti-vacuity: the same override migrates onto a v3 version whose aggregate closes no cycle",
+  );
+}

@@ -5,10 +5,15 @@ import { MAX_FORMULA_CROSS_REFS } from "./limits";
  * The `bms-calc-v2` expression corpus — every literal string `parser.spec.ts`
  * (`runParserV2Tests`, `runV2ErrorWordingTests`) and `evaluate.spec.ts`
  * (`runEvaluateV2Tests`) feed to `parseFormula` under `{ dialect:
- * CALC_DIALECT_V2 }`. Extracted, not invented — the same discipline
- * `v1-corpus.ts` states in its own docblock. `runV2ErrorWordingTests` itself
- * calls `formatCalcError` on hand-built `{ code, position }` objects, never
- * `parseFormula`, so it contributes no literal here.
+ * CALC_DIALECT_V2 }` — extracted, the discipline `v1-corpus.ts` states in
+ * its own docblock — **plus the two entries the exception lists below need,
+ * added by value**: `"{kw} * $energy_tariff_per_kwh"` and `"$"` are not
+ * literals any spec feeds `parseFormula` under `v2` (`parser.spec.ts` feeds
+ * `"{kw} * $f"` under `v2` and `"$"` under `v3`); they are here so the pinned
+ * `v2` refusal and its `v3` counterpart are one corpus entry each.
+ * `runV2ErrorWordingTests` itself calls `formatCalcError` on hand-built
+ * `{ code, position }` objects, never `parseFormula`, so it contributes no
+ * literal here.
  *
  * `E4.1a` U3 (ADR 0070 decision 3) re-runs this list under `bms-calc-v3` the
  * way `dialect-superset.spec.ts` already re-runs `V1_CORPUS` under `v2`: every

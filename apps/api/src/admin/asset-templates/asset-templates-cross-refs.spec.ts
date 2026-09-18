@@ -93,6 +93,28 @@ export function runCrossRefPointKeyTests(): void {
     ]).join(",") === "kw,kwh",
     "keys must be de-duplicated across points — the catalog read is one `IN` list",
   );
+
+  // ADR 0070 (E4.1a U7): a `v3` formula is parsed under `v3`, not the `v2`
+  // literal. Parsed under `v2` it fails on its first `$`, hits `continue`, and
+  // its qualified key never reaches the catalog check — the template saves
+  // clean and the sweep produces the counted skip nobody is watching. The `$`
+  // sits AFTER the qualified reference so a v2 parse cannot yield the key by
+  // accident before failing.
+  assert(
+    keys([
+      {
+        pointKey: "cost",
+        kind: "derived",
+        formula: "{TX_01.not_a_catalog_key} * $energy_tariff_per_kwh + sum({kw} @site)",
+        formulaDialect: "bms-calc-v3",
+      },
+    ]).join(",") === "kw,not_a_catalog_key",
+    "a bms-calc-v3 formula must be parsed under v3 so its cross references beside a $key are reported",
+  );
+  assert(
+    keys([{ pointKey: "p", kind: "derived", formula: "{kw} * $f", formulaDialect: "bms-calc-v3" }]).length === 0,
+    "a $key is a parameter, not a point key — the vocabulary check owns it",
+  );
 }
 
 /**

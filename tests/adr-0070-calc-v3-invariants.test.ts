@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -152,7 +153,7 @@ const DIALECT_GATE_ALLOWLIST = new Set([
   "packages/shared/src/calc-dsl/tokenizer.ts",
   "packages/shared/src/calc-dsl/parser.ts",
 ]);
-const V2_LITERAL_GATE = /[!=]==\s*CALC_DIALECT_V2\b|\bCALC_DIALECT_V2\s*[!=]==/;
+const V2_LITERAL_GATE = /[!=]==\s*(?:CALC_DIALECT_V2\b|"bms-calc-v2")|(?:\bCALC_DIALECT_V2|"bms-calc-v2")\s*[!=]==/;
 
 function sourceFilesUnder(root: string): string[] {
   const out: string[] = [];
@@ -198,6 +199,7 @@ describe("ADR 0070 part (b) — no dialect gate outside the grammar files compar
   it("the regex matches both operator orders and nothing else", () => {
     expect(V2_LITERAL_GATE.test("  if (dialect === CALC_DIALECT_V2 && x) {")).toBe(true);
     expect(V2_LITERAL_GATE.test("  if (CALC_DIALECT_V2 !== row.dialect) {")).toBe(true);
+    expect(V2_LITERAL_GATE.test('  if (dialect === "bms-calc-v2") {')).toBe(true);
     expect(V2_LITERAL_GATE.test("  const label = DIALECT_LABELS[CALC_DIALECT_V2];")).toBe(false);
     expect(V2_LITERAL_GATE.test("  if (isCrossAssetDialect(dialect)) {")).toBe(false);
   });
@@ -207,12 +209,16 @@ describe("ADR 0070 part (b) — no dialect gate outside the grammar files compar
   });
 
   it("positive control: the scan reports an injected gate", () => {
-    const injected = join(repoRoot, "apps/api/src/__adr0070_probe__.ts");
+    // Written to a temp dir, never into the scanned tree: a killed run must
+    // not leave a probe that fails the next `pnpm build`.
+    const dir = mkdtempSync(join(tmpdir(), "adr0070-"));
+    const injected = join(dir, "probe.ts");
     try {
       writeFileSync(injected, "export const x = (d: string) => d === CALC_DIALECT_V2;\n");
-      expect(v2LiteralGates([injected])).toEqual(["apps/api/src/__adr0070_probe__.ts:1"]);
+      const [offender] = v2LiteralGates([injected]);
+      expect(offender, "the injected gate must be reported").toMatch(/probe\.ts:1$/);
     } finally {
-      rmSync(injected, { force: true });
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

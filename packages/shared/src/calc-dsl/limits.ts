@@ -33,6 +33,7 @@ export type CalcV1Dialect = typeof CALC_DIALECT;
  * parameters.
  */
 export const isCrossAssetDialect = (dialect: CalcDialect): boolean => dialect !== CALC_DIALECT;
+/** True for the one dialect that admits a `$key` reference (ADR 0070 decision 4). */
 export const isParameterDialect = (dialect: CalcDialect): boolean => dialect === CALC_DIALECT_V3;
 
 /** Aggregate functions a `v2` formula may apply over a scope (ADR 0055

@@ -129,15 +129,11 @@ describe("E4.1a calc parameters (ADR 0070 decision 2)", () => {
   });
 
   // S2
-  it("creates btree_gist BEFORE SET ROLE bms_owner, and brackets in SET ROLE / RESET ROLE", () => {
-    const ext = sql.indexOf("CREATE EXTENSION IF NOT EXISTS btree_gist");
-    const setRole = sql.indexOf("SET ROLE bms_owner");
-    expect(ext, "CREATE EXTENSION IF NOT EXISTS btree_gist not found").toBeGreaterThanOrEqual(0);
-    expect(setRole, "SET ROLE bms_owner not found").toBeGreaterThanOrEqual(0);
-    expect(
-      ext,
-      "CREATE EXTENSION must run as the connecting superuser, i.e. before SET ROLE bms_owner",
-    ).toBeLessThan(setRole);
+  it("does not CREATE EXTENSION (roles.ts provisions btree_gist, AGENTS.md §4.4), and brackets in SET ROLE / RESET ROLE", () => {
+    expect(sql, "a migration never widens the provisioning surface — btree_gist is roles.ts's").not.toMatch(/CREATE EXTENSION/i);
+    const rolesSource = readFileSync(join(repoRoot, "packages/db/src/roles.ts"), "utf8");
+    expect(rolesSource).toContain("CREATE EXTENSION IF NOT EXISTS btree_gist");
+    expect(sql.indexOf("SET ROLE bms_owner"), "SET ROLE bms_owner not found").toBeGreaterThanOrEqual(0);
     expect(sql).toContain("RESET ROLE");
     expect(sql).not.toContain("CREATE INDEX CONCURRENTLY");
   });
