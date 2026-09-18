@@ -172,7 +172,12 @@ function sourceFilesUnder(root: string): string[] {
 }
 
 function relativeTo(file: string): string {
-  return file.slice(repoRoot.length).replace(/\\/g, "/");
+  // A file outside the repository (the positive control writes its probe to a
+  // temp dir) keeps its absolute path; slicing `repoRoot.length` off it yields
+  // garbage — measured on CI, where /tmp is shorter than the checkout path.
+  const normalised = file.replace(/\\/g, "/");
+  const root = repoRoot.replace(/\\/g, "/");
+  return normalised.startsWith(root) ? normalised.slice(root.length) : normalised;
 }
 
 function v2LiteralGates(files: readonly string[]): string[] {
