@@ -1210,7 +1210,16 @@ Amendment 5 recorded and this amendment does not change.
 - **`F3.63` flips to 🟡** and carries both rulings; effort `3–4` stands.
 - **`packages/shared` contract change, additive:** `accessAssetGroupSchema`
   gains `organizationId: z.string()`. Every producer is the one branch in
-  `scopeForUser`; no consumer narrows on the key set.
+  `scopeForUser`; no consumer narrows on the key set. **And two new schemas**
+  (recorded by the `F3.63` post-merge sweep — the first draft of this list
+  named only the field): `assetPointPickerRowSchema`, the five-field row
+  `GET /assets/:assetId/points` returns (`id`, `assetId`, `assetName`,
+  `pointKey`, `unit` nullable — a fresh `z.object`, not a `.pick()` of the
+  admin DTO), and `assetPointPickerListResponseSchema` wrapping it, with the
+  exported types `AssetPointPickerRow` and `AssetPointPickerListResponse`.
+  The route does NOT return `AdminAssetPointDto`: the admin-only fields
+  (`sourceDataKey`, `sensorCode`, scaling) must not leave through the
+  non-admin route, and the integration spec pins the key set exactly.
 - **One new API route**, `GET /assets/:assetId/points`, in the existing
   `assets` module; no new module, no new dependency, no migration.
 - **`AGENTS.md`:** no §6 line moves. The `chore(agents):` sweep after close

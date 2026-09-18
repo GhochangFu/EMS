@@ -8,7 +8,13 @@ import { createDashboard, fetchDashboard, fetchDashboards, putDashboardWidgets }
 import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-options";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { duplicatePayload, freeSlug, type DuplicateDashboardTarget } from "../../lib/dashboard-duplicate";
-import { isScopeChosen, scopeColumns, scopeForDuplicate, type ChosenScopeValue } from "../../lib/dashboard-scope";
+import {
+  isScopeAuthorised,
+  isScopeChosen,
+  scopeColumns,
+  scopeForDuplicate,
+  type ChosenScopeValue,
+} from "../../lib/dashboard-scope";
 import { DashboardScopeFields } from "./dashboard-scope-fields";
 
 export type DuplicateDashboardDialogProps = {
@@ -48,8 +54,10 @@ export class DuplicateWidgetsCopyFailure extends Error {
  * fixed at creation and `assertBoundPointsInOrganization` requires it to match the copied
  * bindings' own organization. The scope itself — organization-wide, a location within it, or an
  * asset group within it (`F3.34`, ADR 0047 Amendment 5) — IS a choice, restricted the same way
- * the builder restricts it (`DashboardScopeFields` reads `canCreateOrganizationWideDashboard`,
- * `canChooseLocationDashboardScope` and `canChooseAssetGroupDashboardScope`). The prefill is
+ * the builder restricts it: the KINDS offered by `DashboardScopeFields` (which reads
+ * `canCreateOrganizationWideDashboard`, `canChooseLocationDashboardScope` and
+ * `canChooseAssetGroupDashboardScope`), and the ID by `isScopeAuthorised` in `blocked` below,
+ * the edit page's own Save gate (see the paragraph on it further down). The prefill is
  * three-way (`scopeForDuplicate`): before `F3.34` a group source was read as "organization" and
  * the copy silently landed organization-wide. **An asset-scoped source folds to organization**
  * (`F3.63`, ADR 0047 Amendment 6 §Q2, last sentence): the state here is `ChosenScopeValue`, so
@@ -57,7 +65,13 @@ export class DuplicateWidgetsCopyFailure extends Error {
  * copy is an ordinary dashboard the author scopes by hand. The option lists come from
  * `useDashboardScopeOptions` by role (Amendment 6 §Q1 point 2): an `asset_group_admin` opens
  * this dialog from the edit page it now reaches, and its list is `/auth/me`'s
- * `scope.assetGroups` — neither `/admin/*` read fires for it (plan §11 Q1).
+ * `scope.assetGroups` — neither `/admin/*` read fires for it (plan §11 Q1). **Duplicate gates
+ * on `isScopeAuthorised`, the same helper as the edit page's Save** (`F3.63` post-merge sweep):
+ * the prefill is the SOURCE's scope, and a scoped role can open a dashboard on a group or a
+ * location it does not hold — before the sweep the dialog gated on `isScopeChosen` alone, so
+ * *Duplicate this dashboard* on a foreign-group source sent `createDashboard` into a 403. For
+ * `admin` / `organization_admin` the lists are a picker, not a boundary, so an inactive
+ * location's id does not block them.
  *
  * **Not atomic, and this dialog does not hide that.** If the widget copy fails, the dashboard
  * already created stays (`DuplicateWidgetsCopyFailure`). No compensating `DELETE` is issued — the
@@ -153,7 +167,8 @@ export function DuplicateDashboardDialog({
   const widgetsFailure = duplicateM.error instanceof DuplicateWidgetsCopyFailure ? duplicateM.error : null;
   const otherFailure = duplicateM.isError && !widgetsFailure ? apiErrorMessage(duplicateM.error) : null;
 
-  const scopeChosen = isScopeChosen(scope);
+  // Chosen AND authorised — one helper with the edit page; see the docblock above.
+  const scopeChosen = isScopeChosen(scope) && isScopeAuthorised(role, scope, { locations, assetGroups });
   const blocked = !source || name.trim() === "" || slug.trim() === "" || !scopeChosen || duplicateM.isPending;
 
   return (

@@ -25,6 +25,11 @@ import {
   renamingAnAssetScopedDashboardSendsOnlyNameAndDescription,
   theGroupListIsTheDashboardsOrganizationOnly,
   thePatchBodyForAnAssetScopedDashboardHasExactlyTwoKeys,
+  adminOnADashboardWhoseLocationIsAbsentFromTheActiveListCanSave,
+  assetGroupAdminOnAForeignGroupSeesWhyItCannotSave,
+  assetGroupAdminOnItsOwnGroupSeesNoScopeReason,
+  locationAdminOnAGroupDashboardIsAskedToChooseAScope,
+  locationAdminOnAGroupDashboardSeesNoOutsideScopeReason,
 } from "./dashboard-builder-edit-page.spec";
 
 /**
@@ -123,5 +128,25 @@ describe("F3.1d dashboard builder edit page", () => {
 
   it("a location_admin on a location it does not hold cannot save a rename (F3.63 review)", async () => {
     await locationAdminOnAForeignLocationCannotSave();
+  });
+
+  it("an asset_group_admin on a group it does not hold sees why it cannot save (F3.63 sweep)", async () => {
+    await assetGroupAdminOnAForeignGroupSeesWhyItCannotSave();
+  });
+
+  it("an asset_group_admin on its own group sees no scope reason (F3.63 sweep, absence)", async () => {
+    await assetGroupAdminOnItsOwnGroupSeesNoScopeReason();
+  });
+
+  it("an admin on a dashboard whose location is absent from the active list can still save (F3.63 sweep)", async () => {
+    await adminOnADashboardWhoseLocationIsAbsentFromTheActiveListCanSave();
+  });
+
+  it("a location_admin clamped onto an unchosen location is asked to choose a scope (F3.63 sweep)", async () => {
+    await locationAdminOnAGroupDashboardIsAskedToChooseAScope();
+  });
+
+  it("a location_admin clamped onto an unchosen location sees no outside-scope line (F3.63 sweep, absence)", async () => {
+    await locationAdminOnAGroupDashboardSeesNoOutsideScopeReason();
   });
 });

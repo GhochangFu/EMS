@@ -12,8 +12,8 @@ import {
 import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-options";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
+  isScopeAuthorised,
   isScopeChosen,
-  isScopeOffered,
   scopeChanged,
   scopeFromDashboard,
   scopePatch,
@@ -138,13 +138,34 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     : false;
   const widgetsChanged = dto ? builderHasChanged(rows, dto) : false;
   const changed = fieldsChanged || widgetsChanged;
-  // Chosen AND offered (`F3.63` review): a location or a group the role's option list does not
-  // hold — a foreign scope the role can open but not save — leaves the select without a matching
-  // option while `isScopeChosen` is still true; without the second predicate a rename enabled
-  // Save and the PATCH ended in the server's 404. See `isScopeOffered`'s docblock for why a
-  // still-loading list counts as "not offered".
-  const scopeChosen = isScopeChosen(scope) && isScopeOffered(scope, { locations, assetGroups });
+  // Chosen AND authorised (`F3.63` review, then its post-merge sweep): a location or a group a
+  // SCOPED role's option list does not hold — a foreign scope the role can open but not save —
+  // leaves the select without a matching option while `isScopeChosen` is still true; without
+  // the second predicate a rename enabled Save and the PATCH ended in the server's 404. For
+  // `admin` / `organization_admin` the list is a picker of ACTIVE rows, not a boundary, so an
+  // absent id does not block them — the sweep's regression was an `admin` on a dashboard whose
+  // location was set inactive, Save disabled with no reason shown. `isScopeAuthorised` is the
+  // one place the role rule lives; the duplicate dialog composes the same helper. See
+  // `isScopeOffered`'s docblock for why a still-loading list counts as "not offered".
+  const scopeAuthorised = isScopeAuthorised(user.role, scope, { locations, assetGroups });
+  const scopeChosen = isScopeChosen(scope) && scopeAuthorised;
   const blocked = !dto || name.trim() === "" || !scopeChosen || problems.length > 0 || !changed;
+  // Save never disables with a reason nothing on the page shows (the `F3.34` review's rule):
+  // the two scope reasons rank above "No changes yet.", which is also true of an unedited
+  // foreign-scope dashboard and would otherwise mask them. UNCHOSEN is judged before
+  // UNAUTHORISED: an empty id fails `isScopeOffered` too, so the clamp path — a
+  // `location_admin` on a group dashboard, rewritten to an unchosen location — would otherwise
+  // read as "outside your scope" when nothing is scoped outside anything.
+  const saveReason =
+    problems.length > 0
+      ? "Fix the problems below to save."
+      : !isScopeChosen(scope)
+        ? "Choose a scope to save."
+        : !scopeAuthorised
+          ? "This dashboard is scoped to a location or asset group outside your scope, so it cannot be saved here."
+          : !changed
+            ? "No changes yet."
+            : "";
 
   const saveM = useMutation({
     mutationFn: async () => {
@@ -171,7 +192,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
       // same two roles can also open a dashboard of THEIR OWN kind but outside their grant — a
       // `location_admin` on a location it does not hold, an `asset_group_admin` on a group it
       // does not hold (`F3.63` review): the clamp does not fire (the kind is offered), so it is
-      // `isScopeOffered` in `blocked` above that keeps Save disabled there, and the 404 the
+      // `isScopeAuthorised` in `blocked` above that keeps Save disabled there, and the 404 the
       // PATCH would otherwise meet is never reached.
       const body: UpdateDashboardPayload = {
         name: name.trim(),
@@ -347,7 +368,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 {saveM.isPending ? "Saving…" : "Save dashboard"}
               </button>
               <div className="text-[11px] text-bms-muted">
-                <p>{problems.length > 0 ? "Fix the problems below to save." : !changed ? "No changes yet." : ""}</p>
+                <p>{saveReason}</p>
                 {summaryProblems.length > 0 ? (
                   <ul className="mt-1 space-y-0.5 text-red-700">
                     {summaryProblems.map((problem, index) => (

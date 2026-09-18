@@ -3,6 +3,11 @@ import { describe, it } from "vitest";
 import {
   aChosenAssetGroupIsChosen,
   aChosenAssetIsChosen,
+  adminIsAuthorisedForALocationAbsentFromTheList,
+  assetGroupAdminIsNotAuthorisedForAGroupAbsentFromTheList,
+  locationAdminIsAuthorisedForAnOfferedLocation,
+  locationAdminIsNotAuthorisedForALocationAbsentFromTheList,
+  organizationAdminIsAuthorisedForAGroupAbsentFromTheList,
   aLocationAbsentFromTheOfferedListIsNotOffered,
   aLocationInTheOfferedListIsOffered,
   anAssetGroupAbsentFromTheOfferedListIsNotOffered,
@@ -163,5 +168,25 @@ describe("F3.34 dashboard scope model", () => {
 
   it("does not offer a group absent from the offered list", () => {
     anAssetGroupAbsentFromTheOfferedListIsNotOffered();
+  });
+
+  it("authorises admin for a location absent from the active list (F3.63 sweep)", () => {
+    adminIsAuthorisedForALocationAbsentFromTheList();
+  });
+
+  it("authorises organization_admin for a group absent from the list (F3.63 sweep)", () => {
+    organizationAdminIsAuthorisedForAGroupAbsentFromTheList();
+  });
+
+  it("does not authorise location_admin for a location absent from its list (F3.63 sweep)", () => {
+    locationAdminIsNotAuthorisedForALocationAbsentFromTheList();
+  });
+
+  it("authorises location_admin for an offered location (positive control)", () => {
+    locationAdminIsAuthorisedForAnOfferedLocation();
+  });
+
+  it("does not authorise asset_group_admin for a group absent from its list (F3.63 sweep)", () => {
+    assetGroupAdminIsNotAuthorisedForAGroupAbsentFromTheList();
   });
 });

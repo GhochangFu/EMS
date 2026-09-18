@@ -32,8 +32,12 @@ import { AssetsService } from "./assets.service";
  * no owner, so two suites that both name it have no protocol for who may
  * write to it. So {@link createFixture} commits, under a per-run `f363-`
  * prefix, two assets of its own at the location of the `hvac` group the role
- * holds: asset A, a member of that group with one active and one inactive
- * point, and asset B, at the same location and in no group at all. Nothing
+ * holds: asset A, a member of that group with two active points — one with
+ * `unit = 'kW'`, one with `unit NULL` (post-merge sweep, Security Low: the
+ * picker schema's `unit` is `.nullable()`, and before the second row no
+ * ACTIVE point had a NULL unit, so `listPoints` never read that arm back) —
+ * and one inactive point, and asset B, at the same location and in no group
+ * at all. Nothing
  * here names a seeded asset, and nothing here writes a seeded row.
  *
  * Committed rather than `createFixtureAssets()` inside a rollback, because
@@ -72,13 +76,15 @@ const NO_AUDIT = {} as unknown as MasterDataAuditService;
 
 /** The rows this suite committed, and what it needs to delete them again. */
 export interface Fixture {
-  /** Asset A — a member of the role's `hvac` group; one active point, one inactive. */
+  /** Asset A — a member of the role's `hvac` group; two active points, one inactive. */
   readonly assetAId: string;
   /** Asset B — same location, same organization, in no group. */
   readonly assetBId: string;
   readonly groupId: string;
   readonly organizationId: string;
   readonly activeKey: string;
+  /** The second ACTIVE point, `unit NULL` — the nullable arm of the picker schema. */
+  readonly nullUnitKey: string;
   readonly inactiveKey: string;
   readonly pointIds: readonly string[];
   readonly membershipIds: readonly string[];
@@ -118,9 +124,10 @@ export async function createFixture(pools: Pools): Promise<Fixture> {
   try {
     const group = await roleGroup(pool);
     const activeKey = `${prefix}_active`;
+    const nullUnitKey = `${prefix}_nounit`;
     const inactiveKey = `${prefix}_inactive`;
     // `asset_points.point_key` references `bms.point_keys(code)` (F3.39).
-    partial.unregisterKeys = await registerFixturePointKeys(pool, [activeKey, inactiveKey]);
+    partial.unregisterKeys = await registerFixturePointKeys(pool, [activeKey, nullUnitKey, inactiveKey]);
 
     const insertAsset = async (suffix: string, name: string): Promise<string> => {
       const { rows } = await pool.query<{ id: string }>(
@@ -143,17 +150,20 @@ export async function createFixture(pools: Pools): Promise<Fixture> {
     );
     partial.membershipIds.push(...members.map((m) => m.id));
 
-    // `unit` is a real string on the active point so the SQL-to-read value
-    // comparison below is load-bearing on that field, not NULL against NULL.
+    // `unit` is a real string on the first active point so the SQL-to-read
+    // value comparison below is load-bearing on that field, not NULL against
+    // NULL — and NULL on the second active point so the nullable arm IS read
+    // back (both active rows reach `listPoints`; the inactive one does not).
     const { rows: points } = await pool.query<{ id: string }>(
       `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, source_kind, unit, active)
        VALUES ($1, $2, $3, $3, 'unmapped', 'kW', true),
-              ($1, $2, $4, $4, 'unmapped', NULL, false)
+              ($1, $2, $4, $4, 'unmapped', NULL, true),
+              ($1, $2, $5, $5, 'unmapped', NULL, false)
        RETURNING id`,
-      [group.organizationId, assetAId, activeKey, inactiveKey],
+      [group.organizationId, assetAId, activeKey, nullUnitKey, inactiveKey],
     );
     partial.pointIds.push(...points.map((p) => p.id));
-    assert(partial.pointIds.length === 2, `expected 2 fixture points, inserted ${partial.pointIds.length}`);
+    assert(partial.pointIds.length === 3, `expected 3 fixture points, inserted ${partial.pointIds.length}`);
 
     return {
       assetAId,
@@ -161,6 +171,7 @@ export async function createFixture(pools: Pools): Promise<Fixture> {
       groupId: group.id,
       organizationId: group.organizationId,
       activeKey,
+      nullUnitKey,
       inactiveKey,
       pointIds: partial.pointIds,
       membershipIds: partial.membershipIds,
@@ -168,7 +179,7 @@ export async function createFixture(pools: Pools): Promise<Fixture> {
       unregisterKeys: partial.unregisterKeys,
     };
   } catch (err) {
-    await dropFixture(pools, { ...partial, assetAId: "", assetBId: "", groupId: "", organizationId: "", activeKey: "", inactiveKey: "" }).catch(
+    await dropFixture(pools, { ...partial, assetAId: "", assetBId: "", groupId: "", organizationId: "", activeKey: "", nullUnitKey: "", inactiveKey: "" }).catch(
       () => undefined,
     );
     throw err;
@@ -245,25 +256,33 @@ export async function assertRoleCanReadItsOwnAsset(pools: Pools, fx: Fixture): P
 }
 
 /**
- * The read returns exactly the asset's active points — and the committed
- * inactive point is NOT among them. With the count alone `active = true` and
- * no predicate are the same number on an asset with no inactive row (review:
- * mutation M9 survived), which is why the fixture carries one. The absence
- * claim comes first so the failure names the predicate, then the exact count.
- * Mutation: drop `eq(assetPoints.active, true)` in `listPoints` ⇒ red.
+ * The read returns exactly the asset's active points — both of them — and
+ * the committed inactive point is NOT among them. With the count alone
+ * `active = true` and no predicate are the same number on an asset with no
+ * inactive row (review: mutation M9 survived), which is why the fixture
+ * carries one. The absence claim comes first so the failure names the
+ * predicate, then the exact count, then the key SET (sorted — `listPoints`
+ * orders by `point_key`, and `_active` sorts before `_nounit`, but the claim
+ * is membership, not position). Mutation: drop `eq(assetPoints.active, true)`
+ * in `listPoints` ⇒ red.
  */
 export async function assertListPointsReturnsTheActivePointsOfTheAsset(pools: Pools, fx: Fixture): Promise<void> {
   const { assets } = services(pools);
   const id = await ownAssetId(pools.pool, fx);
   assert((await countPoints(pools.pool, id, false)) === 1, "fixture asset A must carry exactly one inactive point");
-  assert((await countPoints(pools.pool, id, true)) === 1, "fixture asset A must carry exactly one active point");
+  assert((await countPoints(pools.pool, id, true)) === 2, "fixture asset A must carry exactly two active points");
   const { items } = await assets.listPoints(id);
   assert(
     !items.some((item) => item.pointKey === fx.inactiveKey),
     `listPoints(${id}) returned the inactive point ${fx.inactiveKey}`,
   );
-  assert(items.length === 1, `listPoints(${id}) returned ${items.length} items, SQL counts 1 active`);
-  assert(items[0]?.pointKey === fx.activeKey, `listPoints(${id}) returned ${String(items[0]?.pointKey)}, expected ${fx.activeKey}`);
+  assert(items.length === 2, `listPoints(${id}) returned ${items.length} items, SQL counts 2 active`);
+  const keys = items.map((item) => item.pointKey).sort();
+  const expected = [fx.activeKey, fx.nullUnitKey].sort();
+  assert(
+    JSON.stringify(keys) === JSON.stringify(expected),
+    `listPoints(${id}) returned keys [${keys.join(", ")}], expected both active keys [${expected.join(", ")}]`,
+  );
 }
 
 export async function assertEveryItemBelongsToTheAsset(pools: Pools, fx: Fixture): Promise<void> {
@@ -435,8 +454,12 @@ export async function assertListPointsEqualsTheAdminProjection(pools: Pools, fx:
  * both sides, so a wrong field INSIDE the pick (`assetName: dto.assetCode`)
  * is invisible to it, and the key-set case sees names, not values. This case
  * builds the expected rows from `bms.asset_points ⋈ bms.assets` and
- * deep-equals the read. Mutation: swap `assetName` for the code in
- * `pickAssetPointPickerRow` ⇒ red.
+ * deep-equals the read — BOTH active rows, one of them with `unit: null`, so
+ * the nullable arm of the picker schema is read back and compared (post-merge
+ * sweep, Security Low); the precondition that exactly one expected row has a
+ * NULL unit is asserted so the case cannot stay green if that row goes
+ * missing. Mutation: swap `assetName` for the code in `pickAssetPointPickerRow`
+ * ⇒ red; pick `unit: dto.unit ?? ""` in `pickAssetPointPickerRow` ⇒ red (run by the sweep).
  */
 export async function assertPickedValuesMatchSql(pools: Pools, fx: Fixture): Promise<void> {
   const { assets } = services(pools);
@@ -454,7 +477,8 @@ export async function assertPickedValuesMatchSql(pools: Pools, fx: Fixture): Pro
       ORDER BY p.point_key`,
     [id],
   );
-  assert(rows.length > 0, "the fixture asset has no active point in SQL");
+  assert(rows.length === 2, `the fixture asset has ${rows.length} active point(s) in SQL, expected 2`);
+  assert(rows.filter((row) => row.unit === null).length === 1, "exactly one active fixture point must have unit NULL");
   const expected = rows.map((row) => ({
     id: row.id,
     assetId: row.asset_id,

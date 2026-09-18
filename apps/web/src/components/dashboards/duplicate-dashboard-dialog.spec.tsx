@@ -36,6 +36,15 @@ import { DuplicateDashboardDialog } from "./duplicate-dashboard-dialog";
  * resets it in `afterEach`. The admin fetches stay spied so a regression is RECORDED as a call.
  * An asset-scoped source (§Q2, last sentence) prefills as organization — `scopeForDuplicate`
  * folds it, because this dialog's state cannot hold the `asset` kind.
+ *
+ * **The post-merge sweep's foreign-scope trio** (`assetGroupAdminOnAForeignGroupCannotDuplicate`,
+ * `locationAdminOnAForeignLocationCannotDuplicate`, and the own-group positive control
+ * `assetGroupAdminOnItsOwnGroupHasDuplicateEnabled`): the dialog gated Duplicate on
+ * `isScopeChosen` alone, and the prefill is the source's own scope, so a scoped role opening a
+ * foreign-scope dashboard sent `createDashboard` into a 403. Duplicate now gates on
+ * `isScopeAuthorised`, the edit page's helper. Every one of the three waits for the prefilled
+ * name first: `blocked` is also true while name and slug are still empty, and an assertion
+ * before the prefill would pass for that reason and survive the mutation.
  */
 
 const SOURCE_ORG = "22222222-2222-4222-8222-222222222222";
@@ -180,14 +189,16 @@ function stubLoads({
   source,
   siblings = [],
   groups = [GROUP],
+  locations = LOCATIONS,
 }: {
   source: DashboardDto;
   siblings?: DashboardSummaryDto[];
   groups?: readonly AdminAssetGroupDto[];
+  locations?: typeof LOCATIONS;
 }): void {
   vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(source);
   vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({ items: siblings });
-  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: LOCATIONS });
+  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: locations });
   vi.spyOn(assetGroupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [...groups] });
 }
 
@@ -455,4 +466,40 @@ export async function anAssetScopedSourcePrefillsAsOrganizationWide(): Promise<v
   renderDialog("admin");
 
   expect(await screen.findByRole("radio", { name: "Organization-wide", checked: true })).toBeInTheDocument();
+}
+
+/** The positive control the two refusals below sit beside: the role on its OWN group, prefilled,
+ * has Duplicate enabled — so a disabled button below is the scope gate, not the empty name. */
+export async function assetGroupAdminOnItsOwnGroupHasDuplicateEnabled(): Promise<void> {
+  await openAssetGroupAdminsDialog();
+
+  await screen.findByDisplayValue("Feed pumps (copy)");
+  expect(screen.getByRole("button", { name: "Duplicate" })).toBeEnabled();
+}
+
+/** The sweep's Medium, group half: the store scope holds `grp-1`, the source is scoped to
+ * `grp-foreign`. The group radio prefills checked and the select shows the id as outside the
+ * scope; Duplicate must be disabled. Mutation: gate on `isScopeChosen` alone ⇒ red. */
+export async function assetGroupAdminOnAForeignGroupCannotDuplicate(): Promise<void> {
+  stubLoads({ source: { ...GROUP_SOURCE, assetGroupId: "grp-foreign" }, groups: [GROUP] });
+  signInAsAssetGroupAdmin();
+  renderDialog("asset_group_admin");
+
+  await screen.findByRole("radio", { name: "Asset group", checked: true });
+  await screen.findByDisplayValue("Feed pumps (copy)");
+  expect(screen.getByRole("button", { name: "Duplicate" })).toBeDisabled();
+}
+
+/** Location half: the role's `GET /admin/locations` lists its own locations only, so the stub
+ * returns `loc-2` and NOT the source's `loc-1`. The list has loaded (its option is waited for)
+ * before the button is judged. Mutation: gate on `isScopeChosen` alone ⇒ red. */
+export async function locationAdminOnAForeignLocationCannotDuplicate(): Promise<void> {
+  const OWN_LOCATION = { ...LOCATIONS[0]!, id: "loc-2", code: "S2", slug: "site-2", name: "Site 2" };
+  stubLoads({ source: SOURCE, locations: [OWN_LOCATION] });
+  renderDialog("location_admin");
+
+  await screen.findByRole("radio", { name: "Location", checked: true });
+  await screen.findByRole("option", { name: "Site 2" });
+  await screen.findByDisplayValue("Feed pumps (copy)");
+  expect(screen.getByRole("button", { name: "Duplicate" })).toBeDisabled();
 }
