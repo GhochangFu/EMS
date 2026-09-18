@@ -1,4 +1,4 @@
-import { CALC_DIALECT_V2, parseFormula } from "@bms/shared";
+import { CALC_DIALECTS, isCrossAssetDialect, parseFormula } from "@bms/shared";
 
 /**
  * `F2.9` / ADR 0055 — the point keys a `bms-calc-v2` formula names *inside* its
@@ -95,16 +95,20 @@ export function boundedMissingPointKeys(codes: readonly string[]): string[] {
   return withheld > 0 ? [...listed, `and ${withheld} more`] : listed;
 }
 
-/** The point keys a `bms-calc-v2` formula names inside its own text, deduped. */
+/** The point keys a cross-asset (`bms-calc-v2` or `bms-calc-v3`, ADR 0070)
+ * formula names inside its own text, deduped. Parsed under the point's own
+ * dialect: a `v3` formula parsed under `v2` fails on its first `$` and its
+ * cross references would silently go unchecked. */
 export function crossRefPointKeys(
   points: readonly CrossRefCandidatePoint[],
 ): { pointKey: string }[] {
   const found = new Set<string>();
   for (const point of points) {
-    if (point.kind !== "derived" || !point.formula || point.formulaDialect !== CALC_DIALECT_V2) {
+    const dialect = CALC_DIALECTS.find((known) => known === point.formulaDialect);
+    if (point.kind !== "derived" || !point.formula || dialect === undefined || !isCrossAssetDialect(dialect)) {
       continue;
     }
-    const parsed = parseFormula(point.formula, { dialect: CALC_DIALECT_V2 });
+    const parsed = parseFormula(point.formula, { dialect });
     if (!parsed.ok) {
       continue;
     }

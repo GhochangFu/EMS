@@ -9,6 +9,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { instantiateAssetsBodySchema } from "./asset-templates.schema";
@@ -98,6 +99,7 @@ describe.skipIf(!connectionString)("F3.2 — the per-asset default dashboard bac
       access,
       audit,
       vocabularies,
+      new CalcParametersService(fleetDb),
     );
     const assetDashboards = new AssetDashboardsInstantiateService(
       fleetDb,

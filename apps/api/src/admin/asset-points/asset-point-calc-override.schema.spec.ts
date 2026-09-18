@@ -580,3 +580,51 @@ export function assertAnUnknownStoredDialectIsRefused(): void {
     `a merged formula with no dialect at all must be refused as unset, got: ${unset.join(" ")}`,
   );
 }
+
+/**
+ * `E4.1a` / ADR 0070 decisions 3 and 4 — the override path is a second author
+ * for the same engine, so every `v2` gate above reads "cross-asset dialect"
+ * now, and `v3` is admitted, scheduled-only, with its own dialect named in
+ * the refusal. The mutation this exists for: revert one gate to the `v2`
+ * literal and a streaming `v3` override stores clean and never computes.
+ */
+export function assertV3OverrideIsAdmittedScheduledOnly(): void {
+  const cost = validateMergedCalcOverride(
+    { ...NOTHING, formula: "{KW} * $energy_tariff_per_kwh", formulaDialect: "bms-calc-v3" },
+    SCHEDULED_TEMPLATE,
+    KEYS,
+  );
+  assert(cost.length === 0, `a scheduled bms-calc-v3 override naming a $key is accepted, got: ${cost.join(" ")}`);
+
+  const mixed = validateMergedCalcOverride(
+    { ...NOTHING, formula: `sum({KW} @site) * $f + {${DERIVED_SIBLING}}`, formulaDialect: "bms-calc-v3" },
+    SCHEDULED_TEMPLATE,
+    KEYS,
+  );
+  assert(mixed.length === 0, `v3 keeps every v2 admission — aggregate and derived sibling — got: ${mixed.join(" ")}`);
+
+  const streaming = validateMergedCalcOverride(
+    { ...NOTHING, formula: "{KW} * $f", formulaDialect: "bms-calc-v3" },
+    STREAMING_TEMPLATE,
+    KEYS,
+  );
+  const joined = streaming.join(" ");
+  assert(joined.includes("cannot run on a single reading"), `a v3 formula merged onto a streaming trigger is refused, got: ${joined}`);
+  assert(joined.includes('"bms-calc-v3" point requires calcTrigger: "scheduled"'), `the message names the row's own dialect, got: ${joined}`);
+
+  // a $ under v2 stays the dsl's refusal — the dialect on the row decides
+  const dollarUnderV2 = validateMergedCalcOverride(
+    { ...NOTHING, formula: "{KW} * $f", formulaDialect: "bms-calc-v2" },
+    SCHEDULED_TEMPLATE,
+    KEYS,
+  );
+  assert(dollarUnderV2.join(" ").includes("is not valid bms-calc-v2"), `a $ under v2 is not valid v2, got: ${dollarUnderV2.join(" ")}`);
+
+  // the unknown-dialect message now names all three runnable dialects
+  const unknown = validateMergedCalcOverride(
+    { ...NOTHING, formula: "{KW} + 1" },
+    { ...SCHEDULED_TEMPLATE, formulaDialect: "bms-calc-v9" as AssetPointCalcOverrideFields["formulaDialect"] },
+    KEYS,
+  );
+  assert(unknown.join(" ").includes("bms-calc-v3"), `the runnable-dialect list names v3, got: ${unknown.join(" ")}`);
+}

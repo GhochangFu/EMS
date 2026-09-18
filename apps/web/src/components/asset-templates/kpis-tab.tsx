@@ -47,7 +47,7 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto, CalcDialect, TemplateKpi } from "@bms/shared";
-import { CALC_DIALECT, CALC_DIALECT_V2 } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, isCrossAssetDialect } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -320,7 +320,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                 ))}
               </select>
             </label>
-            {kpi.dialect === CALC_DIALECT_V2 ? (
+            {CALC_DIALECTS.some((known) => known === kpi.dialect && isCrossAssetDialect(known)) ? (
               // The teaching ADR 0055 decision 6 buys: which reference form
               // answers which question. From `V2_REFERENCE_FORMS`, whose
               // examples the parser is proven to accept — the same list the

@@ -13,7 +13,7 @@
  * What lives here is everything that answers a question. What stays in the
  * `.tsx` is everything that talks to CodeMirror.
  */
-import { CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECTS, CALC_SCOPE_KINDS } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, CALC_SCOPE_KINDS, isCrossAssetDialect } from "@bms/shared";
 import type { CalcDialect, TemplateKpi } from "@bms/shared";
 
 import {
@@ -258,7 +258,8 @@ const SCOPE_SHAPES: Record<CalcScopeKind, { takesCode: boolean; info: string }> 
  * `@site` takes no code, so its two strings are the same.
  */
 export function scopeCompletions(rules: FormulaEditorRules): ScopeCompletion[] {
-  if (decorationDialect(rules) !== CALC_DIALECT_V2) {
+  // ADR 0070: v3 carries every v2 form, so the scope completions serve it too.
+  if (!isCrossAssetDialect(decorationDialect(rules))) {
     return [];
   }
   return CALC_SCOPE_KINDS.map((kind) => {

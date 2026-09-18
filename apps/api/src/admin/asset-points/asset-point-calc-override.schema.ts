@@ -3,7 +3,7 @@ import { z } from "zod";
 import {
   CALC_DIALECT,
   CALC_DIALECTS,
-  CALC_DIALECT_V2,
+  isCrossAssetDialect,
   CALC_TRIGGERS,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_FORMULA_LENGTH,
@@ -196,11 +196,13 @@ export function validateMergedCalcOverride(
   // The dialect is named with `inherited(...)` because the D-1 case here is an
   // author who overrides `calcTrigger` alone and never typed the dialect that
   // makes it illegal.
-  if (dialect === CALC_DIALECT_V2 && merged.calcTrigger === "streaming") {
+  // ADR 0070 decision 3 extends the rule to `v3`; the gate reads the
+  // capability and the sentence names the merged dialect itself.
+  if (dialect !== null && isCrossAssetDialect(dialect) && merged.calcTrigger === "streaming") {
     problems.push(
-      `The merged formulaDialect is "${CALC_DIALECT_V2}"${inherited("formulaDialect")} but ` +
-        `calcTrigger is "streaming"${inherited("calcTrigger")}. A "${CALC_DIALECT_V2}" point ` +
-        `requires calcTrigger: "scheduled" — a cross-asset formula resolves its members once ` +
+      `The merged formulaDialect is "${dialect}"${inherited("formulaDialect")} but ` +
+        `calcTrigger is "streaming"${inherited("calcTrigger")}. A "${dialect}" point ` +
+        `requires calcTrigger: "scheduled" — a cross-asset or parameter formula resolves its inputs once ` +
         "per sweep and cannot run on a single reading.",
     );
   }

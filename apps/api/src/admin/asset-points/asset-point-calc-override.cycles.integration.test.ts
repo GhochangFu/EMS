@@ -7,6 +7,7 @@ import { createDb } from "@bms/db";
 import { AccessControlService } from "../../auth/access-control.service";
 import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { CalcScopeService } from "../../calc/calc-scope.service";
 import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { MetricsService } from "../../observability/metrics.service";
@@ -24,6 +25,7 @@ import {
   assertTheCalcPointsReadCarriesTheRecordedRefusal,
   assertTheCalcPointsReadCarriesTheTemplateRatio,
   assertV2OverrideRefusesAMembershipCycle,
+  assertV3OverrideRefusesACycleAndAnUnknownParameterKey,
   cleanup,
 } from "./asset-point-calc-override.cycles.integration.spec";
 
@@ -66,6 +68,7 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 override cycle refusal"
       new AccessControlService(db, db),
       new MasterDataAuditService(db, db),
       new CalcDependencyService(db, new CalcDefinitionsService(db, new MetricsService()), new CalcScopeService(db)),
+      new CalcParametersService(db),
       status,
     );
     fx = await loadFixtures(created);
@@ -89,6 +92,11 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 override cycle refusal"
   it("refuses a v2 override that closes a cycle through @site membership, writing nothing", async () => {
     if (!pool) throw new Error("pool required");
     await assertV2OverrideRefusesAMembershipCycle(pool, fx, svc);
+  });
+
+  it("ADR 0070 — a bms-calc-v3 override closing the same cycle is refused naming the cycle; an unknown $key is refused naming the key", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertV3OverrideRefusesACycleAndAnUnknownParameterKey(pool, fx, svc);
   });
 
   it("refuses a {CODE.key} that resolves nowhere at the owner's location, and the cycle one that does (ADR 0055 decision 12, F2.22 item 9)", async () => {

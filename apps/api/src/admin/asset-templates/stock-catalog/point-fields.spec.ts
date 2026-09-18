@@ -62,11 +62,17 @@ const withIntervalButNoTrigger = derived("{a}", { calcIntervalSeconds: 60 });
 // `formulaDialect` at all.
 const withV2ButNoTrigger = derived("{a}", { formulaDialect: "bms-calc-v2" });
 
+// @ts-expect-error `formulaDialect: "bms-calc-v3"` without
+// `calcTrigger: "scheduled"` must not compile either — `v3` is scheduled-only
+// (ADR 0070 decision 3), and the plain overload still has no `formulaDialect`.
+const withV3ButNoTrigger = derived("{a}", { formulaDialect: "bms-calc-v3" });
+
 describe("point-fields type-level fixtures are constructible", () => {
   it("both @ts-expect-error fixtures still evaluate at runtime", () => {
     // `never` at the type level (no overload matches, so TS intersects the
     // two candidate return types) — only reference, no member access.
     expect(withIntervalButNoTrigger).toBeDefined();
     expect(withV2ButNoTrigger).toBeDefined();
+    expect(withV3ButNoTrigger).toBeDefined();
   });
 });

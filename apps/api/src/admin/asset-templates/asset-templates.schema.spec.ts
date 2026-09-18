@@ -1,4 +1,4 @@
-import { CALC_DIALECT, CALC_DIALECT_V2, formatCalcError, parseFormula } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECT_V3, formatCalcError, parseFormula } from "@bms/shared";
 
 import {
   createAssetTemplateBodySchema,
@@ -696,6 +696,45 @@ export function runCalcDialectGuardTests(): void {
   for (const good of [0.5, 1]) {
     pointAcceptanceOf(v2Point({ minCoverageRatio: good }), `minCoverageRatio ${good}`);
   }
+
+  // ---- bms-calc-v3 (ADR 0070 decisions 3 and 4; E4.1a U7) ----------------------
+  // Every gate that reads "is this v2" must read "is this a cross-asset
+  // dialect": a literal `=== CALC_DIALECT_V2` silently admits a streaming v3
+  // point and silently refuses its coverage ratio. The v1 and v2 halves above
+  // stay byte-identical.
+
+  const v3Point = (overrides: Record<string, unknown>): Record<string, unknown> =>
+    v2Point({ formula: "{kw} * $energy_tariff_per_kwh", formulaDialect: CALC_DIALECT_V3, ...overrides });
+
+  pointAcceptanceOf(v3Point({}), "a scheduled bms-calc-v3 point naming a $key");
+  pointAcceptanceOf(v3Point({ formula: "sum({kw} @site) * $f" }), "a v3 point mixing an aggregate and a $key");
+  pointAcceptanceOf(v3Point({ minCoverageRatio: 0.5 }), "a v3 point carrying minCoverageRatio — v3 has aggregates too");
+
+  const v3Streaming = pointRefusalOf(
+    v3Point({ calcTrigger: "streaming", calcIntervalSeconds: undefined }),
+    "a streaming bms-calc-v3 point",
+  );
+  assert(refusedAt(v3Streaming, "calcTrigger"), "a bms-calc-v3 point must be refused at `calcTrigger` when it is not scheduled");
+  assert(
+    messagesOf(v3Streaming).includes(`"${CALC_DIALECT_V3}" point requires calcTrigger: "scheduled"`),
+    `the message names the row's own dialect, not the v2 literal, got: ${describeIssues(v3Streaming)}`,
+  );
+  assert(
+    refusedAt(pointRefusalOf(v3Point({ calcIntervalSeconds: undefined }), "a v3 point with no interval"), "calcIntervalSeconds"),
+    "a scheduled bms-calc-v3 point with no calcIntervalSeconds must be refused at `calcIntervalSeconds`",
+  );
+
+  // a $ under v2 is the dsl's own unexpected_character — the dialect on the row decides.
+  // The parse runs in the array-level superRefine, so the refusal is the template's.
+  const dollarUnderV2 = refusalOf(
+    { ...validTemplate, points: [{ pointKey: "kw" }, v2Point({ formula: "{kw} * $f" })] },
+    "a $ under bms-calc-v2",
+  );
+  assert(messagesOf(dollarUnderV2).includes("unexpected character"), `a $ under v2 is the dsl refusal, got: ${describeIssues(dollarUnderV2)}`);
+  acceptanceOf(
+    { ...validTemplate, points: [{ pointKey: "kw" }, v3Point({ formula: "{kw} * $f" })] },
+    "the same text under bms-calc-v3 parses (the positive control)",
+  );
 
   // ---- the parse error is the dsl's own, and never echoes the formula ------
 

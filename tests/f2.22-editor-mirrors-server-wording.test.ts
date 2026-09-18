@@ -86,26 +86,39 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
   // sentence (`A "${CALC_DIALECT_V2}" point`) through the fixed text that
   // closes it (`single reading`) — a code construct each of the four
   // `message:`/`problems.push(` literals is built from, never prose.
+  //
+  // Since ADR 0070 (`E4.1a` U7) each copy interpolates the *row's own* dialect
+  // variable rather than the `v2` literal, so the interpolation is normalised
+  // to `${DIALECT}` before the four are compared.
   it("pair (a) — the streaming-refusal sentence is identical across all four copies", () => {
-    const RE = /A "\$\{CALC_DIALECT_V2\}" point[\s\S]*?single reading\.?/;
-    const server1 = dropTrailingPeriod(
-      joinConcatenatedLiteral(extractExactlyOne(source.templateSchema, RE, "asset-templates.schema.ts")),
-    );
-    const server2 = dropTrailingPeriod(
-      joinConcatenatedLiteral(
-        extractExactlyOne(source.overrideSchema, RE, "asset-point-calc-override.schema.ts"),
+    const RE = /A "\$\{[\w.]+\}" point[\s\S]*?single reading\.?/;
+    const normalise = (literal: string): string => literal.replace(/\$\{[\w.]+\}/, "${DIALECT}");
+    const server1 = normalise(
+      dropTrailingPeriod(
+        joinConcatenatedLiteral(extractExactlyOne(source.templateSchema, RE, "asset-templates.schema.ts")),
       ),
     );
-    const web1 = dropTrailingPeriod(
-      joinConcatenatedLiteral(extractExactlyOne(source.templateCalcConfig, RE, "template-calc-config.ts")),
+    const server2 = normalise(
+      dropTrailingPeriod(
+        joinConcatenatedLiteral(
+          extractExactlyOne(source.overrideSchema, RE, "asset-point-calc-override.schema.ts"),
+        ),
+      ),
     );
-    const web2 = dropTrailingPeriod(
-      joinConcatenatedLiteral(extractExactlyOne(source.overrideLib, RE, "asset-point-calc-override.ts")),
+    const web1 = normalise(
+      dropTrailingPeriod(
+        joinConcatenatedLiteral(extractExactlyOne(source.templateCalcConfig, RE, "template-calc-config.ts")),
+      ),
+    );
+    const web2 = normalise(
+      dropTrailingPeriod(
+        joinConcatenatedLiteral(extractExactlyOne(source.overrideLib, RE, "asset-point-calc-override.ts")),
+      ),
     );
 
     expect(server1).toBe(
-      'A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset formula ' +
-        "resolves its members once per sweep and cannot run on a single reading",
+      'A "${DIALECT}" point requires calcTrigger: "scheduled" — a cross-asset or parameter formula ' +
+        "resolves its inputs once per sweep and cannot run on a single reading",
     );
     expect(server2).toBe(server1);
     expect(web1).toBe(server1);
@@ -194,7 +207,7 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
   // verbatim.
   it("pair (d) — the ratio-placement sentence matches template-calc-config.ts", () => {
     const RE =
-      /minCoverageRatio applies only to a derived point in the "\$\{CALC_DIALECT_V2\}"[\s\S]*?must be fresh/;
+      /minCoverageRatio applies only to a derived point in a cross-asset dialect[\s\S]*?must be fresh/;
     const server = joinConcatenatedLiteral(
       extractExactlyOne(source.templateSchema, RE, "asset-templates.schema.ts (ratio)"),
     );
@@ -203,7 +216,7 @@ describe("F2.22 T9 — the editor's six copies of server wording, gated against 
     );
 
     expect(server).toBe(
-      'minCoverageRatio applies only to a derived point in the "${CALC_DIALECT_V2}" dialect — ' +
+      'minCoverageRatio applies only to a derived point in a cross-asset dialect, not "${CALC_DIALECT}" — ' +
         "it is the fraction of an aggregate's declared members that must be fresh",
     );
     expect(web).toBe(server);

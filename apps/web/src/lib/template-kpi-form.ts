@@ -1,4 +1,4 @@
-import { CALC_DIALECT, CALC_DIALECTS, CALC_DIALECT_V2, MAX_FORMULA_POINT_REFS } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, isCrossAssetDialect, MAX_FORMULA_POINT_REFS } from "@bms/shared";
 import type { CalcDialect, TemplateKpi } from "@bms/shared";
 
 import { previewCrossRefs, previewInputKeys } from "./calc-preview";
@@ -186,10 +186,12 @@ export function effectivePointKeys(row: TemplateKpiRow): string[] {
  * `@` it cannot legally contain never earns it the exemption.
  */
 function referencesAnotherAsset(row: TemplateKpiRow): boolean {
-  if (row.dialect !== CALC_DIALECT_V2) {
+  // ADR 0070: a v3 expression holds cross references the same way.
+  const dialect = CALC_DIALECTS.find((known) => known === row.dialect);
+  if (dialect === undefined || !isCrossAssetDialect(dialect)) {
     return false;
   }
-  return previewCrossRefs(row.expression.trim(), CALC_DIALECT_V2).length > 0;
+  return previewCrossRefs(row.expression.trim(), dialect).length > 0;
 }
 
 /**

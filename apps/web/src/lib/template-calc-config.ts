@@ -4,6 +4,7 @@ import {
   CALC_DIALECT_V2,
   CALC_DIALECT_V3,
   CALC_TRIGGERS,
+  isCrossAssetDialect,
   DEFAULT_MAX_INPUT_AGE_SECONDS,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
@@ -154,7 +155,9 @@ export function setFormulaDialect(row: TemplatePointRow, dialect: CalcDialect): 
   if (target === undefined || target === row.formulaDialect) {
     return row;
   }
-  if (target === CALC_DIALECT_V2) {
+  // ADR 0070 (E4.1a): v3 is a cross-asset dialect too, so the same flip
+  // applies, and a v2 ↔ v3 move keeps the ratio — both hold aggregates.
+  if (isCrossAssetDialect(target)) {
     return {
       ...row,
       formulaDialect: target,
@@ -232,13 +235,13 @@ export function calcConfigErrors(
   // `calculations-tab.tsx` renders the *first* problem per field. Two messages
   // for one empty select would mean the author sees whichever this function
   // happens to push first.
-  if (row.formulaDialect === CALC_DIALECT_V2 && row.calcTrigger === "streaming") {
+  if (row.formulaDialect !== null && isCrossAssetDialect(row.formulaDialect) && row.calcTrigger === "streaming") {
     problems.push({
       row: index,
       field: "calcTrigger",
       message:
-        `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset ` +
-        "formula resolves its members once per sweep and cannot run on a single reading",
+        `A "${row.formulaDialect}" point requires calcTrigger: "scheduled" — a cross-asset or parameter ` +
+        "formula resolves its inputs once per sweep and cannot run on a single reading",
     });
   }
 
@@ -287,13 +290,13 @@ export function calcConfigErrors(
   // has already returned for a measured row, so the derived half is implied.
   // `setFormulaDialect` clears the ratio on the way to `v1`, so the only way
   // to reach this is a stored row whose dialect was changed elsewhere.
-  if (row.minCoverageRatio !== null && row.formulaDialect !== CALC_DIALECT_V2) {
+  if (row.minCoverageRatio !== null && (row.formulaDialect === null || !isCrossAssetDialect(row.formulaDialect))) {
     problems.push({
       row: index,
       field: "minCoverageRatio",
       message:
-        `minCoverageRatio applies only to a derived point in the "${CALC_DIALECT_V2}" ` +
-        "dialect — it is the fraction of an aggregate's declared members that must be fresh",
+        `minCoverageRatio applies only to a derived point in a cross-asset dialect, not "${CALC_DIALECT}" — ` +
+        "it is the fraction of an aggregate's declared members that must be fresh",
     });
   }
 

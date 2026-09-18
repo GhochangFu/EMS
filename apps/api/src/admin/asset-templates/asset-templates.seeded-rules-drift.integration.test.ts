@@ -7,6 +7,7 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
@@ -107,7 +108,7 @@ describe.skipIf(!connectionString)("E2.4 — seeded-rules drift list and re-appl
     const assetDashboards = new AssetDashboardsInstantiateService(
       fleetDb,
       tenantDb,
-      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       audit,
       access,
     );
@@ -120,7 +121,7 @@ describe.skipIf(!connectionString)("E2.4 — seeded-rules drift list and re-appl
       assetDashboards,
     );
     svc = {
-      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       // Parsed through the real schema so these cases exercise the controller's
       // path, transform included — not a hand-built post-transform shape.
       instantiate: (jwt, id, body) =>

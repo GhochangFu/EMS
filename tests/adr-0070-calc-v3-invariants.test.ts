@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,7 +46,8 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  *   `v1` or `v2` for every entry this file finds, and part (a) is exactly
  *   "the `(narrow, v3)` superset property, applied to real production text"
  *   rather than a new claim.
- * // part (b) lands in U7
+ * - **(b) — no dialect gate outside the three grammar files compares to the
+ *   `v2` literal** (U7).
  * - **(c) — `CALC_DIALECTS` has exactly three members, and `KPI_DIALECTS` in
  *   `asset-templates-content.schema.ts` is spread from it.**
  *
@@ -133,7 +134,88 @@ describe("ADR 0070 part (a) — every stock-catalog formula literal parses ident
   });
 });
 
-// part (b) lands in U7
+// --- part (b) — no dialect gate outside the grammar compares to the v2 literal ---
+
+/**
+ * ADR 0070 decision 3 (plan design decision 14). Twenty-three sites measured
+ * at the plan gate compared a dialect to `CALC_DIALECT_V2` with `===` or
+ * `!==`, and every one of them silently excluded `v3` from the cross-asset
+ * half it also carries — the override path's cycle check would skip a `v3`
+ * formula's aggregates entirely. A gate asks `isCrossAssetDialect` /
+ * `isParameterDialect` for the *capability*, never the version. The three
+ * grammar files own the predicates and are the only permitted comparison
+ * sites. Tests and specs are excluded: a fixture may name a dialect.
+ */
+const DIALECT_GATE_ROOTS = ["apps/api/src", "apps/web/src", "packages/db/src"];
+const DIALECT_GATE_ALLOWLIST = new Set([
+  "packages/shared/src/calc-dsl/limits.ts",
+  "packages/shared/src/calc-dsl/tokenizer.ts",
+  "packages/shared/src/calc-dsl/parser.ts",
+]);
+const V2_LITERAL_GATE = /[!=]==\s*CALC_DIALECT_V2\b|\bCALC_DIALECT_V2\s*[!=]==/;
+
+function sourceFilesUnder(root: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name !== "node_modules" && entry.name !== "dist") walk(path);
+      } else if (/\.tsx?$/.test(entry.name) && !/\.(spec|test)\.tsx?$/.test(entry.name)) {
+        out.push(path);
+      }
+    }
+  };
+  walk(join(repoRoot, root));
+  return out;
+}
+
+function relativeTo(file: string): string {
+  return file.slice(repoRoot.length).replace(/\\/g, "/");
+}
+
+function v2LiteralGates(files: readonly string[]): string[] {
+  const offenders: string[] = [];
+  for (const file of files) {
+    const relative = relativeTo(file);
+    if (DIALECT_GATE_ALLOWLIST.has(relative)) continue;
+    const lines = readFileSync(file, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (V2_LITERAL_GATE.test(line)) offenders.push(`${relative}:${index + 1}`);
+    });
+  }
+  return offenders;
+}
+
+describe("ADR 0070 part (b) — no dialect gate outside the grammar files compares to the v2 literal", () => {
+  const files = DIALECT_GATE_ROOTS.flatMap(sourceFilesUnder);
+
+  it("scans a real tree, so the rule below is not silently vacuous", () => {
+    expect(files.length).toBeGreaterThan(200);
+    expect(files.some((f) => relativeTo(f) === "apps/api/src/admin/asset-templates/asset-templates.schema.ts")).toBe(true);
+  });
+
+  it("the regex matches both operator orders and nothing else", () => {
+    expect(V2_LITERAL_GATE.test("  if (dialect === CALC_DIALECT_V2 && x) {")).toBe(true);
+    expect(V2_LITERAL_GATE.test("  if (CALC_DIALECT_V2 !== row.dialect) {")).toBe(true);
+    expect(V2_LITERAL_GATE.test("  const label = DIALECT_LABELS[CALC_DIALECT_V2];")).toBe(false);
+    expect(V2_LITERAL_GATE.test("  if (isCrossAssetDialect(dialect)) {")).toBe(false);
+  });
+
+  it("no source file outside limits/tokenizer/parser compares a dialect to CALC_DIALECT_V2", () => {
+    expect(v2LiteralGates(files), "each site silently excludes v3 — use isCrossAssetDialect / isParameterDialect").toEqual([]);
+  });
+
+  it("positive control: the scan reports an injected gate", () => {
+    const injected = join(repoRoot, "apps/api/src/__adr0070_probe__.ts");
+    try {
+      writeFileSync(injected, "export const x = (d: string) => d === CALC_DIALECT_V2;\n");
+      expect(v2LiteralGates([injected])).toEqual(["apps/api/src/__adr0070_probe__.ts:1"]);
+    } finally {
+      rmSync(injected, { force: true });
+    }
+  });
+});
 
 // --- part (c) — the dialect vocabulary has exactly three members, and KPI_DIALECTS derives from it ---
 

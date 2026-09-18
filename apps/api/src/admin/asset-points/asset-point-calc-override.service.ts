@@ -10,7 +10,7 @@ import { and, asc, eq } from "drizzle-orm";
 
 import { assetPoints, assets, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { CALC_DIALECT_V2, parseFormula } from "@bms/shared";
+import { CALC_DIALECTS, isCrossAssetDialect, parseFormula } from "@bms/shared";
 import type {
   AssetPointCalcConfigDto,
   AssetPointCalcConfigListResponse,
@@ -20,10 +20,12 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { computedSourceDataKey } from "../../calc/computed-source-data-key";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import { unknownParameterKeysMessage } from "../asset-templates/asset-templates-param-refs";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   validateMergedCalcOverride,
@@ -90,6 +92,8 @@ export class AssetPointCalcOverrideService {
     private readonly audit: MasterDataAuditService,
     // `F2.9` Task 12 — the save-time cycle detector, exported by `CalcModule`.
     private readonly dependencies: CalcDependencyService,
+    // `E4.1a` — the `$key` vocabulary check (ADR 0070 decision 4), exported by `CalcModule`.
+    private readonly calcParameters: CalcParametersService,
     // `F2.9` Task 16 — the engine's last outcome per formula instance, also
     // exported by `CalcModule`. Read-only here: this service reports what the
     // hosts recorded and never records anything itself.
@@ -216,11 +220,23 @@ export class AssetPointCalcOverrideService {
     // A merged formula that does not parse is left to `validateMergedCalcOverride`
     // above and to `toActiveDefinition`'s counted skip — this is a check about a
     // graph, and there is no graph node for a formula the engine cannot read.
-    const mergedDialect = body.formulaDialect ?? ctx.template.formulaDialect;
+    const mergedDialect = CALC_DIALECTS.find((known) => known === (body.formulaDialect ?? ctx.template.formulaDialect));
     const mergedFormula = body.formula ?? ctx.template.formula;
-    if (mergedDialect === CALC_DIALECT_V2 && mergedFormula !== null) {
-      const parsed = parseFormula(mergedFormula, { dialect: CALC_DIALECT_V2 });
+    // Parsed under the **merged** dialect, never the `v2` literal (ADR 0070;
+    // `E4.1a` U7): a `v3` formula parsed under `v2` fails on its first `$`,
+    // and the cycle check below would be skipped silently.
+    if (mergedDialect !== undefined && isCrossAssetDialect(mergedDialect) && mergedFormula !== null) {
+      const parsed = parseFormula(mergedFormula, { dialect: mergedDialect });
       if (parsed.ok) {
+        // ADR 0070 decision 4: a `$key` the vocabulary does not hold is a 400
+        // here too — the override path is a second author for the same engine.
+        // A key with no value in scope is not refused (that is `parameter_unset`).
+        if (parsed.paramRefs.length > 0) {
+          const unknown = await this.calcParameters.unknownKeys(parsed.paramRefs);
+          if (unknown.length > 0) {
+            throw new BadRequestException(unknownParameterKeysMessage(unknown));
+          }
+        }
         // **`F2.22` item 9 — a qualified code that resolves nowhere is
         // refused here, and before the cycle check.** This is the one write
         // path that knows the asset: a template has no location to resolve a
@@ -252,7 +268,7 @@ export class AssetPointCalcOverrideService {
           assetId,
           pointKey,
           templatePointId: ctx.templatePointId,
-          dialect: CALC_DIALECT_V2,
+          dialect: mergedDialect,
           localRefs: parsed.refs,
           crossRefs: parsed.crossRefs,
         });

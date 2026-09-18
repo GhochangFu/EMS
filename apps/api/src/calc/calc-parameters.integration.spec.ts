@@ -41,9 +41,11 @@ import { CalcParametersService } from "./calc-parameters.service";
  */
 
 export const TEST_CODE = `E41A-CALCPARAM-${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
-/** Per-run vocabulary code; inserted into `bms.calc_parameter_keys` by the
- * fixture and removed by `cleanup`. Matches the `0074` charset. */
-export const KEY = `e41a_test_${TEST_CODE.slice(-10).toLowerCase()}`;
+/** Per-run vocabulary code (its own `randomUUID()`, which is what
+ * `tests/integration-fixture-isolation.test.ts` reads off the declaration);
+ * inserted into `bms.calc_parameter_keys` by the fixture and removed by
+ * `cleanup`. Matches the `0074` charset. */
+export const KEY = `e41a_test_${randomUUID().replace(/-/g, "").slice(0, 10).toLowerCase()}`;
 const SECOND_KEY = `${KEY}_b`;
 const INACTIVE_KEY = `${KEY}_off`;
 
