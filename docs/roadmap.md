@@ -5514,3 +5514,21 @@ row); the sweep found three more the four pre-merge passes missed — the
 dialog without the scope gate, an `admin` regression on a deactivated
 location, and a false-green route scan — all fixed in #480. No
 `chore(agents):` §6 line is owed. Unblocks nothing.
+
+### `F3.62` — `Delete draft` leaves the deleted dashboard template's page ✅ 2026-09-18
+
+PR [#483](https://github.com/GhochangFu/EMS/pull/483), squash `bc7f281f`.
+Created 2026-09-17 from the `F3.44` browser pass. `deleteM.onSuccess` on
+`dashboard-template-detail-page.tsx` only invalidated the list query, so after
+a successful `DELETE` the SPA stayed on the deleted row's URL with the draft
+still in the header from the cached row, and the next lifecycle click
+answered 404. The handler now navigates to `/admin/dashboard-templates`, as
+the twin `asset-template-detail-page.tsx` has since `F3.36`. No ADR: web-only,
+no contract, no dependency.
+
+**Verified**: two jsdom cases on a probe route, each red on its own mutation
+(the landing case without the `navigate`; the refused-delete case with the
+`navigate` outside `onSuccess`); `tsc` exit 0; three reviews, no findings.
+Database and API N/A; browser skipped — the probe route holds the claim. One
+nit on record, shared with the twin page: the cached detail query survives a
+delete for one refetch round trip on a browser Back. Unblocks nothing.
