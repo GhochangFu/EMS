@@ -191,6 +191,32 @@ export async function addWidgetAddsAWidgetEditor(): Promise<void> {
 }
 
 /**
+ * `F3.61` — the round-trip through `updateWidget`: the component spec asserts
+ * the patch `WidgetEditor` emits; this asserts the page's state took it and
+ * re-rendered — the metric is listed by its label, the role picker is gone
+ * (the two kinds are exclusive, and the contract refuses both) and the
+ * metric's own `×` is there. `findByText` on the label waits on what the
+ * state change produces, not on an element that renders before it.
+ */
+export async function addingAMetricListsItAndHidesTheRolePicker(): Promise<void> {
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()) });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Add widget" }));
+  await userEvent.selectOptions(
+    await screen.findByRole("combobox", { name: "Add named metric" }),
+    "alarms.active.count",
+  );
+
+  expect(await screen.findByText("Active alarms")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("combobox", { name: "Asset role" }),
+    "the role picker stayed on screen beside a bound metric",
+  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Remove metric Active alarms" })).toBeInTheDocument();
+}
+
+/**
  * `F3.62` — a successful `Delete draft` leaves the deleted row's page and lands
  * on the list. Before the fix `deleteM.onSuccess` only invalidated the list
  * query, so the SPA stayed on `/admin/dashboard-templates/<id>` with the
