@@ -25,6 +25,7 @@ import type {
   DashboardTemplatesListResponse,
   DashboardWidgetSpec,
   InstantiateSectionTemplateResponse,
+  MetricCatalogKey,
   StockDashboardTemplatesListResponse,
   TemplateDraftDeletedResponse,
   TemplateLifecycleStatus,
@@ -60,9 +61,15 @@ export interface SectionTemplateBindingInput {
   sortOrder?: number;
 }
 
-/** A metric-catalog binding, the request shape of `sectionTemplateSourceSchema`. */
+/**
+ * A metric-catalog binding, the request shape of `sectionTemplateSourceSchema`.
+ *
+ * `catalogKey` is the catalog enum, not a string: `metricCatalogKeySchema` is
+ * what the request schema accepts, and `WidgetEditor` reads a label from it
+ * (`metricCatalogLabel`) and hands it to `MetricSourcePicker.bound` (`F3.61`).
+ */
 export interface SectionTemplateSourceInput {
-  catalogKey: string;
+  catalogKey: MetricCatalogKey;
   params?: Record<string, string | number | boolean>;
   sortOrder?: number;
 }
