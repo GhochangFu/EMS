@@ -38,6 +38,16 @@ import { assets, bmsSchema, locations, organizations } from "./bms-schema";
  * is shared. Seeded with the twelve stock keys by migration `0074`, extended
  * by `INSERT`, never by a release. Retire a key with `active = false` — the
  * store's FK carries no `onDelete`, on purpose.
+ *
+ * **Its `GRANT`s are its only containment, and the trigger is the POOL** (AGENTS.md
+ * §4.4, the `asset_roles` rule): `0041`'s default privileges give `bms_tenant`
+ * `INSERT, UPDATE, DELETE` here, latent while no tenant-pool writer exists —
+ * today the only readers are `CalcParametersService.unknownKeys`/`listKeys` on
+ * `FLEET_DRIZZLE`. The moment an admin write to this table lands on
+ * `TENANT_DRIZZLE`, a migration must revoke `UPDATE, DELETE` from `bms_tenant`
+ * in `0059`'s shape, or the writer goes through the fleet pool. `E4.1a` U8
+ * ships no keys writer (plan Q9 deferred it); the sentence is here so the row
+ * that adds one cannot miss it.
  */
 export const calcParameterKeys = bmsSchema.table("calc_parameter_keys", {
   // `code` is the primary key: templates round-trip through JSON, which code
