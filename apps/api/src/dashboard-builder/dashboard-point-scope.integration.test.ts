@@ -59,6 +59,7 @@ describe.skipIf(!connectionString)(
     let legitEskomPointId: string;
     let legitEskomAssetId: string;
     let legitEskomPointKey: string;
+    let legitEskomAssetCode: string;
     let phewbPointId: string;
     let phewbAssetId: string;
 
@@ -91,9 +92,16 @@ describe.skipIf(!connectionString)(
       // seeded asset_points row while other suites create and delete transient ESKOM points in
       // the same parallel run; an unordered LIMIT 1 can adopt one of those and then find it
       // gone under ON DELETE CASCADE.
-      const eskomPoint = await ownerPool.query<{ id: string; asset_id: string; point_key: string }>(
-        `SELECT id, asset_id, point_key FROM bms.asset_points
-          WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
+      // ADR 0069: the asset's own code rides the join, so the fixture read joins it too.
+      const eskomPoint = await ownerPool.query<{
+        id: string;
+        asset_id: string;
+        point_key: string;
+        asset_code: string;
+      }>(
+        `SELECT p.id, p.asset_id, p.point_key, a.code AS asset_code FROM bms.asset_points p
+          JOIN bms.assets a ON a.id = p.asset_id
+          WHERE p.organization_id = $1 ORDER BY p.created_at, p.id LIMIT 1`,
         [eskomOrgId],
       );
       const phewbPoint = await ownerPool.query<{ id: string; asset_id: string; point_key: string }>(
@@ -107,6 +115,7 @@ describe.skipIf(!connectionString)(
       legitEskomPointId = eskomPoint.rows[0].id;
       legitEskomAssetId = eskomPoint.rows[0].asset_id;
       legitEskomPointKey = eskomPoint.rows[0].point_key;
+      legitEskomAssetCode = eskomPoint.rows[0].asset_code;
       phewbPointId = phewbPoint.rows[0].id;
       phewbAssetId = phewbPoint.rows[0].asset_id;
 
@@ -192,6 +201,7 @@ describe.skipIf(!connectionString)(
         legitEskomPointId,
         legitEskomAssetId,
         legitEskomPointKey,
+        legitEskomAssetCode,
       );
     });
 

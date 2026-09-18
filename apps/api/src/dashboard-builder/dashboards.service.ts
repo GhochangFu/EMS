@@ -107,6 +107,7 @@ export function mapDashboardWidget(
       role: point.role as "primary" | "series",
       sortOrder: point.sortOrder,
       assetId: point.assetId,
+      assetCode: point.assetCode,
       pointKey: point.pointKey,
       unit: point.unit,
     })),

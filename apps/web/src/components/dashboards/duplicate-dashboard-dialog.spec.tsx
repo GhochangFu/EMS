@@ -81,6 +81,7 @@ function point(): DashboardDto["widgets"][number]["points"][number] {
     role: "primary",
     sortOrder: 0,
     assetId: "asset-1",
+    assetCode: "ASSET-1",
     pointKey: "power_kw",
     unit: "kW",
   };

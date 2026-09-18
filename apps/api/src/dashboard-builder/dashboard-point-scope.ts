@@ -36,6 +36,8 @@ export type ResolvedBoundPoint = {
   readonly role: string;
   readonly sortOrder: number;
   readonly assetId: string;
+  /** ADR 0069 — `bms.assets.code`, from the join below; the legend's label. */
+  readonly assetCode: string;
   readonly pointKey: string;
   readonly unit: string | null;
 };
@@ -43,7 +45,8 @@ export type ResolvedBoundPoint = {
 /**
  * Resolves every point binding for the given widget ids, joined to the point and asset that
  * own it — with an EXPLICIT organization predicate on both legs of the join. See the file
- * docblock for why this cannot be left to RLS.
+ * docblock for why this cannot be left to RLS. `assetCode` (ADR 0069) rides the same join and
+ * the same predicate — the guard protects the label for the reason it protects `assetId`.
  */
 export async function resolveBoundPoints(
   tx: BmsTx | BmsDb,
@@ -61,6 +64,7 @@ export async function resolveBoundPoints(
       role: dashboardWidgetPoints.role,
       sortOrder: dashboardWidgetPoints.sortOrder,
       assetId: assetPoints.assetId,
+      assetCode: assets.code,
       pointKey: assetPoints.pointKey,
       unit: assetPoints.unit,
     })
