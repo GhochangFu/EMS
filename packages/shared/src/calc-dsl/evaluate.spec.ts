@@ -3,6 +3,7 @@ import { evaluate } from "./evaluate";
 import { CALC_DIALECT_V2, CALC_DIALECT_V3 } from "./limits";
 import { parseFormula } from "./parser";
 import { V1_CORPUS } from "./v1-corpus";
+import { V2_CORPUS } from "./v2-corpus";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -236,6 +237,20 @@ export function runEvaluateV2Tests(): void {
 
   const twoArg = evaluate(v1Parsed.ast, new Map([["A", 1]]));
   assert(twoArg.ok === true && Object.is(twoArg.value, 2), "evaluate(ast, inputs) with no crossInputs must still work");
+
+  // ---- v2-corpus.ts smoke check (E4.1a U3, ADR 0070 decision 3) ---------------
+  // The full v2→v3 superset property is `dialect-superset.spec.ts`'s job; this
+  // loop only proves the shared corpus parses under v2 without throwing, and —
+  // for the entries that parse ok — that `evaluate` runs on the real AST without
+  // throwing, so the corpus cannot silently rot for this spec's own purpose.
+  for (const expression of V2_CORPUS) {
+    const parsed = parseFormula(expression, { dialect: CALC_DIALECT_V2 });
+    assert(typeof parsed.ok === "boolean", `v2-corpus.ts entry must parse to a ParseResult: ${JSON.stringify(expression)}`);
+    if (parsed.ok) {
+      const result = evaluate(parsed.ast, new Map(), new Map());
+      assert(typeof result.ok === "boolean", `v2-corpus.ts entry must evaluate without throwing: ${JSON.stringify(expression)}`);
+    }
+  }
 }
 
 /** Parses under `v3` and evaluates with all three maps. */

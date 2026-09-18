@@ -12,6 +12,7 @@ import {
 } from "./limits";
 import { formatCalcError, parseFormula, validateFormula, type ParseOptions } from "./parser";
 import { V1_CORPUS, V1_REFUSALS_V2_ACCEPTS, V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE } from "./v1-corpus";
+import { V2_CORPUS, V2_REFUSALS_V3_ACCEPTS, V2_REFUSALS_WITH_A_DIFFERENT_V3_CODE } from "./v2-corpus";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -349,6 +350,28 @@ export function runParserV2Tests(): void {
   const first = parseFormula("sum({kw} @site) / {TX_01.kwh}", V2);
   const second = parseFormula("sum({kw} @site) / {TX_01.kwh}", V2);
   assert(JSON.stringify(first) === JSON.stringify(second), "parseFormula must be pure under v2");
+
+  // ---- v2-corpus.ts smoke check (E4.1a U3, ADR 0070 decision 3) ---------------
+  // The full v2→v3 superset property is `dialect-superset.spec.ts`'s job; this
+  // loop only proves every literal this spec feeds `parseFormula` under v2 also
+  // lives in that shared corpus and still parses to a ParseResult here, so the
+  // corpus cannot silently stop importing without failing this spec too.
+  for (const expression of V2_CORPUS) {
+    const result = parseFormula(expression, V2);
+    assert(
+      typeof result.ok === "boolean",
+      `v2-corpus.ts entry must parse to a ParseResult here too: ${JSON.stringify(expression)}`,
+    );
+  }
+  assert(
+    V2_REFUSALS_V3_ACCEPTS.every((expression) => V2_CORPUS.includes(expression)),
+    "every V2_REFUSALS_V3_ACCEPTS entry must itself be a V2_CORPUS entry",
+  );
+  assert(
+    V2_REFUSALS_WITH_A_DIFFERENT_V3_CODE.every((entry) => V2_CORPUS.includes(entry.expression)),
+    "every V2_REFUSALS_WITH_A_DIFFERENT_V3_CODE entry must itself be a V2_CORPUS entry — " +
+      "an entry the corpus never holds is checked by nothing",
+  );
 }
 
 // ---- F2.22: author-facing wording for the ten v2 error codes ------------------
