@@ -24,8 +24,9 @@
  * fetched.
  *
  * **Nothing here writes to the catalog, and nothing can.** `WidgetEditor`
- * keeps *Remove*, the binding `×` and the `AssetRoleBindingPicker` under
- * `{editable ? … : null}`, and this page passes the literal `false`. The one
+ * keeps *Remove*, the binding `×`, the `AssetRoleBindingPicker`, the metric
+ * `×` and the `MetricSourcePicker` (`F3.61`) under `{editable ? … : null}`,
+ * and this page passes the literal `false`. The one
  * writable control on the screen is the header's organization picker, which
  * feeds Import — and Import creates a *new* row rather than changing the entry.
  *
