@@ -154,3 +154,85 @@ describe("ADR 0070 part (c) — CALC_DIALECTS names all three dialects, and KPI_
     ).toBe(true);
   });
 });
+
+// --- part (d) — the resolver statement is contained by the owner's organization, bounded by validity, and defaults nothing ---
+
+/**
+ * ADR 0070 decision 2, three properties of `calc-parameters.service.ts` that
+ * the integration suite proves on its own fixture and a green suite cannot
+ * see go missing if every fixture happens to sit in one organization:
+ *
+ * 1. **Containment** — the `WHERE` of the resolver statement names
+ *    `organization_id`. The service is a fleet read (BYPASSRLS), so this
+ *    predicate is the only thing stopping an organization-scope tariff in org
+ *    A from serving an asset in org B.
+ * 2. **Validity** — the same `WHERE` names both `effective_from` and
+ *    `effective_to`; a resolver that dropped the end bound would keep serving
+ *    a superseded tariff forever.
+ * 3. **No default value anywhere** — the file contains no `COALESCE(` and no
+ *    `?? 0` / `?? 1`. An unset key is absent from the map, and the host turns
+ *    that into `parameter_unset`. A default here would be a wrong CO₂ figure
+ *    on a board-level screen — the risk B14 named.
+ *
+ * Each rule carries a positive control on a mutated copy of the source, on
+ * ADR 0055 part (d)'s shape: the analysis must kill the mutation.
+ */
+const CALC_PARAMETERS_SERVICE = "apps/api/src/calc/calc-parameters.service.ts";
+
+/** The `sql\`…\`` template inside `resolveForAssets`, or `null` when the method or its template is not found. */
+function resolverStatement(source: string): string | null {
+  const start = source.indexOf("async resolveForAssets(");
+  if (start === -1) return null;
+  const open = source.indexOf("sql`", start);
+  if (open === -1) return null;
+  const close = source.indexOf("`", open + 4);
+  if (close === -1) return null;
+  return source.slice(open + 4, close);
+}
+
+function resolverDefect(statement: string | null): string | null {
+  if (statement === null) return "resolveForAssets and its sql template must exist";
+  const where = statement.slice(statement.indexOf("WHERE"));
+  if (!statement.includes("WHERE")) return "the statement must have a WHERE clause";
+  if (!/\borganization_id\b/.test(where)) return "the WHERE must name organization_id (containment)";
+  if (!/\beffective_from\b/.test(where)) return "the WHERE must name effective_from";
+  if (!/\beffective_to\b/.test(where)) return "the WHERE must name effective_to";
+  return null;
+}
+
+function defaultValueDefect(source: string): string | null {
+  if (/COALESCE\s*\(/i.test(source)) return "the file must not COALESCE a value — an unset key is absent, never defaulted";
+  if (/\?\?\s*[01]\b/.test(source)) return "the file must not `?? 0` / `?? 1` a value — an unset key is absent, never defaulted";
+  return null;
+}
+
+describe("ADR 0070 part (d) — the resolver statement is contained, bounded and default-free", () => {
+  const source = readFileSync(join(repoRoot, CALC_PARAMETERS_SERVICE), "utf8");
+
+  it("locates the resolver statement, so the rules below are not silently vacuous", () => {
+    const statement = resolverStatement(source);
+    expect(statement, `${CALC_PARAMETERS_SERVICE}: resolveForAssets and its sql template must exist`).not.toBeNull();
+    expect(statement as string).toMatch(/\bbms\.calc_parameters\b/);
+    expect(statement as string).toMatch(/\bbms\.assets\b/);
+  });
+
+  it("the WHERE names organization_id, effective_from and effective_to", () => {
+    expect(resolverDefect(resolverStatement(source)), CALC_PARAMETERS_SERVICE).toBeNull();
+  });
+
+  it("positive control: the analysis kills each of the three mutations", () => {
+    const statement = resolverStatement(source) as string;
+    expect(resolverDefect(statement.replace("cp.organization_id = a.organization_id", "true"))).toMatch(/organization_id/);
+    expect(resolverDefect(statement.replace("cp.effective_from <=", "true OR 1 <="))).toMatch(/effective_from/);
+    expect(resolverDefect(statement.replace(/cp\.effective_to/g, "cp.ended"))).toMatch(/effective_to/);
+  });
+
+  it("the file defaults nothing: no COALESCE(, no ?? 0, no ?? 1", () => {
+    expect(defaultValueDefect(source), CALC_PARAMETERS_SERVICE).toBeNull();
+  });
+
+  it("positive control: the default scan reports an injected COALESCE and an injected ?? 0", () => {
+    expect(defaultValueDefect(`${source}\nconst x = COALESCE(cp.value, 0);`)).toMatch(/COALESCE/);
+    expect(defaultValueDefect(`${source}\nconst y = map.get(k) ?? 0;`)).toMatch(/\?\? 0/);
+  });
+});

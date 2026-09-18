@@ -4,6 +4,7 @@ import { TelemetryModule } from "../telemetry/telemetry.module";
 import { CalcDefinitionsService } from "./calc-definitions.service";
 import { CalcDependencyService } from "./calc-dependency.service";
 import { CalcInputsService } from "./calc-inputs.service";
+import { CalcParametersService } from "./calc-parameters.service";
 import { CalcSchedulerService } from "./calc-scheduler.service";
 import { CalcScopeService } from "./calc-scope.service";
 import { CalcStatusRegistry } from "./calc-status.registry";
@@ -95,6 +96,9 @@ import { CalcWriteService } from "./calc-write.service";
     // decision 12). Provided here; Task 12's save-time detector and Task 13's
     // scheduled sweep are both built on it, each resolving afresh per call.
     CalcScopeService,
+    // `E4.1a` U5 — the `$key` resolver for `bms-calc-v3` (ADR 0070 decision
+    // 2). Exported: the admin services run its `unknownKeys` at save time.
+    CalcParametersService,
     CalcDependencyService,
     // `F2.9` Task 16 — one instance for both hosts and the read path. Nest's
     // default provider scope is the module singleton, which is what makes the
@@ -104,6 +108,6 @@ import { CalcWriteService } from "./calc-write.service";
     CalcStreamingService,
     CalcSchedulerService,
   ],
-  exports: [CalcDependencyService, CalcStatusRegistry],
+  exports: [CalcDependencyService, CalcStatusRegistry, CalcParametersService],
 })
 export class CalcModule {}
