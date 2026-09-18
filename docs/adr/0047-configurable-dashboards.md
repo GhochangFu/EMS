@@ -1038,3 +1038,192 @@ D was declined because it retracts a promise the API already keeps.
 - **No schema change, no dependency, no `AGENTS.md` §6 line moves.** The
   `chore(agents):` sweep after close has nothing to soften; it records the
   amendment in the status line's ADR roll only.
+
+## Amendment 6 — the `asset_group_admin` UI authoring path opens, and an asset-scoped dashboard gains a read-only arm in the editor (2026-09-18)
+
+Ruled by the owner at `F3.63`'s §10 gate, **before any implementation code**,
+on the two questions Amendment 5 deferred to that row. As at Amendment 5, the
+refusal inventory was rebuilt from source (`main` at `0042b603`) before the
+options were put, and it is wider than the row's cell records.
+
+### Question 1 — the role's path to the builder
+
+**What the API already admits.** `AccessControlService.canManageDashboard`
+returns true for `asset_group_admin` on the **group** arm by
+`user_asset_group_access` membership (`F3.1b`, lines 434-494) and on the
+**asset** arm by the same membership through `asset_group_members` (ADR 0067
+decision 2). `DashboardBuilderController`'s own gate,
+`assertOperationsWriteRole(jwt, "configuration")`, admits the role. So
+`POST /dashboards`, `PATCH /dashboards/:slug` and `PUT /:slug/widgets` are
+reachable by a direct caller holding the role, today, for a group it holds.
+
+**What refuses the role, from source — six surfaces, not the row's three:**
+
+1. `AdminRoute` (`admin-route.tsx:36`) redirects it through
+   `isMasterDataAdmin`, and both builder routes (`app.tsx` `/admin/dashboards`,
+   `/admin/dashboards/:slug`) are wrapped in it. `AdminRoute` is the **only**
+   route guard the SPA has; every other route is bare `accessToken && user`.
+2. The two links that lead there — `dashboards-page.tsx:50` *Manage
+   dashboards* and `dashboard-viewer-page.tsx:74` *Edit dashboard* — carry
+   `canAuthorDashboards(role) && isMasterDataAdmin(role)`, each behind a HIGH
+   review finding from `F3.1d` that a link to a silent redirect is worse than
+   no link.
+3. `canChooseAssetGroupDashboardScope` (`admin-access.ts:129`) admits `admin`
+   and `organization_admin` only, by Amendment 5.
+4. `GET /admin/locations` (`locations.service.ts:49`, `requireMasterDataUser`)
+   — the builder pages read it for the location scope select, and
+   `PointPicker` reads it for the first select of its location→points chain.
+   **The row never names this one.**
+5. `GET /admin/asset-points` (`asset-points.service.ts:67`) throws **three
+   times** for the role, not once: `requireMasterDataUser`, then
+   `writableLocationIds` → `assertMasterDataRole`, then `canManageAsset` →
+   `assertMasterDataRole` on the `assetId` filter. No single predicate opens
+   it, so an `?assetId=` branch on this endpoint was not an option.
+6. `GET /admin/asset-groups` (`asset-groups.service.ts:56`,
+   `requireMasterDataUser`) — its header records the exclusion as deliberate
+   and names `F3.63` as the row that owns the boundary.
+
+**What the role can read today, from source:** `GET /auth/me` returns
+`scope.assetGroups` populated only for this role (`{ id, locationId, code,
+name }`, `accessAssetGroupSchema`) and `scope.locations` for the groups'
+locations; `GET /assets` (`assets.controller.ts:36`) lists the role's assets
+through `readableAssetIds`, which the `asset_group` source branch populates
+through `asset_group_members`. So the role can enumerate its groups and its
+assets, and cannot enumerate their points. **Neither `/auth/me` array carries
+an `organizationId`**, and `POST /dashboards` requires one.
+
+Three rulings were put to the owner, with the first recommended:
+
+- **A — open the full path.** A dashboard-specific route guard on
+  `canAuthorDashboards`; the links follow it; the group option widened to the
+  role, fed by `/auth/me`; a point read that is not master-data
+  administration; `isMasterDataRole` and `requireMasterDataUser` untouched.
+- **C — the asset-scoped dashboards only.** The guard and the point read as in
+  A, no group picker: the role edits the ADR 0067 rows the instantiator
+  created and creates nothing.
+- **D — keep the boundary closed and drop the row**, retracting Amendment 2
+  ruling 2's sentence for this role.
+
+### The ruling: A — the path opens beside the master-data boundary, not through it
+
+**The boundary `isMasterDataRole` closes stays closed.** Neither
+`isMasterDataRole`, `isMasterDataAdmin`, `requireMasterDataUser`,
+`canManageAsset`, `canManageDashboard` nor `AdminRoute` is edited. The two
+docblocks that close the boundary on purpose (`access-scope.ts:73-78`,
+`asset-groups.service.ts:38-42`) remain true: this amendment widens no
+master-data read and no master-data write. What it adds runs **beside** that
+boundary, gated on the predicates the API already applies to dashboards:
+
+1. **A route guard that is not `AdminRoute`.** `DashboardAuthorRoute`
+   (`apps/web/src/components/`) admits `canAuthorDashboards(role)` — the web
+   mirror of `canPerformOperationsWrite(role, "configuration")`, which is the
+   controller's own gate — and redirects everyone else to `/`. The two builder
+   routes move from `AdminRoute` to it. The two links drop `&&
+   isMasterDataAdmin(role)` and gate on `canAuthorDashboards` alone, because
+   the redirect the composite existed to avoid is gone. `AdminRoute`'s
+   membership is unchanged; the master-data screens keep it.
+2. **The group option widens to the role, from the list the role can read.**
+   `canChooseAssetGroupDashboardScope` admits `asset_group_admin`. For that
+   role `DashboardScopeFields` renders the group kind **only** — no
+   organization-wide radio (Amendment 2 ruling 2, already enforced by
+   `canCreateOrganizationWideDashboard`) and no location radio (the API's group
+   arm refuses a location target for this role, `target.kind !==
+   "assetGroup"` at line 463, so a location option would be a 403 behind an
+   enabled Save — the same rule Amendment 5 applied to `location_admin` in
+   the other direction). The list comes from `GET /auth/me`'s
+   `scope.assetGroups`, not from `GET /admin/asset-groups`, which stays
+   refused. **`accessAssetGroupSchema` gains `organizationId`** (additive; the
+   `asset_group` source branch already joins `bms.asset_groups`, which carries
+   it), so the create body's `organizationId` derives from the chosen group
+   exactly as Amendment 5's `admin` path derives it. For `admin`,
+   `organization_admin` and `location_admin` the form is unchanged.
+3. **A point read that is not master-data administration.**
+   `GET /assets/:assetId/points` on the existing non-admin `assets` module,
+   gated on `canReadAsset` (`readableAssetIds`) — the same scope `GET /assets`
+   already applies — returning a **five-field picker row**
+   (`assetPointPickerRowSchema`: `id`, `assetId`, `assetName`, `pointKey`,
+   `unit`), not the `AdminAssetPointDto` the master-data list returns. The
+   route is reachable by every read-scoped role, `viewer` included, and the
+   admin projection carries the ingest wiring (`sourceDataKey`, `sensorCode`,
+   `rtuId`, `sourceKind`) and the per-asset scaling and plausibility
+   overrides (`scaleMultiplier`, `scaleOffset`, `engMin`, `engMax`,
+   `qualityPolicy`) — columns that leave through no other non-admin route
+   (review, Security Medium). The five fields are exactly what `PointPicker`
+   and `WidgetInspector.addPoint` read, so the binding DTO does not change;
+   the row is picked from the same `mapAssetPointRow` projection the admin
+   list uses. A non-admin caller gets **403 for an unknown id and an
+   out-of-scope id alike**: the guard runs before the read, so the route is
+   not an existence oracle; only `admin`, whose scope is unrestricted,
+   reaches the service's 404 for an id that does not exist. Which ids the
+   caller may read is a **read of points the caller may already read
+   telemetry for** (`GET /telemetry/points/:pointRef/recent` is gated on the
+   same `readableAssetIds`), so it widens no scope: it lists what the caller
+   can already fetch one call later, given the ids. `GET /admin/asset-points`
+   keeps its master-data gate.
+4. **The point picker gains an asset→points chain for this role.** For
+   `asset_group_admin`, `PointPicker` offers *Asset* (from
+   `GET /assets?organizationId=`, the narrowing the controller already
+   accepts — the row itself carries no `organizationId`) then *Add point*
+   (from `GET /assets/:assetId/points`).
+   For the three master-data roles the location→points chain is unchanged.
+   The write-side guard `assertBoundPointsInOrganization` stays
+   organization-wide, as it is for `location_admin` today: the picker is the
+   scope, the guard is the tenant, and this amendment does not narrow the
+   guard per role.
+
+**What this is not.** It is not a widening of any `/admin/*` read; it is not a
+change to `canManageDashboard`, whose group and asset arms already say yes; it
+is not a location option for this role; it is not a group option for
+`location_admin` (Amendment 5's "one predicate plus one line, with its own
+gate" stands). D was declined because it retracts a promise the API keeps and
+C because it leaves the promise half kept for a saving of one form kind.
+
+### Question 2 — an asset-scoped dashboard in the editor
+
+**The defect.** `scopeFromDashboard` (`dashboard-scope.ts`) is three-way and
+returns *organization* for an ADR 0067 row (`{ locationId: null,
+assetGroupId: null, assetId }`); the edit page then renders the organization
+radio checked, and a rename sends `{ locationId: null, assetGroupId: null }`,
+which `DashboardsService.update` merges onto the stored `assetId` — the row
+still has one axis, so the save **succeeds** and the round trip is silent;
+but choosing a location or a group produces two axes and the merged
+singularity guard answers 400 (`SCOPE_REFUSAL_MESSAGE`). Either way the form
+tells an `admin` that an asset-scoped dashboard is organization-wide, which is
+false. Live today for every role that can open the editor.
+
+**The ruling: a read-only asset arm.** `DashboardScopeValue` gains a fourth
+kind, `asset`, and `scopeFromDashboard` returns it when `assetId` is set. For
+that kind the edit page renders **no radios**: a single line naming the asset
+(the name resolved from `GET /assets`, which every authoring role can read,
+falling back to the id), and the PATCH body **omits** `locationId` and
+`assetGroupId` entirely — the existing "send both explicitly" rule of `F3.34`
+applies to the three chosen kinds and not to a kind the form cannot choose.
+`isScopeChosen` is true for it, and `scopeChanged` is false. The alternative —
+keep the radios and disable them — was declined on §6.2's forms-not-buttons
+rule. The create page and the duplicate dialog do not offer the kind: the
+instantiator remains `assetId`'s only writer in this app, and duplicating an
+asset-scoped dashboard still prefills as the source's organization, which
+Amendment 5 recorded and this amendment does not change.
+
+### Consequences
+
+- **`F3.63` flips to 🟡** and carries both rulings; effort `3–4` stands.
+- **`packages/shared` contract change, additive:** `accessAssetGroupSchema`
+  gains `organizationId: z.string()`. Every producer is the one branch in
+  `scopeForUser`; no consumer narrows on the key set.
+- **One new API route**, `GET /assets/:assetId/points`, in the existing
+  `assets` module; no new module, no new dependency, no migration.
+- **`AGENTS.md`:** no §6 line moves. The `chore(agents):` sweep after close
+  records the amendment in the status line's ADR roll.
+- **§4.6 for this row:** the API layer is the new route's integration cases
+  (403 outside scope, the role's own asset listed, the master-data route
+  still refusing the role); the database layer is the browser save read as
+  `bms_fleet` with `asset_group_id` set and the other two NULL; the browser
+  layer is `wc-hvac-admin@bms.local` reaching `/admin/dashboards`, seeing the
+  group option only, binding a point of its own group's asset, and saving —
+  plus the negative: `wc-admin@bms.local` still sees no group option, and an
+  `operator` still redirects.
+- **Two docblocks are corrected in the feature commit**, not the sweep:
+  `canAuthorDashboards`'s (`admin-access.ts:75-87`) and
+  `canChooseAssetGroupDashboardScope`'s, because each states that `F3.63` is
+  pending. `asset-groups.service.ts:38-42` stays as written — it remains true.

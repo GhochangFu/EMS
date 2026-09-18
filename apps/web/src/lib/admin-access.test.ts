@@ -5,6 +5,7 @@ import {
   runAssetGroupScopePredicateTests,
   runAssetTemplateTabTests,
   runDashboardAuthoringPredicateTests,
+  runLocationScopePredicateTests,
   runNotificationTabTests,
 } from "./admin-access.spec";
 
@@ -26,7 +27,11 @@ describe("admin-access", () => {
     runDashboardAuthoringPredicateTests();
   });
 
-  it("offers the asset-group dashboard scope to admin and organization_admin only", () => {
+  it("offers the asset-group dashboard scope to admin, organization_admin and asset_group_admin", () => {
     runAssetGroupScopePredicateTests();
+  });
+
+  it("offers the location dashboard scope to the three master-data roles only", () => {
+    runLocationScopePredicateTests();
   });
 });

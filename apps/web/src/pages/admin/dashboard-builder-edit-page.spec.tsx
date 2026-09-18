@@ -4,12 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { AdminAssetGroupDto, DashboardDto, UserRole } from "@bms/shared";
+import type { AdminAssetGroupDto, AssetListRow, DashboardDto, UserRole } from "@bms/shared";
 
 import * as assetGroupsApi from "../../api/admin/asset-groups";
 import * as locationsApi from "../../api/admin/locations";
+import * as assetsApi from "../../api/assets";
 import * as dashboardsApi from "../../api/dashboards";
-import type { AuthUser } from "../../stores/auth-store";
+import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
 
 /**
@@ -27,8 +28,24 @@ import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
  * whole tenant. The prefill is now `scopeFromDashboard` (three-way) and the PATCH body is
  * `scopeColumns(scope)`: the group id is carried back, and `scopeColumns` never yields two
  * non-nulls so `DashboardsService.update`'s merged singularity guard stays satisfied.
- * `assetId` (ADR 0067) is never sent; an asset-scoped row still prefills as organization
- * (plan §10 Q2, folded into `F3.63`).
+ * `assetId` (ADR 0067) is never sent.
+ *
+ * **`F3.63` (ADR 0047 Amendment 6 §Q2) closed the asset half of the same defect.** An
+ * asset-scoped row used to prefill as organization — a false radio — so a rename sent
+ * `{ null, null }`, which the server merged onto the kept `assetId` (one axis, a silent success),
+ * and choosing a location or a group was a 400. It now prefills as the read-only `asset` kind, and
+ * the PATCH body is `scopePatch(scope)` — which OMITS both scope columns for it, so
+ * `renamingAnAssetScopedDashboardSendsOnlyNameAndDescription` and the exact-keys case beside
+ * it are this file's second load-bearing pair. Amendment 6 §Q1 point 2 opened the page to an
+ * `asset_group_admin`; its cases set `/auth/me`'s scope on the store first (`http.spec.ts`'s
+ * idiom) and the `.test.tsx` resets it in `afterEach`. The admin fetches stay spied so a
+ * regression is RECORDED as a call, not lost as an unhandled `fetch`.
+ *
+ * **The review's foreign-scope pair** (`assetGroupAdminOnAForeignGroupCannotSave`,
+ * `locationAdminOnAForeignLocationCannotSave`): a role can OPEN a dashboard on a group or a
+ * location it does not hold, and before the fix a rename enabled Save and the PATCH met the
+ * server's 404. `isScopeOffered` in the page's `blocked` keeps Save disabled. Mutation: drop it
+ * from `blocked` ⇒ both red; the own-group rename case beside them is the positive control.
  */
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -71,6 +88,35 @@ const DTO: DashboardDto = {
 /** The same dashboard, scoped to an asset group — `locationId` NULL, `assetGroupId` set. */
 const GROUP_DTO: DashboardDto = { ...DTO, id: "dash-2", slug: "hvac-kolkata", locationId: null, assetGroupId: "grp-1" };
 
+/** The same dashboard, instantiated onto an asset (ADR 0067) — `assetId` set and BOTH scope
+ * columns NULL, as the merged-singularity guard stores it. A fixture with `assetId` beside a
+ * scope column would be a row the API never writes, and a body pinned against it proves nothing. */
+const ASSET_DTO: DashboardDto = {
+  ...DTO,
+  id: "dash-3",
+  slug: "chiller-1",
+  name: "Chiller 1 — health",
+  locationId: null,
+  assetGroupId: null,
+  assetId: "asset-1",
+};
+
+/** `fetchAssets`'s real row shape (`assetListRowSchema`), no cast. */
+const ASSET: AssetListRow = {
+  id: "asset-1",
+  code: "CH-01",
+  name: "Chiller 1",
+  siteName: "Kolkata Works",
+  domain: "hvac",
+  locationId: "11111111-1111-4111-8111-111111111111",
+  locationName: "Kolkata Works",
+  rtuId: null,
+  rtuDisplayName: null,
+  telemetrySource: null,
+  active: true,
+  templateId: null,
+};
+
 /** `fetchAdminAssetGroups`'s real response shape — the full `AdminAssetGroupDto`, no cast, so a
  * missing `organizationId` fails the compiler rather than the run. */
 const GROUP: AdminAssetGroupDto = {
@@ -110,14 +156,33 @@ function stubLoads({
   dto,
   groups,
   locations = [LOCATION],
+  assets = [ASSET],
 }: {
   dto: DashboardDto;
   groups: readonly AdminAssetGroupDto[];
   locations?: readonly (typeof LOCATION)[];
+  assets?: readonly AssetListRow[];
 }): void {
   vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(dto);
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [...locations] });
   vi.spyOn(assetGroupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [...groups] });
+  vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([...assets]);
+}
+
+/** `/auth/me`'s scope for an `asset_group_admin` of this dashboard's organization —
+ * `accessibleScopeSchema`'s exact shape. The location's id matches the group's `locationId`,
+ * so `scopeAssetGroupOptions` resolves the label `Hvac — Western Cape`. */
+function signInAsAssetGroupAdmin(): void {
+  useAuthStore.setState({
+    scope: {
+      kind: "asset_group",
+      locations: [
+        { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null },
+      ],
+      assetGroups: [{ id: "grp-1", locationId: "loc-1", code: "hvac", name: "Hvac", organizationId: ORG_ID }],
+      assetIds: ["a1"],
+    },
+  });
 }
 
 /** Stubs the two save calls and returns the `updateDashboard` spy the body assertions read. */
@@ -136,6 +201,12 @@ function stubSave() {
  */
 async function waitForPrefill(kind: "Location" | "Asset group"): Promise<void> {
   await screen.findByRole("radio", { name: kind, checked: true });
+}
+
+/** The asset-kind wait: there is no radio for it, so the read-only scope line — rendered only
+ * once the dto effect has applied `scopeFromDashboard` — is what proves the prefill landed. */
+async function waitForAssetPrefill(): Promise<void> {
+  await screen.findByText(/Scoped to asset Chiller 1\./);
 }
 
 function renderPage(user: AuthUser): void {
@@ -169,7 +240,12 @@ export async function renamingAGroupScopedDashboardKeepsItsGroup(): Promise<void
 
   renderPage(asUser("admin"));
 
-  await userEvent.type(await screen.findByLabelText("Name"), " (renamed)");
+  // Two async loads, both waited for in order: the dto (the checked radio — typing before it
+  // lands is overwritten by `setName(dto.name)`), then the group list, which Save waits for
+  // (`isScopeOffered`). The Name input renders before either and is not a wait.
+  await waitForPrefill("Asset group");
+  await screen.findByRole("option", { name: "Hvac — Kolkata Works" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
   await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
 
   await waitFor(() => {
@@ -257,4 +333,210 @@ export async function theGroupListIsTheDashboardsOrganizationOnly(): Promise<voi
       .filter((value) => value !== "");
     expect(values).toEqual(["grp-1"]);
   });
+}
+
+/**
+ * **The load-bearing assertion of `F3.63`'s Q2 half** (ADR 0047 Amendment 6 §Q2). An
+ * asset-scoped dashboard, renamed and saved by `admin`, sends exactly `{ name, description }`:
+ * `scopePatch` returns `{}` for the `asset` kind, so neither scope column is in the body. The
+ * match is exact, not `objectContaining`: a body carrying `locationId: null` or
+ * `assetGroupId: null` — what spreading `scopeColumns`'s two nulls would send — reds it.
+ */
+export async function renamingAnAssetScopedDashboardSendsOnlyNameAndDescription(): Promise<void> {
+  stubLoads({ dto: ASSET_DTO, groups: [GROUP] });
+  const updateSpy = stubSave();
+
+  renderPage(asUser("admin"));
+
+  await waitForAssetPrefill();
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+
+  await waitFor(() => {
+    expect(updateSpy).toHaveBeenCalledWith(ASSET_DTO.id, {
+      name: `${ASSET_DTO.name} (renamed)`,
+      description: null,
+    });
+  });
+}
+
+/** The same body, its keys pinned EXACTLY (the rule `renamingAGroupScopedDashboardKeepsItsGroup`
+ * records for `assetId`): `toHaveBeenCalledWith` treats an own property whose value is
+ * `undefined` as absent, so a body spread from `{ locationId: undefined, assetGroupId: undefined }`
+ * passes the case above and is caught only here. */
+export async function thePatchBodyForAnAssetScopedDashboardHasExactlyTwoKeys(): Promise<void> {
+  stubLoads({ dto: ASSET_DTO, groups: [GROUP] });
+  const updateSpy = stubSave();
+
+  renderPage(asUser("admin"));
+
+  await waitForAssetPrefill();
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+
+  await waitFor(() => expect(updateSpy).toHaveBeenCalled());
+  expect(Object.keys(updateSpy.mock.calls[0]?.[1] ?? {}).sort()).toEqual(["description", "name"]);
+}
+
+/** The read-only line names the asset, resolved from `GET /assets?organizationId=` (the
+ * `assets` prop `DashboardScopeFields` requires). */
+export async function anAssetScopedDashboardNamesItsAsset(): Promise<void> {
+  stubLoads({ dto: ASSET_DTO, groups: [GROUP] });
+
+  renderPage(asUser("admin"));
+
+  expect(await screen.findByText(/Scoped to asset Chiller 1\./)).toBeInTheDocument();
+}
+
+/** No radio at all for the `asset` kind — not a disabled one (forms, not buttons). The asset
+ * line found first is the positive control that the fields rendered. Mutation: render the
+ * three radios for the kind ⇒ red. */
+export async function anAssetScopedDashboardRendersNoRadios(): Promise<void> {
+  stubLoads({ dto: ASSET_DTO, groups: [GROUP] });
+
+  renderPage(asUser("admin"));
+
+  await waitForAssetPrefill();
+  expect(screen.queryAllByRole("radio")).toEqual([]);
+}
+
+/** The asset list is narrowed to the dashboard's own organization — `fetchAssets(ORG_ID)`. */
+export async function anAssetScopedDashboardReadsTheOrganizationsAssets(): Promise<void> {
+  stubLoads({ dto: ASSET_DTO, groups: [GROUP] });
+
+  renderPage(asUser("admin"));
+
+  await waitForAssetPrefill();
+  expect(assetsApi.fetchAssets).toHaveBeenCalledWith(ORG_ID);
+}
+
+/** An asset absent from `/assets` (the list is active-only; a retired asset's dashboard is
+ * still a row) falls back to the id, so the line never reads "Scoped to asset undefined". */
+export async function anAssetScopedDashboardWithTheAssetAbsentShowsTheId(): Promise<void> {
+  stubLoads({ dto: ASSET_DTO, groups: [GROUP], assets: [] });
+
+  renderPage(asUser("admin"));
+
+  expect(await screen.findByText(new RegExp(`Scoped to asset ${ASSET_DTO.assetId}\\.`))).toBeInTheDocument();
+}
+
+/** Only an asset-scoped dto issues the assets read. Mutation: drop `enabled: !!dto?.assetId`
+ * ⇒ red. */
+export async function aLocationDashboardDoesNotFetchAssets(): Promise<void> {
+  stubLoads({ dto: DTO, groups: [GROUP] });
+
+  renderPage(asUser("admin"));
+
+  await waitForPrefill("Location");
+  expect(assetsApi.fetchAssets).not.toHaveBeenCalled();
+}
+
+/** An unedited asset-scoped dashboard is not dirty — `scopeChanged` is false for the `asset`
+ * kind. Mutation: return true for it ⇒ red (the page would show "" and Save would enable). */
+export async function anUneditedAssetScopedDashboardIsNotDirty(): Promise<void> {
+  stubLoads({ dto: ASSET_DTO, groups: [GROUP] });
+
+  renderPage(asUser("admin"));
+
+  await waitForAssetPrefill();
+  expect(screen.getByText("No changes yet.")).toBeInTheDocument();
+}
+
+/** Renders the role's edit page on its own group dashboard and waits for the group radio,
+ * checked — the positive control the two absence assertions below sit beside. */
+async function renderAssetGroupAdminsGroupDashboard(): Promise<void> {
+  stubLoads({ dto: GROUP_DTO, groups: [GROUP] });
+  signInAsAssetGroupAdmin();
+  renderPage(asUser("asset_group_admin"));
+  await waitForPrefill("Asset group");
+}
+
+/** `GET /admin/locations` is a 403 for the role; the hook gates it on
+ * `canChooseLocationDashboardScope`. Mutation: drop that clause ⇒ red. */
+export async function assetGroupAdminsEditPageDoesNotFetchLocations(): Promise<void> {
+  await renderAssetGroupAdminsGroupDashboard();
+  expect(locationsApi.fetchAdminLocations).not.toHaveBeenCalled();
+}
+
+/** `GET /admin/asset-groups` stays refused for the role (Amendment 6 §Q1 point 2). Mutation:
+ * gate the admin query on the group predicate alone ⇒ red. */
+export async function assetGroupAdminsEditPageDoesNotFetchAdminAssetGroups(): Promise<void> {
+  await renderAssetGroupAdminsGroupDashboard();
+  expect(assetGroupsApi.fetchAdminAssetGroups).not.toHaveBeenCalled();
+}
+
+/** The group list is the store's `scope.assetGroups`. Mutation: feed the role `[]` ⇒ red. */
+export async function assetGroupAdminsEditPageListsItsOwnGroups(): Promise<void> {
+  await renderAssetGroupAdminsGroupDashboard();
+  expect(await screen.findByRole("option", { name: "Hvac — Western Cape" })).toBeInTheDocument();
+}
+
+/** The role renames its group dashboard and the group is carried back — the `F3.34` rule,
+ * now for the role Amendment 6 admits. */
+export async function assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup(): Promise<void> {
+  const updateSpy = stubSave();
+  await renderAssetGroupAdminsGroupDashboard();
+
+  await screen.findByRole("option", { name: "Hvac — Western Cape" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+
+  await waitFor(() => {
+    expect(updateSpy).toHaveBeenCalledWith(
+      GROUP_DTO.id,
+      expect.objectContaining({ name: `${GROUP_DTO.name} (renamed)`, assetGroupId: "grp-1", locationId: null }),
+    );
+  });
+}
+
+/** The page passes the AUTHOR's role to `WidgetInspector`, whose `PointPicker` forks on it
+ * (Unit 6): for the role the picker's first control is the `Asset` select, not the master-data
+ * `Location` chain. Mutation: pass a constant master-data role ⇒ red. */
+export async function assetGroupAdminsWidgetInspectorOffersTheAssetChain(): Promise<void> {
+  await renderAssetGroupAdminsGroupDashboard();
+
+  await userEvent.click(screen.getByRole("button", { name: "+ Value tile" }));
+
+  expect(await screen.findByRole("combobox", { name: "Asset" })).toBeInTheDocument();
+}
+
+/** The review's foreign-scope defect, group half: the role's store scope holds `grp-1` only, and
+ * the dashboard is scoped to `grp-foreign`. The group radio prefills checked (the kind IS offered
+ * to the role, so the clamp does not fire), the select has no matching option, and after a rename
+ * Save stays disabled. Positive control: `assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup`
+ * above, same role and same shape on its OWN group, has Save enabled. Mutation: drop
+ * `isScopeOffered` from `blocked` ⇒ red. */
+export async function assetGroupAdminOnAForeignGroupCannotSave(): Promise<void> {
+  stubLoads({ dto: { ...GROUP_DTO, assetGroupId: FOREIGN_GROUP.id }, groups: [GROUP] });
+  const updateSpy = stubSave();
+  signInAsAssetGroupAdmin();
+  renderPage(asUser("asset_group_admin"));
+
+  await waitForPrefill("Asset group");
+  await screen.findByRole("option", { name: "Hvac — Western Cape" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+
+  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  expect(updateSpy).not.toHaveBeenCalled();
+}
+
+/** The same defect, location half: `GET /admin/locations` lists a `location_admin`'s own
+ * locations only (`writableLocationIds`), so the stub returns a second location and NOT the
+ * dashboard's `loc-1`. The location radio prefills checked, the select has no matching option, and
+ * after a rename Save stays disabled. Positive control: `choosingADifferentLocationMakesItDirty`
+ * has Save enabled for an offered location. Mutation: drop `isScopeOffered` from `blocked` ⇒ red. */
+export async function locationAdminOnAForeignLocationCannotSave(): Promise<void> {
+  const OWN_LOCATION = { ...LOCATION, id: "loc-2", code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
+  stubLoads({ dto: DTO, groups: [], locations: [OWN_LOCATION] });
+  const updateSpy = stubSave();
+  renderPage(asUser("location_admin"));
+
+  await waitForPrefill("Location");
+  await screen.findByRole("option", { name: "Mumbai Works" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+
+  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  expect(updateSpy).not.toHaveBeenCalled();
 }

@@ -63,6 +63,12 @@ export const accessAssetGroupSchema = z.object({
   locationId: z.string(),
   code: z.string(),
   name: z.string(),
+  /**
+   * ADR 0047 Amendment 6: the `asset_group_admin` authoring path derives the
+   * create body's `organizationId` from the group the picker offers, so the
+   * group's own organization travels with it here rather than being re-fetched.
+   */
+  organizationId: z.string(),
 });
 
 export const accessibleScopeSchema = z.object({

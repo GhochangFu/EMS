@@ -2,16 +2,23 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 
-import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
-import { fetchAdminLocations } from "../../api/admin/locations";
+import { fetchAssets } from "../../api/assets";
 import {
   fetchDashboard,
   putDashboardWidgets,
   updateDashboard,
   type UpdateDashboardPayload,
 } from "../../api/dashboards";
+import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-options";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { isScopeChosen, scopeColumns, scopeFromDashboard } from "../../lib/dashboard-scope";
+import {
+  isScopeChosen,
+  isScopeOffered,
+  scopeChanged,
+  scopeFromDashboard,
+  scopePatch,
+  type ScopeAssetOption,
+} from "../../lib/dashboard-scope";
 import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
@@ -52,6 +59,12 @@ type WidgetTile = CanvasTile & { row: DashboardWidgetRow; index: number };
  * preserving every server-issued widget `id` so a re-save does not invent new
  * rows for widgets that already exist (`dashboardRowsFromDto` is what carries
  * them forward).
+ *
+ * `F3.63` (ADR 0047 Amendment 6): the option lists come from `useDashboardScopeOptions` by
+ * role, so an `asset_group_admin` — admitted by `DashboardAuthorRoute` — edits its group
+ * dashboard from `/auth/me`'s `scope.assetGroups` with no `/admin/*` read; and an
+ * asset-scoped row (ADR 0067) prefills as the read-only `asset` kind, whose PATCH omits both
+ * scope columns (`scopePatch`) — see the comment on the save body below.
  */
 export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps) {
   const { slug = "" } = useParams<{ slug: string }>();
@@ -89,39 +102,48 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     }
     setName(dto.name);
     setDescription(dto.description ?? "");
-    // Three-way (`F3.34`): an asset-group dashboard prefills as one. Before this row the
-    // prefill was two-way and a rename silently widened a group dashboard to the tenant.
+    // Four-way (`F3.34`, then `F3.63`): an asset-group dashboard prefills as one, and an
+    // asset-scoped row as the read-only `asset` kind. Before `F3.34` the prefill was two-way and
+    // a rename silently widened a group dashboard to the tenant. Before `F3.63` an asset-scoped
+    // row showed a false organization radio; a rename kept its `assetId` (the two nulls merged
+    // onto one axis, so the save succeeded silently) and choosing a location or a group was a
+    // 400 (Amendment 6 §Q2).
     setScope(scopeFromDashboard(dto));
     setRows(dashboardRowsFromDto(dto));
     setSelected(null);
   }, [dto]);
 
-  const locationsQ = useQuery({
-    queryKey: ["admin", "locations", "for-dashboard-edit", dto?.organizationId],
-    queryFn: () => fetchAdminLocations("true", dto?.organizationId),
+  // Both lists narrowed to the dashboard's own organization (`F3.34`), read by role (`F3.63`).
+  const { locations, assetGroups } = useDashboardScopeOptions({
+    role: user.role,
+    organizationId: dto?.organizationId,
     enabled: !!dto,
   });
-  // `F3.34` — the asset-group picker. The endpoint filters by location only, so the list is
-  // narrowed to the dashboard's own organization here (the locations query above is narrowed
-  // the same way, server-side). Keyed on the exported key so the cache is shared.
-  const assetGroupsQ = useQuery({
-    queryKey: adminAssetGroupsQueryKey(),
-    queryFn: () => fetchAdminAssetGroups(),
-    enabled: !!dto,
+  // Names the read-only asset line; only an asset-scoped row has one to name. The key is
+  // `PointPicker`'s for the same fetch, so the cache is shared.
+  const assetsQ = useQuery({
+    queryKey: ["assets", "dashboard-scope", dto?.organizationId],
+    queryFn: () => fetchAssets(dto?.organizationId),
+    enabled: !!dto?.assetId,
   });
-  const assetGroups = (assetGroupsQ.data?.items ?? []).filter((group) => group.organizationId === dto?.organizationId);
+  const assets: readonly ScopeAssetOption[] = (assetsQ.data ?? []).map((asset) => ({ id: asset.id, name: asset.name }));
 
   const problems = dashboardBuilderErrors(rows);
   // Review finding — `WidgetInspector` (below) renders only the SELECTED widget's problems, so
   // a set-level problem or another widget's problem must surface somewhere else, or `Save`
   // disables with a reason nothing on the page shows.
   const summaryProblems = unselectedDashboardBuilderProblems(problems, selected);
-  const columns = scopeColumns(scope);
-  const scopeChanged = dto ? columns.locationId !== dto.locationId || columns.assetGroupId !== dto.assetGroupId : false;
-  const fieldsChanged = dto ? name !== dto.name || description !== (dto.description ?? "") || scopeChanged : false;
+  const fieldsChanged = dto
+    ? name !== dto.name || description !== (dto.description ?? "") || scopeChanged(scope, dto)
+    : false;
   const widgetsChanged = dto ? builderHasChanged(rows, dto) : false;
   const changed = fieldsChanged || widgetsChanged;
-  const scopeChosen = isScopeChosen(scope);
+  // Chosen AND offered (`F3.63` review): a location or a group the role's option list does not
+  // hold — a foreign scope the role can open but not save — leaves the select without a matching
+  // option while `isScopeChosen` is still true; without the second predicate a rename enabled
+  // Save and the PATCH ended in the server's 404. See `isScopeOffered`'s docblock for why a
+  // still-loading list counts as "not offered".
+  const scopeChosen = isScopeChosen(scope) && isScopeOffered(scope, { locations, assetGroups });
   const blocked = !dto || name.trim() === "" || !scopeChosen || problems.length > 0 || !changed;
 
   const saveM = useMutation({
@@ -129,24 +151,32 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
       if (!dto) {
         throw new Error("Dashboard has not loaded yet");
       }
-      // Both scope columns are sent explicitly on every save (`F3.34`, plan §10 Q1).
-      // `updateDashboard`'s body merges on presence, so an explicit `null` clears a column —
-      // which is correct here because the prefill is three-way (`scopeFromDashboard`) and this
-      // form now renders the asset-group control: a group source round-trips its own id, and a
-      // null is only ever sent for the axis the author did not choose. `scopeColumns` never
-      // yields two non-nulls, so `DashboardsService.update`'s merged singularity guard holds;
-      // `assetId` (ADR 0067) is never sent, so an asset-scoped row keeps it — the spec pins the
-      // key's absence exactly, because the merge-on-presence would read `assetId: null` as
-      // "clear the provenance". A `location_admin` CAN open a group-scoped dashboard here (the
-      // read is `getBySlug`, organization-wide by ADR 0047 Amendment 2, and `AdminRoute` admits
-      // the role), but two controls hold: the fields' clamp rewrites a kind the role is not
-      // offered to an unchosen location, so Save stays disabled until a location is picked, and
-      // the PATCH that then follows meets `update`'s STORED-scope check first, which refuses the
-      // role on the group arm with a 404 (review finding — the refusal is at save, not at load).
+      // Both scope columns are sent explicitly on every save of a CHOSEN kind (`F3.34`, plan
+      // §10 Q1). `updateDashboard`'s body merges on presence, so an explicit `null` clears a
+      // column — which is correct here because the prefill is `scopeFromDashboard` and this
+      // form renders the asset-group control: a group source round-trips its own id, and a
+      // null is only ever sent for the axis the author did not choose. `scopePatch` never
+      // yields two non-nulls, so `DashboardsService.update`'s merged singularity guard holds.
+      // For the read-only `asset` kind (`F3.63`, ADR 0047 Amendment 6 §Q2) `scopePatch` is
+      // `{}`: both scope columns are OMITTED, not sent as null, so a rename of an asset-scoped
+      // dashboard touches neither — the spec pins the body's keys exactly. `assetId` (ADR 0067)
+      // is never sent either, so an asset-scoped row keeps it — pinned exactly too, because the
+      // merge-on-presence would read `assetId: null` as "clear the provenance". A
+      // `location_admin` CAN open a group-scoped dashboard here (the read is `getBySlug`,
+      // organization-wide by ADR 0047 Amendment 2, and `DashboardAuthorRoute` admits the role),
+      // but two controls hold: the fields' clamp rewrites a kind the role is not offered to an
+      // unchosen location, so Save stays disabled until a location is picked, and the PATCH
+      // that then follows meets `update`'s STORED-scope check first, which refuses the role on
+      // the group arm with a 404 (review finding — the refusal is at save, not at load). The
+      // same two roles can also open a dashboard of THEIR OWN kind but outside their grant — a
+      // `location_admin` on a location it does not hold, an `asset_group_admin` on a group it
+      // does not hold (`F3.63` review): the clamp does not fire (the kind is offered), so it is
+      // `isScopeOffered` in `blocked` above that keeps Save disabled there, and the 404 the
+      // PATCH would otherwise meet is never reached.
       const body: UpdateDashboardPayload = {
         name: name.trim(),
         description: description.trim() === "" ? null : description.trim(),
-        ...columns,
+        ...scopePatch(scope),
       };
       const updated = await updateDashboard(dto.id, body);
       return putDashboardWidgets(updated.id, buildPutWidgetsPayload(rows));
@@ -226,8 +256,9 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                   value={scope}
                   onChange={setScope}
                   organizations={[{ id: dto.organizationId, name: "This dashboard's organization" }]}
-                  locations={locationsQ.data?.items ?? []}
+                  locations={locations}
                   assetGroups={assetGroups}
+                  assets={assets}
                 />
               </div>
               <div className="mt-3 border-t border-gray-100 pt-3">
@@ -298,6 +329,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
             {selected !== null && selectedRow ? (
               <WidgetInspector
                 row={selectedRow}
+                role={user.role}
                 problems={problems.filter((problem) => problem.widget === selected)}
                 organizationId={dto.organizationId}
                 onChange={(patch) => updateWidget(selected, patch)}

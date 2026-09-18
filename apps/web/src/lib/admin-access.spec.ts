@@ -2,6 +2,7 @@ import {
   canAccessOnboarding,
   canAuthorDashboards,
   canChooseAssetGroupDashboardScope,
+  canChooseLocationDashboardScope,
   canCreateOrganizationWideDashboard,
   canManageNotificationChannels,
   masterDataTabs,
@@ -245,10 +246,10 @@ export function runDashboardAuthoringPredicateTests(): void {
 }
 
 /**
- * `F3.34` (ADR 0047 Amendment 5) — the asset-group scope option renders for the two roles the
- * API's group arm admits for any group of the organization. Its body is identical to
- * `canCreateOrganizationWideDashboard` today and it is deliberately a SECOND predicate: `F3.63`
- * widens this one to `asset_group_admin` and must not move the organization-wide one.
+ * `F3.34` (ADR 0047 Amendment 5) — the asset-group scope option renders for the roles the API's
+ * group arm admits: `admin` and `organization_admin` for any group of the organization, and (as
+ * of `F3.63`, ADR 0047 Amendment 6) `asset_group_admin` by its own membership. It is deliberately
+ * a SECOND predicate from `canCreateOrganizationWideDashboard` — see that function's docblock.
  */
 export function runAssetGroupScopePredicateTests(): void {
   assert(canChooseAssetGroupDashboardScope("admin"), "admin may choose the asset-group scope");
@@ -263,10 +264,30 @@ export function runAssetGroupScopePredicateTests(): void {
       "(canManageDashboard: target.kind !== \"location\"), so the option would buy a 403",
   );
   assert(
-    !canChooseAssetGroupDashboardScope("asset_group_admin"),
-    "asset_group_admin may not choose the asset-group scope YET — widening it to that role is " +
-      "F3.63's, with its own §10 gate (ADR 0047 Amendment 5)",
+    canChooseAssetGroupDashboardScope("asset_group_admin"),
+    "asset_group_admin may choose the asset-group scope — Amendment 6 widened this predicate; " +
+      "the group list is fed from GET /auth/me, not from GET /admin/asset-groups",
   );
   assert(!canChooseAssetGroupDashboardScope("operator"), "operator may not choose the asset-group scope");
   assert(!canChooseAssetGroupDashboardScope("viewer"), "viewer may not choose the asset-group scope");
+}
+
+/**
+ * `F3.63` (ADR 0047 Amendment 6) — the location scope option renders for the three master-data
+ * roles the API's location arm admits. Deliberately its own predicate from `isMasterDataAdmin`,
+ * on the `canManageNotificationChannels` rule: the two answer different questions even though
+ * their membership is identical today.
+ */
+export function runLocationScopePredicateTests(): void {
+  assert(canChooseLocationDashboardScope("admin"), "admin may choose the location scope");
+  assert(canChooseLocationDashboardScope("organization_admin"), "organization_admin may choose the location scope");
+  assert(canChooseLocationDashboardScope("location_admin"), "location_admin may choose the location scope");
+  // Named individually so widening the list is a decision, not a fallthrough.
+  assert(
+    !canChooseLocationDashboardScope("asset_group_admin"),
+    "asset_group_admin may not choose the location scope — the API's group arm refuses a " +
+      "location target for this role (canManageDashboard: target.kind !== \"assetGroup\")",
+  );
+  assert(!canChooseLocationDashboardScope("operator"), "operator may not choose the location scope");
+  assert(!canChooseLocationDashboardScope("viewer"), "viewer may not choose the location scope");
 }

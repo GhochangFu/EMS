@@ -590,6 +590,9 @@ export type RtusListResponse = z.infer<typeof E.rtusListResponseSchema>;
 export type AssetsListResponse = z.infer<typeof E.assetsListResponseSchema>;
 export type AssetPointsListResponse = z.infer<typeof E.assetPointsListResponseSchema>;
 export type PointKeysListResponse = z.infer<typeof E.pointKeysListResponseSchema>;
+/** `F3.63` (ADR 0047 Amendment 6 §Q1 point 3) — `GET /assets/:assetId/points`, five fields. */
+export type AssetPointPickerRow = z.infer<typeof E.assetPointPickerRowSchema>;
+export type AssetPointPickerListResponse = z.infer<typeof E.assetPointPickerListResponseSchema>;
 /** `F3.1b`/`F3.1d` (ADR 0047) — `GET /dashboards`. */
 export type DashboardsListResponse = z.infer<typeof E.dashboardsListResponseSchema>;
 /** `F3.1b`/`F3.1d` (ADR 0047) — `DELETE /dashboards/:id`. */

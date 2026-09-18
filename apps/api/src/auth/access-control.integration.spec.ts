@@ -497,6 +497,8 @@ export async function assertAssetGroupScope(
       `asset group admin can read ${leaked.length} same-location asset(s) outside their group`,
     );
   }
+  // Amendment 6's claim that each group carries its own `organizationId` has its own `it()`
+  // in `assets/asset-points-read.integration.spec.ts`, not a seventh throw here.
 }
 
 /**

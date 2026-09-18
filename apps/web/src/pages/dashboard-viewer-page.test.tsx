@@ -4,7 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aLocationAdminStillSeesTheEditLink,
-  assetGroupAdminSeesNoEditLinkDespiteCanAuthorDashboards,
+  assetGroupAdminSeesTheEditLink,
 } from "./dashboard-viewer-page.spec";
 
 /**
@@ -18,8 +18,8 @@ describe("F3.1d dashboard viewer page", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows an asset_group_admin no Edit dashboard link, despite canAuthorDashboards", async () => {
-    await assetGroupAdminSeesNoEditLinkDespiteCanAuthorDashboards();
+  it("shows an asset_group_admin the Edit dashboard link", async () => {
+    await assetGroupAdminSeesTheEditLink();
   });
 
   it("still shows a location_admin the Edit dashboard link", async () => {

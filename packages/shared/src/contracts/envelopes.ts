@@ -74,6 +74,34 @@ export const assetPointsListResponseSchema = itemsOf(adminAssetPointDtoSchema);
 export const pointKeysListResponseSchema = itemsOf(adminPointKeyDtoSchema);
 
 /**
+ * `GET /assets/:assetId/points` — the non-admin point read (`F3.63`, ADR 0047
+ * Amendment 6 §Q1 point 3), gated on `canReadAsset` rather than on the
+ * master-data roles, so `viewer` reaches it.
+ *
+ * **Five fields, not `adminAssetPointDtoSchema`.** The admin projection also
+ * carries the ingest wiring (`sourceDataKey`, `sensorCode`, `rtuId`,
+ * `sourceKind`) and the per-asset scaling and plausibility overrides
+ * (`scaleMultiplier`, `scaleOffset`, `engMin`, `engMax`, `qualityPolicy`) —
+ * columns that leave through no other non-admin route. The two consumers
+ * (`PointPicker`, `WidgetInspector.addPoint`) read `id`, `pointKey`, `unit`
+ * and `assetName`; `assetId` is what a caller checks the row against. A
+ * fresh `z.object`, typed field for field as the admin DTO types them (`id`
+ * and `assetId` are `z.string()` there too), rather than `.pick()` — the
+ * flattening combinators are the ones `tests/adr-0030-contract-derivation`
+ * forbids, and a picked schema would silently widen the day the admin DTO
+ * does. The API derives the row from the same `mapAssetPointRow` the admin
+ * list uses, so an integration case can hold the picked fields to parity.
+ */
+export const assetPointPickerRowSchema = z.object({
+  id: z.string(),
+  assetId: z.string(),
+  assetName: z.string(),
+  pointKey: z.string(),
+  unit: z.string().nullable(),
+});
+export const assetPointPickerListResponseSchema = itemsOf(assetPointPickerRowSchema);
+
+/**
  * Asset templates — the two admin routes that had no envelope here.
  *
  * Added by `F2.5` (ADR 0038) and **not an API change**: no route, response

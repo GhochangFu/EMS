@@ -15,6 +15,7 @@ import type {
 import * as assetGroupsApi from "../../api/admin/asset-groups";
 import * as locationsApi from "../../api/admin/locations";
 import * as dashboardsApi from "../../api/dashboards";
+import { useAuthStore } from "../../stores/auth-store";
 import { DuplicateDashboardDialog } from "./duplicate-dashboard-dialog";
 
 /**
@@ -28,6 +29,13 @@ import { DuplicateDashboardDialog } from "./duplicate-dashboard-dialog";
  * (already specced by `dashboard-duplicate.spec.ts`) with the two live calls —
  * this file does not re-check the id-dropping rule, only that the dialog wires
  * it and behaves correctly when the second call fails.
+ *
+ * `F3.63` (ADR 0047 Amendment 6, plan §11 Q1): the dialog is the third caller of
+ * `DashboardScopeFields`, reachable from the edit page an `asset_group_admin` now opens. Its
+ * cases set `/auth/me`'s scope on the store first (`http.spec.ts`'s idiom); the `.test.tsx`
+ * resets it in `afterEach`. The admin fetches stay spied so a regression is RECORDED as a call.
+ * An asset-scoped source (§Q2, last sentence) prefills as organization — `scopeForDuplicate`
+ * folds it, because this dialog's state cannot hold the `asset` kind.
  */
 
 const SOURCE_ORG = "22222222-2222-4222-8222-222222222222";
@@ -124,6 +132,26 @@ function summaryFor(dto: DashboardDto, overrides: Partial<DashboardSummaryDto> =
 
 /** The same dashboard scoped to an asset group (`F3.34`) — `locationId` NULL, `assetGroupId` set. */
 const GROUP_SOURCE: DashboardDto = { ...SOURCE, locationId: null, assetGroupId: "grp-1" };
+
+/** The same dashboard instantiated onto an asset (ADR 0067) — `assetId` set, both scope columns
+ * NULL, as the merged-singularity guard stores it. */
+const ASSET_SOURCE: DashboardDto = { ...SOURCE, locationId: null, assetGroupId: null, assetId: "asset-1" };
+
+/** `/auth/me`'s scope for an `asset_group_admin` of the source's organization —
+ * `accessibleScopeSchema`'s exact shape. The location's id matches the group's `locationId`,
+ * so `scopeAssetGroupOptions` resolves the label `Hvac — Western Cape`. */
+function signInAsAssetGroupAdmin(): void {
+  useAuthStore.setState({
+    scope: {
+      kind: "asset_group",
+      locations: [
+        { id: "loc-1", code: "WC", slug: "western-cape", name: "Western Cape", type: "smoc_campus", province: null },
+      ],
+      assetGroups: [{ id: "grp-1", locationId: "loc-1", code: "hvac", name: "Hvac", organizationId: SOURCE_ORG }],
+      assetIds: ["a1"],
+    },
+  });
+}
 
 /** `fetchAdminAssetGroups`'s real response shape — the full `AdminAssetGroupDto`, no cast. */
 const GROUP: AdminAssetGroupDto = {
@@ -362,4 +390,69 @@ export async function widgetCopyFailureRendersInlineWithoutDeletingTheHalfMadeCo
   expect(deleteSpy).not.toHaveBeenCalled();
   // The error must not be lost behind an automatic navigate away from it.
   expect(screen.queryByText(/landed on/)).not.toBeInTheDocument();
+}
+
+/** Opens the role's dialog on its own group dashboard and waits for the group radio, checked —
+ * the positive control the two absence assertions below sit beside. */
+async function openAssetGroupAdminsDialog(): Promise<void> {
+  stubLoads({ source: GROUP_SOURCE, groups: [GROUP] });
+  signInAsAssetGroupAdmin();
+  renderDialog("asset_group_admin");
+  await screen.findByRole("radio", { name: "Asset group", checked: true });
+}
+
+/** `GET /admin/locations` is a 403 for the role; the hook gates it on
+ * `canChooseLocationDashboardScope`. Mutation: drop that clause ⇒ red. */
+export async function assetGroupAdminsDialogDoesNotFetchLocations(): Promise<void> {
+  await openAssetGroupAdminsDialog();
+  expect(locationsApi.fetchAdminLocations).not.toHaveBeenCalled();
+}
+
+/** `GET /admin/asset-groups` stays refused for the role (Amendment 6 §Q1 point 2). Mutation:
+ * gate the admin query on the group predicate alone ⇒ red. */
+export async function assetGroupAdminsDialogDoesNotFetchAdminAssetGroups(): Promise<void> {
+  await openAssetGroupAdminsDialog();
+  expect(assetGroupsApi.fetchAdminAssetGroups).not.toHaveBeenCalled();
+}
+
+/** The group list is the store's `scope.assetGroups`. Mutation: feed the role `[]` ⇒ red. */
+export async function assetGroupAdminsDialogListsItsOwnGroups(): Promise<void> {
+  await openAssetGroupAdminsDialog();
+  expect(await screen.findByRole("option", { name: "Hvac — Western Cape" })).toBeInTheDocument();
+}
+
+/** The role duplicates its group dashboard and the copy carries the group — the `F3.34` rule,
+ * now for the role Amendment 6 admits. */
+export async function assetGroupAdminDuplicatesItsGroupDashboardAndKeepsTheGroup(): Promise<void> {
+  const createSpy = vi.spyOn(dashboardsApi, "createDashboard").mockResolvedValue({
+    ...GROUP_SOURCE,
+    id: "new-dash-id",
+    slug: "feed-pumps-copy",
+    name: "Feed pumps (copy)",
+    widgets: [],
+  });
+  vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue({
+    ...GROUP_SOURCE,
+    id: "new-dash-id",
+    slug: "feed-pumps-copy",
+    name: "Feed pumps (copy)",
+  });
+  await openAssetGroupAdminsDialog();
+
+  await screen.findByDisplayValue("Feed pumps (copy)");
+  await userEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+
+  await screen.findByText(/landed on \/admin\/dashboards\/feed-pumps-copy/);
+  expect(createSpy).toHaveBeenCalledWith(expect.objectContaining({ assetGroupId: "grp-1", locationId: null }));
+}
+
+/** An asset-scoped source prefills as organization-wide for `admin` (Amendment 6 §Q2, last
+ * sentence): the dialog's state is `ChosenScopeValue`, and `scopeForDuplicate` folds the row.
+ * Mutation: prefill with `scopeFromDashboard` instead ⇒ the `asset` kind renders no radio at
+ * all, so no radio is checked ⇒ red. */
+export async function anAssetScopedSourcePrefillsAsOrganizationWide(): Promise<void> {
+  stubLoads({ source: ASSET_SOURCE });
+  renderDialog("admin");
+
+  expect(await screen.findByRole("radio", { name: "Organization-wide", checked: true })).toBeInTheDocument();
 }

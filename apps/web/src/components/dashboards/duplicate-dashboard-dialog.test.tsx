@@ -2,7 +2,13 @@
 import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
+import { useAuthStore } from "../../stores/auth-store";
 import {
+  anAssetScopedSourcePrefillsAsOrganizationWide,
+  assetGroupAdminDuplicatesItsGroupDashboardAndKeepsTheGroup,
+  assetGroupAdminsDialogDoesNotFetchAdminAssetGroups,
+  assetGroupAdminsDialogDoesNotFetchLocations,
+  assetGroupAdminsDialogListsItsOwnGroups,
   duplicatesAndNavigatesIntoTheNewDashboardsBuilder,
   duplicatingAnAssetGroupDashboardKeepsTheGroup,
   locationAdminGetsNoAssetGroupOption,
@@ -22,6 +28,9 @@ describe("F3.1d Unit 9 — DuplicateDashboardDialog", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    // The role cases sign an `asset_group_admin` scope into the store; reset it here, where a
+    // failing `expect` cannot skip it.
+    useAuthStore.setState({ scope: null });
   });
 
   it("states in visible text that a copy carries the source's bindings", async () => {
@@ -54,5 +63,25 @@ describe("F3.1d Unit 9 — DuplicateDashboardDialog", () => {
 
   it("on a widget-copy failure renders the error inline and never deletes the half-made copy", async () => {
     await widgetCopyFailureRendersInlineWithoutDeletingTheHalfMadeCopy();
+  });
+
+  it("an asset_group_admin's dialog does not fetch locations (F3.63)", async () => {
+    await assetGroupAdminsDialogDoesNotFetchLocations();
+  });
+
+  it("an asset_group_admin's dialog does not fetch the admin asset-group list (F3.63)", async () => {
+    await assetGroupAdminsDialogDoesNotFetchAdminAssetGroups();
+  });
+
+  it("an asset_group_admin's dialog lists its own groups from /auth/me (F3.63)", async () => {
+    await assetGroupAdminsDialogListsItsOwnGroups();
+  });
+
+  it("an asset_group_admin duplicates its group dashboard and keeps the group (F3.63)", async () => {
+    await assetGroupAdminDuplicatesItsGroupDashboardAndKeepsTheGroup();
+  });
+
+  it("an asset-scoped source prefills as organization-wide (F3.63, Amendment 6 Q2)", async () => {
+    await anAssetScopedSourcePrefillsAsOrganizationWide();
   });
 });

@@ -5,13 +5,25 @@ import { cleanup } from "@testing-library/react";
 import {
   adminSeesTheAssetGroupOption,
   adminSeesTheOrganizationWideOption,
-  assetGroupAdminNeverSeesTheAssetGroupOption,
+  adminStillSeesTheLocationOption,
+  anAssetValueNamesTheAsset,
+  anAssetValueRendersNoRadios,
+  anAssetValueWithNoMatchingAssetFallsBackToTheId,
+  assetGroupAdminNeverSeesTheLocationOption,
+  assetGroupAdminNeverSeesTheLocationSelectEither,
+  assetGroupAdminSeesTheAssetGroupOption,
   assetGroupAdminNeverSeesTheOrganizationWideOptionEither,
   choosingAGroupDecidesTheOrganization,
   clickingTheAssetGroupRadioAloneDecidesTheOrganization,
   forALocationAdminAnAssetGroupValueClampsToLocation,
   forALocationAdminAnOrganizationWideValueClampsToLocation,
   forAdminAnAssetGroupValueIsNotClamped,
+  forAdminAnAssetValueIsNotClamped,
+  aGroupOutsideTheOfferedListShowsAsOutsideTheScope,
+  anOfferedGroupShowsItsLabel,
+  aLocationOutsideTheOfferedListShowsAsOutsideTheScope,
+  forAnAssetGroupAdminALocationValueClampsToAssetGroup,
+  forAnAssetGroupAdminAnAssetValueIsNotClamped,
   locationAdminNeverSeesTheAssetGroupOption,
   locationAdminNeverSeesTheOrganizationWideOption,
   organizationAdminSeesTheAssetGroupOption,
@@ -69,10 +81,6 @@ describe("F3.34 asset-group scope kind", () => {
     locationAdminNeverSeesTheAssetGroupOption();
   });
 
-  it("never shows an asset_group_admin the asset-group option", () => {
-    assetGroupAdminNeverSeesTheAssetGroupOption();
-  });
-
   it("decides the organization from the chosen group", async () => {
     await choosingAGroupDecidesTheOrganization();
   });
@@ -91,5 +99,64 @@ describe("F3.34 asset-group scope kind", () => {
 
   it("does not clamp an assetGroup value for admin", () => {
     forAdminAnAssetGroupValueIsNotClamped();
+  });
+});
+
+describe("F3.63 asset_group_admin authoring path and the read-only asset kind", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("shows an asset_group_admin the asset-group option", () => {
+    assetGroupAdminSeesTheAssetGroupOption();
+  });
+
+  it("never shows an asset_group_admin the location option", () => {
+    assetGroupAdminNeverSeesTheLocationOption();
+  });
+
+  it("never shows an asset_group_admin the location select either", () => {
+    assetGroupAdminNeverSeesTheLocationSelectEither();
+  });
+
+  it("still shows admin the location option", () => {
+    adminStillSeesTheLocationOption();
+  });
+
+  it("clamps an asset_group_admin fed a location value to an unchosen asset group", () => {
+    forAnAssetGroupAdminALocationValueClampsToAssetGroup();
+  });
+
+  it("renders no radios for an asset value", () => {
+    anAssetValueRendersNoRadios();
+  });
+
+  it("names the asset on the read-only line", () => {
+    anAssetValueNamesTheAsset();
+  });
+
+  it("falls back to the id when no asset matches", () => {
+    anAssetValueWithNoMatchingAssetFallsBackToTheId();
+  });
+
+  it("never clamps an asset value for an asset_group_admin", () => {
+    forAnAssetGroupAdminAnAssetValueIsNotClamped();
+  });
+
+  it("never clamps an asset value for admin", () => {
+    forAdminAnAssetValueIsNotClamped();
+  });
+
+  it("shows a group outside the offered list as outside the scope (F3.63, browser B7)", () => {
+    aGroupOutsideTheOfferedListShowsAsOutsideTheScope();
+  });
+
+  it("shows an offered group by its own label (positive control)", () => {
+    anOfferedGroupShowsItsLabel();
+  });
+
+  it("shows a location outside the offered list as outside the scope", () => {
+    aLocationOutsideTheOfferedListShowsAsOutsideTheScope();
   });
 });
