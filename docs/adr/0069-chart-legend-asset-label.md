@@ -209,6 +209,17 @@ None. No new package in any workspace.
   (1 each). The plan re-runs the grep; a literal typed loosely enough to
   compile without the field is exactly the kind the parse in decision 2 exists
   to catch.
+- **A ninth site, and it was a producer, not a fixture (review finding,
+  2026-09-18).** `readBack` in
+  `apps/api/src/admin/dashboard-templates/dashboard-templates-instantiate.service.ts`
+  built the point rows with its own select and parsed the result through
+  `dashboardDtoSchema` from `unknown` — so the grep above (literals with a
+  `role`) did not find it, the compiler did not see it, and every instantiation
+  whose bindings resolved committed the dashboard and then answered 500 from
+  the read-back. Two integration suites reddened. Fixed by replacing the select
+  with `resolveBoundPoints`, so the contract now has one producer of point
+  rows. The lesson is in the row: **enumerate producers by the parse call, not
+  by the literal.**
 - **Prose falsified by this change, fixed in the feature commit (ruling 8):**
   `dashboard-widget-data.ts:493-496` (the "only human-readable field … do not
   'fix' this into a fetch" comment — rewritten to say the label rides the

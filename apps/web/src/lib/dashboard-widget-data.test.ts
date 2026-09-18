@@ -3,7 +3,9 @@ import { describe, it } from "vitest";
 import {
   runChartSeriesOrderingTests,
   runPointRefsForTests,
-  runSeriesNameTests,
+  runSeriesNameForTests,
+  runSeriesNameFormTests,
+  runSeriesNamesAreDistinctTests,
   runSingleValueWidgetTests,
   runStalenessTests,
   runZeroBindingsTests,
@@ -31,7 +33,15 @@ describe("dashboard widget data", () => {
     runStalenessTests();
   });
 
-  it("F3.43 — names two series that share a pointKey by their asset, so the legend shows both", () => {
-    runSeriesNameTests();
+  it("F3.43 — two series that share a pointKey on different assets carry distinct names", () => {
+    runSeriesNamesAreDistinctTests();
+  });
+
+  it("F3.43 — a series is named <assetCode> · <pointKey>", () => {
+    runSeriesNameFormTests();
+  });
+
+  it("F3.43 — seriesNameFor composes the two fields with a middle dot", () => {
+    runSeriesNameForTests();
   });
 });

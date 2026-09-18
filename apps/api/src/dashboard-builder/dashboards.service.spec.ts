@@ -151,6 +151,9 @@ export function runDashboardsServiceUnitTests(): void {
   );
   // ADR 0069 decision 2. The `merged as DashboardWidgetDto` cast lets an omitted key compile — that
   // is how `sources` shipped defaulted under F3.35 — so the gate is a parse, not the compiler.
+  // The widget-level parse above is that gate and fails FIRST on an omitted `assetCode` (measured:
+  // `path ["points",0,"assetCode"]`); this one restates it at the point shape so a reader of this
+  // spec finds the point contract named, not so a mutation reaches it.
   const pointParsed = dashboardWidgetPointDtoSchema.safeParse(widget.points[0]);
   assert(
     pointParsed.success === true,

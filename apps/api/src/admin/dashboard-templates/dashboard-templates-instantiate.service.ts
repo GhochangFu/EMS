@@ -39,6 +39,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import { resolveBoundPoints } from "../../dashboard-builder/dashboard-point-scope";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { InstantiateSectionTemplateBody } from "./dashboard-templates.schema";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
@@ -513,20 +514,15 @@ export class DashboardTemplatesInstantiateService {
 
     const widgets = [];
     for (const widget of widgetRows) {
-      const points = await this.fleetDb
-        .select({
-          id: dashboardWidgetPoints.id,
-          pointId: dashboardWidgetPoints.pointId,
-          role: dashboardWidgetPoints.role,
-          sortOrder: dashboardWidgetPoints.sortOrder,
-          assetId: assetPoints.assetId,
-          pointKey: assetPoints.pointKey,
-          unit: assetPoints.unit,
-        })
-        .from(dashboardWidgetPoints)
-        .innerJoin(assetPoints, eq(dashboardWidgetPoints.pointId, assetPoints.id))
-        .where(and(eq(dashboardWidgetPoints.widgetId, widget.id), eq(dashboardWidgetPoints.organizationId, organizationId)))
-        .orderBy(asc(dashboardWidgetPoints.sortOrder));
+      // `resolveBoundPoints`, not a hand-written select (review finding, F3.43). This method is
+      // the SECOND producer of `dashboardWidgetPointDtoSchema` rows, and the first one the ADR
+      // 0069 sweep did not enumerate: its own select lacked `assetCode`, and because the parse
+      // below takes `unknown`, the compiler said nothing — every instantiation whose bindings
+      // resolved to a point committed the dashboard and then answered 500 from the read-back.
+      // The shared resolver carries the organization predicate on both join legs (its file
+      // docblock says why the fleet pool needs that) and every column the contract names, so
+      // a future widening reaches this producer through the type, not through a 500.
+      const points = await resolveBoundPoints(this.fleetDb, organizationId, [widget.id]);
 
       const sources = await this.fleetDb
         .select({
@@ -554,6 +550,7 @@ export class DashboardTemplatesInstantiateService {
           role: point.role,
           sortOrder: point.sortOrder,
           assetId: point.assetId,
+          assetCode: point.assetCode,
           pointKey: point.pointKey,
           unit: point.unit,
         })),

@@ -224,9 +224,11 @@ export function runChartSeriesOrderingTests(): void {
     data.series.length === 2,
     `both bound points must produce a series entry — got ${data.series.length}`,
   );
+  // On `sortOrder`, not on `name`: the name is the series-name cases' claim below, and asserting
+  // it here made this message say "wrong order" when the order was right and only the name changed.
   assert(
-    data.series[0]?.name === "BRK-01 · first" && data.series[1]?.name === "BRK-01 · second",
-    `series must be ordered by sortOrder (0, 1), not by array position (second, first) — got ${data.series.map((s) => s.name).join(",")}`,
+    data.series[0]?.sortOrder === 0 && data.series[1]?.sortOrder === 1,
+    `series must be ordered by sortOrder (0, 1), not by array position (1, 0) — got ${data.series.map((s) => s.sortOrder).join(",")}`,
   );
   assert(
     data.series[0]?.points[0]?.v === 1 && data.series[1]?.points[0]?.v === 2,
@@ -240,27 +242,49 @@ export function runChartSeriesOrderingTests(): void {
   );
 }
 
+/** Two bindings that share one `pointKey` and differ only in asset — the shape the row measured. */
+function sameKeyOnTwoAssets(): { a: DashboardWidgetPointDto; b: DashboardWidgetPointDto } {
+  return {
+    a: point({ id: "a", pointId: "pa", assetId: "asset-a", assetCode: "BRK-01", pointKey: "kw", sortOrder: 0, role: "series" }),
+    b: point({ id: "b", pointId: "pb", assetId: "asset-b", assetCode: "BRK-02", pointKey: "kw", sortOrder: 1, role: "series" }),
+  };
+}
+
+function seriesNamesOf(points: DashboardWidgetPointDto[]): string[] {
+  const data = widgetDataFor(chartWidget(points), new Map(), new Map(), NOW);
+  if (!isScalarData(data)) {
+    throw new Error("a chart with bindings must be scalar-ready data");
+  }
+  return data.series.map((s) => s.name);
+}
+
 /**
  * The guard `F3.43` owes (ADR 0069 decision 4): two bindings that share one `pointKey` and
  * differ only in asset must produce two DISTINCT series names. ECharts keys the legend by
  * `series[].name`, so equal names collapse into one legend entry — the five copies of `kw` the
  * row measured. Two bindings with different `pointKey`s prove nothing here; they were
- * distinguishable before the ADR. This is the case that reddened with `name:` reverted to
- * `point.pointKey` (recorded in the closure row).
+ * distinguishable before the ADR. This is the assertion that reddened with `name:` reverted to
+ * `point.pointKey` (`got kw,kw`; recorded in the closure row). One claim, one `it()`.
  */
-export function runSeriesNameTests(): void {
-  const a = point({ id: "a", pointId: "pa", assetId: "asset-a", assetCode: "BRK-01", pointKey: "kw", sortOrder: 0, role: "series" });
-  const b = point({ id: "b", pointId: "pb", assetId: "asset-b", assetCode: "BRK-02", pointKey: "kw", sortOrder: 1, role: "series" });
-  const data = widgetDataFor(chartWidget([a, b]), new Map(), new Map(), NOW);
-  if (!isScalarData(data)) {
-    throw new Error("a chart with bindings must be scalar-ready data");
-  }
-  const names = data.series.map((s) => s.name);
+export function runSeriesNamesAreDistinctTests(): void {
+  const { a, b } = sameKeyOnTwoAssets();
+  const names = seriesNamesOf([a, b]);
   assert(
     new Set(names).size === 2,
     `two bindings sharing pointKey "kw" on different assets must have distinct series names — got ${names.join(",")}`,
   );
+}
+
+/** The form the legend shows, as `widgetDataFor` wires it: `<assetCode> · <pointKey>` (ADR 0069 Q2). */
+export function runSeriesNameFormTests(): void {
+  const { a, b } = sameKeyOnTwoAssets();
+  const names = seriesNamesOf([a, b]);
   assert(names[0] === "BRK-01 · kw", `the name is "<assetCode> · <pointKey>", got ${String(names[0])}`);
+}
+
+/** The helper on its own — the separator is the middle dot the summary badge uses (ADR 0069 ruling 6). */
+export function runSeriesNameForTests(): void {
+  const { a } = sameKeyOnTwoAssets();
   assert(
     seriesNameFor(a) === "BRK-01 · kw",
     `seriesNameFor composes assetCode and pointKey with " · ", got ${seriesNameFor(a)}`,
