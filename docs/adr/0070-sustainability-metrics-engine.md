@@ -2,13 +2,15 @@
 
 ## Status
 
-Accepted — drafted and ruled 2026-09-18 under `E4.1`. Five gate questions
+Accepted — drafted and ruled 2026-09-18 under `E4.1`. Six gate questions
 (§"Gate questions") were put to the owner one at a time, in order, before any
 implementation code (AGENTS.md §10, `backlog-cycle` step 2). **Two were ruled
 against the recommendation** — Q1 (the mechanism) and Q2 (the window kinds) —
 and both recommendations are kept below with their cost, so a reader who later
 meets the window engine or the timezone column can see that the cheaper shape
-was declined deliberately. Q3, Q4 and Q5 were ruled as recommended. Ten further
+was declined deliberately. Q3, Q4 and Q5 were ruled as recommended. Q6 was
+found by review of the drafted text — the cagg's sum is a sample sum, not a
+quantity — and ruled as recommended the same day. Ten further
 rulings were taken by the drafting agent as routine calls and are listed in
 §"Ruled here without a question" so the owner can overturn any of them at the
 plan gate.
@@ -23,6 +25,7 @@ code; `E4.1a` is what changes the grammar, and `E4.1b`/`E4.1c` follow it.
 | Q3 — where factors live | One table, nearest scope wins, effective-dated | 2 |
 | Q4 — the Rand tariff | Both call sites absorbed; DTO fields renamed | 7 |
 | Q5 — the row's shape | Split into `E4.1a` ⭐ / `E4.1b` / `E4.1c` under an umbrella | 1 |
+| Q6 — what `sum` over a window means | The time integral (`avg × hours`); no `count` | 5 |
 
 ## Context
 
@@ -174,6 +177,14 @@ row, one staged plan — one eight-plus-week row with a single §4.6 pass and on
 review sweep at the end. *(c)* Two children, engine and content. **Ruled
 (a)**; decision 1.
 
+**Q6 — What does `sum` over a window mean?** Raised by review of the drafted
+decision 5, which had read `sum_value` straight off the cagg. *(a)* **The time
+integral, recommended**: `avg × hours(window)`, so a kW point gives kWh;
+`count` dropped, because `sample_count` counts readings, not events. *(b)* No
+`sum` at all — the author writes `avg({kw}, today) * hours(today)`. *(c)* The
+raw sample sum with an editor warning — a garbage number stays writable and
+nothing at runtime refuses it. **Ruled (a)**; decision 5.
+
 ## Decision
 
 ### 1. `E4.1` becomes an umbrella with three children, and its dependants wait for the umbrella
@@ -263,19 +274,25 @@ with an author-facing message; a key that exists but has no value in scope is
 value is per organization and per date and the author of a stock template
 cannot see either.
 
-### 5. Window functions — six functions over one point reference
+### 5. Window functions — five functions and one helper over one point reference
 
 ```
-sum({kw}, 24h)            avg({kw}, 7d)            min({temp_c}, this_month)
-max({kw}, today)          count({run_status}, 24h) delta({kwh}, today)
-hours(today)
+sum({kw}, today)          avg({kw}, 7d)            min({temp_c}, this_month)
+max({kw}, 24h)            delta({kwh}, today)      hours(today)
 ```
 
-- **Six functions plus one helper.** `sum`, `avg`, `min`, `max`, `count` read
-  the continuous aggregates (`sum_value`, `sum_value / sample_count`,
-  `min_value`, `max_value`, `sample_count`); **`delta`** is last sample minus
-  first sample inside the window, read from `point_values` itself (Context 5),
-  and is the correct path from a cumulative meter (`kwh`, `kl`) to a period
+- **Five functions plus one helper.** `avg`, `min`, `max` read the continuous
+  aggregates (`sum_value / sample_count`, `min_value`, `max_value`).
+  **`sum` is the time integral, not the sample sum** (ruled at Q6):
+  `sum({kw}, today)` is `avg({kw}, today) × hours(today)`, in `<unit>·h` — a
+  kW point gives kWh, and the author converts any other unit. The cagg's
+  `sum_value` is a sum of raw samples that scales with the polling rate and
+  means nothing physically — `reports.service.ts:191` already multiplies by
+  the bucket width for exactly this reason — so it is **not** exposed, and
+  there is no `count`: `sample_count` is how many readings arrived, never a
+  count of events an author means. **`delta`** is last sample minus first
+  sample inside the window, read from `point_values` itself (Context 5), and
+  is the correct path from a cumulative meter (`kwh`, `kl`) to a period
   total. **`hours(window)`** is the elapsed hours the window covers — a
   calendar window's elapsed part, a rolling window's full duration — so a
   daily baseline can be prorated: `delta({kwh}, today) / ($energy_baseline_kwh_per_day * hours(today) / 24)`.
@@ -298,9 +315,23 @@ hours(today)
   decision 9 again. `delta` with one sample is empty.
 - **Rolling windows** are a duration literal `<n>(m|h|d)` ending at the
   tick's bucketed timestamp (ADR 0037 decision 8), capped at `366d` (ruled
-  without a question, item 5). The host reads the coarsest view whose bucket
-  divides the window offset, and the `materialized_only = false` tail covers
-  the newest minutes without a second query.
+  without a question, item 5).
+- **View selection obeys the watermark, not only the bucket.** The policies
+  in `0027` trail real time by their `end_offset` — 1 minute for `1m`, 10
+  minutes for `5m`, 2 hours for `1h`, **2 days for `1d`** — and
+  `materialized_only = false` fills the gap beyond a view's watermark by
+  aggregating `point_values` on the fly, which is correct but is not free.
+  The host therefore reads **the coarsest view whose bucket divides the
+  window's boundaries *and* whose watermark has passed the window's end**,
+  and composes finer buckets or raw rows for the remainder. Nothing in a
+  `today` window ever comes from `point_values_1d`, and a `this_month` read
+  that took `1d` alone would silently drop the last two days of the month —
+  the guard `E4.1b` owes asserts a month-to-date value across that boundary.
+- **`delta` is two index lookups, not a range scan.** First and last sample
+  inside the window are `ORDER BY time ASC LIMIT 1` and `ORDER BY time DESC
+  LIMIT 1` on `(asset_id, point_key, time)` — the shape ADR 0037 decision 3
+  kept index-friendly — so `delta({kwh}, this_year)` costs the same as
+  `delta({kwh}, 24h)` regardless of the window's length.
 - **Staleness of a window** is not the staleness of its last sample.
   `max_input_age_seconds` (ADR 0037 decision 5) applies to the *latest*
   reading of the referenced point, as it does today; the window itself is
@@ -393,7 +424,7 @@ to overturn at the plan gate.
 2. Overlapping validity for one key and scope is refused at the write path with a 409; a `btree_gist` `EXCLUDE` constraint is a plan-gate option, not a §9.4 dependency (decision 2).
 3. `v3` is `scheduled` only, as `v2` is (decision 3).
 4. A window wraps one point reference, never a scope aggregate; a windowed site total is two layers (decision 5).
-5. Rolling windows are `<n>(m|h|d)`, capped at `366d`; calendar windows are the four named (decisions 5, 6).
+5. Rolling windows are `<n>(m|h|d)`, capped at `366d`; calendar windows are the four named; view selection obeys the cagg watermark; `delta` is two index lookups (decisions 5, 6).
 6. `locations.timezone` is nullable with no default; the seed sets `Africa/Johannesburg`; a calendar window on `NULL` refuses (decision 6).
 7. `organizations.currency` is ISO 4217, `NOT NULL`, backfilled `ZAR` for the seeded organization (decision 7).
 8. Three new refusal reasons on the existing counter: `parameter_unset`, `window_empty`, `timezone_unset` (decisions 2, 5, 6).
@@ -426,9 +457,11 @@ migration, not a manifest change.
   `effective_to`; `parameter_unset` refusing with a counter and **no row**; an
   RLS test **as `bms_tenant`** that a foreign organization's parameter is
   invisible; the overlap 409; the admin form gated as master data.
-  *`E4.1b`* — each of the six functions against a hand-computed window;
-  `delta` reading raw across a cagg boundary; the IST 18:30 UTC calendar
-  test; `timezone_unset` and `window_empty` refusing; the `v2` corpus still
+  *`E4.1b`* — each of the five functions and `hours` against a hand-computed
+  window; `sum({kw}, 24h)` equal to `avg × 24` and **not** to the cagg's
+  `sum_value`; `delta` reading raw across a cagg boundary; a `this_month`
+  value that includes the two days behind the `1d` watermark; the IST
+  18:30 UTC calendar test; `timezone_unset` and `window_empty` refusing; the `v2` corpus still
   parsing `sum({kw} @site)` unchanged. *`E4.1c`* — `ENERGY_TARIFF_ZAR_PER_KWH`
   read nowhere; `null` cost on a missing tariff; the DTO contract parsed by
   the web; the stock version bumps; every promoted formula parsing under `v3`
