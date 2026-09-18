@@ -1,12 +1,18 @@
 import { z } from "zod";
 
 import {
+  bindingShapeMessage,
+  columnNotDeclaredMessage,
   DASHBOARD_GRID,
   dashboardDtoSchema,
   dashboardWidgetSpecSchema,
+  duplicateColumnMessage,
   MAX_DASHBOARD_WIDGETS,
+  METRIC_CATALOG,
   metricCatalogKeySchema,
   widgetPointRoleSchema,
+  WIDGET_SOURCE_CARDINALITY,
+  WIDGET_SOURCE_SHAPES,
 } from "./dashboard-builder";
 import { assetRoleCodeSchema, dashboardSectionCodeSchema } from "./operations";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
@@ -204,11 +210,112 @@ export const sectionTemplateWidgetIdentitySchema = z
  * and its config come from `dashboardWidgetSpecSchema` unchanged, because a
  * template widget renders through exactly the same components as a dashboard
  * widget; only the *binding* differs.
+ *
+ * **A second `superRefine`, on the intersection, never on the identity node
+ * above.** The identity node's rules read only `bindings`/`sources`; these
+ * three (`F3.61` Amendment 1) need `widgetType` and `config`, which live on
+ * the *other* arm of the intersection and are invisible to the identity
+ * node's refinement. One node, one description, for the identity node's own
+ * reason (lines above): a chain of two `ZodEffects` needs two `.describe()`s
+ * and the outer one silently covers only itself.
+ *
+ * **Why the `key` prefix.** `sectionTemplateContentSchema` wraps every widget
+ * in an array, and `ZodError.flatten()` collapses every issue under
+ * `content.widgets[i]…` to the one top-level key `content:` on the wire
+ * (§11.1 of the `F3.61` plan; `F4.103`'s recorded residual). A message that
+ * does not name the widget therefore names nothing — `publish()` already
+ * prefixes its own refusals the same way (`dashboard-templates.service.ts`).
+ *
+ * **Why no `min`.** A template contract enforces no binding minimum for
+ * `bindings` either — an unresolved gauge is a legal, publishable,
+ * instantiable template (ADR 0049 decision 6), and a table at zero sources is
+ * the same class: "No data bound." (`dashboard-widget-data.ts:479`). Refusing
+ * it on `PATCH` would turn "remove the metric, Save canvas" (`F3.61` Task 4's
+ * remove control) into a 400 with nothing more to say than `content: …`.
+ *
+ * **Why no duplicate-source rule.** Every `WIDGET_SOURCE_CARDINALITY.max` is 0
+ * or 1, so two sources on one widget is already over the cap (R5) — a second,
+ * dedicated rule would never be the one that fires.
  */
-export const sectionTemplateWidgetSchema = z.intersection(
-  sectionTemplateWidgetIdentitySchema,
-  dashboardWidgetSpecSchema,
-);
+export const sectionTemplateWidgetSchema = z
+  .intersection(sectionTemplateWidgetIdentitySchema, dashboardWidgetSpecSchema)
+  .superRefine((widget, ctx) => {
+    const cap = WIDGET_SOURCE_CARDINALITY[widget.widgetType].max;
+    if (widget.sources.length > cap) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["sources"],
+        message: `Widget "${widget.key}": a ${widget.widgetType} widget accepts at most ${cap} catalog binding(s)`,
+      });
+    }
+
+    const drawable = WIDGET_SOURCE_SHAPES[widget.widgetType];
+    widget.sources.forEach((source, index) => {
+      const entry = METRIC_CATALOG[source.catalogKey];
+      if (!drawable.includes(entry.shape)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["sources", index, "catalogKey"],
+          message: `Widget "${widget.key}": ${bindingShapeMessage(widget.widgetType, source.catalogKey, entry.shape)}`,
+        });
+      }
+    });
+
+    if (widget.widgetType !== "table") {
+      return;
+    }
+    const chosen = widget.config.columns;
+    // Absent or empty is "every declared column" (`tableConfigSchema`), always legal.
+    if (chosen === undefined || chosen.length === 0) {
+      return;
+    }
+    // Load-bearing, not defensive — the same guard `dashboards.schema.ts`'s
+    // `eachTableColumnIsDeclared` carries. A `sources: []` widget with
+    // `config.columns` set reaches this line with no binding; without the
+    // guard `binding.catalogKey` below throws a TypeError out of `safeParse`
+    // (zod does not catch a refinement throw) rather than answering a 400.
+    const [binding] = widget.sources;
+    if (binding === undefined) {
+      return;
+    }
+    const entry = METRIC_CATALOG[binding.catalogKey];
+    // Narrows on the presence of `columns`, never on `entry.shape !== "dataset"`
+    // — the `entry.shape` field carries the literal "dataset"
+    // `tests/f3.61-template-source-rules-single-source.test.ts` refuses restated here.
+    if (!("columns" in entry)) {
+      return;
+    }
+    const declared = new Set(entry.columns);
+    const seen = new Set<string>();
+    chosen.forEach((column, columnIndex) => {
+      if (!declared.has(column)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["config", "columns", columnIndex],
+          message: `Widget "${widget.key}": ${columnNotDeclaredMessage(column, binding.catalogKey)}`,
+        });
+        return;
+      }
+      if (seen.has(column)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["config", "columns", columnIndex],
+          message: `Widget "${widget.key}": ${duplicateColumnMessage(column)}`,
+        });
+        return;
+      }
+      seen.add(column);
+    });
+  })
+  // AFTER the refinement — ADR 0029 Amendment 1 fact F, same as the identity node above.
+  .describe(
+    "A section template widget. Three rules the document cannot express, beside the identity " +
+      "rules above: each catalog source must be a shape the widget type draws " +
+      "(WIDGET_SOURCE_SHAPES), the source count must be at most the type's own cap " +
+      "(WIDGET_SOURCE_CARDINALITY), and a table's config.columns must name only columns its " +
+      "bound dataset declares (METRIC_CATALOG), each once. No minimum: an unbound template " +
+      'widget instantiates as "No data bound." (ADR 0049 decision 6).',
+  );
 
 /**
  * A template's `content` — the whole authored canvas.
