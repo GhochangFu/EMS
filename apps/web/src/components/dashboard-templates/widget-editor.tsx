@@ -1,15 +1,31 @@
 import { DASHBOARD_GRID } from "@bms/shared";
 
 import type { SectionTemplateWidgetInput } from "../../api/admin/dashboard-templates";
+import { metricCatalogLabel } from "../../lib/metric-catalog";
+import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { AssetRoleBindingPicker } from "../dashboards/asset-role-binding-picker";
+import { MetricSourcePicker } from "../dashboards/metric-source-picker";
 
 /**
  * One widget's editing surface: title, the four grid fields (bounded by
- * `DASHBOARD_GRID`, never a bare number), and its role bindings.
+ * `DASHBOARD_GRID`, never a bare number), its role bindings and its named
+ * metrics.
  *
  * Serves two pages — the authoring detail page
  * (`dashboard-template-detail-page.tsx`) and the read-only stock viewer
  * (`F3.44`) — which is why it lives once, here, rather than once per page.
+ *
+ * **The Named metric block (`F3.61`) mirrors `WidgetInspector`'s** and reads
+ * the same three records: `WIDGET_CATALOG[type].sources` decides whether the
+ * block renders at all and when the picker stops, `catalogKeysFor` (inside
+ * `MetricSourcePicker`) decides which entries a type may bind, and
+ * `metricCatalogLabel` names a bound entry. Add sends `params: {}` and nothing
+ * else — every entry's write schema is `z.object({}).strict()`, and a scope id
+ * in `params` is the ADR 0019 problem the binding contract exists to refuse.
+ * Remove patches `sources` alone: no column picker exists on a template widget
+ * and no stock entry carries `config.columns`, so a `config` clear would be a
+ * branch that can never fire (plan §5.3) and it would falsify `updateWidget`'s
+ * "never `config`" cast.
  */
 export function WidgetEditor({
   row,
@@ -23,6 +39,8 @@ export function WidgetEditor({
   onRemove: () => void;
 }) {
   const bindings = row.bindings ?? [];
+  const sources = row.sources ?? [];
+  const sourceCardinality = WIDGET_CATALOG[row.widgetType].sources;
 
   return (
     <section className="space-y-2 rounded border border-gray-200 p-3">
@@ -128,7 +146,13 @@ export function WidgetEditor({
             </li>
           ))}
         </ul>
-        {editable ? (
+        {/*
+          The role picker disappears once a named metric is bound, as the inspector's point
+          picker does (`widget-inspector.tsx`): a widget binds roles or a metric, never both,
+          so offering both pickers at once would invite a state the next `PATCH` refuses —
+          the contract refuses both since `F3.61`.
+        */}
+        {editable && sources.length === 0 ? (
           <div className="mt-2">
             <AssetRoleBindingPicker
               onAdd={(binding) =>
@@ -138,6 +162,55 @@ export function WidgetEditor({
           </div>
         ) : null}
       </div>
+
+      {/*
+        Rendered only for a type that can bind one — a gauge, a tank and a chart accept no
+        catalog shape, so `WIDGET_CATALOG[type].sources` gives them `max: 0` and the whole
+        block is absent rather than empty.
+      */}
+      {sourceCardinality.max > 0 ? (
+        <div>
+          <span className="text-[11px] font-semibold text-bms-ink">Named metric</span>
+          <ul className="mt-1 space-y-1">
+            {sources.map((source, index) => (
+              <li
+                key={`${source.catalogKey}-${index}`}
+                className="flex items-center justify-between rounded border border-gray-100 px-2 py-1 text-xs"
+              >
+                <span>{metricCatalogLabel(source.catalogKey)}</span>
+                {editable ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChange({ sources: sources.filter((_, position) => position !== index) })
+                    }
+                    // `Remove metric <label>`, beside the sibling `Remove binding <role> <key>`
+                    // — deliberately not the inspector's bare `Remove <label>`, so the two ×
+                    // controls in one editor read as two kinds.
+                    aria-label={`Remove metric ${metricCatalogLabel(source.catalogKey)}`}
+                    className="text-red-700"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {editable && sources.length < sourceCardinality.max && bindings.length === 0 ? (
+            <div className="mt-2">
+              <MetricSourcePicker
+                widgetType={row.widgetType}
+                bound={sources.map((source) => source.catalogKey)}
+                onAdd={(catalogKey) =>
+                  onChange({
+                    sources: [...sources, { catalogKey, params: {}, sortOrder: sources.length }],
+                  })
+                }
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

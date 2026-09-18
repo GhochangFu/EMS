@@ -5,7 +5,8 @@
  * dashboard builder renders through, because a template widget draws through
  * exactly the same renderer components; only the *binding* differs (ADR 0049
  * decision 4). Widgets bind an asset-group role plus a point key, through
- * `AssetRoleBindingPicker`, rather than a live point id.
+ * `AssetRoleBindingPicker`, or a metric-catalog entry through
+ * `MetricSourcePicker` (`F3.61`) — never a live point id, and never both kinds.
  *
  * **Lifecycle buttons are derived from `TEMPLATE_LIFECYCLE_TRANSITIONS`
  * (`canTransition`, `canOpenDraftFrom`, `canMutate`), never a second copy of
@@ -207,8 +208,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
     setRows((current) =>
       current.map((row) =>
         // The cast is safe: every caller here patches identity/binding fields
-        // (`title`, the four grid numbers, `bindings`) and never `widgetType`
-        // or `config`. TS otherwise cannot tell that a spread of two arms of
+        // (`title`, the four grid numbers, `bindings`, `sources`) and never
+        // `widgetType` or `config`. TS otherwise cannot tell that a spread of two arms of
         // the `DashboardWidgetSpec` discriminated union still matches one arm.
         row.key === key ? ({ ...row, ...patch } as SectionTemplateWidgetInput) : row,
       ),
