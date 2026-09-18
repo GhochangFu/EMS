@@ -15,7 +15,7 @@ import type { MasterDataAuditService } from "../admin/master-data-audit.service"
 import type { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { jwtFor, SEEDED } from "../auth/access-control.integration.spec";
 import { AccessControlService } from "../auth/access-control.service";
-import { registerFixturePointKeys, resolveSeededAssetByCode } from "../testing/integration-fixtures";
+import { registerFixturePointKeys } from "../testing/integration-fixtures";
 import { AssetsService } from "./assets.service";
 
 /**
@@ -25,10 +25,26 @@ import { AssetsService } from "./assets.service";
  * Assertions live here; `asset-points-read.integration.test.ts` owns the
  * database lifecycle (§4.6/ADR 0014).
  *
- * Read-only against seed data, with one exception:
- * {@link assertListPointsReturnsTheActivePointsOfTheAsset} commits one
- * inactive point when the seed has none, and deletes it in `finally` — the
- * service reads on the same `pg.Pool`, so a rollback cannot isolate it.
+ * **The suite owns its fixture, and the fixture is committed.** An earlier
+ * draft read the seeded `CR-HVAC-1` and wrote an inactive point onto it —
+ * the row `access-control.asset-dashboard.integration.spec.ts` also claims,
+ * which `tests/integration-fixture-sharing.test.ts` refuses: a seeded row has
+ * no owner, so two suites that both name it have no protocol for who may
+ * write to it. So {@link createFixture} commits, under a per-run `f363-`
+ * prefix, two assets of its own at the location of the `hvac` group the role
+ * holds: asset A, a member of that group with one active and one inactive
+ * point, and asset B, at the same location and in no group at all. Nothing
+ * here names a seeded asset, and nothing here writes a seeded row.
+ *
+ * Committed rather than `createFixtureAssets()` inside a rollback, because
+ * `AssetsService` and `AccessControlService` read on their own pool: a row
+ * inside this suite's open transaction is invisible to the connection the
+ * service checks out. The insert runs on the gate's `bms_fleet` pool — the
+ * pool the service itself reads on, and the one role with `BYPASSRLS`, so it
+ * writes `bms.assets` (FORCEd `tenant_isolation`) without a tenant GUC. The
+ * `A11` case of the sibling spec inserts on the same handle. Every row is
+ * deleted by id in {@link dropFixture}, children first, with the counts
+ * asserted so a leak is loud rather than the next suite's FK failure.
  *
  * Three cases are not about the new read but are the positive controls that
  * the master-data gate did not move: `AssetPointsAdminService.list`,
@@ -54,42 +70,154 @@ function services({ authDb, fleetDb }: Pools) {
 /** The audit service is never reached: every admin `list` below throws before its first read. */
 const NO_AUDIT = {} as unknown as MasterDataAuditService;
 
-/**
- * The fixture asset every case below reads — a member of the seeded `hvac`
- * group `wc-hvac-admin@bms.local` holds (`packages/db/src/demo-users-seed.ts`,
- * `asset-groups-seed.spec.ts`), with two active points in the seed. **Named,
- * not positional** (`tests/integration-fixture-isolation.test.ts`): an
- * `ORDER BY … LIMIT 1` over `bms.assets` returns whatever sorts first, which
- * is another suite's committed fixture as often as it is the seed. A seed
- * rename makes `resolveSeededAssetByCode` fail by name; rename this constant
- * to match, never widen it back to a positional read.
- */
-const FIXTURE_ASSET_CODE = "CR-HVAC-1";
+/** The rows this suite committed, and what it needs to delete them again. */
+export interface Fixture {
+  /** Asset A — a member of the role's `hvac` group; one active point, one inactive. */
+  readonly assetAId: string;
+  /** Asset B — same location, same organization, in no group. */
+  readonly assetBId: string;
+  readonly groupId: string;
+  readonly organizationId: string;
+  readonly activeKey: string;
+  readonly inactiveKey: string;
+  readonly pointIds: readonly string[];
+  readonly membershipIds: readonly string[];
+  readonly assetIds: readonly string[];
+  readonly unregisterKeys?: () => Promise<void>;
+}
+
+/** The `hvac` group `wc-hvac-admin@bms.local` holds, resolved by email and code — never by position. */
+async function roleGroup(pool: pg.Pool): Promise<{ id: string; locationId: string; organizationId: string }> {
+  const { rows } = await pool.query<{ id: string; location_id: string; organization_id: string }>(
+    `SELECT ag.id, ag.location_id, ag.organization_id
+       FROM bms.asset_groups ag
+       JOIN bms.user_asset_group_access uaga ON uaga.asset_group_id = ag.id
+       JOIN bms.users u ON u.id = uaga.user_id
+      WHERE u.email = $1 AND ag.code = 'hvac'`,
+    [SEEDED.assetGroupAdmin],
+  );
+  assert(rows.length === 1, `${SEEDED.assetGroupAdmin} holds ${rows.length} group(s) coded hvac, expected exactly one — run pnpm db:seed`);
+  const [row] = rows;
+  assert(row.location_id !== null, "the hvac group has no location_id — the fixture assets need one");
+  return { id: row.id, locationId: row.location_id, organizationId: row.organization_id };
+}
 
 /**
- * Resolves {@link FIXTURE_ASSET_CODE} and holds the control that it IS in one
- * of the role's groups — by the grant tables, keyed on the resolved id, not by
- * position and not by reading `bms.assets` again. Without this control a seed
- * change that moved the asset out of the group would turn every "the role can
- * read its own asset" case below into a test of nothing.
+ * Commits the fixture on the fleet pool. A failure part-way drops whatever
+ * landed and rethrows, so a broken `beforeAll` leaves no row behind either.
  */
-async function ownAssetId(pool: pg.Pool): Promise<string> {
-  const id = await resolveSeededAssetByCode(pool, FIXTURE_ASSET_CODE);
+export async function createFixture(pools: Pools): Promise<Fixture> {
+  const { pool } = pools;
+  const prefix = `f363-${randomUUID().slice(0, 8)}`;
+  const partial = {
+    pointIds: [] as string[],
+    membershipIds: [] as string[],
+    assetIds: [] as string[],
+    unregisterKeys: undefined as (() => Promise<void>) | undefined,
+  };
+  try {
+    const group = await roleGroup(pool);
+    const activeKey = `${prefix}_active`;
+    const inactiveKey = `${prefix}_inactive`;
+    // `asset_points.point_key` references `bms.point_keys(code)` (F3.39).
+    partial.unregisterKeys = await registerFixturePointKeys(pool, [activeKey, inactiveKey]);
+
+    const insertAsset = async (suffix: string, name: string): Promise<string> => {
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+         VALUES ($1, $2, $3, $4, 'F3.63 point-read fixture', 'hvac')
+         RETURNING id`,
+        [group.organizationId, group.locationId, `${prefix}-${suffix}`, name],
+      );
+      const id = rows[0]?.id;
+      assert(id !== undefined, `INSERT of fixture asset ${prefix}-${suffix} returned no id`);
+      partial.assetIds.push(id);
+      return id;
+    };
+    const assetAId = await insertAsset("a", "F3.63 fixture asset A (in the hvac group)");
+    const assetBId = await insertAsset("b", "F3.63 fixture asset B (in no group)");
+
+    const { rows: members } = await pool.query<{ id: string }>(
+      `INSERT INTO bms.asset_group_members (asset_group_id, asset_id) VALUES ($1, $2) RETURNING id`,
+      [group.id, assetAId],
+    );
+    partial.membershipIds.push(...members.map((m) => m.id));
+
+    // `unit` is a real string on the active point so the SQL-to-read value
+    // comparison below is load-bearing on that field, not NULL against NULL.
+    const { rows: points } = await pool.query<{ id: string }>(
+      `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, source_kind, unit, active)
+       VALUES ($1, $2, $3, $3, 'unmapped', 'kW', true),
+              ($1, $2, $4, $4, 'unmapped', NULL, false)
+       RETURNING id`,
+      [group.organizationId, assetAId, activeKey, inactiveKey],
+    );
+    partial.pointIds.push(...points.map((p) => p.id));
+    assert(partial.pointIds.length === 2, `expected 2 fixture points, inserted ${partial.pointIds.length}`);
+
+    return {
+      assetAId,
+      assetBId,
+      groupId: group.id,
+      organizationId: group.organizationId,
+      activeKey,
+      inactiveKey,
+      pointIds: partial.pointIds,
+      membershipIds: partial.membershipIds,
+      assetIds: partial.assetIds,
+      unregisterKeys: partial.unregisterKeys,
+    };
+  } catch (err) {
+    await dropFixture(pools, { ...partial, assetAId: "", assetBId: "", groupId: "", organizationId: "", activeKey: "", inactiveKey: "" }).catch(
+      () => undefined,
+    );
+    throw err;
+  }
+}
+
+/**
+ * Deletes what {@link createFixture} committed — children before parents,
+ * point keys last (`asset_points.point_key` references them) — and asserts
+ * each count, so a row that went missing or a row left behind both fail here
+ * rather than in another suite's FK.
+ */
+export async function dropFixture(pools: Pools, fx: Fixture): Promise<void> {
+  const { pool } = pools;
+  const deleteAll = async (table: string, ids: readonly string[]): Promise<void> => {
+    if (ids.length === 0) {
+      return;
+    }
+    const { rowCount } = await pool.query(`DELETE FROM bms.${table} WHERE id = ANY($1::uuid[])`, [ids]);
+    assert(rowCount === ids.length, `bms.${table}: deleted ${String(rowCount)} fixture row(s), expected ${ids.length}`);
+  };
+  try {
+    await deleteAll("asset_points", fx.pointIds);
+    await deleteAll("asset_group_members", fx.membershipIds);
+    await deleteAll("assets", fx.assetIds);
+  } finally {
+    if (fx.unregisterKeys) {
+      await fx.unregisterKeys();
+    }
+  }
+}
+
+/**
+ * The control that asset A IS in one of the role's groups — by the grant
+ * tables, keyed on A's id by SQL, not by trusting the insert. Without it, a
+ * membership insert that landed on the wrong group would turn every "the role
+ * can read its own asset" case below into a test of nothing.
+ */
+async function ownAssetId(pool: pg.Pool, fx: Fixture): Promise<string> {
   const { rows } = await pool.query<{ n: string }>(
     `SELECT count(*)::text AS n
        FROM bms.asset_group_members agm
        JOIN bms.user_asset_group_access uaga ON uaga.asset_group_id = agm.asset_group_id
        JOIN bms.users u ON u.id = uaga.user_id
       WHERE agm.asset_id = $1 AND u.email = $2`,
-    [id, SEEDED.assetGroupAdmin],
+    [fx.assetAId, SEEDED.assetGroupAdmin],
   );
-  assert(
-    Number(rows[0]?.n ?? 0) > 0,
-    `${FIXTURE_ASSET_CODE} (${id}) is in no group of ${SEEDED.assetGroupAdmin} — the seed moved; pick another member`,
-  );
-  const active = await countPoints(pool, id, true);
-  assert(active > 0, `${FIXTURE_ASSET_CODE} has no active point in the seed — run pnpm db:seed`);
-  return id;
+  assert(Number(rows[0]?.n ?? 0) > 0, `fixture asset A (${fx.assetAId}) is in no group of ${SEEDED.assetGroupAdmin}`);
+  return fx.assetAId;
 }
 
 async function countPoints(pool: pg.Pool, assetId: string, active: boolean): Promise<number> {
@@ -101,76 +229,50 @@ async function countPoints(pool: pg.Pool, assetId: string, active: boolean): Pro
 }
 
 /** The guard admits the role on its own asset — the positive control for the refusal below. */
-export async function assertRoleCanReadItsOwnAsset(pools: Pools): Promise<void> {
+export async function assertRoleCanReadItsOwnAsset(pools: Pools, fx: Fixture): Promise<void> {
   const { access } = services(pools);
-  const id = await ownAssetId(pools.pool);
+  const id = await ownAssetId(pools.pool, fx);
   const allowed = await access.canReadAsset(jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin"), id);
   assert(allowed, `canReadAsset refused the role's own asset ${id}`);
 }
 
 /**
- * The read returns exactly the asset's active points — and an inactive point
- * is NOT among them. The seed carries no inactive point on the fixture asset,
- * so with the count alone `active = true` and no predicate are the same number
- * (review: mutation M9 survived). When the SQL count of inactive points is 0
- * the case commits one inactive point with a per-run `point_key`, asserts
- * against it, and deletes it in `finally` whatever happened. Committed rather
- * than rolled back because the service reads on the same pool: a row inside
- * an open transaction is invisible to the service's connection.
+ * The read returns exactly the asset's active points — and the committed
+ * inactive point is NOT among them. With the count alone `active = true` and
+ * no predicate are the same number on an asset with no inactive row (review:
+ * mutation M9 survived), which is why the fixture carries one. The absence
+ * claim comes first so the failure names the predicate, then the exact count.
+ * Mutation: drop `eq(assetPoints.active, true)` in `listPoints` ⇒ red.
  */
-export async function assertListPointsReturnsTheActivePointsOfTheAsset(pools: Pools): Promise<void> {
+export async function assertListPointsReturnsTheActivePointsOfTheAsset(pools: Pools, fx: Fixture): Promise<void> {
   const { assets } = services(pools);
-  const id = await ownAssetId(pools.pool);
-  const inactiveKey = `f363_inactive_${randomUUID()}`;
-  const inactiveId = randomUUID();
-  let unregisterKey: (() => Promise<void>) | undefined;
-  let inserted = false;
-  try {
-    if ((await countPoints(pools.pool, id, false)) === 0) {
-      // `asset_points.point_key` references `bms.point_keys(code)` (F3.39).
-      unregisterKey = await registerFixturePointKeys(pools.pool, [inactiveKey]);
-      await pools.pool.query(
-        `INSERT INTO bms.asset_points (id, organization_id, asset_id, point_key, source_data_key, source_kind, active)
-         SELECT $1::uuid, a.organization_id, a.id, $3::text, $3::text, 'unmapped', false
-           FROM bms.assets a WHERE a.id = $2`,
-        [inactiveId, id, inactiveKey],
-      );
-      inserted = true;
-    }
-    const activeCount = await countPoints(pools.pool, id, true);
-    const inactiveCount = await countPoints(pools.pool, id, false);
-    assert(inactiveCount > 0, `the fixture asset must have an inactive point for this case to distinguish the predicate`);
-    const { items } = await assets.listPoints(id);
-    assert(items.length === activeCount, `listPoints(${id}) returned ${items.length} items, SQL counts ${activeCount} active`);
-    assert(
-      !items.some((item) => item.pointKey === inactiveKey),
-      `listPoints(${id}) returned the inactive point ${inactiveKey}`,
-    );
-  } finally {
-    if (inserted) {
-      await pools.pool.query(`DELETE FROM bms.asset_points WHERE id = $1`, [inactiveId]);
-    }
-    if (unregisterKey) {
-      await unregisterKey();
-    }
-  }
+  const id = await ownAssetId(pools.pool, fx);
+  assert((await countPoints(pools.pool, id, false)) === 1, "fixture asset A must carry exactly one inactive point");
+  assert((await countPoints(pools.pool, id, true)) === 1, "fixture asset A must carry exactly one active point");
+  const { items } = await assets.listPoints(id);
+  assert(
+    !items.some((item) => item.pointKey === fx.inactiveKey),
+    `listPoints(${id}) returned the inactive point ${fx.inactiveKey}`,
+  );
+  assert(items.length === 1, `listPoints(${id}) returned ${items.length} items, SQL counts 1 active`);
+  assert(items[0]?.pointKey === fx.activeKey, `listPoints(${id}) returned ${String(items[0]?.pointKey)}, expected ${fx.activeKey}`);
 }
 
-export async function assertEveryItemBelongsToTheAsset(pools: Pools): Promise<void> {
+export async function assertEveryItemBelongsToTheAsset(pools: Pools, fx: Fixture): Promise<void> {
   const { assets } = services(pools);
-  const id = await ownAssetId(pools.pool);
+  const id = await ownAssetId(pools.pool, fx);
   const { items } = await assets.listPoints(id);
-  assert(items.length > 0, "the fixture asset must have at least one active point (SQL said so)");
+  assert(items.length > 0, "the fixture asset must have at least one active point");
   const foreign = items.filter((item) => item.assetId !== id);
   assert(foreign.length === 0, `listPoints(${id}) returned ${foreign.length} item(s) of another asset`);
 }
 
 /** Every item parses under the five-field picker schema — the positive control beside the key set. */
-export async function assertEveryItemParsesUnderThePickerDto(pools: Pools): Promise<void> {
+export async function assertEveryItemParsesUnderThePickerDto(pools: Pools, fx: Fixture): Promise<void> {
   const { assets } = services(pools);
-  const id = await ownAssetId(pools.pool);
+  const id = await ownAssetId(pools.pool, fx);
   const { items } = await assets.listPoints(id);
-  assert(items.length > 0, "the fixture asset must have at least one active point (SQL said so)");
+  assert(items.length > 0, "the fixture asset must have at least one active point");
   for (const item of items) {
     const parsed = assetPointPickerRowSchema.safeParse(item);
     assert(parsed.success, `item ${item.id} fails assetPointPickerRowSchema: ${parsed.success ? "" : parsed.error.message}`);
@@ -183,11 +285,11 @@ export async function assertEveryItemParsesUnderThePickerDto(pools: Pools): Prom
  * `sourceDataKey` or `sensorCode` riding along. `Object.keys`, sorted, equal
  * — with `pointKey` named in the failure so a wrong key set reads as such.
  */
-export async function assertNoItemCarriesAnAdminOnlyField(pools: Pools): Promise<void> {
+export async function assertNoItemCarriesAnAdminOnlyField(pools: Pools, fx: Fixture): Promise<void> {
   const { assets } = services(pools);
-  const id = await ownAssetId(pools.pool);
+  const id = await ownAssetId(pools.pool, fx);
   const { items } = await assets.listPoints(id);
-  assert(items.length > 0, "the fixture asset must have at least one active point (SQL said so)");
+  assert(items.length > 0, "the fixture asset must have at least one active point");
   const expected = ["assetId", "assetName", "id", "pointKey", "unit"];
   for (const item of items) {
     const keys = Object.keys(item).sort();
@@ -200,27 +302,28 @@ export async function assertNoItemCarriesAnAdminOnlyField(pools: Pools): Promise
   }
 }
 
-/** An asset of the same organization that is in none of the role's groups: the guard says no. */
-export async function assertRoleCannotReadAnAssetOutsideItsGroups(pools: Pools): Promise<void> {
+/**
+ * Asset B — same location and organization as A, in no group: the guard says
+ * no. The positive control on A runs first, so a broken fixture reads as a
+ * failed control rather than as a proved refusal. B's absence from every
+ * group of the role is asserted by SQL, not assumed from the insert.
+ */
+export async function assertRoleCannotReadAnAssetOutsideItsGroups(pools: Pools, fx: Fixture): Promise<void> {
   const { access } = services(pools);
-  const { rows } = await pools.pool.query<{ id: string }>(
-    `SELECT a.id FROM bms.assets a
-       JOIN bms.locations l ON l.id = a.location_id
-       JOIN bms.organizations o ON o.id = l.organization_id
-      WHERE o.code = 'ESKOM'
-        AND NOT EXISTS (
-          SELECT 1 FROM bms.asset_group_members agm
-            JOIN bms.user_asset_group_access uaga ON uaga.asset_group_id = agm.asset_group_id
-            JOIN bms.users u ON u.id = uaga.user_id
-           WHERE agm.asset_id = a.id AND u.email = $1)
-      ORDER BY a.code
-      LIMIT 1`,
-    [SEEDED.assetGroupAdmin],
+  const own = await ownAssetId(pools.pool, fx);
+  const jwt = jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin");
+  assert(await access.canReadAsset(jwt, own), `positive control: canReadAsset refused the role's own asset ${own}`);
+  const { rows } = await pools.pool.query<{ n: string }>(
+    `SELECT count(*)::text AS n
+       FROM bms.asset_group_members agm
+       JOIN bms.user_asset_group_access uaga ON uaga.asset_group_id = agm.asset_group_id
+       JOIN bms.users u ON u.id = uaga.user_id
+      WHERE agm.asset_id = $1 AND u.email = $2`,
+    [fx.assetBId, SEEDED.assetGroupAdmin],
   );
-  const outside = rows[0]?.id;
-  assert(outside !== undefined, "no ESKOM asset outside the role's groups — the fixture cannot prove a refusal");
-  const allowed = await access.canReadAsset(jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin"), outside);
-  assert(!allowed, `canReadAsset admitted ${outside}, which is in none of the role's groups`);
+  assert(Number(rows[0]?.n ?? 0) === 0, `fixture asset B (${fx.assetBId}) is in a group of ${SEEDED.assetGroupAdmin} — the fixture cannot prove a refusal`);
+  const allowed = await access.canReadAsset(jwt, fx.assetBId);
+  assert(!allowed, `canReadAsset admitted ${fx.assetBId}, which is in none of the role's groups`);
 }
 
 /** An unknown id is the service's 404, reached by any caller the guard admits. */
@@ -265,10 +368,10 @@ async function assertRefusedAsNotMasterData(label: string, run: () => Promise<un
  * serves. `list` throws before any tenant read, so the tenant handle and the
  * audit service are never touched.
  */
-export async function assertAdminListStillRefusesTheRole(pools: Pools): Promise<void> {
+export async function assertAdminListStillRefusesTheRole(pools: Pools, fx: Fixture): Promise<void> {
   const { access } = services(pools);
   const admin = new AssetPointsAdminService(pools.fleetDb, pools.fleetDb, access, NO_AUDIT);
-  const id = await ownAssetId(pools.pool);
+  const id = await ownAssetId(pools.pool, fx);
   await assertRefusedAsNotMasterData("admin point list", () =>
     admin.list(jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin"), id),
   );
@@ -306,13 +409,13 @@ export async function assertAdminAssetGroupsListStillRefusesTheRole(pools: Pools
  * field that diverges in either read reddens. The unpicked fields are the
  * subject of {@link assertNoItemCarriesAnAdminOnlyField}.
  */
-export async function assertListPointsEqualsTheAdminProjection(pools: Pools): Promise<void> {
+export async function assertListPointsEqualsTheAdminProjection(pools: Pools, fx: Fixture): Promise<void> {
   const { access, assets } = services(pools);
   const admin = new AssetPointsAdminService(pools.fleetDb, pools.fleetDb, access, NO_AUDIT);
-  const id = await ownAssetId(pools.pool);
+  const id = await ownAssetId(pools.pool, fx);
   const { items: adminItems } = await admin.list(jwtFor(SEEDED.globalAdmin, "admin"), id, undefined, true);
   const { items } = await assets.listPoints(id);
-  assert(adminItems.length > 0, "the admin list must return the fixture asset's points (SQL said it has some)");
+  assert(adminItems.length > 0, "the admin list must return the fixture asset's points");
   const left = JSON.stringify(adminItems.map(pickAssetPointPickerRow));
   const right = JSON.stringify(items);
   assert(left === right, `listPoints diverges from the picked admin projection:\n admin: ${left}\n read:  ${right}`);
@@ -327,9 +430,9 @@ export async function assertListPointsEqualsTheAdminProjection(pools: Pools): Pr
  * deep-equals the read. Mutation: swap `assetName` for the code in
  * `pickAssetPointPickerRow` ⇒ red.
  */
-export async function assertPickedValuesMatchSql(pools: Pools): Promise<void> {
+export async function assertPickedValuesMatchSql(pools: Pools, fx: Fixture): Promise<void> {
   const { assets } = services(pools);
-  const id = await ownAssetId(pools.pool);
+  const id = await ownAssetId(pools.pool, fx);
   const { rows } = await pools.pool.query<{
     id: string;
     asset_id: string;

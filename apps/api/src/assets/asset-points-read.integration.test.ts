@@ -18,6 +18,9 @@ import {
   assertRoleCannotReadAnAssetOutsideItsGroups,
   assertRoleCanReadItsOwnAsset,
   assertUnknownAssetIsNotFound,
+  createFixture,
+  dropFixture,
+  type Fixture,
   type Pools,
 } from "./asset-points-read.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
@@ -31,9 +34,11 @@ import { asRole } from "../testing/role-urls";
  * caller on `bms_auth` (`DATABASE_URL_AUTH`, else derived from the gate's URL).
  *
  * It has to be an integration suite: the claims are that a real group grant
- * admits a real seeded asset, that a real `active` predicate holds against a
+ * admits a real asset, that a real `active` predicate holds against a
  * committed inactive row, and that the admin projection and the new read
- * agree on real rows.
+ * agree on real rows. The rows are the suite's own — `createFixture` commits
+ * them on the fleet pool in `beforeAll`, `dropFixture` deletes them in
+ * `afterAll` whatever happened, before the pools close.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.63",
@@ -49,6 +54,7 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
   let pool: pg.Pool;
   let authPool: pg.Pool;
   let pools: Pools;
+  let fx: Fixture;
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -58,9 +64,13 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
       "F3.63",
     );
     pools = { pool, authDb: createDb(authPool), fleetDb: createDb(pool) };
+    fx = await createFixture(pools);
   });
 
   afterAll(async () => {
+    if (fx) {
+      await dropFixture(pools, fx);
+    }
     if (pool) {
       await pool.end();
     }
@@ -70,27 +80,27 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
   });
 
   it("the guard admits the role on an asset in its own group (positive control)", async () => {
-    await assertRoleCanReadItsOwnAsset(pools);
+    await assertRoleCanReadItsOwnAsset(pools, fx);
   }, 60_000);
 
   it("listPoints returns exactly the asset's active points, and not a committed inactive one", async () => {
-    await assertListPointsReturnsTheActivePointsOfTheAsset(pools);
+    await assertListPointsReturnsTheActivePointsOfTheAsset(pools, fx);
   }, 60_000);
 
   it("every item belongs to the asset", async () => {
-    await assertEveryItemBelongsToTheAsset(pools);
+    await assertEveryItemBelongsToTheAsset(pools, fx);
   }, 60_000);
 
   it("every item parses under assetPointPickerRowSchema", async () => {
-    await assertEveryItemParsesUnderThePickerDto(pools);
+    await assertEveryItemParsesUnderThePickerDto(pools, fx);
   }, 60_000);
 
   it("no item carries an admin-only field — the key set is exactly the five picker fields", async () => {
-    await assertNoItemCarriesAnAdminOnlyField(pools);
+    await assertNoItemCarriesAnAdminOnlyField(pools, fx);
   }, 60_000);
 
   it("the guard refuses an asset outside the role's groups", async () => {
-    await assertRoleCannotReadAnAssetOutsideItsGroups(pools);
+    await assertRoleCannotReadAnAssetOutsideItsGroups(pools, fx);
   }, 60_000);
 
   it("an unknown asset is the service's NotFoundException", async () => {
@@ -98,7 +108,7 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
   }, 60_000);
 
   it("GET /admin/asset-points still refuses asset_group_admin (the master-data gate did not move)", async () => {
-    await assertAdminListStillRefusesTheRole(pools);
+    await assertAdminListStillRefusesTheRole(pools, fx);
   }, 60_000);
 
   it("GET /admin/locations still refuses asset_group_admin, by the master-data message", async () => {
@@ -110,11 +120,11 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
   }, 60_000);
 
   it("listPoints deep-equals the admin list's projection, picked to the five fields", async () => {
-    await assertListPointsEqualsTheAdminProjection(pools);
+    await assertListPointsEqualsTheAdminProjection(pools, fx);
   }, 60_000);
 
   it("the five picked values match bms.asset_points joined to bms.assets", async () => {
-    await assertPickedValuesMatchSql(pools);
+    await assertPickedValuesMatchSql(pools, fx);
   }, 60_000);
 
   it("every group in /auth/me's scope carries its own bms.asset_groups organization_id", async () => {
