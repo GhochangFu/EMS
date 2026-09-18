@@ -13,10 +13,11 @@ import type { AccessibleScope } from "@bms/shared";
  *
  * `assetId` (ADR 0067) has no form representation: the instantiator is its only writer in this
  * app (`PATCH /dashboards/:id` accepts it for a direct caller). Before `F3.63` a stored
- * asset-scoped row prefilled as organization-wide, which was false and — on a rename — silently
- * widened the row's scope to the whole tenant on save (Amendment 6 §Q2). `scopeFromDashboard` now
- * returns the read-only `asset` kind for such a row; `scopePatch` omits both scope columns for
- * it, so a rename cannot touch them. `scopeForDuplicate` still folds an asset-scoped source to
+ * asset-scoped row prefilled as organization-wide — a false organization radio — and a rename sent
+ * two nulls that the server merged onto the kept `assetId` (one axis, so the save succeeded
+ * silently), while choosing a location or a group made two axes and a 400 (Amendment 6 §Q2).
+ * `scopeFromDashboard` now returns the read-only `asset` kind for such a row; `scopePatch`
+ * omits both scope columns for it, so a rename cannot touch them. `scopeForDuplicate` still folds an asset-scoped source to
  * `organization` — duplicating one never offers the `asset` kind, because the create path and the
  * dialog cannot write `assetId` (Amendment 6 §Q2, last sentence).
  */
@@ -85,7 +86,8 @@ export function scopeForDuplicate(dto: {
 }
 
 /** True when the chosen kind has its id filled — what enables Save / Create / Duplicate. An
- * `asset` value is always chosen: it is never rendered as a form the author fills in. */
+ * `asset` value is chosen when its `assetId` is filled, which a stored row always has: it is
+ * never rendered as a form the author fills in, so the empty case is unreachable from the UI. */
 export function isScopeChosen(value: DashboardScopeValue): boolean {
   switch (value.kind) {
     case "organization":
@@ -96,6 +98,30 @@ export function isScopeChosen(value: DashboardScopeValue): boolean {
       return value.assetGroupId !== "";
     case "asset":
       return value.assetId !== "";
+  }
+}
+
+/** True when the value's location or group is one the form OFFERS — present in the list the
+ * caller was fed by `useDashboardScopeOptions`. The edit page composes this into its Save block
+ * (`F3.63` review): an `asset_group_admin` or a `location_admin` can OPEN a dashboard scoped to a
+ * group or a location it does not hold (the read is organization-wide), and the select then has
+ * no matching option while `isScopeChosen` is still true — so a rename enabled Save and the
+ * PATCH ended in the server's 404. `organization` and `asset` are always offered: neither is
+ * chosen from a list. While a list is still loading its ids are absent, so Save waits for it —
+ * that is the intended direction; the alternative reads an empty list as "anything goes". Typed
+ * structurally, not to the fields component's option rows: this lib must not import a component. */
+export function isScopeOffered(
+  value: DashboardScopeValue,
+  offered: { locations: readonly { id: string }[]; assetGroups: readonly { id: string }[] },
+): boolean {
+  switch (value.kind) {
+    case "organization":
+    case "asset":
+      return true;
+    case "location":
+      return offered.locations.some((location) => location.id === value.locationId);
+    case "assetGroup":
+      return offered.assetGroups.some((group) => group.id === value.assetGroupId);
   }
 }
 

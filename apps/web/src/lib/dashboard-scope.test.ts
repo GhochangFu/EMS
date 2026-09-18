@@ -3,6 +3,12 @@ import { describe, it } from "vitest";
 import {
   aChosenAssetGroupIsChosen,
   aChosenAssetIsChosen,
+  aLocationAbsentFromTheOfferedListIsNotOffered,
+  aLocationInTheOfferedListIsOffered,
+  anAssetGroupAbsentFromTheOfferedListIsNotOffered,
+  anAssetGroupInTheOfferedListIsOffered,
+  anAssetValueIsAlwaysOffered,
+  anOrganizationValueIsAlwaysOffered,
   aDifferentAssetGroupValueIsChanged,
   aDifferentLocationValueIsChanged,
   aGroupValuePatchesToItsColumn,
@@ -133,5 +139,29 @@ describe("F3.34 dashboard scope model", () => {
 
   it("filters asset-group options by organizationId", () => {
     scopeAssetGroupOptionsFiltersByOrganization();
+  });
+
+  it("always offers an organization value", () => {
+    anOrganizationValueIsAlwaysOffered();
+  });
+
+  it("always offers an asset value", () => {
+    anAssetValueIsAlwaysOffered();
+  });
+
+  it("offers a location present in the offered list", () => {
+    aLocationInTheOfferedListIsOffered();
+  });
+
+  it("does not offer a location absent from the offered list", () => {
+    aLocationAbsentFromTheOfferedListIsNotOffered();
+  });
+
+  it("offers a group present in the offered list", () => {
+    anAssetGroupInTheOfferedListIsOffered();
+  });
+
+  it("does not offer a group absent from the offered list", () => {
+    anAssetGroupAbsentFromTheOfferedListIsNotOffered();
   });
 });

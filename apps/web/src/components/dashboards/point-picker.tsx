@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
-import type { AdminAssetPointDto, UserRole } from "@bms/shared";
+import type { AssetPointPickerRow, UserRole } from "@bms/shared";
 
 import { fetchAdminAssetPoints } from "../../api/admin/asset-points";
 import { fetchAdminLocations } from "../../api/admin/locations";
@@ -11,7 +11,7 @@ import { isMasterDataAdmin } from "../../lib/admin-access";
 type PointPickerProps = {
   role: UserRole;
   organizationId: string;
-  onAdd: (point: AdminAssetPointDto) => void;
+  onAdd: (point: AssetPointPickerRow) => void;
 };
 
 /**
@@ -49,7 +49,11 @@ type PointPickerProps = {
  * `WIDGET_CATALOG[type].points.max` is reached, per §7's "the Add point
  * control disappears at the maximum"), so this picker only ever needs to know
  * which organization it may not cross. The `onAdd` contract is the same for
- * both chains: one `AdminAssetPointDto`.
+ * both chains: one `AssetPointPickerRow` — the five fields
+ * `GET /assets/:assetId/points` returns (`id`, `assetId`, `assetName`,
+ * `pointKey`, `unit`). The admin chain's `AdminAssetPointDto` is a structural
+ * superset, so its rows pass through unchanged; `WidgetInspector.addPoint`
+ * reads `id`, `pointKey` and `unit` only.
  */
 export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
   const masterData = isMasterDataAdmin(role);
@@ -86,7 +90,12 @@ export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
     );
   }
 
+  // One list, typed to the picker row: the admin chain's rows are a structural superset and
+  // narrow to it here, so the JSX below reads one shape whichever chain fed it.
   const pointsQ = masterData ? adminPointsQ : assetPointsQ;
+  const points: readonly AssetPointPickerRow[] = masterData
+    ? (adminPointsQ.data?.items ?? [])
+    : (assetPointsQ.data?.items ?? []);
   const chosen = masterData ? locationId : assetId;
 
   return (
@@ -125,7 +134,7 @@ export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
           aria-label="Add point"
           value=""
           onChange={(event) => {
-            const point = pointsQ.data?.items.find((item) => item.id === event.target.value);
+            const point = points.find((item) => item.id === event.target.value);
             if (point) {
               onAdd(point);
             }
@@ -135,7 +144,7 @@ export function PointPicker({ role, organizationId, onAdd }: PointPickerProps) {
           <option value="" disabled>
             {pointsQ.isLoading ? "Loading points…" : "Add a point…"}
           </option>
-          {(pointsQ.data?.items ?? []).map((point) => (
+          {points.map((point) => (
             <option key={point.id} value={point.id}>
               {point.unit ? `${point.pointKey} (${point.unit})` : point.pointKey} — {point.assetName}
             </option>

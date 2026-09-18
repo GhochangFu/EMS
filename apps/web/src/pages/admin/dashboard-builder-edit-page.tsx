@@ -13,6 +13,7 @@ import { useDashboardScopeOptions } from "../../hooks/use-dashboard-scope-option
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   isScopeChosen,
+  isScopeOffered,
   scopeChanged,
   scopeFromDashboard,
   scopePatch,
@@ -103,8 +104,10 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     setDescription(dto.description ?? "");
     // Four-way (`F3.34`, then `F3.63`): an asset-group dashboard prefills as one, and an
     // asset-scoped row as the read-only `asset` kind. Before `F3.34` the prefill was two-way and
-    // a rename silently widened a group dashboard to the tenant; before `F3.63` it did the same
-    // to an asset dashboard.
+    // a rename silently widened a group dashboard to the tenant. Before `F3.63` an asset-scoped
+    // row showed a false organization radio; a rename kept its `assetId` (the two nulls merged
+    // onto one axis, so the save succeeded silently) and choosing a location or a group was a
+    // 400 (Amendment 6 §Q2).
     setScope(scopeFromDashboard(dto));
     setRows(dashboardRowsFromDto(dto));
     setSelected(null);
@@ -135,7 +138,12 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     : false;
   const widgetsChanged = dto ? builderHasChanged(rows, dto) : false;
   const changed = fieldsChanged || widgetsChanged;
-  const scopeChosen = isScopeChosen(scope);
+  // Chosen AND offered (`F3.63` review): a location or a group the role's option list does not
+  // hold — a foreign scope the role can open but not save — leaves the select without a matching
+  // option while `isScopeChosen` is still true; without the second predicate a rename enabled
+  // Save and the PATCH ended in the server's 404. See `isScopeOffered`'s docblock for why a
+  // still-loading list counts as "not offered".
+  const scopeChosen = isScopeChosen(scope) && isScopeOffered(scope, { locations, assetGroups });
   const blocked = !dto || name.trim() === "" || !scopeChosen || problems.length > 0 || !changed;
 
   const saveM = useMutation({
@@ -159,7 +167,12 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
       // but two controls hold: the fields' clamp rewrites a kind the role is not offered to an
       // unchosen location, so Save stays disabled until a location is picked, and the PATCH
       // that then follows meets `update`'s STORED-scope check first, which refuses the role on
-      // the group arm with a 404 (review finding — the refusal is at save, not at load).
+      // the group arm with a 404 (review finding — the refusal is at save, not at load). The
+      // same two roles can also open a dashboard of THEIR OWN kind but outside their grant — a
+      // `location_admin` on a location it does not hold, an `asset_group_admin` on a group it
+      // does not hold (`F3.63` review): the clamp does not fire (the kind is offered), so it is
+      // `isScopeOffered` in `blocked` above that keeps Save disabled there, and the 404 the
+      // PATCH would otherwise meet is never reached.
       const body: UpdateDashboardPayload = {
         name: name.trim(),
         description: description.trim() === "" ? null : description.trim(),

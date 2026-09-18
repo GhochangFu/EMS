@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { AdminAssetPointDto, JwtPayload } from "@bms/shared";
+import type { AssetPointPickerRow, JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { repoRoot } from "../testing/repo-root";
@@ -62,26 +62,13 @@ function listPointsBody(text: string): string {
 const USER: JwtPayload = { sub: "u1", email: "op@bms.local", name: "Operator", role: "asset_group_admin" };
 const ASSET_ID = "22222222-2222-4222-8222-222222222222";
 
-const POINT: AdminAssetPointDto = {
+/** The route's five-field row (`assetPointPickerRowSchema`), not the admin DTO. */
+const POINT: AssetPointPickerRow = {
   id: "33333333-3333-4333-8333-333333333333",
   assetId: ASSET_ID,
-  assetCode: "CR-HVAC-1",
   assetName: "Chiller 1",
-  locationId: "44444444-4444-4444-8444-444444444444",
-  locationName: "Western Cape",
   pointKey: "supply_temp",
-  sourceDataKey: "supply_temp",
-  sensorCode: null,
   unit: "°C",
-  active: true,
-  sourceKind: "measured",
-  rtuId: null,
-  createdAt: "2026-09-18T10:00:00.000Z",
-  scaleMultiplier: null,
-  scaleOffset: null,
-  engMin: null,
-  engMax: null,
-  qualityPolicy: null,
 };
 
 function accessStub(opts: { canReadAsset: boolean }) {

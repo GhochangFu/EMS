@@ -1,7 +1,7 @@
-import type { AssetListRow, AssetPointsListResponse } from "@bms/shared";
+import type { AssetListRow, AssetPointPickerListResponse } from "@bms/shared";
 import {
   assetListResponseSchema,
-  assetPointsListResponseSchema,
+  assetPointPickerListResponseSchema,
 } from "@bms/shared/contracts";
 import { withAuth } from "./http";
 import { checkResponse } from "./validate";
@@ -32,19 +32,22 @@ export async function fetchAssets(organizationId?: string): Promise<AssetRow[]> 
 }
 
 /**
- * `GET /api/v1/assets/:assetId/points` — one asset's active points, in the
- * admin list's `AdminAssetPointDto` shape (`F3.63`, ADR 0047 Amendment 6 §Q1
- * point 3). Gated server-side on `canReadAsset`, not on the master-data
- * roles, so it is the point read `PointPicker` uses for an
+ * `GET /api/v1/assets/:assetId/points` — one asset's active points, five
+ * fields each (`AssetPointPickerRow`: `id`, `assetId`, `assetName`,
+ * `pointKey`, `unit` — `F3.63`, ADR 0047 Amendment 6 §Q1 point 3). NOT the
+ * admin list's `AdminAssetPointDto`: the route is gated server-side on
+ * `canReadAsset`, not on the master-data roles, so every read-scoped role
+ * reaches it, and the admin projection's ingest wiring and scaling overrides
+ * are not for them. It is the point read `PointPicker` uses for an
  * `asset_group_admin`, who `GET /admin/asset-points` refuses. Same
  * `fetch` + `withAuth` + `checkResponse` shape as `fetchAssets` above; the
- * envelope is `{ items }` (`assetPointsListResponseSchema`), where
+ * envelope is `{ items }` (`assetPointPickerListResponseSchema`), where
  * `fetchAssets`'s is a bare array.
  */
-export async function fetchAssetPoints(assetId: string): Promise<AssetPointsListResponse> {
+export async function fetchAssetPoints(assetId: string): Promise<AssetPointPickerListResponse> {
   const res = await fetch(`${base}/api/v1/assets/${encodeURIComponent(assetId)}/points`, withAuth());
   if (!res.ok) {
     throw new Error(`asset points ${res.status}`);
   }
-  return checkResponse(assetPointsListResponseSchema, await res.json(), "asset points");
+  return checkResponse(assetPointPickerListResponseSchema, await res.json(), "asset points");
 }

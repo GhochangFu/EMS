@@ -11,6 +11,7 @@ import {
   anAssetScopedDashboardWithTheAssetAbsentShowsTheId,
   anUneditedAssetScopedDashboardIsNotDirty,
   anUneditedGroupScopedDashboardIsNotDirty,
+  assetGroupAdminOnAForeignGroupCannotSave,
   assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup,
   assetGroupAdminsEditPageDoesNotFetchAdminAssetGroups,
   assetGroupAdminsEditPageDoesNotFetchLocations,
@@ -18,6 +19,7 @@ import {
   assetGroupAdminsWidgetInspectorOffersTheAssetChain,
   choosingADifferentGroupMakesItDirty,
   choosingADifferentLocationMakesItDirty,
+  locationAdminOnAForeignLocationCannotSave,
   movingALocationDashboardOntoAGroupSendsTheGroupAndClearsTheLocation,
   renamingAGroupScopedDashboardKeepsItsGroup,
   renamingAnAssetScopedDashboardSendsOnlyNameAndDescription,
@@ -113,5 +115,13 @@ describe("F3.1d dashboard builder edit page", () => {
 
   it("an asset_group_admin's widget inspector offers the asset chain (F3.63)", async () => {
     await assetGroupAdminsWidgetInspectorOffersTheAssetChain();
+  });
+
+  it("an asset_group_admin on a group it does not hold cannot save a rename (F3.63 review)", async () => {
+    await assetGroupAdminOnAForeignGroupCannotSave();
+  });
+
+  it("a location_admin on a location it does not hold cannot save a rename (F3.63 review)", async () => {
+    await locationAdminOnAForeignLocationCannotSave();
   });
 });

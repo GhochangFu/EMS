@@ -1,5 +1,5 @@
 import { DASHBOARD_GRID, METRIC_CATALOG } from "@bms/shared";
-import type { AdminAssetPointDto, MetricCatalogKey, UserRole, WidgetPointRole } from "@bms/shared";
+import type { AssetPointPickerRow, MetricCatalogKey, UserRole, WidgetPointRole } from "@bms/shared";
 
 import { widgetRowAfterRemovingSource } from "../../lib/dashboard-builder-form";
 import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dashboard-builder-form";
@@ -68,7 +68,7 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
     onChange({ config: { ...row.config, ...patch } });
   }
 
-  function addPoint(point: AdminAssetPointDto): void {
+  function addPoint(point: AssetPointPickerRow): void {
     const role: WidgetPointRole = row.widgetType === "chart" ? "series" : "primary";
     onChange({
       points: [

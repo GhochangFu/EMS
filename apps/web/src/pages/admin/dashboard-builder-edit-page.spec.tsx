@@ -31,14 +31,21 @@ import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
  * `assetId` (ADR 0067) is never sent.
  *
  * **`F3.63` (ADR 0047 Amendment 6 §Q2) closed the asset half of the same defect.** An
- * asset-scoped row used to prefill as organization, so a rename sent `{ null, null }` and
- * silently widened it to the whole tenant. It now prefills as the read-only `asset` kind, and
+ * asset-scoped row used to prefill as organization — a false radio — so a rename sent
+ * `{ null, null }`, which the server merged onto the kept `assetId` (one axis, a silent success),
+ * and choosing a location or a group was a 400. It now prefills as the read-only `asset` kind, and
  * the PATCH body is `scopePatch(scope)` — which OMITS both scope columns for it, so
  * `renamingAnAssetScopedDashboardSendsOnlyNameAndDescription` and the exact-keys case beside
  * it are this file's second load-bearing pair. Amendment 6 §Q1 point 2 opened the page to an
  * `asset_group_admin`; its cases set `/auth/me`'s scope on the store first (`http.spec.ts`'s
  * idiom) and the `.test.tsx` resets it in `afterEach`. The admin fetches stay spied so a
  * regression is RECORDED as a call, not lost as an unhandled `fetch`.
+ *
+ * **The review's foreign-scope pair** (`assetGroupAdminOnAForeignGroupCannotSave`,
+ * `locationAdminOnAForeignLocationCannotSave`): a role can OPEN a dashboard on a group or a
+ * location it does not hold, and before the fix a rename enabled Save and the PATCH met the
+ * server's 404. `isScopeOffered` in the page's `blocked` keeps Save disabled. Mutation: drop it
+ * from `blocked` ⇒ both red; the own-group rename case beside them is the positive control.
  */
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -233,7 +240,12 @@ export async function renamingAGroupScopedDashboardKeepsItsGroup(): Promise<void
 
   renderPage(asUser("admin"));
 
-  await userEvent.type(await screen.findByLabelText("Name"), " (renamed)");
+  // Two async loads, both waited for in order: the dto (the checked radio — typing before it
+  // lands is overwritten by `setName(dto.name)`), then the group list, which Save waits for
+  // (`isScopeOffered`). The Name input renders before either and is not a wait.
+  await waitForPrefill("Asset group");
+  await screen.findByRole("option", { name: "Hvac — Kolkata Works" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
   await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
 
   await waitFor(() => {
@@ -465,6 +477,7 @@ export async function assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup():
   const updateSpy = stubSave();
   await renderAssetGroupAdminsGroupDashboard();
 
+  await screen.findByRole("option", { name: "Hvac — Western Cape" });
   await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
   await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
 
@@ -485,4 +498,45 @@ export async function assetGroupAdminsWidgetInspectorOffersTheAssetChain(): Prom
   await userEvent.click(screen.getByRole("button", { name: "+ Value tile" }));
 
   expect(await screen.findByRole("combobox", { name: "Asset" })).toBeInTheDocument();
+}
+
+/** The review's foreign-scope defect, group half: the role's store scope holds `grp-1` only, and
+ * the dashboard is scoped to `grp-foreign`. The group radio prefills checked (the kind IS offered
+ * to the role, so the clamp does not fire), the select has no matching option, and after a rename
+ * Save stays disabled. Positive control: `assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup`
+ * above, same role and same shape on its OWN group, has Save enabled. Mutation: drop
+ * `isScopeOffered` from `blocked` ⇒ red. */
+export async function assetGroupAdminOnAForeignGroupCannotSave(): Promise<void> {
+  stubLoads({ dto: { ...GROUP_DTO, assetGroupId: FOREIGN_GROUP.id }, groups: [GROUP] });
+  const updateSpy = stubSave();
+  signInAsAssetGroupAdmin();
+  renderPage(asUser("asset_group_admin"));
+
+  await waitForPrefill("Asset group");
+  await screen.findByRole("option", { name: "Hvac — Western Cape" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+
+  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  expect(updateSpy).not.toHaveBeenCalled();
+}
+
+/** The same defect, location half: `GET /admin/locations` lists a `location_admin`'s own
+ * locations only (`writableLocationIds`), so the stub returns a second location and NOT the
+ * dashboard's `loc-1`. The location radio prefills checked, the select has no matching option, and
+ * after a rename Save stays disabled. Positive control: `choosingADifferentLocationMakesItDirty`
+ * has Save enabled for an offered location. Mutation: drop `isScopeOffered` from `blocked` ⇒ red. */
+export async function locationAdminOnAForeignLocationCannotSave(): Promise<void> {
+  const OWN_LOCATION = { ...LOCATION, id: "loc-2", code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
+  stubLoads({ dto: DTO, groups: [], locations: [OWN_LOCATION] });
+  const updateSpy = stubSave();
+  renderPage(asUser("location_admin"));
+
+  await waitForPrefill("Location");
+  await screen.findByRole("option", { name: "Mumbai Works" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+
+  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
+  expect(updateSpy).not.toHaveBeenCalled();
 }

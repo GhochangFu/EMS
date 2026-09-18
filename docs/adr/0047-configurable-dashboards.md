@@ -1140,12 +1140,24 @@ boundary, gated on the predicates the API already applies to dashboards:
 3. **A point read that is not master-data administration.**
    `GET /assets/:assetId/points` on the existing non-admin `assets` module,
    gated on `canReadAsset` (`readableAssetIds`) — the same scope `GET /assets`
-   already applies — returning the `AdminAssetPointDto` shape `PointPicker`
-   binds today, so `WidgetInspector` and the binding DTO do not change. The
-   endpoint answers 403 for an asset outside the caller's readable scope and
-   404 for none. It is a **read of points the caller may already read
+   already applies — returning a **five-field picker row**
+   (`assetPointPickerRowSchema`: `id`, `assetId`, `assetName`, `pointKey`,
+   `unit`), not the `AdminAssetPointDto` the master-data list returns. The
+   route is reachable by every read-scoped role, `viewer` included, and the
+   admin projection carries the ingest wiring (`sourceDataKey`, `sensorCode`,
+   `rtuId`, `sourceKind`) and the per-asset scaling and plausibility
+   overrides (`scaleMultiplier`, `scaleOffset`, `engMin`, `engMax`,
+   `qualityPolicy`) — columns that leave through no other non-admin route
+   (review, Security Medium). The five fields are exactly what `PointPicker`
+   and `WidgetInspector.addPoint` read, so the binding DTO does not change;
+   the row is picked from the same `mapAssetPointRow` projection the admin
+   list uses. A non-admin caller gets **403 for an unknown id and an
+   out-of-scope id alike**: the guard runs before the read, so the route is
+   not an existence oracle; only `admin`, whose scope is unrestricted,
+   reaches the service's 404 for an id that does not exist. Which ids the
+   caller may read is a **read of points the caller may already read
    telemetry for** (`GET /telemetry/points/:pointRef/recent` is gated on the
-   same `readableAssetIds`), so it widens nothing: it lists what the caller
+   same `readableAssetIds`), so it widens no scope: it lists what the caller
    can already fetch one call later, given the ids. `GET /admin/asset-points`
    keeps its master-data gate.
 4. **The point picker gains an asset→points chain for this role.** For

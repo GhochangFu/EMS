@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
-import type { AdminAssetPointDto, AssetListRow, UserRole } from "@bms/shared";
+import type { AdminAssetPointDto, AssetListRow, AssetPointPickerRow, UserRole } from "@bms/shared";
 
 import * as assetPointsApi from "../../api/admin/asset-points";
 import * as locationsApi from "../../api/admin/locations";
@@ -67,6 +67,17 @@ const POINT: AdminAssetPointDto = {
   qualityPolicy: null,
 };
 
+/** `fetchAssetPoints`'s real row (`assetPointPickerRowSchema`) — the five fields
+ * `GET /assets/:assetId/points` returns, no cast, so a consumer that reaches for an
+ * admin-only field fails the compiler here rather than at run time. */
+const PICKER_POINT: AssetPointPickerRow = {
+  id: POINT.id,
+  assetId: POINT.assetId,
+  assetName: POINT.assetName,
+  pointKey: POINT.pointKey,
+  unit: POINT.unit,
+};
+
 /** The one location the master-data chain lists — `fetchAdminLocations`'s real DTO shape. */
 const LOCATION = {
   id: "loc-1",
@@ -97,7 +108,7 @@ type Spies = {
 function stubAll(): Spies {
   return {
     fetchAssets: vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([ASSET]),
-    fetchAssetPoints: vi.spyOn(assetsApi, "fetchAssetPoints").mockResolvedValue({ items: [POINT] }),
+    fetchAssetPoints: vi.spyOn(assetsApi, "fetchAssetPoints").mockResolvedValue({ items: [PICKER_POINT] }),
     fetchAdminLocations: vi
       .spyOn(locationsApi, "fetchAdminLocations")
       .mockResolvedValue({ items: [LOCATION] }),
@@ -110,7 +121,7 @@ function stubAll(): Spies {
 function renderPicker(
   role: UserRole,
   organizationId: string = ORG,
-  onAdd: (point: AdminAssetPointDto) => void = () => {},
+  onAdd: (point: AssetPointPickerRow) => void = () => {},
 ): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -191,7 +202,7 @@ export async function choosingAPointCallsOnAddWithTheDto(): Promise<void> {
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Asset" }), "a1");
   await screen.findByRole("option", { name: "power_kw (kW) — Feed pump" });
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Add point" }), "p1");
-  expect(onAdd).toHaveBeenCalledWith(POINT);
+  expect(onAdd).toHaveBeenCalledWith(PICKER_POINT);
 }
 
 // ---------------------------------------------------------------------------

@@ -3,9 +3,9 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { assetPoints, assets, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AdminAssetPointDto } from "@bms/shared";
+import type { AssetPointPickerListResponse } from "@bms/shared";
 
-import { mapAssetPointRow } from "../admin/asset-points/asset-point-row";
+import { mapAssetPointRow, pickAssetPointPickerRow } from "../admin/asset-points/asset-point-row";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 
 /**
@@ -88,11 +88,15 @@ export class AssetsService {
 
   /**
    * `F3.63` (ADR 0047 Amendment 6 §Q1 point 3) — the **active** points of one
-   * asset, in the admin list's shape (`{ items: AdminAssetPointDto[] }`, the
-   * same join and the same `ORDER BY point_key`), for a caller the controller
-   * has already admitted through `canReadAsset`. Active only, with no
-   * parameter: the point picker asks the admin route for `active=true` today
-   * and nothing else needs the inactive rows.
+   * asset, as `{ items: AssetPointPickerRow[] }` (`assetPointPickerListResponseSchema`):
+   * the same join and the same `ORDER BY point_key` as the admin list, then
+   * `pickAssetPointPickerRow` narrows each `mapAssetPointRow` result to the
+   * five fields the picker reads. The narrowing is the point (review, Security
+   * Medium): every read-scoped role reaches this route, `viewer` included, and
+   * the admin projection carries ingest wiring and scaling overrides that no
+   * other non-admin route exposes. Active only, with no parameter: the point
+   * picker asks the admin route for `active=true` today and nothing else
+   * needs the inactive rows.
    *
    * The `assets` row is read first so an absent id is a 404 rather than an
    * empty list — the controller's guard is what keeps a non-admin from using
@@ -101,7 +105,7 @@ export class AssetsService {
    * the isolation control, and this read adds columns to rows the caller may
    * already read, never rows.
    */
-  async listPoints(assetId: string): Promise<{ items: AdminAssetPointDto[] }> {
+  async listPoints(assetId: string): Promise<AssetPointPickerListResponse> {
     const [asset] = await this.db
       .select({ id: assets.id })
       .from(assets)
@@ -125,6 +129,6 @@ export class AssetsService {
       .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.active, true)))
       .orderBy(asc(assetPoints.pointKey));
 
-    return { items: rows.map((row) => mapAssetPointRow(row)) };
+    return { items: rows.map((row) => pickAssetPointPickerRow(mapAssetPointRow(row))) };
   }
 }

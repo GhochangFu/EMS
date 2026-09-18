@@ -5,11 +5,15 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 
 import {
+  assertAdminAssetGroupsListStillRefusesTheRole,
   assertAdminListStillRefusesTheRole,
+  assertAdminLocationsListStillRefusesTheRole,
   assertEveryItemBelongsToTheAsset,
-  assertEveryItemParsesUnderTheAdminDto,
+  assertEveryItemParsesUnderThePickerDto,
+  assertEveryScopeGroupCarriesItsOwnOrganizationId,
   assertListPointsEqualsTheAdminProjection,
   assertListPointsReturnsTheActivePointsOfTheAsset,
+  assertNoItemCarriesAnAdminOnlyField,
   assertRoleCannotReadAnAssetOutsideItsGroups,
   assertRoleCanReadItsOwnAsset,
   assertUnknownAssetIsNotFound,
@@ -26,8 +30,9 @@ import { asRole } from "../testing/role-urls";
  * caller on `bms_auth` (`DATABASE_URL_AUTH`, else derived from the gate's URL).
  *
  * It has to be an integration suite: the claims are that a real group grant
- * admits a real seeded asset, that a real `active` predicate holds, and that
- * the admin projection and the new read agree on real rows.
+ * admits a real seeded asset, that a real `active` predicate holds against a
+ * committed inactive row, and that the admin projection and the new read
+ * agree on real rows.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.63",
@@ -67,7 +72,7 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
     await assertRoleCanReadItsOwnAsset(pools);
   }, 60_000);
 
-  it("listPoints returns exactly the asset's active points", async () => {
+  it("listPoints returns exactly the asset's active points, and not a committed inactive one", async () => {
     await assertListPointsReturnsTheActivePointsOfTheAsset(pools);
   }, 60_000);
 
@@ -75,8 +80,12 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
     await assertEveryItemBelongsToTheAsset(pools);
   }, 60_000);
 
-  it("every item parses under adminAssetPointDtoSchema", async () => {
-    await assertEveryItemParsesUnderTheAdminDto(pools);
+  it("every item parses under assetPointPickerRowSchema", async () => {
+    await assertEveryItemParsesUnderThePickerDto(pools);
+  }, 60_000);
+
+  it("no item carries an admin-only field — the key set is exactly the five picker fields", async () => {
+    await assertNoItemCarriesAnAdminOnlyField(pools);
   }, 60_000);
 
   it("the guard refuses an asset outside the role's groups", async () => {
@@ -91,7 +100,19 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
     await assertAdminListStillRefusesTheRole(pools);
   }, 60_000);
 
-  it("listPoints deep-equals the admin list's projection for the same asset", async () => {
+  it("GET /admin/locations still refuses asset_group_admin, by the master-data message", async () => {
+    await assertAdminLocationsListStillRefusesTheRole(pools);
+  }, 60_000);
+
+  it("GET /admin/asset-groups still refuses asset_group_admin, by the master-data message", async () => {
+    await assertAdminAssetGroupsListStillRefusesTheRole(pools);
+  }, 60_000);
+
+  it("listPoints deep-equals the admin list's projection, picked to the five fields", async () => {
     await assertListPointsEqualsTheAdminProjection(pools);
+  }, 60_000);
+
+  it("every group in /auth/me's scope carries its own bms.asset_groups organization_id", async () => {
+    await assertEveryScopeGroupCarriesItsOwnOrganizationId(pools);
   }, 60_000);
 });

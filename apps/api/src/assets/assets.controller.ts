@@ -8,7 +8,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z, ZodError } from "zod";
-import type { AdminAssetPointDto, JwtPayload } from "@bms/shared";
+import type { AssetPointPickerListResponse, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
@@ -78,12 +78,13 @@ export class AssetsController {
     }
   }
 
-  /** `GET /api/v1/assets/:assetId/points` — the asset's active points, in the admin list's shape. */
+  /** `GET /api/v1/assets/:assetId/points` — the asset's active points, five fields each
+   * (`AssetPointPickerRow`, not the admin DTO — see `AssetsService.listPoints`). */
   @Get(":assetId/points")
   async listPoints(
     @CurrentUser() user: JwtPayload,
     @Param("assetId") assetId: string,
-  ): Promise<{ items: AdminAssetPointDto[] }> {
+  ): Promise<AssetPointPickerListResponse> {
     const id = assetIdParamSchema.parse(assetId);
     if (!(await this.accessControl.canReadAsset(user, id))) {
       throw new ForbiddenException("Asset is outside your access scope");

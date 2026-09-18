@@ -1,5 +1,5 @@
 import type { assetPoints } from "@bms/db";
-import type { AdminAssetPointDto, QualityPolicy } from "@bms/shared";
+import type { AdminAssetPointDto, AssetPointPickerRow, QualityPolicy } from "@bms/shared";
 
 /**
  * The joined row every asset-point read selects: the point, its asset's code
@@ -17,10 +17,11 @@ export type AssetPointRow = {
  * `F3.63` (ADR 0047 Amendment 6 §Q1 point 3) — the one projection from a
  * joined `asset_points` row to `AdminAssetPointDto`, shared by the admin list
  * (`AssetPointsAdminService`) and the non-admin read
- * (`AssetsService.listPoints`). A module-level function rather than a method,
- * so the non-admin module imports a pure mapper and not the admin service;
- * the parity case in `asset-points-read.integration.spec.ts` holds the two
- * reads to the same shape.
+ * (`AssetsService.listPoints`, which then narrows it with
+ * {@link pickAssetPointPickerRow}). A module-level function rather than a
+ * method, so the non-admin module imports a pure mapper and not the admin
+ * service; the parity case in `asset-points-read.integration.spec.ts` holds
+ * the two reads to the same values on the picked fields.
  */
 export function mapAssetPointRow(row: AssetPointRow): AdminAssetPointDto {
   const point = row.point;
@@ -51,5 +52,23 @@ export function mapAssetPointRow(row: AssetPointRow): AdminAssetPointDto {
     engMin: point.engMin,
     engMax: point.engMax,
     qualityPolicy: point.qualityPolicy as QualityPolicy | null,
+  };
+}
+
+/**
+ * The five-field `AssetPointPickerRow` (`F3.63` review) the non-admin read
+ * returns, picked from the admin projection — so the two reads cannot compute
+ * a field differently, and so the admin-only columns (ingest wiring, scaling,
+ * plausibility, quality policy) never leave through `GET /assets/:id/points`.
+ * Listed field by field rather than spread-and-delete: a key this function
+ * does not name cannot reach the response.
+ */
+export function pickAssetPointPickerRow(dto: AdminAssetPointDto): AssetPointPickerRow {
+  return {
+    id: dto.id,
+    assetId: dto.assetId,
+    assetName: dto.assetName,
+    pointKey: dto.pointKey,
+    unit: dto.unit,
   };
 }

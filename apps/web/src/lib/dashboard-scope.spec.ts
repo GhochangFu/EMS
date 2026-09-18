@@ -1,5 +1,6 @@
 import {
   isScopeChosen,
+  isScopeOffered,
   scopeAssetGroupOptions,
   scopeChanged,
   scopeColumns,
@@ -279,5 +280,61 @@ export function scopeAssetGroupOptionsFiltersByOrganization(): void {
     options.map((option) => option.id).sort(),
     ["grp-1", "grp-2"],
     "the organizationId filter must keep only that organization's groups",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// isScopeOffered (`F3.63` review — a foreign scope must not enable Save)
+// ---------------------------------------------------------------------------
+
+const OFFERED = { locations: [{ id: "loc-1" }], assetGroups: [{ id: "grp-1" }] };
+
+/** Mutation: return `false` for the `organization` arm ⇒ red. */
+export function anOrganizationValueIsAlwaysOffered(): void {
+  assert(
+    isScopeOffered({ kind: "organization", organizationId: "org-1" }, { locations: [], assetGroups: [] }),
+    "an organization value is offered whatever the lists hold",
+  );
+}
+
+/** Mutation: return `false` for the `asset` arm ⇒ red. */
+export function anAssetValueIsAlwaysOffered(): void {
+  assert(
+    isScopeOffered({ kind: "asset", organizationId: "org-1", assetId: "a1" }, { locations: [], assetGroups: [] }),
+    "an asset value is offered whatever the lists hold",
+  );
+}
+
+/** Mutation: check `assetGroups` on the location arm ⇒ red. */
+export function aLocationInTheOfferedListIsOffered(): void {
+  assert(
+    isScopeOffered({ kind: "location", organizationId: "org-1", locationId: "loc-1" }, OFFERED),
+    "a location present in the offered list is offered",
+  );
+}
+
+/** The defect (review): a `location_admin` opening a dashboard on a location it does not hold.
+ * Mutation: return `true` for the location arm ⇒ red. */
+export function aLocationAbsentFromTheOfferedListIsNotOffered(): void {
+  assert(
+    !isScopeOffered({ kind: "location", organizationId: "org-1", locationId: "loc-9" }, OFFERED),
+    "a location absent from the offered list is not offered",
+  );
+}
+
+/** Mutation: check `locations` on the group arm ⇒ red. */
+export function anAssetGroupInTheOfferedListIsOffered(): void {
+  assert(
+    isScopeOffered({ kind: "assetGroup", organizationId: "org-1", assetGroupId: "grp-1" }, OFFERED),
+    "a group present in the offered list is offered",
+  );
+}
+
+/** The defect (review): an `asset_group_admin` opening a dashboard on a group it does not hold.
+ * Mutation: return `true` for the group arm ⇒ red. */
+export function anAssetGroupAbsentFromTheOfferedListIsNotOffered(): void {
+  assert(
+    !isScopeOffered({ kind: "assetGroup", organizationId: "org-1", assetGroupId: "grp-9" }, OFFERED),
+    "a group absent from the offered list is not offered",
   );
 }
