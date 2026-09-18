@@ -37,10 +37,11 @@ import {
 
 /**
  * One point binding, as edited. `label` is a **display-only** string for the widget inspector
- * (Unit 7) — derived from `pointKey`/`unit`, the only human-readable fields
- * `dashboardWidgetPointDtoSchema` carries — and is dropped by `buildPutWidgetsPayload` below,
- * which sends only `{pointId, role, sortOrder}`. A reader who finds `label` on the row and not
- * in the write payload should read this note before assuming it is a bug.
+ * (Unit 7) — `pointKey (unit)`, deliberately NOT the asset-qualified `seriesNameFor` the legend
+ * uses (ADR 0069 Q4): the picker row carries no `assetCode`, so a freshly picked point and a
+ * loaded one would read differently until the next save. It is dropped by `buildPutWidgetsPayload`
+ * below, which sends only `{pointId, role, sortOrder}`. A reader who finds `label` on the row and
+ * not in the write payload should read this note before assuming it is a bug.
  */
 export type DashboardWidgetPointRow = {
   pointId: string;
@@ -137,8 +138,9 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
 }
 
 /** A display label for an already-bound point — `pointKey` alone, or `pointKey (unit)` when a
- * unit is stored. Not a name lookup: the DTO carries no asset name, and a second round trip to
- * fetch one is the request-volume growth plan §15 Q4 already declined for this row. */
+ * unit is stored. The DTO carries `assetCode` since ADR 0069, and the legend uses it; this label
+ * does not (Q4), so it matches `addPoint`'s label for a freshly picked point, whose picker row has
+ * no code. Still not a name lookup — a second round trip is what plan §15 Q4 declined. */
 function pointBindingLabel(point: DashboardWidgetPointDto): string {
   return point.unit ? `${point.pointKey} (${point.unit})` : point.pointKey;
 }

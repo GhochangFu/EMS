@@ -1,7 +1,13 @@
 import { encodePointRef } from "@bms/shared";
 import type { DashboardDto, DashboardWidgetDto, DashboardWidgetPointDto } from "@bms/shared";
 
-import { pointRefsFor, widgetDataFor, type HistoryByRef, type LatestByRef } from "./dashboard-widget-data";
+import {
+  pointRefsFor,
+  seriesNameFor,
+  widgetDataFor,
+  type HistoryByRef,
+  type LatestByRef,
+} from "./dashboard-widget-data";
 import { FRESH_MS } from "./schematic-telemetry";
 import { isScalarData } from "../components/widgets/dashboard-widget";
 
@@ -219,7 +225,7 @@ export function runChartSeriesOrderingTests(): void {
     `both bound points must produce a series entry — got ${data.series.length}`,
   );
   assert(
-    data.series[0]?.name === "first" && data.series[1]?.name === "second",
+    data.series[0]?.name === "BRK-01 · first" && data.series[1]?.name === "BRK-01 · second",
     `series must be ordered by sortOrder (0, 1), not by array position (second, first) — got ${data.series.map((s) => s.name).join(",")}`,
   );
   assert(
@@ -231,5 +237,32 @@ export function runChartSeriesOrderingTests(): void {
   assert(
     isScalarData(missingHistory) && missingHistory.series[0]?.points.length === 0,
     "a point absent from historyByRef contributes an empty series rather than throwing",
+  );
+}
+
+/**
+ * The guard `F3.43` owes (ADR 0069 decision 4): two bindings that share one `pointKey` and
+ * differ only in asset must produce two DISTINCT series names. ECharts keys the legend by
+ * `series[].name`, so equal names collapse into one legend entry — the five copies of `kw` the
+ * row measured. Two bindings with different `pointKey`s prove nothing here; they were
+ * distinguishable before the ADR. This is the case that reddened with `name:` reverted to
+ * `point.pointKey` (recorded in the closure row).
+ */
+export function runSeriesNameTests(): void {
+  const a = point({ id: "a", pointId: "pa", assetId: "asset-a", assetCode: "BRK-01", pointKey: "kw", sortOrder: 0, role: "series" });
+  const b = point({ id: "b", pointId: "pb", assetId: "asset-b", assetCode: "BRK-02", pointKey: "kw", sortOrder: 1, role: "series" });
+  const data = widgetDataFor(chartWidget([a, b]), new Map(), new Map(), NOW);
+  if (!isScalarData(data)) {
+    throw new Error("a chart with bindings must be scalar-ready data");
+  }
+  const names = data.series.map((s) => s.name);
+  assert(
+    new Set(names).size === 2,
+    `two bindings sharing pointKey "kw" on different assets must have distinct series names — got ${names.join(",")}`,
+  );
+  assert(names[0] === "BRK-01 · kw", `the name is "<assetCode> · <pointKey>", got ${String(names[0])}`);
+  assert(
+    seriesNameFor(a) === "BRK-01 · kw",
+    `seriesNameFor composes assetCode and pointKey with " · ", got ${seriesNameFor(a)}`,
   );
 }

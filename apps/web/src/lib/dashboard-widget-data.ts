@@ -420,6 +420,21 @@ function freshestSeriesMs(series: readonly WidgetSeries[], nowMs: number): numbe
 }
 
 /**
+ * The name a `chart` series carries into the legend and the tooltip — `<assetCode> · <pointKey>`,
+ * ADR 0069 decision 3.
+ *
+ * **Always asset-qualified, never conditional on the siblings (Q2).** A name that depended on
+ * whether the widget's other bindings share this `pointKey`, or span more than one asset, would
+ * change when a binding is added and would read differently for the same binding on two widgets.
+ * ECharts keys the legend by this string, so five breakers' `kw` are five entries, not one — the
+ * row's own defect. The separator is the middle dot the summary badge already uses
+ * (`Asset · <code>`, ADR 0067).
+ */
+export function seriesNameFor(point: Pick<DashboardWidgetPointDto, "assetCode" | "pointKey">): string {
+  return `${point.assetCode} · ${point.pointKey}`;
+}
+
+/**
  * Maps one widget's bindings and the two resolved data maps onto what
  * `DashboardWidget` renders.
  *
@@ -490,11 +505,12 @@ export function widgetDataFor(
       ) ?? null;
 
     const series: WidgetSeries[] = ordered.map((point) => ({
-      // `pointKey` is the only human-readable field this DTO carries — `adminAssetPointDtoSchema`
-      // has no asset name and `dashboardWidgetPointDtoSchema` has no label column of its own.
-      // A nicer legend (an asset-qualified name) needs a second round trip per point, which
-      // plan §15 Q4 already declined for the whole row; do not "fix" this into a fetch.
-      name: point.pointKey,
+      // `F3.43` (ADR 0069): the asset-qualified name rides the `bms.assets` join the API already
+      // makes for its organization guard, so the label costs no second round trip — the fetch
+      // plan §15 Q4 declined is still declined; the DTO simply carries `assetCode` now. Until
+      // ADR 0069 this read `point.pointKey`, and ECharts, which keys the legend by name, drew
+      // five breakers' `kw` as ONE legend entry.
+      name: seriesNameFor(point),
       sortOrder: point.sortOrder,
       points: config.aggregate
         ? (aggregateFor(point)?.buckets ?? [])

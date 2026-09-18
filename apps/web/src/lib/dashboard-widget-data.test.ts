@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runChartSeriesOrderingTests,
   runPointRefsForTests,
+  runSeriesNameTests,
   runSingleValueWidgetTests,
   runStalenessTests,
   runZeroBindingsTests,
@@ -28,5 +29,9 @@ describe("dashboard widget data", () => {
 
   it("ages a reading through the ADR 0027 staleness gate rather than showing it as live forever", () => {
     runStalenessTests();
+  });
+
+  it("F3.43 — names two series that share a pointKey by their asset, so the legend shows both", () => {
+    runSeriesNameTests();
   });
 });
