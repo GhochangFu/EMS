@@ -5,6 +5,7 @@ import type {
   CalcErrorCode,
   CalcExpr,
   CalcFunctionName,
+  CalcParamRef,
   CalcParseError,
   CalcScope,
   ParseResult,
@@ -13,11 +14,13 @@ import { crossRefKey } from "./cross-ref";
 import {
   CALC_AGGREGATE_FNS,
   CALC_DIALECT,
-  CALC_DIALECT_V2,
   CALC_FUNCTION_ARITY,
+  isCrossAssetDialect,
+  isParameterDialect,
   MAX_FORMULA_CROSS_REFS,
   MAX_FORMULA_DEPTH,
   MAX_FORMULA_LENGTH,
+  MAX_FORMULA_PARAM_REFS,
   MAX_FORMULA_POINT_REFS,
   type CalcDialect,
 } from "./limits";
@@ -78,6 +81,14 @@ export interface ParseOptions {
  * `v2` error code. That is how ADR 0055 decisions 3 and 4 are held by
  * construction; the property test (`F2.9` Task 3) is the tripwire.
  *
+ * **The `v2` productions are untouched by `v3`** (ADR 0070 decision 3), by
+ * the same construction: `isV2` now means "has cross-asset references", which
+ * `v3` also has, so every `v2` branch runs under `v3` unedited, and the one
+ * `v3` production — `paramRef := "$" key`, a `param` token becoming a
+ * `param` node — sits behind `isV3`. A `param` token cannot exist under
+ * `v1` or `v2` (the tokenizer never emits one), so the guard is belt and
+ * braces rather than the only defence.
+ *
  * Recursive descent, one class of parser per precedence level. `enter`/`exit`
  * bound recursion depth (`MAX_FORMULA_DEPTH`) so a pathological paste fails
  * as a `ParseResult`, not a JS `RangeError`.
@@ -86,12 +97,14 @@ class Parser {
   private pos = 0;
   private depth = 0;
   private readonly isV2: boolean;
+  private readonly isV3: boolean;
 
   constructor(
     private readonly tokens: Token[],
     dialect: CalcDialect,
   ) {
-    this.isV2 = dialect === CALC_DIALECT_V2;
+    this.isV2 = isCrossAssetDialect(dialect);
+    this.isV3 = isParameterDialect(dialect);
   }
 
   private peek(): Token {
@@ -189,6 +202,13 @@ class Parser {
     this.enter();
     try {
       const token = this.peek();
+
+      // v3 only — a `param` token becomes a `param` node (ADR 0070 decision
+      // 4). Checked first because nothing else consumes the kind.
+      if (this.isV3 && token.kind === "param") {
+        this.advance();
+        return { kind: "param", key: token.text, position: token.position };
+      }
 
       // v2 only — a qualified `ref` token becomes a `qref` node, and an
       // identifier naming an aggregate function opens an aggregate. Checked
@@ -346,10 +366,12 @@ class Parser {
 type RefEntries = {
   local: { pointKey: string; position: number }[];
   cross: CalcCrossRef[];
+  params: CalcParamRef[];
 };
 
 /**
- * One walk of the AST, splitting local `{ref}`s from cross-asset nodes.
+ * One walk of the AST, splitting local `{ref}`s from cross-asset nodes and
+ * (`v3`) from parameter nodes.
  *
  * **The `default: assertNever(node)` is load-bearing.** `visit` returns
  * `void`, so TypeScript does NOT flag a missing `case` here: a new `CalcExpr`
@@ -363,6 +385,7 @@ type RefEntries = {
 function collectRefEntries(expr: CalcExpr): RefEntries {
   const local: RefEntries["local"] = [];
   const cross: CalcCrossRef[] = [];
+  const params: CalcParamRef[] = [];
   const visit = (node: CalcExpr): void => {
     switch (node.kind) {
       case "number":
@@ -386,12 +409,15 @@ function collectRefEntries(expr: CalcExpr): RefEntries {
       case "aggregate":
         cross.push(node);
         return;
+      case "param":
+        params.push(node);
+        return;
       default:
         assertNever(node);
     }
   };
   visit(expr);
-  return { local, cross };
+  return { local, cross, params };
 }
 
 function dedupeInFirstAppearanceOrder(entries: { pointKey: string }[]): string[] {
@@ -404,6 +430,21 @@ function dedupeInFirstAppearanceOrder(entries: { pointKey: string }[]): string[]
     }
   }
   return refs;
+}
+
+/** First node per key, in first-appearance order — so the kept node's
+ * `position` is the parameter's first occurrence (the one `too_many_param_refs`
+ * reports). */
+function dedupeParamRefs(nodes: CalcParamRef[]): CalcParamRef[] {
+  const seen = new Set<string>();
+  const out: CalcParamRef[] = [];
+  for (const node of nodes) {
+    if (!seen.has(node.key)) {
+      seen.add(node.key);
+      out.push(node);
+    }
+  }
+  return out;
 }
 
 /** First node per `crossRefKey`, in first-appearance order — so the kept
@@ -423,10 +464,13 @@ function dedupeCrossRefs(nodes: CalcCrossRef[]): CalcCrossRef[] {
 
 /**
  * Parses a `bms-calc-v1` expression — or, with `{ dialect: "bms-calc-v2" }`,
- * a `v2` one. Pure — no evaluation, ever (ADR 0036 decision 3): this
- * function's only job is to say whether the text is a legal formula and, if
- * so, which local point keys (`refs`) and cross-asset references
- * (`crossRefs`) it names.
+ * a `v2` one, or with `{ dialect: "bms-calc-v3" }` a `v3` one. Pure — no
+ * evaluation, ever (ADR 0036 decision 3): this function's only job is to say
+ * whether the text is a legal formula and, if so, which local point keys
+ * (`refs`), cross-asset references (`crossRefs`) and parameters
+ * (`paramRefs`) it names. The vocabulary a `$key` must belong to is a
+ * database read and is the api's check, exactly where the cross-asset key
+ * check lives (ADR 0070 decision 4).
  */
 export function parseFormula(expression: string, options?: ParseOptions): ParseResult {
   const dialect = options?.dialect ?? CALC_DIALECT;
@@ -443,7 +487,7 @@ export function parseFormula(expression: string, options?: ParseOptions): ParseR
 
     const ast = new Parser(tokens, dialect).parseProgram();
 
-    const { local, cross } = collectRefEntries(ast);
+    const { local, cross, params } = collectRefEntries(ast);
     const refs = dedupeInFirstAppearanceOrder(local);
     if (refs.length > MAX_FORMULA_POINT_REFS) {
       const overflowKey = refs[MAX_FORMULA_POINT_REFS];
@@ -459,7 +503,15 @@ export function parseFormula(expression: string, options?: ParseOptions): ParseR
       };
     }
 
-    return { ok: true, ast, refs, crossRefs };
+    const paramNodes = dedupeParamRefs(params);
+    if (paramNodes.length > MAX_FORMULA_PARAM_REFS) {
+      return {
+        ok: false,
+        errors: [{ code: "too_many_param_refs", position: paramNodes[MAX_FORMULA_PARAM_REFS].position }],
+      };
+    }
+
+    return { ok: true, ast, refs, crossRefs, paramRefs: paramNodes.map((node) => node.key) };
   } catch (error) {
     if (error instanceof CalcTokenizeError || error instanceof CalcParseFailure) {
       return { ok: false, errors: [error.parseError] };
@@ -531,6 +583,11 @@ const ERROR_MESSAGES: Readonly<Record<CalcErrorCode, string>> = {
   qualified_reference_in_aggregate:
     "an aggregate cannot take a qualified {ASSET_CODE.point_key} reference — its scope already names the assets",
   too_many_cross_refs: `the formula has more than ${MAX_FORMULA_CROSS_REFS} distinct cross-asset references (aggregates and qualified references)`,
+  // `bms-calc-v3` lexical code (ADR 0070 decision 4) — same rule.
+  malformed_parameter_reference:
+    "malformed parameter reference — write $key, the key of a parameter from the calc parameter vocabulary",
+  // `bms-calc-v3` parser code (ADR 0070 decision 4) — same rule.
+  too_many_param_refs: `the formula has more than ${MAX_FORMULA_PARAM_REFS} distinct $key parameter references`,
 };
 
 /**
