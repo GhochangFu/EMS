@@ -42,7 +42,7 @@ export function runCalcDefinitionTests(): void {
   const badDialect = toActiveDefinition({ ...BASE, formulaDialect: "unvalidated" });
   assert(badDialect.ok === false && badDialect.reason === "bad_dialect", "a dialect outside CALC_DIALECTS must skip");
 
-  const unknownDialect = toActiveDefinition({ ...BASE, formulaDialect: "bms-calc-v3" });
+  const unknownDialect = toActiveDefinition({ ...BASE, formulaDialect: "bms-calc-v9" });
   assert(
     unknownDialect.ok === false && unknownDialect.reason === "bad_dialect",
     "a dialect this engine does not know must skip as bad_dialect, never be parsed as v1",

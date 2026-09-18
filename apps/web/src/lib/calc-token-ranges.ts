@@ -74,6 +74,10 @@ export function tokenWidth(token: Token): number {
   if (token.kind === "string") {
     return token.text.length + 2;
   }
+  if (token.kind === "param") {
+    // a `v3` `$key` token's `text` drops the `$` (ADR 0070 decision 4)
+    return token.text.length + 1;
+  }
   return token.text.length;
 }
 

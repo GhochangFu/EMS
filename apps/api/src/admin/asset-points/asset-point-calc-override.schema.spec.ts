@@ -106,7 +106,7 @@ export function assertBoundsAreEnforcedByTheSchema(): void {
       "row every other endpoint accepts (tests/adr-0055-calc-v2-invariants.test.ts part (c))",
   );
   assert(
-    !assetPointCalcOverrideBodySchema.safeParse({ ...base, formulaDialect: "bms-calc-v3" }).success,
+    !assetPointCalcOverrideBodySchema.safeParse({ ...base, formulaDialect: "bms-calc-v9" }).success,
     "and a dialect outside CALC_DIALECTS must still be rejected — widening to an enum is not " +
       "the same as accepting anything",
   );
@@ -555,7 +555,7 @@ export function assertAnUnknownStoredDialectIsRefused(): void {
       ...SCHEDULED_TEMPLATE,
       // A stored row can hold anything: `toFields` carries the column through
       // rather than coercing it, so this reaches the merge as-is.
-      formulaDialect: "bms-calc-v3" as AssetPointCalcOverrideFields["formulaDialect"],
+      formulaDialect: "bms-calc-v9" as AssetPointCalcOverrideFields["formulaDialect"],
     },
     KEYS,
   );

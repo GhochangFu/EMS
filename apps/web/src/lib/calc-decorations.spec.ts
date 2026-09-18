@@ -9,7 +9,7 @@
  * Every offset below is a literal read off a red first run, never recomputed
  * here from the derivation the module uses.
  */
-import { CALC_DIALECT_V2, tokenize, type TokenKind } from "@bms/shared";
+import { CALC_DIALECT_V2, CALC_DIALECT_V3, tokenize, type TokenKind } from "@bms/shared";
 
 import { calcDecorations, decorationClass } from "./calc-decorations";
 import { safeTokenize } from "./calc-token-ranges";
@@ -131,6 +131,7 @@ export function runEveryTokenKindIsStyledTests(): void {
     "comma",
     "scope",
     "string",
+    "param",
     "eof",
   ];
   for (const kind of kinds) {
@@ -202,4 +203,27 @@ export function runV2DialectDecorationTests(): void {
     decorations.every((d) => d.to <= text.length && d.to > d.from),
     "every span stays inside the text and is non-empty",
   );
+}
+
+/**
+ * Case 9 — a `$key` parameter reference is styled under the `v3` dialect only
+ * (ADR 0070 decision 4). Under `v2` the `$` does not lex, so the whole call
+ * yields nothing — the same shape as the `v2`-under-`v1` guard above.
+ */
+export function runV3DialectDecorationTests(): void {
+  const text = "$f * 2";
+
+  assert(
+    calcDecorations(text, CALC_DIALECT_V2).length === 0,
+    "under v2 the $ does not lex, so a v3 formula yields no decorations",
+  );
+
+  const decorations = calcDecorations(text, CALC_DIALECT_V3);
+  const param = decorations.find((d) => d.className === "cm-calc-param");
+  assert(param !== undefined, `expected a cm-calc-param span, got ${JSON.stringify(decorations)}`);
+  if (param) {
+    assert(param.from === 0 && param.to === 2, `"$f" must span 0..2, got ${param.from}..${param.to}`);
+    assert(text.slice(param.from, param.to) === "$f", "the param span must cover the $ and the key");
+  }
+  assert(decorations.length === 3, `$f, * and 2 are three spans, got ${decorations.length}`);
 }

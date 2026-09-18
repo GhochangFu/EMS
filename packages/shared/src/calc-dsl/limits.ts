@@ -9,10 +9,31 @@ export const CALC_DIALECT = "bms-calc-v1";
  * import and keeps compiling unchanged.
  */
 export const CALC_DIALECT_V2 = "bms-calc-v2";
-export const CALC_DIALECTS = [CALC_DIALECT, CALC_DIALECT_V2] as const;
+/**
+ * `bms-calc-v3` (ADR 0070 decision 3): the parameter dialect. A strict
+ * superset of `v2` — every `v2` formula means the same thing under `v3` —
+ * and `v2` keeps its meaning forever, the way ADR 0055 decisions 3 and 4 hold
+ * `v1` under `v2`. It adds the `$key` parameter reference (decision 4); the
+ * window functions are `E4.1b`'s and are not here yet. Order is superset
+ * order: the picker renders the tuple as it is.
+ */
+export const CALC_DIALECT_V3 = "bms-calc-v3";
+export const CALC_DIALECTS = [CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECT_V3] as const;
 export type CalcDialect = (typeof CALC_DIALECTS)[number];
 /** The `v1` literal alone, for a surface that must not widen with the union. */
 export type CalcV1Dialect = typeof CALC_DIALECT;
+
+/**
+ * The two dialect predicates every gate outside the grammar files reads
+ * (ADR 0070; `E4.1a` plan design decision 14). A literal `=== CALC_DIALECT_V2`
+ * silently excludes `v3` from the cross-asset half it also carries — the
+ * override path's cycle check would skip a `v3` formula's aggregates entirely —
+ * so a gate asks for the *capability*, never the version. `v1` is the only
+ * dialect without cross-asset references; `v3` is the only one with
+ * parameters.
+ */
+export const isCrossAssetDialect = (dialect: CalcDialect): boolean => dialect !== CALC_DIALECT;
+export const isParameterDialect = (dialect: CalcDialect): boolean => dialect === CALC_DIALECT_V3;
 
 /** Aggregate functions a `v2` formula may apply over a scope (ADR 0055
  * decision 1; the set is the plan's design decision 5 — `min`/`max` stay
@@ -30,6 +51,9 @@ export const MAX_FORMULA_POINT_REFS = 20;
  * formula, beside the unchanged local cap above (ADR 0055; plan design
  * decision 6). An aggregate's *member set* is deliberately not capped here. */
 export const MAX_FORMULA_CROSS_REFS = 8;
+/** Distinct `$key` parameter references per `v3` formula (ADR 0070 decision
+ * 4; `E4.1a` plan ruling Q7 — the cross-ref bound's number). */
+export const MAX_FORMULA_PARAM_REFS = 8;
 /** Parser recursion-depth guard — defense in depth against a pathological
  * paste, not a limit any legitimate formula should approach. */
 export const MAX_FORMULA_DEPTH = 64;

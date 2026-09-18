@@ -91,6 +91,9 @@ const calcTheme = EditorView.theme({
   // a literal. Neither is emitted under `v1`, so a `v1` formula never sees them.
   ".cm-calc-scope": { color: "#B45309", fontWeight: "600" },
   ".cm-calc-string": { color: "#0E7490" },
+  // `bms-calc-v3` only (ADR 0070): a `$key` parameter reads like a reference
+  // to something stored, not a point — the ref green, italic.
+  ".cm-calc-param": { color: "#007C3C", fontStyle: "italic" },
 });
 
 /**

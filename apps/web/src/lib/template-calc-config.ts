@@ -2,6 +2,7 @@ import {
   CALC_DIALECT,
   CALC_DIALECTS,
   CALC_DIALECT_V2,
+  CALC_DIALECT_V3,
   CALC_TRIGGERS,
   DEFAULT_MAX_INPUT_AGE_SECONDS,
   MAX_CALC_INTERVAL_SECONDS,
@@ -113,6 +114,8 @@ export function setCalcTrigger(row: TemplatePointRow, trigger: CalcTrigger): Tem
 const DIALECT_LABELS: Readonly<Record<CalcDialect, string>> = {
   [CALC_DIALECT]: `${CALC_DIALECT} — this asset's own points`,
   [CALC_DIALECT_V2]: `${CALC_DIALECT_V2} — cross-asset: aggregates over @site / @domain / @group, and {CODE.key}`,
+  // ADR 0070 decision 4 — the `E4.1a` label; `U10` widens the editor help.
+  [CALC_DIALECT_V3]: `${CALC_DIALECT_V3} — everything in v2, plus $key parameters from the calc parameter store`,
 };
 
 /**

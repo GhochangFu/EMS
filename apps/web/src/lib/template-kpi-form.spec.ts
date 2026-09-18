@@ -163,7 +163,8 @@ export function runStoredV2KpiSurvivesTests(): void {
 
   // A dialect this UI does not know still reads as unvalidated. The ternary
   // widened to the vocabulary, it did not become "trust whatever is stored".
-  const [unknown] = kpiRowsFrom([{ ...storedV2, dialect: "bms-calc-v3" } as unknown as TemplateKpi]);
+  // (`bms-calc-v3` was the fixture until ADR 0070 made it a real dialect.)
+  const [unknown] = kpiRowsFrom([{ ...storedV2, dialect: "bms-calc-v9" } as unknown as TemplateKpi]);
   assert(
     unknown.dialect === "unvalidated",
     `a dialect outside CALC_DIALECTS must read as unvalidated, got ${unknown.dialect}`,

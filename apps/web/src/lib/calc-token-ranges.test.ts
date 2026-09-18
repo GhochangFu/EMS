@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runQualifiedRefRangeTests,
+  runParamRangeTests,
   runSafeTokenizeDialectTests,
   runStringAndScopeRangeTests,
   runV1RefRangeTests,
@@ -23,5 +24,9 @@ describe("calc token ranges", () => {
 
   it("threads the dialect through safeTokenize and defaults to v1", () => {
     runSafeTokenizeDialectTests();
+  });
+
+  it("spans a $key parameter over its $", () => {
+    runParamRangeTests();
   });
 });
