@@ -37,10 +37,13 @@ import { DashboardTemplateStockViewPage } from "./dashboard-template-stock-view-
  * fixture one per widget over eight, because the case counts widgets and
  * lists, never bindings per widget. `NO_BINDINGS` mirrors
  * `sustainability-overview` (four widgets, zero bindings) — the zero-binding
- * edge every metric-catalog-only entry has. The fixtures carry one `sources`
- * entry per widget; the live entries carry four for the whole entry. The
- * difference is inert here because `WidgetEditor` renders no `sources`
- * (`F3.61`); the fixture carries them only so a widget is not a bare tile.
+ * edge every metric-catalog-only entry has. **The fixtures now carry one
+ * *kind* per widget, bindings or a source but never both** (`F3.61`): the
+ * contract refuses a widget carrying both, so `w0` and `w9` — the unbound
+ * pair — carry the one catalog source that every bound widget used to carry
+ * too, and a bound widget now carries no source. The label the viewer
+ * renders for that source is the positive control in case 1 (`F3.61` Task
+ * 5).
  */
 
 const admin: AuthUser = {
@@ -88,7 +91,7 @@ function stockWidget(index: number, bound: boolean): unknown {
     bindings: bound
       ? [{ assetRoleCode: index === 3 ? "meter" : "pump", pointKey: index === 3 ? "kw" : `p${index}`, pointRole: "primary", sortOrder: 0 }]
       : [],
-    sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+    sources: bound ? [] : [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
   };
 }
 

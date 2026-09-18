@@ -157,6 +157,12 @@ export const sectionTemplateWidgetIdentitySchema = z
    * `AssetRoleBindingPicker.add()` clears the point key and keeps the role.
    * `dashboards.schema.ts` holds `noDuplicateBindings` for the same reason one
    * level down. Found by the `F3.36` correctness review.
+   *
+   * **Rule 3 exists because `F3.61` gives the editor two pickers.** The screen
+   * hides one when the other is used, and this is the rule that stops a
+   * `PATCH` from storing what the screen cannot draw —
+   * `dashboards.schema.ts`'s `exactlyOneBindingKind` one level up, minus the
+   * *neither* half, because *Add widget* creates that state.
    */
   .superRefine((widget, ctx) => {
     if (widget.gridX + widget.gridW > DASHBOARD_GRID.columns) {
@@ -174,6 +180,13 @@ export const sectionTemplateWidgetIdentitySchema = z
         path: ["bindings"],
       });
     }
+    if (widget.bindings.length > 0 && widget.sources.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "a widget binds asset roles or catalog sources, never both — remove one kind",
+        path: ["sources"],
+      });
+    }
   })
   // AFTER the refinement, never before — ADR 0029 Amendment 1 fact F: a
   // description attached before it lands on the inner schema and is silently
@@ -181,7 +194,7 @@ export const sectionTemplateWidgetIdentitySchema = z
   // without this the generated document is strictly more permissive than the API
   // and a caller who trusted it meets a 400 the document calls impossible.
   .describe(
-    `A section template widget. Two rules the document cannot express: the widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas (gridX + gridW), and no two bindings may name the same asset role and point key.`,
+    `A section template widget. Three rules the document cannot express: the widget must fit inside the ${DASHBOARD_GRID.columns}-column canvas (gridX + gridW), no two bindings may name the same asset role and point key, and a widget binds asset roles or catalog sources, never both.`,
   );
 
 /**
