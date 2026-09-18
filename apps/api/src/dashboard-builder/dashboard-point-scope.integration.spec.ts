@@ -100,7 +100,8 @@ export async function assertFleetPoolExcludesForeignBinding(
 }
 
 /** Positive, both pools: a legitimate same-organization binding resolves with the correct
- * assetId/pointKey/unit — proven independently on each pool. */
+ * assetId/assetCode/pointKey — proven independently on each pool. `assetCode` (ADR 0069) rides
+ * the same `bms.assets` join and the same predicate, so the label is proven where the id is. */
 export async function assertLegitimateBindingResolvesOnBothPools(
   tenantDb: BmsDb,
   fleetDb: BmsDb,
@@ -109,6 +110,7 @@ export async function assertLegitimateBindingResolvesOnBothPools(
   legitEskomPointId: string,
   expectedAssetId: string,
   expectedPointKey: string,
+  expectedAssetCode: string,
 ): Promise<void> {
   const onTenant = await withTenant(tenantDb, eskomOrgId, (tx) =>
     resolveBoundPoints(tx, eskomOrgId, [widgetId]),
@@ -117,12 +119,14 @@ export async function assertLegitimateBindingResolvesOnBothPools(
   expect(tenantHit, "the legitimate binding must resolve on the tenant pool").toBeDefined();
   expect(tenantHit?.assetId).toBe(expectedAssetId);
   expect(tenantHit?.pointKey).toBe(expectedPointKey);
+  expect(tenantHit?.assetCode, "ADR 0069 — the joined assets.code on the tenant pool").toBe(expectedAssetCode);
 
   const onFleet = await resolveBoundPoints(fleetDb, eskomOrgId, [widgetId]);
   const fleetHit = onFleet.find((point) => point.pointId === legitEskomPointId);
   expect(fleetHit, "the legitimate binding must resolve on the fleet pool").toBeDefined();
   expect(fleetHit?.assetId).toBe(expectedAssetId);
   expect(fleetHit?.pointKey).toBe(expectedPointKey);
+  expect(fleetHit?.assetCode, "ADR 0069 — the joined assets.code on the fleet pool").toBe(expectedAssetCode);
 }
 
 /**

@@ -666,14 +666,17 @@ export const duplicateColumnMessage = (column: string): string =>
  * read. A response contract states what the store can hold; the write bound belongs to
  * `F3.1b`.
  *
- * **`assetId`/`pointKey`/`unit` widened in by `F3.1b`.** Without them a caller cannot build the
- * `pointRef` (`encodePointRef`) `GET /telemetry/points/:pointRef/recent` needs, and `F3.1c`
- * would need a second round trip per point just to render one binding. Bounds match
- * `bms.asset_points`' own columns exactly — `assetId` a uuid FK, `pointKey varchar(128)`,
- * `unit varchar(32)` nullable — because §4.8 forbids a response contract asserting what the
- * store cannot hold. This is also what makes `F3.1b`'s Task 5 organization guard load-bearing:
- * `assetId` is the value a caller turns straight into a `telemetry.*` read, so a foreign one
- * leaving this API is a cross-tenant telemetry read one HTTP call later.
+ * **`assetId`/`pointKey`/`unit` widened in by `F3.1b`; `assetCode` by `F3.43` (ADR 0069).** Without
+ * the first three a caller cannot build the `pointRef` (`encodePointRef`) that
+ * `GET /telemetry/points/:pointRef/recent` needs. `assetCode` is the one human-readable asset
+ * field the DTO carries: it rides the `bms.assets` join `resolveBoundPoints` already makes for its
+ * organization predicate, so an asset-qualified series name costs no second round trip — which is
+ * why ADR 0069 widened the contract rather than adding a fetch. Bounds match the columns exactly —
+ * `assetId` a uuid FK, `assetCode varchar(64)`, `pointKey varchar(128)`, `unit varchar(32)`
+ * nullable — because §4.8 forbids a response contract asserting what the store cannot hold. This is
+ * also what makes `F3.1b`'s Task 5 organization guard load-bearing: `assetId` is the value a caller
+ * turns straight into a `telemetry.*` read, so a foreign one leaving this API is a cross-tenant
+ * telemetry read one HTTP call later; `assetCode` is protected by the same predicate.
  */
 export const dashboardWidgetPointDtoSchema = z
   .object({
@@ -682,6 +685,11 @@ export const dashboardWidgetPointDtoSchema = z
     role: widgetPointRoleSchema,
     sortOrder: z.number().int(),
     assetId: z.string().uuid(),
+    // ADR 0069 — the asset's own code, from the `bms.assets` join `resolveBoundPoints`
+    // already makes. Bound to the column (`varchar(64)`, §4.8) and required, never
+    // nullable: the join is inner, so a binding whose asset does not resolve is not
+    // returned at all rather than returned with a null label.
+    assetCode: z.string().max(64),
     pointKey: z.string().max(128),
     unit: z.string().max(32).nullable(),
   });

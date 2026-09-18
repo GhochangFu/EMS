@@ -168,6 +168,7 @@ export function runDashboardBuilderTests(): void {
         role: "series",
         sortOrder: 0,
         assetId: "88888888-8888-4888-8888-888888888888",
+        assetCode: "BRK-01",
         pointKey: "kw",
         unit: "kW",
       },
@@ -177,6 +178,7 @@ export function runDashboardBuilderTests(): void {
         role: "series",
         sortOrder: 1,
         assetId: "99999999-9999-4999-8999-999999999999",
+        assetCode: "BRK-02",
         pointKey: "kwh",
         unit: null,
       },
@@ -539,6 +541,7 @@ export function runDashboardWidgetPointDtoTests(): void {
     role: "primary",
     sortOrder: 0,
     assetId: "88888888-8888-4888-8888-888888888888",
+    assetCode: "BRK-01",
     pointKey: "kw",
     unit: "kW",
   };
@@ -556,6 +559,16 @@ export function runDashboardWidgetPointDtoTests(): void {
     dashboardWidgetPointDtoSchema,
     { ...point, assetId: undefined },
     "a point binding missing assetId must be refused — without it a caller cannot build a pointRef",
+  );
+  expectRejects(
+    dashboardWidgetPointDtoSchema,
+    { ...point, assetCode: undefined },
+    "ADR 0069 — a point binding missing assetCode must be refused; the legend has nothing else to name a series with",
+  );
+  expectRejects(
+    dashboardWidgetPointDtoSchema,
+    { ...point, assetCode: "x".repeat(65) },
+    "ADR 0069 — assetCode is bound to bms.assets.code (varchar 64)",
   );
 }
 

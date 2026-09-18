@@ -3,6 +3,9 @@ import { describe, it } from "vitest";
 import {
   runChartSeriesOrderingTests,
   runPointRefsForTests,
+  runSeriesNameForTests,
+  runSeriesNameFormTests,
+  runSeriesNamesAreDistinctTests,
   runSingleValueWidgetTests,
   runStalenessTests,
   runZeroBindingsTests,
@@ -28,5 +31,17 @@ describe("dashboard widget data", () => {
 
   it("ages a reading through the ADR 0027 staleness gate rather than showing it as live forever", () => {
     runStalenessTests();
+  });
+
+  it("F3.43 — two series that share a pointKey on different assets carry distinct names", () => {
+    runSeriesNamesAreDistinctTests();
+  });
+
+  it("F3.43 — a series is named <assetCode> · <pointKey>", () => {
+    runSeriesNameFormTests();
+  });
+
+  it("F3.43 — seriesNameFor composes the two fields with a middle dot", () => {
+    runSeriesNameForTests();
   });
 });

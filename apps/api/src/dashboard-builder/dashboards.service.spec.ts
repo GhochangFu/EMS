@@ -1,6 +1,10 @@
 import { ConflictException } from "@nestjs/common";
 
-import { dashboardSummaryDtoSchema, dashboardWidgetDtoSchema } from "@bms/shared";
+import {
+  dashboardSummaryDtoSchema,
+  dashboardWidgetDtoSchema,
+  dashboardWidgetPointDtoSchema,
+} from "@bms/shared";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
@@ -72,6 +76,7 @@ const resolvedPoint = {
   role: "primary",
   sortOrder: 0,
   assetId: ASSET_A,
+  assetCode: "BRK-01",
   pointKey: "kw",
   unit: "kW",
 };
@@ -143,6 +148,22 @@ export function runDashboardsServiceUnitTests(): void {
   assert(
     widget.points[0]?.assetId === ASSET_A && widget.points[0]?.pointKey === "kw",
     "mapDashboardWidget must carry the resolved assetId/pointKey through onto each point",
+  );
+  // ADR 0069 decision 2. The `merged as DashboardWidgetDto` cast lets an omitted key compile — that
+  // is how `sources` shipped defaulted under F3.35 — so the gate is a parse, not the compiler.
+  // The widget-level parse above is that gate and fails FIRST on an omitted `assetCode` (measured:
+  // `path ["points",0,"assetCode"]`); this one restates it at the point shape so a reader of this
+  // spec finds the point contract named, not so a mutation reaches it.
+  const pointParsed = dashboardWidgetPointDtoSchema.safeParse(widget.points[0]);
+  assert(
+    pointParsed.success === true,
+    `mapDashboardWidget's point must parse against dashboardWidgetPointDtoSchema: ${JSON.stringify(
+      pointParsed.success ? null : pointParsed.error.issues,
+    )}`,
+  );
+  assert(
+    widget.points[0]?.assetCode === "BRK-01",
+    `mapDashboardWidget must copy the joined assetCode through, got ${String(widget.points[0]?.assetCode)}`,
   );
 
   // -------------------------------------------------------------------------
