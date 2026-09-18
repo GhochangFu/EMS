@@ -11,6 +11,7 @@ import {
   assertEveryItemBelongsToTheAsset,
   assertEveryItemParsesUnderThePickerDto,
   assertEveryScopeGroupCarriesItsOwnOrganizationId,
+  assertPickedValuesMatchSql,
   assertListPointsEqualsTheAdminProjection,
   assertListPointsReturnsTheActivePointsOfTheAsset,
   assertNoItemCarriesAnAdminOnlyField,
@@ -110,6 +111,10 @@ describe.skipIf(!connectionString)("F3.63 — the asset point read beside the ma
 
   it("listPoints deep-equals the admin list's projection, picked to the five fields", async () => {
     await assertListPointsEqualsTheAdminProjection(pools);
+  }, 60_000);
+
+  it("the five picked values match bms.asset_points joined to bms.assets", async () => {
+    await assertPickedValuesMatchSql(pools);
   }, 60_000);
 
   it("every group in /auth/me's scope carries its own bms.asset_groups organization_id", async () => {

@@ -319,6 +319,47 @@ export async function assertListPointsEqualsTheAdminProjection(pools: Pools): Pr
 }
 
 /**
+ * The five picked values, read back from SQL — not from the admin projection.
+ * {@link assertListPointsEqualsTheAdminProjection} applies the same pick to
+ * both sides, so a wrong field INSIDE the pick (`assetName: dto.assetCode`)
+ * is invisible to it, and the key-set case sees names, not values. This case
+ * builds the expected rows from `bms.asset_points ⋈ bms.assets` and
+ * deep-equals the read. Mutation: swap `assetName` for the code in
+ * `pickAssetPointPickerRow` ⇒ red.
+ */
+export async function assertPickedValuesMatchSql(pools: Pools): Promise<void> {
+  const { assets } = services(pools);
+  const id = await ownAssetId(pools.pool);
+  const { rows } = await pools.pool.query<{
+    id: string;
+    asset_id: string;
+    asset_name: string;
+    point_key: string;
+    unit: string | null;
+  }>(
+    `SELECT p.id, p.asset_id, a.name AS asset_name, p.point_key, p.unit
+       FROM bms.asset_points p JOIN bms.assets a ON a.id = p.asset_id
+      WHERE p.asset_id = $1 AND p.active
+      ORDER BY p.point_key`,
+    [id],
+  );
+  assert(rows.length > 0, "the fixture asset has no active point in SQL");
+  const expected = rows.map((row) => ({
+    id: row.id,
+    assetId: row.asset_id,
+    assetName: row.asset_name,
+    pointKey: row.point_key,
+    unit: row.unit,
+  }));
+  const { items } = await assets.listPoints(id);
+  const left = JSON.stringify(expected);
+  const right = JSON.stringify(items);
+  assert(left === right, `listPoints diverges from SQL:
+ sql:  ${left}
+ read: ${right}`);
+}
+
+/**
  * Amendment 6 — `organizationId` travels with each group in `/auth/me`'s
  * `scope.assetGroups`, and it is the GROUP's organization, read back from
  * `bms.asset_groups` by id. Moved here from `assertAssetGroupScope`
