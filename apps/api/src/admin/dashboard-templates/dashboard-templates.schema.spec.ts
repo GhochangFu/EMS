@@ -11,6 +11,9 @@ import { updateDashboardTemplateBodySchema } from "./dashboard-templates.schema"
  * the rule reaches the body the global `@Catch(ZodError)` filter turns into a
  * 400, not merely that the underlying schema refuses the value.
  *
+ * One exported function per claim, one `it()` per function in the sibling
+ * `.test.ts` — so a failing claim reddens only its own `it()`.
+ *
  * Assertions live here; `dashboard-templates.schema.test.ts` is the vitest
  * entry point (ADR 0014).
  */
@@ -74,7 +77,7 @@ function widget(overrides: Record<string, unknown> = {}): unknown {
   };
 }
 
-export function runUpdateBodyTemplateSourceRulesTests(): void {
+export function rejectsAPatchBodyWhoseWidgetCarriesBothKinds(): void {
   expectRejectsAt(
     updateDashboardTemplateBodySchema,
     { content: { widgets: [widget({ bindings: [ROLE], sources: [METRIC] })] } },
@@ -82,15 +85,31 @@ export function runUpdateBodyTemplateSourceRulesTests(): void {
     /never both/,
     "a PATCH body whose one widget carries both kinds",
   );
+}
 
-  // Adjacent positive control — the same body shape, legal.
+/** The positive control the plan intended: the same body as the both-kinds
+ * case, minus `sources` — a `bindings: [ROLE]`-only widget parses. */
+export function acceptsAPatchBodyWhoseWidgetCarriesOnlyARoleBinding(): void {
+  expectAccepts(
+    updateDashboardTemplateBodySchema,
+    { content: { widgets: [widget({ bindings: [ROLE] })] } },
+    "a PATCH body whose widget carries only a role binding",
+  );
+}
+
+/** A second, weaker control: neither kind also parses. Kept alongside the
+ * role-only control above, not instead of it — the role-only case is what
+ * mirrors the both-kinds case's shape (same body, `sources` removed). */
+export function acceptsAPatchBodyWhoseWidgetCarriesNeitherKind(): void {
   expectAccepts(
     updateDashboardTemplateBodySchema,
     { content: { widgets: [widget({ sources: [] })] } },
     "a PATCH body whose widget carries neither kind",
   );
+}
 
-  // Amendment 1 — the second node reaches the boundary the same way.
+/** Amendment 1 — the second node reaches the boundary the same way. */
+export function rejectsAPatchBodyWhoseChartWidgetCarriesAMetricSource(): void {
   expectRejectsAt(
     updateDashboardTemplateBodySchema,
     {

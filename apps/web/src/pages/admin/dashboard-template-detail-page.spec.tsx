@@ -193,10 +193,16 @@ export async function addWidgetAddsAWidgetEditor(): Promise<void> {
 /**
  * `F3.61` — the round-trip through `updateWidget`: the component spec asserts
  * the patch `WidgetEditor` emits; this asserts the page's state took it and
- * re-rendered — the metric is listed by its label, the role picker is gone
- * (the two kinds are exclusive, and the contract refuses both) and the
- * metric's own `×` is there. `findByText` on the label waits on what the
- * state change produces, not on an element that renders before it.
+ * re-rendered — the metric's own `×` is there, the role picker is gone (the
+ * two kinds are exclusive, and the contract refuses both) and the metric is
+ * listed by its label. The positive control is `findByRole` on the `×`
+ * button, not `findByText` on the label: `MetricSourcePicker`'s own
+ * `<option>Active alarms</option>` renders the label text before the add, so
+ * `findByText("Active alarms")` resolves at once and is not a live control
+ * (measured: dropping `sources` from `updateWidget`'s patch does not redden
+ * it — the failure lands on the role-picker absence instead). The `×`
+ * button's aria-label only exists once the state update lands a bound
+ * source, so it is what the state change actually produces.
  */
 export async function addingAMetricListsItAndHidesTheRolePicker(): Promise<void> {
   stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()) });
@@ -208,12 +214,14 @@ export async function addingAMetricListsItAndHidesTheRolePicker(): Promise<void>
     "alarms.active.count",
   );
 
-  expect(await screen.findByText("Active alarms")).toBeInTheDocument();
+  expect(
+    await screen.findByRole("button", { name: "Remove metric Active alarms" }),
+  ).toBeInTheDocument();
   expect(
     screen.queryByRole("combobox", { name: "Asset role" }),
     "the role picker stayed on screen beside a bound metric",
   ).toBeNull();
-  expect(screen.getByRole("button", { name: "Remove metric Active alarms" })).toBeInTheDocument();
+  expect(screen.getByText("Active alarms")).toBeInTheDocument();
 }
 
 /**

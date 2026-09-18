@@ -29,12 +29,17 @@ const CONTRACT_PATH = `${repoRoot}${CONTRACT_FILE}`;
  * rule with no shape or cap to restate, and scanning the whole file would
  * make this test responsible for unrelated code.
  *
- * **Proven red twice, by hand, before this file gated the build**: (1)
+ * **Proven red by hand, before this file gated the build**: (1)
  * `WIDGET_SOURCE_SHAPES[widget.widgetType]` replaced with `["metric"]` —
- * reddened the "no restated shape literal" assertion; (2) the cap read
+ * measured: reddens *both* the "reads WIDGET_SOURCE_SHAPES/CARDINALITY/
+ * METRIC_CATALOG by lookup" assertion and the "no restated shape literal"
+ * assertion in the same run, not the shape assertion alone. (2) the cap read
  * (`WIDGET_SOURCE_CARDINALITY[widget.widgetType].max`) replaced with the
- * literal `1` — reddened the "no restated cap number" assertion. Both
- * reverted before commit.
+ * literal `1` — measured: reddens only the "reads … by lookup" assertion,
+ * not the "no restated cap number" assertion. (3) hand-writing `at most 1`
+ * into the message template string (leaving the `WIDGET_SOURCE_CARDINALITY[`
+ * read in place) — measured: reddens the "no restated cap number" assertion
+ * on its own, which (2) does not reach. All three reverted before commit.
  */
 
 /** Strips block and line comments before scanning — the repo idiom at

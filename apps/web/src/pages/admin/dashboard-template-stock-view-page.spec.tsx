@@ -271,14 +271,18 @@ export async function everyWidgetRendersDisabledWithNoWritableControl(): Promise
   ).toBeNull();
 
   // `F3.61` — the metric label is the positive control for the two absences
-  // that follow; it comes first so an `editable={true}` mutation reddens on
-  // an absence and not on a missing render. `w0` and `w9` are the unbound
-  // pair and each carries the one source, so the label appears twice — and
-  // under that mutation each grows a `×`, so the absence is `queryAllByRole`
-  // rather than a `queryByRole` that throws on the second match. The picker
-  // absence is a guard, not the mutation's target: with every fixture widget
-  // either role-bound or at `sources.max`, the editor's own gates hide the
-  // picker whatever `editable` says (measured). The disabled-input sweep
+  // that follow; it comes first so a mutation reddens on an absence and not
+  // on a missing render. `w0` and `w9` are the unbound pair and each carries
+  // the one source, so the label appears twice — and under a mutation that
+  // drops the metric `×`'s own `editable` guard in `widget-editor.tsx` each
+  // grows a `×`, so the absence is `queryAllByRole` rather than a
+  // `queryByRole` that throws on the second match. A blanket `editable={true}`
+  // flip does not reach this pair: measured, it dies earlier, on the
+  // pre-existing `Remove` assertion above (line 261) — the metric `×`
+  // absence is alive only under the narrower, single-guard mutation. The
+  // picker absence is a guard, not the mutation's target: with every fixture
+  // widget either role-bound or at `sources.max`, the editor's own gates hide
+  // the picker whatever `editable` says (measured). The disabled-input sweep
   // below cannot see either control — the block adds a `<select>` and a
   // `<button>`, never an `<input>` — which is why they are asserted by role.
   expect(within(card).getAllByText("Active alarms")).toHaveLength(UNBOUND_WIDGET_COUNT);

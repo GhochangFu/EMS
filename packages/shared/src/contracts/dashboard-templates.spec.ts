@@ -11,6 +11,13 @@ import {
  * `config.columns` must name only columns its bound dataset declares (three
  * more rules, on `sectionTemplateWidgetSchema`).
  *
+ * One exported function per case, one `it()` per function in the sibling
+ * `.test.ts` — so a failing case reddens only its own `it()` and every later
+ * claim still runs. Before this split all fourteen cases sat behind two
+ * `it()`s; measured, `const cap = 1` reddened case 7 alone and cases 8–13
+ * never ran in the same test run (`throw` inside `assert` stops the
+ * enclosing function).
+ *
  * Assertions live here; `dashboard-templates.test.ts` is the vitest entry
  * point (ADR 0014).
  */
@@ -83,8 +90,8 @@ function widget(overrides: Record<string, unknown> = {}): unknown {
   };
 }
 
-export function runSectionTemplateWidgetIdentityTests(): void {
-  // Case 1
+/** Case 1 */
+export function rejectsAWidgetCarryingBothKinds(): void {
   expectRejectsAt(
     sectionTemplateWidgetSchema,
     widget({ bindings: [ROLE], sources: [METRIC] }),
@@ -92,15 +99,19 @@ export function runSectionTemplateWidgetIdentityTests(): void {
     /never both/,
     "a widget carrying both kinds",
   );
+}
 
-  // Case 2 — the positive control for case 1: *Add widget*'s own shape.
+/** Case 2 — the positive control for case 1: *Add widget*'s own shape. */
+export function acceptsAWidgetCarryingNeitherKind(): void {
   expectAccepts(
     sectionTemplateWidgetSchema,
     widget({ bindings: [], sources: [] }),
     "a widget carrying neither kind",
   );
+}
 
-  // Case 3
+/** Case 3 */
+export function acceptsAWidgetCarryingEitherKindAlone(): void {
   expectAccepts(
     sectionTemplateWidgetSchema,
     widget({ bindings: [ROLE] }),
@@ -111,8 +122,10 @@ export function runSectionTemplateWidgetIdentityTests(): void {
     widget({ sources: [METRIC] }),
     "a widget carrying only a catalog source",
   );
+}
 
-  // Case 4
+/** Case 4 */
+export function identitySchemaDescribesAllThreeRules(): void {
   assert(
     typeof sectionTemplateWidgetIdentitySchema.description === "string",
     "sectionTemplateWidgetIdentitySchema must carry a .describe() after its superRefine " +
@@ -128,8 +141,10 @@ export function runSectionTemplateWidgetIdentityTests(): void {
     /never both/.test(description),
     `the description must name the never-both rule, got "${description}"`,
   );
+}
 
-  // Case 5 — the composition the API bodies wrap.
+/** Case 5 — the composition the API bodies wrap. */
+export function rejectsBothKindsInsideSectionTemplateContentSchema(): void {
   expectRejectsAt(
     sectionTemplateContentSchema,
     { widgets: [widget({ bindings: [ROLE], sources: [METRIC] })] },
@@ -178,8 +193,8 @@ function tableWidget(overrides: Record<string, unknown> = {}): unknown {
   };
 }
 
-export function runTemplateWidgetSourceRulesTests(): void {
-  // Case 6
+/** Case 6 */
+export function rejectsAValueTileBoundToADataset(): void {
   expectRejectsAt(
     sectionTemplateContentSchema,
     tile({ sources: [DATASET] }),
@@ -187,18 +202,18 @@ export function runTemplateWidgetSourceRulesTests(): void {
     /returns rows/,
     "a value_tile bound to a dataset",
   );
-  {
-    const result = sectionTemplateContentSchema.safeParse(tile({ sources: [DATASET] }));
-    const messages = (result.success ? [] : result.error.issues).map((i) => i.message).join(" | ");
-    assert(
-      /Widget "w"/.test(messages),
-      `the message must name the widget key, got "${messages}"`,
-    );
-  }
+  const result = sectionTemplateContentSchema.safeParse(tile({ sources: [DATASET] }));
+  const messages = (result.success ? [] : result.error.issues).map((i) => i.message).join(" | ");
+  assert(
+    /Widget "w"/.test(messages),
+    `the message must name the widget key, got "${messages}"`,
+  );
+}
 
-  // Case 7 — assert on ["widgets", 0, "sources"] specifically: the deeper shape
-  // issue at ["widgets", 0, "sources", 0, "catalogKey"] also fires on this parse
-  // and must not be what satisfies this claim.
+/** Case 7 — assert on ["widgets", 0, "sources"] specifically: the deeper shape
+ * issue at ["widgets", 0, "sources", 0, "catalogKey"] also fires on this parse
+ * and must not be what satisfies this claim. */
+export function rejectsAnySourceOnAChart(): void {
   expectRejectsAt(
     sectionTemplateContentSchema,
     chart({ sources: [METRIC] }),
@@ -206,9 +221,11 @@ export function runTemplateWidgetSourceRulesTests(): void {
     /at most 0/,
     "any source on a chart",
   );
+}
 
-  // Case 8 — the neighbour (case 3 of the identity tests, one source on a tile)
-  // is the control: a `>=` mutation reddens it, not this case.
+/** Case 8 — the neighbour (case 3, one source on a tile) is the control: a
+ * `>=` mutation reddens it, not this case. */
+export function rejectsTwoSourcesOnAValueTile(): void {
   expectRejectsAt(
     sectionTemplateContentSchema,
     tile({ sources: [METRIC, DATASET] }),
@@ -216,8 +233,10 @@ export function runTemplateWidgetSourceRulesTests(): void {
     /at most 1/,
     "two sources on a value_tile",
   );
+}
 
-  // Case 9
+/** Case 9 */
+export function rejectsATableColumnItsDatasetDoesNotDeclare(): void {
   expectRejectsAt(
     sectionTemplateContentSchema,
     tableWidget({ sources: [DATASET], config: { columns: ["assetCode", "nope"] } }),
@@ -225,15 +244,19 @@ export function runTemplateWidgetSourceRulesTests(): void {
     /does not have a column named "nope"/,
     "a table column its bound dataset does not declare",
   );
+}
 
-  // Case 10
+/** Case 10 */
+export function acceptsDeclaredColumnsOfTheBoundDataset(): void {
   expectAccepts(
     sectionTemplateContentSchema,
     tableWidget({ sources: [DATASET2], config: { columns: ["status", "dueAt"] } }),
     "declared columns of the bound dataset (workorders.open, not alarms.active's)",
   );
+}
 
-  // Case 11
+/** Case 11 */
+export function rejectsTheSameColumnChosenTwice(): void {
   expectRejectsAt(
     sectionTemplateContentSchema,
     tableWidget({ sources: [DATASET], config: { columns: ["assetCode", "assetCode"] } }),
@@ -241,30 +264,36 @@ export function runTemplateWidgetSourceRulesTests(): void {
     /already chosen/,
     "the same column chosen twice",
   );
+}
 
-  // Case 12 — the state Task 4's remove control produces (§11.2.3: no minimum).
+/** Case 12 — the state Task 4's remove control produces (§11.2.3: no minimum). */
+export function acceptsATableWithNoSourceAndNoColumns(): void {
   expectAccepts(
     sectionTemplateContentSchema,
     tableWidget(),
     "a table with no source and no columns",
   );
+}
 
-  // The R7 guard (dashboards.schema.ts:582-588's own load-bearing guard,
-  // mirrored here): `config.columns` set with no source bound must not throw
-  // out of `safeParse`. Not a numbered plan case — found reviewing the guard
-  // while building R7, reported per the caller's TDD instruction.
-  {
-    const result = sectionTemplateContentSchema.safeParse(
-      tableWidget({ config: { columns: ["assetCode"] } }),
-    );
-    assert(
-      result.success === true,
-      "a table with config.columns set but no source must not throw out of safeParse " +
-        `(the R7 early-return guard) — got ${JSON.stringify(result.success ? null : result.error.issues)}`,
-    );
-  }
+/** The R7 guard (dashboards.schema.ts:582-588's own load-bearing guard,
+ * mirrored here): `config.columns` set with no source bound must not throw
+ * out of `safeParse`. Not a numbered plan case — found reviewing the guard
+ * while building R7, reported per the caller's TDD instruction. Kept as its
+ * own case (not folded into case 12): it asserts a different failure mode
+ * (no throw) than case 12's success-parse claim. */
+export function tableWithColumnsSetButNoSourceDoesNotThrow(): void {
+  const result = sectionTemplateContentSchema.safeParse(
+    tableWidget({ config: { columns: ["assetCode"] } }),
+  );
+  assert(
+    result.success === true,
+    "a table with config.columns set but no source must not throw out of safeParse " +
+      `(the R7 early-return guard) — got ${JSON.stringify(result.success ? null : result.error.issues)}`,
+  );
+}
 
-  // Case 13
+/** Case 13 */
+export function widgetSchemaDescribesShapeCapAndColumnsRules(): void {
   assert(
     typeof sectionTemplateWidgetSchema.description === "string",
     "sectionTemplateWidgetSchema must carry a .describe() after its superRefine " +
