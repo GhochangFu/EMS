@@ -183,12 +183,19 @@ export async function createFixture(pools: Pools): Promise<Fixture> {
  */
 export async function dropFixture(pools: Pools, fx: Fixture): Promise<void> {
   const { pool } = pools;
+  // Every delete runs before any count is judged: a short count on the first
+  // table must not leave the two below it in place (a leaked fixture breaks
+  // another suite's cleanup on an FK), and the message must name the count,
+  // not the FK error the key unregistration would then hit.
+  const short: string[] = [];
   const deleteAll = async (table: string, ids: readonly string[]): Promise<void> => {
     if (ids.length === 0) {
       return;
     }
     const { rowCount } = await pool.query(`DELETE FROM bms.${table} WHERE id = ANY($1::uuid[])`, [ids]);
-    assert(rowCount === ids.length, `bms.${table}: deleted ${String(rowCount)} fixture row(s), expected ${ids.length}`);
+    if (rowCount !== ids.length) {
+      short.push(`bms.${table}: deleted ${String(rowCount)} fixture row(s), expected ${ids.length}`);
+    }
   };
   try {
     await deleteAll("asset_points", fx.pointIds);
@@ -199,6 +206,7 @@ export async function dropFixture(pools: Pools, fx: Fixture): Promise<void> {
       await fx.unregisterKeys();
     }
   }
+  assert(short.length === 0, short.join("\n"));
 }
 
 /**
