@@ -61,7 +61,6 @@ describe.skipIf(!connectionString)(
     let legitEskomPointKey: string;
     let phewbPointId: string;
     let phewbAssetId: string;
-    let phewbPointKey: string;
 
     beforeAll(async () => {
       const url = connectionString as string;
@@ -110,7 +109,6 @@ describe.skipIf(!connectionString)(
       legitEskomPointKey = eskomPoint.rows[0].point_key;
       phewbPointId = phewbPoint.rows[0].id;
       phewbAssetId = phewbPoint.rows[0].asset_id;
-      phewbPointKey = phewbPoint.rows[0].point_key;
 
       // The ESKOM dashboard + widget: ordinary rows, correctly scoped, via SET ROLE-equivalent
       // superuser insert for simplicity — RLS has nothing to say about a same-org row.
@@ -170,7 +168,7 @@ describe.skipIf(!connectionString)(
         widgetId,
         legitEskomPointId,
         phewbAssetId,
-        phewbPointKey,
+        phewbPointId,
       );
     });
 
@@ -181,7 +179,7 @@ describe.skipIf(!connectionString)(
         widgetId,
         legitEskomPointId,
         phewbAssetId,
-        phewbPointKey,
+        phewbPointId,
       );
     });
 
