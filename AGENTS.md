@@ -365,6 +365,16 @@
 > and `canManageDashboard` are unedited; the amendment found the API already
 > admits `asset_group_admin` on the group and asset arms and defers that
 > role's UI path to `F3.63`. Not a §6 promotion.
+> **That UI path is open** (**ADR 0047** Amendment 6, `F3.63`, 2026-09-18,
+> PRs #479/#480/#481): `asset_group_admin` reaches the dashboard builder
+> through `DashboardAuthorRoute` (on `canAuthorDashboards`, not `AdminRoute`),
+> authors the group scope from its own `/auth/me` groups, and binds points
+> through `GET /assets/:assetId/points` — a `canReadAsset`-gated read on the
+> non-admin `assets` module that returns a five-field picker DTO. The editor
+> gains a read-only `asset` arm for ADR 0067 dashboards. **The master-data
+> boundary is still closed**: `isMasterDataRole`, `requireMasterDataUser`,
+> `canManageAsset`, `canManageDashboard`, `AdminRoute`'s membership and every
+> `/admin/*` read gate are unedited. Not a §6 promotion.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
