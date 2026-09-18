@@ -4,8 +4,10 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addWidgetAddsAWidgetEditor,
+  deleteDraftLandsOnTheList,
   draftShowsPublishAndDelete,
   publishedShowsArchiveAndInstantiate,
+  refusedDeleteStaysOnThePage,
   resolutionReportNamesAPartialWidget,
 } from "./dashboard-template-detail-page.spec";
 
@@ -34,5 +36,13 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("adding a widget grows the canvas with a vocabulary-fed role picker", async () => {
     await addWidgetAddsAWidgetEditor();
+  });
+
+  it("a successful Delete draft lands on the template list (F3.62)", async () => {
+    await deleteDraftLandsOnTheList();
+  });
+
+  it("a refused Delete draft stays on the page with the error (F3.62)", async () => {
+    await refusedDeleteStaysOnThePage();
   });
 });
