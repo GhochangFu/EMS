@@ -325,8 +325,9 @@ export const chartConfigSchema = z
  * A ceiling on `tableConfigSchema.columns`, and deliberately not the real bound.
  *
  * The real bound is the bound dataset's own `METRIC_CATALOG[key].columns`, which is a
- * cross-field rule between `config` and `sources` and therefore lives on the write path
- * (`dashboards.schema.ts`), exactly where `eachSourceFitsTheWidget` lives. This number only
+ * cross-field rule between `config` and `sources` and therefore lives on both write paths —
+ * `dashboards.schema.ts` and the template contract's `sectionTemplateWidgetSchema` (`F3.61`) —
+ * exactly where `eachSourceFitsTheWidget` lives. This number only
  * refuses an absurd payload before that rule runs, so it is set above the longest declared
  * list (six, `workorders.open`) with headroom rather than at it — tightening it to six would
  * make a future seven-column dataset fail here with a message about a limit instead of there

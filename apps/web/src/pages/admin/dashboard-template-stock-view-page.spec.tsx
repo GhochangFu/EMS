@@ -23,11 +23,12 @@ import { DashboardTemplateStockViewPage } from "./dashboard-template-stock-view-
  * **What this file exists to hold.** The viewer renders repository data through
  * the same `DashboardCanvas` + `WidgetEditor` the authoring detail page uses,
  * with `editable={false}`. The thing that can silently stop being true is that
- * `false`: `WidgetEditor` keeps *Remove*, the binding `×` and the
- * `AssetRoleBindingPicker` under `{editable ? … : null}`, so a flipped flag
- * puts three writable controls on a screen with no save path. Case 1 is built
- * for that, with the ten widget keys and the `meter · kw` binding as the
- * positive control so an absence list cannot pass on an empty render.
+ * `false`: `WidgetEditor` keeps *Remove*, the binding `×`, the
+ * `AssetRoleBindingPicker`, the metric `×` and the `MetricSourcePicker`
+ * (`F3.61`) under `editable`, so a flipped flag puts five writable controls on
+ * a screen with no save path. Case 1 is built for that, with the ten widget
+ * keys, the `meter · kw` binding and the `Active alarms` metric label as the
+ * positive controls so an absence list cannot pass on an empty render.
  *
  * The fixtures are parsed through `stockDashboardTemplateDtoSchema`, so they
  * are real `StockDashboardTemplateDto`s rather than hand-typed lookalikes.
@@ -37,10 +38,13 @@ import { DashboardTemplateStockViewPage } from "./dashboard-template-stock-view-
  * fixture one per widget over eight, because the case counts widgets and
  * lists, never bindings per widget. `NO_BINDINGS` mirrors
  * `sustainability-overview` (four widgets, zero bindings) — the zero-binding
- * edge every metric-catalog-only entry has. The fixtures carry one `sources`
- * entry per widget; the live entries carry four for the whole entry. The
- * difference is inert here because `WidgetEditor` renders no `sources`
- * (`F3.61`); the fixture carries them only so a widget is not a bare tile.
+ * edge every metric-catalog-only entry has. **The fixtures now carry one
+ * *kind* per widget, bindings or a source but never both** (`F3.61`): the
+ * contract refuses a widget carrying both, so `w0` and `w9` — the unbound
+ * pair — carry the one catalog source that every bound widget used to carry
+ * too, and a bound widget now carries no source. The label the viewer
+ * renders for that source is the positive control in case 1 (`F3.61` Task
+ * 5).
  */
 
 const admin: AuthUser = {
@@ -62,6 +66,8 @@ const DRAFT_ID = "22222222-2222-4222-8222-222222222222";
 const PUMPING_CODE = "electrical-metered-pumping";
 const PUMPING_NAME = "Electrical — Metered Pumping";
 const PUMPING_WIDGET_COUNT = 10;
+/** `w0` and `w9` — the unbound pair, each carrying the one catalog source. */
+const UNBOUND_WIDGET_COUNT = 2;
 const NO_BINDINGS_CODE = "sustainability-overview";
 const NO_BINDINGS_NAME = "Sustainability overview";
 const NO_BINDINGS_WIDGET_COUNT = 4;
@@ -72,8 +78,8 @@ const INPUTS_PER_WIDGET = 5;
 /**
  * One `value_tile` widget. Four per row of the 12-column canvas, so
  * `gridX + gridW` never crosses the `superRefine` bound. `bound` adds one
- * role binding; every widget carries one metric-catalog source, which the
- * editor does not render (`F3.61`).
+ * role binding; an unbound widget carries one metric-catalog source instead,
+ * which the editor lists by its catalog label (`F3.61`).
  */
 function stockWidget(index: number, bound: boolean): unknown {
   return {
@@ -88,7 +94,7 @@ function stockWidget(index: number, bound: boolean): unknown {
     bindings: bound
       ? [{ assetRoleCode: index === 3 ? "meter" : "pump", pointKey: index === 3 ? "kw" : `p${index}`, pointRole: "primary", sortOrder: 0 }]
       : [],
-    sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+    sources: bound ? [] : [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
   };
 }
 
@@ -102,7 +108,7 @@ const PUMPING: StockDashboardTemplateDto = stockDashboardTemplateDtoSchema.parse
     // Eight bound out of ten — w0 and w9 are the unbound pair, so the last
     // widget renders with an empty list and still has to be on screen.
     widgets: Array.from({ length: PUMPING_WIDGET_COUNT }, (_unused, index) =>
-      stockWidget(index, index !== 0 && index !== 9),
+      stockWidget(index, index !== 0 && index !== PUMPING_WIDGET_COUNT - 1),
     ),
   },
 });
@@ -264,6 +270,31 @@ export async function everyWidgetRendersDisabledWithNoWritableControl(): Promise
     "the AssetRoleBindingPicker rendered — WidgetEditor's `editable` is no longer false",
   ).toBeNull();
 
+  // `F3.61` — the metric label is the positive control for the two absences
+  // that follow; it comes first so a mutation reddens on an absence and not
+  // on a missing render. `w0` and `w9` are the unbound pair and each carries
+  // the one source, so the label appears twice — and under a mutation that
+  // drops the metric `×`'s own `editable` guard in `widget-editor.tsx` each
+  // grows a `×`, so the absence is `queryAllByRole` rather than a
+  // `queryByRole` that throws on the second match. A blanket `editable={true}`
+  // flip does not reach this pair: measured, it dies earlier, on the
+  // pre-existing `Remove` assertion above (line 261) — the metric `×`
+  // absence is alive only under the narrower, single-guard mutation. The
+  // picker absence is a guard, not the mutation's target: with every fixture
+  // widget either role-bound or at `sources.max`, the editor's own gates hide
+  // the picker whatever `editable` says (measured). The disabled-input sweep
+  // below cannot see either control — the block adds a `<select>` and a
+  // `<button>`, never an `<input>` — which is why they are asserted by role.
+  expect(within(card).getAllByText("Active alarms")).toHaveLength(UNBOUND_WIDGET_COUNT);
+  expect(
+    screen.queryByRole("combobox", { name: "Add named metric" }),
+    "the MetricSourcePicker rendered — WidgetEditor's `editable` is no longer false",
+  ).toBeNull();
+  expect(
+    screen.queryAllByRole("button", { name: /^Remove metric/ }),
+    "the metric × rendered — WidgetEditor's `editable` is no longer false",
+  ).toHaveLength(0);
+
   const inputs = [...card.querySelectorAll<HTMLInputElement>("input")];
   expect(
     inputs.length,
@@ -301,7 +332,9 @@ export async function theHeaderNamesTheEntry(): Promise<void> {
 
 /**
  * Case 3 — the zero-binding entry renders: four keys, four `Bindings` labels,
- * and no binding row under any of them. The keys are the positive control.
+ * no binding row under any of them, and one metric row per widget (`F3.61`)
+ * — the read-only list is what a metric-only entry shows, not four empty
+ * lists. The keys are the positive control.
  */
 export async function theZeroBindingEntryRenders(): Promise<void> {
   stubApi([NO_BINDINGS]);
@@ -320,6 +353,10 @@ export async function theZeroBindingEntryRenders(): Promise<void> {
     within(card).queryAllByText(/ · /),
     "a binding row rendered for an entry that carries no bindings",
   ).toHaveLength(0);
+  expect(
+    within(card).getAllByText("Active alarms"),
+    "a metric-only entry must list its source on every widget",
+  ).toHaveLength(NO_BINDINGS_WIDGET_COUNT);
 }
 
 /**

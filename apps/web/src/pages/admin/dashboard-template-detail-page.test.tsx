@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addWidgetAddsAWidgetEditor,
+  addingAMetricListsItAndHidesTheRolePicker,
   deleteDraftLandsOnTheList,
   draftShowsPublishAndDelete,
   publishedShowsArchiveAndInstantiate,
@@ -36,6 +37,10 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("adding a widget grows the canvas with a vocabulary-fed role picker", async () => {
     await addWidgetAddsAWidgetEditor();
+  });
+
+  it("adding a metric lists it by label and hides the role picker (F3.61)", async () => {
+    await addingAMetricListsItAndHidesTheRolePicker();
   });
 
   it("a successful Delete draft lands on the template list (F3.62)", async () => {
