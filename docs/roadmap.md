@@ -5559,3 +5559,31 @@ env (579 files / 4038 tests); the compose database for the three API suites;
 the browser on the rebuilt images — the live legend read five distinct
 `<code> · kw` names where the row measured five copies of `kw`. Database
 N/A. Post-merge sweep clean. Unblocks nothing.
+
+### `F3.61` — the dashboard-template `WidgetEditor` renders and edits a widget's named metrics ✅ 2026-09-18
+
+PR [#489](https://github.com/GhochangFu/EMS/pull/489), squash `4d870035`.
+Created 2026-09-17 at the `F3.44` plan gate. `WidgetEditor` rendered
+`bindings` only, so a metric-catalog widget read as a widget with an empty
+Bindings list on both the authoring page and the stock viewer. It now carries
+a **Named metric** block mirroring `WidgetInspector`'s — the list by catalog
+label, a remove control and `MetricSourcePicker` reused unchanged — gated on
+the type's source cap and on the other binding kind being empty. No ADR: the
+catalog is code and the picker fetches nothing.
+
+**Amendment 1, ruled in at the plan gate.** The template write path had none
+of the dashboard write path's cross-field rules and instantiation copied
+`config` and `sources` verbatim. The owner folded that gap into the row: the
+template contract now refuses a widget carrying both kinds, a source whose
+shape the type cannot draw, more sources than the cap, and a table column its
+dataset does not declare — reading `WIDGET_SOURCE_SHAPES`,
+`WIDGET_SOURCE_CARDINALITY` and `METRIC_CATALOG`, pinned by a repo scan. No
+binding minimum (ADR 0049 decision 6). Effort 1–2 → 3.
+
+**Verified**: 468 files / 3302 tests; the four violator queries on the compose
+database at 0 rows each; the DB-live suites for the template module 20/20;
+`browser-verifier` 9/9 on the rebuilt bundle including the live 200 at zero
+sources and the instantiated builder's refusal without a dataset; CI green as
+the DB-live full gate after the local run was memory-killed. Three reviews:
+compliance and security clean; code review five test-quality findings, fixed
+in-row. No `chore(agents):` line is owed. Unblocks nothing.
