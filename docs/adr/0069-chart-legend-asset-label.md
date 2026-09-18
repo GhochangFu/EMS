@@ -27,8 +27,10 @@ What the code does today, re-measured on `main` at `8e4a2a82` before drafting:
 - `buildChartOption` (`widget-echarts-option.ts:145-152`) keys the legend by
   `series[].name`. ECharts collapses equal names into one legend entry, so a
   chart bound to five breakers' `kw` shows five plots and one legend item.
-  `/dashboards/ionsite-electrical-overview` is a standing reproduction on any
-  seeded stack.
+  `/dashboards/ionsite-electrical-overview` is the reproduction. It is **not
+  seeded** — `docs/ion-exchange-electrical-dashboard-2026-09-02.json` says it is
+  replayed by hand — so the verification stack replays it before the browser
+  layer runs (plan-gate ruling, 2026-09-18).
 - `dashboardWidgetPointDtoSchema`
   (`packages/shared/src/contracts/dashboard-builder.ts:678-687`) carries `id`,
   `pointId`, `role`, `sortOrder`, `assetId`, `pointKey` and `unit`. `assetId`
