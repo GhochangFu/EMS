@@ -10,6 +10,7 @@ import {
   CALC_DIALECT,
   CALC_DIALECTS,
   CALC_DIALECT_V2,
+  CALC_DIALECT_V3,
   CALC_TRIGGERS,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
@@ -89,9 +90,23 @@ export function runV2IsScheduledOnlyTests(): void {
   );
   assert(
     onTrigger[0].message ===
-      `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset ` +
-        "formula resolves its members once per sweep and cannot run on a single reading",
+      `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset or parameter ` +
+        "formula resolves its inputs once per sweep and cannot run on a single reading",
     `the message must match the server's word for word, got: ${onTrigger[0].message}`,
+  );
+
+  // ADR 0070 (E4.1a U7): v3 is scheduled-only too, and the sentence names the
+  // row's own dialect — a literal v2 gate would let a streaming v3 row through.
+  const v3Streaming = calcConfigErrors(derived({ formulaDialect: CALC_DIALECT_V3 }), 0).filter(
+    (problem) => problem.field === "calcTrigger",
+  );
+  assert(
+    v3Streaming.length === 1 && v3Streaming[0].message.startsWith(`A "${CALC_DIALECT_V3}" point requires calcTrigger: "scheduled"`),
+    `a streaming v3 row is one problem on calcTrigger naming v3 — got ${JSON.stringify(v3Streaming)}`,
+  );
+  assert(
+    calcConfigErrors(derived({ formulaDialect: CALC_DIALECT_V3, calcTrigger: "scheduled", calcIntervalSeconds: 300 }), 0).length === 0,
+    "a scheduled v3 row is fine",
   );
 
   const scheduled = calcConfigErrors(
@@ -426,6 +441,17 @@ export function runSetFormulaDialectTests(): void {
   assert(setFormulaDialect(streamingV1, CALC_DIALECT) === streamingV1, "v1 → v1 returns the same row");
   assert(setFormulaDialect(v2WithRatio, CALC_DIALECT_V2) === v2WithRatio, "v2 → v2 returns the same row");
 
+  // ADR 0070 (E4.1a U7): to v3 flips streaming → scheduled as v2 does; v2 ↔ v3
+  // keeps the ratio (both have aggregates); to v1 still clears it.
+  const toV3 = setFormulaDialect(streamingV1, CALC_DIALECT_V3);
+  assert(toV3.formulaDialect === CALC_DIALECT_V3 && toV3.calcTrigger === "scheduled", "v1 → v3 flips a streaming trigger to scheduled");
+  const v2ToV3 = setFormulaDialect(v2WithRatio, CALC_DIALECT_V3);
+  assert(v2ToV3.formulaDialect === CALC_DIALECT_V3 && v2ToV3.minCoverageRatio === 0.5, "v2 → v3 keeps the coverage ratio");
+  const v3ToV2 = setFormulaDialect(v2ToV3, CALC_DIALECT_V2);
+  assert(v3ToV2.formulaDialect === CALC_DIALECT_V2 && v3ToV2.minCoverageRatio === 0.5, "v3 → v2 keeps the coverage ratio");
+  assert(setFormulaDialect(v2ToV3, CALC_DIALECT).minCoverageRatio === null, "v3 → v1 clears the coverage ratio");
+  assert(setFormulaDialect(v2ToV3, CALC_DIALECT_V3) === v2ToV3, "v3 → v3 returns the same row");
+
   // A non-member: the `<select>` hands this a `string`, and there is no
   // "Choose…" option for a dialect. Anything outside `CALC_DIALECTS` is
   // returned unchanged rather than stored — a row cannot be moved to a
@@ -456,8 +482,8 @@ export function runSetFormulaDialectTests(): void {
 export function runCoverageRatioTests(): void {
   const BOUNDS_MESSAGE = "A minimum coverage ratio is above 0 and at most 1. Leave it empty to fail closed.";
   const PLACEMENT_MESSAGE =
-    `minCoverageRatio applies only to a derived point in the "${CALC_DIALECT_V2}" ` +
-    "dialect — it is the fraction of an aggregate's declared members that must be fresh";
+    `minCoverageRatio applies only to a derived point in a cross-asset dialect, not "${CALC_DIALECT}" — ` +
+    "it is the fraction of an aggregate's declared members that must be fresh";
 
   const onRatio = (value: number | null, dialect: CalcDialect = CALC_DIALECT_V2) =>
     calcConfigErrors(
@@ -471,6 +497,7 @@ export function runCoverageRatioTests(): void {
     ).filter((problem) => problem.field === "minCoverageRatio");
 
   assert(onRatio(null).length === 0, "an empty ratio is fail closed, and valid");
+  assert(onRatio(0.5, CALC_DIALECT_V3).length === 0, "a v3 row may carry a ratio — it has aggregates too (ADR 0070)");
   assert(onRatio(1).length === 0, "1 is inside — every member must be fresh");
   assert(onRatio(0.5).length === 0, "a fraction is the ordinary relaxed shape");
 
@@ -551,5 +578,10 @@ export function runDialectOptionsTests(): void {
   assert(
     v1 !== undefined && v1.label.includes("own points"),
     `the v1 label says it is same-asset — got ${v1?.label}`,
+  );
+  const v3 = options.find((option) => option.value === CALC_DIALECT_V3);
+  assert(
+    v3 !== undefined && v3.label.includes("$key") && options[2] === v3,
+    `the v3 label names the $key form and comes third — got ${v3?.label}`,
   );
 }

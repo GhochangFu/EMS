@@ -24,6 +24,7 @@ import {
   assertAnOverrideMadeIllegalByTheTargetVersionRefusesAndPinsNothing,
   assertAnOverrideStillLegalOnTheTargetVersionMigrates,
   assertAnOverrideThatWouldCycleOnTheTargetVersionRefusesAndPinsNothing,
+  assertAV3OverrideThatWouldCycleOnTheTargetVersionRefuses,
   cleanup,
 } from "./asset-templates.migrate-override.integration.spec";
 
@@ -131,6 +132,11 @@ describe.skipIf(!connectionString)("F2.9 Task 12b — migration re-validates the
   it("refuses a migration whose target version would put the override on a dependency cycle", async () => {
     if (!pool) throw new Error("pool required");
     await assertAnOverrideThatWouldCycleOnTheTargetVersionRefusesAndPinsNothing(pool, svc, fx);
+  });
+
+  it("ADR 0070 — refuses a migration onto a bms-calc-v3 target whose aggregate closes a cycle, parsed under v3", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAV3OverrideThatWouldCycleOnTheTargetVersionRefuses(pool, svc, fx);
   });
 
   it("does not read a non-computed asset_points row as a calc override", async () => {

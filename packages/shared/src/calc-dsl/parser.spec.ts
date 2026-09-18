@@ -2,6 +2,8 @@ import type { CalcErrorCode, CalcExpr, CalcParseError, ParseResult } from "./ast
 import { crossRefKey } from "./cross-ref";
 import {
   CALC_DIALECT_V2,
+  CALC_DIALECT_V3,
+  MAX_FORMULA_PARAM_REFS,
   CALC_FUNCTION_ARITY,
   MAX_FORMULA_CROSS_REFS,
   MAX_FORMULA_DEPTH,
@@ -10,6 +12,7 @@ import {
 } from "./limits";
 import { formatCalcError, parseFormula, validateFormula, type ParseOptions } from "./parser";
 import { V1_CORPUS, V1_REFUSALS_V2_ACCEPTS, V1_REFUSALS_WITH_A_DIFFERENT_V2_CODE } from "./v1-corpus";
+import { V2_CORPUS, V2_REFUSALS_V3_ACCEPTS, V2_REFUSALS_WITH_A_DIFFERENT_V3_CODE } from "./v2-corpus";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -220,6 +223,7 @@ export function runParserTests(): void {
 }
 
 const V2: ParseOptions = { dialect: CALC_DIALECT_V2 };
+const V3: ParseOptions = { dialect: CALC_DIALECT_V3 };
 
 /**
  * The `bms-calc-v2` half (ADR 0055; `F2.9` Task 2). Every case passes
@@ -346,6 +350,28 @@ export function runParserV2Tests(): void {
   const first = parseFormula("sum({kw} @site) / {TX_01.kwh}", V2);
   const second = parseFormula("sum({kw} @site) / {TX_01.kwh}", V2);
   assert(JSON.stringify(first) === JSON.stringify(second), "parseFormula must be pure under v2");
+
+  // ---- v2-corpus.ts smoke check (E4.1a U3, ADR 0070 decision 3) ---------------
+  // The full v2→v3 superset property is `dialect-superset.spec.ts`'s job; this
+  // loop only proves every literal this spec feeds `parseFormula` under v2 also
+  // lives in that shared corpus and still parses to a ParseResult here, so the
+  // corpus cannot silently stop importing without failing this spec too.
+  for (const expression of V2_CORPUS) {
+    const result = parseFormula(expression, V2);
+    assert(
+      typeof result.ok === "boolean",
+      `v2-corpus.ts entry must parse to a ParseResult here too: ${JSON.stringify(expression)}`,
+    );
+  }
+  assert(
+    V2_REFUSALS_V3_ACCEPTS.every((expression) => V2_CORPUS.includes(expression)),
+    "every V2_REFUSALS_V3_ACCEPTS entry must itself be a V2_CORPUS entry",
+  );
+  assert(
+    V2_REFUSALS_WITH_A_DIFFERENT_V3_CODE.every((entry) => V2_CORPUS.includes(entry.expression)),
+    "every V2_REFUSALS_WITH_A_DIFFERENT_V3_CODE entry must itself be a V2_CORPUS entry — " +
+      "an entry the corpus never holds is checked by nothing",
+  );
 }
 
 // ---- F2.22: author-facing wording for the ten v2 error codes ------------------
@@ -399,5 +425,115 @@ export function runV2ErrorWordingTests(): void {
     assert(!message.includes("sum"), `${code}: must not name the sum function: ${message}`);
     assert(!message.includes("avg"), `${code}: must not name the avg function: ${message}`);
     assert(message.endsWith("at character 0"), `${code}: must end with the fixed position suffix, got ${JSON.stringify(message)}`);
+  }
+}
+
+/**
+ * The `bms-calc-v3` half (ADR 0070 decisions 3 and 4; `E4.1a` U2). One added
+ * production — `$key` parses to a `param` node — and a third list,
+ * `paramRefs`, beside `refs` and `crossRefs`. Three lists, three namespaces:
+ * a local key, a cross reference and a parameter are served from three maps
+ * at evaluation time. The `v2` guard is the first assertion: a `$` under
+ * `v2` must still fail exactly as it did.
+ */
+export function runParserV3Tests(): void {
+  // ---- v2 guard ----------------------------------------------------------------
+
+  const guard = expectFailCode("{kw} * $f", "unexpected_character", "v2 guard: $ must stay unexpected under v2", V2);
+  assert(guard.position === 7, `v2 guard: the refusal is at the $, got ${guard.position}`);
+
+  // ---- the ADR's worked example parses -------------------------------------------
+
+  const cost = expectOk("{kw} * $energy_tariff_per_kwh", V3);
+  assert(cost.ast.kind === "binary" && cost.ast.op === "*", "the cost rate must parse to a root binary *");
+  if (cost.ast.kind === "binary") {
+    assert(cost.ast.left.kind === "ref", `left of * must be a local ref, got ${cost.ast.left.kind}`);
+    assert(cost.ast.right.kind === "param", `right of * must be a param, got ${cost.ast.right.kind}`);
+    if (cost.ast.right.kind === "param") {
+      assert(cost.ast.right.key === "energy_tariff_per_kwh", `param key is the code without the $, got ${cost.ast.right.key}`);
+      assert(cost.ast.right.position === 7, `a param's position is its $, got ${cost.ast.right.position}`);
+      assert(
+        Object.keys(cost.ast.right).sort().join(",") === "key,kind,position",
+        `a param node carries key, kind and position only, got ${Object.keys(cost.ast.right).join(",")}`,
+      );
+    }
+  }
+  assert(cost.refs.join("|") === "kw", `refs keeps its local meaning, got ${JSON.stringify(cost.refs)}`);
+  assert(cost.paramRefs.join("|") === "energy_tariff_per_kwh", `paramRefs lists the key, got ${JSON.stringify(cost.paramRefs)}`);
+  assert(cost.crossRefs.length === 0, `a param is not a cross ref, got ${JSON.stringify(cost.crossRefs)}`);
+
+  // ---- three lists, three namespaces -----------------------------------------------
+
+  const mixed = expectOk("sum({kw} @site) * $f + {TX_01.kwh}", V3);
+  assert(mixed.crossRefs.length === 2, `two cross refs beside a param, got ${mixed.crossRefs.length}`);
+  assert(mixed.paramRefs.join("|") === "f", `one param beside two cross refs, got ${JSON.stringify(mixed.paramRefs)}`);
+  assert(mixed.refs.length === 0, `an aggregate's key and a qref are not local refs, got ${JSON.stringify(mixed.refs)}`);
+
+  // ---- paramRefs dedupes in first-appearance order ----------------------------------
+
+  const twice = expectOk("$b + $a + $b", V3);
+  assert(twice.paramRefs.join("|") === "b|a", `paramRefs dedupes in first-appearance order, got ${JSON.stringify(twice.paramRefs)}`);
+
+  // ---- a param may sit anywhere a number may ---------------------------------------------
+
+  const nested = expectOk("clamp(-$lo, min($lo, 2), ($hi))", V3);
+  assert(nested.paramRefs.join("|") === "lo|hi", `params inside calls, unary and parentheses, got ${JSON.stringify(nested.paramRefs)}`);
+
+  // ---- paramRefs is always [] under v1 and v2 ----------------------------------------------
+
+  assert(expectOk("{kw} + 1").paramRefs.length === 0, "a v1 parse carries an empty paramRefs");
+  assert(expectOk("sum({kw} @site)", V2).paramRefs.length === 0, "a v2 parse carries an empty paramRefs");
+
+  // ---- the bound ------------------------------------------------------------------------------
+
+  const atCap = Array.from({ length: MAX_FORMULA_PARAM_REFS }, (_, i) => `$p${i}`).join(" + ");
+  assert(expectOk(atCap, V3).paramRefs.length === MAX_FORMULA_PARAM_REFS, "exactly the cap is accepted");
+  const overCap = `${atCap} + $p${MAX_FORMULA_PARAM_REFS}`;
+  const tooMany = expectFailCode(overCap, "too_many_param_refs", "one distinct key over the cap must fail", V3);
+  assert(
+    tooMany.position === atCap.length + 3,
+    `too_many_param_refs reports the overflowing key's $, got ${tooMany.position} (expected ${atCap.length + 3})`,
+  );
+  const repeated = Array.from({ length: MAX_FORMULA_PARAM_REFS + 5 }, () => "$same").join(" + ");
+  assert(expectOk(repeated, V3).paramRefs.length === 1, "occurrences do not count, distinct keys do");
+
+  // ---- the lexical refusals reach parseFormula as errors ------------------------------------
+
+  assert(expectFailCode("$", "malformed_parameter_reference", "a bare $ fails through parseFormula", V3).position === 0, "at the $");
+  assert(expectFailCode("2 + $1", "malformed_parameter_reference", "a leading digit fails", V3).position === 4, "at the $");
+
+  // ---- error wording: one line each, no echo ------------------------------------------------------
+
+  for (const code of ["malformed_parameter_reference", "too_many_param_refs"] as const satisfies readonly CalcErrorCode[]) {
+    const message = formatCalcError({ code, position: 7 });
+    assert(!message.includes("energy") && !message.includes("p8"), `${code}: must not echo a key: ${message}`);
+    assert(message.endsWith("at character 7"), `${code}: must end with the position suffix, got ${JSON.stringify(message)}`);
+    assert(message.includes("$"), `${code}: must name the $ syntax so the author knows the fix: ${message}`);
+  }
+
+  // ---- purity ---------------------------------------------------------------------------------------
+
+  assert(
+    JSON.stringify(parseFormula("{kw} * $f", V3)) === JSON.stringify(parseFormula("{kw} * $f", V3)),
+    "two parses of one v3 formula are structurally equal",
+  );
+
+  // ---- validateFormula checks local refs only; the vocabulary is the api's ----------------------------
+
+  const valid = validateFormula("{kw} * $unknown_key", ["kw"], V3);
+  assert(valid.ok === true, `validateFormula does not know the vocabulary, got ${JSON.stringify(valid)}`);
+  const badLocal = validateFormula("{kw} * $f", [], V3);
+  assert(badLocal.ok === false && badLocal.errors[0]?.code === "unknown_reference", "a local ref is still checked under v3");
+
+  // ---- everything v2 parses, v3 parses to the same AST ------------------------------------------------
+
+  for (const expression of ["sum({kw} @site) / sum({kw} @group('IT_LOAD'))", "{TX_01.kwh} - {TX_02.kwh}", "({a} + {b}) / 2"]) {
+    const underV2 = parseFormula(expression, V2);
+    const underV3 = parseFormula(expression, V3);
+    assert(underV2.ok && underV3.ok, `${expression} must parse under both`);
+    if (underV2.ok && underV3.ok) {
+      assert(JSON.stringify(underV2.ast) === JSON.stringify(underV3.ast), `${expression}: same AST under v2 and v3`);
+      assert(JSON.stringify(underV2.crossRefs) === JSON.stringify(underV3.crossRefs), `${expression}: same crossRefs`);
+    }
   }
 }

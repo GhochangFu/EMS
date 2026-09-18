@@ -20,7 +20,7 @@
  * the one thing the tab edits and this panel only shows: ADR 0055 decision 11
  * refuses a per-asset override, so it is a line in the table, not a field.
  */
-import { CALC_DIALECT_V2, CALC_TRIGGERS } from "@bms/shared";
+import { CALC_TRIGGERS, isCrossAssetDialect } from "@bms/shared";
 import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import {
@@ -69,7 +69,10 @@ export function PointCalcOverridePanel({
   // The grammar in force after the save — the draft's when chosen, the
   // template's when inheriting — from the same function `draftProblems` reads,
   // so the controls below and the sentences under them cannot disagree.
-  const isV2 = mergedDialect(draft, config) === CALC_DIALECT_V2;
+  // "Has cross-asset references" — v2 or v3 (ADR 0070); the name is kept
+  // because every branch below reads it as "not v1".
+  const merged = mergedDialect(draft, config);
+  const isV2 = merged !== null && isCrossAssetDialect(merged);
 
   return (
     <div className="rounded border border-gray-200 p-3">

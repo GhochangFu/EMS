@@ -60,6 +60,7 @@ export function def(overrides: Partial<CalcDefinition> & { formula: string }): C
     maxInputAgeSeconds: 999_999,
     dialect,
     crossRefs: parsed.crossRefs,
+    paramRefs: parsed.paramRefs,
     minCoverageRatio: null,
     ...overrides,
   };
@@ -71,6 +72,10 @@ type SweepOptions = {
   membership?: Membership;
   /** `resolveMembership` throws — the fleet read failed this sweep. */
   membershipThrows?: boolean;
+  /** `E4.1a`: what `resolveForAssets` answers, keyed by `inputKey(assetId, key)`; empty when unset. */
+  parameters?: Map<string, number>;
+  /** `resolveForAssets` throws — the parameter read failed this sweep. */
+  parametersThrows?: boolean;
 };
 
 type SweepHarness = {
@@ -80,6 +85,8 @@ type SweepHarness = {
   warnings: string[];
   excluded: number[];
   membersMax: number[];
+  /** `E4.1a`: every pairs list `resolveForAssets` received, one entry per sweep. */
+  parameterRequests: { assetId: string; key: string }[][];
   /** The **real** registry, never a recording fake: a fake that keyed itself
    * would leave every registry assertion here green against a registry that
    * keyed on the template point id alone, or dropped skips entirely. */
@@ -99,6 +106,7 @@ export function buildSweepDeps(
   const warnings: string[] = [];
   const excluded: number[] = [];
   const membersMax: number[] = [];
+  const parameterRequests: { assetId: string; key: string }[][] = [];
   const status = new CalcStatusRegistry();
   const deps: CalcSchedulerDeps = {
     definitions: { getScheduledDefinitions: async () => scheduled },
@@ -132,6 +140,20 @@ export function buildSweepDeps(
         return options.membership ?? EMPTY_MEMBERSHIP;
       },
     },
+    parameters: {
+      resolveForAssets: async (pairs) => {
+        parameterRequests.push(pairs.map((p) => ({ assetId: p.assetId, key: p.key })));
+        if (options.parametersThrows) {
+          throw new Error("simulated fleet read failure resolving parameters");
+        }
+        const out = new Map<string, number>();
+        for (const pair of pairs) {
+          const value = options.parameters?.get(inputKey(pair.assetId, pair.key));
+          if (value !== undefined) out.set(inputKey(pair.assetId, pair.key), value);
+        }
+        return out;
+      },
+    },
     writer: {
       writeValues: async (values) => {
         writes.push([...values]);
@@ -146,7 +168,7 @@ export function buildSweepDeps(
     status,
     logger: { warn: (m: unknown) => warnings.push(String(m)) },
   };
-  return { deps, writes, skips, warnings, excluded, membersMax, status };
+  return { deps, writes, skips, warnings, excluded, membersMax, parameterRequests, status };
 }
 
 async function runSweepTests(): Promise<void> {
@@ -382,6 +404,7 @@ function buildLoopDeps(
       getLatestSamplesForPairs: async () => new Map(),
     },
     scope: { resolveMembership: async () => EMPTY_MEMBERSHIP },
+    parameters: { resolveForAssets: async () => new Map() },
     writer: {
       writeValues: async (values) => {
         writes.push([...values]);
@@ -519,6 +542,7 @@ async function runLoopTests(): Promise<void> {
         getLatestSamplesForPairs: async () => new Map(),
       },
       scope: { resolveMembership: async () => EMPTY_MEMBERSHIP },
+      parameters: { resolveForAssets: async () => new Map() },
       writer: {
         writeValues: async (values) => {
           writes.push([...values]);

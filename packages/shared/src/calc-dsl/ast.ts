@@ -1,15 +1,16 @@
 /**
- * The `bms-calc-v1` grammar (ADR 0036) and, since ADR 0055, the `bms-calc-v2`
- * additions to it.
+ * The `bms-calc-v1` grammar (ADR 0036), the `bms-calc-v2` additions to it
+ * (ADR 0055) and, since ADR 0070, the `bms-calc-v3` additions to that.
  *
- * **The `v1` shapes are frozen.** They are the public AST surface
- * `F2.4`/`F2.5`/`F2.6`/`F2.8` build against, and ADR 0055 decision 3 says
- * `v1` keeps its meaning forever — changing an existing shape here is a
- * breaking change for every consumer. **The `v2` additions are additive and
- * named:** a new member of a union or a new error code, never an edit to an
- * existing one. A consumer that exhausts a union must decide what a new kind
- * means for it, which is the point of adding a kind rather than an optional
- * field (ADR 0055 decision 2; plan design decision 2).
+ * **The `v1` and `v2` shapes are frozen.** They are the public AST surface
+ * `F2.4`/`F2.5`/`F2.6`/`F2.8`/`F2.9` build against, and ADR 0055 decision 3
+ * and ADR 0070 decision 3 say each dialect keeps its meaning forever —
+ * changing an existing shape here is a breaking change for every consumer.
+ * **The `v2` and `v3` additions are additive and named:** a new member of a
+ * union or a new error code, never an edit to an existing one. A consumer
+ * that exhausts a union must decide what a new kind means for it, which is
+ * the point of adding a kind rather than an optional field (ADR 0055
+ * decision 2; plan design decision 2).
  */
 
 import type { CALC_AGGREGATE_FNS } from "./limits";
@@ -72,7 +73,28 @@ export type CalcAggregate = {
  * canonical string form of one is `crossRefKey` in `./cross-ref`. */
 export type CalcCrossRef = CalcQualifiedRef | CalcAggregate;
 
-export type CalcExpr = CalcNumber | CalcPointRef | CalcUnary | CalcBinary | CalcCall | CalcQualifiedRef | CalcAggregate;
+// ---- bms-calc-v3 (ADR 0070 decision 4) ------------------------------------
+//
+// One new node kind, on purpose, rather than an optional field on `ref`, for
+// the reason the `v2` block gives: an exhaustive consumer must decide what a
+// parameter means for it. `collectRefEntries`'s `assertNever` and `evalNode`'s
+// return type both turn the omission into a compile error.
+
+/** `$key` — `position` is the 0-based offset of the `$`; `key` is the
+ * vocabulary code without the `$`. The host resolves it against the
+ * parameter store (nearest scope, effective at the tick) before `evaluate`
+ * runs, into the fourth map; the node carries no value and no scope. */
+export type CalcParamRef = { kind: "param"; key: string; position: number };
+
+export type CalcExpr =
+  | CalcNumber
+  | CalcPointRef
+  | CalcUnary
+  | CalcBinary
+  | CalcCall
+  | CalcQualifiedRef
+  | CalcAggregate
+  | CalcParamRef;
 
 export type CalcErrorCode =
   | "empty_expression"
@@ -103,7 +125,14 @@ export type CalcErrorCode =
   | "scope_not_allowed"
   | "aggregate_needs_point_reference"
   | "qualified_reference_in_aggregate"
-  | "too_many_cross_refs";
+  | "too_many_cross_refs"
+  // `bms-calc-v3` lexical code (ADR 0070 decision 4). Same rule again: the
+  // `$key` production sits behind the tokenizer's dialect check, so neither a
+  // `v1` nor a `v2` call can produce it.
+  | "malformed_parameter_reference"
+  // `bms-calc-v3` parser code (ADR 0070 decision 4): the `MAX_FORMULA_PARAM_REFS`
+  // bound, on the `too_many_cross_refs` pattern.
+  | "too_many_param_refs";
 
 /**
  * `position` is a 0-based character offset into the expression. Never carries
@@ -117,9 +146,12 @@ export type CalcParseError = { code: CalcErrorCode; position: number };
  * `refs` keeps its `v1` meaning — the LOCAL point keys, deduped, in
  * first-appearance order. `crossRefs` is the `v2` addition: every distinct
  * cross-asset node (by `crossRefKey`), first-appearance order, and always `[]`
- * under `v1` (plan design decision 3). Two lists, because a local key and a
- * cross reference are served from two different maps at evaluation time.
+ * under `v1` (plan design decision 3). `paramRefs` is the `v3` addition
+ * (ADR 0070 decision 4): every distinct `$key`, first-appearance order, and
+ * always `[]` under `v1` and `v2`. Three lists, because a local key, a cross
+ * reference and a parameter are served from three different maps at
+ * evaluation time.
  */
 export type ParseResult =
-  | { ok: true; ast: CalcExpr; refs: string[]; crossRefs: CalcCrossRef[] }
+  | { ok: true; ast: CalcExpr; refs: string[]; crossRefs: CalcCrossRef[]; paramRefs: string[] }
   | { ok: false; errors: CalcParseError[] };

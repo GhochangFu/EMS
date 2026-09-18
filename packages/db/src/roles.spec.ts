@@ -1,3 +1,6 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+
 import { expect } from "vitest";
 
 import {
@@ -186,4 +189,35 @@ export function assertProvisioningTouchesNoSchemaObject(): void {
   ]) {
     expect(sql).not.toContain(forbidden);
   }
+}
+
+/**
+ * `E4.1a`: `btree_gist` is provisioned here and by no migration (AGENTS.md
+ * §4.4 — a `CREATE EXTENSION` belongs to the provisioning identity, never to
+ * a migration). `0074`'s gist EXCLUDE depends on it, so the fresh-database
+ * path is `roles` → `migrate`, the order CI and compose already run.
+ */
+export function assertBtreeGistIsProvisionedHereAndNowhereElse(): void {
+  const sql = ROLE_PROVISIONING_SQL.join("\n");
+  expect(sql).toContain("CREATE EXTENSION IF NOT EXISTS btree_gist");
+  // `import.meta.url` is a TS1470 error under this package's CommonJS build and
+  // `__dirname` does not exist under Vitest ESM — the `asset-domains-seed.spec.ts`
+  // candidates idiom: the package root and the repository root.
+  const drizzle = ["drizzle", "packages/db/drizzle"].map((c) => resolve(process.cwd(), c)).find((d) => existsSync(d));
+  if (drizzle === undefined) {
+    throw new Error(`drizzle/ not found from ${process.cwd()}`);
+  }
+  const offenders = readdirSync(drizzle)
+    .filter((name) => name.endsWith(".sql"))
+    // Comment lines stripped: a header that explains WHY the extension lives
+    // here must not fail its own rule.
+    .filter((name) =>
+      /CREATE EXTENSION/i.test(
+        readFileSync(join(drizzle, name), "utf8")
+          .split("\n")
+          .filter((line) => !line.trimStart().startsWith("--"))
+          .join("\n"),
+      ),
+    );
+  expect(offenders, "no migration may CREATE EXTENSION (AGENTS.md §4.4)").toEqual([]);
 }

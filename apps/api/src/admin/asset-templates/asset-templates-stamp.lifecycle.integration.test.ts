@@ -6,6 +6,7 @@ import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import {
@@ -77,6 +78,7 @@ describe.skipIf(!connectionString)("F2.13 — asset template stock stamp", () =>
       new AccessControlService(createDb(authPool), fleetDb),
       new MasterDataAuditService(tenantDb, fleetDb),
       new VocabulariesService(tenantDb),
+      new CalcParametersService(fleetDb),
     );
     fx = await loadFixtures(pool);
   });

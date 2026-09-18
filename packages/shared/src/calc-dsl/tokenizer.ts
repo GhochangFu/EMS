@@ -1,5 +1,5 @@
 import type { CalcErrorCode, CalcParseError } from "./ast";
-import { CALC_DIALECT, CALC_DIALECT_V2, CALC_SCOPE_KINDS, type CalcDialect } from "./limits";
+import { CALC_DIALECT, CALC_SCOPE_KINDS, isCrossAssetDialect, isParameterDialect, type CalcDialect } from "./limits";
 
 export type TokenKind =
   | "number"
@@ -16,6 +16,8 @@ export type TokenKind =
   // and the `'…'` argument a domain or group scope takes.
   | "scope"
   | "string"
+  // `bms-calc-v3` only (ADR 0070 decision 4): `$key`, a parameter reference.
+  | "param"
   | "eof";
 
 /**
@@ -27,6 +29,9 @@ export type TokenKind =
  * qualified reference `{CODE.key}` is still a `ref` token whose `text` is the
  * point key alone, with the asset code in `assetCode`. `assetCode` is never
  * set under `v1`, and never set for an unqualified `v2` reference.
+ *
+ * Under `bms-calc-v3`: a `param` token's `text` **excludes** the `$` — it is
+ * the vocabulary code the host looks up — and its `position` is the `$`.
  */
 export interface Token {
   kind: TokenKind;
@@ -85,9 +90,17 @@ const SCOPE_KINDS: ReadonlySet<string> = new Set(CALC_SCOPE_KINDS);
  * reach a `v2` branch, so it cannot produce a `scope` or `string` token, an
  * `assetCode`, or any of the four `v2` error codes. The property test (`F2.9`
  * Task 3) is the tripwire, not the guarantee.
+ *
+ * **The `v2` loop is untouched by `v3`**, by the same construction (ADR 0070
+ * decision 3). `isV2` is now "has cross-asset references", which `v3` also
+ * has, so every `v2` branch runs under `v3` unedited; the one `v3` production
+ * (`$key`) sits behind `isV3`, and under `v1` or `v2` a `$` still falls
+ * through to `unexpected_character`.
  */
 export function tokenize(expression: string, options?: TokenizeOptions): Token[] {
-  const isV2 = (options?.dialect ?? CALC_DIALECT) === CALC_DIALECT_V2;
+  const dialect = options?.dialect ?? CALC_DIALECT;
+  const isV2 = isCrossAssetDialect(dialect);
+  const isV3 = isParameterDialect(dialect);
   const tokens: Token[] = [];
   const n = expression.length;
   let i = 0;
@@ -178,6 +191,26 @@ export function tokenize(expression: string, options?: TokenizeOptions): Token[]
       }
       tokens.push({ kind: "string", position: start, text });
       i = j + 1; // consume the closing quote
+      continue;
+    }
+
+    // v3 only — `$key` as one `param` token, `text` without the `$`. The key
+    // must follow the `$` immediately and match `[A-Za-z_][A-Za-z0-9_]*`; a
+    // bare `$`, a space, or a leading digit is `malformed_parameter_reference`
+    // at the `$`. No `-` inside a key, ever: `$a-b` must mean `$a - b` (ADR
+    // 0070; plan design decision 5), which is why the vocabulary's charset is
+    // narrower than a catalog code's. Under v1 and v2, `$` falls through to
+    // `unexpected_character` exactly as before.
+    if (isV3 && ch === "$") {
+      let j = i + 1;
+      if (j >= n || !isIdentStart(expression[j])) {
+        fail("malformed_parameter_reference", start);
+      }
+      while (j < n && isIdentChar(expression[j])) {
+        j += 1;
+      }
+      tokens.push({ kind: "param", position: start, text: expression.slice(i + 1, j) });
+      i = j;
       continue;
     }
 

@@ -31,6 +31,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -45,6 +46,7 @@ import {
   crossRefPointKeys,
   type CrossRefCandidatePoint,
 } from "./asset-templates-cross-refs";
+import { paramRefKeys, unknownParameterKeysMessage } from "./asset-templates-param-refs";
 // `F2.7` design decision 11 — the two row mappers this service held inline
 // moved to a pure sibling when it stood at 998 of §4.5's 1000 lines.
 import { toTemplatePointDto, toTemplatePointInsert } from "./asset-templates-point-rows";
@@ -102,6 +104,8 @@ export class AssetTemplatesAdminService {
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
     private readonly vocabularies: VocabulariesService,
+    // `E4.1a` — the `$key` vocabulary check (ADR 0070 decision 4), exported by `CalcModule`.
+    private readonly calcParameters: CalcParametersService,
   ) {}
 
   /** Lists template versions visible to the caller, newest version first. */
@@ -186,6 +190,7 @@ export class AssetTemplatesAdminService {
   ): Promise<AdminAssetTemplateDto> {
     await this.assertCanAuthor(jwt, body.organizationId);
     await this.assertPointKeysActive(body.points);
+    await this.assertParameterKeysKnown(body.points, body.content?.kpis);
     // ADR 0031 Amendment 1. Checked here rather than at instantiation because
     // that is where the value is *chosen*: a template stores this domain and
     // stamps it onto every asset built from it, so a bad code caught later
@@ -275,6 +280,9 @@ export class AssetTemplatesAdminService {
     if (body.points) {
       await this.assertPointKeysActive(body.points);
     }
+    if (body.points || body.content?.kpis) {
+      await this.assertParameterKeysKnown(body.points ?? (await this.loadPoints(id)), body.content?.kpis);
+    }
     if (body.domain !== undefined) {
       await this.vocabularies.assertAssetDomain(body.domain);
     }
@@ -359,6 +367,7 @@ export class AssetTemplatesAdminService {
     }
     await this.assertPointKeysActive(points);
     const storedContent = this.parseStoredContent(template);
+    await this.assertParameterKeysKnown(points, storedContent.kpis);
     this.assertContentRefsResolve(storedContent, points);
 
     // ADR 0032. Publish used to get this for free: `parseStoredContent` ran the
@@ -653,6 +662,28 @@ export class AssetTemplatesAdminService {
       throw new BadRequestException(
         `Not in the active point-key catalog: ${missing.join(", ")}`,
       );
+    }
+  }
+
+  /**
+   * `E4.1a` / ADR 0070 decision 4 — every `$key` a `bms-calc-v3` point or KPI
+   * names must be in `bms.calc_parameter_keys`. Folded beside
+   * `assertPointKeysActive` for the same reason it is: create, update and
+   * publish all get it. **A key that exists but has no value in scope is not
+   * refused** — the value is per organization and per date and a stock
+   * template's author cannot see either; that is the sweep's `parameter_unset`.
+   */
+  private async assertParameterKeysKnown(
+    points: readonly CrossRefCandidatePoint[],
+    kpis: readonly { expression: string; dialect?: string | null }[] | undefined,
+  ): Promise<void> {
+    const codes = paramRefKeys(points, kpis ?? []);
+    if (codes.length === 0) {
+      return;
+    }
+    const unknown = await this.calcParameters.unknownKeys(codes);
+    if (unknown.length > 0) {
+      throw new BadRequestException(unknownParameterKeysMessage(unknown));
     }
   }
 

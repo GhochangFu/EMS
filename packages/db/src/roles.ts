@@ -125,6 +125,18 @@ $$`,
   //
   // `admin_option` stays off, so the API cannot re-grant the role onward.
   "GRANT bms_rollup TO bms_owner, bms_tenant, bms_fleet WITH INHERIT FALSE, SET TRUE",
+
+  // `E4.1a` (ADR 0070 decision 2, plan ruling Q2). Migration `0074`'s
+  // `calc_parameters_no_overlap` is an `EXCLUDE USING gist` over two `uuid`
+  // columns, a `varchar` and a `tstzrange`; the `=` operators for the first
+  // three come from `btree_gist`. AGENTS.md §4.4: a `CREATE EXTENSION` never
+  // widens a migration's surface — it belongs here, as the provisioning
+  // identity, before `db:migrate`. `bms_owner` holds no `CREATE` on the
+  // database, so a migration could only have done this ahead of its
+  // `SET ROLE`, which is the shape the rule forbids. Trusted contrib, no
+  // untrusted code; idempotent; schema-less (an extension is database-scoped,
+  // so `assertProvisioningTouchesNoSchemaObject` still holds).
+  "CREATE EXTENSION IF NOT EXISTS btree_gist",
 ];
 
 /**

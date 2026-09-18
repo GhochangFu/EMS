@@ -2,6 +2,7 @@ import {
   CALC_DIALECT,
   CALC_DIALECTS,
   CALC_DIALECT_V2,
+  isCrossAssetDialect,
   MAX_CALC_INTERVAL_SECONDS,
   MIN_CALC_INTERVAL_SECONDS,
   parseFormula,
@@ -427,15 +428,14 @@ export function checkEntry(entry: StockAssetTemplateEntry): void {
 
     const formula = typeof point.formula === "string" ? point.formula : "";
 
-    if (point.formulaDialect === CALC_DIALECT_V2) {
+    const dialect = CALC_DIALECTS.find((known) => known === point.formulaDialect) ?? CALC_DIALECT;
+    if (isCrossAssetDialect(dialect)) {
       // ADR 0055 decision 10: a cross-asset formula resolves its membership once
       // per sweep, so it is scheduled and carries an interval. The import path's
       // `superRefine` agrees; here it fails the build, not the first Import.
       assert(
         point.calcTrigger === "scheduled",
-        `${entry.code}.${point.pointKey}: a "${CALC_DIALECT_V2}" point must carry calcTrigger ` +
-          `"scheduled" — a cross-asset formula cannot run on a single incoming reading ` +
-          `(ADR 0055 decision 10); got ${String(point.calcTrigger)}`,
+        `${entry.code}.${point.pointKey}: a "${dialect}" point must carry calcTrigger "scheduled" — a cross-asset formula cannot run on a single incoming reading (ADR 0055 decision 10); got ${String(point.calcTrigger)}`,
       );
       const interval = point.calcIntervalSeconds;
       assert(
@@ -456,10 +456,10 @@ export function checkEntry(entry: StockAssetTemplateEntry): void {
           `default) or a ratio in (0, 1]; got ${String(ratio)}`,
       );
 
-      const parsedV2 = parseFormula(formula, { dialect: CALC_DIALECT_V2 });
+      const parsedV2 = parseFormula(formula, { dialect });
       if (!parsedV2.ok) {
         const detail = parsedV2.errors.map((error) => `${error.code} at ${error.position}`).join("; ");
-        throw new Error(`${entry.code}.${point.pointKey}: formula "${formula}" does not parse under ${CALC_DIALECT_V2}: ${detail}`);
+        throw new Error(`${entry.code}.${point.pointKey}: formula "${formula}" does not parse under ${dialect}: ${detail}`);
       }
       // Decision 7 admits a DERIVED sibling, so the reference set is the entry's
       // declared keys — measured and derived — not the measured-only set the `v1`
@@ -471,7 +471,7 @@ export function checkEntry(entry: StockAssetTemplateEntry): void {
       const unknown = [...parsedV2.refs, ...crossKeys].filter((key) => !declaredKeys.has(key));
       assert(
         unknown.length === 0,
-        `${entry.code}.${point.pointKey}: formula "${formula}", parsed under ${CALC_DIALECT_V2}, ` +
+        `${entry.code}.${point.pointKey}: formula "${formula}", parsed under ${dialect}, ` +
           `references ${unknown.map((key) => `"${key}"`).join(", ")} — keys this entry does not ` +
           "declare. A stock formula may only name a point key its own entry declares, locally or " +
           "inside an aggregate; assertPointKeysActive and the calc engine both depend on it.",

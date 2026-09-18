@@ -34,6 +34,7 @@ function def(overrides: Partial<CalcDefinition> & { formula: string }): CalcDefi
     pointKey: "DERIVED",
     ast: parsed.ast,
     refs: parsed.refs,
+    paramRefs: parsed.paramRefs,
     trigger: "streaming",
     intervalSeconds: null,
     maxInputAgeSeconds: 300,

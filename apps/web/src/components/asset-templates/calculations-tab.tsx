@@ -24,7 +24,7 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto, CalcDialect } from "@bms/shared";
-import { CALC_DIALECT, CALC_DIALECT_V2, CALC_TRIGGERS } from "@bms/shared";
+import { CALC_DIALECT, CALC_TRIGGERS, isCrossAssetDialect } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -155,7 +155,9 @@ export function CalculationsTab({
         // `null` on the wire is `v1` — the label a row had before ADR 0055
         // gave it a choice.
         const dialect = row.formulaDialect ?? CALC_DIALECT;
-        const isV2 = dialect === CALC_DIALECT_V2;
+        // "Has cross-asset references" — v2 or v3 (ADR 0070); the name is
+        // kept because every branch below reads it as "not v1".
+        const isV2 = isCrossAssetDialect(dialect);
         const validation = validateEditorFormula(
           {
             mode: "derived",

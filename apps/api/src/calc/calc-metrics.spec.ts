@@ -31,6 +31,10 @@ const ALL_REASONS_RECORD: Record<CalcRuntimeSkipReason, true> = {
   unknown_asset_reference: true,
   no_members: true,
   coverage_below_floor: true,
+  // ADR 0070 (E4.1a U6): a `$key` with no row in scope, and a failed
+  // parameter read (plan ruling Q4, the mirror of membership_unresolved).
+  parameter_unset: true,
+  parameters_unresolved: true,
 };
 const ALL_REASONS = Object.keys(ALL_REASONS_RECORD) as CalcRuntimeSkipReason[];
 

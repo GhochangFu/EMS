@@ -9,7 +9,7 @@
  * below is a literal read off a red first run, never recomputed here from the
  * derivation the module uses.
  */
-import { CALC_DIALECT_V2, tokenize } from "@bms/shared";
+import { CALC_DIALECT_V2, CALC_DIALECT_V3, tokenize } from "@bms/shared";
 
 import { safeTokenize, tokenRange } from "./calc-token-ranges";
 
@@ -76,4 +76,14 @@ export function runSafeTokenizeDialectTests(): void {
     tokens.map((t) => t.kind).join(",") === "ident,lparen,ref,scope,rparen,eof",
     `under v2 the same text lexes, got ${tokens.map((t) => t.kind).join(",")}`,
   );
+}
+
+/** Case 5 — a `param` token's range covers the `$` its `text` drops (ADR 0070). */
+export function runParamRangeTests(): void {
+  const text = "$energy";
+  const [param] = tokenize(text, { dialect: CALC_DIALECT_V3 });
+  assert(param.kind === "param", `sanity: expected a param token, got ${param.kind}`);
+  const range = tokenRange(text, param);
+  assert(range.from === 0 && range.to === 7, `$energy at 0 must span 0..7, got ${range.from}..${range.to}`);
+  assert(text.slice(range.from, range.to) === "$energy", "the param range must cover the $ and the key");
 }

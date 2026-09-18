@@ -81,6 +81,9 @@ async function evaluateOneStreamingFormula(
     used.push(sample);
   }
 
+  // Two arguments on purpose: no `v2` or `v3` definition reaches this host —
+  // `streaming_on_v2` refuses both at load (ADR 0055 decision 10, ADR 0070
+  // decision 3) — so there is never a cross input or a `$key` to pass here.
   const result = evaluate(def.ast, inputs);
   if (!result.ok) {
     return refuse(deps, def, assetId, "non_finite", nowMs);

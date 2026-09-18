@@ -1,6 +1,6 @@
 import {
   CALC_DIALECTS,
-  CALC_DIALECT_V2,
+  isCrossAssetDialect,
   MAX_CALC_INTERVAL_SECONDS,
   MAX_INPUT_AGE_SECONDS_BOUND,
   MIN_CALC_INTERVAL_SECONDS,
@@ -336,11 +336,11 @@ export function draftProblems(
   // The panel disables the streaming option under a merged `v2` (design
   // decision 5), so the second arm is reached through a streaming trigger the
   // template or a stored override already carries, never through the select.
-  if (merged.formulaDialect === CALC_DIALECT_V2 && merged.calcTrigger === "streaming") {
+  if (merged.formulaDialect !== null && isCrossAssetDialect(merged.formulaDialect) && merged.calcTrigger === "streaming") {
     problems.push(
-      `The merged formulaDialect is "${CALC_DIALECT_V2}"${inherited("formulaDialect")} but ` +
-        `calcTrigger is "streaming"${inherited("calcTrigger")}. A "${CALC_DIALECT_V2}" point ` +
-        `requires calcTrigger: "scheduled" — a cross-asset formula resolves its members once ` +
+      `The merged formulaDialect is "${merged.formulaDialect}"${inherited("formulaDialect")} but ` +
+        `calcTrigger is "streaming"${inherited("calcTrigger")}. A "${merged.formulaDialect}" point ` +
+        `requires calcTrigger: "scheduled" — a cross-asset or parameter formula resolves its inputs once ` +
         "per sweep and cannot run on a single reading.",
     );
   }

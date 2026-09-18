@@ -11,6 +11,7 @@ import {
   assertTheOwnerIsProvisionedFirst,
   assertTheRollupRoleCanRunBackgroundJobsButNotLogInRemotely,
   assertTheRollupRoleIsTheOnlyOneGranted,
+  assertBtreeGistIsProvisionedHereAndNowhereElse,
 } from "./roles.spec";
 
 describe("F4.16 — role password wiring", () => {
@@ -50,6 +51,10 @@ describe("E7.1a / ADR 0045 — db:roles is the provisioning identity", () => {
 
   it("gives bms_rollup LOGIN for the background workers, and no password", () => {
     assertTheRollupRoleCanRunBackgroundJobsButNotLogInRemotely();
+  });
+
+  it("provisions btree_gist for migration 0074's gist EXCLUDE, and no migration does (§4.4)", () => {
+    assertBtreeGistIsProvisionedHereAndNowhereElse();
   });
 
   it("touches no schema object, since it now runs before the first migration", () => {

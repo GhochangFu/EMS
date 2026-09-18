@@ -646,6 +646,8 @@ export async function assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStill
     // answers without a query — the early return the sweep relies on for a
     // `v2` formula whose references are all local.
     scope: new CalcScopeService(db),
+    // `E4.1a`: no fixture here holds a `$key`, so the read is never made.
+    parameters: { resolveForAssets: async () => new Map() },
     writer: {
       writeValues: async (values) => {
         writes.push(...values);

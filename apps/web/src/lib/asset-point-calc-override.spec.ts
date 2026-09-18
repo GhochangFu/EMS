@@ -475,7 +475,7 @@ export function runV2IsScheduledOnlyTests(): void {
     v2[0] ===
       `The merged formulaDialect is "${CALC_DIALECT_V2}" (inherited from the template) but ` +
         `calcTrigger is "streaming". A "${CALC_DIALECT_V2}" point requires calcTrigger: ` +
-        '"scheduled" — a cross-asset formula resolves its members once per sweep and cannot ' +
+        '"scheduled" — a cross-asset or parameter formula resolves its inputs once per sweep and cannot ' +
         "run on a single reading.",
     `the panel must use the API's sentence verbatim, got: ${v2[0]}`,
   );
@@ -488,8 +488,8 @@ export function runV2IsScheduledOnlyTests(): void {
     chosen.length === 1 &&
       chosen[0] ===
         `The merged formulaDialect is "${CALC_DIALECT_V2}" but calcTrigger is "streaming". ` +
-          `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset ` +
-          "formula resolves its members once per sweep and cannot run on a single reading.",
+          `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset or parameter ` +
+          "formula resolves its inputs once per sweep and cannot run on a single reading.",
     `a chosen v2 grammar states the dialect half, so no inherited clause on it — got ${JSON.stringify(chosen)}`,
   );
 

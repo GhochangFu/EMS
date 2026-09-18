@@ -1,4 +1,4 @@
-import { CALC_DIALECT, CALC_DIALECT_V2, DEFAULT_MAX_INPUT_AGE_SECONDS } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECT_V3, DEFAULT_MAX_INPUT_AGE_SECONDS } from "@bms/shared";
 
 import {
   referencesADerivedSiblingUnderV1,
@@ -42,7 +42,7 @@ export function runCalcDefinitionTests(): void {
   const badDialect = toActiveDefinition({ ...BASE, formulaDialect: "unvalidated" });
   assert(badDialect.ok === false && badDialect.reason === "bad_dialect", "a dialect outside CALC_DIALECTS must skip");
 
-  const unknownDialect = toActiveDefinition({ ...BASE, formulaDialect: "bms-calc-v3" });
+  const unknownDialect = toActiveDefinition({ ...BASE, formulaDialect: "bms-calc-v9" });
   assert(
     unknownDialect.ok === false && unknownDialect.reason === "bad_dialect",
     "a dialect this engine does not know must skip as bad_dialect, never be parsed as v1",
@@ -269,6 +269,40 @@ export function runCalcDefinitionTests(): void {
       v2Streaming.ok ? "ok" : v2Streaming.reason
     }`,
   );
+
+  // ---- bms-calc-v3 (ADR 0070 decisions 3 and 4; E4.1a U6) ------------------------
+
+  const v3 = toActiveDefinition({
+    ...BASE,
+    formula: "{A} * $f",
+    formulaDialect: CALC_DIALECT_V3,
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 60,
+  });
+  assert(v3.ok === true, `a scheduled v3 row must load, got ${v3.ok ? "ok" : v3.reason}`);
+  if (v3.ok) {
+    assert(v3.def.dialect === CALC_DIALECT_V3, `the definition carries the v3 dialect, got ${v3.def.dialect}`);
+    assert(v3.def.paramRefs.join("|") === "f", `paramRefs lists the $key, got ${JSON.stringify(v3.def.paramRefs)}`);
+    assert(v3.def.refs.join("|") === "A", `refs keeps its local meaning, got ${JSON.stringify(v3.def.refs)}`);
+    assert(v3.def.crossRefs.length === 0, "a param is not a cross ref");
+  }
+
+  // v3 is scheduled-only, refused under the same reason as v2 (design decision 13)
+  const v3Streaming = toActiveDefinition({ ...BASE, formula: "{A} * $f", formulaDialect: CALC_DIALECT_V3, calcTrigger: "streaming" });
+  assert(
+    v3Streaming.ok === false && v3Streaming.reason === "streaming_on_v2",
+    `a v3 row triggered streaming must skip as streaming_on_v2, got ${v3Streaming.ok ? "ok" : v3Streaming.reason}`,
+  );
+
+  // a v2 row's paramRefs is [] (three namespaces, and v2 has no $)
+  const v2Def = toActiveDefinition({ ...BASE, formula: "sum({A} @site)", formulaDialect: CALC_DIALECT_V2, calcTrigger: "scheduled", calcIntervalSeconds: 60 });
+  assert(v2Def.ok === true && v2Def.def.paramRefs.length === 0, "a v2 definition carries an empty paramRefs");
+  const v1Def = toActiveDefinition({ ...BASE, calcTrigger: "scheduled", calcIntervalSeconds: 60 });
+  assert(v1Def.ok === true && v1Def.def.paramRefs.length === 0, "a v1 definition carries an empty paramRefs");
+
+  // a $ under v2 is still unparseable — the dialect on the row decides
+  const dollarUnderV2 = toActiveDefinition({ ...BASE, formula: "{A} * $f", formulaDialect: CALC_DIALECT_V2, calcTrigger: "scheduled", calcIntervalSeconds: 60 });
+  assert(dollarUnderV2.ok === false && dollarUnderV2.reason === "unparseable_formula", "a $ under v2 is unparseable_formula, never parsed as v3");
 
   runDerivedSiblingTests();
 }

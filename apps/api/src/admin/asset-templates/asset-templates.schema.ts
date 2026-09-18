@@ -1,8 +1,8 @@
 import {
   assetDomainCodeSchema,
   CALC_DIALECT,
-  CALC_DIALECT_V2,
   CALC_DIALECTS,
+  isCrossAssetDialect,
   calcDialectSchema,
   CALC_TRIGGERS,
   // F2.23 / ADR 0065 decision 1: the one catalog character class and its sentence.
@@ -153,13 +153,16 @@ export const templatePointBodySchema = z
       // is the whole of decision 10 here: a `v2` point IS scheduled, therefore
       // it MUST carry an interval, so a null interval becomes a save-time
       // rejection instead of a formula that silently never runs.
-      if (point.formulaDialect === CALC_DIALECT_V2 && point.calcTrigger !== "scheduled") {
+      // ADR 0070 decision 3 extends the rule to `v3`: the gate reads the
+      // capability, never the version (a literal `v2` comparison would admit a
+      // streaming `v3` point), and the message names the row's own dialect.
+      if (point.formulaDialect != null && isCrossAssetDialect(point.formulaDialect) && point.calcTrigger !== "scheduled") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["calcTrigger"],
           message:
-            `A "${CALC_DIALECT_V2}" point requires calcTrigger: "scheduled" — a cross-asset ` +
-            "formula resolves its members once per sweep and cannot run on a single reading",
+            `A "${point.formulaDialect}" point requires calcTrigger: "scheduled" — a cross-asset or parameter ` +
+            "formula resolves its inputs once per sweep and cannot run on a single reading",
         });
       }
       if (point.calcTrigger == null) {
@@ -189,14 +192,14 @@ export const templatePointBodySchema = z
     // consulted, which is the silent shape this repository refuses.
     if (
       point.minCoverageRatio != null &&
-      !(point.kind === "derived" && point.formulaDialect === CALC_DIALECT_V2)
+      !(point.kind === "derived" && point.formulaDialect != null && isCrossAssetDialect(point.formulaDialect))
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["minCoverageRatio"],
         message:
-          `minCoverageRatio applies only to a derived point in the "${CALC_DIALECT_V2}" ` +
-          "dialect — it is the fraction of an aggregate's declared members that must be fresh",
+          `minCoverageRatio applies only to a derived point in a cross-asset dialect, not "${CALC_DIALECT}" — ` +
+          "it is the fraction of an aggregate's declared members that must be fresh",
       });
     }
 
@@ -223,9 +226,9 @@ export const templatePointBodySchema = z
     refinePointMetadata(point, ctx);
   })
   .describe(
-    'A derived point requires "formula", a formulaDialect of "bms-calc-v1" or ' +
-      '"bms-calc-v2", and a calcTrigger of "streaming" or "scheduled" ("scheduled" also ' +
-      'requires calcIntervalSeconds). A "bms-calc-v2" point must be "scheduled", and is ' +
+    'A derived point requires "formula", a formulaDialect of "bms-calc-v1", ' +
+      '"bms-calc-v2" or "bms-calc-v3", and a calcTrigger of "streaming" or "scheduled" ("scheduled" also ' +
+      'requires calcIntervalSeconds). A "bms-calc-v2" or "bms-calc-v3" point must be "scheduled", and is ' +
       "the only shape that may carry minCoverageRatio, which is bounded to (0, 1] and " +
       "means fail-closed when absent. A measured point must carry none of those fields. " +
       "The five instrument-metadata defaults belong to a measured point only: " +

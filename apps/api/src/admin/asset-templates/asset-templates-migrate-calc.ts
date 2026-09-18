@@ -1,4 +1,4 @@
-import { CALC_DIALECT_V2, parseFormula } from "@bms/shared";
+import { CALC_DIALECTS, isCrossAssetDialect, parseFormula } from "@bms/shared";
 import type { TemplateMigrationRefusalDto } from "@bms/shared";
 
 import type { CalcCandidate, CalcDependencyService } from "../../calc/calc-dependency.service";
@@ -224,13 +224,16 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
       // A merged formula that does not parse falls through to the read-time
       // counted skip: there is no graph node for a formula the engine cannot
       // read.
-      const mergedDialect = override.formulaDialect ?? declaredPoint.formulaDialect;
+      // Under the **merged** dialect, never the `v2` literal (ADR 0070): a
+      // `v3` formula parsed under `v2` fails on its first `$` and its cycle
+      // check would be skipped silently.
+      const mergedDialect = CALC_DIALECTS.find((known) => known === (override.formulaDialect ?? declaredPoint.formulaDialect));
       const mergedFormula = override.formula ?? declaredPoint.formula;
       const templatePointId = input.targetPointIdsByKey.get(pointKey);
-      if (mergedDialect !== CALC_DIALECT_V2 || mergedFormula === null || templatePointId === undefined) {
+      if (mergedDialect === undefined || !isCrossAssetDialect(mergedDialect) || mergedFormula === null || templatePointId === undefined) {
         continue;
       }
-      const parsed = parseFormula(mergedFormula, { dialect: CALC_DIALECT_V2 });
+      const parsed = parseFormula(mergedFormula, { dialect: mergedDialect });
       if (!parsed.ok) {
         continue;
       }
@@ -238,7 +241,7 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
         assetId: asset.assetId,
         pointKey,
         templatePointId,
-        dialect: CALC_DIALECT_V2,
+        dialect: mergedDialect,
         localRefs: parsed.refs,
         crossRefs: parsed.crossRefs,
       });

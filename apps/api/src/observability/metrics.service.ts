@@ -22,7 +22,16 @@ import type { CalcSkipReason } from "../calc/calc-definition";
  * (a `{CODE.key}` names no asset at the owner's location, decision 12),
  * `no_members` and `coverage_below_floor` (decision 11's two aggregate
  * refusals; a member that is missing or stale under a `null` ratio reports as
- * `missing_input` / `stale_input`, the same reason a local input would). */
+ * `missing_input` / `stale_input`, the same reason a local input would).
+ *
+ * The two after those are `bms-calc-v3`'s (ADR 0070; `E4.1a` U6):
+ * `parameter_unset` (decision 2 — a `$key` has no parameter row in scope for
+ * the owning asset at the tick; the formula writes nothing, never a `0`) and
+ * `parameters_unresolved` (the fleet read that resolves parameters failed, so
+ * every formula holding a `$key` is refused this sweep rather than computed
+ * over a guessed value — the mirror of `membership_unresolved`, plan ruling
+ * Q4: an outage is not a missing configuration and must not send an operator
+ * to the admin screen). */
 export type CalcRuntimeSkipReason =
   | CalcSkipReason
   | "missing_input"
@@ -32,7 +41,9 @@ export type CalcRuntimeSkipReason =
   | "membership_unresolved"
   | "unknown_asset_reference"
   | "no_members"
-  | "coverage_below_floor";
+  | "coverage_below_floor"
+  | "parameter_unset"
+  | "parameters_unresolved";
 
 @Injectable()
 export class MetricsService {

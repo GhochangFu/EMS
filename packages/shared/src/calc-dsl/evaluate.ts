@@ -75,6 +75,7 @@ function evalNode(
   node: CalcExpr,
   inputs: ReadonlyMap<string, number>,
   crossInputs: ReadonlyMap<string, number>,
+  params: ReadonlyMap<string, number>,
 ): CalcEvalResult {
   switch (node.kind) {
     case "number":
@@ -108,8 +109,22 @@ function evalNode(
       return finiteOrFail(value, node.position);
     }
 
+    // bms-calc-v3 (ADR 0070 decision 4): a parameter is served from `params`
+    // only, by its key, and never from `inputs` or `crossInputs` — a third
+    // namespace, so a local point key spelled like a parameter key can never
+    // shadow it or be shadowed by it (the `E4.1a` plan's design decision 3).
+    // Resolution (nearest scope, effective at the tick) happened in the host;
+    // an absent key is exactly a missing input, refused at the `$`.
+    case "param": {
+      const value = params.get(node.key);
+      if (value === undefined) {
+        return { ok: false, code: "missing_input", position: node.position };
+      }
+      return finiteOrFail(value, node.position);
+    }
+
     case "unary": {
-      const operand = evalNode(node.operand, inputs, crossInputs);
+      const operand = evalNode(node.operand, inputs, crossInputs, params);
       if (!operand.ok) {
         return operand;
       }
@@ -117,11 +132,11 @@ function evalNode(
     }
 
     case "binary": {
-      const left = evalNode(node.left, inputs, crossInputs);
+      const left = evalNode(node.left, inputs, crossInputs, params);
       if (!left.ok) {
         return left;
       }
-      const right = evalNode(node.right, inputs, crossInputs);
+      const right = evalNode(node.right, inputs, crossInputs, params);
       if (!right.ok) {
         return right;
       }
@@ -131,7 +146,7 @@ function evalNode(
     case "call": {
       const args: number[] = [];
       for (const argNode of node.args) {
-        const arg = evalNode(argNode, inputs, crossInputs);
+        const arg = evalNode(argNode, inputs, crossInputs, params);
         if (!arg.ok) {
           return arg;
         }
@@ -147,10 +162,11 @@ function evalNode(
 }
 
 const EMPTY_CROSS_INPUTS: ReadonlyMap<string, number> = new Map();
+const EMPTY_PARAMS: ReadonlyMap<string, number> = new Map();
 
 /**
- * Evaluates a parsed `bms-calc-v1` or `bms-calc-v2` expression against
- * resolved input values. Pure — no clock, no database, no configuration
+ * Evaluates a parsed `bms-calc-v1`, `bms-calc-v2` or `bms-calc-v3` expression
+ * against resolved input values. Pure — no clock, no database, no configuration
  * (ADR 0037 decision 1). Staleness is the caller's job, resolved before this
  * runs (decision 5); this function only ever sees values already decided to
  * be usable.
@@ -159,6 +175,9 @@ const EMPTY_CROSS_INPUTS: ReadonlyMap<string, number> = new Map();
  * `crossRefKey` of each `qref`/`aggregate` node, filled by the host after it
  * resolved membership and coverage. It defaults to empty, so every `v1`
  * caller keeps its two-argument call, and a `v1` AST never reads it.
+ * `params` (ADR 0070) is keyed by the `$key` of each `param` node, filled by
+ * the host from the parameter store; it defaults to empty for the same
+ * reason, and a `v1` or `v2` AST never reads it.
  *
  * Checks finiteness at every node, not only the root (decision 9): a chain
  * like `({A} * {B}) - ({A} * {B})` refuses at the first multiply, not at the
@@ -170,6 +189,7 @@ export function evaluate(
   ast: CalcExpr,
   inputs: ReadonlyMap<string, number>,
   crossInputs: ReadonlyMap<string, number> = EMPTY_CROSS_INPUTS,
+  params: ReadonlyMap<string, number> = EMPTY_PARAMS,
 ): CalcEvalResult {
-  return evalNode(ast, inputs, crossInputs);
+  return evalNode(ast, inputs, crossInputs, params);
 }

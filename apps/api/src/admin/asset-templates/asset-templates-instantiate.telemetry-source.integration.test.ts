@@ -8,6 +8,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   assertALocationTargetWritesNoTelemetrySource,
@@ -120,6 +121,7 @@ describe.skipIf(!connectionString)("F4.139 — instantiate derives telemetrySour
       access,
       audit,
       vocabularies,
+      new CalcParametersService(fleetDb),
     );
     // F3.2 / ADR 0067 decision 4 — the REAL dashboards service, never a stub.
     // The constructor parameter is required, so a stub here would leave the
@@ -127,7 +129,7 @@ describe.skipIf(!connectionString)("F4.139 — instantiate derives telemetrySour
     const assetDashboards = new AssetDashboardsInstantiateService(
       fleetDb,
       tenantDb,
-      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       audit,
       access,
     );

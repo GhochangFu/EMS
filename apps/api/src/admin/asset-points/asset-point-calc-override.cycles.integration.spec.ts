@@ -749,3 +749,69 @@ export async function assertTheCalcPointsReadCarriesTheTemplateRatio(
     `Y's template never set a ratio — the read is per template point, not one number for the estate, got ${JSON.stringify(kwOfY?.minCoverageRatio)}`,
   );
 }
+
+/**
+ * `E4.1a` / ADR 0070 — the same cycle, closed by a `bms-calc-v3` override. The
+ * mutation this exists for: parse the merged formula under the `v2` literal
+ * and a `v3` formula fails on its first `$`, the cycle check is skipped, and
+ * the override **stores**. So the 400 alone is not enough — the message must
+ * name the cycle, and the anti-vacuity write must land. The second half is
+ * ADR 0070 decision 4 on this path: a `$key` outside the vocabulary is a 400
+ * naming the key, before the fleet-wide cycle read.
+ */
+export async function assertV3OverrideRefusesACycleAndAnUnknownParameterKey(
+  pool: pg.Pool,
+  fx: Fixtures,
+  svc: AssetPointCalcOverrideService,
+): Promise<void> {
+  const fixture = await seedCycleFixture(pool, fx);
+
+  const message = await expectRejection(
+    () =>
+      svc.setOverride(fx.adminJwt, fixture.y, KEY_KW, {
+        ...NOTHING,
+        formula: `{${CODE_X}.${KEY_TOTAL}} * $energy_tariff_per_kwh`,
+        formulaDialect: "bms-calc-v3",
+        calcTrigger: "scheduled",
+        calcIntervalSeconds: 60,
+      }),
+    /dependency cycle/,
+    "a bms-calc-v3 override closing a cycle through @site membership",
+    400,
+  );
+  assert(
+    message.includes(`${CODE_X}/${KEY_TOTAL}`) && message.includes(`${CODE_Y}/${KEY_KW}`),
+    `the v3 cycle check names both members — proof it parsed under v3, got: ${message}`,
+  );
+  assert((await formulaOf(pool, fixture.y, KEY_KW)) === undefined, "no asset_points row after the refusal");
+
+  const unknown = await expectRejection(
+    () =>
+      svc.setOverride(fx.adminJwt, fixture.y, KEY_KW, {
+        ...NOTHING,
+        formula: `{${CODE_X}.${KEY_MEASURED}} * $not_a_key_in_the_vocabulary`,
+        formulaDialect: "bms-calc-v3",
+        calcTrigger: "scheduled",
+        calcIntervalSeconds: 60,
+      }),
+    /calc parameter vocabulary/,
+    "a bms-calc-v3 override naming a $key outside the vocabulary",
+    400,
+  );
+  assert(unknown.includes("$not_a_key_in_the_vocabulary"), `the refusal names the key, got: ${unknown}`);
+  assert(!DEPENDENCY_CYCLE.test(unknown), "the vocabulary refusal is not the cycle sentence (one guard, one message)");
+
+  // Anti-vacuity: a v3 override with a known $key and no cycle is stored —
+  // and stored with no parameter row anywhere for the key (decision 4).
+  await svc.setOverride(fx.adminJwt, fixture.y, KEY_KW, {
+    ...NOTHING,
+    formula: `{${CODE_X}.${KEY_MEASURED}} * $energy_tariff_per_kwh`,
+    formulaDialect: "bms-calc-v3",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 60,
+  });
+  assert(
+    (await formulaOf(pool, fixture.y, KEY_KW)) === `{${CODE_X}.${KEY_MEASURED}} * $energy_tariff_per_kwh`,
+    "a v3 override that closes no cycle and names a vocabulary key is stored verbatim",
+  );
+}

@@ -7,6 +7,7 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
@@ -103,7 +104,7 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
     const assetDashboards = new AssetDashboardsInstantiateService(
       fleetDb,
       tenantDb,
-      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       audit,
       access,
     );
@@ -116,7 +117,7 @@ describe.skipIf(!connectionString)("F2.2 — asset template instantiation", () =
       assetDashboards,
     );
     svc = {
-      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       // Parse through the real schema so these cases exercise the controller's
       // path, transform included — not a hand-built post-transform shape.
       instantiate: (jwt, templateId, body) =>

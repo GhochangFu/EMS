@@ -1,4 +1,16 @@
-import { CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECTS, CalcTokenizeError, crossRefKey, parseFormula, tokenize } from "./index";
+import {
+  CALC_DIALECT,
+  CALC_DIALECT_V2,
+  CALC_DIALECT_V3,
+  CALC_DIALECTS,
+  CalcTokenizeError,
+  crossRefKey,
+  isCrossAssetDialect,
+  isParameterDialect,
+  MAX_FORMULA_PARAM_REFS,
+  parseFormula,
+  tokenize,
+} from "./index";
 import type { CalcCrossRef, CalcDialect, ParseOptions, Token, TokenKind } from "./index";
 
 function assert(condition: boolean, message: string): void {
@@ -66,9 +78,32 @@ export function runCalcDslBarrelTests(): void {
 
   assert(CALC_DIALECT === "bms-calc-v1", `CALC_DIALECT must stay bms-calc-v1, got ${CALC_DIALECT}`);
   assert(CALC_DIALECT_V2 === "bms-calc-v2", `CALC_DIALECT_V2 must be bms-calc-v2, got ${CALC_DIALECT_V2}`);
+  // ADR 0070 (`E4.1a`): a third member, in superset order — the picker renders
+  // the tuple as it is. `CALC_DIALECT` and `CALC_DIALECT_V2` are unchanged.
+  assert(CALC_DIALECT_V3 === "bms-calc-v3", `CALC_DIALECT_V3 must be bms-calc-v3, got ${CALC_DIALECT_V3}`);
   assert(
-    CALC_DIALECTS.length === 2 && CALC_DIALECTS[0] === CALC_DIALECT && CALC_DIALECTS[1] === CALC_DIALECT_V2,
-    `CALC_DIALECTS must be [v1, v2] in that order, got ${JSON.stringify(CALC_DIALECTS)}`,
+    CALC_DIALECTS.length === 3 &&
+      CALC_DIALECTS[0] === CALC_DIALECT &&
+      CALC_DIALECTS[1] === CALC_DIALECT_V2 &&
+      CALC_DIALECTS[2] === CALC_DIALECT_V3,
+    `CALC_DIALECTS must be [v1, v2, v3] in that order, got ${JSON.stringify(CALC_DIALECTS)}`,
+  );
+  // The two predicates every dialect gate outside the grammar files reads
+  // (plan design decision 14): a literal `=== CALC_DIALECT_V2` silently
+  // excludes `v3`.
+  assert(
+    !isCrossAssetDialect(CALC_DIALECT) && isCrossAssetDialect(CALC_DIALECT_V2) && isCrossAssetDialect(CALC_DIALECT_V3),
+    "isCrossAssetDialect is true for v2 and v3 only",
+  );
+  assert(
+    !isParameterDialect(CALC_DIALECT) && !isParameterDialect(CALC_DIALECT_V2) && isParameterDialect(CALC_DIALECT_V3),
+    "isParameterDialect is true for v3 only",
+  );
+  assert(MAX_FORMULA_PARAM_REFS === 8, `MAX_FORMULA_PARAM_REFS must be 8, got ${MAX_FORMULA_PARAM_REFS}`);
+  const v3 = tokenize("$f", { dialect: CALC_DIALECT_V3 });
+  assert(
+    v3[0].kind === "param" && v3[0].text === "f",
+    `tokenize(text, { dialect: v3 }) must reach the v3 lexer, got ${JSON.stringify(v3[0])}`,
   );
 
   const dialect: CalcDialect = CALC_DIALECT_V2;

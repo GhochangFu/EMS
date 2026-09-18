@@ -7,6 +7,7 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
@@ -100,7 +101,7 @@ describe.skipIf(!connectionString)("E2.4 — seeded-rules re-apply guards", () =
     const assetDashboards = new AssetDashboardsInstantiateService(
       fleetDb,
       tenantDb,
-      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       audit,
       access,
     );
@@ -113,7 +114,7 @@ describe.skipIf(!connectionString)("E2.4 — seeded-rules re-apply guards", () =
       assetDashboards,
     );
     svc = {
-      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       instantiate: (jwt, id, body) =>
         instantiation.instantiate(jwt, id, instantiateAssetsBodySchema.parse(body)),
       seededRules: new AssetTemplateSeededRulesService(

@@ -150,3 +150,58 @@ export async function assertVersionBumpCopiesMinCoverageRatio(
     throw new Error("the version bump must carry the v2 dialect forward beside the ratio");
   }
 }
+
+/**
+ * `E4.1a` / ADR 0070 decision 4 — a `bms-calc-v3` formula's `$key` must be in
+ * the vocabulary, and **a key with no value in scope is not a save-time
+ * error**. Two cases in one because the second is the positive control of the
+ * first: the same request shape, one key changed, must be accepted — with no
+ * `bms.calc_parameters` row anywhere for it. A test that only proved the
+ * refusal would also pass against a service that refused every `$key`.
+ */
+export async function assertParameterKeysAreInTheVocabulary(
+  svc: AssetTemplatesAdminService,
+  fx: Fixtures,
+): Promise<void> {
+  const request = (suffix: string, key: string) => ({
+    organizationId: fx.organizationId,
+    code: `${TEST_CODE}-${suffix}`,
+    name: "Parameter key",
+    assetType: "test_rig",
+    domain: "water",
+    points: [
+      { pointKey: fx.pointKeys[1], kind: "measured" as const, required: true, sortOrder: 0 },
+      {
+        pointKey: fx.pointKeys[0],
+        kind: "derived" as const,
+        formula: `{${fx.pointKeys[1]}} * $${key}`,
+        formulaDialect: "bms-calc-v3" as const,
+        calcTrigger: "scheduled" as const,
+        calcIntervalSeconds: 60,
+        required: false,
+        sortOrder: 1,
+      },
+    ],
+  });
+
+  let message: string | null = null;
+  try {
+    await svc.create(fx.adminJwt, request("PARAM-BAD", "not_a_key_in_the_vocabulary"));
+  } catch (err) {
+    message = err instanceof Error ? err.message : String(err);
+  }
+  if (message === null) {
+    throw new Error("a bms-calc-v3 formula naming a $key outside bms.calc_parameter_keys was accepted");
+  }
+  if (!message.includes("$not_a_key_in_the_vocabulary") || !message.includes("/admin/calc-parameters")) {
+    throw new Error(`the refusal must name the $key and where to add it, got "${message}"`);
+  }
+
+  // The positive control: a stock key with no parameter row anywhere is
+  // accepted — the value is the sweep's `parameter_unset`, never a save error.
+  const created = await svc.create(fx.adminJwt, request("PARAM-OK", "energy_tariff_per_kwh"));
+  const point = derivedPointOf(created, "create");
+  if (point.formulaDialect !== "bms-calc-v3" || point.formula !== `{${fx.pointKeys[1]}} * $energy_tariff_per_kwh`) {
+    throw new Error(`the v3 point must round-trip as stored, got ${JSON.stringify(point)}`);
+  }
+}

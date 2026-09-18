@@ -18,6 +18,7 @@ import {
   assertV2InheritedDialectIsNamedWhenOnlyTheTriggerIsOverridden,
   assertV2OverrideAdmitsADerivedSiblingAndAnAggregate,
   assertV2StreamingIsRefusedOnTheMergedPair,
+  assertV3OverrideIsAdmittedScheduledOnly,
 } from "./asset-point-calc-override.schema.spec";
 
 /** `F2.6` U7 — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -64,6 +65,10 @@ describe("F2.6 — asset point calc override contract", () => {
 
   it("ADR 0055 decision 10 — a merged bms-calc-v2 point may not be streaming", () => {
     assertV2StreamingIsRefusedOnTheMergedPair();
+  });
+
+  it("ADR 0070 — a bms-calc-v3 override is admitted, scheduled-only, with its own dialect named", () => {
+    assertV3OverrideIsAdmittedScheduledOnly();
   });
 
   it("names the inherited dialect when only the trigger is overridden", () => {

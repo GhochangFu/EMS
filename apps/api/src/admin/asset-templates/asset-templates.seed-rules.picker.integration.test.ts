@@ -10,6 +10,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { RulesService } from "../../rules/rules.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
@@ -102,7 +103,7 @@ describe.skipIf(!connectionString)("F3.49 — the picker offers what the validat
     const assetDashboards = new AssetDashboardsInstantiateService(
       fleetDb,
       tenantDb,
-      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       audit,
       access,
     );
@@ -123,7 +124,7 @@ describe.skipIf(!connectionString)("F3.49 — the picker offers what the validat
       dispatch: () => Promise.resolve([]),
     } as unknown as NotificationsService;
     svc = {
-      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies),
+      templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
       rules: new RulesService(tenantDb, fleetDb, vocabularies, alarmRaiser, notifications),
       instantiate: (jwt, templateId, body) =>
         instantiation.instantiate(jwt, templateId, instantiateAssetsBodySchema.parse(body)),

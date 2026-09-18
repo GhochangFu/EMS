@@ -512,6 +512,13 @@
       "when": 1789575341238,
       "tag": "0073_asset_default_dashboards",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789749688719,
+      "tag": "0074_calc_parameters",
+      "breakpoints": true
     }
   ]
 }

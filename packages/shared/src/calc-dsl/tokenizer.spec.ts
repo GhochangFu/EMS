@@ -1,5 +1,5 @@
 import { tokenize, CalcTokenizeError } from "./tokenizer";
-import { CALC_DIALECT_V2 } from "./limits";
+import { CALC_DIALECT_V2, CALC_DIALECT_V3, type CalcDialect } from "./limits";
 import type { CalcErrorCode } from "./ast";
 
 function assert(condition: boolean, message: string): void {
@@ -10,12 +10,14 @@ function assert(condition: boolean, message: string): void {
 
 /** The `v2` option, spelled once. Every call without it is a `v1` call. */
 const V2 = { dialect: CALC_DIALECT_V2 } as const;
+/** The `v3` option, spelled once (ADR 0070). */
+const V3 = { dialect: CALC_DIALECT_V3 } as const;
 
 function expectFailCode(
   expression: string,
   code: CalcErrorCode,
   message: string,
-  options?: { dialect?: typeof CALC_DIALECT_V2 },
+  options?: { dialect?: CalcDialect },
 ): void {
   try {
     tokenize(expression, options);
@@ -142,7 +144,7 @@ export function runTokenizerTests(): void {
   }
 }
 
-function failurePosition(expression: string, options?: { dialect?: typeof CALC_DIALECT_V2 }): number {
+function failurePosition(expression: string, options?: { dialect?: CalcDialect }): number {
   try {
     tokenize(expression, options);
   } catch (error) {
@@ -246,6 +248,87 @@ export function runTokenizerV2Tests(): void {
       assert(
         Object.keys(error.parseError).sort().join(",") === "code,position",
         `unknown_scope must carry only code and position, got keys: ${Object.keys(error.parseError).join(",")}`,
+      );
+    }
+  }
+}
+
+/**
+ * The `v3` half (ADR 0070 decisions 3 and 4). One added production: `$key`
+ * lexes as a `param` token whose `text` is the key **without** the `$` and
+ * whose `position` is the `$`. Everything `v2` lexes, `v3` lexes the same way
+ * — the `v2` loop is untouched, exactly as the `v1` loop was by `v2`. The
+ * assertions marked `v2 guard` are the ones a `v3` production would break if
+ * it leaked past its dialect check: `$` must stay an unexpected character
+ * under `v1` and under `v2`.
+ */
+export function runTokenizerV3Tests(): void {
+  // ---- v2 guard: `$` is still unexpected under v1 and v2 ----------------------
+
+  expectFailCode("$x", "unexpected_character", "v2 guard: $ must stay unexpected under v1");
+  assert(failurePosition("$x") === 0, "v2 guard: the v1 refusal is at the $");
+  expectFailCode("$x", "unexpected_character", "v2 guard: $ must stay unexpected under v2", V2);
+  assert(failurePosition("$x", V2) === 0, "v2 guard: the v2 refusal is at the $");
+
+  // ---- param ------------------------------------------------------------------
+
+  const tariff = tokenize("{kw} * $energy_tariff_per_kwh", V3);
+  assert(
+    tariff.map((t) => t.kind).join(",") === "ref,star,param,eof",
+    `{kw} * $energy_tariff_per_kwh under v3, got ${tariff.map((t) => t.kind).join(",")}`,
+  );
+  assert(
+    tariff[2].text === "energy_tariff_per_kwh",
+    `param text is the key without the $, got ${JSON.stringify(tariff[2].text)}`,
+  );
+  assert(tariff[2].position === 7, `param position is the $, got ${tariff[2].position}`);
+  assert(tariff[2].assetCode === undefined && tariff[2].numberValue === undefined, "a param carries only kind, position and text");
+
+  expectFailCode("$", "malformed_parameter_reference", "a bare $ names no key and must fail", V3);
+  expectFailCode("$1", "malformed_parameter_reference", "a key may not start with a digit", V3);
+  expectFailCode("$ x", "malformed_parameter_reference", "a space between $ and the key is not a reference", V3);
+  assert(failurePosition("2 + $", V3) === 4, "malformed_parameter_reference reports the position of the $");
+
+  // `$a-b` must mean `$a - b`: the reason a key may never contain `-`
+  // (plan design decision 5, ruling Q1)
+  const minus = tokenize("$a-b", V3);
+  assert(
+    minus.map((t) => t.kind).join(",") === "param,minus,ident,eof",
+    `$a-b lexes as $a - b, got ${minus.map((t) => t.kind).join(",")}`,
+  );
+  assert(minus[0].text === "a" && minus[2].text === "b", "the key stops at the -");
+
+  // ---- everything v2 lexes, v3 lexes the same way ------------------------------
+
+  const v2Expression = "sum({TX_01.kw} @group('IT_LOAD')) * {a-b/c d}";
+  const underV2 = tokenize(v2Expression, V2);
+  const underV3 = tokenize(v2Expression, V3);
+  assert(
+    JSON.stringify(underV2) === JSON.stringify(underV3),
+    `a v2 expression must lex identically under v3: ${JSON.stringify(underV3)}`,
+  );
+  const mixed = tokenize("sum({kw} @site) * $f", V3);
+  assert(
+    mixed.map((t) => t.kind).join(",") === "ident,lparen,ref,scope,rparen,star,param,eof",
+    `a v2 production beside a param under v3, got ${mixed.map((t) => t.kind).join(",")}`,
+  );
+
+  // the `v2` refusals are unchanged under v3
+  expectFailCode("@foo", "unknown_scope", "an unknown scope must still fail under v3", V3);
+  expectFailCode("''", "empty_string", "an empty string must still fail under v3", V3);
+  expectFailCode("{.kw}", "malformed_qualified_reference", "an empty asset code must still fail under v3", V3);
+  expectFailCode("2 # 3", "unexpected_character", "an unknown character still fails under v3", V3);
+
+  // ---- a CalcParseError still carries only code + position ----------------------
+
+  try {
+    tokenize("$", V3);
+    throw new Error("expected tokenize to fail");
+  } catch (error) {
+    if (error instanceof CalcTokenizeError) {
+      assert(
+        Object.keys(error.parseError).sort().join(",") === "code,position",
+        `malformed_parameter_reference must carry only code and position, got keys: ${Object.keys(error.parseError).join(",")}`,
       );
     }
   }

@@ -8,10 +8,12 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetTemplatesAdminService } from "./asset-templates.service";
 import {
   assertCrossRefPointKeysAreCatalogued,
+  assertParameterKeysAreInTheVocabulary,
   assertVersionBumpCopiesMinCoverageRatio,
 } from "./asset-templates.calc-v2.integration.spec";
 import { cleanup, loadFixtures, type Fixtures } from "./asset-templates.lifecycle.integration.spec";
@@ -74,6 +76,7 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 template write path", (
       new AccessControlService(createDb(authPool), fleetDb),
       new MasterDataAuditService(tenantDb, fleetDb),
       new VocabulariesService(tenantDb),
+      new CalcParametersService(fleetDb),
     );
     fx = await loadFixtures(created);
   });
@@ -91,5 +94,9 @@ describe.skipIf(!connectionString)("F2.9 — bms-calc-v2 template write path", (
 
   it("carries min_coverage_ratio through a version bump (ADR 0055 decision 11)", async () => {
     await assertVersionBumpCopiesMinCoverageRatio(svc, fx);
+  });
+
+  it("ADR 0070 — a bms-calc-v3 $key must be in the vocabulary; a key with no value is still accepted", async () => {
+    await assertParameterKeysAreInTheVocabulary(svc, fx);
   });
 });

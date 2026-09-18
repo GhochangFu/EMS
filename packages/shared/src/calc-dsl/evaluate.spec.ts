@@ -1,8 +1,9 @@
 import type { CalcEvalErrorCode, CalcEvalResult } from "./evaluate";
 import { evaluate } from "./evaluate";
-import { CALC_DIALECT_V2 } from "./limits";
+import { CALC_DIALECT_V2, CALC_DIALECT_V3 } from "./limits";
 import { parseFormula } from "./parser";
 import { V1_CORPUS } from "./v1-corpus";
+import { V2_CORPUS } from "./v2-corpus";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -236,4 +237,96 @@ export function runEvaluateV2Tests(): void {
 
   const twoArg = evaluate(v1Parsed.ast, new Map([["A", 1]]));
   assert(twoArg.ok === true && Object.is(twoArg.value, 2), "evaluate(ast, inputs) with no crossInputs must still work");
+
+  // ---- v2-corpus.ts smoke check (E4.1a U3, ADR 0070 decision 3) ---------------
+  // The full v2→v3 superset property is `dialect-superset.spec.ts`'s job; this
+  // loop only proves the shared corpus parses under v2 without throwing, and —
+  // for the entries that parse ok — that `evaluate` runs on the real AST without
+  // throwing, so the corpus cannot silently rot for this spec's own purpose.
+  for (const expression of V2_CORPUS) {
+    const parsed = parseFormula(expression, { dialect: CALC_DIALECT_V2 });
+    assert(typeof parsed.ok === "boolean", `v2-corpus.ts entry must parse to a ParseResult: ${JSON.stringify(expression)}`);
+    if (parsed.ok) {
+      const result = evaluate(parsed.ast, new Map(), new Map());
+      assert(typeof result.ok === "boolean", `v2-corpus.ts entry must evaluate without throwing: ${JSON.stringify(expression)}`);
+    }
+  }
+}
+
+/** Parses under `v3` and evaluates with all three maps. */
+function evalExprV3(
+  expression: string,
+  inputs: Record<string, number>,
+  crossInputs: Record<string, number>,
+  params: Record<string, number>,
+): CalcEvalResult {
+  const parsed = parseFormula(expression, { dialect: CALC_DIALECT_V3 });
+  if (!parsed.ok) {
+    throw new Error(`expected ${JSON.stringify(expression)} to parse under v3, got errors: ${JSON.stringify(parsed.errors)}`);
+  }
+  return evaluate(parsed.ast, new Map(Object.entries(inputs)), new Map(Object.entries(crossInputs)), new Map(Object.entries(params)));
+}
+
+/**
+ * The `bms-calc-v3` half (ADR 0070 decision 4; `E4.1a` plan design decision
+ * 3). A `param` node is served from a **fourth** map, `params`, by its key —
+ * never from `inputs` and never from `crossInputs`. The load-bearing
+ * assertion is the last one: a key present in `inputs` and absent from
+ * `params` is still `missing_input`, because a local point key and a
+ * parameter key are different namespaces even when they spell the same.
+ */
+export function runEvaluateV3Tests(): void {
+  // ---- a param reads its value from params by key ---------------------------------
+
+  const cost = evalExprV3("{kw} * $f", { kw: 10 }, {}, { f: 2.15 });
+  assert(cost.ok === true && Object.is(cost.value, 21.5), `kw 10 × f 2.15 must be 21.5, got ${JSON.stringify(cost)}`);
+
+  const allThree = evalExprV3("sum({kw} @site) * $f + {kw}", { kw: 1 }, { "a:sum(kw)@site": 10 }, { f: 2 });
+  assert(allThree.ok === true && Object.is(allThree.value, 21), `all three maps in one formula, got ${JSON.stringify(allThree)}`);
+
+  // ---- absent → missing_input at the $ -------------------------------------------------
+
+  const absent = evalExprV3("{kw} * $f", { kw: 10 }, {}, {});
+  assert(absent.ok === false && absent.code === "missing_input", `an absent param must refuse as missing_input, got ${JSON.stringify(absent)}`);
+  if (!absent.ok) {
+    assert(absent.position === 7, `expected the param's position (7), got ${absent.position}`);
+  }
+
+  // ---- the fourth argument defaults to empty ------------------------------------------------
+
+  const v3Parsed = parseFormula("$f + 1", { dialect: CALC_DIALECT_V3 });
+  if (!v3Parsed.ok) {
+    throw new Error("v3 fixture must parse");
+  }
+  const noParams = evaluate(v3Parsed.ast, new Map(), new Map());
+  assert(noParams.ok === false && noParams.code === "missing_input", "with no params map every param is a missing input");
+
+  // ---- a non-finite param refuses at the node, like a local ref does -------------------------------
+
+  const infinite = evalExprV3("1 + $f", {}, {}, { f: Infinity });
+  assert(infinite.ok === false && infinite.code === "non_finite", `Infinity in params must refuse as non_finite, got ${JSON.stringify(infinite)}`);
+  if (!infinite.ok) {
+    assert(infinite.position === 4, `expected the param's position (4), got ${infinite.position}`);
+  }
+  const nan = evalExprV3("$f", {}, {}, { f: NaN });
+  assert(nan.ok === false && nan.code === "non_finite", "NaN in params must refuse as non_finite");
+
+  // ---- a v2 AST ignores a non-empty params map --------------------------------------------------------------
+
+  const v2Parsed = parseFormula("{A} + 1", { dialect: CALC_DIALECT_V2 });
+  if (!v2Parsed.ok) {
+    throw new Error("v2 fixture must parse");
+  }
+  const v2Ignores = evaluate(v2Parsed.ast, new Map([["A", 1]]), new Map(), new Map([["A", 100]]));
+  assert(v2Ignores.ok === true && Object.is(v2Ignores.value, 2), `a v2 AST never reads params, got ${JSON.stringify(v2Ignores)}`);
+
+  // ---- the namespaces never meet (the load-bearing assertion) --------------------------------------------
+
+  const shadowed = evalExprV3("{f} * $f", { f: 3 }, { f: 30 }, {});
+  assert(
+    shadowed.ok === false && shadowed.code === "missing_input" && shadowed.position === 6,
+    `a key in inputs (and crossInputs) but not in params is still missing_input at the $, got ${JSON.stringify(shadowed)}`,
+  );
+  const separate = evalExprV3("{f} * $f", { f: 3 }, {}, { f: 4 });
+  assert(separate.ok === true && Object.is(separate.value, 12), `{f} from inputs and $f from params, got ${JSON.stringify(separate)}`);
 }
