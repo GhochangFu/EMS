@@ -5532,3 +5532,30 @@ no contract, no dependency.
 Database and API N/A; browser skipped — the probe route holds the claim. One
 nit on record, shared with the twin page: the cached detail query survives a
 delete for one refetch round trip on a browser Back. Unblocks nothing.
+
+### `F3.43` — the chart legend names the asset (ADR 0069) ✅ 2026-09-18
+
+PR [#486](https://github.com/GhochangFu/EMS/pull/486), squash `a3cb6f4f`; the
+guard fix it surfaced, [#485](https://github.com/GhochangFu/EMS/pull/485).
+Created 2026-09-02 by the §4.6 browser pass on the Sheet 02 demo dashboard:
+`widgetDataFor` named every series `pointKey`, ECharts keys the legend by
+name, so five breakers' `kw` collapsed into one legend entry.
+[ADR 0069](./adr/0069-chart-legend-asset-label.md) ruled four questions as
+recommended: `assetCode` (`varchar(64)`, required) on the widget point DTO,
+riding the `bms.assets` join `resolveBoundPoints` already made for its
+organization predicate — no second fetch; a series is always
+`<assetCode> · <pointKey>` through a named `seriesNameFor`; the inspector
+labels stay as they are.
+
+**What the reviews caught**: a second producer of point rows — the
+section-template instantiate read-back, parsed from `unknown`, so the
+compiler said nothing and every instantiation with resolved bindings
+answered 500 after committing. Replaced by `resolveBoundPoints`, which is
+also the tighter read. The ADR now says: enumerate producers by the parse
+call, not by the literal.
+
+**Verified on every layer**: four named mutations; the full suite with the CI
+env (579 files / 4038 tests); the compose database for the three API suites;
+the browser on the rebuilt images — the live legend read five distinct
+`<code> · kw` names where the row measured five copies of `kw`. Database
+N/A. Post-merge sweep clean. Unblocks nothing.
