@@ -28,10 +28,12 @@ import {
  * the Zod layer (plan finding 32). A `0` would make every aggregate pass on
  * zero fresh members; a ratio above `1` could never pass at all.
  *
- * `streaming_on_v2` (`F2.9`, ADR 0055 decision 10) is the same shape for the
- * `bms-calc-v2` dialect: `v2` is `scheduled`-only, the Zod rule refuses the
- * pair at save, and this is the second refusal on the stored row — for
- * exactly the `createDraftFrom` path above.
+ * `streaming_on_v2` (`F2.9`, ADR 0055 decision 10) is the same shape for
+ * **any scheduled-only dialect** — `bms-calc-v2`, and `bms-calc-v3` since ADR
+ * 0070 decision 3: the Zod rule refuses the pair at save, and this is the
+ * second refusal on the stored row — for exactly the `createDraftFrom` path
+ * above. The reason keeps its `v2` name (`E4.1a` plan design decision 13):
+ * renaming a metric label for tidiness breaks every dashboard reading it.
  *
  * `self_reference` (`F2.9`) is the odd one: it does not describe a row that
  * failed a save-time rule, it describes one whose *stored dialect disagrees
@@ -85,6 +87,14 @@ export interface CalcDefinition {
    * different namespaces and must never be resolved against each other.
    */
   crossRefs: CalcCrossRef[];
+  /**
+   * Every distinct `$key` the formula names, in first-appearance order (ADR
+   * 0070 decision 4). Always `[]` under `v1` and `v2`, which have no such
+   * production. A third namespace beside `refs` and `crossRefs`: the sweep
+   * resolves it through `CalcParametersService` into the fourth `evaluate()`
+   * map, and an unresolved key is `parameter_unset`.
+   */
+  paramRefs: string[];
   /**
    * ADR 0055 decision 11. `null` means **fail closed** — every declared member
    * of an aggregate must be fresh — not "no limit". Never overridden per asset:
@@ -199,9 +209,10 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
   if (row.calcTrigger !== "streaming" && row.calcTrigger !== "scheduled") {
     return { ok: false, reason: "no_trigger" };
   }
-  // ADR 0055 decision 10: `v2` is `scheduled`-only. Reported ahead of the
-  // interval checks because the dialect/trigger pair is the actionable defect —
-  // a `v2` streaming row is wrong whether or not it also carries an interval.
+  // ADR 0055 decision 10 and ADR 0070 decision 3: every dialect but `v1` is
+  // `scheduled`-only. Reported ahead of the interval checks because the
+  // dialect/trigger pair is the actionable defect — a `v2` or `v3` streaming
+  // row is wrong whether or not it also carries an interval.
   if (dialect !== CALC_DIALECT && row.calcTrigger === "streaming") {
     return { ok: false, reason: "streaming_on_v2" };
   }
@@ -242,6 +253,7 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
       maxInputAgeSeconds: row.maxInputAgeSeconds ?? DEFAULT_MAX_INPUT_AGE_SECONDS,
       dialect,
       crossRefs: parsed.crossRefs,
+      paramRefs: parsed.paramRefs,
       minCoverageRatio: row.minCoverageRatio,
     },
   };

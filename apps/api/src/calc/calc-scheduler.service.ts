@@ -13,6 +13,7 @@ import { CalcDefinitionsService } from "./calc-definitions.service";
 import { buildCalcGraph, topologicalOrder, type Membership, type NodeId } from "./calc-graph";
 import { classifyInput, type CalcInputSample } from "./calc-inputs";
 import { CalcInputsService } from "./calc-inputs.service";
+import { CalcParametersService } from "./calc-parameters.service";
 import { bucketTimeMs, isDue } from "./calc-schedule";
 import { CalcScopeService } from "./calc-scope.service";
 import { CalcStatusRegistry } from "./calc-status.registry";
@@ -27,6 +28,8 @@ export interface CalcSchedulerDeps {
   inputs: Pick<CalcInputsService, "getLatestSamples" | "getLatestSamplesForPairs">;
   /** `F2.9` — membership for `bms-calc-v2`, resolved once per sweep (plan design decision 8). */
   scope: Pick<CalcScopeService, "resolveMembership">;
+  /** `E4.1a` — `$key` values for `bms-calc-v3`, resolved once per sweep at the tick's time (ADR 0070 decision 2). */
+  parameters: Pick<CalcParametersService, "resolveForAssets">;
   writer: Pick<CalcWriteService, "writeValues">;
   metrics: Pick<MetricsService, "countCalcSkipped" | "countCalcAggregateExcluded" | "setCalcAggregateMembersMax">;
   /** `F2.9` Task 16 — design decision 9, layer 3: what the per-asset page reads. */
@@ -84,6 +87,7 @@ type ComputedThisTick = ReadonlyMap<NodeId, CalcInputSample>;
 type Pair = { readonly assetId: string; readonly pointKey: string };
 
 const EMPTY_MEMBERSHIP: Membership = { qualified: new Map(), members: new Map() };
+const EMPTY_PARAMETERS: ReadonlyMap<string, number> = new Map();
 
 /**
  * The samples for `pairs`, overlay first and one batched read for the rest.
@@ -212,7 +216,22 @@ async function evaluateOneScheduledFormula(
   nowMs: number,
   membership: Membership,
   computedThisTick: ComputedThisTick,
+  parameters: ReadonlyMap<string, number>,
 ): Promise<ScheduledOutcome | null> {
+  // Parameters first (ADR 0070 decision 2): a `$key` with no row in scope is
+  // `parameter_unset` before any input is read, so a missing parameter never
+  // pays a pairs read. `parameters` is keyed by `inputKey(assetId, key)` and
+  // an absent key is absent — the resolver never defaults, and neither does
+  // this: the fourth map is built only from what resolved.
+  const params = new Map<string, number>();
+  for (const key of def.paramRefs) {
+    const value = parameters.get(inputKey(def.assetId, key));
+    if (value === undefined) {
+      return refuse(deps, def, "parameter_unset", nowMs);
+    }
+    params.set(key, value);
+  }
+
   // Local references: the overlay first, then one batched read for the rest —
   // a `v1` formula never hits the overlay (its refs are never derived, which
   // `v1_references_derived` holds at read time), so its read is unchanged.
@@ -252,7 +271,7 @@ async function evaluateOneScheduledFormula(
     excluded = resolved.excluded;
   }
 
-  const result = evaluate(def.ast, inputs, crossInputs);
+  const result = evaluate(def.ast, inputs, crossInputs, params);
   if (!result.ok) {
     // The last exit above the write, and the reason `excluded` is still only a
     // number here: a `non_finite` result discards it with everything else.
@@ -341,6 +360,14 @@ function largestMemberSet(membership: Membership): number {
  * so a purely local cycle is still refused, and the cyclic-set log is left
  * alone rather than fed a partial graph.
  *
+ * **Parameter failure is contained to the definitions that hold a `$key`**
+ * (ADR 0070; `E4.1a` U6). The pairs read runs once per sweep, after
+ * membership, over the distinct `(assetId, key)` set of every scheduled
+ * definition with `paramRefs`; when it throws, each of those definitions
+ * counts `parameters_unresolved` and every other definition — `v1`, `v2`,
+ * or a `v3` formula with no `$` — still evaluates and still writes. No
+ * definition holds a `$key` → no read at all.
+ *
  * **Downstream of a cycle is not refused** (design decision 7, ruling Q6):
  * the members are, and a formula that merely reads one computes from the stored
  * value until decision 5's staleness rule refuses it honestly.
@@ -389,6 +416,27 @@ export async function runScheduledSweep(
         `refused as membership_unresolved: ${(err as Error)?.message ?? err}`,
     );
   }
+  // `E4.1a`: the parameter read, once, over every `(assetId, key)` pair the
+  // sweep will need, at the sweep's own time. Contained the way membership is.
+  const parameterPairs = new Map<string, { assetId: string; key: string }>();
+  for (const def of scheduled) {
+    for (const key of def.paramRefs) {
+      parameterPairs.set(inputKey(def.assetId, key), { assetId: def.assetId, key });
+    }
+  }
+  let parameters: ReadonlyMap<string, number> | null = EMPTY_PARAMETERS;
+  if (parameterPairs.size > 0) {
+    try {
+      parameters = await deps.parameters.resolveForAssets([...parameterPairs.values()], new Date(nowMs));
+    } catch (err) {
+      parameters = null;
+      deps.logger.warn(
+        `calc scheduler: parameter resolution failed; every formula holding a $key due this sweep is ` +
+          `refused as parameters_unresolved: ${(err as Error)?.message ?? err}`,
+      );
+    }
+  }
+
   const graph = buildCalcGraph(scheduled, membership ?? EMPTY_MEMBERSHIP);
   const { order, cyclic } = topologicalOrder(graph);
   if (membership !== null) {
@@ -437,8 +485,19 @@ export async function runScheduledSweep(
       refuse(deps, def, "membership_unresolved", nowMs);
       continue;
     }
+    if (parameters === null && def.paramRefs.length > 0) {
+      refuse(deps, def, "parameters_unresolved", nowMs);
+      continue;
+    }
     try {
-      const outcome = await evaluateOneScheduledFormula(deps, def, nowMs, membership ?? EMPTY_MEMBERSHIP, computedThisTick);
+      const outcome = await evaluateOneScheduledFormula(
+        deps,
+        def,
+        nowMs,
+        membership ?? EMPTY_MEMBERSHIP,
+        computedThisTick,
+        parameters ?? EMPTY_PARAMETERS,
+      );
       if (outcome) {
         toWrite.push(outcome.write);
         noteWritten(deps, def, nowMs);
@@ -514,6 +573,7 @@ export class CalcSchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly definitions: CalcDefinitionsService,
     private readonly inputs: CalcInputsService,
     private readonly scope: CalcScopeService,
+    private readonly parameters: CalcParametersService,
     private readonly writer: CalcWriteService,
     private readonly metrics: MetricsService,
     private readonly status: CalcStatusRegistry,
@@ -524,6 +584,7 @@ export class CalcSchedulerService implements OnModuleInit, OnModuleDestroy {
       definitions: this.definitions,
       inputs: this.inputs,
       scope: this.scope,
+      parameters: this.parameters,
       writer: this.writer,
       metrics: this.metrics,
       status: this.status,
