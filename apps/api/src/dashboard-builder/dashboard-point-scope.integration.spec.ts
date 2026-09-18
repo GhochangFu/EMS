@@ -42,7 +42,7 @@ export async function assertCrossOrgBindingWasWritten(
 
 /**
  * Negative, TENANT pool: reading as ESKOM through `withTenant`, the foreign PHEWB binding must
- * not appear, and no PHEWB `assetId`/`pointKey` anywhere in the result. `asset_points`'s own
+ * not appear — neither its `pointId` nor its `assetId` anywhere in the result. `asset_points`'s own
  * `tenant_isolation` policy is what filters it here — this test alone would still pass with
  * this file's explicit predicate deleted, because the policy masks its absence.
  */
@@ -52,14 +52,19 @@ export async function assertTenantPoolExcludesForeignBinding(
   widgetId: string,
   legitEskomPointId: string,
   phewbAssetId: string,
-  phewbPointKey: string,
+  phewbPointId: string,
 ): Promise<void> {
   const resolved = await withTenant(tenantDb, eskomOrgId, (tx) =>
     resolveBoundPoints(tx, eskomOrgId, [widgetId]),
   );
   expect(
-    resolved.some((point) => point.assetId === phewbAssetId || point.pointKey === phewbPointKey),
-    "no PHEWB assetId/pointKey may appear in an ESKOM-scoped read",
+    // `pointId`/`assetId`, never `pointKey`: a point key is a per-asset name, not an
+    // organization-scoped identity. The oldest ESKOM point and the oldest PHEWB point are picked
+    // by `created_at, id`, and rows seeded in one transaction share `created_at`, so the pick
+    // varies with the seed's uuids — and when both picks carry `kw`, the LEGITIMATE binding
+    // matched a `pointKey` clause here and reddened a docs-only PR (#484, 2026-09-18).
+    resolved.some((point) => point.pointId === phewbPointId || point.assetId === phewbAssetId),
+    "no PHEWB pointId/assetId may appear in an ESKOM-scoped read",
   ).toBe(false);
   expect(
     resolved.some((point) => point.pointId === legitEskomPointId),
@@ -79,12 +84,13 @@ export async function assertFleetPoolExcludesForeignBinding(
   widgetId: string,
   legitEskomPointId: string,
   phewbAssetId: string,
-  phewbPointKey: string,
+  phewbPointId: string,
 ): Promise<void> {
   const resolved = await resolveBoundPoints(fleetDb, eskomOrgId, [widgetId]);
   expect(
-    resolved.some((point) => point.assetId === phewbAssetId || point.pointKey === phewbPointKey),
-    "on the BYPASSRLS fleet pool, no PHEWB assetId/pointKey may appear — the explicit " +
+    // Same identity rule as the tenant case above — see its comment.
+    resolved.some((point) => point.pointId === phewbPointId || point.assetId === phewbAssetId),
+    "on the BYPASSRLS fleet pool, no PHEWB pointId/assetId may appear — the explicit " +
       "organization predicate is the only control here, since RLS supplies none",
   ).toBe(false);
   expect(
