@@ -5477,3 +5477,40 @@ a real create, rename and duplicate, read back as `bms_fleet`) and as
 The sweep found two gates that did not gate and CI found five racing
 waits, all fixed in #476. No `chore(agents):` §6 line is owed. Unblocks
 `F3.63`.
+
+### `F3.63` — the `asset_group_admin` dashboard authoring path ✅ 2026-09-18
+
+PR [#479](https://github.com/GhochangFu/EMS/pull/479), sweep
+[#480](https://github.com/GhochangFu/EMS/pull/480). The row Amendment 5
+deferred out of `F3.34`. Rebuilt from source at its step-2 gate, the
+refusal inventory was six surfaces, not the row's three: `AdminRoute` (the
+SPA's only route guard), the two Manage/Edit links, the scope predicate,
+and three master-data reads the builder calls — `GET /admin/locations`
+(never named), `GET /admin/asset-points` (three throws, not one) and
+`GET /admin/asset-groups`. [ADR 0047](./adr/0047-configurable-dashboards.md)
+**Amendment 6** ruled A of three: the path opens **beside** the master-data
+boundary, not through it — `isMasterDataRole`, `requireMasterDataUser`,
+`canManageAsset`, `canManageDashboard`, `AdminRoute`'s membership and every
+`/admin/*` read gate are not edited. A second ruling gives the editor a
+read-only `asset` arm for ADR 0067 dashboards, which prefilled as
+*organization* before.
+
+**What it built**: `DashboardAuthorRoute` on `canAuthorDashboards` on the two
+builder routes; `GET /assets/:assetId/points` gated on `canReadAsset`,
+returning a five-field picker DTO (the security review found the admin
+projection carries ingest wiring no non-admin route exposes); the group
+option for the role from `/auth/me` (which gains `organizationId`); an
+asset→points chain in the picker; the three callers' reads forked by role.
+The scope model's `asset` kind omits both columns from the PATCH.
+
+**Verified on every layer** — CI green on both PRs; the full suite with the
+compose database; every named mutation killed; the browser as the role
+(11/11 — a real create with zero `/admin/*` requests, read back as
+`bms_fleet`), as `location_admin` and as `admin`. N/A only the asset line
+in a browser (no seeded row has `asset_id`; held by jsdom). Two root
+fixture gates bit the new spec, which now owns its rows. The browser run
+found a display defect (a disabled placeholder shows option 1 on a foreign
+row); the sweep found three more the four pre-merge passes missed — the
+dialog without the scope gate, an `admin` regression on a deactivated
+location, and a false-green route scan — all fixed in #480. No
+`chore(agents):` §6 line is owed. Unblocks nothing.
