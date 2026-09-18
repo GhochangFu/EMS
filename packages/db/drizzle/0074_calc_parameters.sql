@@ -39,9 +39,9 @@
 -- `btree_gist` operator classes. Measured at the E4.1a plan gate:
 -- `pg_available_extensions` lists `btree_gist 1.7` on the compose image, not
 -- installed. It is a trusted contrib extension shipped with Postgres, so it
--- is not a §9.4 dependency (ADR 0070 §Dependencies). `CREATE EXTENSION` runs
--- BEFORE `SET ROLE bms_owner`: `pnpm db:migrate` connects as
--- DATABASE_URL_SUPERUSER (`bms_app`) and `bms_owner` is not a superuser.
+-- is not a §9.4 dependency (ADR 0070 §Dependencies). It is provisioned by
+-- `packages/db/src/roles.ts` (AGENTS.md §4.4: a migration never widens the
+-- provisioning surface), which runs before `db:migrate` on every path.
 --
 -- The scope columns are NULLABLE and at most one is set: both NULL is the
 -- organization scope. The exclusion coalesces each to the nil uuid so that
@@ -80,8 +80,6 @@
 -- frozen, and the journal `when` is strictly greater than `0073`'s
 -- 1789575341238, or drizzle applies nothing and every check downstream passes
 -- against a schema short two tables (`0024`'s header records this).
-
-CREATE EXTENSION IF NOT EXISTS btree_gist;
 
 SET ROLE bms_owner;
 
