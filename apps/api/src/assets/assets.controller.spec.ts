@@ -48,11 +48,20 @@ function listBody(text: string): string {
   return methodBody(text, "async list(", '@Get(":assetId/points")');
 }
 
-/** `listPoints` is the last handler, so its body runs to the end of the file. */
+/** `listPoints` is the last handler, so its body runs to the end of the file — which holds ONLY
+ * while it stays last (post-merge sweep). A handler appended after it would fold into this slice
+ * and every scan below would read the wrong body, so the slice is refused when a later route
+ * decorator sits inside it: anchor this helper on that decorator, as `listBody` does, the day one
+ * is added. */
 function listPointsBody(text: string): string {
   const from = text.indexOf("async listPoints(");
   assert(from > -1, "the controller must declare async listPoints(");
-  return text.slice(from);
+  const body = text.slice(from);
+  assert(
+    !/@(Get|Post|Patch|Put|Delete)\(/.test(body),
+    "listPoints is no longer the last handler — anchor listPointsBody on the next route decorator",
+  );
+  return body;
 }
 
 // ---------------------------------------------------------------------------

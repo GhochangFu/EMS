@@ -28,14 +28,26 @@ const guard = withoutComments(readFileSync(guardPath, "utf8"));
  * index) — `<AdminRoute` is a prefix of no other name here, but it appears
  * throughout the file, so a bare `lastIndexOf` for one candidate alone finds
  * SOME earlier `AdminRoute`, not necessarily the page's own wrapper.
+ *
+ * **Anchored on the page's own `<Route`** (`F3.63` post-merge sweep). A
+ * candidate that sits BEFORE the page's `<Route` belongs to the previous
+ * route, not to this page: with the wrapper removed from
+ * `/admin/dashboards/:slug` alone, `lastIndexOf("<DashboardAuthorRoute")`
+ * found the create route's wrapper and all four cases stayed green. Such a
+ * candidate is disqualified (treated as absent), so a bare page returns
+ * `null` and the `.toBe("DashboardAuthorRoute")` assertions redden as they
+ * are. `<Route` also prefixes `<Routes`, but the page's own `<Route` is always
+ * the nearer of the two.
  */
 function nearestOpener(source: string, page: string): string | null {
   const used = source.indexOf(`<${page} `);
   if (used < 0) {
     return null;
   }
-  const adminRoute = source.lastIndexOf("<AdminRoute", used);
-  const authorRoute = source.lastIndexOf("<DashboardAuthorRoute", used);
+  const ownRoute = source.lastIndexOf("<Route", used);
+  const within = (index: number): number => (index > ownRoute ? index : -1);
+  const adminRoute = within(source.lastIndexOf("<AdminRoute", used));
+  const authorRoute = within(source.lastIndexOf("<DashboardAuthorRoute", used));
   if (adminRoute < 0 && authorRoute < 0) {
     return null;
   }
@@ -53,6 +65,15 @@ describe("F3.63 — the dashboard builder routes are gated by DashboardAuthorRou
 
   it("positive control — AssetPointsAdminPage's nearest opener is still AdminRoute", () => {
     expect(nearestOpener(app, "AssetPointsAdminPage")).toBe("AdminRoute");
+  });
+
+  it("a page with no wrapper inside its own Route reads as unguarded, not as the previous route's", () => {
+    const bare = app.replace(
+      /<DashboardAuthorRoute user=\{user\}>\s*<DashboardBuilderEditPage user=\{user\} \/>\s*<\/DashboardAuthorRoute>/,
+      "<DashboardBuilderEditPage user={user} />",
+    );
+    expect(bare).not.toBe(app);
+    expect(nearestOpener(bare, "DashboardBuilderEditPage")).toBeNull();
   });
 
   it("the guard reads canAuthorDashboards, not isMasterDataAdmin", () => {

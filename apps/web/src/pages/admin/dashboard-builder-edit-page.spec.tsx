@@ -44,8 +44,17 @@ import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
  * **The review's foreign-scope pair** (`assetGroupAdminOnAForeignGroupCannotSave`,
  * `locationAdminOnAForeignLocationCannotSave`): a role can OPEN a dashboard on a group or a
  * location it does not hold, and before the fix a rename enabled Save and the PATCH met the
- * server's 404. `isScopeOffered` in the page's `blocked` keeps Save disabled. Mutation: drop it
+ * server's 404. `isScopeAuthorised` in the page's `blocked` keeps Save disabled. Mutation: drop it
  * from `blocked` ⇒ both red; the own-group rename case beside them is the positive control.
+ *
+ * **The post-merge sweep's three** (`adminOnADashboardWhoseLocationIsAbsentFromTheActiveListCanSave`,
+ * `assetGroupAdminOnAForeignGroupSeesWhyItCannotSave`, `assetGroupAdminOnItsOwnGroupSeesNoScopeReason`):
+ * the first gate was `isScopeOffered` for EVERY role, and the location list is
+ * `fetchAdminLocations("true", …)` — active rows only — so an `admin` on a dashboard whose
+ * location was later set inactive had Save disabled with no reason shown, a regression from
+ * before `#479`. The gate is now `isScopeAuthorised`: the list is the SCOPED roles' authority
+ * only. And Save never disables with a reason nothing on the page shows (the `F3.34` review's
+ * rule): the foreign-scope case now has a visible line, pinned as its own `it()`.
  */
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -242,7 +251,7 @@ export async function renamingAGroupScopedDashboardKeepsItsGroup(): Promise<void
 
   // Two async loads, both waited for in order: the dto (the checked radio — typing before it
   // lands is overwritten by `setName(dto.name)`), then the group list, which Save waits for
-  // (`isScopeOffered`). The Name input renders before either and is not a wait.
+  // (`isScopeAuthorised`). The Name input renders before either and is not a wait.
   await waitForPrefill("Asset group");
   await screen.findByRole("option", { name: "Hvac — Kolkata Works" });
   await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
@@ -410,8 +419,9 @@ export async function anAssetScopedDashboardReadsTheOrganizationsAssets(): Promi
   expect(assetsApi.fetchAssets).toHaveBeenCalledWith(ORG_ID);
 }
 
-/** An asset absent from `/assets` (the list is active-only; a retired asset's dashboard is
- * still a row) falls back to the id, so the line never reads "Scoped to asset undefined". */
+/** An asset absent from `/assets` (`listAll` filters on `assetIds` and `organizationId` only,
+ * so this is the id of a deleted row, or one outside the reader's scope) falls back to the id,
+ * so the line never reads "Scoped to asset undefined". */
 export async function anAssetScopedDashboardWithTheAssetAbsentShowsTheId(): Promise<void> {
   stubLoads({ dto: ASSET_DTO, groups: [GROUP], assets: [] });
 
@@ -505,7 +515,7 @@ export async function assetGroupAdminsWidgetInspectorOffersTheAssetChain(): Prom
  * to the role, so the clamp does not fire), the select has no matching option, and after a rename
  * Save stays disabled. Positive control: `assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup`
  * above, same role and same shape on its OWN group, has Save enabled. Mutation: drop
- * `isScopeOffered` from `blocked` ⇒ red. */
+ * `isScopeAuthorised` from `blocked` ⇒ red. */
 export async function assetGroupAdminOnAForeignGroupCannotSave(): Promise<void> {
   stubLoads({ dto: { ...GROUP_DTO, assetGroupId: FOREIGN_GROUP.id }, groups: [GROUP] });
   const updateSpy = stubSave();
@@ -525,7 +535,7 @@ export async function assetGroupAdminOnAForeignGroupCannotSave(): Promise<void> 
  * locations only (`writableLocationIds`), so the stub returns a second location and NOT the
  * dashboard's `loc-1`. The location radio prefills checked, the select has no matching option, and
  * after a rename Save stays disabled. Positive control: `choosingADifferentLocationMakesItDirty`
- * has Save enabled for an offered location. Mutation: drop `isScopeOffered` from `blocked` ⇒ red. */
+ * has Save enabled for an offered location. Mutation: drop `isScopeAuthorised` from `blocked` ⇒ red. */
 export async function locationAdminOnAForeignLocationCannotSave(): Promise<void> {
   const OWN_LOCATION = { ...LOCATION, id: "loc-2", code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
   stubLoads({ dto: DTO, groups: [], locations: [OWN_LOCATION] });
@@ -539,4 +549,83 @@ export async function locationAdminOnAForeignLocationCannotSave(): Promise<void>
   expect(screen.getByRole("button", { name: "Save dashboard" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "Save dashboard" }));
   expect(updateSpy).not.toHaveBeenCalled();
+}
+
+const OUTSIDE_SCOPE_REASON =
+  "This dashboard is scoped to a location or asset group outside your scope, so it cannot be saved here.";
+
+/** The sweep's second claim on the foreign-group case, its own `it()` because `expect` throws:
+ * the reason Save is disabled is on the page. Mutation: render `""` for `!scopeAuthorised` ⇒ red. */
+export async function assetGroupAdminOnAForeignGroupSeesWhyItCannotSave(): Promise<void> {
+  stubLoads({ dto: { ...GROUP_DTO, assetGroupId: FOREIGN_GROUP.id }, groups: [GROUP] });
+  stubSave();
+  signInAsAssetGroupAdmin();
+  renderPage(asUser("asset_group_admin"));
+
+  await waitForPrefill("Asset group");
+  await screen.findByRole("option", { name: "Hvac — Western Cape" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+
+  expect(screen.getByText(OUTSIDE_SCOPE_REASON)).toBeInTheDocument();
+}
+
+/** The absence half: the role on its OWN group, renamed, shows no such line. Its positive
+ * control is `assetGroupAdminRenamesItsGroupDashboardAndKeepsTheGroup` — the same render, the
+ * same rename, and the save goes through. Mutation: render the reason unconditionally ⇒ red. */
+export async function assetGroupAdminOnItsOwnGroupSeesNoScopeReason(): Promise<void> {
+  stubSave();
+  await renderAssetGroupAdminsGroupDashboard();
+
+  await screen.findByRole("option", { name: "Hvac — Western Cape" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+
+  expect(screen.queryByText(OUTSIDE_SCOPE_REASON)).toBeNull();
+}
+
+/** The clamp path, which is NOT the outside-scope path: a `location_admin` opening a
+ * group-scoped dashboard is rewritten by the fields' clamp to an unchosen location
+ * (`locationId: ""`), and an empty id fails `isScopeOffered` too — so with the reasons in the
+ * other order the page said "outside your scope" when nothing was. The prompt is to choose.
+ * Mutation: judge `!scopeAuthorised` before `!isScopeChosen` ⇒ red. */
+export async function locationAdminOnAGroupDashboardIsAskedToChooseAScope(): Promise<void> {
+  stubLoads({ dto: GROUP_DTO, groups: [] });
+  renderPage(asUser("location_admin"));
+
+  await waitForPrefill("Location");
+  await screen.findByRole("option", { name: "Kolkata Works" });
+
+  expect(screen.getByText("Choose a scope to save.")).toBeInTheDocument();
+}
+
+/** The absence half of the case above, its own `it()`: the clamp path shows no outside-scope
+ * line. Positive control: the case above, same render, has the choose-a-scope line. Mutation:
+ * the same branch swap ⇒ red. */
+export async function locationAdminOnAGroupDashboardSeesNoOutsideScopeReason(): Promise<void> {
+  stubLoads({ dto: GROUP_DTO, groups: [] });
+  renderPage(asUser("location_admin"));
+
+  await waitForPrefill("Location");
+  await screen.findByRole("option", { name: "Kolkata Works" });
+
+  expect(screen.queryByText(OUTSIDE_SCOPE_REASON)).toBeNull();
+}
+
+/** The sweep's regression (Medium): `admin` on a dashboard scoped to `loc-1`, and the ACTIVE
+ * list the page is fed holds `loc-2` only — the shape after `loc-1` is set inactive. The list
+ * has loaded (its option is waited for), the id is absent from it, and after a rename Save is
+ * still ENABLED: the list is a picker for this role, not its boundary, and
+ * `DashboardsService.update` has no `active` check. Before the sweep this was disabled, with
+ * `""` as the reason. Mutation: gate on `isScopeOffered` for every role ⇒ red, while the two
+ * scoped-role foreign cases above stay green. */
+export async function adminOnADashboardWhoseLocationIsAbsentFromTheActiveListCanSave(): Promise<void> {
+  const ACTIVE_LOCATION = { ...LOCATION, id: "loc-2", code: "MUM", slug: "mumbai-works", name: "Mumbai Works" };
+  stubLoads({ dto: DTO, groups: [GROUP], locations: [ACTIVE_LOCATION] });
+  stubSave();
+  renderPage(asUser("admin"));
+
+  await waitForPrefill("Location");
+  await screen.findByRole("option", { name: "Mumbai Works" });
+  await userEvent.type(screen.getByLabelText("Name"), " (renamed)");
+
+  expect(screen.getByRole("button", { name: "Save dashboard" })).toBeEnabled();
 }

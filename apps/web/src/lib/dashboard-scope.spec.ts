@@ -1,4 +1,5 @@
 import {
+  isScopeAuthorised,
   isScopeChosen,
   isScopeOffered,
   scopeAssetGroupOptions,
@@ -336,5 +337,52 @@ export function anAssetGroupAbsentFromTheOfferedListIsNotOffered(): void {
   assert(
     !isScopeOffered({ kind: "assetGroup", organizationId: "org-1", assetGroupId: "grp-9" }, OFFERED),
     "a group absent from the offered list is not offered",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// isScopeAuthorised (`F3.63` post-merge sweep — the list is the SCOPED roles' authority only)
+// ---------------------------------------------------------------------------
+
+const FOREIGN_LOCATION = { kind: "location", organizationId: "org-1", locationId: "loc-9" } as const;
+const FOREIGN_GROUP = { kind: "assetGroup", organizationId: "org-1", assetGroupId: "grp-9" } as const;
+
+/** The regression the sweep fixes: an `admin` on a dashboard whose location is absent from the
+ * active-only list (set inactive after the dashboard was scoped to it). Mutation: drop `admin`
+ * from the picker-roles constant ⇒ red. */
+export function adminIsAuthorisedForALocationAbsentFromTheList(): void {
+  assert(isScopeAuthorised("admin", FOREIGN_LOCATION, OFFERED), "admin is authorised whatever the location list holds");
+}
+
+/** Mutation: drop `organization_admin` from the picker-roles constant ⇒ red. */
+export function organizationAdminIsAuthorisedForAGroupAbsentFromTheList(): void {
+  assert(
+    isScopeAuthorised("organization_admin", FOREIGN_GROUP, OFFERED),
+    "organization_admin is authorised whatever the group list holds",
+  );
+}
+
+/** Mutation: add `location_admin` to the picker-roles constant, or return `true` ⇒ red. */
+export function locationAdminIsNotAuthorisedForALocationAbsentFromTheList(): void {
+  assert(
+    !isScopeAuthorised("location_admin", FOREIGN_LOCATION, OFFERED),
+    "location_admin is not authorised for a location its list does not hold",
+  );
+}
+
+/** The positive control beside the refusal above: the scoped arm defers to `isScopeOffered`,
+ * so an offered location IS authorised. Mutation: return `false` on the scoped arm ⇒ red. */
+export function locationAdminIsAuthorisedForAnOfferedLocation(): void {
+  assert(
+    isScopeAuthorised("location_admin", { kind: "location", organizationId: "org-1", locationId: "loc-1" }, OFFERED),
+    "location_admin is authorised for a location its list holds",
+  );
+}
+
+/** Mutation: add `asset_group_admin` to the picker-roles constant, or return `true` ⇒ red. */
+export function assetGroupAdminIsNotAuthorisedForAGroupAbsentFromTheList(): void {
+  assert(
+    !isScopeAuthorised("asset_group_admin", FOREIGN_GROUP, OFFERED),
+    "asset_group_admin is not authorised for a group its list does not hold",
   );
 }

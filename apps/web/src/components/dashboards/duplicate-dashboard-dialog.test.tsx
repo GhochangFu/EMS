@@ -5,6 +5,9 @@ import { cleanup } from "@testing-library/react";
 import { useAuthStore } from "../../stores/auth-store";
 import {
   anAssetScopedSourcePrefillsAsOrganizationWide,
+  assetGroupAdminOnAForeignGroupCannotDuplicate,
+  assetGroupAdminOnItsOwnGroupHasDuplicateEnabled,
+  locationAdminOnAForeignLocationCannotDuplicate,
   assetGroupAdminDuplicatesItsGroupDashboardAndKeepsTheGroup,
   assetGroupAdminsDialogDoesNotFetchAdminAssetGroups,
   assetGroupAdminsDialogDoesNotFetchLocations,
@@ -43,6 +46,18 @@ describe("F3.1d Unit 9 — DuplicateDashboardDialog", () => {
 
   it("gives a location_admin no asset-group option (F3.34)", async () => {
     await locationAdminGetsNoAssetGroupOption();
+  });
+
+  it("an asset_group_admin on its own group has Duplicate enabled (F3.63 sweep, positive control)", async () => {
+    await assetGroupAdminOnItsOwnGroupHasDuplicateEnabled();
+  });
+
+  it("an asset_group_admin on a group it does not hold cannot duplicate (F3.63 sweep)", async () => {
+    await assetGroupAdminOnAForeignGroupCannotDuplicate();
+  });
+
+  it("a location_admin on a location it does not hold cannot duplicate (F3.63 sweep)", async () => {
+    await locationAdminOnAForeignLocationCannotDuplicate();
   });
 
   it("duplicating an asset-group dashboard keeps the group (F3.34)", async () => {

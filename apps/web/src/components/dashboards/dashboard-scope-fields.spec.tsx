@@ -366,3 +366,29 @@ export function aLocationOutsideTheOfferedListShowsAsOutsideTheScope(): void {
   expect(select.value).toBe("loc-foreign");
   expect(select.selectedOptions[0]?.textContent).toBe("Not in your scope");
 }
+
+/**
+ * The other label (`F3.63` post-merge sweep): for `admin` the location list is
+ * `fetchAdminLocations("true", …)`, active rows only — a dashboard scoped to a
+ * location later set inactive is still the role's to save, so the id is
+ * `Not in the active list`, not "outside your scope". The label follows
+ * `isScopeAuthorised`, the same rule Save gates on. Mutation: drop `admin`
+ * from the lib's picker-roles constant ⇒ reads `Not in your scope` ⇒ red.
+ */
+export function forAdminALocationOutsideTheActiveListShowsAsNotActive(): void {
+  renderFields("admin", { kind: "location", organizationId: "org-1", locationId: "loc-inactive" });
+
+  const select = screen.getByLabelText("Location", { selector: "select" }) as HTMLSelectElement;
+  expect(select.value).toBe("loc-inactive");
+  expect(select.selectedOptions[0]?.textContent).toBe("Not in the active list");
+}
+
+/** Same label on the group arm for `organization_admin` — a group whose location went
+ * inactive drops out of the list the same way. */
+export function forOrganizationAdminAGroupOutsideTheListShowsAsNotActive(): void {
+  renderFields("organization_admin", { kind: "assetGroup", organizationId: "org-1", assetGroupId: "grp-inactive" });
+
+  const select = screen.getByLabelText("Asset group", { selector: "select" }) as HTMLSelectElement;
+  expect(select.value).toBe("grp-inactive");
+  expect(select.selectedOptions[0]?.textContent).toBe("Not in the active list");
+}

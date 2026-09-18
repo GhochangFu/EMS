@@ -29,6 +29,8 @@ import {
   organizationAdminSeesTheAssetGroupOption,
   organizationAdminSeesTheOrganizationWideOption,
   theOptionTextNamesTheLocation,
+  forAdminALocationOutsideTheActiveListShowsAsNotActive,
+  forOrganizationAdminAGroupOutsideTheListShowsAsNotActive,
 } from "./dashboard-scope-fields.spec";
 
 /**
@@ -158,5 +160,13 @@ describe("F3.63 asset_group_admin authoring path and the read-only asset kind", 
 
   it("shows a location outside the offered list as outside the scope", () => {
     aLocationOutsideTheOfferedListShowsAsOutsideTheScope();
+  });
+
+  it("shows admin a location outside the active list as not active (F3.63 sweep)", () => {
+    forAdminALocationOutsideTheActiveListShowsAsNotActive();
+  });
+
+  it("shows organization_admin a group outside the list as not active (F3.63 sweep)", () => {
+    forOrganizationAdminAGroupOutsideTheListShowsAsNotActive();
   });
 });

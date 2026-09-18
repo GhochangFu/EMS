@@ -1,4 +1,4 @@
-import type { AccessibleScope } from "@bms/shared";
+import type { AccessibleScope, UserRole } from "@bms/shared";
 
 /**
  * `F3.34` — the pure dashboard-scope model (ADR 0047 Amendment 5, plan §4.2). `F3.63` (Amendment
@@ -102,14 +102,17 @@ export function isScopeChosen(value: DashboardScopeValue): boolean {
 }
 
 /** True when the value's location or group is one the form OFFERS — present in the list the
- * caller was fed by `useDashboardScopeOptions`. The edit page composes this into its Save block
- * (`F3.63` review): an `asset_group_admin` or a `location_admin` can OPEN a dashboard scoped to a
- * group or a location it does not hold (the read is organization-wide), and the select then has
- * no matching option while `isScopeChosen` is still true — so a rename enabled Save and the
- * PATCH ended in the server's 404. `organization` and `asset` are always offered: neither is
- * chosen from a list. While a list is still loading its ids are absent, so Save waits for it —
- * that is the intended direction; the alternative reads an empty list as "anything goes". Typed
- * structurally, not to the fields component's option rows: this lib must not import a component. */
+ * caller was fed by `useDashboardScopeOptions`. `isScopeAuthorised` below composes this into
+ * the Save / Duplicate block for the two SCOPED roles (`F3.63` review): an `asset_group_admin`
+ * or a `location_admin` can OPEN a dashboard scoped to a group or a location it does not hold
+ * (the read is organization-wide), and the select then has no matching option while
+ * `isScopeChosen` is still true — so a rename enabled Save and the PATCH ended in the server's
+ * 404. `organization` and `asset` are always offered: neither is chosen from a list. While a
+ * list is still loading its ids are absent, so Save waits for it — that is the intended
+ * direction; the alternative reads an empty list as "anything goes". Typed structurally, not to
+ * the fields component's option rows: this lib must not import a component. This function
+ * answers only "is the id in the list"; whether the list is the role's BOUNDARY is
+ * `isScopeAuthorised`'s question. */
 export function isScopeOffered(
   value: DashboardScopeValue,
   offered: { locations: readonly { id: string }[]; assetGroups: readonly { id: string }[] },
@@ -123,6 +126,37 @@ export function isScopeOffered(
     case "assetGroup":
       return offered.assetGroups.some((group) => group.id === value.assetGroupId);
   }
+}
+
+/** The two roles for which `useDashboardScopeOptions`'s lists are a PICKER, not a boundary —
+ * the first two arms of `AccessControlService.canManageDashboard`: `admin` may write any
+ * dashboard, `organization_admin` any dashboard of its organizations, whatever location or
+ * group it is scoped to. Its own constant rather than `canCreateOrganizationWideDashboard`
+ * (same body today) on the rule `admin-access.ts` records: two predicates that answer
+ * different questions stay separate, so widening one cannot silently widen the other. */
+const SCOPE_LIST_IS_A_PICKER_FOR: readonly UserRole[] = ["admin", "organization_admin"];
+
+/** The ONE rule the edit page's Save and the dialog's Duplicate gate on (`F3.63` post-merge
+ * sweep) — whether the role may write a dashboard of this scope, judged from the client's
+ * option lists. For the two scoped roles the list IS the role's authority: `location_admin`'s
+ * `GET /admin/locations` is `writableLocationIds`, `asset_group_admin`'s list is `/auth/me`'s
+ * `scope.assetGroups` — so an id absent from it is a foreign scope, and this defers to
+ * `isScopeOffered`. For `admin` and `organization_admin` the list is only a picker: it is
+ * `fetchAdminLocations("true", …)`, ACTIVE locations only, and a group whose location went
+ * inactive drops out the same way — so before this helper an `admin` opening a dashboard
+ * scoped to a location later set inactive had Save disabled with no reason shown, a regression
+ * from before `#479` where `DashboardsService.update` (which has no `active` check) accepted
+ * the save. Any other role falls to the scoped arm — closed by default; `DashboardAuthorRoute`
+ * keeps those roles off the page anyway. */
+export function isScopeAuthorised(
+  role: UserRole,
+  value: DashboardScopeValue,
+  offered: { locations: readonly { id: string }[]; assetGroups: readonly { id: string }[] },
+): boolean {
+  if (SCOPE_LIST_IS_A_PICKER_FOR.includes(role)) {
+    return true;
+  }
+  return isScopeOffered(value, offered);
 }
 
 /** The two scope columns a write body carries — exactly one non-null, or both null. Structurally
