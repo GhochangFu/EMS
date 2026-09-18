@@ -22,7 +22,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   DASHBOARD_GRID,
   canMutate,
@@ -76,6 +76,7 @@ function freshWidgetKey(): string {
 /** Admin screen for one section dashboard template version. */
 export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPageProps) {
   const { templateId } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<SectionTemplateWidgetInput[]>([]);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -124,6 +125,12 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
     onSuccess: () => {
       setActionError(null);
       void queryClient.invalidateQueries({ queryKey: ["admin", "dashboard-templates"] });
+      // `F3.62` — leave the deleted row's page. Without this the SPA stayed on
+      // `/admin/dashboard-templates/<id>` with the deleted draft still in the
+      // header from the cached row, and the next lifecycle click answered 404.
+      // The twin authoring page (`asset-template-detail-page.tsx`) has done
+      // this in the same handler since `F3.36`.
+      navigate("/admin/dashboard-templates");
     },
     onError: onActionError,
   });

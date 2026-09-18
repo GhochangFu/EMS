@@ -90,12 +90,26 @@ function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {
   }
 }
 
+/**
+ * Where a successful delete must land (`F3.62`). A probe route rather than a
+ * spy on `useNavigate`: the claim is that the SPA leaves the deleted row's
+ * page, and only a rendered landing proves the router actually moved. The
+ * same shape `dashboard-template-stock-view-page.spec.tsx`'s `DraftLanding`
+ * uses for the import.
+ */
+const LIST_LANDING_TEXT = "landed on the template list";
+
+function ListLanding() {
+  return <div>{LIST_LANDING_TEXT}</div>;
+}
+
 function renderPage(): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/admin/dashboard-templates/${TEMPLATE_ID}`]}>
         <Routes>
+          <Route path="/admin/dashboard-templates" element={<ListLanding />} />
           <Route
             path="/admin/dashboard-templates/:templateId"
             element={<DashboardTemplateDetailPage user={admin} />}
@@ -174,4 +188,46 @@ export async function addWidgetAddsAWidgetEditor(): Promise<void> {
 
   await userEvent.click(await screen.findByRole("button", { name: "Add widget" }));
   expect(await screen.findByRole("combobox", { name: "Asset role" })).toBeInTheDocument();
+}
+
+/**
+ * `F3.62` — a successful `Delete draft` leaves the deleted row's page and lands
+ * on the list. Before the fix `deleteM.onSuccess` only invalidated the list
+ * query, so the SPA stayed on `/admin/dashboard-templates/<id>` with the
+ * deleted draft still in the header from the cached row, and the next
+ * lifecycle click answered 404. The twin authoring page
+ * (`asset-template-detail-page.tsx`) has navigated in the same handler since
+ * `F3.36`; this is that parity.
+ */
+export async function deleteDraftLandsOnTheList(): Promise<void> {
+  const deleteDraft = vi.fn(() => Promise.resolve());
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()),
+    deleteAdminDashboardTemplateDraft: deleteDraft,
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Delete draft" }));
+
+  expect(await screen.findByText(LIST_LANDING_TEXT)).toBeInTheDocument();
+  expect(deleteDraft).toHaveBeenCalledWith(TEMPLATE_ID);
+}
+
+/**
+ * The other direction: a refused delete stays on the page and shows the
+ * error, so the navigate cannot be firing unconditionally. Without this case a
+ * `navigate` placed outside `onSuccess` would pass the case above.
+ */
+export async function refusedDeleteStaysOnThePage(): Promise<void> {
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()),
+    deleteAdminDashboardTemplateDraft: () => Promise.reject(new Error("Only a draft can be deleted")),
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Delete draft" }));
+
+  expect(await screen.findByText("Only a draft can be deleted")).toBeInTheDocument();
+  expect(screen.queryByText(LIST_LANDING_TEXT)).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Delete draft" })).toBeInTheDocument();
 }
