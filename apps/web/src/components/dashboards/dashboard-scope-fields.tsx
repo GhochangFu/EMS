@@ -60,6 +60,26 @@ type DashboardScopeFieldsProps = {
   error?: string;
 };
 
+/**
+ * A stored id the role's list does not offer — a dashboard on a group or a
+ * location the role does not hold — rendered as its own `disabled` option, so
+ * the select DISPLAYS what the state holds. Without it a `<select>` whose
+ * value matches no option shows the first enabled option, which is the role's
+ * own first group: the F3.63 browser run (B7) saw `Hvac — RSMOC Western Cape`
+ * on an Electrical-group dashboard. Save is blocked by `isScopeOffered` on
+ * the edit page; this is the display half of the same rule.
+ */
+function outsideScope(id: string, offered: readonly { readonly id: string }[]) {
+  if (id === "" || offered.some((item) => item.id === id)) {
+    return null;
+  }
+  return (
+    <option value={id} disabled>
+      Not in your scope
+    </option>
+  );
+}
+
 function assetGroupLabel(group: ScopeAssetGroupOption): string {
   return group.locationName ? `${group.name} — ${group.locationName}` : group.name;
 }
@@ -251,6 +271,7 @@ export function DashboardScopeFields({
             <option value="" disabled>
               Choose a location
             </option>
+            {outsideScope(value.locationId, locations)}
             {locations.map((location) => (
               <option key={location.id} value={location.id}>
                 {location.name}
@@ -277,6 +298,7 @@ export function DashboardScopeFields({
             <option value="" disabled>
               Choose an asset group
             </option>
+            {outsideScope(value.assetGroupId, assetGroups)}
             {assetGroups.map((group) => (
               <option key={group.id} value={group.id}>
                 {assetGroupLabel(group)}

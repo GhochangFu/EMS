@@ -19,6 +19,9 @@ import {
   forALocationAdminAnOrganizationWideValueClampsToLocation,
   forAdminAnAssetGroupValueIsNotClamped,
   forAdminAnAssetValueIsNotClamped,
+  aGroupOutsideTheOfferedListShowsAsOutsideTheScope,
+  anOfferedGroupShowsItsLabel,
+  aLocationOutsideTheOfferedListShowsAsOutsideTheScope,
   forAnAssetGroupAdminALocationValueClampsToAssetGroup,
   forAnAssetGroupAdminAnAssetValueIsNotClamped,
   locationAdminNeverSeesTheAssetGroupOption,
@@ -143,5 +146,17 @@ describe("F3.63 asset_group_admin authoring path and the read-only asset kind", 
 
   it("never clamps an asset value for admin", () => {
     forAdminAnAssetValueIsNotClamped();
+  });
+
+  it("shows a group outside the offered list as outside the scope (F3.63, browser B7)", () => {
+    aGroupOutsideTheOfferedListShowsAsOutsideTheScope();
+  });
+
+  it("shows an offered group by its own label (positive control)", () => {
+    anOfferedGroupShowsItsLabel();
+  });
+
+  it("shows a location outside the offered list as outside the scope", () => {
+    aLocationOutsideTheOfferedListShowsAsOutsideTheScope();
   });
 });

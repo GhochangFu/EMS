@@ -330,3 +330,39 @@ export function forAdminAnAssetValueIsNotClamped(): void {
 
   expect(onChange).not.toHaveBeenCalled();
 }
+
+/**
+ * A stored id the role's list does not offer (an `asset_group_admin` on a
+ * dashboard of a group it does not hold) must not DISPLAY as the first offered
+ * group: the placeholder option is `disabled`, so a `<select>` whose value
+ * matches no option shows option 1 — the held group — although the state
+ * holds the foreign id (found by the F3.63 browser run, B7). The select
+ * renders the foreign id as its own disabled option, labelled as outside the
+ * role's scope, so what the user sees is what the state holds.
+ * Mutation: drop that option ⇒ the select's value reads `grp-1`.
+ */
+export function aGroupOutsideTheOfferedListShowsAsOutsideTheScope(): void {
+  renderFields("asset_group_admin", { kind: "assetGroup", organizationId: "org-1", assetGroupId: "grp-foreign" });
+
+  const select = screen.getByLabelText("Asset group", { selector: "select" }) as HTMLSelectElement;
+  expect(select.value).toBe("grp-foreign");
+  expect(select.selectedOptions[0]?.textContent).toBe("Not in your scope");
+}
+
+/** The positive control: an offered group shows its own label. */
+export function anOfferedGroupShowsItsLabel(): void {
+  renderFields("asset_group_admin", { kind: "assetGroup", organizationId: "org-1", assetGroupId: "grp-1" });
+
+  const select = screen.getByLabelText("Asset group", { selector: "select" }) as HTMLSelectElement;
+  expect(select.value).toBe("grp-1");
+  expect(select.selectedOptions[0]?.textContent).toBe("Hvac — Kolkata Works");
+}
+
+/** Same shape on the location arm, for a `location_admin` on a foreign location. */
+export function aLocationOutsideTheOfferedListShowsAsOutsideTheScope(): void {
+  renderFields("location_admin", { kind: "location", organizationId: "org-1", locationId: "loc-foreign" });
+
+  const select = screen.getByLabelText("Location", { selector: "select" }) as HTMLSelectElement;
+  expect(select.value).toBe("loc-foreign");
+  expect(select.selectedOptions[0]?.textContent).toBe("Not in your scope");
+}
