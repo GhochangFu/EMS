@@ -440,20 +440,17 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // rate however well it parses.
     "fault_rate_per_1000_trips",
   ],
-  // §8b — four windows, a method the document leaves open, and a commissioning
-  // baseline. availability_pct and mtbf_h are deferred on BOTH vertical-transport
-  // entries for the same reason, and starts_per_day is the DG set's code a SECOND
-  // time: a per-entry Record is what lets one code be deferred once per entry, and
-  // the most any code reaches here is FOUR (availability_pct).
+  // §8b — an undeclared input, an event count, a method the document leaves
+  // open, and a commissioning baseline. E4.1c DISCHARGED starts_per_day
+  // (`delta({start_count}, 24h)`, the DG set's code authored a second time)
+  // and SUPERSEDED availability_pct by availability_pct_24h (fault-sense over
+  // esc_fault). mtbf_h stays deferred on BOTH vertical-transport entries: a
+  // per-entry Record is what lets one code be deferred once per entry.
   "mechanical-escalator": [
-    // hours running over hours elapsed — hours-in-state.
-    "availability_pct",
-    // the failure history again, not the current fault flag.
+    // the failure history, not the current fault flag; the fault counter is
+    // "since last reset", not cumulative.
     "mtbf_h",
-    // starts per day over the cumulative start_count — the same window the DG
-    // set defers this exact code for.
-    "starts_per_day",
-    // safety-circuit trips per month — a window over an event.
+    // safety-circuit trips per month — an EVENT COUNT over a state.
     "safety_trips_per_month",
     // THE DENOMINATOR IS UNDEFINED: the document does not fix whether standby is
     // measured over run time or over run + standby, and the two answers differ by

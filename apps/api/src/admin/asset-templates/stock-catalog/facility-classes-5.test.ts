@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runFacilityClassEntryTests5 } from "./facility-classes-5.spec";
+import { e41cEscalatorClaims, e41cVerticalTransportClaims, runFacilityClassEntryTests5 } from "./facility-classes-5.spec";
 
 /**
  * Vitest entry point for `facility-classes-5.spec.ts` — assertions live in the
@@ -17,4 +17,9 @@ describe("stock asset-template catalog — the vertical-transport classes (E5.3,
   it("ships the escalator exactly as its tag-list section describes it, with the signed handrail deviation", () => {
     runFacilityClassEntryTests5();
   });
+
+  // E4.1c — the escalator's two v3 rows, one it() per claim.
+  for (const [name, run] of [...e41cEscalatorClaims(), ...e41cVerticalTransportClaims()]) {
+    it(name, run);
+  }
 });

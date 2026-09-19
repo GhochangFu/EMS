@@ -15,10 +15,12 @@ import {
   assertProvenance,
   assertSkillAssignment,
   philosophyOf,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 
 /**
@@ -180,6 +182,9 @@ const ESCALATOR_POINTS: readonly PointRow[] = [
   // Promoted, appended after the table (plan §5.0, §12 rulings 2 and 3).
   ["handrail_speed_dev_pct", "derived", "%"],
   ["kwh_per_run_hour", "derived", "kWh/h"],
+  // E4.1c: two v3 rows (plan §3.7); a count carries "" (Q8)
+  ["availability_pct_24h", "derived", "%"],
+  ["starts_per_day", "derived", ""],
 ];
 
 /**
@@ -214,6 +219,9 @@ const ESCALATOR_DERIVED: readonly DerivedRow[] = [
     null,
   ],
   ["kwh_per_run_hour", "{kwh_total} / {run_hours_h}", null],
+  // E4.1c's two `bms-calc-v3` rows (plan §3.7), default input age
+  ["availability_pct_24h", "(1 - avg({esc_fault}, 24h)) * 100", null],
+  ["starts_per_day", "delta({start_count}, 24h)", null],
 ];
 
 /**
@@ -282,18 +290,18 @@ const ESCALATOR_NO_SKILL_ROWS = ["emergency_stop_pressed"] as const;
  */
 function checkEscalator(): void {
   const entry = requireStockEntry(ESCALATOR_CODE);
-  assertEntryIdentity(ESCALATOR_CODE, entry, "escalator", "mechanical");
+  assertEntryIdentity(ESCALATOR_CODE, entry, "escalator", "mechanical", 2);
 
-  // ---- 41 points, 5 core + 31 extended + 3 manual + 2 derived -------------
+  // ---- 43 points, 5 core + 31 extended + 3 manual + 4 derived (2 E4.1c) ---
 
   assert(
     tierCount(entry, "core") === 5 &&
       tierCount(entry, "extended") === 31 &&
       tierCount(entry, "manual") === 3 &&
-      tierCount(entry, "derived") === 2,
+      tierCount(entry, "derived") === 4,
     "§8b prints forty rows: 5 C, 3 M, one X/D and 31 plain X. The X/D row is authored derived " +
-      "(plan §12 ruling 3), so 39 rows are measured and two derived codes are appended — " +
-      `5/31/3 + 2. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      "(plan §12 ruling 3), so 39 rows are measured and two derived codes are appended, plus " +
+      `E4.1c's two v3 rows — 5/31/3 + 4. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(ESCALATOR_CODE, "§8b", entry, ESCALATOR_POINTS);
@@ -525,12 +533,13 @@ function checkEscalator(): void {
   assertMaintenanceBounds(ESCALATOR_CODE, entry);
   assertProvenance(ESCALATOR_CODE, entry, FACILITY_TAG_LIST, "§8b");
 
-  // ---- the six deferrals --------------------------------------------------
+  // ---- the four deferrals -------------------------------------------------
 
   assert(
-    DEFERRED_DERIVED_CODES[ESCALATOR_CODE].length === 6,
-    "§8b's Derived: line names eight codes; two are promoted and six are deferred — four " +
-      "windows (availability_pct, mtbf_h, starts_per_day, safety_trips_per_month), one whose " +
+    DEFERRED_DERIVED_CODES[ESCALATOR_CODE].length === 4,
+    "§8b's Derived: line names eight codes; two are promoted, E4.1c discharged starts_per_day " +
+      "and superseded availability_pct by availability_pct_24h, and four are deferred — an " +
+      "undeclared input (mtbf_h), an event count (safety_trips_per_month), one whose " +
       "denominator the document never fixes (standby_ratio_pct: standby over run, or over run " +
       "plus standby, and the two answers differ by the whole idle band) and one commissioning " +
       `baseline (motor_current_baseline_dev_pct). Got ${DEFERRED_DERIVED_CODES[ESCALATOR_CODE].length}.`,
@@ -646,4 +655,42 @@ export function runFacilityClassEntryTests5(): void {
   checkEscalator();
   assertTheCrossEntryClaims();
   assertThePacksSkillLessRows();
+}
+
+// ---- E4.1c — the bms-calc-v3 mechanical-escalator row(s) (ADR 0070 decision 8) ----
+//
+// Pinned through `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// `availability_pct_24h` SUPERSEDES `availability_pct` and is FAULT-SENSE here
+// (`1 - avg({esc_fault})`), the DG set's and pump's shape — the lift's is
+// service-sense over `lift_in_service`. `starts_per_day` is the DG set's code
+// authored a second time over this entry's CUMULATIVE `start_count` (tier X:
+// absent, `missing_input`) — one code, one meaning, a rolling 24 h (Q10).
+
+/** mechanical-escalator — plan §3.7, sortOrder 41–42. */
+const ESCALATOR_E41C: readonly SustainabilityRow[] = [
+  ["availability_pct_24h", "(1 - avg({esc_fault}, 24h)) * 100", "%"],
+  ["starts_per_day", "delta({start_count}, 24h)", ""],
+];
+
+export function e41cEscalatorClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return sustainabilityClaims("mechanical-escalator", requireStockEntry("mechanical-escalator"), ESCALATOR_E41C, 41, 2);
+}
+
+/**
+ * The cross-entry claim's positive half: `availability_pct_24h` is AUTHORED on
+ * both vertical-transport entries — with the sense each class's state point
+ * dictates — where `availability_pct` used to be deferred on both.
+ */
+export function e41cVerticalTransportClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return [
+    ["availability_pct_24h is authored on both vertical-transport entries, service-sense on the lift and fault-sense on the escalator", () => {
+      const lift = requireStockEntry(LIFT_CODE).points.find((p) => p.pointKey === "availability_pct_24h");
+      const esc = requireStockEntry(ESCALATOR_CODE).points.find((p) => p.pointKey === "availability_pct_24h");
+      assert(
+        lift?.formula === "avg({lift_in_service}, 24h) * 100" && esc?.formula === "(1 - avg({esc_fault}, 24h)) * 100",
+        `lift: ${String(lift?.formula)}; escalator: ${String(esc?.formula)} — one code, one meaning (the fraction of ` +
+          "the trailing 24 h in service), the sense set by the state point each class declares",
+      );
+    }],
+  ];
 }
