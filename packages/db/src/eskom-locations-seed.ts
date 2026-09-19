@@ -122,6 +122,8 @@ export async function seedEskomLocations(
       capital,
       latitude: row.latitude,
       longitude: row.longitude,
+      // E4.1b (ADR 0070 decision 6): the Eskom demo estate keeps SAST.
+      timezone: "Africa/Johannesburg",
       active: true,
       meta: row.meta,
       updatedAt: new Date(),

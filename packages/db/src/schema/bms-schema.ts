@@ -73,6 +73,8 @@ export const locations = bmsSchema.table("locations", {
   capital: varchar("capital", { length: 128 }),
   latitude: doublePrecision("latitude").notNull(),
   longitude: doublePrecision("longitude").notNull(),
+  // 0075 (E4.1b, ADR 0070 decision 6): IANA zone; NULL = unset → timezone_unset.
+  timezone: varchar("timezone", { length: 64 }),
   active: boolean("active").notNull().default(true),
   meta: jsonb("meta"),
   createdAt: timestamp("created_at", { withTimezone: true })

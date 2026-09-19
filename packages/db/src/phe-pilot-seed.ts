@@ -187,6 +187,8 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       capital: null,
       latitude: Number(head.Latitude),
       longitude: Number(head.Longitude),
+      // E4.1b (ADR 0070 decision 6, plan Q12 ruling): the PHE pilot site is in India.
+      timezone: "Asia/Kolkata",
       active: true,
       meta: {
         phe: {
