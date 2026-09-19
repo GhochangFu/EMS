@@ -312,18 +312,28 @@ export class LocationsAdminService {
   }
 
   /**
-   * E4.1b / ADR 0070 decision 6 (plan design decision 13, ruling Q14) — the
-   * zone must be an EXACT, case-sensitive `pg_timezone_names.name`, so one
-   * canonical spelling is stored and `AT TIME ZONE` in the calc engine can
-   * never see an abbreviation such as `IST` (ambiguous: India, Israel,
-   * Ireland). Not a CHECK — a constraint cannot reference a view. Runs on the
-   * fleet connection (a catalog view; no tenant row is read) and BEFORE any
-   * write, so a refusal inserts nothing rather than rolling something back.
-   * Measured 599 rows, 70 ms — admin-rate.
+   * E4.1b / ADR 0070 decision 6 (plan design decision 13, rulings Q14 and
+   * review Q1) — the zone must be an EXACT, case-sensitive
+   * `pg_timezone_names.name` that is a region/city (or `Etc/…`) zone — never
+   * a bare abbreviation or a tzdata artefact. `pg_timezone_names` also lists
+   * 46 slash-less names (`EST`, `Factory`, `posixrules`, `Zulu`, …): `EST` is
+   * a fixed −05:00 with no DST, the silent wrong hour the 0075 header
+   * forbids, and `IST` is ambiguous (India, Israel, Ireland). `LIKE '%/%'`
+   * keeps the place names; `posix/` and `right/` are the legacy tzdata
+   * duplicates a host may ship (0 on the compose image today). Two exact
+   * names can still alias one zone (`Asia/Calcutta`, `Asia/Kolkata`) — both
+   * pass; the engine reads either. Not a CHECK — a constraint cannot
+   * reference a view. Runs on the fleet connection (a catalog view; no tenant
+   * row is read) and BEFORE any write, so a refusal inserts nothing rather
+   * than rolling something back. Measured 599 rows, 70 ms — admin-rate.
    */
   private async assertKnownTimezone(tz: string): Promise<void> {
     const found = await this.fleetDb.execute(
-      sql`SELECT 1 FROM pg_timezone_names WHERE name = ${tz}`,
+      sql`SELECT 1 FROM pg_timezone_names
+           WHERE name = ${tz}
+             AND name LIKE '%/%'
+             AND name NOT LIKE 'posix/%'
+             AND name NOT LIKE 'right/%'`,
     );
     if (found.rows.length === 0) {
       throw new BadRequestException(

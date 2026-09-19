@@ -10,6 +10,8 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { asRole } from "../../testing/role-urls";
 import { LocationsAdminService } from "./locations.service";
 import {
+  createAcceptsEtcUtc,
+  createRefusesABareAbbreviation,
   createRefusesALowercaseZone,
   createRefusalInsertsNoRow,
   createRefusesAnUnknownZone,
@@ -166,6 +168,14 @@ describe.skipIf(!connectionString)("E4.1b — locations.timezone on the admin wr
 
   it("T7 the DTO parses with adminLocationDtoSchema", async () => {
     await dtoParsesWithTheSharedContract(ctx);
+  });
+
+  it("T9 (Q1) create with EST — a bare abbreviation — is a 400", async () => {
+    await createRefusesABareAbbreviation(ctx);
+  });
+
+  it("T10 create with Etc/UTC is accepted", async () => {
+    await createAcceptsEtcUtc(ctx);
   });
 
   it("T8 (C1) update with capital: null, province: null and a zone parses and stores all three", async () => {

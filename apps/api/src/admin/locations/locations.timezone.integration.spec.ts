@@ -185,6 +185,30 @@ export async function updateAdmitsNullProvinceAndCapitalBesideAZone(ctx: Timezon
   expect(rows[0]).toEqual({ province: null, capital: null, timezone: "Asia/Kolkata" });
 }
 
+/**
+ * T9 — review Q1: `pg_timezone_names` also lists bare abbreviations and tzdata
+ * artefacts (`EST`, `Factory`, `Zulu`, …). `EST` is a fixed −05:00 with no
+ * DST — the silent wrong hour the 0075 header forbids. Refused as a 400.
+ */
+export async function createRefusesABareAbbreviation(ctx: TimezoneCtx): Promise<void> {
+  let caught: unknown;
+  try {
+    const created = await ctx.svc.create(ctx.jwt, { ...body(ctx, "T9"), timezone: "EST" });
+    ctx.register(created.id);
+  } catch (err) {
+    caught = err;
+  }
+  expect(caught, "a bare abbreviation is not a region/city zone").toBeInstanceOf(BadRequestException);
+  expect((caught as BadRequestException).message).toContain('"EST" is not one');
+}
+
+/** T10 — `Etc/UTC` carries a slash and is a real zone: accepted (positive control for T9). */
+export async function createAcceptsEtcUtc(ctx: TimezoneCtx): Promise<void> {
+  const created = await ctx.svc.create(ctx.jwt, { ...body(ctx, "T10"), timezone: "Etc/UTC" });
+  ctx.register(created.id);
+  expect(created.timezone).toBe("Etc/UTC");
+}
+
 /** T7 — the DTO parses with the shared contract (ADR 0030), `timezone` included. */
 export async function dtoParsesWithTheSharedContract(ctx: TimezoneCtx): Promise<void> {
   const created = await ctx.svc.create(ctx.jwt, { ...body(ctx, "T7"), timezone: "Asia/Kolkata" });
