@@ -3,6 +3,8 @@ import {
   canAuthorDashboards,
   canChooseAssetGroupDashboardScope,
   canChooseLocationDashboardScope,
+  canWriteCalcParameters,
+  canWriteOrganizationScopedCalcParameter,
   canCreateOrganizationWideDashboard,
   canManageNotificationChannels,
   masterDataTabs,
@@ -97,6 +99,10 @@ export function runAssetTemplateTabTests(): void {
         "/admin/asset-points",
         "/admin/manual-readings",
         "/admin/point-keys",
+        // `E4.1a` (ADR 0070 decision 2) — ungated, like Asset Groups: the
+        // organization scope is hidden inside the form by
+        // `canWriteOrganizationScopedCalcParameter`, not by the tab.
+        "/admin/calc-parameters",
         "/admin/telemetry/import",
         // `F3.8` (ADR 0041 decision 10). This list is asserted whole on
         // purpose, so adding a tab fails here until the expectation is updated
@@ -126,7 +132,9 @@ export function runAssetTemplateTabTests(): void {
     // ungated way: 9 -> 10 and 12 -> 13. `F3.10` added Escalation as a third
     // `notificationAdmin` tab, so 13 -> 14 for the two roles that hold that
     // gate and `location_admin` stays at 10.
-    const expected = role === "location_admin" ? 10 : 14;
+    // `E4.1a` added Calc Parameters the same ungated way: 10 -> 11 and
+    // 14 -> 15.
+    const expected = role === "location_admin" ? 11 : 15;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -290,4 +298,27 @@ export function runLocationScopePredicateTests(): void {
   );
   assert(!canChooseLocationDashboardScope("operator"), "operator may not choose the location scope");
   assert(!canChooseLocationDashboardScope("viewer"), "viewer may not choose the location scope");
+}
+
+/**
+ * `E4.1a` (ADR 0070 decision 2; plan design decision 11). Two predicates, two
+ * questions: who may write anything, and who is offered the ORGANIZATION
+ * scope. Named individually so widening either list is a decision.
+ */
+export function runCalcParameterPredicateTests(): void {
+  for (const role of ["admin", "organization_admin", "location_admin"] as const) {
+    assert(canWriteCalcParameters(role), `${role} may write a calc parameter at some scope`);
+  }
+  for (const role of ["asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canWriteCalcParameters(role), `${role} may not write a calc parameter`);
+  }
+  assert(canWriteOrganizationScopedCalcParameter("admin"), "admin is offered the organization scope");
+  assert(canWriteOrganizationScopedCalcParameter("organization_admin"), "organization_admin is offered the organization scope");
+  assert(
+    !canWriteOrganizationScopedCalcParameter("location_admin"),
+    "location_admin is NOT offered the organization scope — the API answers 403 and the form hides the radio",
+  );
+  for (const role of ["asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canWriteOrganizationScopedCalcParameter(role), `${role} is not offered the organization scope`);
+  }
 }
