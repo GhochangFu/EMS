@@ -14,6 +14,9 @@ import {
   MECHANICAL_CLASS_POINT_KEYS,
   METERED_PUMPING_POINT_KEYS,
   SUSTAINABILITY_ELECTRICAL_POINT_KEYS,
+  SUSTAINABILITY_FACILITY_POINT_KEYS,
+  SUSTAINABILITY_HVAC_POINT_KEYS,
+  SUSTAINABILITY_MECHANICAL_POINT_KEYS,
   SUSTAINABILITY_WATER_POINT_KEYS,
   VERTICAL_TRANSPORT_CLASS_POINT_KEYS,
   WATER_CLASS_POINT_KEYS,
@@ -165,7 +168,7 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // with zero overlap.
   ...keysForDomain(VERTICAL_TRANSPORT_CLASS_POINT_KEYS, "mechanical"),
   // `E4.1c` — the sustainability codes (ADR 0070 decision 8), AFTER every pack
-  // array and from a third shared file. None of the 19 pre-exists (`load_pct`,
+  // array and from a third shared file. None of the 29 pre-exists (`load_pct`,
   // which the DG set authors, is the UPS's and is not redeclared). A code
   // declared here and authored by another pack's entry (`availability_pct_24h`,
   // `starts_per_day` on the pump, lift and escalator in PR 2b) keeps THIS
@@ -173,6 +176,9 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // `tests/f3.39-global-point-key-vocabulary.test.ts` holds.
   ...keysForDomain(SUSTAINABILITY_ELECTRICAL_POINT_KEYS, "electrical"),
   ...keysForDomain(SUSTAINABILITY_WATER_POINT_KEYS, "water"),
+  ...keysForDomain(SUSTAINABILITY_MECHANICAL_POINT_KEYS, "mechanical"),
+  ...keysForDomain(SUSTAINABILITY_HVAC_POINT_KEYS, "hvac"),
+  ...keysForDomain(SUSTAINABILITY_FACILITY_POINT_KEYS, "facility"),
 ];
 
 /**

@@ -27,8 +27,8 @@
  * **Five arrays, one per domain, because `keysForDomain` takes ONE domain.**
  * `tests/f3.39`'s clash check reads one domain per ARRAY (`ARRAY_DOMAIN`),
  * so a mixed array would give a code two domains with the later
- * `keysForDomain` call silently winning. PR 2a declares the electrical and
- * water arrays; PR 2b appends the mechanical, HVAC and facility arrays.
+ * `keysForDomain` call silently winning. PR 2a declared the electrical and
+ * water arrays; PR 2b appended the mechanical, HVAC and facility arrays.
  *
  * **A code shared with another pack keeps its FIRST domain** — the
  * `load_pct` rule (`load_pct` is already vocabulary, the UPS's measured
@@ -44,7 +44,8 @@
  * class declares.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, enforced by `tests/f3.39` —
+ * `packages/db/src/point-key-units.ts`** (moved out of the seed by PR 2b, a
+ * §4.5 gate), enforced by `tests/f3.39` —
  * `keysForDomain` writes `UNIT_BY_KEY[code] ?? null`, and `seedPointKeyCatalog`
  * `COALESCE`s the unit, so a missing entry seeds `NULL` once and a WRONG
  * spelling is the permanent one. The money points (`energy_cost_*`,
@@ -53,7 +54,7 @@
  * organization's currency (`bms.organizations.currency`, migration `0076`),
  * which is a property of the tenant and not of the code.
  *
- * **Both arrays are parsed as TEXT by three guards**, with a regex that
+ * **All five arrays are parsed as TEXT by three guards**, with a regex that
  * requires `export const <NAME>_POINT_KEYS = [` and an array body containing
  * no `]` character. Keep the shape: no nested bracket, no type annotation
  * between the name and the `=`.
@@ -91,3 +92,56 @@ export const SUSTAINABILITY_WATER_POINT_KEYS = [
 ] as const;
 
 export type SustainabilityWaterPointKey = (typeof SUSTAINABILITY_WATER_POINT_KEYS)[number];
+
+/**
+ * The mechanical pack's and the vertical-transport pack's five codes (PR 2b,
+ * plan §3.7). `duty_hours_pct_24h` supersedes the pump's un-windowed
+ * `duty_hours_pct` under decision 8's `<quantity>_<window>` rule;
+ * `starts_per_hour` is the pump's (a rolling `1h` over `start_count`);
+ * `door_cycles_per_day`, `trips_per_day` and `out_of_service_hours_month`
+ * are the lift's. The pump, lift and escalator also author
+ * `availability_pct_24h` and the escalator `starts_per_day` — declared ONCE
+ * above under `electrical`, never here (the `load_pct` rule). Counts carry
+ * the empty-string unit; `out_of_service_hours_month` is a calendar window
+ * and needs the location's time zone (`E4.1b`).
+ */
+export const SUSTAINABILITY_MECHANICAL_POINT_KEYS = [
+  // mechanical-pump (v2) — sortOrder 20–21 (availability_pct_24h at 22 is electrical's)
+  "duty_hours_pct_24h", "starts_per_hour",
+  // mechanical-lift (v2) — sortOrder 81–83 (availability_pct_24h at 80 is electrical's)
+  "door_cycles_per_day", "trips_per_day", "out_of_service_hours_month",
+] as const;
+
+export type SustainabilityMechanicalPointKey = (typeof SUSTAINABILITY_MECHANICAL_POINT_KEYS)[number];
+
+/**
+ * The HVAC pack's one code (PR 2b, plan §3.7): the AHU's fan energy over a
+ * rolling 24 h, `sum({kw}, 24h)` — `kw` is tier X on the AHU, so an asset
+ * without it refuses `missing_input`, visibly.
+ */
+export const SUSTAINABILITY_HVAC_POINT_KEYS = [
+  // hvac-ahu (v2) — sortOrder 28
+  "fan_energy_kwh_day",
+] as const;
+
+export type SustainabilityHvacPointKey = (typeof SUSTAINABILITY_HVAC_POINT_KEYS)[number];
+
+/**
+ * The facility pack's four codes (PR 2b, plan §3.7), one per class:
+ * hours-in-state over a window for the fire panel (calendar month — needs
+ * the location's zone), the occupancy zone and the parking level (rolling
+ * 24 h), and `uptime_pct_24h`, which supersedes the BAS gateway's
+ * un-windowed `uptime_pct` under decision 8's `<quantity>_<window>` rule.
+ */
+export const SUSTAINABILITY_FACILITY_POINT_KEYS = [
+  // facility-fire-panel (v2) — sortOrder 24
+  "isolation_hours_month",
+  // facility-occupancy-zone (v2) — sortOrder 11
+  "occupied_hours_day",
+  // facility-parking-level (v2) — sortOrder 17
+  "fan_hours_day",
+  // facility-bas-gateway (v2) — sortOrder 13
+  "uptime_pct_24h",
+] as const;
+
+export type SustainabilityFacilityPointKey = (typeof SUSTAINABILITY_FACILITY_POINT_KEYS)[number];

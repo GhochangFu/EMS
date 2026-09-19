@@ -746,4 +746,17 @@ export const UNIT_BY_KEY: Record<string, string> = {
   kl_today: "KL",
   water_cost_today: "",
   water_saving_vs_baseline_pct: "%",
+  // `E4.1c` PR 2b — `SUSTAINABILITY_MECHANICAL_POINT_KEYS` (5),
+  // `SUSTAINABILITY_HVAC_POINT_KEYS` (1), `SUSTAINABILITY_FACILITY_POINT_KEYS`
+  // (4), plan §3.7. A count is `""`; hours are `h`.
+  duty_hours_pct_24h: "%",
+  starts_per_hour: "",
+  door_cycles_per_day: "",
+  trips_per_day: "",
+  out_of_service_hours_month: "h",
+  fan_energy_kwh_day: "kWh",
+  isolation_hours_month: "h",
+  occupied_hours_day: "h",
+  fan_hours_day: "h",
+  uptime_pct_24h: "%",
 };

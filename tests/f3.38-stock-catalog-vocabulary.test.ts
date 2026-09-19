@@ -105,10 +105,10 @@ const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   // 206 since E5.3 PR 2: 104 (FACILITY_CLASS_POINT_KEYS + ENVIRONMENT_CLASS_POINT_KEYS) +
   // VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102.
   "packages/shared/src/facility-point-keys.ts": 206,
-  // 19 since E4.1c PR 2a: SUSTAINABILITY_ELECTRICAL_POINT_KEYS's 16 +
-  // SUSTAINABILITY_WATER_POINT_KEYS's 3 (29 once PR 2b appends the mechanical,
-  // HVAC and facility arrays).
-  "packages/shared/src/sustainability-point-keys.ts": 19,
+  // 29 since E4.1c PR 2b: SUSTAINABILITY_ELECTRICAL_POINT_KEYS's 16 +
+  // SUSTAINABILITY_WATER_POINT_KEYS's 3 (PR 2a) + the mechanical 5, HVAC 1
+  // and facility 4 PR 2b appended.
+  "packages/shared/src/sustainability-point-keys.ts": 29,
 };
 
 /** The sources as one list, for an assertion message. */
