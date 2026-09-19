@@ -115,7 +115,9 @@ export async function aCostRendersInTheOrganizationsCurrency(): Promise<void> {
 /**
  * `E4.1c` E2 — the owed guard. No tariff in scope (or two currencies): the page
  * renders without throwing, the tile is the dash, and the ribbon has no
- * `Tariff` text. Before this row `s.tariffZarPerKwh.toFixed(2)` threw here.
+ * `Tariff` text. Before this row the ribbon called `.toFixed(2)` on the raw
+ * tariff field and threw here. (The old field name is not spelled: `tests/adr-0070`
+ * part (f) scans specs too.)
  */
 export async function aNullCostRendersTheDashWithoutThrowing(): Promise<void> {
   stubEnergyApi(1.25, { indicativeCost: null, tariffPerKwh: null, currency: null });
