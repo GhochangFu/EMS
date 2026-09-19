@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MEASURED, derived } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -19,9 +19,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * another instance of this template, exactly as §1's building-level lighting
  * roll-up is.
  *
- * **17 POINTS — 5 core + 11 extended + 0 manual + 1 DERIVED.** §5's 16 table
- * rows in the document's own order (`sortOrder` 0-15) and `occupancy_pct`
- * appended at 16.
+ * **18 POINTS — 5 core + 11 extended + 0 manual + 2 DERIVED.** §5's 16 table
+ * rows in the document's own order (`sortOrder` 0-15), `occupancy_pct`
+ * appended at 16 and `E4.1c`'s `fan_hours_day` at 17 (VERSION HISTORY v2).
  *
  * ---
  *
@@ -68,18 +68,20 @@ import type { StockAssetTemplateEntry } from "./types";
  * by zero and `evaluate.ts` returns `non_finite`** — no value, never a wrong
  * one, and nothing here is clamped.
  *
- * **FOUR DERIVED CODES ARE DEFERRED AND NAMED, and they are the pack's only list
- * that is all one class** (ADR 0054 decision 6; ADR 0051 Amendment 6 decision 8):
- * `turnover_per_day`, `avg_dwell_min`, `fan_hours_day` and `co_driven_fan_pct`
- * are **all time windows**. `bms-calc-v1` has arithmetic, parentheses and five
- * functions and no clock and no memory, so vehicles per day, average dwell (which
- * additionally needs entry-to-exit pairing), fan hours per day and the fraction
- * of those hours that gas demand drove — two windows, not one — are none of them
- * expressible. Every one of the four is the rule engine's to evaluate (`E2.4`)
- * over points this entry already declares.
+ * **THREE DERIVED CODES ARE DEFERRED AND NAMED** (ADR 0054 decision 6; ADR 0051
+ * Amendment 6 decision 8). `E5.3` deferred four as time windows; `E4.1b` gave
+ * the grammar a window over one point reference and `E4.1c` (ADR 0070
+ * decision 8, plan §3.7/§3.9) **authored** `fan_hours_day` as
+ * `sum({jet_fan_status}, 24h)` — fan hours in the trailing 24 h over the
+ * tier-C run status. The three that stay are deferred for reasons the window
+ * did not touch: `turnover_per_day` needs `entry_count` to be a CUMULATIVE
+ * counter and §5 says only "Entries"; `avg_dwell_min` needs entry-to-exit
+ * pairing, a method; `co_driven_fan_pct` is a product of two states inside a
+ * window — two windows, not one (ruling 4). Each is the rule engine's to
+ * evaluate (`E2.4`) over points this entry already declares.
  *
  * **NO `content.kpis`** (ADR 0054 decision 6): every ratio §5 names is either the
- * point above or one of the four deferrals.
+ * point above, `E4.1c`'s `fan_hours_day`, or one of the three deferrals.
  *
  * ---
  *
@@ -143,6 +145,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-parking-level` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §5, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `facility-parking-level` **v2** (2026-09-19, `E4.1c`): one `bms-calc-v3`
+ *    derived point appended at `sortOrder` 17 (plan §3.7) — `fan_hours_day`.
+ *    What an importing tenant must know: the row reads no `$key`; the rolling
+ *    `24h` window needs no time zone; the row is `scheduled` at 60 s — at most
+ *    one tick old — — no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`;
+ *    `jet_fan_status` is tier C, so every instantiation carries it. Nothing on
+ *    a stack is mutated by the bump — a re-import opens the next version,
+ *    still stamped.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (bays_total, bays_occupied, bays_free, co_ppm, jet_fan_status), plus one
@@ -169,11 +179,11 @@ export const FACILITY_PARKING_LEVEL: StockAssetTemplateEntry = {
     "docs/e5.3-derived-taglist-v1.md §5 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required and X optional; alarm rows carry a meaning " +
     "and no limit, because the gas levels that trip the fans and the free-bay count that means " +
-    "full are set per level at commissioning against that basement's ventilation design. One " +
-    "derived point is authored — occupancy over the level's own bays, the same code the " +
-    "occupancy zone authors over its people count — and four of the section's derived codes are " +
-    "deferred and named, all four of them time windows the rule engine evaluates.",
-  stockVersion: 1,
+    "full are set per level at commissioning against that basement's ventilation design. Two " +
+    "derived points are authored — occupancy over the level's own bays, the same code the " +
+    "occupancy zone authors over its people count, and E4.1c's fan hours in the trailing 24 h " +
+    "— and three of the section's derived codes are deferred and named.",
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -525,6 +535,16 @@ export const FACILITY_PARKING_LEVEL: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 16,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. One `bms-calc-v3` row, scheduled
+    // at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`; a rolling 24h.
+    {
+      ...derived("sum({jet_fan_status}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "fan_hours_day",
+      label: "Fan hours, trailing 24 h",
+      unit: "h",
+      required: false,
+      sortOrder: 17,
     },
   ],
 };

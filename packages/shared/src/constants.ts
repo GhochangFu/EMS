@@ -183,7 +183,7 @@ export type ControlRoomElectricalPointKey =
  * asked for. Recorded so a reader does not read the gap as an oversight.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, and
+ * `packages/db/src/point-key-units.ts`**, and
  * `tests/f3.39-global-point-key-vocabulary.test.ts` enforces it. `keysForDomain`
  * writes `UNIT_BY_KEY[code] ?? null`, and `seedPointKeyCatalog` runs last with a
  * plain `unit = EXCLUDED.unit`, so a missing entry silently reverts a correct
@@ -271,7 +271,7 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * `voltage_vrn`, `voltage_vry`, `voltage_vyb`, `voltage_vyn`.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `packages/db/src/point-key-units.ts`**, enforced by
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
  * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
  *
@@ -289,7 +289,7 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * unit. Joining this array flips its domain to `electrical` and fills its
  * unit to `"%"` through `seedPointKeyCatalog`'s `COALESCE` — see the
  * correction to `METERED_PUMPING_POINT_KEYS`'s docblock, just above, and
- * `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY` section comment.
+ * `packages/db/src/point-key-units.ts`'s `UNIT_BY_KEY` section comment.
  *
  * **SIX DERIVED CODES PROMOTED BY `F2.12`, 139 → 145.** ADR 0051 Amendment 6
  * decision 8 pre-authorizes promoting *"each derived code it can actually
@@ -637,7 +637,7 @@ export type ElectricalClassPointKey = (typeof ELECTRICAL_CLASS_POINT_KEYS)[numbe
  * named scales an operator reads.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `packages/db/src/point-key-units.ts`**, enforced by
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
  * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
  *
@@ -856,7 +856,7 @@ export type WaterClassPointKey = (typeof WATER_CLASS_POINT_KEYS)[number];
  * `insulation_resistance_mohm`, not redeclared here.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `packages/db/src/point-key-units.ts`**, enforced by
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
  * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
  *

@@ -127,21 +127,27 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * declares a deferred code" check would therefore fail on a correct entry.
  * Each list is checked against its own entry and no other.
  *
- * **The totals in this paragraph are pre-`E4.1c`.** `E4.1c` PR 2a (ADR 0070
- * decision 8) discharged or superseded nine electrical records — each move is
- * marked in place on its entry's list below with the successor named — and
- * PR 2b moves the mechanical, facility and vertical-transport ones; the
- * totals here are re-reconciled once, in PR 2b (plan §3.9).
- *
- * **106 records across 97 distinct codes** since `E5.3` Task 11. The five parts
- * are 32 records over 30 codes (electrical — `load_pct` three times), 15 over 14
- * (water — `hydraulic_load_pct` on the STP and the ETP), 17 over 17
- * (mechanical/HVAC — no code is deferred twice inside the pack), 25 over 25
- * (facility/smart-building — no code deferred twice, and none of the 25 is
- * deferred by any earlier pack either) and **17 over 15** (vertical transport —
- * `availability_pct` and `mtbf_h` on both the lift and the escalator, for the
- * same reason on each). 30 + 14 + 17 + 25 + 15 is 101, not 97, and the four-record
- * difference over three codes is the whole reason this is a `Record`:
+ * **81 records across 77 distinct codes** since `E4.1c` PR 2b (ADR 0070
+ * decision 8, plan §3.9), COUNTED FROM THE LISTS BELOW rather than restated
+ * from the plan — the plan's arithmetic and the lists agree. `E4.1c` removed
+ * **25 records over 20 codes** from the 106/97 `E5.3` Task 11 left: **18
+ * discharged** (the same code authored as a `bms-calc-v3` point, its record
+ * gone) and **7 superseded** under decision 8's `<quantity>_<window>` rule —
+ * `availability_pct` on four entries → `availability_pct_24h`,
+ * `co2_avoided_kg` → `co2_avoided_kg_today`, `duty_hours_pct` →
+ * `duty_hours_pct_24h`, `uptime_pct` → `uptime_pct_24h` — where the
+ * un-windowed code is never authored and the record's job was to say why it is
+ * absent, so it leaves with a comment naming the successor. Each move is marked
+ * in place on its entry's list. The five parts: **21 over 20** (electrical —
+ * `load_pct` on the feeder and the transformer; was 32/30), **15 over 14**
+ * (water — `hydraulic_load_pct` on the STP and the ETP; unchanged), **13 over
+ * 13** (mechanical/HVAC — no code twice; was 17/17), **21 over 21**
+ * (facility/smart-building — no code twice; was 25/25) and **11 over 10**
+ * (vertical transport — `mtbf_h` on both the lift and the escalator; was
+ * 17/15). 20 + 14 + 13 + 21 + 10 is 78, not 77, and the one-code difference is
+ * `specific_energy_kwh_kl`, the ONE remaining cross-pack overlap; 81 − 77 = 4
+ * is the four codes named twice (`load_pct`, `hydraulic_load_pct`, `mtbf_h`
+ * inside a pack, `specific_energy_kwh_kl` across two). Why this is a `Record`:
  *
  *  - **`specific_energy_kwh_kl` is deferred on `electrical-feeder` AND on
  *    `water-ro`** — the same code for the same shape of reason on two packs —
@@ -149,19 +155,23 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  *    both `kw` and `flow_klh`. One code, one meaning (*energy per kilolitre
  *    moved*), three entries. **The two deferral records stay**: they are claims
  *    about the feeder and the RO, and neither becomes authorable because a pump
- *    can compute it. This is the `load_pct` shape — deferred on three electrical
- *    classes and a measured core point on the UPS — and it is why a catalog-wide
- *    "no entry declares a deferred code" check would fail on correct entries.
- *  - **`availability_pct` is deferred on FOUR entries** — `electrical-dg-set`,
- *    `mechanical-pump` and, since `E5.3` PR 2, `mechanical-lift` and
- *    `mechanical-escalator`. All four need hours-in-state over a window, which
- *    the grammar has no state for. ADR 0053's Consequences name it as open for
- *    the N4 form; the pump's list does not become the DG set's when it lands.
- *  - **`starts_per_day` is deferred on `electrical-dg-set` AND on
- *    `mechanical-escalator`** — a per-day count over a cumulative counter on
- *    both. It is why the pack's ledger grows by 17 records but only **13**
- *    distinct codes: measure the distinct total, never add the part's own count
- *    to the previous total.
+ *    can compute it. This is the `load_pct` shape — deferred on the feeder and
+ *    the transformer, authored by `E4.1c` on the DG set (`{gen_kw} / $rated_kw`)
+ *    and a measured core point on the UPS — and it is why a catalog-wide "no
+ *    entry declares a deferred code" check would fail on correct entries.
+ *  - **`availability_pct_24h` is AUTHORED on four entries and deferred on
+ *    none** — `electrical-dg-set`, `mechanical-pump`, `mechanical-lift` and
+ *    `mechanical-escalator` all carried `availability_pct` as a window record
+ *    until `E4.1c`; one code, one meaning (the fraction of the trailing 24 h
+ *    the asset was not in its fault / trip / out-of-service state), with the
+ *    sense each class's state point dictates — three fault-sense (`1 - avg`),
+ *    the lift service-sense (`avg`). The four records left together because a
+ *    per-entry `Record` let each be named on its own entry; a flat list would
+ *    have removed one line and hidden three.
+ *  - **`starts_per_day` is AUTHORED on `electrical-dg-set` AND on
+ *    `mechanical-escalator`** (`delta({start_count}, 24h)` on both, Q10) where
+ *    both used to defer it — the same shape, and the same lesson: measure the
+ *    distinct total, never add a part's own count to the previous total.
  *
  * A per-entry sum and a distinct count are both right; they count different
  * things, and neither is derivable from the other.
@@ -232,8 +242,9 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // §2 — the HP pump's kW (§2 declares current), and a temperature correction
   // that is an exponential the grammar has no function for.
   "water-ro": ["specific_energy_kwh_kl", "normalized_permeate_flow"],
-  // §3 — a restatement of a declared measured point; a time window; and the one
-  // whose input can never receive a value at all (see DEFERRAL_REASON).
+  // §3 — a restatement of a declared measured point; an EVENT COUNT over
+  // regen_status (the grammar counts no transitions); and the one whose input
+  // can never receive a value at all (see DEFERRAL_REASON).
   "water-softener": ["throughput_since_regen_kl", "regen_frequency_per_day", "salt_efficiency_kg_kl"],
   // The mechanical/utility pack — E5.2, docs/e5.2-derived-taglist-v1.md.
   // Seventeen records over seventeen codes; the thirteen the pack DOES author
@@ -241,18 +252,12 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // "Derived:" prose line minus what that entry authors, and 13 + 17 = 30 is the
   // reconciliation that proves no named code was dropped.
   //
-  // §1 — three time windows and a standard's lookup. `specific_energy_kwh_kl`
-  // is NOT here: the pump declares kw and flow_klh and authors it.
-  "mechanical-pump": [
-    // run hours over ELAPSED hours — the grammar has no state.
-    "duty_hours_pct",
-    // per-hour rate; the short_cycling alarm binds start_count and says so.
-    "starts_per_hour",
-    // hours-in-state over a window; already deferred on electrical-dg-set.
-    "availability_pct",
-    // ISO 20816 zones A-D are per machine group and mounting — a lookup table.
-    "vibration_band",
-  ],
+  // §1 — a standard's lookup. `specific_energy_kwh_kl` is NOT here: the pump
+  // declares kw and flow_klh and authors it. E4.1c DISCHARGED `starts_per_hour` (`delta({start_count}, 1h)`) and
+  // SUPERSEDED `duty_hours_pct` by `duty_hours_pct_24h` and `availability_pct`
+  // by `availability_pct_24h` (decision 8's <quantity>_<window> rule). What
+  // stays: ISO 20816 zones A-D are per machine group and mounting — a lookup.
+  "mechanical-pump": ["vibration_band"],
   // §2 — three asset attributes, one of them with a model behind it. The drive
   // reports frequency, current and torque; it does not report its nameplate.
   "mechanical-vfd": [
@@ -266,9 +271,10 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // speed as a percentage, so this would also be a second code for it.
     "speed_pct",
   ],
-  // §3 — a time window, and a test rather than a formula.
+  // §3 — an event count over an enum, and a test rather than a formula.
   "mechanical-compressor": [
-    // load/unload transitions per hour.
+    // load/unload transitions per hour — an EVENT COUNT over the load-state
+    // enum; a v3 window reads values and counts no transitions.
     "unload_cycles_per_hour",
     // a no-demand pressure-decay test needs a window in which nothing draws
     // air — a METHOD the document names, not an expression over live points.
@@ -277,17 +283,15 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // §4 — a trend and an attribute. The five the chiller DOES author are the N4
   // form's KPIs (cooling_load_tr, kw_per_tr, cop, and the two delta-Ts).
   "hvac-chiller": [
-    // a trend is a time window by definition.
+    // a SLOPE: delta() of a noisy measurement is two samples, not a trend.
     "approach_trend",
     // cooling load / RATED TR.
     "part_load_pct",
   ],
-  // §6 — an attribute, a time window, and a meter §6 does not list.
+  // §6 — an attribute and a meter §6 does not list. E4.1c DISCHARGED `fan_energy_kwh_day` (`sum({kw}, 24h)`). What stays:
   "hvac-ahu": [
     // the clean and dirty pressure-drop band is per filter class — an attribute.
     "filter_life_pct",
-    // kWh per day is a window.
-    "fan_energy_kwh_day",
     // needs CHW flow AT THE COIL, and §6 declares none; the AHU has the two
     // water temperatures and no flow, so the coil duty is not expressible.
     "cooling_delivered_kw",
@@ -319,12 +323,14 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // declares the pack, so that the day an entry lands it lands against a check
   // that already names what it may not author (E5.2 Task 5's shape).
   //
-  // §1 — two time windows and three attributes. Nothing is promoted here.
+  // §1 — two grammar cases and three attributes. Nothing is promoted here.
   "facility-lighting-zone": [
-    // minutes per day is a window; the lit_while_unoccupied alarm binds the
-    // state and says so.
+    // lit AND unoccupied is a PRODUCT OF TWO STATES inside a window, which a
+    // v3 window (one point reference, ruling 4) cannot express; the
+    // lit_while_unoccupied alarm binds the state and says so.
     "lit_while_unoccupied_min_day",
-    // hours per day of manual override — a window.
+    // hours in override: lighting_mode is an ENUM, so a window over it is not
+    // hours-in-one-state without a comparison the grammar has not got.
     "override_hours_day",
     // installed load per square metre needs the ZONE AREA, an attribute.
     "lighting_w_per_m2",
@@ -335,7 +341,8 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // and the count it divides by is not.
     "lamp_availability_pct",
   ],
-  // §2 — the pack's NEW deferral class, two time windows and an attribute.
+  // §2 — the pack's NEW deferral class, an event count and an attribute. E4.1c
+  // DISCHARGED `isolation_hours_month` (`sum({fire_isolate_state}, this_month)`).
   "facility-fire-panel": [
     // THE NEW CLASS (see DEFERRAL_REASON): a product of five declared binaries
     // that PARSES, and is refused all the same. A health flag over states is
@@ -343,18 +350,18 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // already raises its own alarm — a roll-up would restate five decisions as
     // one number with no way back to which input moved it.
     "fire_system_healthy",
-    // hours isolated per month — a window.
-    "isolation_hours_month",
-    // starts per hour; the jockey_pump_cycling alarm binds the run status and
+    // starts per hour — an EVENT COUNT over a state point, which a v3 window
+    // cannot count; the jockey_pump_cycling alarm binds the run status and
     // says the rate is the rule's.
     "jockey_starts_per_hour",
     // "running outside a test" needs the TEST SCHEDULE, a site attribute; the
     // fire_pump_running_unplanned alarm carries the meaning instead.
     "fire_pump_run_unplanned",
   ],
-  // §3 — two time windows and the roll-up class again.
+  // §3 — a contact's polarity, a counter's sense, and the roll-up class again.
   "facility-access-door": [
-    // minutes held open per day — a window.
+    // minutes held open per day: "Door open / closed (contact)" fixes neither
+    // the 0/1 sense, so sum() over it is undefined until the document does.
     "door_open_minutes_day",
     // per-hour rate over interval counters whose REPORTING INTERVAL the
     // catalog does not know — a window with an unknown denominator.
@@ -363,10 +370,9 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // controller's own state points.
     "access_system_healthy",
   ],
-  // §4 — a window, an attribute, and another asset's energy.
+  // §4 — an attribute and another asset's energy. E4.1c DISCHARGED
+  // `occupied_hours_day` (`sum({occupancy_state}, 24h)`).
   "facility-occupancy-zone": [
-    // hours-in-state over a day — a window.
-    "occupied_hours_day",
     // needs the DESK or ROOM count, an attribute; occupancy_capacity is the
     // egress capacity and is a different denominator.
     "space_utilization_pct",
@@ -374,17 +380,18 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // which bms-calc-v1 cannot name.
     "conditioning_while_empty_kwh",
   ],
-  // §5 — four time windows, and the only entry whose deferrals are all one
-  // class. occupancy_pct is NOT here: the level declares bays_occupied and
-  // bays_total and authors it, with a different formula from §4's.
+  // §5 — a counter, a method and a two-window product. E4.1c DISCHARGED
+  // `fan_hours_day` (`sum({jet_fan_status}, 24h)`). occupancy_pct is NOT here:
+  // the level declares bays_occupied and bays_total and authors it, with a
+  // different formula from §4's.
   "facility-parking-level": [
-    // vehicles per day.
+    // vehicles per day: entry_count is "Entries" with no cumulative/interval
+    // statement, so delta() over it is undefined — the traffic_per_hour class.
     "turnover_per_day",
-    // average dwell needs entry-to-exit pairing, which is state over a window.
+    // average dwell needs entry-to-exit pairing — a method.
     "avg_dwell_min",
-    // fan run hours per day.
-    "fan_hours_day",
-    // the fraction of fan hours CO demand drove — two windows, not one.
+    // the fraction of fan hours CO demand drove — a product of two states
+    // inside a window; two windows, not one (ruling 4).
     "co_driven_fan_pct",
   ],
   // §6 — two methods the document only names, and a window. The two the node
@@ -397,45 +404,40 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // adequacy against a ventilation rate the document does not define — a
     // method, and the rate is per occupancy category.
     "ventilation_adequacy_pct",
-    // hours outside the band per day — a window, and the band is the site's.
+    // hours outside the band per day — a COMPARISON against a site band inside
+    // a window, which the grammar has not got; the band is the site's.
     "hours_out_of_band_day",
   ],
-  // §7 — the roll-up class a third time, and two time windows.
+  // §7 — the roll-up class a third time, and an input the entry does not
+  // declare. E4.1c SUPERSEDED `uptime_pct` by `uptime_pct_24h`
+  // (`avg({device_online}, 24h) * 100`, decision 8's <quantity>_<window> rule).
   "facility-bas-gateway": [
     // ADR 0054 decision 6 rules it to the F3.x estate surface rather than to a
     // template point: a per-gateway quality number is computed over the points
     // BEHIND the gateway, which is the estate's view and not this asset's.
     "data_quality_pct",
-    // reachable time over elapsed time — hours-in-state.
-    "uptime_pct",
-    // a mean over a window; last_seen_age_s is the instantaneous point the
-    // stale_data alarm binds.
+    // a mean over a LATENCY nothing declares; last_seen_age_s is an age
+    // sawtooth, the instantaneous point the stale_data alarm binds.
     "mean_latency_s",
   ],
-  // §8a — the pack's longest list, eleven: seven time windows, another system's
+  // §8a — seven: an undeclared input, two event counts, another system's
   // clock, a method, a rate whose two counters do not divide, and
   // levelling_drift_mm, which is a COMMISSIONING BASELINE trend and its own
-  // class (§13 item 5's ruling). The two the lift
-  // DOES author are the lifetime counter ratios (the E5.2 load_factor_pct
-  // shape), which need no window because both inputs are cumulative.
+  // class (§13 item 5's ruling). E4.1c DISCHARGED door_cycles_per_day,
+  // trips_per_day and out_of_service_hours_month and SUPERSEDED
+  // availability_pct by availability_pct_24h (service-sense over
+  // lift_in_service). The two the lift authored at v1 are the lifetime counter
+  // ratios (the E5.2 load_factor_pct shape).
   "mechanical-lift": [
-    // hours in service over hours elapsed — hours-in-state, and the third
-    // record of this code (electrical-dg-set, mechanical-pump, here).
-    "availability_pct",
-    // mean time between failures: a window, and it needs the failure history
-    // rather than the current fault flag.
+    // mean time between failures: lift_fault_count is "since last reset" —
+    // not cumulative — so delta() over it is undefined; the failure history
+    // is not a declared point.
     "mtbf_h",
-    // entrapments per month — a window over an event.
+    // entrapments per month — an EVENT COUNT over a state; the grammar counts
+    // nothing (sample_count is readings).
     "entrapments_per_month",
-    // door cycles per day; door_cycle_count is a CUMULATIVE counter, and per-day
-    // is the window the grammar has no state for.
-    "door_cycles_per_day",
-    // trips per day, the same shape over trip_count.
-    "trips_per_day",
     // the peak-hour wait needs a distribution over a window, not a value.
     "peak_hour_wait_s",
-    // out-of-service hours per month — hours-in-state again, over lift_in_service.
-    "out_of_service_hours_month",
     // mean time to repair lives in the WORK ORDER system (E3.1), which
     // bms-calc-v1 cannot name — the "another asset" class, one system out.
     "mttr_h",
@@ -452,20 +454,17 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // rate however well it parses.
     "fault_rate_per_1000_trips",
   ],
-  // §8b — four windows, a method the document leaves open, and a commissioning
-  // baseline. availability_pct and mtbf_h are deferred on BOTH vertical-transport
-  // entries for the same reason, and starts_per_day is the DG set's code a SECOND
-  // time: a per-entry Record is what lets one code be deferred once per entry, and
-  // the most any code reaches here is FOUR (availability_pct).
+  // §8b — an undeclared input, an event count, a method the document leaves
+  // open, and a commissioning baseline. E4.1c DISCHARGED starts_per_day
+  // (`delta({start_count}, 24h)`, the DG set's code authored a second time)
+  // and SUPERSEDED availability_pct by availability_pct_24h (fault-sense over
+  // esc_fault). mtbf_h stays deferred on BOTH vertical-transport entries: a
+  // per-entry Record is what lets one code be deferred once per entry.
   "mechanical-escalator": [
-    // hours running over hours elapsed — hours-in-state.
-    "availability_pct",
-    // the failure history again, not the current fault flag.
+    // the failure history, not the current fault flag; the fault counter is
+    // "since last reset", not cumulative.
     "mtbf_h",
-    // starts per day over the cumulative start_count — the same window the DG
-    // set defers this exact code for.
-    "starts_per_day",
-    // safety-circuit trips per month — a window over an event.
+    // safety-circuit trips per month — an EVENT COUNT over a state.
     "safety_trips_per_month",
     // THE DENOMINATOR IS UNDEFINED: the document does not fix whether standby is
     // measured over run time or over run + standby, and the two answers differ by
@@ -482,9 +481,11 @@ const DEFERRAL_REASON =
   "ADR 0051 Amendment 6 decision 8: a code with no formula is not vocabulary. Every deferred " +
   "code needs an asset or site attribute (rating, contract demand, tariff band, installed kWp, " +
   "tank capacity, rated kVAr per step), a value on another asset that bms-calc-v1 cannot name " +
-  "(a Σ of feeders, an LV meter, the point of connection, the site load), a time window the " +
-  "grammar has no state for (per-day, per-month, hours-in-state), or a model it has no " +
-  "functions for (IEC 60076-7, C57.91, a Duval triangle). They are deferred and NAMED, never " +
+  "(a Σ of feeders, an LV meter, the point of connection, the site load), or a model it has " +
+  "no functions for (IEC 60076-7, C57.91, a Duval triangle). Two classes this sentence used " +
+  "to list are RETIRED: an attribute whose key is one of 0074's twelve (E4.1a's $key) and a " +
+  "time window over one declared counter or 0/1 state (E4.1b's window) — clause (6) below " +
+  "says what E4.1c authored under each and what stays. They are deferred and NAMED, never " +
   "authored with a placeholder formula (ADR 0036; F2.9 records the fork) — plan §2 carries the " +
   "reason for each one. E5.1's water pack adds TWO deferral classes the electrical pack had no " +
   "case of. (1) A REAGENT STRENGTH, which is a site attribute: specific_chlorine_gkl and " +
@@ -517,7 +518,51 @@ const DEFERRAL_REASON =
   "the F3.x estate view), and each of their inputs already raises its own alarm, so the roll-up " +
   "would restate several decisions as one number with no way back to which input moved it — " +
   "every other class here is deferred because it CANNOT be written, and this one because it " +
-  "should not be.";
+  "should not be. (6) E4.1c's ADR 0070 pack adds no deferral class and REMOVES twenty-five " +
+  "records: E4.1a gave the grammar a $key over a twelve-key vocabulary and E4.1b gave it a " +
+  "window over one point reference, so every attribute-class record whose key is one of the " +
+  "twelve and every window-class record over a declared counter or 0/1 state was authored as a " +
+  "bms-calc-v3 point. What stays is deferred for a reason the two extensions did not touch: a " +
+  "KEY the vocabulary does not hold (decision 2 extends it by INSERT, never by a release — the " +
+  "record names the key), a POINT the entry does not declare, ANOTHER ASSET'S value, a " +
+  "COMPARISON or a condition or a product of states inside a window (ruling 4), an EVENT COUNT " +
+  "over a state point (the grammar counts nothing), a COUNTER whose cumulative sense or a " +
+  "CONTACT whose polarity the document does not fix, a SLOPE, or one of the classes above.";
+
+/**
+ * **The four SUPERSEDED codes are never authored** (E4.1c, plan §3.9; the PR 2b
+ * security review). `availability_pct`, `co2_avoided_kg`, `duty_hours_pct` and
+ * `uptime_pct` left the ledger under decision 8's `<quantity>_<window>` rule
+ * — a record's job was to say why the code is absent, and with the record gone
+ * nothing else refused the un-windowed name. This does: a stock entry that
+ * authors one of the four under the old name fails here naming the successor.
+ * Anti-vacuity is the positive half — the successors ARE found: four entries
+ * author `availability_pct_24h`, one each the other three.
+ */
+export const SUPERSEDED_CODES: Readonly<Record<string, { successor: string; authoredBy: number }>> = {
+  availability_pct: { successor: "availability_pct_24h", authoredBy: 4 },
+  co2_avoided_kg: { successor: "co2_avoided_kg_today", authoredBy: 1 },
+  duty_hours_pct: { successor: "duty_hours_pct_24h", authoredBy: 1 },
+  uptime_pct: { successor: "uptime_pct_24h", authoredBy: 1 },
+};
+
+export function assertSupersededCodesNeverAuthored(): void {
+  for (const [old, { successor, authoredBy }] of Object.entries(SUPERSEDED_CODES)) {
+    const authoringOld = STOCK_ASSET_TEMPLATE_CATALOG.filter((entry) => entry.points.some((p) => p.pointKey === old));
+    assert(
+      authoringOld.length === 0,
+      `${authoringOld.map((e) => e.code).join(", ")} author(s) \"${old}\", which E4.1c SUPERSEDED by ` +
+        `\"${successor}\" (decision 8's <quantity>_<window> rule): the un-windowed code is never ` +
+        "authored, on any entry — a value under that name would claim a window it does not say.",
+    );
+    const authoringNew = STOCK_ASSET_TEMPLATE_CATALOG.filter((entry) => entry.points.some((p) => p.pointKey === successor));
+    assert(
+      authoringNew.length === authoredBy,
+      `\"${successor}\" must be authored by exactly ${authoredBy} stock entries (the positive control for ` +
+        `the \"${old}\" refusal above); got ${authoringNew.length}: [${authoringNew.map((e) => e.code).join(", ")}]`,
+    );
+  }
+}
 
 /** The shared reason plus the class's own list, so the failure names both. */
 export const deferralReason = (code: StockEntryCode): string =>

@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runMechanicalClassEntryTests3 } from "./mechanical-classes-3.spec";
+import { e41cAhuClaims, runMechanicalClassEntryTests3 } from "./mechanical-classes-3.spec";
 
 /**
  * Vitest entry point for `mechanical-classes-3.spec.ts` — assertions live in the
@@ -17,4 +17,9 @@ describe("stock asset-template catalog — the mechanical classes (E5.2, §§6 a
   it("ships the air handling unit and the boiler exactly as their tag-list sections describe them", () => {
     runMechanicalClassEntryTests3();
   });
+
+  // E4.1c — the AHU's one v3 row, one it() per claim.
+  for (const [name, run] of e41cAhuClaims()) {
+    it(name, run);
+  }
 });

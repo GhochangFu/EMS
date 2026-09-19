@@ -89,14 +89,29 @@ import type { StockAssetTemplateEntry } from "./types";
  * §1 meter) and two of its alarm bullets are deferred, each reasoned in that
  * module's docblock. `electrical-apfc` — `F2.12` Task 8, §6: 14 points (4 core
  * + 10 extended), 6 alarms, 1 KPI (`pf_gap`, with no `unit` key — power factor
- * is dimensionless), 3 maintenance plans; the only class with **no derived
- * point at all**, because all four of §6's derived codes need a rated kVAr per
- * step, a tariff band, a time window or trigonometry.
+ * is dimensionless), 3 maintenance plans; it was the only class with no derived
+ * point at all until `E4.1c` authored `steps_per_day` (below) — the other three
+ * of §6's derived codes still need a rated kVAr per step, a tariff band or
+ * trigonometry.
  *
  * **PACK TOTALS after `F2.12`**: 6 entries, 172 points, 64 alarms, 5 KPIs and
  * 21 maintenance plans. The three anti-vacuity bounds in
  * `tests/f2.13-asset-stock-catalog-vocabulary.test.ts` are read off these files
  * and moved with them.
+ *
+ * **`E4.1c` (ADR 0070 decision 8, 2026-09-19) — the sustainability points, all
+ * `bms-calc-v3`, scheduled at 60 s, appended after each entry's last point.**
+ * `electrical-feeder` **v2 → v3**: `energy_cost_per_h`, `co2_kg_per_h`,
+ * `energy_cost_today`, `co2_kg_today`, `energy_saving_vs_baseline_pct`,
+ * `demand_vs_contract_pct` (36–41). `electrical-transformer` **v1 → v2**:
+ * `tap_changes_per_day` (30). `electrical-dg-set` **v1 → v2**: `load_pct`,
+ * `fuel_hours_remaining_h`, `downtime_h_24h`, `availability_pct_24h`,
+ * `starts_per_day` (38–42). `electrical-solar-pv` **v1 → v2**:
+ * `co2_avoided_kg_today`, `performance_ratio_pct`, `specific_yield_kwh_kwp_day`,
+ * `capacity_utilization_pct` (26–29). `electrical-apfc` **v1 → v2**:
+ * `steps_per_day` (14). The UPS is untouched. Eleven ledger records left the
+ * pack (32/30 → 21/20 in `stock-catalog-deferrals.spec.ts`); a `$key` with no
+ * value is a counted `parameter_unset` until entered on `/admin/calc-parameters`.
  */
 export const ELECTRICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // Tag-list section order — §1 through §6, and the order GET /stock lists in.

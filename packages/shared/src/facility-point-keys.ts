@@ -117,7 +117,7 @@
  * a duct; `ups_on_battery` against `on_battery`.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `packages/db/src/point-key-units.ts`**, enforced by
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
  * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL` on a new row.
  * It cannot overwrite a real unit: `seedPointKeyCatalog` writes

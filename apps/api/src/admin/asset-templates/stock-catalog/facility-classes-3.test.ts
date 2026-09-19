@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runFacilityClassEntryTests3 } from "./facility-classes-3.spec";
+import { e41cBasClaims, runFacilityClassEntryTests3 } from "./facility-classes-3.spec";
 
 /**
  * Vitest entry point for `facility-classes-3.spec.ts` — assertions live in the
@@ -17,4 +17,9 @@ describe("stock asset-template catalog — the facility classes (E5.3, §§6 and
   it("ships the indoor air quality node and the BAS gateway exactly as their tag-list sections describe them", () => {
     runFacilityClassEntryTests3();
   });
+
+  // E4.1c — the BAS gateway's one v3 row, one it() per claim.
+  for (const [name, run] of e41cBasClaims()) {
+    it(name, run);
+  }
 });

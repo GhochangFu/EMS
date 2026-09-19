@@ -15,10 +15,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 
 /**
@@ -453,6 +455,12 @@ const BAS_POINTS: readonly PointRow[] = [
   ["rtc_drift_s", "extended", "s"],
   ["firmware_version", "extended", null],
   ["leak_state", "extended", null],
+  ["uptime_pct_24h", "derived", "%"], // E4.1c
+];
+
+/** E4.1c's one `bms-calc-v3` row (plan §3.7) at the default input age. */
+const BAS_DERIVED: readonly DerivedRow[] = [
+  ["uptime_pct_24h", "avg({device_online}, 24h) * 100", null],
 ];
 
 /**
@@ -507,7 +515,9 @@ const BAS_ALARMS: readonly AlarmRow[] = [
  *
  * Asserted as an exact set rather than a subset, so that adding an alarm on any
  * one of them — or quietly dropping a declared row — fails and names the change.
- * The access door's `denied_ratio_pct` claim is the shape.
+ * The access door's `denied_ratio_pct` claim is the shape. Over ALL points —
+ * `E4.1c`'s derived `uptime_pct_24h` is in the expected set by name, so a
+ * second derived row appended later still fails here.
  */
 function assertTheRowsNoAlarmBinds(entry = requireStockEntry(BAS_CODE)): void {
   const bound = new Set(alarmsOf(entry).map((alarm) => alarm.pointKey));
@@ -522,10 +532,12 @@ function assertTheRowsNoAlarmBinds(entry = requireStockEntry(BAS_CODE)): void {
     "memory_pct",
     "points_stale_count",
     "ups_on_battery",
+    // E4.1c's derived row: a computed availability figure is a trend, not a page.
+    "uptime_pct_24h",
   ];
   assert(
     unbound.join(", ") === expected.join(", "),
-    `${BAS_CODE} must declare exactly these six rows that no alarm binds:\n  expected ` +
+    `${BAS_CODE} must declare exactly these seven rows that no alarm binds:\n  expected ` +
       `${expected.join(", ")}\n  got      ${unbound.join(", ") || "(none)"}\n` +
       "§7 raises seven bullets over thirteen rows, and §12 ruling 6 forbids inventing an alarm " +
       "for a row the document does not raise one for. Three are housekeeping trends a chart " +
@@ -534,7 +546,9 @@ function assertTheRowsNoAlarmBinds(entry = requireStockEntry(BAS_CODE)): void {
       "reported here and is named by the UPS battery plan instead; firmware_version is a string " +
       "with nothing to compare it against; and leak_state is the reused row the document " +
       "declares and raises no bullet for — the room's own leak detection answers it, and a " +
-      "second row here would page a controls engineer for a plumbing fault.",
+      "second row here would page a controls engineer for a plumbing fault; and uptime_pct_24h " +
+      "is E4.1c's derived availability, a trend and not a page (device_offline already alarms " +
+      "the instantaneous state).",
   );
 }
 
@@ -568,24 +582,25 @@ function assertTheRowsNoAlarmBinds(entry = requireStockEntry(BAS_CODE)): void {
  */
 function checkBasGateway(): void {
   const entry = requireStockEntry(BAS_CODE);
-  assertEntryIdentity(BAS_CODE, entry, "bas_gateway", "facility");
+  assertEntryIdentity(BAS_CODE, entry, "bas_gateway", "facility", 2);
 
-  // ---- 13 points, 2 core + 11 extended + 0 manual + 0 derived -------------
+  // ---- 14 points, 2 core + 11 extended + 0 manual + 1 derived (1 E4.1c) ----
 
   assert(
     tierCount(entry, "core") === 2 &&
       tierCount(entry, "extended") === 11 &&
       tierCount(entry, "manual") === 0 &&
-      tierCount(entry, "derived") === 0,
-    "§7 marks 2 rows C and 11 X, authors no M row and promotes no derived code — 2/11/0/0. " +
+      tierCount(entry, "derived") === 1,
+    "§7 marks 2 rows C and 11 X, authors no M row and promotes no derived code; E4.1c's " +
+      "uptime_pct_24h is the only derived row — 2/11/0/1. " +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(BAS_CODE, "§7", entry, BAS_POINTS);
-  // The EMPTY table is the claim, not the absence of a call: §7 names three
-  // derived codes and this entry promotes NONE of them, so a formula appearing
+  // §7 names three derived codes and this entry promotes NONE of them; the one
+  // row is E4.1c's, which SUPERSEDES uptime_pct. A second formula appearing
   // here later fails this line and has to be argued for.
-  assertDerivedPoints(BAS_CODE, entry, []);
+  assertDerivedPoints(BAS_CODE, entry, BAS_DERIVED);
   assertNoKpis(BAS_CODE, entry, "§7");
   assertDeferralsAbsent(BAS_CODE, entry);
 
@@ -678,15 +693,16 @@ function checkBasGateway(): void {
     }
   }
   assert(
-    DEFERRED_DERIVED_CODES[BAS_CODE].length === 3 &&
+    DEFERRED_DERIVED_CODES[BAS_CODE].length === 2 &&
       DEFERRED_DERIVED_CODES[BAS_CODE].includes("data_quality_pct"),
-    "§7's Derived: line names three codes and this entry authors NONE of them. data_quality_pct " +
+    "§7's Derived: line names three codes and this entry authors NONE of them under their own " +
+      "name (uptime_pct is SUPERSEDED by E4.1c's uptime_pct_24h, so its record is gone). data_quality_pct " +
       "is the SOW page-10 footer's own number (98.6% Good) and ADR 0054 decision 6 rules it to " +
       "the F3.x estate surface: a quality figure is computed over the points BEHIND a gateway, " +
       "which is the estate's view and not this asset's, and a per-gateway template point would " +
-      "be a second, quieter answer to it. uptime_pct is reachable time over elapsed time and " +
-      "mean_latency_s is a mean over a window — both need a clock and a memory bms-calc-v1 has " +
-      `neither of. Got ${DEFERRED_DERIVED_CODES[BAS_CODE].length}: ` +
+      "be a second, quieter answer to it. mean_latency_s is a mean over a latency the entry does " +
+      "not declare — last_seen_age_s is an age sawtooth. " +
+      `Got ${DEFERRED_DERIVED_CODES[BAS_CODE].length}: ` +
       `${DEFERRED_DERIVED_CODES[BAS_CODE].join(", ")}.`,
   );
 
@@ -750,4 +766,20 @@ function checkBasGateway(): void {
 export function runFacilityClassEntryTests3(): void {
   checkIaqNode();
   checkBasGateway();
+}
+
+// ---- E4.1c — the bms-calc-v3 facility-bas-gateway row(s) (ADR 0070 decision 8) ----
+//
+// Pinned through `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// `uptime_pct_24h` SUPERSEDES the un-windowed `uptime_pct` (decision 8's
+// <quantity>_<window> rule): the fraction of the trailing 24 h the gateway was
+// reachable — service-sense (`avg`, no `1 -`) over the tier-C 0/1 state.
+
+/** facility-bas-gateway — plan §3.7, sortOrder 13. */
+const BAS_E41C: readonly SustainabilityRow[] = [
+  ["uptime_pct_24h", "avg({device_online}, 24h) * 100", "%"],
+];
+
+export function e41cBasClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return sustainabilityClaims("facility-bas-gateway", requireStockEntry("facility-bas-gateway"), BAS_E41C, 13, 2);
 }

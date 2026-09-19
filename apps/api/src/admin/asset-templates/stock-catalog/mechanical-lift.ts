@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -21,9 +21,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * `facility-classes-4.spec.ts` proves it: a copy of this entry citing `E5.2`'s
  * handout is refused **naming E5.3's**, which only the override can produce.
  *
- * **80 POINTS — 7 core + 66 extended + 5 manual + 2 DERIVED.** §8a's 78 table
+ * **84 POINTS — 7 core + 66 extended + 5 manual + 6 DERIVED.** §8a's 78 table
  * rows in the document's own order (`sortOrder` 0-77) across its eight
- * sub-blocks, then `door_reversal_ratio_pct` (78) and `kwh_per_trip` (79). The
+ * sub-blocks, then `door_reversal_ratio_pct` (78) and `kwh_per_trip` (79), then
+ * `E4.1c`'s four `bms-calc-v3` rows (80-83, VERSION HISTORY v2). The
  * plan's §5.8 says *"six sub-blocks"* and the document has eight — service
  * state, motion, doors, drive and machine, shaft/pit/machine room, ride
  * quality, counters and usage, manual/statutory. The rows and their order are
@@ -102,8 +103,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * `lift_fault` binds the `0/1` flag beside them and says where to read the code.
  * A stock template cannot hold four OEMs' fault dictionaries.
  *
- * **ELEVEN DERIVED CODES ARE DEFERRED AND NAMED, TWO ARE PROMOTED** (plan §5.0,
- * §12 ruling 2). §8a's *Derived:* line names thirteen:
+ * **SEVEN DERIVED CODES ARE DEFERRED AND NAMED, TWO ARE PROMOTED, AND `E4.1c`
+ * AUTHORED FOUR MORE** (plan §5.0, §12 ruling 2; ADR 0070 decision 8, plan
+ * §3.7/§3.9). §8a's *Derived:* line names thirteen:
  *
  *  - **Promoted — `door_reversal_ratio_pct`** =
  *    `{door_reversal_count} / {door_cycle_count} * 100`, and **`kwh_per_trip`**
@@ -112,10 +114,18 @@ import type { StockAssetTemplateEntry } from "./types";
  *    entry declares. Division by zero is `non_finite` and yields **no value**,
  *    which is correct on a lift whose counters have just been reset and must
  *    not be guarded: a `clamp` would ship a fabricated ratio.
- *  - **Seven time windows** the grammar has no clock or memory for —
- *    `availability_pct`, `mtbf_h`, `entrapments_per_month`,
- *    `door_cycles_per_day`, `trips_per_day`, `peak_hour_wait_s`,
- *    `out_of_service_hours_month`.
+ *  - **Authored by `E4.1c`, now that `E4.1b` gave the grammar a window over
+ *    one point reference** — `door_cycles_per_day = delta({door_cycle_count},
+ *    24h)` and `trips_per_day = delta({trip_count}, 24h)` over the two
+ *    CUMULATIVE counters (§8a's own labels); `out_of_service_hours_month =
+ *    hours(this_month) - sum({lift_in_service}, this_month)`, a CALENDAR window
+ *    (a `NULL` zone refuses `timezone_unset`); and `availability_pct` **superseded** by
+ *    `availability_pct_24h = avg({lift_in_service}, 24h) * 100` — SERVICE-SENSE
+ *    (`avg`, no `1 -`), where the DG set, pump and escalator are fault-sense
+ *    over their trip/fault points; one code, one meaning on four entries.
+ *  - **Still deferred** — `mtbf_h` (`lift_fault_count` is "since last reset",
+ *    not cumulative), `entrapments_per_month` (an event count over a state: the
+ *    grammar counts nothing) and `peak_hour_wait_s` (a distribution, a method).
  *  - **One that lives in another system** — `mttr_h` needs the work orders
  *    `E3.1` owns, which `bms-calc-v1` cannot name.
  *  - **One method the document only names** — `ride_quality_index` is a banding
@@ -189,6 +199,13 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-lift` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §8a, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `mechanical-lift` **v2** (2026-09-19, `E4.1c`): four `bms-calc-v3` derived
+ *    points at `sortOrder` 80-83 (plan §3.7; the bullet above). A tenant must
+ *    know: no row reads a `$key`; `this_month` needs the location's zone and
+ *    refuses `window_empty` for one tick after local midnight on the first;
+ *    every row is `scheduled` at 60 s; no coverage guard applies (ADR 0055
+ *    decision 11 — `@scope` only); `door_cycle_count` and `trip_count` are tier X — absent, the two
+ *    counts refuse `missing_input`. A re-import opens the next version.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -220,8 +237,10 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
     "client-confirmed). Tier C points are what dry contacts alone give and are required, X needs " +
     "an OEM API, a controller gateway or a retrofit sensor and is optional, and the five M rows " +
     "are entered by hand; alarm rows carry a meaning and no limit, because every safety device " +
-    "on a lift is set against that lift's own rated speed and rated load.",
-  stockVersion: 1,
+    "on a lift is set against that lift's own rated speed and rated load. Six derived points: " +
+    "the two lifetime ratios, and E4.1c's trailing-24 h availability, door cycles and trips " +
+    "per day, and out-of-service hours in the calendar month.",
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -951,6 +970,25 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
       unit: "kWh",
       required: false,
       sortOrder: 79,
+    },
+    // ---- `E4.1c` — ADR 0070 decision 8, plan §3.7. Four `bms-calc-v3` rows,
+    // scheduled at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`; a
+    // count carries "" (Q8). Two-line rows: this module is near the §4.5 cap.
+    {
+      ...derived("avg({lift_in_service}, 24h) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "availability_pct_24h", label: "Availability, trailing 24 h", unit: "%", required: false, sortOrder: 80,
+    },
+    {
+      ...derived("delta({door_cycle_count}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "door_cycles_per_day", label: "Door cycles, trailing 24 h", unit: "", required: false, sortOrder: 81,
+    },
+    {
+      ...derived("delta({trip_count}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "trips_per_day", label: "Trips, trailing 24 h", unit: "", required: false, sortOrder: 82,
+    },
+    {
+      ...derived("hours(this_month) - sum({lift_in_service}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "out_of_service_hours_month", label: "Out of service, calendar month", unit: "h", required: false, sortOrder: 83,
     },
   ],
 };

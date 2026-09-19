@@ -13,10 +13,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 
 /**
@@ -393,6 +395,7 @@ const OCCUPANCY_POINTS: readonly PointRow[] = [
   ["zone_temp_sp_c", "extended", "°C"],
   ["sensor_battery_pct", "extended", "%"],
   ["occupancy_pct", "derived", "%"],
+  ["occupied_hours_day", "derived", "h"], // E4.1c
 ];
 
 /**
@@ -410,6 +413,7 @@ const OCCUPANCY_POINTS: readonly PointRow[] = [
  */
 const OCCUPANCY_DERIVED: readonly DerivedRow[] = [
   ["occupancy_pct", "{occupancy_count} / {occupancy_capacity} * 100", null],
+  ["occupied_hours_day", "sum({occupancy_state}, 24h)", null], // E4.1c, plan §3.7
 ];
 
 /**
@@ -482,17 +486,17 @@ function assertNoSensorOfflineRow(entry = requireStockEntry(OCCUPANCY_CODE)): vo
  */
 function checkOccupancyZone(): void {
   const entry = requireStockEntry(OCCUPANCY_CODE);
-  assertEntryIdentity(OCCUPANCY_CODE, entry, "occupancy_zone", "facility");
+  assertEntryIdentity(OCCUPANCY_CODE, entry, "occupancy_zone", "facility", 2);
 
-  // ---- 11 points, 2 core + 8 extended + 0 manual + 1 derived --------------
+  // ---- 12 points, 2 core + 8 extended + 0 manual + 2 derived (1 E4.1c) ----
 
   assert(
     tierCount(entry, "core") === 2 &&
       tierCount(entry, "extended") === 8 &&
       tierCount(entry, "manual") === 0 &&
-      tierCount(entry, "derived") === 1,
-    `§4 marks 2 rows C and 8 X, has no M row, and one of its four derived codes is authored — ` +
-      `2/8/0/1. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      tierCount(entry, "derived") === 2,
+    `§4 marks 2 rows C and 8 X, has no M row, and one of its four derived codes is authored plus ` +
+      `E4.1c's occupied_hours_day — 2/8/0/2. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(OCCUPANCY_CODE, "§4", entry, OCCUPANCY_POINTS);
@@ -561,9 +565,9 @@ function checkOccupancyZone(): void {
       `"${String(drift?.pointKey)}", message "${String(drift?.message)}".`,
   );
   assert(
-    DEFERRED_DERIVED_CODES[OCCUPANCY_CODE].length === 3,
-    "§4's Derived: line names four codes: occupancy_pct is authored above and the other three " +
-      "are deferred — a window (occupied_hours_day), an attribute (space_utilization_pct, which " +
+    DEFERRED_DERIVED_CODES[OCCUPANCY_CODE].length === 2,
+    "§4's Derived: line names four codes: occupancy_pct is authored above, occupied_hours_day " +
+      "by E4.1c, and the other two are deferred — an attribute (space_utilization_pct, which " +
       "needs the desk or room count and not the egress capacity) and another asset's meter " +
       `(conditioning_while_empty_kwh). Got ${DEFERRED_DERIVED_CODES[OCCUPANCY_CODE].length}.`,
   );
@@ -665,6 +669,7 @@ const PARKING_POINTS: readonly PointRow[] = [
   ["ev_charger_kw", "extended", "kW"],
   ["ev_charger_kwh_total", "extended", "kWh"],
   ["occupancy_pct", "derived", "%"],
+  ["fan_hours_day", "derived", "h"], // E4.1c
 ];
 
 /**
@@ -678,6 +683,7 @@ const PARKING_POINTS: readonly PointRow[] = [
  */
 const PARKING_DERIVED: readonly DerivedRow[] = [
   ["occupancy_pct", "{bays_occupied} / {bays_total} * 100", null],
+  ["fan_hours_day", "sum({jet_fan_status}, 24h)", null], // E4.1c, plan §3.7
 ];
 
 /**
@@ -819,17 +825,17 @@ export function assertCoPpmTier(code: string, tier: "core" | "extended"): void {
  */
 function checkParkingLevel(): void {
   const entry = requireStockEntry(PARKING_CODE);
-  assertEntryIdentity(PARKING_CODE, entry, "parking_level", "facility");
+  assertEntryIdentity(PARKING_CODE, entry, "parking_level", "facility", 2);
 
-  // ---- 17 points, 5 core + 11 extended + 0 manual + 1 derived -------------
+  // ---- 18 points, 5 core + 11 extended + 0 manual + 2 derived (1 E4.1c) ----
 
   assert(
     tierCount(entry, "core") === 5 &&
       tierCount(entry, "extended") === 11 &&
       tierCount(entry, "manual") === 0 &&
-      tierCount(entry, "derived") === 1,
-    `§5 marks 5 rows C and 11 X, has no M row, and one of its five derived codes is authored — ` +
-      `5/11/0/1. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      tierCount(entry, "derived") === 2,
+    `§5 marks 5 rows C and 11 X, has no M row, and one of its five derived codes is authored plus ` +
+      `E4.1c's fan_hours_day — 5/11/0/2. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(PARKING_CODE, "§5", entry, PARKING_POINTS);
@@ -888,10 +894,10 @@ function checkParkingLevel(): void {
       `(E2.4). Got "${String(inconsistent?.pointKey)}", message "${inconsistentText}".`,
   );
   assert(
-    DEFERRED_DERIVED_CODES[PARKING_CODE].length === 4,
-    "§5's Derived: line names five codes: occupancy_pct is authored above and the other four " +
-      "are deferred — and they are the pack's only list that is all one class, four time " +
-      "windows (turnover_per_day, avg_dwell_min, fan_hours_day, co_driven_fan_pct). Got " +
+    DEFERRED_DERIVED_CODES[PARKING_CODE].length === 3,
+    "§5's Derived: line names five codes: occupancy_pct is authored above, fan_hours_day by " +
+      "E4.1c, and the other three are deferred — a counter whose cumulative sense is unfixed " +
+      "(turnover_per_day), a method (avg_dwell_min) and two windows in one (co_driven_fan_pct). Got " +
       `${DEFERRED_DERIVED_CODES[PARKING_CODE].length}.`,
   );
 
@@ -952,4 +958,22 @@ export function runFacilityClassEntryTests2(): void {
   checkAccessDoor();
   checkOccupancyZone();
   checkParkingLevel();
+}
+
+// ---- E4.1c — the bms-calc-v3 facility rows (ADR 0070 decision 8) ---------
+// One hours-in-state row per class over its declared 0/1 state (tier C on
+// both), a rolling 24h — no time zone. Pinned through `sustainabilityClaims`,
+// one `it()` per claim in the wrapper; each is the ledger record discharged
+// under its own name.
+
+/** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
+const E41C_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
+  [OCCUPANCY_CODE, [["occupied_hours_day", "sum({occupancy_state}, 24h)", "h"]], 11, 2],
+  [PARKING_CODE, [["fan_hours_day", "sum({jet_fan_status}, 24h)", "h"]], 17, 2],
+];
+
+export function e41cFacilityClaims2(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return E41C_CLASSES.flatMap(([code, rows, first, version]) =>
+    sustainabilityClaims(code, requireStockEntry(code), rows, first, version),
+  );
 }

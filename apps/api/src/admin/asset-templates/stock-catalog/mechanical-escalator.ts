@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -21,7 +21,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * mechanism and one entry holds it, so this module is not a second copy of that
  * proof.
  *
- * **41 POINTS — 5 core + 31 extended + 3 manual + 2 DERIVED.** §8b prints
+ * **43 POINTS — 5 core + 31 extended + 3 manual + 4 DERIVED** (two of them
+ * `E4.1c`'s `bms-calc-v3` rows at `sortOrder` 41-42, VERSION HISTORY v2). §8b prints
  * **one flat table of forty rows** — it has no sub-blocks, unlike §8a's eight —
  * and thirty-nine of them are measured here in the document's own order
  * (`sortOrder` 0-38). The fortieth POINT OF THIS ENTRY — the handout lists it
@@ -111,15 +112,23 @@ import type { StockAssetTemplateEntry } from "./types";
  * typecheck, would pass `checkEntry`, and would ship a rule that fires on a
  * device identifier rather than on an open chain.
  *
- * **SIX DERIVED CODES ARE DEFERRED AND NAMED, TWO ARE PROMOTED** (plan §5.0,
- * §12 ruling 2). §8b's *Derived:* line names eight:
+ * **FOUR DERIVED CODES ARE DEFERRED AND NAMED, TWO ARE PROMOTED, AND `E4.1c`
+ * AUTHORED TWO MORE** (plan §5.0, §12 ruling 2; ADR 0070 decision 8, plan
+ * §3.7/§3.9). §8b's *Derived:* line names eight:
  *
  *  - **Promoted** — `handrail_speed_dev_pct` and `kwh_per_run_hour`, above.
- *  - **Four time windows** the grammar has no clock or memory for —
- *    `availability_pct` and `mtbf_h` (both deferred on the lift as well, for
- *    the same reason), `starts_per_day` (the DG set's code a third time, over
- *    the cumulative `start_count` this entry declares) and
- *    `safety_trips_per_month`.
+ *  - **Authored by `E4.1c`** — `starts_per_day = delta({start_count}, 24h)`,
+ *    the DG set's code over this entry's CUMULATIVE `start_count` (tier X: an
+ *    asset without it refuses `missing_input`), a rolling 24 h under the ADR's
+ *    name (Q10); and `availability_pct` **superseded** by
+ *    `availability_pct_24h = (1 - avg({esc_fault}, 24h)) * 100` — FAULT-SENSE
+ *    over the tier-C fault flag, the DG set's and pump's shape, where the
+ *    lift's is service-sense over `lift_in_service`; one code, one meaning on
+ *    four entries. The un-windowed code is never authored.
+ *  - **Still deferred** — `mtbf_h` (deferred on the lift too: the fault
+ *    counter is "since last reset", not cumulative, so no window over it is
+ *    defined) and `safety_trips_per_month` (an event count over a state: the
+ *    grammar counts nothing).
  *  - **One whose denominator the document never fixes** —
  *    `standby_ratio_pct`. Standby over run time, or standby over run plus
  *    standby? The two answers differ by the whole idle band, and a definition
@@ -190,6 +199,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-escalator` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §8b, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `mechanical-escalator` **v2** (2026-09-19, `E4.1c`): two `bms-calc-v3`
+ *    derived points at `sortOrder` 41-42 (plan §3.7) — `availability_pct_24h`,
+ *    `starts_per_day`. What an importing tenant must know: no row reads a
+ *    `$key`; the rolling `24h` windows need no time zone; every row is
+ *    `scheduled` at 60 s — at most one tick old — —
+ *    no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`; `start_count` is tier X, so an asset without it
+ *    refuses `starts_per_day` as `missing_input`, visibly. Nothing on a stack
+ *    is mutated by the bump — a re-import opens the next version, still stamped.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -222,8 +239,9 @@ export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
     "an OEM feed, a controller gateway or a retrofit sensor and is optional, and the three M " +
     "rows are entered by hand; alarm rows carry a meaning and no limit, because the handrail " +
     "band, the stopping distance and the vibration band are all set against this machine's own " +
-    "rated speed at commissioning.",
-  stockVersion: 1,
+    "rated speed at commissioning. Four derived points: the signed handrail deviation, energy " +
+    "per run hour, and E4.1c's trailing-24 h availability and starts per day.",
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -846,6 +864,25 @@ export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
       unit: "kWh/h",
       required: false,
       sortOrder: 40,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. Two `bms-calc-v3` rows, scheduled
+    // at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`; a count carries
+    // "" (Q8). Fault-sense availability: 1 - avg of the 0/1 fault flag.
+    {
+      ...derived("(1 - avg({esc_fault}, 24h)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "availability_pct_24h",
+      label: "Availability, trailing 24 h",
+      unit: "%",
+      required: false,
+      sortOrder: 41,
+    },
+    {
+      ...derived("delta({start_count}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "starts_per_day",
+      label: "Starts, trailing 24 h",
+      unit: "",
+      required: false,
+      sortOrder: 42,
     },
   ],
 };

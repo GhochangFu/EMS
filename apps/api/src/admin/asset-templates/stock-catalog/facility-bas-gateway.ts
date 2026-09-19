@@ -1,5 +1,5 @@
-import { DASHBOARD_GRID } from "@bms/shared";
-import { CORE, EXTENDED, MEASURED } from "./point-fields";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
+import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -23,9 +23,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * with its own address, not per panel and not per building. A site's overall
  * integration health is a hierarchy roll-up across these instances.
  *
- * **13 POINTS — 2 core + 11 extended + 0 manual + 0 derived.** §7's 13 table
- * rows in the document's own order (`sortOrder` 0-12), and nothing appended:
- * this entry promotes no derived code at all (below).
+ * **14 POINTS — 2 core + 11 extended + 0 manual + 1 derived.** §7's 13 table
+ * rows in the document's own order (`sortOrder` 0-12), then `E4.1c`'s
+ * `uptime_pct_24h` at 13 (VERSION HISTORY v2): this entry promotes none of
+ * §7's derived codes under its own name (below).
  *
  * ---
  *
@@ -71,8 +72,9 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * ---
  *
- * **NO DERIVED POINT IS AUTHORED, AND ALL THREE OF §7's DERIVED CODES ARE
- * DEFERRED AND NAMED** (ADR 0054 decision 6; ADR 0051 Amendment 6 decision 8):
+ * **NONE OF §7's THREE DERIVED CODES IS AUTHORED UNDER ITS OWN NAME; TWO ARE
+ * DEFERRED AND NAMED** (ADR 0054 decision 6; ADR 0051 Amendment 6 decision 8)
+ * **and one is SUPERSEDED** by `E4.1c` (ADR 0070 decision 8, plan §3.7/§3.9):
  *
  *  - **`data_quality_pct` — the SOW page-10 footer's own number**, *"Data
  *    Quality 98.6% Good"*, and §7 says out loud that the number comes from this
@@ -86,14 +88,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    all; a version built from `points_stale_count` alone would be a second,
  *    quieter answer to the estate's question and would disagree with it. The
  *    footer's number is a surface, and this class is where its INPUTS live.
- *  - **`uptime_pct`** — reachable time over elapsed time, an hours-in-state
- *    window.
- *  - **`mean_latency_s`** — a mean over a window. `last_seen_age_s` is the
- *    instantaneous row the `stale_data` alarm binds instead.
+ *  - **`uptime_pct`** — reachable time over elapsed time. **Superseded** by
+ *    `uptime_pct_24h = avg({device_online}, 24h) * 100`, decision 8's
+ *    `<quantity>_<window>` rule: the fraction of the trailing 24 h the gateway
+ *    was reachable, SERVICE-SENSE (`avg`, no `1 -`) over the tier-C 0/1 state.
+ *    The un-windowed code is never authored.
+ *  - **`mean_latency_s`** — a mean over a LATENCY the entry does not declare:
+ *    `last_seen_age_s` is an age sawtooth, the instantaneous row the
+ *    `stale_data` alarm binds instead. Still deferred.
  *
- * `bms-calc-v1` has arithmetic, parentheses and five functions, and no clock and
- * no memory, so the last two are not expressible at all. **NO `content.kpis`**
- * (ADR 0054 decision 6): every ratio §7 names is one of the three above.
+ * **NO `content.kpis`** (ADR 0054 decision 6): every ratio §7 names is one of
+ * the three above.
  *
  * ---
  *
@@ -172,6 +177,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-bas-gateway` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §7, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `facility-bas-gateway` **v2** (2026-09-19, `E4.1c`): one `bms-calc-v3`
+ *    derived point appended at `sortOrder` 13 (plan §3.7) — `uptime_pct_24h`.
+ *    What an importing tenant must know: the row reads no `$key`; the rolling
+ *    `24h` window needs no time zone; the row is `scheduled` at 60 s — at most
+ *    one tick old — — no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`;
+ *    `device_online` is tier C, so every instantiation carries it. Nothing on
+ *    a stack is mutated by the bump — a re-import opens the next version,
+ *    still stamped.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -201,11 +214,12 @@ export const FACILITY_BAS_GATEWAY: StockAssetTemplateEntry = {
     "derived from published practice, not client-confirmed). Tier C points are required and X " +
     "optional; alarm rows carry a meaning and no limit, because no regulator sets a number on a " +
     "gateway — an enclosure range is the controller's datasheet, a supply band is the power " +
-    "supply's and an acceptable error rate is the integrator's at commissioning. No derived " +
-    "point is authored: all three of the section's derived codes are deferred and named, and " +
-    "the data quality percentage the client's own dashboard footer shows is an estate-wide " +
-    "surface computed over the points behind a gateway, not a point on the gateway itself.",
-  stockVersion: 1,
+    "supply's and an acceptable error rate is the integrator's at commissioning. One derived " +
+    "point is authored — E4.1c's reachable fraction of the trailing 24 h; two of the section's " +
+    "derived codes are deferred and named, and the data quality percentage the client's own " +
+    "dashboard footer shows is an estate-wide surface computed over the points behind a " +
+    "gateway, not a point on the gateway itself.",
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -514,5 +528,16 @@ export const FACILITY_BAS_GATEWAY: StockAssetTemplateEntry = {
     // consume (ADR 0054 decision 3). No alarm binds it — the room's own leak
     // detection answers water under a floor void, and §7 raises no bullet here.
     { ...MEASURED, pointKey: "leak_state", label: "Water leak under floor / in room", unit: null, required: false, sortOrder: 12, meta: EXTENDED },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. One `bms-calc-v3` row, scheduled
+    // at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`; a rolling 24h.
+    // Service-sense: avg of the 0/1 reachable state, no `1 -`.
+    {
+      ...derived("avg({device_online}, 24h) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "uptime_pct_24h",
+      label: "Reachable, trailing 24 h",
+      unit: "%",
+      required: false,
+      sortOrder: 13,
+    },
   ],
 };

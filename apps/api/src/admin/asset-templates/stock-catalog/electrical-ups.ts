@@ -124,7 +124,7 @@ import type { StockAssetTemplateEntry } from "./types";
  * which means `F1.8` has nothing to attach a reading to yet. A flag for `F1.8`;
  * it is a manual-entry data-model question, not a catalog one.
  *
- * **UNITS.** Authored from `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY`
+ * **UNITS.** Authored from `packages/db/src/point-key-units.ts`'s `UNIT_BY_KEY`
  * and not from §4's Unit column, because those spellings are permanent and
  * `onboarding-commit.service.ts` refuses a client CSV that disagrees. `unit` is
  * `null` wherever `UNIT_BY_KEY` holds `""` — the seven `0/1` flags,

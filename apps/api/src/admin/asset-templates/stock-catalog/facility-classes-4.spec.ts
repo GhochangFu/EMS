@@ -13,10 +13,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 
 /**
@@ -198,6 +200,11 @@ const LIFT_POINTS: readonly PointRow[] = [
   // Promoted, appended after the table (plan §5.0, §12 ruling 2)
   ["door_reversal_ratio_pct", "derived", "%"],
   ["kwh_per_trip", "derived", "kWh"],
+  // E4.1c: four v3 rows (plan §3.7); a count carries "" (Q8)
+  ["availability_pct_24h", "derived", "%"],
+  ["door_cycles_per_day", "derived", ""],
+  ["trips_per_day", "derived", ""],
+  ["out_of_service_hours_month", "derived", "h"],
 ];
 
 /**
@@ -220,6 +227,11 @@ const LIFT_POINTS: readonly PointRow[] = [
 const LIFT_DERIVED: readonly DerivedRow[] = [
   ["door_reversal_ratio_pct", "{door_reversal_count} / {door_cycle_count} * 100", null],
   ["kwh_per_trip", "{kwh_total} / {trip_count}", null],
+  // E4.1c's four `bms-calc-v3` rows (plan §3.7), default input age
+  ["availability_pct_24h", "avg({lift_in_service}, 24h) * 100", null],
+  ["door_cycles_per_day", "delta({door_cycle_count}, 24h)", null],
+  ["trips_per_day", "delta({trip_count}, 24h)", null],
+  ["out_of_service_hours_month", "hours(this_month) - sum({lift_in_service}, this_month)", null],
 ];
 
 /**
@@ -367,17 +379,17 @@ function assertTheOverrideDecidesTheSource(entry = requireStockEntry(LIFT_CODE))
  */
 function checkLift(): void {
   const entry = requireStockEntry(LIFT_CODE);
-  assertEntryIdentity(LIFT_CODE, entry, "lift", "mechanical");
+  assertEntryIdentity(LIFT_CODE, entry, "lift", "mechanical", 2);
 
-  // ---- 80 points, 7 core + 66 extended + 5 manual + 2 derived -------------
+  // ---- 84 points, 7 core + 66 extended + 5 manual + 6 derived (4 E4.1c) ---
 
   assert(
     tierCount(entry, "core") === 7 &&
       tierCount(entry, "extended") === 66 &&
       tierCount(entry, "manual") === 5 &&
-      tierCount(entry, "derived") === 2,
+      tierCount(entry, "derived") === 6,
     "§8a marks 7 rows C, 66 X (the X/D entrapment_state among them) and 5 M, and two of its " +
-      `thirteen derived codes are promoted — 7/66/5 + 2. Got ${tierCount(entry, "core")}/` +
+      `thirteen derived codes are promoted plus E4.1c's four v3 rows — 7/66/5 + 6. Got ${tierCount(entry, "core")}/` +
       `${tierCount(entry, "extended")}/${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(LIFT_CODE, "§8a", entry, LIFT_POINTS);
@@ -523,10 +535,12 @@ function checkLift(): void {
       `${String(inspectionPoint?.meta?.tier)} row.`,
   );
   assert(
-    DEFERRED_DERIVED_CODES[LIFT_CODE].length === 11,
-    "§8a's Derived: line names thirteen codes; two are promoted and eleven are deferred — seven " +
-      "windows, one that lives in the work-order system (mttr_h, E3.1), one method the document " +
-      "only names (ride_quality_index), one baseline trend (levelling_drift_mm) and one rate " +
+    DEFERRED_DERIVED_CODES[LIFT_CODE].length === 7,
+    "§8a's Derived: line names thirteen codes; two are promoted, E4.1c discharged three and " +
+      "superseded availability_pct, and seven are deferred — an input the entry does not declare " +
+      "(mtbf_h), an event count over a state (entrapments_per_month), one that lives in the " +
+      "work-order system (mttr_h, E3.1), two methods the document only names (peak_hour_wait_s, " +
+      "ride_quality_index), one baseline trend (levelling_drift_mm) and one rate " +
       "whose two counters do not share a denominator (fault_rate_per_1000_trips). Got " +
       `${DEFERRED_DERIVED_CODES[LIFT_CODE].length}.`,
   );
@@ -594,4 +608,26 @@ function checkLift(): void {
  */
 export function runFacilityClassEntryTests4(): void {
   checkLift();
+}
+
+// ---- E4.1c — the bms-calc-v3 mechanical-lift row(s) (ADR 0070 decision 8) ----
+//
+// Pinned through `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// `availability_pct_24h` SUPERSEDES `availability_pct` and is SERVICE-SENSE
+// here (`avg`, no `1 -`) over the tier-C `lift_in_service`; the DG set, pump
+// and escalator are fault-sense over their trip/fault points — one code, one
+// meaning on four entries. `door_cycle_count` and `trip_count` are CUMULATIVE
+// by §8a's own labels, so `delta` is the interval's count. `this_month` is a
+// calendar window: a NULL-zone location refuses `timezone_unset`.
+
+/** mechanical-lift — plan §3.7, sortOrder 80–83. */
+const LIFT_E41C: readonly SustainabilityRow[] = [
+  ["availability_pct_24h", "avg({lift_in_service}, 24h) * 100", "%"],
+  ["door_cycles_per_day", "delta({door_cycle_count}, 24h)", ""],
+  ["trips_per_day", "delta({trip_count}, 24h)", ""],
+  ["out_of_service_hours_month", "hours(this_month) - sum({lift_in_service}, this_month)", "h"],
+];
+
+export function e41cLiftClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return sustainabilityClaims("mechanical-lift", requireStockEntry("mechanical-lift"), LIFT_E41C, 80, 2);
 }

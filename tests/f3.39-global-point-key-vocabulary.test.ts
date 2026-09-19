@@ -43,6 +43,13 @@ const MIGRATION_REL = "packages/db/drizzle/0057_global_point_key_vocabulary.sql"
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const SCHEMA_REL = "packages/db/src/schema/bms-schema.ts";
 const SEED_REL = "packages/db/src/point-keys-seed.ts";
+/**
+ * `UNIT_BY_KEY` moved out of the seed in `E4.1c` PR 2b (a §4.5 gate: the seed
+ * was at 988 lines and the ten mechanical / HVAC / facility units cross the
+ * cap). The table test below reads THIS path; the `keysForDomain` pin and the
+ * `INSERT` scan keep reading `SEED_REL`, where both still live.
+ */
+const UNITS_REL = "packages/db/src/point-key-units.ts";
 const CONTRACT_REL = "packages/shared/src/contracts/admin.ts";
 const BODY_SCHEMA_REL = "apps/api/src/admin/point-keys/point-keys.schema.ts";
 const SERVICE_REL = "apps/api/src/admin/point-keys/point-keys.service.ts";
@@ -92,11 +99,10 @@ const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   // 3 since E5.3 PR 2: VERTICAL_TRANSPORT_CLASS_POINT_KEYS joins
   // FACILITY_CLASS_POINT_KEYS and ENVIRONMENT_CLASS_POINT_KEYS in this file.
   "packages/shared/src/facility-point-keys.ts": 3,
-  // 2 since E4.1c PR 2a: SUSTAINABILITY_ELECTRICAL_POINT_KEYS and
-  // SUSTAINABILITY_WATER_POINT_KEYS (5 once PR 2b appends the mechanical, HVAC
-  // and facility arrays). This floor counts ARRAYS, not codes — f3.38's 19 is
-  // the code floor for the same file.
-  "packages/shared/src/sustainability-point-keys.ts": 2,
+  // 5 since E4.1c PR 2b: the electrical and water arrays of PR 2a plus the
+  // mechanical, HVAC and facility arrays. This floor counts ARRAYS, not codes
+  // — f3.38's 29 is the code floor for the same file.
+  "packages/shared/src/sustainability-point-keys.ts": 5,
 };
 
 /** The sources as one list, for an assertion message. */
@@ -567,10 +573,13 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // `E4.1c` PR 2a, in `sustainability-point-keys.ts` (ADR 0070 decision 8):
       // one array per domain because `keysForDomain` takes one domain. A code
       // declared here and authored by another pack's entry keeps this domain
-      // (the `load_pct` rule). PR 2b adds the mechanical, HVAC and facility
-      // arrays.
+      // (the `load_pct` rule). PR 2b added the mechanical, HVAC and facility
+      // arrays; `availability_pct_24h` and `starts_per_day` stay electrical.
       SUSTAINABILITY_ELECTRICAL_POINT_KEYS: "electrical",
       SUSTAINABILITY_WATER_POINT_KEYS: "water",
+      SUSTAINABILITY_MECHANICAL_POINT_KEYS: "mechanical",
+      SUSTAINABILITY_HVAC_POINT_KEYS: "hvac",
+      SUSTAINABILITY_FACILITY_POINT_KEYS: "facility",
     };
 
     /**
@@ -652,9 +661,9 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
      * top-level `tests/` project has no workspace dependency on `@bms/db`.
      */
     it("every catalogued point key has a UNIT_BY_KEY entry", () => {
-      const seed = tsOnly(read(SEED_REL));
-      const table = /const UNIT_BY_KEY: Record<string, string> = \{([\s\S]*?)\n\};/.exec(seed);
-      expect(table, `no UNIT_BY_KEY table parsed out of ${SEED_REL}`).not.toBeNull();
+      const unitsSource = tsOnly(read(UNITS_REL));
+      const table = /const UNIT_BY_KEY: Record<string, string> = \{([\s\S]*?)\n\};/.exec(unitsSource);
+      expect(table, `no UNIT_BY_KEY table parsed out of ${UNITS_REL}`).not.toBeNull();
       const units = new Set(
         [...table![1]!.matchAll(/^\s*([a-z0-9_]+):/gm)].map((m) => m[1]!),
       );
@@ -675,8 +684,11 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // the 500 by construction: the eight codes the tag list shares with an existing
       // array or module are REFERENCED, never redeclared.
       // 605 since `F2.8` Task 1: 602 + UNIT_BY_KEY's three new entries
-      // (site_kw, it_kw, pue).
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(605);
+      // (site_kw, it_kw, pue). **634 since `E4.1c` PR 2b** — 605 + the 29
+      // sustainability codes (16 electrical + 3 water in 2a, 5 mechanical + 1
+      // HVAC + 4 facility in 2b), measured on `point-key-units.ts` after the
+      // move; PR 2a left this at 605 and the migration review named the slack.
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(634);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {
@@ -688,7 +700,7 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       }
       expect(
         [...new Set(missing)].sort(),
-        `${SEED_REL} catalogues a point key with no UNIT_BY_KEY entry, so keysForDomain ` +
+        `${SEED_REL} catalogues a point key with no UNIT_BY_KEY entry in ${UNITS_REL}, so keysForDomain ` +
           "seeds it with a NULL unit. seedPointKeyCatalog runs last in seed.ts and its " +
           "upsert assigns `unit = EXCLUDED.unit` outright, so on every `compose up` this " +
           "reverts whatever unit phe-pilot-seed.ts or an administrator put there. Give " +
@@ -819,7 +831,7 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
           "this file does not map to a domain. Every assertion in this block iterates " +
           "ARRAY_DOMAIN, so an unmapped array is seeded by nothing here and checked by " +
           "nothing here. Add it to ARRAY_DOMAIN, to keysForDomain in the seed and to " +
-          "UNIT_BY_KEY in the same commit.",
+          "UNIT_BY_KEY in point-key-units.ts in the same commit.",
       ).toEqual([]);
       // 13 since `E5.3` PR 1 — the eleven plus `FACILITY_CLASS_POINT_KEYS` and
       // `ENVIRONMENT_CLASS_POINT_KEYS`; 14 since PR 2 adds

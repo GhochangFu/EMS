@@ -140,7 +140,7 @@ import type { StockAssetTemplateEntry } from "./types";
  * `pointKey`, so without the derived point §3's *"DG running with mains
  * available (cost)"* bullet has no parameter to bind to at all.
  *
- * **UNITS.** Authored from `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY`
+ * **UNITS.** Authored from `packages/db/src/point-key-units.ts`'s `UNIT_BY_KEY`
  * and not from §3's Unit column, because those spellings are the permanent ones
  * and `onboarding-commit.service.ts` refuses a client CSV that disagrees with
  * them. `engine_speed_rpm` is therefore **`RPM`** and not §3's `rpm`. `unit` is

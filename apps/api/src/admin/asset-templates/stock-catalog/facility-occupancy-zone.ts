@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, EXTENDED, MEASURED, derived } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -19,9 +19,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * tag and not another instance of this template, exactly as §1's lighting
  * roll-up is.
  *
- * **11 POINTS — 2 core + 8 extended + 0 manual + 1 DERIVED.** §4's 10 table rows
- * in the document's own order (`sortOrder` 0-9) and `occupancy_pct` appended at
- * 10. **The pack's smallest entry**, and its two `C` rows are the two questions
+ * **12 POINTS — 2 core + 8 extended + 0 manual + 2 DERIVED.** §4's 10 table rows
+ * in the document's own order (`sortOrder` 0-9), `occupancy_pct` appended at
+ * 10 and `E4.1c`'s `occupied_hours_day` at 11 (VERSION HISTORY v2). **The
+ * pack's smallest entry**, and its two `C` rows are the two questions
  * the section exists to answer: is anyone here, and how warm is it.
  *
  * ---
@@ -71,12 +72,12 @@ import type { StockAssetTemplateEntry } from "./types";
  * but no counter, or a counter but no commissioned capacity, gets no ratio. That
  * is the honest answer and it is why the row is optional.
  *
- * **THREE DERIVED CODES ARE DEFERRED AND NAMED, never placeholdered** (ADR 0054
- * decision 6; ADR 0051 Amendment 6 decision 8):
+ * **TWO DERIVED CODES ARE DEFERRED AND NAMED, never placeholdered** (ADR 0054
+ * decision 6; ADR 0051 Amendment 6 decision 8). The third of `E5.3`'s,
+ * `occupied_hours_day`, left the ledger in `E4.1c` (ADR 0070 decision 8, plan
+ * §3.7/§3.9) — **authored** as `sum({occupancy_state}, 24h)`, hours occupied
+ * in the trailing 24 h over the tier-C presence state. The two that stay:
  *
- *  - **A time window the grammar has no state for** — `occupied_hours_day`.
- *    `bms-calc-v1` has arithmetic, parentheses and five functions and no clock
- *    and no memory.
  *  - **An asset attribute the grammar cannot read** — `space_utilization_pct`
  *    needs the DESK or ROOM count, and `occupancy_capacity` is not that
  *    denominator: the capacity is what the space may safely hold and the desk
@@ -152,6 +153,14 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-occupancy-zone` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §4, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `facility-occupancy-zone` **v2** (2026-09-19, `E4.1c`): one `bms-calc-v3`
+ *    derived point appended at `sortOrder` 11 (plan §3.7) —
+ *    `occupied_hours_day`. What an importing tenant must know: the row reads
+ *    no `$key`; the rolling `24h` window needs no time zone; the row is
+ *    `scheduled` at 60 s — at most one tick old — —
+ *    no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`; `occupancy_state` is tier C, so every instantiation
+ *    carries it. Nothing on a stack is mutated by the bump — a re-import opens
+ *    the next version, still stamped.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -180,11 +189,11 @@ export const FACILITY_OCCUPANCY_ZONE: StockAssetTemplateEntry = {
     "docs/e5.3-derived-taglist-v1.md §4 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required and X optional; alarm rows carry a meaning " +
     "and no limit, because the egress capacity, the comfort band and the battery level are set " +
-    "per zone at commissioning. One derived point is authored — occupancy against the declared " +
-    "capacity, the same code the parking level authors over its own bays — and three of the " +
-    "section's derived codes are deferred and named: a time window, a desk count the zone does " +
-    "not report, and an air handling unit's energy meter.",
-  stockVersion: 1,
+    "per zone at commissioning. Two derived points are authored — occupancy against the declared " +
+    "capacity, the same code the parking level authors over its own bays, and E4.1c's hours " +
+    "occupied in the trailing 24 h — and two of the section's derived codes are deferred and " +
+    "named: a desk count the zone does not report, and an air handling unit's energy meter.",
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -396,6 +405,16 @@ export const FACILITY_OCCUPANCY_ZONE: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 10,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. One `bms-calc-v3` row, scheduled
+    // at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`; a rolling 24h.
+    {
+      ...derived("sum({occupancy_state}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "occupied_hours_day",
+      label: "Hours occupied, trailing 24 h",
+      unit: "h",
+      required: false,
+      sortOrder: 11,
     },
   ],
 };

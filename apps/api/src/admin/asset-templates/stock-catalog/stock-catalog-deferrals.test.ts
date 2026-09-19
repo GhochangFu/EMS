@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runStockCatalogDeferralTests } from "./stock-catalog-deferrals.spec";
+import { assertSupersededCodesNeverAuthored, runStockCatalogDeferralTests } from "./stock-catalog-deferrals.spec";
 
 /**
  * Vitest entry point for `stock-catalog-deferrals.spec.ts` — assertions live in
@@ -16,5 +16,9 @@ import { runStockCatalogDeferralTests } from "./stock-catalog-deferrals.spec";
 describe("stock asset-template catalog — the deferral ledger (E5.2 Task 1)", () => {
   it("ships exactly the declared entries, in order, and declares none of their deferred codes", () => {
     runStockCatalogDeferralTests();
+  });
+
+  it("E4.1c — the four superseded un-windowed codes are authored by no entry, and their successors are", () => {
+    assertSupersededCodesNeverAuthored();
   });
 });

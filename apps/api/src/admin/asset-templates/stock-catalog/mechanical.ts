@@ -135,9 +135,14 @@ import type { StockAssetTemplateEntry } from "./types";
  * assigns seven. The enumeration is what holds, and the 13 / 17 / 30 totals are
  * unaffected either way.)
  *
- *  - **A time window the grammar has no state for** — `duty_hours_pct`,
- *    `starts_per_hour`, `availability_pct` (pump), `unload_cycles_per_hour`
- *    (compressor), `approach_trend` (chiller), `fan_energy_kwh_day` (AHU).
+ *  - **Authored by `E4.1c` (ADR 0070 decision 8), no longer deferred** —
+ *    `starts_per_hour` and `fan_energy_kwh_day` under their own names;
+ *    `duty_hours_pct` and `availability_pct` superseded by `duty_hours_pct_24h`
+ *    and `availability_pct_24h` (pump). Listed at `E5.2` as "a time window";
+ *    `E4.1b`'s window retired that class.
+ *  - **Still deferred, and not a window** — `unload_cycles_per_hour`
+ *    (compressor: an event count over an enum) and `approach_trend` (chiller: a
+ *    slope, not a delta).
  *  - **An asset attribute the grammar cannot read** — `motor_load_pct`,
  *    `speed_pct`, `energy_saving_vs_dol_kwh` (VFD: rated current, rated
  *    frequency, and a direct-on-line baseline that is also a model),
@@ -377,6 +382,15 @@ import type { StockAssetTemplateEntry } from "./types";
  * distinct less the 12 an electrical or water module already names) — so no row
  * was dropped or misspelled anywhere in the pack, and both bounds in that file
  * now stand at the measured actuals.
+ *
+ * **`E4.1c` (ADR 0070 decision 8, 2026-09-19).** `mechanical-pump` **v1 → v2**:
+ * `duty_hours_pct_24h`, `starts_per_hour`, `availability_pct_24h` (20–22) —
+ * `duty_hours_pct` and `availability_pct` superseded, `starts_per_hour`
+ * discharged; the ledger holds `vibration_band` alone. `hvac-ahu` **v1 → v2**:
+ * `fan_energy_kwh_day = sum({kw}, 24h)` (28), discharged. The VFD, compressor,
+ * chiller and boiler are untouched. The pack's ledger: 17/17 → 13/13. The
+ * "Deferred — 17 codes, 17 records" paragraph above is the `E5.2` count; the
+ * reconciled ledger is `stock-catalog-deferrals.spec.ts`'s docblock.
  */
 export const MECHANICAL_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0053 decision 1's document order — pump, VFD, compressor, chiller, AHU,
