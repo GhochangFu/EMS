@@ -14,9 +14,9 @@
  * preview that reported the root would look correct in every screenshot while
  * pointing the author at the wrong half of their expression.
  */
-import { CALC_DIALECT_V2, CALC_DIALECT_V3, crossRefKey, parseFormula, type CalcCrossRef } from "@bms/shared";
+import { CALC_DIALECT_V2, CALC_DIALECT_V3, crossRefKey, parseFormula, windowKey, type CalcCrossRef } from "@bms/shared";
 
-import { previewCrossRefs, previewFormula, previewInputKeys, previewParamRefs } from "./calc-preview";
+import { previewCrossRefs, previewFormula, previewInputKeys, previewParamRefs, previewWindowReads } from "./calc-preview";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -209,7 +209,7 @@ export function runV2MissingCrossInputTests(): void {
   assert(preview.code === "missing_input", `code must be missing_input, got ${preview.code}`);
   assert(preview.position === 0, `must point at the aggregate (offset 0), got ${preview.position}`);
   assert(
-    preview.message === "no sample value for a referenced point, cross-asset reference or parameter at character 0",
+    preview.message === "no sample value for a referenced point, cross-asset reference, parameter or window read at character 0",
     `the refusal must name the cross-asset reference, got ${JSON.stringify(preview.message)}`,
   );
 }
@@ -286,7 +286,7 @@ export function runV3PreviewTests(): void {
   }
   assert(missing.code === "missing_input" && missing.position === 7, `refused at the $ (7), got ${missing.position}`);
   assert(
-    missing.message === "no sample value for a referenced point, cross-asset reference or parameter at character 7",
+    missing.message === "no sample value for a referenced point, cross-asset reference, parameter or window read at character 7",
     `the refusal must name a parameter, got ${JSON.stringify(missing.message)}`,
   );
 
@@ -294,4 +294,42 @@ export function runV3PreviewTests(): void {
   // like the parameter key does not serve the `$`
   const shadowed = previewFormula("{f} * $f", { f: 3 }, { dialect: CALC_DIALECT_V3 });
   assert(shadowed.state === "refused" && shadowed.position === 6, "a local sample never serves a $key");
+}
+
+/**
+ * `E4.1b` U10 — a window read is one preview input, keyed by `windowKey(node)`
+ * (the `crossRefKey` pattern). The key is the real parser's node through the
+ * real `windowKey`, never a hand-typed literal, for the reason case 5 gives.
+ */
+export function runPreviewWindowReadsTests(): void {
+  const reads = previewWindowReads("delta({kwh}, today)", CALC_DIALECT_V3);
+  assert(reads.length === 1, `one window read, got ${reads.length}`);
+  assert(
+    windowKey(reads[0]) === "delta({kwh}, today)",
+    `the read is keyed delta({kwh}, today), got ${windowKey(reads[0])}`,
+  );
+  assert(previewWindowReads("delta({kwh}, today)", CALC_DIALECT_V2).length === 0, "under v2 a window does not parse, so no rows");
+  assert(previewWindowReads("delta({kwh}, today)").length === 0, "under the default dialect, none either");
+  assert(previewWindowReads("delta({kwh}, ", CALC_DIALECT_V3).length === 0, "unparsable text asks for nothing");
+}
+
+/** `windowValues` is the fifth map: 70 / 2 previews 35 (the plan's H1 pair). */
+export function runV3WindowPreviewComputesTests(): void {
+  const ok = previewFormula(
+    "delta({kwh}, today) / hours(today)",
+    {},
+    { dialect: CALC_DIALECT_V3, windowValues: { "delta({kwh}, today)": 70, "hours(today)": 2 } },
+  );
+  assert(ok.state === "ok" && ok.value === 35, `70 / 2 must preview 35, got ${JSON.stringify(ok)}`);
+}
+
+/** Without `windowValues` the evaluator refuses at the window read (offset 0), and the sentence names it. */
+export function runV3WindowPreviewRefusesTests(): void {
+  const missing = previewFormula("delta({kwh}, today) / hours(today)", {}, { dialect: CALC_DIALECT_V3 });
+  assert(missing.state === "refused", `expected refused, got ${JSON.stringify(missing)}`);
+  if (missing.state !== "refused") {
+    return;
+  }
+  assert(missing.code === "missing_input" && missing.position === 0, `refused at the delta (0), got ${missing.position}`);
+  assert(missing.message.endsWith("window read at character 0"), `the refusal must name a window read, got ${missing.message}`);
 }

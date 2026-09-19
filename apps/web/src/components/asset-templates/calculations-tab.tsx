@@ -35,9 +35,11 @@ import {
   COVERAGE_RATIO_HINT,
   INPUT_AGE_BOUNDS,
   IMPLIED_MAX_INPUT_AGE_SECONDS,
+  CALENDAR_WINDOW_WARNING,
   V2_TRIGGER_LATENCY_HINT,
   V3_PARAMETER_HELP,
   V3_TRIGGER_LATENCY_HINT,
+  V3_WINDOW_HELP,
   calcConfigErrors,
   calcGridErrors,
   dialectOptions,
@@ -46,6 +48,7 @@ import {
   setCalcTrigger,
   setFormulaDialect,
 } from "../../lib/template-calc-config";
+import { previewWindowReads } from "../../lib/calc-preview";
 import { templateCycleProblems } from "../../lib/template-calc-cycles";
 import {
   brokenFormulaRefs,
@@ -162,6 +165,12 @@ export function CalculationsTab({
         const isV2 = isCrossAssetDialect(dialect);
         // `v3` only (ADR 0070): the `$key` help and its own latency hint.
         const isV3 = isParameterDialect(dialect);
+        // `E4.1b`: a calendar window is evaluated in the owning asset's
+        // location's zone, so the row says so beside its editor. `[]` under
+        // `v1`/`v2` and for unparsable text, so the predicate is false then.
+        const readsCalendarWindow = previewWindowReads(row.formula ?? "", dialect).some(
+          (read) => read.window.kind === "calendar",
+        );
         const validation = validateEditorFormula(
           {
             mode: "derived",
@@ -237,9 +246,12 @@ export function CalculationsTab({
                   </li>
                 ))}
                 {isV3 ? (
-                  // The one `v3` form (ADR 0070 decision 4), taught beside the
-                  // two `v2` forms it keeps.
-                  <li>{V3_PARAMETER_HELP}</li>
+                  // The `v3` forms (ADR 0070 decisions 4 and 5), taught beside
+                  // the two `v2` forms it keeps: the parameter, then the windows.
+                  <>
+                    <li>{V3_PARAMETER_HELP}</li>
+                    <li>{V3_WINDOW_HELP}</li>
+                  </>
                 ) : null}
               </ul>
             ) : null}
@@ -292,6 +304,13 @@ export function CalculationsTab({
             ) : null}
             {problemFor("formula") ? (
               <p className="mt-1 text-[11px] text-red-700">{problemFor("formula")}</p>
+            ) : null}
+            {readsCalendarWindow ? (
+              // A hint, never a `PointGridProblem` (`E4.1b` plan design
+              // decision 15): the template does not know its sites, so the
+              // validator warns and cannot refuse. Muted, not red — the formula
+              // is valid; the sweep skips per asset and counts the skip.
+              <p className="mt-1 text-[11px] text-bms-muted">{CALENDAR_WINDOW_WARNING}</p>
             ) : null}
             {/* ADR 0038 decision 5. Unconditional here, where the KPIs tab
                 gates on a checked dialect (decision 9): a derived formula is

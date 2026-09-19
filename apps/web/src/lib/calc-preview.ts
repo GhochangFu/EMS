@@ -3,7 +3,8 @@
  * item 6 for `bms-calc-v2`).
  *
  * The author types a sample value for each referenced point — and, under
- * `bms-calc-v2`, one per cross-asset reference — and sees the computed result
+ * `bms-calc-v2`, one per cross-asset reference; under `v3`, one per `$key`
+ * and one per window read — and sees the computed result
  * or the evaluator's refusal as they type. This is a thin adapter over
  * `parseFormula` → `evaluate` from `@bms/shared`, which is a runtime package
  * since ADR 0030, so the browser runs the **same** evaluator the calc engine
@@ -41,6 +42,7 @@ import {
   type CalcCrossRef,
   type CalcDialect,
   type CalcEvalErrorCode,
+  type CalcWindowRead,
 } from "@bms/shared";
 
 /**
@@ -67,13 +69,14 @@ export type CalcPreview =
  * for `CalcParseError`. `position` is what the caller uses to point at the
  * offending node; the message stays a description of the failure.
  *
- * `missing_input` covers both maps: a `{ref}` absent from `values`, or a
- * cross-asset node absent from `crossValues` (`v2`). The sentence names both,
- * because a `v2` author told only "referenced point" would look for a `{ref}`
- * row that is not there.
+ * `missing_input` covers every map: a `{ref}` absent from `values`, a
+ * cross-asset node absent from `crossValues` (`v2`), a `$key` absent from
+ * `paramValues` or a window read absent from `windowValues` (`v3`). The
+ * sentence names all four, because a `v2` author told only "referenced point"
+ * would look for a `{ref}` row that is not there.
  */
 const REFUSAL_REASONS: Readonly<Record<CalcEvalErrorCode, string>> = {
-  missing_input: "no sample value for a referenced point, cross-asset reference or parameter",
+  missing_input: "no sample value for a referenced point, cross-asset reference, parameter or window read",
   non_finite: "the result is not a finite number",
   invalid_clamp_range: "clamp was given a low bound above its high bound",
 };
@@ -100,6 +103,14 @@ export type CalcPreviewOptions = {
   readonly crossValues?: CalcSampleValues;
   /** `bms-calc-v3` (ADR 0070): keyed by the bare `$key`, one per entry of `previewParamRefs`. */
   readonly paramValues?: CalcSampleValues;
+  /**
+   * `bms-calc-v3` (ADR 0070 decision 5, `E4.1b`): keyed by `windowKey(node)`
+   * for each node `previewWindowReads` returns — the key `evaluate`'s fifth
+   * map is looked up by, so the panel and the evaluator cannot disagree on it.
+   * A window is one input in the preview the way an aggregate is: its value
+   * comes from the aggregates only the database holds, so the author types it.
+   */
+  readonly windowValues?: CalcSampleValues;
 };
 
 /**
@@ -151,6 +162,7 @@ export function previewFormula(
     toInputMap(values),
     toInputMap(options?.crossValues ?? {}),
     toInputMap(options?.paramValues ?? {}),
+    toInputMap(options?.windowValues ?? {}),
   );
   if (result.ok) {
     // `evaluate` already normalises `-0` to `0` at every node
@@ -205,4 +217,16 @@ export function previewCrossRefs(expression: string, dialect: CalcDialect = CALC
 export function previewParamRefs(expression: string, dialect: CalcDialect = CALC_DIALECT): string[] {
   const parsed = parseFormula(expression, { dialect });
   return parsed.ok ? parsed.paramRefs : [];
+}
+
+/**
+ * The window reads a `bms-calc-v3` expression makes — one node per distinct
+ * `windowKey`, first-appearance order (`parsed.windowReads`), one preview
+ * sample row each. `[]` under `v1` and `v2`, where a window literal does not
+ * lex, and for text that does not parse. The caller keys each row's value by
+ * `windowKey(node)` when it builds `CalcPreviewOptions.windowValues`.
+ */
+export function previewWindowReads(expression: string, dialect: CalcDialect = CALC_DIALECT): CalcWindowRead[] {
+  const parsed = parseFormula(expression, { dialect });
+  return parsed.ok ? parsed.windowReads : [];
 }

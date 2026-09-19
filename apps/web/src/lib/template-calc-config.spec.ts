@@ -21,9 +21,12 @@ import {
 
 import {
   CALC_INTERVAL_BOUNDS,
+  CALENDAR_WINDOW_WARNING,
   COVERAGE_RATIO_HINT,
   INPUT_AGE_BOUNDS,
   V2_TRIGGER_LATENCY_HINT,
+  V3_TRIGGER_LATENCY_HINT,
+  V3_WINDOW_HELP,
   calcConfigErrors,
   calcGridErrors,
   dialectOptions,
@@ -584,4 +587,50 @@ export function runDialectOptionsTests(): void {
     v3 !== undefined && v3.label.includes("$key") && options[2] === v3,
     `the v3 label names the $key form and comes third — got ${v3?.label}`,
   );
+}
+
+/**
+ * `E4.1b` U10 — the `v3` label teaches the window functions beside `$key`
+ * (ADR 0070 decision 5). Three claims, one function each, so a mutation that
+ * drops one sentence reddens the assertion that names it.
+ */
+export function runV3LabelNamesWindowsTests(): void {
+  const v3 = dialectOptions().find((option) => option.value === CALC_DIALECT_V3);
+  assert(
+    v3 !== undefined && v3.label.includes("delta"),
+    `the v3 label names the window functions (delta) — got ${v3?.label}`,
+  );
+}
+
+/**
+ * ADR 0070's Consequences, the calendar half: a calendar window is bounded
+ * at local midnight, so the value can be one interval behind that boundary
+ * on top of the tick latency the parameter sentence already states.
+ */
+export function runV3HintNamesLocalMidnightTests(): void {
+  assert(
+    V3_TRIGGER_LATENCY_HINT.includes("local midnight"),
+    `the v3 hint says a calendar window is up to one interval behind local midnight — got ${V3_TRIGGER_LATENCY_HINT}`,
+  );
+  assert(
+    V3_WINDOW_HELP.includes("time integral") && V3_WINDOW_HELP.includes("cumulative counters"),
+    `the window help says sum is the time integral and delta is for cumulative counters — got ${V3_WINDOW_HELP}`,
+  );
+}
+
+/**
+ * The calendar warning names the counter the sweep records and where the
+ * fix lives, so an author who sees it knows what to do (`E4.1b` plan design
+ * decision 15). A static sentence: it carries no fragment of the formula.
+ */
+export function runCalendarWarningTests(): void {
+  assert(
+    CALENDAR_WINDOW_WARNING.includes("timezone_unset"),
+    `the warning names the timezone_unset skip — got ${CALENDAR_WINDOW_WARNING}`,
+  );
+  assert(
+    CALENDAR_WINDOW_WARNING.includes("Admin → Locations"),
+    `the warning says where the timezone is set — got ${CALENDAR_WINDOW_WARNING}`,
+  );
+  assert(!/[$]\w|[{]\w/.test(CALENDAR_WINDOW_WARNING), "the warning echoes no $key or {ref} fragment");
 }

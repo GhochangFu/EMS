@@ -7,7 +7,14 @@ import { adminAssetTemplateDtoSchema } from "@bms/shared/contracts";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import * as templateApi from "../../api/admin/asset-templates";
-import { COVERAGE_RATIO_HINT, V2_TRIGGER_LATENCY_HINT, V3_PARAMETER_HELP, V3_TRIGGER_LATENCY_HINT } from "../../lib/template-calc-config";
+import {
+  CALENDAR_WINDOW_WARNING,
+  COVERAGE_RATIO_HINT,
+  V2_TRIGGER_LATENCY_HINT,
+  V3_PARAMETER_HELP,
+  V3_TRIGGER_LATENCY_HINT,
+  V3_WINDOW_HELP,
+} from "../../lib/template-calc-config";
 import { CalculationsTab } from "./calculations-tab";
 import type { FormulaEditorProps } from "./formula-editor-lazy";
 
@@ -250,6 +257,57 @@ export async function choosingV3TeachesTheParameterFormAndItsLatency(): Promise<
   // the v2 row keeps its own hint, and exactly one of each hint is on the page
   expect(screen.getAllByText(V2_TRIGGER_LATENCY_HINT)).toHaveLength(1);
   expect(screen.getAllByText(V3_TRIGGER_LATENCY_HINT)).toHaveLength(1);
+}
+
+/**
+ * Case 2c — `E4.1b` U10: under `v3` the window help renders beside the `$key`
+ * help, and neither renders for the `v2` row beside it. The help is static:
+ * it is on the page before a formula is typed.
+ */
+export async function choosingV3TeachesTheWindowForms(): Promise<void> {
+  renderTab(fixture(), true);
+
+  expect(screen.queryByText(V3_WINDOW_HELP)).toBeNull();
+  await userEvent.selectOptions(grammarFor("d1"), V3);
+
+  expect(screen.getByText(V3_PARAMETER_HELP)).toBeInTheDocument();
+  expect(screen.getByText(V3_WINDOW_HELP)).toBeInTheDocument();
+  expect(screen.getAllByText(V3_WINDOW_HELP)).toHaveLength(1);
+}
+
+/**
+ * Case 2d — typing a calendar window (`delta({kwh}, today)`) into a `v3`
+ * row renders `CALENDAR_WINDOW_WARNING` beside that row's editor. The wait is
+ * on the sentence the formula produces, never on a static element. A hint,
+ * not a `PointGridProblem`: the template does not know its sites, so the
+ * validator warns and cannot refuse (ADR 0070; plan design decision 15).
+ */
+export async function aCalendarWindowShowsTheTimezoneWarning(): Promise<void> {
+  renderTab(fixture(), true);
+  await userEvent.selectOptions(grammarFor("d1"), V3);
+  expect(screen.queryByText(CALENDAR_WINDOW_WARNING)).toBeNull();
+
+  fireEvent.change(formulaFor("d1"), { target: { value: "delta({kwh}, today)" } });
+
+  const warning = await screen.findByText(CALENDAR_WINDOW_WARNING);
+  expect(formulaFor("d1").closest("section")).toContainElement(warning);
+}
+
+/**
+ * Case 2e — the negative control on 2d: a rolling window (`avg({kw}, 24h)`)
+ * is read in UTC minutes and needs no timezone, so no warning renders. The
+ * positive control is the `v3` help line, which proves the row is `v3`; the
+ * inverted predicate (`kind === "rolling"`) is what reddens this case.
+ */
+export async function aRollingWindowShowsNoTimezoneWarning(): Promise<void> {
+  renderTab(fixture(), true);
+  await userEvent.selectOptions(grammarFor("d1"), V3);
+
+  fireEvent.change(formulaFor("d1"), { target: { value: "avg({kw}, 24h)" } });
+
+  await waitFor(() => expect(formulaFor("d1").value).toBe("avg({kw}, 24h)"));
+  expect(screen.getByText(V3_WINDOW_HELP)).toBeInTheDocument();
+  expect(screen.queryByText(CALENDAR_WINDOW_WARNING)).toBeNull();
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   disabledDisablesEverySampleInput,
   aV3FormulaRendersAParameterRowAndComputes,
   aV3FormulaUnderV2RendersNothing,
+  aV3WindowReadRendersItsOwnRowAndComputes,
   eachCrossReferenceFormIsLabelledAsWritten,
   unparsableTextRendersNothing,
 } from "./formula-preview.spec";
@@ -53,5 +54,9 @@ describe("F2.22 formula preview — one sample value per reference, cross-asset 
 
   it("renders nothing for the same text under bms-calc-v2 — the $ does not lex there", () => {
     aV3FormulaUnderV2RendersNothing();
+  });
+
+  it("renders a window read as its own row, labelled delta({kwh}, today), and computes 70 / 2 (E4.1b)", () => {
+    aV3WindowReadRendersItsOwnRowAndComputes();
   });
 });

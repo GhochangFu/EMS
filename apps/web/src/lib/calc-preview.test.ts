@@ -9,10 +9,13 @@ import {
   runPreviewComputesTests,
   runPreviewCrossRefsTests,
   runPreviewInputKeyTests,
+  runPreviewWindowReadsTests,
   runUnparsedIsSilentTests,
   runV2MissingCrossInputTests,
   runV2PreviewComputesTests,
   runV3PreviewTests,
+  runV3WindowPreviewComputesTests,
+  runV3WindowPreviewRefusesTests,
 } from "./calc-preview.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -63,5 +66,17 @@ describe("calc live preview", () => {
 
   it("previews a bms-calc-v3 formula over a parameter sample row, and refuses at the $ without one", () => {
     runV3PreviewTests();
+  });
+
+  it("lists the window reads under v3, keyed by windowKey, and none under v2 (E4.1b)", () => {
+    runPreviewWindowReadsTests();
+  });
+
+  it("previews delta({kwh}, today) / hours(today) as 35 over the window sample values", () => {
+    runV3WindowPreviewComputesTests();
+  });
+
+  it("refuses at the window read, naming it, when no window sample value is given", () => {
+    runV3WindowPreviewRefusesTests();
   });
 });

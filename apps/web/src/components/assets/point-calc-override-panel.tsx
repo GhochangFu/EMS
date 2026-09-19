@@ -34,7 +34,13 @@ import {
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
 import { V2_REFERENCE_FORMS } from "../../lib/formula-editor-rules";
-import { V2_TRIGGER_LATENCY_HINT, V3_PARAMETER_HELP, V3_TRIGGER_LATENCY_HINT, dialectOptions } from "../../lib/template-calc-config";
+import {
+  V2_TRIGGER_LATENCY_HINT,
+  V3_PARAMETER_HELP,
+  V3_TRIGGER_LATENCY_HINT,
+  V3_WINDOW_HELP,
+  dialectOptions,
+} from "../../lib/template-calc-config";
 
 type Props = {
   config: AssetPointCalcConfigDto;
@@ -165,7 +171,15 @@ export function PointCalcOverridePanel({
                 <code className="rounded bg-gray-100 px-1">{form.example}</code>
               </li>
             ))}
-            {isV3 ? <li>{V3_PARAMETER_HELP}</li> : null}
+            {isV3 ? (
+              // The `v3` forms: the parameter (ADR 0070 decision 4) and the
+              // windows (decision 5, `E4.1b`) — an override is evaluated by
+              // the same sweep, so it is taught the same forms.
+              <>
+                <li>{V3_PARAMETER_HELP}</li>
+                <li>{V3_WINDOW_HELP}</li>
+              </>
+            ) : null}
           </ul>
         ) : null}
         <label className="text-xs">

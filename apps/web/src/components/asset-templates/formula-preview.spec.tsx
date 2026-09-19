@@ -28,7 +28,7 @@ import { FormulaPreview } from "./formula-preview";
  */
 
 const MISSING_AGGREGATE =
-  "no sample value for a referenced point, cross-asset reference or parameter at character 0";
+  "no sample value for a referenced point, cross-asset reference, parameter or window read at character 0";
 
 const sampleFor = (label: string) =>
   screen.getByRole("spinbutton", { name: `Sample value for ${label}` }) as HTMLInputElement;
@@ -150,7 +150,7 @@ export function aV3FormulaRendersAParameterRowAndComputes(): void {
 
   expect(sampleInputs()).toHaveLength(2);
   fireEvent.change(sampleFor("kw"), { target: { value: "10" } });
-  expect(result()).toHaveTextContent("parameter at character 7");
+  expect(result()).toHaveTextContent("parameter or window read at character 7");
   fireEvent.change(sampleFor("$energy_tariff_per_kwh"), { target: { value: "2.15" } });
   expect(result()).toHaveTextContent("= 21.5");
 }
@@ -158,4 +158,21 @@ export function aV3FormulaRendersAParameterRowAndComputes(): void {
 export function aV3FormulaUnderV2RendersNothing(): void {
   render(<FormulaPreview expression="{kw} * $energy_tariff_per_kwh" dialect={CALC_DIALECT_V2} />);
   expect(sampleInputs()).toHaveLength(0);
+}
+
+/**
+ * Case 8 — `bms-calc-v3` (`E4.1b` U10): a window read is its own sample row,
+ * labelled by `windowKey(node)` — `delta({kwh}, today)` — and typing into it
+ * is what moves the result: with `hours(today)` at 2, `70` previews `35`.
+ * The change to `= 35` is the assertion the "not passed to `evaluate`"
+ * mutation reddens; the row's presence alone would survive it.
+ */
+export function aV3WindowReadRendersItsOwnRowAndComputes(): void {
+  render(<FormulaPreview expression="delta({kwh}, today) / hours(today)" dialect={CALC_DIALECT_V3} />);
+
+  expect(sampleFor("delta({kwh}, today)")).toBeInTheDocument();
+  fireEvent.change(sampleFor("hours(today)"), { target: { value: "2" } });
+  expect(result()).toHaveTextContent("window read at character 0");
+  fireEvent.change(sampleFor("delta({kwh}, today)"), { target: { value: "70" } });
+  expect(result()).toHaveTextContent("= 35");
 }
