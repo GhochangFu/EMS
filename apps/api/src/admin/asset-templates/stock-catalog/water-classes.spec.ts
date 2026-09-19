@@ -2,6 +2,7 @@ import { alarmsOf, assert, maintenanceOf, requireStockEntry } from "./stock-cata
 import {
   assertAlarmTable,
   assertDeferralsAbsent,
+  assertDerivedPoints,
   assertEntryIdentity,
   assertMaintenanceBounds,
   assertNoKpis,
@@ -10,9 +11,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
+  type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 
 /**
@@ -142,6 +146,17 @@ const STP_POINTS: readonly PointRow[] = [
   ["treated_tank_level_pct", "core", "%"],
   ["mbr_tmp_bar", "extended", "bar"],
   ["uv_status", "extended", null],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "derived", "KL"],
+  ["water_cost_today", "derived", ""],
+  ["water_saving_vs_baseline_pct", "derived", "%"],
+];
+
+/** E4.1c's three v3 rows (plan §3.7), default input age. */
+const STP_DERIVED: readonly DerivedRow[] = [
+  ["kl_today", "sum({influent_flow_klh}, today)", null],
+  ["water_cost_today", "sum({influent_flow_klh}, today) * $water_tariff_per_kl", null],
+  ["water_saving_vs_baseline_pct", "(1 - sum({influent_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
 ];
 
 /**
@@ -170,27 +185,29 @@ const STP_ALARMS: readonly AlarmRow[] = [
  */
 function checkStp(): void {
   const entry = requireStockEntry(STP_CODE);
-  assertEntryIdentity(STP_CODE, entry, "stp", "water");
+  assertEntryIdentity(STP_CODE, entry, "stp", "water", 2);
 
-  // ---- 18 points, 11 core + 5 extended + 2 manual + 0 derived -------------
+  // ---- 21 points, 11 core + 5 extended + 2 manual + 3 derived (3 E4.1c) ----
 
   assert(
     tierCount(entry, "core") === 11 &&
       tierCount(entry, "extended") === 5 &&
       tierCount(entry, "manual") === 2 &&
-      tierCount(entry, "derived") === 0,
+      tierCount(entry, "derived") === 3,
     `§5 marks 11 rows C, 5 X, 1 M and 1 M/X (manual, first-listed wins), and this class authors ` +
-      `no derived code — 11/5/2/0. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}` +
+      `no §5 derived code — 11/5/2/3 (E4.1c adds three v3 rows). Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}` +
       `/${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(STP_CODE, "§5", entry, STP_POINTS);
+  assertDerivedPoints(STP_CODE, entry, STP_DERIVED);
   assertCodDualTier();
 
   assert(
-    tierCount(entry, "derived") === 0,
+    !entry.points.some((point) => point.pointKey === "recovery_pct"),
     "§5's four derived codes are ALL deferred (plan §5.0) and plan §12 ruling 7 refuses " +
       "recovery_pct here — the STP's own derived quantity is reuse, and hydraulic recovery shown " +
-      "where an operator expects reuse is the silent-wrong failure",
+      "where an operator expects reuse is the silent-wrong failure. E4.1c's three v3 rows are " +
+      "sustainability rows over the inlet, not §5 codes",
   );
   assertNoKpis(STP_CODE, entry, "§5");
   assertDeferralsAbsent(STP_CODE, entry);
@@ -392,4 +409,28 @@ function checkEtp(): void {
 export function runWaterClassEntryTests(): void {
   checkStp();
   checkEtp();
+}
+
+// ---- E4.1c — the bms-calc-v3 water rows (ADR 0070 decision 8, Q5) -------
+//
+// The same three codes on every water class, each over ITS inlet flow — one
+// code, one meaning ("KL of inlet water today"). Pinned through
+// `sustainabilityClaims`, one `it()` per claim in the wrapper.
+
+/** water-stp over `{influent_flow_klh}`, §5's inlet — plan §3.7. */
+const STP_E41C: readonly SustainabilityRow[] = [
+  ["kl_today", "sum({influent_flow_klh}, today)", "KL"],
+  ["water_cost_today", "sum({influent_flow_klh}, today) * $water_tariff_per_kl", ""],
+  ["water_saving_vs_baseline_pct", "(1 - sum({influent_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+];
+
+/** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
+export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
+  ["water-stp", STP_E41C, 18, 2],
+];
+
+export function e41cWaterClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return E41C_WATER_CLASSES.flatMap(([code, rows, first, version]) =>
+    sustainabilityClaims(code, requireStockEntry(code), rows, first, version),
+  );
 }
