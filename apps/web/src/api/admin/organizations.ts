@@ -32,6 +32,8 @@ export async function fetchAdminOrganizationSummary(
 export async function createAdminOrganization(input: {
   code: string;
   name: string;
+  /** ISO 4217, upper-case; required — the API refuses a create without it (E4.1c). */
+  currency: string;
 }): Promise<AdminOrganizationDto> {
   return adminFetch("/admin/organizations", adminOrganizationDtoSchema, {
     method: "POST",
@@ -42,7 +44,7 @@ export async function createAdminOrganization(input: {
 
 export async function updateAdminOrganization(
   id: string,
-  input: { name: string },
+  input: { name: string; currency?: string },
 ): Promise<AdminOrganizationDto> {
   return adminFetch(`/admin/organizations/${id}`, adminOrganizationDtoSchema, {
     method: "PATCH",

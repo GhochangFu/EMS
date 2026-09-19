@@ -23,6 +23,16 @@ type OrganizationsAdminPageProps = {
   user: AuthUser;
 };
 
+/**
+ * E4.1c / ADR 0070 decision 8: the currency list the form OFFERS is the
+ * browser's ISO 4217 table — no endpoint; the server validates membership on
+ * write through the same `Intl` table. Guarded: `Intl.supportedValuesOf` is
+ * ES2023 and absent on older engines, where the input stays a free-text field.
+ */
+function browserCurrencies(): string[] {
+  return typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("currency") : [];
+}
+
 /** Organization master data list with drill-down to locations. */
 export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const navigate = useNavigate();
@@ -35,7 +45,9 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const [editing, setEditing] = useState<AdminOrganizationDto | null>(null);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [currency, setCurrency] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const currencies = useMemo(browserCurrencies, []);
 
   const listQ = useQuery({
     queryKey: ["admin", "organizations", activeFilter],
@@ -57,15 +69,20 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (editing) {
-        return updateAdminOrganization(editing.id, { name });
+        return updateAdminOrganization(editing.id, { name, currency: currency.toUpperCase() });
       }
-      return createAdminOrganization({ code: code.toUpperCase(), name });
+      return createAdminOrganization({
+        code: code.toUpperCase(),
+        name,
+        currency: currency.toUpperCase(),
+      });
     },
     onSuccess: async () => {
       setModalOpen(false);
       setEditing(null);
       setCode("");
       setName("");
+      setCurrency("");
       setError(null);
       await queryClient.invalidateQueries({ queryKey: ["admin", "organizations"] });
     },
@@ -86,6 +103,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
     setEditing(null);
     setCode("");
     setName("");
+    setCurrency("");
     setError(null);
     setModalOpen(true);
   }
@@ -94,6 +112,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
     setEditing(item);
     setCode(item.code);
     setName(item.name);
+    setCurrency(item.currency);
     setError(null);
     setModalOpen(true);
   }
@@ -142,6 +161,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                   <tr className="border-b border-gray-200 text-left text-xs uppercase text-bms-muted">
                     <th className="px-2 py-2">Code</th>
                     <th className="px-2 py-2">Name</th>
+                    <th className="px-2 py-2">Currency</th>
                     <th className="px-2 py-2">Status</th>
                     <th className="px-2 py-2">Actions</th>
                   </tr>
@@ -155,6 +175,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                     >
                       <td className="px-2 py-2 font-mono">{item.code}</td>
                       <td className="px-2 py-2 font-semibold text-bms-green">{item.name}</td>
+                      <td className="px-2 py-2 font-mono text-xs">{item.currency}</td>
                       <td className="px-2 py-2">
                         <StatusPill
                           label={item.active ? "Active" : "Inactive"}
@@ -232,6 +253,23 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                   onChange={(event) => setName(event.target.value)}
                   required
                 />
+              </label>
+              <label className="block text-xs font-semibold text-bms-muted">
+                Currency (ISO 4217)
+                <input
+                  className="mt-1 w-full rounded border border-gray-200 px-3 py-2 font-mono text-sm uppercase"
+                  list="currency-list"
+                  placeholder="INR"
+                  maxLength={3}
+                  value={currency}
+                  onChange={(event) => setCurrency(event.target.value.toUpperCase())}
+                  required
+                />
+                <datalist id="currency-list">
+                  {currencies.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
               </label>
               {error ? <div className="text-xs text-red-700">{error}</div> : null}
             </div>
