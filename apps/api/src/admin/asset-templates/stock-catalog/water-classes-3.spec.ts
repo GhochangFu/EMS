@@ -154,7 +154,8 @@ function checkRo(): void {
       tierCount(entry, "extended") === 5 &&
       tierCount(entry, "manual") === 1 &&
       tierCount(entry, "derived") === 5,
-    `§2 marks 10 rows C, 5 X and 1 M, and two of its four derived codes are authored — 10/5/1/2. ` +
+    `§2 marks 10 rows C, 5 X and 1 M, and two of its four §2 derived codes are authored, plus ` +
+      `E4.1c's three v3 rows — 10/5/1/5. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
@@ -303,7 +304,8 @@ function checkSoftener(): void {
       tierCount(entry, "extended") === 3 &&
       tierCount(entry, "manual") === 2 &&
       tierCount(entry, "derived") === 3,
-    `§3 marks 4 rows C, 3 X and 2 M, and all three of its derived codes are deferred — 4/3/2/0. ` +
+    `§3 marks 4 rows C, 3 X and 2 M, and all three of its §3 derived codes are deferred; ` +
+      `E4.1c's three v3 rows are the only derived rows — 4/3/2/3. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );

@@ -341,7 +341,7 @@ function checkEtp(): void {
       tierCount(entry, "manual") === 2 &&
       tierCount(entry, "derived") === 3,
     `§6 marks 7 rows C, 7 X and 1 X/M (extended, first-listed wins) and 2 M, and all four of its ` +
-      `derived codes are deferred — 7/8/2/3 (E4.1c adds three v3 rows). Got ${tierCount(entry, "core")}/` +
+      `§6 derived codes are deferred; E4.1c's three v3 rows are the only derived rows — 7/8/2/3. Got ${tierCount(entry, "core")}/` +
       `${tierCount(entry, "extended")}/${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(ETP_CODE, "§6", entry, ETP_POINTS);

@@ -140,8 +140,8 @@ function checkCoolingTower(): void {
       tierCount(entry, "extended") === 6 &&
       tierCount(entry, "manual") === 1 &&
       tierCount(entry, "derived") === 7,
-    `§4 marks 10 rows C, 6 X and 1 M, and four of its five derived codes are authored — ` +
-      `10/6/1/7. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+    `§4 marks 10 rows C, 6 X and 1 M, and four of its five §4 derived codes are authored, ` +
+      `plus E4.1c's three v3 rows — 10/6/1/7. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(TOWER_CODE, "§4", entry, TOWER_POINTS);
@@ -314,8 +314,8 @@ function checkWtp(): void {
       tierCount(entry, "extended") === 5 &&
       tierCount(entry, "manual") === 2 &&
       tierCount(entry, "derived") === 5,
-    `§1 marks 11 rows C, 5 X and 2 M, and two of its three derived codes are authored — ` +
-      `11/5/2/5. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+    `§1 marks 11 rows C, 5 X and 2 M, and two of its three §1 derived codes are authored, ` +
+      `plus E4.1c's three v3 rows — 11/5/2/5. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(WTP_CODE, "§1", entry, WTP_POINTS);

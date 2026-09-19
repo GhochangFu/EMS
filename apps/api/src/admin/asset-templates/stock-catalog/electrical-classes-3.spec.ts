@@ -6,7 +6,12 @@ import { calcParameterKeys0074, sustainabilityClaims, type SustainabilityRow } f
 
 /**
  * `E4.1c` — the feeder / incomer class (`electrical-feeder`) against
- * `docs/electrical-derived-taglist-v1.md` §1 and against ADR 0070 decision 8.
+ * `docs/electrical-derived-taglist-v1.md` §1 and against ADR 0070 decision 8,
+ * **and the `E4.1c` rows of the other four electrical classes** (transformer,
+ * DG set, solar PV, APFC — the `E41C_ELECTRICAL_CLASSES` table at the end):
+ * their count, key-order and tier claims stay in `electrical-classes.spec.ts`
+ * (961 lines) and `electrical-classes-2.spec.ts`, and the formula pins live
+ * here because the first of those files has no room under the §4.5 cap.
  *
  * **A third electrical class-spec file, and the reason is the §4.5 cap, twice
  * over.** The block below lived in `stock-catalog.spec.ts` from `F2.13`, and
