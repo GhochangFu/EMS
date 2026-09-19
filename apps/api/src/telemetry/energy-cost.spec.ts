@@ -5,8 +5,7 @@ import { energyCost, type PerAssetEnergy } from "./energy-cost";
  * Everything here is arithmetic; the two database halves — the per-asset
  * statement in `DashboardService.energySummary` and in
  * `ReportsService.energySummary` — are asserted in
- * `dashboard.energy-cost.integration.spec.ts` and
- * `reports.energy-cost.integration.spec.ts`.
+ * `energy-cost.integration.spec.ts`.
  *
  * The three fail-closed rules this file exists to hold (plan §3, design
  * decision 2; the owner's Q4 ruling of 2026-09-19):

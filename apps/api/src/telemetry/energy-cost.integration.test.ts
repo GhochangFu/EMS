@@ -2,28 +2,26 @@ import type pg from "pg";
 
 import { afterAll, beforeAll, describe, it } from "vitest";
 
+import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertAFutureRowIsNotYetEffective,
+  assertARowEffectiveAfterTheRangeEndIsNull,
+  assertARowEndedBeforeTheRangeEndIsNull,
+  assertARowStartedInsideTheRangeIsInScopeAtTheEnd,
   assertLocationRowWinsForItsAssetOnly,
   assertMixedCurrencyIsNull,
   assertNoTariffIsNullNotZero,
   assertOrganizationTariffPricesTheTotal,
+  assertReportPricesTheTotal,
   cleanup,
   seedCostFixture,
   type CostFixture,
-} from "../dashboard/dashboard.energy-cost.integration.spec";
-import {
-  assertARowEffectiveAfterTheRangeEndIsNull,
-  assertARowEndedBeforeTheRangeEndIsNull,
-  assertARowStartedInsideTheRangeIsInScopeAtTheEnd,
-  assertReportPricesTheTotal,
-} from "../reports/reports.energy-cost.integration.spec";
-import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+} from "./energy-cost.integration.spec";
 
 /**
  * `E4.1c` U4 — Vitest entry point for both tariff reads. Assertions live in
- * the two sibling `.spec` files (ADR 0014); this file owns the one database
- * lifecycle they share: the kW rows are committed and materialised once in
+ * the sibling `.spec` (ADR 0014); this file owns the one database lifecycle
+ * both halves share: the kW rows are committed and materialised once in
  * `beforeAll` (two files doing that in parallel workers would contend on the
  * refresh lock), and each case inserts and deletes its own tariff rows.
  */

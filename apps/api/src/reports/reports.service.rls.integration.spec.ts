@@ -10,7 +10,7 @@ import { ReportsService } from "./reports.service";
  * `E4.1c` — the tariff resolver the services now take. This file asserts
  * nothing about cost, so every asset resolves to no tariff and the cost
  * fields are `null` (`energy-cost.ts`); the real service is exercised in
- * `dashboard.energy-cost.integration.spec.ts` / `reports.energy-cost.integration.spec.ts`.
+ * `telemetry/energy-cost.integration.spec.ts`.
  */
 const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
 

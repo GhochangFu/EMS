@@ -226,7 +226,15 @@ export async function assertAnOverlappingCreateIs409AndWritesNothing(
   assert((await countOrganizationRows(fleetPool, fx.organizationId)) === before, "count(*) is unchanged after the 409");
 }
 
-/** The positive control beside the 409: `[)` windows that touch do not overlap. */
+/**
+ * The positive control beside the 409: `[)` windows that touch do not overlap.
+ *
+ * Bounded to the band's end, not open-ended: since `E4.1c` the seed enters an
+ * open-ended organization-scope `energy_tariff_per_kwh` row for the demo
+ * organization from 2026-01-01 (`calc-parameters-demo-seed.ts`, the Q1
+ * ruling), and an open-ended row from a 1900s band would overlap it — the
+ * one window this suite's band rule was meant to keep every row out of.
+ */
 export async function assertAnAbuttingCreateIs201(
   svc: CalcParametersAdminService,
   fleetPool: pg.Pool,
@@ -238,9 +246,9 @@ export async function assertAnAbuttingCreateIs201(
     key: KEY,
     value: 9.25,
     effectiveFrom: hours(2),
-    effectiveTo: null,
+    effectiveTo: hours(24),
   });
-  assert(row.effectiveFrom === hours(2) && row.effectiveTo === null, "the abutting row is open-ended from the neighbour's end");
+  assert(row.effectiveFrom === hours(2) && row.effectiveTo === hours(24), "the abutting row starts at the neighbour's end and runs to the band's end");
   assert((await countOrganizationRows(fleetPool, fx.organizationId)) === 2, "two organization-scope rows in the band");
   ctx.abuttingRow = row;
 }
@@ -440,7 +448,12 @@ export async function assertListIsGatedByReadableOrganizations(
   );
   // A location_admin may read its organization's rows, including the
   // organization-scope one it may not write (design decision 11).
-  const { items } = await svc.list(fx.locationAdminJwt, { organizationId: fx.organizationId, key: KEY });
+  const { items: listed } = await svc.list(fx.locationAdminJwt, { organizationId: fx.organizationId, key: KEY });
+  // Inside the band, never bare (the module header): the demo seed's own
+  // open-ended `energy_tariff_per_kwh` row (2026-01-01, `E4.1c`) is listed
+  // too, and would otherwise be the latest `effectiveFrom`.
+  const items = listed.filter((item) => item.effectiveFrom >= BAND[0] && item.effectiveFrom < BAND[1]);
+  assert(listed.length >= items.length && items.length >= 3, "the band's rows are among the listed rows");
   const ids = new Set(items.map((item) => item.id));
   assert(ctx.organizationRow !== undefined && ids.has(ctx.organizationRow.id), "the organization row is listed");
   assert(ctx.locationRow !== undefined && ids.has(ctx.locationRow.id), "the location row is listed");

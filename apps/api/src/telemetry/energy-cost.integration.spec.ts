@@ -5,14 +5,21 @@ import type pg from "pg";
 import { assets, createDb } from "@bms/db";
 
 import { CalcParametersService } from "../calc/calc-parameters.service";
+import { DashboardService } from "../dashboard/dashboard.service";
+import { energyCsvDocument } from "../reports/reports.serialise";
+import { ReportsService } from "../reports/reports.service";
 import { materializeCompleteBuckets } from "../testing/cagg-materialize";
-import { ENERGY_TARIFF_KEY } from "../telemetry/energy-cost";
-import { DashboardService } from "./dashboard.service";
+import { ENERGY_TARIFF_KEY } from "./energy-cost";
 
 /**
- * `E4.1c` U4 — `DashboardService.energySummary` reads the tariff through the
- * real `CalcParametersService` against a real database (ADR 0070 decision 7;
- * the owner's Q4 ruling: per-asset nearest scope, fail closed).
+ * `E4.1c` U4 — `DashboardService.energySummary` and
+ * `ReportsService.energyPreview` read the tariff through the real
+ * `CalcParametersService` against a real database (ADR 0070 decision 7; the
+ * owner's Q4 ruling: per-asset nearest scope, fail closed). The dashboard
+ * half (D1–D5) holds the scope claims; the reports half (R1–R3′, at the end
+ * of this file) holds the instant — the report's end, not now — and the
+ * export. One file, one fixture: `energy-cost.integration.test.ts` is the
+ * name-sibling Vitest wrapper (`tests/repo-invariants`).
  *
  * **Why a database.** The cost is the composition of three statements — the
  * kWh total, the per-asset kWh with each asset's organization currency, and
@@ -37,9 +44,7 @@ import { DashboardService } from "./dashboard.service";
  * continuous aggregate, and a raw row inserted behind its watermark is
  * invisible until a refresh re-covers its bucket, which cannot run inside a
  * transaction (`cagg-materialize.ts`). So the fixture inserts, materialises,
- * asserts, deletes and materialises again. Codes carry a `randomUUID()`. The
- * Vitest entry point is `telemetry/energy-cost.integration.test.ts`, shared
- * with the reports spec so the two materialise once and never contend.
+ * asserts, deletes and materialises again. Codes carry a `randomUUID()`.
  */
 
 const RUN = randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase();
@@ -242,7 +247,7 @@ async function deleteTariff(pool: pg.Pool, id: string): Promise<void> {
   await pool.query(`DELETE FROM bms.calc_parameters WHERE id = $1`, [id]);
 }
 
-function service(pool: pg.Pool): DashboardService {
+function dashboard(pool: pg.Pool): DashboardService {
   return new DashboardService(pool, new CalcParametersService(createDb(pool)));
 }
 
@@ -250,7 +255,7 @@ function service(pool: pg.Pool): DashboardService {
 export async function assertOrganizationTariffPricesTheTotal(pool: pg.Pool, fx: CostFixture): Promise<void> {
   const rowId = await insertTariff(pool, fx.organizationId, 2.15);
   try {
-    const summary = await service(pool).energySummary("24h", [fx.a1, fx.a2]);
+    const summary = await dashboard(pool).energySummary("24h", [fx.a1, fx.a2]);
     assert(summary.totalKwh > 0, `the fixture must produce energy in the window, got ${summary.totalKwh}`);
     // Within a cent, not exact: `totalKwh` is rounded to two decimals before
     // it is returned, while the cost sums the unrounded per-asset kWh — the
@@ -270,7 +275,7 @@ export async function assertOrganizationTariffPricesTheTotal(pool: pg.Pool, fx: 
 
 /** D2 — the owed guard: no row in scope → all three `null`, and `totalKwh` is untouched. D1 is the positive control. */
 export async function assertNoTariffIsNullNotZero(pool: pg.Pool, fx: CostFixture): Promise<void> {
-  const summary = await service(pool).energySummary("24h", [fx.a1, fx.a2]);
+  const summary = await dashboard(pool).energySummary("24h", [fx.a1, fx.a2]);
   assert(summary.totalKwh > 0, `the kWh total does not depend on a tariff, got ${summary.totalKwh}`);
   assert(summary.indicativeCost === null, `no tariff must be null, never 0 — got ${String(summary.indicativeCost)}`);
   assert(summary.tariffPerKwh === null, `expected tariffPerKwh null, got ${String(summary.tariffPerKwh)}`);
@@ -282,7 +287,7 @@ export async function assertLocationRowWinsForItsAssetOnly(pool: pg.Pool, fx: Co
   const orgRow = await insertTariff(pool, fx.organizationId, 2.15);
   const locationRow = await insertTariff(pool, fx.organizationId, 3, { locationId: fx.a1LocationId });
   try {
-    const svc = service(pool);
+    const svc = dashboard(pool);
     const [only1, only2, both] = await Promise.all([
       svc.energySummary("24h", [fx.a1]),
       svc.energySummary("24h", [fx.a2]),
@@ -310,7 +315,7 @@ export async function assertMixedCurrencyIsNull(pool: pg.Pool, fx: CostFixture):
   // collides with (or depends on) its seed row at organization scope.
   const demoRow = await insertTariff(pool, fx.demoOrganizationId, 8, { assetId: fx.demoAsset });
   try {
-    const summary = await service(pool).energySummary("24h", [fx.a1, fx.a2, fx.demoAsset]);
+    const summary = await dashboard(pool).energySummary("24h", [fx.a1, fx.a2, fx.demoAsset]);
     assert(summary.totalKwh > 0, "the kWh total sums across organizations regardless");
     assert(summary.currency === null, `two currencies is no currency — got ${String(summary.currency)}`);
     assert(summary.indicativeCost === null, `a sum across two currencies is not a number — got ${String(summary.indicativeCost)}`);
@@ -325,10 +330,131 @@ export async function assertMixedCurrencyIsNull(pool: pg.Pool, fx: CostFixture):
 export async function assertAFutureRowIsNotYetEffective(pool: pg.Pool, fx: CostFixture): Promise<void> {
   const future = await insertTariff(pool, fx.organizationId, 2.15, {}, { from: new Date(Date.now() + 3_600_000) });
   try {
-    const summary = await service(pool).energySummary("24h", [fx.a1, fx.a2]);
+    const summary = await dashboard(pool).energySummary("24h", [fx.a1, fx.a2]);
     assert(summary.indicativeCost === null, `a future row is not in scope now — got ${String(summary.indicativeCost)}`);
     assert(summary.tariffPerKwh === null, `expected tariffPerKwh null, got ${String(summary.tariffPerKwh)}`);
   } finally {
     await deleteTariff(pool, future);
+  }
+}
+
+// ---- ReportsService.energyPreview — the instant is the range's end, and the export ----
+//
+// The report reads `_1h` over `[startDate, endDate T23:59:59.999Z]` and
+// resolves the tariff at that end instant (decision 7's "the query's end").
+// The rows below are at **asset** scope, keyed on the fixture's own assets,
+// so they can never collide on `calc_parameters_no_overlap` with the
+// organization-scope rows the dashboard cases above insert and delete.
+
+/** The report's date range that covers the fixture's kW rows (UTC dates). */
+function rangeOf(fx: CostFixture): { startDate: string; endDate: string; end: Date } {
+  const startDate = new Date(fx.fromMs).toISOString().slice(0, 10);
+  const endDate = new Date(fx.toMs).toISOString().slice(0, 10);
+  return { startDate, endDate, end: new Date(`${endDate}T23:59:59.999Z`) };
+}
+
+/**
+ * One row per fixture asset, at **asset** scope. The dashboard spec holds
+ * the organization- and location-scope claims; this file's claims are about
+ * the instant, which any scope shows, and asset-scope rows keyed on the
+ * fixture's own assets can never collide on `calc_parameters_no_overlap`
+ * with another suite's organization-scope row.
+ */
+async function insertAssetTariffs(
+  pool: pg.Pool,
+  fx: CostFixture,
+  value: number,
+  validity: { from?: Date; to?: Date | null } = {},
+): Promise<string[]> {
+  const { rows } = await pool.query<{ id: string }>(
+    `INSERT INTO bms.calc_parameters (organization_id, key, location_id, asset_id, value, effective_from, effective_to)
+     VALUES ($1, $2, NULL, $3, $5, $6, $7),
+            ($1, $2, NULL, $4, $5, $6, $7) RETURNING id`,
+    [fx.organizationId, ENERGY_TARIFF_KEY, fx.a1, fx.a2, value, validity.from ?? new Date("2026-01-01T00:00:00Z"), validity.to ?? null],
+  );
+  return rows.map((row) => row.id);
+}
+
+async function deleteTariffs(pool: pg.Pool, ids: readonly string[]): Promise<void> {
+  await pool.query(`DELETE FROM bms.calc_parameters WHERE id = ANY($1::uuid[])`, [ids]);
+}
+
+function reports(pool: pg.Pool): ReportsService {
+  return new ReportsService(pool, new CalcParametersService(createDb(pool)));
+}
+
+/** R1 — the D1 shape over `energyPreview`: the cost is `round(totalKwh × tariff)` in the organization's currency. */
+export async function assertReportPricesTheTotal(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const rowIds = await insertAssetTariffs(pool, fx, 2.15);
+  try {
+    const { startDate, endDate } = rangeOf(fx);
+    const preview = await reports(pool).energyPreview({ startDate, endDate }, [fx.a1, fx.a2]);
+    const { summary } = preview;
+    assert(summary.totalKwh > 0, `the fixture must produce energy in the range, got ${summary.totalKwh}`);
+    // Within a cent (the dashboard spec's D1 says why).
+    assert(
+      summary.indicativeCost !== null && Math.abs(summary.indicativeCost - round2(summary.totalKwh * 2.15)) <= 0.01,
+      `expected ≈ round(${summary.totalKwh} × 2.15), got ${String(summary.indicativeCost)}`,
+    );
+    assert(summary.tariffPerKwh === 2.15, `expected 2.15, got ${String(summary.tariffPerKwh)}`);
+    assert(summary.currency === fx.currency, `expected ${fx.currency}, got ${String(summary.currency)}`);
+    // R4, positive half — the CSV carries the number and the organization's currency as the unit.
+    const csv = energyCsvDocument(preview);
+    assert(
+      csv.includes(`Indicative cost,${summary.indicativeCost},${fx.currency}\n`),
+      `the CSV must carry the cost and the currency, got ${JSON.stringify(csv.split("\n").find((l) => l.startsWith("Indicative cost")))}`,
+    );
+    assert(csv.includes(`Tariff,2.15,${fx.currency}/kWh\n`), "the CSV tariff unit is the organization's currency per kWh");
+  } finally {
+    await deleteTariffs(pool, rowIds);
+  }
+}
+
+/** R2 — a row whose `effective_to` precedes the range's end instant is not in scope at that instant → `null`. */
+export async function assertARowEndedBeforeTheRangeEndIsNull(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const { startDate, endDate, end } = rangeOf(fx);
+  // Ended one hour before the end instant: it covered most of the range and
+  // is still not the tariff *at* the instant decision 7 names.
+  const rowIds = await insertAssetTariffs(pool, fx, 2.15, { to: new Date(end.getTime() - 3_600_000) });
+  try {
+    const preview = await reports(pool).energyPreview({ startDate, endDate }, [fx.a1, fx.a2]);
+    assert(preview.summary.totalKwh > 0, "the kWh total does not depend on a tariff");
+    assert(preview.summary.indicativeCost === null, `an ended row is null — got ${String(preview.summary.indicativeCost)}`);
+    assert(preview.summary.tariffPerKwh === null, `expected null, got ${String(preview.summary.tariffPerKwh)}`);
+    // R4, negative half — the CSV writes the dash for the cost and the tariff.
+    // The unit cell still names the currency: it is the organization's, known
+    // whether or not a tariff is (`energy-cost.ts` rule 1); the empty unit is
+    // the two-currency case, held by `reports.serialise.spec.ts`.
+    assert(preview.summary.currency === fx.currency, `the currency is known without a tariff — got ${String(preview.summary.currency)}`);
+    const csv = energyCsvDocument(preview);
+    assert(csv.includes(`Indicative cost,—,${fx.currency}\n`), "the CSV writes the em dash for a null cost, with the currency as the unit");
+    assert(csv.includes(`Tariff,—,${fx.currency}/kWh\n`), "the CSV writes the em dash for a null tariff, with the currency per kWh as the unit");
+  } finally {
+    await deleteTariffs(pool, rowIds);
+  }
+}
+
+/** R3 — a row effective only after the range's end instant → `null`, even though it is effective now or later. */
+export async function assertARowEffectiveAfterTheRangeEndIsNull(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const { startDate, endDate, end } = rangeOf(fx);
+  const rowIds = await insertAssetTariffs(pool, fx, 2.15, { from: new Date(end.getTime() + 1) });
+  try {
+    const preview = await reports(pool).energyPreview({ startDate, endDate }, [fx.a1, fx.a2]);
+    assert(preview.summary.indicativeCost === null, `a later row is null — got ${String(preview.summary.indicativeCost)}`);
+    assert(preview.summary.tariffPerKwh === null, `expected null, got ${String(preview.summary.tariffPerKwh)}`);
+  } finally {
+    await deleteTariffs(pool, rowIds);
+  }
+}
+
+/** R3′ — the positive control for R2/R3: a row that starts inside the range and is open-ended is in scope at the end. */
+export async function assertARowStartedInsideTheRangeIsInScopeAtTheEnd(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const { startDate, endDate, end } = rangeOf(fx);
+  const rowIds = await insertAssetTariffs(pool, fx, 2.15, { from: new Date(end.getTime() - 60_000) });
+  try {
+    const preview = await reports(pool).energyPreview({ startDate, endDate }, [fx.a1, fx.a2]);
+    assert(preview.summary.tariffPerKwh === 2.15, `a row effective at the end instant resolves — got ${String(preview.summary.tariffPerKwh)}`);
+  } finally {
+    await deleteTariffs(pool, rowIds);
   }
 }
