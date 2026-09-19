@@ -477,3 +477,51 @@ migration, not a manifest change.
 - **B14 stays open.** When the client answers, the answer lands as parameter
   rows through the decision 2 screen and, for the two KPIs, as `v3` formulas —
   never as a code change. That is the property this ADR exists to secure.
+
+## Amendment 1 (2026-09-19) — three facts corrected at `E4.1b`'s closure
+
+Ruled by the owner at the `E4.1b` plan gate ("amend at closure") and at the
+PR 2 review. Decisions 5 and 6 above are left as written; this amendment is
+the record of where the implementation measured them wrong or narrowed them.
+
+1. **Decision 5's watermark sentence is false on this stack.** It says a
+   `this_month` read "that took `1d` alone would silently drop the last two
+   days of the month". Measured 2026-09-19 on the compose stack (PG 16.14,
+   TimescaleDB 2.29.1): all four views run `materialized_only = false`, so
+   the live branch serves every bucket beyond a view's watermark and a
+   `1d`-only read drops nothing. The composition rule survives for two other
+   reasons, recorded in `apps/api/src/calc/calc-window-plan.ts`: **alignment**
+   (`time_bucket` without a zone makes every bucket UTC-aligned, so an IST
+   day at 18:30 UTC or a SAST day at 22:00 UTC is never a whole number of
+   `1h` or `1d` buckets — a `1d`-only read of an IST day answers
+   `window_empty`) and **cost** (a month for one pair from `1m` is 1.1 s,
+   from `5m` 121 ms, from `1h` 8–31 ms). The guard the row owed is kept as
+   "a month-to-date value includes the rows behind the `1d` watermark"
+   (`calc-windows.integration.spec.ts` W7a), which the live branch, not the
+   composition, is what holds.
+2. **Decision 6 names migration `0074`; the column shipped in `0075`.**
+   `0074_calc_parameters.sql` was `E4.1a`'s and was frozen before `E4.1b`
+   started (PR #497, `0075_location_timezone.sql`).
+3. **A stalled refresh policy fails closed** (the PR 2 security review, ruled
+   2026-09-19). Decision 5 bounds a formula (`MAX_FORMULA_WINDOWS`, `366d`)
+   but not a stall: with the `1d` and `1h` policies stalled a `366d` read
+   falls to `5m` (~105k buckets per pair per tick), and with all four stalled
+   — this repository's orphaned `refresh_ranges` case — the part beyond the
+   `1m` watermark is an on-the-fly aggregation of raw rows. Two budgets per
+   aggregate read (`budgetDefect`): `MAX_WINDOW_BUCKETS = 20,000` and
+   `MAX_LIVE_MINUTES = 180` of raw rows beyond the `1m` watermark (the `1m`
+   policy's `start_offset`). A read over either is refused as
+   **`windows_unresolved`** — ruling 8's third reason gains a fourth, the
+   mirror of `parameters_unresolved` — with the watermarks in the warning,
+   once per sweep. Three hours into a blocked refresh every aggregate window
+   read stops fleet-wide; `delta` (two raw probes) and `hours` (no read) are
+   unaffected. That is deliberate: a stalled policy stops the window
+   formulas, never the database, and the warning is what surfaces the stall.
+
+Two smaller facts, for completeness: the write path admits only a
+`Region/City` zone (`LIKE '%/%'`, `posix/` and `right/` excluded — `EST` is a
+fixed offset with no DST, `Factory` and `posixrules` are tzdata artefacts),
+and the read path joins `pg_timezone_names` so a stored zone the server no
+longer knows is `timezone_unset` rather than a thrown batch. `timezone` is
+seed-owned like `latitude` (a re-seed re-asserts it), ruled at the PR 1
+review; `ESK-DECOMM-01`, the access fixture, stays `NULL`.
