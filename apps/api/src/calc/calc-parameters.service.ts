@@ -87,8 +87,8 @@ export class CalcParametersService {
                 FROM bms.calc_parameters cp
                WHERE cp.organization_id = a.organization_id
                  AND cp.key = p.key
-                 AND cp.effective_from <= ${sql.param(at)}
-                 AND (cp.effective_to IS NULL OR cp.effective_to > ${sql.param(at)})
+                 AND cp.effective_from <= ${sql.param(at.toISOString())}::timestamptz
+                 AND (cp.effective_to IS NULL OR cp.effective_to > ${sql.param(at.toISOString())}::timestamptz)
                  AND (cp.asset_id = a.id
                       OR (cp.asset_id IS NULL AND cp.location_id = a.location_id)
                       OR (cp.asset_id IS NULL AND cp.location_id IS NULL))

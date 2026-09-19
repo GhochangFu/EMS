@@ -83,7 +83,7 @@ export function unknownParameterKeysMessage(codes: readonly string[]): string {
   const withheld = codes.length - listed.length;
   const named = withheld > 0 ? [...listed, `and ${withheld} more`] : listed;
   return (
-    `Not in the calc parameter vocabulary: ${named.join(", ")} — add the key on ` +
-    "/admin/calc-parameters or correct the formula"
+    `Not in the calc parameter vocabulary: ${named.join(", ")} — choose a key from ` +
+    "GET /admin/calc-parameters/keys or correct the formula"
   );
 }

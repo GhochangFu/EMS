@@ -107,7 +107,9 @@ function emptyForm(canOrgScope: boolean): FormState {
  * row is a 403 on the API, and an option that is shown and then clamped on
  * submit would silently write a different row from the one the author chose.
  * `tests/e4.1a-calc-parameters-surface-reachable.test.ts` scans for the
- * predicate's call so the gate outlives the jsdom spec.
+ * predicate's call — the page READS the predicate; the gate itself (the radio
+ * absent from the DOM) is held by the jsdom spec alone, and a scan cannot
+ * hold it (post-merge sweep F1: an unconditional radio kept the scan green).
  *
  * **Edit keeps key and scope disabled** (design decision 12): the PATCH body
  * carries `value`, `effectiveFrom`, `effectiveTo` only and is `.strict()`,
