@@ -115,9 +115,25 @@ export function setCalcTrigger(row: TemplatePointRow, trigger: CalcTrigger): Tem
 const DIALECT_LABELS: Readonly<Record<CalcDialect, string>> = {
   [CALC_DIALECT]: `${CALC_DIALECT} — this asset's own points`,
   [CALC_DIALECT_V2]: `${CALC_DIALECT_V2} — cross-asset: aggregates over @site / @domain / @group, and {CODE.key}`,
-  // ADR 0070 decision 4 — the `E4.1a` label; `U10` widens the editor help.
-  [CALC_DIALECT_V3]: `${CALC_DIALECT_V3} — everything in v2, plus $key parameters from the calc parameter store`,
+  // ADR 0070 decision 4 (`E4.1a`).
+  [CALC_DIALECT_V3]: `${CALC_DIALECT_V3} — cross-asset plus parameters: $key reads a value from Calc Parameters`,
 };
+
+/**
+ * ADR 0070's Consequences: the editor's help must say the latency. A
+ * parameter is read once per sweep at the tick, and a `$key` with no value in
+ * scope at that instant writes nothing — the sweep counts it as
+ * `parameter_unset` — so the author is told both before they save.
+ */
+export const V3_TRIGGER_LATENCY_HINT =
+  "Runs on a schedule only. A parameter is read once per sweep at the tick, so the value is at " +
+  "most one interval old; a $key with no value in scope at that instant writes nothing and is " +
+  "counted as parameter_unset.";
+
+/** The one `v3` form, taught under the Grammar select (ADR 0070 decision 2's resolution order). */
+export const V3_PARAMETER_HELP =
+  "$key — a named parameter (tariff, factor, baseline, rating) from /admin/calc-parameters; " +
+  "nearest scope wins: asset, then location, then organization.";
 
 /**
  * The dialect `<select>`'s options, from `CALC_DIALECTS` and in its order.

@@ -5,6 +5,7 @@ import {
   runAssetGroupScopePredicateTests,
   runAssetTemplateTabTests,
   runDashboardAuthoringPredicateTests,
+  runCalcParameterPredicateTests,
   runLocationScopePredicateTests,
   runNotificationTabTests,
 } from "./admin-access.spec";
@@ -33,5 +34,9 @@ describe("admin-access", () => {
 
   it("offers the location dashboard scope to the three master-data roles only", () => {
     runLocationScopePredicateTests();
+  });
+
+  it("gates calc parameter writes by role, and the organization scope by the two global roles (E4.1a)", () => {
+    runCalcParameterPredicateTests();
   });
 });

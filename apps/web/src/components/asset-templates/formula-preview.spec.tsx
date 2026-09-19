@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect } from "vitest";
 
-import { CALC_DIALECT, CALC_DIALECT_V2 } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECT_V3 } from "@bms/shared";
 
 import { FormulaPreview } from "./formula-preview";
 
@@ -28,7 +28,7 @@ import { FormulaPreview } from "./formula-preview";
  */
 
 const MISSING_AGGREGATE =
-  "no sample value for a referenced point or cross-asset reference at character 0";
+  "no sample value for a referenced point, cross-asset reference or parameter at character 0";
 
 const sampleFor = (label: string) =>
   screen.getByRole("spinbutton", { name: `Sample value for ${label}` }) as HTMLInputElement;
@@ -136,4 +136,26 @@ export function eachCrossReferenceFormIsLabelledAsWritten(): void {
   expect(sampleFor("sum(kw) @group('IT_LOAD')")).toBeInTheDocument();
   expect(sampleFor("TX_01.kwh")).toBeInTheDocument();
   expect(sampleInputs()).toHaveLength(2);
+}
+
+/**
+ * Case 7 — `bms-calc-v3` (ADR 0070; `E4.1a` U10): a `$key` is its own sample
+ * row, labelled as the author wrote it (`$energy_tariff_per_kwh`), beside the
+ * local row; filling both computes, and with the parameter row empty the
+ * result line names a parameter at the `$`. Under `v2` the same text renders
+ * nothing (the `$` does not lex) — the dialect prop is what opens the row.
+ */
+export function aV3FormulaRendersAParameterRowAndComputes(): void {
+  render(<FormulaPreview expression="{kw} * $energy_tariff_per_kwh" dialect={CALC_DIALECT_V3} />);
+
+  expect(sampleInputs()).toHaveLength(2);
+  fireEvent.change(sampleFor("kw"), { target: { value: "10" } });
+  expect(result()).toHaveTextContent("parameter at character 7");
+  fireEvent.change(sampleFor("$energy_tariff_per_kwh"), { target: { value: "2.15" } });
+  expect(result()).toHaveTextContent("= 21.5");
+}
+
+export function aV3FormulaUnderV2RendersNothing(): void {
+  render(<FormulaPreview expression="{kw} * $energy_tariff_per_kwh" dialect={CALC_DIALECT_V2} />);
+  expect(sampleInputs()).toHaveLength(0);
 }

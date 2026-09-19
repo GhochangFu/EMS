@@ -152,6 +152,39 @@ export function canChooseLocationDashboardScope(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin" || role === "location_admin";
 }
 
+/**
+ * Whether the role may create, edit or delete calc parameters at all
+ * (`E4.1a`, ADR 0070 decision 2; plan design decision 11).
+ *
+ * `= isMasterDataAdmin`, and deliberately restated rather than aliased, on the
+ * rule `canManageNotificationChannels` above records: the two answer different
+ * questions. The API gates a write by the ROW's scope (`canManageOrganization`
+ * / `canManageLocation` / `canManageAsset`), so every master-data role writes
+ * something; which scopes the form offers is
+ * `canWriteOrganizationScopedCalcParameter` below.
+ */
+export function canWriteCalcParameters(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin" || role === "location_admin";
+}
+
+/**
+ * Whether the role is offered the ORGANIZATION scope for a calc parameter —
+ * both `locationId` and `assetId` null (`E4.1a`, plan design decision 11).
+ *
+ * Mirrors the roles `AccessControlService.canManageOrganization` admits. A
+ * `location_admin` writing an organization-scoped row is a 403, so
+ * `calc-parameters-page.tsx` reads this to decide whether the Organization
+ * radio exists in the DOM — absent, never disabled and never clamped on
+ * submit, per `F3.1d` §6.2's "forms, not buttons".
+ *
+ * **Deliberately its own predicate** although its body equals
+ * `canCreateOrganizationWideDashboard` today (the `canManageNotificationChannels`
+ * rule): a future change to either must not silently move the other.
+ */
+export function canWriteOrganizationScopedCalcParameter(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
 /** Default admin landing route for a role. */
 export function defaultAdminRoute(role: UserRole): string {
   if (role === "admin" || role === "organization_admin") {
@@ -192,6 +225,12 @@ export const masterDataTabs = [
   { label: "Asset Points", path: "/admin/asset-points" },
   { label: "Manual Entry", path: "/admin/manual-readings" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
+  // `E4.1a` (ADR 0070 decision 2). Ungated, like Asset Groups above: the API
+  // gates a write by the row's scope, so a `location_admin` writes location
+  // and asset scope for its own location and is refused the rest by the
+  // server. The organization option is hidden inside the form by
+  // `canWriteOrganizationScopedCalcParameter`, never by the tab.
+  { label: "Calc Parameters", path: "/admin/calc-parameters" },
   { label: "Import Telemetry", path: "/admin/telemetry/import" },
   // `F3.8` (ADR 0041 decision 10), re-gated by `E7.1d` (ADR 0043
   // Consequences). These were `globalAdminOnly` while every channel route ran

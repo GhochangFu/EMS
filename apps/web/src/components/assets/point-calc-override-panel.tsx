@@ -20,7 +20,7 @@
  * the one thing the tab edits and this panel only shows: ADR 0055 decision 11
  * refuses a per-asset override, so it is a line in the table, not a field.
  */
-import { CALC_TRIGGERS, isCrossAssetDialect } from "@bms/shared";
+import { CALC_TRIGGERS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
 import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import {
@@ -34,7 +34,7 @@ import {
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
 import { V2_REFERENCE_FORMS } from "../../lib/formula-editor-rules";
-import { V2_TRIGGER_LATENCY_HINT, dialectOptions } from "../../lib/template-calc-config";
+import { V2_TRIGGER_LATENCY_HINT, V3_PARAMETER_HELP, V3_TRIGGER_LATENCY_HINT, dialectOptions } from "../../lib/template-calc-config";
 
 type Props = {
   config: AssetPointCalcConfigDto;
@@ -73,6 +73,8 @@ export function PointCalcOverridePanel({
   // because every branch below reads it as "not v1".
   const merged = mergedDialect(draft, config);
   const isV2 = merged !== null && isCrossAssetDialect(merged);
+  // `v3` only (ADR 0070): the `$key` help line and its own latency hint.
+  const isV3 = merged !== null && isParameterDialect(merged);
 
   return (
     <div className="rounded border border-gray-200 p-3">
@@ -163,6 +165,7 @@ export function PointCalcOverridePanel({
                 <code className="rounded bg-gray-100 px-1">{form.example}</code>
               </li>
             ))}
+            {isV3 ? <li>{V3_PARAMETER_HELP}</li> : null}
           </ul>
         ) : null}
         <label className="text-xs">
@@ -185,7 +188,9 @@ export function PointCalcOverridePanel({
             ))}
           </select>
           {isV2 ? (
-            <span className="mt-1 block text-[11px] text-bms-muted">{V2_TRIGGER_LATENCY_HINT}</span>
+            <span className="mt-1 block text-[11px] text-bms-muted">
+              {isV3 ? V3_TRIGGER_LATENCY_HINT : V2_TRIGGER_LATENCY_HINT}
+            </span>
           ) : null}
         </label>
         <label className="text-xs">

@@ -317,6 +317,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // from the step object (the server assigns it from the position), which is
   // exactly the key a client would try to send: stripped and answered 200, it
   // reads as "my numbering was accepted".
+  createCalcParameterBodySchema: STRICT(CALLER_ERROR),
   createEscalationProfileBodySchema: STRICT(CALLER_ERROR),
   "createEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   createLocationBodySchema: STRICT(CALLER_ERROR),
@@ -454,6 +455,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
       "succeeded'. Note the gap was only ever the mixed body: `{\"organizationId\":\"…\"}` " +
       "alone already 400d, because the non-empty `.refine()` runs after stripping.",
   ),
+  updateCalcParameterBodySchema: STRICT(CALLER_ERROR),
   updateOrganizationBodySchema: STRICT(CALLER_ERROR),
   updatePointKeyBodySchema: STRICT(CALLER_ERROR),
   // `F3.40`. `code` is deliberately absent from this body — it is the primary

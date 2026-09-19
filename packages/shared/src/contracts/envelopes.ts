@@ -26,6 +26,8 @@ import {
   adminPointKeyDtoSchema,
   adminRtuDtoSchema,
   assetPointCalcConfigDtoSchema,
+  calcParameterDtoSchema,
+  calcParameterKeyDtoSchema,
   stockAssetTemplateDtoSchema,
   templateMigrationAssetDtoSchema,
   templateMigrationRefusalDtoSchema,
@@ -160,6 +162,11 @@ export const stockDashboardTemplatesListResponseSchema = itemsOf(stockDashboardT
  * sibling of `stockDashboardTemplatesListResponseSchema` immediately above.
  */
 export const stockAssetTemplatesListResponseSchema = itemsOf(stockAssetTemplateDtoSchema);
+
+/** `E4.1a` (ADR 0070 decision 2) — `GET /admin/calc-parameters/keys`, the active vocabulary. */
+export const calcParameterKeysListResponseSchema = itemsOf(calcParameterKeyDtoSchema);
+/** `E4.1a` (ADR 0070 decision 2) — `GET /admin/calc-parameters?organizationId=`. */
+export const calcParametersListResponseSchema = itemsOf(calcParameterDtoSchema);
 
 /**
  * `POST /admin/asset-templates/:id/migration-preview` — decision 2's "no blind

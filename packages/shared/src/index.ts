@@ -489,6 +489,10 @@ export type AdminAssetTemplateSummaryDto = z.infer<
 export type StockTemplatePointDto = z.infer<typeof A.stockTemplatePointDtoSchema>;
 /** `F2.13` / ADR 0052 — one entry of the asset-template stock catalog. */
 export type StockAssetTemplateDto = z.infer<typeof A.stockAssetTemplateDtoSchema>;
+/** `E4.1a` / ADR 0070 decision 2 — one row of the calc parameter vocabulary. */
+export type CalcParameterKeyDto = z.infer<typeof A.calcParameterKeyDtoSchema>;
+/** `E4.1a` / ADR 0070 decision 2 — one `bms.calc_parameters` row with its scope labels. */
+export type CalcParameterDto = z.infer<typeof A.calcParameterDtoSchema>;
 export type InstantiatedAssetDto = z.infer<typeof A.instantiatedAssetDtoSchema>;
 /** The result of one instantiate call — the whole batch or nothing. */
 export type AssetInstantiationResultDto = z.infer<
@@ -624,6 +628,14 @@ export type StockDashboardTemplatesListResponse = z.infer<
 /** `F2.13` (ADR 0052) — the repository's asset-template stock catalog. */
 export type StockAssetTemplatesListResponse = z.infer<
   typeof E.stockAssetTemplatesListResponseSchema
+>;
+/** `E4.1a` (ADR 0070 decision 2) — the active calc parameter vocabulary. */
+export type CalcParameterKeysListResponse = z.infer<
+  typeof E.calcParameterKeysListResponseSchema
+>;
+/** `E4.1a` (ADR 0070 decision 2) — one organization's calc parameter rows. */
+export type CalcParametersListResponse = z.infer<
+  typeof E.calcParametersListResponseSchema
 >;
 /** `F2.6` (ADR 0039) — decision 2's preview. Writes nothing. */
 export type TemplateMigrationPreviewResponse = z.infer<

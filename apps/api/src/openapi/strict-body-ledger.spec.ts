@@ -44,6 +44,11 @@ import {
   setCredentialsBodySchema,
 } from "../admin/onboarding/onboarding.schema";
 import {
+  createCalcParameterBodySchema,
+  listCalcParametersQuerySchema,
+  updateCalcParameterBodySchema,
+} from "../admin/calc-parameters/calc-parameters.schema";
+import {
   createOrganizationBodySchema,
   updateOrganizationBodySchema,
 } from "../admin/organizations/organizations.schema";
@@ -218,6 +223,11 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `asset_group_members_role_fkey`, so a rename is not an edit.
   createAssetRoleBodySchema,
   updateAssetRoleBodySchema,
+  // `E4.1a` (ADR 0070 decision 2). Both `.strict()`: a caller sending a field
+  // the store does not have — or, on PATCH, one of the three immutable fields
+  // `key`/`organizationId`/scope — must get a 400 rather than have it dropped.
+  createCalcParameterBodySchema,
+  updateCalcParameterBodySchema,
   createLocationBodySchema,
   createMaintenanceScheduleBodySchema,
   createNotificationChannelBodySchema,
@@ -298,6 +308,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
  */
 export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   mappingSheetQuerySchema,
+  // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
+  // no ledger entry, the `mappingSheetQuerySchema` precedent.
+  listCalcParametersQuerySchema,
   listDashboardTemplatesQuerySchema,
   assetHealthQuerySchema,
   auditExportQuerySchema,
@@ -763,6 +776,12 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // skipped for the `F4.20` reason the entries above give: the parameter that
   // picks the organization must be discoverable from the served document.
   //
+  //
+  // 16 -> 17: `E4.1a` registered `listCalcParametersQuerySchema`
+  // (`GET /admin/calc-parameters`, ADR 0070 decision 2): a required
+  // `organizationId` and an optional `key`, `.strict()`, no body. The two
+  // bodies that row adds are in `BODY_SCHEMAS` above with a decision each.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -772,7 +791,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(16);
+  ).toBe(17);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
