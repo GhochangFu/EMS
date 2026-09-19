@@ -139,8 +139,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    nearest scope wins; the money row carries the empty-string unit — the
  *    amount is in `bms.organizations.currency`; (2) a `today` window needs
  *    the location's time zone (`locations.timezone`), `timezone_unset`
- *    otherwise, and at the first tick after local midnight `hours(today)` is
- *    `0` so the saving row refuses `non_finite` for one tick; (3) every row is
+ *    otherwise, and at the first tick after local midnight the `today` window
+ *    is empty, so every `today` row refuses `window_empty` for one tick — the
+ *    scheduler resolves the window reads before `evaluate()`, so no division
+ *    by `hours(today) = 0` is ever reached; (3) every row is
  *    `scheduled` at 60 s — at most one tick old — with `minCoverageRatio`
  *    `null`, fail closed; (4) the flow is tier C, so no `missing_input` arises
  *    on a correctly mapped asset.

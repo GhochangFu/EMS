@@ -203,7 +203,12 @@ describe("ADR 0055 part (b) — every stock-catalog v1 formula literal parses id
 
   it("excluded the v3 literals (E4.1c) from both sets, and there are at least 35 of them", () => {
     expect(v3Excluded.length).toBeGreaterThanOrEqual(35);
-    expect(v3Excluded.every((entry) => !entry.v2)).toBe(true);
+    // The exclusion is real, not nominal: every v3 literal fails the v1 parser
+    // (a `$key` or a window is v3 syntax), so leaving one in part (b)'s set
+    // would have been a red, and none is in that set.
+    const inV1Set = new Set(allLiterals);
+    expect(v3Excluded.filter((entry) => inV1Set.has(entry.literal))).toEqual([]);
+    expect(v3Excluded.filter((entry) => parseFormula(entry.literal).ok).map((entry) => entry.literal)).toEqual([]);
   });
 
   it.each(literalsByFile.filter((entry) => entry.literals.length > 0))(

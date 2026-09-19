@@ -280,15 +280,16 @@ export function assertNotRequiredNoMeta(): void {
 
 /**
  * Every `$key` is one of the twelve `0074` codes, and every formula parses
- * under `v3` inside `MAX_FORMULA_WINDOWS`. The plan's (a′) invariant test
- * (U12) holds the same claim over the whole catalog; this one is the feeder's
- * own, so a misspelt key goes red HERE, in the class spec, before the
- * repository-wide scan runs.
+ * under `v3` inside `MAX_FORMULA_WINDOWS` — read from the ENTRY's six rows,
+ * never from this file's table, so a misspelt key in the module goes red HERE
+ * on its own claim (naming the key), not only through the pinned text. The
+ * plan's (a′) invariant test (U12) holds the same claim over the whole
+ * catalog.
  */
 export function assertParamRefsAreVocabulary(): void {
   const bad: string[] = [];
-  for (const [pointKey, formula] of E41C_FEEDER_FORMULAS) {
-    const parsed = parseFormula(formula, { dialect: CALC_DIALECT_V3 });
+  for (const { pointKey, formula } of sixOf()) {
+    const parsed = parseFormula(formula ?? "", { dialect: CALC_DIALECT_V3 });
     if (!parsed.ok) {
       bad.push(`${pointKey} does not parse under ${CALC_DIALECT_V3}: ${parsed.errors.map((e) => e.code).join(", ")}`);
       continue;

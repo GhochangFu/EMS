@@ -182,8 +182,11 @@ import type { StockAssetTemplateEntry } from "./types";
  *      2. **A `today` window needs the location's time zone**
  *         (`locations.timezone`, ADR 0070 Amendment 1); an asset at a
  *         location without one refuses `timezone_unset`. At the first tick
- *         after local midnight `hours(today)` is `0` and
- *         `energy_saving_vs_baseline_pct` refuses `non_finite` for one tick.
+ *         after local midnight the `today` window is empty, so the three
+ *         `today` rows refuse `window_empty` for one tick — the scheduler
+ *         resolves every window read before `evaluate()`, so the division by
+ *         `hours(today) = 0` in `energy_saving_vs_baseline_pct` is never
+ *         reached.
  *      3. **The value is at most one 60 s tick old** — every row is
  *         `scheduled`, the ADR 0055 decision 10 cost; `minCoverageRatio` is
  *         `null`, fail closed.
