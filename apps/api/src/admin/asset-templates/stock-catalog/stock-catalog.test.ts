@@ -18,7 +18,8 @@ import { runStockAssetTemplateCatalogTests } from "./stock-catalog.spec";
  * its own name-sibling.
  */
 describe("stock asset-template catalog (F2.13, ADR 0052)", () => {
-  it("ships entries that parse under both contracts, and the feeder class matches its tag list", () => {
+  // The feeder's tag-list block is `electrical-classes-3.test.ts`'s since E4.1c.
+  it("ships entries that parse under both contracts", () => {
     runStockAssetTemplateCatalogTests();
   });
 });
