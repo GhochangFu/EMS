@@ -278,11 +278,10 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     "part_load_pct",
   ],
   // §6 — an attribute, a time window, and a meter §6 does not list.
+  // §6 — E4.1c DISCHARGED `fan_energy_kwh_day` (`sum({kw}, 24h)`). What stays:
   "hvac-ahu": [
     // the clean and dirty pressure-drop band is per filter class — an attribute.
     "filter_life_pct",
-    // kWh per day is a window.
-    "fan_energy_kwh_day",
     // needs CHW flow AT THE COIL, and §6 declares none; the AHU has the two
     // water temperatures and no flow, so the coil duty is not expressible.
     "cooling_delivered_kw",

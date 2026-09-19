@@ -12,10 +12,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 
 /**
@@ -124,10 +126,13 @@ const AHU_POINTS: readonly PointRow[] = [
   ["run_hours_h", "core", "h"],
   ["sat_deviation_c", "derived", "°C"],
   ["coil_delta_t_c", "derived", "°C"],
+  // E4.1c: one v3 row over the unit's input power (plan §3.7)
+  ["fan_energy_kwh_day", "derived", "kWh"],
 ];
 
 /**
- * §6's two expressible derived codes, as literal strings (plan §5.0).
+ * §6's two expressible derived codes, as literal strings (plan §5.0), then
+ * `E4.1c`'s one `bms-calc-v3` row (plan §3.7) at the default input age.
  *
  * `sat_deviation_c` is **the G36 AFDD quantity this entry exists to make
  * reviewable**: supply air temperature minus its setpoint, both tier C, so it
@@ -151,6 +156,7 @@ const AHU_POINTS: readonly PointRow[] = [
 const AHU_DERIVED: readonly DerivedRow[] = [
   ["sat_deviation_c", "{supply_air_temp_c} - {supply_air_temp_sp_c}", null],
   ["coil_delta_t_c", "{chw_return_temp_c} - {chw_supply_temp_c}", null],
+  ["fan_energy_kwh_day", "sum({kw}, 24h)", null],
 ];
 
 /**
@@ -235,17 +241,17 @@ function assertOneFormulaTwoCodes(): void {
  */
 function checkAhu(): void {
   const entry = requireStockEntry(AHU_CODE);
-  assertEntryIdentity(AHU_CODE, entry, "ahu", "hvac");
+  assertEntryIdentity(AHU_CODE, entry, "ahu", "hvac", 2);
 
-  // ---- 28 points, 13 core + 13 extended + 0 manual + 2 derived ------------
+  // ---- 29 points, 13 core + 13 extended + 0 manual + 3 derived (1 E4.1c) --
 
   assert(
     tierCount(entry, "core") === 13 &&
       tierCount(entry, "extended") === 13 &&
       tierCount(entry, "manual") === 0 &&
-      tierCount(entry, "derived") === 2,
-    `§6 marks 13 rows C and 13 X, has no M row, and two of its five derived codes are authored — ` +
-      `13/13/0/2. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      tierCount(entry, "derived") === 3,
+    `§6 marks 13 rows C and 13 X, has no M row; two of its five derived codes are authored plus ` +
+      `E4.1c's one v3 row — 13/13/0/3. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(AHU_CODE, "§6", entry, AHU_POINTS);
@@ -789,4 +795,20 @@ function checkBoiler(): void {
 export function runMechanicalClassEntryTests3(): void {
   checkAhu();
   checkBoiler();
+}
+
+// ---- E4.1c — the bms-calc-v3 AHU row (ADR 0070 decision 8) ---------------
+//
+// Pinned through `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// `fan_energy_kwh_day` is the ledger record discharged under its own name:
+// `sum({kw}, 24h)` — kW summed over hours is kWh. `kw` is tier X on the AHU,
+// so an asset without it refuses `missing_input`, visibly.
+
+/** hvac-ahu — plan §3.7, sortOrder 28. */
+const AHU_E41C: readonly SustainabilityRow[] = [
+  ["fan_energy_kwh_day", "sum({kw}, 24h)", "kWh"],
+];
+
+export function e41cAhuClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return sustainabilityClaims(AHU_CODE, requireStockEntry(AHU_CODE), AHU_E41C, 28, 2);
 }

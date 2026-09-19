@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -24,9 +24,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * convention existed in this vocabulary before this pack; §6 spells it with an
  * `_sp_` infix and the entry follows the document.
  *
- * **28 POINTS — 13 core + 13 extended + 0 manual + 2 DERIVED.** §6's 26 table
+ * **29 POINTS — 13 core + 13 extended + 0 manual + 3 DERIVED.** §6's 26 table
  * rows in the document's own order (`sortOrder` 0-25), then the two authored
- * derived codes (26-27). **No `M` row at all**, the first entry in the pack with
+ * `E5.2` derived codes (26-27) and `E4.1c`'s one `bms-calc-v3` row (28,
+ * VERSION HISTORY v2). **No `M` row at all**, the first entry in the pack with
  * none since the VFD: everything §6 lists is read by the unit's own controller.
  *
  * **NINE OF THE TWENTY-SIX ROWS ARE REUSED CODES — REFERENCED AND NEVER
@@ -99,8 +100,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * merge would silently edit the handout before anybody read it. The entry spec
  * asserts the pair from this side, so a later "tidy" has to read the reason.
  *
- * **DIVISION BY ZERO CANNOT ARISE HERE AND NOTHING IS GUARDED ANYWAY.** Both
- * formulas are subtractions, so neither has a denominator; `evaluate.ts` still
+ * **DIVISION BY ZERO CANNOT ARISE HERE AND NOTHING IS GUARDED ANYWAY.** The two `E5.2`
+ * formulas are subtractions and `E4.1c`'s is a sum, so none has a denominator; `evaluate.ts` still
  * returns `non_finite` for any non-finite intermediate, which is the correct
  * answer everywhere in this pack. **Neither overrides `maxInputAgeSeconds`**: the
  * air temperatures, the setpoint and the two water temperatures all arrive from
@@ -108,17 +109,19 @@ import type { StockAssetTemplateEntry } from "./types";
  * spec asserts `null` on both, so a "helpful" override is a test failure with a
  * reason.
  *
- * **THREE DERIVED CODES ARE DEFERRED AND NAMED, never placeholdered** (ADR 0053
+ * **TWO DERIVED CODES ARE DEFERRED AND NAMED, never placeholdered** (ADR 0053
  * decision 6; ADR 0051 Amendment 6 decision 8). `stock-catalog-deferrals.spec.ts`
- * holds the list and asserts this entry declares none of them:
+ * holds the list and asserts this entry declares none of them. The third of
+ * `E5.2`'s deferrals left the ledger in `E4.1c` (ADR 0070 decision 8, plan
+ * §3.7/§3.9): `fan_energy_kwh_day` is **authored** as `sum({kw}, 24h)` —
+ * kW summed over the trailing 24 h of hours is kWh; `kw` is tier X, so an
+ * asset without it refuses `missing_input`, visibly. The two that stay:
  *
  *  - **An asset attribute** — `filter_life_pct`. A percentage of filter life
  *    needs the clean and the dirty pressure-drop band, which is per filter class
  *    and per manufacturer, and an attribute table is not a point. The measurement
  *    is `filter_dp_pa`, the alarm on it is `filter_dp_high`, and the
  *    condition_based plan below is what the percentage would have been for.
- *  - **A time window** — `fan_energy_kwh_day`. Kilowatt-hours per day is a
- *    window and `bms-calc-v1` has no state.
  *  - **A meter the section does not list** — `cooling_delivered_kw`. The coil's
  *    duty is flow × ΔT, and §6 declares the two chilled-water temperatures and
  *    **no flow at the coil**. This is the honest half of the ΔT above: the AHU
@@ -179,6 +182,15 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `hvac-ahu` **v1** (2026-09-03, `E5.2`): authored from
  *    `e5.2-derived-taglist-v1.md` §6, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `hvac-ahu` **v2** (2026-09-19, `E4.1c`): one `bms-calc-v3` derived
+ *    point appended at `sortOrder` 28 (plan §3.7) — `fan_energy_kwh_day`.
+ *    Four things an importing tenant must know: (1) the row reads no `$key`,
+ *    so it never waits on `/admin/calc-parameters`; (2) the rolling `24h`
+ *    window needs no time zone; (3) the row is `scheduled` at 60 s — at most
+ *    one tick old — with `minCoverageRatio` `null`, fail closed; (4) `kw` is
+ *    tier X, so an asset without it refuses `missing_input`, visibly.
+ *    Nothing on a stack is mutated by the bump — a re-import opens the next
+ *    version, still stamped.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (ahu_status, ahu_fault, supply_air_temp_c, supply_air_temp_sp_c, return_air_temp_c, duct_static_pa, fan_speed_pct, filter_dp_pa), plus one
@@ -202,11 +214,12 @@ export const HVAC_AHU: StockAssetTemplateEntry = {
     "routines compare a reading against what the controller is holding. Authored from " +
     "docs/e5.2-derived-taglist-v1.md §6 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required and X optional; alarm rows carry a meaning and " +
-    "no limit, because the bands are set per site at commissioning. Two derived points — the " +
-    "supply-air deviation from setpoint and the coil chilled-water delta-T — are computed from " +
-    "the measured rows. The section carries no fan run status, so the fan alarm binds the fan " +
-    "motor current and the missing row is a redline for the client's review.",
-  stockVersion: 1,
+    "no limit, because the bands are set per site at commissioning. Three derived points — the " +
+    "supply-air deviation from setpoint, the coil chilled-water delta-T and E4.1c's fan energy " +
+    "over the trailing 24 h — are computed from the measured rows. The section carries no fan " +
+    "run status, so the fan alarm binds the fan motor current and the missing row is a redline " +
+    "for the client's review.",
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -677,6 +690,18 @@ export const HVAC_AHU: StockAssetTemplateEntry = {
       unit: "°C",
       required: false,
       sortOrder: 27,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. One `bms-calc-v3` row,
+    // scheduled at 60 s, `minCoverageRatio` null (fail closed), no `meta`. The
+    // window read is inline (design decision 6); `kw` is tier X (declared, not
+    // required), which is legal and refuses `missing_input` where absent.
+    {
+      ...derived("sum({kw}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "fan_energy_kwh_day",
+      label: "Fan energy, trailing 24 h",
+      unit: "kWh",
+      required: false,
+      sortOrder: 28,
     },
   ],
 };
