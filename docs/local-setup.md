@@ -253,8 +253,6 @@ JWT_TTL=8h
 AUTH_MODE=local
 PORT=4000
 LOG_LEVEL=info
-# Optional — indicative Energy Centre cost (ZAR/kWh); default 2.15 in code
-# ENERGY_TARIFF_ZAR_PER_KWH=2.15
 
 # ADR 0063 (F4.24). Optional for the API — unset, `GET /health` reports
 # `queue.configured: false` and `enqueue` rejects `QueueUnavailableError`
