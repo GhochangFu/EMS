@@ -13,6 +13,8 @@ import {
   HVAC_POINT_KEYS,
   MECHANICAL_CLASS_POINT_KEYS,
   METERED_PUMPING_POINT_KEYS,
+  SUSTAINABILITY_ELECTRICAL_POINT_KEYS,
+  SUSTAINABILITY_WATER_POINT_KEYS,
   VERTICAL_TRANSPORT_CLASS_POINT_KEYS,
   WATER_CLASS_POINT_KEYS,
 } from "@bms/shared";
@@ -719,6 +721,29 @@ const UNIT_BY_KEY: Record<string, string> = {
   standby_hours_h: "h",
   step_chain_elongation_pct: "%",
   kwh_per_run_hour: "kWh/h", // E5.3: derived, formula in mechanical-escalator.ts — §12 ruling 7
+  // `E4.1c` / ADR 0070 decision 8 — `SUSTAINABILITY_ELECTRICAL_POINT_KEYS` +
+  // `SUSTAINABILITY_WATER_POINT_KEYS`, 19 entries, exactly as plan §3.7 spells
+  // them. Money is `""` (the organization's currency is the tenant's, not the
+  // code's — plan Q8); a per-day count is `""` too.
+  energy_cost_per_h: "",
+  co2_kg_per_h: "kg/h",
+  energy_cost_today: "",
+  co2_kg_today: "kg",
+  energy_saving_vs_baseline_pct: "%",
+  demand_vs_contract_pct: "%",
+  tap_changes_per_day: "",
+  fuel_hours_remaining_h: "h",
+  downtime_h_24h: "h",
+  availability_pct_24h: "%",
+  starts_per_day: "",
+  co2_avoided_kg_today: "kg",
+  performance_ratio_pct: "%",
+  specific_yield_kwh_kwp_day: "kWh/kWp/day",
+  capacity_utilization_pct: "%",
+  steps_per_day: "",
+  kl_today: "KL",
+  water_cost_today: "",
+  water_saving_vs_baseline_pct: "%",
 };
 
 function titleCase(code: string): string {
@@ -857,6 +882,15 @@ const GLOBAL_CATALOG: PointKeySeed[] = [
   // domain, and all 102 were checked against every code in `GLOBAL_CATALOG`
   // with zero overlap.
   ...keysForDomain(VERTICAL_TRANSPORT_CLASS_POINT_KEYS, "mechanical"),
+  // `E4.1c` — the sustainability codes (ADR 0070 decision 8), AFTER every pack
+  // array and from a third shared file. None of the 19 pre-exists (`load_pct`,
+  // which the DG set authors, is the UPS's and is not redeclared). A code
+  // declared here and authored by another pack's entry (`availability_pct_24h`,
+  // `starts_per_day` on the pump, lift and escalator in PR 2b) keeps THIS
+  // domain — the `load_pct` rule; the per-code clash check in
+  // `tests/f3.39-global-point-key-vocabulary.test.ts` holds.
+  ...keysForDomain(SUSTAINABILITY_ELECTRICAL_POINT_KEYS, "electrical"),
+  ...keysForDomain(SUSTAINABILITY_WATER_POINT_KEYS, "water"),
 ];
 
 /**

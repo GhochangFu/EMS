@@ -76,6 +76,9 @@ const PILOT_SEED_REL = "packages/db/src/phe-pilot-seed.ts";
 const POINT_KEY_SOURCE_RELS = [
   "packages/shared/src/constants.ts",
   "packages/shared/src/facility-point-keys.ts",
+  // E4.1c (ADR 0070 decision 8): the third file — constants.ts is at 974
+  // lines against the §4.5 cap, the facility-point-keys.ts precedent.
+  "packages/shared/src/sustainability-point-keys.ts",
 ] as const;
 
 /**
@@ -89,6 +92,11 @@ const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   // 3 since E5.3 PR 2: VERTICAL_TRANSPORT_CLASS_POINT_KEYS joins
   // FACILITY_CLASS_POINT_KEYS and ENVIRONMENT_CLASS_POINT_KEYS in this file.
   "packages/shared/src/facility-point-keys.ts": 3,
+  // 2 since E4.1c PR 2a: SUSTAINABILITY_ELECTRICAL_POINT_KEYS and
+  // SUSTAINABILITY_WATER_POINT_KEYS (5 once PR 2b appends the mechanical, HVAC
+  // and facility arrays). This floor counts ARRAYS, not codes — f3.38's 19 is
+  // the code floor for the same file.
+  "packages/shared/src/sustainability-point-keys.ts": 2,
 };
 
 /** The sources as one list, for an assertion message. */
@@ -556,6 +564,13 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // `mechanical`, the `HVAC_CLASS_POINT_KEYS` precedent, not an append to
       // `MECHANICAL_CLASS_POINT_KEYS` (plan §12 ruling 1).
       VERTICAL_TRANSPORT_CLASS_POINT_KEYS: "mechanical",
+      // `E4.1c` PR 2a, in `sustainability-point-keys.ts` (ADR 0070 decision 8):
+      // one array per domain because `keysForDomain` takes one domain. A code
+      // declared here and authored by another pack's entry keeps this domain
+      // (the `load_pct` rule). PR 2b adds the mechanical, HVAC and facility
+      // arrays.
+      SUSTAINABILITY_ELECTRICAL_POINT_KEYS: "electrical",
+      SUSTAINABILITY_WATER_POINT_KEYS: "water",
     };
 
     /**
