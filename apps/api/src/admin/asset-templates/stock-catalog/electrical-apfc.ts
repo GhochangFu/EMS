@@ -135,7 +135,8 @@ import type { StockAssetTemplateEntry } from "./types";
  *    derived point appended at `sortOrder` 14 — `steps_per_day =
  *    delta({step_operation_count}, 24h)`, the ledger promotion (ADR 0070
  *    decision 8). What an importing tenant must know: `scheduled` at 60 s, so
- *    at most one tick old; `minCoverageRatio` `null` (fail closed);
+ *    at most one tick old; no coverage guard applies (`minCoverageRatio`
+ *    governs a `@scope` aggregate only, ADR 0055 decision 11);
  *    `step_operation_count` is tier X, so an asset without it refuses
  *    `missing_input`; a rolling `24h` needs no time zone; no `$key`.
  *

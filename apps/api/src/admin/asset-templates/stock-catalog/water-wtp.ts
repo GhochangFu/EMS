@@ -140,8 +140,9 @@ import type { StockAssetTemplateEntry } from "./types";
  *    is empty, so every `today` row refuses `window_empty` for one tick — the
  *    scheduler resolves the window reads before `evaluate()`, so no division
  *    by `hours(today) = 0` is ever reached; (3) every row is
- *    `scheduled` at 60 s — at most one tick old — with `minCoverageRatio`
- *    `null`, fail closed; (4) the flow is tier C, so no `missing_input` arises
+ *    `scheduled` at 60 s — at most one tick old — with no coverage guard
+ *    applying (`minCoverageRatio` governs a `@scope` aggregate only, ADR
+ *    0055 decision 11); (4) the flow is tier C, so no `missing_input` arises
  *    on a correctly mapped asset.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
