@@ -43,6 +43,13 @@ const MIGRATION_REL = "packages/db/drizzle/0057_global_point_key_vocabulary.sql"
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const SCHEMA_REL = "packages/db/src/schema/bms-schema.ts";
 const SEED_REL = "packages/db/src/point-keys-seed.ts";
+/**
+ * `UNIT_BY_KEY` moved out of the seed in `E4.1c` PR 2b (a §4.5 gate: the seed
+ * was at 988 lines and the ten mechanical / HVAC / facility units cross the
+ * cap). The table test below reads THIS path; the `keysForDomain` pin and the
+ * `INSERT` scan keep reading `SEED_REL`, where both still live.
+ */
+const UNITS_REL = "packages/db/src/point-key-units.ts";
 const CONTRACT_REL = "packages/shared/src/contracts/admin.ts";
 const BODY_SCHEMA_REL = "apps/api/src/admin/point-keys/point-keys.schema.ts";
 const SERVICE_REL = "apps/api/src/admin/point-keys/point-keys.service.ts";
@@ -652,9 +659,9 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
      * top-level `tests/` project has no workspace dependency on `@bms/db`.
      */
     it("every catalogued point key has a UNIT_BY_KEY entry", () => {
-      const seed = tsOnly(read(SEED_REL));
-      const table = /const UNIT_BY_KEY: Record<string, string> = \{([\s\S]*?)\n\};/.exec(seed);
-      expect(table, `no UNIT_BY_KEY table parsed out of ${SEED_REL}`).not.toBeNull();
+      const unitsSource = tsOnly(read(UNITS_REL));
+      const table = /const UNIT_BY_KEY: Record<string, string> = \{([\s\S]*?)\n\};/.exec(unitsSource);
+      expect(table, `no UNIT_BY_KEY table parsed out of ${UNITS_REL}`).not.toBeNull();
       const units = new Set(
         [...table![1]!.matchAll(/^\s*([a-z0-9_]+):/gm)].map((m) => m[1]!),
       );
@@ -688,7 +695,7 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       }
       expect(
         [...new Set(missing)].sort(),
-        `${SEED_REL} catalogues a point key with no UNIT_BY_KEY entry, so keysForDomain ` +
+        `${SEED_REL} catalogues a point key with no UNIT_BY_KEY entry in ${UNITS_REL}, so keysForDomain ` +
           "seeds it with a NULL unit. seedPointKeyCatalog runs last in seed.ts and its " +
           "upsert assigns `unit = EXCLUDED.unit` outright, so on every `compose up` this " +
           "reverts whatever unit phe-pilot-seed.ts or an administrator put there. Give " +
@@ -819,7 +826,7 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
           "this file does not map to a domain. Every assertion in this block iterates " +
           "ARRAY_DOMAIN, so an unmapped array is seeded by nothing here and checked by " +
           "nothing here. Add it to ARRAY_DOMAIN, to keysForDomain in the seed and to " +
-          "UNIT_BY_KEY in the same commit.",
+          "UNIT_BY_KEY in point-key-units.ts in the same commit.",
       ).toEqual([]);
       // 13 since `E5.3` PR 1 — the eleven plus `FACILITY_CLASS_POINT_KEYS` and
       // `ENVIRONMENT_CLASS_POINT_KEYS`; 14 since PR 2 adds
