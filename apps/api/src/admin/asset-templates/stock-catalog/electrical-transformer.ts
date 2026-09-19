@@ -10,9 +10,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * oil-immersed distribution / power transformer (dry-type: drop oil rows, keep
  * winding RTDs)"*, the SOW page-9 asset with the most on-screen detail
  * (*2.60 MVA, 11.2/0.433 kV, 48.7 °C, Load 72%*). §2's 31 table rows less the
- * two below, in the table's own order (`sortOrder` 0…28), then the one derived
- * code — **30 points: 9 core + 16 extended + 4 manual + 1 derived**, 15 alarms,
- * 2 KPIs, 5 maintenance plans.
+ * two below, in the table's own order (`sortOrder` 0…28), then the one `F2.12`
+ * derived code (29) and `E4.1c`'s `tap_changes_per_day` (30) — **31 points:
+ * 9 core + 16 extended + 4 manual + 2 derived**, 15 alarms, 2 KPIs, 5
+ * maintenance plans.
  *
  * **PROVISIONAL — derived from published practice, not client-confirmed**, and
  * the entry's own `description` says so, because the stamp plus the citation is

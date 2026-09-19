@@ -8,17 +8,18 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **SOURCE.** `docs/electrical-derived-taglist-v1.md` §6 — *"Capacitor bank /
  * APFC panel"*, the SOW page-10 *Capacitor* utility node. All 14 of §6's table
- * rows are declared, **in the document's own order** (`sortOrder` 0…13) —
- * **14 points: 4 core + 10 extended + 0 manual + 0 derived**, 6 alarms, 1 KPI,
- * 3 maintenance plans.
+ * rows are declared, **in the document's own order** (`sortOrder` 0…13), then
+ * `E4.1c`'s `steps_per_day` (14) — **15 points: 4 core + 10 extended + 0
+ * manual + 1 derived**, 6 alarms, 1 KPI, 3 maintenance plans.
  *
- * **THE SMALLEST ENTRY IN THE PACK, AND THE ONE WITH NO FORMULA AT ALL.** Every
- * other class authors at least one `kind: "derived"` point; §6 authors none,
- * because all four of its derived codes need something the grammar does not
- * have (below). It is therefore the cheap opposite end of the row — 14 measured
- * rows, no manual rows, no `F1.8` exposure and no calc engine involvement — and
- * `electrical-classes-2.spec.ts` checks it as hard as the largest entry so that
- * "small" never becomes "special case".
+ * **THE SMALLEST ENTRY IN THE PACK, AND UNTIL `E4.1c` THE ONE WITH NO FORMULA
+ * AT ALL.** From `F2.12` to `E4.1c` §6 authored no `kind: "derived"` point,
+ * because all four of its derived codes needed something the grammar did not
+ * have; `bms-calc-v3`'s window gave `steps_per_day` its formula (below) and
+ * the other three still wait on an attribute or a function. It is still the
+ * cheap opposite end of the row — 14 measured rows, no manual rows, no `F1.8`
+ * exposure, one scheduled `v3` row — and `electrical-classes-2.spec.ts` checks
+ * it as hard as the largest entry so that "small" never becomes "special case".
  *
  * **§6's TABLE INTERLEAVES THE TIERS BY ONE ROW, and the order here is the
  * table's.** `target_pf` (X) is row 3, ahead of `actual_pf` and
@@ -53,7 +54,8 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **THE DEFERRED DERIVED CODES**, each with the reason it is named rather than
  * placeholdered (ADR 0051 Amendment 6 decision 8: a code with no formula is not
- * vocabulary). §6's `Derived:` line names **four**, and all four are deferred:
+ * vocabulary). §6's `Derived:` line names **four**; three are deferred and one
+ * (`steps_per_day`) is authored since `E4.1c`:
  *
  *  - `pf_correction_kvar` — the reactive power a target PF needs is
  *    `kW × (tan φ₁ − tan φ₂)`. `bms-calc-v1` has `+ - * /`, `abs`, `round`,

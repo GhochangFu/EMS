@@ -13,7 +13,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * fitted, add what is missing, correct names and units"*; the redline it comes
  * back as is `stockVersion` 2, never an edit to a shipped row (ADR 0015).
  *
- * **18 POINTS — 11 core + 5 extended + 2 manual + 0 derived**, §5's table rows
+ * **21 POINTS — 11 core + 5 extended + 2 manual + 3 derived** (`E4.1c`'s
+ * three, `sortOrder` 18–20, after §5's 18 table rows), §5's table rows
  * in the **document's own order**, which is what `sortOrder` follows. Tier `C`
  * is required and `meta.tier: "core"`; `X` is optional and `"extended"`; `M` is
  * optional and `"manual"`, entered by hand through `F1.8`/`F1.9` and never

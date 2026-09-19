@@ -10,7 +10,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * softening"*. PROVISIONAL: derived from published practice, not
  * client-confirmed.
  *
- * **9 POINTS — 4 core + 3 extended + 2 manual + 0 derived**, §3's table rows in
+ * **12 POINTS — 4 core + 3 extended + 2 manual + 3 derived** (`E4.1c`'s three,
+ * `sortOrder` 9–11, after §3's 9 table rows), §3's table rows in
  * the document's own order. **The smallest entry in the pack**, and the cheap
  * opposite end that proves the catalog mechanism is not tuned to one shape: the
  * cooling tower carries 21 points and four formulas, this carries nine points

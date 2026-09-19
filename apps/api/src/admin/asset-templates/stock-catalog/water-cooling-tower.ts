@@ -9,9 +9,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * **SOURCE.** `docs/e5.1-derived-taglist-v1.md` §4 — *"Cooling water / cooling
  * tower"*. PROVISIONAL: derived from published practice, not client-confirmed.
  *
- * **21 POINTS — 10 core + 6 extended + 1 manual + 4 DERIVED.** §4's 17 table
+ * **24 POINTS — 10 core + 6 extended + 1 manual + 7 DERIVED.** §4's 17 table
  * rows in the document's own order (`sortOrder` 0-16), then the four authored
- * derived codes (17-20). This is **the entry the derived machinery is first
+ * derived codes (17-20), then `E4.1c`'s three `v3` rows (21-23). This is **the entry the derived machinery is first
  * proved on** in the water pack: four formulas, one `maxInputAgeSeconds`
  * override, and the first alarms anywhere in the catalog that bind a computed
  * point rather than a measured one.
@@ -164,8 +164,9 @@ export const WATER_COOLING_TOWER: StockAssetTemplateEntry = {
     "docs/e5.1-derived-taglist-v1.md §4 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
     "carry a meaning and no limit, because the bands are set per site with the water-treatment " +
-    "program. Four derived points — range, approach, cycles of concentration and make-up as a " +
-    "percentage of circulation — are computed from the measured rows and need no extra " +
+    "program. Seven derived points — range, approach, cycles of concentration and make-up as a " +
+    "percentage of circulation, plus make-up water today, its cost and its saving against the " +
+    "daily baseline (bms-calc-v3) — are computed from the measured rows and need no extra " +
     "instrument.",
   stockVersion: 2,
   content: {

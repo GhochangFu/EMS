@@ -10,9 +10,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * plant (clarifier + filtration + disinfection)"*. PROVISIONAL: derived from
  * published practice, not client-confirmed.
  *
- * **20 POINTS — 11 core + 5 extended + 2 manual + 2 DERIVED.** §1's 18 table
+ * **23 POINTS — 11 core + 5 extended + 2 manual + 5 DERIVED.** §1's 18 table
  * rows in the document's own order (`sortOrder` 0-17), then the two authored
- * derived codes (18-19).
+ * derived codes (18-19), then `E4.1c`'s three `v3` rows (20-22).
  *
  * **THE TWO FORMULAS** (plan §5.0):
  *
@@ -160,7 +160,8 @@ export const WATER_WTP: StockAssetTemplateEntry = {
     "chlorination to a clear water reservoir. Authored from " +
     "docs/e5.1-derived-taglist-v1.md §1 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
-    "carry a meaning and no limit. Two derived points — recovery and turbidity removal — are " +
+    "carry a meaning and no limit. Five derived points — recovery and turbidity removal, plus raw " +
+    "water today, its cost and its saving against the daily baseline (bms-calc-v3) — are " +
     "computed from the measured rows and need no extra instrument.",
   stockVersion: 2,
   content: {

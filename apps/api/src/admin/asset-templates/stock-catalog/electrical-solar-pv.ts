@@ -10,8 +10,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * grid-tied inverter with plant sensors"*, whose rows are *"SunSpec Model 103
  * fields, plus Model 303 irradiance and the module temperature that PR needs"*.
  * §5's 26 table rows less the one below, **in the document's own order**
- * (`sortOrder` 0…24), then the one derived code — **26 points: 9 core + 15
- * extended + 1 manual + 1 derived**, 7 alarms, 1 KPI, 4 maintenance plans.
+ * (`sortOrder` 0…24), then the one `F2.12` derived code (25) and `E4.1c`'s
+ * four (26–29) — **30 points: 9 core + 15 extended + 1 manual + 5 derived**,
+ * 7 alarms, 1 KPI, 4 maintenance plans.
  *
  * **§5's TABLE INTERLEAVES THE TIERS, and the order here is the table's.**
  * `inv_event_code` (X) is row 3, ahead of four C rows; the six `ac_voltage_*` /

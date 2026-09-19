@@ -10,8 +10,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * generator with AMF/controller"*, whose points *"mirror the DSE / ComAp /
  * PowerCommand register groups; every DG controller in the Indian market
  * exposes this set"*. All 36 of §3's table rows are declared, **in the
- * document's own order**, then the two derived codes — **38 points: 21 core +
- * 15 extended + 0 manual + 2 derived**, 13 alarms, 1 KPI, 5 maintenance plans.
+ * document's own order**, then the two `F2.12` derived codes (36–37) and
+ * `E4.1c`'s five (38–42) — **43 points: 21 core + 15 extended + 0 manual +
+ * 7 derived**, 13 alarms, 1 KPI, 5 maintenance plans.
  *
  * **§3's TABLE INTERLEAVES THE TIERS, and the order here is the table's.**
  * `dg_alarm_code` (X) is row 6, ahead of `mains_available` (C); `oil_temp_c`

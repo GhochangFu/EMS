@@ -14,9 +14,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * already use it beside `feeder`, `test_rig` and `test_skid`. Plan §12 ruling 4
  * confirmed it.
  *
- * **18 POINTS — 10 core + 5 extended + 1 manual + 2 DERIVED.** §2's 16 table
+ * **21 POINTS — 10 core + 5 extended + 1 manual + 5 DERIVED.** §2's 16 table
  * rows in the document's own order (`sortOrder` 0-15), then the two authored
- * derived codes (16-17).
+ * derived codes (16-17), then `E4.1c`'s three `v3` rows (18-20).
  *
  * **THE TWO FORMULAS** (plan §5.0), both keeping the 300 s default
  * `maxInputAgeSeconds` because each takes both inputs from the skid's own
@@ -166,7 +166,8 @@ export const WATER_RO: StockAssetTemplateEntry = {
     "and the membrane array, with permeate and reject streams. Authored from " +
     "docs/e5.1-derived-taglist-v1.md §2 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
-    "carry a meaning and no limit. Two derived points — recovery and salt rejection — are " +
+    "carry a meaning and no limit. Five derived points — recovery and salt rejection, plus feed " +
+    "water today, its cost and its saving against the daily baseline (bms-calc-v3) — are " +
     "computed from the measured rows and need no extra instrument.",
   stockVersion: 2,
   content: {
