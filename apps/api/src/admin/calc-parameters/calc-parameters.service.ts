@@ -40,6 +40,40 @@ type Window = { readonly from: Date; readonly to: Date | null };
 const NOT_FOUND = "Calc parameter not found";
 
 /**
+ * Maps a driver error from a `bms.calc_parameters` write to the HTTP
+ * exception the caller gets; anything unrecognised is returned unchanged for
+ * the caller to rethrow. `pg` puts SQLSTATE in `code` and the constraint
+ * name in `constraint`; this drizzle version does not wrap driver errors
+ * (`dashboards.service.ts` reads the same two fields).
+ */
+export function translateCalcParameterWriteError(err: unknown, organizationId: string): unknown {
+  const code = (err as { code?: string } | null)?.code;
+  const constraint = (err as { constraint?: string } | null)?.constraint;
+  if (code === "23P01" && constraint === "calc_parameters_no_overlap") {
+    return new ConflictException(
+      "A value for this key at this scope overlaps a row written moments ago; the database's " +
+        "overlap constraint refused it. Reload the list and choose dates outside that row.",
+    );
+  }
+  if (code === "42501") {
+    return new BadRequestException(
+      `The locationId or assetId you supplied does not belong to organization ${organizationId} — ` +
+        "the write was refused by this table's row-level security policy.",
+    );
+  }
+  if (code === "23514" && constraint === "calc_parameters_validity_check") {
+    return new BadRequestException("effectiveTo must be later than effectiveFrom");
+  }
+  if (code === "23503" && constraint === "calc_parameters_key_fkey") {
+    return new BadRequestException("The key is not in the calc parameter vocabulary.");
+  }
+  if (code === "23503" && constraint === "calc_parameters_organization_id_fkey") {
+    return new BadRequestException(`Organization ${organizationId} does not exist.`);
+  }
+  return err;
+}
+
+/**
  * `E4.1a` U8 — the admin write path of `bms.calc_parameters` and the read of
  * the vocabulary (ADR 0070 decision 2; plan design decisions 7, 11 and 12).
  *
@@ -104,9 +138,7 @@ export class CalcParametersAdminService {
   }
 
   async getById(jwt: JwtPayload, id: string): Promise<CalcParameterDto> {
-    const row = await this.fetchRow(id);
-    await this.requireReadable(jwt, row.organizationId);
-    return row;
+    return this.fetchReadable(jwt, id);
   }
 
   async create(jwt: JwtPayload, body: CreateCalcParameterBody): Promise<CalcParameterDto> {
@@ -117,6 +149,7 @@ export class CalcParametersAdminService {
     };
     await this.requireWritable(jwt, scope);
     await this.assertScopeParentsBelong(scope);
+    await this.assertKeyInVocabulary(body.key);
     const window = this.windowOf(new Date(body.effectiveFrom), body.effectiveTo == null ? null : new Date(body.effectiveTo));
 
     const id = await this.translating(scope, () =>
@@ -155,7 +188,7 @@ export class CalcParametersAdminService {
   }
 
   async update(jwt: JwtPayload, id: string, body: UpdateCalcParameterBody): Promise<CalcParameterDto> {
-    const existing = await this.fetchRow(id);
+    const existing = await this.fetchReadable(jwt, id);
     const scope: Scope = {
       organizationId: existing.organizationId,
       locationId: existing.locationId,
@@ -178,7 +211,11 @@ export class CalcParametersAdminService {
     await this.translating(scope, () =>
       withTenant(this.db, scope.organizationId, async (tx) => {
         await this.refuseOverlap(tx, existing.key, scope, window, id);
-        await tx
+        // `.returning()` so a row the policy hides from this organization's
+        // GUC — reachable only through a superuser-written row whose parents
+        // disagree with its organization — is a 404, never a silent no-op
+        // with an audit row saying it happened (`dashboards.service.ts`'s shape).
+        const updated = await tx
           .update(calcParameters)
           .set({
             ...(body.value === undefined ? {} : { value: body.value }),
@@ -186,7 +223,11 @@ export class CalcParametersAdminService {
             effectiveTo: window.to,
             updatedAt: new Date(),
           })
-          .where(eq(calcParameters.id, id));
+          .where(eq(calcParameters.id, id))
+          .returning({ id: calcParameters.id });
+        if (updated.length === 0) {
+          throw new NotFoundException(NOT_FOUND);
+        }
         await this.audit.write(
           {
             actor: jwt,
@@ -204,7 +245,7 @@ export class CalcParametersAdminService {
   }
 
   async remove(jwt: JwtPayload, id: string): Promise<void> {
-    const existing = await this.fetchRow(id);
+    const existing = await this.fetchReadable(jwt, id);
     const scope: Scope = {
       organizationId: existing.organizationId,
       locationId: existing.locationId,
@@ -212,7 +253,10 @@ export class CalcParametersAdminService {
     };
     await this.requireWritable(jwt, scope);
     await withTenant(this.db, scope.organizationId, async (tx) => {
-      await tx.delete(calcParameters).where(eq(calcParameters.id, id));
+      const deleted = await tx.delete(calcParameters).where(eq(calcParameters.id, id)).returning({ id: calcParameters.id });
+      if (deleted.length === 0) {
+        throw new NotFoundException(NOT_FOUND);
+      }
       await this.audit.write(
         {
           actor: jwt,
@@ -349,32 +393,33 @@ export class CalcParametersAdminService {
   }
 
   /**
-   * The two database refusals a write can still meet after the gates: the
-   * `EXCLUDE` backstop under a race (`23P01`) and the policy's `WITH CHECK`
-   * (`42501`). Neither may reach a caller as a 500.
+   * The database refusals a write can still meet after the gates: the
+   * `EXCLUDE` backstop under a race (`23P01`), the policy's `WITH CHECK`
+   * (`42501`), the validity `CHECK` and the two foreign keys. None may reach
+   * a caller as a 500. The mapping is `translateCalcParameterWriteError`, a
+   * pure function, so each branch is unit-tested against a synthetic driver
+   * error — a genuine race cannot be staged in an integration test.
    */
   private async translating<T>(scope: Scope, run: () => Promise<T>): Promise<T> {
     try {
       return await run();
     } catch (err) {
-      const code = (err as { code?: string } | null)?.code;
-      const constraint = (err as { constraint?: string } | null)?.constraint;
-      if (code === "23P01" && constraint === "calc_parameters_no_overlap") {
-        throw new ConflictException(
-          "A value for this key at this scope overlaps a row written moments ago; the database's " +
-            "overlap constraint refused it. Reload the list and choose dates outside that row.",
-        );
-      }
-      if (code === "42501") {
-        throw new BadRequestException(
-          `The locationId or assetId you supplied does not belong to organization ${scope.organizationId} — ` +
-            "the write was refused by this table's row-level security policy.",
-        );
-      }
-      if (code === "23514" && constraint === "calc_parameters_validity_check") {
-        throw new BadRequestException("effectiveTo must be later than effectiveFrom");
-      }
-      throw err;
+      throw translateCalcParameterWriteError(err, scope.organizationId);
+    }
+  }
+
+  /**
+   * ADR 0070 decision 2: a key must be in the active vocabulary. Checked here
+   * with a sentence, ahead of `calc_parameters_key_fkey` (which a retired key
+   * — `active = false` — would pass) and the same read the template save path
+   * makes (`CalcParametersService.unknownKeys`).
+   */
+  private async assertKeyInVocabulary(key: string): Promise<void> {
+    const unknown = await this.vocabulary.unknownKeys([key]);
+    if (unknown.length > 0) {
+      throw new BadRequestException(
+        `"${key}" is not in the active calc parameter vocabulary. Choose a key from GET /admin/calc-parameters/keys.`,
+      );
     }
   }
 
@@ -390,6 +435,24 @@ export class CalcParametersAdminService {
       .from(calcParameters)
       .leftJoin(locations, eq(calcParameters.locationId, locations.id))
       .leftJoin(assets, eq(calcParameters.assetId, assets.id));
+  }
+
+  /**
+   * The row, or 404 — also 404 when it exists in an organization the caller
+   * cannot read, so an id from another tenant is never confirmed as real
+   * (the `assertScopeParentsBelong` principle, applied to the read side).
+   * `requireMasterDataUser` runs first, so a non-admin learns nothing either
+   * way. Inside the caller's organizations a write the role may not make is
+   * still a 403 from `requireWritable`: readable, not writable.
+   */
+  private async fetchReadable(jwt: JwtPayload, id: string): Promise<CalcParameterDto> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    const row = await this.fetchRow(id);
+    const readable = await this.accessControl.readableOrganizationIds(jwt);
+    if (readable !== null && !readable.includes(row.organizationId)) {
+      throw new NotFoundException(NOT_FOUND);
+    }
+    return row;
   }
 
   private async fetchRow(id: string): Promise<CalcParameterDto> {

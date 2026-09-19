@@ -11,7 +11,9 @@ import { asRole } from "../../testing/role-urls";
 import { loadFixtures, type Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
+  assertAForeignOrganizationRowIs404NotForbidden,
   assertAdminCreatesAnOrganizationScopedRow,
+  assertAnUnknownKeyIs400,
   assertALocationAdminCannotCreateOrganizationScope,
   assertALocationAdminCannotUpdateAnOrganizationRow,
   assertALocationAdminWritesItsOwnLocationOnly,
@@ -137,5 +139,13 @@ describe.skipIf(!connectionString)("E4.1a — calc parameters admin", () => {
 
   it("keys lists the twelve stock keys in sort_order order", async () => {
     await assertKeysListsTheTwelveStockKeysInOrder(svc, fx);
+  });
+
+  it("an unknown key is a 400 with a sentence, ahead of the foreign key (security review)", async () => {
+    await assertAnUnknownKeyIs400(svc, fx);
+  });
+
+  it("a row in an organization the caller cannot read is a 404 on get, update and remove — never a 403", async () => {
+    await assertAForeignOrganizationRowIs404NotForbidden(svc, pool(), fx, fixture, ctx);
   });
 });

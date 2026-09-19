@@ -474,3 +474,59 @@ export async function assertKeysListsTheTwelveStockKeysInOrder(svc: CalcParamete
   const tariff = items.find((item) => item.code === KEY);
   assert(tariff?.unit === "/kWh" && tariff.active === true && typeof tariff.sortOrder === "number", "unit, active and sortOrder are carried");
 }
+
+// ---- review fixes (PR 2 security Low 1 / Low 2, migration Medium 2) --------------
+
+/**
+ * A key outside the active vocabulary is a 400 with a sentence, ahead of
+ * `calc_parameters_key_fkey` (which would have surfaced as a 500). The
+ * positive control is every create above: a stock key passes the same check.
+ */
+export async function assertAnUnknownKeyIs400(svc: CalcParametersAdminService, fx: Fixtures): Promise<void> {
+  await expectRejection(
+    () =>
+      svc.create(fx.adminJwt, {
+        organizationId: fx.organizationId,
+        key: "not_a_vocabulary_key",
+        value: 1,
+        effectiveFrom: BAND[0],
+      }),
+    BadRequestException,
+    /not in the active calc parameter vocabulary/,
+  );
+}
+
+/**
+ * A row in an organization the caller cannot read answers 404 on `getById`,
+ * `update` and `remove` — never 403, which would confirm the id as real
+ * (the `assertScopeParentsBelong` principle on the read side). The row is
+ * written as the fleet role under the foreign organization, inside this run's
+ * band so `cleanup` sweeps it. The positive control is the readable-but-not-
+ * writable case beside it: an organization row in the caller's OWN
+ * organization is still a 403 for a `location_admin`.
+ */
+export async function assertAForeignOrganizationRowIs404NotForbidden(
+  svc: CalcParametersAdminService,
+  fleetPool: pg.Pool,
+  fx: Fixtures,
+  fixture: AdminFixture,
+  ctx: Ctx,
+): Promise<void> {
+  const { rows } = await fleetPool.query<{ id: string }>(
+    `INSERT INTO bms.calc_parameters (organization_id, key, value, effective_from, effective_to)
+     VALUES ($1, $2, 42, $3, $4) RETURNING id`,
+    [fixture.foreignOrganizationId, KEY, BAND[0], BAND[1]],
+  );
+  const foreignId = rows[0]?.id as string;
+  try {
+    await expectRejection(() => svc.getById(fx.locationAdminJwt, foreignId), NotFoundException, /not found/i);
+    await expectRejection(() => svc.update(fx.locationAdminJwt, foreignId, { value: 1 }), NotFoundException, /not found/i);
+    await expectRejection(() => svc.remove(fx.locationAdminJwt, foreignId), NotFoundException, /not found/i);
+    assert(await rowExists(fleetPool, foreignId), "the foreign row is untouched");
+    const own = ctx.organizationRow;
+    assert(own !== undefined, "the organization row must exist");
+    await expectRejection(() => svc.update(fx.locationAdminJwt, own.id, { value: 1 }), ForbiddenException, /organization scope/i);
+  } finally {
+    await fleetPool.query(`DELETE FROM bms.calc_parameters WHERE id = $1`, [foreignId]);
+  }
+}

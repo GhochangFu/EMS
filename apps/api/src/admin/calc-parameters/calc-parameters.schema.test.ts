@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertEveryDatabaseRefusalIsTranslated,
   assertAKeyWithAHyphenIsRefused,
   assertANonFiniteValueIsRefused,
   assertAnExtraFieldIsRefused,
@@ -38,5 +39,9 @@ describe("E4.1a — calc parameter body contract", () => {
 
   it("the list query requires organizationId and bounds the key filter", () => {
     assertTheListQueryRequiresAnOrganization();
+  });
+
+  it("translates every database refusal a write can meet after the gates, and nothing else", () => {
+    assertEveryDatabaseRefusalIsTranslated();
   });
 });
