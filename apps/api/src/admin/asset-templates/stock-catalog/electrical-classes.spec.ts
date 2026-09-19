@@ -414,6 +414,12 @@ const DG_SET_POINT_KEYS: readonly string[] = [
   "canopy_temp_c",
   "specific_fuel_l_kwh",
   "unplanned_run_flag",
+  // E4.1c: five derived v3 rows — electrical-classes-3.spec.ts pins them
+  "load_pct",
+  "fuel_hours_remaining_h",
+  "downtime_h_24h",
+  "availability_pct_24h",
+  "starts_per_day",
 ];
 
 /**
@@ -457,16 +463,16 @@ function checkDgSet(): void {
       `bms.asset_domains at import time; got "${entry.domain}"`,
   );
   assert(
-    entry.stockVersion === 1,
-    `${DG_SET_CODE} is a first release — stockVersion 1, got ${String(entry.stockVersion)}`,
+    entry.stockVersion === 2,
+    `${DG_SET_CODE} is at stockVersion 2 since E4.1c (five v3 rows), got ${String(entry.stockVersion)}`,
   );
 
-  // ---- 38 points, 21 core + 15 extended + 0 manual + 2 derived ------------
+  // ---- 43 points, 21 core + 15 extended + 0 manual + 7 derived ------------
 
   assert(
-    entry.points.length === 38,
+    entry.points.length === 43,
     `tag list §3 has 36 rows, all of them declared, plus the two derived codes bms-calc-v1 can ` +
-      `express — 38 points. Got ${entry.points.length}`,
+      `express and E4.1c's five v3 rows — 43 points. Got ${entry.points.length}`,
   );
 
   const tierCount = (tier: string): number =>
@@ -483,9 +489,10 @@ function checkDgSet(): void {
       `marks ${tierCount("manual")} manual`,
   );
   assert(
-    derivedPoints.length === 2,
+    derivedPoints.length === 7,
     `§3's seven derived codes reduce to two bms-calc-v1 can express (specific_fuel_l_kwh, ` +
-      `unplanned_run_flag); the entry authors ${derivedPoints.length}: ` +
+      `unplanned_run_flag), and E4.1c authors five v3 rows (load_pct, fuel_hours_remaining_h, ` +
+      `downtime_h_24h, availability_pct_24h, starts_per_day); the entry authors ${derivedPoints.length}: ` +
       `${derivedPoints.map((point) => point.pointKey).join(", ")}`,
   );
 
@@ -506,7 +513,7 @@ function checkDgSet(): void {
   );
 
   const keySet = new Set(declaredKeys);
-  assert(keySet.size === 38, `${DG_SET_CODE}: no point key may repeat`);
+  assert(keySet.size === 43, `${DG_SET_CODE}: no point key may repeat`);
 
   for (const code of DEFERRED_DERIVED_CODES[DG_SET_CODE]) {
     assert(

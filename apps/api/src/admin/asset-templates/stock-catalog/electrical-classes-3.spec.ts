@@ -338,9 +338,24 @@ const TRANSFORMER_E41C: readonly SustainabilityRow[] = [
   ["tap_changes_per_day", "delta({oltc_operation_count}, 24h)", ""],
 ];
 
+/**
+ * DG set — `availability_pct_24h` is the fault-sense form (`1 - avg` of the
+ * `dg_shutdown` 0/1 state, Q11); `fuel_hours_remaining_h` refuses `non_finite`
+ * on a stopped engine (`fuel_rate_lph` 0), counted; `starts_per_day` means a
+ * rolling `24h` (Q10).
+ */
+const DG_SET_E41C: readonly SustainabilityRow[] = [
+  ["load_pct", "{gen_kw} / $rated_kw * 100", "%"],
+  ["fuel_hours_remaining_h", "{fuel_level_pct} / 100 * $tank_capacity_l / {fuel_rate_lph}", "h"],
+  ["downtime_h_24h", "sum({dg_shutdown}, 24h)", "h"],
+  ["availability_pct_24h", "(1 - avg({dg_shutdown}, 24h)) * 100", "%"],
+  ["starts_per_day", "delta({start_count}, 24h)", ""],
+];
+
 /** Every E4.1c class beside the feeder: `[code, rows, firstSortOrder, expectedVersion]`. */
 export const E41C_ELECTRICAL_CLASSES: ReadonlyArray<readonly [string, readonly SustainabilityRow[], number, number]> = [
   ["electrical-transformer", TRANSFORMER_E41C, 30, 2],
+  ["electrical-dg-set", DG_SET_E41C, 38, 2],
 ];
 
 export function e41cElectricalClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {

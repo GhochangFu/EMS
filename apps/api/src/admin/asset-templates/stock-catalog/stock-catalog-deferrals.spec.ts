@@ -185,15 +185,13 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     "loss_of_life_pct_day",
     "duval_triangle_zone",
   ],
-  // §3 — the rating, the tank capacity (`fuel_level_pct` is a percentage), and
-  // three that need a time window the grammar has no state for.
-  "electrical-dg-set": [
-    "load_pct",
-    "fuel_hours_remaining_h",
-    "starts_per_day",
-    "availability_pct",
-    "underload_hours",
-  ],
+  // §3 — E4.1c DISCHARGED `load_pct` ($rated_kw), `fuel_hours_remaining_h`
+  // ($tank_capacity_l) and `starts_per_day` (a 24h delta), and SUPERSEDED
+  // `availability_pct` by `availability_pct_24h` (decision 8's
+  // <quantity>_<window> rule — the un-windowed code is never authored). What
+  // stays is hours *while* below a fraction of rating: a condition inside a
+  // window, which ruling 4's one-point-reference window cannot express.
+  "electrical-dg-set": ["underload_hours"],
   // §4 — the site minimum, an attribute, and two per-window counts.
   "electrical-ups": [
     "runtime_margin_min",
