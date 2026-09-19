@@ -167,7 +167,7 @@ export class CalcWindowsService {
       // segment, so neither adds a row to a level statement.
       const readsAggregates = request.node.kind === "window" && request.node.fn !== "delta";
       const segments = readsAggregates ? planWindowSegments({ startMs, endMs: request.endMs, watermarks }) : [];
-      const defect = readsAggregates ? budgetDefect(segments, request.endMs, watermarks) : null;
+      const defect = readsAggregates ? budgetDefect(segments, watermarks) : null;
       if (defect !== null) {
         out.set(key, { ok: false, reason: "windows_unresolved", detail: defect });
         return;

@@ -388,7 +388,12 @@ export async function assertARollingWeekReadsThe1dViewAndTodayDoesNot(pool: pg.P
 
   const today = countedService(pool);
   const todayNode = windowFn("avg", KW, calendar("today"));
-  await today.service.resolveReads([{ ownerAssetId: fixture.u, readAssetId: fixture.u, node: todayNode, endMs: tick }]);
+  const todayMap = await today.service.resolveReads([{ ownerAssetId: fixture.u, readAssetId: fixture.u, node: todayNode, endMs: tick }]);
+  // positive control first (post-merge sweep): a refused read runs no level
+  // statement, so the absence claim below would pass having observed nothing
+  const todayResult = todayMap.get(windowRequestKey(fixture.u, todayNode, tick));
+  assert(todayResult?.ok === true && near(todayResult.value, 300), `W7c control: the today read is served (the two tail rows, mean 300), got ${JSON.stringify(todayResult)}`);
+  assert(today.relations().some((r) => r === "telemetry.point_values_1m" || r === "telemetry.point_values_5m" || r === "telemetry.point_values_1h"), `W7c control: a level statement ran, read ${today.relations().join(",")}`);
   assert(!today.relations().includes("telemetry.point_values_1d"), `W7c: a today window never reads the 1d view, read ${today.relations().join(",")}`);
 }
 
