@@ -356,17 +356,23 @@ export async function assertTheShippedFeederImportsWholeAgainstTheRealVocabulary
 
   const draft = await realStock.import(fx.adminJwt, FEEDER_CODE, fx.organizationId);
   importedFeederId = draft.id;
-  // F2.8: the feeder is stock v2 — 33 measured points plus the three
-  // `bms-calc-v2` derived points (`site_kw`, `it_kw`, `pue`) on the incomer.
-  // The import writes the derived rows through the same `template_points`
-  // path, so the stored count is the whole entry, not the measured half.
-  assert(draft.stockCode === FEEDER_CODE && draft.stockVersion === 2, "the feeder import is stamped v2");
-  assert(draft.points.length === 36, `36 points must land, got ${draft.points.length}`);
-  assert((await storedPointCount(pool, draft.id)) === 36, "36 template_points rows must be stored");
+  // F2.8 made the feeder stock v2 — 33 measured points plus the three
+  // `bms-calc-v2` derived points (`site_kw`, `it_kw`, `pue`) on the incomer;
+  // E4.1c made it v3 — six `bms-calc-v3` sustainability points after them
+  // (ADR 0070 decision 8). The import writes the derived rows through the
+  // same `template_points` path, so the stored count is the whole entry, not
+  // the measured half. This is also the one gate that proves the six new
+  // codes are in the seeded vocabulary: `assertPointKeysActive` refuses the
+  // whole import otherwise (a stack that has not re-seeded fails here first).
+  assert(draft.stockCode === FEEDER_CODE && draft.stockVersion === 3, "the feeder import is stamped v3");
+  assert(draft.points.length === 42, `42 points must land, got ${draft.points.length}`);
+  assert((await storedPointCount(pool, draft.id)) === 42, "42 template_points rows must be stored");
   const derivedKeys = draft.points.filter((point) => point.kind === "derived").map((point) => point.pointKey);
   assert(
-    derivedKeys.length === 3 && derivedKeys.join(",") === "site_kw,it_kw,pue",
-    `the three F2.8 derived points must land in order, got [${derivedKeys.join(",")}]`,
+    derivedKeys.length === 9 &&
+      derivedKeys.join(",") ===
+        "site_kw,it_kw,pue,energy_cost_per_h,co2_kg_per_h,energy_cost_today,co2_kg_today,energy_saving_vs_baseline_pct,demand_vs_contract_pct",
+    `the three F2.8 and the six E4.1c derived points must land in order, got [${derivedKeys.join(",")}]`,
   );
   const alarms = (draft.content as { alarms?: Record<string, unknown>[] }).alarms ?? [];
   assert(alarms.length === 11, `11 alarms must survive, got ${alarms.length}`);
