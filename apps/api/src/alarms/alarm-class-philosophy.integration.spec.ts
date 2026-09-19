@@ -362,7 +362,7 @@ export async function assertDetailsRefusesATemplateFromAnotherOrganization(
 
     const [otherOrg] = await tx
       .insert(organizations)
-      .values({ code: "E22_TEST_OTHER_ORG", name: "E2.2 integration — other tenant" })
+      .values({ code: "E22_TEST_OTHER_ORG", name: "E2.2 integration — other tenant", currency: "ZAR" })
       .returning({ id: organizations.id });
     if (!otherOrg) {
       throw new Error("failed to insert the other-tenant organization");

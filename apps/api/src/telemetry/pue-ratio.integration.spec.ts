@@ -294,7 +294,7 @@ export async function setupFixtures(pool: pg.Pool): Promise<Fixtures> {
   const domain = await anyAssetDomain(pool);
 
   const orgRows = await pool.query<{ id: string }>(
-    "INSERT INTO bms.organizations (code, name) VALUES ($1, $2) RETURNING id",
+    "INSERT INTO bms.organizations (code, name, currency) VALUES ($1, $2, 'ZAR') RETURNING id",
     [`${RUN_CODE}-ORG`, "F2.8 PUE reader fixture organization"],
   );
   const organizationId = orgRows.rows[0]?.id;

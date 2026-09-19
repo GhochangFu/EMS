@@ -11,6 +11,8 @@ import {
   bucketHours,
   levelForRange,
 } from "../telemetry/point-aggregates";
+import { CalcParametersService } from "../calc/calc-parameters.service";
+import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
 import { windowedPueRatio } from "../telemetry/pue-ratio";
 import type { EnergyReportQuery } from "./reports.schema";
 import {
@@ -36,7 +38,13 @@ export class ReportsService {
   // misattributed to grid. The report reads across the caller's `assetIds` scope
   // (threaded as `$3`/`$4`), which is the isolation control (Amendment 2/3), so
   // it runs on fleetDb (BYPASSRLS). Its telemetry aggregates are unpoliced.
-  constructor(@Inject(FLEET_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(FLEET_POOL) private readonly pool: Pool,
+    // `E4.1c` — the tariff is a parameter (ADR 0070 decision 7); see
+    // `DashboardService` for why the injection is `Pick`-typed.
+    @Inject(CalcParametersService)
+    private readonly parameters: Pick<CalcParametersService, "resolveForAssets">,
+  ) {}
 
   /** Builds the Sprint E Energy Consumption report preview. */
   async energyPreview(
@@ -44,8 +52,7 @@ export class ReportsService {
     assetIds?: string[] | null,
   ): Promise<EnergyReportPreview> {
     const range = this.parseRange(query);
-    const tariff = this.energyTariffZar();
-    const summary = await this.energySummary(range, tariff, assetIds);
+    const summary = await this.energySummary(range, assetIds);
     const sourceTotals = await this.energySourceTotals(range, assetIds);
     const topConsumers = await this.energyTopConsumers(range, 10, assetIds);
 
@@ -136,7 +143,6 @@ export class ReportsService {
 
   private async energySummary(
     range: { start: Date; end: Date },
-    tariff: number,
     assetIds?: string[] | null,
   ): Promise<EnergyReportPreview["summary"]> {
     if (assetIds && assetIds.length === 0) {
@@ -147,8 +153,10 @@ export class ReportsService {
         // `F2.8` ruling 4: nothing readable is `null`, not a `1` sentinel. The CSV
         // writes the em dash for it (`reports.serialise.ts`).
         pueEstimate: null,
-        indicativeCostZar: 0,
-        tariffZarPerKwh: tariff,
+        // `E4.1c` — an empty scope has no cost, no tariff and no currency.
+        indicativeCost: null,
+        tariffPerKwh: null,
+        currency: null,
         asOf: new Date().toISOString(),
       };
     }
@@ -197,6 +205,17 @@ export class ReportsService {
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kwh) : 0;
     const peakKw = row ? Number(row.peak_kw) : 0;
+    // `E4.1c` (ADR 0070 decision 7) — Σ per-asset kWh × that asset's
+    // nearest-scope `energy_tariff_per_kwh`, effective at the **report's end**
+    // instant, over the same `[start, end]` bound as the total above. A missing
+    // tariff or a second currency in scope is `null`, not 0 (`energy-cost.ts`).
+    const perAsset = await perAssetEnergy(this.pool, {
+      level,
+      window: { kind: "range", start: range.start, end: range.end },
+      kwhFactor,
+      assetIds: assetIds ?? null,
+    });
+    const cost = energyCost(perAsset, await resolveTariffs(this.parameters, perAsset, range.end));
     return {
       window: "custom",
       totalKwh: this.round(totalKwh),
@@ -211,8 +230,7 @@ export class ReportsService {
         end: range.end,
         assetIds: assetIds ?? null,
       }),
-      indicativeCostZar: this.round(totalKwh * tariff),
-      tariffZarPerKwh: tariff,
+      ...cost,
       asOf: new Date().toISOString(),
     };
   }
@@ -331,11 +349,6 @@ export class ReportsService {
         estimatedKwh: this.round(avgKw * range.durationHours),
       };
     });
-  }
-
-  private energyTariffZar(): number {
-    const t = Number(process.env.ENERGY_TARIFF_ZAR_PER_KWH ?? "2.15");
-    return Number.isFinite(t) && t > 0 ? t : 2.15;
   }
 
   private round(value: number): number {

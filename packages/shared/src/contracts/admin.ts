@@ -23,6 +23,7 @@ export const adminOrganizationDtoSchema = z.object({
   code: z.string(),
   name: z.string(),
   active: z.boolean(),
+  currency: z.string(),
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
 });

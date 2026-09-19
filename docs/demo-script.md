@@ -83,7 +83,9 @@ per [`local-setup.md`](./local-setup.md). Three terminals: `api` (:4000),
 1. Top nav **Energy** or sidebar **Energy** (`/energy`).
 2. Window selector: **24h** → **7d** → **30d** (charts refetch).
 3. KPI row: total kWh, peak kW, PUE (same estimator as executive),
-   indicative ZAR cost (tariff from `ENERGY_TARIFF_ZAR_PER_KWH`).
+   indicative cost = kWh × the organization's `energy_tariff_per_kwh`
+   parameter, in its currency; the tile shows a dash when none is entered —
+   the demo seed enters `2.15` for ESKOM.
 4. Stacked **source mix**: solar from assets `PV*`, nominal DG slice,
    remainder grid — **narrative**, not meter-grade split.
 5. **Top consumers**: horizontal bars = rough kWh from avg kW × window

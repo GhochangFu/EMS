@@ -28,6 +28,15 @@ import {
 } from "./point-aggregates.integration.spec";
 
 /**
+ * `E4.1c` — the tariff resolver the services now take. This file asserts
+ * nothing about cost, so every asset resolves to no tariff and the cost
+ * fields are `null` (`energy-cost.ts`); the real service is exercised in
+ * `telemetry/energy-cost.integration.spec.ts`.
+ */
+const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+
+
+/**
  * `F4.1` — Vitest entry point for the ADR 0023 continuous aggregates.
  * Assertions live in the sibling `.spec` (ADR 0014); this file owns the database
  * lifecycle.
@@ -154,7 +163,7 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
    * are invisible to every other assertion here.
    */
   it("energySummary matches the equivalent raw query on both branches", async () => {
-    const svc = new DashboardService(pool as pg.Pool);
+    const svc = new DashboardService(pool as pg.Pool, NO_TARIFFS);
     await assertEnergySummaryMatchesRaw(pool as pg.Pool, (window, assetIds) =>
       svc.energySummary(window, assetIds),
     );

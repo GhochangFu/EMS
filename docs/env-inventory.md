@@ -29,7 +29,6 @@ provide.
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | No | unset | Optional OTLP HTTP collector base URL. When unset, tracing instrumentation starts without export. |
 | `PORT` | No | `4000` | API HTTP and Socket.IO port. |
 | `LOG_LEVEL` | No | `info` | Pino log level. |
-| `ENERGY_TARIFF_ZAR_PER_KWH` | No | `2.15` | Indicative Energy Centre cost calculation. |
 | `REDIS_URL` | No | `redis://redis:6379` in compose | Enables Socket.IO Redis fan-out, and the BullMQ job queue (`F4.24`, ADR 0063). Native WSL may omit it for in-process Socket.IO fallback; absent, `GET /health` reports `queue.configured: false` and `enqueue` rejects `QueueUnavailableError` rather than the API failing to boot. |
 | `OBJECT_STORAGE_ENDPOINT` | No | `http://minio:9000` in compose | ADR 0066 decision 3. Unset or whitespace-only reads as unconfigured: the API boots, `GET /health` reports `storage: { configured: false }`, and both asset-image routes answer 503. Set, it must be a valid `http:`/`https:` URL, and `http:` is refused unless `OBJECT_STORAGE_ALLOW_INSECURE=true` is also set. |
 | `OBJECT_STORAGE_BUCKET` | Required if `OBJECT_STORAGE_ENDPOINT` is set | `bms-asset-images` in compose | ADR 0066 decision 3. The one bucket every asset image lives in (`org/<organization_id>/assets/<asset_id>/<image_id>` keys, decision 4). Missing while the endpoint is set is a boot error, not a silent fallback. |

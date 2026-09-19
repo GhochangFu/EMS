@@ -95,6 +95,7 @@ export async function verifyHierarchySeed(
       eskom_incomers_on_pue_template: string;
       eskom_it_load_members: string;
       eskom_it_rack_kw_points: string;
+      eskom_energy_tariff_rows: string;
     }>(`
       SELECT
         (SELECT COUNT(*)::text FROM bms.locations l
@@ -146,8 +147,17 @@ export async function verifyHierarchySeed(
           INNER JOIN bms.assets a ON a.id = ap.asset_id
           INNER JOIN bms.organizations o ON o.id = a.organization_id
           WHERE o.code = 'ESKOM' AND a.domain = 'it'
-            AND ap.point_key = 'rack_kw') AS eskom_it_rack_kw_points
-    `);
+            AND ap.point_key = 'rack_kw') AS eskom_it_rack_kw_points,
+        -- E4.1c. The demo tariff row (calc-parameters-demo-seed.ts): at least
+        -- one organization-scope energy_tariff_per_kwh row, effective or not.
+        -- A floor, not an exact count, because an administrator may end it and
+        -- enter another on the demo, and the seed must not put the first back.
+        (SELECT COUNT(*)::text FROM bms.calc_parameters cp
+          WHERE cp.organization_id = $1
+            AND cp.key = 'energy_tariff_per_kwh'
+            AND cp.location_id IS NULL
+            AND cp.asset_id IS NULL) AS eskom_energy_tariff_rows
+    `, [eskomOrgId]);
     const row = res.rows[0];
     // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
     // needs in order to tell `WHERE active = true` apart from no predicate.
@@ -181,6 +191,13 @@ export async function verifyHierarchySeed(
     expect("ESKOM incomers pinned to BASELINE-ELECTRICAL-INCOMER", row?.eskom_incomers_on_pue_template, 9);
     expect("ESKOM IT_LOAD group members", row?.eskom_it_load_members, 14);
     expect("ESKOM IT assets with a rack_kw catalog row", row?.eskom_it_rack_kw_points, 14);
+    // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
+    // the floor is written as its own check.
+    if (Number(row?.eskom_energy_tariff_rows) < 1) {
+      errors.push(
+        `ESKOM organization-scope energy_tariff_per_kwh rows: expected at least 1, got ${row?.eskom_energy_tariff_rows ?? "no row"}`,
+      );
+    }
   });
 
   // ── Pass 3: PHEWB ─────────────────────────────────────────────────────────

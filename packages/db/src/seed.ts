@@ -24,6 +24,7 @@ import { seedAutomationRules, seedEskomLadderRules } from "./automation-rules-se
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import { seedAssetTemplateHealth } from "./asset-template-health-seed";
 import { seedPueDemo, seedPueDemoRackKwPoints } from "./pue-demo-seed";
+import { seedCalcParametersDemo } from "./calc-parameters-demo-seed";
 import {
   seedDemoAlarms,
   seedDemoWorkOrders,
@@ -264,6 +265,13 @@ async function main(): Promise<void> {
       // PUE counts fail on a cold database with 0 of 9 / 0 of 14 / 0 of 14 —
       // and only on a cold one, which is why the cold-start gate exists.
       await seedPueDemo(pool, eskomOrgId);
+      // `E4.1c` — the demo tariff row (ADR 0070 decision 7, Q1 ruling). ESKOM
+      // only, insert-if-absent; the module header says why both. Inside this
+      // bracket because `bms.calc_parameters` is FORCE-RLS and the row needs
+      // the tenant GUC. Order-free within the seed: it references the organization
+      // and the `energy_tariff_per_kwh` vocabulary row, which migration `0074`
+      // writes — so `roles → migrate → seed` puts it there on every environment.
+      await seedCalcParametersDemo(pool, eskomOrgId);
     });
 
     // ── Post-tenant ───────────────────────────────────────────────────────

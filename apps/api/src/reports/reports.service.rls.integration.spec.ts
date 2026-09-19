@@ -7,6 +7,15 @@ import type { EnergyReportQuery } from "./reports.schema";
 import { ReportsService } from "./reports.service";
 
 /**
+ * `E4.1c` — the tariff resolver the services now take. This file asserts
+ * nothing about cost, so every asset resolves to no tariff and the cost
+ * fields are `null` (`energy-cost.ts`); the real service is exercised in
+ * `telemetry/energy-cost.integration.spec.ts`.
+ */
+const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+
+
+/**
  * `E7.1b` — why the energy report must read on the fleet (BYPASSRLS) pool.
  *
  * `ReportsService` moved from `TENANT_POOL` to `FLEET_POOL` (commit `5b314db`,
@@ -410,7 +419,7 @@ export async function assertReportResolvesOnFleet(
   fleetPool: pg.Pool,
   fx: EnergyRlsFixture,
 ): Promise<void> {
-  const svc = new ReportsService(fleetPool);
+  const svc = new ReportsService(fleetPool, NO_TARIFFS);
   const preview = await svc.energyPreview(fx.query, scopedAssetIds(fx));
 
   assert(
@@ -442,7 +451,7 @@ export async function assertReportGoesDarkOnBareTenant(
   bareTenantPool: pg.Pool,
   fx: EnergyRlsFixture,
 ): Promise<void> {
-  const svc = new ReportsService(bareTenantPool);
+  const svc = new ReportsService(bareTenantPool, NO_TARIFFS);
   const preview = await svc.energyPreview(fx.query, scopedAssetIds(fx));
 
   assert(
@@ -472,7 +481,7 @@ export async function assertReportResolvesWithOrgGuc(
   gucTenantPool: pg.Pool,
   fx: EnergyRlsFixture,
 ): Promise<void> {
-  const svc = new ReportsService(gucTenantPool);
+  const svc = new ReportsService(gucTenantPool, NO_TARIFFS);
   const preview = await svc.energyPreview(fx.query, scopedAssetIds(fx));
 
   assert(

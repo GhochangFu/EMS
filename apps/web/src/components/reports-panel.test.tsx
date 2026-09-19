@@ -3,7 +3,9 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aCostRendersInTheReportsPanel,
   aMeasuredRatioRendersInTheReportsPanel,
+  aNullCostRendersTheDashInTheReportsPanel,
   anUnconfiguredPreviewShowsTheDashAndTheReason,
 } from "./reports-panel.spec";
 
@@ -24,5 +26,13 @@ describe("F2.8 reports panel PUE tile", () => {
 
   it("renders a dash and the not-configured reason when the API returns null", async () => {
     await anUnconfiguredPreviewShowsTheDashAndTheReason();
+  });
+
+  it("E4.1c — renders the cost in the organization's currency", async () => {
+    await aCostRendersInTheReportsPanel();
+  });
+
+  it("E4.1c — renders the dash, without throwing, when the cost fields are null", async () => {
+    await aNullCostRendersTheDashInTheReportsPanel();
   });
 });

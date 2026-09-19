@@ -121,7 +121,7 @@ async function anyAssetDomain(pool: pg.Pool): Promise<string> {
 
 async function createOrganization(pool: pg.Pool, label: string): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
-    "INSERT INTO bms.organizations (code, name) VALUES ($1, $2) RETURNING id",
+    "INSERT INTO bms.organizations (code, name, currency) VALUES ($1, $2, 'ZAR') RETURNING id",
     [`E13HR-${label}-${randomUUID()}`, `E1.3 health-rollup fixture org ${label}`],
   );
   const id = rows[0]?.id;

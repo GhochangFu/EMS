@@ -9,6 +9,14 @@ import { createFixtureAssets, fixtureLocation } from "../testing/integration-fix
 import { DashboardService } from "./dashboard.service";
 
 /**
+ * `E4.1c` — the tariff resolver the services now take. This file asserts
+ * nothing about cost, so every asset resolves to no tariff and the cost
+ * fields are `null` (`energy-cost.ts`); the real service is exercised in
+ * `telemetry/energy-cost.integration.spec.ts`.
+ */
+const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+
+/**
  * `F3.10` U12 — the dashboard's open-alarm counts follow `cleared_at`, not
  * `acknowledged_at` (ADR 0057 decision 1, owner ruling Q1). Assertions live
  * here; the sibling `.integration.test` owns the pool (ADR 0014).
@@ -105,7 +113,7 @@ export async function assertOpenAlarmCountsFollowClearedAt(pool: pg.Pool): Promi
   await withRolledBackClient(pool, async (client) => {
     const run = randomUUID().slice(0, 8);
     const { locationId, assetId } = await insertFixture(client, run);
-    const service = new DashboardService(client as unknown as pg.Pool);
+    const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
 
     const kpis = await service.kpis([assetId]);
     expect(

@@ -4,7 +4,7 @@ import {
   Injectable,
 } from "@nestjs/common";
 import type { Pool } from "pg";
-import type { LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
+import type { EnergyCentreSummary, LocationDashboardDto, LocationKpiSummary } from "@bms/shared";
 
 import { FLEET_POOL } from "../database/database.tokens";
 import {
@@ -13,6 +13,8 @@ import {
   bucketHours,
   levelForRange,
 } from "../telemetry/point-aggregates";
+import { CalcParametersService } from "../calc/calc-parameters.service";
+import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
 import { latestPueRatio, windowedPueRatio } from "../telemetry/pue-ratio";
 
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
@@ -26,7 +28,15 @@ type LocationDashboardTelemetrySample = LocationDashboardAssetRow["telemetry"][n
  */
 @Injectable()
 export class DashboardService {
-  constructor(@Inject(FLEET_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(FLEET_POOL) private readonly pool: Pool,
+    // `E4.1c` — the tariff is a parameter (ADR 0070 decision 7). `Pick`-typed
+    // so the existing `new DashboardService(pool)` spec sites pass a two-line
+    // fake; the real service comes from `CalcModule`, which `DashboardModule`
+    // imports for it.
+    @Inject(CalcParametersService)
+    private readonly parameters: Pick<CalcParametersService, "resolveForAssets">,
+  ) {}
 
   /** Returns location KPI cards for the current access scope. */
   async locationKpis(opts?: {
@@ -655,20 +665,7 @@ export class DashboardService {
     };
   }
 
-  private energyTariffZar(): number {
-    const t = Number(process.env.ENERGY_TARIFF_ZAR_PER_KWH ?? "2.15");
-    return Number.isFinite(t) && t > 0 ? t : 2.15;
-  }
-
-  async energySummary(windowRaw?: string, assetIds?: string[] | null): Promise<{
-    window: string;
-    totalKwh: number;
-    peakKw: number;
-    pueEstimate: number | null;
-    indicativeCostZar: number;
-    tariffZarPerKwh: number;
-    asOf: string;
-  }> {
+  async energySummary(windowRaw?: string, assetIds?: string[] | null): Promise<EnergyCentreSummary> {
     const { intervalSql, useHourlyBuckets, windowLabel, durationHours } =
       this.parseEnergyWindow(windowRaw);
     if (assetIds && assetIds.length === 0) {
@@ -677,8 +674,11 @@ export class DashboardService {
         totalKwh: 0,
         peakKw: 0,
         pueEstimate: null,
-        indicativeCostZar: 0,
-        tariffZarPerKwh: this.energyTariffZar(),
+        // `E4.1c` — an empty scope has no cost, no tariff and no currency
+        // (`energy-cost.ts`, the three fail-closed rules).
+        indicativeCost: null,
+        tariffPerKwh: null,
+        currency: null,
         asOf: new Date().toISOString(),
       };
     }
@@ -744,7 +744,19 @@ export class DashboardService {
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kwh) : 0;
     const peakKw = row ? Number(row.peak_kw) : 0;
-    const tariff = this.energyTariffZar();
+
+    // `E4.1c` (ADR 0070 decision 7) — the cost is Σ per-asset kWh × that asset's
+    // nearest-scope `energy_tariff_per_kwh`, effective **now** (the window ends
+    // now), in the organization's currency. The per-asset read uses the same
+    // `now() - interval` bound as the total above, so the two describe the same
+    // window. A missing tariff or a second currency in scope is `null`, not 0.
+    const perAsset = await perAssetEnergy(this.pool, {
+      level,
+      window: { kind: "trailing", intervalSql },
+      kwhFactor,
+      assetIds: assetIds ?? null,
+    });
+    const cost = energyCost(perAsset, await resolveTariffs(this.parameters, perAsset, new Date()));
 
     return {
       window: windowLabel,
@@ -758,8 +770,7 @@ export class DashboardService {
         end: new Date(),
         assetIds: assetIds ?? null,
       }),
-      indicativeCostZar: Math.round(totalKwh * tariff * 100) / 100,
-      tariffZarPerKwh: tariff,
+      ...cost,
       asOf: new Date().toISOString(),
     };
   }

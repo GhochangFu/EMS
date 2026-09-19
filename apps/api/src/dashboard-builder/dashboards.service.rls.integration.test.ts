@@ -431,7 +431,7 @@ describe.skipIf(!connectionString)(
       // carries exactly two, and "excluded from a caller's own two" cannot be tested without a
       // third that genuinely is neither.
       const leakOrg = await ownerPool.query<{ id: string }>(
-        `INSERT INTO bms.organizations (code, name) VALUES ($1, 'F3.1b fleet-leak proof org') RETURNING id`,
+        `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, 'F3.1b fleet-leak proof org', 'ZAR') RETURNING id`,
         [LEAK_ORG_CODE],
       );
       const leakOrgId = leakOrg.rows[0]?.id;

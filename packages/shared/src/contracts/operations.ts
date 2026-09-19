@@ -22,8 +22,17 @@ export const energyCentreSummarySchema = z.object({
   // `energyReportPreviewSchema.summary`, so the CSV/XLSX export takes the null
   // too (`reports.serialise.ts` writes U+2014).
   pueEstimate: z.number().nullable(),
-  indicativeCostZar: z.number(),
-  tariffZarPerKwh: z.number(),
+  // Nullable since `E4.1c` (ADR 0070 decision 7). The tariff is the
+  // organization's `energy_tariff_per_kwh` parameter, resolved per asset at the
+  // nearest scope, and the currency is `bms.organizations.currency`; the three
+  // are `null` — never `0` — when any asset in scope has no tariff, when the
+  // scope spans two currencies, or when the scope is empty
+  // (`apps/api/src/telemetry/energy-cost.ts` holds the three rules). The
+  // fields stopped naming a currency in the same change: the web formats the
+  // amount with `Intl.NumberFormat` on `currency`.
+  indicativeCost: z.number().nullable(),
+  tariffPerKwh: z.number().nullable(),
+  currency: z.string().nullable(),
   asOf: z.string(),
 });
 

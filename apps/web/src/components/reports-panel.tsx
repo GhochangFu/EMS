@@ -8,6 +8,7 @@ import {
   fetchEnergyReportPreview,
   type EnergyReportInput,
 } from "../api/reports";
+import { costTileProps } from "../lib/money";
 import { pueTileProps } from "../lib/pue-tile";
 import { KpiTile } from "./kpi-tile";
 
@@ -225,13 +226,13 @@ export function ReportsPanel() {
             `PUE estimate` cell.
           */}
           <KpiTile label="PUE" {...pueTileProps(status, summary?.pueEstimate)} />
-          <KpiTile
-            label="Indicative cost"
-            status={status}
-            value={summary ? formatNumber(summary.indicativeCostZar) : null}
-            unit="ZAR"
-            hint="kWh × tariff"
-          />
+          {/*
+            `E4.1c` — the same value the export writes, rendered the same way: a
+            null cost is the U+2014 `reports.serialise.ts` puts in the
+            `Indicative cost` cell, and the currency is the organization's
+            (the formatted string carries the symbol, so no `unit`).
+          */}
+          <KpiTile label="Indicative cost" {...costTileProps(status, summary?.indicativeCost, summary?.currency)} />
         </div>
 
         {previewQ.isError ? (

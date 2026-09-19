@@ -174,7 +174,7 @@ export async function assertKbScopedToTheCallersOrganization(db: BmsDb): Promise
     const { organizationId } = await fixtureLocation(tx);
     const [otherOrg] = await tx
       .insert(organizations)
-      .values({ code: "E22_KB_OTHER_ORG", name: "E2.2 KB — other tenant" })
+      .values({ code: "E22_KB_OTHER_ORG", name: "E2.2 KB — other tenant", currency: "ZAR" })
       .returning({ id: organizations.id });
     if (!otherOrg) {
       throw new Error("failed to insert the other-tenant organization");
@@ -352,7 +352,7 @@ export async function assertKbKeepsTheSameCodeInTwoOrganizations(db: BmsDb): Pro
     const { organizationId } = await fixtureLocation(tx);
     const [otherOrg] = await tx
       .insert(organizations)
-      .values({ code: "E22_KB_SECOND_ORG", name: "E2.2 KB - second tenant" })
+      .values({ code: "E22_KB_SECOND_ORG", name: "E2.2 KB - second tenant", currency: "ZAR" })
       .returning({ id: organizations.id });
     if (!otherOrg) {
       throw new Error("failed to insert the second organization");
@@ -405,7 +405,7 @@ export async function assertKbKeepsBothOrganizationsForAnUnrestrictedAdmin(
     const { organizationId } = await fixtureLocation(tx);
     const [otherOrg] = await tx
       .insert(organizations)
-      .values({ code: "E22_KB_THIRD_ORG", name: "E2.2 KB - third tenant" })
+      .values({ code: "E22_KB_THIRD_ORG", name: "E2.2 KB - third tenant", currency: "ZAR" })
       .returning({ id: organizations.id });
     if (!otherOrg) {
       throw new Error("failed to insert the third organization");

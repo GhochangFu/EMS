@@ -43,8 +43,11 @@ function preview(overrides: Partial<EnergyReportPreview> = {}): EnergyReportPrev
       totalKwh: 2345.17,
       peakKw: 414.66,
       pueEstimate: 1.25,
-      indicativeCostZar: 5042.12,
-      tariffZarPerKwh: 2.15,
+      // `E4.1c` — the fields stopped naming a currency; for a ZAR organization
+      // the exported bytes are what they were (`UNCHANGED_OUTPUT` below).
+      indicativeCost: 5042.12,
+      tariffPerKwh: 2.15,
+      currency: "ZAR",
       asOf: "2026-08-10T12:00:00.000Z",
     },
     sourceTotals: { gridKwh: 2130.37, solarKwh: 126.04, dgKwh: 88.76 },
@@ -201,6 +204,34 @@ export function runReportsSerialiseTests(): void {
     ),
     "with no consumers the table header is still emitted, as it was before the fix",
   );
+}
+
+/**
+ * `E4.1c` (ADR 0070 decision 7) — a scope with no tariff, or two currencies,
+ * answers `null` for the cost, the tariff and the currency. The two cells
+ * carry the same U+2014 as a null PUE with an **empty** unit cell (no `ZAR`
+ * spelled anywhere — the unit is the organization's), and the sheet path's
+ * `assertFiniteCells` does not throw, because a string is outside its type.
+ * The row labels are unchanged for the same reason as the PUE row's.
+ */
+export function assertNullCostRendersTheDash(): void {
+  const nullCost = { ...preview().summary, indicativeCost: null, tariffPerKwh: null, currency: null };
+  const lines = energyCsvDocument(preview({ summary: nullCost })).split("\n");
+  const cost = lines.find((line) => line.startsWith("Indicative cost"));
+  const tariff = lines.find((line) => line.startsWith("Tariff"));
+  assert(cost === "Indicative cost,—,", `a null cost must be the em dash with an empty unit, got ${JSON.stringify(cost)}`);
+  assert(tariff === "Tariff,—,", `a null tariff must be the em dash with an empty unit, got ${JSON.stringify(tariff)}`);
+  // Positive control beside the absence: with a currency present the unit cell
+  // is the organization's code, which is what the `UNCHANGED_OUTPUT` golden pins
+  // for ZAR and what an INR organization gets without a code change.
+  const inr = { ...preview().summary, currency: "INR" };
+  const inrLines = energyCsvDocument(preview({ summary: inr })).split("\n");
+  assert(inrLines.includes("Indicative cost,5042.12,INR"), "the unit cell is the organization's currency");
+  assert(inrLines.includes("Tariff,2.15,INR/kWh"), "the tariff unit is the organization's currency per kWh");
+  // The sheet path: `assertFiniteCells` is typed on `number` and must not see
+  // the string. It throwing here would be the export refusing an honest null.
+  const rows = energySheetRows(preview({ summary: nullCost }));
+  assert(rows.some((row) => row[0] === "Indicative cost" && row[1] === "—" && row[2] === ""), "the sheet carries the dash and an empty unit");
 }
 
 /**

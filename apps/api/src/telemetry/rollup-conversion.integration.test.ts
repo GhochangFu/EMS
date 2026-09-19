@@ -22,6 +22,15 @@ import {
 } from "./rollup-conversion.integration.spec";
 
 /**
+ * `E4.1c` — the tariff resolver the services now take. This file asserts
+ * nothing about cost, so every asset resolves to no tariff and the cost
+ * fields are `null` (`energy-cost.ts`); the real service is exercised in
+ * `telemetry/energy-cost.integration.spec.ts`.
+ */
+const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+
+
+/**
  * `F4.28` / ADR 0025 — Vitest entry point for the six converted rollup reads.
  * Assertions live in the sibling `.spec` (§4.6); this file owns the lifecycle.
  *
@@ -68,8 +77,8 @@ describe.skipIf(!connectionString)("F4.28 — rollup reads on the aggregates", (
     // that depends on them: the fixture is visible only through the real-time
     // branch, and no refresh policy's window can ever reach it.
     await assertFixtureIsOnlyOnTheLiveBranch(created, probes);
-    dashboard = new DashboardService(created);
-    reports = new ReportsService(created);
+    dashboard = new DashboardService(created, NO_TARIFFS);
+    reports = new ReportsService(created, NO_TARIFFS);
   }, 120_000);
 
   afterAll(async () => {

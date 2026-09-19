@@ -206,7 +206,6 @@ services:
       JWT_TTL: 8h
       PORT: 4000
       LOG_LEVEL: info
-      ENERGY_TARIFF_ZAR_PER_KWH: 2.15
       # ADR 0029 Amendment 2. Passed through from `.env`, with **no default
       # here on purpose**: the image sets `NODE_ENV=production`, so this stack
       # is "production" as far as the gate is concerned even when it is someone's
@@ -329,7 +328,6 @@ services:
       JWT_TTL: 8h
       PORT: 4001
       LOG_LEVEL: info
-      ENERGY_TARIFF_ZAR_PER_KWH: 2.15
       REDIS_URL: redis://redis:6379
       # Identical to `api` above, and not optional. Without these three
       # `resolveAuthMode` falls back to `local`, and the JWT_SECRET two lines

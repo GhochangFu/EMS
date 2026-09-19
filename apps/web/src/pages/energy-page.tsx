@@ -12,6 +12,7 @@ import { KpiTile } from "../components/kpi-tile";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { AppShell } from "../layouts/app-shell";
+import { costTileProps, formatMoney } from "../lib/money";
 import { pueTileProps } from "../lib/pue-tile";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -72,9 +73,17 @@ export function EnergyPage({ user }: EnergyPageProps) {
       kpiRibbon={
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-bms-ink">Energy Analytics · multi-site consumption</span>
-          <span className="hidden text-bms-muted sm:inline">
-            Tariff {s ? `R ${s.tariffZarPerKwh.toFixed(2)}/kWh est.` : ""}
-          </span>
+          {/*
+            `E4.1c` — the tariff is the organization's `energy_tariff_per_kwh`
+            parameter in its own currency, or nothing: a `null` tariff (none
+            entered, or two currencies in scope) renders no ribbon text rather
+            than `R null`.
+          */}
+          {s && s.tariffPerKwh !== null && s.currency !== null ? (
+            <span className="hidden text-bms-muted sm:inline">
+              Tariff {formatMoney(s.tariffPerKwh, s.currency, 2)}/kWh
+            </span>
+          ) : null}
         </div>
       }
     >
@@ -127,17 +136,12 @@ export function EnergyPage({ user }: EnergyPageProps) {
           />
           {/* `F2.8` — the windowed Σ site_kw / Σ it_kw, or a dash with a reason. */}
           <KpiTile label="PUE" {...pueTileProps(sumStatus, s?.pueEstimate)} />
-          <KpiTile
-            label="Indicative cost"
-            status={sumStatus}
-            value={
-              s != null
-                ? s.indicativeCostZar.toLocaleString(undefined, { maximumFractionDigits: 0 })
-                : null
-            }
-            unit="ZAR"
-            hint="kWh × tariff (prototype)"
-          />
+          {/*
+            `E4.1c` — the organization's currency carries the symbol, so the
+            tile has no `unit`; a `null` cost (no tariff in scope, or two
+            currencies) is the dash with the reason, never a 0.
+          */}
+          <KpiTile label="Indicative cost" {...costTileProps(sumStatus, s?.indicativeCost, s?.currency)} />
         </div>
 
         <SectionCard

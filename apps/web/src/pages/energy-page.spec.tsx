@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -34,21 +34,25 @@ function asUser(role: UserRole): AuthUser {
   } as unknown as AuthUser;
 }
 
-function summary(pueEstimate: number | null): EnergyCentreSummary {
+function summary(pueEstimate: number | null, cost: Partial<EnergyCentreSummary> = {}): EnergyCentreSummary {
   return {
     window: "24h",
     totalKwh: 2345.17,
     peakKw: 414.66,
     pueEstimate,
-    indicativeCostZar: 5042.12,
-    tariffZarPerKwh: 2.15,
+    // `E4.1c` — nullable, currency-neutral; `ZAR` here is the fixture's
+    // organization, not a field name.
+    indicativeCost: 5042.12,
+    tariffPerKwh: 2.15,
+    currency: "ZAR",
     asOf: "2026-09-05T12:00:00.000Z",
+    ...cost,
   };
 }
 
 /** All three of the page's fetches, because an unstubbed one dials `localhost:4000`. */
-function stubEnergyApi(pueEstimate: number | null): void {
-  vi.spyOn(energyApi, "fetchEnergySummary").mockResolvedValue(summary(pueEstimate));
+function stubEnergyApi(pueEstimate: number | null, cost: Partial<EnergyCentreSummary> = {}): void {
+  vi.spyOn(energyApi, "fetchEnergySummary").mockResolvedValue(summary(pueEstimate, cost));
   vi.spyOn(energyApi, "fetchEnergySourceMix").mockResolvedValue({ points: [] });
   vi.spyOn(energyApi, "fetchEnergyTopConsumers").mockResolvedValue({ consumers: [] });
 }
@@ -89,4 +93,38 @@ export async function anUnconfiguredWindowShowsTheDashAndTheReason(): Promise<vo
   const tile = await tileLabelled("PUE");
   expect(await within(tile).findByText("—")).toBeInTheDocument();
   expect(within(tile).getByText(NOT_CONFIGURED)).toBeInTheDocument();
+}
+
+/** `E4.1c` E1 — the cost tile is the `Intl` string for the organization's currency, and the ribbon names the tariff. */
+export async function aCostRendersInTheOrganizationsCurrency(): Promise<void> {
+  stubEnergyApi(1.25);
+  renderPage();
+
+  const expected = new Intl.NumberFormat(undefined, { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(
+    5042.12,
+  );
+  const tile = await tileLabelled("Indicative cost");
+  // Raw `textContent`, not `findByText`: `Intl` separates the symbol and the
+  // digits with U+00A0, which the default matcher's whitespace normaliser
+  // would collapse to a space and then fail to match.
+  await waitFor(() => expect(tile.textContent).toContain(expected));
+  const tariff = new Intl.NumberFormat(undefined, { style: "currency", currency: "ZAR", maximumFractionDigits: 2 }).format(2.15);
+  expect(document.body.textContent).toContain(`Tariff ${tariff}/kWh`);
+}
+
+/**
+ * `E4.1c` E2 — the owed guard. No tariff in scope (or two currencies): the page
+ * renders without throwing, the tile is the dash, and the ribbon has no
+ * `Tariff` text. Before this row the ribbon called `.toFixed(2)` on the raw
+ * tariff field and threw here. (The old field name is not spelled: `tests/adr-0070`
+ * part (f) scans specs too.)
+ */
+export async function aNullCostRendersTheDashWithoutThrowing(): Promise<void> {
+  stubEnergyApi(1.25, { indicativeCost: null, tariffPerKwh: null, currency: null });
+  renderPage();
+
+  const tile = await tileLabelled("Indicative cost");
+  expect(await within(tile).findByText("—")).toBeInTheDocument();
+  expect(within(tile).getByText(/No tariff/)).toBeInTheDocument();
+  expect(screen.queryByText(/^Tariff /)).toBeNull();
 }

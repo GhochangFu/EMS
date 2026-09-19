@@ -280,6 +280,8 @@ mix and cost flavour even when only electrical `kw` exists in seed data.
 2. **Summary:** integrate bucketed total `kw` to kWh, max bucket kW as
    peak, PUE via existing `estimatePue` on average bucket load,
    indicative cost = kWh × `ENERGY_TARIFF_ZAR_PER_KWH` (default 2.15).
+   Superseded by ADR 0070 decision 7 (`E4.1c`, 2026-09-19): the tariff is
+   the organization's `energy_tariff_per_kwh` parameter.
 3. **Source mix:** per bucket, solar = sum of `kw` for assets with
    `code ILIKE 'PV%'`, then a small **nominal** DG slice (~4% of load
    after solar, capped) and the remainder labelled grid — clearly a
