@@ -252,9 +252,14 @@ export async function assertOrganizationTariffPricesTheTotal(pool: pg.Pool, fx: 
   try {
     const summary = await service(pool).energySummary("24h", [fx.a1, fx.a2]);
     assert(summary.totalKwh > 0, `the fixture must produce energy in the window, got ${summary.totalKwh}`);
+    // Within a cent, not exact: `totalKwh` is rounded to two decimals before
+    // it is returned, while the cost sums the unrounded per-asset kWh — the
+    // same order the environment-variable code used. The fixture's constant
+    // kW make the two agree exactly; the tolerance is for the claim, not the
+    // fixture.
     assert(
-      summary.indicativeCost === round2(summary.totalKwh * 2.15),
-      `expected round(${summary.totalKwh} × 2.15) = ${round2(summary.totalKwh * 2.15)}, got ${String(summary.indicativeCost)}`,
+      summary.indicativeCost !== null && Math.abs(summary.indicativeCost - round2(summary.totalKwh * 2.15)) <= 0.01,
+      `expected ≈ round(${summary.totalKwh} × 2.15) = ${round2(summary.totalKwh * 2.15)}, got ${String(summary.indicativeCost)}`,
     );
     assert(summary.tariffPerKwh === 2.15, `expected tariffPerKwh 2.15, got ${String(summary.tariffPerKwh)}`);
     assert(summary.currency === fx.currency, `expected currency ${fx.currency}, got ${String(summary.currency)}`);
