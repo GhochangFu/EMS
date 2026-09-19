@@ -63,6 +63,32 @@ export const V2_CORPUS: readonly string[] = [
   "sum({kw} @site) / 2",
   "1 + {TX_01.kwh}",
   "{TX_01.kwh}",
+  // ---- E4.1b U6 — valid v2 formulas the U5 v2-guard cases also feed ------
+  // (`tokenizer.spec.ts` / `parser.spec.ts` `runParserWindowTests` /
+  // `runTokenizerWindowTests` v2-guard lines), plus two bare-integer
+  // formulas so the superset property exercises the integer path beside the
+  // window lexer, as `V1_CORPUS` already does for `v1`.
+  "sum({kw} @site)",
+  "min({kw}, 1)",
+  "max({a}, {b}, 3)",
+  "{kw} * 24",
+  "{kw} + 7",
+  // ---- E4.1b U6 — the window productions, V2_REFUSALS_V3_ACCEPTS below ---
+  "sum({kw}, 24h)",
+  "sum({kw}, today)",
+  "avg({TX_01.kw}, 24h)",
+  "min({kw}, 7d)",
+  "max({kw}, this_year)",
+  "delta({kwh}, today)",
+  "hours(this_month)",
+  "hours(24h)",
+  // ---- E4.1b U6 — the window gates, V2_REFUSALS_WITH_A_DIFFERENT_V3_CODE below --
+  "24h",
+  "today",
+  "hours(1)",
+  "delta(1, 2)",
+  "sum({kw} @site, 24h)",
+  "min({kw} + 1, 24h)",
 ];
 
 /**
@@ -70,7 +96,18 @@ export const V2_CORPUS: readonly string[] = [
  * (`unexpected_character`) and `v3`-legal — the `v3` production the whole row
  * exists to add. Checked by name, exactly as `V1_REFUSALS_V2_ACCEPTS` is.
  */
-export const V2_REFUSALS_V3_ACCEPTS: readonly string[] = ["{kw} * $energy_tariff_per_kwh"];
+export const V2_REFUSALS_V3_ACCEPTS: readonly string[] = [
+  "{kw} * $energy_tariff_per_kwh",
+  // ---- E4.1b U6 — the window productions themselves, ADR 0070 decision 2 --
+  "sum({kw}, 24h)",
+  "sum({kw}, today)",
+  "avg({TX_01.kw}, 24h)",
+  "min({kw}, 7d)",
+  "max({kw}, this_year)",
+  "delta({kwh}, today)",
+  "hours(this_month)",
+  "hours(24h)",
+];
 
 /**
  * The one entry whose `v2` outcome is decided inside the tokenizer's `isV3`
@@ -83,4 +120,23 @@ export const V2_REFUSALS_WITH_A_DIFFERENT_V3_CODE: readonly {
   readonly expression: string;
   readonly v2Code: CalcErrorCode;
   readonly v3Code: CalcErrorCode;
-}[] = [{ expression: "$", v2Code: "unexpected_character", v3Code: "malformed_parameter_reference" }];
+}[] = [
+  { expression: "$", v2Code: "unexpected_character", v3Code: "malformed_parameter_reference" },
+  // ---- E4.1b U6 — the window-token and window-form gates, ADR 0070 decision
+  // 2/4. Both codes measured against this build (see the plan's U6 build
+  // report) rather than assumed: `24h` and `today` lex as `malformed_number`
+  // / `unexpected_end` under `v2` (the window branches are gated on
+  // `isV3W`/`isV3`) and as `window_not_allowed` under `v3` (a window with no
+  // enclosing window-form call). `hours`/`delta` are not `v1`/`v2` functions
+  // at all, so they refuse `unknown_function` there and only gain their `v3`
+  // window-form refusals once the identifier is recognised.
+  { expression: "24h", v2Code: "malformed_number", v3Code: "window_not_allowed" },
+  { expression: "today", v2Code: "unexpected_end", v3Code: "window_not_allowed" },
+  { expression: "hours(1)", v2Code: "unknown_function", v3Code: "window_required" },
+  { expression: "delta(1, 2)", v2Code: "unknown_function", v3Code: "window_needs_point_reference" },
+  // measured: the lexer's glued-suffix rule fires before the parser ever sees
+  // the scope comma, so this refuses `malformed_number` under `v2` too — the
+  // same code the bare `24h` entry pins, for the same reason.
+  { expression: "sum({kw} @site, 24h)", v2Code: "malformed_number", v3Code: "window_over_aggregate" },
+  { expression: "min({kw} + 1, 24h)", v2Code: "malformed_number", v3Code: "window_needs_point_reference" },
+];

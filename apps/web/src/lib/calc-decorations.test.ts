@@ -10,6 +10,7 @@ import {
   runUnterminatedReferenceTests,
   runV2DialectDecorationTests,
   runV3DialectDecorationTests,
+  runWindowDecorationTests,
 } from "./calc-decorations.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -48,5 +49,9 @@ describe("calc syntax decorations", () => {
 
   it("styles a $key parameter span under the v3 dialect only", () => {
     runV3DialectDecorationTests();
+  });
+
+  it("styles a window literal span under the v3 dialect only", () => {
+    runWindowDecorationTests();
   });
 });

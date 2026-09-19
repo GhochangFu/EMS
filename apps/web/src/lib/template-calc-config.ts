@@ -115,8 +115,10 @@ export function setCalcTrigger(row: TemplatePointRow, trigger: CalcTrigger): Tem
 const DIALECT_LABELS: Readonly<Record<CalcDialect, string>> = {
   [CALC_DIALECT]: `${CALC_DIALECT} — this asset's own points`,
   [CALC_DIALECT_V2]: `${CALC_DIALECT_V2} — cross-asset: aggregates over @site / @domain / @group, and {CODE.key}`,
-  // ADR 0070 decision 4 (`E4.1a`).
-  [CALC_DIALECT_V3]: `${CALC_DIALECT_V3} — cross-asset plus parameters: $key reads a value from Calc Parameters`,
+  // ADR 0070 decisions 4 and 5 (`E4.1a`, `E4.1b`).
+  [CALC_DIALECT_V3]:
+    `${CALC_DIALECT_V3} — cross-asset, parameters and windows: $key reads a parameter; ` +
+    "sum/avg/min/max/delta({point}, 24h | today) read a time window",
 };
 
 /**
@@ -128,12 +130,39 @@ const DIALECT_LABELS: Readonly<Record<CalcDialect, string>> = {
 export const V3_TRIGGER_LATENCY_HINT =
   "Runs on a schedule only. A parameter is read once per sweep at the tick, so the value is at " +
   "most one interval old; a $key with no value in scope at that instant writes nothing and is " +
-  "counted as parameter_unset.";
+  "counted as parameter_unset. A calendar window (today, this_week, this_month, this_year) is " +
+  "additionally up to one interval behind local midnight.";
 
 /** The one `v3` form, taught under the Grammar select (ADR 0070 decision 2's resolution order). */
 export const V3_PARAMETER_HELP =
   "$key — a named parameter (tariff, factor, baseline, rating) from /admin/calc-parameters; " +
   "nearest scope wins: asset, then location, then organization.";
+
+/**
+ * The window forms (ADR 0070 decision 5; `E4.1b`), taught under the `$key`
+ * help. Three sentences carry the three things an author gets wrong: `sum` is
+ * the time integral and not a sum of samples (plan ruling Q5 — `hours()` on a
+ * rolling window is the literal duration, and `sum` integrates over the whole
+ * of it); `delta` is last minus first and so means something only on a
+ * cumulative counter (ruling Q7: the grammar cannot know cumulativeness, so
+ * the sentence says it and no per-point warning does); `hours` prorates.
+ */
+export const V3_WINDOW_HELP =
+  "sum({kw}, 24h) is the time integral (avg × hours: a kW point gives kWh, over the whole window " +
+  "even where samples are missing); delta({kwh}, today) is last minus first, for cumulative " +
+  "counters; hours(today) prorates a daily baseline; a rolling window is <n>m/<n>h/<n>d up to 366d.";
+
+/**
+ * Rendered beside a row's editor when its formula reads a calendar window
+ * (`E4.1b` plan design decision 15). A hint line, never a `PointGridProblem`:
+ * a template does not know which sites will instantiate it, so the validator
+ * can warn and cannot refuse — the sweep is what skips, per asset, and counts
+ * `timezone_unset`. A static sentence, so it echoes no fragment of the
+ * author's formula (ADR 0036's no-echo rule).
+ */
+export const CALENDAR_WINDOW_WARNING =
+  "This formula uses a calendar window. It is evaluated in the zone of each asset's location; " +
+  "at a location with no timezone (Admin → Locations) it writes nothing and counts timezone_unset.";
 
 /**
  * The dialect `<select>`'s options, from `CALC_DIALECTS` and in its order.

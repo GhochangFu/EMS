@@ -35,6 +35,7 @@ function def(overrides: Partial<CalcDefinition> & { formula: string }): CalcDefi
     ast: parsed.ast,
     refs: parsed.refs,
     paramRefs: parsed.paramRefs,
+    windowReads: parsed.windowReads,
     trigger: "streaming",
     intervalSeconds: null,
     maxInputAgeSeconds: 300,

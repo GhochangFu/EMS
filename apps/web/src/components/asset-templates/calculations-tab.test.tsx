@@ -3,11 +3,14 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aCalendarWindowShowsTheTimezoneWarning,
   aCycleBlocksTheSaveUnderBothRows,
   aFrozenVersionDisablesEveryControl,
   aMixedDialectPairSkipsTheCycleMirror,
+  aRollingWindowShowsNoTimezoneWarning,
   choosingV2FlipsAStreamingRowToScheduled,
   choosingV3TeachesTheParameterFormAndItsLatency,
+  choosingV3TeachesTheWindowForms,
   eachRowRendersItsDialectsControls,
   savingCarriesTheRatioAndPreservesTheDialect,
 } from "./calculations-tab.spec";
@@ -49,5 +52,17 @@ describe("F2.22 calculations tab — Grammar, Minimum coverage and the v2 trigge
 
   it("skips the cycle mirror on a mixed-dialect pair, but still blocks the save on the sibling-reference sentence", async () => {
     await aMixedDialectPairSkipsTheCycleMirror();
+  });
+
+  it("teaches the window forms beside the $key help when bms-calc-v3 is chosen (E4.1b)", async () => {
+    await choosingV3TeachesTheWindowForms();
+  });
+
+  it("warns about the location timezone when a v3 formula reads a calendar window", async () => {
+    await aCalendarWindowShowsTheTimezoneWarning();
+  });
+
+  it("does not warn when a v3 formula reads only a rolling window", async () => {
+    await aRollingWindowShowsNoTimezoneWarning();
   });
 });

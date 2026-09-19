@@ -8,6 +8,11 @@ export { evaluate, type CalcEvalErrorCode, type CalcEvalResult } from "./evaluat
 // (`CalcCrossRef`, `CalcScope`, `CalcAggregateFn`, `CalcQualifiedRef`,
 // `CalcAggregate`) come through `export * from "./ast"` above.
 export { crossRefKey } from "./cross-ref";
+// `bms-calc-v3` windows (ADR 0070 decision 5; `E4.1b`): the one canonical key
+// for a window read, and the literal reader the editor's preview reuses. The
+// node types (`CalcWindow`, `CalcWindowFn`, `CalcHours`, `CalcWindowRead`,
+// `CalcWindowFnName`) come through `export * from "./ast"` above.
+export { parseWindowLiteral, windowKey } from "./window-ref";
 // Widened for `F2.5`'s formula editor (ADR 0038 decision 6): syntax
 // highlighting reuses this tokenizer through a CodeMirror `ViewPlugin` rather
 // than defining the grammar a second time in a Lezer file. `CalcTokenizeError`

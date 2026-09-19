@@ -7,7 +7,13 @@ import {
   crossRefKey,
   isCrossAssetDialect,
   isParameterDialect,
+  isWindowDialect,
+  CALC_WINDOW_FNS,
+  CALC_CALENDAR_WINDOWS,
+  CALC_ROLLING_UNITS,
   MAX_FORMULA_PARAM_REFS,
+  MAX_FORMULA_WINDOWS,
+  MAX_ROLLING_WINDOW_DAYS,
   parseFormula,
   tokenize,
 } from "./index";
@@ -100,6 +106,30 @@ export function runCalcDslBarrelTests(): void {
     "isParameterDialect is true for v3 only",
   );
   assert(MAX_FORMULA_PARAM_REFS === 8, `MAX_FORMULA_PARAM_REFS must be 8, got ${MAX_FORMULA_PARAM_REFS}`);
+  // E4.1b (ADR 0070 decision 5; plan rulings Q1, Q6)
+  assert(
+    !isWindowDialect(CALC_DIALECT) && !isWindowDialect(CALC_DIALECT_V2) && isWindowDialect(CALC_DIALECT_V3),
+    "isWindowDialect is true for v3 only",
+  );
+  assert(MAX_FORMULA_WINDOWS === 8, `MAX_FORMULA_WINDOWS must be 8 (ruling Q1), got ${MAX_FORMULA_WINDOWS}`);
+  assert(MAX_ROLLING_WINDOW_DAYS === 366, `MAX_ROLLING_WINDOW_DAYS must be 366, got ${MAX_ROLLING_WINDOW_DAYS}`);
+  assert(
+    CALC_WINDOW_FNS.join(",") === "sum,avg,min,max,delta",
+    `CALC_WINDOW_FNS must be the five functions in order, got ${JSON.stringify(CALC_WINDOW_FNS)}`,
+  );
+  assert(
+    CALC_CALENDAR_WINDOWS.join(",") === "today,this_week,this_month,this_year",
+    `CALC_CALENDAR_WINDOWS must be the four words in order, got ${JSON.stringify(CALC_CALENDAR_WINDOWS)}`,
+  );
+  assert(
+    CALC_ROLLING_UNITS.m === 1 && CALC_ROLLING_UNITS.h === 60 && CALC_ROLLING_UNITS.d === 1440 && Object.keys(CALC_ROLLING_UNITS).length === 3,
+    "CALC_ROLLING_UNITS is m/h/d in minutes",
+  );
+  const windowed = tokenize("delta({kwh}, today)", { dialect: CALC_DIALECT_V3 });
+  assert(
+    windowed[4].kind === "window" && windowed[4].text === "today",
+    `tokenize(text, { dialect: v3 }) must reach the window lexer, got ${JSON.stringify(windowed[4])}`,
+  );
   const v3 = tokenize("$f", { dialect: CALC_DIALECT_V3 });
   assert(
     v3[0].kind === "param" && v3[0].text === "f",

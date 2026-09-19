@@ -333,3 +333,96 @@ export function runTokenizerV3Tests(): void {
     }
   }
 }
+
+/**
+ * The `v3` window half (ADR 0070 decision 5; `E4.1b` plan design decision 2).
+ * One added token kind, `window`, produced by two productions that both sit
+ * behind the window-dialect guard: an integer literal glued to one of `m|h|d`
+ * (`24h`, `7d`, `15m`) and one of the four calendar words (`today`,
+ * `this_week`, `this_month`, `this_year`). `text` is the literal as written
+ * and `position` its first character. The lexer decides the *shape* only —
+ * `0h` and `1440m` and `9999d` all lex as `window`; the cap and the zero are
+ * the parser's (`window_too_long`, `malformed_window`).
+ *
+ * The assertions marked `v2 guard` are the ones a leaked production would
+ * break: under `v1` and `v2`, `24h` must stay a `malformed_number` (the
+ * glued-suffix rule that already exists) and `today` an ordinary `ident`.
+ */
+export function runTokenizerWindowTests(): void {
+  const kinds = (expression: string, options?: { dialect?: CalcDialect }): string =>
+    tokenize(expression, options).map((t) => t.kind).join(",");
+
+  // ---- v2 guard: byte-identical under v1 and v2 --------------------------------
+
+  expectFailCode("24h", "malformed_number", "v2 guard: 24h is a malformed number under v1");
+  assert(failurePosition("24h") === 0, "v2 guard: the v1 refusal is at the digit");
+  expectFailCode("24h", "malformed_number", "v2 guard: 24h is a malformed number under v2", V2);
+  assert(failurePosition("24h", V2) === 0, "v2 guard: the v2 refusal is at the digit");
+  assert(kinds("today") === "ident,eof", `v2 guard: today is an ident under v1, got ${kinds("today")}`);
+  assert(kinds("today", V2) === "ident,eof", `v2 guard: today is an ident under v2, got ${kinds("today", V2)}`);
+  assert(kinds("this_month", V2) === "ident,eof", "v2 guard: this_month is an ident under v2");
+
+  // ---- rolling: an integer glued to m|h|d --------------------------------------
+
+  const rolling = tokenize("sum({kw}, 24h)", V3);
+  assert(
+    rolling.map((t) => t.kind).join(",") === "ident,lparen,ref,comma,window,rparen,eof",
+    `sum({kw}, 24h) under v3, got ${rolling.map((t) => t.kind).join(",")}`,
+  );
+  assert(rolling[4].text === "24h", `a rolling window's text is the literal as written, got ${JSON.stringify(rolling[4].text)}`);
+  assert(rolling[4].position === 10, `a rolling window's position is its first digit, got ${rolling[4].position}`);
+  assert(
+    rolling[4].numberValue === undefined && rolling[4].assetCode === undefined,
+    "a window carries only kind, position and text",
+  );
+  assert(kinds("1440m", V3) === "window,eof", "1440m lexes as a window");
+  assert(kinds("7d", V3) === "window,eof", "7d lexes as a window");
+  assert(kinds("0h", V3) === "window,eof", "0h lexes as a window — the zero is the parser's to refuse");
+  assert(kinds("367d", V3) === "window,eof", "367d lexes as a window — the cap is the parser's to refuse");
+
+  // the shape is exact: a trailing identifier character, a fraction or a
+  // space breaks it, and the existing v1 rules take over unchanged
+  expectFailCode("24hx", "malformed_number", "24hx is a glued suffix, not a window", V3);
+  expectFailCode("24.5h", "malformed_number", "a fraction is never a window", V3);
+  expectFailCode("24s", "malformed_number", "s is not a window unit", V3);
+  expectFailCode("24H", "malformed_number", "units are lowercase", V3);
+  assert(kinds("24 h", V3) === "number,ident,eof", `a space splits 24 h into a number and an ident, got ${kinds("24 h", V3)}`);
+  assert(kinds("24", V3) === "number,eof", "a bare integer is still a number under v3");
+  assert(kinds("24h+1", V3) === "window,plus,number,eof", `24h+1 lexes as window, plus, number — got ${kinds("24h+1", V3)}`);
+  assert(kinds("(24h)", V3) === "lparen,window,rparen,eof", "a window inside parentheses");
+
+  // ---- calendar: the four reserved words -----------------------------------------
+
+  const calendar = tokenize("delta({kwh}, today)", V3);
+  assert(
+    calendar.map((t) => t.kind).join(",") === "ident,lparen,ref,comma,window,rparen,eof",
+    `delta({kwh}, today) under v3, got ${calendar.map((t) => t.kind).join(",")}`,
+  );
+  assert(calendar[4].text === "today" && calendar[4].position === 13, "a calendar window's text and position");
+  assert(kinds("this_week", V3) === "window,eof", "this_week is a window");
+  assert(kinds("this_month", V3) === "window,eof", "this_month is a window");
+  assert(kinds("this_year", V3) === "window,eof", "this_year is a window");
+  assert(kinds("hours(today)", V3) === "ident,lparen,window,rparen,eof", "hours(today): the helper is an ident, its argument a window");
+
+  // the word must be whole and exact — `todays`, `Today` and `this_months`
+  // are ordinary identifiers, and `{today}` is a point reference whose text
+  // is `today` (the `{…}` branch never consults the word list)
+  assert(kinds("todays", V3) === "ident,eof", "todays is an ident");
+  assert(kinds("Today", V3) === "ident,eof", "Today is an ident — the words are lowercase");
+  assert(kinds("this_months", V3) === "ident,eof", "this_months is an ident");
+  const braced = tokenize("{today}", V3);
+  assert(braced[0].kind === "ref" && braced[0].text === "today", `{today} is a ref with text today, got ${JSON.stringify(braced[0])}`);
+
+  // ---- everything v2 lexes, v3 lexes the same way (window edition) ---------------
+
+  const v2Expression = "sum({TX_01.kw} @group('IT_LOAD')) * {a-b/c d} + 24 * 7";
+  assert(
+    JSON.stringify(tokenize(v2Expression, V2)) === JSON.stringify(tokenize(v2Expression, V3)),
+    "a v2 expression with bare integers must lex identically under v3",
+  );
+  const mixed = tokenize("avg({TX_01.kw}, 7d) * $f", V3);
+  assert(
+    mixed.map((t) => t.kind).join(",") === "ident,lparen,ref,comma,window,rparen,star,param,eof",
+    `a qualified ref, a window and a param together, got ${mixed.map((t) => t.kind).join(",")}`,
+  );
+}

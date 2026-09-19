@@ -52,7 +52,7 @@ import { CALC_DIALECT, CALC_DIALECTS, isCrossAssetDialect, isParameterDialect } 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-editor-rules";
-import { V3_PARAMETER_HELP, dialectOptions } from "../../lib/template-calc-config";
+import { V3_PARAMETER_HELP, V3_WINDOW_HELP, dialectOptions } from "../../lib/template-calc-config";
 import { checkedDialect } from "../../lib/template-formula-validation";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
@@ -333,8 +333,12 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                   </li>
                 ))}
                 {CALC_DIALECTS.some((known) => known === kpi.dialect && isParameterDialect(known)) ? (
-                  // The one `v3` form (ADR 0070 decision 4), beside the two it keeps.
-                  <li>{V3_PARAMETER_HELP}</li>
+                  // The `v3` forms (ADR 0070 decisions 4 and 5), beside the two
+                  // it keeps — the same lines the Calculations tab renders.
+                  <>
+                    <li>{V3_PARAMETER_HELP}</li>
+                    <li>{V3_WINDOW_HELP}</li>
+                  </>
                 ) : null}
               </ul>
             ) : null}

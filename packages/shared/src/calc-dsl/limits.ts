@@ -13,9 +13,9 @@ export const CALC_DIALECT_V2 = "bms-calc-v2";
  * `bms-calc-v3` (ADR 0070 decision 3): the parameter dialect. A strict
  * superset of `v2` — every `v2` formula means the same thing under `v3` —
  * and `v2` keeps its meaning forever, the way ADR 0055 decisions 3 and 4 hold
- * `v1` under `v2`. It adds the `$key` parameter reference (decision 4); the
- * window functions are `E4.1b`'s and are not here yet. Order is superset
- * order: the picker renders the tuple as it is.
+ * `v1` under `v2`. It adds the `$key` parameter reference (decision 4) and
+ * the window functions over a point reference (decision 5, `E4.1b`). Order
+ * is superset order: the picker renders the tuple as it is.
  */
 export const CALC_DIALECT_V3 = "bms-calc-v3";
 export const CALC_DIALECTS = [CALC_DIALECT, CALC_DIALECT_V2, CALC_DIALECT_V3] as const;
@@ -35,6 +35,13 @@ export type CalcV1Dialect = typeof CALC_DIALECT;
 export const isCrossAssetDialect = (dialect: CalcDialect): boolean => dialect !== CALC_DIALECT;
 /** True for the one dialect that admits a `$key` reference (ADR 0070 decision 4). */
 export const isParameterDialect = (dialect: CalcDialect): boolean => dialect === CALC_DIALECT_V3;
+/**
+ * True for the one dialect that admits a time window — `sum({kw}, 24h)`,
+ * `delta({kwh}, today)`, `hours(this_month)` (ADR 0070 decision 5; `E4.1b` plan
+ * design decision 1). The same truth as `isParameterDialect` today, kept as a
+ * separate capability so a future dialect decides each on its own.
+ */
+export const isWindowDialect = (dialect: CalcDialect): boolean => dialect === CALC_DIALECT_V3;
 
 /** Aggregate functions a `v2` formula may apply over a scope (ADR 0055
  * decision 1; the set is the plan's design decision 5 — `min`/`max` stay
@@ -55,6 +62,25 @@ export const MAX_FORMULA_CROSS_REFS = 8;
 /** Distinct `$key` parameter references per `v3` formula (ADR 0070 decision
  * 4; `E4.1a` plan ruling Q7 — the cross-ref bound's number). */
 export const MAX_FORMULA_PARAM_REFS = 8;
+/** Distinct window reads per `v3` formula — `24h` and `1440m` over the same
+ * point are one read (ADR 0070 ruling 9; `E4.1b` plan ruling Q1, the
+ * cross-ref bound's number). */
+export const MAX_FORMULA_WINDOWS = 8;
+/** The longest rolling window, in days (ADR 0070 decision 5, ruling 5). */
+export const MAX_ROLLING_WINDOW_DAYS = 366;
+/** The five functions that take a point reference and a window (ADR 0070
+ * decision 5). `sum`/`avg` double as scope aggregates and `min`/`max` as
+ * n-ary scalars; the parser tells the forms apart by the second argument.
+ * `hours` is deliberately absent — it takes a window and no point. */
+export const CALC_WINDOW_FNS = ["sum", "avg", "min", "max", "delta"] as const;
+/** The four calendar windows, each the elapsed part of the current period in
+ * the owning asset's location's zone (ADR 0070 decision 6). Reserved words
+ * under `v3`: the grammar has no variables, so nothing is shadowed. */
+export const CALC_CALENDAR_WINDOWS = ["today", "this_week", "this_month", "this_year"] as const;
+export type CalcCalendarWindow = (typeof CALC_CALENDAR_WINDOWS)[number];
+/** Minutes per rolling-window unit letter. */
+export const CALC_ROLLING_UNITS = { m: 1, h: 60, d: 1440 } as const;
+export type CalcRollingUnit = keyof typeof CALC_ROLLING_UNITS;
 /** Parser recursion-depth guard — defense in depth against a pathological
  * paste, not a limit any legitimate formula should approach. */
 export const MAX_FORMULA_DEPTH = 64;

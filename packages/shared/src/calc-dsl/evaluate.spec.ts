@@ -330,3 +330,76 @@ export function runEvaluateV3Tests(): void {
   const separate = evalExprV3("{f} * $f", { f: 3 }, {}, { f: 4 });
   assert(separate.ok === true && Object.is(separate.value, 12), `{f} from inputs and $f from params, got ${JSON.stringify(separate)}`);
 }
+
+/**
+ * The `v3` window half (ADR 0070 decision 5; `E4.1b` plan design decision
+ * 11). A `window` or `hours` node is served from the FIFTH map only, keyed by
+ * `windowKey`, and never from `inputs` — the point inside the window is in
+ * `inputs` for the staleness rule, not for the window's value. An absent key
+ * is `missing_input` at the node; the host refuses `window_empty` /
+ * `timezone_unset` before `evaluate` ever runs, so this map holds only
+ * resolved numbers.
+ */
+const evalWindow = (
+  expression: string,
+  inputs: Record<string, number>,
+  windows: Record<string, number> | undefined,
+): CalcEvalResult => {
+  const parsed = parseFormula(expression, { dialect: CALC_DIALECT_V3 });
+  if (!parsed.ok) {
+    throw new Error(`expected ${JSON.stringify(expression)} to parse under v3, got ${JSON.stringify(parsed.errors)}`);
+  }
+  return windows === undefined
+    ? evaluate(parsed.ast, new Map(Object.entries(inputs)))
+    : evaluate(parsed.ast, new Map(Object.entries(inputs)), new Map(), new Map(), new Map(Object.entries(windows)));
+};
+
+
+/** served under windowKey: delta / hours computes; a 24h read is served under its 1440m key */
+export function runEvaluateWindowServedTests(): void {
+  const prorated = evalWindow("delta({kwh}, today) / hours(today)", {}, { "delta({kwh}, today)": 70, "hours(today)": 2 });
+  assert(prorated.ok === true && Object.is(prorated.value, 35), `70 / 2 must be 35, got ${JSON.stringify(prorated)}`);
+
+  const normalised = evalWindow("avg({kw}, 24h)", {}, { "avg({kw}, 1440m)": 12.5 });
+  assert(normalised.ok === true && Object.is(normalised.value, 12.5), `a 24h read is served under its 1440m key, got ${JSON.stringify(normalised)}`);
+}
+
+/** absent from the fifth map → missing_input at the node */
+export function runEvaluateWindowAbsentTests(): void {
+  const absent = evalWindow("delta({kwh}, today) / hours(today)", {}, { "hours(today)": 2 });
+  assert(absent.ok === false && absent.code === "missing_input", `an absent window read is missing_input, got ${JSON.stringify(absent)}`);
+  if (!absent.ok) {
+    assert(absent.position === 0, `…at the window node's position, got ${absent.position}`);
+  }
+  const absentHours = evalWindow("1 + hours(this_week)", {}, {});
+  assert(absentHours.ok === false && absentHours.code === "missing_input", "an absent hours read is missing_input");
+  if (!absentHours.ok) {
+    assert(absentHours.position === 4, `…at the hours node's position, got ${absentHours.position}`);
+  }
+}
+
+/** the fifth map is its own namespace and defaults to empty */
+export function runEvaluateWindowNamespaceTests(): void {
+  // the map is a separate namespace: the point inside the window is NOT the window's value
+  const shadow = evalWindow("delta({kwh}, today)", { kwh: 999 }, {});
+  assert(shadow.ok === false && shadow.code === "missing_input", "inputs holding the point does not serve the window");
+
+  // the fifth argument defaults to empty
+  const noMap = evalWindow("hours(today)", {}, undefined);
+  assert(noMap.ok === false && noMap.code === "missing_input", "with no windows map every window read is a missing input");
+}
+
+/** a v2 AST never reads the windows map; a non-finite value refuses at the node */
+export function runEvaluateWindowV2AndFiniteTests(): void {
+  // a v2 AST ignores a non-empty windows map
+  const v2 = parseFormula("{kw} * 2", { dialect: CALC_DIALECT_V2 });
+  if (!v2.ok) {
+    throw new Error("v2 fixture must parse");
+  }
+  const v2Result = evaluate(v2.ast, new Map([["kw", 3]]), new Map(), new Map(), new Map([["hours(today)", 99]]));
+  assert(v2Result.ok === true && Object.is(v2Result.value, 6), "a v2 AST never reads the windows map");
+
+  // a non-finite window value refuses at the node, like every other input
+  const infinite = evalWindow("hours(today)", {}, { "hours(today)": Infinity });
+  assert(infinite.ok === false && infinite.code === "non_finite", "Infinity in windows refuses as non_finite");
+}

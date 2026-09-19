@@ -78,6 +78,8 @@ export function tokenWidth(token: Token): number {
     // a `v3` `$key` token's `text` drops the `$` (ADR 0070 decision 4)
     return token.text.length + 1;
   }
+  // a `v3` `window` token's `text` is the literal as written (`24h`, `today`;
+  // `E4.1b`), so it takes the default below with the other raw-glyph kinds
   return token.text.length;
 }
 

@@ -132,6 +132,7 @@ export function runEveryTokenKindIsStyledTests(): void {
     "scope",
     "string",
     "param",
+    "window",
     "eof",
   ];
   for (const kind of kinds) {
@@ -226,4 +227,37 @@ export function runV3DialectDecorationTests(): void {
     assert(text.slice(param.from, param.to) === "$f", "the param span must cover the $ and the key");
   }
   assert(decorations.length === 3, `$f, * and 2 are three spans, got ${decorations.length}`);
+}
+
+/**
+ * Case 10 — a window literal is styled under the `v3` dialect only (ADR 0070
+ * decision 5, `E4.1b`). Under `v2` the `24h` does not lex (a glued suffix is a
+ * malformed number), so the whole call yields nothing — the same shape as the
+ * `$key` guard above. The span covers the literal exactly as written.
+ */
+export function runWindowDecorationTests(): void {
+  const text = "avg({kw}, 24h)";
+
+  assert(
+    calcDecorations(text, CALC_DIALECT_V2).length === 0,
+    "under v2 the 24h does not lex, so a windowed formula yields no decorations",
+  );
+
+  const decorations = calcDecorations(text, CALC_DIALECT_V3);
+  const window = decorations.find((d) => d.className === "cm-calc-window");
+  assert(window !== undefined, `expected a cm-calc-window span, got ${JSON.stringify(decorations)}`);
+  if (window) {
+    assert(window.from === 10 && window.to === 13, `"24h" must span 10..13, got ${window.from}..${window.to}`);
+    assert(text.slice(window.from, window.to) === "24h", "the window span must cover the literal");
+  }
+
+  const calendar = calcDecorations("delta({kwh}, this_month)", CALC_DIALECT_V3);
+  const word = calendar.find((d) => d.className === "cm-calc-window");
+  assert(word !== undefined && word.from === 13 && word.to === 23, `"this_month" must span 13..23, got ${JSON.stringify(word)}`);
+  // a calendar word is a keyword, not a function name — it must not carry the
+  // function class the ident branch would have given it
+  assert(
+    !calendar.some((d) => d.className === "cm-calc-function" && d.from === 13),
+    "this_month must not be styled as a function",
+  );
 }

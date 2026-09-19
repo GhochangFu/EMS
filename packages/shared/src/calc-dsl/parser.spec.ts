@@ -1,9 +1,11 @@
 import type { CalcErrorCode, CalcExpr, CalcParseError, ParseResult } from "./ast";
 import { crossRefKey } from "./cross-ref";
+import { windowKey } from "./window-ref";
 import {
   CALC_DIALECT_V2,
   CALC_DIALECT_V3,
   MAX_FORMULA_PARAM_REFS,
+  MAX_FORMULA_WINDOWS,
   CALC_FUNCTION_ARITY,
   MAX_FORMULA_CROSS_REFS,
   MAX_FORMULA_DEPTH,
@@ -536,4 +538,232 @@ export function runParserV3Tests(): void {
       assert(JSON.stringify(underV2.crossRefs) === JSON.stringify(underV3.crossRefs), `${expression}: same crossRefs`);
     }
   }
+}
+
+/**
+ * The `v3` window half (ADR 0070 decisions 5 and 6; `E4.1b` plan design
+ * decisions 2, 4, 7 and 12). Two new node kinds — `window` (one of the five
+ * functions over exactly one point reference and one window literal) and
+ * `hours` (a window literal alone) — and a fourth list, `windowReads`,
+ * deduped by `windowKey`. The point inside a window joins `refs` /
+ * `crossRefs` exactly as it would bare, so every rule hanging off those lists
+ * (staleness, `unknown_reference`, the cross-ref catalog check, membership,
+ * the cycle detectors) applies unchanged.
+ *
+ * The assertions marked `v2 guard` pin the codes a `v2` parse gives the same
+ * text: a windowed form must stay a `v2` refusal with its `v2` code.
+ *
+ * One exported function per section (one `it()` per claim): `assert`
+ * throws, so a mutation reddens the assertion that owns it.
+ */
+const kindsOf = (result: Extract<ParseResult, { ok: true }>): string => result.windowReads.map((r) => r.kind).join(",");
+
+/** v2 guard: the same text under v2 */
+export function runWindowV2GuardTests(): void {
+
+  expectFailCode("sum({kw}, today)", "scope_required", "v2 guard: a windowed sum is scope_required under v2", V2);
+  expectFailCode("delta({kwh}, today)", "unexpected_token", "v2 guard: delta(…, today) is an unexpected token under v2", V2);
+  expectFailCode("hours(today)", "unexpected_token", "v2 guard: hours(today) is an unexpected token under v2", V2);
+  expectFailCode("min({kw}, 24h)", "malformed_number", "v2 guard: 24h is a malformed number under v2", V2);
+  const v2Aggregate = expectOk("sum({kw} @site)", V2);
+  const v3Aggregate = expectOk("sum({kw} @site)", V3);
+  assert(
+    JSON.stringify(v2Aggregate.ast) === JSON.stringify(v3Aggregate.ast),
+    "a v2 scope aggregate has the same AST under v3",
+  );
+  assert(v2Aggregate.windowReads.length === 0 && v3Aggregate.windowReads.length === 0, "an aggregate is not a window read");
+  const v2Result = expectOk("{kw} * 2", V2);
+  assert(Array.isArray(v2Result.windowReads) && v2Result.windowReads.length === 0, "windowReads is [] under v2");
+}
+
+/** sum / avg: the window form, told from the aggregate by the comma */
+export function runWindowSumAvgFormTests(): void {
+
+  const sum = expectOk("sum({kw}, 24h)", V3);
+  assert(sum.ast.kind === "window", `sum({kw}, 24h) parses to a window node, got ${sum.ast.kind}`);
+  if (sum.ast.kind === "window") {
+    assert(sum.ast.fn === "sum", `fn is sum, got ${sum.ast.fn}`);
+    assert(sum.ast.ref.kind === "ref" && sum.ast.ref.pointKey === "kw", `ref is the local {kw}, got ${JSON.stringify(sum.ast.ref)}`);
+    assert(
+      sum.ast.window.kind === "rolling" && sum.ast.window.minutes === 1440,
+      `the window is rolling 1440 minutes, got ${JSON.stringify(sum.ast.window)}`,
+    );
+    assert(sum.ast.position === 0, `a window node's position is the function name, got ${sum.ast.position}`);
+    assert(
+      Object.keys(sum.ast).sort().join(",") === "fn,kind,position,ref,window",
+      `a window node carries fn, kind, position, ref and window only, got ${Object.keys(sum.ast).join(",")}`,
+    );
+  }
+  assert(sum.refs.join("|") === "kw", `the point inside a window joins refs, got ${JSON.stringify(sum.refs)}`);
+  assert(sum.crossRefs.length === 0, "a local window read is not a cross ref");
+  assert(sum.paramRefs.length === 0, "a window is not a parameter");
+  assert(sum.windowReads.length === 1 && kindsOf(sum) === "window", `one window read, got ${JSON.stringify(sum.windowReads)}`);
+
+  const avgQualified = expectOk("avg({TX_01.kw}, 7d)", V3);
+  assert(avgQualified.ast.kind === "window" && avgQualified.ast.ref.kind === "qref", "a qualified point inside a window is a qref");
+  assert(avgQualified.crossRefs.length === 1 && avgQualified.crossRefs[0].kind === "qref", "the qualified point joins crossRefs");
+  assert(avgQualified.refs.length === 0, "a qualified point is not a local ref");
+}
+
+/** min / max: the window form, told from the n-ary scalar by the second argument */
+export function runWindowMinMaxFormTests(): void {
+
+  const min = expectOk("min({kw}, 24h)", V3);
+  assert(min.ast.kind === "window" && min.ast.fn === "min", `min({kw}, 24h) is a window node, got ${min.ast.kind}`);
+  const minScalar = expectOk("min({kw}, 1)", V3);
+  assert(minScalar.ast.kind === "call" && minScalar.ast.fn === "min", `min({kw}, 1) stays a call, got ${minScalar.ast.kind}`);
+  const maxThree = expectOk("max({a}, {b}, 3)", V3);
+  assert(maxThree.ast.kind === "call" && maxThree.ast.args.length === 3, "the n-ary max is unchanged");
+  const needsRef = expectFailCode("min({kw} + 1, 24h)", "window_needs_point_reference", "an expression before a window is refused", V3);
+  assert(needsRef.position === 0, `window_needs_point_reference is reported at the function name, got ${needsRef.position}`);
+  expectFailCode("max(1, today)", "window_needs_point_reference", "a number before a window is refused", V3);
+  expectFailCode("min({a}, {b}, 24h)", "window_needs_point_reference", "two points before a window is not the window form", V3);
+}
+
+/** delta and hours: v3 only, never in CALC_FUNCTION_ARITY */
+export function runWindowDeltaAndHoursTests(): void {
+
+  const delta = expectOk("delta({kwh}, this_month)", V3);
+  assert(delta.ast.kind === "window" && delta.ast.fn === "delta", "delta is a window node");
+  if (delta.ast.kind === "window") {
+    assert(
+      delta.ast.window.kind === "calendar" && delta.ast.window.period === "this_month",
+      `a calendar window carries its period, got ${JSON.stringify(delta.ast.window)}`,
+    );
+  }
+  const deltaNoWindow = expectFailCode("delta({kwh})", "window_required", "delta without a window is refused", V3);
+  assert(deltaNoWindow.position === 11, `window_required is reported at the token found instead, got ${deltaNoWindow.position}`);
+  expectFailCode("delta({kwh}, 1)", "window_required", "a number is not a window", V3);
+  expectFailCode("delta(1, 2)", "window_needs_point_reference", "delta needs a point reference first", V3);
+  expectFailCode("delta({kwh}, today", "unexpected_end", "a truncated window call is unexpected_end", V3);
+  expectFailCode("delta", "unexpected_end", "a bare delta is unexpected_end", V3);
+  assert(!("delta" in CALC_FUNCTION_ARITY) && !("hours" in CALC_FUNCTION_ARITY), "delta and hours are not v1 functions");
+
+  const hours = expectOk("hours(today)", V3);
+  assert(hours.ast.kind === "hours", `hours(today) is an hours node, got ${hours.ast.kind}`);
+  if (hours.ast.kind === "hours") {
+    assert(hours.ast.window.kind === "calendar" && hours.ast.window.period === "today", "hours carries its window");
+    assert(hours.ast.position === 0, "an hours node's position is the function name");
+    assert(
+      Object.keys(hours.ast).sort().join(",") === "kind,position,window",
+      `an hours node carries kind, position and window only, got ${Object.keys(hours.ast).join(",")}`,
+    );
+  }
+  assert(hours.refs.length === 0 && hours.windowReads.length === 1 && kindsOf(hours) === "hours", "hours is a window read with no point");
+  expectFailCode("hours({kw}, today)", "window_required", "hours takes no point reference", V3);
+  expectFailCode("hours(1)", "window_required", "hours(1) is not a window", V3);
+  expectFailCode("hours()", "window_required", "hours() is missing its window", V3);
+  expectFailCode("hours(today, 24h)", "unexpected_token", "hours takes exactly one window", V3);
+  const rollingHours = expectOk("hours(24h)", V3);
+  assert(rollingHours.ast.kind === "hours" && rollingHours.ast.window.kind === "rolling", "hours over a rolling window parses");
+}
+
+/** a window wraps one point reference, never a scope aggregate (ruling 4) */
+export function runWindowOverAggregateTests(): void {
+
+  const overAggregate = expectFailCode("sum({kw} @site, 24h)", "window_over_aggregate", "a window over a scope aggregate is refused", V3);
+  assert(overAggregate.position === 14, `window_over_aggregate is reported at the comma, got ${overAggregate.position}`);
+  expectFailCode("avg({kw} @group('IT'), today)", "window_over_aggregate", "…whatever the scope", V3);
+}
+
+/** a window token anywhere else */
+export function runWindowNotAllowedTests(): void {
+
+  const stray = expectFailCode("today + 1", "window_not_allowed", "a bare window is refused", V3);
+  assert(stray.position === 0, `window_not_allowed is at the window, got ${stray.position}`);
+  expectFailCode("abs(24h)", "window_not_allowed", "a window inside a scalar function is refused", V3);
+  expectFailCode("{kw} * 24h", "window_not_allowed", "a window as an operand is refused", V3);
+  expectFailCode("1 today", "window_not_allowed", "a trailing window is refused", V3);
+  expectFailCode("sum({kw}, 24h, 1)", "unexpected_token", "a third argument to a window function is refused", V3);
+}
+
+/** the literal's amount and cap are the parser's */
+export function runWindowLiteralBoundsTests(): void {
+
+  const tooLong = expectFailCode("avg({kw}, 367d)", "window_too_long", "over 366d is refused", V3);
+  assert(tooLong.position === 10, `window_too_long is at the literal, got ${tooLong.position}`);
+  expectOk("avg({kw}, 366d)", V3);
+  expectOk("avg({kw}, 8784h)", V3);
+  expectFailCode("avg({kw}, 8785h)", "window_too_long", "the cap counts in minutes, whatever the unit", V3);
+  const zero = expectFailCode("avg({kw}, 0h)", "malformed_window", "a zero window is refused", V3);
+  assert(zero.position === 10, `malformed_window is at the literal, got ${zero.position}`);
+  expectFailCode("hours(0d)", "malformed_window", "a zero window inside hours is refused", V3);
+}
+
+/** windowReads: deduped by windowKey, bounded by MAX_FORMULA_WINDOWS */
+export function runWindowReadsListTests(): void {
+
+  const deduped = expectOk("avg({kw}, 24h) - avg({kw}, 1440m) + hours(today) + hours(today)", V3);
+  assert(
+    deduped.windowReads.length === 2,
+    `24h and 1440m over the same point are one read and hours(today) twice is one, got ${deduped.windowReads.map(windowKey).join(" | ")}`,
+  );
+  assert(
+    deduped.windowReads.map(windowKey).join(" | ") === "avg({kw}, 1440m) | hours(today)",
+    `windowReads is in first-appearance order by canonical key, got ${deduped.windowReads.map(windowKey).join(" | ")}`,
+  );
+  const distinct = expectOk("avg({kw}, 24h) + avg({kw}, 7d) + avg({kw}, today) + max({kw}, 24h)", V3);
+  assert(distinct.windowReads.length === 4, "a different window or function is a different read");
+
+  const eightReads = Array.from({ length: MAX_FORMULA_WINDOWS }, (_, i) => `avg({kw}, ${i + 1}h)`).join(" + ");
+  expectOk(eightReads, V3);
+  const nineReads = `${eightReads} + avg({kw}, 99h)`;
+  const overflow = expectFailCode(nineReads, "too_many_windows", "a ninth distinct read is refused", V3);
+  assert(
+    overflow.position === eightReads.length + 3,
+    `too_many_windows is at the ninth read's function name, got ${overflow.position}`,
+  );
+  const eightRepeated = `${eightReads} + avg({kw}, 60m)`;
+  expectOk(eightRepeated, V3);
+}
+
+/** every error message is free of source text */
+export function runWindowErrorWordingTests(): void {
+
+  const codes: CalcErrorCode[] = [
+    "malformed_window",
+    "window_too_long",
+    "window_required",
+    "window_needs_point_reference",
+    "window_over_aggregate",
+    "window_not_allowed",
+    "too_many_windows",
+  ];
+  for (const code of codes) {
+    const text = formatCalcError({ code, position: 3 });
+    assert(text.length > 20 && text.endsWith(" at character 3"), `${code} renders a sentence and the position, got ${text}`);
+    assert(!text.includes("$"), `${code}'s message carries no source-shaped text`);
+  }
+  assert(formatCalcError({ code: "window_too_long", position: 0 }).includes("366d"), "the cap's message names 366d");
+  assert(formatCalcError({ code: "too_many_windows", position: 0 }).includes(String(MAX_FORMULA_WINDOWS)), "the bound's message names the number");
+  assert(
+    formatCalcError({ code: "window_over_aggregate", position: 0 }).includes("@site"),
+    "window_over_aggregate names the two-layer alternative",
+  );
+}
+
+/** purity: the same text parses to the same result twice */
+export function runWindowPurityTests(): void {
+
+  const once = parseFormula("delta({kwh}, today) / hours(today)", V3);
+  const twice = parseFormula("delta({kwh}, today) / hours(today)", V3);
+  assert(JSON.stringify(once) === JSON.stringify(twice), "parseFormula is pure");
+}
+
+/**
+ * Design decision 7's load-bearing case, in its own `it()` so the mutation
+ * that skips `node.ref` in `collectRefEntries` reddens THIS assertion and not
+ * only the `refs` one above it (`assert` throws, so only the first claim in a
+ * block ever reddens).
+ */
+export function runWindowValidateTests(): void {
+  const known = validateFormula("delta({kwh}, today)", ["kwh"], V3);
+  assert(known.ok === true, `a known point inside a window validates, got ${JSON.stringify(known)}`);
+  const unknown = validateFormula("delta({kwh}, today)", ["kw"], V3);
+  assert(unknown.ok === false && unknown.errors[0].code === "unknown_reference", "an unknown point inside a window is unknown_reference");
+  if (!unknown.ok) {
+    assert(unknown.errors[0].position === 6, `unknown_reference is at the {, got ${unknown.errors[0].position}`);
+  }
+  const qualifiedUnchecked = validateFormula("avg({TX_01.kw}, 24h)", [], V3);
+  assert(qualifiedUnchecked.ok === true, "a qualified point inside a window is not checked by name here (the api host does)");
 }

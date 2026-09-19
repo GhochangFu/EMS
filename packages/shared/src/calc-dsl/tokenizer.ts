@@ -1,5 +1,14 @@
 import type { CalcErrorCode, CalcParseError } from "./ast";
-import { CALC_DIALECT, CALC_SCOPE_KINDS, isCrossAssetDialect, isParameterDialect, type CalcDialect } from "./limits";
+import {
+  CALC_CALENDAR_WINDOWS,
+  CALC_DIALECT,
+  CALC_ROLLING_UNITS,
+  CALC_SCOPE_KINDS,
+  isCrossAssetDialect,
+  isParameterDialect,
+  isWindowDialect,
+  type CalcDialect,
+} from "./limits";
 
 export type TokenKind =
   | "number"
@@ -18,6 +27,9 @@ export type TokenKind =
   | "string"
   // `bms-calc-v3` only (ADR 0070 decision 4): `$key`, a parameter reference.
   | "param"
+  // `bms-calc-v3` only (ADR 0070 decision 5, `E4.1b`): a window literal — a rolling
+  // `<n>m` / `<n>h` / `<n>d` or one of the four calendar words.
+  | "window"
   | "eof";
 
 /**
@@ -31,7 +43,9 @@ export type TokenKind =
  * set under `v1`, and never set for an unqualified `v2` reference.
  *
  * Under `bms-calc-v3`: a `param` token's `text` **excludes** the `$` — it is
- * the vocabulary code the host looks up — and its `position` is the `$`.
+ * the vocabulary code the host looks up — and its `position` is the `$`. A
+ * `window` token's `text` is the literal exactly as written (`24h`, `today`) and
+ * its `position` its first character; the parser reads the shape.
  */
 export interface Token {
   kind: TokenKind;
@@ -76,6 +90,8 @@ const SINGLE_CHAR_TOKENS: Readonly<Record<string, TokenKind>> = {
 };
 
 const SCOPE_KINDS: ReadonlySet<string> = new Set(CALC_SCOPE_KINDS);
+const CALENDAR_WINDOWS: ReadonlySet<string> = new Set(CALC_CALENDAR_WINDOWS);
+const isRollingUnit = (ch: string): boolean => Object.prototype.hasOwnProperty.call(CALC_ROLLING_UNITS, ch);
 
 /**
  * Tokenizes the whole expression up front. Throws `CalcTokenizeError` on the
@@ -93,14 +109,16 @@ const SCOPE_KINDS: ReadonlySet<string> = new Set(CALC_SCOPE_KINDS);
  *
  * **The `v2` loop is untouched by `v3`**, by the same construction (ADR 0070
  * decision 3). `isV2` is now "has cross-asset references", which `v3` also
- * has, so every `v2` branch runs under `v3` unedited; the one `v3` production
- * (`$key`) sits behind `isV3`, and under `v1` or `v2` a `$` still falls
- * through to `unexpected_character`.
+ * has, so every `v2` branch runs under `v3` unedited; the `v3` productions sit
+ * behind `isV3` (`$key`) and `isV3W` (a window literal, `E4.1b`). Under `v1` or
+ * `v2` a `$` still falls through to `unexpected_character`, `24h` is still the
+ * glued-suffix `malformed_number` it always was, and `today` is an `ident`.
  */
 export function tokenize(expression: string, options?: TokenizeOptions): Token[] {
   const dialect = options?.dialect ?? CALC_DIALECT;
   const isV2 = isCrossAssetDialect(dialect);
   const isV3 = isParameterDialect(dialect);
+  const isV3W = isWindowDialect(dialect);
   const tokens: Token[] = [];
   const n = expression.length;
   let i = 0;
@@ -229,6 +247,24 @@ export function tokenize(expression: string, options?: TokenizeOptions): Token[]
           fail("malformed_number", start);
         }
       }
+      // v3 only — an INTEGER literal glued to exactly one of `m|h|d` and then
+      // nothing identifier-like is a rolling window (`24h`, `7d`, `15m`; ADR 0070
+      // decision 5). Checked before the glued-suffix rule below, which is what
+      // makes `24h` a `malformed_number` under v1 and v2 exactly as before. A
+      // fraction (`24.5h`), a longer suffix (`24hx`) or another letter (`24s`)
+      // falls through to that rule unchanged; the amount and the cap are the
+      // parser's (`malformed_window`, `window_too_long`).
+      if (
+        isV3W &&
+        j < n &&
+        !expression.slice(start, j).includes(".") &&
+        isRollingUnit(expression[j]) &&
+        (j + 1 >= n || !isIdentChar(expression[j + 1]))
+      ) {
+        tokens.push({ kind: "window", position: start, text: expression.slice(start, j + 1) });
+        i = j + 1;
+        continue;
+      }
       // no exponent form, and no second decimal point — either glued straight
       // onto the literal is malformed, not a separate token
       if (j < n && (isIdentStart(expression[j]) || expression[j] === ".")) {
@@ -257,7 +293,17 @@ export function tokenize(expression: string, options?: TokenizeOptions): Token[]
       while (j < n && isIdentChar(expression[j])) {
         j += 1;
       }
-      tokens.push({ kind: "ident", position: start, text: expression.slice(start, j) });
+      const word = expression.slice(start, j);
+      // v3 only — the four calendar words are reserved (ADR 0070 decision 6;
+      // plan ruling Q6). The grammar has no variables and a bare identifier
+      // that is not a function already refuses, so nothing is shadowed; the
+      // `{…}` branch above never reaches here, so `{today}` stays a point key.
+      if (isV3W && CALENDAR_WINDOWS.has(word)) {
+        tokens.push({ kind: "window", position: start, text: word });
+        i = j;
+        continue;
+      }
+      tokens.push({ kind: "ident", position: start, text: word });
       i = j;
       continue;
     }

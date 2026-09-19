@@ -35,6 +35,11 @@ const ALL_REASONS_RECORD: Record<CalcRuntimeSkipReason, true> = {
   // parameter read (plan ruling Q4, the mirror of membership_unresolved).
   parameter_unset: true,
   parameters_unresolved: true,
+  // ADR 0070 decisions 5 and 6 (E4.1b U9): an empty window, a calendar
+  // window with no zone, and a failed window read (plan ruling Q8).
+  window_empty: true,
+  timezone_unset: true,
+  windows_unresolved: true,
 };
 const ALL_REASONS = Object.keys(ALL_REASONS_RECORD) as CalcRuntimeSkipReason[];
 

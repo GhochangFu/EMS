@@ -31,7 +31,16 @@ import type { CalcSkipReason } from "../calc/calc-definition";
  * every formula holding a `$key` is refused this sweep rather than computed
  * over a guessed value — the mirror of `membership_unresolved`, plan ruling
  * Q4: an outage is not a missing configuration and must not send an operator
- * to the admin screen). */
+ * to the admin screen).
+ *
+ * The three after those are `E4.1b`'s (ADR 0070 decisions 5 and 6):
+ * `window_empty` (a window read found no sample — `delta` with one sample
+ * is empty too; the formula writes nothing), `timezone_unset` (a calendar
+ * window on an asset whose location has no zone, or a zone the server does
+ * not know — the operator sets it on the location form; never a guessed
+ * zone) and `windows_unresolved` (the batched read of the aggregates failed,
+ * so every formula holding a window read is refused this sweep — the mirror
+ * of `parameters_unresolved`, plan ruling Q8). */
 export type CalcRuntimeSkipReason =
   | CalcSkipReason
   | "missing_input"
@@ -43,7 +52,10 @@ export type CalcRuntimeSkipReason =
   | "no_members"
   | "coverage_below_floor"
   | "parameter_unset"
-  | "parameters_unresolved";
+  | "parameters_unresolved"
+  | "window_empty"
+  | "timezone_unset"
+  | "windows_unresolved";
 
 @Injectable()
 export class MetricsService {

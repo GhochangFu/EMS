@@ -1,4 +1,4 @@
-import type { CalcCrossRef, CalcDialect, CalcExpr, CalcTrigger } from "@bms/shared";
+import type { CalcCrossRef, CalcDialect, CalcExpr, CalcTrigger, CalcWindowRead } from "@bms/shared";
 import {
   CALC_DIALECT,
   CALC_DIALECTS,
@@ -95,6 +95,16 @@ export interface CalcDefinition {
    * map, and an unresolved key is `parameter_unset`.
    */
   paramRefs: string[];
+  /**
+   * Every distinct window read the formula names, deduped by `windowKey`
+   * (ADR 0070 decision 5; `E4.1b`). Always `[]` under `v1` and `v2`, which
+   * have no such production. The point INSIDE each read is already in `refs`
+   * or `crossRefs` (the parser visits it), so the staleness rule, the
+   * dependency graph and both cycle detectors see it without a change; this
+   * list is for the sweep's resolve step alone, which serves the fifth
+   * `evaluate()` map through `CalcWindowsService`.
+   */
+  windowReads: CalcWindowRead[];
   /**
    * ADR 0055 decision 11. `null` means **fail closed** — every declared member
    * of an aggregate must be fresh — not "no limit". Never overridden per asset:
@@ -254,6 +264,7 @@ export function toActiveDefinition(row: TemplatePointCalcRow): ActiveDefinitionR
       dialect,
       crossRefs: parsed.crossRefs,
       paramRefs: parsed.paramRefs,
+      windowReads: parsed.windowReads,
       minCoverageRatio: row.minCoverageRatio,
     },
   };

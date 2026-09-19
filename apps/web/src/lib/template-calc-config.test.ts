@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runBoundsCheckTests,
   runBoundsComeFromSharedTests,
+  runCalendarWarningTests,
   runCoverageRatioTests,
   runDialectOptionsTests,
   runGridPassTests,
@@ -11,6 +12,8 @@ import {
   runSetFormulaDialectTests,
   runTriggerChangeTests,
   runV2IsScheduledOnlyTests,
+  runV3HintNamesLocalMidnightTests,
+  runV3LabelNamesWindowsTests,
   runValidConfigTests,
 } from "./template-calc-config.spec";
 
@@ -58,5 +61,17 @@ describe("template calc config", () => {
 
   it("builds the dialect options from CALC_DIALECTS, never the two literals", () => {
     runDialectOptionsTests();
+  });
+
+  it("names the window functions in the v3 label (E4.1b)", () => {
+    runV3LabelNamesWindowsTests();
+  });
+
+  it("says a calendar window is up to one interval behind local midnight, and what sum and delta are", () => {
+    runV3HintNamesLocalMidnightTests();
+  });
+
+  it("names timezone_unset and Admin → Locations in the calendar warning", () => {
+    runCalendarWarningTests();
   });
 });

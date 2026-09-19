@@ -5,6 +5,7 @@ import { CalcDefinitionsService } from "./calc-definitions.service";
 import { CalcDependencyService } from "./calc-dependency.service";
 import { CalcInputsService } from "./calc-inputs.service";
 import { CalcParametersService } from "./calc-parameters.service";
+import { CalcWindowsService } from "./calc-windows.service";
 import { CalcSchedulerService } from "./calc-scheduler.service";
 import { CalcScopeService } from "./calc-scope.service";
 import { CalcStatusRegistry } from "./calc-status.registry";
@@ -99,6 +100,9 @@ import { CalcWriteService } from "./calc-write.service";
     // `E4.1a` U5 — the `$key` resolver for `bms-calc-v3` (ADR 0070 decision
     // 2). Exported: the admin services run its `unknownKeys` at save time.
     CalcParametersService,
+    // `E4.1b` U8 — the window resolver for `bms-calc-v3` (ADR 0070 decision
+    // 5): the caggs and the two delta probes, batched once per sweep.
+    CalcWindowsService,
     CalcDependencyService,
     // `F2.9` Task 16 — one instance for both hosts and the read path. Nest's
     // default provider scope is the module singleton, which is what makes the

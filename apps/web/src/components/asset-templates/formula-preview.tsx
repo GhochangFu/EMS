@@ -21,6 +21,15 @@
  * label is built from the node's fields (`crossRefLabel`), in the shape the
  * author wrote: `sum(kw) @site`, `sum(kw) @group('IT_LOAD')`, `TX_01.kwh`.
  *
+ * ## One row per window read, keyed **and labelled** by `windowKey(node)`
+ *
+ * Under `bms-calc-v3` a window read such as `delta({kwh}, today)` is likewise
+ * **one** input (ADR 0070 decision 5; `E4.1b` U10): its value comes from the
+ * aggregates only the database holds. The key is `windowKey(node)` — the
+ * evaluator's fifth-map key — and, unlike a cross-asset row, the label is the
+ * key itself: `windowKey` is already the source spelling, with one
+ * normalisation (a rolling window in minutes, so `24h` shows as `1440m`).
+ *
  * ## Sample text is state; an empty row is omitted, never `0`
  *
  * The inputs hold their raw text — UI state, never saved — and the two
@@ -54,13 +63,14 @@
  */
 import { useState } from "react";
 import type { CalcCrossRef, CalcDialect } from "@bms/shared";
-import { crossRefKey } from "@bms/shared";
+import { crossRefKey, windowKey } from "@bms/shared";
 
 import {
   previewCrossRefs,
   previewParamRefs,
   previewFormula,
   previewInputKeys,
+  previewWindowReads,
   type CalcSampleValues,
 } from "../../lib/calc-preview";
 
@@ -107,15 +117,19 @@ export function FormulaPreview({ expression, dialect, disabled = false }: Formul
   const [values, setValues] = useState<SampleTexts>({});
   const [crossValues, setCrossValues] = useState<SampleTexts>({});
   const [paramValues, setParamValues] = useState<SampleTexts>({});
+  const [windowValues, setWindowValues] = useState<SampleTexts>({});
 
   const keys = previewInputKeys(expression, dialect);
   const crossRefs = previewCrossRefs(expression, dialect);
   // `bms-calc-v3` (ADR 0070): one row per `$key`, keyed by the bare key.
   const paramRefs = previewParamRefs(expression, dialect);
+  // `bms-calc-v3` (`E4.1b`): one row per window read, keyed by `windowKey`.
+  const windowReads = previewWindowReads(expression, dialect);
   const preview = previewFormula(expression, sampleValuesFrom(values), {
     dialect,
     crossValues: sampleValuesFrom(crossValues),
     paramValues: sampleValuesFrom(paramValues),
+    windowValues: sampleValuesFrom(windowValues),
   });
 
   if (preview.state === "unparsed") {
@@ -127,8 +141,23 @@ export function FormulaPreview({ expression, dialect, disabled = false }: Formul
       <span className="block text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
         Preview
       </span>
-      {keys.length > 0 || crossRefs.length > 0 || paramRefs.length > 0 ? (
+      {keys.length > 0 || crossRefs.length > 0 || paramRefs.length > 0 || windowReads.length > 0 ? (
         <div className="mt-1 flex flex-wrap gap-3">
+          {windowReads.map((node) => {
+            // Once per row, for both the write below and the read through
+            // `windowValues` above — the one site the key is derived at. The
+            // key doubles as the label (docblock).
+            const key = windowKey(node);
+            return (
+              <SampleInput
+                key={`window:${key}`}
+                label={key}
+                value={windowValues[key] ?? ""}
+                disabled={disabled}
+                onChange={(text) => setWindowValues((current) => ({ ...current, [key]: text }))}
+              />
+            );
+          })}
           {paramRefs.map((key) => (
             <SampleInput
               key={`param:${key}`}

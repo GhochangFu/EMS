@@ -1,5 +1,6 @@
 import type { CalcExpr, CalcFunctionName } from "./ast";
 import { crossRefKey } from "./cross-ref";
+import { windowKey } from "./window-ref";
 
 /**
  * ADR 0037 decision 9. `missing_input` covers a `{ref}` absent from the
@@ -76,6 +77,7 @@ function evalNode(
   inputs: ReadonlyMap<string, number>,
   crossInputs: ReadonlyMap<string, number>,
   params: ReadonlyMap<string, number>,
+  windows: ReadonlyMap<string, number>,
 ): CalcEvalResult {
   switch (node.kind) {
     case "number":
@@ -123,8 +125,25 @@ function evalNode(
       return finiteOrFail(value, node.position);
     }
 
+    // bms-calc-v3 windows (ADR 0070 decision 5; E4.1b): a window read is
+    // served from `windows` only, by its canonical key, and never from
+    // `inputs` — the point inside the window is in `inputs` for the staleness
+    // rule, not for the window's value (a fourth namespace, same reason as the
+    // three above). Resolution (the segment plan over the aggregates, the
+    // zone, the two delta probes) happened in the host, which refuses
+    // `window_empty` / `timezone_unset` before this runs; an absent key here
+    // is exactly a missing input, refused at the function name.
+    case "window":
+    case "hours": {
+      const value = windows.get(windowKey(node));
+      if (value === undefined) {
+        return { ok: false, code: "missing_input", position: node.position };
+      }
+      return finiteOrFail(value, node.position);
+    }
+
     case "unary": {
-      const operand = evalNode(node.operand, inputs, crossInputs, params);
+      const operand = evalNode(node.operand, inputs, crossInputs, params, windows);
       if (!operand.ok) {
         return operand;
       }
@@ -132,11 +151,11 @@ function evalNode(
     }
 
     case "binary": {
-      const left = evalNode(node.left, inputs, crossInputs, params);
+      const left = evalNode(node.left, inputs, crossInputs, params, windows);
       if (!left.ok) {
         return left;
       }
-      const right = evalNode(node.right, inputs, crossInputs, params);
+      const right = evalNode(node.right, inputs, crossInputs, params, windows);
       if (!right.ok) {
         return right;
       }
@@ -146,7 +165,7 @@ function evalNode(
     case "call": {
       const args: number[] = [];
       for (const argNode of node.args) {
-        const arg = evalNode(argNode, inputs, crossInputs, params);
+        const arg = evalNode(argNode, inputs, crossInputs, params, windows);
         if (!arg.ok) {
           return arg;
         }
@@ -163,6 +182,7 @@ function evalNode(
 
 const EMPTY_CROSS_INPUTS: ReadonlyMap<string, number> = new Map();
 const EMPTY_PARAMS: ReadonlyMap<string, number> = new Map();
+const EMPTY_WINDOWS: ReadonlyMap<string, number> = new Map();
 
 /**
  * Evaluates a parsed `bms-calc-v1`, `bms-calc-v2` or `bms-calc-v3` expression
@@ -177,7 +197,10 @@ const EMPTY_PARAMS: ReadonlyMap<string, number> = new Map();
  * caller keeps its two-argument call, and a `v1` AST never reads it.
  * `params` (ADR 0070) is keyed by the `$key` of each `param` node, filled by
  * the host from the parameter store; it defaults to empty for the same
- * reason, and a `v1` or `v2` AST never reads it.
+ * reason, and a `v1` or `v2` AST never reads it. `windows` (ADR 0070
+ * decision 5, `E4.1b`) is keyed by `windowKey` of each `window`/`hours` node,
+ * filled by the host from the continuous aggregates; same default, same
+ * reason.
  *
  * Checks finiteness at every node, not only the root (decision 9): a chain
  * like `({A} * {B}) - ({A} * {B})` refuses at the first multiply, not at the
@@ -190,6 +213,7 @@ export function evaluate(
   inputs: ReadonlyMap<string, number>,
   crossInputs: ReadonlyMap<string, number> = EMPTY_CROSS_INPUTS,
   params: ReadonlyMap<string, number> = EMPTY_PARAMS,
+  windows: ReadonlyMap<string, number> = EMPTY_WINDOWS,
 ): CalcEvalResult {
-  return evalNode(ast, inputs, crossInputs, params);
+  return evalNode(ast, inputs, crossInputs, params, windows);
 }

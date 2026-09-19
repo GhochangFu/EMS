@@ -94,6 +94,9 @@ const calcTheme = EditorView.theme({
   // `bms-calc-v3` only (ADR 0070): a `$key` parameter reads like a reference
   // to something stored, not a point — the ref green, italic.
   ".cm-calc-param": { color: "#007C3C", fontStyle: "italic" },
+  // `bms-calc-v3` only (ADR 0070 decision 5, `E4.1b`): a window literal reads
+  // like a keyword — the scope amber, so `24h` and `@site` sit in one family.
+  ".cm-calc-window": { color: "#B45309", fontStyle: "italic" },
 });
 
 /**

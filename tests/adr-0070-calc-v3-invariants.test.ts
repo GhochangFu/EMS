@@ -48,7 +48,11 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  *   "the `(narrow, v3)` superset property, applied to real production text"
  *   rather than a new claim.
  * - **(b) — no dialect gate outside the three grammar files compares to the
- *   `v2` literal** (U7).
+ *   `v2` literal** (U7). **(b′) — `E4.1b` U6 widens the same scan to the `v3`
+ *   literal too**: a gate written `dialect === CALC_DIALECT_V3` is exactly as
+ *   wrong as the `v2` version it was modelled on — it silently excludes
+ *   whatever dialect comes after `v3` — so the regex and the allowlist are
+ *   shared between both literals rather than duplicated into a second scan.
  * - **(c) — `CALC_DIALECTS` has exactly three members, and `KPI_DIALECTS` in
  *   `asset-templates-content.schema.ts` is spread from it.**
  *
@@ -146,6 +150,12 @@ describe("ADR 0070 part (a) — every stock-catalog formula literal parses ident
  * `isParameterDialect` for the *capability*, never the version. The three
  * grammar files own the predicates and are the only permitted comparison
  * sites. Tests and specs are excluded: a fixture may name a dialect.
+ *
+ * **(b′), `E4.1b` U6:** the same defect can be written against `v3` instead —
+ * `dialect === CALC_DIALECT_V3` silently excludes a future `v4` the way the
+ * `v2` version excluded `v3` itself — so the regex below matches either
+ * literal (`CALC_DIALECT_V(2|3)` / `"bms-calc-v(2|3)"`) rather than adding a
+ * second, near-identical scan.
  */
 const DIALECT_GATE_ROOTS = ["apps/api/src", "apps/web/src", "packages/db/src"];
 const DIALECT_GATE_ALLOWLIST = new Set([
@@ -153,7 +163,8 @@ const DIALECT_GATE_ALLOWLIST = new Set([
   "packages/shared/src/calc-dsl/tokenizer.ts",
   "packages/shared/src/calc-dsl/parser.ts",
 ]);
-const V2_LITERAL_GATE = /[!=]==\s*(?:CALC_DIALECT_V2\b|"bms-calc-v2")|(?:\bCALC_DIALECT_V2|"bms-calc-v2")\s*[!=]==/;
+const V2_LITERAL_GATE =
+  /[!=]==\s*(?:CALC_DIALECT_V[23]\b|"bms-calc-v[23]")|(?:\bCALC_DIALECT_V[23]\b|"bms-calc-v[23]")\s*[!=]==/;
 
 function sourceFilesUnder(root: string): string[] {
   const out: string[] = [];
@@ -193,7 +204,7 @@ function v2LiteralGates(files: readonly string[]): string[] {
   return offenders;
 }
 
-describe("ADR 0070 part (b) — no dialect gate outside the grammar files compares to the v2 literal", () => {
+describe("ADR 0070 part (b)/(b′) — no dialect gate outside the grammar files compares to the v2 or v3 literal", () => {
   const files = DIALECT_GATE_ROOTS.flatMap(sourceFilesUnder);
 
   it("scans a real tree, so the rule below is not silently vacuous", () => {
@@ -201,19 +212,25 @@ describe("ADR 0070 part (b) — no dialect gate outside the grammar files compar
     expect(files.some((f) => relativeTo(f) === "apps/api/src/admin/asset-templates/asset-templates.schema.ts")).toBe(true);
   });
 
-  it("the regex matches both operator orders and nothing else", () => {
+  it("the regex matches both operator orders and nothing else, for both v2 and v3", () => {
     expect(V2_LITERAL_GATE.test("  if (dialect === CALC_DIALECT_V2 && x) {")).toBe(true);
     expect(V2_LITERAL_GATE.test("  if (CALC_DIALECT_V2 !== row.dialect) {")).toBe(true);
     expect(V2_LITERAL_GATE.test('  if (dialect === "bms-calc-v2") {')).toBe(true);
+    expect(V2_LITERAL_GATE.test("  if (dialect === CALC_DIALECT_V3 && x) {")).toBe(true);
+    expect(V2_LITERAL_GATE.test("  if (CALC_DIALECT_V3 !== row.dialect) {")).toBe(true);
+    expect(V2_LITERAL_GATE.test('  if (dialect === "bms-calc-v3") {')).toBe(true);
     expect(V2_LITERAL_GATE.test("  const label = DIALECT_LABELS[CALC_DIALECT_V2];")).toBe(false);
+    expect(V2_LITERAL_GATE.test("  const label = DIALECT_LABELS[CALC_DIALECT_V3];")).toBe(false);
     expect(V2_LITERAL_GATE.test("  if (isCrossAssetDialect(dialect)) {")).toBe(false);
   });
 
-  it("no source file outside limits/tokenizer/parser compares a dialect to CALC_DIALECT_V2", () => {
-    expect(v2LiteralGates(files), "each site silently excludes v3 — use isCrossAssetDialect / isParameterDialect").toEqual([]);
+  it("no source file outside limits/tokenizer/parser compares a dialect to CALC_DIALECT_V2 or CALC_DIALECT_V3", () => {
+    expect(v2LiteralGates(files), "each site silently excludes the next dialect — use isCrossAssetDialect / isParameterDialect / isWindowDialect").toEqual(
+      [],
+    );
   });
 
-  it("positive control: the scan reports an injected gate", () => {
+  it("positive control: the scan reports an injected v2 gate", () => {
     // Written to a temp dir, never into the scanned tree: a killed run must
     // not leave a probe that fails the next `pnpm build`.
     const dir = mkdtempSync(join(tmpdir(), "adr0070-"));
@@ -222,6 +239,20 @@ describe("ADR 0070 part (b) — no dialect gate outside the grammar files compar
       writeFileSync(injected, "export const x = (d: string) => d === CALC_DIALECT_V2;\n");
       const [offender] = v2LiteralGates([injected]);
       expect(offender, "the injected gate must be reported").toMatch(/probe\.ts:1$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("positive control: the scan reports an injected v3 gate (b′)", () => {
+    // Proves the widened half of the regex actually fires, not just the v2
+    // half it was copied from.
+    const dir = mkdtempSync(join(tmpdir(), "adr0070-"));
+    const injected = join(dir, "probe.ts");
+    try {
+      writeFileSync(injected, "export const x = (d: string) => d === CALC_DIALECT_V3;\n");
+      const [offender] = v2LiteralGates([injected]);
+      expect(offender, "the injected v3 gate must be reported").toMatch(/probe\.ts:1$/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -327,5 +358,93 @@ describe("ADR 0070 part (d) — the resolver statement is contained, bounded and
   it("positive control: the default scan reports an injected COALESCE and an injected ?? 0", () => {
     expect(defaultValueDefect(`${source}\nconst x = COALESCE(cp.value, 0);`)).toMatch(/COALESCE/);
     expect(defaultValueDefect(`${source}\nconst y = map.get(k) ?? 0;`)).toMatch(/\?\? 0/);
+  });
+});
+
+// --- part (e) — a window read never range-scans raw rows: the views serve every aggregate, and delta is two LIMIT 1 probes ---
+
+/**
+ * ADR 0070 decision 5 (`E4.1b` U8), a property of `calc-windows.service.ts`
+ * the integration suite cannot prove by value: with every view running
+ * `materialized_only = false`, a raw range scan answers the same number as
+ * the composed read and only the cost differs. So the shape is scanned:
+ *
+ * 1. Every `FROM telemetry.` relation in the file is one of the four views,
+ *    except **exactly two** occurrences of `FROM telemetry.point_values` —
+ *    the first-sample and last-sample probes of `delta` — and each of those
+ *    is followed within 200 characters (whitespace collapsed) by `LIMIT 1`.
+ * 2. All four views are named (a level dropped from the ladder would be a
+ *    silent cost regression the tiling property in `calc-window-plan.spec`
+ *    cannot see, because the service, not the planner, names the relation).
+ *
+ * The docblock of the file spells the raw relation too, so the scan reads
+ * the SQL template literals only — the text inside backtick strings passed
+ * to `query(` — and never a comment.
+ */
+const CALC_WINDOWS_SERVICE = "apps/api/src/calc/calc-windows.service.ts";
+const VIEW_RELATIONS = ["telemetry.point_values_1m", "telemetry.point_values_5m", "telemetry.point_values_1h", "telemetry.point_values_1d"];
+
+/** The SQL template literals of the file: every backtick string that follows
+ * `query(` / `query<...>(` (the pg pool) or `execute(sql` (Drizzle) — both
+ * shapes the service uses, so a raw scan added on either is seen. */
+function sqlTemplates(source: string): string[] {
+  const out: string[] = [];
+  const re = /(?:query(?:<[^`]*?>)?\(\s*|execute(?:<[^`]*?>)?\(\s*sql)`([\s\S]*?)`/g;
+  for (const m of source.matchAll(re)) {
+    out.push(m[1]);
+  }
+  return out;
+}
+
+function rawScanDefect(templates: readonly string[]): string | null {
+  // whitespace runs collapsed, so the 200-character budget measures SQL, not indentation
+  const sql = templates.join("\n").replace(/\s+/g, " ");
+  const rawSites = [...sql.matchAll(/FROM\s+telemetry\.point_values\b(?!_)/g)];
+  if (rawSites.length !== 2) return `expected exactly two FROM telemetry.point_values sites (the two delta probes), found ${rawSites.length}`;
+  for (const site of rawSites) {
+    const tail = sql.slice(site.index as number, (site.index as number) + 200);
+    if (!/LIMIT\s+1\b/.test(tail)) return "a FROM telemetry.point_values site is not followed by LIMIT 1 within 200 characters — a range scan";
+  }
+  const others = [...sql.matchAll(/FROM\s+(telemetry\.\w+)/g)].map((m) => m[1]).filter((r) => r !== "telemetry.point_values");
+  for (const relation of others) {
+    if (!VIEW_RELATIONS.includes(relation)) return `FROM ${relation} is neither a view nor a delta probe`;
+  }
+  return null;
+}
+
+describe("ADR 0070 part (e) — a window read never range-scans raw rows", () => {
+  const source = readFileSync(join(repoRoot, CALC_WINDOWS_SERVICE), "utf8");
+  const templates = sqlTemplates(source);
+
+  it("found the service and its SQL templates, so the rules below are not silently vacuous", () => {
+    expect(templates.length, `${CALC_WINDOWS_SERVICE}: expected at least four query( / execute(sql templates`).toBeGreaterThanOrEqual(4);
+    expect(templates.join("\n")).toMatch(/FROM\s+telemetry\.point_values\b/);
+    // the Drizzle shape is captured too: the calendar statement joins bms.locations
+    expect(templates.some((t) => /JOIN\s+bms\.locations/.test(t)), "the execute(sql`…`) template is scanned").toBe(true);
+  });
+
+  it("names all four views — the level relation is interpolated from aggregateRelation, so the file names them through it", () => {
+    // the per-level statement interpolates `${relation}`; the four names are
+    // what `aggregateRelation` maps to, pinned in point-aggregates.ts
+    const pointAggregates = readFileSync(join(repoRoot, "apps/api/src/telemetry/point-aggregates.ts"), "utf8");
+    for (const relation of VIEW_RELATIONS) {
+      expect(pointAggregates, relation).toContain(`"${relation}"`);
+    }
+    expect(source).toMatch(/aggregateRelation\(level\)/);
+  });
+
+  it("exactly two FROM telemetry.point_values sites, each a LIMIT 1 probe, and no other raw relation", () => {
+    expect(rawScanDefect(templates), CALC_WINDOWS_SERVICE).toBeNull();
+  });
+
+  it("positive control: the scan reports an injected raw range scan and a dropped LIMIT", () => {
+    expect(rawScanDefect([...templates, "SELECT sum(value) FROM telemetry.point_values v WHERE v.time >= $1 AND v.time < $2"])).toMatch(/exactly two/);
+    const withoutLimit = templates.map((t) => t.replace(/ORDER BY v\.time ASC\s+LIMIT 1/, "ORDER BY v.time ASC"));
+    expect(rawScanDefect(withoutLimit)).toMatch(/LIMIT 1/);
+    expect(rawScanDefect([...templates, "SELECT 1 FROM telemetry.point_values_15m"])).toMatch(/neither a view/);
+    // an injected raw range scan through the Drizzle shape is captured by sqlTemplates
+    const injected = sqlTemplates(`${source}\nconst x = db.execute(sql\`SELECT sum(value) FROM telemetry.point_values v WHERE v.time >= \${a}\`);`);
+    expect(injected.length).toBe(templates.length + 1);
+    expect(rawScanDefect(injected)).toMatch(/exactly two/);
   });
 });

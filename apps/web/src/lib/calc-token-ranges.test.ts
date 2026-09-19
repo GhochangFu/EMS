@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   runQualifiedRefRangeTests,
   runParamRangeTests,
+  runWindowRangeTests,
   runSafeTokenizeDialectTests,
   runStringAndScopeRangeTests,
   runV1RefRangeTests,
@@ -28,5 +29,9 @@ describe("calc token ranges", () => {
 
   it("spans a $key parameter over its $", () => {
     runParamRangeTests();
+  });
+
+  it("spans a window literal as written", () => {
+    runWindowRangeTests();
   });
 });

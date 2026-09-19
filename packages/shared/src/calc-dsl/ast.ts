@@ -13,7 +13,7 @@
  * decision 2; plan design decision 2).
  */
 
-import type { CALC_AGGREGATE_FNS } from "./limits";
+import type { CALC_AGGREGATE_FNS, CALC_WINDOW_FNS, CalcCalendarWindow } from "./limits";
 
 export type CalcFunctionName = "min" | "max" | "abs" | "round" | "clamp";
 
@@ -86,6 +86,42 @@ export type CalcCrossRef = CalcQualifiedRef | CalcAggregate;
  * runs, into the fourth map; the node carries no value and no scope. */
 export type CalcParamRef = { kind: "param"; key: string; position: number };
 
+// ---- bms-calc-v3 windows (ADR 0070 decisions 5 and 6; `E4.1b`) -------------
+//
+// Two new node kinds, on purpose, rather than one kind with a nullable `ref`:
+// `hours(window)` takes no point, and a consumer that exhausts the union must
+// decide what each means for it. Neither carries a value, a zone or a read
+// plan — the host resolves every window read against the continuous
+// aggregates (and, for `delta`, two index probes) into the fifth map before
+// `evaluate` runs, keyed by `windowKey` in `./window-ref`.
+
+/** `sum` / `avg` / `min` / `max` / `delta` — the vocabulary is `CALC_WINDOW_FNS`. */
+export type CalcWindowFnName = (typeof CALC_WINDOW_FNS)[number];
+
+/** A rolling window is a duration in minutes ending at the tick (`24h` →
+ * 1440); a calendar window is the elapsed part of the named period in the
+ * owning asset's location's zone. */
+export type CalcWindow = { kind: "rolling"; minutes: number } | { kind: "calendar"; period: CalcCalendarWindow };
+
+/** `fn({key}, window)` / `fn({CODE.key}, window)` — `position` is the 0-based
+ * offset of the function-name token, as for `call`. `ref` is exactly one
+ * point reference, own or qualified, never a scope aggregate (ruling 4); it
+ * also joins `refs` / `crossRefs` as the same node would bare. */
+export type CalcWindowFn = {
+  kind: "window";
+  fn: CalcWindowFnName;
+  ref: CalcPointRef | CalcQualifiedRef;
+  window: CalcWindow;
+  position: number;
+};
+
+/** `hours(window)` — the elapsed hours the window covers, for prorating a
+ * daily baseline. `position` is the function-name token. */
+export type CalcHours = { kind: "hours"; window: CalcWindow; position: number };
+
+/** The two node kinds the host must resolve into the fifth map. */
+export type CalcWindowRead = CalcWindowFn | CalcHours;
+
 export type CalcExpr =
   | CalcNumber
   | CalcPointRef
@@ -94,7 +130,9 @@ export type CalcExpr =
   | CalcCall
   | CalcQualifiedRef
   | CalcAggregate
-  | CalcParamRef;
+  | CalcParamRef
+  | CalcWindowFn
+  | CalcHours;
 
 export type CalcErrorCode =
   | "empty_expression"
@@ -132,7 +170,17 @@ export type CalcErrorCode =
   | "malformed_parameter_reference"
   // `bms-calc-v3` parser code (ADR 0070 decision 4): the `MAX_FORMULA_PARAM_REFS`
   // bound, on the `too_many_cross_refs` pattern.
-  | "too_many_param_refs";
+  | "too_many_param_refs"
+  // `bms-calc-v3` window codes (ADR 0070 decision 5; `E4.1b`). Same rule: a
+  // `window` token exists only under the window dialect, and every production
+  // that raises one of these sits behind the parser's dialect check.
+  | "malformed_window"
+  | "window_too_long"
+  | "window_required"
+  | "window_needs_point_reference"
+  | "window_over_aggregate"
+  | "window_not_allowed"
+  | "too_many_windows";
 
 /**
  * `position` is a 0-based character offset into the expression. Never carries
@@ -148,10 +196,20 @@ export type CalcParseError = { code: CalcErrorCode; position: number };
  * cross-asset node (by `crossRefKey`), first-appearance order, and always `[]`
  * under `v1` (plan design decision 3). `paramRefs` is the `v3` addition
  * (ADR 0070 decision 4): every distinct `$key`, first-appearance order, and
- * always `[]` under `v1` and `v2`. Three lists, because a local key, a cross
- * reference and a parameter are served from three different maps at
- * evaluation time.
+ * always `[]` under `v1` and `v2`. `windowReads` is the `E4.1b` addition
+ * (ADR 0070 decision 5): every distinct window read (by `windowKey`),
+ * first-appearance order, always `[]` under `v1` and `v2`; the point inside
+ * each read is ALSO in `refs` or `crossRefs`. Four lists, because a local
+ * key, a cross reference, a parameter and a window read are served from four
+ * different maps at evaluation time.
  */
 export type ParseResult =
-  | { ok: true; ast: CalcExpr; refs: string[]; crossRefs: CalcCrossRef[]; paramRefs: string[] }
+  | {
+      ok: true;
+      ast: CalcExpr;
+      refs: string[];
+      crossRefs: CalcCrossRef[];
+      paramRefs: string[];
+      windowReads: CalcWindowRead[];
+    }
   | { ok: false; errors: CalcParseError[] };
