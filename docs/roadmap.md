@@ -2838,7 +2838,8 @@ squash `2a79a42`; its ADR gate landed first as PR
 [#214](https://github.com/GhochangFu/EMS/pull/214), squash `2dd1ab2`. **The
 `F3.1` umbrella closes with it**, clearing the `F3.1` blocker on `F3.2`, `F3.5`,
 `E4.2`, `F3.28` and `F3.32`. **Four of those five are now fully unblocked;
-`E4.2` is not** — it depends on `E4.1, F3.1`, and `E4.1` is still `⬜`. The row's
+`E4.2` is not** — it depends on `E4.1, F3.1`, and `E4.1` was still `⬜`
+(it closed 2026-09-20; see the `E4.1` entry below). The row's
 own closure record is in [`BACKLOG.md`](./BACKLOG.md); four things belong here
 because they are about method rather than about dashboards.
 
@@ -5587,3 +5588,45 @@ sources and the instantiated builder's refusal without a dataset; CI green as
 the DB-live full gate after the local run was memory-killed. Three reviews:
 compliance and security clean; code review five test-quality findings, fixed
 in-row. No `chore(agents):` line is owed. Unblocks nothing.
+
+### `E4.1` — the sustainability metrics engine, umbrella and three children (ADR 0070 + Amendments 1–2) ✅ 2026-09-20
+
+`E4.1a` ⭐ (#492, #493, 2026-09-19), `E4.1b` (#497, #498, 2026-09-19) and
+`E4.1c` (#502, #503, #504, 2026-09-20). Gated 2026-09-18 by
+[ADR 0070](./adr/0070-sustainability-metrics-engine.md), drafted and ruled
+the same day: the row's original cell asked for savings baselines, carbon
+factors and downtime deltas "as derived tags", and the gate found the calc
+grammar had no node for a stored scalar and none for a time window. The three
+children are those two grammar extensions and the content that waited on
+them — `bms.calc_parameters` and the `$key` reference (`E4.1a`), rolling and
+calendar windows over the continuous aggregates with `bms.locations.timezone`
+(`E4.1b`), and `E4.1c`: the Rand tariff absorbed into a parameter with
+`bms.organizations.currency`, and forty-nine `bms-calc-v3` sustainability
+points across nineteen stock entries that empty twenty-five records from the
+deferral ledger. Each child's closure record is in
+[`BACKLOG.md`](./BACKLOG.md); the twelve `E4.1c` plan-gate rulings and the
+three overturned recommendations are in ADR 0070 Amendment 2.
+
+**Three things belong here, about method.** A row's own inventory of what
+the grammar cannot express was half stale by the plan gate — the plan
+re-derived it from the ledger's lists, not from the ADR's example list, and
+the owner widened the scope to everything expressible (Q6); the ledger's
+totals were then derived from the lists by the implementer and recounted by
+three reviewers. Every layer paid for a run, not a read: a seed module that
+typechecked failed on first execution (`inconsistent types deduced`), a
+DB-gated stock-import suite that no implementer ran carried stale version
+pins into two PRs until the full suite found them, and the compose count
+`642` the plan repeated everywhere was `636` on a cold start. And the
+post-merge sweep class recurred: a fix applied in one PR's modules (the
+`window_empty` sentence, the `minCoverageRatio` claim) had siblings in the
+other PR's.
+
+**Verified on every layer, three times.** Full suite 4299 / 4413 / 4477
+passed; fourteen reviews across the three PRs; the compose database
+(`0076` hash-matched, the seed row, 642 point keys); the source API on `:4001`
+in both directions (the tariff, the two-currency dash, every stock import at
+201, the feeder and the pump swept live); `browser-verifier` 5/5 + 5/5 + 4/4
+with no screenshot. Post-merge sweep #505: no behaviour defect, a test
+claim that named a guard the row does not have. **Unblocks `E4.2`, `E4.3`
+and `E1.6`.** Ships no Water
+Recycle % or Operational Efficiency % formula — B14 is still the client's.
