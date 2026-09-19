@@ -289,7 +289,7 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * unit. Joining this array flips its domain to `electrical` and fills its
  * unit to `"%"` through `seedPointKeyCatalog`'s `COALESCE` — see the
  * correction to `METERED_PUMPING_POINT_KEYS`'s docblock, just above, and
- * `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY` section comment.
+ * `packages/db/src/point-key-units.ts`'s `UNIT_BY_KEY` section comment.
  *
  * **SIX DERIVED CODES PROMOTED BY `F2.12`, 139 → 145.** ADR 0051 Amendment 6
  * decision 8 pre-authorizes promoting *"each derived code it can actually

@@ -116,7 +116,7 @@ import type { StockAssetTemplateEntry } from "./types";
  *    "—"), the six `0/1` flags and `relay_trip_code`'s "code". A template
  *    `unit` is an *override*; `null` defers to the catalog's own unit, which
  *    is what those keys carry. Where the table names a unit it is spelled as
- *    `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY` spells it —
+ *    `packages/db/src/point-key-units.ts`'s `UNIT_BY_KEY` spells it —
  *    `kVAr`, `kVArh`, not the table's `kVAR`/`kVARh`. **The two money rows
  *    are the one exception**: `energy_cost_per_h` and `energy_cost_today`
  *    carry `unit: ""` explicitly (plan Q8, ruled 2026-09-19) — the amount's

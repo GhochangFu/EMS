@@ -139,7 +139,7 @@ import type { StockAssetTemplateEntry } from "./types";
  * contacts and flags, `tap_position`'s "tap", `oltc_operation_count`'s "count"
  * and `silica_gel_state`'s "enum". A template `unit` is an *override*; `null`
  * defers to the catalog's own unit. Where §2 names a unit it is spelled as
- * `packages/db/src/point-keys-seed.ts` spells it (`°C`, `ppm`, `kV`, `MΩ`).
+ * `packages/db/src/point-key-units.ts` spells it (`°C`, `ppm`, `kV`, `MΩ`).
  * Labels drop the table's editorial remarks (`(manual)`).
  *
  * ---

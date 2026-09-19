@@ -257,6 +257,17 @@ import { WATER_WTP } from "./water-wtp";
  * section's wording, labels are display-only and asserted by nothing, and
  * harmonising them here would silently edit the handout a client is holding.
  * **A v2 redline candidate for the document**, recorded rather than fixed.
+ *
+ * **`E4.1c` (ADR 0070 decision 8 as widened by Q5, 2026-09-19) — every entry
+ * v1 → v2** with the same three `bms-calc-v3` codes over ITS inlet flow, one
+ * meaning across the six ("KL of inlet water today"): `kl_today`,
+ * `water_cost_today`, `water_saving_vs_baseline_pct` — STP and ETP over
+ * `{influent_flow_klh}`, the tower over `{makeup_flow_klh}` (make-up is what is
+ * consumed), the WTP over `{raw_water_flow_klh}`, the RO over `{feed_flow_klh}`,
+ * the softener over `{inlet_flow_klh}`. A tenant whose inlet is not purchased
+ * water leaves `water_tariff_per_kl` unset (a counted `parameter_unset`) or
+ * deletes the cost row on the draft. No ledger record moved: the fifteen over
+ * fourteen codes above stay, and none of them is one of these three.
  */
 export const WATER_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0040 ruling 2's authoring order, which is the order GET /stock lists

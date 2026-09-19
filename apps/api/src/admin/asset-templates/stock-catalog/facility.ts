@@ -444,6 +444,21 @@ import type { StockAssetTemplateEntry } from "./types";
  *    closes the pack**: it references thirteen codes and declares none of them,
  *    the most of any entry here, and Task 14 restores the catalog order claim
  *    to full equality against all twenty-seven entries with it.
+ *
+ * **`E4.1c` (ADR 0070 decision 8, 2026-09-19) — six entries v1 → v2**, each with
+ * `bms-calc-v3` rows appended after its last point. `facility-fire-panel`:
+ * `isolation_hours_month` (24, a calendar month — the location needs a zone).
+ * `facility-occupancy-zone`: `occupied_hours_day` (11).
+ * `facility-parking-level`: `fan_hours_day` (17). `facility-bas-gateway`:
+ * `uptime_pct_24h` (13, supersedes `uptime_pct`). `mechanical-lift`:
+ * `availability_pct_24h` (service-sense), `door_cycles_per_day`,
+ * `trips_per_day`, `out_of_service_hours_month` (80–83; `availability_pct`
+ * superseded). `mechanical-escalator`: `availability_pct_24h` (fault-sense),
+ * `starts_per_day` (41–42; `availability_pct` superseded). The lighting zone,
+ * access door and IAQ node are untouched. The ledgers: facility 25/25 → 21/21,
+ * vertical transport 17/15 → 11/10. The "Deferred — 40 codes, 42 records"
+ * paragraph above is the `E5.3` count; the reconciled ledger is
+ * `stock-catalog-deferrals.spec.ts`'s docblock.
  */
 export const FACILITY_STOCK_ASSET_TEMPLATES: readonly StockAssetTemplateEntry[] = [
   // ADR 0054 decision 1's document order — lighting zone, fire panel, access

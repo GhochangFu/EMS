@@ -110,7 +110,7 @@ import type { StockAssetTemplateEntry } from "./types";
  * the two `actual_pf` rows read better together, a bullet list carries no
  * `sortOrder`, and the transformer entry took the same liberty with §2.
  *
- * **UNITS.** Authored from `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY`
+ * **UNITS.** Authored from `packages/db/src/point-key-units.ts`'s `UNIT_BY_KEY`
  * and not from §6's Unit column, because those spellings are permanent and
  * `onboarding-commit.service.ts` refuses a client CSV that disagrees.
  * `kvar_connected` and `kvar_required` therefore take **`kVAr`** and not §6's
