@@ -395,15 +395,18 @@ export async function assertTheShippedFeederImportsWholeAgainstTheRealVocabulary
  * a domain that is not a row is refused with a 400 whose *Expected one of* list
  * — read from the table — ends in `mechanical`. That says the row exists and is
  * active; it cannot say an entry filed under it imports. This does, on the
- * shipped `mechanical-pump`: 20 points land, all ten alarms survive
+ * shipped `mechanical-pump`: 23 points land (v2 since `E4.1c`), all ten alarms survive
  * `assertTemplateAlarmVocabularies` and `assertContentRefsResolve` with their
  * `philosophy` objects intact and their threshold pair still absent, and the
  * draft **publishes**, which re-validates the stored content under the current
  * contract.
  *
- * Two of the twenty are `kind: "derived"`, so this is also the first proof that
- * a stock entry's derived points survive an import — their formulas reference
- * measured siblings and their keys are the `E5.2` vocabulary rows.
+ * Five of the twenty-three are `kind: "derived"` — `E5.2`'s two and `E4.1c`'s
+ * three `bms-calc-v3` rows — so this is also the proof that a stock entry's
+ * derived points survive an import: their formulas reference measured siblings
+ * and their keys are seeded vocabulary rows (the `E4.1c` codes from
+ * `sustainability-point-keys.ts`, the one DB-backed gate on the mechanical
+ * array being in `bms.point_keys`).
  */
 export async function assertAMechanicalEntryImportsAndPublishes(
   realStock: AssetTemplatesStockService,
@@ -436,14 +439,15 @@ export async function assertAMechanicalEntryImportsAndPublishes(
     `the imported pump must carry domain "mechanical" — the sixth bms.asset_domains row, and the ` +
       `first a pack added through the seed rather than a migration. Got "${draft.domain}".`,
   );
-  assert(draft.stockCode === PUMP_CODE && draft.stockVersion === 1, "the pump import is stamped v1");
-  assert(draft.points.length === 20, `20 points must land, got ${draft.points.length}`);
-  assert((await storedPointCount(pool, draft.id)) === 20, "20 template_points rows must be stored");
-  const derivedPoints = draft.points.filter((point) => point.kind === "derived");
+  assert(draft.stockCode === PUMP_CODE && draft.stockVersion === 2, "the pump import is stamped v2 (E4.1c)");
+  assert(draft.points.length === 23, `23 points must land, got ${draft.points.length}`);
+  assert((await storedPointCount(pool, draft.id)) === 23, "23 template_points rows must be stored");
+  const derivedKeys = draft.points.filter((point) => point.kind === "derived").map((point) => point.pointKey);
   assert(
-    derivedPoints.length === 2,
-    `both derived points must survive the import — head_m and specific_energy_kwh_kl; got ` +
-      `${derivedPoints.length}`,
+    derivedKeys.length === 5 &&
+      derivedKeys.join(",") ===
+        "head_m,specific_energy_kwh_kl,duty_hours_pct_24h,starts_per_hour,availability_pct_24h",
+    `the two E5.2 and the three E4.1c derived points must land in order; got [${derivedKeys.join(",")}]`,
   );
 
   const alarms = (draft.content as { alarms?: Record<string, unknown>[] }).alarms ?? [];
