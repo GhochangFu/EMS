@@ -175,13 +175,15 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   ],
   // §2 — another asset's LV meter, the rating, and three models the grammar
   // has no functions for (IEC 60076-7, C57.91 ageing, a Duval-triangle lookup).
+  // `tap_changes_per_day` LEFT with E4.1c: `delta({oltc_operation_count}, 24h)`
+  // is the window it needed (ADR 0070 decision 5); electrical-transformer.ts
+  // authors it at sortOrder 30. Docblock counts above wait for PR 2b (U16).
   "electrical-transformer": [
     "lv_load_pct",
     "load_pct",
     "hot_spot_estimate_c",
     "loss_of_life_pct_day",
     "duval_triangle_zone",
-    "tap_changes_per_day",
   ],
   // §3 — the rating, the tank capacity (`fuel_level_pct` is a percentage), and
   // three that need a time window the grammar has no state for.

@@ -15,6 +15,7 @@ import {
   assertStockVersion3,
   assertUnitsPerPlan,
   E41C_FEEDER_FORMULAS,
+  e41cElectricalClaims,
   runFeederTagListBlock,
 } from "./electrical-classes-3.spec";
 
@@ -85,4 +86,9 @@ describe("stock asset-template catalog — the feeder class (F2.13 §1, F2.8, E4
   it("E4.1c — stockVersion is 3 (ruling 10)", () => {
     assertStockVersion3();
   });
+
+  // The transformer, DG set, solar PV and APFC rows — one it() per claim.
+  for (const [name, run] of e41cElectricalClaims()) {
+    it(name, run);
+  }
 });

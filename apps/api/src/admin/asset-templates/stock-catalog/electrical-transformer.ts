@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -82,7 +82,11 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `loss_of_life_pct_day` — IEEE C57.91's ageing factor is exponential.
  *  - `duval_triangle_zone` — a triangle-zone lookup, not an arithmetic
  *    expression.
- *  - `tap_changes_per_day` — a time window the grammar has no state for.
+ *  - `tap_changes_per_day` — needed a time window the grammar had no state
+ *    for. **Authored by `E4.1c`** as `delta({oltc_operation_count}, 24h)`
+ *    (`bms-calc-v3`, ADR 0070 decision 5) at `sortOrder` 30 — see VERSION
+ *    HISTORY v2. `oltc_operation_count` is tier X, so an asset without it
+ *    refuses `missing_input`, visibly.
  *
  * The tag list's **overload (load %)** alarm is deferred with them, for the
  * headline reason above.
@@ -145,8 +149,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  *  - `electrical-transformer` **v1** (2026-09-02, `F2.12`): authored from
  *    `electrical-derived-taglist-v1.md` §2, PROVISIONAL — derived, not
- *    client-confirmed. The client-confirmed release is v2; its redline
- *    candidates are recorded above (a loading row, C₂H₄ and C₂H₆).
+ *    client-confirmed. The client-confirmed redline (a loading row, C₂H₄ and
+ *    C₂H₆) is recorded above and lands as a later version when it arrives.
+ *  - `electrical-transformer` **v2** (2026-09-19, `E4.1c`): one `bms-calc-v3`
+ *    derived point appended at `sortOrder` 30 — `tap_changes_per_day =
+ *    delta({oltc_operation_count}, 24h)`, the ledger promotion (ADR 0070
+ *    decision 8). What an importing tenant must know: the row is `scheduled`
+ *    at 60 s, so the value is at most one tick old; `minCoverageRatio` is
+ *    `null` (fail closed); `oltc_operation_count` is tier X and an asset that
+ *    has not mapped it refuses `missing_input`; a rolling `24h` window needs
+ *    no time zone (a calendar one would). No `$key`, so nothing to enter on
+ *    `/admin/calc-parameters`.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -172,7 +185,7 @@ export const ELECTRICAL_TRANSFORMER: StockAssetTemplateEntry = {
     "not client-confirmed). A transformer is this table PLUS a feeder/incomer template on its LV " +
     "side; the loading figures live there. Tier C points are required, X optional, M entered by " +
     "hand; alarm rows carry a meaning and no limit.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -504,6 +517,17 @@ export const ELECTRICAL_TRANSFORMER: StockAssetTemplateEntry = {
       unit: "°C",
       required: false,
       sortOrder: 29,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7: the ledger promotion. A count
+    // per day carries the empty-string unit (Q8). No `meta`: nothing fits a
+    // computed point.
+    {
+      ...derived("delta({oltc_operation_count}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "tap_changes_per_day",
+      label: "OLTC tap changes, trailing 24 h",
+      unit: "",
+      required: false,
+      sortOrder: 30,
     },
   ],
 };

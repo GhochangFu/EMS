@@ -65,6 +65,7 @@ const TRANSFORMER_POINT_KEYS: readonly string[] = [
   "silica_gel_state",
   "insulation_resistance_mohm",
   "oil_rise_over_ambient_c",
+  "tap_changes_per_day", // E4.1c: derived, v3 — electrical-classes-3.spec.ts pins it
 ];
 
 /**
@@ -119,16 +120,16 @@ function checkTransformer(): void {
       `bms.asset_domains at import time; got "${entry.domain}"`,
   );
   assert(
-    entry.stockVersion === 1,
-    `${TRANSFORMER_CODE} is a first release — stockVersion 1, got ${String(entry.stockVersion)}`,
+    entry.stockVersion === 2,
+    `${TRANSFORMER_CODE} is at stockVersion 2 since E4.1c (tap_changes_per_day), got ${String(entry.stockVersion)}`,
   );
 
-  // ---- 30 points, 9 core + 16 extended + 4 manual + 1 derived -------------
+  // ---- 31 points, 9 core + 16 extended + 4 manual + 2 derived -------------
 
   assert(
-    entry.points.length === 30,
-    `tag list §2 has 31 rows; two are not declared (lv_load_pct, dga_lab_result) and one derived ` +
-      `code is authored, so the entry declares 30 points — got ${entry.points.length}`,
+    entry.points.length === 31,
+    `tag list §2 has 31 rows; two are not declared (lv_load_pct, dga_lab_result) and two derived ` +
+      `codes are authored (one F2.12's, one E4.1c's), so the entry declares 31 points — got ${entry.points.length}`,
   );
 
   const tierCount = (tier: string): number =>
@@ -148,9 +149,10 @@ function checkTransformer(): void {
       `marks ${tierCount("manual")}`,
   );
   assert(
-    derivedPoints.length === 1,
-    `§2 has exactly one expressible derived code (oil_rise_over_ambient_c); the entry authors ` +
-      `${derivedPoints.length}: ${derivedPoints.map((point) => point.pointKey).join(", ")}`,
+    derivedPoints.length === 2,
+    `§2 has one v1-expressible derived code (oil_rise_over_ambient_c) and E4.1c authors one v3 ` +
+      `(tap_changes_per_day); the entry authors ${derivedPoints.length}: ` +
+      `${derivedPoints.map((point) => point.pointKey).join(", ")}`,
   );
 
   entry.points.forEach((point, index) => {
@@ -169,7 +171,7 @@ function checkTransformer(): void {
   );
 
   const keySet = new Set(declaredKeys);
-  assert(keySet.size === 30, `${TRANSFORMER_CODE}: no point key may repeat`);
+  assert(keySet.size === 31, `${TRANSFORMER_CODE}: no point key may repeat`);
 
   // ---- the two §2 rows that are deliberately NOT declared -----------------
 

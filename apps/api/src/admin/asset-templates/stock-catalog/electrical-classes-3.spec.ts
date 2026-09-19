@@ -1,8 +1,8 @@
 import { CALC_DIALECT_V2, CALC_DIALECT_V3, MAX_FORMULA_WINDOWS, parseFormula } from "@bms/shared";
 
-import { readRepoFile } from "../../../testing/repo-root";
 import { STOCK_ASSET_TEMPLATE_CATALOG } from "./stock-catalog";
-import { alarmsOf, assert, FEEDER_CODE } from "./stock-catalog.spec";
+import { alarmsOf, assert, FEEDER_CODE, requireStockEntry } from "./stock-catalog.spec";
+import { calcParameterKeys0074, sustainabilityClaims, type SustainabilityRow } from "./stock-transcription.spec";
 
 /**
  * `E4.1c` — the feeder / incomer class (`electrical-feeder`) against
@@ -176,29 +176,6 @@ export const E41C_FEEDER_FORMULAS: ReadonlyArray<readonly [pointKey: string, for
   ["demand_vs_contract_pct", "{max_demand_kva} / $contract_demand_kva * 100", "%"],
 ];
 
-/**
- * The parameter codes migration `0074` seeds into `bms.calc_parameter_keys`
- * (ADR 0070 decision 2), READ OUT OF THE MIGRATION, never retyped — the
- * `stock-catalog.spec.ts` discipline for `0029`/`0030`. Throwing on a parse
- * that finds no codes is load-bearing: an empty set would make the
- * membership claim below vacuously red, but a retyped list would let a key
- * nobody seeds pass it. Twelve at `0074`; the vocabulary grows by `INSERT`
- * (decision 2), so the count is asserted as a floor of twelve, not a pin.
- */
-let paramKeysMemo: ReadonlySet<string> | undefined;
-const calcParameterKeys0074 = (): ReadonlySet<string> => {
-  if (paramKeysMemo) return paramKeysMemo;
-  const migration = readRepoFile("packages/db/drizzle/0074_calc_parameters.sql");
-  const startNeedle = "INSERT INTO bms.calc_parameter_keys (";
-  const start = migration.indexOf(startNeedle);
-  if (start < 0) throw new Error("no INSERT INTO bms.calc_parameter_keys in 0074 — fix this parser, do not delete it");
-  const end = migration.indexOf("ON CONFLICT", start);
-  if (end < 0) throw new Error("unterminated INSERT INTO bms.calc_parameter_keys — expected a trailing ON CONFLICT");
-  const codes = [...migration.slice(start, end).matchAll(/\(\s*'([a-z0-9_]+)'/g)].map((m) => m[1] as string);
-  if (codes.length < 12) throw new Error(`parsed ${codes.length} codes out of 0074's insert, expected 12 — the parser is broken`);
-  paramKeysMemo = new Set(codes);
-  return paramKeysMemo;
-};
 
 export function assertNineDerivedRowsInOrder(): void {
   const codes = derivedOf().map((point) => point.pointKey);
@@ -346,5 +323,28 @@ export function assertStockVersion3(): void {
     version === 3,
     `electrical-feeder is stockVersion 3 (ruling 10: v2 → v3 for E4.1c's six rows; an importing tenant ` +
       `takes them by re-import, never by mutation) — got ${String(version)}`,
+  );
+}
+
+// ---- E4.1c — the other four electrical classes' bms-calc-v3 rows ---------
+//
+// Plan §3.7. The count, key-order and tier claims of each class stay in
+// `electrical-classes.spec.ts` / `electrical-classes-2.spec.ts` (both near the
+// §4.5 cap); the E4.1c rows are pinned HERE through `sustainabilityClaims`,
+// one `it()` per claim in the wrapper. `load_pct` on the DG set is the UPS's
+// measured code re-used derived — one code, one meaning (kW ÷ rated kW).
+
+const TRANSFORMER_E41C: readonly SustainabilityRow[] = [
+  ["tap_changes_per_day", "delta({oltc_operation_count}, 24h)", ""],
+];
+
+/** Every E4.1c class beside the feeder: `[code, rows, firstSortOrder, expectedVersion]`. */
+export const E41C_ELECTRICAL_CLASSES: ReadonlyArray<readonly [string, readonly SustainabilityRow[], number, number]> = [
+  ["electrical-transformer", TRANSFORMER_E41C, 30, 2],
+];
+
+export function e41cElectricalClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return E41C_ELECTRICAL_CLASSES.flatMap(([code, rows, first, version]) =>
+    sustainabilityClaims(code, requireStockEntry(code), rows, first, version),
   );
 }
