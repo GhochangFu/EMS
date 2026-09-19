@@ -367,17 +367,18 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // which bms-calc-v1 cannot name.
     "conditioning_while_empty_kwh",
   ],
-  // §5 — four time windows, and the only entry whose deferrals are all one
-  // class. occupancy_pct is NOT here: the level declares bays_occupied and
-  // bays_total and authors it, with a different formula from §4's.
+  // §5 — a counter, a method and a two-window product. E4.1c DISCHARGED
+  // `fan_hours_day` (`sum({jet_fan_status}, 24h)`). occupancy_pct is NOT here:
+  // the level declares bays_occupied and bays_total and authors it, with a
+  // different formula from §4's.
   "facility-parking-level": [
-    // vehicles per day.
+    // vehicles per day: entry_count is "Entries" with no cumulative/interval
+    // statement, so delta() over it is undefined — the traffic_per_hour class.
     "turnover_per_day",
-    // average dwell needs entry-to-exit pairing, which is state over a window.
+    // average dwell needs entry-to-exit pairing — a method.
     "avg_dwell_min",
-    // fan run hours per day.
-    "fan_hours_day",
-    // the fraction of fan hours CO demand drove — two windows, not one.
+    // the fraction of fan hours CO demand drove — a product of two states
+    // inside a window; two windows, not one (ruling 4).
     "co_driven_fan_pct",
   ],
   // §6 — two methods the document only names, and a window. The two the node
