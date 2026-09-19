@@ -261,6 +261,10 @@ const WTP_POINTS: readonly PointRow[] = [
   ["raw_alkalinity_mgl", "manual", "mg/L"],
   ["recovery_pct", "derived", "%"],
   ["turbidity_removal_pct", "derived", "%"],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "derived", "KL"],
+  ["water_cost_today", "derived", ""],
+  ["water_saving_vs_baseline_pct", "derived", "%"],
 ];
 
 /**
@@ -275,6 +279,10 @@ const WTP_DERIVED: readonly DerivedRow[] = [
     "(1 - {filtered_turbidity_ntu} / {raw_turbidity_ntu}) * 100",
     null,
   ],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "sum({raw_water_flow_klh}, today)", null],
+  ["water_cost_today", "sum({raw_water_flow_klh}, today) * $water_tariff_per_kl", null],
+  ["water_saving_vs_baseline_pct", "(1 - sum({raw_water_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
 ];
 
 /**
@@ -297,17 +305,17 @@ const WTP_ALARMS: readonly AlarmRow[] = [
  */
 function checkWtp(): void {
   const entry = requireStockEntry(WTP_CODE);
-  assertEntryIdentity(WTP_CODE, entry, "wtp", "water");
+  assertEntryIdentity(WTP_CODE, entry, "wtp", "water", 2);
 
-  // ---- 20 points, 11 core + 5 extended + 2 manual + 2 derived -------------
+  // ---- 23 points, 11 core + 5 extended + 2 manual + 5 derived (3 E4.1c) -------------
 
   assert(
     tierCount(entry, "core") === 11 &&
       tierCount(entry, "extended") === 5 &&
       tierCount(entry, "manual") === 2 &&
-      tierCount(entry, "derived") === 2,
+      tierCount(entry, "derived") === 5,
     `§1 marks 11 rows C, 5 X and 2 M, and two of its three derived codes are authored — ` +
-      `11/5/2/2. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `11/5/2/5. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(WTP_CODE, "§1", entry, WTP_POINTS);
@@ -400,8 +408,16 @@ const TOWER_E41C: readonly SustainabilityRow[] = [
   ["water_saving_vs_baseline_pct", "(1 - sum({makeup_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
 ];
 
+/** water-wtp over `{raw_water_flow_klh}`, §1's inlet — plan §3.7. */
+const WTP_E41C: readonly SustainabilityRow[] = [
+  ["kl_today", "sum({raw_water_flow_klh}, today)", "KL"],
+  ["water_cost_today", "sum({raw_water_flow_klh}, today) * $water_tariff_per_kl", ""],
+  ["water_saving_vs_baseline_pct", "(1 - sum({raw_water_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+];
+
 /** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
 export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
+  ["water-wtp", WTP_E41C, 20, 2],
   ["water-cooling-tower", TOWER_E41C, 21, 2],
 ];
 
