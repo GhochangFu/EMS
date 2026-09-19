@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -116,6 +117,9 @@ export class LocationsAdminService {
     if (!(await this.accessControl.canManageOrganization(jwt, body.organizationId))) {
       throw new ForbiddenException("Organization is outside your access scope");
     }
+    if (typeof body.timezone === "string") {
+      await this.assertKnownTimezone(body.timezone);
+    }
 
     const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [row] = await tx
@@ -130,6 +134,7 @@ export class LocationsAdminService {
           capital: body.capital ?? null,
           latitude: body.latitude,
           longitude: body.longitude,
+          timezone: body.timezone ?? null,
           meta: body.meta ?? null,
           active: true,
         })
@@ -173,6 +178,9 @@ export class LocationsAdminService {
     if (!existing) {
       throw new NotFoundException("Location not found");
     }
+    if (typeof body.timezone === "string") {
+      await this.assertKnownTimezone(body.timezone);
+    }
 
     await withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       await tx
@@ -186,6 +194,7 @@ export class LocationsAdminService {
           capital: body.capital !== undefined ? body.capital : existing.capital,
           latitude: body.latitude ?? existing.latitude,
           longitude: body.longitude ?? existing.longitude,
+          timezone: body.timezone !== undefined ? body.timezone : existing.timezone,
           meta: body.meta !== undefined ? body.meta : existing.meta,
           updatedAt: new Date(),
         })
@@ -302,6 +311,28 @@ export class LocationsAdminService {
     return this.fetchRow(id);
   }
 
+  /**
+   * E4.1b / ADR 0070 decision 6 (plan design decision 13, ruling Q14) — the
+   * zone must be an EXACT, case-sensitive `pg_timezone_names.name`, so one
+   * canonical spelling is stored and `AT TIME ZONE` in the calc engine can
+   * never see an abbreviation such as `IST` (ambiguous: India, Israel,
+   * Ireland). Not a CHECK — a constraint cannot reference a view. Runs on the
+   * fleet connection (a catalog view; no tenant row is read) and BEFORE any
+   * write, so a refusal inserts nothing rather than rolling something back.
+   * Measured 599 rows, 70 ms — admin-rate.
+   */
+  private async assertKnownTimezone(tz: string): Promise<void> {
+    const found = await this.fleetDb.execute(
+      sql`SELECT 1 FROM pg_timezone_names WHERE name = ${tz}`,
+    );
+    if (found.rows.length === 0) {
+      throw new BadRequestException(
+        "timezone must be an IANA zone name the database knows — for example " +
+          `Asia/Kolkata or Africa/Johannesburg — and "${tz}" is not one`,
+      );
+    }
+  }
+
   private async fetchRow(id: string): Promise<AdminLocationDto> {
     const [row] = await this.fleetDb
       .select({
@@ -336,6 +367,7 @@ export class LocationsAdminService {
       type: loc.type as AdminLocationDto["type"],
       province: loc.province,
       capital: loc.capital,
+      timezone: loc.timezone,
       latitude: loc.latitude,
       longitude: loc.longitude,
       active: loc.active,
