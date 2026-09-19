@@ -127,6 +127,12 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * declares a deferred code" check would therefore fail on a correct entry.
  * Each list is checked against its own entry and no other.
  *
+ * **The totals in this paragraph are pre-`E4.1c`.** `E4.1c` PR 2a (ADR 0070
+ * decision 8) discharged or superseded nine electrical records — each move is
+ * marked in place on its entry's list below with the successor named — and
+ * PR 2b moves the mechanical, facility and vertical-transport ones; the
+ * totals here are re-reconciled once, in PR 2b (plan §3.9).
+ *
  * **106 records across 97 distinct codes** since `E5.3` Task 11. The five parts
  * are 32 records over 30 codes (electrical — `load_pct` three times), 15 over 14
  * (water — `hydraulic_load_pct` on the STP and the ETP), 17 over 17
