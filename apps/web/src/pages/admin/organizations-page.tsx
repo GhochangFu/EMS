@@ -24,7 +24,7 @@ type OrganizationsAdminPageProps = {
 };
 
 /**
- * E4.1c / ADR 0070 decision 8: the currency list the form OFFERS is the
+ * E4.1c / ADR 0070 decision 7: the currency list the form OFFERS is the
  * browser's ISO 4217 table — no endpoint; the server validates membership on
  * write through the same `Intl` table. Guarded: `Intl.supportedValuesOf` is
  * ES2023 and absent on older engines, where the input stays a free-text field.

@@ -9,7 +9,7 @@ const drizzleDir = join(repoRoot, "packages", "db", "drizzle");
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 /**
- * `E4.1c` / ADR 0070 decision 8 — migration `0076` adds
+ * `E4.1c` / ADR 0070 decision 7 — migration `0076` adds
  * `bms.organizations.currency` (`char(3)`, `NOT NULL`, NO default, ISO 4217
  * shape enforced by a CHECK). Money has a currency, and the currency is the
  * organization's: every indicative-cost figure the dashboard and the energy
@@ -92,7 +92,7 @@ describe("E4.1c — migration 0076 exists", () => {
   });
 });
 
-describe("E4.1c organizations.currency (ADR 0070 decision 8)", () => {
+describe("E4.1c organizations.currency (ADR 0070 decision 7)", () => {
   const sql = sqlOnly(migration ?? "");
   const journal = JSON.parse(read(JOURNAL_REL)) as {
     entries: Array<{ idx: number; tag: string; when: number }>;

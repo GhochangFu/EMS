@@ -9,7 +9,7 @@ import {
 } from "../apps/api/src/testing/integration-db-gate.js";
 
 /**
- * `E4.1c` / ADR 0070 decision 8 — what migration `0076` guarantees against a
+ * `E4.1c` / ADR 0070 decision 7 — what migration `0076` guarantees against a
  * real database. `tests/e4.1c-organization-currency-schema.test.ts` asserts
  * the migration's *text*; this asserts what Postgres actually enforces,
  * following `tests/e4.1a-calc-parameters-schema.integration.test.ts`'s

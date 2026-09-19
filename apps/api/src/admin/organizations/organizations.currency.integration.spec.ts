@@ -9,7 +9,7 @@ import { createOrganizationBodySchema, updateOrganizationBodySchema } from "./or
 import type { OrganizationsAdminService } from "./organizations.service";
 
 /**
- * `E4.1c` / ADR 0070 decision 8 — `bms.organizations.currency` on the
+ * `E4.1c` / ADR 0070 decision 7 — `bms.organizations.currency` on the
  * organization admin write path, against the real database.
  *
  * The controller parses the body with `createOrganizationBodySchema.parse`

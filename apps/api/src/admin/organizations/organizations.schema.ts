@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * E4.1c / ADR 0070 decision 8 — is `code` a currency ISO 4217 knows? The
+ * E4.1c / ADR 0070 decision 7 — is `code` a currency ISO 4217 knows? The
  * shape (`^[A-Z]{3}$`) is the regex's job and the database CHECK's; this is
  * the MEMBERSHIP check, through the engine's own table (162 codes on Node 20)
  * rather than a second copy of it. Guarded: `Intl.supportedValuesOf` is

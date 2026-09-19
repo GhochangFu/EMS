@@ -38,7 +38,7 @@ export async function getOrganizationId(
 /**
  * Ensures ESKOM and PHEWB organization rows exist.
  *
- * E4.1c / ADR 0070 decision 8: the SEED owns `currency` — migration `0076`
+ * E4.1c / ADR 0070 decision 7: the SEED owns `currency` — migration `0076`
  * backfills the two codes once, and every re-seed restates them here, so a
  * hand edit on the demo database is reverted the way `name` is.
  */
