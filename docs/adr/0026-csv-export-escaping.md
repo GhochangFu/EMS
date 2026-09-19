@@ -675,3 +675,17 @@ configuration nobody has reported.
   "Energy reports (PDF)" and line 1140 is rewritten. Tracked in the
   `docs/BACKLOG.md` owed table per §10.1.
 
+## Amendment 3 (`E4.1c`, 2026-09-20) — the two money cells are nullable and carry the organization's currency
+
+The metric block's `Indicative cost` and `Tariff` rows read `indicativeCost`
+and `tariffPerKwh` since ADR 0070 decision 7 (`E4.1c`, PR #502), not the
+`indicativeCostZar` / `tariffZarPerKwh` this ADR's field list named. Both are
+nullable — a scope with no tariff, or one spanning two currencies, answers
+`null` — and a `null` writes the same **U+2014** dash `pueEstimate` writes
+(text, outside `assertFiniteCells`, never U+002D, which is a formula leader
+and would arrive guarded as `'-`). The unit cell is the organization's ISO
+4217 code (`ZAR`, `ZAR/kWh`), or empty when the currency itself is `null`.
+For a ZAR organization the exported bytes are what they were — the golden in
+`reports.serialise.spec.ts` is byte-identical — so an estate with no tariff
+has five numeric cells in the metric block, not seven, and the two dashes
+route through `csvTextCell` by the cell type as before.

@@ -525,3 +525,85 @@ and the read path joins `pg_timezone_names` so a stored zone the server no
 longer knows is `timezone_unset` rather than a thrown batch. `timezone` is
 seed-owned like `latitude` (a re-seed re-asserts it), ruled at the PR 1
 review; `ESK-DECOMM-01`, the access fixture, stays `NULL`.
+
+## Amendment 2 (2026-09-20) — what `E4.1c` narrowed, widened and measured
+
+Ruled by the owner at the `E4.1c` plan gate (2026-09-19, twelve questions,
+three against the recommendation) and at its three reviews; recorded here
+at the row's closure (PRs #502, #503, #504). Decisions 7 and 8 above are
+left as written.
+
+1. **Decision 7's scope sentence is implemented as per-asset nearest-scope
+   resolution** (plan-gate Q4). "The organization scope (the location scope
+   where the read is location-scoped)" is contained by resolving
+   `energy_tariff_per_kwh` for every asset with energy in the read's scope
+   through decision 2's resolver — the organization row for everyone, a
+   location row where one exists, an asset row where one exists — and
+   summing per asset. Consequences: a location-scoped user gets the location
+   row without a second rule; a global administrator whose scope spans two
+   organizations in **two** currencies sees `null` (a sum across currencies is
+   not a number); one whose scope spans two organizations in **one** currency
+   sees the summed cost with `tariffPerKwh` `null` (two tariffs, one number
+   is not a tariff — an authorised aggregation, named here so it is not read
+   as a leak). Telemetry whose `asset_id` has no `bms.assets` row (no foreign
+   key holds the two) fails the read closed rather than leaving the cost
+   non-null and smaller than the total it is labelled with.
+2. **The demo seed enters a value for `energy_tariff_per_kwh`** (Q1) —
+   `2.15` for the `ESKOM` organization at organization scope, insert-if-absent
+   so an administrator's edit or ended row survives the next boot, and never
+   for `PHEWB`. This is an exception to Context 3's "no stock key ships with a
+   value": the row is demo data for the demo tenant, restoring the parity the
+   absorption removed (the tile went from an environment default to the
+   dash); the pilot organization holds no value, so the B14 risk Context 3
+   guards is not realised.
+3. **Ruling 7 names the demo organization only; the pilot is backfilled
+   `INR`** (Q7). Migration `0076` stamps `ESKOM` → `ZAR` and `PHEWB` → `INR`
+   and aborts, naming the codes, on any other row with no currency.
+   `0076`'s own header cites "decision 8"; the column is decision 7 — the
+   file is frozen and the slip stands.
+4. **Decision 8's `kwh_today` on the feeder is not authored derived** (Q3).
+   It is the meter register, measured, required, featured on the overview
+   tile and fed by the simulator; the three today-tags read
+   `delta({kwh_total}, today)` inline — the ADR's own path from a cumulative
+   meter to a period total, in the location's zone. Accepted: the measured
+   tile and `energy_cost_today / tariff` can disagree by the register's reset
+   time.
+5. **Decision 8's "water meter classes" do not exist** (Q5). The water pack
+   has six treatment classes with flow rates; the three water points are
+   authored on all six over each class's inlet flow (`influent_flow_klh` on
+   the STP and ETP, `makeup_flow_klh` on the cooling tower, `raw_water_flow_klh`
+   on the WTP, `feed_flow_klh` on the RO, `inlet_flow_klh` on the softener),
+   `sum(rate, today)` being the time integral decision 5 fixed. A tenant whose
+   inlet is not purchased water leaves `water_tariff_per_kl` unset — a counted
+   `parameter_unset`.
+6. **Decision 8's list is every expressible ledger code, not the fifteen
+   named** (Q6). "The derived points the ledger deferred on an attribute or a
+   window and which decisions 4–6 now express — exact list at the plan gate"
+   was applied in full: 49 `bms-calc-v3` points across 19 entries, 25 ledger
+   records discharged or superseded (106 over 97 → 81 over 77). What stays is
+   deferred for a reason the two extensions did not touch — a key the
+   twelve-key vocabulary does not hold (decision 2 extends it by `INSERT`,
+   never by a release), a point the entry does not declare, another asset's
+   value, a comparison or a product of states inside a window (ruling 4), an
+   event count over a state (the grammar counts nothing), a counter whose
+   cumulative sense or a contact whose polarity the document does not fix, a
+   slope, or one of this ADR's own classes (model, method, lookup, roll-up).
+7. **The `<quantity>_<window>` naming rule has two named exceptions** (Q10).
+   `starts_per_day` and `specific_yield_kwh_kwp_day` keep the codes the tag
+   list, the ledger and decision 8 all spell, and mean a rolling `24h` — "per
+   day" is a rate over a trailing day; `today` would be a different quantity.
+   The rule applies to the new windowed codes (`downtime_h_24h`,
+   `availability_pct_24h`, `*_today`, `*_month`), and the un-windowed
+   spellings a windowed code superseded (`availability_pct`,
+   `co2_avoided_kg`, `duty_hours_pct`, `uptime_pct`) are refused on every
+   entry by a guard.
+8. **Money points carry `unit: ""`** (Q8), the spelling `pf` and `pue` use
+   for "no unit": a template point's unit is one static string and the
+   currency is the organization's, shown by the tile from
+   `organizations.currency`.
+9. **Two refusal facts measured at the reviews.** At the first tick after
+   local midnight a `today` read has a zero-length window and refuses
+   `window_empty` — never `non_finite`, because the window read is resolved
+   before `evaluate()` runs. `minCoverageRatio` governs `@scope` aggregates
+   only (ADR 0055 decision 11); a window `sum` is `avg × hours` and no
+   coverage guard applies to a windowed point.
