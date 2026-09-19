@@ -42,6 +42,11 @@ import {
   setCredentialsBodySchema,
 } from "../admin/onboarding/onboarding.schema";
 import {
+  createCalcParameterBodySchema,
+  listCalcParametersQuerySchema,
+  updateCalcParameterBodySchema,
+} from "../admin/calc-parameters/calc-parameters.schema";
+import {
   createOrganizationBodySchema,
   updateOrganizationBodySchema,
 } from "../admin/organizations/organizations.schema";
@@ -233,6 +238,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   NotificationsController_createChannel: createNotificationChannelBodySchema,
   NotificationsController_listDeliveries: listDeliveriesQuerySchema,
   NotificationsController_updateChannel: updateNotificationChannelBodySchema,
+  CalcParametersAdminController_create: createCalcParameterBodySchema,
+  CalcParametersAdminController_list: listCalcParametersQuerySchema,
+  CalcParametersAdminController_update: updateCalcParameterBodySchema,
   OnboardingController_chat: chatBodySchema,
   OnboardingController_createSession: createSessionBodySchema,
   OnboardingController_patchDraft: patchDraftBodySchema,

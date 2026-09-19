@@ -10,6 +10,8 @@ import { AssetPointsAdminService } from "./asset-points/asset-points.service";
 import { MappingSheetService } from "./asset-points/mapping-sheet.service";
 import { AssetDashboardsInstantiateService } from "./asset-templates/asset-dashboards-instantiate.service";
 import { AssetTemplateInstantiationService } from "./asset-templates/asset-templates-instantiate.service";
+import { CalcParametersAdminController } from "./calc-parameters/calc-parameters.controller";
+import { CalcParametersAdminService } from "./calc-parameters/calc-parameters.service";
 import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
 import { AssetTemplateSeededRulesService } from "./asset-templates/asset-templates-seeded-rules.service";
 import { AssetTemplatesStockService } from "./asset-templates/asset-templates-stock.service";
@@ -72,6 +74,8 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     AssetPointsAdminController,
     AssetPointCalcOverrideController,
     PointKeysAdminController,
+    // E4.1a / ADR 0070 decision 2 — the calc parameter store and its vocabulary read.
+    CalcParametersAdminController,
     AssetRolesAdminController,
     AssetTemplatesAdminController,
     DashboardTemplatesController,
@@ -99,6 +103,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     MappingSheetService,
     AssetPointCalcOverrideService,
     PointKeysAdminService,
+    CalcParametersAdminService,
     AssetRolesAdminService,
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,

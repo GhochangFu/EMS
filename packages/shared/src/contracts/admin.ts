@@ -956,3 +956,41 @@ export const setAssetGroupMemberRoleBodySchema = z
     role: assetRoleCodeSchema.nullable(),
   })
   .strict();
+
+/**
+ * `E4.1a` / ADR 0070 decision 2 — one row of the calc parameter vocabulary
+ * (`bms.calc_parameter_keys`), as the admin picker reads it. Global, so no
+ * organization. `active` is always `true` on the wire today (the read lists
+ * the active vocabulary only); carried so a "show retired keys" read needs no
+ * contract change. **No `.readonly()`**, matching `adminPointKeyDtoSchema`.
+ */
+export const calcParameterKeyDtoSchema = z.object({
+  code: z.string(),
+  label: z.string(),
+  unit: z.string().nullable(),
+  description: z.string().nullable(),
+  sortOrder: z.number().int(),
+  active: z.boolean(),
+});
+
+/**
+ * `E4.1a` / ADR 0070 decision 2 — one `bms.calc_parameters` row: the value of
+ * one key for one organization at one scope over one validity window. Scope
+ * is `locationId` / `assetId`, at most one set; both `null` is the organization
+ * scope. `locationName` / `assetCode` are the joined labels the admin table
+ * renders, `null` where the scope column is. `effectiveTo` `null` is open-ended.
+ */
+export const calcParameterDtoSchema = z.object({
+  id: z.string(),
+  organizationId: z.string(),
+  key: z.string(),
+  locationId: z.string().nullable(),
+  assetId: z.string().nullable(),
+  locationName: z.string().nullable(),
+  assetCode: z.string().nullable(),
+  value: z.number(),
+  effectiveFrom: z.string(),
+  effectiveTo: z.string().nullable(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
