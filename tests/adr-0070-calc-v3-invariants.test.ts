@@ -1,7 +1,7 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
@@ -446,5 +446,231 @@ describe("ADR 0070 part (e) — a window read never range-scans raw rows", () =>
     const injected = sqlTemplates(`${source}\nconst x = db.execute(sql\`SELECT sum(value) FROM telemetry.point_values v WHERE v.time >= \${a}\`);`);
     expect(injected.length).toBe(templates.length + 1);
     expect(rawScanDefect(injected)).toMatch(/exactly two/);
+  });
+});
+
+// --- part (f) — the env var is read nowhere: neither the old name nor its ZAR-suffixed contract fields survive in code, compose, .env or the operational docs ---
+
+/**
+ * `E4.1c` U7, design decision 12–15/13. ADR 0070 decision 7 removes
+ * `ENERGY_TARIFF_ZAR_PER_KWH`, `energyTariffZar()` and the `indicativeCostZar`
+ * / `tariffZarPerKwh` contract field names.
+ *
+ * **The dispatch's regex, transcribed as `/ENERGY_TARIFF|energyTariffZar|
+ * TariffZar|CostZar/`, cannot be built as given** — it is a plain substring
+ * match, so `ENERGY_TARIFF` alone also matches `ENERGY_TARIFF_KEY`
+ * (`energy-cost.ts`, the two `energy-cost.integration.spec.ts` files) and
+ * `DEMO_ENERGY_TARIFF_KEY` (`calc-parameters-demo-seed.ts`) — the *replacement*
+ * the plan mandates (U3, U5), not residue, and none of those files is on the
+ * sweep list. The regex is narrowed to `/ENERGY_TARIFF_ZAR|[Tt]ariffZar|
+ * [Cc]ostZar/`, which is what decision 7's own sentence actually names: the
+ * env var is `ENERGY_TARIFF_ZAR_PER_KWH`, and the retired field names both
+ * carry the `TariffZar` / `CostZar` stems. `/i` is not used — it would also
+ * match the lowercase, legitimate `energy_tariff_per_kwh` parameter key
+ * everywhere it appears — so `TariffZar`/`CostZar` are matched in either case
+ * by an explicit `[Tt]`/`[Cc]` instead, which is also what proves the `.tsx`
+ * positive control below (`tariffZarPerKwh`, lowercase-t) actually fires: the
+ * literally-transcribed `TariffZar` (capital-T only) would have missed it.
+ *
+ * **Scan set**, per the dispatch: `apps/`, `packages/`, `scripts/` walked for
+ * `.ts .tsx .js .mjs .cjs .yml .yaml .json .example` (skip `node_modules`,
+ * `dist`, `coverage`, `.vite`), plus the repo-root `docker-compose*.yml` and
+ * `.env*` files, `.github/workflows/*.yml`, and the three operational docs
+ * `docs/env-inventory.md`, `docs/local-setup.md`, `docs/demo-script.md`.
+ * Specs are included (a renamed fixture is exactly what part (f) must catch).
+ *
+ * **Exclusions the dispatch names are a scope statement, not a filter that
+ * fires**: `docs/decisions.md` (a dated log entry, superseded-noted rather
+ * than rewritten, in the sweep), this test file itself, and `docs/plans/`,
+ * `docs/adr/`, `docs/BACKLOG.md` (records) are none of them under `apps/`,
+ * `packages/`, `scripts/` or the three named docs paths above — the scan set
+ * is an allowlist that never reaches them, so no `.filter()` line for them
+ * would ever fire, and none is written.
+ */
+const ENERGY_TARIFF_TOKEN_RE = /ENERGY_TARIFF_ZAR|[Tt]ariffZar|[Cc]ostZar/;
+const SCAN_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs", ".yml", ".yaml", ".json", ".example"]);
+const SCAN_SKIP_DIRS = new Set(["node_modules", "dist", "coverage", ".vite"]);
+
+/** Every file under `root` whose extension is in {@link SCAN_EXTENSIONS}, skipping {@link SCAN_SKIP_DIRS}. */
+function scanTree(root: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (!SCAN_SKIP_DIRS.has(entry.name)) walk(join(dir, entry.name));
+      } else if (SCAN_EXTENSIONS.has(extname(entry.name))) {
+        out.push(join(dir, entry.name));
+      }
+    }
+  };
+  walk(root);
+  return out;
+}
+
+const ENV_VAR_SCAN_DOCS = ["docs/env-inventory.md", "docs/local-setup.md", "docs/demo-script.md"];
+
+/** The dispatch's full scan set: `apps/`, `packages/`, `scripts/`, the root
+ * `docker-compose*.yml` and `.env*` files, `.github/workflows/*.yml`, and the
+ * three named operational docs. */
+function envVarScanFiles(): string[] {
+  const rootEntries = readdirSync(repoRoot, { withFileTypes: true }).filter((e) => e.isFile());
+  const composeFiles = rootEntries.filter((e) => /^docker-compose.*\.yml$/.test(e.name)).map((e) => join(repoRoot, e.name));
+  const dotEnvFiles = rootEntries.filter((e) => e.name.startsWith(".env")).map((e) => join(repoRoot, e.name));
+  const workflowsDir = join(repoRoot, ".github", "workflows");
+  const workflowFiles = readdirSync(workflowsDir, { withFileTypes: true })
+    .filter((e) => e.isFile() && e.name.endsWith(".yml"))
+    .map((e) => join(workflowsDir, e.name));
+  return [
+    ...scanTree(join(repoRoot, "apps")),
+    ...scanTree(join(repoRoot, "packages")),
+    ...scanTree(join(repoRoot, "scripts")),
+    ...composeFiles,
+    ...dotEnvFiles,
+    ...workflowFiles,
+    ...ENV_VAR_SCAN_DOCS.map((p) => join(repoRoot, p)),
+  ];
+}
+
+/** `file:line` for every line in `files` matching {@link ENERGY_TARIFF_TOKEN_RE}. */
+function envVarTokenHits(files: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const file of files) {
+    const relative = relativeTo(file);
+    const lines = readFileSync(file, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (ENERGY_TARIFF_TOKEN_RE.test(line)) out.push(`${relative}:${index + 1}`);
+    });
+  }
+  return out;
+}
+
+describe("ADR 0070 part (f) — the env var is read nowhere", () => {
+  const files = envVarScanFiles();
+
+  it("scans at least 400 files, so the rule below is not silently vacuous", () => {
+    expect(files.length).toBeGreaterThanOrEqual(400);
+    const relatives = files.map(relativeTo);
+    expect(relatives).toContain("apps/web/src/pages/energy-page.tsx");
+    expect(relatives).toContain("docker-compose.yml");
+  });
+
+  it("positive control: the scan reports an injected .ts env-var read", () => {
+    const dir = mkdtempSync(join(tmpdir(), "adr0070f-"));
+    try {
+      const injected = join(dir, "probe.ts");
+      writeFileSync(injected, "const zar = process.env.ENERGY_TARIFF_ZAR_PER_KWH;\n");
+      expect(envVarTokenHits(scanTree(dir))).toEqual([expect.stringMatching(/probe\.ts:1$/)]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("positive control: the scan reports an injected .tsx field name — proves the extension list, and the case fix", () => {
+    const dir = mkdtempSync(join(tmpdir(), "adr0070f-"));
+    try {
+      const injected = join(dir, "probe.tsx");
+      writeFileSync(injected, "export const tariffZarPerKwh = data.tariffZarPerKwh;\n");
+      expect(envVarTokenHits(scanTree(dir))).toEqual([expect.stringMatching(/probe\.tsx:1$/)]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("positive control: the scan reports an injected .yml compose default", () => {
+    const dir = mkdtempSync(join(tmpdir(), "adr0070f-"));
+    try {
+      const injected = join(dir, "probe.yml");
+      writeFileSync(injected, "      ENERGY_TARIFF_ZAR_PER_KWH: 2.15\n");
+      expect(envVarTokenHits(scanTree(dir))).toEqual([expect.stringMatching(/probe\.yml:1$/)]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("no scanned file names the old env var or the retired ZAR-suffixed contract field names", () => {
+    expect(
+      envVarTokenHits(files),
+      "docker-compose.yml, apps/api/.env.example, docs/env-inventory.md, docs/local-setup.md and docs/demo-script.md must drop every ENERGY_TARIFF_ZAR_PER_KWH / TariffZar / CostZar line",
+    ).toEqual([]);
+  });
+});
+
+describe("ADR 0070 part (f), structural half — dashboard.service.ts and reports.service.ts read the environment nowhere", () => {
+  const STRUCTURAL_FILES = ["apps/api/src/dashboard/dashboard.service.ts", "apps/api/src/reports/reports.service.ts"];
+
+  function residueDefect(source: string): string | null {
+    if (/process\.env/.test(source)) return "the file must not read process.env — the tariff comes from CalcParametersService";
+    if (/\b2\.15\b/.test(source)) return "the file must not carry the literal 2.15 default";
+    return null;
+  }
+
+  it("neither service reads process.env nor carries the literal 2.15 default", () => {
+    for (const file of STRUCTURAL_FILES) {
+      const source = readFileSync(join(repoRoot, file), "utf8");
+      expect(residueDefect(source), file).toBeNull();
+    }
+  });
+
+  it("positive control: the scan reports an injected process.env read and an injected 2.15 literal", () => {
+    const source = readFileSync(join(repoRoot, STRUCTURAL_FILES[0]!), "utf8");
+    expect(residueDefect(`${source}\nconst x = process.env.SOMETHING;`)).toMatch(/process\.env/);
+    expect(residueDefect(`${source}\nconst y = 2.15;`)).toMatch(/2\.15/);
+  });
+});
+
+// --- part (g) — no default value in the cost helper ---
+
+/**
+ * `E4.1c` U7, design decision 13/2. `energy-cost.ts` must default nothing —
+ * an unresolved tariff or currency is absent, never `0`/`1`, per
+ * {@link energyCost}'s own docblock.
+ *
+ * **A sibling of part (d)'s `defaultValueDefect`, not a reuse.** The plain
+ * helper is the right analysis for `calc-parameters.service.ts`, which never
+ * spells `COALESCE(` in prose — but `energy-cost.ts`'s own docblock *does*,
+ * on purpose (`"tests/adr-0070 part (g) scans this file for COALESCE(, ?? 0
+ * and ?? 1"`), so the plain helper false-positives on its own gate
+ * description: the exact "a text scan reads docblock prose too" shape, this
+ * time inside the file the scan itself is pointed at rather than a fixture.
+ * `energy-cost.ts` is `U3`'s, already committed and correct prose — it is not
+ * this unit's to edit — so the fix lives here: comments are stripped before
+ * the code is scanned. (Known limitation, unexercised by this file: a `//`
+ * inside a string or SQL template would be stripped as if it started a
+ * comment; `energy-cost.ts` carries none — confirmed by inspection.) `part
+ * (d)`'s own gate is untouched by this file — its `defaultValueDefect` is not
+ * modified, so `calc-parameters.service.ts`'s behaviour cannot regress.
+ */
+const ENERGY_COST_FILE = "apps/api/src/telemetry/energy-cost.ts";
+
+/** Strips `/* … *\/` and `// …` before scanning, so a comment describing the
+ * gate cannot trip it. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+}
+
+function costHelperDefaultValueDefect(source: string): string | null {
+  return defaultValueDefect(stripComments(source));
+}
+
+describe("ADR 0070 part (g) — the cost helper defaults nothing", () => {
+  const source = readFileSync(join(repoRoot, ENERGY_COST_FILE), "utf8");
+
+  it("the file's docblock spells COALESCE( in prose, so the plain part (d) helper is not vacuously safe to reuse here", () => {
+    expect(defaultValueDefect(source)).not.toBeNull();
+  });
+
+  it("the code (comments stripped) contains no COALESCE(, no ?? 0, no ?? 1", () => {
+    expect(costHelperDefaultValueDefect(source), ENERGY_COST_FILE).toBeNull();
+  });
+
+  it("positive control: the scan reports an injected COALESCE and an injected ?? 0 and ?? 1 in real code", () => {
+    expect(costHelperDefaultValueDefect(`${source}\nconst x = COALESCE(row.value, 0);`)).toMatch(/COALESCE/);
+    expect(costHelperDefaultValueDefect(`${source}\nconst y = tariffs.get(id) ?? 0;`)).toMatch(/\?\? 0/);
+    expect(costHelperDefaultValueDefect(`${source}\nconst z = tariffs.get(id) ?? 1;`)).toMatch(/\?\? 1/);
+  });
+
+  it("negative control: a comment naming COALESCE( is not reported, so the stripper is what is doing the work", () => {
+    expect(costHelperDefaultValueDefect(`${source}\n// COALESCE( in a comment, not code\n`)).toBeNull();
+    expect(costHelperDefaultValueDefect(`${source}\n/* COALESCE( in a block comment */\n`)).toBeNull();
   });
 });
