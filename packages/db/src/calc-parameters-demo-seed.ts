@@ -45,11 +45,11 @@ export const DEMO_ENERGY_TARIFF_EFFECTIVE_FROM = "2026-01-01T00:00:00.000Z";
 
 const INSERT_IF_ABSENT_SQL = `
   INSERT INTO bms.calc_parameters (organization_id, key, location_id, asset_id, value, effective_from, effective_to)
-  SELECT $1::uuid, $2, NULL, NULL, $3::float8, $4::timestamptz, NULL
+  SELECT $1::uuid, $2::varchar, NULL, NULL, $3::float8, $4::timestamptz, NULL
   WHERE NOT EXISTS (
     SELECT 1 FROM bms.calc_parameters
      WHERE organization_id = $1::uuid
-       AND key = $2
+       AND key = $2::varchar
        AND location_id IS NULL
        AND asset_id IS NULL
   )
