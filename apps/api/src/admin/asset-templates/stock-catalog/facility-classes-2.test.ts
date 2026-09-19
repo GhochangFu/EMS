@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runFacilityClassEntryTests2 } from "./facility-classes-2.spec";
+import { e41cFacilityClaims2, runFacilityClassEntryTests2 } from "./facility-classes-2.spec";
 
 /**
  * Vitest entry point for `facility-classes-2.spec.ts` — assertions live in the
@@ -17,4 +17,9 @@ describe("stock asset-template catalog — the facility classes (E5.3, §§3, 4 
   it("ships the access door, the occupancy zone and the parking level exactly as their tag-list sections describe them", () => {
     runFacilityClassEntryTests2();
   });
+
+  // E4.1c — the v3 rows of the classes in this file, one it() per claim.
+  for (const [name, run] of e41cFacilityClaims2()) {
+    it(name, run);
+  }
 });

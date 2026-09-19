@@ -357,10 +357,9 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // controller's own state points.
     "access_system_healthy",
   ],
-  // §4 — a window, an attribute, and another asset's energy.
+  // §4 — an attribute and another asset's energy. E4.1c DISCHARGED
+  // `occupied_hours_day` (`sum({occupancy_state}, 24h)`).
   "facility-occupancy-zone": [
-    // hours-in-state over a day — a window.
-    "occupied_hours_day",
     // needs the DESK or ROOM count, an attribute; occupancy_capacity is the
     // egress capacity and is a different denominator.
     "space_utilization_pct",
