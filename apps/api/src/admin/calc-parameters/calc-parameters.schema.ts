@@ -84,8 +84,14 @@ export const updateCalcParameterBodySchema = z
   .strict()
   .superRefine((body, ctx) => {
     refineWindow(body, ctx);
+    // An empty PATCH would rewrite the same window, bump `updated_at` and
+    // write an audit row for no change (PR 2 code review; the
+    // `updateAssetRoleBodySchema` precedent).
+    if (body.value === undefined && body.effectiveFrom === undefined && body.effectiveTo === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "At least one of value, effectiveFrom or effectiveTo is required" });
+    }
   })
-  .describe("effectiveTo, when both ends are given, is later than effectiveFrom.");
+  .describe("At least one field; effectiveTo, when both ends are given, is later than effectiveFrom.");
 
 export const listCalcParametersQuerySchema = z
   .object({

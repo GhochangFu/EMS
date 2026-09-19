@@ -1,4 +1,10 @@
 // @vitest-environment jsdom
+// Pinned to a non-UTC zone BEFORE anything reads the clock: in UTC the
+// wall-clock-as-UTC bug and the correct local-zone conversion are
+// observationally identical, so the ISO-offset case would pass in CI for
+// the implementation it exists to forbid (PR 2 code review; the F4.40 shape).
+// (`process` is reached through `globalThis`: the web tsconfig carries no Node types.)
+(globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.TZ = "Asia/Kolkata";
 import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 

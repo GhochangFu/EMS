@@ -47,12 +47,12 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto, CalcDialect, TemplateKpi } from "@bms/shared";
-import { CALC_DIALECT, CALC_DIALECTS, isCrossAssetDialect } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-editor-rules";
-import { dialectOptions } from "../../lib/template-calc-config";
+import { V3_PARAMETER_HELP, dialectOptions } from "../../lib/template-calc-config";
 import { checkedDialect } from "../../lib/template-formula-validation";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
@@ -332,6 +332,10 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                     <code className="rounded bg-gray-100 px-1">{form.example}</code>
                   </li>
                 ))}
+                {CALC_DIALECTS.some((known) => known === kpi.dialect && isParameterDialect(known)) ? (
+                  // The one `v3` form (ADR 0070 decision 4), beside the two it keeps.
+                  <li>{V3_PARAMETER_HELP}</li>
+                ) : null}
               </ul>
             ) : null}
 

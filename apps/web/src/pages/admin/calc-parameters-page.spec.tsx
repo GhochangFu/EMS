@@ -381,8 +381,10 @@ export async function rendersTheServerConflictSentenceVerbatim(): Promise<void> 
 /**
  * Edit opens the form with key and scope disabled (plan design decision 12):
  * the API's PATCH body has no such field, so an enabled control would be a
- * 400 behind Save. The value and both dates stay editable, and Save sends only
- * those three.
+ * 400 behind Save. The value and both dates stay editable, and a value-only
+ * edit sends the value ALONE: the minute-granular input cannot round-trip a
+ * stored instant's seconds, so an unchanged date must not travel (PR 2 code
+ * review). Changing the end date sends that one field beside the value.
  */
 export async function editDisablesKeyAndScope(): Promise<void> {
   stubApi();
@@ -416,7 +418,17 @@ export async function editDisablesKeyAndScope(): Promise<void> {
   ];
   expect(id).toBe("aaaa1111-0000-0000-0000-000000000003");
   expect(body.value).toBe(0.95);
-  expect(Object.keys(body).sort()).toEqual(["effectiveFrom", "effectiveTo", "value"]);
+  expect(Object.keys(body).sort()).toEqual(["value"]);
+
+  // The positive control: an edited end date travels, the untouched start does not.
+  await userEvent.click(within(table).getAllByRole("button", { name: "Edit" })[2] as HTMLElement);
+  const to = (await screen.findByLabelText("Effective to")) as HTMLInputElement;
+  fireEvent.change(to, { target: { value: "2031-12-31T23:59" } });
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(api.updateAdminCalcParameter).toHaveBeenCalledTimes(2));
+  const [, second] = vi.mocked(api.updateAdminCalcParameter).mock.calls[1] as [string, Record<string, unknown>];
+  expect(Object.keys(second).sort()).toEqual(["effectiveTo", "value"]);
+  expect(new Date(second.effectiveTo as string).getTime()).toBe(new Date("2031-12-31T23:59").getTime());
 }
 
 /** Delete asks first; a declined `confirm()` sends nothing, an accepted one sends the id. */

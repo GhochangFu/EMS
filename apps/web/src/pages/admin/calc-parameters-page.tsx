@@ -164,7 +164,19 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
         effectiveTo: form.effectiveTo ? localInputToIso(form.effectiveTo) : null,
       };
       if (editing) {
-        return updateAdminCalcParameter(editing.id, edit);
+        // A `datetime-local` input holds minutes, so a stored 10:30:45 comes
+        // back as 10:30 — a PATCH that always sent both dates would move the
+        // boundary 45 s earlier on a value-only edit and could 409 against an
+        // abutting neighbour (PR 2 code review). A date is sent only when the
+        // input differs from the stored instant's own round trip.
+        const fromUnchanged = form.effectiveFrom === toLocalDateTimeInputValue(editing.effectiveFrom);
+        const toUnchanged =
+          form.effectiveTo === (editing.effectiveTo ? toLocalDateTimeInputValue(editing.effectiveTo) : "");
+        return updateAdminCalcParameter(editing.id, {
+          value: edit.value,
+          ...(fromUnchanged ? {} : { effectiveFrom: edit.effectiveFrom }),
+          ...(toUnchanged ? {} : { effectiveTo: edit.effectiveTo }),
+        });
       }
       return createAdminCalcParameter({
         organizationId,

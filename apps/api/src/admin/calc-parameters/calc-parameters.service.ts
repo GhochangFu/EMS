@@ -57,8 +57,8 @@ export function translateCalcParameterWriteError(err: unknown, organizationId: s
   }
   if (code === "42501") {
     return new BadRequestException(
-      `The locationId or assetId you supplied does not belong to organization ${organizationId} — ` +
-        "the write was refused by this table's row-level security policy.",
+      `The write was refused by this table's row-level security policy: the row, or the locationId or assetId ` +
+        `it names, does not belong to organization ${organizationId}.`,
     );
   }
   if (code === "23514" && constraint === "calc_parameters_validity_check") {
@@ -98,8 +98,9 @@ export function translateCalcParameterWriteError(err: unknown, organizationId: s
  * the clashing window; `calc_parameters_no_overlap` (a `btree_gist`
  * `EXCLUDE`) is the race-proof backstop, and its `23P01` is translated to a
  * second 409 that cannot name the dates — RLS suppresses a constraint
- * violation's DETAIL. The two sentences differ on purpose, so a test can tell
- * which refusal fired.
+ * violation's DETAIL. The two sentences differ on purpose: the pre-read's is
+ * asserted by the integration suite, the backstop's by the unit test of
+ * `translateCalcParameterWriteError` (a race cannot be staged in a suite).
  *
  * **`key`, `organizationId` and the scope are immutable on PATCH** (design
  * decision 12): the update body has no such field. A re-scope is delete +
