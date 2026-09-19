@@ -360,3 +360,83 @@ describe("ADR 0070 part (d) — the resolver statement is contained, bounded and
     expect(defaultValueDefect(`${source}\nconst y = map.get(k) ?? 0;`)).toMatch(/\?\? 0/);
   });
 });
+
+// --- part (e) — a window read never range-scans raw rows: the views serve every aggregate, and delta is two LIMIT 1 probes ---
+
+/**
+ * ADR 0070 decision 5 (`E4.1b` U8), a property of `calc-windows.service.ts`
+ * the integration suite cannot prove by value: with every view running
+ * `materialized_only = false`, a raw range scan answers the same number as
+ * the composed read and only the cost differs. So the shape is scanned:
+ *
+ * 1. Every `FROM telemetry.` relation in the file is one of the four views,
+ *    except **exactly two** occurrences of `FROM telemetry.point_values` —
+ *    the first-sample and last-sample probes of `delta` — and each of those
+ *    is followed within 200 characters (whitespace collapsed) by `LIMIT 1`.
+ * 2. All four views are named (a level dropped from the ladder would be a
+ *    silent cost regression the tiling property in `calc-window-plan.spec`
+ *    cannot see, because the service, not the planner, names the relation).
+ *
+ * The docblock of the file spells the raw relation too, so the scan reads
+ * the SQL template literals only — the text inside backtick strings passed
+ * to `query(` — and never a comment.
+ */
+const CALC_WINDOWS_SERVICE = "apps/api/src/calc/calc-windows.service.ts";
+const VIEW_RELATIONS = ["telemetry.point_values_1m", "telemetry.point_values_5m", "telemetry.point_values_1h", "telemetry.point_values_1d"];
+
+/** The SQL template literals of the file: every backtick string that follows `query(` or `query<...>(`. */
+function sqlTemplates(source: string): string[] {
+  const out: string[] = [];
+  const re = /query(?:<[^`]*?>)?\(\s*`([\s\S]*?)`/g;
+  for (const m of source.matchAll(re)) {
+    out.push(m[1]);
+  }
+  return out;
+}
+
+function rawScanDefect(templates: readonly string[]): string | null {
+  // whitespace runs collapsed, so the 200-character budget measures SQL, not indentation
+  const sql = templates.join("\n").replace(/\s+/g, " ");
+  const rawSites = [...sql.matchAll(/FROM\s+telemetry\.point_values\b(?!_)/g)];
+  if (rawSites.length !== 2) return `expected exactly two FROM telemetry.point_values sites (the two delta probes), found ${rawSites.length}`;
+  for (const site of rawSites) {
+    const tail = sql.slice(site.index as number, (site.index as number) + 200);
+    if (!/LIMIT\s+1\b/.test(tail)) return "a FROM telemetry.point_values site is not followed by LIMIT 1 within 200 characters — a range scan";
+  }
+  const others = [...sql.matchAll(/FROM\s+(telemetry\.\w+)/g)].map((m) => m[1]).filter((r) => r !== "telemetry.point_values");
+  for (const relation of others) {
+    if (!VIEW_RELATIONS.includes(relation)) return `FROM ${relation} is neither a view nor a delta probe`;
+  }
+  return null;
+}
+
+describe("ADR 0070 part (e) — a window read never range-scans raw rows", () => {
+  const source = readFileSync(join(repoRoot, CALC_WINDOWS_SERVICE), "utf8");
+  const templates = sqlTemplates(source);
+
+  it("found the service and its SQL templates, so the rules below are not silently vacuous", () => {
+    expect(templates.length, `${CALC_WINDOWS_SERVICE}: expected at least three query( templates`).toBeGreaterThanOrEqual(3);
+    expect(templates.join("\n")).toMatch(/FROM\s+telemetry\.point_values\b/);
+  });
+
+  it("names all four views — the level relation is interpolated from aggregateRelation, so the file names them through it", () => {
+    // the per-level statement interpolates `${relation}`; the four names are
+    // what `aggregateRelation` maps to, pinned in point-aggregates.ts
+    const pointAggregates = readFileSync(join(repoRoot, "apps/api/src/telemetry/point-aggregates.ts"), "utf8");
+    for (const relation of VIEW_RELATIONS) {
+      expect(pointAggregates, relation).toContain(`"${relation}"`);
+    }
+    expect(source).toMatch(/aggregateRelation\(level\)/);
+  });
+
+  it("exactly two FROM telemetry.point_values sites, each a LIMIT 1 probe, and no other raw relation", () => {
+    expect(rawScanDefect(templates), CALC_WINDOWS_SERVICE).toBeNull();
+  });
+
+  it("positive control: the scan reports an injected raw range scan and a dropped LIMIT", () => {
+    expect(rawScanDefect([...templates, "SELECT sum(value) FROM telemetry.point_values v WHERE v.time >= $1 AND v.time < $2"])).toMatch(/exactly two/);
+    const withoutLimit = templates.map((t) => t.replace(/ORDER BY v\.time ASC\s+LIMIT 1/, "ORDER BY v.time ASC"));
+    expect(rawScanDefect(withoutLimit)).toMatch(/LIMIT 1/);
+    expect(rawScanDefect([...templates, "SELECT 1 FROM telemetry.point_values_15m"])).toMatch(/neither a view/);
+  });
+});
