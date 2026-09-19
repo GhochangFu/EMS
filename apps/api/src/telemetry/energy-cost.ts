@@ -1,3 +1,8 @@
+import type { Pool } from "pg";
+
+import { inputKey } from "../calc/calc-batch";
+import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggregates";
+
 /**
  * `E4.1c` — the indicative energy cost, read from a parameter rather than an
  * environment variable (ADR 0070 decision 7).
@@ -38,6 +43,9 @@
  * the contract's three fields went `.nullable()`. **No default value anywhere**:
  * `tests/adr-0070` part (g) scans this file for `COALESCE(`, `?? 0` and `?? 1`.
  */
+
+/** The parameter key both reads resolve (`bms.calc_parameter_keys`, migration `0074`). */
+export const ENERGY_TARIFF_KEY = "energy_tariff_per_kwh";
 
 /** One asset's energy in the window, as both services' per-asset statement returns it. */
 export interface PerAssetEnergy {
@@ -89,4 +97,112 @@ export function energyCost(
   const tariffPerKwh = distinctTariffs.size === 1 ? [...distinctTariffs][0]! : null;
   const indicativeCost = currency === null ? null : Math.round(sum * 100) / 100;
   return { indicativeCost, tariffPerKwh: currency === null ? null : tariffPerKwh, currency };
+}
+
+/**
+ * The window a per-asset read covers. `trailing` is the dashboard's — the
+ * **database** clock, `bucket > now() - interval`, the same predicate its kWh
+ * total uses, so `indicativeCost` and `totalKwh` describe one set of buckets
+ * to the row. `range` is the report's, `bucket >= start AND bucket <= end`.
+ * The two are kept as two arms rather than unified so that each service's
+ * cost sums exactly the buckets its total sums (the integration specs pin
+ * `indicativeCost === round(totalKwh × tariff)` on both).
+ */
+export type EnergyCostWindow =
+  | { readonly kind: "trailing"; readonly intervalSql: string }
+  | { readonly kind: "range"; readonly start: Date; readonly end: Date };
+
+export interface PerAssetEnergyOptions {
+  readonly level: AggregateLevel;
+  readonly window: EnergyCostWindow;
+  /** Bucket width in hours at `level` — `bucketHours(level)`; kW × hours = kWh. */
+  readonly kwhFactor: number;
+  readonly assetIds: readonly string[] | null;
+}
+
+interface PerAssetEnergyRow {
+  readonly asset_id: string;
+  readonly kwh: string;
+  readonly currency: string;
+}
+
+/**
+ * Energy per asset in the window, with each asset's organization currency —
+ * the database half. Reads the continuous aggregate at `level` (ADR 0023) with
+ * the same `avgExpr` mean the totals use, and joins `bms.assets` and
+ * `bms.organizations` for the currency. `pool` is the caller's `FLEET_POOL`,
+ * and the `$1::uuid[]` scope from `AccessControlService.readableAssetIds` is
+ * the isolation control (`pue-ratio.ts` §Containment gives the reason in
+ * full); `bms.organizations` carries no row-level security (measured at the
+ * `E4.1c` plan gate) and `bms.assets` is read by the fleet role here as it is
+ * by every other fleet-pool statement in the two services.
+ */
+export async function perAssetEnergy(
+  pool: Pool,
+  { level, window, kwhFactor, assetIds }: PerAssetEnergyOptions,
+): Promise<PerAssetEnergy[]> {
+  const relation = aggregateRelation(level);
+  if (!relation) {
+    throw new Error(`perAssetEnergy: unknown aggregate level "${level}"`);
+  }
+  const bound =
+    window.kind === "trailing" ? "bucket > now() - $3::interval" : "bucket >= $3 AND bucket <= $4";
+  const params: unknown[] =
+    window.kind === "trailing"
+      ? [assetIds ?? null, kwhFactor, window.intervalSql]
+      : [assetIds ?? null, kwhFactor, window.start, window.end];
+  const r = await pool.query<PerAssetEnergyRow>(
+    `
+    WITH per AS (
+      SELECT bucket, asset_id, ${avgExpr()} AS kw
+      FROM ${relation}
+      WHERE point_key = 'kw'
+        AND ${bound}
+        AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
+      GROUP BY 1, 2
+    )
+    SELECT p.asset_id,
+           (SUM(p.kw) * $2::float8)::float8 AS kwh,
+           o.currency
+    FROM per p
+    JOIN bms.assets a ON a.id = p.asset_id
+    JOIN bms.organizations o ON o.id = a.organization_id
+    GROUP BY p.asset_id, o.currency
+    `,
+    params,
+  );
+  return r.rows.map((row) => ({ assetId: row.asset_id, kwh: Number(row.kwh), currency: row.currency }));
+}
+
+/** The one method of `CalcParametersService` the two reads need — what the services inject. */
+export interface TariffResolver {
+  resolveForAssets(
+    pairs: readonly { readonly assetId: string; readonly key: string }[],
+    at: Date,
+  ): Promise<Map<string, number>>;
+}
+
+/**
+ * Resolve `energy_tariff_per_kwh` for every asset in `rows` at `at` — the
+ * nearest scope per asset — and re-key the resolver's `inputKey` map by
+ * `assetId` for {@link energyCost}. An asset with no row in scope is simply
+ * absent from the result; `energyCost` is where absence fails closed.
+ */
+export async function resolveTariffs(
+  resolver: TariffResolver,
+  rows: readonly PerAssetEnergy[],
+  at: Date,
+): Promise<Map<string, number>> {
+  const resolved = await resolver.resolveForAssets(
+    rows.map((row) => ({ assetId: row.assetId, key: ENERGY_TARIFF_KEY })),
+    at,
+  );
+  const byAsset = new Map<string, number>();
+  for (const row of rows) {
+    const value = resolved.get(inputKey(row.assetId, ENERGY_TARIFF_KEY));
+    if (value !== undefined) {
+      byAsset.set(row.assetId, value);
+    }
+  }
+  return byAsset;
 }

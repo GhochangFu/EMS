@@ -92,8 +92,13 @@ function energyTable(preview: EnergyReportPreview): ReportCell[][] {
     // `'-`. As a string it routes to `csvTextCell` and is outside
     // `assertFiniteCells`, which is typed on `number`.
     ["PUE estimate", preview.summary.pueEstimate ?? "—", ""],
-    ["Indicative cost", preview.summary.indicativeCostZar, "ZAR"],
-    ["Tariff", preview.summary.tariffZarPerKwh, "ZAR/kWh"],
+    // `E4.1c` (ADR 0070 decision 7) — the cost and the tariff are nullable and
+    // the unit column is the organization's own currency, not a spelled one:
+    // `null` writes the same U+2014 as `pueEstimate` (text, outside
+    // `assertFiniteCells`) with an empty unit. For a ZAR organization the
+    // three cells are byte-identical to what they were.
+    ["Indicative cost", preview.summary.indicativeCost ?? "—", preview.summary.currency ?? ""],
+    ["Tariff", preview.summary.tariffPerKwh ?? "—", preview.summary.currency ? `${preview.summary.currency}/kWh` : ""],
     [],
     ["Source", "Energy", "Unit"],
     ["Grid", preview.sourceTotals.gridKwh, "kWh"],

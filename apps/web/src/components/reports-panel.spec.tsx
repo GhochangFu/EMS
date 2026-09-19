@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -25,7 +25,10 @@ import { ReportsPanel } from "./reports-panel";
 const NOT_CONFIGURED = "Not configured — no incomer in scope computes site_kw and it_kw";
 const MEASURED_HINT = "Σ site kW ÷ Σ IT kW, from the incomers' site_kw / it_kw";
 
-function preview(pueEstimate: number | null): EnergyReportPreview {
+function preview(
+  pueEstimate: number | null,
+  cost: Partial<EnergyReportPreview["summary"]> = {},
+): EnergyReportPreview {
   return {
     template: {
       id: "energy_consumption",
@@ -41,9 +44,12 @@ function preview(pueEstimate: number | null): EnergyReportPreview {
       totalKwh: 2345.17,
       peakKw: 414.66,
       pueEstimate,
-      indicativeCostZar: 5042.12,
-      tariffZarPerKwh: 2.15,
+      // `E4.1c` — nullable, currency-neutral; `ZAR` is the fixture's organization.
+      indicativeCost: 5042.12,
+      tariffPerKwh: 2.15,
+      currency: "ZAR",
       asOf: "2026-09-05T12:00:00.000Z",
+      ...cost,
     },
     sourceTotals: { gridKwh: 2130.37, solarKwh: 126.04, dgKwh: 88.76 },
     topConsumers: [],
@@ -51,8 +57,8 @@ function preview(pueEstimate: number | null): EnergyReportPreview {
   };
 }
 
-function renderPanel(pueEstimate: number | null): void {
-  vi.spyOn(reportsApi, "fetchEnergyReportPreview").mockResolvedValue(preview(pueEstimate));
+function renderPanel(pueEstimate: number | null, cost: Partial<EnergyReportPreview["summary"]> = {}): void {
+  vi.spyOn(reportsApi, "fetchEnergyReportPreview").mockResolvedValue(preview(pueEstimate, cost));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -86,4 +92,25 @@ export async function anUnconfiguredPreviewShowsTheDashAndTheReason(): Promise<v
   const tile = await tileLabelled("PUE");
   expect(await within(tile).findByText("—")).toBeInTheDocument();
   expect(within(tile).getByText(NOT_CONFIGURED)).toBeInTheDocument();
+}
+
+/** `E4.1c` — the cost tile is the `Intl` string for the organization's currency. */
+export async function aCostRendersInTheReportsPanel(): Promise<void> {
+  renderPanel(1.25);
+
+  const expected = new Intl.NumberFormat(undefined, { style: "currency", currency: "ZAR", maximumFractionDigits: 0 }).format(
+    5042.12,
+  );
+  const tile = await tileLabelled("Indicative cost");
+  // Raw `textContent`: `Intl` separates the symbol and the digits with U+00A0.
+  await waitFor(() => expect(tile.textContent).toContain(expected));
+}
+
+/** `E4.1c` — the owed guard: a null cost renders the dash without throwing. */
+export async function aNullCostRendersTheDashInTheReportsPanel(): Promise<void> {
+  renderPanel(1.25, { indicativeCost: null, tariffPerKwh: null, currency: null });
+
+  const tile = await tileLabelled("Indicative cost");
+  expect(await within(tile).findByText("—")).toBeInTheDocument();
+  expect(within(tile).getByText(/No tariff/)).toBeInTheDocument();
 }
