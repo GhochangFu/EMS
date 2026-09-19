@@ -36,6 +36,8 @@ const LEVELS: readonly { view: string; widthMs: number }[] = [
   { view: "point_values_1d", widthMs: 86_400_000 },
 ];
 
+/** Refreshes the four views over the complete buckets of `[fromMs, toMs)`,
+ * clipped to `floor_L(nowMs)` per level — see the file docblock. */
 export async function materializeCompleteBuckets(pool: pg.Pool, fromMs: number, toMs: number, nowMs: number): Promise<void> {
   const client = await pool.connect();
   try {

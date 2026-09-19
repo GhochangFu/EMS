@@ -8,6 +8,7 @@ import { windowKey, type CalcCalendarWindow, type CalcWindowRead } from "@bms/sh
 import { FLEET_DRIZZLE, TENANT_POOL } from "../database/database.tokens";
 import { aggregateRelation, type AggregateLevel } from "../telemetry/point-aggregates";
 import {
+  budgetDefect,
   combineSegments,
   deltaOf,
   hoursOf,
@@ -32,9 +33,12 @@ export type WindowReadRequest = {
   readonly endMs: number;
 };
 
-export type WindowReadReason = "window_empty" | "timezone_unset";
+/** `windows_unresolved` here is the budget refusal (`MAX_WINDOW_BUCKETS` / `MAX_LIVE_MINUTES`):
+ * the read was not attempted, and `detail` names the watermarks so the host
+ * can warn once per sweep. The other two are data. */
+export type WindowReadReason = "window_empty" | "timezone_unset" | "windows_unresolved";
 
-export type WindowReadResult = { ok: true; value: number } | { ok: false; reason: WindowReadReason };
+export type WindowReadResult = { ok: true; value: number } | { ok: false; reason: WindowReadReason; detail?: string };
 
 /** The key `resolveReads` answers under — the owner, the canonical read and
  * the window's end, so two definitions on one asset with different intervals
@@ -108,7 +112,12 @@ type Planned = {
  * **Statement budget: at most seven per sweep** — watermarks, calendar
  * bounds (only when a calendar read exists), one per level with at least one
  * segment (≤ 4), and the delta probes (only when a `delta` exists). Empty
- * requests → no statement.
+ * requests → no statement. **Row budget per read** (`budgetDefect`) — a plan
+ * that would fold more than `MAX_WINDOW_BUCKETS` (a stalled coarse policy
+ * pushing a year onto `5m`) or aggregate more than `MAX_LIVE_MINUTES` of raw
+ * rows beyond the `1m` watermark (a blocked refresh) is refused before any
+ * level statement runs, as `windows_unresolved` with the watermarks in
+ * `detail`.
  */
 @Injectable()
 export class CalcWindowsService {
@@ -117,6 +126,13 @@ export class CalcWindowsService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
   ) {}
 
+  /**
+   * The value of every distinct read in `requests` at its own window end,
+   * keyed by `windowRequestKey`; a read that cannot be answered carries its
+   * reason instead. Every distinct key is answered — an owner with no
+   * location is `timezone_unset` — so an absent key means the batch itself
+   * did not run.
+   */
   async resolveReads(requests: readonly WindowReadRequest[]): Promise<Map<string, WindowReadResult>> {
     const out = new Map<string, WindowReadResult>();
     const distinct = new Map<string, WindowReadRequest>();
@@ -147,8 +163,15 @@ export class CalcWindowsService {
         }
         startMs = start;
       }
-      const isDelta = request.node.kind === "window" && request.node.fn === "delta";
-      const segments = isDelta ? [] : planWindowSegments({ startMs, endMs: request.endMs, watermarks });
+      // `delta` reads raw probes and `hours` reads nothing: neither plans a
+      // segment, so neither adds a row to a level statement.
+      const readsAggregates = request.node.kind === "window" && request.node.fn !== "delta";
+      const segments = readsAggregates ? planWindowSegments({ startMs, endMs: request.endMs, watermarks }) : [];
+      const defect = readsAggregates ? budgetDefect(segments, request.endMs, watermarks) : null;
+      if (defect !== null) {
+        out.set(key, { ok: false, reason: "windows_unresolved", detail: defect });
+        return;
+      }
       planned.push({ index, request, startMs, segments });
     });
 

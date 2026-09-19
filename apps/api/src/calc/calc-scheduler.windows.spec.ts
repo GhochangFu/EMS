@@ -163,3 +163,36 @@ export async function noWindowReadsMakesNoCall(): Promise<void> {
   assert(windowRequests.length === 0, "no window read → resolveReads not called (a throwing fake proves it)");
   assert(writes.flat().length === 1, "the formula writes");
 }
+
+/** H9 — a budget refusal: windows_unresolved for the definition, one warn per distinct detail per sweep */
+export async function budgetRefusalWarnsOncePerSweep(): Promise<void> {
+  const a = def({ ...V3, pointKey: "A", templatePointId: "tp-a", formula: "avg({kw}, 366d)" });
+  const b = def({ ...V3, pointKey: "B", templatePointId: "tp-b", formula: "max({kw}, 366d)" });
+  const samples = new Map([["asset-1:kw", { value: 10, timeMs: 0 }]]);
+  const [readA] = readsOf("avg({kw}, 366d)");
+  const [readB] = readsOf("max({kw}, 366d)");
+  const detail = "a window read would fold 105408 buckets over the 20000 budget — a refresh policy is behind (watermarks: 1d …)";
+  const windows = new Map<string, WindowReadResult>([
+    [windowFakeKey("asset-1", readA), { ok: false, reason: "windows_unresolved", detail }],
+    [windowFakeKey("asset-1", readB), { ok: false, reason: "windows_unresolved", detail }],
+  ]);
+  const { deps, skips, warnings, writes } = buildSweepDeps([a, b], samples, { windows });
+  await runScheduledSweep(deps, new Map(), 0);
+  assert(count(skips, "windows_unresolved") === 2 && skips.length === 2, `both definitions refuse windows_unresolved, got ${JSON.stringify(skips)}`);
+  assert(writes.flat().length === 0, "nothing written");
+  assert(warnings.length === 1 && warnings[0].includes(detail), `one warn for one distinct detail, got ${JSON.stringify(warnings)}`);
+}
+
+/** H10 — a 10 s interval: the request's end is the tick's bucket floored to the minute, on both sides of the seam */
+export async function subMinuteIntervalEndsOnTheMinute(): Promise<void> {
+  const fast = def({ ...V3, pointKey: "F", formula: "avg({kw}, 24h)", intervalSeconds: 10 });
+  const samples = new Map([["asset-1:kw", { value: 10, timeMs: 0 }]]);
+  const [read] = readsOf("avg({kw}, 24h)");
+  const windows = new Map([[windowFakeKey("asset-1", read), ok(7)]]);
+  const { deps, windowRequests, writes, skips } = buildSweepDeps([fast], samples, { windows });
+  // 70 s: bucketTimeMs(70_000, 10) is 70_000, windowEndMs floors it to 60_000
+  await runScheduledSweep(deps, new Map(), 70_000);
+  assert(windowRequests.length === 1 && windowRequests[0][0]?.endMs === 60_000, `the request ends at the minute (60000), got ${JSON.stringify(windowRequests[0]?.map((r) => r.endMs))}`);
+  // the fake answered under the same key the host looks up, so the write happened
+  assert(writes.flat().length === 1 && writes.flat()[0].value === 7 && skips.length === 0, `the host found its answer under the minute-floored key, got writes ${JSON.stringify(writes.flat())} skips ${JSON.stringify(skips)}`);
+}

@@ -498,6 +498,15 @@ export async function runScheduledSweep(
   if (windowRequests.size > 0) {
     try {
       windows = await deps.windows.resolveReads([...windowRequests.values()]);
+      // A budget refusal (`MAX_WINDOW_BUCKETS`) names its watermarks; one warn
+      // per distinct detail per sweep, never one per definition.
+      const details = new Set<string>();
+      for (const answer of windows.values()) {
+        if (!answer.ok && answer.reason === "windows_unresolved" && answer.detail !== undefined) details.add(answer.detail);
+      }
+      for (const detail of details) {
+        deps.logger.warn(`calc scheduler: window read refused this sweep — ${detail}`);
+      }
     } catch (err) {
       windows = null;
       deps.logger.warn(

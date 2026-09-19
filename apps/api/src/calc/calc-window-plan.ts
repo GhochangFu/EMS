@@ -50,6 +50,63 @@ export const LEVEL_MS: Readonly<Record<AggregateLevel, number>> = {
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 
+/**
+ * The most buckets one window read may fold (PR 2 security review M1, ruled
+ * 2026-09-19: fail closed). With healthy watermarks a `366d` read is ~366
+ * `1d` buckets plus a small tail; when the `1d` and `1h` policies stall (an
+ * orphaned `refresh_ranges` row has blocked every later refresh on this repo
+ * before) the same read falls through to `5m` (~105k buckets per pair) or
+ * `1m` (~527k), every tick, for every window formula — the statement count
+ * stays at seven, the row volume does not. Above this budget the read is
+ * refused as `windows_unresolved` and the host warns naming the watermarks,
+ * so a stalled policy stops the window formulas and never the database.
+ * 20,000 admits a 366d read from `1h` (8,784) and a 60d read from `5m`
+ * (17,280); it refuses a 366d read from `5m`.
+ */
+export const MAX_WINDOW_BUCKETS = 20_000;
+
+/**
+ * The second half of the same ruling. A blocked refresh stalls ALL four
+ * policies at once, and then the bucket count above never bites: the `1d`
+ * view still serves the whole past and only the stalled part falls to `1m`
+ * — whose rows beyond its OWN watermark are the live branch, an on-the-fly
+ * aggregation of raw samples. A week of that is 10,080 "buckets" of raw
+ * work per pair per tick. So the part of a window beyond the `1m` watermark
+ * is bounded on its own: 180 minutes, the `1m` policy's `start_offset`
+ * (`0027`), which a healthy stack never exceeds and a blocked refresh
+ * exceeds within hours — refusing every aggregate window read and naming
+ * the watermark, which is what surfaces the stall.
+ */
+export const MAX_LIVE_MINUTES = 180;
+
+/** How many buckets a plan folds — the cost `MAX_WINDOW_BUCKETS` bounds. */
+export function bucketCount(segments: readonly Segment[]): number {
+  let total = 0;
+  for (const segment of segments) {
+    total += (segment.toMs - segment.fromMs) / LEVEL_MS[segment.level];
+  }
+  return total;
+}
+
+/**
+ * Why a plan must not run, or `null`. Checked by the service before any
+ * level statement; the text names the budget it crossed and every watermark,
+ * for the host's once-per-sweep warn.
+ */
+export function budgetDefect(segments: readonly Segment[], endMs: number, watermarks: Watermarks): string | null {
+  const marks = WINDOW_LEVELS.map((level) => `${level} ${new Date(watermarks[level]).toISOString()}`).join(", ");
+  const buckets = bucketCount(segments);
+  if (buckets > MAX_WINDOW_BUCKETS) {
+    return `a window read would fold ${Math.round(buckets)} buckets over the ${MAX_WINDOW_BUCKETS} budget — a refresh policy is behind (watermarks: ${marks})`;
+  }
+  const liveMinutes = segments.reduce((sum, s) => (s.level === "1m" ? sum + Math.max(0, s.toMs - Math.max(s.fromMs, watermarks["1m"])) / MINUTE_MS : sum), 0);
+  if (liveMinutes > MAX_LIVE_MINUTES) {
+    return `a window read would aggregate ${Math.round(liveMinutes)} minutes of raw rows beyond the 1m watermark, over the ${MAX_LIVE_MINUTES} budget — the refresh policies are stalled (watermarks: ${marks})`;
+  }
+  void endMs;
+  return null;
+}
+
 /** Each level's `cagg_watermark`, as epoch milliseconds — the instant up to
  * which the view is materialized. Read live once per sweep, never assumed
  * from `0027`'s offsets (a manual refresh moves them). */

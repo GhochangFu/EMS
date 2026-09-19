@@ -1,9 +1,13 @@
 import type { AggregateLevel } from "../telemetry/point-aggregates";
 import {
+  bucketCount,
+  budgetDefect,
   combineSegments,
   deltaOf,
   hoursOf,
   LEVEL_MS,
+  MAX_LIVE_MINUTES,
+  MAX_WINDOW_BUCKETS,
   planWindowSegments,
   rollingStartMs,
   WINDOW_LEVELS,
@@ -295,4 +299,42 @@ export function runWindowBoundsTests(): void {
     "P10: rollingStartMs subtracts minutes",
   );
   assert(WINDOW_LEVELS.join(",") === "1d,1h,5m,1m", "the ladder is coarse to fine");
+}
+
+/** P11 — the two budgets a stalled policy is refused against (security review M1, ruled fail closed) */
+export function runBucketBudgetTests(): void {
+  const end = utc("2026-09-19T10:00:00Z");
+  const year = rollingStartMs(end, 366 * 1440);
+  const healthy = marks({ "1d": "2026-09-19T00:00:00Z", "1h": "2026-09-19T08:00:00Z", "5m": "2026-09-19T09:50:00Z", "1m": "2026-09-19T09:59:00Z" });
+  const healthyYear = planWindowSegments({ startMs: year, endMs: end, watermarks: healthy });
+  assert(bucketCount(healthyYear) < 500, `P11: a 366d read under healthy watermarks folds ~366 day buckets plus tails, got ${bucketCount(healthyYear)}`);
+  assert(budgetDefect(healthyYear, end, healthy) === null, "P11: a healthy 366d read is inside both budgets");
+
+  // the 1d policy never ran and 1h stalled a year: the year falls to 5m
+  const coarseStalled = marks({ "1d": "2025-01-01T00:00:00Z", "1h": "2025-01-01T00:00:00Z", "5m": "2026-09-19T09:50:00Z", "1m": "2026-09-19T09:59:00Z" });
+  const coarseYear = planWindowSegments({ startMs: year, endMs: end, watermarks: coarseStalled });
+  assert(bucketCount(coarseYear) > MAX_WINDOW_BUCKETS, `P11: a 366d read on stalled coarse policies exceeds the bucket budget (${bucketCount(coarseYear)})`);
+  const coarseDefect = budgetDefect(coarseYear, end, coarseStalled);
+  assert(coarseDefect !== null && /buckets over the 20000 budget/.test(coarseDefect) && /1d 2025-01-01/.test(coarseDefect), `P11: the bucket budget names itself and the watermarks, got ${coarseDefect}`);
+  // a 24h read on the same stalled policies is served: the bucket budget bites on length, not on the stall alone
+  const coarseDay = planWindowSegments({ startMs: rollingStartMs(end, 1440), endMs: end, watermarks: coarseStalled });
+  assert(budgetDefect(coarseDay, end, coarseStalled) === null, `P11: a 24h read on stalled coarse policies is inside both budgets, got ${budgetDefect(coarseDay, end, coarseStalled)}`);
+
+  // a blocked refresh stalls ALL four a week: the bucket count stays small
+  // (1d still serves the past) but a week beyond the 1m watermark is raw
+  const allStalled = marks({ "1d": "2026-09-12T00:00:00Z", "1h": "2026-09-12T00:00:00Z", "5m": "2026-09-12T00:00:00Z", "1m": "2026-09-12T00:00:00Z" });
+  const allYear = planWindowSegments({ startMs: year, endMs: end, watermarks: allStalled });
+  assert(bucketCount(allYear) <= MAX_WINDOW_BUCKETS, `P11: the bucket budget alone would admit a blocked refresh (${bucketCount(allYear)})`);
+  const liveDefect = budgetDefect(allYear, end, allStalled);
+  assert(liveDefect !== null && /minutes of raw rows beyond the 1m watermark/.test(liveDefect) && /1m 2026-09-12/.test(liveDefect), `P11: the live budget refuses a blocked refresh and names the 1m watermark, got ${liveDefect}`);
+  // …and so is a 24h read: every aggregate window read stops, which is what surfaces the stall
+  const allDay = planWindowSegments({ startMs: rollingStartMs(end, 1440), endMs: end, watermarks: allStalled });
+  assert(budgetDefect(allDay, end, allStalled) !== null, "P11: a 24h read on a blocked refresh is refused too");
+  // a healthy stack's live part is minutes, far inside the budget
+  const healthyDay = planWindowSegments({ startMs: rollingStartMs(end, 1440), endMs: end, watermarks: healthy });
+  assert(budgetDefect(healthyDay, end, healthy) === null, "P11: a healthy 24h read is inside both budgets");
+
+  assert(bucketCount([]) === 0, "P11: no segments fold no buckets");
+  assert(bucketCount([{ level: "1h", fromMs: 0, toMs: 7_200_000 }]) === 2, "P11: two hour buckets");
+  assert(MAX_WINDOW_BUCKETS === 20_000 && MAX_LIVE_MINUTES === 180, "the budgets the cases above are written against");
 }

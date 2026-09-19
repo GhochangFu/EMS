@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runBucketBudgetTests,
   runCombineSegmentsTests,
   runDeltaOfTests,
   runWindowBoundsTests,
@@ -45,5 +46,8 @@ describe("calc window plan — segment composition over the continuous aggregate
   });
   it("P10 floors the window end to the minute and measures hours as elapsed time", () => {
     runWindowBoundsTests();
+  });
+  it("P11 refuses a 366d read on stalled coarse policies (buckets) and every aggregate read on a blocked refresh (raw minutes); a healthy stack passes both", () => {
+    runBucketBudgetTests();
   });
 });

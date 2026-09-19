@@ -1,12 +1,14 @@
 import { describe, it } from "vitest";
 
 import {
+  budgetRefusalWarnsOncePerSweep,
   emptyWindowRefusesWithoutARow,
   failedReadRefusesOnlyWindowHolders,
   noWindowReadsMakesNoCall,
   parameterUnsetStillBatchesWindows,
   requestsAreTheDistinctSetOfDueDefinitions,
   staleInputWinsOverEmptyWindow,
+  subMinuteIntervalEndsOnTheMinute,
   unsetZoneRefusesWithoutARow,
   windowReadsPresentWrite,
 } from "./calc-scheduler.windows.spec";
@@ -45,5 +47,13 @@ describe("window reads in the scheduled sweep (ADR 0070 decision 5, E4.1b)", () 
 
   it("H8 no window read anywhere → resolveReads is never called", async () => {
     await noWindowReadsMakesNoCall();
+  });
+
+  it("H9 a budget refusal is windows_unresolved per definition and one warn per distinct detail per sweep", async () => {
+    await budgetRefusalWarnsOncePerSweep();
+  });
+
+  it("H10 a 10 s interval's request ends on the minute, and the host finds its answer under that key", async () => {
+    await subMinuteIntervalEndsOnTheMinute();
   });
 });

@@ -129,6 +129,9 @@ export async function seedWindowsFixture(pool: pg.Pool, fx: Fixtures): Promise<W
     [at(dMinus1, "18:31"), 130],
     [at(dMinus1, "19:00"), 150],
     [at(dMinus1, "20:00"), 200],
+    // exactly at W1's window end: OUTSIDE the half-open window (a `<=` on the
+    // delta probes' end bound would read 999 − 130 instead of 200 − 130)
+    [at(dMinus1, "20:30"), 999],
   ];
   // W2/W3 — ten samples of 100 early on day D and one of 200 late, on U
   const kwU: [number, number][] = [
@@ -294,8 +297,8 @@ export async function assertADeltaOverOneSampleIsEmpty(pool: pg.Pool, fixture: W
   const one = await resolveOne(pool, fixture.n, windowFn("delta", KWH, rolling(1440)), fixture.dMs + DAY_MS);
   assert(one !== undefined && one.ok === false && one.reason === "window_empty", `W5: delta over one sample is window_empty, got ${JSON.stringify(one)}`);
   // positive control: the same shape over K's six samples has a value
-  const six = await resolveOne(pool, fixture.k, windowFn("delta", KWH, rolling(1440)), fixture.dMs);
-  assert(six !== undefined && six.ok === true && six.value === 100, `W5 control: delta over six samples is 200 − 100, got ${JSON.stringify(six)}`);
+  const seven = await resolveOne(pool, fixture.k, windowFn("delta", KWH, rolling(1440)), fixture.dMs);
+  assert(seven !== undefined && seven.ok === true && seven.value === 899, `W5 control: delta over K's seven samples is 999 − 100, got ${JSON.stringify(seven)}`);
 }
 
 // ---- W6 — timezone_unset ------------------------------------------------------------------------------
@@ -343,8 +346,14 @@ export async function assertThisMonthIncludesTheTailBehindThe1dWatermark(pool: p
     new Date(fixture.tailMs[0]).toISOString(),
   ]);
   assert(Number(raw[0].n) === 2, `W7a control: the two tail rows are in raw, got ${raw[0].n}`);
+  // the 1d view's materialization hypertable, resolved by name — its id is
+  // assigned in creation order and differs between databases
+  const { rows: hyper } = await pool.query<{ name: string }>(
+    `SELECT materialization_hypertable_name AS name FROM timescaledb_information.continuous_aggregates WHERE view_name = 'point_values_1d'`,
+  );
+  assert(hyper.length === 1 && /^_materialized_hypertable_\d+$/.test(hyper[0].name), `W7a control: the 1d view has a materialization hypertable, got ${JSON.stringify(hyper)}`);
   const { rows: mat } = await pool.query<{ n: string }>(
-    `SELECT count(*) AS n FROM _timescaledb_internal._materialized_hypertable_5 WHERE asset_id = $1 AND point_key = $2 AND bucket >= $3::timestamptz`,
+    `SELECT count(*) AS n FROM _timescaledb_internal.${hyper[0].name} WHERE asset_id = $1 AND point_key = $2 AND bucket >= $3::timestamptz`,
     [fixture.u, KW, new Date(Math.floor(nowMs / DAY_MS) * DAY_MS).toISOString()],
   );
   assert(Number(mat[0].n) === 0, `W7a control: today's bucket is not materialized at 1d, got ${mat[0].n}`);
@@ -407,6 +416,59 @@ export async function assertOneCallServesEveryReadInAtMostSevenStatements(pool: 
   assert(rb?.ok === true && near(rb.value, 2618.181818), `W8: the sum read, got ${JSON.stringify(rb)}`);
   assert(rc?.ok === true && rc.value === 1.5, `W8: hours(90m) is 1.5 with no row read, got ${JSON.stringify(rc)}`);
   assert(counted.statements() <= 7, `W8: at most seven statements per sweep, got ${counted.statements()}`);
+}
+
+export async function assertHoursAloneReadsNoRow(pool: pg.Pool, fixture: WindowsFixture): Promise<void> {
+  // the PR 2 security review's L1: an hours read once planned segments whose
+  // dead rows entered the level statements; W8 could not see it because the
+  // hours read shared its batch with a sum read
+  const counted = countedService(pool);
+  const node: CalcWindowRead = { kind: "hours", window: rolling(90), position: 0 };
+  const tick = fixture.dMs + DAY_MS;
+  const map = await counted.service.resolveReads([{ ownerAssetId: fixture.u, readAssetId: fixture.u, node, endMs: tick }]);
+  const result = map.get(windowRequestKey(fixture.u, node, tick));
+  assert(result?.ok === true && result.value === 1.5, `W8b: hours(90m) is 1.5, got ${JSON.stringify(result)}`);
+  assert(counted.relations().length === 0, `W8b: an hours-only batch reads no relation at all, read ${counted.relations().join(",")}`);
+  assert(counted.statements() === 1, `W8b: only the watermark statement runs for an hours-only batch, got ${counted.statements()}`);
+}
+
+/** W11 — the budget (security review M1, ruled fail closed): with the 1d and
+ * 1h watermarks a week behind, a 366d read is refused as windows_unresolved
+ * naming the watermarks, and a 24h read in the same batch is still served. */
+export async function assertAStalledPolicyRefusesALongReadNotTheDatabase(pool: pg.Pool, fixture: WindowsFixture): Promise<void> {
+  const tick = fixture.dMs + DAY_MS;
+  // the watermark statement is answered with stalled instants (the 1d view
+  // never refreshed, the 1h view a year behind); every other statement
+  // reaches the database
+  const stalledPool = {
+    query: (text: string, params?: unknown[]) => {
+      if (/cagg_watermark/.test(text)) {
+        return Promise.resolve({
+          rows: [
+            { view_name: "point_values_1d", watermark: new Date(tick - 400 * DAY_MS) },
+            { view_name: "point_values_1h", watermark: new Date(tick - 400 * DAY_MS) },
+            { view_name: "point_values_5m", watermark: new Date(tick) },
+            { view_name: "point_values_1m", watermark: new Date(tick) },
+          ],
+        });
+      }
+      return pool.query(text, params);
+    },
+  } as unknown as pg.Pool;
+  const service = new CalcWindowsService(stalledPool, createDb(pool));
+  const year = windowFn("avg", KW, rolling(366 * 1440));
+  const day = windowFn("avg", KW, rolling(1440));
+  const map = await service.resolveReads([
+    { ownerAssetId: fixture.u, readAssetId: fixture.u, node: year, endMs: tick },
+    { ownerAssetId: fixture.u, readAssetId: fixture.u, node: day, endMs: tick },
+  ]);
+  const refused = map.get(windowRequestKey(fixture.u, year, tick));
+  assert(refused !== undefined && refused.ok === false && refused.reason === "windows_unresolved", `W11: the 366d read is refused, got ${JSON.stringify(refused)}`);
+  if (refused && !refused.ok) {
+    assert(/budget/.test(refused.detail ?? "") && /1d \d{4}-/.test(refused.detail ?? ""), `W11: the detail names the budget and the watermarks, got ${refused.detail}`);
+  }
+  const served = map.get(windowRequestKey(fixture.u, day, tick));
+  assert(served !== undefined && served.ok === true && near(served.value, 109.090909), `W11: the 24h read in the same batch is served, got ${JSON.stringify(served)}`);
 }
 
 export async function assertTheWatermarksAreReadLive(pool: pg.Pool): Promise<void> {

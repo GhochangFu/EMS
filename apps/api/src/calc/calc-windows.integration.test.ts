@@ -16,9 +16,11 @@ import {
   assertADeltaOverOneSampleIsEmpty,
   assertAnUnknownStoredZoneRefusesNotThrows,
   assertARollingWeekReadsThe1dViewAndTodayDoesNot,
+  assertAStalledPolicyRefusesALongReadNotTheDatabase,
   assertAvgIsSumOverCount,
   assertAvgTodayAtIstSiteIsAlignedToTheIstDay,
   assertDeltaTodayAcrossIstMidnight,
+  assertHoursAloneReadsNoRow,
   assertHoursTodayAtIstSite,
   assertMinAndMaxOverTheDay,
   assertNoRequestsQueriesNothing,
@@ -136,6 +138,16 @@ describe.skipIf(!connectionString)("E4.1b — calc window resolver", () => {
   it("W8 — two owners, three reads, one call: three results in at most seven statements", async () => {
     if (!pool) throw new Error("pool required");
     await assertOneCallServesEveryReadInAtMostSevenStatements(pool, fixture);
+  });
+
+  it("W8b — an hours-only batch reads no relation: one statement, the watermarks", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertHoursAloneReadsNoRow(pool, fixture);
+  });
+
+  it("W11 — a stalled coarse policy refuses a 366d read as windows_unresolved naming the watermarks; a 24h read in the same batch is served", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAStalledPolicyRefusesALongReadNotTheDatabase(pool, fixture);
   });
 
   it("W9 — the four watermarks are read live from the internal function this Timescale exposes", async () => {
