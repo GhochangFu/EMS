@@ -35,8 +35,9 @@ import {
  * **Three claims here are about the PACK and not about this entry**, and they
  * are here because this is the last entry commit and there is nowhere later to
  * put them: the two no-skill rows of PR 2, the sixteen of the whole pack (plan
- * §12 ruling 4), and the cross-entry pair — `availability_pct` and `mtbf_h`
- * deferred on **both** vertical-transport entries, with `controller_comms_ok`
+ * §12 ruling 4), and the cross-entry pair — `mtbf_h` deferred on **both**
+ * vertical-transport entries (`availability_pct` was, until `E4.1c` superseded
+ * it by `availability_pct_24h` on both), with `controller_comms_ok`
  * declared once on `facility-access-door` in PR 1 and referenced by both.
  *
  * `refusalFrom` and the citation-override self-test live in
@@ -540,10 +541,11 @@ function checkEscalator(): void {
  * **The cross-entry claim** — the one no single entry's block can make, and the
  * reason it lands with the last entry rather than the first.
  *
- * Two halves. `availability_pct` and `mtbf_h` are deferred on **both**
- * vertical-transport entries for the same reason and are named twice, which is
- * what a per-entry `DEFERRED_DERIVED_CODES` record exists to allow — a
- * catalog-wide list would have made one of the two records invisible.
+ * Two halves. `mtbf_h` is deferred on **both** vertical-transport entries for
+ * the same reason and is named twice, which is what a per-entry
+ * `DEFERRED_DERIVED_CODES` record exists to allow — a catalog-wide list would
+ * have made one of the two records invisible. (`availability_pct` was the
+ * second such code until `E4.1c` superseded it on both entries.)
  * `controller_comms_ok` is declared **once**, on `facility-access-door` in
  * PR 1, and referenced by both entries here: it is the dependency that made
  * PR 2 a branch cut from `main` after PR 1 merged rather than a stacked one,
@@ -551,14 +553,14 @@ function checkEscalator(): void {
  * row and every import of either entry fails.
  */
 function assertTheCrossEntryClaims(): void {
-  for (const code of ["availability_pct", "mtbf_h"]) {
+  for (const code of ["mtbf_h"]) {
     for (const entryCode of VERTICAL_TRANSPORT_CODES) {
       assert(
         DEFERRED_DERIVED_CODES[entryCode].includes(code),
         `${code} must be deferred on ${entryCode}. It is deferred on BOTH vertical-transport ` +
-          "entries and for the same reason — availability is hours-in-state over a window and " +
-          "mean time between failures needs the failure history rather than the current fault " +
-          "flag, and bms-calc-v1 has neither a clock nor a memory. The record is per entry " +
+          "entries and for the same reason — mean time between failures needs the failure " +
+          "history, and the fault counter each declares is \"since last reset\", not cumulative, " +
+          "so no window over it is defined. The record is per entry " +
           "precisely so that one code can be deferred on several classes and be NAMED on each; " +
           "a catalog-wide list would have hidden the second. Deferred on " +
           `${entryCode}: [${DEFERRED_DERIVED_CODES[entryCode].join(", ")}].`,

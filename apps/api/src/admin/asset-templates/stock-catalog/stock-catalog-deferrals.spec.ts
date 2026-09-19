@@ -406,30 +406,24 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // sawtooth, the instantaneous point the stale_data alarm binds.
     "mean_latency_s",
   ],
-  // §8a — the pack's longest list, eleven: seven time windows, another system's
+  // §8a — seven: an undeclared input, two event counts, another system's
   // clock, a method, a rate whose two counters do not divide, and
   // levelling_drift_mm, which is a COMMISSIONING BASELINE trend and its own
-  // class (§13 item 5's ruling). The two the lift
-  // DOES author are the lifetime counter ratios (the E5.2 load_factor_pct
-  // shape), which need no window because both inputs are cumulative.
+  // class (§13 item 5's ruling). E4.1c DISCHARGED door_cycles_per_day,
+  // trips_per_day and out_of_service_hours_month and SUPERSEDED
+  // availability_pct by availability_pct_24h (service-sense over
+  // lift_in_service). The two the lift authored at v1 are the lifetime counter
+  // ratios (the E5.2 load_factor_pct shape).
   "mechanical-lift": [
-    // hours in service over hours elapsed — hours-in-state, and the third
-    // record of this code (electrical-dg-set, mechanical-pump, here).
-    "availability_pct",
-    // mean time between failures: a window, and it needs the failure history
-    // rather than the current fault flag.
+    // mean time between failures: lift_fault_count is "since last reset" —
+    // not cumulative — so delta() over it is undefined; the failure history
+    // is not a declared point.
     "mtbf_h",
-    // entrapments per month — a window over an event.
+    // entrapments per month — an EVENT COUNT over a state; the grammar counts
+    // nothing (sample_count is readings).
     "entrapments_per_month",
-    // door cycles per day; door_cycle_count is a CUMULATIVE counter, and per-day
-    // is the window the grammar has no state for.
-    "door_cycles_per_day",
-    // trips per day, the same shape over trip_count.
-    "trips_per_day",
     // the peak-hour wait needs a distribution over a window, not a value.
     "peak_hour_wait_s",
-    // out-of-service hours per month — hours-in-state again, over lift_in_service.
-    "out_of_service_hours_month",
     // mean time to repair lives in the WORK ORDER system (E3.1), which
     // bms-calc-v1 cannot name — the "another asset" class, one system out.
     "mttr_h",

@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runFacilityClassEntryTests4 } from "./facility-classes-4.spec";
+import { e41cLiftClaims, runFacilityClassEntryTests4 } from "./facility-classes-4.spec";
 
 /**
  * Vitest entry point for `facility-classes-4.spec.ts` — assertions live in the
@@ -16,4 +16,9 @@ describe("stock asset-template catalog — the vertical-transport classes (E5.3,
   it("ships the lift exactly as its tag-list section describes it, citing the document its prefix does not", () => {
     runFacilityClassEntryTests4();
   });
+
+  // E4.1c — the lift's four v3 rows, one it() per claim.
+  for (const [name, run] of e41cLiftClaims()) {
+    it(name, run);
+  }
 });
