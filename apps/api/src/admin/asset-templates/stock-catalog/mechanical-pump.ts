@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -15,10 +15,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * those entries and they do not fork this one; a site that wants the pump as its
  * own asset imports this template beside them.
  *
- * **20 POINTS — 6 core + 11 extended + 1 manual + 2 DERIVED.** §1's 18 table
+ * **23 POINTS — 6 core + 11 extended + 1 manual + 5 DERIVED.** §1's 18 table
  * rows in the document's own order (`sortOrder` 0-17), then the two authored
- * derived codes (18-19). This is the **first** entry of the pack, and unlike
- * `E5.1`'s first entry it exercises the derived machinery at once.
+ * `E5.2` derived codes (18-19) and `E4.1c`'s three `bms-calc-v3` rows
+ * (20-22, VERSION HISTORY v2). This is the **first** entry of the pack, and
+ * unlike `E5.1`'s first entry it exercises the derived machinery at once.
  *
  * **SEVEN OF THE EIGHTEEN ROWS ARE REUSED CODES, REFERENCED AND NEVER
  * REDECLARED** (ADR 0053 decision 3). A pump set is a motor with a hydraulic end
@@ -75,15 +76,29 @@ import type { StockAssetTemplateEntry } from "./types";
  * `E5.1`'s one override existed for a site weather station. The entry spec
  * asserts `null` on both, so a helpful override is a test failure with a reason.
  *
- * **FOUR DERIVED CODES ARE DEFERRED AND NAMED, never placeholdered** (ADR 0053
- * decision 6; ADR 0051 Amendment 6 decision 8 — a code with no `bms-calc-v1`
- * formula is not vocabulary). `stock-catalog-deferrals.spec.ts` holds the list
- * and asserts this entry declares none of them:
+ * **ONE DERIVED CODE IS DEFERRED AND NAMED, never placeholdered** (ADR 0053
+ * decision 6; ADR 0051 Amendment 6 decision 8 — a code with no formula is not
+ * vocabulary). `stock-catalog-deferrals.spec.ts` holds the list and asserts
+ * this entry declares none of it. **Three of the four `E5.2` deferrals left
+ * the ledger in `E4.1c`** (ADR 0070 decision 8, plan §3.7/§3.9), because
+ * `E4.1b` gave the grammar a window over one point reference:
  *
- *  - **A time window the grammar has no state for** — `duty_hours_pct` (run
- *    hours over elapsed hours), `starts_per_hour`, and `availability_pct`, the
- *    N4 quantity ADR 0053's Consequences already name as open and which is also
- *    deferred on `electrical-dg-set`.
+ *  - `duty_hours_pct` (run hours over elapsed hours) — **superseded** by
+ *    `duty_hours_pct_24h = delta({run_hours_h}, 24h) / hours(24h) * 100`,
+ *    decision 8's `<quantity>_<window>` rule; the un-windowed code is never
+ *    authored. `run_hours_h` is §1's CUMULATIVE counter, so `delta` is the
+ *    interval's run hours.
+ *  - `starts_per_hour` — **authored** as `delta({start_count}, 1h)` over the
+ *    cumulative counter `short_cycling` binds; `start_count` is tier X, so an
+ *    asset without it refuses `missing_input`, visibly. A count carries the
+ *    empty-string unit (Q8).
+ *  - `availability_pct` — **superseded** by `availability_pct_24h =
+ *    (1 - avg({pump_trip}, 24h)) * 100`: the fraction of the trailing 24 h
+ *    the set was not in its trip state. FAULT-SENSE (`1 - avg`), the DG
+ *    set's `dg_shutdown` and the escalator's `esc_fault` shape; the lift's
+ *    is service-sense over `lift_in_service`. One code, one meaning on the
+ *    four entries.
+ *
  *  - **A standard's lookup, a class NEW in this pack** — `vibration_band`. ISO
  *    20816's zones A-D are a table indexed by machine group, power and mounting;
  *    `bms-calc-v1` has arithmetic, parentheses and five functions, and no lookup
@@ -92,7 +107,7 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **NO `content.kpis`** (ADR 0053 decision 6, the same structural reason
  * `water.ts` and `mechanical.ts` record). Both expressible ratios §1 names are
- * declared codes, so both are points; the four the grammar cannot express are
+ * declared codes, so both are points; the one the grammar cannot express is
  * deferred. There is nothing left for a KPI to be — and a `content.kpis` entry
  * could not be bound by an alarm in any case.
  *
@@ -117,11 +132,13 @@ import type { StockAssetTemplateEntry } from "./types";
  * than a gap because `assertSkillAssignment` requires the map and the list to
  * partition the ten.
  *
- * **`short_cycling` BINDS THE CUMULATIVE COUNTER `start_count`.**
- * `starts_per_hour` is deferred, so the alarm binds the counter and says so in
- * its own text: the **rate** is the rule's to evaluate (`E2.4`) and the counter
- * is the parameter it evaluates over. Same precedent as `E5.1`'s
- * `throughput_anomaly`, and the reason the deferral is not a hole.
+ * **`short_cycling` BINDS THE CUMULATIVE COUNTER `start_count`.** The alarm
+ * binds the counter and says so in its own text: the **rate** is the rule's
+ * to evaluate (`E2.4`) and the counter is the parameter it evaluates over.
+ * Same precedent as `E5.1`'s `throughput_anomaly`. `E4.1c`'s
+ * `starts_per_hour` point is the same rate as a stored value — the alarm's
+ * binding does not move (a rule over the counter and a point over it are two
+ * readers of one row).
  *
  * **MAINTENANCE — 4 plans, PROVISIONAL** (plan §12 ruling 5), derived from ISO
  * 20816 / ANSI-HI 9.6.4 and OEM centrifugal-pump practice, because the tag list
@@ -146,6 +163,16 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `mechanical-pump` **v1** (2026-09-03, `E5.2`): authored from
  *    `e5.2-derived-taglist-v1.md` §1, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `mechanical-pump` **v2** (2026-09-19, `E4.1c`): three `bms-calc-v3`
+ *    derived points appended at `sortOrder` 20–22 (plan §3.7) —
+ *    `duty_hours_pct_24h`, `starts_per_hour`, `availability_pct_24h`. Four
+ *    things an importing tenant must know: (1) no row reads a `$key`, so
+ *    none waits on `/admin/calc-parameters`; (2) the rolling `24h` and `1h`
+ *    windows need no time zone; (3) every row is `scheduled` at 60 s — at
+ *    most one tick old — with `minCoverageRatio` `null`, fail closed;
+ *    (4) `start_count` is tier X, so an asset without it refuses
+ *    `starts_per_hour` as `missing_input`, visibly. Nothing on a stack is
+ *    mutated by the bump — a re-import opens the next version, still stamped.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (pump_status, pump_mode, pump_trip, current_a, discharge_pressure_bar, run_hours_h), plus one
@@ -167,9 +194,10 @@ export const MECHANICAL_PUMP: StockAssetTemplateEntry = {
     "plant's process points. Authored from docs/e5.2-derived-taglist-v1.md §1 (PROVISIONAL — " +
     "derived from published practice, not client-confirmed). Tier C points are required, X " +
     "optional, M entered by hand; alarm rows carry a meaning and no limit, because the bands are " +
-    "set per site at commissioning. Two derived points — developed head and specific energy per " +
-    "kilolitre — are computed from the measured rows and need no extra instrument.",
-  stockVersion: 1,
+    "set per site at commissioning. Five derived points — developed head, specific energy per " +
+    "kilolitre, and E4.1c's trailing-24 h duty and availability and starts per hour — are " +
+    "computed from the measured rows and need no extra instrument.",
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -558,8 +586,8 @@ export const MECHANICAL_PUMP: StockAssetTemplateEntry = {
     { ...MEASURED, pointKey: "discharge_pressure_bar", label: "Discharge pressure", unit: "bar", required: true, sortOrder: 7, meta: CORE },
     { ...MEASURED, pointKey: "flow_klh", label: "Delivered flow", unit: "KL/hr", required: false, sortOrder: 8, meta: EXTENDED },
     { ...MEASURED, pointKey: "run_hours_h", label: "Cumulative run hours", unit: "h", required: true, sortOrder: 9, meta: CORE },
-    // The counter short_cycling binds — starts_per_hour is deferred, and the
-    // rate is the rule's to evaluate over this row.
+    // The counter short_cycling binds — the rate is the rule's to evaluate over
+    // this row; E4.1c's starts_per_hour below stores the same rate as a value.
     { ...MEASURED, pointKey: "start_count", label: "Cumulative starts", unit: null, required: false, sortOrder: 10, meta: EXTENDED },
     { ...MEASURED, pointKey: "de_bearing_temp_c", label: "Drive-end bearing temperature", unit: "°C", required: false, sortOrder: 11, meta: EXTENDED },
     { ...MEASURED, pointKey: "nde_bearing_temp_c", label: "Non-drive-end bearing temperature", unit: "°C", required: false, sortOrder: 12, meta: EXTENDED },
@@ -590,6 +618,34 @@ export const MECHANICAL_PUMP: StockAssetTemplateEntry = {
       unit: "kWh/KL",
       required: false,
       sortOrder: 19,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. Three `bms-calc-v3` rows, every
+    // one scheduled at 60 s, `minCoverageRatio` null (fail closed), no `meta`.
+    // Each window read is inline (design decision 6). A count carries the
+    // empty-string unit (Q8).
+    {
+      ...derived("delta({run_hours_h}, 24h) / hours(24h) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "duty_hours_pct_24h",
+      label: "Duty, trailing 24 h",
+      unit: "%",
+      required: false,
+      sortOrder: 20,
+    },
+    {
+      ...derived("delta({start_count}, 1h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "starts_per_hour",
+      label: "Starts, trailing hour",
+      unit: "",
+      required: false,
+      sortOrder: 21,
+    },
+    {
+      ...derived("(1 - avg({pump_trip}, 24h)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "availability_pct_24h",
+      label: "Availability, trailing 24 h",
+      unit: "%",
+      required: false,
+      sortOrder: 22,
     },
   ],
 };

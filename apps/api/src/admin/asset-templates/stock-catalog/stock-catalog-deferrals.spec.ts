@@ -243,16 +243,11 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   //
   // §1 — three time windows and a standard's lookup. `specific_energy_kwh_kl`
   // is NOT here: the pump declares kw and flow_klh and authors it.
-  "mechanical-pump": [
-    // run hours over ELAPSED hours — the grammar has no state.
-    "duty_hours_pct",
-    // per-hour rate; the short_cycling alarm binds start_count and says so.
-    "starts_per_hour",
-    // hours-in-state over a window; already deferred on electrical-dg-set.
-    "availability_pct",
-    // ISO 20816 zones A-D are per machine group and mounting — a lookup table.
-    "vibration_band",
-  ],
+  // §1 — E4.1c DISCHARGED `starts_per_hour` (`delta({start_count}, 1h)`) and
+  // SUPERSEDED `duty_hours_pct` by `duty_hours_pct_24h` and `availability_pct`
+  // by `availability_pct_24h` (decision 8's <quantity>_<window> rule). What
+  // stays: ISO 20816 zones A-D are per machine group and mounting — a lookup.
+  "mechanical-pump": ["vibration_band"],
   // §2 — three asset attributes, one of them with a model behind it. The drive
   // reports frequency, current and torque; it does not report its nameplate.
   "mechanical-vfd": [

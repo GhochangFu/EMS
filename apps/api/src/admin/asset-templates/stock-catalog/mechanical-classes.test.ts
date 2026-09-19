@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runMechanicalClassEntryTests } from "./mechanical-classes.spec";
+import { e41cPumpClaims, runMechanicalClassEntryTests } from "./mechanical-classes.spec";
 
 /**
  * Vitest entry point for `mechanical-classes.spec.ts` — assertions live in the
@@ -16,4 +16,9 @@ describe("stock asset-template catalog — the mechanical classes (E5.2, §§1 a
   it("ships the pump set and the VFD exactly as their tag-list sections describe them", () => {
     runMechanicalClassEntryTests();
   });
+
+  // E4.1c — the pump's three v3 rows, one it() per claim.
+  for (const [name, run] of e41cPumpClaims()) {
+    it(name, run);
+  }
 });

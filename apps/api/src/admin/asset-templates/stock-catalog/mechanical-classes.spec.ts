@@ -11,10 +11,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 
 /**
@@ -57,7 +59,8 @@ const PUMP_CODE = "mechanical-pump";
 
 /**
  * §1's 18 table rows in the document's own order (`sortOrder` 0-17), then the
- * two authored derived codes at 18-19 — `[pointKey, tier, unit]`.
+ * two authored derived codes at 18-19, then `E4.1c`'s three `bms-calc-v3`
+ * rows at 20-22 — `[pointKey, tier, unit]`.
  *
  * **Seven of the eighteen are reused codes** — `current_a`, `kw`, `kwh_total`,
  * `run_hours_h`, `start_count`, `winding_temp_c` and
@@ -96,10 +99,15 @@ const PUMP_POINTS: readonly PointRow[] = [
   ["insulation_resistance_mohm", "manual", "MΩ"],
   ["head_m", "derived", "m"],
   ["specific_energy_kwh_kl", "derived", "kWh/KL"],
+  // E4.1c: three v3 rows (plan §3.7); a count carries "" (Q8)
+  ["duty_hours_pct_24h", "derived", "%"],
+  ["starts_per_hour", "derived", ""],
+  ["availability_pct_24h", "derived", "%"],
 ];
 
 /**
- * §1's two expressible derived codes, as literal strings (plan §5.0).
+ * §1's two expressible derived codes, as literal strings (plan §5.0), then
+ * `E4.1c`'s three `bms-calc-v3` rows (plan §3.7) at the default input age.
  *
  * `10.2` is the document's own metres-of-water-per-bar constant, not the plan's,
  * and it is not a limit — B7 governs alarm thresholds, not physics. Both
@@ -115,6 +123,9 @@ const PUMP_POINTS: readonly PointRow[] = [
 const PUMP_DERIVED: readonly DerivedRow[] = [
   ["head_m", "({discharge_pressure_bar} - {suction_pressure_bar}) * 10.2", null],
   ["specific_energy_kwh_kl", "{kw} / {flow_klh}", null],
+  ["duty_hours_pct_24h", "delta({run_hours_h}, 24h) / hours(24h) * 100", null],
+  ["starts_per_hour", "delta({start_count}, 1h)", null],
+  ["availability_pct_24h", "(1 - avg({pump_trip}, 24h)) * 100", null],
 ];
 
 /**
@@ -187,16 +198,17 @@ function assertSpecificEnergyIsOneCodeThreeEntries(entry = requireStockEntry(PUM
  */
 function checkPump(): void {
   const entry = requireStockEntry(PUMP_CODE);
-  assertEntryIdentity(PUMP_CODE, entry, "pump", "mechanical");
+  assertEntryIdentity(PUMP_CODE, entry, "pump", "mechanical", 2);
 
-  // ---- 20 points, 6 core + 11 extended + 1 manual + 2 derived -------------
+  // ---- 23 points, 6 core + 11 extended + 1 manual + 5 derived (3 E4.1c) ----
 
   assert(
     tierCount(entry, "core") === 6 &&
       tierCount(entry, "extended") === 11 &&
       tierCount(entry, "manual") === 1 &&
-      tierCount(entry, "derived") === 2,
-    `§1 marks 6 rows C, 11 X and 1 M, and two of its six derived codes are authored — 6/11/1/2. ` +
+      tierCount(entry, "derived") === 5,
+    `§1 marks 6 rows C, 11 X and 1 M; two of its six derived codes are authored plus E4.1c's ` +
+      `three v3 rows — 6/11/1/5. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
@@ -491,4 +503,25 @@ function checkVfd(): void {
 export function runMechanicalClassEntryTests(): void {
   checkPump();
   checkVfd();
+}
+
+// ---- E4.1c — the bms-calc-v3 pump rows (ADR 0070 decision 8) -------------
+//
+// Pinned through `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// `duty_hours_pct_24h` and `availability_pct_24h` SUPERSEDE the un-windowed
+// `duty_hours_pct` / `availability_pct` (decision 8's <quantity>_<window>
+// rule); `starts_per_hour` is the ledger record discharged under its own
+// name. `availability_pct_24h` is fault-sense here (`1 - avg({pump_trip})`),
+// the DG set's and the escalator's shape; `run_hours_h` and `start_count`
+// are the two CUMULATIVE counters (§1's labels), so `delta` is the interval.
+
+/** mechanical-pump — plan §3.7, sortOrder 20–22. */
+const PUMP_E41C: readonly SustainabilityRow[] = [
+  ["duty_hours_pct_24h", "delta({run_hours_h}, 24h) / hours(24h) * 100", "%"],
+  ["starts_per_hour", "delta({start_count}, 1h)", ""],
+  ["availability_pct_24h", "(1 - avg({pump_trip}, 24h)) * 100", "%"],
+];
+
+export function e41cPumpClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return sustainabilityClaims(PUMP_CODE, requireStockEntry(PUMP_CODE), PUMP_E41C, 20, 2);
 }
