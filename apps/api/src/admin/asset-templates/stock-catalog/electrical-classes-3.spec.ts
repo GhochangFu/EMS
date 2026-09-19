@@ -352,10 +352,24 @@ const DG_SET_E41C: readonly SustainabilityRow[] = [
   ["starts_per_day", "delta({start_count}, 24h)", ""],
 ];
 
+/**
+ * Solar PV — `performance_ratio_pct`'s denominator is `kWp × kWh/m²`: `sum` of
+ * `W/m²` over hours `/ 1000` is `kWh/m²` (plan §3.7). `capacity_utilization_pct`
+ * is instantaneous and keeps the ADR's name; `specific_yield_kwh_kwp_day` is a
+ * rolling `24h` (Q10); `co2_avoided_kg_today` supersedes `co2_avoided_kg`.
+ */
+const SOLAR_PV_E41C: readonly SustainabilityRow[] = [
+  ["co2_avoided_kg_today", "delta({energy_total_kwh}, today) * $grid_carbon_factor_kgco2_per_kwh", "kg"],
+  ["performance_ratio_pct", "delta({energy_total_kwh}, today) / ($installed_kwp * sum({irradiance_wm2}, today) / 1000) * 100", "%"],
+  ["specific_yield_kwh_kwp_day", "delta({energy_total_kwh}, 24h) / $installed_kwp", "kWh/kWp/day"],
+  ["capacity_utilization_pct", "{ac_power_kw} / $installed_kwp * 100", "%"],
+];
+
 /** Every E4.1c class beside the feeder: `[code, rows, firstSortOrder, expectedVersion]`. */
 export const E41C_ELECTRICAL_CLASSES: ReadonlyArray<readonly [string, readonly SustainabilityRow[], number, number]> = [
   ["electrical-transformer", TRANSFORMER_E41C, 30, 2],
   ["electrical-dg-set", DG_SET_E41C, 38, 2],
+  ["electrical-solar-pv", SOLAR_PV_E41C, 26, 2],
 ];
 
 export function e41cElectricalClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {

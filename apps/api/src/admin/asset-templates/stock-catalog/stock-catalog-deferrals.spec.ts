@@ -199,17 +199,13 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     "battery_age_months",
     "charge_cycle_count",
   ],
-  // §5 — the point of connection is another asset's §1 meter; the rest need
-  // installed kWp, the whole string set, the site load or an emission factor.
-  "electrical-solar-pv": [
-    "grid_export_kw",
-    "performance_ratio_pct",
-    "specific_yield_kwh_kwp_day",
-    "capacity_utilization_pct",
-    "string_current_deviation_pct",
-    "self_consumption_pct",
-    "co2_avoided_kg",
-  ],
+  // §5 — E4.1c DISCHARGED the three kWp codes (`performance_ratio_pct`,
+  // `specific_yield_kwh_kwp_day`, `capacity_utilization_pct` over
+  // $installed_kwp) and SUPERSEDED `co2_avoided_kg` by `co2_avoided_kg_today`
+  // (decision 8's <quantity>_<window> rule). What stays: the point of
+  // connection is another asset's §1 meter; a deviation needs the whole
+  // string set where §5 declares one key; self-consumption needs the site load.
+  "electrical-solar-pv": ["grid_export_kw", "string_current_deviation_pct", "self_consumption_pct"],
   // §6 — rated kVAr per step, a time window, `tan`/`acos`, and the tariff band.
   "electrical-apfc": ["pf_correction_kvar", "steps_per_day", "capacitor_health_pct", "pf_penalty_hours"],
   // The water pack — E5.1, docs/e5.1-derived-taglist-v1.md. Fifteen records

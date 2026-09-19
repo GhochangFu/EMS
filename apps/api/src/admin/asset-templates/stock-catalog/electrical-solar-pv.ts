@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -68,18 +68,30 @@ import type { StockAssetTemplateEntry } from "./types";
  * **THE DEFERRED DERIVED CODES**, each with the reason it is named rather than
  * placeholdered (ADR 0051 Amendment 6 decision 8: a code with no formula is not
  * vocabulary). §5 names seven prose codes plus the in-table `grid_export_kw`;
- * one is authored below and seven are deferred:
+ * one is authored below, **four more since `E4.1c`** (`bms-calc-v3`, ADR 0070
+ * decision 8 — see VERSION HISTORY v2), and three are deferred:
  *
  *  - `grid_export_kw` — another asset's §1 meter (above).
- *  - `performance_ratio_pct` = yield ÷ (irradiance × capacity) — the installed
- *    **kWp** is an asset attribute.
- *  - `specific_yield_kwh_kwp_day` — kWp again, and a daily window.
- *  - `capacity_utilization_pct` — kWp again.
+ *  - `performance_ratio_pct` = yield ÷ (irradiance × capacity) — needed the
+ *    installed **kWp**. **Authored by `E4.1c`** over `$installed_kwp` and
+ *    `sum({irradiance_wm2}, today)` (`W/m²` summed over hours `/ 1000` is
+ *    `kWh/m²`); `irradiance_wm2` is tier X, so an asset without it refuses
+ *    `missing_input`.
+ *  - `specific_yield_kwh_kwp_day` — **authored by `E4.1c`** as
+ *    `delta({energy_total_kwh}, 24h) / $installed_kwp`, a rolling 24 h under
+ *    the ADR's name (Q10).
+ *  - `capacity_utilization_pct` — **authored by `E4.1c`** as
+ *    `{ac_power_kw} / $installed_kwp * 100`; instantaneous, so the code
+ *    carries no window word.
  *  - `string_current_deviation_pct` — needs the **whole set** of string
  *    currents, where §5 declares one `string_current_a` key. A deviation over
  *    one value is not a deviation.
  *  - `self_consumption_pct` — the site load, on other assets.
- *  - `co2_avoided_kg` — `E4.2`'s figure, and it needs a grid emission factor.
+ *  - `co2_avoided_kg` — **superseded** by `co2_avoided_kg_today =
+ *    delta({energy_total_kwh}, today) * $grid_carbon_factor_kgco2_per_kwh`
+ *    (`E4.1c`, decision 8's `<quantity>_<window>` rule); the un-windowed code
+ *    is never authored. `energy_today_kwh` stays MEASURED (the `kwh_today`
+ *    ruling, Q3): the today rows read `delta({energy_total_kwh}, today)`.
  *
  * **THE ONE AUTHORED FORMULA.** `inverter_efficiency_pct` =
  * `{ac_power_kw} / {dc_power_kw} * 100`, `streaming`, default input age (the
@@ -144,9 +156,22 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  *  - `electrical-solar-pv` **v1** (2026-09-02, `F2.12`): authored from
  *    `electrical-derived-taglist-v1.md` §5, PROVISIONAL — derived, not
- *    client-confirmed. The client-confirmed release is v2; a redline candidate
- *    is per-string metering, which would make `string_current_deviation_pct`
- *    expressible and give the deferred alarm bullet a parameter.
+ *    client-confirmed. A redline candidate is per-string metering, which
+ *    would make `string_current_deviation_pct` expressible and give the
+ *    deferred alarm bullet a parameter; it lands as a later version.
+ *  - `electrical-solar-pv` **v2** (2026-09-19, `E4.1c`): four `bms-calc-v3`
+ *    derived points appended at `sortOrder` 26–29 (plan §3.7) —
+ *    `co2_avoided_kg_today`, `performance_ratio_pct`,
+ *    `specific_yield_kwh_kwp_day`, `capacity_utilization_pct`. Four things an
+ *    importing tenant must know: (1) a `$key` with no value (`installed_kwp`,
+ *    `grid_carbon_factor_kgco2_per_kwh`) is a counted `parameter_unset` until
+ *    entered on `/admin/calc-parameters`, nearest scope wins; (2) a `today`
+ *    window needs the location's time zone (`locations.timezone`) —
+ *    `timezone_unset` otherwise — and at night `sum({irradiance_wm2}, today)`
+ *    is `0` until sunrise, so `performance_ratio_pct` refuses `non_finite`,
+ *    counted; (3) every row is `scheduled` at 60 s, at most one tick old,
+ *    `minCoverageRatio` `null`; (4) `irradiance_wm2` is tier X — absent, the
+ *    ratio refuses `missing_input`.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (inv_status, inv_fault, ac_power_kw, dc_power_kw, energy_today_kwh, energy_total_kwh, ac_frequency_hz, dc_voltage_v), plus one
@@ -168,7 +193,7 @@ export const ELECTRICAL_SOLAR_PV: StockAssetTemplateEntry = {
     "client-confirmed). Net export at the point of connection is a §1 meter on another asset and " +
     "is not declared here. Tier C points are required, X optional, M entered by hand; alarm rows " +
     "carry a meaning and no limit.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -443,6 +468,41 @@ export const ELECTRICAL_SOLAR_PV: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 25,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. Four `bms-calc-v3` rows, each
+    // scheduled at 60 s, `minCoverageRatio` null (fail closed), no `meta`;
+    // every window read inline (design decision 6).
+    {
+      ...derived("delta({energy_total_kwh}, today) * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "co2_avoided_kg_today",
+      label: "CO₂ avoided today",
+      unit: "kg",
+      required: false,
+      sortOrder: 26,
+    },
+    {
+      ...derived("delta({energy_total_kwh}, today) / ($installed_kwp * sum({irradiance_wm2}, today) / 1000) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "performance_ratio_pct",
+      label: "Performance ratio, today",
+      unit: "%",
+      required: false,
+      sortOrder: 27,
+    },
+    {
+      ...derived("delta({energy_total_kwh}, 24h) / $installed_kwp", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "specific_yield_kwh_kwp_day",
+      label: "Specific yield, trailing 24 h",
+      unit: "kWh/kWp/day",
+      required: false,
+      sortOrder: 28,
+    },
+    {
+      ...derived("{ac_power_kw} / $installed_kwp * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "capacity_utilization_pct",
+      label: "Capacity utilization vs installed kWp",
+      unit: "%",
+      required: false,
+      sortOrder: 29,
     },
   ],
 };
