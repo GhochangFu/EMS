@@ -226,7 +226,8 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // DISCHARGED `steps_per_day` (`delta({step_operation_count}, 24h)`).
   "electrical-apfc": ["pf_correction_kvar", "capacitor_health_pct", "pf_penalty_hours"],
   // The water pack — E5.1, docs/e5.1-derived-taglist-v1.md. Fifteen records
-  // over fourteen codes; the seven the pack DOES author are in water.ts.
+  // over fourteen codes; the twenty-six the pack DOES author (eight before
+  // E4.1c, eighteen from it) are in the six water-*.ts class modules.
   //
   // §5 — a reuse meter §5 does not list; INFLUENT BOD and the aeration tank
   // volume; blower kWh where §5 declares motor current; the design capacity.
