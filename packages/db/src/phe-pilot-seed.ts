@@ -187,6 +187,11 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       capital: null,
       latitude: Number(head.Latitude),
       longitude: Number(head.Longitude),
+      // E4.1b (ADR 0070 decision 6, plan Q12 ruling): the PHE pilot site is in India.
+      // Seed-owned like `latitude` (ruled 2026-09-19 at the PR 1 review): the
+      // zone is a fact of the site, so a re-seed re-asserts it — unlike
+      // `ingest_enabled` (F1.7), which an operator owns.
+      timezone: "Asia/Kolkata",
       active: true,
       meta: {
         phe: {

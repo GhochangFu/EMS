@@ -13,10 +13,14 @@ export const createLocationBodySchema = z
       .regex(/^[a-z0-9-]+$/),
     name: z.string().min(2).max(255),
     type: locationTypeSchema,
-    province: z.string().max(64).optional(),
-    capital: z.string().max(128).optional(),
+    // E4.1b review C1: the form sends null for an empty field; null clears, absent leaves it.
+    province: z.string().max(64).nullable().optional(),
+    capital: z.string().max(128).nullable().optional(),
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
+    // E4.1b (ADR 0070 decision 6): an IANA zone name, validated against
+    // pg_timezone_names by the service; `null` clears, absent leaves it.
+    timezone: z.string().max(64).nullable().optional(),
     meta: z.record(z.unknown()).optional(),
   })
   .strict();

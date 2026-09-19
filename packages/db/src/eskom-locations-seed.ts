@@ -122,6 +122,11 @@ export async function seedEskomLocations(
       capital,
       latitude: row.latitude,
       longitude: row.longitude,
+      // E4.1b (ADR 0070 decision 6): the Eskom demo estate keeps SAST.
+      // Seed-owned like `latitude` (ruled 2026-09-19 at the PR 1 review): the
+      // zone is a fact of the site, so a re-seed re-asserts it — unlike
+      // `ingest_enabled` (F1.7), which an operator owns.
+      timezone: "Africa/Johannesburg",
       active: true,
       meta: row.meta,
       updatedAt: new Date(),

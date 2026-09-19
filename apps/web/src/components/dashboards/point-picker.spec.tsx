@@ -90,6 +90,7 @@ const LOCATION = {
   type: "smoc_campus" as const,
   province: null,
   capital: null,
+  timezone: null,
   latitude: 0,
   longitude: 0,
   active: true,

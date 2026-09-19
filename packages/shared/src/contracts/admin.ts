@@ -38,6 +38,7 @@ export const adminLocationDtoSchema = z.object({
   type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
   province: z.string().nullable(),
   capital: z.string().nullable(),
+  timezone: z.string().nullable(),
   latitude: z.number(),
   longitude: z.number(),
   active: z.boolean(),
