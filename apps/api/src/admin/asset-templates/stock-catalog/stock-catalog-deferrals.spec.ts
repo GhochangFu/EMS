@@ -127,6 +127,12 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * declares a deferred code" check would therefore fail on a correct entry.
  * Each list is checked against its own entry and no other.
  *
+ * **The totals in this paragraph are pre-`E4.1c`.** `E4.1c` PR 2a (ADR 0070
+ * decision 8) discharged or superseded nine electrical records — each move is
+ * marked in place on its entry's list below with the successor named — and
+ * PR 2b moves the mechanical, facility and vertical-transport ones; the
+ * totals here are re-reconciled once, in PR 2b (plan §3.9).
+ *
  * **106 records across 97 distinct codes** since `E5.3` Task 11. The five parts
  * are 32 records over 30 codes (electrical — `load_pct` three times), 15 over 14
  * (water — `hydraulic_load_pct` on the STP and the ETP), 17 over 17
@@ -161,10 +167,13 @@ export type StockEntryCode = (typeof STOCK_ENTRY_CODES)[number];
  * things, and neither is derivable from the other.
  */
 export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly string[]>> = {
-  // §1 — rating, contract demand, tariff band, production/KL, Σ of feeders.
+  // §1 — rating, tariff band, production/KL, Σ of feeders.
+  // `demand_vs_contract_pct` LEFT this list with `E4.1c` (ADR 0070 decision
+  // 8): `bms-calc-v3`'s `$contract_demand_kva` is the attribute it needed, and
+  // `electrical-feeder.ts` authors it at `sortOrder` 41. The docblock counts
+  // above are reconciled once, in PR 2b (plan §3.9, U16).
   "electrical-feeder": [
     "load_pct",
-    "demand_vs_contract_pct",
     "pf_penalty_flag",
     "kwh_per_unit_output",
     "specific_energy_kwh_kl",
@@ -172,23 +181,23 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   ],
   // §2 — another asset's LV meter, the rating, and three models the grammar
   // has no functions for (IEC 60076-7, C57.91 ageing, a Duval-triangle lookup).
+  // `tap_changes_per_day` LEFT with E4.1c: `delta({oltc_operation_count}, 24h)`
+  // is the window it needed (ADR 0070 decision 5); electrical-transformer.ts
+  // authors it at sortOrder 30. Docblock counts above wait for PR 2b (U16).
   "electrical-transformer": [
     "lv_load_pct",
     "load_pct",
     "hot_spot_estimate_c",
     "loss_of_life_pct_day",
     "duval_triangle_zone",
-    "tap_changes_per_day",
   ],
-  // §3 — the rating, the tank capacity (`fuel_level_pct` is a percentage), and
-  // three that need a time window the grammar has no state for.
-  "electrical-dg-set": [
-    "load_pct",
-    "fuel_hours_remaining_h",
-    "starts_per_day",
-    "availability_pct",
-    "underload_hours",
-  ],
+  // §3 — E4.1c DISCHARGED `load_pct` ($rated_kw), `fuel_hours_remaining_h`
+  // ($tank_capacity_l) and `starts_per_day` (a 24h delta), and SUPERSEDED
+  // `availability_pct` by `availability_pct_24h` (decision 8's
+  // <quantity>_<window> rule — the un-windowed code is never authored). What
+  // stays is hours *while* below a fraction of rating: a condition inside a
+  // window, which ruling 4's one-point-reference window cannot express.
+  "electrical-dg-set": ["underload_hours"],
   // §4 — the site minimum, an attribute, and two per-window counts.
   "electrical-ups": [
     "runtime_margin_min",
@@ -196,19 +205,16 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     "battery_age_months",
     "charge_cycle_count",
   ],
-  // §5 — the point of connection is another asset's §1 meter; the rest need
-  // installed kWp, the whole string set, the site load or an emission factor.
-  "electrical-solar-pv": [
-    "grid_export_kw",
-    "performance_ratio_pct",
-    "specific_yield_kwh_kwp_day",
-    "capacity_utilization_pct",
-    "string_current_deviation_pct",
-    "self_consumption_pct",
-    "co2_avoided_kg",
-  ],
-  // §6 — rated kVAr per step, a time window, `tan`/`acos`, and the tariff band.
-  "electrical-apfc": ["pf_correction_kvar", "steps_per_day", "capacitor_health_pct", "pf_penalty_hours"],
+  // §5 — E4.1c DISCHARGED the three kWp codes (`performance_ratio_pct`,
+  // `specific_yield_kwh_kwp_day`, `capacity_utilization_pct` over
+  // $installed_kwp) and SUPERSEDED `co2_avoided_kg` by `co2_avoided_kg_today`
+  // (decision 8's <quantity>_<window> rule). What stays: the point of
+  // connection is another asset's §1 meter; a deviation needs the whole
+  // string set where §5 declares one key; self-consumption needs the site load.
+  "electrical-solar-pv": ["grid_export_kw", "string_current_deviation_pct", "self_consumption_pct"],
+  // §6 — rated kVAr per step, `tan`/`acos`, and the tariff band. E4.1c
+  // DISCHARGED `steps_per_day` (`delta({step_operation_count}, 24h)`).
+  "electrical-apfc": ["pf_correction_kvar", "capacitor_health_pct", "pf_penalty_hours"],
   // The water pack — E5.1, docs/e5.1-derived-taglist-v1.md. Fifteen records
   // over fourteen codes; the seven the pack DOES author are in water.ts.
   //
@@ -638,20 +644,24 @@ export function runStockCatalogDeferralTests(): void {
     }
   }
 
-  // ---- the feeder's own guard: exactly F2.8's three, and no kpis ----------
+  // ---- the feeder's own guard: F2.8's three, E4.1c's six, and no kpis -----
   //
-  // The negative half — that it declares none of its six deferred codes — is the
-  // per-entry loop's above, run over `DEFERRED_DERIVED_CODES[FEEDER_CODE]` like
-  // every other entry's. This is the positive half, which only this entry has:
-  // the three `F2.8` authored and nothing else.
+  // The negative half — that it declares none of its five deferred codes — is
+  // the per-entry loop's above, run over `DEFERRED_DERIVED_CODES[FEEDER_CODE]`
+  // like every other entry's. This is the positive half, which only this entry
+  // has: the three `F2.8` authored, then the six `E4.1c` authored (ADR 0070
+  // decision 8, plan §3.7), in `sortOrder` order, and nothing else.
   const feeder = requireStockEntry(FEEDER_CODE);
   const derived = feeder.points.filter((point) => point.kind === "derived").map((point) => point.pointKey);
+  const FEEDER_AUTHORED =
+    "site_kw,it_kw,pue," +
+    "energy_cost_per_h,co2_kg_per_h,energy_cost_today,co2_kg_today,energy_saving_vs_baseline_pct,demand_vs_contract_pct";
   assert(
-    derived.join(",") === "site_kw,it_kw,pue",
-    `${FEEDER_CODE} must author exactly F2.8's site_kw, it_kw and pue, in that order — got ` +
-      `${derived.join(", ") || "(none)"}. Those three are ruling 1 of F2.8's gate and the only ` +
-      `derived points this entry may carry; anything else is a deferred code or an unruled one. ` +
-      `${deferralReason(FEEDER_CODE)}`,
+    derived.join(",") === FEEDER_AUTHORED,
+    `${FEEDER_CODE} must author exactly F2.8's site_kw, it_kw and pue, then E4.1c's six, in that order — got ` +
+      `${derived.join(", ") || "(none)"}. The first three are ruling 1 of F2.8's gate; the six are ADR 0070 ` +
+      `decision 8's (one of them, demand_vs_contract_pct, a promotion out of this ledger); anything else ` +
+      `is a deferred code or an unruled one. ${deferralReason(FEEDER_CODE)}`,
   );
   assert(
     !Object.hasOwn(feeder.content ?? {}, "kpis"),

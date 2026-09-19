@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -10,8 +10,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * generator with AMF/controller"*, whose points *"mirror the DSE / ComAp /
  * PowerCommand register groups; every DG controller in the Indian market
  * exposes this set"*. All 36 of §3's table rows are declared, **in the
- * document's own order**, then the two derived codes — **38 points: 21 core +
- * 15 extended + 0 manual + 2 derived**, 13 alarms, 1 KPI, 5 maintenance plans.
+ * document's own order**, then the two `F2.12` derived codes (36–37) and
+ * `E4.1c`'s five (38–42) — **43 points: 21 core + 15 extended + 0 manual +
+ * 7 derived**, 13 alarms, 1 KPI, 5 maintenance plans.
  *
  * **§3's TABLE INTERLEAVES THE TIERS, and the order here is the table's.**
  * `dg_alarm_code` (X) is row 6, ahead of `mains_available` (C); `oil_temp_c`
@@ -68,19 +69,31 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **THE DEFERRED DERIVED CODES**, each with the reason it is named rather than
  * placeholdered (ADR 0051 Amendment 6 decision 8: a code with no formula is not
- * vocabulary). §3 names seven; two are authored below and five are deferred:
+ * vocabulary). §3 names seven; two are authored below, **four more since
+ * `E4.1c`** (`bms-calc-v3`, ADR 0070 decision 8 — see VERSION HISTORY v2),
+ * and one is deferred:
  *
- *  - `load_pct` = kW ÷ rating — the rating is an asset attribute, and
- *    `bms-calc-v1` has no way to read one. Deferred on the feeder and the
- *    transformer for the same reason; **a measured core point on the UPS**,
- *    which reports it directly, which is why the deferral ledger is per entry.
+ *  - `load_pct` = kW ÷ rating — needed the rating, an asset attribute.
+ *    **Authored by `E4.1c`** as `{gen_kw} / $rated_kw * 100`; the code is
+ *    already vocabulary (**a measured core point on the UPS**, which reports
+ *    it directly) — one code, one meaning.
  *  - `fuel_hours_remaining_h` — the tag list writes it *"level ÷ rate"*, but
- *    `fuel_level_pct` is a **percentage**. Turning it into litres needs the day
- *    tank's capacity, an asset attribute.
- *  - `starts_per_day` — a time window the grammar has no state for.
- *  - `availability_pct` — the same, over a longer window.
+ *    `fuel_level_pct` is a **percentage**; litres need the day tank's capacity.
+ *    **Authored by `E4.1c`** over `$tank_capacity_l` (an asset-scope row) and
+ *    `{fuel_rate_lph}` (tier X); a stopped engine's rate `0` refuses
+ *    `non_finite`, counted, never a fabricated denominator.
+ *  - `starts_per_day` — needed a time window. **Authored by `E4.1c`** as
+ *    `delta({start_count}, 24h)` — a rolling 24 h under the ADR's name (Q10).
+ *  - `availability_pct` — **superseded** by `availability_pct_24h =
+ *    (1 - avg({dg_shutdown}, 24h)) * 100`, decision 8's `<quantity>_<window>`
+ *    rule: the fraction of the trailing 24 h the set was not in its shutdown
+ *    state (Q11: `dg_shutdown`, the fault-sense 0/1, not `dg_status`). Its
+ *    twin `downtime_h_24h = sum({dg_shutdown}, 24h)` is the same window in
+ *    hours. The un-windowed code is never authored.
  *  - `underload_hours` — hours-in-state, which is a time window *and* a
- *    threshold. The annual load-bank plan below is the practice that covers it.
+ *    threshold: a condition inside a window, which a `v3` window (one point
+ *    reference, ruling 4) cannot express. Still deferred. The annual
+ *    load-bank plan below is the practice that covers it.
  *
  * **THE TWO AUTHORED FORMULAS, and the reasoning each one must carry.**
  *
@@ -145,7 +158,19 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  *  - `electrical-dg-set` **v1** (2026-09-02, `F2.12`): authored from
  *    `electrical-derived-taglist-v1.md` §3, PROVISIONAL — derived, not
- *    client-confirmed. The client-confirmed release is v2.
+ *    client-confirmed. The client-confirmed redline lands as a later version.
+ *  - `electrical-dg-set` **v2** (2026-09-19, `E4.1c`): five `bms-calc-v3`
+ *    derived points appended at `sortOrder` 38–42 (plan §3.7) — `load_pct`,
+ *    `fuel_hours_remaining_h`, `downtime_h_24h`, `availability_pct_24h`,
+ *    `starts_per_day`. Four things an importing tenant must know: (1) a
+ *    `$key` with no value (`rated_kw`, `tank_capacity_l` — the day tank's,
+ *    an asset-scope row) is a counted `parameter_unset` until entered on
+ *    `/admin/calc-parameters`, nearest scope wins; (2) the rolling `24h`
+ *    windows need no time zone; (3) every row is `scheduled` at 60 s —
+ *    at most one tick old — with `minCoverageRatio` `null`, fail closed;
+ *    (4) `fuel_rate_lph` and `start_count` are tier X, so an asset without
+ *    them refuses `fuel_hours_remaining_h` / `starts_per_day` as
+ *    `missing_input`, visibly.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (dg_status, dg_on_load, dg_alarm, dg_shutdown, gen_kw, fuel_level_pct, coolant_temp_c, oil_pressure_bar), plus one
@@ -167,7 +192,7 @@ export const ELECTRICAL_DG_SET: StockAssetTemplateEntry = {
     "this class carries its own generator metering rows (gen_*), so a DG asset sees its own " +
     "output without a companion feeder/incomer template. Tier C points are required and X " +
     "optional; §3 has no manual rows. Alarm rows carry a meaning and no limit.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -511,6 +536,50 @@ export const ELECTRICAL_DG_SET: StockAssetTemplateEntry = {
       unit: null,
       required: false,
       sortOrder: 37,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. Five `bms-calc-v3` rows, every
+    // one scheduled at 60 s, `minCoverageRatio` null (fail closed), no `meta`.
+    // The windowed pair read `dg_shutdown` inline (design decision 6). A count
+    // per day carries the empty-string unit (Q8).
+    {
+      ...derived("{gen_kw} / $rated_kw * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "load_pct",
+      label: "Load vs rated kW",
+      unit: "%",
+      required: false,
+      sortOrder: 38,
+    },
+    {
+      ...derived("{fuel_level_pct} / 100 * $tank_capacity_l / {fuel_rate_lph}", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "fuel_hours_remaining_h",
+      label: "Fuel hours remaining at present rate",
+      unit: "h",
+      required: false,
+      sortOrder: 39,
+    },
+    {
+      ...derived("sum({dg_shutdown}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "downtime_h_24h",
+      label: "Hours in shutdown, trailing 24 h",
+      unit: "h",
+      required: false,
+      sortOrder: 40,
+    },
+    {
+      ...derived("(1 - avg({dg_shutdown}, 24h)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "availability_pct_24h",
+      label: "Availability, trailing 24 h",
+      unit: "%",
+      required: false,
+      sortOrder: 41,
+    },
+    {
+      ...derived("delta({start_count}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "starts_per_day",
+      label: "Engine starts, trailing 24 h",
+      unit: "",
+      required: false,
+      sortOrder: 42,
     },
   ],
 };

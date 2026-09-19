@@ -89,6 +89,9 @@ const STOCK_LABEL = STOCK_RELS.join(" + ");
 const POINT_KEY_SOURCE_RELS = [
   "packages/shared/src/constants.ts",
   "packages/shared/src/facility-point-keys.ts",
+  // E4.1c (ADR 0070 decision 8): the third file — constants.ts is at 974
+  // lines against the §4.5 cap, the facility-point-keys.ts precedent.
+  "packages/shared/src/sustainability-point-keys.ts",
 ] as const;
 
 /**
@@ -102,6 +105,10 @@ const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   // 206 since E5.3 PR 2: 104 (FACILITY_CLASS_POINT_KEYS + ENVIRONMENT_CLASS_POINT_KEYS) +
   // VERTICAL_TRANSPORT_CLASS_POINT_KEYS's 102.
   "packages/shared/src/facility-point-keys.ts": 206,
+  // 19 since E4.1c PR 2a: SUSTAINABILITY_ELECTRICAL_POINT_KEYS's 16 +
+  // SUSTAINABILITY_WATER_POINT_KEYS's 3 (29 once PR 2b appends the mechanical,
+  // HVAC and facility arrays).
+  "packages/shared/src/sustainability-point-keys.ts": 19,
 };
 
 /** The sources as one list, for an assertion message. */

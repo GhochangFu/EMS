@@ -111,12 +111,19 @@ const DERIVED_RE = /derived\(\s*"((?:[^"\\]|\\.)*)"\s*(?:,\s*(\{[^{}]*\}))?/g;
  * `{kw} * 2` literals parse under both dialects there like any other.
  */
 const V2_OPTION_RE = /formulaDialect:\s*CALC_DIALECT_V2/;
+/**
+ * `E4.1c`: a `bms-calc-v3` stock literal (ADR 0070 decision 8) is neither
+ * part (b)'s `v1` claim nor part (f)'s `v2` claim — a `$key` or a window is
+ * `v3` syntax and parses under neither — so it is EXCLUDED from both sets
+ * here. `tests/adr-0070-calc-v3-invariants.test.ts` parts (a)/(a′) hold it.
+ */
+const V3_OPTION_RE = /formulaDialect:\s*CALC_DIALECT_V3/;
 /** `expression:\s*"…"` — deliberately requires the quote, so a type
  * annotation like `expression: string;` never matches. A KPI literal takes no
  * option object and so can never be `v2`. */
 const EXPRESSION_RE = /expression:\s*"((?:[^"\\]|\\.)*)"/g;
 
-type ScannedLiteral = { literal: string; options: string | null; v2: boolean };
+type ScannedLiteral = { literal: string; options: string | null; v2: boolean; v3: boolean };
 
 function extractLiterals(source: string): ScannedLiteral[] {
   const out: ScannedLiteral[] = [];
@@ -129,12 +136,17 @@ function extractLiterals(source: string): ScannedLiteral[] {
   // eslint-disable-next-line no-cond-assign
   while ((match = DERIVED_RE.exec(source))) {
     const options = match[2] ?? null;
-    out.push({ literal: decode(match[1]), options, v2: options !== null && V2_OPTION_RE.test(options) });
+    out.push({
+      literal: decode(match[1]),
+      options,
+      v2: options !== null && V2_OPTION_RE.test(options),
+      v3: options !== null && V3_OPTION_RE.test(options),
+    });
   }
   EXPRESSION_RE.lastIndex = 0;
   // eslint-disable-next-line no-cond-assign
   while ((match = EXPRESSION_RE.exec(source))) {
-    out.push({ literal: decode(match[1]), options: null, v2: false });
+    out.push({ literal: decode(match[1]), options: null, v2: false, v3: false });
   }
   return out;
 }
@@ -144,11 +156,15 @@ const scannedByFile = stockCatalogFiles.map((file) => ({
   scanned: extractLiterals(readFileSync(file, "utf8")),
 }));
 
-/** Part (b)'s set — every literal NOT authored `bms-calc-v2`. */
+/** Part (b)'s set — every literal NOT authored `bms-calc-v2` or `bms-calc-v3`. */
 const literalsByFile = scannedByFile.map(({ file, scanned }) => ({
   file,
-  literals: scanned.filter((entry) => !entry.v2).map((entry) => entry.literal),
+  literals: scanned.filter((entry) => !entry.v2 && !entry.v3).map((entry) => entry.literal),
 }));
+
+/** `E4.1c`: the `v3` literals this file deliberately holds to nothing — counted,
+ * so the exclusion is visible rather than silent (35 after PR 2a). */
+const v3Excluded = scannedByFile.flatMap(({ scanned }) => scanned.filter((entry) => entry.v3));
 
 const allLiterals = literalsByFile.flatMap((entry) => entry.literals);
 
@@ -183,6 +199,16 @@ describe("ADR 0055 part (b) — every stock-catalog v1 formula literal parses id
    */
   it("found at least 30 formula literals", () => {
     expect(allLiterals.length).toBeGreaterThanOrEqual(30);
+  });
+
+  it("excluded the v3 literals (E4.1c) from both sets, and there are at least 35 of them", () => {
+    expect(v3Excluded.length).toBeGreaterThanOrEqual(35);
+    // The exclusion is real, not nominal: every v3 literal fails the v1 parser
+    // (a `$key` or a window is v3 syntax), so leaving one in part (b)'s set
+    // would have been a red, and none is in that set.
+    const inV1Set = new Set(allLiterals);
+    expect(v3Excluded.filter((entry) => inV1Set.has(entry.literal))).toEqual([]);
+    expect(v3Excluded.filter((entry) => parseFormula(entry.literal).ok).map((entry) => entry.literal)).toEqual([]);
   });
 
   it.each(literalsByFile.filter((entry) => entry.literals.length > 0))(

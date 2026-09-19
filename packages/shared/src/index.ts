@@ -57,6 +57,14 @@ export * from "./constants";
  */
 export * from "./facility-point-keys";
 
+/**
+ * `E4.1c`'s sustainability point-key arrays (ADR 0070 decision 8) — the codes
+ * of the `bms-calc-v3` derived points the stock catalog authors. A THIRD file,
+ * for the same reason as the second: `./constants` is at 974 lines against the
+ * cap. The three guards read a three-file list with a per-file floor.
+ */
+export * from "./sustainability-point-keys";
+
 /** The schemas themselves. See the note above on why they are re-exported. */
 export * from "./contracts";
 

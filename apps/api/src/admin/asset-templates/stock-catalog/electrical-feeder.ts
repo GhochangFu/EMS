@@ -1,4 +1,4 @@
-import { CALC_DIALECT_V2, DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V2, CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 
 import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
@@ -10,16 +10,18 @@ import type { StockAssetTemplateEntry } from "./types";
  * **Moved out of `electrical.ts` by `F2.12` when that file reached the §4.5
  * cap. Text only — no point, alarm, unit, label, tier or sort order changed,
  * which is why `F2.12` did not bump `stockVersion`.** `F2.8` did, to **2**: it
- * appends three `bms-calc-v2` derived rows. See VERSION HISTORY below.
+ * appends three `bms-calc-v2` derived rows. `E4.1c` did, to **3**: it appends
+ * six `bms-calc-v3` sustainability rows. See VERSION HISTORY below.
  *
  * ---
  *
  * **SOURCE.** `docs/electrical-derived-taglist-v1.md` §1 — *"Feeder / incomer —
  * multifunction energy meter (HT panel, LT panel, MCC feeder, sub-meter)"*.
  * All 33 rows, in the table's own order (`sortOrder` 0…32), `label` from the
- * Description column, `unit` from the Unit column. **The three DERIVED rows at
- * `sortOrder` 33–35 are not in that document** — they are `F2.8`'s, and the
- * VERSION HISTORY below is their provenance. The entry's `description`
+ * Description column, `unit` from the Unit column. **The nine DERIVED rows at
+ * `sortOrder` 33–41 are not in that document** — three are `F2.8`'s, six are
+ * `E4.1c`'s (ADR 0070 decision 8), and the VERSION HISTORY below is their
+ * provenance. The entry's `description`
  * cites that file and section by name, because **the stamp plus the citation
  * is the provenance** (decision 6): `stock_version = 1` on an imported row *is*
  * "derived-v1", and there is no `meta.provenance`.
@@ -34,18 +36,28 @@ import type { StockAssetTemplateEntry } from "./types";
  * time window the grammar cannot name — so authoring it derived would need a
  * placeholder formula, which is the guessing ADR 0019 exists to prevent. A
  * meter that exposes the register supplies it; one that does not leaves the
- * point unmapped at instantiation, visibly.
+ * point unmapped at instantiation, visibly. **Re-ruled the same way for
+ * `E4.1c` (plan Q3, 2026-09-19):** `bms-calc-v3` CAN now write
+ * `delta({kwh_total}, today)`, and `kwh_today` still stays MEASURED — a
+ * derived `kwh_today` would be a second, one-tick-old answer to the meter's
+ * own register. The today-quantities below (`energy_cost_today`,
+ * `co2_kg_today`, `energy_saving_vs_baseline_pct`) read the window inline
+ * themselves, never `{kwh_today}`.
  *
- * **THE SIX "Derived:" CODES ARE DEFERRED, NOT AUTHORED** — ADR 0051 Amendment
- * 6 decision 8: a code with no formula is not vocabulary, so none of them is
- * promoted into `ELECTRICAL_CLASS_POINT_KEYS` in this row and `tests/f3.38`'s
- * 185 bound does not move. Each one needs something `bms-calc-v1` cannot name
- * (ADR 0036; `F2.9` records the fork):
+ * **FIVE OF THE SIX "Derived:" CODES ARE DEFERRED, NOT AUTHORED** — ADR 0051
+ * Amendment 6 decision 8: a code with no formula is not vocabulary, so none of
+ * them is promoted into `ELECTRICAL_CLASS_POINT_KEYS`. **`demand_vs_contract_pct`
+ * left the ledger with `E4.1c`** — `bms-calc-v3`'s `$contract_demand_kva`
+ * (ADR 0070 decision 2) is exactly the attribute it needed; it is authored at
+ * `sortOrder` 41 below. Each of the five that stay needs something the
+ * grammar still cannot name (ADR 0036; `F2.9` records the fork):
  *
  *  - `load_pct` = kVA ÷ rating — needs the asset's kVA rating, an asset
  *    attribute.
  *  - `demand_vs_contract_pct` = demand ÷ contract demand (the page-9 KPI) —
- *    needs the contract demand, an asset attribute.
+ *    needed the contract demand, an asset attribute. **Authored by `E4.1c`**
+ *    over `$contract_demand_kva`; kept in this list so the tag list's six are
+ *    all accounted for.
  *  - `pf_penalty_flag` vs the tariff PF band — needs the tariff band, a site
  *    attribute.
  *  - `kwh_per_unit_output` — needs production, a value from another asset.
@@ -59,11 +71,17 @@ import type { StockAssetTemplateEntry } from "./types";
  *    that row's own plan scope. A formula summing the wrong scope would compute
  *    a real number under the wrong name, which is worse than a named deferral.
  *
- * **Three `kind: "derived"` points since `F2.8`, and no `content.kpis`.** They
- * are not tag-list rows and not promotions of the six above: they are ruling 1
- * of `F2.8`'s gate (2026-09-05) — PUE on the site's incomer, and nowhere else.
- * `F2.12` promotes each deferred code it can actually author a formula for, in
- * its own plan.
+ * **Nine `kind: "derived"` points — three since `F2.8`, six since `E4.1c` —
+ * and no `content.kpis`.** `F2.8`'s three are not tag-list rows and not
+ * promotions of the six above: they are ruling 1 of `F2.8`'s gate
+ * (2026-09-05) — PUE on the site's incomer, and nowhere else. `E4.1c`'s six
+ * are ADR 0070 decision 8's sustainability points (plan §3.7): a cost and a
+ * carbon rate from `{kw}`, a cost and a carbon mass today from
+ * `delta({kwh_total}, today)`, a saving against a daily baseline prorated by
+ * `hours(today)`, and the one promotion, `demand_vs_contract_pct`. Every
+ * `$key` is a `bms.calc_parameters` row the tenant enters on
+ * `/admin/calc-parameters`; until it exists the point refuses
+ * `parameter_unset`, counted, never a number.
  *
  * **ALARMS — 11 philosophy rows, every one pair-absent** (ADR 0019 Amendment 2
  * decisions 1 and 2; B7: limit values are set per site at commissioning). The
@@ -99,7 +117,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *    `unit` is an *override*; `null` defers to the catalog's own unit, which
  *    is what those keys carry. Where the table names a unit it is spelled as
  *    `packages/db/src/point-keys-seed.ts`'s `UNIT_BY_KEY` spells it —
- *    `kVAr`, `kVArh`, not the table's `kVAR`/`kVARh`.
+ *    `kVAr`, `kVArh`, not the table's `kVAR`/`kVARh`. **The two money rows
+ *    are the one exception**: `energy_cost_per_h` and `energy_cost_today`
+ *    carry `unit: ""` explicitly (plan Q8, ruled 2026-09-19) — the amount's
+ *    dimension is the tenant's `bms.organizations.currency`, not the code's,
+ *    and the empty string on the template row says so where `null` would
+ *    only defer to the catalog's identical `""`.
  *  - **Labels drop the table's editorial notes** — "(existing key)" and
  *    "(existing key; meter or derived)" are remarks about the vocabulary, not
  *    what an operator should read on a point.
@@ -142,6 +165,35 @@ import type { StockAssetTemplateEntry } from "./types";
  *         site-level role. On a panel or a sub-meter these three rows simply
  *         compute the same site figures again; a tenant that does not want
  *         that deletes them from the draft.
+ *  - `electrical-feeder` **v3** (2026-09-19, `E4.1c`): six `bms-calc-v3`
+ *    derived points appended at `sortOrder` 36–41, ADR 0070 decision 8 as
+ *    ruled on 2026-09-19 (plan §3.7) — `energy_cost_per_h`, `co2_kg_per_h`,
+ *    `energy_cost_today`, `co2_kg_today`, `energy_saving_vs_baseline_pct` and
+ *    `demand_vs_contract_pct` (the ledger promotion). Four things a tenant
+ *    importing this release must know:
+ *
+ *      1. **A `$key` with no value is a counted `parameter_unset`**, not a
+ *         number, until the tenant enters it on `/admin/calc-parameters` —
+ *         `energy_tariff_per_kwh`, `grid_carbon_factor_kgco2_per_kwh`,
+ *         `energy_baseline_kwh_per_day`, `contract_demand_kva`; the nearest
+ *         scope (asset, location, organization) wins (ADR 0070 decision 2).
+ *         The money points carry the empty-string unit: the amount is in
+ *         `bms.organizations.currency`, the tenant's, not the code's.
+ *      2. **A `today` window needs the location's time zone**
+ *         (`locations.timezone`, ADR 0070 Amendment 1); an asset at a
+ *         location without one refuses `timezone_unset`. At the first tick
+ *         after local midnight the `today` window is empty, so the three
+ *         `today` rows refuse `window_empty` for one tick — the scheduler
+ *         resolves every window read before `evaluate()`, so the division by
+ *         `hours(today) = 0` in `energy_saving_vs_baseline_pct` is never
+ *         reached.
+ *      3. **The value is at most one 60 s tick old** — every row is
+ *         `scheduled`, the ADR 0055 decision 10 cost; `minCoverageRatio` is
+ *         `null`, fail closed.
+ *      4. **`max_demand_kva` is tier X** — an asset that has not mapped it
+ *         refuses `demand_vs_contract_pct` as `missing_input`, visibly.
+ *         `kwh_today` stays MEASURED (Q3): the today rows read
+ *         `delta({kwh_total}, today)` themselves.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (kw, kva, pf, current_a, frequency_hz, kwh_today, breaker_main, meter_comms_ok), plus one
@@ -162,7 +214,7 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
     "docs/electrical-derived-taglist-v1.md §1 (PROVISIONAL — derived from industry practice, " +
     "not client-confirmed). Tier C points are required, tier X optional; alarm rows carry a " +
     "meaning and no limit — limits are set per site at commissioning.",
-  stockVersion: 2,
+  stockVersion: 3,
   content: {
     contentVersion: 1,
     alarms: [
@@ -409,6 +461,61 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
       unit: null,
       required: false,
       sortOrder: 35,
+    },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. Six `bms-calc-v3` rows, every
+    // one scheduled at 60 s with `minCoverageRatio` null (fail closed) and no
+    // `meta` (nothing fits a computed point). Each `$key` is a `0074`
+    // parameter; each window read is inline, never a derived sibling's. The
+    // money rows carry `unit: ""` — the organization's currency (Q8).
+    {
+      ...derived("{kw} * $energy_tariff_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "energy_cost_per_h",
+      label: "Energy cost rate (organization currency per hour)",
+      unit: "",
+      required: false,
+      sortOrder: 36,
+    },
+    {
+      ...derived("{kw} * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "co2_kg_per_h",
+      label: "CO₂ emission rate",
+      unit: "kg/h",
+      required: false,
+      sortOrder: 37,
+    },
+    {
+      ...derived("delta({kwh_total}, today) * $energy_tariff_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "energy_cost_today",
+      label: "Energy cost today (organization currency)",
+      unit: "",
+      required: false,
+      sortOrder: 38,
+    },
+    {
+      ...derived("delta({kwh_total}, today) * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "co2_kg_today",
+      label: "CO₂ emitted today",
+      unit: "kg",
+      required: false,
+      sortOrder: 39,
+    },
+    {
+      ...derived("(1 - delta({kwh_total}, today) / ($energy_baseline_kwh_per_day * hours(today) / 24)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "energy_saving_vs_baseline_pct",
+      label: "Energy saving vs baseline, today",
+      unit: "%",
+      required: false,
+      sortOrder: 40,
+    },
+    // The tag list's own "Derived:" row — the ledger promotion. `max_demand_kva`
+    // is tier X, so an asset without it refuses `missing_input`.
+    {
+      ...derived("{max_demand_kva} / $contract_demand_kva * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "demand_vs_contract_pct",
+      label: "Maximum demand vs contract demand",
+      unit: "%",
+      required: false,
+      sortOrder: 41,
     },
   ],
 };

@@ -1,3 +1,5 @@
+import { CALC_DIALECT_V3, MAX_FORMULA_WINDOWS, parseFormula } from "@bms/shared";
+
 import { readRepoFile } from "../../../testing/repo-root";
 import { DEFERRED_DERIVED_CODES, deferralReason } from "./stock-catalog-deferrals.spec";
 import { assert, maintenanceOf, type Alarm } from "./stock-catalog.spec";
@@ -487,6 +489,9 @@ export function assertEntryIdentity(
   entry: StockAssetTemplateEntry,
   assetType: string,
   domain: string,
+  // `E4.1c` (plan design decision 17): a bumped entry passes its version; the
+  // unbumped callers stay on the default and keep asserting a first release.
+  expectedVersion = 1,
 ): void {
   assert(
     entry.assetType === assetType,
@@ -499,9 +504,119 @@ export function assertEntryIdentity(
       `"${entry.domain}"`,
   );
   assert(
-    entry.stockVersion === 1,
-    `${code} is a first release — stockVersion 1, got ${String(entry.stockVersion)}`,
+    entry.stockVersion === expectedVersion,
+    expectedVersion === 1
+      ? `${code} is a first release — stockVersion 1, got ${String(entry.stockVersion)}`
+      : `${code} is at stockVersion ${expectedVersion} (its VERSION HISTORY names the bump), got ` +
+          `${String(entry.stockVersion)}`,
   );
+}
+
+// ---- E4.1c — the bms-calc-v3 sustainability rows, one claim list per entry --
+
+/** `[pointKey, formula, unit]` — an `E4.1c` row exactly as plan §3.7 writes it. */
+export type SustainabilityRow = readonly [pointKey: string, formula: string, unit: string];
+
+/**
+ * The parameter codes migration `0074` seeds into `bms.calc_parameter_keys`
+ * (ADR 0070 decision 2), READ OUT OF THE MIGRATION, never retyped — the
+ * `stock-catalog.spec.ts` discipline for `0029`/`0030`. Throwing on a parse
+ * that finds fewer than twelve is load-bearing: a retyped list would let a key
+ * nobody seeds pass the membership claim. The vocabulary grows by `INSERT`
+ * (decision 2), so twelve is a floor here, not a pin.
+ */
+let paramKeysMemo: ReadonlySet<string> | undefined;
+export const calcParameterKeys0074 = (): ReadonlySet<string> => {
+  if (paramKeysMemo) return paramKeysMemo;
+  const migration = readRepoFile("packages/db/drizzle/0074_calc_parameters.sql");
+  const start = migration.indexOf("INSERT INTO bms.calc_parameter_keys (");
+  if (start < 0) throw new Error("no INSERT INTO bms.calc_parameter_keys in 0074 — fix this parser, do not delete it");
+  const end = migration.indexOf("ON CONFLICT", start);
+  if (end < 0) throw new Error("unterminated INSERT INTO bms.calc_parameter_keys — expected a trailing ON CONFLICT");
+  const codes = [...migration.slice(start, end).matchAll(/\(\s*'([a-z0-9_]+)'/g)].map((m) => m[1] as string);
+  if (codes.length < 12) throw new Error(`parsed ${codes.length} codes out of 0074's insert, expected 12 — the parser is broken`);
+  paramKeysMemo = new Set(codes);
+  return paramKeysMemo;
+};
+
+/**
+ * `E4.1c`'s claims over one entry's `bms-calc-v3` rows (ADR 0070 decision 8,
+ * plan design decision 7), as a NAMED LIST so a wrapper runs one `it()` per
+ * claim — `assert` throws, so a block reports only its first failure and a
+ * later claim never runs. Every claim reads the ENTRY, never the caller's
+ * table alone, so a misspelt `$key` in the module reds the pinned-text claim
+ * AND the vocabulary claim, naming the key. `rows` is the plan's order;
+ * `firstSortOrder` is one past the entry's last pre-`E4.1c` point.
+ */
+export function sustainabilityClaims(
+  code: string,
+  entry: StockAssetTemplateEntry,
+  rows: readonly SustainabilityRow[],
+  firstSortOrder: number,
+  expectedVersion: number,
+): ReadonlyArray<readonly [name: string, run: () => void]> {
+  const tail = () => {
+    const last = entry.points.slice(-rows.length);
+    assert(
+      last.map((point) => point.pointKey).join(",") === rows.map((row) => row[0]).join(","),
+      `${code}'s last ${rows.length} points must be E4.1c's, in plan §3.7's order — expected ` +
+        `${rows.map((row) => row[0]).join(", ")}; got ${last.map((point) => point.pointKey).join(", ")}`,
+    );
+    return last;
+  };
+  const claims: Array<readonly [string, () => void]> = [
+    [`${code} — E4.1c's ${rows.length} rows are appended last, in order, at sortOrder ${firstSortOrder}–${firstSortOrder + rows.length - 1}`, () => {
+      const orders = tail().map((point) => point.sortOrder).join(",");
+      const expected = rows.map((_, index) => firstSortOrder + index).join(",");
+      assert(orders === expected, `${code}: expected sortOrder ${expected}; got ${orders}`);
+    }],
+  ];
+  for (const [pointKey, formula, unit] of rows) {
+    claims.push([`${code}.${pointKey} is exactly "${formula}" with unit "${unit}"`, () => {
+      const point = entry.points.find((row) => row.pointKey === pointKey);
+      assert(point !== undefined && point.kind === "derived", `${code} must author ${pointKey} derived`);
+      assert(
+        point?.formula === formula,
+        `${code}.${pointKey}'s formula must be exactly "${formula}" — got "${String(point?.formula)}". Plan §3.7 ` +
+          "is the text; a shipped formula is asserted literally because a rewrite is a silent behaviour " +
+          "change on every organization that imported it.",
+      );
+      assert(point?.unit === unit, `${code}.${pointKey}'s unit must be "${unit}" (Q8: money is ""); got ${String(point?.unit)}`);
+    }]);
+  }
+  claims.push(
+    [`${code} — every E4.1c row is ${CALC_DIALECT_V3}, scheduled at 60 s`, () => {
+      const off = tail().filter((p) => p.formulaDialect !== CALC_DIALECT_V3 || p.calcTrigger !== "scheduled" || p.calcIntervalSeconds !== 60);
+      assert(off.length === 0, `${code}: ${off.map((p) => `${p.pointKey} ${String(p.formulaDialect)}/${String(p.calcTrigger)}/${String(p.calcIntervalSeconds)}`).join(", ")}`);
+    }],
+    [`${code} — every E4.1c row leaves minCoverageRatio null (fail closed) and the default input age`, () => {
+      const off = tail().filter((p) => p.minCoverageRatio !== null || p.maxInputAgeSeconds !== null);
+      assert(off.length === 0, `${code}: ${off.map((p) => p.pointKey).join(", ")}`);
+    }],
+    [`${code} — every E4.1c row is required: false with no meta`, () => {
+      const off = tail().filter((p) => p.required !== false || p.meta !== undefined);
+      assert(off.length === 0, `${code}: ${off.map((p) => p.pointKey).join(", ")} — nothing fits a computed point`);
+    }],
+    [`${code} — every E4.1c $key is one of 0074's parameter codes; every formula parses under v3 within MAX_FORMULA_WINDOWS`, () => {
+      const bad: string[] = [];
+      for (const point of tail()) {
+        const parsed = parseFormula(point.formula ?? "", { dialect: CALC_DIALECT_V3 });
+        if (!parsed.ok) {
+          bad.push(`${point.pointKey} does not parse under v3: ${parsed.errors.map((e) => e.code).join(", ")}`);
+          continue;
+        }
+        for (const key of parsed.paramRefs) {
+          if (!calcParameterKeys0074().has(key)) bad.push(`${point.pointKey} reads $${key}, not a 0074 parameter key`);
+        }
+        if (parsed.windowReads.length > MAX_FORMULA_WINDOWS) bad.push(`${point.pointKey}: ${parsed.windowReads.length} window reads`);
+      }
+      assert(bad.length === 0, `${code}: ${bad.join("; ")}`);
+    }],
+    [`${code} — stockVersion is ${expectedVersion} (ruling 10: the bump an importing tenant takes by re-import)`, () => {
+      assert(entry.stockVersion === expectedVersion, `${code}: stockVersion ${String(entry.stockVersion)}`);
+    }],
+  );
+  return claims;
 }
 
 /** The count of points at one tier, `"derived"` included. */

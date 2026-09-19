@@ -10,10 +10,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 import { WATER_TAG_LIST } from "./water-classes.spec";
 
@@ -68,6 +70,10 @@ const RO_POINTS: readonly PointRow[] = [
   ["cartridge_filter_dp_bar", "extended", "bar"],
   ["recovery_pct", "derived", "%"],
   ["salt_rejection_pct", "derived", "%"],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "derived", "KL"],
+  ["water_cost_today", "derived", ""],
+  ["water_saving_vs_baseline_pct", "derived", "%"],
 ];
 
 /** §2's two expressible derived codes. Both keep the 300 s default. */
@@ -78,6 +84,10 @@ const RO_DERIVED: readonly DerivedRow[] = [
     "(1 - {permeate_conductivity_uscm} / {feed_conductivity_uscm}) * 100",
     null,
   ],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "sum({feed_flow_klh}, today)", null],
+  ["water_cost_today", "sum({feed_flow_klh}, today) * $water_tariff_per_kl", null],
+  ["water_saving_vs_baseline_pct", "(1 - sum({feed_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
 ];
 
 /** §2's six alarm bullets, one row each — nothing splits on this entry. */
@@ -135,16 +145,17 @@ function assertRecoveryIsOneCodeTwoFormulas(): void {
  */
 function checkRo(): void {
   const entry = requireStockEntry(RO_CODE);
-  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water");
+  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water", 2);
 
-  // ---- 18 points, 10 core + 5 extended + 1 manual + 2 derived -------------
+  // ---- 21 points, 10 core + 5 extended + 1 manual + 5 derived (3 E4.1c) -------------
 
   assert(
     tierCount(entry, "core") === 10 &&
       tierCount(entry, "extended") === 5 &&
       tierCount(entry, "manual") === 1 &&
-      tierCount(entry, "derived") === 2,
-    `§2 marks 10 rows C, 5 X and 1 M, and two of its four derived codes are authored — 10/5/1/2. ` +
+      tierCount(entry, "derived") === 5,
+    `§2 marks 10 rows C, 5 X and 1 M, and two of its four §2 derived codes are authored, plus ` +
+      `E4.1c's three v3 rows — 10/5/1/5. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
@@ -255,6 +266,17 @@ const SOFTENER_POINTS: readonly PointRow[] = [
   ["brine_tank_level_pct", "core", "%"],
   ["salt_consumption_kg", "manual", "kg"],
   ["outlet_conductivity_uscm", "extended", "µS/cm"],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "derived", "KL"],
+  ["water_cost_today", "derived", ""],
+  ["water_saving_vs_baseline_pct", "derived", "%"],
+];
+
+/** E4.1c's three v3 rows (plan §3.7), default input age. */
+const SOFTENER_DERIVED: readonly DerivedRow[] = [
+  ["kl_today", "sum({inlet_flow_klh}, today)", null],
+  ["water_cost_today", "sum({inlet_flow_klh}, today) * $water_tariff_per_kl", null],
+  ["water_saving_vs_baseline_pct", "(1 - sum({inlet_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
 ];
 
 /** §3's four alarm bullets, one row each — nothing splits on this entry. */
@@ -273,20 +295,22 @@ const SOFTENER_ALARMS: readonly AlarmRow[] = [
  */
 function checkSoftener(): void {
   const entry = requireStockEntry(SOFTENER_CODE);
-  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water");
+  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water", 2);
 
-  // ---- 9 points, 4 core + 3 extended + 2 manual + 0 derived ---------------
+  // ---- 12 points, 4 core + 3 extended + 2 manual + 3 derived (3 E4.1c) ---------------
 
   assert(
     tierCount(entry, "core") === 4 &&
       tierCount(entry, "extended") === 3 &&
       tierCount(entry, "manual") === 2 &&
-      tierCount(entry, "derived") === 0,
-    `§3 marks 4 rows C, 3 X and 2 M, and all three of its derived codes are deferred — 4/3/2/0. ` +
+      tierCount(entry, "derived") === 3,
+    `§3 marks 4 rows C, 3 X and 2 M, and all three of its §3 derived codes are deferred; ` +
+      `E4.1c's three v3 rows are the only derived rows — 4/3/2/3. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(SOFTENER_CODE, "§3", entry, SOFTENER_POINTS);
+  assertDerivedPoints(SOFTENER_CODE, entry, SOFTENER_DERIVED);
   assertNoKpis(SOFTENER_CODE, entry, "§3");
   assertDeferralsAbsent(SOFTENER_CODE, entry);
 
@@ -362,4 +386,36 @@ function checkSoftener(): void {
 export function runWaterClassEntryTests3(): void {
   checkRo();
   checkSoftener();
+}
+
+// ---- E4.1c — the bms-calc-v3 water rows (ADR 0070 decision 8, Q5) -------
+//
+// The same three codes on every water class, each over ITS inlet flow — one
+// code, one meaning ("KL of inlet water today"). Pinned through
+// `sustainabilityClaims`, one `it()` per claim in the wrapper.
+
+/** water-ro over `{feed_flow_klh}`, §2's inlet — plan §3.7. */
+const RO_E41C: readonly SustainabilityRow[] = [
+  ["kl_today", "sum({feed_flow_klh}, today)", "KL"],
+  ["water_cost_today", "sum({feed_flow_klh}, today) * $water_tariff_per_kl", ""],
+  ["water_saving_vs_baseline_pct", "(1 - sum({feed_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+];
+
+/** water-softener over `{inlet_flow_klh}`, §3's inlet — plan §3.7. */
+const SOFTENER_E41C: readonly SustainabilityRow[] = [
+  ["kl_today", "sum({inlet_flow_klh}, today)", "KL"],
+  ["water_cost_today", "sum({inlet_flow_klh}, today) * $water_tariff_per_kl", ""],
+  ["water_saving_vs_baseline_pct", "(1 - sum({inlet_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+];
+
+/** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
+export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
+  ["water-softener", SOFTENER_E41C, 9, 2],
+  ["water-ro", RO_E41C, 18, 2],
+];
+
+export function e41cWaterClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return E41C_WATER_CLASSES.flatMap(([code, rows, first, version]) =>
+    sustainabilityClaims(code, requireStockEntry(code), rows, first, version),
+  );
 }

@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -10,9 +10,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * plant (clarifier + filtration + disinfection)"*. PROVISIONAL: derived from
  * published practice, not client-confirmed.
  *
- * **20 POINTS — 11 core + 5 extended + 2 manual + 2 DERIVED.** §1's 18 table
+ * **23 POINTS — 11 core + 5 extended + 2 manual + 5 DERIVED.** §1's 18 table
  * rows in the document's own order (`sortOrder` 0-17), then the two authored
- * derived codes (18-19).
+ * derived codes (18-19), then `E4.1c`'s three `v3` rows (20-22).
  *
  * **THE TWO FORMULAS** (plan §5.0):
  *
@@ -123,6 +123,26 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-wtp` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §1, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `water-wtp` **v2** (2026-09-19, `E4.1c`): three `bms-calc-v3` derived
+ *    points appended at `sortOrder` 20–22 (ADR 0070 decision 8 as
+ *    widened by plan Q5 — the same three codes on all six water classes, each
+ *    over its own inlet flow): `kl_today = sum({raw_water_flow_klh}, today)`,
+ *    `water_cost_today = sum({raw_water_flow_klh}, today) * $water_tariff_per_kl`,
+ *    `water_saving_vs_baseline_pct` against `$water_baseline_kl_per_day`
+ *    prorated by `hours(today)`. **The inlet here is `raw_water_flow_klh`** —
+ *    the raw water intake — the purchased or abstracted water the tariff applies to. Four
+ *    things an importing tenant must know: (1) a `$key` with no value is a
+ *    counted `parameter_unset` until entered on `/admin/calc-parameters`,
+ *    nearest scope wins; the money row carries the empty-string unit — the
+ *    amount is in `bms.organizations.currency`; (2) a `today` window needs
+ *    the location's time zone (`locations.timezone`), `timezone_unset`
+ *    otherwise, and at the first tick after local midnight the `today` window
+ *    is empty, so every `today` row refuses `window_empty` for one tick — the
+ *    scheduler resolves the window reads before `evaluate()`, so no division
+ *    by `hours(today) = 0` is ever reached; (3) every row is
+ *    `scheduled` at 60 s — at most one tick old — with `minCoverageRatio`
+ *    `null`, fail closed; (4) the flow is tier C, so no `missing_input` arises
+ *    on a correctly mapped asset.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (raw_water_flow_klh, treated_water_flow_klh, raw_turbidity_ntu, filtered_turbidity_ntu, treated_cl2_residual_mgl, clearwell_level_pct, filter_dp_bar, intake_pump_status), plus one
@@ -142,9 +162,10 @@ export const WATER_WTP: StockAssetTemplateEntry = {
     "chlorination to a clear water reservoir. Authored from " +
     "docs/e5.1-derived-taglist-v1.md §1 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
-    "carry a meaning and no limit. Two derived points — recovery and turbidity removal — are " +
+    "carry a meaning and no limit. Five derived points — recovery and turbidity removal, plus raw " +
+    "water today, its cost and its saving against the daily baseline (bms-calc-v3) — are " +
     "computed from the measured rows and need no extra instrument.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -470,6 +491,33 @@ export const WATER_WTP: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 19,
+    },
+    // `E4.1c` — ADR 0070 decision 8 / Q5, plan §3.7: the three water rows over
+    // this class's inlet flow. Scheduled at 60 s, `minCoverageRatio` null, no
+    // `meta`; the money row carries `unit: ""` (Q8). See VERSION HISTORY v2.
+    {
+      ...derived("sum({raw_water_flow_klh}, today)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_today",
+      label: "Inlet water today",
+      unit: "KL",
+      required: false,
+      sortOrder: 20,
+    },
+    {
+      ...derived("sum({raw_water_flow_klh}, today) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_today",
+      label: "Water cost today (organization currency)",
+      unit: "",
+      required: false,
+      sortOrder: 21,
+    },
+    {
+      ...derived("(1 - sum({raw_water_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_saving_vs_baseline_pct",
+      label: "Water saving vs baseline, today",
+      unit: "%",
+      required: false,
+      sortOrder: 22,
     },
   ],
 };

@@ -1,5 +1,5 @@
-import { DASHBOARD_GRID } from "@bms/shared";
-import { CORE, EXTENDED, MEASURED } from "./point-fields";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
+import { CORE, derived, EXTENDED, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -8,17 +8,18 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **SOURCE.** `docs/electrical-derived-taglist-v1.md` §6 — *"Capacitor bank /
  * APFC panel"*, the SOW page-10 *Capacitor* utility node. All 14 of §6's table
- * rows are declared, **in the document's own order** (`sortOrder` 0…13) —
- * **14 points: 4 core + 10 extended + 0 manual + 0 derived**, 6 alarms, 1 KPI,
- * 3 maintenance plans.
+ * rows are declared, **in the document's own order** (`sortOrder` 0…13), then
+ * `E4.1c`'s `steps_per_day` (14) — **15 points: 4 core + 10 extended + 0
+ * manual + 1 derived**, 6 alarms, 1 KPI, 3 maintenance plans.
  *
- * **THE SMALLEST ENTRY IN THE PACK, AND THE ONE WITH NO FORMULA AT ALL.** Every
- * other class authors at least one `kind: "derived"` point; §6 authors none,
- * because all four of its derived codes need something the grammar does not
- * have (below). It is therefore the cheap opposite end of the row — 14 measured
- * rows, no manual rows, no `F1.8` exposure and no calc engine involvement — and
- * `electrical-classes-2.spec.ts` checks it as hard as the largest entry so that
- * "small" never becomes "special case".
+ * **THE SMALLEST ENTRY IN THE PACK, AND UNTIL `E4.1c` THE ONE WITH NO FORMULA
+ * AT ALL.** From `F2.12` to `E4.1c` §6 authored no `kind: "derived"` point,
+ * because all four of its derived codes needed something the grammar did not
+ * have; `bms-calc-v3`'s window gave `steps_per_day` its formula (below) and
+ * the other three still wait on an attribute or a function. It is still the
+ * cheap opposite end of the row — 14 measured rows, no manual rows, no `F1.8`
+ * exposure, one scheduled `v3` row — and `electrical-classes-2.spec.ts` checks
+ * it as hard as the largest entry so that "small" never becomes "special case".
  *
  * **§6's TABLE INTERLEAVES THE TIERS BY ONE ROW, and the order here is the
  * table's.** `target_pf` (X) is row 3, ahead of `actual_pf` and
@@ -53,16 +54,19 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  * **THE DEFERRED DERIVED CODES**, each with the reason it is named rather than
  * placeholdered (ADR 0051 Amendment 6 decision 8: a code with no formula is not
- * vocabulary). §6's `Derived:` line names **four**, and all four are deferred:
+ * vocabulary). §6's `Derived:` line names **four**; three are deferred and one
+ * (`steps_per_day`) is authored since `E4.1c`:
  *
  *  - `pf_correction_kvar` — the reactive power a target PF needs is
  *    `kW × (tan φ₁ − tan φ₂)`. `bms-calc-v1` has `+ - * /`, `abs`, `round`,
  *    `min`, `max` and `clamp`, and **no trigonometry** — no `tan`, no `acos`.
  *    The controller computes it itself and publishes it as the measured
  *    `kvar_required` row, which is why that row exists and this code does not.
- *  - `steps_per_day` — a time window the grammar has no state for.
- *    `step_operation_count` is the cumulative counter behind it, and the
- *    `switching_rate_high` alarm binds that counter instead.
+ *  - `steps_per_day` — needed a time window the grammar had no state for.
+ *    **Authored by `E4.1c`** as `delta({step_operation_count}, 24h)`
+ *    (`bms-calc-v3`, ADR 0070 decision 5) at `sortOrder` 14 — see VERSION
+ *    HISTORY v2. The `switching_rate_high` alarm keeps binding the cumulative
+ *    counter (an alarm binds a measured point).
  *  - `capacitor_health_pct` = measured ÷ **rated** kVAr per step — the rated
  *    kVAr per step is an asset attribute. The bank-health plan below is the
  *    manual version, and it says so.
@@ -75,9 +79,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * list in `stock-catalog.spec.ts`, where the tariff band is the same blocker.
  * The document decides, so §6's four are the four above.
  *
- * **NO AUTHORED FORMULA, and that is a finding rather than a gap.** §6 is the
- * one section of the six whose entire derived list is blocked by an attribute,
- * a time window or a missing function. It is also the section with the clearest
+ * **ONE AUTHORED FORMULA SINCE `E4.1c`, and none before, which was a finding
+ * rather than a gap.** §6 was the one section of the six whose entire derived
+ * list was blocked by an attribute, a time window or a missing function; the
+ * window half fell with `bms-calc-v3`, the rest stands. It is also the section with the clearest
  * *commercial* value — power factor is billed — which is exactly why it is
  * worth writing down that the platform cannot compute a penalty today. **A v2
  * candidate: an asset attribute for rated kVAr per step and a site attribute
@@ -124,8 +129,15 @@ import type { StockAssetTemplateEntry } from "./types";
  *
  *  - `electrical-apfc` **v1** (2026-09-02, `F2.12`): authored from
  *    `electrical-derived-taglist-v1.md` §6, PROVISIONAL — derived, not
- *    client-confirmed. The client-confirmed release is v2; its redline
- *    candidate is the attribute pair recorded above.
+ *    client-confirmed. The redline candidate is the attribute pair recorded
+ *    above; it lands as a later version.
+ *  - `electrical-apfc` **v2** (2026-09-19, `E4.1c`): one `bms-calc-v3`
+ *    derived point appended at `sortOrder` 14 — `steps_per_day =
+ *    delta({step_operation_count}, 24h)`, the ledger promotion (ADR 0070
+ *    decision 8). What an importing tenant must know: `scheduled` at 60 s, so
+ *    at most one tick old; `minCoverageRatio` `null` (fail closed);
+ *    `step_operation_count` is tier X, so an asset without it refuses
+ *    `missing_input`; a rolling `24h` needs no time zone; no `$key`.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One view,
  * tiling the class's headline measured points as `value_tile`s in table order (apfc_status,
@@ -152,11 +164,11 @@ export const ELECTRICAL_APFC: StockAssetTemplateEntry = {
   description:
     "Automatic power-factor-correction panel with a switched capacitor bank — the SOW page-10 " +
     "Capacitor utility node. Authored from docs/electrical-derived-taglist-v1.md §6 (PROVISIONAL " +
-    "— derived from industry practice, not client-confirmed). The class carries no derived point " +
-    "at all: every one of §6's derived codes needs a rated kVAr per step, a tariff band, a time " +
-    "window or trigonometry, none of which bms-calc-v1 has. Tier C points are required and X " +
+    "— derived from industry practice, not client-confirmed). The class carries one derived point " +
+    "(steps_per_day, bms-calc-v3): the other §6 derived codes need a rated kVAr per step, a tariff " +
+    "band or trigonometry, none of which the grammar has. Tier C points are required and X " +
     "optional; §6 has no manual rows. Alarm rows carry a meaning and no limit.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -347,5 +359,15 @@ export const ELECTRICAL_APFC: StockAssetTemplateEntry = {
     { ...MEASURED, pointKey: "step_operation_count", label: "Switching operations, cumulative", unit: null, required: false, sortOrder: 11, meta: EXTENDED },
     { ...MEASURED, pointKey: "capacitor_current_a", label: "Capacitor bank current", unit: "A", required: false, sortOrder: 12, meta: EXTENDED },
     { ...MEASURED, pointKey: "step_fault_state", label: "Step failed / capacitor lost capacity", unit: null, required: false, sortOrder: 13, meta: EXTENDED },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7: the ledger promotion. A count
+    // per day carries the empty-string unit (Q8). No `meta`.
+    {
+      ...derived("delta({step_operation_count}, 24h)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "steps_per_day",
+      label: "Switching operations, trailing 24 h",
+      unit: "",
+      required: false,
+      sortOrder: 14,
+    },
   ],
 };

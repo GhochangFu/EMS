@@ -1,5 +1,5 @@
-import { DASHBOARD_GRID } from "@bms/shared";
-import { CORE, EXTENDED, MANUAL, MEASURED } from "./point-fields";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
+import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -13,7 +13,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * fitted, add what is missing, correct names and units"*; the redline it comes
  * back as is `stockVersion` 2, never an edit to a shipped row (ADR 0015).
  *
- * **18 POINTS — 11 core + 5 extended + 2 manual + 0 derived**, §5's table rows
+ * **21 POINTS — 11 core + 5 extended + 2 manual + 3 derived** (`E4.1c`'s
+ * three, `sortOrder` 18–20, after §5's 18 table rows), §5's table rows
  * in the **document's own order**, which is what `sortOrder` follows. Tier `C`
  * is required and `meta.tier: "core"`; `X` is optional and `"extended"`; `M` is
  * optional and `"manual"`, entered by hand through `F1.8`/`F1.9` and never
@@ -129,6 +130,26 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-stp` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §5, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `water-stp` **v2** (2026-09-19, `E4.1c`): three `bms-calc-v3` derived
+ *    points appended at `sortOrder` 18–20 (ADR 0070 decision 8 as
+ *    widened by plan Q5 — the same three codes on all six water classes, each
+ *    over its own inlet flow): `kl_today = sum({influent_flow_klh}, today)`,
+ *    `water_cost_today = sum({influent_flow_klh}, today) * $water_tariff_per_kl`,
+ *    `water_saving_vs_baseline_pct` against `$water_baseline_kl_per_day`
+ *    prorated by `hours(today)`. **The inlet here is `influent_flow_klh`** —
+ *    the sewage influent — NOT purchased water on most sites, so `water_tariff_per_kl` is normally left unset (a counted `parameter_unset`) or the cost row deleted on the draft; `kl_today` still counts the plant's inlet load. Four
+ *    things an importing tenant must know: (1) a `$key` with no value is a
+ *    counted `parameter_unset` until entered on `/admin/calc-parameters`,
+ *    nearest scope wins; the money row carries the empty-string unit — the
+ *    amount is in `bms.organizations.currency`; (2) a `today` window needs
+ *    the location's time zone (`locations.timezone`), `timezone_unset`
+ *    otherwise, and at the first tick after local midnight the `today` window
+ *    is empty, so every `today` row refuses `window_empty` for one tick — the
+ *    scheduler resolves the window reads before `evaluate()`, so no division
+ *    by `hours(today) = 0` is ever reached; (3) every row is
+ *    `scheduled` at 60 s — at most one tick old — with `minCoverageRatio`
+ *    `null`, fail closed; (4) the flow is tier C, so no `missing_input` arises
+ *    on a correctly mapped asset.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (influent_flow_klh, effluent_flow_klh, aeration_do_mgl, mlss_mgl, effluent_turbidity_ntu, effluent_ph, effluent_cl2_residual_mgl, blower_status), plus one
@@ -150,7 +171,7 @@ export const WATER_STP: StockAssetTemplateEntry = {
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
     "carry a meaning and no limit, because a limit is set per site at commissioning. A plant " +
     "with no MBR stage or no UV stage strikes those rows at commissioning.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -532,5 +553,32 @@ export const WATER_STP: StockAssetTemplateEntry = {
     { ...MEASURED, pointKey: "treated_tank_level_pct", label: "Treated water tank level", unit: "%", required: true, sortOrder: 15, meta: CORE },
     { ...MEASURED, pointKey: "mbr_tmp_bar", label: "MBR trans-membrane pressure", unit: "bar", required: false, sortOrder: 16, meta: EXTENDED },
     { ...MEASURED, pointKey: "uv_status", label: "UV disinfection status", unit: null, required: false, sortOrder: 17, meta: EXTENDED },
+    // `E4.1c` — ADR 0070 decision 8 / Q5, plan §3.7: the three water rows over
+    // this class's inlet flow. Scheduled at 60 s, `minCoverageRatio` null, no
+    // `meta`; the money row carries `unit: ""` (Q8). See VERSION HISTORY v2.
+    {
+      ...derived("sum({influent_flow_klh}, today)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_today",
+      label: "Inlet water today",
+      unit: "KL",
+      required: false,
+      sortOrder: 18,
+    },
+    {
+      ...derived("sum({influent_flow_klh}, today) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_today",
+      label: "Water cost today (organization currency)",
+      unit: "",
+      required: false,
+      sortOrder: 19,
+    },
+    {
+      ...derived("(1 - sum({influent_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_saving_vs_baseline_pct",
+      label: "Water saving vs baseline, today",
+      unit: "%",
+      required: false,
+      sortOrder: 20,
+    },
   ],
 };
