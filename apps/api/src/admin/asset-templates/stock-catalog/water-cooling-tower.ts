@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID } from "@bms/shared";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
 import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
@@ -126,6 +126,24 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-cooling-tower` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §4, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `water-cooling-tower` **v2** (2026-09-19, `E4.1c`): three `bms-calc-v3` derived
+ *    points appended at `sortOrder` 21–23 (ADR 0070 decision 8 as
+ *    widened by plan Q5 — the same three codes on all six water classes, each
+ *    over its own inlet flow): `kl_today = sum({makeup_flow_klh}, today)`,
+ *    `water_cost_today = sum({makeup_flow_klh}, today) * $water_tariff_per_kl`,
+ *    `water_saving_vs_baseline_pct` against `$water_baseline_kl_per_day`
+ *    prorated by `hours(today)`. **The inlet here is `makeup_flow_klh`** —
+ *    the MAKE-UP flow: make-up is the water the tower consumes, circulation is recirculated and must not be counted. Four
+ *    things an importing tenant must know: (1) a `$key` with no value is a
+ *    counted `parameter_unset` until entered on `/admin/calc-parameters`,
+ *    nearest scope wins; the money row carries the empty-string unit — the
+ *    amount is in `bms.organizations.currency`; (2) a `today` window needs
+ *    the location's time zone (`locations.timezone`), `timezone_unset`
+ *    otherwise, and at the first tick after local midnight `hours(today)` is
+ *    `0` so the saving row refuses `non_finite` for one tick; (3) every row is
+ *    `scheduled` at 60 s — at most one tick old — with `minCoverageRatio`
+ *    `null`, fail closed; (4) the flow is tier C, so no `missing_input` arises
+ *    on a correctly mapped asset.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (supply_temp_c, return_temp_c, circ_flow_klh, makeup_flow_klh, basin_level_pct, circ_conductivity_uscm, circ_ph, fan_status), plus one
@@ -149,7 +167,7 @@ export const WATER_COOLING_TOWER: StockAssetTemplateEntry = {
     "program. Four derived points — range, approach, cycles of concentration and make-up as a " +
     "percentage of circulation — are computed from the measured rows and need no extra " +
     "instrument.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -520,6 +538,33 @@ export const WATER_COOLING_TOWER: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 20,
+    },
+    // `E4.1c` — ADR 0070 decision 8 / Q5, plan §3.7: the three water rows over
+    // this class's inlet flow. Scheduled at 60 s, `minCoverageRatio` null, no
+    // `meta`; the money row carries `unit: ""` (Q8). See VERSION HISTORY v2.
+    {
+      ...derived("sum({makeup_flow_klh}, today)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_today",
+      label: "Inlet water today",
+      unit: "KL",
+      required: false,
+      sortOrder: 21,
+    },
+    {
+      ...derived("sum({makeup_flow_klh}, today) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_today",
+      label: "Water cost today (organization currency)",
+      unit: "",
+      required: false,
+      sortOrder: 22,
+    },
+    {
+      ...derived("(1 - sum({makeup_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_saving_vs_baseline_pct",
+      label: "Water saving vs baseline, today",
+      unit: "%",
+      required: false,
+      sortOrder: 23,
     },
   ],
 };

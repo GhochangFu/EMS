@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runWaterClassEntryTests2 } from "./water-classes-2.spec";
+import { e41cWaterClaims, runWaterClassEntryTests2 } from "./water-classes-2.spec";
 
 /**
  * Vitest entry point for `water-classes-2.spec.ts` — assertions live in the
@@ -13,4 +13,9 @@ describe("stock asset-template catalog — the water classes (E5.1, §§1 and 4)
   it("ships the cooling tower and WTP classes exactly as their tag-list sections describe them", () => {
     runWaterClassEntryTests2();
   });
+
+  // E4.1c — the v3 water rows of each class in this file, one it() per claim.
+  for (const [name, run] of e41cWaterClaims()) {
+    it(name, run);
+  }
 });

@@ -10,10 +10,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 import { WATER_TAG_LIST } from "./water-classes.spec";
 
@@ -78,6 +80,10 @@ const TOWER_POINTS: readonly PointRow[] = [
   ["approach_c", "derived", "°C"],
   ["cycles_of_concentration", "derived", null],
   ["makeup_pct", "derived", "%"],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "derived", "KL"],
+  ["water_cost_today", "derived", ""],
+  ["water_saving_vs_baseline_pct", "derived", "%"],
 ];
 
 /**
@@ -95,6 +101,10 @@ const TOWER_DERIVED: readonly DerivedRow[] = [
   ["approach_c", "{supply_temp_c} - {ambient_wetbulb_c}", 3600],
   ["cycles_of_concentration", "{circ_conductivity_uscm} / {makeup_conductivity_uscm}", null],
   ["makeup_pct", "{makeup_flow_klh} / {circ_flow_klh} * 100", null],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "sum({makeup_flow_klh}, today)", null],
+  ["water_cost_today", "sum({makeup_flow_klh}, today) * $water_tariff_per_kl", null],
+  ["water_saving_vs_baseline_pct", "(1 - sum({makeup_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
 ];
 
 /**
@@ -121,17 +131,17 @@ const TOWER_ALARMS: readonly AlarmRow[] = [
  */
 function checkCoolingTower(): void {
   const entry = requireStockEntry(TOWER_CODE);
-  assertEntryIdentity(TOWER_CODE, entry, "cooling_tower", "water");
+  assertEntryIdentity(TOWER_CODE, entry, "cooling_tower", "water", 2);
 
-  // ---- 21 points, 10 core + 6 extended + 1 manual + 4 derived -------------
+  // ---- 24 points, 10 core + 6 extended + 1 manual + 7 derived (3 E4.1c) -------------
 
   assert(
     tierCount(entry, "core") === 10 &&
       tierCount(entry, "extended") === 6 &&
       tierCount(entry, "manual") === 1 &&
-      tierCount(entry, "derived") === 4,
+      tierCount(entry, "derived") === 7,
     `§4 marks 10 rows C, 6 X and 1 M, and four of its five derived codes are authored — ` +
-      `10/6/1/4. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `10/6/1/7. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(TOWER_CODE, "§4", entry, TOWER_POINTS);
@@ -375,4 +385,28 @@ function checkWtp(): void {
 export function runWaterClassEntryTests2(): void {
   checkCoolingTower();
   checkWtp();
+}
+
+// ---- E4.1c — the bms-calc-v3 water rows (ADR 0070 decision 8, Q5) -------
+//
+// The same three codes on every water class, each over ITS inlet flow — one
+// code, one meaning ("KL of inlet water today"). Pinned through
+// `sustainabilityClaims`, one `it()` per claim in the wrapper.
+
+/** water-cooling-tower over `{makeup_flow_klh}`, §4's inlet — plan §3.7. */
+const TOWER_E41C: readonly SustainabilityRow[] = [
+  ["kl_today", "sum({makeup_flow_klh}, today)", "KL"],
+  ["water_cost_today", "sum({makeup_flow_klh}, today) * $water_tariff_per_kl", ""],
+  ["water_saving_vs_baseline_pct", "(1 - sum({makeup_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+];
+
+/** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
+export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
+  ["water-cooling-tower", TOWER_E41C, 21, 2],
+];
+
+export function e41cWaterClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return E41C_WATER_CLASSES.flatMap(([code, rows, first, version]) =>
+    sustainabilityClaims(code, requireStockEntry(code), rows, first, version),
+  );
 }
