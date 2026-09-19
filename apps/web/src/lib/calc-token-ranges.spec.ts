@@ -87,3 +87,18 @@ export function runParamRangeTests(): void {
   assert(range.from === 0 && range.to === 7, `$energy at 0 must span 0..7, got ${range.from}..${range.to}`);
   assert(text.slice(range.from, range.to) === "$energy", "the param range must cover the $ and the key");
 }
+
+/** Case 6 — a `window` token's range is the literal as written (ADR 0070, `E4.1b`). */
+export function runWindowRangeTests(): void {
+  const text = "delta({kwh}, today)";
+  const tokens = tokenize(text, { dialect: CALC_DIALECT_V3 });
+  const window = tokens[4];
+  assert(window.kind === "window", `sanity: expected a window token at index 4, got ${window.kind}`);
+  const range = tokenRange(text, window);
+  assert(range.from === 13 && range.to === 18, `today at 13 must span 13..18, got ${range.from}..${range.to}`);
+  assert(text.slice(range.from, range.to) === "today", "the window range must cover the word");
+
+  const [rolling] = tokenize("1440m", { dialect: CALC_DIALECT_V3 });
+  const rollingRange = tokenRange("1440m", rolling);
+  assert(rollingRange.from === 0 && rollingRange.to === 5, `1440m must span 0..5, got ${rollingRange.from}..${rollingRange.to}`);
+}

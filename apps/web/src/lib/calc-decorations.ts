@@ -53,6 +53,9 @@ const CLASS_BY_KIND: Readonly<Record<TokenKind, string | null>> = {
   string: "cm-calc-string",
   // `bms-calc-v3` only (ADR 0070 decision 4): a `$key` parameter reference.
   param: "cm-calc-param",
+  // `bms-calc-v3` only (ADR 0070 decision 5, `E4.1b`): a window literal — `24h`,
+  // `today`. A keyword, not a function: the ident class would mislead.
+  window: "cm-calc-window",
   // `eof` marks the end of input. It has `text: ""`, so a decoration built from
   // it would be zero-width — CodeMirror renders nothing for one, and a mark
   // that renders nothing is a mark that hides a bug.
