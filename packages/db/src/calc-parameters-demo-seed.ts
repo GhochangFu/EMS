@@ -17,7 +17,8 @@ import type { SeedQueryable } from "./seed-tenant";
  * shipping with a value, and the pilot is a real client: a guessed rupee
  * tariff on its screen is the B14 risk verbatim. `db:seed` is demo data for
  * the demo tenant (`meta.tenant = "demo"`), and that is the whole reach of
- * this module. `verify-hierarchy-seed.ts` counts the row as the fleet role.
+ * this module. `verify-hierarchy-seed.ts` counts the row as `bms_owner` inside
+ * the ESKOM `withOrganization` bracket (the GUC is what lets FORCE RLS show it).
  *
  * **Insert-if-absent, not update.** The other seeds re-assert their rows on
  * every `compose up` (`ON CONFLICT … DO UPDATE`), because those rows are the

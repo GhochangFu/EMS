@@ -268,7 +268,9 @@ async function main(): Promise<void> {
       // `E4.1c` — the demo tariff row (ADR 0070 decision 7, Q1 ruling). ESKOM
       // only, insert-if-absent; the module header says why both. Inside this
       // bracket because `bms.calc_parameters` is FORCE-RLS and the row needs
-      // the tenant GUC. Order-free: it references only the organization.
+      // the tenant GUC. Order-free within the seed: it references the organization
+      // and the `energy_tariff_per_kwh` vocabulary row, which migration `0074`
+      // writes — so `roles → migrate → seed` puts it there on every environment.
       await seedCalcParametersDemo(pool, eskomOrgId);
     });
 
