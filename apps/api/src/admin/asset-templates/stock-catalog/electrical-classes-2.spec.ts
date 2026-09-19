@@ -328,6 +328,7 @@ const APFC_POINT_KEYS: readonly string[] = [
   "step_operation_count",
   "capacitor_current_a",
   "step_fault_state",
+  "steps_per_day", // E4.1c: derived, v3 — electrical-classes-3.spec.ts pins it
 ];
 
 /**
@@ -355,8 +356,10 @@ const APFC_ALARM_CODES: readonly string[] = [
 /**
  * `electrical-apfc` against `docs/electrical-derived-taglist-v1.md` §6
  * (plan §5.5). The smallest entry in the row, and deliberately checked as hard
- * as the largest: 14 points, no manual rows, no derived points, and the one KPI
- * in the catalog that carries **no `unit` key at all**.
+ * as the largest: 15 points, no manual rows, ONE derived point since `E4.1c`
+ * (`steps_per_day`, `bms-calc-v3` — the class was the only one with no formula
+ * at all until then), and the one KPI in the catalog that carries **no `unit`
+ * key at all**.
  */
 function checkApfc(): void {
   const entry = requireStockEntry(APFC_CODE);
@@ -372,16 +375,16 @@ function checkApfc(): void {
       `bms.asset_domains at import time; got "${entry.domain}"`,
   );
   assert(
-    entry.stockVersion === 1,
-    `${APFC_CODE} is a first release — stockVersion 1, got ${String(entry.stockVersion)}`,
+    entry.stockVersion === 2,
+    `${APFC_CODE} is at stockVersion 2 since E4.1c (steps_per_day), got ${String(entry.stockVersion)}`,
   );
 
-  // ---- 14 points, 4 core + 10 extended + 0 manual + 0 derived -------------
+  // ---- 15 points, 4 core + 10 extended + 0 manual + 1 derived -------------
 
   assert(
-    entry.points.length === 14,
-    `tag list §6 has 14 rows, all of them declared, and none of its four derived codes is ` +
-      `expressible — 14 points. Got ${entry.points.length}`,
+    entry.points.length === 15,
+    `tag list §6 has 14 rows, all of them declared, and E4.1c authors one of its four derived ` +
+      `codes (steps_per_day, v3) — 15 points. Got ${entry.points.length}`,
   );
 
   const tierCount = (tier: string): number =>
@@ -396,12 +399,12 @@ function checkApfc(): void {
     `§6 has no M column entries — an APFC controller instruments every row it names. The entry ` +
       `marks ${tierCount("manual")} manual`,
   );
+  const apfcDerived = entry.points.filter((point) => point.kind !== "measured").map((point) => point.pointKey);
   assert(
-    entry.points.every((point) => point.kind === "measured"),
-    `${APFC_CODE} authors a derived point and must not: all four of §6's derived codes are ` +
-      "deferred (rated kVAr per step, a time window, tan/acos, the tariff band), so this is the " +
-      "one class in the row with no formula at all. " +
-      `Got: ${entry.points.filter((point) => point.kind !== "measured").map((point) => point.pointKey).join(", ")}`,
+    apfcDerived.join(",") === "steps_per_day",
+    `${APFC_CODE} authors exactly one derived point, E4.1c's steps_per_day: the other three of §6's ` +
+      "derived codes stay deferred (rated kVAr per step, tan/acos, the tariff band). " +
+      `Got: ${apfcDerived.join(", ") || "(none)"}`,
   );
 
   entry.points.forEach((point, index) => {
@@ -421,7 +424,7 @@ function checkApfc(): void {
   );
 
   const keySet = new Set(declaredKeys);
-  assert(keySet.size === 14, `${APFC_CODE}: no point key may repeat`);
+  assert(keySet.size === 15, `${APFC_CODE}: no point key may repeat`);
 
   for (const code of DEFERRED_DERIVED_CODES[APFC_CODE]) {
     assert(

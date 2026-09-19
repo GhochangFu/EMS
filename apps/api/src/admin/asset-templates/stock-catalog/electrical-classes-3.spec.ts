@@ -365,11 +365,17 @@ const SOLAR_PV_E41C: readonly SustainabilityRow[] = [
   ["capacity_utilization_pct", "{ac_power_kw} / $installed_kwp * 100", "%"],
 ];
 
+/** APFC — the "only class with no derived point at all" claim ends here. */
+const APFC_E41C: readonly SustainabilityRow[] = [
+  ["steps_per_day", "delta({step_operation_count}, 24h)", ""],
+];
+
 /** Every E4.1c class beside the feeder: `[code, rows, firstSortOrder, expectedVersion]`. */
 export const E41C_ELECTRICAL_CLASSES: ReadonlyArray<readonly [string, readonly SustainabilityRow[], number, number]> = [
   ["electrical-transformer", TRANSFORMER_E41C, 30, 2],
   ["electrical-dg-set", DG_SET_E41C, 38, 2],
   ["electrical-solar-pv", SOLAR_PV_E41C, 26, 2],
+  ["electrical-apfc", APFC_E41C, 14, 2],
 ];
 
 export function e41cElectricalClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {

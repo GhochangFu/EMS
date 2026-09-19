@@ -206,8 +206,9 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // connection is another asset's §1 meter; a deviation needs the whole
   // string set where §5 declares one key; self-consumption needs the site load.
   "electrical-solar-pv": ["grid_export_kw", "string_current_deviation_pct", "self_consumption_pct"],
-  // §6 — rated kVAr per step, a time window, `tan`/`acos`, and the tariff band.
-  "electrical-apfc": ["pf_correction_kvar", "steps_per_day", "capacitor_health_pct", "pf_penalty_hours"],
+  // §6 — rated kVAr per step, `tan`/`acos`, and the tariff band. E4.1c
+  // DISCHARGED `steps_per_day` (`delta({step_operation_count}, 24h)`).
+  "electrical-apfc": ["pf_correction_kvar", "capacitor_health_pct", "pf_penalty_hours"],
   // The water pack — E5.1, docs/e5.1-derived-taglist-v1.md. Fifteen records
   // over fourteen codes; the seven the pack DOES author are in water.ts.
   //
