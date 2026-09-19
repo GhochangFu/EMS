@@ -411,10 +411,28 @@
 > pilot), and refuses `timezone_unset` where none is set; an empty window
 > refuses `window_empty`; **a stalled refresh policy fails closed** under two
 > budgets per read (20,000 buckets; 180 minutes of raw rows beyond the `1m`
-> watermark) as `windows_unresolved`. The stock sustainability points and the
-> Rand-tariff absorption are `E4.1c`'s. Not a §6 promotion: the ESG module was
-> never a §6 item, and `btree_gist` — the one extension this needed — is
-> provisioned by `roles.ts` per §4.4, not by the migration.
+> watermark) as `windows_unresolved`. **And the content that waited on both**
+> (`E4.1c`, 2026-09-20, PRs #502, #503 and #504 — twelve plan rulings, three
+> against the recommendation; fourteen reviews and a post-merge sweep applied;
+> ADR 0070 Amendment 2): the Rand tariff is gone — `DashboardService` and
+> `ReportsService` price energy per asset at the nearest-scope
+> `energy_tariff_per_kwh`, the Energy Centre and the report DTOs carry
+> `indicativeCost` / `tariffPerKwh` / `currency` (nullable; a scope with no
+> tariff or two currencies answers `null`, never `0`), `bms.organizations.currency`
+> (migration `0076`, ISO 4217, `NOT NULL`, `ESKOM` `ZAR` / `PHEWB` `INR`) is
+> the label and the web formats with `Intl.NumberFormat`; the demo seed enters
+> `2.15` for `ESKOM` only; and **forty-nine `bms-calc-v3` sustainability
+> points across nineteen stock entries** — energy cost and CO₂ per hour and
+> today, savings against a baseline, water today and its cost, DG availability
+> and starts, solar performance ratio and specific yield, pump duty and
+> availability, lift and escalator availability and cycles, fire-panel
+> isolation hours — each bumping its `stockVersion`, emptying twenty-five
+> records from the stock catalog's deferral ledger (106/97 → 81/77). What
+> stays deferred is what the two extensions did not touch (a key the vocabulary
+> lacks, a comparison, an event count, a model). `E4.2`, `E4.3` and `E1.6` are
+> unblocked. Not a §6 promotion: the ESG module was never a §6 item, and
+> `btree_gist` — the one extension this needed — is provisioned by `roles.ts`
+> per §4.4, not by the migration.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
@@ -572,7 +590,8 @@ The completed prototype screens are:
 6. **CRAC / Cooling** — animated HVAC schematic, supply/return temps,
    chilled-water loop, fan speeds
 7. **Energy Centre** — energy KPIs, source mix, peak demand, top
-   consumers (charts only, no schematic)
+   consumers (charts only, no schematic); the indicative cost is the
+   organization's tariff parameter in its own currency since `E4.1c`
 
 Everything else from the mockup or production north star is out of scope
 until the corresponding add-on phase begins (see §6).
