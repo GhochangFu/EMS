@@ -1,5 +1,5 @@
-import { DASHBOARD_GRID } from "@bms/shared";
-import { CORE, EXTENDED, MANUAL, MEASURED } from "./point-fields";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
+import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -134,6 +134,24 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-etp` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §6, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `water-etp` **v2** (2026-09-19, `E4.1c`): three `bms-calc-v3` derived
+ *    points appended at `sortOrder` 17–19 (ADR 0070 decision 8 as
+ *    widened by plan Q5 — the same three codes on all six water classes, each
+ *    over its own inlet flow): `kl_today = sum({influent_flow_klh}, today)`,
+ *    `water_cost_today = sum({influent_flow_klh}, today) * $water_tariff_per_kl`,
+ *    `water_saving_vs_baseline_pct` against `$water_baseline_kl_per_day`
+ *    prorated by `hours(today)`. **The inlet here is `influent_flow_klh`** —
+ *    the raw effluent inlet — process water already paid for at the WTP or the utility meter, so a tenant that would double-count leaves `water_tariff_per_kl` unset (a counted `parameter_unset`) or deletes the cost row on the draft. Four
+ *    things an importing tenant must know: (1) a `$key` with no value is a
+ *    counted `parameter_unset` until entered on `/admin/calc-parameters`,
+ *    nearest scope wins; the money row carries the empty-string unit — the
+ *    amount is in `bms.organizations.currency`; (2) a `today` window needs
+ *    the location's time zone (`locations.timezone`), `timezone_unset`
+ *    otherwise, and at the first tick after local midnight `hours(today)` is
+ *    `0` so the saving row refuses `non_finite` for one tick; (3) every row is
+ *    `scheduled` at 60 s — at most one tick old — with `minCoverageRatio`
+ *    `null`, fail closed; (4) the flow is tier C, so no `missing_input` arises
+ *    on a correctly mapped asset.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (influent_flow_klh, discharge_flow_klh, neutralization_ph, discharge_ph, bio_mlss_mgl, bio_do_mgl, transfer_pump_status), plus one
@@ -157,7 +175,7 @@ export const WATER_ETP: StockAssetTemplateEntry = {
     "alarm rows carry a meaning and no limit, and the discharge-consent rows carry the CPCB " +
     "Schedule VI meaning rather than a number, because a consent value is per site and per " +
     "consent.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -503,5 +521,32 @@ export const WATER_ETP: StockAssetTemplateEntry = {
     { ...MEASURED, pointKey: "filter_press_status", label: "Sludge dewatering run status", unit: null, required: false, sortOrder: 14, meta: EXTENDED },
     { ...MEASURED, pointKey: "transfer_pump_status", label: "Inter-stage transfer pump status", unit: null, required: true, sortOrder: 15, meta: CORE },
     { ...MEASURED, pointKey: "guard_pond_level_pct", label: "Guard/holding pond level", unit: "%", required: false, sortOrder: 16, meta: EXTENDED },
+    // `E4.1c` — ADR 0070 decision 8 / Q5, plan §3.7: the three water rows over
+    // this class's inlet flow. Scheduled at 60 s, `minCoverageRatio` null, no
+    // `meta`; the money row carries `unit: ""` (Q8). See VERSION HISTORY v2.
+    {
+      ...derived("sum({influent_flow_klh}, today)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_today",
+      label: "Inlet water today",
+      unit: "KL",
+      required: false,
+      sortOrder: 17,
+    },
+    {
+      ...derived("sum({influent_flow_klh}, today) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_today",
+      label: "Water cost today (organization currency)",
+      unit: "",
+      required: false,
+      sortOrder: 18,
+    },
+    {
+      ...derived("(1 - sum({influent_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_saving_vs_baseline_pct",
+      label: "Water saving vs baseline, today",
+      unit: "%",
+      required: false,
+      sortOrder: 19,
+    },
   ],
 };

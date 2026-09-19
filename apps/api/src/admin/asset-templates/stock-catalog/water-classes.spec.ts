@@ -294,6 +294,17 @@ const ETP_POINTS: readonly PointRow[] = [
   ["filter_press_status", "extended", null],
   ["transfer_pump_status", "core", null],
   ["guard_pond_level_pct", "extended", "%"],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "derived", "KL"],
+  ["water_cost_today", "derived", ""],
+  ["water_saving_vs_baseline_pct", "derived", "%"],
+];
+
+/** E4.1c's three v3 rows (plan §3.7), default input age. */
+const ETP_DERIVED: readonly DerivedRow[] = [
+  ["kl_today", "sum({influent_flow_klh}, today)", null],
+  ["water_cost_today", "sum({influent_flow_klh}, today) * $water_tariff_per_kl", null],
+  ["water_saving_vs_baseline_pct", "(1 - sum({influent_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
 ];
 
 /**
@@ -320,20 +331,21 @@ const ETP_ALARMS: readonly AlarmRow[] = [
  */
 function checkEtp(): void {
   const entry = requireStockEntry(ETP_CODE);
-  assertEntryIdentity(ETP_CODE, entry, "etp", "water");
+  assertEntryIdentity(ETP_CODE, entry, "etp", "water", 2);
 
-  // ---- 17 points, 7 core + 8 extended + 2 manual + 0 derived --------------
+  // ---- 20 points, 7 core + 8 extended + 2 manual + 3 derived (3 E4.1c) --------------
 
   assert(
     tierCount(entry, "core") === 7 &&
       tierCount(entry, "extended") === 8 &&
       tierCount(entry, "manual") === 2 &&
-      tierCount(entry, "derived") === 0,
+      tierCount(entry, "derived") === 3,
     `§6 marks 7 rows C, 7 X and 1 X/M (extended, first-listed wins) and 2 M, and all four of its ` +
-      `derived codes are deferred — 7/8/2/0. Got ${tierCount(entry, "core")}/` +
+      `derived codes are deferred — 7/8/2/3 (E4.1c adds three v3 rows). Got ${tierCount(entry, "core")}/` +
       `${tierCount(entry, "extended")}/${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(ETP_CODE, "§6", entry, ETP_POINTS);
+  assertDerivedPoints(ETP_CODE, entry, ETP_DERIVED);
   assertCodDualTier();
   assertNoKpis(ETP_CODE, entry, "§6");
   assertDeferralsAbsent(ETP_CODE, entry);
@@ -424,8 +436,16 @@ const STP_E41C: readonly SustainabilityRow[] = [
   ["water_saving_vs_baseline_pct", "(1 - sum({influent_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
 ];
 
+/** water-etp over `{influent_flow_klh}`, §6's inlet — plan §3.7. */
+const ETP_E41C: readonly SustainabilityRow[] = [
+  ["kl_today", "sum({influent_flow_klh}, today)", "KL"],
+  ["water_cost_today", "sum({influent_flow_klh}, today) * $water_tariff_per_kl", ""],
+  ["water_saving_vs_baseline_pct", "(1 - sum({influent_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+];
+
 /** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
 export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
+  ["water-etp", ETP_E41C, 17, 2],
   ["water-stp", STP_E41C, 18, 2],
 ];
 
