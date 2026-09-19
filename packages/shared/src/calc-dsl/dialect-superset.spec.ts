@@ -259,7 +259,10 @@ function genExpressionV2Grammar(rng: () => number): string {
  * made explicit here rather than left to fall through silently. No generator
  * in this file ever emits a `param` node — the `paramRefs === []` assertions
  * below are what prove that, not this counter — so `counts.param` is expected
- * to stay `0` and is never asserted `> 0`. */
+ * to stay `0` and is never asserted `> 0`. `E4.1b` U6 extends it again with
+ * `"window"` and `"hours"` — no generator in this file ever emits a window
+ * token (ADR 0070 decision 2 gates it on `isWindowDialect`), so both stay `0`
+ * for the same reason `param` does, and are never asserted `> 0` either. */
 function countKinds(node: CalcExpr, counts: Record<string, number>): void {
   counts[node.kind] = (counts[node.kind] ?? 0) + 1;
   if (node.kind === "unary") {
@@ -269,9 +272,11 @@ function countKinds(node: CalcExpr, counts: Record<string, number>): void {
     countKinds(node.right, counts);
   } else if (node.kind === "call") {
     node.args.forEach((arg) => countKinds(arg, counts));
+  } else if (node.kind === "window") {
+    countKinds(node.ref, counts);
   }
-  // "number", "ref", "qref", "aggregate" and "param" carry no CalcExpr
-  // children — nothing further to walk.
+  // "number", "ref", "qref", "aggregate", "param" and "hours" carry no
+  // CalcExpr children — nothing further to walk.
 }
 
 /** A random input map over `refs`: values in ±1e3, a 5 % chance a key is
@@ -354,7 +359,18 @@ function runGeneratedCorpus(
 ): void {
   let okCount = 0;
   let refusalCount = 0;
-  const kindCounts: Record<string, number> = { number: 0, ref: 0, unary: 0, binary: 0, call: 0, qref: 0, aggregate: 0, param: 0 };
+  const kindCounts: Record<string, number> = {
+    number: 0,
+    ref: 0,
+    unary: 0,
+    binary: 0,
+    call: 0,
+    qref: 0,
+    aggregate: 0,
+    param: 0,
+    window: 0,
+    hours: 0,
+  };
 
   const narrowOptions: ParseOptions | undefined = narrow === undefined ? undefined : { dialect: narrow };
   const wideOptions: ParseOptions = { dialect: wide };

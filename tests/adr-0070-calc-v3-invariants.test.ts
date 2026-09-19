@@ -48,7 +48,11 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  *   "the `(narrow, v3)` superset property, applied to real production text"
  *   rather than a new claim.
  * - **(b) — no dialect gate outside the three grammar files compares to the
- *   `v2` literal** (U7).
+ *   `v2` literal** (U7). **(b′) — `E4.1b` U6 widens the same scan to the `v3`
+ *   literal too**: a gate written `dialect === CALC_DIALECT_V3` is exactly as
+ *   wrong as the `v2` version it was modelled on — it silently excludes
+ *   whatever dialect comes after `v3` — so the regex and the allowlist are
+ *   shared between both literals rather than duplicated into a second scan.
  * - **(c) — `CALC_DIALECTS` has exactly three members, and `KPI_DIALECTS` in
  *   `asset-templates-content.schema.ts` is spread from it.**
  *
@@ -146,6 +150,12 @@ describe("ADR 0070 part (a) — every stock-catalog formula literal parses ident
  * `isParameterDialect` for the *capability*, never the version. The three
  * grammar files own the predicates and are the only permitted comparison
  * sites. Tests and specs are excluded: a fixture may name a dialect.
+ *
+ * **(b′), `E4.1b` U6:** the same defect can be written against `v3` instead —
+ * `dialect === CALC_DIALECT_V3` silently excludes a future `v4` the way the
+ * `v2` version excluded `v3` itself — so the regex below matches either
+ * literal (`CALC_DIALECT_V(2|3)` / `"bms-calc-v(2|3)"`) rather than adding a
+ * second, near-identical scan.
  */
 const DIALECT_GATE_ROOTS = ["apps/api/src", "apps/web/src", "packages/db/src"];
 const DIALECT_GATE_ALLOWLIST = new Set([
@@ -153,7 +163,8 @@ const DIALECT_GATE_ALLOWLIST = new Set([
   "packages/shared/src/calc-dsl/tokenizer.ts",
   "packages/shared/src/calc-dsl/parser.ts",
 ]);
-const V2_LITERAL_GATE = /[!=]==\s*(?:CALC_DIALECT_V2\b|"bms-calc-v2")|(?:\bCALC_DIALECT_V2|"bms-calc-v2")\s*[!=]==/;
+const V2_LITERAL_GATE =
+  /[!=]==\s*(?:CALC_DIALECT_V[23]\b|"bms-calc-v[23]")|(?:\bCALC_DIALECT_V[23]\b|"bms-calc-v[23]")\s*[!=]==/;
 
 function sourceFilesUnder(root: string): string[] {
   const out: string[] = [];
@@ -193,7 +204,7 @@ function v2LiteralGates(files: readonly string[]): string[] {
   return offenders;
 }
 
-describe("ADR 0070 part (b) — no dialect gate outside the grammar files compares to the v2 literal", () => {
+describe("ADR 0070 part (b)/(b′) — no dialect gate outside the grammar files compares to the v2 or v3 literal", () => {
   const files = DIALECT_GATE_ROOTS.flatMap(sourceFilesUnder);
 
   it("scans a real tree, so the rule below is not silently vacuous", () => {
@@ -201,19 +212,25 @@ describe("ADR 0070 part (b) — no dialect gate outside the grammar files compar
     expect(files.some((f) => relativeTo(f) === "apps/api/src/admin/asset-templates/asset-templates.schema.ts")).toBe(true);
   });
 
-  it("the regex matches both operator orders and nothing else", () => {
+  it("the regex matches both operator orders and nothing else, for both v2 and v3", () => {
     expect(V2_LITERAL_GATE.test("  if (dialect === CALC_DIALECT_V2 && x) {")).toBe(true);
     expect(V2_LITERAL_GATE.test("  if (CALC_DIALECT_V2 !== row.dialect) {")).toBe(true);
     expect(V2_LITERAL_GATE.test('  if (dialect === "bms-calc-v2") {')).toBe(true);
+    expect(V2_LITERAL_GATE.test("  if (dialect === CALC_DIALECT_V3 && x) {")).toBe(true);
+    expect(V2_LITERAL_GATE.test("  if (CALC_DIALECT_V3 !== row.dialect) {")).toBe(true);
+    expect(V2_LITERAL_GATE.test('  if (dialect === "bms-calc-v3") {')).toBe(true);
     expect(V2_LITERAL_GATE.test("  const label = DIALECT_LABELS[CALC_DIALECT_V2];")).toBe(false);
+    expect(V2_LITERAL_GATE.test("  const label = DIALECT_LABELS[CALC_DIALECT_V3];")).toBe(false);
     expect(V2_LITERAL_GATE.test("  if (isCrossAssetDialect(dialect)) {")).toBe(false);
   });
 
-  it("no source file outside limits/tokenizer/parser compares a dialect to CALC_DIALECT_V2", () => {
-    expect(v2LiteralGates(files), "each site silently excludes v3 — use isCrossAssetDialect / isParameterDialect").toEqual([]);
+  it("no source file outside limits/tokenizer/parser compares a dialect to CALC_DIALECT_V2 or CALC_DIALECT_V3", () => {
+    expect(v2LiteralGates(files), "each site silently excludes the next dialect — use isCrossAssetDialect / isParameterDialect / isWindowDialect").toEqual(
+      [],
+    );
   });
 
-  it("positive control: the scan reports an injected gate", () => {
+  it("positive control: the scan reports an injected v2 gate", () => {
     // Written to a temp dir, never into the scanned tree: a killed run must
     // not leave a probe that fails the next `pnpm build`.
     const dir = mkdtempSync(join(tmpdir(), "adr0070-"));
@@ -222,6 +239,20 @@ describe("ADR 0070 part (b) — no dialect gate outside the grammar files compar
       writeFileSync(injected, "export const x = (d: string) => d === CALC_DIALECT_V2;\n");
       const [offender] = v2LiteralGates([injected]);
       expect(offender, "the injected gate must be reported").toMatch(/probe\.ts:1$/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("positive control: the scan reports an injected v3 gate (b′)", () => {
+    // Proves the widened half of the regex actually fires, not just the v2
+    // half it was copied from.
+    const dir = mkdtempSync(join(tmpdir(), "adr0070-"));
+    const injected = join(dir, "probe.ts");
+    try {
+      writeFileSync(injected, "export const x = (d: string) => d === CALC_DIALECT_V3;\n");
+      const [offender] = v2LiteralGates([injected]);
+      expect(offender, "the injected v3 gate must be reported").toMatch(/probe\.ts:1$/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
