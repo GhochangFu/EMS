@@ -684,8 +684,11 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // the 500 by construction: the eight codes the tag list shares with an existing
       // array or module are REFERENCED, never redeclared.
       // 605 since `F2.8` Task 1: 602 + UNIT_BY_KEY's three new entries
-      // (site_kw, it_kw, pue).
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(605);
+      // (site_kw, it_kw, pue). **634 since `E4.1c` PR 2b** — 605 + the 29
+      // sustainability codes (16 electrical + 3 water in 2a, 5 mechanical + 1
+      // HVAC + 4 facility in 2b), measured on `point-key-units.ts` after the
+      // move; PR 2a left this at 605 and the migration review named the slack.
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(634);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {

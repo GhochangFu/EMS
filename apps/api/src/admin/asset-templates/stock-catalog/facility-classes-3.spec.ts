@@ -515,13 +515,13 @@ const BAS_ALARMS: readonly AlarmRow[] = [
  *
  * Asserted as an exact set rather than a subset, so that adding an alarm on any
  * one of them — or quietly dropping a declared row — fails and names the change.
- * The access door's `denied_ratio_pct` claim is the shape. Over the MEASURED
- * rows only — §7's table — since `E4.1c` appended a derived row no bullet binds.
+ * The access door's `denied_ratio_pct` claim is the shape. Over ALL points —
+ * `E4.1c`'s derived `uptime_pct_24h` is in the expected set by name, so a
+ * second derived row appended later still fails here.
  */
 function assertTheRowsNoAlarmBinds(entry = requireStockEntry(BAS_CODE)): void {
   const bound = new Set(alarmsOf(entry).map((alarm) => alarm.pointKey));
   const unbound = entry.points
-    .filter((point) => point.kind === "measured")
     .map((point) => point.pointKey)
     .filter((pointKey) => !bound.has(pointKey))
     .sort();
@@ -532,10 +532,12 @@ function assertTheRowsNoAlarmBinds(entry = requireStockEntry(BAS_CODE)): void {
     "memory_pct",
     "points_stale_count",
     "ups_on_battery",
+    // E4.1c's derived row: a computed availability figure is a trend, not a page.
+    "uptime_pct_24h",
   ];
   assert(
     unbound.join(", ") === expected.join(", "),
-    `${BAS_CODE} must declare exactly these six rows that no alarm binds:\n  expected ` +
+    `${BAS_CODE} must declare exactly these seven rows that no alarm binds:\n  expected ` +
       `${expected.join(", ")}\n  got      ${unbound.join(", ") || "(none)"}\n` +
       "§7 raises seven bullets over thirteen rows, and §12 ruling 6 forbids inventing an alarm " +
       "for a row the document does not raise one for. Three are housekeeping trends a chart " +
@@ -544,7 +546,9 @@ function assertTheRowsNoAlarmBinds(entry = requireStockEntry(BAS_CODE)): void {
       "reported here and is named by the UPS battery plan instead; firmware_version is a string " +
       "with nothing to compare it against; and leak_state is the reused row the document " +
       "declares and raises no bullet for — the room's own leak detection answers it, and a " +
-      "second row here would page a controls engineer for a plumbing fault.",
+      "second row here would page a controls engineer for a plumbing fault; and uptime_pct_24h " +
+      "is E4.1c's derived availability, a trend and not a page (device_offline already alarms " +
+      "the instantaneous state).",
   );
 }
 

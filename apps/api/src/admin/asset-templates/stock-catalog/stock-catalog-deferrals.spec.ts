@@ -529,6 +529,41 @@ const DEFERRAL_REASON =
   "over a state point (the grammar counts nothing), a COUNTER whose cumulative sense or a " +
   "CONTACT whose polarity the document does not fix, a SLOPE, or one of the classes above.";
 
+/**
+ * **The four SUPERSEDED codes are never authored** (E4.1c, plan §3.9; the PR 2b
+ * security review). `availability_pct`, `co2_avoided_kg`, `duty_hours_pct` and
+ * `uptime_pct` left the ledger under decision 8's `<quantity>_<window>` rule
+ * — a record's job was to say why the code is absent, and with the record gone
+ * nothing else refused the un-windowed name. This does: a stock entry that
+ * authors one of the four under the old name fails here naming the successor.
+ * Anti-vacuity is the positive half — the successors ARE found: four entries
+ * author `availability_pct_24h`, one each the other three.
+ */
+export const SUPERSEDED_CODES: Readonly<Record<string, { successor: string; authoredBy: number }>> = {
+  availability_pct: { successor: "availability_pct_24h", authoredBy: 4 },
+  co2_avoided_kg: { successor: "co2_avoided_kg_today", authoredBy: 1 },
+  duty_hours_pct: { successor: "duty_hours_pct_24h", authoredBy: 1 },
+  uptime_pct: { successor: "uptime_pct_24h", authoredBy: 1 },
+};
+
+export function assertSupersededCodesNeverAuthored(): void {
+  for (const [old, { successor, authoredBy }] of Object.entries(SUPERSEDED_CODES)) {
+    const authoringOld = STOCK_ASSET_TEMPLATE_CATALOG.filter((entry) => entry.points.some((p) => p.pointKey === old));
+    assert(
+      authoringOld.length === 0,
+      `${authoringOld.map((e) => e.code).join(", ")} author(s) \"${old}\", which E4.1c SUPERSEDED by ` +
+        `\"${successor}\" (decision 8's <quantity>_<window> rule): the un-windowed code is never ` +
+        "authored, on any entry — a value under that name would claim a window it does not say.",
+    );
+    const authoringNew = STOCK_ASSET_TEMPLATE_CATALOG.filter((entry) => entry.points.some((p) => p.pointKey === successor));
+    assert(
+      authoringNew.length === authoredBy,
+      `\"${successor}\" must be authored by exactly ${authoredBy} stock entries (the positive control for ` +
+        `the \"${old}\" refusal above); got ${authoringNew.length}: [${authoringNew.map((e) => e.code).join(", ")}]`,
+    );
+  }
+}
+
 /** The shared reason plus the class's own list, so the failure names both. */
 export const deferralReason = (code: StockEntryCode): string =>
   `${DEFERRAL_REASON} Deferred for ${code}: ${DEFERRED_DERIVED_CODES[code].join(", ")}.`;
