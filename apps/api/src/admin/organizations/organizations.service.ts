@@ -103,6 +103,7 @@ export class OrganizationsAdminService {
       .values({
         code: body.code,
         name: body.name,
+        currency: body.currency,
         meta: body.meta ?? null,
         active: true,
       })
@@ -145,6 +146,7 @@ export class OrganizationsAdminService {
       .update(organizations)
       .set({
         name: body.name ?? existing.name,
+        currency: body.currency ?? existing.currency,
         meta: body.meta !== undefined ? body.meta : existing.meta,
       })
       .where(eq(organizations.id, id))
@@ -242,6 +244,7 @@ export class OrganizationsAdminService {
       code: row.code,
       name: row.name,
       active: row.active,
+      currency: row.currency,
       meta: (row.meta as Record<string, unknown> | null) ?? null,
       createdAt: row.createdAt.toISOString(),
     };

@@ -17,6 +17,7 @@ export function runAdminSchemaTests(): void {
   const org = createOrganizationBodySchema.parse({
     code: "DEMO",
     name: "Demo Org",
+    currency: "ZAR",
   });
   assert(org.code === "DEMO", "organization code parsed");
 

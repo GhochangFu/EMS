@@ -526,6 +526,13 @@
       "when": 1789791806391,
       "tag": "0075_location_timezone",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1789818098638,
+      "tag": "0076_organization_currency",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import {
   boolean,
+  char,
   doublePrecision,
   integer,
   jsonb,
@@ -37,6 +38,11 @@ export const organizations = bmsSchema.table("organizations", {
   name: varchar("name", { length: 255 }).notNull(),
   active: boolean("active").notNull().default(true),
   meta: jsonb("meta"),
+  // E4.1c / ADR 0070 decision 8: the ISO 4217 code every money figure for
+  // this organization is labelled with. NOT NULL, no default (migration 0076
+  // backfills ESKOM/PHEWB and aborts on any other NULL row); the write path
+  // checks membership through Intl.supportedValuesOf("currency").
+  currency: char("currency", { length: 3 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

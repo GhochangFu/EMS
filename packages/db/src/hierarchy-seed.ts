@@ -35,14 +35,20 @@ export async function getOrganizationId(
   return id;
 }
 
-/** Ensures ESKOM and PHEWB organization rows exist. */
+/**
+ * Ensures ESKOM and PHEWB organization rows exist.
+ *
+ * E4.1c / ADR 0070 decision 8: the SEED owns `currency` — migration `0076`
+ * backfills the two codes once, and every re-seed restates them here, so a
+ * hand edit on the demo database is reverted the way `name` is.
+ */
 export async function ensureOrganizations(pool: pg.Pool): Promise<void> {
   await pool.query(`
-    INSERT INTO bms.organizations (code, name, meta)
+    INSERT INTO bms.organizations (code, name, meta, currency)
     VALUES
-      ('ESKOM', 'Eskom SMOC', '{"tenant":"demo"}'::jsonb),
-      ('PHEWB', 'Public Health Engineering — West Bengal', '{"orgId":10}'::jsonb)
-    ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name
+      ('ESKOM', 'Eskom SMOC', '{"tenant":"demo"}'::jsonb, 'ZAR'),
+      ('PHEWB', 'Public Health Engineering — West Bengal', '{"orgId":10}'::jsonb, 'INR')
+    ON CONFLICT (code) DO UPDATE SET name = EXCLUDED.name, currency = EXCLUDED.currency
   `);
 }
 
