@@ -16,7 +16,7 @@ import { describe, expect, it } from "vitest";
  */
 type CalcParseError = { code: string; position: number };
 type ParseResult =
-  | { ok: true; ast: unknown; refs: string[]; crossRefs: unknown[]; paramRefs: string[] }
+  | { ok: true; ast: unknown; refs: string[]; crossRefs: unknown[]; paramRefs: string[]; windowReads: unknown[] }
   | { ok: false; errors: CalcParseError[] };
 
 const require_ = createRequire(import.meta.url);
@@ -24,9 +24,10 @@ const calcDsl = require_("@bms/shared") as {
   CALC_DIALECTS: readonly string[];
   CALC_DIALECT_V2: string;
   CALC_DIALECT_V3: string;
+  MAX_FORMULA_WINDOWS: number;
   parseFormula: (expression: string, options?: { dialect?: string }) => ParseResult;
 };
-const { CALC_DIALECTS, CALC_DIALECT_V2, CALC_DIALECT_V3, parseFormula } = calcDsl;
+const { CALC_DIALECTS, CALC_DIALECT_V2, CALC_DIALECT_V3, MAX_FORMULA_WINDOWS, parseFormula } = calcDsl;
 
 function asFailure(result: ParseResult): Extract<ParseResult, { ok: false }> {
   return result as Extract<ParseResult, { ok: false }>;
@@ -42,11 +43,19 @@ function asOk(result: ParseResult): Extract<ParseResult, { ok: true }> {
  * - **(a) — every `derived("…")` / `expression: "…"` literal under the stock
  *   catalog parses to the identical AST under its own authored dialect and
  *   under `v3`.** The `v3` half of `adr-0055-calc-v2-invariants.test.ts` part
- *   (b)/(f)'s claim, restated for the third dialect rather than duplicated —
- *   the stock catalog ships no `v3` literal today, so "its own dialect" is
- *   `v1` or `v2` for every entry this file finds, and part (a) is exactly
- *   "the `(narrow, v3)` superset property, applied to real production text"
- *   rather than a new claim.
+ *   (b)/(f)'s claim, restated for the third dialect rather than duplicated.
+ *   **Since `E4.1c` the catalog ships `v3` literals** (ADR 0070 decision 8):
+ *   the extractor reads `formulaDialect: CALC_DIALECT_V3` as well as `V2`, a
+ *   `v3`-authored literal is parsed under `v3` on both sides (the superset
+ *   claim is trivially true of it; what (a) then holds is that it PARSES), and
+ *   the "carries no `paramRefs`" claim applies to the non-`v3` literals only —
+ *   a `$key` is `v3` syntax, so a `v1`/`v2` literal cannot carry one.
+ * - **(a′) — the `v3` literals read only `0074`'s parameter vocabulary** (`E4.1c`
+ *   U12): the twelve codes are parsed out of the migration's `INSERT`, never
+ *   retyped; every `paramRefs` entry of every stock literal is one of them;
+ *   every `v3` literal's `windowReads.length ≤ MAX_FORMULA_WINDOWS`; and an
+ *   injected `{kw} * $not_a_key` in a temp copy is reported — the positive
+ *   control that proves the membership check can fail.
  * - **(b) — no dialect gate outside the three grammar files compares to the
  *   `v2` literal** (U7). **(b′) — `E4.1b` U6 widens the same scan to the `v3`
  *   literal too**: a gate written `dialect === CALC_DIALECT_V3` is exactly as
@@ -82,9 +91,18 @@ const stockCatalogFiles = readdirSync(stockCatalogDir)
  * calls end `",\n)"`). */
 const DERIVED_RE = /derived\(\s*"((?:[^"\\]|\\.)*)"\s*(?:,\s*(\{[^{}]*\}))?/g;
 const V2_OPTION_RE = /formulaDialect:\s*CALC_DIALECT_V2/;
+/** `E4.1c`: a `v3`-authored stock literal names the SYMBOL, like the `v2` rule. */
+const V3_OPTION_RE = /formulaDialect:\s*CALC_DIALECT_V3/;
 const EXPRESSION_RE = /expression:\s*"((?:[^"\\]|\\.)*)"/g;
 
 type ScannedLiteral = { literal: string; dialect: string | undefined };
+
+function dialectOf(options: string | null): string | undefined {
+  if (options === null) return undefined;
+  if (V3_OPTION_RE.test(options)) return CALC_DIALECT_V3;
+  if (V2_OPTION_RE.test(options)) return CALC_DIALECT_V2;
+  return undefined;
+}
 
 function extractLiterals(source: string): ScannedLiteral[] {
   const out: ScannedLiteral[] = [];
@@ -93,8 +111,7 @@ function extractLiterals(source: string): ScannedLiteral[] {
   DERIVED_RE.lastIndex = 0;
   // eslint-disable-next-line no-cond-assign
   while ((match = DERIVED_RE.exec(source))) {
-    const options = match[2] ?? null;
-    out.push({ literal: decode(match[1]), dialect: options !== null && V2_OPTION_RE.test(options) ? CALC_DIALECT_V2 : undefined });
+    out.push({ literal: decode(match[1]), dialect: dialectOf(match[2] ?? null) });
   }
   EXPRESSION_RE.lastIndex = 0;
   // eslint-disable-next-line no-cond-assign
@@ -105,6 +122,7 @@ function extractLiterals(source: string): ScannedLiteral[] {
 }
 
 const allLiterals = stockCatalogFiles.flatMap((file) => extractLiterals(readFileSync(file, "utf8")));
+const v3Literals = allLiterals.filter((entry) => entry.dialect === CALC_DIALECT_V3);
 
 describe("ADR 0070 part (a) — every stock-catalog formula literal parses identically under its own dialect and under bms-calc-v3", () => {
   it("found stock-catalog files to scan, so the scan below is not silently empty", () => {
@@ -117,6 +135,15 @@ describe("ADR 0070 part (a) — every stock-catalog formula literal parses ident
    * that file's `allLiterals.length + v2Literals.length`. */
   it("found at least 30 formula literals", () => {
     expect(allLiterals.length).toBeGreaterThanOrEqual(30);
+  });
+
+  /** Anti-vacuity for the `v3` arm: PR 2a authors 6 (feeder) + 1 + 5 + 4 + 1
+   * (transformer, DG, solar, APFC) + 6 × 3 (water) = 35 `v3` stock literals;
+   * PR 2b adds ten more. A `V3_OPTION_RE` that stopped matching would drop
+   * them all into the `v1` set, where they fail to parse — loud either way,
+   * but this floor names the cause. */
+  it("found at least 35 v3-authored literals (E4.1c PR 2a)", () => {
+    expect(v3Literals.length).toBeGreaterThanOrEqual(35);
   });
 
   it("every literal parses to the identical AST under its own authored dialect and under bms-calc-v3", () => {
@@ -134,7 +161,107 @@ describe("ADR 0070 part (a) — every stock-catalog formula literal parses ident
       expect(JSON.stringify(v3Ok.ast), `AST mismatch for ${JSON.stringify(literal)}`).toBe(JSON.stringify(ownOk.ast));
       expect(v3Ok.refs, `refs mismatch for ${JSON.stringify(literal)}`).toEqual(ownOk.refs);
       expect(v3Ok.crossRefs, `crossRefs mismatch for ${JSON.stringify(literal)}`).toEqual(ownOk.crossRefs);
-      expect(v3Ok.paramRefs, `a real stock literal must carry no paramRefs under v3: ${JSON.stringify(literal)}`).toEqual([]);
+      if (dialect !== CALC_DIALECT_V3) {
+        expect(v3Ok.paramRefs, `a non-v3 stock literal must carry no paramRefs under v3: ${JSON.stringify(literal)}`).toEqual([]);
+      }
+    }
+  });
+});
+
+// --- part (a′) — the v3 literals read only 0074's parameter vocabulary ---
+
+/**
+ * The twelve codes `0074_calc_parameters.sql` seeds into
+ * `bms.calc_parameter_keys`, parsed out of the `INSERT … VALUES` block. The
+ * vocabulary grows by `INSERT` (ADR 0070 decision 2), never by a release, so
+ * a code a stock formula reads must already be one of these — otherwise every
+ * tick refuses `parameter_unset` on a key no administrator can enter.
+ */
+const CALC_PARAMETERS_MIGRATION = join(repoRoot, "packages", "db", "drizzle", "0074_calc_parameters.sql");
+
+function parameterKeysOf(migration: string): string[] {
+  const start = migration.indexOf("INSERT INTO bms.calc_parameter_keys");
+  const end = start < 0 ? -1 : migration.indexOf("ON CONFLICT", start);
+  if (start < 0 || end < 0) return [];
+  return [...migration.slice(start, end).matchAll(/'([a-z][a-z0-9_]{0,63})'/g)]
+    .map((m) => m[1] as string)
+    .filter((code, index, all) => all.indexOf(code) === index);
+}
+
+/**
+ * The keys plan §3.7 reads — NINE distinct, not the "seven" plan §4 counts
+ * (twelve less the three it names unread: `chemical_baseline_kg_per_day`,
+ * `effluent_tariff_per_kl`, `tariff_pf_band`). PR 2b's packs read no `$key`,
+ * so this is equality now and stays equality.
+ */
+const PARAMETER_KEYS_IN_USE = [
+  "energy_tariff_per_kwh",
+  "grid_carbon_factor_kgco2_per_kwh",
+  "energy_baseline_kwh_per_day",
+  "contract_demand_kva",
+  "rated_kw",
+  "tank_capacity_l",
+  "installed_kwp",
+  "water_tariff_per_kl",
+  "water_baseline_kl_per_day",
+] as const;
+
+/** Every stock file's `paramRefs`, file by file, so an offender is named with its path. */
+function paramRefViolations(files: readonly string[], vocabulary: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  for (const file of files) {
+    for (const { literal, dialect } of extractLiterals(readFileSync(file, "utf8"))) {
+      const parsed = parseFormula(literal, { dialect: dialect ?? CALC_DIALECTS[0] });
+      if (!parsed.ok) continue; // part (a) reports the parse failure
+      for (const key of asOk(parsed).paramRefs) {
+        if (!vocabulary.has(key)) out.push(`${file}: ${JSON.stringify(literal)} reads $${key}, not a 0074 parameter key`);
+      }
+    }
+  }
+  return out;
+}
+
+describe("ADR 0070 part (a′) — the v3 stock literals read only 0074's parameter vocabulary", () => {
+  const vocabulary = new Set(parameterKeysOf(readFileSync(CALC_PARAMETERS_MIGRATION, "utf8")));
+
+  it("parses exactly twelve parameter codes out of 0074's INSERT (anti-vacuity)", () => {
+    expect([...vocabulary].sort()).toHaveLength(12);
+  });
+
+  it("every paramRefs entry of every stock literal is one of the twelve", () => {
+    expect(paramRefViolations(stockCatalogFiles, vocabulary)).toEqual([]);
+  });
+
+  it("the keys in use are exactly the nine of plan §3.7 (the other three of the twelve are read by nothing)", () => {
+    const inUse = new Set<string>();
+    for (const { literal, dialect } of v3Literals) {
+      const parsed = parseFormula(literal, { dialect });
+      if (parsed.ok) for (const key of asOk(parsed).paramRefs) inUse.add(key);
+    }
+    expect([...inUse].sort()).toEqual([...PARAMETER_KEYS_IN_USE].sort());
+  });
+
+  it("every v3 literal's window reads fit MAX_FORMULA_WINDOWS", () => {
+    for (const { literal, dialect } of v3Literals) {
+      const parsed = parseFormula(literal, { dialect });
+      expect(parsed.ok, `${JSON.stringify(literal)} must parse under v3`).toBe(true);
+      if (parsed.ok) expect(asOk(parsed).windowReads.length, JSON.stringify(literal)).toBeLessThanOrEqual(MAX_FORMULA_WINDOWS);
+    }
+  });
+
+  it("the positive control: an injected `{kw} * $not_a_key` literal in a temp copy is reported, naming the key", () => {
+    const dir = mkdtempSync(join(tmpdir(), "adr-0070-a-prime-"));
+    try {
+      const file = join(dir, "injected.ts");
+      writeFileSync(
+        file,
+        'export const X = { ...derived("{kw} * $not_a_key", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }) };\n',
+      );
+      const violations = paramRefViolations([file], vocabulary);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]).toContain("$not_a_key");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
