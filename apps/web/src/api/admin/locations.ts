@@ -35,6 +35,8 @@ export async function createAdminLocation(input: {
   type: AdminLocationDto["type"];
   province?: string | null;
   capital?: string | null;
+  /** E4.1b: IANA zone name; the server validates it against pg_timezone_names. */
+  timezone?: string | null;
   latitude: number;
   longitude: number;
   meta?: Record<string, unknown>;
@@ -55,6 +57,7 @@ export async function updateAdminLocation(
     type: AdminLocationDto["type"];
     province: string | null;
     capital: string | null;
+    timezone: string | null;
     latitude: number;
     longitude: number;
   }>,

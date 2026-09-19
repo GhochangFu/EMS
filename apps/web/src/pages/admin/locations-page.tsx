@@ -34,9 +34,20 @@ const emptyForm = {
   type: "rsmoc" as AdminLocationDto["type"],
   province: "",
   capital: "",
+  timezone: "",
   latitude: "0",
   longitude: "0",
 };
+
+/**
+ * E4.1b (plan Q13): the zone list the form OFFERS is the browser's — no
+ * endpoint; the server validates against `pg_timezone_names` on write.
+ * Guarded: `Intl.supportedValuesOf` is ES2022 and absent on older engines,
+ * where the input stays a free-text field.
+ */
+function browserTimezones(): string[] {
+  return typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+}
 
 /** Admin screen for location master data with org drill-down. */
 export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
@@ -51,6 +62,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
   const [editing, setEditing] = useState<AdminLocationDto | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState<string | null>(null);
+  const timezones = useMemo(browserTimezones, []);
 
   useEffect(() => {
     setSelection((current) => ({ ...current, organizationId: orgId }));
@@ -90,6 +102,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
         type: form.type,
         province: form.province || null,
         capital: form.capital || null,
+        timezone: form.timezone || null,
         latitude: Number(form.latitude),
         longitude: Number(form.longitude),
       };
@@ -134,6 +147,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
       type: item.type,
       province: item.province ?? "",
       capital: item.capital ?? "",
+      timezone: item.timezone ?? "",
       latitude: String(item.latitude),
       longitude: String(item.longitude),
     });
@@ -182,6 +196,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
               <th className="px-2 py-2">Slug</th>
+              <th className="px-2 py-2">Timezone</th>
               <th className="px-2 py-2">Status</th>
               <th className="px-2 py-2">Actions</th>
             </tr>
@@ -197,6 +212,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                 <td className="px-2 py-2 font-mono">{item.code}</td>
                 <td className="px-2 py-2 font-semibold text-bms-green">{item.name}</td>
                 <td className="px-2 py-2 font-mono text-xs">{item.slug}</td>
+                <td className="px-2 py-2 font-mono text-xs">{item.timezone ?? "—"}</td>
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}
@@ -292,6 +308,21 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   value={form.province}
                   onChange={(event) => setForm({ ...form, province: event.target.value })}
                 />
+              </label>
+              <label className="block text-xs font-semibold text-bms-muted">
+                Timezone (IANA)
+                <input
+                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  list="tz-list"
+                  placeholder="Asia/Kolkata"
+                  value={form.timezone}
+                  onChange={(event) => setForm({ ...form, timezone: event.target.value })}
+                />
+                <datalist id="tz-list">
+                  {timezones.map((tz) => (
+                    <option key={tz} value={tz} />
+                  ))}
+                </datalist>
               </label>
               <label className="block text-xs font-semibold text-bms-muted">
                 Latitude
