@@ -93,7 +93,7 @@ export function bucketCount(segments: readonly Segment[]): number {
  * level statement; the text names the budget it crossed and every watermark,
  * for the host's once-per-sweep warn.
  */
-export function budgetDefect(segments: readonly Segment[], endMs: number, watermarks: Watermarks): string | null {
+export function budgetDefect(segments: readonly Segment[], watermarks: Watermarks): string | null {
   const marks = WINDOW_LEVELS.map((level) => `${level} ${new Date(watermarks[level]).toISOString()}`).join(", ");
   const buckets = bucketCount(segments);
   if (buckets > MAX_WINDOW_BUCKETS) {
@@ -103,7 +103,6 @@ export function budgetDefect(segments: readonly Segment[], endMs: number, waterm
   if (liveMinutes > MAX_LIVE_MINUTES) {
     return `a window read would aggregate ${Math.round(liveMinutes)} minutes of raw rows beyond the 1m watermark, over the ${MAX_LIVE_MINUTES} budget — the refresh policies are stalled (watermarks: ${marks})`;
   }
-  void endMs;
   return null;
 }
 
