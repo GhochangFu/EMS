@@ -52,6 +52,23 @@ const locationsTableBlock = (schema: string): string => {
   return end < 0 ? schema.slice(start) : schema.slice(start, end + 4);
 };
 
+/**
+ * The seed's `values` / `locationValues` object literal — from `const <name> = {`
+ * to the first line that is exactly `    };` — with its comment lines dropped,
+ * so a comment quoting the literal (item 3 of the PR 1 review adds one right
+ * above it) cannot keep S7/S8 green with the property deleted.
+ */
+const seedValuesObject = (source: string, name: string): string => {
+  const start = source.indexOf(`const ${name} = {`);
+  if (start < 0) throw new Error(`no const ${name} = { in the seed`);
+  const end = source.indexOf("\n    };", start);
+  const block = end < 0 ? source.slice(start) : source.slice(start, end + 7);
+  return block
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+};
+
 const migrationFile = readdirSync(drizzleDir).find(
   (f) => f.startsWith(MIGRATION_PREFIX) && f.endsWith(".sql"),
 );
@@ -130,14 +147,17 @@ describe("E4.1b locations.timezone (ADR 0070 decision 6)", () => {
   });
 
   // S7 — Q12 ruling: the Eskom demo is SAST.
-  it("eskom-locations-seed.ts sets timezone: \"Africa/Johannesburg\"", () => {
-    expect(read("packages/db/src/eskom-locations-seed.ts")).toContain(
-      'timezone: "Africa/Johannesburg"',
-    );
+  it("eskom-locations-seed.ts sets timezone: \"Africa/Johannesburg\" inside the values object", () => {
+    const values = seedValuesObject(read("packages/db/src/eskom-locations-seed.ts"), "values");
+    expect(values).toContain('timezone: "Africa/Johannesburg"');
+    // Positive control for the slice: the object's own properties are inside it.
+    expect(values).toContain("latitude: row.latitude,");
   });
 
   // S8 — Q12 ruling: the PHE pilot site is in India (IST), against the plan's recommendation.
-  it("phe-pilot-seed.ts sets timezone: \"Asia/Kolkata\"", () => {
-    expect(read("packages/db/src/phe-pilot-seed.ts")).toContain('timezone: "Asia/Kolkata"');
+  it("phe-pilot-seed.ts sets timezone: \"Asia/Kolkata\" inside the locationValues object", () => {
+    const values = seedValuesObject(read("packages/db/src/phe-pilot-seed.ts"), "locationValues");
+    expect(values).toContain('timezone: "Asia/Kolkata"');
+    expect(values).toContain("latitude: Number(head.Latitude),");
   });
 });
