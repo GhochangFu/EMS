@@ -265,6 +265,17 @@ const SOFTENER_POINTS: readonly PointRow[] = [
   ["brine_tank_level_pct", "core", "%"],
   ["salt_consumption_kg", "manual", "kg"],
   ["outlet_conductivity_uscm", "extended", "µS/cm"],
+  // E4.1c: three v3 rows over the inlet flow (plan §3.7)
+  ["kl_today", "derived", "KL"],
+  ["water_cost_today", "derived", ""],
+  ["water_saving_vs_baseline_pct", "derived", "%"],
+];
+
+/** E4.1c's three v3 rows (plan §3.7), default input age. */
+const SOFTENER_DERIVED: readonly DerivedRow[] = [
+  ["kl_today", "sum({inlet_flow_klh}, today)", null],
+  ["water_cost_today", "sum({inlet_flow_klh}, today) * $water_tariff_per_kl", null],
+  ["water_saving_vs_baseline_pct", "(1 - sum({inlet_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
 ];
 
 /** §3's four alarm bullets, one row each — nothing splits on this entry. */
@@ -283,20 +294,21 @@ const SOFTENER_ALARMS: readonly AlarmRow[] = [
  */
 function checkSoftener(): void {
   const entry = requireStockEntry(SOFTENER_CODE);
-  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water");
+  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water", 2);
 
-  // ---- 9 points, 4 core + 3 extended + 2 manual + 0 derived ---------------
+  // ---- 12 points, 4 core + 3 extended + 2 manual + 3 derived (3 E4.1c) ---------------
 
   assert(
     tierCount(entry, "core") === 4 &&
       tierCount(entry, "extended") === 3 &&
       tierCount(entry, "manual") === 2 &&
-      tierCount(entry, "derived") === 0,
+      tierCount(entry, "derived") === 3,
     `§3 marks 4 rows C, 3 X and 2 M, and all three of its derived codes are deferred — 4/3/2/0. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(SOFTENER_CODE, "§3", entry, SOFTENER_POINTS);
+  assertDerivedPoints(SOFTENER_CODE, entry, SOFTENER_DERIVED);
   assertNoKpis(SOFTENER_CODE, entry, "§3");
   assertDeferralsAbsent(SOFTENER_CODE, entry);
 
@@ -387,8 +399,16 @@ const RO_E41C: readonly SustainabilityRow[] = [
   ["water_saving_vs_baseline_pct", "(1 - sum({feed_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
 ];
 
+/** water-softener over `{inlet_flow_klh}`, §3's inlet — plan §3.7. */
+const SOFTENER_E41C: readonly SustainabilityRow[] = [
+  ["kl_today", "sum({inlet_flow_klh}, today)", "KL"],
+  ["water_cost_today", "sum({inlet_flow_klh}, today) * $water_tariff_per_kl", ""],
+  ["water_saving_vs_baseline_pct", "(1 - sum({inlet_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+];
+
 /** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
 export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
+  ["water-softener", SOFTENER_E41C, 9, 2],
   ["water-ro", RO_E41C, 18, 2],
 ];
 

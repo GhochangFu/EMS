@@ -1,5 +1,5 @@
-import { DASHBOARD_GRID } from "@bms/shared";
-import { CORE, EXTENDED, MANUAL, MEASURED } from "./point-fields";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
+import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -112,6 +112,24 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `water-softener` **v1** (2026-09-03, `E5.1`): authored from
  *    `e5.1-derived-taglist-v1.md` §3, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `water-softener` **v2** (2026-09-19, `E4.1c`): three `bms-calc-v3` derived
+ *    points appended at `sortOrder` 9–11 (ADR 0070 decision 8 as
+ *    widened by plan Q5 — the same three codes on all six water classes, each
+ *    over its own inlet flow): `kl_today = sum({inlet_flow_klh}, today)`,
+ *    `water_cost_today = sum({inlet_flow_klh}, today) * $water_tariff_per_kl`,
+ *    `water_saving_vs_baseline_pct` against `$water_baseline_kl_per_day`
+ *    prorated by `hours(today)`. **The inlet here is `inlet_flow_klh`** —
+ *    the service inlet flow — regeneration water is not metered here. Four
+ *    things an importing tenant must know: (1) a `$key` with no value is a
+ *    counted `parameter_unset` until entered on `/admin/calc-parameters`,
+ *    nearest scope wins; the money row carries the empty-string unit — the
+ *    amount is in `bms.organizations.currency`; (2) a `today` window needs
+ *    the location's time zone (`locations.timezone`), `timezone_unset`
+ *    otherwise, and at the first tick after local midnight `hours(today)` is
+ *    `0` so the saving row refuses `non_finite` for one tick; (3) every row is
+ *    `scheduled` at 60 s — at most one tick old — with `minCoverageRatio`
+ *    `null`, fail closed; (4) the flow is tier C, so no `missing_input` arises
+ *    on a correctly mapped asset.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -136,7 +154,7 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
     "carry a meaning and no limit, because the rated exchange capacity a softener is judged " +
     "against is an attribute of the vessel and is set per site at commissioning.",
-  stockVersion: 1,
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -346,5 +364,32 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     // could never fire. See the module docblock.
     { ...MEASURED, pointKey: "salt_consumption_kg", label: "Salt use per regeneration", unit: "kg", required: false, sortOrder: 7, meta: MANUAL },
     { ...MEASURED, pointKey: "outlet_conductivity_uscm", label: "Outlet conductivity", unit: "µS/cm", required: false, sortOrder: 8, meta: EXTENDED },
+    // `E4.1c` — ADR 0070 decision 8 / Q5, plan §3.7: the three water rows over
+    // this class's inlet flow. Scheduled at 60 s, `minCoverageRatio` null, no
+    // `meta`; the money row carries `unit: ""` (Q8). See VERSION HISTORY v2.
+    {
+      ...derived("sum({inlet_flow_klh}, today)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_today",
+      label: "Inlet water today",
+      unit: "KL",
+      required: false,
+      sortOrder: 9,
+    },
+    {
+      ...derived("sum({inlet_flow_klh}, today) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_today",
+      label: "Water cost today (organization currency)",
+      unit: "",
+      required: false,
+      sortOrder: 10,
+    },
+    {
+      ...derived("(1 - sum({inlet_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_saving_vs_baseline_pct",
+      label: "Water saving vs baseline, today",
+      unit: "%",
+      required: false,
+      sortOrder: 11,
+    },
   ],
 };
