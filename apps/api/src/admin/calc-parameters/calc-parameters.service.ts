@@ -138,10 +138,16 @@ export class CalcParametersAdminService {
     return { items: rows.map((row) => this.toDto(row)) };
   }
 
+  /** One row — 404 when it does not exist or sits in an organization the caller cannot read. */
   async getById(jwt: JwtPayload, id: string): Promise<CalcParameterDto> {
     return this.fetchReadable(jwt, id);
   }
 
+  /**
+   * Creates a row at the body's scope: write gate by that scope, parents
+   * pre-validated, the key checked against the vocabulary, then the overlap
+   * pre-read, the insert and the audit row in one tenant transaction.
+   */
   async create(jwt: JwtPayload, body: CreateCalcParameterBody): Promise<CalcParameterDto> {
     const scope: Scope = {
       organizationId: body.organizationId,
@@ -188,6 +194,10 @@ export class CalcParametersAdminService {
     return this.fetchRow(id);
   }
 
+  /**
+   * Edits value and validity only (key and scope are immutable, design
+   * decision 12); the stored end stands for an end the body does not name.
+   */
   async update(jwt: JwtPayload, id: string, body: UpdateCalcParameterBody): Promise<CalcParameterDto> {
     const existing = await this.fetchReadable(jwt, id);
     const scope: Scope = {
@@ -245,6 +255,7 @@ export class CalcParametersAdminService {
     return this.fetchRow(id);
   }
 
+  /** A hard delete with an audit row (ruling Q10); ending validity is an edit of `effectiveTo`. */
   async remove(jwt: JwtPayload, id: string): Promise<void> {
     const existing = await this.fetchReadable(jwt, id);
     const scope: Scope = {

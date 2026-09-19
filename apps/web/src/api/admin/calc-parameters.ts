@@ -68,6 +68,7 @@ export async function fetchAdminCalcParameters(
   return adminFetch(`/admin/calc-parameters?${params}`, calcParametersListResponseSchema);
 }
 
+/** `POST /admin/calc-parameters` — a 409 carries the server's overlap sentence in its body. */
 export async function createAdminCalcParameter(
   input: CreateCalcParameterInput,
 ): Promise<CalcParameterDto> {
@@ -78,6 +79,7 @@ export async function createAdminCalcParameter(
   });
 }
 
+/** `PATCH /admin/calc-parameters/:id` — value and validity only; key and scope are immutable. */
 export async function updateAdminCalcParameter(
   id: string,
   input: UpdateCalcParameterInput,
