@@ -5626,5 +5626,7 @@ passed; fourteen reviews across the three PRs; the compose database
 (`0076` hash-matched, the seed row, 642 point keys); the source API on `:4001`
 in both directions (the tariff, the two-currency dash, every stock import at
 201, the feeder and the pump swept live); `browser-verifier` 5/5 + 5/5 + 4/4
-with no screenshot. **Unblocks `E4.2`, `E4.3` and `E1.6`.** Ships no Water
+with no screenshot. Post-merge sweep #505: no behaviour defect, a test
+claim that named a guard the row does not have. **Unblocks `E4.2`, `E4.3`
+and `E1.6`.** Ships no Water
 Recycle % or Operational Efficiency % formula — B14 is still the client's.
