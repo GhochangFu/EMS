@@ -107,7 +107,7 @@ describe("E4.1a — the calc-parameters admin surface is reachable and gated", (
     expect(page).toContain("<MasterDataLayout user={user}>");
   });
 
-  it("the page reads canWriteOrganizationScopedCalcParameter — the gate is on the form", () => {
+  it("the page reads canWriteOrganizationScopedCalcParameter (the gate itself is the jsdom spec's)", () => {
     // Imported AND called: an import alone is dead code the bundler drops.
     expect(page).toMatch(/import \{[^}]*canWriteOrganizationScopedCalcParameter[^}]*\} from "\.\.\/\.\.\/lib\/admin-access"/);
     expect(page).toMatch(/canWriteOrganizationScopedCalcParameter\(user\.role\)/);
