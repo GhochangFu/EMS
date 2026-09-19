@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runEvaluateTests, runEvaluateV2Tests, runEvaluateV3Tests } from "./evaluate.spec";
+import { runEvaluateTests, runEvaluateV2Tests, runEvaluateV3Tests, runEvaluateWindowTests } from "./evaluate.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("bms-calc-v1 evaluator", () => {
@@ -18,5 +18,11 @@ describe("bms-calc-v2 evaluator", () => {
 describe("bms-calc-v3 evaluate", () => {
   it("reads $key parameters from the fourth map only, refusing at the $ when one is absent", () => {
     runEvaluateV3Tests();
+  });
+});
+
+describe("bms-calc-v3 evaluate — windows (E4.1b)", () => {
+  it("serves window and hours nodes from the fifth map by windowKey, and from nothing else", () => {
+    runEvaluateWindowTests();
   });
 });
