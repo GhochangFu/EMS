@@ -80,20 +80,34 @@ export async function createStoresAKnownZone(ctx: TimezoneCtx): Promise<string> 
   return created.id;
 }
 
-/** T2 — an unknown zone is a 400 naming the example and the value, and no row is inserted. */
-export async function createRefusesAnUnknownZoneAndWritesNothing(ctx: TimezoneCtx): Promise<void> {
-  const before = await countFamily(ctx);
-  let caught: unknown;
+/** The T2 attempt, shared by its two claims; a row that slips through is registered for cleanup. */
+async function attemptUnknownZone(ctx: TimezoneCtx, suffix: string): Promise<unknown> {
   try {
-    const created = await ctx.svc.create(ctx.jwt, { ...body(ctx, "T2"), timezone: NOT_A_ZONE });
+    const created = await ctx.svc.create(ctx.jwt, { ...body(ctx, suffix), timezone: NOT_A_ZONE });
     ctx.register(created.id);
+    return undefined;
   } catch (err) {
-    caught = err;
+    return err;
   }
+}
+
+/** T2a — an unknown zone is a 400 naming the example zone and the value. */
+export async function createRefusesAnUnknownZone(ctx: TimezoneCtx): Promise<void> {
+  const caught = await attemptUnknownZone(ctx, "T2A");
   expect(caught, "an unknown zone must throw").toBeInstanceOf(BadRequestException);
   const message = (caught as BadRequestException).message;
   expect(message).toContain("Asia/Kolkata");
   expect(message).toContain(`"${NOT_A_ZONE}"`);
+}
+
+/**
+ * T2b — the refusal inserts NO row. Its own `it()`, because `expect` throws
+ * and a count assertion behind T2a's exception assertion would never run
+ * under the mutation it exists to catch (a guard that fires AFTER the insert).
+ */
+export async function createRefusalInsertsNoRow(ctx: TimezoneCtx): Promise<void> {
+  const before = await countFamily(ctx);
+  await attemptUnknownZone(ctx, "T2B");
   expect(await countFamily(ctx), "the refusal happens before the write: no row inserted").toBe(before);
 }
 

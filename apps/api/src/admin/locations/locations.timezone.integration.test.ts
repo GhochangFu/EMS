@@ -11,7 +11,8 @@ import { asRole } from "../../testing/role-urls";
 import { LocationsAdminService } from "./locations.service";
 import {
   createRefusesALowercaseZone,
-  createRefusesAnUnknownZoneAndWritesNothing,
+  createRefusalInsertsNoRow,
+  createRefusesAnUnknownZone,
   createStoresAKnownZone,
   createWithoutTheKeyStoresNull,
   dtoParsesWithTheSharedContract,
@@ -138,8 +139,12 @@ describe.skipIf(!connectionString)("E4.1b — locations.timezone on the admin wr
     await createStoresAKnownZone(ctx);
   });
 
-  it("T2 create with Not/AZone is a 400 naming the example and the value, and inserts no row", async () => {
-    await createRefusesAnUnknownZoneAndWritesNothing(ctx);
+  it("T2a create with Not/AZone is a 400 naming the example zone and the value", async () => {
+    await createRefusesAnUnknownZone(ctx);
+  });
+
+  it("T2b the refusal inserts no row", async () => {
+    await createRefusalInsertsNoRow(ctx);
   });
 
   it("T3 create with asia/kolkata is a 400 (exact, case-sensitive match — Q14)", async () => {
