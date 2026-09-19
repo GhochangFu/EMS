@@ -181,7 +181,7 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // `demand_vs_contract_pct` LEFT this list with `E4.1c` (ADR 0070 decision
   // 8): `bms-calc-v3`'s `$contract_demand_kva` is the attribute it needed, and
   // `electrical-feeder.ts` authors it at `sortOrder` 41. The docblock counts
-  // above are reconciled once, in PR 2b (plan §3.9, U16).
+  // above are reconciled, per plan §3.9 U16 (PR 2b).
   "electrical-feeder": [
     "load_pct",
     "pf_penalty_flag",
@@ -193,7 +193,7 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // has no functions for (IEC 60076-7, C57.91 ageing, a Duval-triangle lookup).
   // `tap_changes_per_day` LEFT with E4.1c: `delta({oltc_operation_count}, 24h)`
   // is the window it needed (ADR 0070 decision 5); electrical-transformer.ts
-  // authors it at sortOrder 30. Docblock counts above wait for PR 2b (U16).
+  // authors it at sortOrder 30. Docblock counts above are reconciled (U16, PR 2b).
   "electrical-transformer": [
     "lv_load_pct",
     "load_pct",
@@ -226,7 +226,8 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // DISCHARGED `steps_per_day` (`delta({step_operation_count}, 24h)`).
   "electrical-apfc": ["pf_correction_kvar", "capacitor_health_pct", "pf_penalty_hours"],
   // The water pack — E5.1, docs/e5.1-derived-taglist-v1.md. Fifteen records
-  // over fourteen codes; the seven the pack DOES author are in water.ts.
+  // over fourteen codes; the twenty-six the pack DOES author (eight before
+  // E4.1c, eighteen from it) are in the six water-*.ts class modules.
   //
   // §5 — a reuse meter §5 does not list; INFLUENT BOD and the aeration tank
   // volume; blower kWh where §5 declares motor current; the design capacity.
@@ -247,10 +248,11 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // can never receive a value at all (see DEFERRAL_REASON).
   "water-softener": ["throughput_since_regen_kl", "regen_frequency_per_day", "salt_efficiency_kg_kl"],
   // The mechanical/utility pack — E5.2, docs/e5.2-derived-taglist-v1.md.
-  // Seventeen records over seventeen codes; the thirteen the pack DOES author
-  // are listed with their formulas in mechanical.ts. Each list is its section's
-  // "Derived:" prose line minus what that entry authors, and 13 + 17 = 30 is the
-  // reconciliation that proves no named code was dropped.
+  // Thirteen records over thirteen codes; the seventeen the pack DOES author
+  // (up from thirteen since E4.1c PR 2b) are listed with their formulas in
+  // mechanical.ts. Each list is its section's "Derived:" prose line minus
+  // what that entry authors, and 13 + 17 = 30 is the reconciliation that
+  // proves no named code was dropped.
   //
   // §1 — a standard's lookup. `specific_energy_kwh_kl` is NOT here: the pump
   // declares kw and flow_klh and authors it. E4.1c DISCHARGED `starts_per_hour` (`delta({start_count}, 1h)`) and

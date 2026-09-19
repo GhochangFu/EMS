@@ -589,7 +589,7 @@ export function sustainabilityClaims(
       const off = tail().filter((p) => p.formulaDialect !== CALC_DIALECT_V3 || p.calcTrigger !== "scheduled" || p.calcIntervalSeconds !== 60);
       assert(off.length === 0, `${code}: ${off.map((p) => `${p.pointKey} ${String(p.formulaDialect)}/${String(p.calcTrigger)}/${String(p.calcIntervalSeconds)}`).join(", ")}`);
     }],
-    [`${code} — every E4.1c row leaves minCoverageRatio null (fail closed) and the default input age`, () => {
+    [`${code} — every E4.1c row leaves minCoverageRatio at derived()'s null (inert — no @scope aggregate) and the default input age`, () => {
       const off = tail().filter((p) => p.minCoverageRatio !== null || p.maxInputAgeSeconds !== null);
       assert(off.length === 0, `${code}: ${off.map((p) => p.pointKey).join(", ")}`);
     }],

@@ -92,7 +92,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * The tag list's **overload (load %)** alarm is deferred with them, for the
  * headline reason above.
  *
- * **THE ONE AUTHORED FORMULA.** `oil_rise_over_ambient_c` =
+ * **THE TWO AUTHORED FORMULAS** — the v1 one below, and `E4.1c`'s
+ * `tap_changes_per_day` at `sortOrder` 30 (VERSION HISTORY v2 below).
+ *
+ * `oil_rise_over_ambient_c` =
  * `{top_oil_temp_c} - {ambient_temp_c}`, `streaming`, and **`maxInputAgeSeconds:
  * 3600` rather than the 300 s default** (plan §4.2): `ambient_temp_c` is
  * typically a slow-updating site sensor, and at the default the formula
@@ -156,8 +159,9 @@ import type { StockAssetTemplateEntry } from "./types";
  *    derived point appended at `sortOrder` 30 — `tap_changes_per_day =
  *    delta({oltc_operation_count}, 24h)`, the ledger promotion (ADR 0070
  *    decision 8). What an importing tenant must know: the row is `scheduled`
- *    at 60 s, so the value is at most one tick old; `minCoverageRatio` is
- *    `null` (fail closed); `oltc_operation_count` is tier X and an asset that
+ *    at 60 s, so the value is at most one tick old; no coverage guard
+ *    applies (`minCoverageRatio` governs a `@scope` aggregate only, ADR 0055
+ *    decision 11); `oltc_operation_count` is tier X and an asset that
  *    has not mapped it refuses `missing_input`; a rolling `24h` window needs
  *    no time zone (a calendar one would). No `$key`, so nothing to enter on
  *    `/admin/calc-parameters`.

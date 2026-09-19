@@ -253,7 +253,7 @@ export function assertMinCoverageRatioNull(): void {
   const off = six.filter((point) => point.minCoverageRatio !== null);
   assert(
     off.length === 0,
-    `every E4.1c row leaves minCoverageRatio at derived()'s null (fail closed, ADR 0055 decision 11) — ` +
+    `every E4.1c row leaves minCoverageRatio at derived()'s null (inert — no @scope aggregate, ADR 0055 decision 11) — ` +
       `got ${off.map((point) => `${point.pointKey}: ${String(point.minCoverageRatio)}`).join(", ")}`,
   );
 }

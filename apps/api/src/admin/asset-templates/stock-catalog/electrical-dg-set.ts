@@ -95,7 +95,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    reference, ruling 4) cannot express. Still deferred. The annual
  *    load-bank plan below is the practice that covers it.
  *
- * **THE TWO AUTHORED FORMULAS, and the reasoning each one must carry.**
+ * **THE SEVEN AUTHORED FORMULAS.** Two below, and `E4.1c`'s five `v3` rows
+ * at `sortOrder` 38–42 (VERSION HISTORY v2 below) — `load_pct`,
+ * `fuel_hours_remaining_h`, `downtime_h_24h`, `availability_pct_24h`,
+ * `starts_per_day`. The reasoning for the two below:
  *
  *  - `specific_fuel_l_kwh` = `{fuel_rate_lph} / {gen_kw}`, `streaming`, default
  *    input age. **It is undefined at zero output** — the set running unloaded on
@@ -167,7 +170,9 @@ import type { StockAssetTemplateEntry } from "./types";
  *    an asset-scope row) is a counted `parameter_unset` until entered on
  *    `/admin/calc-parameters`, nearest scope wins; (2) the rolling `24h`
  *    windows need no time zone; (3) every row is `scheduled` at 60 s —
- *    at most one tick old — with `minCoverageRatio` `null`, fail closed;
+ *    at most one tick old — no coverage guard applies (`minCoverageRatio`
+ *    governs a `@scope` aggregate only, ADR 0055 decision 11); a window with
+ *    no samples refuses `window_empty`;
  *    (4) `fuel_rate_lph` and `start_count` are tier X, so an asset without
  *    them refuses `fuel_hours_remaining_h` / `starts_per_day` as
  *    `missing_input`, visibly.
@@ -538,7 +543,8 @@ export const ELECTRICAL_DG_SET: StockAssetTemplateEntry = {
       sortOrder: 37,
     },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. Five `bms-calc-v3` rows, every
-    // one scheduled at 60 s, `minCoverageRatio` null (fail closed), no `meta`.
+    // one scheduled at 60 s; no coverage guard applies (`minCoverageRatio`
+    // governs a `@scope` aggregate only, ADR 0055 decision 11), no `meta`.
     // The windowed pair read `dg_shutdown` inline (design decision 6). A count
     // per day carries the empty-string unit (Q8).
     {

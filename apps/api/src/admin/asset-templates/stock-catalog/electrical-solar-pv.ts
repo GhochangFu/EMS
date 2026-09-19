@@ -94,7 +94,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    is never authored. `energy_today_kwh` stays MEASURED (the `kwh_today`
  *    ruling, Q3): the today rows read `delta({energy_total_kwh}, today)`.
  *
- * **THE ONE AUTHORED FORMULA.** `inverter_efficiency_pct` =
+ * **THE FIVE AUTHORED FORMULAS** — the one below, and `E4.1c`'s four `v3`
+ * rows at `sortOrder` 26–29 (VERSION HISTORY v2 below).
+ *
+ * `inverter_efficiency_pct` =
  * `{ac_power_kw} / {dc_power_kw} * 100`, `streaming`, default input age (the
  * inverter publishes both on one SunSpec poll). **It is undefined at night**,
  * when `dc_power_kw` is zero, and that is handled rather than guarded:
@@ -471,8 +474,9 @@ export const ELECTRICAL_SOLAR_PV: StockAssetTemplateEntry = {
       sortOrder: 25,
     },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. Four `bms-calc-v3` rows, each
-    // scheduled at 60 s, `minCoverageRatio` null (fail closed), no `meta`;
-    // every window read inline (design decision 6).
+    // scheduled at 60 s; no coverage guard applies (`minCoverageRatio` governs
+    // a `@scope` aggregate only, ADR 0055 decision 11), no `meta`; every
+    // window read inline (design decision 6).
     {
       ...derived("delta({energy_total_kwh}, today) * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
       pointKey: "co2_avoided_kg_today",

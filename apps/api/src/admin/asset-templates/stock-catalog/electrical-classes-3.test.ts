@@ -59,7 +59,7 @@ describe("stock asset-template catalog — the feeder class (F2.13 §1, F2.8, E4
     assertScheduledAt60();
   });
 
-  it("E4.1c — every row leaves minCoverageRatio null (fail closed)", () => {
+  it("E4.1c — every row leaves minCoverageRatio at derived()'s null (inert — no @scope aggregate)", () => {
     assertMinCoverageRatioNull();
   });
 
