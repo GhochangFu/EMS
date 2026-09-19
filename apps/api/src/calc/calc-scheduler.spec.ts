@@ -1,4 +1,4 @@
-import { CALC_DIALECT, CALC_DIALECT_V2, crossRefKey, parseFormula } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECT_V2, crossRefKey, parseFormula, windowKey } from "@bms/shared";
 
 import { defKey, inputKey } from "./calc-batch";
 import { toActiveDefinition, type CalcDefinition, type TemplatePointCalcRow } from "./calc-definition";
@@ -7,6 +7,7 @@ import type { CalcInputSample } from "./calc-inputs";
 import { CalcStatusRegistry } from "./calc-status.registry";
 import type { CalcWriteInput } from "./calc-write.service";
 import { runSchedulerLoop, runScheduledSweep, type CalcSchedulerDeps, type CalcSchedulerLoopDeps } from "./calc-scheduler.service";
+import { windowRequestKey, type WindowReadRequest, type WindowReadResult } from "./calc-windows.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -61,6 +62,7 @@ export function def(overrides: Partial<CalcDefinition> & { formula: string }): C
     dialect,
     crossRefs: parsed.crossRefs,
     paramRefs: parsed.paramRefs,
+    windowReads: parsed.windowReads,
     minCoverageRatio: null,
     ...overrides,
   };
@@ -76,7 +78,15 @@ type SweepOptions = {
   parameters?: Map<string, number>;
   /** `resolveForAssets` throws — the parameter read failed this sweep. */
   parametersThrows?: boolean;
+  /** `E4.1b`: what `resolveReads` answers, keyed by `windowFakeKey(ownerAssetId, node)`; every read absent when unset. */
+  windows?: Map<string, WindowReadResult>;
+  windowsThrows?: boolean; // `resolveReads` throws this sweep
 };
+
+/** The fake's key: the owner and the canonical read, without the window end (a test pins one tick). */
+export function windowFakeKey(ownerAssetId: string, node: WindowReadRequest["node"]): string {
+  return `${ownerAssetId}:${windowKey(node)}`;
+}
 
 type SweepHarness = {
   deps: CalcSchedulerDeps;
@@ -87,6 +97,7 @@ type SweepHarness = {
   membersMax: number[];
   /** `E4.1a`: every pairs list `resolveForAssets` received, one entry per sweep. */
   parameterRequests: { assetId: string; key: string }[][];
+  windowRequests: WindowReadRequest[][]; // `E4.1b`: one entry per sweep
   /** The **real** registry, never a recording fake: a fake that keyed itself
    * would leave every registry assertion here green against a registry that
    * keyed on the template point id alone, or dropped skips entirely. */
@@ -107,6 +118,7 @@ export function buildSweepDeps(
   const excluded: number[] = [];
   const membersMax: number[] = [];
   const parameterRequests: { assetId: string; key: string }[][] = [];
+  const windowRequests: WindowReadRequest[][] = [];
   const status = new CalcStatusRegistry();
   const deps: CalcSchedulerDeps = {
     definitions: { getScheduledDefinitions: async () => scheduled },
@@ -154,6 +166,19 @@ export function buildSweepDeps(
         return out;
       },
     },
+    // `E4.1b`: answers under the service's own key, so the host's lookup is what is exercised
+    windows: {
+      resolveReads: async (requests) => {
+        windowRequests.push([...requests]);
+        if (options.windowsThrows) throw new Error("simulated read failure resolving windows");
+        const out = new Map<string, WindowReadResult>();
+        for (const r of requests) {
+          const answer = options.windows?.get(windowFakeKey(r.ownerAssetId, r.node));
+          if (answer !== undefined) out.set(windowRequestKey(r.ownerAssetId, r.node, r.endMs), answer);
+        }
+        return out;
+      },
+    },
     writer: {
       writeValues: async (values) => {
         writes.push([...values]);
@@ -168,7 +193,7 @@ export function buildSweepDeps(
     status,
     logger: { warn: (m: unknown) => warnings.push(String(m)) },
   };
-  return { deps, writes, skips, warnings, excluded, membersMax, parameterRequests, status };
+  return { deps, writes, skips, warnings, excluded, membersMax, parameterRequests, windowRequests, status };
 }
 
 async function runSweepTests(): Promise<void> {
@@ -405,6 +430,7 @@ function buildLoopDeps(
     },
     scope: { resolveMembership: async () => EMPTY_MEMBERSHIP },
     parameters: { resolveForAssets: async () => new Map() },
+    windows: { resolveReads: async () => new Map() },
     writer: {
       writeValues: async (values) => {
         writes.push([...values]);
@@ -543,6 +569,7 @@ async function runLoopTests(): Promise<void> {
       },
       scope: { resolveMembership: async () => EMPTY_MEMBERSHIP },
       parameters: { resolveForAssets: async () => new Map() },
+      windows: { resolveReads: async () => new Map() },
       writer: {
         writeValues: async (values) => {
           writes.push([...values]);

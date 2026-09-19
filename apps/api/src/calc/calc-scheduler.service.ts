@@ -1,7 +1,7 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 
 import type { CalcCrossRef } from "@bms/shared";
-import { CALC_DIALECT, crossRefKey, evaluate } from "@bms/shared";
+import { CALC_DIALECT, crossRefKey, evaluate, windowKey } from "@bms/shared";
 
 import { sleep } from "../telemetry/sleep";
 import { MetricsService, type CalcRuntimeSkipReason } from "../observability/metrics.service";
@@ -15,6 +15,8 @@ import { classifyInput, type CalcInputSample } from "./calc-inputs";
 import { CalcInputsService } from "./calc-inputs.service";
 import { CalcParametersService } from "./calc-parameters.service";
 import { bucketTimeMs, isDue } from "./calc-schedule";
+import { windowEndMs } from "./calc-window-plan";
+import { CalcWindowsService, windowRequestKey, type WindowReadRequest, type WindowReadResult } from "./calc-windows.service";
 import { CalcScopeService } from "./calc-scope.service";
 import { CalcStatusRegistry } from "./calc-status.registry";
 import { CalcWriteService, type CalcWriteInput } from "./calc-write.service";
@@ -30,6 +32,8 @@ export interface CalcSchedulerDeps {
   scope: Pick<CalcScopeService, "resolveMembership">;
   /** `E4.1a` — `$key` values for `bms-calc-v3`, resolved once per sweep at the tick's time (ADR 0070 decision 2). */
   parameters: Pick<CalcParametersService, "resolveForAssets">;
+  /** `E4.1b` — window reads for `bms-calc-v3`, resolved once per sweep for the due definitions (ADR 0070 decision 5). */
+  windows: Pick<CalcWindowsService, "resolveReads">;
   writer: Pick<CalcWriteService, "writeValues">;
   metrics: Pick<MetricsService, "countCalcSkipped" | "countCalcAggregateExcluded" | "setCalcAggregateMembersMax">;
   /** `F2.9` Task 16 — design decision 9, layer 3: what the per-asset page reads. */
@@ -88,6 +92,7 @@ type Pair = { readonly assetId: string; readonly pointKey: string };
 
 const EMPTY_MEMBERSHIP: Membership = { qualified: new Map(), members: new Map() };
 const EMPTY_PARAMETERS: ReadonlyMap<string, number> = new Map();
+const EMPTY_WINDOWS: ReadonlyMap<string, WindowReadResult> = new Map();
 
 /**
  * The samples for `pairs`, overlay first and one batched read for the rest.
@@ -217,6 +222,7 @@ async function evaluateOneScheduledFormula(
   membership: Membership,
   computedThisTick: ComputedThisTick,
   parameters: ReadonlyMap<string, number>,
+  windows: ReadonlyMap<string, WindowReadResult>,
 ): Promise<ScheduledOutcome | null> {
   // Parameters first (ADR 0070 decision 2): a `$key` with no row in scope is
   // `parameter_unset` before any input is read, so a missing parameter never
@@ -271,7 +277,26 @@ async function evaluateOneScheduledFormula(
     excluded = resolved.excluded;
   }
 
-  const result = evaluate(def.ast, inputs, crossInputs, params);
+  // Window reads last (`E4.1b`, design decision 10): the point inside a
+  // window is in `refs`/`crossRefs` and was classified above, so a meter
+  // with no reading at all is `missing_input` and a stale one `stale_input`
+  // — as a `v1` formula over it would be — and only a LIVE meter with
+  // nothing inside the window reaches `window_empty`. `windows` is keyed by
+  // `windowRequestKey`; an answer absent from the batch is a failed read,
+  // never a value.
+  const windowValues = new Map<string, number>();
+  for (const node of def.windowReads) {
+    const answer = windows.get(windowRequestKey(def.assetId, node, windowEndMs(nowMs, def.intervalSeconds ?? 0)));
+    if (answer === undefined) {
+      return refuse(deps, def, "windows_unresolved", nowMs);
+    }
+    if (!answer.ok) {
+      return refuse(deps, def, answer.reason, nowMs);
+    }
+    windowValues.set(windowKey(node), answer.value);
+  }
+
+  const result = evaluate(def.ast, inputs, crossInputs, params, windowValues);
   if (!result.ok) {
     // The last exit above the write, and the reason `excluded` is still only a
     // number here: a `non_finite` result discards it with everything else.
@@ -368,6 +393,19 @@ function largestMemberSet(membership: Membership): number {
  * or a `v3` formula with no `$` — still evaluates and still writes. No
  * definition holds a `$key` → no read at all.
  *
+ * **Window failure is contained to the definitions that hold a window read**
+ * (ADR 0070 decision 5; `E4.1b` U9), the way parameters are. The batch runs
+ * once per sweep, after membership and parameters, over the distinct
+ * `(owner, read asset, windowKey, end)` set of every **due** `v3` definition
+ * — due only, because each read costs a statement per level per tick and a
+ * definition that is not due would pay it for nothing. A qualified read's
+ * asset comes through `membership.qualified`, exactly as the cross-reference
+ * path resolves it; a code that resolves to nothing is skipped here and
+ * refused as `unknown_asset_reference` there. When the batch throws, each
+ * definition holding a window read counts `windows_unresolved` and every
+ * other definition still evaluates and still writes. No due definition holds
+ * a window read → no read at all.
+ *
  * **Downstream of a cycle is not refused** (design decision 7, ruling Q6):
  * the members are, and a formula that merely reads one computes from the stored
  * value until decision 5's staleness rule refuses it honestly.
@@ -437,6 +475,38 @@ export async function runScheduledSweep(
     }
   }
 
+  // `E4.1b`: the window read, once, over every read the DUE definitions
+  // need, each at its own definition's bucketed tick. Contained the way
+  // parameters are.
+  const windowRequests = new Map<string, WindowReadRequest>();
+  for (const def of scheduled) {
+    if (def.windowReads.length === 0 || def.intervalSeconds === null || def.intervalSeconds <= 0) continue;
+    if (!isDue({ intervalSeconds: def.intervalSeconds, lastRunMs: lastRunMs.get(defKey(def.assetId, def.templatePointId)) ?? null, nowMs })) {
+      continue;
+    }
+    const endMs = windowEndMs(nowMs, def.intervalSeconds);
+    for (const node of def.windowReads) {
+      let readAssetId: string | null | undefined = def.assetId;
+      if (node.kind === "window" && node.ref.kind === "qref") {
+        readAssetId = membership?.qualified.get(def.assetId)?.get(node.ref.assetCode);
+      }
+      if (readAssetId === null || readAssetId === undefined) continue;
+      windowRequests.set(windowRequestKey(def.assetId, node, endMs), { ownerAssetId: def.assetId, readAssetId, node, endMs });
+    }
+  }
+  let windows: ReadonlyMap<string, WindowReadResult> | null = EMPTY_WINDOWS;
+  if (windowRequests.size > 0) {
+    try {
+      windows = await deps.windows.resolveReads([...windowRequests.values()]);
+    } catch (err) {
+      windows = null;
+      deps.logger.warn(
+        `calc scheduler: window read failed; every formula holding a window read due this sweep is ` +
+          `refused as windows_unresolved: ${(err as Error)?.message ?? err}`,
+      );
+    }
+  }
+
   const graph = buildCalcGraph(scheduled, membership ?? EMPTY_MEMBERSHIP);
   const { order, cyclic } = topologicalOrder(graph);
   if (membership !== null) {
@@ -489,6 +559,10 @@ export async function runScheduledSweep(
       refuse(deps, def, "parameters_unresolved", nowMs);
       continue;
     }
+    if (windows === null && def.windowReads.length > 0) {
+      refuse(deps, def, "windows_unresolved", nowMs);
+      continue;
+    }
     try {
       const outcome = await evaluateOneScheduledFormula(
         deps,
@@ -497,6 +571,7 @@ export async function runScheduledSweep(
         membership ?? EMPTY_MEMBERSHIP,
         computedThisTick,
         parameters ?? EMPTY_PARAMETERS,
+        windows ?? EMPTY_WINDOWS,
       );
       if (outcome) {
         toWrite.push(outcome.write);
@@ -574,6 +649,7 @@ export class CalcSchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly inputs: CalcInputsService,
     private readonly scope: CalcScopeService,
     private readonly parameters: CalcParametersService,
+    private readonly windows: CalcWindowsService,
     private readonly writer: CalcWriteService,
     private readonly metrics: MetricsService,
     private readonly status: CalcStatusRegistry,
@@ -585,6 +661,7 @@ export class CalcSchedulerService implements OnModuleInit, OnModuleDestroy {
       inputs: this.inputs,
       scope: this.scope,
       parameters: this.parameters,
+      windows: this.windows,
       writer: this.writer,
       metrics: this.metrics,
       status: this.status,

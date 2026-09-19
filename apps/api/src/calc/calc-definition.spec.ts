@@ -304,6 +304,20 @@ export function runCalcDefinitionTests(): void {
   const dollarUnderV2 = toActiveDefinition({ ...BASE, formula: "{A} * $f", formulaDialect: CALC_DIALECT_V2, calcTrigger: "scheduled", calcIntervalSeconds: 60 });
   assert(dollarUnderV2.ok === false && dollarUnderV2.reason === "unparseable_formula", "a $ under v2 is unparseable_formula, never parsed as v3");
 
+  // E4.1b — a v3 row with a window carries windowReads, and the point inside
+  // the window is in refs (the sweep's staleness rule sees it); v2 and v1
+  // rows carry an empty list, and a window under v2 is unparseable
+  const windowed = toActiveDefinition({ ...BASE, formula: "avg({A}, 24h) + hours(today)", formulaDialect: CALC_DIALECT_V3, calcTrigger: "scheduled", calcIntervalSeconds: 60 });
+  assert(windowed.ok === true, `a v3 window row is active, got ${JSON.stringify(windowed)}`);
+  if (windowed.ok) {
+    assert(windowed.def.windowReads.length === 2 && windowed.def.windowReads.map((r) => r.kind).join(",") === "window,hours", `windowReads carries both reads, got ${JSON.stringify(windowed.def.windowReads)}`);
+    assert(windowed.def.refs.join("|") === "A", `the point inside the window is a local ref, got ${JSON.stringify(windowed.def.refs)}`);
+  }
+  assert(v2Def.ok === true && v2Def.def.windowReads.length === 0, "a v2 definition carries an empty windowReads");
+  assert(v1Def.ok === true && v1Def.def.windowReads.length === 0, "a v1 definition carries an empty windowReads");
+  const windowUnderV2 = toActiveDefinition({ ...BASE, formula: "avg({A}, 24h)", formulaDialect: CALC_DIALECT_V2, calcTrigger: "scheduled", calcIntervalSeconds: 60 });
+  assert(windowUnderV2.ok === false && windowUnderV2.reason === "unparseable_formula", "a window under v2 is unparseable_formula");
+
   runDerivedSiblingTests();
 }
 

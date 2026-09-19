@@ -648,6 +648,7 @@ export async function assertTheTwoHopCycleWritesNothingAndTheHealthyFormulaStill
     scope: new CalcScopeService(db),
     // `E4.1a`: no fixture here holds a `$key`, so the read is never made.
     parameters: { resolveForAssets: async () => new Map() },
+    windows: { resolveReads: async () => new Map() },
     writer: {
       writeValues: async (values) => {
         writes.push(...values);
