@@ -226,8 +226,9 @@ export const ELECTRICAL_APFC: StockAssetTemplateEntry = {
         category: "operations",
         message:
           "Steps switching far more often than expected — contactor wear, or a hunting " +
-          "controller. Binds the cumulative counter because steps_per_day, the rate this bullet " +
-          "describes, needs a time window the grammar has no state for.",
+          "controller. Binds the cumulative counter; the rate this bullet describes is the " +
+          "rule's to evaluate over it, and the derived point steps_per_day stores the same " +
+          "rate as a value.",
       },
     ],
     kpis: [

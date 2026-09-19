@@ -415,9 +415,9 @@ export const MECHANICAL_PUMP: StockAssetTemplateEntry = {
         category: "operations",
         message:
           "Starts accumulating faster than the set is rated for. The alarm binds the cumulative " +
-          "counter start_count; the per-hour RATE is the rule's to evaluate, because " +
-          "starts_per_hour is a time window and the calc grammar has no state. The permitted " +
-          "rate is a site value, from the motor's own starts-per-hour rating.",
+          "counter start_count; the per-hour RATE is the rule's to evaluate over it, and the " +
+          "derived point starts_per_hour stores the same rate as a value. The permitted rate is " +
+          "a site value, from the motor's own starts-per-hour rating.",
         philosophy: {
           cause:
             "A level or pressure switch with too little hysteresis, a passing check valve " +

@@ -432,8 +432,8 @@ export const FACILITY_FIRE_PANEL: StockAssetTemplateEntry = {
         category: "operations",
         message:
           "Jockey pump starting repeatedly. The rate that counts as cycling is the rule's to " +
-          "evaluate over this run status — jockey_starts_per_hour is deferred, because the " +
-          "formula grammar has no clock.",
+          "evaluate over this run status — jockey_starts_per_hour is deferred, because it is an " +
+          "event count over a state and the formula grammar counts no transitions.",
         philosophy: {
           cause:
             "A leak in the ring main, a dripping hydrant landing valve or test valve, a passing " +
