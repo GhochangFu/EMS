@@ -24,7 +24,7 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto, CalcDialect } from "@bms/shared";
-import { CALC_DIALECT, CALC_TRIGGERS, isCrossAssetDialect } from "@bms/shared";
+import { CALC_DIALECT, CALC_TRIGGERS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -36,6 +36,8 @@ import {
   INPUT_AGE_BOUNDS,
   IMPLIED_MAX_INPUT_AGE_SECONDS,
   V2_TRIGGER_LATENCY_HINT,
+  V3_PARAMETER_HELP,
+  V3_TRIGGER_LATENCY_HINT,
   calcConfigErrors,
   calcGridErrors,
   dialectOptions,
@@ -158,6 +160,8 @@ export function CalculationsTab({
         // "Has cross-asset references" — v2 or v3 (ADR 0070); the name is
         // kept because every branch below reads it as "not v1".
         const isV2 = isCrossAssetDialect(dialect);
+        // `v3` only (ADR 0070): the `$key` help and its own latency hint.
+        const isV3 = isParameterDialect(dialect);
         const validation = validateEditorFormula(
           {
             mode: "derived",
@@ -232,6 +236,11 @@ export function CalculationsTab({
                     <code className="rounded bg-gray-100 px-1">{form.example}</code>
                   </li>
                 ))}
+                {isV3 ? (
+                  // The one `v3` form (ADR 0070 decision 4), taught beside the
+                  // two `v2` forms it keeps.
+                  <li>{V3_PARAMETER_HELP}</li>
+                ) : null}
               </ul>
             ) : null}
 
@@ -335,7 +344,9 @@ export function CalculationsTab({
                   <span className="block text-[11px] text-red-700">{problemFor("calcTrigger")}</span>
                 ) : null}
                 {isV2 ? (
-                  <span className="block text-[11px] text-bms-muted">{V2_TRIGGER_LATENCY_HINT}</span>
+                  <span className="block text-[11px] text-bms-muted">
+                    {isV3 ? V3_TRIGGER_LATENCY_HINT : V2_TRIGGER_LATENCY_HINT}
+                  </span>
                 ) : null}
               </label>
 

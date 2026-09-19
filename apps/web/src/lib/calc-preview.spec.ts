@@ -14,9 +14,9 @@
  * preview that reported the root would look correct in every screenshot while
  * pointing the author at the wrong half of their expression.
  */
-import { CALC_DIALECT_V2, crossRefKey, parseFormula, type CalcCrossRef } from "@bms/shared";
+import { CALC_DIALECT_V2, CALC_DIALECT_V3, crossRefKey, parseFormula, type CalcCrossRef } from "@bms/shared";
 
-import { previewCrossRefs, previewFormula, previewInputKeys } from "./calc-preview";
+import { previewCrossRefs, previewFormula, previewInputKeys, previewParamRefs } from "./calc-preview";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -209,7 +209,7 @@ export function runV2MissingCrossInputTests(): void {
   assert(preview.code === "missing_input", `code must be missing_input, got ${preview.code}`);
   assert(preview.position === 0, `must point at the aggregate (offset 0), got ${preview.position}`);
   assert(
-    preview.message === "no sample value for a referenced point or cross-asset reference at character 0",
+    preview.message === "no sample value for a referenced point, cross-asset reference or parameter at character 0",
     `the refusal must name the cross-asset reference, got ${JSON.stringify(preview.message)}`,
   );
 }
@@ -252,4 +252,46 @@ export function runPreviewCrossRefsTests(): void {
   );
   const withLocal = previewInputKeys("sum({kw} @site) / {kw}", CALC_DIALECT_V2);
   assert(withLocal.join(",") === "kw", `the local {kw} is listed once under v2 — got ${JSON.stringify(withLocal)}`);
+}
+
+/**
+ * Case 7 — `bms-calc-v3` (ADR 0070; `E4.1a` U10). A `$key` is a third kind
+ * of sample row: `previewParamRefs` lists the bare keys under `v3` and `[]`
+ * under `v2` (the `$` does not lex there — the gate on the default), and
+ * `previewFormula` reads `options.paramValues` as the evaluator's fourth
+ * map. With no value the refusal sits at the `$` (offset 7 in the fixture)
+ * and its sentence names a parameter, so a `v3` author told "referenced
+ * point" does not look for a `{ref}` row that is not there.
+ */
+export function runV3PreviewTests(): void {
+  const expression = "{kw} * $energy_tariff_per_kwh";
+  assert(
+    previewParamRefs(expression, CALC_DIALECT_V3).join(",") === "energy_tariff_per_kwh",
+    `previewParamRefs lists the bare key under v3, got ${JSON.stringify(previewParamRefs(expression, CALC_DIALECT_V3))}`,
+  );
+  assert(previewParamRefs(expression, CALC_DIALECT_V2).length === 0, "under v2 the $ does not lex, so no rows");
+  assert(previewParamRefs(expression).length === 0, "under the default dialect, none either");
+  assert(
+    previewParamRefs("$b + $a + $b", CALC_DIALECT_V3).join(",") === "b,a",
+    "keys are deduped in first-appearance order",
+  );
+
+  const ok = previewFormula(expression, { kw: 10 }, { dialect: CALC_DIALECT_V3, paramValues: { energy_tariff_per_kwh: 2 } });
+  assert(ok.state === "ok" && ok.value === 20, `10 × 2 must preview 20, got ${JSON.stringify(ok)}`);
+
+  const missing = previewFormula(expression, { kw: 10 }, { dialect: CALC_DIALECT_V3 });
+  assert(missing.state === "refused", `expected refused, got ${JSON.stringify(missing)}`);
+  if (missing.state !== "refused") {
+    return;
+  }
+  assert(missing.code === "missing_input" && missing.position === 7, `refused at the $ (7), got ${missing.position}`);
+  assert(
+    missing.message === "no sample value for a referenced point, cross-asset reference or parameter at character 7",
+    `the refusal must name a parameter, got ${JSON.stringify(missing.message)}`,
+  );
+
+  // the three namespaces stay apart in the preview too: a local key spelled
+  // like the parameter key does not serve the `$`
+  const shadowed = previewFormula("{f} * $f", { f: 3 }, { dialect: CALC_DIALECT_V3 });
+  assert(shadowed.state === "refused" && shadowed.position === 6, "a local sample never serves a $key");
 }

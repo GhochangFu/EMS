@@ -7,6 +7,7 @@ import {
   aFrozenVersionDisablesEveryControl,
   aMixedDialectPairSkipsTheCycleMirror,
   choosingV2FlipsAStreamingRowToScheduled,
+  choosingV3TeachesTheParameterFormAndItsLatency,
   eachRowRendersItsDialectsControls,
   savingCarriesTheRatioAndPreservesTheDialect,
 } from "./calculations-tab.spec";
@@ -24,6 +25,10 @@ describe("F2.22 calculations tab — Grammar, Minimum coverage and the v2 trigge
 
   it("renders each derived row's controls by its stored dialect", async () => {
     await eachRowRendersItsDialectsControls();
+  });
+
+  it("teaches the $key form and the v3 latency hint when bms-calc-v3 is chosen (ADR 0070)", async () => {
+    await choosingV3TeachesTheParameterFormAndItsLatency();
   });
 
   it("flips a streaming v1 row to scheduled when bms-calc-v2 is chosen, and asks for an interval", async () => {

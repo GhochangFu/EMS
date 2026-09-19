@@ -73,7 +73,7 @@ export type CalcPreview =
  * row that is not there.
  */
 const REFUSAL_REASONS: Readonly<Record<CalcEvalErrorCode, string>> = {
-  missing_input: "no sample value for a referenced point or cross-asset reference",
+  missing_input: "no sample value for a referenced point, cross-asset reference or parameter",
   non_finite: "the result is not a finite number",
   invalid_clamp_range: "clamp was given a low bound above its high bound",
 };
@@ -98,6 +98,8 @@ export type CalcSampleValues = Readonly<Record<string, number>>;
 export type CalcPreviewOptions = {
   readonly dialect?: CalcDialect;
   readonly crossValues?: CalcSampleValues;
+  /** `bms-calc-v3` (ADR 0070): keyed by the bare `$key`, one per entry of `previewParamRefs`. */
+  readonly paramValues?: CalcSampleValues;
 };
 
 /**
@@ -144,7 +146,12 @@ export function previewFormula(
     return { state: "unparsed" };
   }
 
-  const result = evaluate(parsed.ast, toInputMap(values), toInputMap(options?.crossValues ?? {}));
+  const result = evaluate(
+    parsed.ast,
+    toInputMap(values),
+    toInputMap(options?.crossValues ?? {}),
+    toInputMap(options?.paramValues ?? {}),
+  );
   if (result.ok) {
     // `evaluate` already normalises `-0` to `0` at every node
     // (`evaluate.ts:19`), so this value is passed through untouched. Do not
@@ -188,4 +195,14 @@ export function previewInputKeys(expression: string, dialect: CalcDialect = CALC
 export function previewCrossRefs(expression: string, dialect: CalcDialect = CALC_DIALECT): CalcCrossRef[] {
   const parsed = parseFormula(expression, { dialect });
   return parsed.ok ? parsed.crossRefs : [];
+}
+
+/**
+ * The `$key`s a `bms-calc-v3` expression names, deduped in first-appearance
+ * order (`parsed.paramRefs`) — one preview sample row each. `[]` under `v1`
+ * and `v2`, where a `$` does not lex, and for text that does not parse.
+ */
+export function previewParamRefs(expression: string, dialect: CalcDialect = CALC_DIALECT): string[] {
+  const parsed = parseFormula(expression, { dialect });
+  return parsed.ok ? parsed.paramRefs : [];
 }

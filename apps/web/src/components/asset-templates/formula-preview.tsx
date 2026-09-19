@@ -58,6 +58,7 @@ import { crossRefKey } from "@bms/shared";
 
 import {
   previewCrossRefs,
+  previewParamRefs,
   previewFormula,
   previewInputKeys,
   type CalcSampleValues,
@@ -105,12 +106,16 @@ function crossRefLabel(node: CalcCrossRef): string {
 export function FormulaPreview({ expression, dialect, disabled = false }: FormulaPreviewProps) {
   const [values, setValues] = useState<SampleTexts>({});
   const [crossValues, setCrossValues] = useState<SampleTexts>({});
+  const [paramValues, setParamValues] = useState<SampleTexts>({});
 
   const keys = previewInputKeys(expression, dialect);
   const crossRefs = previewCrossRefs(expression, dialect);
+  // `bms-calc-v3` (ADR 0070): one row per `$key`, keyed by the bare key.
+  const paramRefs = previewParamRefs(expression, dialect);
   const preview = previewFormula(expression, sampleValuesFrom(values), {
     dialect,
     crossValues: sampleValuesFrom(crossValues),
+    paramValues: sampleValuesFrom(paramValues),
   });
 
   if (preview.state === "unparsed") {
@@ -122,8 +127,17 @@ export function FormulaPreview({ expression, dialect, disabled = false }: Formul
       <span className="block text-[11px] font-semibold uppercase tracking-wide text-bms-muted">
         Preview
       </span>
-      {keys.length > 0 || crossRefs.length > 0 ? (
+      {keys.length > 0 || crossRefs.length > 0 || paramRefs.length > 0 ? (
         <div className="mt-1 flex flex-wrap gap-3">
+          {paramRefs.map((key) => (
+            <SampleInput
+              key={`param:${key}`}
+              label={`$${key}`}
+              value={paramValues[key] ?? ""}
+              disabled={disabled}
+              onChange={(text) => setParamValues((current) => ({ ...current, [key]: text }))}
+            />
+          ))}
           {crossRefs.map((node) => {
             // Once per row, for both the write below and the read through
             // `crossValues` above — the one site the key is derived at.

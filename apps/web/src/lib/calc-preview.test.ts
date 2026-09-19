@@ -12,6 +12,7 @@ import {
   runUnparsedIsSilentTests,
   runV2MissingCrossInputTests,
   runV2PreviewComputesTests,
+  runV3PreviewTests,
 } from "./calc-preview.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -58,5 +59,9 @@ describe("calc live preview", () => {
 
   it("lists the cross-asset references under v2, none under v1, and keeps the local list local", () => {
     runPreviewCrossRefsTests();
+  });
+
+  it("previews a bms-calc-v3 formula over a parameter sample row, and refuses at the $ without one", () => {
+    runV3PreviewTests();
   });
 });

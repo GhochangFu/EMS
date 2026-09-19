@@ -7,7 +7,7 @@ import { adminAssetTemplateDtoSchema } from "@bms/shared/contracts";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import * as templateApi from "../../api/admin/asset-templates";
-import { COVERAGE_RATIO_HINT, V2_TRIGGER_LATENCY_HINT } from "../../lib/template-calc-config";
+import { COVERAGE_RATIO_HINT, V2_TRIGGER_LATENCY_HINT, V3_PARAMETER_HELP, V3_TRIGGER_LATENCY_HINT } from "../../lib/template-calc-config";
 import { CalculationsTab } from "./calculations-tab";
 import type { FormulaEditorProps } from "./formula-editor-lazy";
 
@@ -48,6 +48,7 @@ vi.mock("./formula-editor-lazy", () => ({
 
 const V1 = "bms-calc-v1";
 const V2 = "bms-calc-v2";
+const V3 = "bms-calc-v3";
 const STREAMING_OPTION = "on every reading";
 const INTERVAL_MISSING = "A scheduled formula needs an interval.";
 const CYCLE_SENTENCE = /lies on a dependency cycle/;
@@ -225,6 +226,30 @@ export async function choosingV2FlipsAStreamingRowToScheduled(): Promise<void> {
   expect(runsFor("d1").value).toBe("scheduled");
   expect(streamingOptionOf(runsFor("d1"))).toBeDisabled();
   expect(screen.getByText(INTERVAL_MISSING)).toBeInTheDocument();
+}
+
+/**
+ * Case 2b — choosing `bms-calc-v3` (ADR 0070; `E4.1a` U10) does everything
+ * `v2` does — scheduled-only, streaming disabled — and teaches the `$key`
+ * form and the `v3` latency hint (ADR 0070 Consequences: the editor must say
+ * a parameter is read once per sweep). Neither line renders for the `v2` row
+ * beside it, which is the negative control.
+ */
+export async function choosingV3TeachesTheParameterFormAndItsLatency(): Promise<void> {
+  renderTab(fixture(), true);
+
+  expect(screen.queryByText(V3_PARAMETER_HELP)).toBeNull();
+  expect(screen.queryByText(V3_TRIGGER_LATENCY_HINT)).toBeNull();
+  await userEvent.selectOptions(grammarFor("d1"), V3);
+
+  expect(grammarFor("d1").value).toBe(V3);
+  expect(runsFor("d1").value).toBe("scheduled");
+  expect(streamingOptionOf(runsFor("d1"))).toBeDisabled();
+  expect(screen.getByText(V3_PARAMETER_HELP)).toBeInTheDocument();
+  expect(screen.getByText(V3_TRIGGER_LATENCY_HINT)).toBeInTheDocument();
+  // the v2 row keeps its own hint, and exactly one of each hint is on the page
+  expect(screen.getAllByText(V2_TRIGGER_LATENCY_HINT)).toHaveLength(1);
+  expect(screen.getAllByText(V3_TRIGGER_LATENCY_HINT)).toHaveLength(1);
 }
 
 /**

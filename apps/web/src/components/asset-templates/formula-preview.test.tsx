@@ -7,6 +7,8 @@ import {
   aV2FormulaRendersARowPerReferenceAndComputes,
   anEmptyAggregateRowRefusesAtItsOffset,
   disabledDisablesEverySampleInput,
+  aV3FormulaRendersAParameterRowAndComputes,
+  aV3FormulaUnderV2RendersNothing,
   eachCrossReferenceFormIsLabelledAsWritten,
   unparsableTextRendersNothing,
 } from "./formula-preview.spec";
@@ -43,5 +45,13 @@ describe("F2.22 formula preview — one sample value per reference, cross-asset 
 
   it("labels a scoped aggregate and a qualified reference as the author wrote them", () => {
     eachCrossReferenceFormIsLabelledAsWritten();
+  });
+
+  it("renders a $key sample row under bms-calc-v3, labelled as written, and computes 10 × 2.15", () => {
+    aV3FormulaRendersAParameterRowAndComputes();
+  });
+
+  it("renders nothing for the same text under bms-calc-v2 — the $ does not lex there", () => {
+    aV3FormulaUnderV2RendersNothing();
   });
 });
