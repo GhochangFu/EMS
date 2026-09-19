@@ -16,6 +16,7 @@ import {
   createStoresAKnownZone,
   createWithoutTheKeyStoresNull,
   dtoParsesWithTheSharedContract,
+  updateAdmitsNullProvinceAndCapitalBesideAZone,
   updateWithNullClearsTheZone,
   updateWithoutTheKeyKeepsTheZone,
   type TimezoneCtx,
@@ -165,5 +166,9 @@ describe.skipIf(!connectionString)("E4.1b — locations.timezone on the admin wr
 
   it("T7 the DTO parses with adminLocationDtoSchema", async () => {
     await dtoParsesWithTheSharedContract(ctx);
+  });
+
+  it("T8 (C1) update with capital: null, province: null and a zone parses and stores all three", async () => {
+    await updateAdmitsNullProvinceAndCapitalBesideAZone(ctx);
   });
 });

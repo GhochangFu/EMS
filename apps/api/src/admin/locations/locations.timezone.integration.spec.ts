@@ -5,6 +5,7 @@ import type pg from "pg";
 import { adminLocationDtoSchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
+import { updateLocationBodySchema } from "./locations.schema";
 import type { LocationsAdminService } from "./locations.service";
 
 /**
@@ -155,6 +156,33 @@ export async function updateWithoutTheKeyKeepsTheZone(ctx: TimezoneCtx): Promise
   expect(updated.name).toBe("E4.1b timezone T6 renamed");
   expect(updated.timezone).toBe("Africa/Johannesburg");
   expect(await readTimezone(ctx, created.id)).toBe("Africa/Johannesburg");
+}
+
+/**
+ * T8 — review C1 (pre-existing): the form sends `null` for an empty Province /
+ * Capital, and the body schema refused it over HTTP. An update carrying both
+ * nulls beside a zone succeeds and the row reads back all three.
+ */
+export async function updateAdmitsNullProvinceAndCapitalBesideAZone(ctx: TimezoneCtx): Promise<void> {
+  const created = await ctx.svc.create(ctx.jwt, {
+    ...body(ctx, "T8"),
+    province: "West Bengal",
+    capital: "Kolkata",
+  });
+  ctx.register(created.id);
+  const updated = await ctx.svc.update(
+    ctx.jwt,
+    created.id,
+    updateLocationBodySchema.parse({ capital: null, province: null, timezone: "Asia/Kolkata" }),
+  );
+  expect(updated.capital).toBeNull();
+  expect(updated.province).toBeNull();
+  const { rows } = await ctx.fleetPool.query<{
+    province: string | null;
+    capital: string | null;
+    timezone: string | null;
+  }>("SELECT province, capital, timezone FROM bms.locations WHERE id = $1", [created.id]);
+  expect(rows[0]).toEqual({ province: null, capital: null, timezone: "Asia/Kolkata" });
 }
 
 /** T7 — the DTO parses with the shared contract (ADR 0030), `timezone` included. */
