@@ -175,4 +175,10 @@ export function aV3WindowReadRendersItsOwnRowAndComputes(): void {
   expect(result()).toHaveTextContent("window read at character 0");
   fireEvent.change(sampleFor("delta({kwh}, today)"), { target: { value: "70" } });
   expect(result()).toHaveTextContent("= 35");
+  // the point inside the window is in refs (the engine reads it for the
+  // staleness rule), so a kwh sample row renders too — and it is inert here:
+  // the window node reads the fifth map, never the point (PR 2 code review)
+  expect(sampleFor("kwh")).toBeInTheDocument();
+  fireEvent.change(sampleFor("kwh"), { target: { value: "999999" } });
+  expect(result()).toHaveTextContent("= 35");
 }

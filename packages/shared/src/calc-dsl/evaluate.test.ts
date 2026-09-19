@@ -1,6 +1,14 @@
 import { describe, it } from "vitest";
 
-import { runEvaluateTests, runEvaluateV2Tests, runEvaluateV3Tests, runEvaluateWindowTests } from "./evaluate.spec";
+import {
+  runEvaluateTests,
+  runEvaluateV2Tests,
+  runEvaluateV3Tests,
+  runEvaluateWindowAbsentTests,
+  runEvaluateWindowNamespaceTests,
+  runEvaluateWindowServedTests,
+  runEvaluateWindowV2AndFiniteTests,
+} from "./evaluate.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("bms-calc-v1 evaluator", () => {
@@ -22,7 +30,16 @@ describe("bms-calc-v3 evaluate", () => {
 });
 
 describe("bms-calc-v3 evaluate — windows (E4.1b)", () => {
-  it("serves window and hours nodes from the fifth map by windowKey, and from nothing else", () => {
-    runEvaluateWindowTests();
+  it("serves window and hours nodes from the fifth map by windowKey", () => {
+    runEvaluateWindowServedTests();
+  });
+  it("a read absent from the fifth map is missing_input at the node", () => {
+    runEvaluateWindowAbsentTests();
+  });
+  it("the fifth map is its own namespace and defaults to empty", () => {
+    runEvaluateWindowNamespaceTests();
+  });
+  it("a v2 AST never reads the windows map; a non-finite window value refuses at the node", () => {
+    runEvaluateWindowV2AndFiniteTests();
   });
 });

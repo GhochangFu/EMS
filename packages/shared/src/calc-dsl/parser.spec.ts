@@ -552,11 +552,14 @@ export function runParserV3Tests(): void {
  *
  * The assertions marked `v2 guard` pin the codes a `v2` parse gives the same
  * text: a windowed form must stay a `v2` refusal with its `v2` code.
+ *
+ * One exported function per section (one `it()` per claim): `assert`
+ * throws, so a mutation reddens the assertion that owns it.
  */
-export function runParserWindowTests(): void {
-  const kindsOf = (result: Extract<ParseResult, { ok: true }>): string => result.windowReads.map((r) => r.kind).join(",");
+const kindsOf = (result: Extract<ParseResult, { ok: true }>): string => result.windowReads.map((r) => r.kind).join(",");
 
-  // ---- v2 guard: the same text under v2 -----------------------------------------
+/** v2 guard: the same text under v2 */
+export function runWindowV2GuardTests(): void {
 
   expectFailCode("sum({kw}, today)", "scope_required", "v2 guard: a windowed sum is scope_required under v2", V2);
   expectFailCode("delta({kwh}, today)", "unexpected_token", "v2 guard: delta(…, today) is an unexpected token under v2", V2);
@@ -571,8 +574,10 @@ export function runParserWindowTests(): void {
   assert(v2Aggregate.windowReads.length === 0 && v3Aggregate.windowReads.length === 0, "an aggregate is not a window read");
   const v2Result = expectOk("{kw} * 2", V2);
   assert(Array.isArray(v2Result.windowReads) && v2Result.windowReads.length === 0, "windowReads is [] under v2");
+}
 
-  // ---- sum / avg: the window form, told from the aggregate by the comma ----------
+/** sum / avg: the window form, told from the aggregate by the comma */
+export function runWindowSumAvgFormTests(): void {
 
   const sum = expectOk("sum({kw}, 24h)", V3);
   assert(sum.ast.kind === "window", `sum({kw}, 24h) parses to a window node, got ${sum.ast.kind}`);
@@ -598,8 +603,10 @@ export function runParserWindowTests(): void {
   assert(avgQualified.ast.kind === "window" && avgQualified.ast.ref.kind === "qref", "a qualified point inside a window is a qref");
   assert(avgQualified.crossRefs.length === 1 && avgQualified.crossRefs[0].kind === "qref", "the qualified point joins crossRefs");
   assert(avgQualified.refs.length === 0, "a qualified point is not a local ref");
+}
 
-  // ---- min / max: the window form, told from the n-ary scalar by the second argument ----------
+/** min / max: the window form, told from the n-ary scalar by the second argument */
+export function runWindowMinMaxFormTests(): void {
 
   const min = expectOk("min({kw}, 24h)", V3);
   assert(min.ast.kind === "window" && min.ast.fn === "min", `min({kw}, 24h) is a window node, got ${min.ast.kind}`);
@@ -611,8 +618,10 @@ export function runParserWindowTests(): void {
   assert(needsRef.position === 0, `window_needs_point_reference is reported at the function name, got ${needsRef.position}`);
   expectFailCode("max(1, today)", "window_needs_point_reference", "a number before a window is refused", V3);
   expectFailCode("min({a}, {b}, 24h)", "window_needs_point_reference", "two points before a window is not the window form", V3);
+}
 
-  // ---- delta and hours: v3 only, never in CALC_FUNCTION_ARITY -------------------------
+/** delta and hours: v3 only, never in CALC_FUNCTION_ARITY */
+export function runWindowDeltaAndHoursTests(): void {
 
   const delta = expectOk("delta({kwh}, this_month)", V3);
   assert(delta.ast.kind === "window" && delta.ast.fn === "delta", "delta is a window node");
@@ -647,14 +656,18 @@ export function runParserWindowTests(): void {
   expectFailCode("hours(today, 24h)", "unexpected_token", "hours takes exactly one window", V3);
   const rollingHours = expectOk("hours(24h)", V3);
   assert(rollingHours.ast.kind === "hours" && rollingHours.ast.window.kind === "rolling", "hours over a rolling window parses");
+}
 
-  // ---- a window wraps one point reference, never a scope aggregate (ruling 4) ---------
+/** a window wraps one point reference, never a scope aggregate (ruling 4) */
+export function runWindowOverAggregateTests(): void {
 
   const overAggregate = expectFailCode("sum({kw} @site, 24h)", "window_over_aggregate", "a window over a scope aggregate is refused", V3);
   assert(overAggregate.position === 14, `window_over_aggregate is reported at the comma, got ${overAggregate.position}`);
   expectFailCode("avg({kw} @group('IT'), today)", "window_over_aggregate", "…whatever the scope", V3);
+}
 
-  // ---- a window token anywhere else ----------------------------------------------------
+/** a window token anywhere else */
+export function runWindowNotAllowedTests(): void {
 
   const stray = expectFailCode("today + 1", "window_not_allowed", "a bare window is refused", V3);
   assert(stray.position === 0, `window_not_allowed is at the window, got ${stray.position}`);
@@ -662,8 +675,10 @@ export function runParserWindowTests(): void {
   expectFailCode("{kw} * 24h", "window_not_allowed", "a window as an operand is refused", V3);
   expectFailCode("1 today", "window_not_allowed", "a trailing window is refused", V3);
   expectFailCode("sum({kw}, 24h, 1)", "unexpected_token", "a third argument to a window function is refused", V3);
+}
 
-  // ---- the literal's amount and cap are the parser's ---------------------------------------
+/** the literal's amount and cap are the parser's */
+export function runWindowLiteralBoundsTests(): void {
 
   const tooLong = expectFailCode("avg({kw}, 367d)", "window_too_long", "over 366d is refused", V3);
   assert(tooLong.position === 10, `window_too_long is at the literal, got ${tooLong.position}`);
@@ -673,8 +688,10 @@ export function runParserWindowTests(): void {
   const zero = expectFailCode("avg({kw}, 0h)", "malformed_window", "a zero window is refused", V3);
   assert(zero.position === 10, `malformed_window is at the literal, got ${zero.position}`);
   expectFailCode("hours(0d)", "malformed_window", "a zero window inside hours is refused", V3);
+}
 
-  // ---- windowReads: deduped by windowKey, bounded by MAX_FORMULA_WINDOWS ------------------------
+/** windowReads: deduped by windowKey, bounded by MAX_FORMULA_WINDOWS */
+export function runWindowReadsListTests(): void {
 
   const deduped = expectOk("avg({kw}, 24h) - avg({kw}, 1440m) + hours(today) + hours(today)", V3);
   assert(
@@ -698,8 +715,10 @@ export function runParserWindowTests(): void {
   );
   const eightRepeated = `${eightReads} + avg({kw}, 60m)`;
   expectOk(eightRepeated, V3);
+}
 
-  // ---- every error message is free of source text ---------------------------------------------
+/** every error message is free of source text */
+export function runWindowErrorWordingTests(): void {
 
   const codes: CalcErrorCode[] = [
     "malformed_window",
@@ -721,8 +740,10 @@ export function runParserWindowTests(): void {
     formatCalcError({ code: "window_over_aggregate", position: 0 }).includes("@site"),
     "window_over_aggregate names the two-layer alternative",
   );
+}
 
-  // ---- purity: the same text parses to the same result twice --------------------------------------
+/** purity: the same text parses to the same result twice */
+export function runWindowPurityTests(): void {
 
   const once = parseFormula("delta({kwh}, today) / hours(today)", V3);
   const twice = parseFormula("delta({kwh}, today) / hours(today)", V3);

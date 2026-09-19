@@ -384,10 +384,12 @@ describe("ADR 0070 part (d) — the resolver statement is contained, bounded and
 const CALC_WINDOWS_SERVICE = "apps/api/src/calc/calc-windows.service.ts";
 const VIEW_RELATIONS = ["telemetry.point_values_1m", "telemetry.point_values_5m", "telemetry.point_values_1h", "telemetry.point_values_1d"];
 
-/** The SQL template literals of the file: every backtick string that follows `query(` or `query<...>(`. */
+/** The SQL template literals of the file: every backtick string that follows
+ * `query(` / `query<...>(` (the pg pool) or `execute(sql` (Drizzle) — both
+ * shapes the service uses, so a raw scan added on either is seen. */
 function sqlTemplates(source: string): string[] {
   const out: string[] = [];
-  const re = /query(?:<[^`]*?>)?\(\s*`([\s\S]*?)`/g;
+  const re = /(?:query(?:<[^`]*?>)?\(\s*|execute(?:<[^`]*?>)?\(\s*sql)`([\s\S]*?)`/g;
   for (const m of source.matchAll(re)) {
     out.push(m[1]);
   }
@@ -415,8 +417,10 @@ describe("ADR 0070 part (e) — a window read never range-scans raw rows", () =>
   const templates = sqlTemplates(source);
 
   it("found the service and its SQL templates, so the rules below are not silently vacuous", () => {
-    expect(templates.length, `${CALC_WINDOWS_SERVICE}: expected at least three query( templates`).toBeGreaterThanOrEqual(3);
+    expect(templates.length, `${CALC_WINDOWS_SERVICE}: expected at least four query( / execute(sql templates`).toBeGreaterThanOrEqual(4);
     expect(templates.join("\n")).toMatch(/FROM\s+telemetry\.point_values\b/);
+    // the Drizzle shape is captured too: the calendar statement joins bms.locations
+    expect(templates.some((t) => /JOIN\s+bms\.locations/.test(t)), "the execute(sql`…`) template is scanned").toBe(true);
   });
 
   it("names all four views — the level relation is interpolated from aggregateRelation, so the file names them through it", () => {
@@ -438,5 +442,9 @@ describe("ADR 0070 part (e) — a window read never range-scans raw rows", () =>
     const withoutLimit = templates.map((t) => t.replace(/ORDER BY v\.time ASC\s+LIMIT 1/, "ORDER BY v.time ASC"));
     expect(rawScanDefect(withoutLimit)).toMatch(/LIMIT 1/);
     expect(rawScanDefect([...templates, "SELECT 1 FROM telemetry.point_values_15m"])).toMatch(/neither a view/);
+    // an injected raw range scan through the Drizzle shape is captured by sqlTemplates
+    const injected = sqlTemplates(`${source}\nconst x = db.execute(sql\`SELECT sum(value) FROM telemetry.point_values v WHERE v.time >= \${a}\`);`);
+    expect(injected.length).toBe(templates.length + 1);
+    expect(rawScanDefect(injected)).toMatch(/exactly two/);
   });
 });
