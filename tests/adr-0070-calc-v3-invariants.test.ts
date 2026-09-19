@@ -183,7 +183,11 @@ function parameterKeysOf(migration: string): string[] {
   const start = migration.indexOf("INSERT INTO bms.calc_parameter_keys");
   const end = start < 0 ? -1 : migration.indexOf("ON CONFLICT", start);
   if (start < 0 || end < 0) return [];
-  return [...migration.slice(start, end).matchAll(/'([a-z][a-z0-9_]{0,63})'/g)]
+  // Anchored to the FIRST quoted value of each `VALUES` row — the `code`
+  // column — never the labels, units or descriptions that follow it. A later
+  // row with a lowercase single-word unit (`'h'`) would otherwise match too and
+  // hide inside a bumped count (PR 2a security review, L1).
+  return [...migration.slice(start, end).matchAll(/^\s*\('([a-z][a-z0-9_]{0,63})'/gm)]
     .map((m) => m[1] as string)
     .filter((code, index, all) => all.indexOf(code) === index);
 }
