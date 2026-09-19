@@ -96,7 +96,7 @@ import type { StockAssetTemplateEntry } from "./types";
  *    load-bank plan below is the practice that covers it.
  *
  * **THE SEVEN AUTHORED FORMULAS.** Two below, and `E4.1c`'s five `v3` rows
- * at `sortOrder` 38–42 (VERSION HISTORY v2 above) — `load_pct`,
+ * at `sortOrder` 38–42 (VERSION HISTORY v2 below) — `load_pct`,
  * `fuel_hours_remaining_h`, `downtime_h_24h`, `availability_pct_24h`,
  * `starts_per_day`. The reasoning for the two below:
  *

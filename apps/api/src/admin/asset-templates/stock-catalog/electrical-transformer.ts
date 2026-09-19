@@ -93,7 +93,7 @@ import type { StockAssetTemplateEntry } from "./types";
  * headline reason above.
  *
  * **THE TWO AUTHORED FORMULAS** — the v1 one below, and `E4.1c`'s
- * `tap_changes_per_day` at `sortOrder` 30 (VERSION HISTORY v2 above).
+ * `tap_changes_per_day` at `sortOrder` 30 (VERSION HISTORY v2 below).
  *
  * `oil_rise_over_ambient_c` =
  * `{top_oil_temp_c} - {ambient_temp_c}`, `streaming`, and **`maxInputAgeSeconds:
