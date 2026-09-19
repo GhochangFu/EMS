@@ -197,20 +197,26 @@ import type { StockAssetTemplateEntry } from "./types";
  *    reason at a different scale. **Every other class here is deferred because
  *    it cannot be written; this one because it should not be** (plan §12 ruling
  *    5).
- *  - **A time window the grammar has no state for** — **27 of the 42 records
- *    over 25 distinct codes**, the largest class in the pack by a distance:
- *    `lit_while_unoccupied_min_day`,
- *    `override_hours_day`, `isolation_hours_month`, `jockey_starts_per_hour`,
- *    `door_open_minutes_day`, `traffic_per_hour`, `occupied_hours_day`,
- *    `turnover_per_day`, `avg_dwell_min`, `fan_hours_day`, `co_driven_fan_pct`,
- *    `hours_out_of_band_day`, `uptime_pct`, `mean_latency_s`, and in PR 2
- *    `availability_pct` and `mtbf_h` (both twice), `entrapments_per_month`,
- *    `door_cycles_per_day`, `trips_per_day`, `peak_hour_wait_s`,
- *    `out_of_service_hours_month`, `starts_per_day`, `safety_trips_per_month`,
- *    `fault_rate_per_1000_trips` (an interval counter over a cumulative one is
- *    not a rate) and `levelling_drift_mm` (a trend against a commissioning
- *    baseline — the `approach_trend` class; ADR 0054 read this one the other way
- *    and plan §12 ruling 5 defers it).
+ *  - **Authored by `E4.1c` (ADR 0070 decision 8), no longer deferred** —
+ *    `isolation_hours_month`, `occupied_hours_day`, `fan_hours_day`,
+ *    `door_cycles_per_day`, `trips_per_day`, `out_of_service_hours_month`,
+ *    `starts_per_day` under their own names; `uptime_pct` and `availability_pct`
+ *    (twice) superseded by `uptime_pct_24h` and `availability_pct_24h`. All were
+ *    filed at `E5.3` as "a time window the grammar has no state for";
+ *    `E4.1b`'s window retired that class.
+ *  - **Still deferred, each for a reason the window did not touch** — an
+ *    EVENT COUNT over a state (`jockey_starts_per_hour`, `entrapments_per_month`,
+ *    `safety_trips_per_month`); a COMPARISON, a condition or a PRODUCT OF STATES
+ *    inside a window (`lit_while_unoccupied_min_day`, `override_hours_day` over
+ *    an enum, `hours_out_of_band_day`, `co_driven_fan_pct`); a COUNTER whose
+ *    cumulative sense (`traffic_per_hour`, `turnover_per_day`) or a CONTACT
+ *    whose polarity (`door_open_minutes_day`) the document does not fix; a
+ *    METHOD (`avg_dwell_min`, `peak_hour_wait_s`); an INPUT the entry does not
+ *    declare (`mtbf_h` twice, `mean_latency_s`); `fault_rate_per_1000_trips`
+ *    (an interval counter over a cumulative one is not a rate) and
+ *    `levelling_drift_mm` (a trend against a commissioning baseline — the
+ *    `approach_trend` class; ADR 0054 read this one the other way and plan §12
+ *    ruling 5 defers it).
  *  - **An asset attribute the grammar cannot read** — `lighting_w_per_m2` (zone
  *    area), `daylight_saving_pct` (the full-output baseline),
  *    `lamp_availability_pct` (the luminaire count), `fire_pump_run_unplanned`

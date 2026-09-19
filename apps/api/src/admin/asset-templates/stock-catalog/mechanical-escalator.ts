@@ -203,8 +203,8 @@ import type { StockAssetTemplateEntry } from "./types";
  *    derived points at `sortOrder` 41-42 (plan §3.7) — `availability_pct_24h`,
  *    `starts_per_day`. What an importing tenant must know: no row reads a
  *    `$key`; the rolling `24h` windows need no time zone; every row is
- *    `scheduled` at 60 s — at most one tick old — with `minCoverageRatio`
- *    `null`, fail closed; `start_count` is tier X, so an asset without it
+ *    `scheduled` at 60 s — at most one tick old — —
+ *    no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`; `start_count` is tier X, so an asset without it
  *    refuses `starts_per_day` as `missing_input`, visibly. Nothing on a stack
  *    is mutated by the bump — a re-import opens the next version, still stamped.
  *
@@ -866,7 +866,7 @@ export const MECHANICAL_ESCALATOR: StockAssetTemplateEntry = {
       sortOrder: 40,
     },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. Two `bms-calc-v3` rows, scheduled
-    // at 60 s, `minCoverageRatio` null (fail closed), no `meta`; a count carries
+    // at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`; a count carries
     // "" (Q8). Fault-sense availability: 1 - avg of the 0/1 fault flag.
     {
       ...derived("(1 - avg({esc_fault}, 24h)) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),

@@ -242,8 +242,9 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // §2 — the HP pump's kW (§2 declares current), and a temperature correction
   // that is an exponential the grammar has no function for.
   "water-ro": ["specific_energy_kwh_kl", "normalized_permeate_flow"],
-  // §3 — a restatement of a declared measured point; a time window; and the one
-  // whose input can never receive a value at all (see DEFERRAL_REASON).
+  // §3 — a restatement of a declared measured point; an EVENT COUNT over
+  // regen_status (the grammar counts no transitions); and the one whose input
+  // can never receive a value at all (see DEFERRAL_REASON).
   "water-softener": ["throughput_since_regen_kl", "regen_frequency_per_day", "salt_efficiency_kg_kl"],
   // The mechanical/utility pack — E5.2, docs/e5.2-derived-taglist-v1.md.
   // Seventeen records over seventeen codes; the thirteen the pack DOES author
@@ -251,9 +252,8 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // "Derived:" prose line minus what that entry authors, and 13 + 17 = 30 is the
   // reconciliation that proves no named code was dropped.
   //
-  // §1 — three time windows and a standard's lookup. `specific_energy_kwh_kl`
-  // is NOT here: the pump declares kw and flow_klh and authors it.
-  // §1 — E4.1c DISCHARGED `starts_per_hour` (`delta({start_count}, 1h)`) and
+  // §1 — a standard's lookup. `specific_energy_kwh_kl` is NOT here: the pump
+  // declares kw and flow_klh and authors it. E4.1c DISCHARGED `starts_per_hour` (`delta({start_count}, 1h)`) and
   // SUPERSEDED `duty_hours_pct` by `duty_hours_pct_24h` and `availability_pct`
   // by `availability_pct_24h` (decision 8's <quantity>_<window> rule). What
   // stays: ISO 20816 zones A-D are per machine group and mounting — a lookup.
@@ -271,9 +271,10 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // speed as a percentage, so this would also be a second code for it.
     "speed_pct",
   ],
-  // §3 — a time window, and a test rather than a formula.
+  // §3 — an event count over an enum, and a test rather than a formula.
   "mechanical-compressor": [
-    // load/unload transitions per hour.
+    // load/unload transitions per hour — an EVENT COUNT over the load-state
+    // enum; a v3 window reads values and counts no transitions.
     "unload_cycles_per_hour",
     // a no-demand pressure-decay test needs a window in which nothing draws
     // air — a METHOD the document names, not an expression over live points.
@@ -282,13 +283,12 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // §4 — a trend and an attribute. The five the chiller DOES author are the N4
   // form's KPIs (cooling_load_tr, kw_per_tr, cop, and the two delta-Ts).
   "hvac-chiller": [
-    // a trend is a time window by definition.
+    // a SLOPE: delta() of a noisy measurement is two samples, not a trend.
     "approach_trend",
     // cooling load / RATED TR.
     "part_load_pct",
   ],
-  // §6 — an attribute, a time window, and a meter §6 does not list.
-  // §6 — E4.1c DISCHARGED `fan_energy_kwh_day` (`sum({kw}, 24h)`). What stays:
+  // §6 — an attribute and a meter §6 does not list. E4.1c DISCHARGED `fan_energy_kwh_day` (`sum({kw}, 24h)`). What stays:
   "hvac-ahu": [
     // the clean and dirty pressure-drop band is per filter class — an attribute.
     "filter_life_pct",
@@ -323,12 +323,14 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
   // declares the pack, so that the day an entry lands it lands against a check
   // that already names what it may not author (E5.2 Task 5's shape).
   //
-  // §1 — two time windows and three attributes. Nothing is promoted here.
+  // §1 — two grammar cases and three attributes. Nothing is promoted here.
   "facility-lighting-zone": [
-    // minutes per day is a window; the lit_while_unoccupied alarm binds the
-    // state and says so.
+    // lit AND unoccupied is a PRODUCT OF TWO STATES inside a window, which a
+    // v3 window (one point reference, ruling 4) cannot express; the
+    // lit_while_unoccupied alarm binds the state and says so.
     "lit_while_unoccupied_min_day",
-    // hours per day of manual override — a window.
+    // hours in override: lighting_mode is an ENUM, so a window over it is not
+    // hours-in-one-state without a comparison the grammar has not got.
     "override_hours_day",
     // installed load per square metre needs the ZONE AREA, an attribute.
     "lighting_w_per_m2",
@@ -356,9 +358,10 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // fire_pump_running_unplanned alarm carries the meaning instead.
     "fire_pump_run_unplanned",
   ],
-  // §3 — two time windows and the roll-up class again.
+  // §3 — a contact's polarity, a counter's sense, and the roll-up class again.
   "facility-access-door": [
-    // minutes held open per day — a window.
+    // minutes held open per day: "Door open / closed (contact)" fixes neither
+    // the 0/1 sense, so sum() over it is undefined until the document does.
     "door_open_minutes_day",
     // per-hour rate over interval counters whose REPORTING INTERVAL the
     // catalog does not know — a window with an unknown denominator.
@@ -401,7 +404,8 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // adequacy against a ventilation rate the document does not define — a
     // method, and the rate is per occupancy category.
     "ventilation_adequacy_pct",
-    // hours outside the band per day — a window, and the band is the site's.
+    // hours outside the band per day — a COMPARISON against a site band inside
+    // a window, which the grammar has not got; the band is the site's.
     "hours_out_of_band_day",
   ],
   // §7 — the roll-up class a third time, and an input the entry does not
@@ -477,9 +481,11 @@ const DEFERRAL_REASON =
   "ADR 0051 Amendment 6 decision 8: a code with no formula is not vocabulary. Every deferred " +
   "code needs an asset or site attribute (rating, contract demand, tariff band, installed kWp, " +
   "tank capacity, rated kVAr per step), a value on another asset that bms-calc-v1 cannot name " +
-  "(a Σ of feeders, an LV meter, the point of connection, the site load), a time window the " +
-  "grammar has no state for (per-day, per-month, hours-in-state), or a model it has no " +
-  "functions for (IEC 60076-7, C57.91, a Duval triangle). They are deferred and NAMED, never " +
+  "(a Σ of feeders, an LV meter, the point of connection, the site load), or a model it has " +
+  "no functions for (IEC 60076-7, C57.91, a Duval triangle). Two classes this sentence used " +
+  "to list are RETIRED: an attribute whose key is one of 0074's twelve (E4.1a's $key) and a " +
+  "time window over one declared counter or 0/1 state (E4.1b's window) — clause (6) below " +
+  "says what E4.1c authored under each and what stays. They are deferred and NAMED, never " +
   "authored with a placeholder formula (ADR 0036; F2.9 records the fork) — plan §2 carries the " +
   "reason for each one. E5.1's water pack adds TWO deferral classes the electrical pack had no " +
   "case of. (1) A REAGENT STRENGTH, which is a site attribute: specific_chlorine_gkl and " +

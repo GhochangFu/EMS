@@ -183,7 +183,7 @@ export type ControlRoomElectricalPointKey =
  * asked for. Recorded so a reader does not read the gap as an oversight.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, and
+ * `packages/db/src/point-key-units.ts`**, and
  * `tests/f3.39-global-point-key-vocabulary.test.ts` enforces it. `keysForDomain`
  * writes `UNIT_BY_KEY[code] ?? null`, and `seedPointKeyCatalog` runs last with a
  * plain `unit = EXCLUDED.unit`, so a missing entry silently reverts a correct
@@ -271,7 +271,7 @@ export type MeteredPumpingPointKey = (typeof METERED_PUMPING_POINT_KEYS)[number]
  * `voltage_vrn`, `voltage_vry`, `voltage_vyb`, `voltage_vyn`.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `packages/db/src/point-key-units.ts`**, enforced by
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
  * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
  *
@@ -637,7 +637,7 @@ export type ElectricalClassPointKey = (typeof ELECTRICAL_CLASS_POINT_KEYS)[numbe
  * named scales an operator reads.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `packages/db/src/point-key-units.ts`**, enforced by
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
  * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
  *
@@ -856,7 +856,7 @@ export type WaterClassPointKey = (typeof WATER_CLASS_POINT_KEYS)[number];
  * `insulation_resistance_mohm`, not redeclared here.
  *
  * **Every code here needs a `UNIT_BY_KEY` entry in
- * `packages/db/src/point-keys-seed.ts`**, enforced by
+ * `packages/db/src/point-key-units.ts`**, enforced by
  * `tests/f3.39-global-point-key-vocabulary.test.ts` — `keysForDomain` writes
  * `UNIT_BY_KEY[code] ?? null`, so a missing entry seeds `NULL`.
  *

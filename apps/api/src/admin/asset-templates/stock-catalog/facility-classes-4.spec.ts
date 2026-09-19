@@ -538,9 +538,9 @@ function checkLift(): void {
     DEFERRED_DERIVED_CODES[LIFT_CODE].length === 7,
     "§8a's Derived: line names thirteen codes; two are promoted, E4.1c discharged three and " +
       "superseded availability_pct, and seven are deferred — an input the entry does not declare " +
-      "(mtbf_h), two event counts (entrapments_per_month, peak_hour_wait_s is a method), one that " +
-      "lives in the work-order system (mttr_h, E3.1), one method the document " +
-      "only names (ride_quality_index), one baseline trend (levelling_drift_mm) and one rate " +
+      "(mtbf_h), an event count over a state (entrapments_per_month), one that lives in the " +
+      "work-order system (mttr_h, E3.1), two methods the document only names (peak_hour_wait_s, " +
+      "ride_quality_index), one baseline trend (levelling_drift_mm) and one rate " +
       "whose two counters do not share a denominator (fault_rate_per_1000_trips). Got " +
       `${DEFERRED_DERIVED_CODES[LIFT_CODE].length}.`,
   );

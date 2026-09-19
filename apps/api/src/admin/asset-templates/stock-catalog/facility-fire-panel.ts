@@ -148,8 +148,8 @@ import type { StockAssetTemplateEntry } from "./types";
  *    a `NULL` zone refuses `timezone_unset`, and at the first tick after local
  *    midnight on the first of the month the window is empty and the row
  *    refuses `window_empty` for one tick, counted, never a fabricated zero;
- *    (3) the row is `scheduled` at 60 s — at most one tick old — with
- *    `minCoverageRatio` `null`, fail closed; (4) `fire_isolate_state` is tier
+ *    (3) the row is `scheduled` at 60 s — at most one tick old — —
+ *    no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`; (4) `fire_isolate_state` is tier
  *    C, so every instantiation carries it. Nothing on a stack is mutated by
  *    the bump — a re-import opens the next version, still stamped.
  *
@@ -649,7 +649,7 @@ export const FACILITY_FIRE_PANEL: StockAssetTemplateEntry = {
     // from a data key, and therefore always in skippedPoints.
     { ...MEASURED, pointKey: "weekly_test_done", label: "Weekly fire alarm test logged", unit: null, required: false, sortOrder: 23, meta: MANUAL },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. One `bms-calc-v3` row, scheduled
-    // at 60 s, `minCoverageRatio` null (fail closed), no `meta`. `this_month` is
+    // at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`. `this_month` is
     // a calendar window: the location's time zone (`E4.1b`) is what bounds it.
     {
       ...derived("sum({fire_isolate_state}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),

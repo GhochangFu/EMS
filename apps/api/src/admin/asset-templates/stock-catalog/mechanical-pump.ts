@@ -169,7 +169,7 @@ import type { StockAssetTemplateEntry } from "./types";
  *    things an importing tenant must know: (1) no row reads a `$key`, so
  *    none waits on `/admin/calc-parameters`; (2) the rolling `24h` and `1h`
  *    windows need no time zone; (3) every row is `scheduled` at 60 s — at
- *    most one tick old — with `minCoverageRatio` `null`, fail closed;
+ *    most one tick old — — no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`;
  *    (4) `start_count` is tier X, so an asset without it refuses
  *    `starts_per_hour` as `missing_input`, visibly. Nothing on a stack is
  *    mutated by the bump — a re-import opens the next version, still stamped.
@@ -620,7 +620,7 @@ export const MECHANICAL_PUMP: StockAssetTemplateEntry = {
       sortOrder: 19,
     },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. Three `bms-calc-v3` rows, every
-    // one scheduled at 60 s, `minCoverageRatio` null (fail closed), no `meta`.
+    // one scheduled at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`.
     // Each window read is inline (design decision 6). A count carries the
     // empty-string unit (Q8).
     {

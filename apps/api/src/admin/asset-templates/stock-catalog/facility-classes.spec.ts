@@ -598,9 +598,9 @@ function checkFirePanel(): void {
   assert(
     cycling?.pointKey === "jockey_pump_status" && cycling.category === "operations",
     `${FIRE_PANEL_CODE}'s jockey_pump_cycling must bind the RUN STATUS jockey_pump_status and be ` +
-      "filed operations, not safety. jockey_starts_per_hour is deferred — bms-calc-v1 has " +
-      "arithmetic and five functions and no state, so a per-hour rate is not expressible — so " +
-      "the alarm binds the status and the RATE is the rule's to evaluate (E2.4). A jockey pump " +
+      "filed operations, not safety. jockey_starts_per_hour is deferred — an EVENT COUNT over a " +
+      "state, and a v3 window reads values and counts no transitions — so the alarm binds the " +
+      "status and the RATE is the rule's to evaluate (E2.4). A jockey pump " +
       "starting repeatedly is a leak in the ring main, which is a finding on the wet system and " +
       `not a life-safety event. Got "${String(cycling?.pointKey)}" / ` +
       `${String(cycling?.category)}.`,

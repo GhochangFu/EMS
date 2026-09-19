@@ -181,7 +181,7 @@ import type { StockAssetTemplateEntry } from "./types";
  *    derived point appended at `sortOrder` 13 (plan §3.7) — `uptime_pct_24h`.
  *    What an importing tenant must know: the row reads no `$key`; the rolling
  *    `24h` window needs no time zone; the row is `scheduled` at 60 s — at most
- *    one tick old — with `minCoverageRatio` `null`, fail closed;
+ *    one tick old — — no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`;
  *    `device_online` is tier C, so every instantiation carries it. Nothing on
  *    a stack is mutated by the bump — a re-import opens the next version,
  *    still stamped.
@@ -529,7 +529,7 @@ export const FACILITY_BAS_GATEWAY: StockAssetTemplateEntry = {
     // detection answers water under a floor void, and §7 raises no bullet here.
     { ...MEASURED, pointKey: "leak_state", label: "Water leak under floor / in room", unit: null, required: false, sortOrder: 12, meta: EXTENDED },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. One `bms-calc-v3` row, scheduled
-    // at 60 s, `minCoverageRatio` null (fail closed), no `meta`; a rolling 24h.
+    // at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`; a rolling 24h.
     // Service-sense: avg of the 0/1 reachable state, no `1 -`.
     {
       ...derived("avg({device_online}, 24h) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),

@@ -268,9 +268,9 @@ function checkPump(): void {
   assert(
     shortCycling?.pointKey === "start_count" && startCount?.kind === "measured",
     `${PUMP_CODE}'s short_cycling alarm must bind the CUMULATIVE COUNTER start_count. ` +
-      "starts_per_hour is deferred — bms-calc-v1 has arithmetic and five functions and no state, " +
-      "so a per-hour rate is not expressible in a formula — and the alarm text says so: the RATE " +
-      "is the rule's to evaluate (E2.4) and the counter is the parameter it evaluates over. Same " +
+      "E4.1c authors starts_per_hour as a v3 point over the same counter, and the alarm binding " +
+      "does not move — the alarm text says so: the RATE is the rule's to evaluate (E2.4), the " +
+      "counter is the parameter it evaluates over, and the point stores the same rate. Same " +
       `precedent as E5.1's throughput_anomaly. Got "${String(shortCycling?.pointKey)}" on a ` +
       `"${String(startCount?.kind)}" point.`,
   );
