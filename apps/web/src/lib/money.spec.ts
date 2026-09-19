@@ -49,13 +49,21 @@ export function assertNullCurrencyIsNull(): void {
   assert(formatMoney(5, null) === null, "a null currency must format to null");
 }
 
-/** A code ICU does not know falls back to `<amount> <code>` rather than throwing on the page. */
+/**
+ * A code `Intl` refuses falls back to `<amount> <code>` rather than throwing
+ * on the page. Measured (Node 24, the browser's ICU class): a well-formed but
+ * unassigned code such as `ZZZ` does NOT throw — `Intl.NumberFormat` prints
+ * `ZZZ 1,235` — so it never reaches the `catch`; only a malformed code
+ * (length ≠ 3) raises `RangeError`. The case therefore drives the fallback
+ * with `"ZZ"`, and the positive control beside it pins that `ZZZ` is
+ * formatted by `Intl` itself, so a reader does not "fix" the code back.
+ */
 export function assertUnknownCodeFallsBack(): void {
-  // `XXX` and `XTS` are ISO-known test codes; `ZZZ` is not a code at all.
-  const actual = formatMoney(1234.5, "ZZZ");
-  assert(actual !== null, "the fallback must not be null");
-  assert(actual !== null && actual.includes("ZZZ"), `expected the fallback to carry the code, got ${JSON.stringify(actual)}`);
-  assert(actual !== null && actual.includes("1"), `expected the fallback to carry the amount, got ${JSON.stringify(actual)}`);
+  const malformed = formatMoney(1234.5, "ZZ");
+  assert(malformed === `${(1234.5).toLocaleString(undefined, { maximumFractionDigits: 0 })} ZZ`, `expected the fallback string, got ${JSON.stringify(malformed)}`);
+  const unassigned = formatMoney(1234.5, "ZZZ");
+  const viaIntl = new Intl.NumberFormat(undefined, { style: "currency", currency: "ZZZ", maximumFractionDigits: 0 }).format(1234.5);
+  assert(unassigned === viaIntl, `an unassigned three-letter code is Intl's own output, got ${JSON.stringify(unassigned)}`);
 }
 
 /** A settled query with a null cost becomes the `empty` tile — the dash — with the reason, never a blank `ready`. */

@@ -748,8 +748,8 @@ export class DashboardService {
     // `E4.1c` (ADR 0070 decision 7) — the cost is Σ per-asset kWh × that asset's
     // nearest-scope `energy_tariff_per_kwh`, effective **now** (the window ends
     // now), in the organization's currency. The per-asset read uses the same
-    // `now() - interval` bound as the total above, so the two sum one set of
-    // buckets. A missing tariff or a second currency in scope is `null`, not 0.
+    // `now() - interval` bound as the total above, so the two describe the same
+    // window. A missing tariff or a second currency in scope is `null`, not 0.
     const perAsset = await perAssetEnergy(this.pool, {
       level,
       window: { kind: "trailing", intervalSql },

@@ -29,7 +29,7 @@ describe("E4.1c — formatMoney", () => {
     assertNullCurrencyIsNull();
   });
 
-  it("falls back to amount plus code for a code ICU does not know", () => {
+  it("falls back to amount plus code for a code Intl refuses, and lets Intl format an unassigned one", () => {
     assertUnknownCodeFallsBack();
   });
 });

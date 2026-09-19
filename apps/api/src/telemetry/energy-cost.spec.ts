@@ -30,7 +30,7 @@ function assert(condition: boolean, message: string): void {
 const A1 = "a1";
 const A2 = "a2";
 
-function rows(...entries: readonly (readonly [string, number, string])[]): PerAssetEnergy[] {
+function rows(...entries: readonly (readonly [string, number, string | null])[]): PerAssetEnergy[] {
   return entries.map(([assetId, kwh, currency]) => ({ assetId, kwh, currency }));
 }
 
@@ -96,4 +96,28 @@ export function assertStrayTariffIsIgnored(): void {
 export function assertNonFiniteKwhIsNull(): void {
   const result = energyCost(rows([A1, Number.NaN, "ZAR"]), tariffs({ [A1]: 2.15 }));
   assert(result.indicativeCost === null, `expected null for a NaN input, got ${String(result.indicativeCost)}`);
+}
+
+/** C9 — the same tariff in two currencies is still no single tariff: `Tariff,2.15,` with an empty unit would be a number with no meaning. */
+export function assertEqualTariffsInTwoCurrenciesIsNull(): void {
+  const result = energyCost(rows([A1, 100, "ZAR"], [A2, 50, "INR"]), tariffs({ [A1]: 2.15, [A2]: 2.15 }));
+  assert(result.currency === null, `two currencies is no currency — got ${String(result.currency)}`);
+  assert(result.tariffPerKwh === null, `one number across two currencies is not a tariff — got ${String(result.tariffPerKwh)}`);
+  assert(result.indicativeCost === null, `expected null, got ${String(result.indicativeCost)}`);
+}
+
+/**
+ * C10 — orphan telemetry (an `asset_id` with no `bms.assets` row) arrives with
+ * `currency: null` and a tariff nobody could resolve; the whole read fails
+ * closed. Both halves are asserted: with the tariff absent (the real case)
+ * and, as the control on rule 1 alone, with a tariff somehow present.
+ */
+export function assertOrphanTelemetryIsNull(): void {
+  const absent = energyCost(rows([A1, 100, "ZAR"], ["orphan", 5, null]), tariffs({ [A1]: 2.15 }));
+  assert(absent.indicativeCost === null, `an unpriced row fails the read closed — got ${String(absent.indicativeCost)}`);
+  const present = energyCost(rows([A1, 100, "ZAR"], ["orphan", 5, null]), tariffs({ [A1]: 2.15, orphan: 2.15 }));
+  assert(present.currency === null, `a null currency beside ZAR is no currency — got ${String(present.currency)}`);
+  assert(present.indicativeCost === null, `expected null, got ${String(present.indicativeCost)}`);
+  const alone = energyCost(rows(["orphan", 5, null]), tariffs({ orphan: 2.15 }));
+  assert(alone.currency === null && alone.indicativeCost === null, "a null currency alone is not a currency");
 }

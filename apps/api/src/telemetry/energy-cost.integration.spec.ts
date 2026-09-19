@@ -62,6 +62,8 @@ export type CostFixture = {
   readonly demoAsset: string;
   readonly demoOrganizationId: string;
   readonly demoCurrency: string;
+  /** A `kw` writer with no `bms.assets` row — orphan telemetry, the C1 control. */
+  readonly orphan: string;
   /** The `[from, to)` of the kW rows, for the materialisation. */
   readonly fromMs: number;
   readonly toMs: number;
@@ -85,9 +87,19 @@ const round2 = (value: number): number => Math.round(value * 100) / 100;
 async function nonDemoOrganization(
   pool: pg.Pool,
 ): Promise<{ organizationId: string; currency: string; locationIds: [string, string] }> {
+  // Only what the seed writes — an organization-scope row effective now —
+  // excludes an organization. The E4.1a admin suite writes the same key into
+  // a seeded organization for its own duration, at every scope, inside a
+  // 1900s validity band; a bare EXISTS on the key would exclude both
+  // organizations when the two files overlap in parallel workers (PR 1 code
+  // review, F2).
   const { rows: demo } = await pool.query<{ id: string }>(
     `SELECT o.id FROM bms.organizations o
-      WHERE EXISTS (SELECT 1 FROM bms.calc_parameters cp WHERE cp.organization_id = o.id AND cp.key = $1)`,
+      WHERE EXISTS (SELECT 1 FROM bms.calc_parameters cp
+                     WHERE cp.organization_id = o.id AND cp.key = $1
+                       AND cp.location_id IS NULL AND cp.asset_id IS NULL
+                       AND cp.effective_from <= now()
+                       AND (cp.effective_to IS NULL OR cp.effective_to > now()))`,
     [ENERGY_TARIFF_KEY],
   );
   const { rows: orgs } = await pool.query<{ id: string; currency: string }>(
@@ -141,6 +153,9 @@ export async function seedCostFixture(pool: pg.Pool): Promise<CostFixture> {
   const a1 = byCode.get(`${TEST_CODE}-A1`) as string;
   const a2 = byCode.get(`${TEST_CODE}-A2`) as string;
   const demoAsset = byCode.get(`${TEST_CODE}-D`) as string;
+  // No `bms.assets` row, on purpose: `telemetry.point_values` has no foreign
+  // key, and this is the id the D6 case puts in scope.
+  const orphan = randomUUID();
 
   // Two hours of `kw` per asset, one sample a minute, ending ten minutes ago
   // so the last bucket is complete and materialisable. Distinct constants
@@ -155,6 +170,7 @@ export async function seedCostFixture(pool: pg.Pool): Promise<CostFixture> {
       [a1, 10],
       [a2, 20],
       [demoAsset, 5],
+      [orphan, 1],
     ] as const) {
       times.push(new Date(t).toISOString());
       ids.push(id);
@@ -178,6 +194,7 @@ export async function seedCostFixture(pool: pg.Pool): Promise<CostFixture> {
     demoAsset,
     demoOrganizationId: demo.id,
     demoCurrency: demo.currency,
+    orphan,
     fromMs,
     toMs,
   };
@@ -192,7 +209,8 @@ export async function seedCostFixture(pool: pg.Pool): Promise<CostFixture> {
  */
 export async function cleanup(pool: pg.Pool, fx?: CostFixture): Promise<void> {
   const { rows } = await pool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE code LIKE $1`, [`${TEST_CODE}%`]);
-  const assetIds = rows.map((row) => row.id);
+  // The orphan has no asset row to find it by, so its id travels in `fx`.
+  const assetIds = [...rows.map((row) => row.id), ...(fx ? [fx.orphan] : [])];
   if (assetIds.length === 0) {
     return;
   }
@@ -323,6 +341,28 @@ export async function assertMixedCurrencyIsNull(pool: pg.Pool, fx: CostFixture):
   } finally {
     await deleteTariff(pool, demoRow);
     await deleteTariff(pool, orgRow);
+  }
+}
+
+/**
+ * D6 — orphan telemetry in scope (an `asset_id` with no `bms.assets` row):
+ * the total counts it, so the cost must not be priced without it. Before
+ * the LEFT JOIN the per-asset read dropped the row and the cost came back
+ * non-null and smaller than `totalKwh × tariff` (PR 1 code review, C1). D1
+ * is the positive control: the same tariff row, without the orphan, prices.
+ */
+export async function assertOrphanTelemetryFailsClosed(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const rowId = await insertTariff(pool, fx.organizationId, 2.15);
+  try {
+    const svc = dashboard(pool);
+    const without = await svc.energySummary("24h", [fx.a1, fx.a2]);
+    const withOrphan = await svc.energySummary("24h", [fx.a1, fx.a2, fx.orphan]);
+    assert(withOrphan.totalKwh > without.totalKwh, "the total counts the orphan's energy — the case is live");
+    assert(without.indicativeCost !== null, "positive control: without the orphan the scope prices");
+    assert(withOrphan.indicativeCost === null, `with the orphan the cost must be null, got ${String(withOrphan.indicativeCost)}`);
+    assert(withOrphan.currency === null, `an unpriced row is no currency — got ${String(withOrphan.currency)}`);
+  } finally {
+    await deleteTariff(pool, rowId);
   }
 }
 

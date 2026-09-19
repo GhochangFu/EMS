@@ -12,6 +12,7 @@ import {
   assertMixedCurrencyIsNull,
   assertNoTariffIsNullNotZero,
   assertOrganizationTariffPricesTheTotal,
+  assertOrphanTelemetryFailsClosed,
   assertReportPricesTheTotal,
   cleanup,
   seedCostFixture,
@@ -77,6 +78,11 @@ describe.skipIf(!connectionString)("E4.1c — the tariff is a parameter (ADR 007
     it("D5 ignores a row effective only after now — the instant is the window's end", async () => {
       if (!pool) throw new Error("pool required");
       await assertAFutureRowIsNotYetEffective(pool, fx);
+    }, 30_000);
+
+    it("D6 fails closed when orphan telemetry is in scope, and prices without it", async () => {
+      if (!pool) throw new Error("pool required");
+      await assertOrphanTelemetryFailsClosed(pool, fx);
     }, 30_000);
   });
 

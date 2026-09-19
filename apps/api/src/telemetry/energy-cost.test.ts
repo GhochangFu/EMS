@@ -2,10 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   assertAbsentTariffIsNullNotZero,
+  assertEqualTariffsInTwoCurrenciesIsNull,
   assertMixedCurrencyIsNull,
   assertNoRowsIsNull,
   assertNonFiniteKwhIsNull,
   assertOneCurrencyOneTariffSums,
+  assertOrphanTelemetryIsNull,
   assertRoundsToTwoDecimals,
   assertStrayTariffIsIgnored,
   assertTwoTariffsSumPerAsset,
@@ -43,5 +45,13 @@ describe("E4.1c — energyCost, the three fail-closed rules", () => {
 
   it("C8 answers null for a non-finite kWh rather than writing NaN", () => {
     assertNonFiniteKwhIsNull();
+  });
+
+  it("C9 reports no single tariff when the same number spans two currencies", () => {
+    assertEqualTariffsInTwoCurrenciesIsNull();
+  });
+
+  it("C10 fails closed on orphan telemetry with no currency", () => {
+    assertOrphanTelemetryIsNull();
   });
 });

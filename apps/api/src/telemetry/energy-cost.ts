@@ -30,7 +30,9 @@ import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggrega
  *
  * - **`currency`** is the one distinct currency of the rows, else `null`. A
  *   global administrator whose scope spans two organizations in two currencies
- *   sees the dash: a sum across currencies is not a number.
+ *   sees the dash: a sum across currencies is not a number. A row with no
+ *   currency (orphan telemetry, above) counts as its own "currency", so one
+ *   such row is enough to answer the dash rather than a smaller number.
  * - **`tariffPerKwh`** is the one distinct resolved tariff when **every** row
  *   resolved, else `null`. Two tariffs in scope (a location override beside
  *   the organization row) still sum — per asset — but there is no single
@@ -51,8 +53,14 @@ export const ENERGY_TARIFF_KEY = "energy_tariff_per_kwh";
 export interface PerAssetEnergy {
   readonly assetId: string;
   readonly kwh: number;
-  /** `bms.organizations.currency` of the asset's organization (ISO 4217). */
-  readonly currency: string;
+  /**
+   * `bms.organizations.currency` of the asset's organization (ISO 4217), or
+   * `null` for telemetry whose `asset_id` has no `bms.assets` row —
+   * `telemetry.point_values` carries no foreign key, and a total that counts
+   * such rows must not be priced (rule 1 below turns the `null` into no
+   * currency, and so no cost).
+   */
+  readonly currency: string | null;
 }
 
 /** The three contract fields, in the shape `energyCentreSummarySchema` declares them. */
@@ -80,6 +88,8 @@ export function energyCost(
 
   const currencies = new Set(rows.map((row) => row.currency));
   const currency = currencies.size === 1 ? rows[0]!.currency : null;
+  // `Set` size 1 with a `null` member is "one distinct value", which is not a
+  // currency: the orphan-telemetry case, priced by nobody.
 
   let sum = 0;
   const distinctTariffs = new Set<number>();
@@ -102,8 +112,10 @@ export function energyCost(
 /**
  * The window a per-asset read covers. `trailing` is the dashboard's — the
  * **database** clock, `bucket > now() - interval`, the same predicate its kWh
- * total uses, so `indicativeCost` and `totalKwh` describe one set of buckets
- * to the row. `range` is the report's, `bucket >= start AND bucket <= end`.
+ * total uses, so `indicativeCost` and `totalKwh` describe the same window
+ * (two statements, two `now()`; a minute boundary between them can move the
+ * trailing edge by one `_1m` bucket, which the two-decimal rounding absorbs
+ * everywhere but at a bucket edge). `range` is the report's, `bucket >= start AND bucket <= end`.
  * The two are kept as two arms rather than unified so that each service's
  * cost sums exactly the buckets its total sums (the integration specs pin
  * `indicativeCost === round(totalKwh × tariff)` on both).
@@ -123,14 +135,19 @@ export interface PerAssetEnergyOptions {
 interface PerAssetEnergyRow {
   readonly asset_id: string;
   readonly kwh: string;
-  readonly currency: string;
+  readonly currency: string | null;
 }
 
 /**
  * Energy per asset in the window, with each asset's organization currency —
  * the database half. Reads the continuous aggregate at `level` (ADR 0023) with
  * the same `avgExpr` mean the totals use, and joins `bms.assets` and
- * `bms.organizations` for the currency. `pool` is the caller's `FLEET_POOL`,
+ * `bms.organizations` for the currency. **Both joins are LEFT**: the totals
+ * this read must agree with join nothing, so an `asset_id` in the aggregate
+ * with no `bms.assets` row (no foreign key holds the two together) is still
+ * a row here — with `currency: null` — rather than a silent omission that
+ * would leave the cost non-null and smaller than the total it is labelled
+ * with. The PR 1 code review found the inner join (C1). `pool` is the caller's `FLEET_POOL`,
  * and the `$1::uuid[]` scope from `AccessControlService.readableAssetIds` is
  * the isolation control (`pue-ratio.ts` §Containment gives the reason in
  * full); `bms.organizations` carries no row-level security (measured at the
@@ -165,8 +182,8 @@ export async function perAssetEnergy(
            (SUM(p.kw) * $2::float8)::float8 AS kwh,
            o.currency
     FROM per p
-    JOIN bms.assets a ON a.id = p.asset_id
-    JOIN bms.organizations o ON o.id = a.organization_id
+    LEFT JOIN bms.assets a ON a.id = p.asset_id
+    LEFT JOIN bms.organizations o ON o.id = a.organization_id
     GROUP BY p.asset_id, o.currency
     `,
     params,

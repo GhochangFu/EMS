@@ -453,7 +453,7 @@ export async function assertListIsGatedByReadableOrganizations(
   // open-ended `energy_tariff_per_kwh` row (2026-01-01, `E4.1c`) is listed
   // too, and would otherwise be the latest `effectiveFrom`.
   const items = listed.filter((item) => item.effectiveFrom >= BAND[0] && item.effectiveFrom < BAND[1]);
-  assert(listed.length >= items.length && items.length >= 3, "the band's rows are among the listed rows");
+  assert(items.length >= 3, "the band's three rows are among the listed rows");
   const ids = new Set(items.map((item) => item.id));
   assert(ctx.organizationRow !== undefined && ids.has(ctx.organizationRow.id), "the organization row is listed");
   assert(ctx.locationRow !== undefined && ids.has(ctx.locationRow.id), "the location row is listed");
