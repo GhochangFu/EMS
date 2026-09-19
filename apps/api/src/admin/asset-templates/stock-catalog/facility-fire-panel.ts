@@ -1,5 +1,5 @@
-import { DASHBOARD_GRID } from "@bms/shared";
-import { CORE, EXTENDED, MANUAL, MEASURED } from "./point-fields";
+import { CALC_DIALECT_V3, DASHBOARD_GRID } from "@bms/shared";
+import { CORE, derived, EXTENDED, MANUAL, MEASURED } from "./point-fields";
 import type { StockAssetTemplateEntry } from "./types";
 
 /**
@@ -27,8 +27,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * somebody silenced it at the panel is exactly the observation this entry is
  * for.
  *
- * **24 POINTS — 8 core + 15 extended + 1 manual + 0 DERIVED.** §2's 24 table
- * rows in the document's own order (`sortOrder` 0-23) and nothing appended.
+ * **25 POINTS — 8 core + 15 extended + 1 manual + 1 DERIVED.** §2's 24 table
+ * rows in the document's own order (`sortOrder` 0-23), then `E4.1c`'s one
+ * `bms-calc-v3` row (24, VERSION HISTORY v2).
  *
  * **ONE TEMPLATE PER PANEL.** §2 says zones and loops are child points or child
  * assets *"depending on the gateway's object model"*, and this entry authors the
@@ -55,8 +56,13 @@ import type { StockAssetTemplateEntry } from "./types";
  * so it is always in `skippedPoints` and never gets an `asset_points` row — and
  * promoting it to `C` would make every instantiation fail.
  *
- * **FOUR DERIVED CODES ARE DEFERRED AND NAMED, and one of them is the pack's NEW
- * deferral class** (ADR 0054 decision 6; plan §12 ruling 5):
+ * **THREE DERIVED CODES ARE DEFERRED AND NAMED, and one of them is the pack's NEW
+ * deferral class** (ADR 0054 decision 6; plan §12 ruling 5). The fourth of
+ * `E5.3`'s deferrals, `isolation_hours_month`, left the ledger in `E4.1c`
+ * (ADR 0070 decision 8, plan §3.7/§3.9) — **authored** as
+ * `sum({fire_isolate_state}, this_month)`, hours isolated in the calendar
+ * month; a calendar window needs the location's time zone (`E4.1b`), so a
+ * `NULL` zone refuses `timezone_unset`, counted. The three that stay:
  *
  *  - **A SUBSYSTEM STATE ROLL-UP — the new class, and the first deferral in this
  *    catalog whose formula PARSES.** `fire_system_healthy` is *"no fault ∧ no
@@ -68,11 +74,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    decisions as one number with no way back to which input moved it. **Every
  *    other deferral in this pack is a code that cannot be written; this one is a
  *    code that should not be.**
- *  - **A time window the grammar has no state for** — `isolation_hours_month`
- *    and `jockey_starts_per_hour`. `bms-calc-v1` has arithmetic, parentheses and
- *    five functions and no clock and no memory. The `zone_isolated_too_long` and
- *    `jockey_pump_cycling` alarms bind the STATE and say so: the window and the
- *    rate are the rule's to evaluate (`E2.4`).
+ *  - **An event count over a state point** — `jockey_starts_per_hour`. A `v3`
+ *    window reads one point's values; it counts no transitions (`sample_count`
+ *    is readings). The `jockey_pump_cycling` alarm binds the STATE and says so:
+ *    the rate is the rule's to evaluate (`E2.4`).
  *  - **An asset attribute the grammar cannot read** — `fire_pump_run_unplanned`
  *    needs the site's TEST SCHEDULE to know what *unplanned* means. The
  *    `fire_pump_running_unplanned` alarm carries the meaning in words instead.
@@ -135,6 +140,18 @@ import type { StockAssetTemplateEntry } from "./types";
  *  - `facility-fire-panel` **v1** (2026-09-04, `E5.3`): authored from
  *    `e5.3-derived-taglist-v1.md` §2, PROVISIONAL — derived, not
  *    client-confirmed.
+ *  - `facility-fire-panel` **v2** (2026-09-19, `E4.1c`): one `bms-calc-v3`
+ *    derived point appended at `sortOrder` 24 (plan §3.7) —
+ *    `isolation_hours_month`. Four things an importing tenant must know: (1)
+ *    the row reads no `$key`, so it never waits on `/admin/calc-parameters`;
+ *    (2) `this_month` is a CALENDAR window — the location needs a time zone,
+ *    a `NULL` zone refuses `timezone_unset`, and at the first tick after local
+ *    midnight on the first of the month the window is empty and the row
+ *    refuses `window_empty` for one tick, counted, never a fabricated zero;
+ *    (3) the row is `scheduled` at 60 s — at most one tick old — with
+ *    `minCoverageRatio` `null`, fail closed; (4) `fire_isolate_state` is tier
+ *    C, so every instantiation carries it. Nothing on a stack is mutated by
+ *    the bump — a re-import opens the next version, still stamped.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -164,8 +181,9 @@ export const FACILITY_FIRE_PANEL: StockAssetTemplateEntry = {
     "docs/e5.3-derived-taglist-v1.md §2 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required, X optional and the M row is entered by hand; " +
     "alarm rows carry a meaning and no limit, because the standards fix the state names and the " +
-    "site's fire officer fixes every window and level.",
-  stockVersion: 1,
+    "site's fire officer fixes every window and level. One derived point — E4.1c's hours " +
+    "isolated in the calendar month — is computed from the isolate state.",
+  stockVersion: 2,
   content: {
     contentVersion: 1,
     alarms: [
@@ -630,5 +648,16 @@ export const FACILITY_FIRE_PANEL: StockAssetTemplateEntry = {
     // The M row: a signature in a logbook, entered through F1.8, never mapped
     // from a data key, and therefore always in skippedPoints.
     { ...MEASURED, pointKey: "weekly_test_done", label: "Weekly fire alarm test logged", unit: null, required: false, sortOrder: 23, meta: MANUAL },
+    // `E4.1c` — ADR 0070 decision 8, plan §3.7. One `bms-calc-v3` row, scheduled
+    // at 60 s, `minCoverageRatio` null (fail closed), no `meta`. `this_month` is
+    // a calendar window: the location's time zone (`E4.1b`) is what bounds it.
+    {
+      ...derived("sum({fire_isolate_state}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "isolation_hours_month",
+      label: "Hours isolated, calendar month",
+      unit: "h",
+      required: false,
+      sortOrder: 24,
+    },
   ],
 };

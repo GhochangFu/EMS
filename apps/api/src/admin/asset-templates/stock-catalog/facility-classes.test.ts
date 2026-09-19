@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runFacilityClassEntryTests } from "./facility-classes.spec";
+import { e41cFirePanelClaims, runFacilityClassEntryTests } from "./facility-classes.spec";
 
 /**
  * Vitest entry point for `facility-classes.spec.ts` — assertions live in the
@@ -17,4 +17,9 @@ describe("stock asset-template catalog — the facility classes (E5.3, §§1 and
   it("ships the lighting zone and the fire alarm panel exactly as their tag-list sections describe them", () => {
     runFacilityClassEntryTests();
   });
+
+  // E4.1c — the fire panel's one v3 row, one it() per claim.
+  for (const [name, run] of e41cFirePanelClaims()) {
+    it(name, run);
+  }
 });

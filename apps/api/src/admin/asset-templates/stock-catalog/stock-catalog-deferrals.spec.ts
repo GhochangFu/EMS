@@ -329,7 +329,8 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // and the count it divides by is not.
     "lamp_availability_pct",
   ],
-  // §2 — the pack's NEW deferral class, two time windows and an attribute.
+  // §2 — the pack's NEW deferral class, an event count and an attribute. E4.1c
+  // DISCHARGED `isolation_hours_month` (`sum({fire_isolate_state}, this_month)`).
   "facility-fire-panel": [
     // THE NEW CLASS (see DEFERRAL_REASON): a product of five declared binaries
     // that PARSES, and is refused all the same. A health flag over states is
@@ -337,9 +338,8 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // already raises its own alarm — a roll-up would restate five decisions as
     // one number with no way back to which input moved it.
     "fire_system_healthy",
-    // hours isolated per month — a window.
-    "isolation_hours_month",
-    // starts per hour; the jockey_pump_cycling alarm binds the run status and
+    // starts per hour — an EVENT COUNT over a state point, which a v3 window
+    // cannot count; the jockey_pump_cycling alarm binds the run status and
     // says the rate is the rule's.
     "jockey_starts_per_hour",
     // "running outside a test" needs the TEST SCHEDULE, a site attribute; the

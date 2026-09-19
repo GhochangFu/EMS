@@ -12,10 +12,12 @@ import {
   assertPointTable,
   assertProvenance,
   assertSkillAssignment,
+  sustainabilityClaims,
   tierCount,
   type AlarmRow,
   type DerivedRow,
   type PointRow,
+  type SustainabilityRow,
 } from "./stock-transcription.spec";
 
 /**
@@ -332,7 +334,7 @@ const FIRE_PANEL_CODE = "facility-fire-panel";
 
 /**
  * §2's 24 table rows in the document's own order (`sortOrder` 0-23) —
- * `[pointKey, tier, unit]`. Nothing is appended: §2 promotes no derived code.
+ * `[pointKey, tier, unit]`, then `E4.1c`'s one `bms-calc-v3` row at 24.
  *
  * **Two rows are the ones this table exists to hold.** `smoke_state` at index 22
  * is a **reused** code — the control room's, referenced here and redeclared
@@ -375,10 +377,13 @@ const FIRE_PANEL_POINTS: readonly PointRow[] = [
   ["suppression_released_state", "extended", null],
   ["smoke_state", "extended", null],
   ["weekly_test_done", "manual", null],
+  // E4.1c: one v3 row, a calendar-month window (plan §3.7)
+  ["isolation_hours_month", "derived", "h"],
 ];
 
 /**
- * §2 authors **no** derived point, and the empty table is the claim.
+ * §2 authors **no** derived point; the one row is `E4.1c`'s `bms-calc-v3`
+ * `isolation_hours_month` (plan §3.7) at the default input age.
  *
  * The pack's NEW deferral class is here: `fire_system_healthy` is expressible —
  * a product of five declared binaries that PARSES under `bms-calc-v1` — and it
@@ -386,10 +391,13 @@ const FIRE_PANEL_POINTS: readonly PointRow[] = [
  * `content.health`'s job (ADR 0050's surface) and each of its five inputs
  * already raises its own alarm. **Every other class in this pack is deferred
  * because it cannot be written; this one because it should not be** (plan §12
- * ruling 5). The other three are two time windows and a test schedule the panel
- * does not report.
+ * ruling 5). Of the other three, `isolation_hours_month` was authored by
+ * `E4.1c`; `jockey_starts_per_hour` (an event count over a state) and the test
+ * schedule the panel does not report stay.
  */
-const FIRE_PANEL_DERIVED: readonly DerivedRow[] = [];
+const FIRE_PANEL_DERIVED: readonly DerivedRow[] = [
+  ["isolation_hours_month", "sum({fire_isolate_state}, this_month)", null],
+];
 
 /**
  * §2's eleven alarm bullets become **eleven** rows, one for one — the only entry
@@ -501,16 +509,17 @@ function assertObserveOnly(entry = requireStockEntry(FIRE_PANEL_CODE)): void {
  */
 function checkFirePanel(): void {
   const entry = requireStockEntry(FIRE_PANEL_CODE);
-  assertEntryIdentity(FIRE_PANEL_CODE, entry, "fire_panel", "facility");
+  assertEntryIdentity(FIRE_PANEL_CODE, entry, "fire_panel", "facility", 2);
 
-  // ---- 24 points, 8 core + 15 extended + 1 manual + 0 derived -------------
+  // ---- 25 points, 8 core + 15 extended + 1 manual + 1 derived (1 E4.1c) ----
 
   assert(
     tierCount(entry, "core") === 8 &&
       tierCount(entry, "extended") === 15 &&
       tierCount(entry, "manual") === 1 &&
-      tierCount(entry, "derived") === 0,
-    `§2 marks 8 rows C, 15 X and 1 M, and promotes none of its four derived codes — 8/15/1/0. ` +
+      tierCount(entry, "derived") === 1,
+    `§2 marks 8 rows C, 15 X and 1 M, and promotes none of its four derived codes; E4.1c's one ` +
+      `v3 row is the only derived row — 8/15/1/1. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
@@ -648,4 +657,21 @@ function checkFirePanel(): void {
 export function runFacilityClassEntryTests(): void {
   checkLightingZone();
   checkFirePanel();
+}
+
+// ---- E4.1c — the bms-calc-v3 facility-fire-panel row(s) (ADR 0070 decision 8) ----
+//
+// Pinned through `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// `isolation_hours_month` is the ledger record discharged under its own name:
+// a CALENDAR window (`this_month`), so it needs the location's time zone
+// (`E4.1b`) — a NULL zone refuses `timezone_unset`, counted — and at local
+// midnight on the first of the month a read refuses `window_empty` for one tick.
+
+/** facility-fire-panel — plan §3.7, sortOrder 24. */
+const FIRE_PANEL_E41C: readonly SustainabilityRow[] = [
+  ["isolation_hours_month", "sum({fire_isolate_state}, this_month)", "h"],
+];
+
+export function e41cFirePanelClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return sustainabilityClaims("facility-fire-panel", requireStockEntry("facility-fire-panel"), FIRE_PANEL_E41C, 24, 2);
 }
