@@ -394,16 +394,16 @@ export const DEFERRED_DERIVED_CODES: Readonly<Record<StockEntryCode, readonly st
     // hours outside the band per day — a window, and the band is the site's.
     "hours_out_of_band_day",
   ],
-  // §7 — the roll-up class a third time, and two time windows.
+  // §7 — the roll-up class a third time, and an input the entry does not
+  // declare. E4.1c SUPERSEDED `uptime_pct` by `uptime_pct_24h`
+  // (`avg({device_online}, 24h) * 100`, decision 8's <quantity>_<window> rule).
   "facility-bas-gateway": [
     // ADR 0054 decision 6 rules it to the F3.x estate surface rather than to a
     // template point: a per-gateway quality number is computed over the points
     // BEHIND the gateway, which is the estate's view and not this asset's.
     "data_quality_pct",
-    // reachable time over elapsed time — hours-in-state.
-    "uptime_pct",
-    // a mean over a window; last_seen_age_s is the instantaneous point the
-    // stale_data alarm binds.
+    // a mean over a LATENCY nothing declares; last_seen_age_s is an age
+    // sawtooth, the instantaneous point the stale_data alarm binds.
     "mean_latency_s",
   ],
   // §8a — the pack's longest list, eleven: seven time windows, another system's
