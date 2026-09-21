@@ -2,7 +2,11 @@ import type { BmsDb } from "@bms/db";
 import { z } from "zod";
 
 import type { BmsTx, withTenant } from "../database/tenant-context";
-import { runProcessor, type ProcessorContext } from "./queue-processor";
+import {
+  runProcessor,
+  type ProcessorContext,
+  type ProcessorContinuation,
+} from "./queue-processor";
 import { defineQueue, tenantPayloadSchema } from "./queue-registry";
 
 /**
@@ -77,16 +81,32 @@ const fakeTx = { tx: "fake" } as unknown as BmsTx;
 
 type Fixture = {
   withTenantCalls: { db: BmsDb; organizationId: string }[];
+  /** F3.5b (R-5): every observable step in the order it happened — `withTenant:start`, `handler`, `withTenant:resolved`, `afterCommit`. */
+  order: string[];
   withTenant: typeof withTenant;
 };
 
-function makeFixture(): Fixture {
+/**
+ * The fake awaits the callback before it records `withTenant:resolved`, so a
+ * continuation invoked inside the callback lands *before* that marker — the
+ * order rows below depend on it. `commitError`, when given, is thrown after
+ * the callback resolved: the real `db.transaction` rejects the same way when
+ * `COMMIT` fails, and R-5 says the continuation must not run then.
+ */
+function makeFixture(options: { commitError?: Error } = {}): Fixture {
   const withTenantCalls: Fixture["withTenantCalls"] = [];
+  const order: string[] = [];
   const fake: typeof withTenant = async (db, organizationId, fn) => {
     withTenantCalls.push({ db, organizationId });
-    return fn(fakeTx);
+    order.push("withTenant:start");
+    const result = await fn(fakeTx);
+    if (options.commitError !== undefined) {
+      throw options.commitError;
+    }
+    order.push("withTenant:resolved");
+    return result;
   };
-  return { withTenantCalls, withTenant: fake };
+  return { withTenantCalls, order, withTenant: fake };
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +368,147 @@ export async function assertFleetHandlerThrowPropagatesUnchanged(): Promise<void
     (err as { message?: unknown }).message === "handler failed: fleet",
     `expected the handler's error to propagate unchanged, got ${JSON.stringify((err as { message?: unknown }).message)}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// F3.5b (ADR 0071 Amendment 2, plan R-5) — the post-commit continuation
+// ---------------------------------------------------------------------------
+
+/** A continuation whose `afterCommit` records itself and counts its calls; `reject` makes it fail. */
+function makeContinuation(order: string[], reject?: Error): { calls: () => number; continuation: ProcessorContinuation } {
+  let calls = 0;
+  const continuation: ProcessorContinuation = {
+    afterCommit: async () => {
+      calls += 1;
+      order.push("afterCommit");
+      if (reject !== undefined) {
+        throw reject;
+      }
+    },
+  };
+  return { calls: () => calls, continuation };
+}
+
+export async function assertAfterCommitRunsAfterWithTenantResolved(): Promise<void> {
+  const fixture = makeFixture();
+  const { continuation } = makeContinuation(fixture.order);
+  const registration = runProcessor(
+    tenantQ,
+    { tenantDb, fleetDb },
+    async () => {
+      fixture.order.push("handler");
+      return continuation;
+    },
+    { withTenant: fixture.withTenant },
+  );
+  await registration.process({ data: { organizationId: ORG_A, x: 1 } });
+  const expected = ["withTenant:start", "handler", "withTenant:resolved", "afterCommit"];
+  assert(
+    JSON.stringify(fixture.order) === JSON.stringify(expected),
+    `expected afterCommit to run after withTenant resolved (the transaction committed), got order ${JSON.stringify(fixture.order)} — an email sent inside the transaction precedes the commit of the rows it names`,
+  );
+}
+
+export async function assertAfterCommitRunsForAFleetHandlerToo(): Promise<void> {
+  const fixture = makeFixture();
+  const { continuation } = makeContinuation(fixture.order);
+  const registration = runProcessor(
+    fleetQ,
+    { tenantDb, fleetDb },
+    async () => {
+      fixture.order.push("handler");
+      return continuation;
+    },
+    { withTenant: fixture.withTenant },
+  );
+  await registration.process({ data: { x: 1 } });
+  assert(
+    JSON.stringify(fixture.order) === JSON.stringify(["handler", "afterCommit"]),
+    `expected a fleet handler's continuation to run after the handler with no withTenant call, got order ${JSON.stringify(fixture.order)}`,
+  );
+}
+
+export async function assertAfterCommitIsSkippedWhenTheHandlerThrew(): Promise<void> {
+  const fixture = makeFixture();
+  const { calls, continuation } = makeContinuation(fixture.order);
+  const registration = runProcessor(
+    tenantQ,
+    { tenantDb, fleetDb },
+    async () => {
+      // The continuation is built and reachable before the throw, so a
+      // processor that captured it and ran it in a `finally` would call it.
+      void continuation;
+      throw new Error("handler failed: before commit");
+    },
+    { withTenant: fixture.withTenant },
+  );
+  const err = await captureRejection(() =>
+    registration.process({ data: { organizationId: ORG_A, x: 1 } }),
+  );
+  assert(
+    errorMessage(err) === "handler failed: before commit",
+    `expected the handler's throw to propagate unchanged, got "${errorMessage(err)}"`,
+  );
+  assert(
+    calls() === 0,
+    `expected afterCommit never to run when the handler threw, it ran ${calls()} time(s) — nothing was committed for it to follow`,
+  );
+}
+
+/**
+ * The handler resolved its continuation, then `withTenant` itself rejected —
+ * the real `db.transaction` does that when `COMMIT` fails. R-5's claim is
+ * "after the commit", not "after the handler": the continuation must not run.
+ */
+export async function assertAfterCommitIsSkippedWhenTheCommitFailed(): Promise<void> {
+  const commitError = new Error("commit failed");
+  commitError.name = "CommitError";
+  const fixture = makeFixture({ commitError });
+  const { calls, continuation } = makeContinuation(fixture.order);
+  const registration = runProcessor(
+    tenantQ,
+    { tenantDb, fleetDb },
+    async () => continuation,
+    { withTenant: fixture.withTenant },
+  );
+  const err = await captureRejection(() =>
+    registration.process({ data: { organizationId: ORG_A, x: 1 } }),
+  );
+  assert(
+    errorName(err) === "CommitError",
+    `expected the commit failure to propagate, got ${errorName(err)}: "${errorMessage(err)}"`,
+  );
+  assert(
+    calls() === 0,
+    `expected afterCommit never to run when withTenant rejected after the handler, it ran ${calls()} time(s)`,
+  );
+}
+
+/**
+ * No failure counter exists at this layer: `worker-host.ts` moves
+ * `countQueueJob(name, "failed")` on BullMQ's `failed` event, which fires
+ * when `process` rejects. So the rejection *is* the path a handler throw
+ * takes, and this row asserts it.
+ */
+export async function assertAfterCommitRejectionFailsTheJob(): Promise<void> {
+  const fixture = makeFixture();
+  const boom = new Error("boom");
+  boom.name = "AfterCommitError";
+  const { calls, continuation } = makeContinuation(fixture.order, boom);
+  const registration = runProcessor(
+    tenantQ,
+    { tenantDb, fleetDb },
+    async () => continuation,
+    { withTenant: fixture.withTenant },
+  );
+  const err = await captureRejection(() =>
+    registration.process({ data: { organizationId: ORG_A, x: 1 } }),
+  );
+  assert(
+    errorName(err) === "AfterCommitError" && errorMessage(err) === "boom",
+    `expected process to reject with the continuation's AfterCommitError("boom") unchanged, got ${errorName(err)}: "${errorMessage(err)}" — a swallowed rejection would be counted completed`,
+  );
+  assert(calls() === 1, `expected afterCommit to have run exactly once, got ${calls()}`);
 }
 
 // ---------------------------------------------------------------------------
