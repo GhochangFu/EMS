@@ -1,15 +1,21 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { EnergyReportPreview } from "@bms/shared";
+import type { EnergyReportPreview, ReportFileDto } from "@bms/shared";
 
+import * as organizationsApi from "../api/admin/organizations";
 import * as reportsApi from "../api/reports";
+import { ApiError } from "../lib/api-error";
+import type { AuthUser } from "../stores/auth-store";
 import { ReportsPanel } from "./reports-panel";
 
 /**
  * `F2.8` — the Reports panel PUE tile, on a measured ratio and on a null.
+ * `F3.5a` Unit 11 — the PDF button, the Save-to-history block and the role
+ * gate on it (ADR 0071 decision 12; R-13).
  *
  * Assertions live here; `reports-panel.test.tsx` is the Vitest entry point and
  * carries the `@vitest-environment jsdom` docblock (ADR 0014, ADR 0042
@@ -24,6 +30,46 @@ import { ReportsPanel } from "./reports-panel";
 
 const NOT_CONFIGURED = "Not configured — no incomer in scope computes site_kw and it_kw";
 const MEASURED_HINT = "Σ site kW ÷ Σ IT kW, from the incomers' site_kw / it_kw";
+const ORGANIZATION_SENTENCE = "Choose an organization to file the report under.";
+
+const VIEWER: AuthUser = {
+  id: "9b1d2c3e-0000-4a5b-8c4d-000000000001",
+  email: "viewer@bms.local",
+  displayName: "Viewer",
+  role: "viewer",
+};
+
+function userWithRole(role: AuthUser["role"]): AuthUser {
+  return { ...VIEWER, role };
+}
+
+const ESKOM = {
+  id: "5c2c1b0e-2222-4a5b-8c4d-000000000010",
+  code: "ESKOM",
+  name: "Eskom SMOC",
+  active: true,
+  currency: "ZAR",
+  meta: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
+};
+
+const SAVED: ReportFileDto = {
+  id: "0f0a4a1e-1111-4a5b-8c4d-000000000001",
+  organizationId: ESKOM.id,
+  templateId: "energy_consumption",
+  format: "pdf",
+  periodStart: "2026-09-01",
+  periodEnd: "2026-09-05",
+  locationIds: [],
+  contentType: "application/pdf",
+  byteSize: 12_345,
+  sha256: "a".repeat(64),
+  filename: "energy-consumption-2026-09-01-to-2026-09-05.pdf",
+  deliveryStatus: "none",
+  deliveryError: null,
+  createdBy: null,
+  createdAt: "2026-09-05T12:00:00.000Z",
+};
 
 function preview(
   pueEstimate: number | null,
@@ -57,16 +103,42 @@ function preview(
   };
 }
 
-function renderPanel(pueEstimate: number | null, cost: Partial<EnergyReportPreview["summary"]> = {}): void {
+function renderPanel(
+  pueEstimate: number | null,
+  cost: Partial<EnergyReportPreview["summary"]> = {},
+  user: AuthUser = VIEWER,
+): void {
   vi.spyOn(reportsApi, "fetchEnergyReportPreview").mockResolvedValue(preview(pueEstimate, cost));
+  // The History list and the organization select fetch on mount for the
+  // admin roles; stubbed so no row here depends on the network.
+  vi.spyOn(reportsApi, "fetchReportFiles").mockResolvedValue([]);
+  vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({ items: [ESKOM] });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <ReportsPanel />
+        <ReportsPanel user={user} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+/**
+ * The preview has resolved when its range line renders — the Save button and
+ * the export buttons exist before the data, so waiting on them resolves at
+ * once and the click lands on a disabled control.
+ */
+async function previewResolved(): Promise<void> {
+  await screen.findByText(/2026-09-01 to 2026-09-05/);
+}
+
+/**
+ * The range the panel sent to the preview — its own date state (today and
+ * yesterday), not the fixture range the preview answers with. An export or a
+ * save must send exactly this object.
+ */
+function rangeSentToThePreview(): unknown {
+  return vi.mocked(reportsApi.fetchEnergyReportPreview).mock.calls[0]?.[0];
 }
 
 /** `KpiTile`'s label is a `span` in a flex row in the card, so the card is its grandparent. */
@@ -113,4 +185,154 @@ export async function aNullCostRendersTheDashInTheReportsPanel(): Promise<void> 
   const tile = await tileLabelled("Indicative cost");
   expect(await within(tile).findByText("—")).toBeInTheDocument();
   expect(within(tile).getByText(/No tariff/)).toBeInTheDocument();
+}
+
+/**
+ * `F3.5a` R-13 — a viewer sees the PDF button (the export routes are
+ * `readableAssetIds`-scoped, like CSV) and neither the Save block nor the
+ * History list. "Export PDF" is the positive control for the two absences.
+ */
+export async function aViewerSeesThePdfButtonAndNoSaveOrHistory(): Promise<void> {
+  renderPanel(1.25);
+  await previewResolved();
+
+  expect(screen.getByRole("button", { name: "Export PDF" })).toBeInTheDocument();
+  expect(screen.queryByText("Save to history")).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "History" })).not.toBeInTheDocument();
+}
+
+/** `F3.5a` — the deferred pill is gone; the preview heading is the positive control. */
+export async function theDeferredPillIsGoneAndTheCardNamesThreeFormats(): Promise<void> {
+  renderPanel(1.25);
+  await previewResolved();
+
+  expect(screen.getByText("Energy Consumption Preview")).toBeInTheDocument();
+  expect(screen.queryByText("PDF/XLSX deferred")).not.toBeInTheDocument();
+  expect(screen.getByText("PDF · XLSX · CSV")).toBeInTheDocument();
+}
+
+/** `F3.5a` — "Export PDF" calls `downloadEnergyReportPdf` with the range. */
+export async function exportPdfCallsTheApiWithTheRange(): Promise<void> {
+  const download = vi.spyOn(reportsApi, "downloadEnergyReportPdf").mockResolvedValue();
+  renderPanel(1.25);
+  await previewResolved();
+
+  const button = screen.getByRole("button", { name: "Export PDF" });
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+
+  await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+  expect(download.mock.calls[0]?.[0]).toEqual(rangeSentToThePreview());
+}
+
+/** `F3.5a` — a failed PDF export renders its own line, not the XLSX or CSV one. */
+export async function aFailedPdfExportRendersItsOwnLine(): Promise<void> {
+  vi.spyOn(reportsApi, "downloadEnergyReportPdf").mockRejectedValue(new Error("energy-report-pdf 500"));
+  renderPanel(1.25);
+  await previewResolved();
+
+  const button = screen.getByRole("button", { name: "Export PDF" });
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+
+  expect(await screen.findByText("PDF export failed.")).toBeInTheDocument();
+  expect(screen.queryByText("XLSX export failed.")).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.5a` R-13 — a global `admin` must name an organization: the select exists,
+ * lists the fetched organizations, and Save stays disabled beside the
+ * organization sentence until one is chosen. Asserted **after** the preview
+ * resolves, because `saveBlockedReason` names the missing range first.
+ */
+export async function anAdminMustChooseAnOrganizationBeforeSaving(): Promise<void> {
+  renderPanel(1.25, {}, userWithRole("admin"));
+  await previewResolved();
+
+  const select = await screen.findByLabelText("Organization");
+  expect(await within(select).findByRole("option", { name: "ESKOM · Eskom SMOC" })).toBeInTheDocument();
+  const save = screen.getByRole("button", { name: "Save to history" });
+  expect(save).toBeDisabled();
+  expect(screen.getByText(ORGANIZATION_SENTENCE)).toBeInTheDocument();
+
+  await userEvent.selectOptions(select, ESKOM.id);
+
+  await waitFor(() => expect(save).toBeEnabled());
+  expect(screen.queryByText(ORGANIZATION_SENTENCE)).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.5a` R-13 — a `location_admin` sends no organization: no select, and Save
+ * is enabled once the preview resolved. The History heading is the second
+ * positive control for the role gate.
+ */
+export async function aLocationAdminSavesWithoutAnOrganizationSelect(): Promise<void> {
+  renderPanel(1.25, {}, userWithRole("location_admin"));
+  await previewResolved();
+
+  expect(screen.queryByLabelText("Organization")).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save to history" })).toBeEnabled());
+  expect(screen.getByRole("heading", { name: "History" })).toBeInTheDocument();
+}
+
+/**
+ * `F3.5a` — Save calls `saveEnergyReportFile(input, "pdf", undefined)` for a
+ * `location_admin`, asserted by position so a swapped `format` /
+ * `organizationId` pair reddens here, and renders the saved line.
+ */
+export async function saveCallsTheApiByPositionAndRendersTheSavedLine(): Promise<void> {
+  const save = vi.spyOn(reportsApi, "saveEnergyReportFile").mockResolvedValue(SAVED);
+  renderPanel(1.25, {}, userWithRole("location_admin"));
+  await previewResolved();
+
+  const button = screen.getByRole("button", { name: "Save to history" });
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  const call = save.mock.calls[0];
+  expect(call?.[0]).toEqual(rangeSentToThePreview());
+  expect(call?.[1]).toBe("pdf");
+  expect(call?.[2]).toBeUndefined();
+  expect(await screen.findByText(`Saved ${SAVED.filename} to history.`)).toBeInTheDocument();
+}
+
+/**
+ * `F3.5a` — the admin path with a chosen organization and the `xlsx` format:
+ * two non-undefined strings in the last two positions, so a swap cannot hide
+ * behind `undefined`. The list refetches after the save (spy delta 1).
+ */
+export async function anAdminSaveSendsTheFormatAndTheOrganizationInOrder(): Promise<void> {
+  const save = vi.spyOn(reportsApi, "saveEnergyReportFile").mockResolvedValue({ ...SAVED, format: "xlsx" });
+  renderPanel(1.25, {}, userWithRole("admin"));
+  await previewResolved();
+  const list = vi.mocked(reportsApi.fetchReportFiles);
+
+  await userEvent.selectOptions(await screen.findByLabelText("Organization"), ESKOM.id);
+  await userEvent.selectOptions(screen.getByLabelText("Format"), "xlsx");
+  const button = screen.getByRole("button", { name: "Save to history" });
+  await waitFor(() => expect(button).toBeEnabled());
+  const listCallsBefore = list.mock.calls.length;
+  await userEvent.click(button);
+
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  const call = save.mock.calls[0];
+  expect(call?.[1]).toBe("xlsx");
+  expect(call?.[2]).toBe(ESKOM.id);
+  await waitFor(() => expect(list.mock.calls.length).toBe(listCallsBefore + 1));
+}
+
+/** `F3.5a` — a refused save renders the API's own sentence (the 409 cap here). */
+export async function aRefusedSaveRendersTheApiSentence(): Promise<void> {
+  vi.spyOn(reportsApi, "saveEnergyReportFile").mockRejectedValue(
+    new ApiError("On-demand report cap reached for this organization", 409),
+  );
+  renderPanel(1.25, {}, userWithRole("location_admin"));
+  await previewResolved();
+
+  const button = screen.getByRole("button", { name: "Save to history" });
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+
+  expect(await screen.findByText("On-demand report cap reached for this organization")).toBeInTheDocument();
 }

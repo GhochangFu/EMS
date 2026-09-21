@@ -4,9 +4,18 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aCostRendersInTheReportsPanel,
+  aFailedPdfExportRendersItsOwnLine,
+  aLocationAdminSavesWithoutAnOrganizationSelect,
   aMeasuredRatioRendersInTheReportsPanel,
   aNullCostRendersTheDashInTheReportsPanel,
+  aRefusedSaveRendersTheApiSentence,
+  aViewerSeesThePdfButtonAndNoSaveOrHistory,
+  anAdminMustChooseAnOrganizationBeforeSaving,
+  anAdminSaveSendsTheFormatAndTheOrganizationInOrder,
   anUnconfiguredPreviewShowsTheDashAndTheReason,
+  exportPdfCallsTheApiWithTheRange,
+  saveCallsTheApiByPositionAndRendersTheSavedLine,
+  theDeferredPillIsGoneAndTheCardNamesThreeFormats,
 } from "./reports-panel.spec";
 
 /**
@@ -34,5 +43,48 @@ describe("F2.8 reports panel PUE tile", () => {
 
   it("E4.1c — renders the dash, without throwing, when the cost fields are null", async () => {
     await aNullCostRendersTheDashInTheReportsPanel();
+  });
+});
+
+describe("F3.5a reports panel — PDF export, Save to history, role gate", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("a viewer sees Export PDF and neither Save to history nor History", async () => {
+    await aViewerSeesThePdfButtonAndNoSaveOrHistory();
+  });
+
+  it("the deferred pill is gone and the card names PDF · XLSX · CSV", async () => {
+    await theDeferredPillIsGoneAndTheCardNamesThreeFormats();
+  });
+
+  it("Export PDF calls downloadEnergyReportPdf with the range", async () => {
+    await exportPdfCallsTheApiWithTheRange();
+  });
+
+  it("a failed PDF export renders its own line", async () => {
+    await aFailedPdfExportRendersItsOwnLine();
+  });
+
+  it("an admin must choose an organization before Save enables", async () => {
+    await anAdminMustChooseAnOrganizationBeforeSaving();
+  });
+
+  it("a location_admin has no organization select and Save enables once the preview resolved", async () => {
+    await aLocationAdminSavesWithoutAnOrganizationSelect();
+  });
+
+  it("Save calls saveEnergyReportFile(input, 'pdf', undefined) and renders the saved line", async () => {
+    await saveCallsTheApiByPositionAndRendersTheSavedLine();
+  });
+
+  it("an admin save sends the format and the organization in order and refetches the list", async () => {
+    await anAdminSaveSendsTheFormatAndTheOrganizationInOrder();
+  });
+
+  it("a refused save renders the API's sentence", async () => {
+    await aRefusedSaveRendersTheApiSentence();
   });
 });

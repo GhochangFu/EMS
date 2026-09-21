@@ -1,16 +1,25 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import type { EnergyReportPreview, EnergyTopConsumer } from "@bms/shared";
+import type { EnergyReportPreview, EnergyTopConsumer, ReportFileFormat } from "@bms/shared";
+import { REPORT_FILE_FORMATS } from "@bms/shared/contracts";
 
+import { fetchAdminOrganizations } from "../api/admin/organizations";
 import {
   downloadEnergyReportCsv,
+  downloadEnergyReportPdf,
   downloadEnergyReportXlsx,
   fetchEnergyReportPreview,
+  saveEnergyReportFile,
   type EnergyReportInput,
 } from "../api/reports";
+import { isMasterDataAdmin } from "../lib/admin-access";
+import { apiErrorMessage } from "../lib/api-error-message";
 import { costTileProps } from "../lib/money";
 import { pueTileProps } from "../lib/pue-tile";
+import { formatLabel, saveBlockedReason } from "../lib/report-files-view";
+import type { AuthUser } from "../stores/auth-store";
 import { KpiTile } from "./kpi-tile";
+import { REPORT_FILES_QUERY_KEY, ReportHistory } from "./report-history";
 
 type ReportCard = {
   title: string;
@@ -23,7 +32,7 @@ const reportCards: ReportCard[] = [
   {
     title: "Energy Consumption",
     description: "Multi-site kWh, demand, PUE, cost, source mix, and top loads.",
-    formats: "XLSX · CSV",
+    formats: "PDF · XLSX · CSV",
     active: true,
   },
   {
@@ -60,8 +69,26 @@ function formatNumber(value: number, maximumFractionDigits = 0): string {
   return value.toLocaleString(undefined, { maximumFractionDigits });
 }
 
-/** Sprint E Reports & Analytics panel with Energy Consumption preview/export. */
-export function ReportsPanel() {
+export type ReportsPanelProps = {
+  /**
+   * The signed-in user, passed from `ReportsPage` rather than read from the
+   * store, so the spec keeps its bare render plus a role (`F3.5a` R-13).
+   */
+  user: AuthUser;
+};
+
+/**
+ * Sprint E Reports & Analytics panel with Energy Consumption preview/export;
+ * `F3.5a` adds the PDF export, Save to history and the History list (ADR 0071
+ * decision 12).
+ *
+ * The PDF button renders for everyone — the export routes are
+ * `readableAssetIds`-scoped, like CSV. Save and History render only for
+ * `isMasterDataAdmin(user.role)` (R-13): the API's `POST` runs
+ * `assertMasterDataRole` and the list route answers `[]` for other roles, so
+ * a control shown to them would only buy a refusal.
+ */
+export function ReportsPanel({ user }: ReportsPanelProps) {
   const [startDate, setStartDate] = useState(dateDaysAgo(1));
   const [endDate, setEndDate] = useState(today());
   const input: EnergyReportInput = useMemo(
@@ -82,6 +109,11 @@ export function ReportsPanel() {
     mutationFn: () => downloadEnergyReportXlsx(input),
   });
 
+  const pdfM = useMutation({
+    mutationFn: () => downloadEnergyReportPdf(input),
+  });
+
+  const canSave = isMasterDataAdmin(user.role);
   const preview = previewQ.data;
   const summary = preview?.summary;
   const status = previewQ.isLoading
@@ -181,6 +213,24 @@ export function ReportsPanel() {
           {csvM.isError ? (
             <p className="mt-2 text-xs text-red-600">CSV export failed.</p>
           ) : null}
+          <button
+            className="mt-2 w-full rounded border border-bms-green px-3 py-2 text-sm font-semibold text-bms-green disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
+            disabled={pdfM.isPending || previewQ.isError || !preview}
+            onClick={() => pdfM.mutate()}
+          >
+            {pdfM.isPending ? "Preparing PDF..." : "Export PDF"}
+          </button>
+          {pdfM.isError ? (
+            <p className="mt-2 text-xs text-red-600">PDF export failed.</p>
+          ) : null}
+          {canSave ? (
+            <SaveToHistory
+              input={input}
+              user={user}
+              hasPreview={preview !== undefined}
+              previewError={previewQ.isError}
+            />
+          ) : null}
         </div>
       </section>
 
@@ -199,9 +249,6 @@ export function ReportsPanel() {
                   : "Select a valid range to generate the preview."}
               </p>
             </div>
-            <span className="rounded border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
-              PDF/XLSX deferred
-            </span>
           </div>
         </div>
 
@@ -242,7 +289,116 @@ export function ReportsPanel() {
         ) : null}
 
         {preview ? <PreviewDetails preview={preview} /> : null}
+
+        {canSave ? <ReportHistory /> : null}
       </section>
+    </div>
+  );
+}
+
+type SaveToHistoryProps = {
+  input: EnergyReportInput;
+  user: AuthUser;
+  hasPreview: boolean;
+  previewError: boolean;
+};
+
+/**
+ * The Save-to-history block (ADR 0071 decisions 4 and 11; Amendment 1 item
+ * 1). Rendered only for a master-data admin — the caller holds the gate.
+ *
+ * The organization select exists only for the global `admin`, who must name
+ * one; every other role sends no `organizationId` and, if the API still asks
+ * for one (an organization admin holding several), renders its 400 sentence.
+ * Every disabled state is one of `saveBlockedReason`'s sentences, rendered
+ * beside the button, so nothing on this screen is disabled without saying why.
+ */
+function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryProps) {
+  const queryClient = useQueryClient();
+  const needsOrganization = user.role === "admin";
+  const [format, setFormat] = useState<ReportFileFormat>("pdf");
+  const [organizationId, setOrganizationId] = useState<string | undefined>(undefined);
+  const [outcome, setOutcome] = useState<{ tone: "saved" | "refused"; text: string } | null>(null);
+
+  const organizationsQ = useQuery({
+    queryKey: ["admin", "organizations", "true"],
+    queryFn: () => fetchAdminOrganizations("true"),
+    enabled: needsOrganization,
+  });
+
+  const saveM = useMutation({
+    mutationFn: () => saveEnergyReportFile(input, format, organizationId),
+    onSuccess: async (file) => {
+      setOutcome({ tone: "saved", text: `Saved ${file.filename} to history.` });
+      await queryClient.invalidateQueries({ queryKey: REPORT_FILES_QUERY_KEY });
+    },
+    onError: (cause: Error) => setOutcome({ tone: "refused", text: apiErrorMessage(cause) }),
+  });
+
+  const blockedReason = saveBlockedReason({
+    hasPreview,
+    previewError,
+    needsOrganization,
+    organizationId,
+    pending: saveM.isPending,
+  });
+
+  return (
+    <div className="mt-4 border-t border-gray-200 pt-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-bms-muted">Save to history</h3>
+      <div className="mt-2 grid gap-2">
+        <label className="text-xs font-medium text-bms-muted" htmlFor="save-format">
+          Format
+        </label>
+        <select
+          id="save-format"
+          className="rounded border border-gray-300 px-3 py-2 text-sm"
+          value={format}
+          onChange={(e) => setFormat(e.target.value as ReportFileFormat)}
+        >
+          {REPORT_FILE_FORMATS.map((option) => (
+            <option key={option} value={option}>
+              {formatLabel(option)}
+            </option>
+          ))}
+        </select>
+        {needsOrganization ? (
+          <>
+            <label className="text-xs font-medium text-bms-muted" htmlFor="save-organization">
+              Organization
+            </label>
+            <select
+              id="save-organization"
+              className="rounded border border-gray-300 px-3 py-2 text-sm"
+              value={organizationId ?? ""}
+              onChange={(e) => setOrganizationId(e.target.value === "" ? undefined : e.target.value)}
+            >
+              <option value="">Choose an organization</option>
+              {(organizationsQ.data?.items ?? []).map((organization) => (
+                <option key={organization.id} value={organization.id}>
+                  {organization.code} · {organization.name}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        className="mt-3 w-full rounded bg-bms-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+        disabled={blockedReason !== null}
+        onClick={() => saveM.mutate()}
+      >
+        {saveM.isPending ? "Saving…" : "Save to history"}
+      </button>
+      {blockedReason !== null && !saveM.isPending ? (
+        <p className="mt-2 text-xs text-bms-muted">{blockedReason}</p>
+      ) : null}
+      {outcome !== null ? (
+        <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-bms-green" : "text-red-600"}`}>
+          {outcome.text}
+        </p>
+      ) : null}
     </div>
   );
 }

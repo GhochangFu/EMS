@@ -8,14 +8,14 @@ type ReportsPageProps = {
   user: AuthUser;
 };
 
-/** Reports & Analytics screen for Phase 5 Sprint E energy CSV reports. */
+/** Reports & Analytics screen — energy report preview, export and history (`F3.5a`). */
 export function ReportsPage({ user }: ReportsPageProps) {
   return (
     <AppShell
       user={user}
       kpiRibbon={
         <span className="text-bms-ink">
-          Operations · Reports & Analytics · Energy CSV preview/export
+          Operations · Reports & Analytics · Energy report preview, export and history
         </span>
       }
     >
@@ -27,7 +27,7 @@ export function ReportsPage({ user }: ReportsPageProps) {
           actions={<StatusPill label="CSV Active" />}
         />
 
-        <ReportsPanel />
+        <ReportsPanel user={user} />
       </div>
     </AppShell>
   );
