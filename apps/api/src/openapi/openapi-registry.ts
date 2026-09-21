@@ -101,6 +101,10 @@ import {
   listReportFilesQuerySchema,
   saveEnergyReportFileBodySchema,
 } from "../reports/report-files.schema";
+import {
+  createReportScheduleBodySchema,
+  updateReportScheduleBodySchema,
+} from "../reports/report-schedules.schema";
 import { energyReportQuerySchema } from "../reports/reports.schema";
 import {
   listRuleExecutionsQuerySchema,
@@ -162,6 +166,10 @@ import {
  * parameter and no body and no query, which Nest's own reflection describes
  * — the `EscalationProfilesController_remove` case again. Their siblings
  * `_save` (a body) and `_list` (a query) are registered below.
+ * **`ReportSchedulesController_list`, `_get` and `_remove` are absent** by
+ * the same rule (`F3.5b`): `_list` takes no body and no query at all, and
+ * `_get`/`_remove` take one path parameter; `_create` and `_update` carry the
+ * two bodies and are registered.
  */
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,
@@ -263,6 +271,11 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // one path parameter each, no body, no query; the docblock above says why.
   ReportFilesController_list: listReportFilesQuerySchema,
   ReportFilesController_save: saveEnergyReportFileBodySchema,
+  // `F3.5b` (ADR 0071 decision 11). `_list`, `_get` and `_remove` are absent —
+  // no body and no query (`_list` takes nothing at all; the cap bounds the
+  // set), one path parameter for the other two; the docblock above says why.
+  ReportSchedulesController_create: createReportScheduleBodySchema,
+  ReportSchedulesController_update: updateReportScheduleBodySchema,
   ReportsController_energyCsv: energyReportQuerySchema,
   ReportsController_energyPdf: energyReportQuerySchema,
   ReportsController_energyPreview: energyReportQuerySchema,

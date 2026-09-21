@@ -369,6 +369,16 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // would try is `locationIds`, which the server stamps from the actor's own
   // grants (item 2): stripped and answered 201, it would read as accepted.
   saveEnergyReportFileBodySchema: STRICT(CALLER_ERROR),
+  // `F3.5b` (ADR 0071 decision 11; plan R-12). One producer — the Reports
+  // panel's Schedules section. The key a client would try is `nextRunAt`,
+  // which the server computes from the cadence, the clock and the zone
+  // (R-8): stripped and answered 201, it would read as accepted, and the
+  // schedule would run at a different instant than the one the client sent.
+  createReportScheduleBodySchema: STRICT(CALLER_ERROR),
+  // The same producer and the same key; a PATCH that names `nextRunAt` is a
+  // client trying to move a run by hand, which only the three period fields
+  // and a re-enable can do (Q-3). `{}` is refused by the schema's own refine.
+  updateReportScheduleBodySchema: STRICT(CALLER_ERROR),
   "ruleDraftBodySchema/action": STRICT(CALLER_ERROR),
   "ruleDraftBodySchema/condition|0": STRICT(CALLER_ERROR),
   "ruleDraftBodySchema/condition|1": STRICT(CALLER_ERROR),

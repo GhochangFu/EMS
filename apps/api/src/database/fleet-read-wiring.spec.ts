@@ -15,6 +15,7 @@ import { WorkerHostService } from "../queue/worker-host.service";
 import { ReportDispatchService } from "../reports/report-dispatch.service";
 import { ReportFilesService } from "../reports/report-files.service";
 import { ReportRenderService } from "../reports/report-render.service";
+import { ReportSchedulesService } from "../reports/report-schedules.service";
 import { ReportsService } from "../reports/reports.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import { RulesService } from "../rules/rules.service";
@@ -209,4 +210,21 @@ export function assertReportRenderServiceTenantSlot(): void {
  */
 export function assertReportDispatchServiceInjectsTheQueueClient(): void {
   expect(injectedToken(ReportDispatchService, 0)).toBe(QUEUE_CLIENT);
+}
+
+/**
+ * `F3.5b` U11 — `ReportSchedulesService(tenantDb, fleetDb, client,
+ * accessControl, channels, audit)` (ADR 0071 decision 11; plan R-12): the
+ * insert, the update and the row-then-object delete run under `withTenant`
+ * on slot 0 and the schedule's organization — `0078`'s `WITH CHECK` refuses
+ * a foreign stamp there; the location existence read, the by-id read for the
+ * decision-6 verdict and the actor lookup on slot 1. A swap would insert on
+ * the BYPASSRLS pool. Two claims, one function each.
+ */
+export function assertReportSchedulesServiceTenantSlot(): void {
+  expect(injectedToken(ReportSchedulesService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertReportSchedulesServiceFleetSlot(): void {
+  expect(injectedToken(ReportSchedulesService, 1)).toBe(FLEET_DRIZZLE);
 }

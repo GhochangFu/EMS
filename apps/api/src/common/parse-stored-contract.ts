@@ -101,7 +101,8 @@ export type StoredContractContext =
   | "dashboard_templates_instantiate.instantiate.content"
   | "dashboard_templates_instantiate.read_back.dto"
   | "asset_images.to_dto.row"
-  | "report_files.to_dto.row";
+  | "report_files.to_dto.row"
+  | "report_schedules.to_dto.row";
 
 const logger = new Logger("StoredContract");
 
