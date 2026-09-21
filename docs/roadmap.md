@@ -418,7 +418,13 @@ Process (`AGENTS.md` §10).
   browser-based Reports smoke checks passed.
 
 #### Phase 5 Sprint F — Report storage
-- **Status:** skipped for now — revisit later if persisted report history is needed
+- **Status:** active since 2026-09-21 under ADR 0071 (`F3.5`, split into
+  `F3.5a` → `F3.5b`). The sprint was skipped from 2026-08 until the owner
+  ruled at the §10 gate that generated reports are stored, listed and
+  downloaded from history (`F3.5a`), and that a per-organization schedule
+  renders them on the worker and mails them (`F3.5b`). PDF output, which
+  Sprint E deferred "until the report content stabilizes", lands in
+  `F3.5a` as the third format beside CSV and XLSX.
 - **Goal:** persist generated report files only after reports are useful.
 - **Deliverables**
   - ~~Promote MinIO/object storage if persisted report files are required.~~
