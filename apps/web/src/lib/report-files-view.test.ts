@@ -1,9 +1,13 @@
 import { describe, it } from "vitest";
 
 import {
+  aNonNoneStatusIgnoresAScheduleId,
   everyDeliveryStatusHasItsExactLabel,
   formatBytesAtTheFourBoundaries,
   formatLabelsAreExact,
+  noneWithAScheduleIdIsPending,
+  noneWithNoScheduleIdIsOnDemand,
+  originLabelNamesBothOrigins,
   periodLabelJoinsWithAnEnDash,
   previewErrorOutranksTheMissingOrganization,
   saveBlockedReasonIsNullWhenNothingBlocks,
@@ -16,6 +20,22 @@ import {
 describe("F3.5a report-files-view", () => {
   it("labels every delivery status with R-14's exact sentence", () => {
     everyDeliveryStatusHasItsExactLabel();
+  });
+
+  it("labels 'none' with a scheduleId as Pending", () => {
+    noneWithAScheduleIdIsPending();
+  });
+
+  it("labels 'none' with no scheduleId as On demand", () => {
+    noneWithNoScheduleIdIsOnDemand();
+  });
+
+  it("ignores a scheduleId for a non-none status", () => {
+    aNonNoneStatusIgnoresAScheduleId();
+  });
+
+  it("names both origins", () => {
+    originLabelNamesBothOrigins();
   });
 
   it("labels the two report formats exactly", () => {

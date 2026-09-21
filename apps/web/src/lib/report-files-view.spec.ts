@@ -6,6 +6,7 @@ import {
   deliveryStatusLabel,
   formatBytes,
   formatLabel,
+  originLabel,
   periodLabel,
   saveBlockedReason,
 } from "./report-files-view";
@@ -25,11 +26,46 @@ const EXPECTED_LABELS: Record<ReportDeliveryStatus, string> = {
   failed: "Email failed",
 };
 
-/** Every delivery status resolves R-14's exact sentence, all four. */
+const SCHEDULE_ID = "11111111-1111-4111-8111-111111111111";
+
+/**
+ * Every delivery status resolves R-14's exact sentence with `scheduleId:
+ * null` — a status other than `none` is unaffected by `scheduleId`, all four.
+ */
 export function everyDeliveryStatusHasItsExactLabel(): void {
   for (const status of STATUSES) {
-    expect(deliveryStatusLabel(status)).toBe(EXPECTED_LABELS[status]);
+    expect(deliveryStatusLabel(status, null)).toBe(EXPECTED_LABELS[status]);
   }
+}
+
+/**
+ * `F3.5b` — `"none"` with a `scheduleId` is `"Pending"`, not `"On demand"`: a
+ * scheduled file between commit and delivery.
+ */
+export function noneWithAScheduleIdIsPending(): void {
+  expect(deliveryStatusLabel("none", SCHEDULE_ID)).toBe("Pending");
+}
+
+/** `"none"` with no `scheduleId` keeps `"On demand"` — an on-demand save. */
+export function noneWithNoScheduleIdIsOnDemand(): void {
+  expect(deliveryStatusLabel("none", null)).toBe("On demand");
+}
+
+/**
+ * `"none"` for a `sent`/`skipped_unconfigured`/`failed` row is unreachable in
+ * practice, but pinning that `scheduleId` does not move those three statuses
+ * off their own sentence guards against a future refactor collapsing the
+ * branch by accident.
+ */
+export function aNonNoneStatusIgnoresAScheduleId(): void {
+  expect(deliveryStatusLabel("sent", SCHEDULE_ID)).toBe("Emailed");
+  expect(deliveryStatusLabel("failed", SCHEDULE_ID)).toBe("Email failed");
+}
+
+/** `originLabel` names a scheduled file "Scheduled" and an on-demand one "On demand". */
+export function originLabelNamesBothOrigins(): void {
+  expect(originLabel({ scheduleId: SCHEDULE_ID })).toBe("Scheduled");
+  expect(originLabel({ scheduleId: null })).toBe("On demand");
 }
 
 /** The two report formats resolve their exact labels. */

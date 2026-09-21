@@ -1,16 +1,21 @@
 import { expect, vi } from "vitest";
 
-import { reportFileDtoSchema } from "@bms/shared/contracts";
-import type { ReportFileDto } from "@bms/shared";
+import { reportFileDtoSchema, reportScheduleDtoSchema } from "@bms/shared/contracts";
+import type { ReportFileDto, ReportScheduleDto } from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
 import {
+  createReportSchedule,
   deleteReportFile,
+  deleteReportSchedule,
   downloadEnergyReportCsv,
   downloadEnergyReportPdf,
   downloadReportFile,
   fetchReportFiles,
+  fetchReportSchedules,
   saveEnergyReportFile,
+  updateReportSchedule,
+  type CreateReportScheduleBody,
 } from "./reports";
 
 /**
@@ -44,6 +49,27 @@ const DTO: ReportFileDto = reportFileDtoSchema.parse({
   scheduleId: null,
   createdBy: "33333333-3333-4333-8333-333333333333",
   createdAt: "2026-09-16T10:00:00.000Z",
+});
+
+const SCHEDULE_ID = "44444444-4444-4444-8444-444444444444";
+
+const SCHEDULE_DTO: ReportScheduleDto = reportScheduleDtoSchema.parse({
+  id: SCHEDULE_ID,
+  organizationId: ORGANIZATION_ID,
+  name: "Weekly summary",
+  templateId: "energy_consumption",
+  formats: ["pdf"],
+  cadence: "weekly",
+  runAtLocal: "07:00",
+  timezone: "Asia/Kolkata",
+  locationIds: [],
+  channelId: null,
+  enabled: true,
+  nextRunAt: "2026-09-28T01:30:00.000Z",
+  lastRunAt: null,
+  createdBy: "33333333-3333-4333-8333-333333333333",
+  createdAt: "2026-09-16T10:00:00.000Z",
+  updatedAt: "2026-09-16T10:00:00.000Z",
 });
 
 /** Records the last anchor `saveBlob` built, so the download rows can name it. */
@@ -219,4 +245,82 @@ export async function fetchReportFilesReturnsTheList(): Promise<void> {
 
   expect(seen().url.endsWith("/reports/files")).toBe(true);
   expect(files).toEqual([DTO]);
+}
+
+/**
+ * `F3.5b` — `fetchReportSchedules` hits `/reports/schedules` and returns the
+ * parsed list.
+ */
+export async function fetchReportSchedulesReturnsTheList(): Promise<void> {
+  const seen = captureFetch(200, JSON.stringify([SCHEDULE_DTO]));
+
+  const schedules = await fetchReportSchedules();
+
+  expect(seen().url.endsWith("/reports/schedules")).toBe(true);
+  expect(schedules).toEqual([SCHEDULE_DTO]);
+}
+
+const CREATE_BODY: CreateReportScheduleBody = {
+  name: "Weekly summary",
+  formats: ["pdf"],
+  cadence: "weekly",
+  runAtLocal: "07:00",
+  timezone: "Asia/Kolkata",
+  locationIds: [],
+  channelId: null,
+  enabled: true,
+  organizationId: ORGANIZATION_ID,
+};
+
+/**
+ * `createReportSchedule` posts to `/reports/schedules` and reads the body
+ * back **by key** (the F3.5a false-green lesson — see `captureFetch`'s
+ * docblock).
+ */
+export async function createReportSchedulePostsTheBodyByKey(): Promise<void> {
+  const seen = captureFetch(201, JSON.stringify(SCHEDULE_DTO));
+
+  await createReportSchedule(CREATE_BODY);
+
+  const { url, init } = seen();
+  expect(url.endsWith("/reports/schedules")).toBe(true);
+  expect(init.method).toBe("POST");
+  const body = JSON.parse(init.body as string) as Record<string, unknown>;
+  expect(body.name).toBe(CREATE_BODY.name);
+  expect(body.formats).toEqual(CREATE_BODY.formats);
+  expect(body.cadence).toBe(CREATE_BODY.cadence);
+  expect(body.runAtLocal).toBe(CREATE_BODY.runAtLocal);
+  expect(body.timezone).toBe(CREATE_BODY.timezone);
+  expect(body.locationIds).toEqual(CREATE_BODY.locationIds);
+  expect(body.channelId).toBe(CREATE_BODY.channelId);
+  expect(body.enabled).toBe(CREATE_BODY.enabled);
+  expect(body.organizationId).toBe(CREATE_BODY.organizationId);
+}
+
+/**
+ * `updateReportSchedule` patches `/reports/schedules/:id` and reads the body
+ * back by key.
+ */
+export async function updateReportSchedulePatchesTheBodyByKey(): Promise<void> {
+  const seen = captureFetch(200, JSON.stringify(SCHEDULE_DTO));
+
+  await updateReportSchedule(SCHEDULE_ID, { enabled: false });
+
+  const { url, init } = seen();
+  expect(url.endsWith(`/reports/schedules/${SCHEDULE_ID}`)).toBe(true);
+  expect(init.method).toBe("PATCH");
+  const body = JSON.parse(init.body as string) as Record<string, unknown>;
+  expect(Object.keys(body)).toEqual(["enabled"]);
+  expect(body.enabled).toBe(false);
+}
+
+/** `deleteReportSchedule` sends `DELETE /reports/schedules/<id>` and resolves on 204. */
+export async function deleteReportScheduleResolvesOnA204(): Promise<void> {
+  const seen = captureFetch(204, null);
+
+  await expect(deleteReportSchedule(SCHEDULE_ID)).resolves.toBeUndefined();
+
+  const { url, init } = seen();
+  expect(url.endsWith(`/reports/schedules/${SCHEDULE_ID}`)).toBe(true);
+  expect(init.method).toBe("DELETE");
 }

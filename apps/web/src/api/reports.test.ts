@@ -1,14 +1,18 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  createReportSchedulePostsTheBodyByKey,
+  deleteReportScheduleResolvesOnA204,
   deleteResolvesOnA204,
   deleteThrowsApiErrorCarryingA403,
   downloadCsvStillNamesTheCsvAnchor,
   downloadPdfHitsExportPdf,
   downloadReportFileNamesTheAnchorAfterTheDto,
   fetchReportFilesReturnsTheList,
+  fetchReportSchedulesReturnsTheList,
   saveWithOrganizationAddsItByKey,
   saveWithoutOrganizationPostsExactlyThreeFields,
+  updateReportSchedulePatchesTheBodyByKey,
 } from "./reports.spec";
 
 /**
@@ -52,5 +56,21 @@ describe("F3.5a reports web client", () => {
 
   it("fetches the report file list", async () => {
     await fetchReportFilesReturnsTheList();
+  });
+
+  it("fetches the report schedule list", async () => {
+    await fetchReportSchedulesReturnsTheList();
+  });
+
+  it("posts a new schedule's body by key", async () => {
+    await createReportSchedulePostsTheBodyByKey();
+  });
+
+  it("patches a schedule's body by key", async () => {
+    await updateReportSchedulePatchesTheBodyByKey();
+  });
+
+  it("resolves with undefined when the schedule delete answers 204", async () => {
+    await deleteReportScheduleResolvesOnA204();
   });
 });

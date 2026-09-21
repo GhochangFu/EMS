@@ -93,7 +93,9 @@ export async function twoFilesRenderTwoRowsWithSizePeriodAndDelivery(): Promise<
   expect(within(first).getByText(formatBytes(FIRST.byteSize))).toBeInTheDocument();
   expect(within(first).getByText(periodLabel(FIRST))).toBeInTheDocument();
   expect(within(first).getByText("PDF")).toBeInTheDocument();
-  expect(within(first).getByText("On demand")).toBeInTheDocument();
+  // `F3.5b`: an on-demand file's Origin and Delivery cells both say "On
+  // demand" (no scheduleId), so the row holds two matches, not one.
+  expect(within(first).getAllByText("On demand")).toHaveLength(2);
 
   const second = await rowFor(SECOND.filename);
   expect(within(second).getByText("67 B")).toBeInTheDocument();

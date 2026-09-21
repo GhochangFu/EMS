@@ -34,9 +34,10 @@ export function periodLabel(file: Pick<ReportFileDto, "periodStart" | "periodEnd
 }
 
 /**
- * R-14's four sentences, exactly. Typed as a `Record` over every
- * `ReportDeliveryStatus` so a fifth status is a compile error rather than a
- * silent `undefined`.
+ * R-14's four sentences for a `status` other than `none`, exactly. Typed as a
+ * `Record` over every `ReportDeliveryStatus` so a fifth status is a compile
+ * error rather than a silent `undefined` — `none`'s own two rows below take
+ * it out of this map's picture by taking `scheduleId` first.
  */
 const DELIVERY_STATUS_LABELS: Record<ReportDeliveryStatus, string> = {
   none: "On demand",
@@ -45,8 +46,26 @@ const DELIVERY_STATUS_LABELS: Record<ReportDeliveryStatus, string> = {
   failed: "Email failed",
 };
 
-export function deliveryStatusLabel(status: ReportDeliveryStatus): string {
+/**
+ * `F3.5b` (ADR 0071 R-18) — `none` splits in two: a scheduled file between
+ * commit and delivery is `"Pending"`, not `"On demand"` (`scheduleId` set); an
+ * on-demand save keeps `"On demand"` (`scheduleId` is `null`). The other three
+ * statuses are unaffected by `scheduleId` — a schedule's file that has already
+ * been emailed, skipped or failed carries its own sentence regardless.
+ */
+export function deliveryStatusLabel(
+  status: ReportDeliveryStatus,
+  scheduleId: string | null,
+): string {
+  if (status === "none") {
+    return scheduleId !== null ? "Pending" : "On demand";
+  }
   return DELIVERY_STATUS_LABELS[status];
+}
+
+/** `F3.5b` (ADR 0071 R-18) — the History table's *Origin* column. */
+export function originLabel(file: { scheduleId: string | null }): string {
+  return file.scheduleId !== null ? "Scheduled" : "On demand";
 }
 
 const FORMAT_LABELS: Record<ReportFileFormat, string> = {
