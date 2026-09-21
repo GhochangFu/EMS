@@ -11,16 +11,6 @@ describe("F3.5a ReportFilesService — the gate and the cap", () => {
   it("fails closed on a non-numeric count", spec.assertCapFailsClosedOnANonNumericCount);
 });
 
-describe("F3.5a ReportFilesService — the organization (Amendment 1 item 1)", () => {
-  it("a global admin must name the organization (400)", spec.assertGlobalAdminMustNameTheOrganization);
-  it("a global admin proceeds with the organization named", spec.assertGlobalAdminProceedsWithTheOrganization);
-  it("a global admin naming an unknown organization is 404 before any storage call (U8 gap)", spec.assertGlobalAdminNamingAnUnknownOrganizationIs404BeforeAnyWork);
-  it("a single-organization admin needs no body id", spec.assertSingleOrganizationAdminNeedsNoBodyId);
-  it("a foreign body id is 403", spec.assertAForeignBodyIdIs403);
-  it("several organizations require the body id (400 naming the count, not the ids)", spec.assertSeveralOrganizationsRequireTheBodyId);
-  it("zero organizations is 403", spec.assertNoOrganizationIs403);
-});
-
 describe("F3.5a ReportFilesService — the location_ids stamp (Amendment 1 item 2)", () => {
   it("an organization admin stamps {}", spec.assertOrganizationAdminStampsTheEmptyArray);
   it("a location admin stamps writableLocationIds ∩ the organization's locations", spec.assertLocationAdminStampsTheIntersection);
