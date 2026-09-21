@@ -124,7 +124,12 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
     FLEET_SENTINEL,
     metrics,
     ruleSweep,
-    { redis: { host: "cache", port: 6380 }, port: 4100, ruleSweepIntervalMs: CONFIGURED_SWEEP_INTERVAL_MS },
+    {
+      redis: { host: "cache", port: 6380 },
+      port: 4100,
+      ruleSweepIntervalMs: CONFIGURED_SWEEP_INTERVAL_MS,
+      reportDispatchIntervalMs: 60_000,
+    },
   );
   await service.onModuleInit();
   return { sweepRuns, keyWrites };

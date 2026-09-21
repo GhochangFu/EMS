@@ -304,7 +304,12 @@ export function recordingClient(fx: ReportFileIntegrationFixtures): StorageRecor
   return { client: { kind: "configured", bucket: base.bucket, ops }, calls, putKeys, state };
 }
 
-const DEFAULT_CONFIG: ReportFilesConfig = { onDemandCap: 50 };
+const DEFAULT_CONFIG: ReportFilesConfig = {
+  onDemandCap: 50,
+  retentionPerSchedule: 24,
+  emailMaxBytes: 10_485_760,
+  historyUrl: null,
+};
 
 export function service(
   fx: ReportFileIntegrationFixtures,

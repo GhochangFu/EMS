@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import type { ReportDeliveryStatus, ReportFileFormat } from "@bms/shared";
 import {
   collectDefaultMetrics,
   Counter,
@@ -267,6 +268,31 @@ export class MetricsService {
     registers: [this.registry],
   });
 
+  /**
+   * One report file written by a scheduled render (ADR 0071 decision 8,
+   * R-17), labelled by format. Like `queueJobs`, the series lives in the
+   * WORKER's registry (the render job runs there) and stays empty on the
+   * API.
+   */
+  private readonly reportFilesWritten = new Counter({
+    name: "bms_report_files_written_total",
+    help: "Report files written by a scheduled render, by format (pdf, xlsx).",
+    labelNames: ["format"],
+    registers: [this.registry],
+  });
+
+  /**
+   * One scheduled report's delivery outcome (ADR 0071 decisions 8, 10,
+   * R-17), labelled by `bms.report_files.delivery_status`. Counts only —
+   * never an address, never a channel id (AGENTS.md §9.6).
+   */
+  private readonly reportDeliveries = new Counter({
+    name: "bms_report_deliveries_total",
+    help: "Scheduled report delivery outcomes, by status (sent, skipped_unconfigured, failed).",
+    labelNames: ["status"],
+    registers: [this.registry],
+  });
+
   constructor() {
     this.registry.setDefaultLabels({
       service: process.env.OTEL_SERVICE_NAME ?? "bms-api",
@@ -372,5 +398,15 @@ export class MetricsService {
   observeRuleSweep(durationSeconds: number, raised: number): void {
     this.ruleSweepDuration.observe(durationSeconds);
     this.ruleSweepRaised.inc(raised);
+  }
+
+  /** Records one report file a scheduled render wrote, by format. */
+  countReportFileWritten(format: ReportFileFormat): void {
+    this.reportFilesWritten.labels(format).inc();
+  }
+
+  /** Records one scheduled report's delivery outcome, by status. */
+  countReportDelivery(status: ReportDeliveryStatus): void {
+    this.reportDeliveries.labels(status).inc();
   }
 }

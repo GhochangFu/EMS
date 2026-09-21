@@ -9,6 +9,9 @@
  *
  * `readWorkerConfig` is stricter — decision 9 requires the worker process to
  * refuse to start without Redis, because the worker has nothing else to do.
+ * Its guards run in order: `REDIS_URL` → `WORKER_PORT` →
+ * `RULE_SWEEP_INTERVAL_MS` → `REPORT_DISPATCH_INTERVAL_MS` (ADR 0071
+ * decision 8, R-14) — updated for `REPORT_DISPATCH_INTERVAL_MS` in F3.5b.
  *
  * A `redis://` URL can carry a password, so `redisOptionsFromUrl` never
  * includes the raw input in a thrown message (AGENTS.md §9.6).
@@ -33,6 +36,16 @@ export const DEFAULT_WORKER_PORT: number = 4100;
 export const DEFAULT_RULE_SWEEP_INTERVAL_MS: number = 60_000;
 export const MIN_RULE_SWEEP_INTERVAL_MS: number = 10_000;
 export const MAX_RULE_SWEEP_INTERVAL_MS: number = 3_600_000;
+
+/**
+ * `REPORT_DISPATCH_INTERVAL_MS` (ADR 0071 decision 8, R-14). The bounds are
+ * numerically identical to the sweep's — the worker's tick budget is the
+ * same either way — but named separately: one constant per meaning, so a
+ * later change to one interval's bounds cannot silently move the other's.
+ */
+export const DEFAULT_REPORT_DISPATCH_INTERVAL_MS: number = 60_000;
+export const MIN_REPORT_DISPATCH_INTERVAL_MS: number = 10_000;
+export const MAX_REPORT_DISPATCH_INTERVAL_MS: number = 3_600_000;
 
 export type RedisConnectionOptions = {
   host: string;
@@ -125,6 +138,7 @@ export type WorkerConfig = {
   readonly redis: RedisConnectionOptions;
   readonly port: number;
   readonly ruleSweepIntervalMs: number;
+  readonly reportDispatchIntervalMs: number;
 };
 
 const MAX_PORT = 65535;
@@ -173,11 +187,37 @@ function readRuleSweepInterval(raw: string | undefined): number {
 }
 
 /**
+ * `REPORT_DISPATCH_INTERVAL_MS` (ADR 0071 decision 8, R-14). Unset or blank
+ * is the default; a set value must be an integer within `[MIN, MAX]`
+ * inclusive, or the worker refuses to start — `readRuleSweepInterval`'s
+ * shape, exactly, on the report-dispatch bounds.
+ */
+function readReportDispatchInterval(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === "") {
+    return DEFAULT_REPORT_DISPATCH_INTERVAL_MS;
+  }
+  const trimmed = raw.trim();
+  const value = Number(trimmed);
+  if (
+    !/^\d+$/.test(trimmed) ||
+    value < MIN_REPORT_DISPATCH_INTERVAL_MS ||
+    value > MAX_REPORT_DISPATCH_INTERVAL_MS
+  ) {
+    throw new QueueConfigError(
+      `REPORT_DISPATCH_INTERVAL_MS must be an integer between 10000 and 3600000 milliseconds, got "${raw}"`,
+    );
+  }
+  return value;
+}
+
+/**
  * `readQueueConfig` runs first, so a missing `REDIS_URL` is refused before
  * `WORKER_PORT` is even looked at — the plan's table rules out the port
  * guard firing first on an otherwise-unconfigured worker. `WORKER_PORT` is
- * read before `RULE_SWEEP_INTERVAL_MS` for the same reason: guard order is
- * `REDIS_URL` → `WORKER_PORT` → `RULE_SWEEP_INTERVAL_MS`.
+ * read before `RULE_SWEEP_INTERVAL_MS`, and `RULE_SWEEP_INTERVAL_MS` before
+ * `REPORT_DISPATCH_INTERVAL_MS`, for the same reason: guard order is
+ * `REDIS_URL` → `WORKER_PORT` → `RULE_SWEEP_INTERVAL_MS` →
+ * `REPORT_DISPATCH_INTERVAL_MS`.
  */
 export function readWorkerConfig(
   env: Record<string, string | undefined>,
@@ -193,5 +233,6 @@ export function readWorkerConfig(
     redis: queueConfig.redis,
     port,
     ruleSweepIntervalMs: readRuleSweepInterval(env.RULE_SWEEP_INTERVAL_MS),
+    reportDispatchIntervalMs: readReportDispatchInterval(env.REPORT_DISPATCH_INTERVAL_MS),
   };
 }
