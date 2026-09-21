@@ -9,6 +9,7 @@ import {
   emailChannelOptionsIncludesTheMatch,
   everyCadenceHasItsExactLabel,
   nextRunLabelUsesToLocaleString,
+  scheduleBlockedReasonAllowsAnEmptySelectionWhenWholeOrganizationIsOffered,
   scheduleBlockedReasonIsNullWhenNothingBlocks,
   scheduleBlockedReasonPerCondition,
 } from "./report-schedules-view.spec";
@@ -55,5 +56,9 @@ describe("F3.5b report-schedules-view", () => {
 
   it("is not blocked when nothing holds", () => {
     scheduleBlockedReasonIsNullWhenNothingBlocks();
+  });
+
+  it("allows an empty location selection only when whole-organization is offered (step-5 nit)", () => {
+    scheduleBlockedReasonAllowsAnEmptySelectionWhenWholeOrganizationIsOffered();
   });
 });

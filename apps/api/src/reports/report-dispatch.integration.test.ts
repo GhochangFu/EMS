@@ -23,9 +23,10 @@ import {
 /**
  * `F3.5b` U9 — Vitest entry point for the dispatch tick against Postgres.
  * Assertions live in the sibling `.spec` (§4.6/ADR 0014); this file owns
- * the lifecycle: the pool, the one committed locked-row fixture and its
- * `afterAll` delete. Each scenario runs once in a `beforeAll` and its facts
- * are read by one claim per `it()`.
+ * the lifecycle: the pool. The one committed locked-row fixture lives and
+ * dies inside `runLockedRowScenario` (step-5 finding: a fixture committed in
+ * `beforeAll` is claimed by the compose worker). Each scenario runs once in
+ * a `beforeAll` and its facts are read by one claim per `it()`.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.5b",

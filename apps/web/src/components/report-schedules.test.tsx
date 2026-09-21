@@ -6,6 +6,7 @@ import {
   aDeleteInFlightDisablesThatRowsEdit,
   aLocationAdminCreateBodyHasNoOrganizationIdKey,
   aLocationAdminHasNoOrganizationSelect,
+  aLocationAdminWithNoLocationSelectedIsBlockedOnTheLocation,
   aLocationAdminHasNoWholeOrganizationOption,
   aLocationAdminReadsTheChannelSentenceInsteadOfTheSelect,
   aRefusedCreateRendersTheApiSentence,
@@ -120,6 +121,10 @@ describe("F3.5b report schedules section", () => {
 
   it("a refused create renders the API's sentence", async () => {
     await aRefusedCreateRendersTheApiSentence();
+  });
+
+  it("a location_admin with a name but no location is blocked on the location (step-5 nit)", async () => {
+    await aLocationAdminWithNoLocationSelectedIsBlockedOnTheLocation();
   });
 
   it("Save is disabled beside the blocked sentence", async () => {

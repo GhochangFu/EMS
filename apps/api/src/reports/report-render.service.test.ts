@@ -39,6 +39,8 @@ describe("F3.5b ReportRenderService — prune and the throw (R-9)", () => {
   it("the prune offset is the configured retention", spec.assertThePruneOffsetIsTheConfiguredRetention);
   it("prunes the overflow rows in phase A with one row delete", spec.assertPrunesTheOverflowRowsInPhaseA);
   it("the pruned keys are carried in the outcome by file id", spec.assertPrunedKeysAreCarriedInTheOutcome);
+  it("retention at the format count prunes none of this run's own rows (step-5 finding)", spec.assertRetentionAtTheFormatCountPrunesNoneOfThisRunsRows);
+  it("retention below the format count would prune one of this run's own rows (positive control)", spec.assertRetentionBelowTheFormatCountWouldPruneThisRunsOwnRow);
   it("render deletes no object — that is for finish", spec.assertRenderDeletesNoObject);
   it("no overflow means no row delete", spec.assertNoOverflowMeansNoRowDelete);
   it("a throw after a put discards exactly the objects of this run", spec.assertAThrowAfterAPutDiscardsThisRunsObjects);

@@ -222,7 +222,27 @@ export function assertNextRunAtRefusesUnknownZone(): void {
   );
 }
 
-function assertThrowsReportPeriodError(fn: () => unknown, what: string): void {
+/**
+ * Step-5 security finding: the message names the field, never the value.
+ * The zone and the clock are operator-typed strings; a message that quoted
+ * them would carry them into any log line that prints `err.message`.
+ */
+export function assertUnknownZoneMessageNamesTheFieldNotTheZone(): void {
+  const caught = assertThrowsReportPeriodError(
+    () => nextRunAt({ cadence: "daily", runAtLocal: "06:00", timezone: "Not/AZone" }, new Date("2026-09-21T10:00:00Z")),
+    "nextRunAt with Not/AZone",
+  );
+  assert(!caught.message.includes("Not/AZone"), `the message must not quote the zone; got ${JSON.stringify(caught.message)}`);
+  assert(caught.message.includes("timezone"), `the message must name the field "timezone"; got ${JSON.stringify(caught.message)}`);
+}
+
+export function assertBadClockMessageNamesTheFieldNotTheValue(): void {
+  const caught = assertThrowsReportPeriodError(() => parseRunAtLocal("7:05"), 'parseRunAtLocal("7:05")');
+  assert(!caught.message.includes("7:05"), `the message must not quote the clock; got ${JSON.stringify(caught.message)}`);
+  assert(caught.message.includes("runAtLocal"), `the message must name the field "runAtLocal"; got ${JSON.stringify(caught.message)}`);
+}
+
+function assertThrowsReportPeriodError(fn: () => unknown, what: string): ReportPeriodError {
   let caught: unknown;
   try {
     fn();
@@ -234,4 +254,5 @@ function assertThrowsReportPeriodError(fn: () => unknown, what: string): void {
     (caught as Error).name === "ReportPeriodError",
     `${what}: expected name "ReportPeriodError", got ${(caught as Error).name}`,
   );
+  return caught as ReportPeriodError;
 }

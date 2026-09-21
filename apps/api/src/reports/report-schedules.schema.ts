@@ -62,7 +62,7 @@ const timezoneSchema = z
 
 const runAtLocalSchema = z.string().regex(RUN_AT_LOCAL_PATTERN, "runAtLocal must be HH:MM (24-hour)");
 
-/** R-12: at most 200 locations per schedule — the fleet existence read is `IN (...)` over the list. */
+/** At most 200 locations per schedule — a step-3 bound on the existence read (`IN (...)` over the list); not in R-12. */
 const locationIdsSchema = z.array(z.string().uuid()).max(200);
 
 export const createReportScheduleBodySchema = z

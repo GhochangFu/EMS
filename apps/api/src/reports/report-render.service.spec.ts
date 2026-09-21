@@ -257,6 +257,13 @@ export type Scenario = {
   existingFormats?: string[];
   /** The prune select's overflow rows. */
   overflow?: { prunedId: string; objectKey: string }[];
+  /**
+   * When set, the prune select models Postgres over this run's own inserts
+   * (no prior rows): it returns the inserted rows beyond `offset`, newest
+   * first as the real `created_at DESC, id DESC` would order rows that
+   * share one `now()`. Ignored when `overflow` is given.
+   */
+  pruneModelsTheOffset?: boolean;
   /** The insert that throws (0-based), if any. */
   insertErrorAt?: number;
   deliverable?: DeliverableFixture[];
@@ -340,6 +347,11 @@ export function harness(scenario: Scenario = {}): Harness {
           if (shape === "objectKey,prunedId") {
             calls.push("tx:pruneSelect");
             pruneSelects.push({ where: renderWhere(whereArg), offset: offsetArg });
+            if (scenario.overflow === undefined && scenario.pruneModelsTheOffset) {
+              return inserted
+                .map((row) => ({ prunedId: String(row.id), objectKey: String(row.objectKey) }))
+                .slice(Number(offsetArg));
+            }
             return scenario.overflow ?? [];
           }
           if (shape === "byteSize,contentType,fileId,filename,format,objectKey") {
@@ -790,6 +802,35 @@ export async function assertPrunedKeysAreCarriedInTheOutcome(): Promise<void> {
   assert(
     outcome.prunedKeys.get(PRUNED_A) === KEY_PRUNED_A && outcome.prunedKeys.get(PRUNED_B) === KEY_PRUNED_B && outcome.prunedKeys.size === 2,
     `expected both pruned keys by file id, got ${JSON.stringify([...outcome.prunedKeys])}`,
+  );
+}
+
+/**
+ * Step-5 finding — why `readReportFilesConfig` clamps the retention to
+ * `REPORT_FILE_FORMATS.length`: with the retention at the format count, two
+ * formats and no prior rows, the prune reaches none of this run's own rows.
+ * The config row (`report-files-config.spec.ts`) is the discriminating
+ * gate; this row states the invariant the clamp protects, over a fake that
+ * models the `OFFSET`.
+ */
+export async function assertRetentionAtTheFormatCountPrunesNoneOfThisRunsRows(): Promise<void> {
+  const h = harness({ config: { retentionPerSchedule: 2 }, pruneModelsTheOffset: true });
+  const outcome = rendered(await render(h));
+  assert(
+    h.inserted.length === 2 && outcome.prunedKeys.size === 0,
+    `expected two inserts and no pruned key at retention 2; inserted=${h.inserted.length}, pruned=${JSON.stringify([...outcome.prunedKeys])}`,
+  );
+}
+
+/** Positive control for the row above: a retention of 1 — the floor the plan first named — would prune one of this run's own two rows. */
+export async function assertRetentionBelowTheFormatCountWouldPruneThisRunsOwnRow(): Promise<void> {
+  const h = harness({ config: { retentionPerSchedule: 1 }, pruneModelsTheOffset: true });
+  const outcome = rendered(await render(h));
+  const ownIds = h.inserted.map((row) => String(row.id));
+  const pruned = [...outcome.prunedKeys.keys()];
+  assert(
+    pruned.length === 1 && ownIds.includes(pruned[0] as string),
+    `expected exactly one of this run's own rows pruned at retention 1; own=${JSON.stringify(ownIds)}, pruned=${JSON.stringify(pruned)}`,
   );
 }
 

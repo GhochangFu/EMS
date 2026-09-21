@@ -38,7 +38,7 @@ export const reportSchedules = bmsSchema.table("report_schedules", {
   templateId: text("template_id").notNull(),
   formats: text("formats").array().notNull(),
   cadence: text("cadence").notNull(),
-  runAtLocal: time("run_at_local").notNull(),
+  runAtLocal: time("run_at_local", { precision: 0 }).notNull(),
   timezone: varchar("timezone", { length: 64 }).notNull(),
   // `{}` = whole organization; resolved to asset ids under RLS at render
   // time (ADR 0071 decision 7). Not a foreign key.

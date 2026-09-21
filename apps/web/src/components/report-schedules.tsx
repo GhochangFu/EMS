@@ -242,6 +242,8 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
       timezone: form.timezone,
       needsOrganization,
       organizationId,
+      locationIds: form.locationIds,
+      canUseWholeOrganization: offersWholeOrganization,
       pending: saveM.isPending,
     }) ??
     (editing !== null && Object.keys(patchFor(editing, form, offersChannel)).length === 0 ? NOTHING_CHANGED : null);

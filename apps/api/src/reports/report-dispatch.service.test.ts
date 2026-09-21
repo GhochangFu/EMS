@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, it, vi } from "vitest";
 
 import type { ReportDispatchSummary } from "./report-dispatch.service";
 import {
+  assertDueCountsTheClaimedRowsOnly,
   assertEachAddCarriesTheRowsPeriodAndJobId,
   assertEachUpdateAdvancesToNextRunAtFromNow,
   assertLateTickAdvancesStrictlyPastNow,
@@ -13,6 +14,7 @@ import {
   assertPoisonRowWarnsOnceWithIdAndErrorName,
   assertRecordedOrderIsSelectThenAddsThenUpdates,
   assertSummaryCountsTwoDueTwoEnqueued,
+  assertTheClaimCarriesTheLimit,
   assertTheOtherRowIsStillEnqueued,
   assertTickRejectedWithTheEnqueueError,
   assertUnparsableTimestampEnqueuesAndAdvancesNothing,
@@ -21,6 +23,7 @@ import {
   LATE_ROW,
   makeHarness,
   NOW,
+  overTheLimitRows,
   POISON_ROW,
   UNPARSABLE_ROW,
   type DispatchHarness,
@@ -59,6 +62,23 @@ describe("F3.5b — ReportDispatchService.tick: enqueue before advance, the pois
 
     it("the summary counts two due, two enqueued, none skipped", () => {
       assertSummaryCountsTwoDueTwoEnqueued(summary);
+    });
+
+    it("the claim carries LIMIT bound to REPORT_DISPATCH_CLAIM_LIMIT (step-5 finding)", () => {
+      assertTheClaimCarriesTheLimit(h);
+    });
+  });
+
+  describe("aTickOverTheClaimLimitLeavesTheRestForTheNextTick", () => {
+    let summary: ReportDispatchSummary;
+
+    beforeAll(async () => {
+      const h = makeHarness(overTheLimitRows());
+      summary = await h.service.tick(h.fleetDb, NOW);
+    });
+
+    it("due and enqueued equal the claim limit with one row over it", () => {
+      assertDueCountsTheClaimedRowsOnly(summary);
     });
   });
 

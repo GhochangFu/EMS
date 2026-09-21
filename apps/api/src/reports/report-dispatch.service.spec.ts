@@ -8,7 +8,7 @@ import type { BmsDb } from "@bms/db";
 
 import type { QueueClient, QueueHandle } from "../queue/queue-registry";
 import { renderJobId } from "../queue/reports-render";
-import { ReportDispatchService, type ReportDispatchSummary } from "./report-dispatch.service";
+import { REPORT_DISPATCH_CLAIM_LIMIT, ReportDispatchService, type ReportDispatchSummary } from "./report-dispatch.service";
 import { nextRunAt, periodFor } from "./report-period";
 
 /**
@@ -125,6 +125,8 @@ export type DispatchHarness = {
   readonly service: ReportDispatchService;
   /** `select`, `add`, `update` — one entry per call, in call order. */
   readonly calls: string[];
+  /** The claim's rendered SQL and parameters, one entry per select. */
+  readonly selects: RecordedUpdate[];
   readonly adds: RecordedAdd[];
   readonly updates: RecordedUpdate[];
   readonly warns: string[];
@@ -138,6 +140,7 @@ export function makeHarness(
   opts: { addRejects?: Error } = {},
 ): DispatchHarness {
   const calls: string[] = [];
+  const selects: RecordedUpdate[] = [];
   const adds: RecordedAdd[] = [];
   const updates: RecordedUpdate[] = [];
   const warns: string[] = [];
@@ -148,7 +151,12 @@ export function makeHarness(
       const head = rendered.sql.trimStart().slice(0, 6).toUpperCase();
       if (head === "SELECT") {
         calls.push("select");
-        return { rows: rows.map((row) => ({ ...row })) };
+        selects.push({ sql: rendered.sql, params: rendered.params });
+        // The fake honours a bound `LIMIT $n`: the parameter that follows the
+        // keyword bounds the rows returned, as Postgres would.
+        const limitMatch = /LIMIT \$(\d+)/i.exec(rendered.sql);
+        const limit = limitMatch === null ? rows.length : Number(rendered.params[Number(limitMatch[1]) - 1]);
+        return { rows: rows.slice(0, limit).map((row) => ({ ...row })) };
       }
       if (head === "UPDATE") {
         calls.push("update");
@@ -184,7 +192,7 @@ export function makeHarness(
   vi.spyOn(Logger.prototype, "warn").mockImplementation((message: unknown) => {
     warns.push(String(message));
   });
-  return { service, calls, adds, updates, warns, fleetDb };
+  return { service, calls, selects, adds, updates, warns, fleetDb };
 }
 
 /** The `next_run_at` parameter of a recorded update: the first `Date` parameter. */
@@ -232,6 +240,35 @@ export function assertEachUpdateAdvancesToNextRunAtFromNow(h: DispatchHarness): 
   assert(
     JSON.stringify(actual) === JSON.stringify(expected),
     `expected each update's next_run_at to equal nextRunAt(row, now) (R-8); expected ${expected.join(", ")}, got ${actual.join(", ")}`,
+  );
+}
+
+/**
+ * Step-5 security finding: the claim is bounded. `REPORT_DISPATCH_CLAIM_LIMIT`
+ * rows are claimed per tick; the rest stay due for the next tick, so the
+ * lock-holding transaction is bounded across the Redis round trips.
+ */
+export function assertTheClaimCarriesTheLimit(h: DispatchHarness): void {
+  const select = h.selects[0];
+  assert(
+    select !== undefined && /\bLIMIT\b/i.test(select.sql) && select.params.includes(REPORT_DISPATCH_CLAIM_LIMIT),
+    `expected the claim to carry LIMIT bound to REPORT_DISPATCH_CLAIM_LIMIT (${REPORT_DISPATCH_CLAIM_LIMIT}); got ${JSON.stringify(select)}`,
+  );
+}
+
+/** One more due row than the limit; the fake honours the bound `LIMIT`, so `due` counts the claimed rows only. */
+export function overTheLimitRows(): DueRowFixture[] {
+  const base = DUE_ROWS[0] as DueRowFixture;
+  return Array.from({ length: REPORT_DISPATCH_CLAIM_LIMIT + 1 }, (_, index) => ({
+    ...base,
+    id: `${String(index).padStart(8, "0")}-0000-4000-8000-000000000000`,
+  }));
+}
+
+export function assertDueCountsTheClaimedRowsOnly(summary: ReportDispatchSummary): void {
+  assert(
+    summary.due === REPORT_DISPATCH_CLAIM_LIMIT && summary.enqueued === REPORT_DISPATCH_CLAIM_LIMIT,
+    `expected due and enqueued to equal the claim limit ${REPORT_DISPATCH_CLAIM_LIMIT} with one row over it; got due=${summary.due} enqueued=${summary.enqueued}`,
   );
 }
 

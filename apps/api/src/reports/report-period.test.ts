@@ -11,6 +11,7 @@ process.env.TZ = "America/St_Johns";
 import { describe, it } from "vitest";
 
 import {
+  assertBadClockMessageNamesTheFieldNotTheValue,
   assertNextRunAtRefusesUnknownZone,
   assertNextRunAtRow,
   assertParseRunAtLocalAcceptsSeconds,
@@ -19,6 +20,7 @@ import {
   assertPeriodForRow,
   assertTimeZoneRow,
   assertToInstantRow,
+  assertUnknownZoneMessageNamesTheFieldNotTheZone,
   assertUtcOffsetRow,
   assertWeekdayOfMonday,
   NEXT_RUN_AT_ROWS,
@@ -88,5 +90,13 @@ describe("report-period (F3.5b U3, ADR 0071 decision 7, plan R-6/R-7)", () => {
 
   it("nextRunAt with an unknown zone throws with name ReportPeriodError", () => {
     assertNextRunAtRefusesUnknownZone();
+  });
+
+  it("the unknown-zone message names the field, never the zone (step-5 security finding)", () => {
+    assertUnknownZoneMessageNamesTheFieldNotTheZone();
+  });
+
+  it("the bad-clock message names the field, never the value", () => {
+    assertBadClockMessageNamesTheFieldNotTheValue();
   });
 });

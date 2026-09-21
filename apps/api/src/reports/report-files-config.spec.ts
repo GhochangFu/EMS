@@ -91,6 +91,33 @@ export function assertInvalidRetentionPerScheduleDefaultsWithOneWarn(): void {
   );
 }
 
+/**
+ * Step-5 finding: the effective floor is `REPORT_FILE_FORMATS.length` (2),
+ * not 1. A retention below the number of formats one run writes would let
+ * the prune (`created_at DESC, id DESC OFFSET n`) delete one of the run's
+ * own rows — same `now()`, a random uuid tie. `"1"` is a valid integer, so
+ * it passes the reader and is clamped to 2 with one warn naming the
+ * variable.
+ */
+export function assertRetentionBelowTheFormatCountIsClampedToItWithOneWarn(): void {
+  const { warns, logger } = fakeLogger();
+  const config = readReportFilesConfig({ REPORT_RETENTION_PER_SCHEDULE: "1" }, logger);
+  assert(config.retentionPerSchedule === 2, `expected "1" clamped to the format count 2, got ${config.retentionPerSchedule}`);
+  assert(warns.length === 1, `expected exactly one warn for the clamp, got ${JSON.stringify(warns)}`);
+  assert(
+    warns[0]?.includes("REPORT_RETENTION_PER_SCHEDULE") ?? false,
+    `expected the clamp warn to name REPORT_RETENTION_PER_SCHEDULE, got ${JSON.stringify(warns[0])}`,
+  );
+}
+
+/** Positive control for the clamp: a value at the floor is honoured without a warn. */
+export function assertRetentionAtTheFormatCountIsHonouredWithNoWarn(): void {
+  const { warns, logger } = fakeLogger();
+  const config = readReportFilesConfig({ REPORT_RETENTION_PER_SCHEDULE: "2" }, logger);
+  assert(config.retentionPerSchedule === 2, `expected 2, got ${config.retentionPerSchedule}`);
+  assert(warns.length === 0, `a value at the floor must not warn, got ${JSON.stringify(warns)}`);
+}
+
 export function assertInvalidEmailMaxBytesDefaultsWithOneWarn(): void {
   const { warns, logger } = fakeLogger();
   const config = readReportFilesConfig({ REPORT_EMAIL_MAX_BYTES: "abc" }, logger);
@@ -114,6 +141,26 @@ export function assertNonHttpHistoryUrlDefaultsToNullWithOneWarnNamingTheVariabl
     warns[0]?.includes("REPORT_HISTORY_URL") ?? false,
     `expected the warn to name REPORT_HISTORY_URL, got ${JSON.stringify(warns[0])}`,
   );
+}
+
+/**
+ * Step-5 security finding: the reader returns a normalised URL, never the
+ * raw string. Userinfo is dropped (the value lands in every report mail
+ * body — a `u:p@` there is a credential leak), whitespace is trimmed and
+ * the trailing `/` removed (the body appends `/reports`).
+ */
+export function assertHistoryUrlUserinfoIsDropped(): void {
+  const { warns, logger } = fakeLogger();
+  const config = readReportFilesConfig({ REPORT_HISTORY_URL: "https://u:p@host" }, logger);
+  assert(config.historyUrl === "https://host", `expected "https://host" with the userinfo dropped, got ${JSON.stringify(config.historyUrl)}`);
+  assert(warns.length === 0, `a normalisable URL must not warn, got ${JSON.stringify(warns)}`);
+}
+
+export function assertHistoryUrlIsTrimmedAndLosesItsTrailingSlash(): void {
+  const { warns, logger } = fakeLogger();
+  const config = readReportFilesConfig({ REPORT_HISTORY_URL: " https://host/app/ " }, logger);
+  assert(config.historyUrl === "https://host/app", `expected "https://host/app", got ${JSON.stringify(config.historyUrl)}`);
+  assert(warns.length === 0, `a normalisable URL must not warn, got ${JSON.stringify(warns)}`);
 }
 
 export function assertValidHttpsHistoryUrlIsHonoured(): void {

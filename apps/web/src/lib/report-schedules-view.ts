@@ -55,6 +55,9 @@ export type ScheduleBlockedInput = {
   /** True when the caller's role requires an organization choice. */
   readonly needsOrganization: boolean;
   readonly organizationId: string | undefined;
+  readonly locationIds: readonly string[];
+  /** True when an empty `locationIds` means "whole organization" (never on the `location_admin` form). */
+  readonly canUseWholeOrganization: boolean;
   readonly pending: boolean;
 };
 
@@ -65,7 +68,9 @@ export type ScheduleBlockedInput = {
  * `report-files-view.ts` `saveBlockedReason` order): a save in flight wins
  * over everything else, then a missing organization choice, then an empty
  * name, then no format chosen, then a malformed run time, then an empty
- * timezone.
+ * timezone, then — step-5 nit — an empty location selection on a form that
+ * does not offer "Whole organization" (the API would refuse the empty list
+ * for a `location_admin`; the sentence pre-empts that 403).
  */
 export function scheduleBlockedReason(input: ScheduleBlockedInput): string | null {
   if (input.pending) {
@@ -85,6 +90,9 @@ export function scheduleBlockedReason(input: ScheduleBlockedInput): string | nul
   }
   if (input.timezone.trim().length === 0) {
     return "Enter a timezone";
+  }
+  if (input.locationIds.length === 0 && !input.canUseWholeOrganization) {
+    return "Choose at least one location";
   }
   return null;
 }

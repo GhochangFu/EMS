@@ -24,11 +24,12 @@ import { nextRunAt, periodFor } from "./report-period";
  * `next_run_at` due, the next tick enqueues the same `jobId` and BullMQ
  * de-duplicates it while the earlier job is retained; the reverse order
  * would lose the period. A second dispatcher (an `api-replica`'s worker)
- * skips the locked rows." Two things this file adds to that sentence:
+ * skips the locked rows." Three things this file adds to that sentence:
  * `now` is the tick's one clock (the argument, defaulting to `new Date()`),
- * stamped into the predicate, `last_run_at` and `updated_at` alike; and
- * the `jobId` is R-1's `<scheduleId>_<periodEnd>` (`renderJobId`), because
- * the colon form is refused before Redis.
+ * stamped into the predicate, `last_run_at` and `updated_at` alike; the
+ * `jobId` is R-1's `<scheduleId>_<periodEnd>` (`renderJobId`), because
+ * the colon form is refused before Redis; and the claim carries `LIMIT
+ * REPORT_DISPATCH_CLAIM_LIMIT` (step-5 finding — see the constant).
  *
  * **Injects the queue client only.** The fleet handle is `tick(fleetDb)`'s
  * argument (the `RuleSweepService` reasoning): `reports-dispatch` is a
@@ -70,6 +71,15 @@ import { nextRunAt, periodFor } from "./report-period";
  * host logs one `info` line with the four counts. No Redis key and no health
  * field.
  */
+/**
+ * The most rows one tick claims (step-5 security finding). A tick that
+ * finds more leaves the rest due for the next tick — `ORDER BY next_run_at`
+ * puts the most overdue first — and the lock-holding transaction is bounded
+ * across at most this many Redis round trips. `due` in the summary counts
+ * the claimed rows, never the rows left behind.
+ */
+export const REPORT_DISPATCH_CLAIM_LIMIT: number = 200;
+
 export type ReportDispatchSummary = {
   readonly due: number;
   readonly enqueued: number;
@@ -135,6 +145,7 @@ export class ReportDispatchService {
         FROM bms.report_schedules
         WHERE enabled AND next_run_at <= ${now}
         ORDER BY next_run_at
+        LIMIT ${REPORT_DISPATCH_CLAIM_LIMIT}
         FOR UPDATE SKIP LOCKED
       `);
       const rows = result.rows as DueRow[];

@@ -226,7 +226,21 @@ function pgArray(values: readonly string[]): string {
   return `{${values.join(",")}}`;
 }
 
-/** One committed schedule as `bms_fleet`, named `f3.5b-render-<id>`; recorded for the sweep. */
+/**
+ * One committed schedule as `bms_fleet`, named `f3.5b-render-<id>`; recorded
+ * for the sweep.
+ *
+ * **`next_run_at` is ten years out, never `now()`** (step-5 finding). These
+ * rows commit and are `enabled`, so a row due now is a row the compose
+ * worker's `reports-dispatch` tick — which shares this database and ticks
+ * every 60 s — claims: it enqueues a render for the fixture, writes a
+ * `report_files` row the id-bounded sweep did not expect, and the sweep then
+ * fails on `report_files_schedule_id_fkey` and orphans an object. CI has no
+ * worker, so the suite was green there and red only against the running
+ * stack — the §4.6 asymmetry. `render()` never reads `next_run_at` (its
+ * schedule select projects id, name, formats, location_ids, channel_id,
+ * enabled), so the far-future instant changes nothing this suite measures.
+ */
 export async function insertSchedule(fx: RenderIntegrationFixtures, options: ScheduleOptions = {}): Promise<string> {
   const id = randomUUID();
   const organizationId = options.organizationId ?? fx.base.eskomId;
@@ -239,7 +253,7 @@ export async function insertSchedule(fx: RenderIntegrationFixtures, options: Sch
       (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, channel_id, enabled, next_run_at)
     values
       (${id}, ${organizationId}, ${`f3.5b-render-${id}`}, 'energy_consumption', ${formats}::text[], 'daily', '00:30:00',
-       'Asia/Kolkata', ${locationIds}::uuid[], ${channelId}, ${enabled}, now())
+       'Asia/Kolkata', ${locationIds}::uuid[], ${channelId}, ${enabled}, now() + interval '10 years')
   `);
   fx.scheduleIds.push(id);
   return id;

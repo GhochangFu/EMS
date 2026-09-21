@@ -2,6 +2,7 @@ import { Logger } from "@nestjs/common";
 
 import {
   REPORT_EMAIL_MAX_BYTES_DEFAULT,
+  REPORT_FILE_FORMATS,
   REPORT_ONDEMAND_CAP_DEFAULT,
   REPORT_RETENTION_PER_SCHEDULE_DEFAULT,
 } from "@bms/shared";
@@ -20,13 +21,28 @@ import {
  * graph" shape `WORKER_CONFIG` uses.
  *
  * F3.5b (R-14) adds three fields on the same reader rule:
- * `retentionPerSchedule` (`REPORT_RETENTION_PER_SCHEDULE`, floor 1, default
+ * `retentionPerSchedule` (`REPORT_RETENTION_PER_SCHEDULE`, default
  * `REPORT_RETENTION_PER_SCHEDULE_DEFAULT`) and `emailMaxBytes`
  * (`REPORT_EMAIL_MAX_BYTES`, floor 1, default `REPORT_EMAIL_MAX_BYTES_DEFAULT`)
  * — each a bad-value-warns-and-defaults integer read; and `historyUrl`
  * (`REPORT_HISTORY_URL`, optional) — a bad or non-`http(s)` value warns
  * naming the variable and falls back to `null`, an unset value falls back to
  * `null` with **no** warn (there is nothing wrong to report).
+ *
+ * **`retentionPerSchedule`'s effective floor is `REPORT_FILE_FORMATS.length`
+ * (step-5 finding; plan R-14 said floor 1).** The render job's prune keeps
+ * the newest `n` rows of a schedule by `created_at DESC, id DESC`; one run
+ * inserts up to one row per format in the same transaction, so they share
+ * `now()` and tie on a random uuid. With `n` below the format count the
+ * prune would delete one of the run's own rows. A value that passes the
+ * integer read but is below the format count is clamped up to it with one
+ * warn naming the variable; a value below 1 still defaults with the
+ * reader's own warn.
+ *
+ * **`historyUrl` is normalised, never the raw string** (step-5 security
+ * finding): the value is interpolated into every report mail body, so the
+ * userinfo (`u:p@`) is cleared, the string trimmed and a trailing `/`
+ * removed — the body appends `/reports`.
  */
 export type ReportFilesConfig = {
   readonly onDemandCap: number;
@@ -38,6 +54,22 @@ export type ReportFilesConfig = {
 const REPORT_ONDEMAND_CAP_FLOOR = 1;
 const REPORT_RETENTION_PER_SCHEDULE_FLOOR = 1;
 const REPORT_EMAIL_MAX_BYTES_FLOOR = 1;
+
+/**
+ * The retention a run needs so the prune never reaches its own rows: one
+ * row per format. Applied after the integer read (a value below 1 is the
+ * reader's warn-and-default; a value in `[1, formats)` is this clamp).
+ */
+function clampRetentionToTheFormatCount(value: number, logger: Pick<Logger, "warn">): number {
+  const floor = REPORT_FILE_FORMATS.length;
+  if (value >= floor) {
+    return value;
+  }
+  logger.warn(
+    `REPORT_RETENTION_PER_SCHEDULE is below the number of report formats one run writes; using ${floor} so the prune never deletes a run's own rows`,
+  );
+  return floor;
+}
 
 function readPositiveInteger(
   raw: string | undefined,
@@ -65,7 +97,10 @@ function readPositiveInteger(
  * `REPORT_HISTORY_URL` — optional. Unset reads as `null` with no warn; a set
  * value must parse with `new URL()` and carry the `http:` or `https:`
  * protocol, else it falls back to `null` with one warn naming the variable
- * (never the value, the same rule as the integer readers).
+ * (never the value, the same rule as the integer readers). What is
+ * returned is the parsed URL's `href` with the userinfo cleared, whitespace
+ * trimmed and a trailing `/` removed — never `raw` (step-5 security
+ * finding: the value is written into every report mail body).
  */
 function readHistoryUrl(
   raw: string | undefined,
@@ -77,7 +112,7 @@ function readHistoryUrl(
 
   let parsed: URL;
   try {
-    parsed = new URL(raw);
+    parsed = new URL(raw.trim());
   } catch {
     logger.warn("REPORT_HISTORY_URL is not a valid URL; using no history link");
     return null;
@@ -88,7 +123,9 @@ function readHistoryUrl(
     return null;
   }
 
-  return raw;
+  parsed.username = "";
+  parsed.password = "";
+  return parsed.href.replace(/\/$/, "");
 }
 
 export function readReportFilesConfig(
@@ -103,11 +140,14 @@ export function readReportFilesConfig(
       REPORT_ONDEMAND_CAP_DEFAULT,
       logger,
     ),
-    retentionPerSchedule: readPositiveInteger(
-      env.REPORT_RETENTION_PER_SCHEDULE,
-      "REPORT_RETENTION_PER_SCHEDULE",
-      REPORT_RETENTION_PER_SCHEDULE_FLOOR,
-      REPORT_RETENTION_PER_SCHEDULE_DEFAULT,
+    retentionPerSchedule: clampRetentionToTheFormatCount(
+      readPositiveInteger(
+        env.REPORT_RETENTION_PER_SCHEDULE,
+        "REPORT_RETENTION_PER_SCHEDULE",
+        REPORT_RETENTION_PER_SCHEDULE_FLOOR,
+        REPORT_RETENTION_PER_SCHEDULE_DEFAULT,
+        logger,
+      ),
       logger,
     ),
     emailMaxBytes: readPositiveInteger(

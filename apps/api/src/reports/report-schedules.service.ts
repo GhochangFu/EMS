@@ -73,8 +73,9 @@ type StoredRow = typeof reportSchedules.$inferSelect;
  * periods it slept through are not rendered. `updated_at` is stamped here —
  * the column has a default and no trigger.
  *
- * **`remove` (Q-2).** `report_files.schedule_id` is `ON DELETE RESTRICT`
- * (the Postgres default `NO ACTION`), so the files go first: one tenant
+ * **`remove` (Q-2).** `report_files.schedule_id` is `ON DELETE NO ACTION`
+ * (Postgres's omitted-clause default; identical to `RESTRICT` for a
+ * non-`DEFERRABLE` constraint), so the files go first: one tenant
  * transaction deletes the schedule's file rows returning their keys, deletes
  * the schedule (0 rows → 404), writes the audit row, commits; then
  * `discardObjectsBestEffort` removes the objects — a bucket that is down
@@ -264,7 +265,8 @@ export class ReportSchedulesService {
     const row = await this.readRowForVerdict(jwt, id);
 
     const keysByFileId = await withTenant(this.tenantDb, row.organizationId, async (tx) => {
-      // Q-2: the files first — `schedule_id` is RESTRICT, so the schedule's delete would fail on 23503.
+      // Q-2: the files first — `schedule_id` is NO ACTION (Postgres's omitted-clause default;
+      // identical to RESTRICT for a non-DEFERRABLE constraint), so the schedule's delete would fail on 23503.
       const files = await tx
         .delete(reportFiles)
         .where(eq(reportFiles.scheduleId, id))
@@ -349,6 +351,8 @@ export class ReportSchedulesService {
 
   /** The fleet read by id (404), then the decision-6 verdict (403). Shared by `get`, `update` and `remove`. */
   private async readRowForVerdict(jwt: JwtPayload, id: string): Promise<StoredRow> {
+    // §4.3: the fleet pool, because the organization is unknown until the row is read — the
+    // verdict below is what scopes the caller to it.
     const [row] = await this.fleetDb.select().from(reportSchedules).where(eq(reportSchedules.id, id)).limit(1);
     if (!row) {
       throw new NotFoundException("Report schedule not found");

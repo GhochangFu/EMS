@@ -113,6 +113,8 @@ function blockedInput(overrides: Partial<ScheduleBlockedInput> = {}): ScheduleBl
     timezone: "Asia/Kolkata",
     needsOrganization: false,
     organizationId: undefined,
+    locationIds: ["loc-1"],
+    canUseWholeOrganization: false,
     pending: false,
     ...overrides,
   };
@@ -128,6 +130,12 @@ export function scheduleBlockedReasonPerCondition(): void {
   expect(scheduleBlockedReason(blockedInput({ formats: [] }))).toBe("Choose at least one format");
   expect(scheduleBlockedReason(blockedInput({ runAtLocal: "7:00" }))).toBe("Enter a run time");
   expect(scheduleBlockedReason(blockedInput({ timezone: "  " }))).toBe("Enter a timezone");
+  expect(scheduleBlockedReason(blockedInput({ locationIds: [] }))).toBe("Choose at least one location");
+}
+
+/** Step-5 nit: an empty selection is "whole organization" only when the form offers it (never the `location_admin` form). */
+export function scheduleBlockedReasonAllowsAnEmptySelectionWhenWholeOrganizationIsOffered(): void {
+  expect(scheduleBlockedReason(blockedInput({ locationIds: [], canUseWholeOrganization: true }))).toBeNull();
 }
 
 /** Positive control: when none of the conditions holds, the form is not blocked. */

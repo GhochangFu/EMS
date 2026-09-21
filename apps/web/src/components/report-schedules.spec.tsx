@@ -447,6 +447,16 @@ export async function aRefusedCreateRendersTheApiSentence(): Promise<void> {
   expect(await screen.findByText("Report schedule cap reached for this organization")).toBeInTheDocument();
 }
 
+/** Step-5 nit: a `location_admin` with a name but no location selected reads "Choose at least one location" beside a disabled Save. */
+export async function aLocationAdminWithNoLocationSelectedIsBlockedOnTheLocation(): Promise<void> {
+  renderSchedules("location_admin");
+  await locationsSelect();
+  await userEvent.type(screen.getByLabelText("Name"), "Site digest");
+
+  expect(await screen.findByText("Choose at least one location")).toBeInTheDocument();
+  expect(saveButton()).toBeDisabled();
+}
+
 /** Save stays disabled beside the blocked sentence until a name is entered. */
 export async function saveIsDisabledBesideTheBlockedSentence(): Promise<void> {
   renderSchedules("location_admin");

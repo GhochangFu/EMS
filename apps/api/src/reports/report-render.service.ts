@@ -168,7 +168,8 @@ export class ReportRenderService {
     private readonly reports: ReportsService,
     private readonly email: EmailTransport,
     private readonly metrics: MetricsService,
-    // Slot 7: `toChannelRow` is an instance method (it decrypts through the
+    // Slot 6 (0-based, the `fleet-read-wiring.spec.ts` indexing): `toChannelRow`
+    // is an instance method (it decrypts through the
     // service's `CredentialCryptoService` and warns through its logger), so
     // the channel read cannot map without the service.
     private readonly channels: ChannelsService,

@@ -82,13 +82,13 @@ export function isValidTimeZone(zone: string): boolean {
 export function parseRunAtLocal(value: string): LocalClock {
   const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
   if (!match) {
-    throw new ReportPeriodError(`runAtLocal "${value}" is not HH:MM or HH:MM:SS`);
+    throw new ReportPeriodError("runAtLocal is not HH:MM or HH:MM:SS");
   }
   const hour = Number(match[1]);
   const minute = Number(match[2]);
   const second = match[3] === undefined ? 0 : Number(match[3]);
   if (hour > 23 || minute > 59 || second !== 0) {
-    throw new ReportPeriodError(`runAtLocal "${value}" is out of range or carries seconds`);
+    throw new ReportPeriodError("runAtLocal is out of range or carries seconds");
   }
   return { hour, minute };
 }
@@ -101,7 +101,7 @@ function formatterFor(zone: string): Intl.DateTimeFormat {
     return cached;
   }
   if (!isValidTimeZone(zone)) {
-    throw new ReportPeriodError(`"${zone}" is not a known IANA zone`);
+    throw new ReportPeriodError("timezone is not a known IANA zone");
   }
   const created = new Intl.DateTimeFormat("en-US", {
     timeZone: zone,

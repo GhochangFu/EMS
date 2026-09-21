@@ -410,6 +410,13 @@ export async function assertRenderHandlerReturnsAContinuationThatFinishesTheOutc
     typeof resolved === "object" && resolved !== null && typeof resolved.afterCommit === "function",
     `expected the render handler to resolve a ProcessorContinuation ({ afterCommit }) — phase B/C must follow the commit (R-5); got ${String(resolved)}`,
   );
+  // Step-5 finding: before the continuation runs, finish must not have run —
+  // a handler that awaits `finish` inline and also returns a continuation
+  // would pass the count-after check alone.
+  assert(
+    probe.finishedOutcomes.length === 0,
+    `expected finish not to have run before afterCommit() — phase B/C must follow the commit, not the handler (R-5); finished=${probe.finishedOutcomes.length}`,
+  );
   await (resolved as ProcessorContinuation).afterCommit();
   assert(
     probe.finishedOutcomes.length === 1 && probe.finishedOutcomes[0] === RENDER_OUTCOME,

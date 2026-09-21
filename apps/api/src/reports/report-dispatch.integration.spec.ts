@@ -29,8 +29,17 @@ import { ReportDispatchService } from "./report-dispatch.service";
  * its own uncommitted inserts claimed, which a fresh connection could not),
  * and nothing this suite writes outlives the case. The one exception is the
  * locked-row fixture, which must be visible to two connections at once and
- * is therefore committed in `beforeAll` as `bms_fleet` and deleted by id in
- * `afterAll`, which asserts the delete count is 1.
+ * is therefore committed as `bms_fleet` — **inside the locked-row scenario,
+ * immediately before connection A's `FOR UPDATE` opens, and deleted in the
+ * scenario's own `finally` with the delete count asserted** (step-5
+ * finding). It was once committed in `beforeAll` and deleted in `afterAll`:
+ * a committed, enabled row due an hour ago is exactly what the compose
+ * worker's `reports-dispatch` tick — same database, every 60 s — claims,
+ * and once claimed its `next_run_at` is in the future and the positive
+ * control (`assertTheReleasedRowIsEnqueuedOnce`) flakes. CI has no worker,
+ * so the flake was invisible there — the §4.6 asymmetry. The exposure is
+ * now the milliseconds between the insert and the `FOR UPDATE`, and the row
+ * is held or gone for the rest of its life.
  *
  * **Assertions are scoped to this suite's ids, never to totals.** The tick
  * claims every due row it can see — a row another suite committed, or one
@@ -59,8 +68,6 @@ export type DispatchIntegrationFixtures = {
   readonly pool: pg.Pool;
   readonly fleetDb: BmsDb;
   readonly eskomId: string;
-  /** The committed locked-row fixture's id, deleted in `afterAll`. */
-  readonly lockedId: string;
   readonly close: () => Promise<void>;
 };
 
@@ -141,23 +148,12 @@ export async function openDispatchFixtures(connectionString: string, label: stri
     await pool.end();
     throw new Error(`${label}: organization ESKOM is missing — run pnpm db:seed`);
   }
-  // The one committed fixture: due an hour ago, so both connections see it.
-  const lockedId = await insertSchedule(
-    fleetDb,
-    eskomId,
-    "f3.5b-locked",
-    new Date(Date.now() - 3_600_000),
-    true,
-  );
   return {
     pool,
     fleetDb,
     eskomId,
-    lockedId,
     close: async () => {
-      const deleted = await pool.query(`DELETE FROM bms.report_schedules WHERE id = $1`, [lockedId]);
       await pool.end();
-      assert(deleted.rowCount === 1, `expected the afterAll delete of the locked fixture to remove exactly 1 row, got ${deleted.rowCount}`);
     },
   };
 }
@@ -281,7 +277,14 @@ export type LockedFacts = {
   readonly addsAfterRelease: readonly RecordedAdd[];
 };
 
-/** Connection A: a raw pool client holding `SELECT … FOR UPDATE` in an open transaction. Connection B: the tick, on a rolled-back transaction of its own. */
+/**
+ * Connection A: a raw pool client holding `SELECT … FOR UPDATE` in an open
+ * transaction. Connection B: the tick, on a rolled-back transaction of its
+ * own. The committed fixture (due an hour ago, so both connections see it)
+ * is inserted here, immediately before A's lock, and deleted in the outer
+ * `finally` — after the release tick, which is the positive control and
+ * needs the row still present and still due.
+ */
 export async function runLockedRowScenario(fx: DispatchIntegrationFixtures): Promise<LockedFacts> {
   const now = new Date();
   const tickOnB = async (): Promise<RecordedAdd[]> => {
@@ -293,18 +296,24 @@ export async function runLockedRowScenario(fx: DispatchIntegrationFixtures): Pro
     return adds;
   };
 
-  const a = await fx.pool.connect();
-  let addsWhileLocked: RecordedAdd[];
+  const lockedId = await insertSchedule(fx.fleetDb, fx.eskomId, "f3.5b-locked", new Date(Date.now() - 3_600_000), true);
   try {
-    await a.query("BEGIN");
-    await a.query(`SELECT id FROM bms.report_schedules WHERE id = $1 FOR UPDATE`, [fx.lockedId]);
-    addsWhileLocked = await tickOnB();
+    const a = await fx.pool.connect();
+    let addsWhileLocked: RecordedAdd[];
+    try {
+      await a.query("BEGIN");
+      await a.query(`SELECT id FROM bms.report_schedules WHERE id = $1 FOR UPDATE`, [lockedId]);
+      addsWhileLocked = await tickOnB();
+    } finally {
+      await a.query("ROLLBACK").catch(() => undefined);
+      a.release();
+    }
+    const addsAfterRelease = await tickOnB();
+    return { lockedId, addsWhileLocked, addsAfterRelease };
   } finally {
-    await a.query("ROLLBACK").catch(() => undefined);
-    a.release();
+    const deleted = await fx.pool.query(`DELETE FROM bms.report_schedules WHERE id = $1`, [lockedId]);
+    assert(deleted.rowCount === 1, `expected the scenario's delete of the locked fixture to remove exactly 1 row, got ${deleted.rowCount}`);
   }
-  const addsAfterRelease = await tickOnB();
-  return { lockedId: fx.lockedId, addsWhileLocked, addsAfterRelease };
 }
 
 export function assertTheLockedRowIsSkipped(f: LockedFacts): void {
