@@ -51,7 +51,8 @@ describe("F3.5b ReportSchedulesService — get and list", () => {
   it("listAppliesTheLocationPredicateOnlyForLocationAdmins — location", () => spec.listAppliesTheLocationPredicateOnlyForLocationAdmins("location"));
   it("listAppliesTheLocationPredicateOnlyForLocationAdmins — organization", () => spec.listAppliesTheLocationPredicateOnlyForLocationAdmins("organization"));
   it("listAppliesTheLocationPredicateOnlyForLocationAdmins — global", () => spec.listAppliesTheLocationPredicateOnlyForLocationAdmins("global"));
-  it("list maps every row through the DTO", spec.listOrdersNewestFirst);
+  it("list orders created_at desc, id desc", spec.listOrdersNewestFirst);
+  it("list maps every row through the DTO", spec.listMapsEveryRowThroughTheDto);
 });
 
 describe("F3.5b ReportSchedulesService — remove (Q-2)", () => {

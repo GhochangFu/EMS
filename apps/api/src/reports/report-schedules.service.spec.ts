@@ -218,6 +218,8 @@ export type Harness = {
   updates: Record<string, unknown>[];
   executed: { sql: string; params: unknown[] }[];
   listWheres: { sql: string; params: unknown[] }[];
+  /** The `orderBy` arguments of every list select, rendered to SQL text. */
+  listOrders: string[][];
   access: { calls: string[] };
   channels: { calls: string[] };
   audit: { inputs: AuditInput[]; executors: unknown[] };
@@ -239,6 +241,7 @@ export function harness(scenario: Scenario = {}, now: Date = NOW): Harness {
   const updates: Record<string, unknown>[] = [];
   const executed: { sql: string; params: unknown[] }[] = [];
   const listWheres: { sql: string; params: unknown[] }[] = [];
+  const listOrders: string[][] = [];
   let tenantTransactions = 0;
   const scheduleRows = scenario.scheduleRows ?? [];
 
@@ -268,6 +271,7 @@ export function harness(scenario: Scenario = {}, now: Date = NOW): Harness {
         },
         (method, args) => {
           if (method === "where") whereArg = args[0];
+          if (method === "orderBy") listOrders.push(args.map((arg) => renderSql(arg).sql));
         },
       );
     },
@@ -430,6 +434,7 @@ export function harness(scenario: Scenario = {}, now: Date = NOW): Harness {
     updates,
     executed,
     listWheres,
+    listOrders,
     access,
     channels,
     audit,
@@ -772,12 +777,24 @@ export async function listAppliesTheLocationPredicateOnlyForLocationAdmins(kind:
   assert(!hasPredicate, `${kind} must carry no location predicate; sql: ${where.sql}`);
 }
 
+/** R-12: `ORDER BY created_at DESC, id DESC` — asserted on the rendered `orderBy` arguments, not on the fake's row order. */
 export async function listOrdersNewestFirst(): Promise<void> {
-  const older = storedSchedule({ id: FILE_A, createdAt: new Date("2026-09-20T10:00:00Z") });
-  const h = harness({ scheduleRows: [storedSchedule(), older] });
+  const h = harness({ scheduleRows: [storedSchedule()] });
+  await h.service.list(JWT);
+  const order = h.listOrders[0];
+  assert(order !== undefined, "the list select must call orderBy once");
+  assert(
+    order.length === 2 && /"created_at" desc/.test(order[0]!) && /"id" desc/.test(order[1]!),
+    `expected [created_at desc, id desc], got ${JSON.stringify(order)}`,
+  );
+}
+
+export async function listMapsEveryRowThroughTheDto(): Promise<void> {
+  const second = storedSchedule({ id: FILE_A });
+  const h = harness({ scheduleRows: [storedSchedule(), second] });
   const dtos = await h.service.list(JWT);
-  // The fake answers rows in the order given; the order clause is the service's — assert it was requested.
-  assert(dtos.length === 2 && dtos[0]?.id === SCHEDULE_ID, "list must map every row through the DTO");
+  assert(dtos.length === 2 && dtos[0]?.id === SCHEDULE_ID && dtos[1]?.id === FILE_A, "list must map every row through the DTO");
+  assert(dtos.every((dto) => typeof dto.nextRunAt === "string"), "every DTO carries nextRunAt as an ISO string");
 }
 
 // ---------------------------------------------------------------------------
