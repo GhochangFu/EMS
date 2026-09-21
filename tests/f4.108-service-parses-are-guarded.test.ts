@@ -79,6 +79,7 @@ const TEMPLATES_SERVICE = "apps/api/src/admin/dashboard-templates/dashboard-temp
 const INSTANTIATE_SERVICE =
   "apps/api/src/admin/dashboard-templates/dashboard-templates-instantiate.service.ts";
 const ASSET_IMAGES_SERVICE = "apps/api/src/assets/asset-images.service.ts";
+const REPORT_FILES_SERVICE = "apps/api/src/reports/report-files.service.ts";
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
 /**
@@ -478,14 +479,14 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
   });
 
   /**
-   * The eight actually moved — and the ninth `F3.3` added.
+   * The eight actually moved — the ninth `F3.3` added, and the tenth `F3.5a`.
    *
    * The absence assertion above goes quiet either way: once a site reads
    * `parseStoredContract(schema, …)` there is no `.parse(` left at it to find,
-   * so "no offenders" is equally true of nine converted sites and of nine
+   * so "no offenders" is equally true of ten converted sites and of ten
    * sites deleted. This counts the positive.
    */
-  it("routes all nine stored-data parses through parseStoredContract", () => {
+  it("routes all ten stored-data parses through parseStoredContract", () => {
     const occurrences = (rel: string): number =>
       (blankCommentsAndStrings(read(rel)).match(/parseStoredContract\(/g) ?? []).length;
 
@@ -495,13 +496,15 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         templates: occurrences(TEMPLATES_SERVICE),
         instantiate: occurrences(INSTANTIATE_SERVICE),
         assetImages: occurrences(ASSET_IMAGES_SERVICE),
+        reportFiles: occurrences(REPORT_FILES_SERVICE),
       },
       "ADR 0060 Amendment 1 enumerates eight stored-data parses: one in the stock service, " +
         "five in dashboard-templates.service.ts and two in the instantiate service; F3.3 " +
-        "added a ninth, the whole-DTO parse in asset-images.service.ts. A site reverted to " +
+        "added a ninth, the whole-DTO parse in asset-images.service.ts; F3.5a a tenth, the " +
+        "whole-DTO parse in report-files.service.ts. A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
-    ).toEqual({ stock: 1, templates: 5, instantiate: 2, assetImages: 1 });
+    ).toEqual({ stock: 1, templates: 5, instantiate: 2, assetImages: 1, reportFiles: 1 });
   });
 
   /**
@@ -523,9 +526,15 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       declared.length,
       "the StoredContractContext union no longer parses as a list of string literals, so the " +
         "per-site counts below would be vacuous",
-    ).toBe(9);
+    ).toBe(10);
 
-    const callSites = [STOCK_SERVICE, TEMPLATES_SERVICE, INSTANTIATE_SERVICE, ASSET_IMAGES_SERVICE]
+    const callSites = [
+      STOCK_SERVICE,
+      TEMPLATES_SERVICE,
+      INSTANTIATE_SERVICE,
+      ASSET_IMAGES_SERVICE,
+      REPORT_FILES_SERVICE,
+    ]
       .map((rel) => blankCommentsAndStrings(read(rel), false))
       .join("\n");
 

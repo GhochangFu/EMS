@@ -11,6 +11,7 @@ import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { WorkerHostService } from "../queue/worker-host.service";
+import { ReportFilesService } from "../reports/report-files.service";
 import { ReportsService } from "../reports/reports.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import { RulesService } from "../rules/rules.service";
@@ -161,4 +162,21 @@ export function assertAssetImagesWriteServiceTenantSlot(): void {
 
 export function assertAssetImagesWriteServiceFleetSlot(): void {
   expect(injectedToken(AssetImagesWriteService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F3.5a` — `ReportFilesService(tenantDb, fleetDb, client, config, reports,
+ * accessControl, audit)` (ADR 0071 decisions 5, 6): the insert and the delete
+ * run under `withTenant` on slot 0 and the saved organization; the cap
+ * pre-check, the by-id read for the decision-6 verdict, the actor lookup and
+ * the committed-row re-check on slot 1. A swap would insert on the BYPASSRLS
+ * pool, which `0077`'s `WITH CHECK` could never refuse. Two claims, one
+ * function each.
+ */
+export function assertReportFilesServiceTenantSlot(): void {
+  expect(injectedToken(ReportFilesService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertReportFilesServiceFleetSlot(): void {
+  expect(injectedToken(ReportFilesService, 1)).toBe(FLEET_DRIZZLE);
 }
