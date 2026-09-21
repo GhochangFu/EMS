@@ -275,6 +275,9 @@ export type Harness = {
   deleteWheres: { sql: string; params: unknown[] }[];
   updates: { set: Record<string, unknown>; where: { sql: string; params: unknown[] } }[];
   assetWheres: { sql: string; params: unknown[] }[];
+  scheduleWheres: { sql: string; params: unknown[] }[];
+  uniqueWheres: { sql: string; params: unknown[] }[];
+  pruneSelects: { where: { sql: string; params: unknown[] }; offset: unknown }[];
   deliverableWheres: { sql: string; params: unknown[] }[];
   executed: { sql: string; params: unknown[] }[];
   reports: { calls: { method: string; query: unknown; assetIds: unknown }[] };
@@ -293,6 +296,9 @@ export function harness(scenario: Scenario = {}): Harness {
   const deleteWheres: Harness["deleteWheres"] = [];
   const updates: Harness["updates"] = [];
   const assetWheres: Harness["assetWheres"] = [];
+  const scheduleWheres: Harness["scheduleWheres"] = [];
+  const uniqueWheres: Harness["uniqueWheres"] = [];
+  const pruneSelects: Harness["pruneSelects"] = [];
   const deliverableWheres: Harness["deliverableWheres"] = [];
   const executed: Harness["executed"] = [];
   const putBodies = new Map<string, Buffer>();
@@ -310,10 +316,12 @@ export function harness(scenario: Scenario = {}): Harness {
     select: (projection?: Record<string, unknown>) => {
       const shape = shapeOf(projection);
       let whereArg: unknown;
+      let offsetArg: unknown;
       return chain(
         async () => {
           if (shape === "channelId,enabled,formats,locationIds,name,scheduleId") {
             calls.push("tx:selectSchedule");
+            scheduleWheres.push(renderWhere(whereArg));
             return scheduleRow === null ? [] : [scheduleRow];
           }
           if (shape === "assetId") {
@@ -323,12 +331,15 @@ export function harness(scenario: Scenario = {}): Harness {
           }
           if (shape === "existingId") {
             calls.push("tx:uniqueCheck");
-            const { params } = renderWhere(whereArg);
+            const rendered = renderWhere(whereArg);
+            uniqueWheres.push(rendered);
+            const { params } = rendered;
             const hit = (scenario.existingFormats ?? []).some((format) => params.includes(format));
             return hit ? [{ existingId: PRUNED_A }] : [];
           }
           if (shape === "objectKey,prunedId") {
             calls.push("tx:pruneSelect");
+            pruneSelects.push({ where: renderWhere(whereArg), offset: offsetArg });
             return scenario.overflow ?? [];
           }
           if (shape === "byteSize,contentType,fileId,filename,format,objectKey") {
@@ -344,6 +355,7 @@ export function harness(scenario: Scenario = {}): Harness {
         },
         (method, args) => {
           if (method === "where") whereArg = args[0];
+          if (method === "offset") offsetArg = args[0];
         },
       );
     },
@@ -495,6 +507,9 @@ export function harness(scenario: Scenario = {}): Harness {
     deleteWheres,
     updates,
     assetWheres,
+    scheduleWheres,
+    uniqueWheres,
+    pruneSelects,
     deliverableWheres,
     executed,
     reports,
@@ -604,6 +619,13 @@ export async function assertNamedLocationsFilterTheAssets(): Promise<void> {
       where.params.includes(OTHER_LOCATION),
     `expected location_id in ($1, $2) bound to the two location ids, got ${JSON.stringify(where)}`,
   );
+}
+
+export async function assertTheScheduleIsReadByItsId(): Promise<void> {
+  const h = harness();
+  await render(h);
+  const where = h.scheduleWheres[0];
+  assert(where !== undefined && /"report_schedules"\."id" = \$1/.test(where.sql) && where.params[0] === SCHEDULE_ID, `got ${JSON.stringify(where)}`);
 }
 
 export async function assertTheRenderReceivesTheResolvedAssetIds(): Promise<void> {
@@ -720,9 +742,35 @@ export async function assertTheUniqueCheckNamesScheduleAndPeriodEndAndFormat(): 
   assert(h.metrics.written.length === 1 && h.metrics.written[0] === "xlsx", `expected only xlsx written, got ${JSON.stringify(h.metrics.written)}`);
 }
 
+/** The triple, as bound params in order — a check that dropped `schedule_id` or `period_end` still carries the format (the fake matches on it), so the params are pinned. */
+export async function assertTheUniqueCheckBindsScheduleIdPeriodEndAndFormat(): Promise<void> {
+  const h = harness();
+  await render(h);
+  const first = h.uniqueWheres[0];
+  assert(
+    first !== undefined &&
+      /"schedule_id" = \$1 and .*"period_end" = \$2 and .*"format" = \$3/.test(first.sql) &&
+      JSON.stringify(first.params) === JSON.stringify([SCHEDULE_ID, "2026-09-07", "pdf"]),
+    `expected (schedule_id, period_end, format) bound to the schedule, the period end and pdf, got ${JSON.stringify(first)}`,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Phase A — prune, and the throw
 // ---------------------------------------------------------------------------
+
+export async function assertThePruneSelectIsBoundToThisSchedule(): Promise<void> {
+  const h = harness({ overflow: OVERFLOW });
+  await render(h);
+  const prune = h.pruneSelects[0];
+  assert(prune !== undefined && /"schedule_id" = \$1/.test(prune.where.sql) && prune.where.params[0] === SCHEDULE_ID, `got ${JSON.stringify(prune)}`);
+}
+
+export async function assertThePruneOffsetIsTheConfiguredRetention(): Promise<void> {
+  const h = harness({ config: { retentionPerSchedule: 3 } });
+  await render(h);
+  assert(h.pruneSelects[0]?.offset === 3, `expected offset 3 from the config, got ${JSON.stringify(h.pruneSelects[0]?.offset)}`);
+}
 
 const OVERFLOW = [
   { prunedId: PRUNED_A, objectKey: KEY_PRUNED_A },

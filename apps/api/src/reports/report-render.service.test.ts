@@ -13,6 +13,7 @@ describe("F3.5b ReportRenderService — the gate, the schedule, the scope (R-9)"
   it("structural control: slot 1 is STORAGE_CLIENT — the service injects no fleet handle", spec.assertStorageClientIsSlotOne);
   it("location_ids = {} selects every asset the policy shows", spec.assertEmptyLocationIdsSelectsEveryAsset);
   it("named locations filter the assets with location_id = ANY($ids)", spec.assertNamedLocationsFilterTheAssets);
+  it("the schedule is read by its id on the transaction", spec.assertTheScheduleIsReadByItsId);
   it("the render receives the period and the resolved asset ids", spec.assertTheRenderReceivesTheResolvedAssetIds);
 });
 
@@ -30,9 +31,12 @@ describe("F3.5b ReportRenderService — files, objects, rows (R-9)", () => {
   it("a format whose unique row exists is skipped: one put, the other format", spec.assertSkipsAFormatWhoseUniqueRowExistsPutsOnlyTheOther);
   it("a format whose unique row exists counts skippedExisting", spec.assertSkipsAFormatWhoseUniqueRowExistsCountsIt);
   it("the unique check carries the format (xlsx is not skipped by the pdf row)", spec.assertTheUniqueCheckNamesScheduleAndPeriodEndAndFormat);
+  it("the unique check binds (schedule_id, period_end, format) in that order", spec.assertTheUniqueCheckBindsScheduleIdPeriodEndAndFormat);
 });
 
 describe("F3.5b ReportRenderService — prune and the throw (R-9)", () => {
+  it("the prune select is bound to this schedule", spec.assertThePruneSelectIsBoundToThisSchedule);
+  it("the prune offset is the configured retention", spec.assertThePruneOffsetIsTheConfiguredRetention);
   it("prunes the overflow rows in phase A with one row delete", spec.assertPrunesTheOverflowRowsInPhaseA);
   it("the pruned keys are carried in the outcome by file id", spec.assertPrunedKeysAreCarriedInTheOutcome);
   it("render deletes no object — that is for finish", spec.assertRenderDeletesNoObject);

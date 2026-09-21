@@ -437,9 +437,14 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
     // F3.5b (ADR 0071 plan R-3): the inverse of the F3.3 row — the worker
     // imports StorageModule for the render job, and nothing else under
     // ./storage/ (the module is the one door to the SDK).
-    it("worker.module.ts imports ./storage/storage.module and nothing else under ./storage/", () => {
-      const imports = [...source("worker.module.ts").matchAll(/from\s*["'](\.\/storage\/[^"']+)["']/g)].map((m) => m[1]);
-      expect(imports).toEqual(["./storage/storage.module"]);
+    it("worker.module.ts imports ./storage/storage.module and nothing else under ./storage/ (all three specifier forms)", () => {
+      const code = source("worker.module.ts");
+      const specifiers = [
+        /\bfrom\s*["'](\.\/storage\/[^"']+)["']/g,
+        /\bimport\s*["'](\.\/storage\/[^"']+)["']/g,
+        /\bimport\s*\(\s*["'](\.\/storage\/[^"']+)["']\s*\)/g,
+      ].flatMap((re) => [...code.matchAll(re)].map((m) => m[1]));
+      expect(specifiers).toEqual(["./storage/storage.module"]);
     });
 
     it("storage-health.service.ts imports neither storage.module, aws-s3-ops nor @aws-sdk", () => {
