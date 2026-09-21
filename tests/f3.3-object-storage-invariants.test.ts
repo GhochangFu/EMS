@@ -274,8 +274,24 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
       expect(sectionAfter(apiReplicaBlock(), /^\s*depends_on:\s*$/m)).toMatch(/^\s*minio:\s*$/m);
     });
 
-    it("the worker service sets no OBJECT_STORAGE_ variable at all (decision 9)", () => {
-      expect(workerBlock()).not.toMatch(/OBJECT_STORAGE_/);
+    // F3.5b (ADR 0071 Amendment 2, plan R-2 / Q-1, 2026-09-21): the render
+    // job reads and writes report objects, so the worker now carries the
+    // same seven lines `api` does. Decision 9's "no OBJECT_STORAGE_ on the
+    // worker" is overturned; the row that pinned it is inverted here, and
+    // the `depends_on` row keeps the boot order honest.
+    it("the worker service sets all six OBJECT_STORAGE_ variables (ADR 0071 Amendment 2 overturns decision 9)", () => {
+      const missing = missingVars(workerBlock());
+      expect(missing, `variables the worker service does not set: ${missing.join(", ")}`).toEqual([]);
+    });
+
+    it("the worker's depends_on names minio", () => {
+      expect(sectionAfter(workerBlock(), /^\s*depends_on:\s*$/m)).toMatch(/^\s*minio:\s*$/m);
+    });
+
+    it("the worker reads OBJECT_STORAGE_ALLOW_INSECURE as ${OBJECT_STORAGE_ALLOW_INSECURE:-} — an EMPTY default", () => {
+      expect(workerBlock()).toMatch(
+        /^\s*OBJECT_STORAGE_ALLOW_INSECURE:\s*"?\$\{OBJECT_STORAGE_ALLOW_INSECURE:-\}"?\s*$/m,
+      );
     });
 
     // Review finding E (2026-09-15): a pilot points the same compose file at
