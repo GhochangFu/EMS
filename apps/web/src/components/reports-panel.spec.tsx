@@ -67,6 +67,7 @@ const SAVED: ReportFileDto = {
   filename: "energy-consumption-2026-09-01-to-2026-09-05.pdf",
   deliveryStatus: "none",
   deliveryError: null,
+  scheduleId: null,
   createdBy: null,
   createdAt: "2026-09-05T12:00:00.000Z",
 };

@@ -1,6 +1,7 @@
 import { char, date, integer, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 import { bmsSchema, organizations, users } from "./bms-schema";
+import { reportSchedules } from "./report-schedules-schema";
 
 /**
  * `bms.report_files` — `F3.5a`, migration `0077`, ADR 0071 decision 4.
@@ -22,11 +23,13 @@ import { bmsSchema, organizations, users } from "./bms-schema";
  * derives a name and then `\d` and this file describe one object under two
  * names.
  *
- * **`scheduleId` is deliberately absent** (ADR 0071 decision 4/9, F3.5a plan
- * R-8): the column, its FK to `bms.report_schedules` and the
- * `(schedule_id, period_end, format)` unique index all arrive with migration
- * `0078` in `F3.5b`. Adding it here, nullable and unused, would be a column
- * this table cannot yet reference and a seam this unit does not own.
+ * **`scheduleId` arrived with migration `0078` (`F3.5b`, ADR 0071
+ * decision 9, plan R-13/R-16)** — `NULL` = an on-demand save. The
+ * `(schedule_id, period_end, format) WHERE schedule_id IS NOT NULL` unique
+ * index and the `WHERE schedule_id IS NOT NULL` prune index are declared in
+ * the migration only, not mirrored here — the same "no partial index
+ * precedent in this package" reasoning `report-schedules-schema.ts`
+ * documents.
  */
 export const reportFiles = bmsSchema.table(
   "report_files",
@@ -53,6 +56,10 @@ export const reportFiles = bmsSchema.table(
     filename: text("filename").notNull(),
     deliveryStatus: text("delivery_status").notNull().default("none"),
     deliveryError: text("delivery_error"),
+    // NULL = an on-demand save (ADR 0071 decision 4). RESTRICT (Postgres's
+    // default — no `onDelete` here) per F3.5b plan R-13/Q-2: files are
+    // removed with their schedule, never orphaned to on-demand by a cascade.
+    scheduleId: uuid("schedule_id").references(() => reportSchedules.id),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

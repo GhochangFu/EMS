@@ -5,4 +5,5 @@ export * from "./dashboard-schema";
 export * from "./telemetry-schema";
 export * from "./asset-images-schema";
 export * from "./calc-parameters-schema";
+export * from "./report-schedules-schema";
 export * from "./report-files-schema";

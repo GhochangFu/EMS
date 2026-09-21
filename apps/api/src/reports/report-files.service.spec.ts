@@ -148,6 +148,7 @@ export type StoredRowFixture = {
   filename: string;
   deliveryStatus: string;
   deliveryError: string | null;
+  scheduleId: string | null;
   createdBy: string | null;
   createdAt: Date;
 };
@@ -168,6 +169,7 @@ export function storedRow(overrides: Partial<StoredRowFixture> = {}): StoredRowF
     filename: "energy-consumption-2026-09-01-to-2026-09-07.pdf",
     deliveryStatus: "none",
     deliveryError: null,
+    scheduleId: null,
     createdBy: ACTOR_ID,
     createdAt: CREATED_AT,
     ...overrides,

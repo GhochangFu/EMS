@@ -203,6 +203,8 @@ export class ReportFilesService {
           filename,
           deliveryStatus: "none",
           deliveryError: null,
+          // On-demand save (ADR 0071 decision 4) — never a scheduled render.
+          scheduleId: null,
           createdBy,
         });
         await this.audit.write(
@@ -488,6 +490,7 @@ type StoredRow = {
   filename: string;
   deliveryStatus: string;
   deliveryError: string | null;
+  scheduleId: string | null;
   createdBy: string | null;
   createdAt: Date;
 };
@@ -509,6 +512,7 @@ function selectRows(db: BmsDb | BmsTx) {
       filename: reportFiles.filename,
       deliveryStatus: reportFiles.deliveryStatus,
       deliveryError: reportFiles.deliveryError,
+      scheduleId: reportFiles.scheduleId,
       createdBy: reportFiles.createdBy,
       createdAt: reportFiles.createdAt,
     })
@@ -556,6 +560,7 @@ export function toReportFileDto(row: StoredRow): ReportFileDto {
     filename: row.filename,
     deliveryStatus: row.deliveryStatus,
     deliveryError: row.deliveryError,
+    scheduleId: row.scheduleId,
     createdBy: row.createdBy,
     createdAt: row.createdAt.toISOString(),
   } satisfies Record<keyof ReportFileDto, unknown>;
