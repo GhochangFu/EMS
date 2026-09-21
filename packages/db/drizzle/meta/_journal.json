@@ -533,6 +533,13 @@
       "when": 1789818098638,
       "tag": "0076_organization_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1789972403791,
+      "tag": "0077_report_files",
+      "breakpoints": true
     }
   ]
 }

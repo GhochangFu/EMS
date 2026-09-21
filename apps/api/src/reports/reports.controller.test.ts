@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runReportsControllerHeaderTests,
+  runReportsPdfHeaderTests,
   runReportsXlsxHeaderTests,
 } from "./reports.controller.spec";
 
@@ -13,5 +14,9 @@ describe("reports controller", () => {
 
   it("marks the energy XLSX export no-store and sends the buffer verbatim (F4.51)", async () => {
     await runReportsXlsxHeaderTests();
+  });
+
+  it("marks the energy PDF export no-store and sends the buffer verbatim (ADR 0071)", async () => {
+    await runReportsPdfHeaderTests();
   });
 });

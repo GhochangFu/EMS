@@ -1,5 +1,5 @@
 import { Inject, Injectable, ForbiddenException } from "@nestjs/common";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 
 import {
   assetGroupMembers,
@@ -8,7 +8,6 @@ import {
   locations,
   userAssetGroupAccess,
   userLocationAccess,
-  userOrganizationAccess,
   users,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -26,6 +25,7 @@ import {
   isMasterDataRole,
   readScopeSourcesForRole,
 } from "./access-scope";
+import { directOrganizationIds, scopeFromSource } from "./access-scope-sources";
 import {
   canPerformOperationsWrite,
   operationsWriteDenialReason,
@@ -207,6 +207,131 @@ export class AccessControlService {
   async canManageLocation(jwt: JwtPayload, locationId: string): Promise<boolean> {
     const ids = await this.writableLocationIds(jwt);
     return ids === null || ids.includes(locationId);
+  }
+
+  /**
+   * The inputs the report-file list route turns into a SQL predicate (`F3.5a`,
+   * ADR 0071 decision 6 / Amendment 1 item 3): one shape per master-data role.
+   *
+   * - `admin` → `global`: every organization, no filter.
+   * - `organization_admin` → the organizations of their **direct**
+   *   `user_organization_access` grants. `writableOrganizationIds` would give
+   *   the same list for this role, but it is *location-derived* for a
+   *   `location_admin`, which is why this method branches on the role itself
+   *   rather than on that helper's output.
+   * - `location_admin` → their `user_location_access` rows (the same set
+   *   `writableLocationIds` returns, inactive locations included) plus the
+   *   organizations those locations belong to, so the route can bound the
+   *   organization filter before applying `location_ids <@ $writable`.
+   *
+   * `asset_group_admin`, `operator` and `viewer` are refused by
+   * `assertMasterDataRole` **before** any grant is read: a report file's scope
+   * is a set of location ids, and a role with no location set has nothing to
+   * match it against (decision 6's `wc-hvac-admin` case). The row verdict
+   * {@link canReadReportFile} is derived from this same scope so the two can
+   * never disagree about a file the list shows but the download refuses.
+   */
+  async reportFileReadScope(
+    jwt: JwtPayload,
+  ): Promise<
+    | { kind: "global" }
+    | { kind: "organization"; organizationIds: string[] }
+    | { kind: "location"; organizationIds: string[]; locationIds: string[] }
+  > {
+    const user = await this.resolveDbUser(jwt);
+    this.assertMasterDataRole(user.role);
+    if (user.role === "admin") {
+      return { kind: "global" };
+    }
+    if (user.role === "organization_admin") {
+      return { kind: "organization", organizationIds: await this.directOrganizationIds(user.id) };
+    }
+    // fleetDb: pre-tenant resolution keyed by the actor's own userId (ADR 0043 Amendment 2/3).
+    const rows = await this.fleetDb
+      .select({ id: locations.id, organizationId: locations.organizationId })
+      .from(userLocationAccess)
+      .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
+      .where(eq(userLocationAccess.userId, user.id));
+    return {
+      kind: "location",
+      organizationIds: [...new Set(rows.map((row) => row.organizationId))],
+      locationIds: rows.map((row) => row.id),
+    };
+  }
+
+  /**
+   * Whether the user may download or delete a report file (`F3.5a`, ADR 0071
+   * decision 6 / Amendment 1 item 3): its readers are the users whose manage
+   * scope covers its `location_ids`.
+   *
+   * - `admin` reads everything.
+   * - `organization_admin` reads a file of an organization they hold directly.
+   *   `canManageOrganization` is deliberately **not** used: for a
+   *   `location_admin` it is location-derived, so it would admit a location
+   *   admin to every file of an organization in which they hold one location.
+   * - `location_admin` reads a file only when `location_ids` is non-empty and
+   *   **every** id is one they hold. The empty array means "the whole
+   *   organization" — the shape an admin's or organization admin's save
+   *   stamps (Amendment 1 item 2) — and that requires organization-level
+   *   rights a location admin does not have. `every`, not `some`: a file
+   *   covering two locations is readable only by someone who holds both.
+   *
+   * Any other role throws 403 through `assertMasterDataRole` inside
+   * {@link reportFileReadScope}, with that guard's sentence — not the
+   * out-of-scope sentence the routes answer when a covered role is refused.
+   */
+  async canReadReportFile(
+    jwt: JwtPayload,
+    file: { organizationId: string; locationIds: readonly string[] },
+  ): Promise<boolean> {
+    const scope = await this.reportFileReadScope(jwt);
+    if (scope.kind === "global") {
+      return true;
+    }
+    if (scope.kind === "organization") {
+      return scope.organizationIds.includes(file.organizationId);
+    }
+    // Step-5 security L1: the organization is checked here too. A location
+    // id is unique fleet-wide, so a row that carries this admin's ids under a
+    // foreign `organization_id` is one no honest writer produces — but the
+    // verdict is the read gate, and it fails closed on the organization
+    // rather than trusting the writer.
+    const held = new Set(scope.locationIds);
+    return (
+      scope.organizationIds.includes(file.organizationId) &&
+      file.locationIds.length > 0 &&
+      file.locationIds.every((id) => held.has(id))
+    );
+  }
+
+  /**
+   * The asset ids an on-demand report render may contain (`F3.5a`, ADR 0071
+   * Amendment 1 item 1): `readableAssetIds(jwt)` intersected with the given
+   * organization's assets. A global admin's `readableAssetIds` is `null`
+   * (every organization) and an organization admin may hold several, so a
+   * render bounded by `readableAssetIds` alone could carry another
+   * organization's rows into a file stamped with this one's `organization_id`.
+   * `null` therefore means "all of the organization's assets", never "all".
+   *
+   * The organization's assets are read on `fleetDb` because this service runs
+   * before any tenant GUC is set; the `organization_id` filter is the
+   * isolation control (ADR 0043 Amendment 2/3), and the caller has already
+   * proven the actor holds that organization (the save path's R-4 step).
+   */
+  async readableAssetIdsInOrganization(jwt: JwtPayload, organizationId: string): Promise<string[]> {
+    const readable = await this.readableAssetIds(jwt);
+    // fleetDb: organization-bounded read (Amendment 2/3); the id is one the caller resolved
+    // from the actor's own grants, never a raw request value.
+    const rows = await this.fleetDb
+      .select({ id: assets.id })
+      .from(assets)
+      .where(eq(assets.organizationId, organizationId));
+    const inOrganization = rows.map((row) => row.id);
+    if (readable === null) {
+      return inOrganization;
+    }
+    const allowed = new Set(readable);
+    return inOrganization.filter((id) => allowed.has(id));
   }
 
   /**
@@ -722,13 +847,8 @@ export class AccessControlService {
   }
 
   /** Organization ids from this user's direct `user_organization_access` grants. */
-  private async directOrganizationIds(userId: string): Promise<string[]> {
-    // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
-    const rows = await this.fleetDb
-      .select({ id: userOrganizationAccess.organizationId })
-      .from(userOrganizationAccess)
-      .where(eq(userOrganizationAccess.userId, userId));
-    return rows.map((row) => row.id);
+  private directOrganizationIds(userId: string): Promise<string[]> {
+    return directOrganizationIds(this.fleetDb, userId);
   }
 
   /** Organization ids implied by this user's `user_location_access` grants. */
@@ -751,210 +871,11 @@ export class AccessControlService {
   private async scopeForUser(user: DbUser): Promise<AccessibleScope> {
     let scope: AccessibleScope = noAccessScope();
     for (const source of readScopeSourcesForRole(user.role)) {
-      scope = await this.scopeFromSource(user, source);
+      scope = await scopeFromSource(this.fleetDb, user, source);
       if (scope.assetIds.length > 0 || scope.locations.length > 0) {
         break;
       }
     }
     return scope;
-  }
-
-  private async scopeFromSource(
-    user: DbUser,
-    source: ReadScopeSource,
-  ): Promise<AccessibleScope> {
-    if (source === "global") {
-      const [locationRows, assetRows] = await Promise.all([
-        this.fleetDb
-          .select({
-            id: locations.id,
-            code: locations.code,
-            slug: locations.slug,
-            name: locations.name,
-            type: locations.type,
-            province: locations.province,
-          })
-          .from(locations)
-          .where(eq(locations.active, true))
-          .orderBy(asc(locations.name)),
-        this.fleetDb.select({ id: assets.id }).from(assets),
-      ]);
-      return {
-        kind: "global",
-        locations: locationRows.map((row) => ({
-          ...row,
-          type: row.type as AccessibleScope["locations"][number]["type"],
-        })),
-        assetGroups: [],
-        assetIds: assetRows.map((row) => row.id),
-      };
-    }
-
-    if (source === "organization") {
-      const organizationIds = await this.directOrganizationIds(user.id);
-      // fleetDb: pre-tenant resolution filtered by the actor's own org grants (Amendment 2/3).
-      const locationRows =
-        organizationIds.length > 0
-          ? await this.fleetDb
-              .select({
-                id: locations.id,
-                code: locations.code,
-                slug: locations.slug,
-                name: locations.name,
-                type: locations.type,
-                province: locations.province,
-              })
-              .from(locations)
-              .where(
-                and(
-                  inArray(locations.organizationId, organizationIds),
-                  eq(locations.active, true),
-                ),
-              )
-              .orderBy(asc(locations.name))
-          : [];
-      const locationIds = locationRows.map((row) => row.id);
-      // fleetDb: assets gains a policy in 0047; filtered by locationIds derived
-      // from the actor's own grants above (Amendment 2/3).
-      const assetRows =
-        locationIds.length > 0
-          ? await this.fleetDb
-              .select({ id: assets.id })
-              .from(assets)
-              .where(inArray(assets.locationId, locationIds))
-          : [];
-      return {
-        kind: "location",
-        locations: locationRows.map((row) => ({
-          ...row,
-          type: row.type as AccessibleScope["locations"][number]["type"],
-        })),
-        assetGroups: [],
-        assetIds: assetRows.map((row) => row.id),
-      };
-    }
-
-    if (source === "location") {
-      // fleetDb: pre-tenant resolution keyed by the actor's own userId (Amendment 2/3).
-      const locationRows = await this.fleetDb
-        .select({
-          id: locations.id,
-          code: locations.code,
-          slug: locations.slug,
-          name: locations.name,
-          type: locations.type,
-          province: locations.province,
-        })
-        .from(userLocationAccess)
-        .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
-        .where(
-          and(
-            eq(userLocationAccess.userId, user.id),
-            eq(locations.active, true),
-          ),
-        )
-        .orderBy(asc(locations.name));
-      const locationIds = locationRows.map((row) => row.id);
-      // fleetDb: assets gains a policy in 0047; filtered by locationIds derived
-      // from the actor's own grants above (Amendment 2/3).
-      const assetRows =
-        locationIds.length > 0
-          ? await this.fleetDb
-              .select({ id: assets.id })
-              .from(assets)
-              .where(inArray(assets.locationId, locationIds))
-          : [];
-      return {
-        kind: "location",
-        locations: locationRows.map((row) => ({
-          ...row,
-          type: row.type as AccessibleScope["locations"][number]["type"],
-        })),
-        assetGroups: [],
-        assetIds: assetRows.map((row) => row.id),
-      };
-    }
-
-    if (source === "asset_group") {
-      // fleetDb throughout: pre-tenant resolution before any org context exists.
-      // asset_groups gains a policy in 0047 and locations already carries one;
-      // both reads are keyed by the actor's own userId / user-derived location
-      // ids, which is the isolation control (Amendment 2/3). The join is split
-      // only because the original single query mixed a userId-keyed grant walk
-      // with a location filter.
-      const groupRows = await this.fleetDb
-        .select({
-          id: assetGroups.id,
-          locationId: assetGroups.locationId,
-          code: assetGroups.code,
-          name: assetGroups.name,
-          // ADR 0047 Amendment 6: carried into the response so the
-          // asset_group_admin authoring path's group picker can derive a
-          // create body's `organizationId` without a second fetch.
-          organizationId: assetGroups.organizationId,
-        })
-        .from(userAssetGroupAccess)
-        .innerJoin(assetGroups, eq(userAssetGroupAccess.assetGroupId, assetGroups.id))
-        .where(eq(userAssetGroupAccess.userId, user.id));
-
-      const locationIds = [...new Set(groupRows.map((row) => row.locationId))];
-      const locationRows =
-        locationIds.length > 0
-          ? await this.fleetDb
-              .select({
-                id: locations.id,
-                code: locations.code,
-                slug: locations.slug,
-                name: locations.name,
-                type: locations.type,
-                province: locations.province,
-              })
-              .from(locations)
-              .where(and(inArray(locations.id, locationIds), eq(locations.active, true)))
-          : [];
-      const locationById = new Map(
-        locationRows.map((row) => [
-          row.id,
-          { ...row, type: row.type as AccessibleScope["locations"][number]["type"] },
-        ]),
-      );
-
-      // Matches the original INNER JOIN + `active = true` filter: a group whose
-      // location is inactive (or, in principle, gone) drops out here.
-      const activeGroupRows = groupRows
-        .filter((row) => locationById.has(row.locationId))
-        .sort((a, b) => {
-          const nameA = locationById.get(a.locationId)?.name ?? "";
-          const nameB = locationById.get(b.locationId)?.name ?? "";
-          return nameA === nameB ? a.name.localeCompare(b.name) : nameA.localeCompare(nameB);
-        });
-
-      const groupIds = activeGroupRows.map((row) => row.id);
-      // fleetDb: assets + the asset_group_members junction gain policies in 0047;
-      // filtered by groupIds derived from the actor's own grants above (Amendment 2/3).
-      const assetRows =
-        groupIds.length > 0
-          ? await this.fleetDb
-              .select({ id: assets.id })
-              .from(assetGroupMembers)
-              .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
-              .where(inArray(assetGroupMembers.assetGroupId, groupIds))
-          : [];
-
-      return {
-        kind: "asset_group",
-        locations: [...locationById.values()],
-        assetGroups: activeGroupRows.map((row) => ({
-          id: row.id,
-          locationId: row.locationId,
-          code: row.code,
-          name: row.name,
-          organizationId: row.organizationId,
-        })),
-        assetIds: assetRows.map((row) => row.id),
-      };
-    }
-
-    return noAccessScope();
   }
 }

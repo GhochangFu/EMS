@@ -338,3 +338,150 @@ One row re-estimated. **Ruled (a).** Umbrella effort becomes 11–15.
   only.
 - **Effort:** `F3.5` becomes an umbrella at 11–15 — `F3.5a` 5–7,
   `F3.5b` 6–8, serial, `F3.5b` depends on `F3.5a`.
+
+## Amendment 1 — `F3.5a` plan rulings and what the build measured (2026-09-21, in progress)
+
+The step-3 plan (`docs/plans/f3.5a-pdf-report-files.md`) put three
+questions to the owner and made twelve further rulings where this ADR is
+silent; the owner accepted all fifteen as recommended on 2026-09-21. The
+three answers, because they change decisions 6 and 11:
+
+1. **The save body carries an optional `organizationId`** (plan Q-1, R-4).
+   Decision 11's `POST /api/v1/reports/energy/files` body is
+   `{ startDate, endDate, format, organizationId? }`. A global admin, or an
+   organization admin who holds several organizations, must send it (400
+   naming the field); an admin with exactly one organization may omit it, and
+   a value that differs from their own is 403. The render scope is
+   `readableAssetIds(jwt)` intersected with that organization's assets, so a
+   file never carries another organization's rows. Decision 6's original
+   sentence had no organization to stamp on the row for those callers.
+2. **An organization admin's file stamps `location_ids = {}`** (Q-2, R-5),
+   not `writableLocationIds(jwt)` as decision 6 says — that helper returns
+   every location of every organization the admin holds, which would stamp
+   foreign ids on the row. A `location_admin` stamps their writable locations
+   intersected with the organization's; an empty intersection is 403.
+3. **Out-of-scope download and delete answer 403** (Q-3, R-6), the
+   asset-image routes' status, with one sentence:
+   `Report file is outside your access scope`.
+
+Measured at Unit 1, correcting decision 2's API description:
+
+4. **`pdfmake@0.3.11` exports a singleton, not a `PdfPrinter` class.**
+   Decision 2 says `renderPdf` "drives `PdfPrinter`" and names
+   `PdfPrinter` for the standard-14 descriptor; that is the 0.2.x server
+   API. `0.3.x`'s `js/index.js` is `module.exports = new pdfmake()` with
+   `setFonts` / `createPdf`, and `new PdfMake(...)` fails `TS2351`
+   (measured). `energy-pdf.ts` calls `PdfMake.setFonts(STANDARD_FONTS)`
+   then `PdfMake.createPdf(definition).getBuffer()`. The font descriptor
+   and the "no `.ttf`, no VFS" claim are unchanged and pinned by
+   `assertFontsAreTheStandardFourWithNoFile`.
+5. **The renderer sets a fail-closed access policy, and the warnings are
+   gone.** `createPdf` warns when no URL policy and no local-file policy is
+   set. Unit 1 tried a deny-all local-file policy, which threw `Access to
+   local file denied` for `Helvetica-Bold`, and recorded the warnings as a
+   residual. The step-5 fix measured what Unit 1 had not:
+   `setLocalAccessPolicy`'s callback receives the descriptor value itself
+   (`"Helvetica-Bold"`), so a policy can name the standard fonts.
+   `renderPdf` now sets a local policy that allows exactly the four
+   Standard-14 names and a URL policy that denies every URL. Measured: all
+   four styles render, zero `console.warn`, and a definition naming
+   `/etc/passwd` rejects with `denied by resource access policy`
+   (`energy-pdf.spec.ts`, three rows; removing the policy reddens two).
+6. **The lockfile gained no native module** (decision 13, measured): no
+   `optionalDependencies` with a `cpu`/`os` field under `pdfkit` or
+   `fontkit`.
+
+The step-5 reviews (2026-09-21; `code-reviewer`, `security-reviewer`,
+`migration-reviewer`, `agents-compliance-reviewer`) found no Critical or
+High. What they found, and the test that reddens on each, all applied on
+the branch before the PR:
+
+7. **(Security, Medium — confirmed)** a calendar-invalid date such as
+   `2026-02-30` passed the `^\d{4}-\d{2}-\d{2}$` regex, V8 rolled it to
+   `03-01`, the render and `putObject` ran, and Postgres refused the `date`
+   insert — a 500 for a caller error plus one put and one delete per
+   attempt, repeatable by one master-data user with no HTTP rate limiter.
+   The save body's two dates now carry a round-trip refine with a NaN guard
+   (`2026-13-01` made the bare `toISOString()` throw `RangeError`) and a
+   `.describe()`; `report-files.controller.spec.ts` gates it at the parse.
+   **Residual, recorded:** the three export routes keep the silent roll —
+   `export.csv` for `02-31` covers to `03-02`. That is pre-existing and not
+   this row's; a later row may lift the refine into
+   `energyReportQuerySchema`.
+8. **(Security, Low)** `canReadReportFile`'s `location` branch checked
+   only the location ids, not `file.organizationId`; unreachable today
+   because a location cannot move between organizations through the API,
+   hardened anyway (`locationAdminIsRefusedByAForeignOrganization`).
+9. **(Code review, false green — confirmed)** the advisory-lock row
+   asserted SQL text (`hashtextextended($1, 0)`) and never the bound
+   parameter, so a constant lock key survived; the harness now records
+   `params`, and a second row pins the tenant GUC to the resolved
+   organization. **(Code review, false green — confirmed)** the web client
+   spec dropped the URL, so `downloadPdfHitsExportPdf` asserted
+   `toBeDefined()` on a default `{}`; every row now asserts the path suffix
+   and the method (routing the PDF to `export.csv` reddens).
+10. **(Migration review, Low)** three fence rows read the raw migration
+    file; a header comment quoting a statement would have kept its deletion
+    green. They read `sqlOnly()` now (measured: green before, red after).
+11. **(Code review, closed)** `download` treats a `null` `contentLength` as
+    a match; `@aws-sdk/client-s3` always sends `Content-Length` on
+    `GetObject`, so the branch is unreachable. No change.
+12. **Recorded, not changed:** an `organization_admin` holding two or more
+    organizations gets the API's 400 from the panel, because the organization
+    select renders for the global admin only (plan R-13, owner-approved);
+    the History table has no *Generated by* column although `createdBy` is in
+    the DTO (the mockup's *Recent Exports* table has one); the
+    `Content-Disposition` filename is quoted but not escaped, safe because
+    the only writer builds it from two bounded dates and an enum — `F3.5b`'s
+    schedule writer must never put a schedule name in `filename`;
+    `X-Content-Type-Options` is set but not in CORS `exposedHeaders`, so a
+    browser applies it and the SPA cannot read it; `content_type` has no
+    CHECK (the DTO enum gates it on read); `created_by` is `NO ACTION` like
+    `asset_images`; `access-control.service.ts` crossed the §4.5 cap and
+    `scopeFromSource` / `directOrganizationIds` moved to
+    `access-scope-sources.ts` in their own `refactor(F3.5a):` commit
+    (`2ab82d84`, byte-identical bodies); the integration suite is two spec
+    files for the same cap.
+
+§4.6, what ran against the stack (compose from the repo root, 2026-09-21):
+
+- **Database:** `db:migrate` applied `0077` on the dev database; `\d
+  bms.report_files` shows the sixteen columns, five constraints, the index,
+  `FORCE` and the own-column policy; `bms_tenant` and `bms_fleet` hold the
+  four privileges through `0041`'s default grants. **Cold start** on a
+  scratch database (`bms_tmp`: init hook, `roles → migrate → seed` with the
+  CI role passwords): 77 migrations applied, `report_files` forced, 148
+  seeded assets, 0 report files; dropped afterwards.
+- **API:** the container was rebuilt and restarted after U2, U8, U9 and the
+  review fix (CreatedAt moved each time); Nest booted with
+  `ReportFilesController {/api/v1/reports}` mapping four routes and no
+  unresolved dependency. The HTTP matrix ran from the SPA tab (OIDC, the
+  owner's session): `export.pdf` 200/`%PDF-`/`no-store`, reversed dates 400;
+  save 201 with the DTO shape and no `objectKey`, 400 without
+  `organizationId` for the global admin, 404 for an unknown organization,
+  400 for `csv`, 400 for an unknown key; list newest first, `limit=500`
+  400; download with the five headers and a body whose SHA-256 equals the
+  row's; delete 204 then 404.
+- **Object store:** 40 integration rows against MinIO (run twice); the
+  orphan after a failed row is discarded; MinIO stopped → save 503 with one
+  warn naming the file id, list 200-shape, `export.pdf` 200.
+- **Browser** (`browser-verifier`, `javascript_tool` assertions, 0
+  screenshots, served bundle `index-CcOsrotG.js` after a hard reload): 39
+  claims across three users, 0 failures. `admin@bms.local`: three export
+  buttons, the deferred pill absent, PDF download name, organization
+  select listing ESKOM and PHEWB, Save disabled with the sentence until an
+  organization is chosen, the saved line and the History row, Download,
+  Delete and the empty sentence. `wc-admin@bms.local`: no organization
+  select, Save enabled, its file stamped `[RSMOC-WC]`, the admin's `{}`
+  file invisible in the list and 403 on download and delete, an XLSX save
+  and download. `wc-hvac-admin@bms.local`: Export PDF present and 200, no
+  Save block, no History, every file route 403 with the master-data
+  sentence. Claims the jsdom specs already held (role gate, pill absence,
+  by-position save arguments, the two-deletes pending state, the 503
+  sentence) were re-run in the browser only where a click reaches the
+  server.
+- **Coverage** (full suite with the CI env block): 83.21 statements ·
+  80.00 branches · 84.36 functions · 83.35 lines against 80.2 / 77.4 / 81.3
+  / 80.4; thresholds unchanged. One suite failed locally on a leaked
+  `mechanical-lift` draft template created 2026-09-19 — pre-existing, not
+  this branch; CI on a fresh database is the gate.

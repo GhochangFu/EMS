@@ -39,7 +39,7 @@ import type { CsvField } from "../serialise/csv";
  * comma reader — a worse trade than the defect, so the CSV keeps its documented
  * residual and the sheet is offered beside it.
  *
- * The two renderers therefore share `energyTable`. They were separate literal
+ * The three renderers therefore share `energyTable`. They were separate literal
  * lists in the first draft of this change and could drift apart silently while
  * the client is told they are one report in two formats.
  *
@@ -72,7 +72,7 @@ type ReportCell = string | number;
  * The report as a table: a header block, a metric block, a source block, and the
  * top-consumers table, separated by blank rows.
  */
-function energyTable(preview: EnergyReportPreview): ReportCell[][] {
+export function energyTable(preview: EnergyReportPreview): ReportCell[][] {
   return [
     ["Report", preview.template.title],
     ["Start date", preview.range.startDate],

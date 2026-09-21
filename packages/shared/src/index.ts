@@ -39,6 +39,7 @@ import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
 import type * as PM from "./contracts/point-metadata";
+import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
@@ -294,6 +295,14 @@ export type EnergyReportTemplate = z.infer<typeof Op.energyReportTemplateSchema>
 export type EnergyReportSourceTotals = z.infer<typeof Op.energyReportSourceTotalsSchema>;
 /** Preview payload for Phase 5 Sprint E Energy Consumption reports. */
 export type EnergyReportPreview = z.infer<typeof Op.energyReportPreviewSchema>;
+/** `F3.5a` (ADR 0071 decision 3) — `pdf` or `xlsx`, the two formats a report file may be saved as. */
+export type ReportFileFormat = z.infer<typeof Rp.reportFileFormatSchema>;
+/** `F3.5a` (ADR 0071) — `none` until F3.5b's email queue writes one of the other three. */
+export type ReportDeliveryStatus = z.infer<typeof Rp.reportDeliveryStatusSchema>;
+/** `F3.5a` (ADR 0071 decisions 4, 6, 11) — one row of `bms.report_files`, sans `objectKey` (decision 4). */
+export type ReportFileDto = z.infer<typeof Rp.reportFileDtoSchema>;
+/** `GET /api/v1/reports/files`. */
+export type ReportFileListResponse = z.infer<typeof Rp.reportFileListResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Alarms

@@ -1,8 +1,12 @@
 import {
   energyReportPreviewSchema,
+  reportFileDtoSchema,
+  reportFileListResponseSchema,
 } from "@bms/shared/contracts";
-import type { EnergyReportPreview } from "@bms/shared";
+import type { EnergyReportPreview, ReportFileDto, ReportFileFormat } from "@bms/shared";
 
+import { ApiError } from "../lib/api-error";
+import { adminFetch } from "./admin/client";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
 
@@ -35,6 +39,24 @@ export async function fetchEnergyReportPreview(
   return checkResponse(energyReportPreviewSchema, await res.json(), "reports/energy/preview");
 }
 
+/**
+ * Triggers a browser save of `blob` under `filename`.
+ *
+ * `F3.5a` Unit 10 — extracted from `saveExport` with no behaviour change so
+ * `downloadReportFile` can reach the same anchor-download shape for a file
+ * that did not come from a query-scoped export route.
+ */
+function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 /** Fetches an export response and triggers a browser save under `filename`. */
 async function saveExport(
   path: string,
@@ -48,14 +70,7 @@ async function saveExport(
     throw new Error(`${label} ${res.status}`);
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  saveBlob(blob, filename);
 }
 
 /** Downloads the Sprint E CSV export and triggers a browser save. */
@@ -87,4 +102,80 @@ export async function downloadEnergyReportXlsx(
     `energy-consumption-${input.startDate}-to-${input.endDate}.xlsx`,
     "energy-report-xlsx",
   );
+}
+
+/** Downloads the same report as `pdf` (`F3.5a`, ADR 0071 decision 3). */
+export async function downloadEnergyReportPdf(
+  input: EnergyReportInput,
+): Promise<void> {
+  return saveExport(
+    "/api/v1/reports/energy/export.pdf",
+    input,
+    `energy-consumption-${input.startDate}-to-${input.endDate}.pdf`,
+    "energy-report-pdf",
+  );
+}
+
+/**
+ * `POST /api/v1/reports/energy/files` — saves the rendered report to history
+ * (ADR 0071 decisions 4, 11; R-4). `organizationId` is sent only when given —
+ * a global admin must name one (the API answers 400 naming it when absent), a
+ * single-organization admin need not.
+ */
+export async function saveEnergyReportFile(
+  input: EnergyReportInput,
+  format: ReportFileFormat,
+  organizationId?: string,
+): Promise<ReportFileDto> {
+  return adminFetch("/reports/energy/files", reportFileDtoSchema, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...input,
+      format,
+      ...(organizationId ? { organizationId } : {}),
+    }),
+  });
+}
+
+/** `GET /api/v1/reports/files` — the caller's saved report history (R-7). */
+export async function fetchReportFiles(): Promise<ReportFileDto[]> {
+  return adminFetch("/reports/files", reportFileListResponseSchema);
+}
+
+/**
+ * `GET /api/v1/reports/files/:id/download` — the `fetchAssetImageBlob` shape
+ * (`asset-images.ts:52-110`): `clearSessionOnAuthFailure` runs before the body
+ * is read, and a refusal throws `ApiError` carrying the status rather than a
+ * plain `Error`, so the panel can render the API's own 403/404 sentence.
+ */
+export async function downloadReportFile(file: ReportFileDto): Promise<void> {
+  const res = await fetch(
+    `${base}/api/v1/reports/files/${encodeURIComponent(file.id)}/download`,
+    withAuth(),
+  );
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    const text = await res.text();
+    throw new ApiError(text || `report file download ${res.status}`, res.status);
+  }
+  const blob = await res.blob();
+  saveBlob(blob, file.filename);
+}
+
+/**
+ * `DELETE /api/v1/reports/files/:id` — 204, no body (the `deleteAssetImage`
+ * shape: success is `status === 204`, not `res.ok`).
+ */
+export async function deleteReportFile(id: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/v1/reports/files/${encodeURIComponent(id)}`,
+    withAuth({ method: "DELETE" }),
+  );
+  if (res.status === 204) {
+    return;
+  }
+  clearSessionOnAuthFailure(res);
+  const text = await res.text();
+  throw new ApiError(text || `report file delete ${res.status}`, res.status);
 }

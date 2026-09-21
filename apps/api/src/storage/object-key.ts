@@ -14,6 +14,12 @@ import { z } from "zod";
  * `tests/f3.3-object-storage-invariants.test.ts` (Unit 8) counts exactly
  * one `function buildObjectKey(` under `apps/api/src` and no other `org/`
  * literal — a second builder is a defect, not a convenience.
+ *
+ * **Two builders, one prefix, both here** (ADR 0071 decision 5). Decision
+ * 4 allows one object key *file*; ADR 0071 decision 5 adds the second
+ * *function* in it — `buildReportObjectKey`, under
+ * `org/<organization_id>/reports/<file_id>` — rather than a second module,
+ * so `OBJECT_KEY_PREFIX` and the fence's "one file" reasoning stay singular.
  */
 
 export class ObjectKeyError extends Error {
@@ -26,9 +32,18 @@ export type ObjectKeyParts = {
   readonly imageId: string;
 };
 
+/** ADR 0071 decision 5 — `bms.report_files`'s key parts. */
+export type ReportObjectKeyParts = {
+  readonly organizationId: string;
+  readonly fileId: string;
+};
+
 const uuid = z.string().uuid();
 
-function requireUuid(part: keyof ObjectKeyParts, value: string): string {
+function requireUuid(
+  part: keyof ObjectKeyParts | keyof ReportObjectKeyParts,
+  value: string,
+): string {
   if (!uuid.safeParse(value).success) {
     // The message names the part, never the value — and avoids the word
     // "key", which the spec's `"key"` row would otherwise read as an echo.
@@ -50,4 +65,11 @@ export function buildObjectKey(parts: ObjectKeyParts): string {
   const assetId = requireUuid("assetId", parts.assetId);
   const imageId = requireUuid("imageId", parts.imageId);
   return `${OBJECT_KEY_PREFIX}${organizationId}/assets/${assetId}/${imageId}`;
+}
+
+/** ADR 0071 decision 5 — `bms.report_files`'s object key, `org/<org>/reports/<fileId>`. */
+export function buildReportObjectKey(parts: ReportObjectKeyParts): string {
+  const organizationId = requireUuid("organizationId", parts.organizationId);
+  const fileId = requireUuid("fileId", parts.fileId);
+  return `${OBJECT_KEY_PREFIX}${organizationId}/reports/${fileId}`;
 }

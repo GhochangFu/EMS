@@ -14,6 +14,7 @@ import {
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
 import { windowedPueRatio } from "../telemetry/pue-ratio";
+import { energyPdfDefinition, renderPdf } from "./energy-pdf";
 import type { EnergyReportQuery } from "./reports.schema";
 import {
   assertFiniteCells,
@@ -25,7 +26,7 @@ const energyTemplate: EnergyReportTemplate = {
   id: "energy_consumption",
   title: "Energy Consumption",
   description: "Multi-site kWh, demand, PUE, cost, source mix, and top loads.",
-  formats: ["CSV", "XLSX"],
+  formats: ["CSV", "XLSX", "PDF"],
   active: true,
 };
 
@@ -68,11 +69,12 @@ export class ReportsService {
       sourceTotals,
       topConsumers,
       notes: [
-        "CSV and XLSX are generated on demand and not persisted in Sprint E.",
-        // XLSX shipped with ADR 0026 Amendment 2 (`F4.51`). Leaving the old
-        // wording here would have told every client the format was deferred
-        // while the panel showed them the button for it.
-        "PDF output and report history remain deferred to later sprint scope.",
+        // ADR 0071 (`F3.5a`) — PDF shipped and report files can be saved to
+        // history. Leaving the old "deferred" wording here would have told
+        // every client the format and the history were still missing while
+        // the panel showed them both.
+        "CSV, XLSX and PDF are generated on demand; a PDF or XLSX can be " +
+          "saved to the report history (F3.5a).",
         "DG is a nominal slice because the simulator has no separate DG meter.",
       ],
     };
@@ -116,6 +118,20 @@ export class ReportsService {
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "Energy");
     return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  }
+
+  /**
+   * The same report as PDF (ADR 0071 decision 2). Mirrors `energyXlsx` line
+   * for line: the finite-cells guard stays here (not in `energy-pdf.ts`,
+   * which is pure), and `energyTable`'s rows are what both renderers read.
+   */
+  async energyPdf(
+    query: EnergyReportQuery,
+    assetIds?: string[] | null,
+  ): Promise<Buffer> {
+    const preview = await this.energyPreview(query, assetIds);
+    assertFiniteCells(energySheetRows(preview));
+    return renderPdf(energyPdfDefinition(preview));
   }
 
   private parseRange(query: EnergyReportQuery): {

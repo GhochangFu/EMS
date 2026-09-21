@@ -141,3 +141,57 @@ export async function runReportsXlsxHeaderTests(): Promise<void> {
       "intermediary, or a shared-cache hit leaks one user's scope into another's response",
   );
 }
+
+/**
+ * ADR 0071 decision 2/3 — the pdf route's headers. The `runReportsXlsxHeaderTests`
+ * shape verbatim: `energyPdf` also sets its headers imperatively through
+ * `res.setHeader`, because the body is a `Buffer` and the handler needs `@Res()`.
+ *
+ * The `Cache-Control` header is the same scope-leak control `F4.30`/`F4.51`
+ * close for the CSV and XLSX routes — this response carries the same asset
+ * codes, names and site names.
+ */
+export async function runReportsPdfHeaderTests(): Promise<void> {
+  const body = Buffer.from("%PDF-1.4\n");
+  const calls: unknown[] = [];
+  const controller = new ReportsController(
+    {
+      energyPdf: async (dto: unknown, ids: unknown) => {
+        calls.push([dto, ids]);
+        return body;
+      },
+    } as never,
+    { readableAssetIds: async () => null } as never,
+  );
+
+  const out = stubResponse();
+  await controller.energyPdf(
+    {} as never,
+    { startDate: "2026-08-01", endDate: "2026-08-07" },
+    out.res as never,
+  );
+
+  // The control: without this the header assertions below could pass on a
+  // handler that never ran its body.
+  assert(calls.length === 1, "the handler must have reached the service exactly once");
+  assert(
+    calls[0] instanceof Array && calls[0][1] === null,
+    "readableAssetIds's result must be threaded through as the service's second argument",
+  );
+  assert(out.sent === body, "the pdf buffer is sent verbatim, not re-serialised");
+
+  assert(
+    out.headers["Content-Type"] === "application/pdf",
+    `the pdf media type must be set, got ${out.headers["Content-Type"]}`,
+  );
+  assert(
+    out.headers["Content-Disposition"] ===
+      'attachment; filename="energy-consumption-report.pdf"',
+    `the disposition must name the file, got ${out.headers["Content-Disposition"]}`,
+  );
+  assert(
+    out.headers["Cache-Control"] === "no-store",
+    "the pdf export is scope-filtered per user and must not be cached by a browser or " +
+      "intermediary, or a shared-cache hit leaks one user's scope into another's response",
+  );
+}

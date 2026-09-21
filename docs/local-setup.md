@@ -277,6 +277,11 @@ LOG_LEVEL=info
 # OBJECT_STORAGE_FORCE_PATH_STYLE=true
 # Only the exact string `true` lets the API accept a plain-http endpoint.
 # OBJECT_STORAGE_ALLOW_INSECURE=true
+# F3.5a (ADR 0071): how many on-demand report files one organization may
+# hold before `POST /api/v1/reports/energy/files` answers 409. Optional;
+# default 50, floor 1; a non-integer value falls back to the default with
+# one warning that names the variable.
+# REPORT_ONDEMAND_CAP=50
 ```
 
 Create `apps/web/.env` (do not commit):
@@ -343,7 +348,13 @@ Since `F3.3` (ADR 0066), object storage is optional for a native `pnpm
 writes (`POST /api/v1/assets/:assetId/images` and
 `DELETE /api/v1/assets/:assetId/images/:imageId`, `F3.4`). With MinIO
 configured but stopped, the list still answers 200 and the other three 503
-(measured 2026-09-16, ADR 0066 Amendment 3). To
+(measured 2026-09-16, ADR 0066 Amendment 3). Since `F3.5a` (ADR 0071) the
+four report-file routes (`POST /api/v1/reports/energy/files`,
+`GET /api/v1/reports/files`, `GET /api/v1/reports/files/:id/download`,
+`DELETE /api/v1/reports/files/:id`) follow the same rule — 503 without the
+variables; with MinIO configured but stopped the list answers 200 and the
+save 503 (measured 2026-09-21). `GET /api/v1/reports/energy/export.pdf`
+needs no object store: the PDF renders in the API process. To
 exercise them natively, run `docker compose --profile core up -d minio` and
 uncomment the six variables in `apps/api/.env` above. The worker process
 reads none of them — `worker.module.ts` has no `StorageModule` import

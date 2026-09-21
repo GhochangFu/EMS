@@ -6,6 +6,8 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   assertForeignPvFixtureIsNotAdopted,
+  assertNotesRewrite,
+  assertPdfResolvesOnFleet,
   assertReportGoesDarkOnBareTenant,
   assertReportResolvesOnFleet,
   assertReportResolvesWithOrgGuc,
@@ -94,6 +96,12 @@ describe.skipIf(!connectionString)(
       await assertReportResolvesOnFleet(fleetPool, fx);
     });
 
+    /** ADR 0071 (`F3.5a`) — the PDF renderer reached against live fixture data. */
+    it("resolves a PDF on the fleet pool", async () => {
+      if (!fleetPool || !fx) throw new Error("fixture required");
+      await assertPdfResolvesOnFleet(fleetPool, fx);
+    });
+
     it("empties topConsumers and misattributes solar on a bare tenant pool", async () => {
       if (!bareTenantPool || !fx) throw new Error("fixture required");
       await assertReportGoesDarkOnBareTenant(bareTenantPool, fx);
@@ -116,3 +124,14 @@ describe.skipIf(!connectionString)(
     });
   },
 );
+
+/**
+ * ADR 0071 (`F3.5a`) — the `notes` rewrite. Ungated: `assertNotesRewrite`
+ * needs no database (see its docblock), so it runs whether or not
+ * `DATABASE_URL` is set.
+ */
+describe("ReportsService.energyPreview notes", () => {
+  it("no longer claims PDF or report history are deferred", async () => {
+    await assertNotesRewrite();
+  });
+});
