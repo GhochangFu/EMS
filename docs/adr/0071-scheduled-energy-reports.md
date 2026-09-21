@@ -338,3 +338,51 @@ One row re-estimated. **Ruled (a).** Umbrella effort becomes 11–15.
   only.
 - **Effort:** `F3.5` becomes an umbrella at 11–15 — `F3.5a` 5–7,
   `F3.5b` 6–8, serial, `F3.5b` depends on `F3.5a`.
+
+## Amendment 1 — `F3.5a` plan rulings and what the build measured (2026-09-21, in progress)
+
+The step-3 plan (`docs/plans/f3.5a-pdf-report-files.md`) put three
+questions to the owner and made twelve further rulings where this ADR is
+silent; the owner accepted all fifteen as recommended on 2026-09-21. The
+three answers, because they change decisions 6 and 11:
+
+1. **The save body carries an optional `organizationId`** (plan Q-1, R-4).
+   Decision 11's `POST /api/v1/reports/energy/files` body is
+   `{ startDate, endDate, format, organizationId? }`. A global admin, or an
+   organization admin who holds several organizations, must send it (400
+   naming the field); an admin with exactly one organization may omit it, and
+   a value that differs from their own is 403. The render scope is
+   `readableAssetIds(jwt)` intersected with that organization's assets, so a
+   file never carries another organization's rows. Decision 6's original
+   sentence had no organization to stamp on the row for those callers.
+2. **An organization admin's file stamps `location_ids = {}`** (Q-2, R-5),
+   not `writableLocationIds(jwt)` as decision 6 says — that helper returns
+   every location of every organization the admin holds, which would stamp
+   foreign ids on the row. A `location_admin` stamps their writable locations
+   intersected with the organization's; an empty intersection is 403.
+3. **Out-of-scope download and delete answer 403** (Q-3, R-6), the
+   asset-image routes' status, with one sentence:
+   `Report file is outside your access scope`.
+
+Measured at Unit 1, correcting decision 2's API description:
+
+4. **`pdfmake@0.3.11` exports a singleton, not a `PdfPrinter` class.**
+   Decision 2 says `renderPdf` "drives `PdfPrinter`" and names
+   `PdfPrinter` for the standard-14 descriptor; that is the 0.2.x server
+   API. `0.3.x`'s `js/index.js` is `module.exports = new pdfmake()` with
+   `setFonts` / `createPdf`, and `new PdfMake(...)` fails `TS2351`
+   (measured). `energy-pdf.ts` calls `PdfMake.setFonts(STANDARD_FONTS)`
+   then `PdfMake.createPdf(definition).getBuffer()`. The font descriptor
+   and the "no `.ttf`, no VFS" claim are unchanged and pinned by
+   `assertFontsAreTheStandardFourWithNoFile`.
+5. **Two `console.warn` lines per render are an accepted residual for
+   now.** `createPdf` warns when no URL policy and no local-file policy is
+   set. A deny-all local-file policy was tried and measured to throw
+   `Access to local file denied` for `Helvetica-Bold`, because
+   `PDFDocument.provideFont` validates every font not in the VFS, standard
+   names included. A policy that allows exactly the four standard-14 names
+   and denies everything else is the fail-closed shape and is owed to the
+   step-5 review of `F3.5a`; until then the warning is noise, not a defect.
+6. **The lockfile gained no native module** (decision 13, measured): no
+   `optionalDependencies` with a `cpu`/`os` field under `pdfkit` or
+   `fontkit`.
