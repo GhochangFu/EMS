@@ -433,6 +433,24 @@
 > unblocked. Not a §6 promotion: the ESG module was never a §6 item, and
 > `btree_gist` — the one extension this needed — is provisioned by `roles.ts`
 > per §4.4, not by the migration.
+> And **the energy report has a third format and a history** (**ADR 0071**,
+> `F3.5a`, 2026-09-21, PR #509 — five gate questions, two ruled against the
+> recommendation; three plan questions and twelve rulings; four reviews and
+> the fix applied): `pdfmake` renders the same `energyTable` rows the CSV and
+> XLSX read, with the four Standard-14 Helvetica names behind a fail-closed
+> access policy and no font file, so money is `<ISO code> <amount>`, never a
+> symbol; `GET /api/v1/reports/energy/export.pdf` beside the two export
+> routes; `bms.report_files` (migration `0077`, FORCE RLS in the creating
+> migration) is the authority for a saved report — `POST
+> /api/v1/reports/energy/files` renders under the caller's asset scope,
+> stamps the readers' `location_ids` (`{}` = the whole organization), writes
+> the object under `org/<org>/reports/<fileId>` and then the row, and refuses
+> with 409 at `REPORT_ONDEMAND_CAP` (default 50) before any storage call; the
+> list, the API-proxied download and the delete follow one scope rule
+> (`canReadReportFile`). **A §6 promotion**: "Energy reports (PDF)" and
+> "persisted report storage" leave that list; roadmap Phase 5 Sprint F is
+> complete. `F3.5b` — the per-organization schedule on the worker, the two
+> queues, the email attachment — is the open half of the ADR.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
@@ -540,7 +558,11 @@ The current planning direction is:
    `apps/api/src/storage/` seam, MinIO is the compose backend on a loopback
    port, and `bms.asset_images` is the metadata table. The old trigger —
    "until persisted report files are needed" — was wrong on its own terms
-   (PDF reports are §6); the row that stores a file was `F3.4`, closed
+   (PDF reports were §6 until ADR 0071, `F3.5a`, 2026-09-21, whose
+   `bms.report_files` is the store's **second** producer, under
+   `org/<org>/reports/<fileId>` through a second builder in the same
+   `object-key.ts` — one prefix, one file); the row that stores a file was
+   `F3.4`, closed
    2026-09-16 (ADR 0066 Amendment 3), so the store has its producer: the
    upload sniffs the content type from the bytes and never trusts the
    declared label, and the `F4.145` invariant allows `OBJECT_KEY_PREFIX`
@@ -644,6 +666,7 @@ entry **D-0001**.
 | Testing      | Vitest, one project per app + a repo-wide `repo` project; coverage gate on a ratcheting baseline (ADR 0014). See §4.6 |
 | Cache / pub-sub / jobs | Redis 7 for Socket.IO adapter fan-out (ADR 0002) **and the BullMQ job queue** (ADR 0063, `F4.24`) — AOF-persisted, `noeviction`, host port on loopback only. Caching stays out of scope. |
 | Object storage | S3 API through `@aws-sdk/client-s3` (ADR 0066, `F3.3`), MinIO in compose (`quay.io/minio/minio`, pinned; host ports on loopback only; `core`/`pilot`/`phe`/`realtime-smoke`), one bucket, keys `org/<org>/assets/<asset>/<image>` built server-side only. `bms.asset_images` (migration `0072`, FORCE RLS, policy checks the parent asset) is the authority: an object without a row is never served. Reads are **API-proxied** under the JWT guard and `canReadAsset`; `GET /health` carries `storage` on the API and not on the worker. Unset `OBJECT_STORAGE_ENDPOINT` = unconfigured (routes answer 503), half-configured = boot refusal, `http://` refused without `OBJECT_STORAGE_ALLOW_INSECURE=true`. SSE/TLS are deployer requirements (decision 8). See §4 rule 13 for the deferrals. |
+| Reports | Three formats of one report from one row source (`energyTable`, ADR 0026 Amendment 2 for the XLSX beside the CSV; **ADR 0071**, `F3.5a`, for the PDF): `pdfmake@0.3.11`, a singleton (`setFonts`/`createPdf`, not the `PdfPrinter` class the ADR first named), the four Standard-14 Helvetica names behind a local-access policy that allows exactly those and a URL policy that denies every URL — no font file, no VFS, and ANSI only, so money is `<ISO code> <amount>` and a non-WinAnsi asset name renders the fallback glyph. `bms.report_files` (migration `0077`, FORCE RLS, own-column policy, no GRANT — `0041`’s default privileges) is the authority for a saved report: `location_ids uuid[]` is the readers’ scope snapshot (`{}` = whole organization), `object_key` is unique and never echoed, `delivery_status` waits for `F3.5b`. The save (`POST /api/v1/reports/energy/files`) takes an optional `organizationId` (required for the global admin and a multi-organization admin), refuses a calendar-invalid date at the parse, pre-checks the cap on the fleet handle, renders under `readableAssetIdsInOrganization`, puts the object, then inserts the row under the tenant GUC behind `pg_advisory_xact_lock` with the authoritative count; a failed row discards the object only after a fleet re-read proves the row absent. Readers: `AccessControlService.canReadReportFile` — global admin, an organization admin of the row’s organization, or a location admin holding every id in `location_ids` (empty needs organization rights); `asset_group_admin` is 403 with the master-data sentence before any read. The download is API-proxied with five headers set before `pipeline`; the delete is row-then-object. `GET /reports/files` answers a 200-shape with MinIO stopped and 503 when storage is unconfigured; `export.pdf` needs no store. The three export routes keep the silent date roll (recorded, ADR 0071 Amendment 1 item 7). `F3.5b` adds `bms.report_schedules`, the `reports-dispatch` and `reports-render` queues, and the email attachment. |
 | Local dev    | WSL2 Ubuntu 22.04; native Postgres remains supported, Docker Compose is optional |
 
 No new dependencies may be added without an ADR in `docs/adr/`.
@@ -787,10 +810,18 @@ bms/
 │   │                            processors, the heartbeat, the health reader.
 │   │                            src/storage/ is the ADR 0066 object-storage
 │   │                            seam (F3.3): the config reader, the ONE
-│   │                            buildObjectKey, the S3Ops seam over
-│   │                            @aws-sdk/client-s3, ensureBucket at boot, the
-│   │                            storage health reader. Imported by AppModule
-│   │                            only — never by worker.module.ts.
+│   │                            object-key.ts (buildObjectKey for images,
+│   │                            buildReportObjectKey for reports since F3.5a
+│   │                            — two builders, one prefix, one file), the
+│   │                            S3Ops seam over @aws-sdk/client-s3,
+│   │                            ensureBucket at boot, the storage health
+│   │                            reader. Imported by AppModule only — never
+│   │                            by worker.module.ts.
+│   │                            src/reports/ carries the energy report in
+│   │                            three formats (energy-pdf.ts since F3.5a,
+│   │                            ADR 0071) and the report-files service,
+│   │                            controller and schemas — the saved-report
+│   │                            history. See §2 *Reports*.
 │   │                            src/worker.ts is the SECOND ENTRYPOINT of this
 │   │                            package (dist/worker.js, compose service
 │   │                            `worker`, :4100) — a second root that starts
@@ -2420,8 +2451,12 @@ These are intentionally deferred. Do not implement them yet:
   an in-place update or delete. Whether audit **reads** are themselves audited
   is deliberately left open by ADR 0021 for `F4.15`/`F4.19` — do not settle it
   as a side effect of other work
-- Energy reports (**PDF**). **XLSX is in scope** since ADR 0026 *Amendment 2*
-  (`F4.51`) — `GET /api/v1/reports/energy/export.xlsx`
+- ~~Energy reports (**PDF**).~~ **Promoted 2026-09-21 by ADR 0071 (`F3.5a`)**
+  — `GET /api/v1/reports/energy/export.pdf` beside the XLSX (ADR 0026
+  *Amendment 2*, `F4.51`) and the CSV. What stays out: scheduled delivery
+  until `F3.5b` lands, a bundled Unicode font (the standard fonts are ANSI
+  only), NERSA / ISO compliance reports, and report templates other than
+  `energy_consumption`
 - Complex drag-and-drop node graph rule builders
 - Three.js Control Room 3D
 - General site-wide AI Copilot / chatbot (the **scoped admin onboarding
@@ -2461,9 +2496,11 @@ scoped REST/WebSocket reads, live-location dashboard markers, schematic
 guards, Control Room asset-group UI gating, simulator focus settings, and
 the telemetry dashboard index may remain, but the sprint is not complete
 until the hardening checklist in `docs/roadmap.md` is finished. Report **PDF**
-output (reports-domain **XLSX** is in scope since ADR 0026 *Amendment 2*,
-`F4.51`; audit-log CSV/XLSX has been in scope since ADR 0021, and this line
-used to draw that contrast the other way), persisted report storage, CR
+output and persisted report storage **are in scope since ADR 0071
+(`F3.5a`, 2026-09-21)** — reports-domain **XLSX** since ADR 0026
+*Amendment 2* (`F4.51`), audit-log CSV/XLSX since ADR 0021; this line used
+to list both report items as out of scope. Scheduled report delivery
+(`F3.5b`), CR
 Security, CR Alarm Management, CR Trends, Phase 6 3D, two-way commands,
 setpoint changes, manual bypass, battery tests, equalize charge, HVAC
 force-changeover, sensor calibration/test execution, real-ingestion rules,
