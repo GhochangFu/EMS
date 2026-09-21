@@ -2,9 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   assertBuildsTheExactKeyForThreeUuids,
+  assertBuildsTheReportKeyForTwoUuids,
   assertNonUuidPartIsRefusedWithoutEchoingIt,
+  assertNonUuidReportPartIsRefusedWithoutEchoingIt,
   assertObjectKeyErrorNameIsStable,
   INVALID_PART_ROWS,
+  INVALID_REPORT_PART_ROWS,
 } from "./object-key.spec";
 
 /**
@@ -27,4 +30,17 @@ describe("F3.3 — buildObjectKey", () => {
   it("gives ObjectKeyError a stable name", () => {
     assertObjectKeyErrorNameIsStable();
   });
+});
+
+describe("ADR 0071 decision 5 — buildReportObjectKey", () => {
+  it("builds org/<org>/reports/<fileId> for two uuids", () => {
+    assertBuildsTheReportKeyForTwoUuids();
+  });
+
+  it.each(INVALID_REPORT_PART_ROWS)(
+    "refuses a non-uuid $part ($value) without echoing it",
+    (row) => {
+      assertNonUuidReportPartIsRefusedWithoutEchoingIt(row);
+    },
+  );
 });

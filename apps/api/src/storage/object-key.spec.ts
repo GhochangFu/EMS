@@ -1,4 +1,4 @@
-import { buildObjectKey, ObjectKeyError } from "./object-key";
+import { buildObjectKey, buildReportObjectKey, ObjectKeyError } from "./object-key";
 
 /**
  * F3.3 (ADR 0066 decision 4) — the one object key builder.
@@ -79,6 +79,55 @@ export function assertNonUuidPartIsRefusedWithoutEchoingIt(row: InvalidPartRow):
     "positive control: the valid input must build a key before the corrupted one is tried",
   );
   const err = captureThrow(() => buildObjectKey({ ...VALID, [row.part]: row.value }));
+  assert(
+    errorName(err) === "ObjectKeyError",
+    `expected err.name === "ObjectKeyError" for ${row.part}=${JSON.stringify(row.value)}, got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes(row.part),
+    `expected the refusal to name the part "${row.part}", got "${errorMessage(err)}"`,
+  );
+  if (row.value.length > 0) {
+    assert(
+      !errorMessage(err).includes(row.value),
+      `the refusal must not echo the rejected value ${JSON.stringify(row.value)} — got "${errorMessage(err)}"`,
+    );
+  }
+}
+
+const VALID_REPORT = {
+  organizationId: "44444444-4444-4444-8444-444444444444",
+  fileId: "55555555-5555-4555-8555-555555555555",
+} as const;
+
+export function assertBuildsTheReportKeyForTwoUuids(): void {
+  const key = buildReportObjectKey(VALID_REPORT);
+  const expected =
+    "org/44444444-4444-4444-8444-444444444444/reports/55555555-5555-4555-8555-555555555555";
+  assert(key === expected, `expected ${JSON.stringify(expected)}, got ${JSON.stringify(key)}`);
+}
+
+export type InvalidReportPartRow = {
+  readonly part: keyof typeof VALID_REPORT;
+  readonly value: string;
+};
+
+/** A traversal, a bare word, an empty string and a near-uuid: none may reach the key. */
+export const INVALID_REPORT_PART_ROWS: readonly InvalidReportPartRow[] = [
+  { part: "organizationId", value: "../" },
+  { part: "fileId", value: "key" },
+  { part: "fileId", value: "../../etc/passwd" },
+  { part: "fileId", value: "" },
+  { part: "organizationId", value: "44444444-4444-4444-8444-44444444444" },
+];
+
+export function assertNonUuidReportPartIsRefusedWithoutEchoingIt(row: InvalidReportPartRow): void {
+  // Positive control: the same input with every part valid builds a key.
+  assert(
+    typeof buildReportObjectKey(VALID_REPORT) === "string",
+    "positive control: the valid input must build a key before the corrupted one is tried",
+  );
+  const err = captureThrow(() => buildReportObjectKey({ ...VALID_REPORT, [row.part]: row.value }));
   assert(
     errorName(err) === "ObjectKeyError",
     `expected err.name === "ObjectKeyError" for ${row.part}=${JSON.stringify(row.value)}, got "${errorName(err)}"`,

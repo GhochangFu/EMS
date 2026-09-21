@@ -29,6 +29,10 @@ import { describe, expect, it } from "vitest";
  *    — an import statement from an `object-key` module, in **any** shape, and
  *    the constant named in the body — because the first version matched a
  *    named import alone and a namespace import read the prefix past it.
+ *    ADR 0071 decision 5 adds a second **function**, `buildReportObjectKey(`,
+ *    in the same file — allowed because decision 4 gates one object-key
+ *    *file*, not one function; a row below counts that it too exists exactly
+ *    once and lives in `object-key.ts`.
  * 4. **The worker gets no storage** (decision 9). `worker.module.ts` reaches
  *    nothing under `./storage/`, the two files in the worker's import
  *    closure pull in neither the module nor the SDK, and
@@ -346,6 +350,16 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
       expect(
         definers,
         "a second builder is a second key format; ADR 0066 decision 4 allows one",
+      ).toEqual(["storage/object-key.ts"]);
+    });
+
+    it("exactly one function buildReportObjectKey( exists, and it is in object-key.ts", () => {
+      const definers = sources
+        .filter((f) => f.code.includes("function buildReportObjectKey("))
+        .map((f) => f.rel);
+      expect(
+        definers,
+        "ADR 0071 decision 5 allows a second function in the one object-key file, never a second file",
       ).toEqual(["storage/object-key.ts"]);
     });
 
