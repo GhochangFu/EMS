@@ -303,6 +303,12 @@ export type ReportDeliveryStatus = z.infer<typeof Rp.reportDeliveryStatusSchema>
 export type ReportFileDto = z.infer<typeof Rp.reportFileDtoSchema>;
 /** `GET /api/v1/reports/files`. */
 export type ReportFileListResponse = z.infer<typeof Rp.reportFileListResponseSchema>;
+/** `F3.5b` (ADR 0071 decision 7) — daily, weekly, or monthly. */
+export type ReportCadence = z.infer<typeof Rp.reportCadenceSchema>;
+/** `F3.5b` (ADR 0071 decisions 7–12) — one row of `bms.report_schedules`. */
+export type ReportScheduleDto = z.infer<typeof Rp.reportScheduleDtoSchema>;
+/** `GET /api/v1/reports/schedules`. */
+export type ReportScheduleListResponse = z.infer<typeof Rp.reportScheduleListResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Alarms
