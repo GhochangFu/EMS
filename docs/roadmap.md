@@ -418,23 +418,28 @@ Process (`AGENTS.md` §10).
   browser-based Reports smoke checks passed.
 
 #### Phase 5 Sprint F — Report storage
-- **Status:** active since 2026-09-21 under ADR 0071 (`F3.5`, split into
-  `F3.5a` → `F3.5b`). The sprint was skipped from 2026-08 until the owner
+- **Status:** complete — closed 2026-09-21 by `F3.5a` (ADR 0071, PR #509,
+  squash `e7920c57`). The sprint was skipped from 2026-08 until the owner
   ruled at the §10 gate that generated reports are stored, listed and
   downloaded from history (`F3.5a`), and that a per-organization schedule
-  renders them on the worker and mails them (`F3.5b`). PDF output, which
-  Sprint E deferred "until the report content stabilizes", lands in
-  `F3.5a` as the third format beside CSV and XLSX.
+  renders them on the worker and mails them (`F3.5b`, still open). PDF
+  output, which Sprint E deferred "until the report content stabilizes",
+  landed in `F3.5a` as the third format beside CSV and XLSX.
 - **Goal:** persist generated report files only after reports are useful.
 - **Deliverables**
   - ~~Promote MinIO/object storage if persisted report files are required.~~
-    **Promoted 2026-09-15 by ADR 0066 (`F3.3`)** for asset images; a report
-    file store would reuse `apps/api/src/storage/` and needs no new promotion.
-  - Store generated report files.
-  - Report history page.
-  - Download previous reports.
-- **Exit criteria:** generated reports can be persisted and downloaded
-  from history. Skip this sprint if report storage is not needed.
+    **Promoted 2026-09-15 by ADR 0066 (`F3.3`)** for asset images; the report
+    file store reuses `apps/api/src/storage/` and needed no new promotion.
+  - ~~Store generated report files.~~ `bms.report_files` (migration `0077`,
+    tenant-scoped) plus `POST /api/v1/reports/energy/files`; the object under
+    `org/<org>/reports/<fileId>`.
+  - ~~Report history page.~~ The History table on the Reports page, for
+    master-data admins, scoped by the row's `location_ids`.
+  - ~~Download previous reports.~~ `GET /api/v1/reports/files/:id/download`,
+    API-proxied, `attachment`, `no-store`.
+- **Exit criteria:** met — a saved report is listed and downloaded from
+  history; verified on the compose stack and in the browser as three users
+  (ADR 0071 Amendment 1).
 
 #### Phase 5 Sprint G — Control Room foundation
 - **Status:** complete
