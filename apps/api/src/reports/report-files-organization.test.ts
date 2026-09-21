@@ -10,5 +10,7 @@ describe("F3.5a ReportFilesService — the organization (Amendment 1 item 1)", (
   it("a single-organization admin needs no body id", spec.assertSingleOrganizationAdminNeedsNoBodyId);
   it("a foreign body id is 403", spec.assertAForeignBodyIdIs403);
   it("several organizations require the body id (400 naming the count, not the ids)", spec.assertSeveralOrganizationsRequireTheBodyId);
+  it("a multi-organization admin may name a held organization", spec.assertAMultiOrganizationAdminMayNameAHeldOrganization);
+  it("a multi-organization admin naming a third organization is 403 before any work", spec.assertAMultiOrganizationAdminIsRefusedAThirdOrganization);
   it("zero organizations is 403", spec.assertNoOrganizationIs403);
 });

@@ -145,6 +145,23 @@ export async function assertNonWinAnsiNameDoesNotThrow(): Promise<void> {
   assert(buffer.subarray(0, 5).toString("latin1") === "%PDF-", "a non-WinAnsi name must still render a PDF");
 }
 
+/**
+ * An empty scope — a scoped user with no readable asset — renders too: no
+ * consumers, a `null` cost and tariff, and the three U+2014 cells. The
+ * post-merge sweep found no row exercised this shape; the API's `[]` scope
+ * short-circuits every pool read and reaches the renderer with exactly it.
+ */
+export async function assertEmptyScopeRendersAPdf(): Promise<void> {
+  const input = preview({
+    topConsumers: [],
+    summary: { ...preview().summary, totalKwh: 0, peakKw: 0, pueEstimate: null, indicativeCost: null, tariffPerKwh: null, currency: null },
+    sourceTotals: { gridKwh: 0, solarKwh: 0, dgKwh: 0 },
+  });
+  const buffer = await renderPdf(energyPdfDefinition(input));
+  assert(buffer.subarray(0, 5).toString("latin1") === "%PDF-", "an empty scope must still render a PDF");
+  assert(buffer.subarray(-16).toString("latin1").includes("%%EOF"), "an empty-scope PDF must be closed");
+}
+
 /** `STANDARD_FONTS` names the standard-14 Helvetica by string, no file. */
 export function assertFontsAreTheStandardFourWithNoFile(): void {
   const helvetica = STANDARD_FONTS.Helvetica as Record<string, string>;

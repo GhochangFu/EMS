@@ -398,7 +398,7 @@ the branch before the PR:
 
 7. **(Security, Medium — confirmed)** a calendar-invalid date such as
    `2026-02-30` passed the `^\d{4}-\d{2}-\d{2}$` regex, V8 rolled it to
-   `03-01`, the render and `putObject` ran, and Postgres refused the `date`
+   `03-02` (measured — the ADR first wrote `03-01`), the render and `putObject` ran, and Postgres refused the `date`
    insert — a 500 for a caller error plus one put and one delete per
    attempt, repeatable by one master-data user with no HTTP rate limiter.
    The save body's two dates now carry a round-trip refine with a NaN guard
@@ -485,3 +485,18 @@ the branch before the PR:
   / 80.4; thresholds unchanged. One suite failed locally on a leaked
   `mechanical-lift` draft template created 2026-09-19 — pre-existing, not
   this branch; CI on a fresh database is the gate.
+
+13. **Post-merge sweep (2026-09-21).** One confirmed false green: the
+    multi-organization branch of `resolveOrganization` with a body id —
+    `writable.includes(requested)` — was reached by no row (every row with a
+    body id held one grant), and inverting it left all 52 rows green. The
+    scenario it guards is an organization admin of A and B filing a report
+    stamped `organization_id = C`, a cross-tenant write the policy cannot
+    refuse because the tenant GUC is set from the same value. Two rows now
+    gate it (a held second organization resolves; a third is 403 before any
+    render or put) and the inverted guard reddens exactly those two. Also
+    added: an empty-scope render row (no consumers, `null` cost — measured
+    to resolve, never gated). Two prose corrections: item 7 said V8 rolled
+    `02-30` to `03-01`; it is `03-02`. The panel docblock overclaimed that
+    every disabled state renders its sentence — the pending state carries it
+    in the button label instead.

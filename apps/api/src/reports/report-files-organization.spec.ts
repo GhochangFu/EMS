@@ -81,6 +81,30 @@ export async function assertSeveralOrganizationsRequireTheBodyId(): Promise<void
   );
 }
 
+/**
+ * The multi-organization branches with a body id — found unguarded by the
+ * post-merge sweep: inverting `writable.includes(requested)` left every row
+ * green, because every row with a body id took the single-grant path. The
+ * scenario that guard exists for is an organization admin of A and B filing
+ * a report stamped `organization_id = C` — a cross-tenant write the policy
+ * cannot refuse, because the tenant GUC is set from this same value.
+ */
+const TWO_ORGS = { ...ORGANIZATION_ADMIN, writableOrganizationIds: [ORG_ID, OTHER_ORG_ID] };
+
+export async function assertAMultiOrganizationAdminMayNameAHeldOrganization(): Promise<void> {
+  const dto = await save(harness(TWO_ORGS), { ...BODY, organizationId: OTHER_ORG_ID });
+  assert(dto.organizationId === OTHER_ORG_ID, `the held second organization was not resolved: ${dto.organizationId}`);
+}
+
+export async function assertAMultiOrganizationAdminIsRefusedAThirdOrganization(): Promise<void> {
+  const third = "34343434-3434-4343-8343-343434343434";
+  const { err, h } = await saveRejecting(TWO_ORGS, { ...BODY, organizationId: third });
+  assert(
+    errorName(err) === "ForbiddenException" && h.reports.calls.length === 0 && !h.calls.includes("putObject"),
+    `a third organization got ${errorName(err)}; renders ${h.reports.calls.length}; calls ${h.calls.join(",")}`,
+  );
+}
+
 export async function assertNoOrganizationIs403(): Promise<void> {
   const { err } = await saveRejecting({ ...ORGANIZATION_ADMIN, writableOrganizationIds: [] });
   assert(errorName(err) === "ForbiddenException", `zero organizations got ${errorName(err)}: ${errorMessage(err)}`);
