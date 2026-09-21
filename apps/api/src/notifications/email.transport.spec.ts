@@ -53,7 +53,13 @@ function message(row: NotificationChannelRow = channel()): NotificationMessage {
   };
 }
 
-type SentMail = { from: string; to: string[]; subject: string; text: string };
+type SentMail = {
+  from: string;
+  to: string[];
+  subject: string;
+  text: string;
+  attachments?: { filename: string; contentType: string; content: Buffer }[];
+};
 
 function fakeSender(fail?: Error): { sender: MailSender; sent: SentMail[] } {
   const sent: SentMail[] = [];
@@ -255,4 +261,85 @@ export async function runEmailTransportTests(): Promise<void> {
   assert(readRecipients({ to: RECIPIENT }).length === 1, "a bare string is tolerated");
   assert(readRecipients({ to: [" a@b.c ", "", null, 7] }).join("") === "a@b.c", "trimmed and filtered");
   assert(readRecipients({}).length === 0, "no `to` key at all");
+}
+
+// --- F3.5b — attachments (ADR 0071 decision 10) ------------------------------
+//
+// An optional field at an adapter is invisible to `tsc` and to every fake:
+// the transport can drop `attachments` on the floor and nothing above this
+// line reddens. These three rows are the only gate on the forward, so each
+// holds one claim and the first is the one a deleted forward must redden.
+
+const PDF_NAME = "energy-consumption-2026-09-01-to-2026-09-07.pdf";
+const XLSX_NAME = "energy-consumption-2026-09-01-to-2026-09-07.xlsx";
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+function reportMessage(attachments: NotificationMessage["attachments"]): NotificationMessage {
+  const base = message();
+  return attachments === undefined ? base : { ...base, attachments };
+}
+
+/**
+ * Two attachments reach `sendMail` under nodemailer's names, with the SAME
+ * `Buffer` instance as `content` — identity, not equality, because a copy is
+ * exactly the shape of a re-encoding bug this row exists to catch. The
+ * recipients are asserted last, as the positive control that a send happened.
+ */
+export async function assertAttachmentsReachTheMailerVerbatim(): Promise<void> {
+  const pdf = Buffer.from("%PDF-1.4 fixture");
+  const xlsx = Buffer.from("PK fixture");
+  const { sender, sent } = fakeSender();
+  const transport = new EmailTransport({ sender, config: buildConfig(CONFIGURED) });
+  const result = await transport.send(
+    reportMessage([
+      { filename: PDF_NAME, contentType: "application/pdf", body: pdf },
+      { filename: XLSX_NAME, contentType: XLSX_TYPE, body: xlsx },
+    ]),
+  );
+  assert(result.status === "sent", `a send with attachments must be sent, got ${result.status}`);
+  assert(sent.length === 1, `expected one mail, got ${sent.length}`);
+  const mail = sent[0];
+  const attachments = mail?.attachments ?? [];
+  assert(
+    attachments.length === 2,
+    `sendMail must receive both attachments, got ${JSON.stringify(mail?.attachments)}`,
+  );
+  assert(attachments[0]?.content === pdf, "attachments[0].content must be the same Buffer instance");
+  assert(attachments[1]?.content === xlsx, "attachments[1].content must be the same Buffer instance");
+  assert(
+    attachments[0]?.filename === PDF_NAME && attachments[0]?.contentType === "application/pdf",
+    `attachments[0] must carry the pdf name and type, got ${JSON.stringify(attachments[0])}`,
+  );
+  assert(
+    attachments[1]?.filename === XLSX_NAME && attachments[1]?.contentType === XLSX_TYPE,
+    `attachments[1] must carry the xlsx name and type, got ${JSON.stringify(attachments[1])}`,
+  );
+  assert(
+    Object.keys(attachments[0] ?? {}).sort().join(",") === "content,contentType,filename",
+    `an attachment carries nodemailer's three keys only, got ${Object.keys(attachments[0] ?? {}).join(",")}`,
+  );
+  assert(
+    mail?.to.join(",") === `${RECIPIENT},${SECOND_RECIPIENT}`,
+    "the channel's recipients are unchanged by an attachment (positive control)",
+  );
+}
+
+/** A message without the field hands `sendMail` no `attachments` key at all. */
+export async function assertNoAttachmentsMeansNoAttachmentsKey(): Promise<void> {
+  const { sender, sent } = fakeSender();
+  const transport = new EmailTransport({ sender, config: buildConfig(CONFIGURED) });
+  await transport.send(reportMessage(undefined));
+  assert(sent.length === 1, `expected one mail, got ${sent.length}`);
+  const mail = sent[0] as object;
+  assert(!("attachments" in mail), `a message without attachments must not send the key: ${Object.keys(mail).join(",")}`);
+}
+
+/** `attachments: []` is the same as none: no key, not an empty list. */
+export async function assertAnEmptyAttachmentsArrayMeansNoAttachmentsKey(): Promise<void> {
+  const { sender, sent } = fakeSender();
+  const transport = new EmailTransport({ sender, config: buildConfig(CONFIGURED) });
+  await transport.send(reportMessage([]));
+  assert(sent.length === 1, `expected one mail, got ${sent.length}`);
+  const mail = sent[0] as object;
+  assert(!("attachments" in mail), `an empty attachments array must not send the key: ${Object.keys(mail).join(",")}`);
 }
