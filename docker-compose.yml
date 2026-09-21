@@ -437,6 +437,9 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # ADR 0071 Amendment 2 (plan R-3): `WorkerModule` imports `StorageModule`, so `StorageBootstrap` runs here too and a store that is not answering refuses the boot — `api`'s entry, verbatim.
+      minio:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
 
