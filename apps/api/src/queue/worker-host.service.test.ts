@@ -48,10 +48,15 @@ vi.mock("./worker-host", () => ({
   },
 }));
 
+import type { ProcessorContinuation } from "./queue-processor";
 import {
+  assertDispatchHandlerRanTheTickOnTheHandleItWasGiven,
+  assertDispatchScheduleUpsertedAtTheConfiguredInterval,
   assertHeartbeatRegistrationReceivedTheFleetSentinelAsFleetDb,
   assertHeartbeatRegistrationReceivedTheTenantSentinelAsTenantDb,
   assertNoQueueIsStartedTwice,
+  assertRenderHandlerRenderedOnTheTransactionItWasGiven,
+  assertRenderHandlerReturnsAContinuationThatFinishesTheOutcome,
   assertStartedQueueNamesEqualAllQueues,
   assertSweepHandlerRanTheSweepOnTheHandleItWasGiven,
   assertSweepHandlerWroteTheSummaryUnderTheSweepKey,
@@ -59,11 +64,13 @@ import {
   assertSweepRegistrationReceivedTheTenantSentinelAsTenantDb,
   assertSweepScheduleUpsertedAtTheConfiguredInterval,
   initWorkerHost,
+  invokeDispatchHandler,
+  invokeRenderHandler,
   invokeSweepHandler,
   type WorkerHostProbe,
 } from "./worker-host.service.spec";
 
-describe("F4.24 / F3.11 — WorkerHostService registers one processor per declared queue, with the pools by slot", () => {
+describe("F4.24 / F3.11 / F3.5b — WorkerHostService registers one processor per declared queue, with the pools by slot", () => {
   let probe: WorkerHostProbe;
 
   beforeAll(async () => {
@@ -109,6 +116,36 @@ describe("F4.24 / F3.11 — WorkerHostService registers one processor per declar
 
     it("writes JSON.stringify(summary) under bms:rules-sweep:last", () => {
       assertSweepHandlerWroteTheSummaryUnderTheSweepKey(probe);
+    });
+  });
+
+  it('upsertSchedule received ("reports-dispatch", { schedulerId: "reports-dispatch", everyMs: 23456 }) — the configured interval, not the sweep\'s and not a constant', () => {
+    assertDispatchScheduleUpsertedAtTheConfiguredInterval(recorded.upsertScheduleCalls);
+  });
+
+  describe("the reports-dispatch handler, invoked with ({}, { db: FLEET_SENTINEL }) as runProcessor would for a fleet queue", () => {
+    beforeAll(async () => {
+      await invokeDispatchHandler(recorded.runProcessorCalls);
+    });
+
+    it("hands ctx.db to ReportDispatchService.tick", () => {
+      assertDispatchHandlerRanTheTickOnTheHandleItWasGiven(probe);
+    });
+  });
+
+  describe("the reports-render handler, invoked with (payload, { tx: TX_SENTINEL }) as runProcessor would for a tenant queue", () => {
+    let resolved: void | ProcessorContinuation;
+
+    beforeAll(async () => {
+      resolved = await invokeRenderHandler(recorded.runProcessorCalls);
+    });
+
+    it("hands ctx.tx to ReportRenderService.render", () => {
+      assertRenderHandlerRenderedOnTheTransactionItWasGiven(probe);
+    });
+
+    it("resolves a continuation whose afterCommit() hands finish the very outcome render returned", async () => {
+      await assertRenderHandlerReturnsAContinuationThatFinishesTheOutcome(probe, resolved);
     });
   });
 });

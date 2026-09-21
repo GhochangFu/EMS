@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
+import { ReportDispatchService } from "./report-dispatch.service";
 import { ReportRenderService } from "./report-render.service";
 import { readReportFilesConfig } from "./report-files-config";
 import { REPORT_FILES_CONFIG } from "./report-files.tokens";
@@ -13,7 +14,7 @@ import { ReportsService } from "./reports.service";
  * `ReportsModule`. It holds what both processes need — the renderer
  * (`ReportsService`), the scheduled render body (`ReportRenderService`),
  * the `REPORT_FILES_CONFIG` factory (one read of the environment for both
- * processes) and, since U9, the dispatcher — and nothing that starts a
+ * processes) and the dispatcher (`ReportDispatchService`, U9) — and nothing that starts a
  * loop or mounts a route. The `RuleSweepModule` shape (ADR 0064 decision 3,
  * Amendment 1 A1): its one import is the provider-only
  * `NotificationsCoreModule`, for `EmailTransport` (the attachment forward,
@@ -55,8 +56,9 @@ import { ReportsService } from "./reports.service";
     ReportsService,
     CalcParametersService,
     ReportRenderService,
+    ReportDispatchService,
     { provide: REPORT_FILES_CONFIG, useFactory: () => readReportFilesConfig(process.env) },
   ],
-  exports: [ReportsService, ReportRenderService, REPORT_FILES_CONFIG],
+  exports: [ReportsService, ReportRenderService, ReportDispatchService, REPORT_FILES_CONFIG],
 })
 export class ReportsCoreModule {}

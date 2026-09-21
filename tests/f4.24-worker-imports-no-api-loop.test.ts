@@ -150,14 +150,16 @@ const WORKER_LEAVES = [
   // F3.5b (ADR 0071 decisions 8–10; plan R-3, R-4): the storage module, the
   // loop-free reports core with its render body and renderer, the shared
   // file-store helpers, the stateless `CalcParametersService` provider, and
-  // the two queue declarations. U9 appends `reports/report-dispatch.service.ts`
-  // and `reports/report-period.ts` with the dispatcher that imports them —
-  // measured at U8: nothing in the closure reaches `report-period.ts` until
-  // the dispatcher exists, so listing it here early reddens rule 1.
+  // the two queue declarations, and (U9) the dispatcher with the period
+  // arithmetic it alone imports — measured at U8: nothing in the closure
+  // reached `report-period.ts` until the dispatcher existed, so listing it
+  // before U9 reddened rule 1.
   "storage/storage.module.ts",
   "reports/reports-core.module.ts",
   "reports/reports.service.ts",
   "reports/report-render.service.ts",
+  "reports/report-dispatch.service.ts",
+  "reports/report-period.ts",
   "reports/report-file-store.ts",
   "calc/calc-parameters.service.ts",
   "queue/reports-dispatch.ts",

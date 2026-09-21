@@ -10,7 +10,9 @@ import { AssetImagesService } from "../assets/asset-images.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
+import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
+import { ReportDispatchService } from "../reports/report-dispatch.service";
 import { ReportFilesService } from "../reports/report-files.service";
 import { ReportRenderService } from "../reports/report-render.service";
 import { ReportsService } from "../reports/reports.service";
@@ -194,4 +196,17 @@ export function assertReportFilesServiceFleetSlot(): void {
  */
 export function assertReportRenderServiceTenantSlot(): void {
   expect(injectedToken(ReportRenderService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+/**
+ * `F3.5b` U9 — `ReportDispatchService(client)`: the queue client in slot 0
+ * and **no pool token at all** — the fleet handle is `tick(fleetDb)`'s
+ * argument from the `fleet`-tenancy processor, the `RuleSweepService`
+ * reasoning (a second `FLEET_DRIZZLE` route the processor mapping and
+ * `worker-host.service.spec.ts` could not see). `WorkerHostService` appended
+ * it in slot 6 and `ReportRenderService` in slot 7; the two slot-1/2 rows
+ * above are re-run unchanged as the proof the append moved nothing.
+ */
+export function assertReportDispatchServiceInjectsTheQueueClient(): void {
+  expect(injectedToken(ReportDispatchService, 0)).toBe(QUEUE_CLIENT);
 }
