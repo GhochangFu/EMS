@@ -441,6 +441,61 @@ export async function assertReportResolvesOnFleet(
 }
 
 /**
+ * ADR 0071 (`F3.5a`) — the PDF renderer reached over the same fleet-scoped
+ * preview `assertReportResolvesOnFleet` proves. This does not re-assert the
+ * row content (`energy-pdf.spec.ts` already pins that the table's cells reach
+ * the definition); it proves only that the service's own guard-then-render
+ * path (`assertFiniteCells` → `energyPdfDefinition` → `renderPdf`) produces a
+ * real PDF against live data.
+ */
+export async function assertPdfResolvesOnFleet(
+  fleetPool: pg.Pool,
+  fx: EnergyRlsFixture,
+): Promise<void> {
+  const svc = new ReportsService(fleetPool, NO_TARIFFS);
+  const buffer = await svc.energyPdf(fx.query, scopedAssetIds(fx));
+
+  assert(
+    buffer.subarray(0, 5).toString("latin1") === "%PDF-",
+    `fleet: energyPdf must resolve a PDF buffer, got first bytes ` +
+      `${buffer.subarray(0, 5).toString("latin1")}`,
+  );
+}
+
+/**
+ * ADR 0071 (`F3.5a`) — the `notes` rewrite. On an **empty** `assetIds` scope
+ * (`[]`) every read `energyPreview` calls short-circuits before touching the
+ * pool (`energySummary`/`energySourceTotals`/`energyTopConsumers`'s
+ * `assetIds.length === 0` guards), so this needs no database and no
+ * `requireIntegrationDb` gate — a pool that throws if queried proves that, as
+ * well as proving the claim below.
+ *
+ * **Mutation:** restoring the old "PDF output and report history remain
+ * deferred to later sprint scope." line reddens the "no deferred" half.
+ */
+export async function assertNotesRewrite(): Promise<void> {
+  const throwingPool = {
+    query: async () => {
+      throw new Error("assertNotesRewrite: energyPreview must not query the pool for assetIds: []");
+    },
+  } as unknown as pg.Pool;
+  const svc = new ReportsService(throwingPool, NO_TARIFFS);
+  const preview = await svc.energyPreview(
+    { startDate: "2026-08-01", endDate: "2026-08-07" },
+    [],
+  );
+
+  assert(
+    preview.notes.every((n) => !n.includes("deferred")),
+    `notes must not claim anything is deferred, got ${JSON.stringify(preview.notes)}`,
+  );
+  assert(
+    preview.notes.some((n) => n.includes("report history")),
+    `notes must mention the report history, got ${JSON.stringify(preview.notes)}`,
+  );
+}
+
+/**
  * **The divergence.** On a bare tenant pool the `bms.assets` reads go dark under
  * `0047` FORCE, so `topConsumers` is empty and solar is misattributed to grid —
  * while the unpoliced telemetry aggregate keeps `totalKwh` non-zero. That last

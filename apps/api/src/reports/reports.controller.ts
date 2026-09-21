@@ -115,4 +115,46 @@ export class ReportsController {
     res.setHeader("Cache-Control", "no-store");
     res.send(body);
   }
+
+  /**
+   * The same report as `xlsx`, in PDF (ADR 0071 decision 2, decision 3).
+   *
+   * A separate route rather than a `?format=` switch on `export.csv`/`export.xlsx`,
+   * for the same reason `energyXlsx` gives: the sibling routes already carry their
+   * format in their path, and each response's bytes are the client deliverable.
+   *
+   * `@Res()` for the same reason as `energyXlsx`: the body is a `Buffer`, which
+   * Nest would otherwise try to serialise as JSON.
+   */
+  @Get("energy/export.pdf")
+  async energyPdf(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: unknown,
+    @Res() res: Response,
+  ): Promise<void> {
+    let body: Buffer;
+    try {
+      const dto = energyReportQuerySchema.parse(query);
+      body = await this.reports.energyPdf(
+        dto,
+        await this.accessControl.readableAssetIds(user),
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="energy-consumption-report.pdf"',
+    );
+    // Scope-filtered per user via `readableAssetIds` and carrying asset codes,
+    // names and site names — a shared-cache hit across two differently-scoped
+    // users would leak across scopes, exactly as on the CSV and XLSX routes.
+    res.setHeader("Cache-Control", "no-store");
+    res.send(body);
+  }
 }
