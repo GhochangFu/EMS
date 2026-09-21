@@ -56,9 +56,12 @@ export const reportFiles = bmsSchema.table(
     filename: text("filename").notNull(),
     deliveryStatus: text("delivery_status").notNull().default("none"),
     deliveryError: text("delivery_error"),
-    // NULL = an on-demand save (ADR 0071 decision 4). RESTRICT (Postgres's
-    // default — no `onDelete` here) per F3.5b plan R-13/Q-2: files are
-    // removed with their schedule, never orphaned to on-demand by a cascade.
+    // NULL = an on-demand save (ADR 0071 decision 4). No `onDelete` here —
+    // Postgres's actual default is NO ACTION, not RESTRICT (they differ only
+    // for a DEFERRABLE constraint, which this is not, so both refuse the
+    // delete identically) — the mechanism behind F3.5b plan R-13/Q-2's
+    // "RESTRICT" ruling: files are removed with their schedule, never
+    // orphaned to on-demand by a cascade.
     scheduleId: uuid("schedule_id").references(() => reportSchedules.id),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

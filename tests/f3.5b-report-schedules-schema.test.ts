@@ -148,7 +148,7 @@ describe("F3.5b — bms.report_schedules schema, and report_files.schedule_id (m
     expect(channelIdLine).toContain("ON DELETE SET NULL");
   });
 
-  it("report_files.schedule_id references report_schedules with no ON DELETE clause — RESTRICT, the Postgres default (R-13, Q-2)", () => {
+  it("report_files.schedule_id references report_schedules with no ON DELETE clause — NO ACTION, the Postgres default, refuses the delete exactly as R-13/Q-2's RESTRICT ruling requires (the constraint is not deferrable, so the two are indistinguishable here)", () => {
     const migration = sqlOnly(read(MIGRATION_REL));
 
     // The claim under test, first: no ON DELETE on schedule_id.
