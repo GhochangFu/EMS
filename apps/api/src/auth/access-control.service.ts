@@ -1,5 +1,5 @@
 import { Inject, Injectable, ForbiddenException } from "@nestjs/common";
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 
 import {
   assetGroupMembers,
@@ -8,7 +8,6 @@ import {
   locations,
   userAssetGroupAccess,
   userLocationAccess,
-  userOrganizationAccess,
   users,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -26,6 +25,7 @@ import {
   isMasterDataRole,
   readScopeSourcesForRole,
 } from "./access-scope";
+import { directOrganizationIds, scopeFromSource } from "./access-scope-sources";
 import {
   canPerformOperationsWrite,
   operationsWriteDenialReason,
@@ -722,13 +722,8 @@ export class AccessControlService {
   }
 
   /** Organization ids from this user's direct `user_organization_access` grants. */
-  private async directOrganizationIds(userId: string): Promise<string[]> {
-    // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
-    const rows = await this.fleetDb
-      .select({ id: userOrganizationAccess.organizationId })
-      .from(userOrganizationAccess)
-      .where(eq(userOrganizationAccess.userId, userId));
-    return rows.map((row) => row.id);
+  private directOrganizationIds(userId: string): Promise<string[]> {
+    return directOrganizationIds(this.fleetDb, userId);
   }
 
   /** Organization ids implied by this user's `user_location_access` grants. */
@@ -751,210 +746,11 @@ export class AccessControlService {
   private async scopeForUser(user: DbUser): Promise<AccessibleScope> {
     let scope: AccessibleScope = noAccessScope();
     for (const source of readScopeSourcesForRole(user.role)) {
-      scope = await this.scopeFromSource(user, source);
+      scope = await scopeFromSource(this.fleetDb, user, source);
       if (scope.assetIds.length > 0 || scope.locations.length > 0) {
         break;
       }
     }
     return scope;
-  }
-
-  private async scopeFromSource(
-    user: DbUser,
-    source: ReadScopeSource,
-  ): Promise<AccessibleScope> {
-    if (source === "global") {
-      const [locationRows, assetRows] = await Promise.all([
-        this.fleetDb
-          .select({
-            id: locations.id,
-            code: locations.code,
-            slug: locations.slug,
-            name: locations.name,
-            type: locations.type,
-            province: locations.province,
-          })
-          .from(locations)
-          .where(eq(locations.active, true))
-          .orderBy(asc(locations.name)),
-        this.fleetDb.select({ id: assets.id }).from(assets),
-      ]);
-      return {
-        kind: "global",
-        locations: locationRows.map((row) => ({
-          ...row,
-          type: row.type as AccessibleScope["locations"][number]["type"],
-        })),
-        assetGroups: [],
-        assetIds: assetRows.map((row) => row.id),
-      };
-    }
-
-    if (source === "organization") {
-      const organizationIds = await this.directOrganizationIds(user.id);
-      // fleetDb: pre-tenant resolution filtered by the actor's own org grants (Amendment 2/3).
-      const locationRows =
-        organizationIds.length > 0
-          ? await this.fleetDb
-              .select({
-                id: locations.id,
-                code: locations.code,
-                slug: locations.slug,
-                name: locations.name,
-                type: locations.type,
-                province: locations.province,
-              })
-              .from(locations)
-              .where(
-                and(
-                  inArray(locations.organizationId, organizationIds),
-                  eq(locations.active, true),
-                ),
-              )
-              .orderBy(asc(locations.name))
-          : [];
-      const locationIds = locationRows.map((row) => row.id);
-      // fleetDb: assets gains a policy in 0047; filtered by locationIds derived
-      // from the actor's own grants above (Amendment 2/3).
-      const assetRows =
-        locationIds.length > 0
-          ? await this.fleetDb
-              .select({ id: assets.id })
-              .from(assets)
-              .where(inArray(assets.locationId, locationIds))
-          : [];
-      return {
-        kind: "location",
-        locations: locationRows.map((row) => ({
-          ...row,
-          type: row.type as AccessibleScope["locations"][number]["type"],
-        })),
-        assetGroups: [],
-        assetIds: assetRows.map((row) => row.id),
-      };
-    }
-
-    if (source === "location") {
-      // fleetDb: pre-tenant resolution keyed by the actor's own userId (Amendment 2/3).
-      const locationRows = await this.fleetDb
-        .select({
-          id: locations.id,
-          code: locations.code,
-          slug: locations.slug,
-          name: locations.name,
-          type: locations.type,
-          province: locations.province,
-        })
-        .from(userLocationAccess)
-        .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
-        .where(
-          and(
-            eq(userLocationAccess.userId, user.id),
-            eq(locations.active, true),
-          ),
-        )
-        .orderBy(asc(locations.name));
-      const locationIds = locationRows.map((row) => row.id);
-      // fleetDb: assets gains a policy in 0047; filtered by locationIds derived
-      // from the actor's own grants above (Amendment 2/3).
-      const assetRows =
-        locationIds.length > 0
-          ? await this.fleetDb
-              .select({ id: assets.id })
-              .from(assets)
-              .where(inArray(assets.locationId, locationIds))
-          : [];
-      return {
-        kind: "location",
-        locations: locationRows.map((row) => ({
-          ...row,
-          type: row.type as AccessibleScope["locations"][number]["type"],
-        })),
-        assetGroups: [],
-        assetIds: assetRows.map((row) => row.id),
-      };
-    }
-
-    if (source === "asset_group") {
-      // fleetDb throughout: pre-tenant resolution before any org context exists.
-      // asset_groups gains a policy in 0047 and locations already carries one;
-      // both reads are keyed by the actor's own userId / user-derived location
-      // ids, which is the isolation control (Amendment 2/3). The join is split
-      // only because the original single query mixed a userId-keyed grant walk
-      // with a location filter.
-      const groupRows = await this.fleetDb
-        .select({
-          id: assetGroups.id,
-          locationId: assetGroups.locationId,
-          code: assetGroups.code,
-          name: assetGroups.name,
-          // ADR 0047 Amendment 6: carried into the response so the
-          // asset_group_admin authoring path's group picker can derive a
-          // create body's `organizationId` without a second fetch.
-          organizationId: assetGroups.organizationId,
-        })
-        .from(userAssetGroupAccess)
-        .innerJoin(assetGroups, eq(userAssetGroupAccess.assetGroupId, assetGroups.id))
-        .where(eq(userAssetGroupAccess.userId, user.id));
-
-      const locationIds = [...new Set(groupRows.map((row) => row.locationId))];
-      const locationRows =
-        locationIds.length > 0
-          ? await this.fleetDb
-              .select({
-                id: locations.id,
-                code: locations.code,
-                slug: locations.slug,
-                name: locations.name,
-                type: locations.type,
-                province: locations.province,
-              })
-              .from(locations)
-              .where(and(inArray(locations.id, locationIds), eq(locations.active, true)))
-          : [];
-      const locationById = new Map(
-        locationRows.map((row) => [
-          row.id,
-          { ...row, type: row.type as AccessibleScope["locations"][number]["type"] },
-        ]),
-      );
-
-      // Matches the original INNER JOIN + `active = true` filter: a group whose
-      // location is inactive (or, in principle, gone) drops out here.
-      const activeGroupRows = groupRows
-        .filter((row) => locationById.has(row.locationId))
-        .sort((a, b) => {
-          const nameA = locationById.get(a.locationId)?.name ?? "";
-          const nameB = locationById.get(b.locationId)?.name ?? "";
-          return nameA === nameB ? a.name.localeCompare(b.name) : nameA.localeCompare(nameB);
-        });
-
-      const groupIds = activeGroupRows.map((row) => row.id);
-      // fleetDb: assets + the asset_group_members junction gain policies in 0047;
-      // filtered by groupIds derived from the actor's own grants above (Amendment 2/3).
-      const assetRows =
-        groupIds.length > 0
-          ? await this.fleetDb
-              .select({ id: assets.id })
-              .from(assetGroupMembers)
-              .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
-              .where(inArray(assetGroupMembers.assetGroupId, groupIds))
-          : [];
-
-      return {
-        kind: "asset_group",
-        locations: [...locationById.values()],
-        assetGroups: activeGroupRows.map((row) => ({
-          id: row.id,
-          locationId: row.locationId,
-          code: row.code,
-          name: row.name,
-          organizationId: row.organizationId,
-        })),
-        assetIds: assetRows.map((row) => row.id),
-      };
-    }
-
-    return noAccessScope();
   }
 }
