@@ -13,7 +13,7 @@ import type { SQL } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 
-import { locations, reportFiles, users } from "@bms/db";
+import { locations, organizations, reportFiles, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { reportFileDtoSchema, reportTemplateIdSchema } from "@bms/shared";
 import type { JwtPayload, ReportFileDto, ReportFileFormat } from "@bms/shared";
@@ -62,7 +62,8 @@ const CONTENT_TYPES: Record<ReportFileFormat, ReportFileDto["contentType"]> = {
  * `asset_group_admin`, `operator` and `viewer` with its own sentence before
  * any read — decision 6's `wc-hvac-admin` case) → the target organization
  * (Amendment 1 item 1: `writableOrganizationIds` `null` → the body id is
- * required; one id → that id, a differing body id is 403; several → the body
+ * required and must name an existing organization, 404 otherwise; one id →
+ * that id, a differing body id is 403; several → the body
  * id is required and must be one of them; zero → 403) → the `location_ids`
  * stamp (item 2, see below) → the cheap cap pre-check on `fleetDb` (409,
  * before the render and before any storage call) →
@@ -329,6 +330,20 @@ export class ReportFilesService {
     if (writable === null) {
       if (requested === undefined) {
         throw new BadRequestException("organizationId is required for a global admin");
+      }
+      // The global admin's id comes from the body, not from a grant, so its
+      // existence is checked here (fleet handle) — before the stamp, the cap
+      // pre-check and any storage call. Without this a well-formed uuid naming
+      // no organization reached `putObject` and then failed the FK: a 500 for
+      // a caller error. The other branches validate against `writable`, which
+      // came from real grants.
+      const [organization] = await this.fleetDb
+        .select({ organizationId: organizations.id })
+        .from(organizations)
+        .where(eq(organizations.id, requested))
+        .limit(1);
+      if (!organization) {
+        throw new NotFoundException("Organization not found");
       }
       return requested;
     }

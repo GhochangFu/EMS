@@ -94,6 +94,10 @@ import {
   setRuleNotificationsBodySchema,
   updateNotificationChannelBodySchema,
 } from "../notifications/notifications.schema";
+import {
+  listReportFilesQuerySchema,
+  saveEnergyReportFileBodySchema,
+} from "../reports/report-files.schema";
 import { energyReportQuerySchema } from "../reports/reports.schema";
 import {
   assetHealthQuerySchema,
@@ -247,6 +251,11 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // read as the republish-moves-live-rules outcome decision 1 refuses.
   reapplySeededRulesBodySchema,
   reorderWorkOrdersBodySchema,
+  // `F3.5a` (ADR 0071 decision 11). `.strict()`: the body names the period,
+  // the format and, for a global or multi-organization admin, the organization
+  // — a fourth key (`locationIds`, the obvious one, which the server stamps
+  // from the actor's grants) must be a 400 rather than dropped at 201.
+  saveEnergyReportFileBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,
   rulePreviewBodySchema,
@@ -311,6 +320,9 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.
   listCalcParametersQuerySchema,
+  // `F3.5a`: `GET /reports/files?limit=` — `.strict()`, no ledger entry, the
+  // `mappingSheetQuerySchema` precedent.
+  listReportFilesQuerySchema,
   listDashboardTemplatesQuerySchema,
   assetHealthQuerySchema,
   auditExportQuerySchema,
@@ -782,6 +794,11 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // `organizationId` and an optional `key`, `.strict()`, no body. The two
   // bodies that row adds are in `BODY_SCHEMAS` above with a decision each.
   //
+  // 17 -> 18: `F3.5a` registered `listReportFilesQuerySchema`
+  // (`GET /reports/files?limit=`, ADR 0071 decision 11): one optional
+  // `limit`, `.strict()`, no body. The one body that row adds,
+  // `saveEnergyReportFileBodySchema`, is in `BODY_SCHEMAS` with its decision.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -791,7 +808,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(17);
+  ).toBe(18);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

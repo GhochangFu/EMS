@@ -97,6 +97,10 @@ import {
   listMaintenanceQuerySchema,
   updateMaintenanceScheduleBodySchema,
 } from "../maintenance/maintenance.schema";
+import {
+  listReportFilesQuerySchema,
+  saveEnergyReportFileBodySchema,
+} from "../reports/report-files.schema";
 import { energyReportQuerySchema } from "../reports/reports.schema";
 import {
   listRuleExecutionsQuerySchema,
@@ -152,6 +156,12 @@ import {
  * absent because it takes no body and no query, the
  * `EscalationProfilesController_remove` case below. Documenting multipart
  * shape properly is a generator change, out of scope here.
+ *
+ * **`ReportFilesController_download` and `_remove` are absent** (`F3.5a`,
+ * ADR 0071 decision 11) for the non-multipart reason: each takes one path
+ * parameter and no body and no query, which Nest's own reflection describes
+ * — the `EscalationProfilesController_remove` case again. Their siblings
+ * `_save` (a body) and `_list` (a query) are registered below.
  */
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,
@@ -249,6 +259,10 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OrganizationsAdminController_update: updateOrganizationBodySchema,
   PointKeysAdminController_create: createPointKeyBodySchema,
   PointKeysAdminController_update: updatePointKeyBodySchema,
+  // `F3.5a` (ADR 0071 decision 11). `_download` and `_remove` are absent —
+  // one path parameter each, no body, no query; the docblock above says why.
+  ReportFilesController_list: listReportFilesQuerySchema,
+  ReportFilesController_save: saveEnergyReportFileBodySchema,
   ReportsController_energyCsv: energyReportQuerySchema,
   ReportsController_energyPdf: energyReportQuerySchema,
   ReportsController_energyPreview: energyReportQuerySchema,

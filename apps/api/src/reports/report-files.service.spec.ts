@@ -179,6 +179,8 @@ export type Scenario = {
   /** The `AccessControlService` answers. Defaults are the global admin's. */
   writableLocationIds?: string[] | null;
   writableOrganizationIds?: string[] | null;
+  /** Whether the fleet `{ organizationId }` existence read finds the body's organization; default true. */
+  organizationExists?: boolean;
   readScope?: ReadScope;
   readableInOrganization?: string[];
   canRead?: boolean;
@@ -265,6 +267,12 @@ export function harness(scenario: Scenario = {}): Harness {
         );
       }
       if (shape === "actorId") return chain(async () => [{ actorId: ACTOR_ID }]);
+      if (shape === "organizationId") {
+        return chain(async () => {
+          calls.push("fleet:organizationExists");
+          return scenario.organizationExists === false ? [] : [{ organizationId: ORG_ID }];
+        });
+      }
       if (shape === "fileId") {
         return chain(async () => {
           calls.push("fleet:committedCheck");
@@ -504,6 +512,26 @@ export async function assertGlobalAdminProceedsWithTheOrganization(): Promise<vo
   assert(dto.organizationId === ORG_ID, `the row carries ${dto.organizationId}, not the body's organization`);
 }
 
+/**
+ * U8 (plan gap): a well-formed uuid naming no organization is the caller's
+ * 404, before the stamp, the cap pre-check and any storage call — not the FK
+ * failure at insert time that `putObject` would otherwise precede. The
+ * positive control is `assertGlobalAdminProceedsWithTheOrganization`, whose
+ * fake answers the existence read with the row.
+ */
+export async function assertGlobalAdminNamingAnUnknownOrganizationIs404BeforeAnyWork(): Promise<void> {
+  const { err, h } = await saveRejecting({ organizationExists: false });
+  assert(
+    errorName(err) === "NotFoundException" && errorMessage(err) === "Organization not found",
+    `an unknown organization got ${errorName(err)}: ${errorMessage(err)}`,
+  );
+  assert(h.calls.includes("fleet:organizationExists"), `the existence read did not run: ${h.calls.join(",")}`);
+  assert(
+    h.calls.filter((c) => c === "putObject").length === 0 && h.reports.calls.length === 0 && !h.calls.includes("tx:begin"),
+    `the 404 came after work: calls ${h.calls.join(",")}, renders ${h.reports.calls.length}`,
+  );
+}
+
 export async function assertSingleOrganizationAdminNeedsNoBodyId(): Promise<void> {
   const h = harness(ORGANIZATION_ADMIN);
   const dto = await save(h, { ...BODY, organizationId: undefined });
@@ -629,7 +657,8 @@ export async function assertXlsxHashSizeFilenameAndContentType(): Promise<void> 
 export async function assertPutsTheObjectThenInsertsTheRowUnderTheTenant(): Promise<void> {
   const h = harness({});
   await save(h);
-  const expected = ["render", "putObject", "tx:begin", "tx:setTenant", "tx:advisoryLock", "tx:count", "tx:insert", "audit", "tx:commit"];
+  // U8: the global admin's organization existence read precedes the render (the 404 before any work).
+  const expected = ["fleet:organizationExists", "render", "putObject", "tx:begin", "tx:setTenant", "tx:advisoryLock", "tx:count", "tx:insert", "audit", "tx:commit"];
   assert(
     JSON.stringify(h.calls) === JSON.stringify(expected),
     `call order ${JSON.stringify(h.calls)}; expected ${JSON.stringify(expected)}`,

@@ -364,6 +364,11 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),
   "reorderWorkOrdersBodySchema/items[]": STRICT(CALLER_ERROR),
   ruleDraftBodySchema: STRICT(CALLER_ERROR),
+  // `F3.5a` (ADR 0071 decision 11; Amendment 1 item 1). One producer — the
+  // Reports panel's Save to history — and four named fields. The key a client
+  // would try is `locationIds`, which the server stamps from the actor's own
+  // grants (item 2): stripped and answered 201, it would read as accepted.
+  saveEnergyReportFileBodySchema: STRICT(CALLER_ERROR),
   "ruleDraftBodySchema/action": STRICT(CALLER_ERROR),
   "ruleDraftBodySchema/condition|0": STRICT(CALLER_ERROR),
   "ruleDraftBodySchema/condition|1": STRICT(CALLER_ERROR),
