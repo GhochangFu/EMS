@@ -78,13 +78,17 @@ describe("F3.5a — bms.report_files schema (migration 0077)", () => {
     expect(sqlOnly(read(MIGRATION_REL))).not.toMatch(/CREATE INDEX CONCURRENTLY/i);
   });
 
+  // The three positive fences below read `sqlOnly()` too (step-5 migration
+  // review Low 1): a raw scan is satisfied by the header prose quoting the
+  // statement, so a deleted `FORCE ROW LEVEL SECURITY` stayed green as long
+  // as a comment still spelled it.
   it("gives organization_id NOT NULL", () => {
-    const migration = read(MIGRATION_REL);
+    const migration = sqlOnly(read(MIGRATION_REL));
     expect(migration).toContain("organization_id uuid NOT NULL REFERENCES bms.organizations(id)");
   });
 
   it("enables and forces row level security", () => {
-    const migration = read(MIGRATION_REL);
+    const migration = sqlOnly(read(MIGRATION_REL));
     expect(migration).toContain(`ALTER TABLE bms.${TABLE} ENABLE ROW LEVEL SECURITY;`);
     // ENABLE alone exempts the table owner, and `bms_owner` IS the owner — so
     // without FORCE the policy is decorative for the one role that matters
@@ -121,7 +125,7 @@ describe("F3.5a — bms.report_files schema (migration 0077)", () => {
   });
 
   it("names every constraint the schema file and psql must agree on", () => {
-    const migration = read(MIGRATION_REL);
+    const migration = sqlOnly(read(MIGRATION_REL));
     for (const name of [
       "CONSTRAINT report_files_object_key_key",
       "CONSTRAINT report_files_format_check",
@@ -134,7 +138,7 @@ describe("F3.5a — bms.report_files schema (migration 0077)", () => {
   });
 
   it("creates the organization/created_at index", () => {
-    const migration = read(MIGRATION_REL);
+    const migration = sqlOnly(read(MIGRATION_REL));
     expect(migration).toContain("CREATE INDEX IF NOT EXISTS report_files_org_created_idx");
   });
 

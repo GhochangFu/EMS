@@ -35,7 +35,7 @@ import {
  * suite: the cap, `remove`, decision 11, the failed-row cleanup, the audit
  * rows and decision 5's last sentence. The gates and the lifecycle are the
  * ones `report-files.integration.test.ts` uses; see that file and
- * `report-files.integration-fixtures.ts`.
+ * `report-files.integration.spec.ts`.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.5a",

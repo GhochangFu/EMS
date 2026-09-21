@@ -18,9 +18,11 @@ import {
   assertRemoveHandsTheParsedIdToTheService,
   assertRegistryKeysNameRealHandlers,
   assertRemoveRefusesANonUuidIdBeforeTheService,
+  assertSaveAcceptsTheLastDayOfFebruary,
   assertSaveAnswers201,
   assertSaveHandsTheParsedBodyAndTheJwtToTheService,
   assertSaveParsesBeforeTheService,
+  assertSaveRefusesACalendarInvalidDateBeforeTheService,
   assertSaveRefusesAnUnknownKeyBeforeTheService,
   assertScanFindsAParamDecorator,
   DOWNLOAD_HEADER_LITERALS,
@@ -79,6 +81,22 @@ describe("F3.5a — ReportFilesController (ADR 0071 decision 11)", () => {
 
     it("positive control: hands the parsed body and the JWT to the service", async () => {
       await assertSaveHandsTheParsedBodyAndTheJwtToTheService();
+    });
+
+    it("refuses a calendar-invalid startDate (2026-02-30) with a 400 naming the field, before the service", async () => {
+      await assertSaveRefusesACalendarInvalidDateBeforeTheService("startDate", "2026-02-30");
+    });
+
+    it("refuses a calendar-invalid endDate (2026-02-30) with a 400 naming the field, before the service", async () => {
+      await assertSaveRefusesACalendarInvalidDateBeforeTheService("endDate", "2026-02-30");
+    });
+
+    it("refuses an Invalid-Date month (2026-13-01) with a 400, not a RangeError", async () => {
+      await assertSaveRefusesACalendarInvalidDateBeforeTheService("startDate", "2026-13-01");
+    });
+
+    it("positive control: accepts 2026-02-28 and hands it to the service unchanged", async () => {
+      await assertSaveAcceptsTheLastDayOfFebruary();
     });
 
     it("answers 201", () => {

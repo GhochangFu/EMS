@@ -1,6 +1,6 @@
 import type { EnergyReportPreview, EnergyTopConsumer } from "@bms/shared";
 
-import { energyPdfDefinition, renderPdf, STANDARD_FONTS } from "./energy-pdf";
+import { energyPdfDefinition, LOCAL_ACCESS_POLICY, renderPdf, STANDARD_FONTS } from "./energy-pdf";
 import { energyTable } from "./reports.serialise";
 
 function assert(condition: boolean, message: string): void {
@@ -158,4 +158,61 @@ export function assertFontsAreTheStandardFourWithNoFile(): void {
   for (const value of Object.values(helvetica)) {
     assert(!value.toLowerCase().endsWith(".ttf"), `${value} must not name a font file`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Amendment 1 item 5 — the resource access policy (measured, step-5 review)
+// ---------------------------------------------------------------------------
+
+const STANDARD_14_NAMES = ["Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique"];
+
+/** The policy allows exactly the four Standard-14 names and nothing else. */
+export function assertLocalPolicyAllowsExactlyTheStandardFour(): void {
+  for (const name of STANDARD_14_NAMES) {
+    assert(LOCAL_ACCESS_POLICY(name) === true, `${name} must be allowed by the local access policy`);
+  }
+  for (const path of ["Helvetica.ttf", "/usr/share/fonts/Helvetica.ttf", "C:\\Windows\\Fonts\\arial.ttf", "/etc/passwd", "Times-Roman", ""]) {
+    assert(LOCAL_ACCESS_POLICY(path) === false, `${JSON.stringify(path)} must be denied by the local access policy`);
+  }
+}
+
+/** Both policies are set, so `createPdf` emits no `console.warn` (the two-line residual is gone). */
+export async function assertRenderEmitsNoWarning(): Promise<void> {
+  const warns: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warns.push(args.map(String).join(" "));
+  };
+  try {
+    const buffer = await renderPdf(energyPdfDefinition(preview()));
+    assert(buffer.subarray(0, 5).toString("latin1") === "%PDF-", "the positive control must still render a PDF");
+  } finally {
+    console.warn = original;
+  }
+  assert(warns.length === 0, `renderPdf must emit no console.warn, got ${JSON.stringify(warns)}`);
+}
+
+/**
+ * A definition naming a local file path is refused **by the policy** — the
+ * message is pdfmake's `denied by resource access policy`, not the
+ * `Invalid image ... ENOENT` an un-policied render throws for the same path
+ * (measured: without the policy the ENOENT is what surfaces, so a message
+ * assertion is what separates "refused" from "not found").
+ */
+export async function assertRenderRefusesALocalFilePath(): Promise<void> {
+  const definition = energyPdfDefinition(preview());
+  const hostile = { ...definition, content: [{ image: "/etc/passwd" }] };
+  let caught: unknown;
+  try {
+    await renderPdf(hostile);
+  } catch (err) {
+    caught = err;
+  }
+  assert(caught instanceof Error, "a local file path in the definition must reject");
+  const message = caught instanceof Error ? caught.message : String(caught);
+  assert(
+    message.includes("denied by resource access policy"),
+    `the rejection must come from the access policy, got: ${message.split("\n")[0]}`,
+  );
+  assert(!message.includes("Invalid image"), "the refusal must precede the image open, not be its ENOENT");
 }

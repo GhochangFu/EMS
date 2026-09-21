@@ -3,10 +3,13 @@ import { describe, it } from "vitest";
 import {
   assertDefinitionCarriesEveryTableCell,
   assertFontsAreTheStandardFourWithNoFile,
+  assertLocalPolicyAllowsExactlyTheStandardFour,
   assertMoneyCarriesTheCodeAndNoSymbol,
   assertNonWinAnsiNameDoesNotThrow,
   assertNullCostRendersTheDash,
+  assertRenderEmitsNoWarning,
   assertRenderProducesAPdf,
+  assertRenderRefusesALocalFilePath,
 } from "./energy-pdf.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -33,5 +36,17 @@ describe("energy report PDF (ADR 0071 decision 2)", () => {
 
   it("names the standard-14 Helvetica by string, with no font file", () => {
     assertFontsAreTheStandardFourWithNoFile();
+  });
+
+  it("the local access policy allows exactly the four Standard-14 names (Amendment 1 item 5)", () => {
+    assertLocalPolicyAllowsExactlyTheStandardFour();
+  });
+
+  it("emits no console.warn on a render — both access policies are set", async () => {
+    await assertRenderEmitsNoWarning();
+  });
+
+  it("refuses a definition naming a local file path through the policy, not ENOENT", async () => {
+    await assertRenderRefusesALocalFilePath();
   });
 });

@@ -85,8 +85,9 @@ export type ReportsPanelProps = {
  * The PDF button renders for everyone — the export routes are
  * `readableAssetIds`-scoped, like CSV. Save and History render only for
  * `isMasterDataAdmin(user.role)` (R-13): the API's `POST` runs
- * `assertMasterDataRole` and the list route answers `[]` for other roles, so
- * a control shown to them would only buy a refusal.
+ * `assertMasterDataRole` and the list route answers 403 for other roles
+ * (`reportFileReadScope` runs the same guard), so a control shown to them
+ * would only buy a refusal.
  */
 export function ReportsPanel({ user }: ReportsPanelProps) {
   const [startDate, setStartDate] = useState(dateDaysAgo(1));

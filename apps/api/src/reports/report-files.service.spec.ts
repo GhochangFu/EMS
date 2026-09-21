@@ -208,7 +208,8 @@ export type Harness = {
   putKeys: string[];
   deleteKeys: string[];
   inserted: Record<string, unknown>[];
-  executed: string[];
+  /** Every `tx.execute` statement, rendered to SQL text plus its bound params (step-5 false-green 1: the text alone never carried the organization). */
+  executed: { sql: string; params: unknown[] }[];
   /** The `where` argument of every list select, rendered to SQL text (`""` when absent). */
   listWheres: { sql: string; params: unknown[] }[];
   access: { calls: string[]; renderedAssetIds: unknown[] };
@@ -231,7 +232,7 @@ export function harness(scenario: Scenario = {}): Harness {
   const putKeys: string[] = [];
   const deleteKeys: string[] = [];
   const inserted: Record<string, unknown>[] = [];
-  const executed: string[] = [];
+  const executed: { sql: string; params: unknown[] }[] = [];
   const listWheres: { sql: string; params: unknown[] }[] = [];
   let tenantTransactions = 0;
   const fileRows = scenario.fileRows ?? [];
@@ -295,9 +296,9 @@ export function harness(scenario: Scenario = {}): Harness {
 
   const tx = {
     execute: async (statement: unknown) => {
-      const rendered = renderWhere(statement).sql;
+      const rendered = renderWhere(statement);
       executed.push(rendered);
-      calls.push(rendered.includes("pg_advisory_xact_lock") ? "tx:advisoryLock" : rendered.includes("set_config") ? "tx:setTenant" : "tx:execute");
+      calls.push(rendered.sql.includes("pg_advisory_xact_lock") ? "tx:advisoryLock" : rendered.sql.includes("set_config") ? "tx:setTenant" : "tx:execute");
       return undefined;
     },
     select: (projection?: Record<string, unknown>) => {
@@ -675,11 +676,42 @@ export async function assertTheKeyIsBuiltFromTheOrganizationAndTheFileId(): Prom
   );
 }
 
+/**
+ * R-11 — the advisory lock is keyed on the **resolved** organization, as a
+ * bound param. Step-5 false-green 1: the earlier row read `renderWhere(...).sql`
+ * only, so a lock keyed on a constant (`report_files:global`) or on another
+ * organization still passed. The save omits `organizationId` so the value
+ * comes from the actor's single grant (`ORGANIZATION_ADMIN`), never from the
+ * body — a lock keyed on the unresolved body value is `undefined` here.
+ */
 export async function assertTheAdvisoryLockNamesTheOrganization(): Promise<void> {
-  const h = harness({});
-  await save(h);
-  const lock = h.executed.find((statement) => statement.includes("pg_advisory_xact_lock"));
-  assert(lock !== undefined && lock.includes("hashtextextended"), `no advisory lock statement among ${JSON.stringify(h.executed)}`);
+  const h = harness(ORGANIZATION_ADMIN);
+  await save(h, { ...BODY, organizationId: undefined });
+  const lock = h.executed.find((statement) => statement.sql.includes("pg_advisory_xact_lock"));
+  assert(lock !== undefined && lock.sql.includes("hashtextextended"), `no advisory lock statement among ${JSON.stringify(h.executed)}`);
+  const params = lock?.params ?? [];
+  assert(
+    params.includes(`report_files:${ORG_ID}`),
+    `the lock key must be the bound value report_files:${ORG_ID}, got params ${JSON.stringify(params)}`,
+  );
+}
+
+/**
+ * The tenant GUC (`set_config('app.current_organization', $1, true)`) binds
+ * the **resolved** organization, not the body's. Its own `it()`: `assert`
+ * throws, so a row shared with the lock assertion could only ever redden on
+ * the first claim.
+ */
+export async function assertTheTenantGucBindsTheResolvedOrganization(): Promise<void> {
+  const h = harness(ORGANIZATION_ADMIN);
+  await save(h, { ...BODY, organizationId: undefined });
+  const guc = h.executed.find((statement) => statement.sql.includes("set_config"));
+  assert(guc !== undefined && guc.sql.includes("app.current_organization"), `no set_config statement among ${JSON.stringify(h.executed)}`);
+  const params = guc?.params ?? [];
+  assert(
+    params.includes(ORG_ID),
+    `the GUC must bind the resolved organization ${ORG_ID}, got params ${JSON.stringify(params)}`,
+  );
 }
 
 export async function assertTheAuditPayloadCarriesIdsAndNumbersOnly(): Promise<void> {

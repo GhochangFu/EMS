@@ -291,8 +291,17 @@ export class AccessControlService {
     if (scope.kind === "organization") {
       return scope.organizationIds.includes(file.organizationId);
     }
+    // Step-5 security L1: the organization is checked here too. A location
+    // id is unique fleet-wide, so a row that carries this admin's ids under a
+    // foreign `organization_id` is one no honest writer produces — but the
+    // verdict is the read gate, and it fails closed on the organization
+    // rather than trusting the writer.
     const held = new Set(scope.locationIds);
-    return file.locationIds.length > 0 && file.locationIds.every((id) => held.has(id));
+    return (
+      scope.organizationIds.includes(file.organizationId) &&
+      file.locationIds.length > 0 &&
+      file.locationIds.every((id) => held.has(id))
+    );
   }
 
   /**

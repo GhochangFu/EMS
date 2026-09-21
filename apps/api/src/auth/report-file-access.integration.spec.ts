@@ -177,6 +177,28 @@ export async function locationAdminIsRefusedByOneUncoveredId(
   }
 }
 
+/**
+ * Step-5 security L1 — the location verdict checks the organization too. A
+ * file stamped with PHEWB's `organization_id` and `wc-admin`'s own `RSMOC-WC`
+ * location id (a row no honest writer produces, but one the verdict must
+ * still refuse) is outside `wc-admin`'s organizations. Before the fix the
+ * branch ran only the `every` over `locationIds` and answered true.
+ * `locationAdminReadsWhenEveryIdIsCovered` is the positive control: the same
+ * location ids under ESKOM answer true.
+ */
+export async function locationAdminIsRefusedByAForeignOrganization(
+  svc: AccessControlService,
+  fx: ReportFileFixtures,
+): Promise<void> {
+  const verdict = await svc.canReadReportFile(wcAdmin(), {
+    organizationId: fx.phewbId,
+    locationIds: [fx.wcId],
+  });
+  if (verdict !== false) {
+    throw new Error(`wc-admin on PHEWB/[WC]: expected false, got ${String(verdict)}`);
+  }
+}
+
 /** An empty array means the whole organization, which a location admin does not hold. */
 export async function locationAdminIsRefusedByAnEmptyArray(
   svc: AccessControlService,

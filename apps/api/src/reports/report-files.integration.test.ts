@@ -33,7 +33,7 @@ import {
  * 1–8: the save, the scope and the `0077` policy. Assertions live in the
  * sibling `.spec` (§4.6 / ADR 0014); the lifecycle — pools, seeded ids by
  * code, the storage client and the id-bounded sweep — is
- * `report-files.integration-fixtures.ts`, shared with the lifecycle wrapper.
+ * `report-files.integration.spec.ts`, shared with the lifecycle wrapper.
  *
  * **Two gates, and they are not interchangeable.** `requireIntegrationDb`
  * decides on `DATABASE_URL`, `requireIntegrationStorage` on

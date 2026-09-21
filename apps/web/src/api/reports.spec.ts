@@ -70,14 +70,20 @@ function stubDom(): { lastAnchor: () => AnchorStub | undefined } {
   return { lastAnchor: () => lastAnchor };
 }
 
+type SeenRequest = { url: string; init: RequestInit };
+
 /**
- * Captures the `init` of the single request the call under test makes, and
- * answers with one status and one body — the `asset-images.spec.ts` shape.
+ * Captures the `url` and the `init` of the single request the call under test
+ * makes, and answers with one status and one body — the `asset-images.spec.ts`
+ * shape. Step-5 false-green 2: the earlier capture dropped the URL, so a row
+ * could only ever assert on `init`, and `toBeDefined()` on a default `{}`
+ * gated nothing. `url` is `String(...)`-ed defensively: the client passes a
+ * string today, but `fetch` accepts a `URL` or a `Request` too.
  */
-function captureFetch(status: number, body: BodyInit | null): () => RequestInit {
-  let seen: RequestInit = {};
-  vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
-    seen = init ?? {};
+function captureFetch(status: number, body: BodyInit | null): () => SeenRequest {
+  let seen: SeenRequest = { url: "", init: {} };
+  vi.stubGlobal("fetch", async (url: unknown, init?: RequestInit) => {
+    seen = { url: String(url), init: init ?? {} };
     return new Response(body, { status });
   });
   return () => seen;
@@ -107,7 +113,8 @@ export async function saveWithoutOrganizationPostsExactlyThreeFields(): Promise<
 
   await saveEnergyReportFile(INPUT, "pdf");
 
-  const init = seen();
+  const { url, init } = seen();
+  expect(url.endsWith("/reports/energy/files")).toBe(true);
   expect(init.method).toBe("POST");
   const body = JSON.parse(init.body as string) as Record<string, unknown>;
   expect(Object.keys(body).sort()).toEqual(["endDate", "format", "startDate"]);
@@ -126,19 +133,28 @@ export async function saveWithOrganizationAddsItByKey(): Promise<void> {
 
   await saveEnergyReportFile(INPUT, "xlsx", ORGANIZATION_ID);
 
-  const body = JSON.parse((seen().body as string)) as Record<string, unknown>;
+  const body = JSON.parse(seen().init.body as string) as Record<string, unknown>;
   expect(body.format).toBe("xlsx");
   expect(body.organizationId).toBe(ORGANIZATION_ID);
 }
 
-/** `downloadEnergyReportPdf` hits `export.pdf` and names the `.pdf` anchor. */
+/**
+ * `downloadEnergyReportPdf` hits `export.pdf` — the path suffix, not
+ * `export.csv` — and names the `.pdf` anchor. The query string is checked
+ * for the two dates so a route that dropped them would redden too.
+ */
 export async function downloadPdfHitsExportPdf(): Promise<void> {
   const seen = captureFetch(200, "pdf-bytes");
   const { lastAnchor } = stubDom();
 
   await downloadEnergyReportPdf(INPUT);
 
-  expect(seen()).toBeDefined();
+  const { url, init } = seen();
+  const [path, query] = url.split("?");
+  expect(path?.endsWith("/reports/energy/export.pdf")).toBe(true);
+  expect(query).toContain(`startDate=${INPUT.startDate}`);
+  expect(query).toContain(`endDate=${INPUT.endDate}`);
+  expect(init.method ?? "GET").toBe("GET");
   expect(lastAnchor()?.download).toBe(
     `energy-consumption-${INPUT.startDate}-to-${INPUT.endDate}.pdf`,
   );
@@ -149,31 +165,39 @@ export async function downloadPdfHitsExportPdf(): Promise<void> {
  * still names the `.csv` anchor — the one gate that proves it.
  */
 export async function downloadCsvStillNamesTheCsvAnchor(): Promise<void> {
-  captureFetch(200, "csv-bytes");
+  const seen = captureFetch(200, "csv-bytes");
   const { lastAnchor } = stubDom();
 
   await downloadEnergyReportCsv(INPUT);
 
+  expect(seen().url.split("?")[0]?.endsWith("/reports/energy/export.csv")).toBe(true);
   expect(lastAnchor()?.download).toBe(
     `energy-consumption-${INPUT.startDate}-to-${INPUT.endDate}.csv`,
   );
 }
 
-/** `downloadReportFile` names the anchor `file.filename`. */
+/** `downloadReportFile` hits `/reports/files/<id>/download` and names the anchor `file.filename`. */
 export async function downloadReportFileNamesTheAnchorAfterTheDto(): Promise<void> {
-  captureFetch(200, "pdf-bytes");
+  const seen = captureFetch(200, "pdf-bytes");
   const { lastAnchor } = stubDom();
 
   await downloadReportFile(DTO);
 
+  const { url, init } = seen();
+  expect(url.endsWith(`/reports/files/${DTO.id}/download`)).toBe(true);
+  expect(init.method ?? "GET").toBe("GET");
   expect(lastAnchor()?.download).toBe(DTO.filename);
 }
 
-/** `deleteReportFile` resolves on 204. */
+/** `deleteReportFile` sends `DELETE /reports/files/<id>` and resolves on 204. */
 export async function deleteResolvesOnA204(): Promise<void> {
-  captureFetch(204, null);
+  const seen = captureFetch(204, null);
 
   await expect(deleteReportFile(DTO.id)).resolves.toBeUndefined();
+
+  const { url, init } = seen();
+  expect(url.endsWith(`/reports/files/${DTO.id}`)).toBe(true);
+  expect(init.method).toBe("DELETE");
 }
 
 /** `deleteReportFile` throws `ApiError` with `status === 403` on 403. */
@@ -188,9 +212,10 @@ export async function deleteThrowsApiErrorCarryingA403(): Promise<void> {
 
 /** `fetchReportFiles` reads through `adminFetch`'s contract check. */
 export async function fetchReportFilesReturnsTheList(): Promise<void> {
-  captureFetch(200, JSON.stringify([DTO]));
+  const seen = captureFetch(200, JSON.stringify([DTO]));
 
   const files = await fetchReportFiles();
 
+  expect(seen().url.endsWith("/reports/files")).toBe(true);
   expect(files).toEqual([DTO]);
 }

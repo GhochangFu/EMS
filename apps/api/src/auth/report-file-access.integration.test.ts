@@ -10,6 +10,7 @@ import {
   assetGroupAdminIsRefusedWithTheMasterDataSentence,
   globalAdminReadsEverything,
   loadReportFileFixtures,
+  locationAdminIsRefusedByAForeignOrganization,
   locationAdminIsRefusedByAnEmptyArray,
   locationAdminIsRefusedByOneUncoveredId,
   locationAdminReadsWhenEveryIdIsCovered,
@@ -82,6 +83,10 @@ describe.skipIf(!connectionString)("F3.5a — report file read scope against a r
 
     it("locationAdminIsRefusedByAnEmptyArray", async () => {
       await locationAdminIsRefusedByAnEmptyArray(svc, fx);
+    });
+
+    it("locationAdminIsRefusedByAForeignOrganization", async () => {
+      await locationAdminIsRefusedByAForeignOrganization(svc, fx);
     });
 
     it("assetGroupAdminIsRefusedWithTheMasterDataSentence", async () => {

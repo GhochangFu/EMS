@@ -37,6 +37,7 @@ describe("F3.5a ReportFilesService — render, hash, object then row", () => {
   it("puts the object, then locks, counts, inserts and audits under the tenant, then commits", spec.assertPutsTheObjectThenInsertsTheRowUnderTheTenant);
   it("the key is buildReportObjectKey({ organizationId, fileId }) on the put and on the row", spec.assertTheKeyIsBuiltFromTheOrganizationAndTheFileId);
   it("the advisory lock statement names the organization", spec.assertTheAdvisoryLockNamesTheOrganization);
+  it("the tenant GUC binds the resolved organization, not the body's", spec.assertTheTenantGucBindsTheResolvedOrganization);
   it("the create audit payload carries ids, a code and numbers only", spec.assertTheAuditPayloadCarriesIdsAndNumbersOnly);
   it("a failed put is 503 with one warn naming the id and err.name", spec.assertAFailedPutIs503WithOneWarnNamingTheId);
 });

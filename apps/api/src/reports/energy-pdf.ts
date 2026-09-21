@@ -29,20 +29,24 @@ import { energyTable } from "./reports.serialise";
  * pins "does not throw" as the claim this file makes — not "renders
  * correctly", which WinAnsi cannot promise.
  *
- * **The singleton's URL/local-file access policy is left unset, on purpose.**
- * `createPdf` warns on every call when neither policy is set (`base.js`,
- * measured) because a font descriptor *can* name a URL or a local path.
- * Measured here: `URLResolver.resolve` only acts on a value starting
- * `http://`/`https://`, so a bare Standard-14 name is a no-op regardless of
- * URL policy — but `PDFDocument.provideFont` (`PDFDocument.js`) calls
- * `validateLocalFile` for **every** font not found in the virtual filesystem,
- * bare Standard-14 names included. A deny-all local policy was tried and
- * measured to throw `Access to local file denied` for `Helvetica-Bold` —
- * pdfmake has no "this is a built-in name" exemption, so denying local access
- * denies the standard font itself. The two `console.warn` lines this leaves
- * on every render are the accepted residual (§8: not step-6 verified beyond
- * "no throw"); a real access policy needs a rule that recognises the four
- * Standard-14 names, which is out of this unit's scope.
+ * **The resource access policies (Amendment 1 item 5, measured at step 5).**
+ * `createPdf` warns on every call when either the URL policy or the
+ * local-file policy is unset (`base.js`), because a font descriptor *can*
+ * name a URL or a local path. `PDFDocument.provideFont` calls
+ * `validateLocalFile(def[0])` for **every** font not found in the virtual
+ * filesystem, bare Standard-14 names included — so a deny-all local policy
+ * threw `Access to local file denied` for `Helvetica-Bold` (the Unit 1
+ * measurement). What that measurement did not test: the policy callback
+ * receives the descriptor value itself (`"Helvetica-Bold"`), so a policy can
+ * tell the four Standard-14 names from a path. {@link LOCAL_ACCESS_POLICY}
+ * allows exactly those four and denies everything else; the URL policy denies
+ * every URL (`URLResolver.resolve` only fires on `http(s)://` values, and the
+ * definition carries none). Measured: all four styles render, no
+ * `console.warn`, and a definition naming `/etc/passwd` rejects with pdfmake's
+ * `denied by resource access policy` — where the un-policied build reached
+ * `openImage` and threw `Invalid image ... ENOENT` instead. Both policies are
+ * set per call beside `setFonts`: the module is a process-global singleton,
+ * and a caller that set a looser policy elsewhere would otherwise win.
  */
 export const STANDARD_FONTS: TFontDictionary = {
   Helvetica: {
@@ -52,6 +56,20 @@ export const STANDARD_FONTS: TFontDictionary = {
     bolditalics: "Helvetica-BoldOblique",
   },
 };
+
+const STANDARD_14_NAMES: ReadonlySet<string> = new Set(
+  Object.values(STANDARD_FONTS.Helvetica as Record<string, string>),
+);
+
+/**
+ * pdfmake's local-file policy (`setLocalAccessPolicy`): `true` for exactly the
+ * four Standard-14 names `STANDARD_FONTS` declares, `false` for every other
+ * value — a `.ttf`, an absolute path, an image path, an empty string.
+ */
+export const LOCAL_ACCESS_POLICY = (path: string): boolean => STANDARD_14_NAMES.has(path);
+
+/** No definition this module builds names a URL; every URL is refused. */
+const URL_ACCESS_POLICY = (): boolean => false;
 
 const numberFormat = new Intl.NumberFormat("en", { maximumFractionDigits: 2 });
 
@@ -137,5 +155,7 @@ export async function renderPdf(definition: TDocumentDefinitions): Promise<Buffe
   // spec to assert on — this keeps that assertion reading what was declared,
   // not whatever the singleton wrote back into it.
   PdfMake.setFonts({ Helvetica: { ...STANDARD_FONTS.Helvetica } });
+  PdfMake.setLocalAccessPolicy(LOCAL_ACCESS_POLICY);
+  PdfMake.setUrlAccessPolicy(URL_ACCESS_POLICY);
   return PdfMake.createPdf(definition).getBuffer();
 }

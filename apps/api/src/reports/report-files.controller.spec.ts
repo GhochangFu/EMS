@@ -292,6 +292,52 @@ export async function assertSaveRefusesAnUnknownKeyBeforeTheService(): Promise<v
   assert(calls.length === 0, `an unknown key reached the service: ${JSON.stringify(calls)}`);
 }
 
+/**
+ * Step-5 security M1 — a calendar-invalid date is refused at the parse, with
+ * the field named, and the service never runs. The regex alone admits
+ * `2026-02-30`; without the refine V8 rolls it to `03-02`, the render and the
+ * `putObject` run, and Postgres rejects the `date` insert as a 500. The
+ * controller parse is the gate (the service receives the parsed type), so
+ * this is the one layer that holds the claim.
+ *
+ * `2026-13-01` is a second shape of the same defect: `new Date(...)` is
+ * `Invalid Date` there, and a refine that calls `toISOString()` on it throws
+ * `RangeError` — a 500 through the very guard meant to remove one.
+ */
+export async function assertSaveRefusesACalendarInvalidDateBeforeTheService(
+  field: "startDate" | "endDate",
+  value: string,
+): Promise<void> {
+  const { files, calls } = serviceStub();
+  const controller = new ReportFilesController(files);
+  const err = await rejects(() => controller.save(USER, { ...VALID_BODY, [field]: value }));
+  assert(errorName(err) === "BadRequestException", `${field}=${value} threw ${errorName(err)}, not a 400`);
+  // The message text, not the `fieldErrors` key: the key alone is satisfied by
+  // any refine on the field, so it would not gate "the message names the field".
+  const response = (err as { getResponse(): unknown }).getResponse() as {
+    fieldErrors?: Record<string, string[] | undefined>;
+  };
+  const message = response.fieldErrors?.[field]?.[0];
+  assert(
+    message === `${field} is not a calendar date`,
+    `the 400 for ${field}=${value} must carry the message naming the field, got ${JSON.stringify(response)}`,
+  );
+  assert(calls.length === 0, `${field}=${value} reached the service: ${JSON.stringify(calls)}`);
+}
+
+/** The positive control for the refine: the last day of February is accepted and reaches the service. */
+export async function assertSaveAcceptsTheLastDayOfFebruary(): Promise<void> {
+  const { files, calls } = serviceStub();
+  const controller = new ReportFilesController(files);
+  const body = { ...VALID_BODY, startDate: "2026-02-28", endDate: "2026-02-28" };
+  await controller.save(USER, body);
+  assert(calls.length === 1, `2026-02-28 must reach the service once, got ${JSON.stringify(calls)}`);
+  assert(
+    JSON.stringify(calls[0]?.args[1]) === JSON.stringify(body),
+    `the service must receive 2026-02-28 unchanged, got ${JSON.stringify(calls[0]?.args[1])}`,
+  );
+}
+
 /** The positive control: a valid body reaches the service once, parsed, with the JWT. */
 export async function assertSaveHandsTheParsedBodyAndTheJwtToTheService(): Promise<void> {
   const { files, calls } = serviceStub();
