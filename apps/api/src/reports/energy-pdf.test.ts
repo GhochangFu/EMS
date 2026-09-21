@@ -6,6 +6,7 @@ import {
   assertLocalPolicyAllowsExactlyTheStandardFour,
   assertMoneyCarriesTheCodeAndNoSymbol,
   assertNonWinAnsiNameDoesNotThrow,
+  assertEmptyScopeRendersAPdf,
   assertNullCostRendersTheDash,
   assertRenderEmitsNoWarning,
   assertRenderProducesAPdf,
@@ -32,6 +33,10 @@ describe("energy report PDF (ADR 0071 decision 2)", () => {
 
   it("does not throw for a non-WinAnsi consumer name", async () => {
     await assertNonWinAnsiNameDoesNotThrow();
+  });
+
+  it("renders an empty scope — no consumers, null cost — to a closed PDF", async () => {
+    await assertEmptyScopeRendersAPdf();
   });
 
   it("names the standard-14 Helvetica by string, with no font file", () => {

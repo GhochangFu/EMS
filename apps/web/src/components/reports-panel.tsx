@@ -311,8 +311,9 @@ type SaveToHistoryProps = {
  * The organization select exists only for the global `admin`, who must name
  * one; every other role sends no `organizationId` and, if the API still asks
  * for one (an organization admin holding several), renders its 400 sentence.
- * Every disabled state is one of `saveBlockedReason`'s sentences, rendered
- * beside the button, so nothing on this screen is disabled without saying why.
+ * Every disabled state is one of `saveBlockedReason`'s sentences: the
+ * pending one is carried by the button label ("Saving…"), the others are
+ * rendered beside the button, so nothing here is disabled without saying why.
  */
 function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryProps) {
   const queryClient = useQueryClient();
