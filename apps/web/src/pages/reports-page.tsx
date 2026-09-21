@@ -23,8 +23,8 @@ export function ReportsPage({ user }: ReportsPageProps) {
         <PageHeader
           eyebrow="R.rp"
           title="Reports & Analytics"
-          subtitle="One-click generation · Energy Consumption CSV · preview/export only"
-          actions={<StatusPill label="CSV Active" />}
+          subtitle="One-click generation · Energy Consumption PDF · XLSX · CSV · saved report history"
+          actions={<StatusPill label="PDF · XLSX · CSV Active" />}
         />
 
         <ReportsPanel user={user} />
