@@ -17,9 +17,12 @@ import { STORAGE_CLIENT } from "./storage.tokens";
  * `@aws-sdk`.** `health.controller.ts` injects it, and that controller is in
  * the worker's import closure
  * (`tests/f4.24-worker-imports-no-api-loop.test.ts` `WORKER_LEAVES`), so
- * anything this file imports the worker process loads at start-up. The
- * worker has no storage config (decision 9) and must not pull the SDK in
- * behind a service it never resolves.
+ * anything this file imports the worker process loads at start-up. Since
+ * `F3.5b` (ADR 0071 plan R-3) the worker imports `StorageModule` too and
+ * resolves this service for its own `/health`; the import discipline stays
+ * because the controller, not the module, is the reason this file is in
+ * the closure, and a controller-side import of the SDK would survive a
+ * later row that removes the module again.
  *
  * The bucket is never logged or thrown from here; the head read's failure
  * collapses to `reachable: false` inside `readStorageHealth`.

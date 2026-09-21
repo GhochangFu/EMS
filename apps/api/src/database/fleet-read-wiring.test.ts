@@ -10,6 +10,7 @@ import {
   assertConformedServiceSlots,
   assertReportFilesServiceFleetSlot,
   assertReportFilesServiceTenantSlot,
+  assertReportRenderServiceTenantSlot,
   assertRuleSweepServiceTenantSlot,
   assertUnconditionalFleetReadSlots,
   assertWorkerHostFleetSlot,
@@ -71,5 +72,9 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("F3.5a ReportFilesService injects the fleet pool in slot 1", () => {
     assertReportFilesServiceFleetSlot();
+  });
+
+  it("F3.5b ReportRenderService injects the tenant pool in slot 0", () => {
+    assertReportRenderServiceTenantSlot();
   });
 });

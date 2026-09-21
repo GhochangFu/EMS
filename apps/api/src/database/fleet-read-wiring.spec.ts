@@ -12,6 +12,7 @@ import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { WorkerHostService } from "../queue/worker-host.service";
 import { ReportFilesService } from "../reports/report-files.service";
+import { ReportRenderService } from "../reports/report-render.service";
 import { ReportsService } from "../reports/reports.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import { RulesService } from "../rules/rules.service";
@@ -179,4 +180,18 @@ export function assertReportFilesServiceTenantSlot(): void {
 
 export function assertReportFilesServiceFleetSlot(): void {
   expect(injectedToken(ReportFilesService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F3.5b` — `ReportRenderService(tenantDb, client, config, reports, email,
+ * metrics, channels)`: the tenant pool in slot 0 and **no fleet token at
+ * all** — the schedule read and the asset resolution run on the processor's
+ * tenant transaction, and the render itself reaches the fleet pool only
+ * through `ReportsService` (ADR 0071 decision 9). A fleet handle here would
+ * be the second route the RLS scope could not see, the `RuleSweepService`
+ * reasoning. The slot-1 `STORAGE_CLIENT` pin is the spec's structural
+ * positive control (`report-render.service.spec.ts`).
+ */
+export function assertReportRenderServiceTenantSlot(): void {
+  expect(injectedToken(ReportRenderService, 0)).toBe(TENANT_DRIZZLE);
 }

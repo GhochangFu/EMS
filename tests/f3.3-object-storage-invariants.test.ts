@@ -33,12 +33,17 @@ import { describe, expect, it } from "vitest";
  *    in the same file — allowed because decision 4 gates one object-key
  *    *file*, not one function; a row below counts that it too exists exactly
  *    once and lives in `object-key.ts`.
- * 4. **The worker gets no storage** (decision 9). `worker.module.ts` reaches
- *    nothing under `./storage/`, the two files in the worker's import
- *    closure pull in neither the module nor the SDK, and
- *    `HealthController.getHealth` guards the `@Optional()` service before it
- *    calls it — the worker resolves `undefined` there, so an unguarded call
- *    is a crash on `/health` at `WORKER_PORT` rather than a missing key.
+ * 4. **The health path never carries the SDK by itself** (decision 9, as
+ *    `F3.5b` re-states it). Until ADR 0071 plan R-3 this claim read "the
+ *    worker gets no storage": `worker.module.ts` reached nothing under
+ *    `./storage/`. The `reports-render` job now puts, reads back and
+ *    deletes report objects, so `WorkerModule` imports `StorageModule` and
+ *    the first row below is that positive. What stays: the three files on
+ *    the `/health` path pull in neither the module nor the SDK (the module
+ *    is the one door to `aws-s3-ops`), and `HealthController.getHealth`
+ *    guards the `@Optional()` service before it calls it — a process that
+ *    resolves `undefined` there (a future root without the module) must
+ *    answer rather than crash on `/health`.
  *
  * **Comment-stripping is load-bearing in four places**: the `buildObjectKey`
  * count and the key-literal scan (`object-key.ts`'s own docblock names
@@ -428,9 +433,13 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
     });
   });
 
-  describe("the worker gets no storage (decision 9, plan Q-A)", () => {
-    it("worker.module.ts reaches nothing under ./storage/", () => {
-      expect(source("worker.module.ts")).not.toMatch(/\.\/storage\//);
+  describe("the health path never carries the SDK by itself (decision 9, plan Q-A; F3.5b R-3)", () => {
+    // F3.5b (ADR 0071 plan R-3): the inverse of the F3.3 row — the worker
+    // imports StorageModule for the render job, and nothing else under
+    // ./storage/ (the module is the one door to the SDK).
+    it("worker.module.ts imports ./storage/storage.module and nothing else under ./storage/", () => {
+      const imports = [...source("worker.module.ts").matchAll(/from\s*["'](\.\/storage\/[^"']+)["']/g)].map((m) => m[1]);
+      expect(imports).toEqual(["./storage/storage.module"]);
     });
 
     it("storage-health.service.ts imports neither storage.module, aws-s3-ops nor @aws-sdk", () => {

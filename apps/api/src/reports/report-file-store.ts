@@ -85,6 +85,33 @@ export async function discardObjectUnlessTheRowCommitted(
   }
 }
 
+/**
+ * `F3.5b` U8 (plan R-9, R-15) — the render job's multi-key discard: the
+ * objects this run put when phase A throws (the rows cannot commit, the
+ * throw aborts the transaction), and the pruned rows' objects after the
+ * commit (phase B). Best-effort, never throws: every key is attempted, a
+ * failure is one `warn` naming the **file id** and `err.name` — never the
+ * key (§9.6) — and the orphan stays for the sweep row ADR 0066 decision 11
+ * keeps open. Unlike `discardObjectUnlessTheRowCommitted` there is no
+ * committed-row re-check: the caller knows the rows' state (aborted, or
+ * committed-deleted), so the re-read would decide nothing.
+ */
+export async function discardObjectsBestEffort(
+  client: StorageClient,
+  logger: Pick<Logger, "warn">,
+  keysByFileId: ReadonlyMap<string, string>,
+): Promise<void> {
+  for (const [fileId, key] of keysByFileId) {
+    try {
+      await deleteObject(client, key);
+    } catch (err) {
+      logger.warn(
+        `report file ${fileId}: object delete failed with ${errorName(err)}; an orphan object remains (ADR 0066 decision 11)`,
+      );
+    }
+  }
+}
+
 export function errorName(err: unknown): string {
   return typeof err === "object" && err !== null && typeof (err as { name?: unknown }).name === "string"
     ? (err as { name: string }).name
