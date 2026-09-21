@@ -128,12 +128,19 @@ One row re-estimated. **Ruled (a).** Umbrella effort becomes 11–15.
    exports a pure `energyPdfDefinition(preview: EnergyReportPreview):
    TDocumentDefinitions` that reads the same `energyTable` rows as the CSV
    and XLSX — one report, three formats, one row source — and a
-   `renderPdf(definition): Promise<Buffer>` that drives `PdfPrinter`. The
-   fonts are pdfkit's built-in Helvetica descriptors, so no `.ttf` is
-   shipped, loaded or bundled. **Consequence, ruled here:** the standard
-   fonts are WinAnsi, so the PDF writes money as `<ISO code> <amount>`
-   (`INR 1,234.56`), never a currency symbol; the XLSX and CSV already carry
-   numbers only.
+   `renderPdf(definition): Promise<Buffer>` that drives `PdfPrinter`. **The
+   fonts narrow what Q3 offered.** Q3 described `pdfmake` as shipping a
+   Roboto font VFS (~1 MB); that VFS is the browser build's, and the server
+   build accepts the PDF standard-14 font names through `PdfPrinter` —
+   `{ Helvetica: { normal: "Helvetica", bold: "Helvetica-Bold", italics:
+   "Helvetica-Oblique", bolditalics: "Helvetica-BoldOblique" } }` (pdfmake
+   docs, *Standard 14 fonts*, read 2026-09-21) — so no `.ttf` and no VFS is
+   shipped, loaded or bundled. **Consequence, ruled here:** the docs say the
+   standard fonts *"support only ANSI code page"*, so the PDF writes money
+   as `<ISO code> <amount>` (`INR 1,234.56`), never a currency symbol, and
+   an asset name outside WinAnsi renders as pdfkit's fallback glyph; the
+   XLSX and CSV already carry numbers only and are the formats for such
+   names. A bundled Unicode font is a named deferral.
 
 3. **One more on-demand route, same query, same scope, same headers:**
    `GET /api/v1/reports/energy/export.pdf` beside `export.csv` and
@@ -214,16 +221,43 @@ One row re-estimated. **Ruled (a).** Umbrella effort becomes 11–15.
    tenancy, empty strict payload, one repeatable job upserted at
    `onModuleInit` every `REPORT_DISPATCH_INTERVAL_MS` (default `60000`,
    floor `10000`), scheduler id `reports-dispatch`. Its handler runs as
-   `bms_fleet` on `ctx.db`: `UPDATE bms.report_schedules SET next_run_at =
-   <next>, last_run_at = now() WHERE enabled AND next_run_at <= now()
-   RETURNING …` under `FOR UPDATE SKIP LOCKED`, then one `enqueue` per
-   returned row. `reports-render` — tenant tenancy, payload
+   `bms_fleet` on `ctx.db`, inside one transaction: `SELECT … FROM
+   bms.report_schedules WHERE enabled AND next_run_at <= now() FOR UPDATE
+   SKIP LOCKED`, then one `enqueue` per row, then `UPDATE … SET next_run_at
+   = <next>, last_run_at = now()` for the rows enqueued, then commit.
+   Enqueue before advance, because the queue is the idempotent side: a tick
+   that dies between the two leaves `next_run_at` due, the next tick
+   enqueues the same `jobId` and BullMQ de-duplicates it while the earlier
+   job is retained; the reverse order would lose the period. A second
+   dispatcher (an `api-replica`'s worker) skips the locked rows.
+   `reports-render` — tenant tenancy, payload
    `{ organizationId, scheduleId, periodStart, periodEnd }` (uuid, uuid,
    date, date, strict), `jobId` `<scheduleId>:<periodEnd>`, retry
    `RETRY_DEFAULTS`. `concurrency: 1` on both, as `startQueueWorkers` sets.
 
-9. **The render job is idempotent on the unique row.** Inside
-   `withTenant(tenantDb, organizationId, …)` it loads the schedule, resolves
+9. **The render job is idempotent on the unique row, and it reaches the
+   report through a named import edge.** The job body lives in a
+   `ReportRenderService` in `apps/api/src/reports/`, exported by a
+   loop-free `ReportsCoreModule` (the `RuleSweepModule` shape, ADR 0064
+   decision 3) that `WorkerModule` imports beside `RuleSweepModule`;
+   `WorkerHostService` injects it as constructor slot 7 and its docblock
+   records the second `queue/ → reports/` edge in the sentence that
+   already records `queue/ → rules/`. `ReportsCoreModule` provides
+   `ReportsService`, `ReportRenderService` and — **as a provider, never by
+   importing `CalcModule`** — `CalcParametersService` (one `FLEET_DRIZZLE`
+   dependency, from the `@Global()` `DatabaseModule`), because
+   `CalcModule` carries `CalcStreamingService` and `CalcSchedulerService`
+   and ADR 0063 decision 3 forbids the worker a loop the API starts;
+   `NotificationsCoreModule` supplies the transports for decision 10, as it
+   does for `RuleSweepModule`. The fence
+   `tests/f4.24-worker-imports-no-api-loop.test.ts` stays the gate: the new
+   module's closure reaches no sweep loop, no listener and no controller,
+   and the fence reddens if a later edit makes that false;
+   `fleet-read-wiring.spec.ts` pins the new slot, and the compose
+   boot is the DI gate (a green build is not one). `ReportsModule` imports
+   `ReportsCoreModule` in place of providing `ReportsService` itself.
+   Inside
+   `withTenant(tenantDb, organizationId, …)` the job loads the schedule, resolves
    `location_ids` to asset ids **under RLS** (the tenant transaction), calls
    `ReportsService` with those ids on the fleet pool exactly as the
    controller does, writes one `report_files` row and one object per format,
