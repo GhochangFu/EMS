@@ -15,6 +15,7 @@ import {
   anAdminSaveSendsTheBodyByKey,
   anAdminSeesTheOrganizationSelect,
   anOrganizationAdminGetsTheChannelSelect,
+  anUnchangedEditKeepsSaveDisabled,
   choosingAnOrganizationLoadsItsLocations,
   deleteCallsTheApiOnceAndRefetches,
   editPrefillsTheName,
@@ -95,6 +96,10 @@ describe("F3.5b report schedules section", () => {
 
   it("Edit pre-fills the name", async () => {
     await editPrefillsTheName();
+  });
+
+  it("an unchanged edit keeps Save disabled beside Nothing changed yet", async () => {
+    await anUnchangedEditKeepsSaveDisabled();
   });
 
   it("a rename PATCHes only the name key", async () => {

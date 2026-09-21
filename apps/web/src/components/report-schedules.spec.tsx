@@ -357,6 +357,17 @@ export async function editPrefillsTheName(): Promise<void> {
   await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue(FIRST.name));
 }
 
+/** Editing a row and changing nothing keeps Save disabled beside "Nothing changed yet" (no empty PATCH). */
+export async function anUnchangedEditKeepsSaveDisabled(): Promise<void> {
+  renderSchedules("admin", [FIRST, SECOND]);
+  const first = await rowFor(FIRST.name);
+  await userEvent.click(within(first).getByRole("button", { name: "Edit" }));
+  await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue(FIRST.name));
+
+  expect(saveButton()).toBeDisabled();
+  expect(screen.getByText("Nothing changed yet")).toBeInTheDocument();
+}
+
 /** A rename alone PATCHes `{ name }` — only the changed key. */
 export async function updateSendsOnlyTheChangedKey(): Promise<void> {
   const update = vi.spyOn(reportsApi, "updateReportSchedule").mockResolvedValue(FIRST);

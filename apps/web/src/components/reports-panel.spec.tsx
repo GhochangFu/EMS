@@ -220,6 +220,15 @@ export async function aViewerSeesNoSchedulesHeading(): Promise<void> {
   expect(screen.queryByRole("heading", { name: "Schedules" })).not.toBeInTheDocument();
 }
 
+/** `F3.5b` R-18 — an `asset_group_admin` sees no Schedules heading either (the browser pass's third user). */
+export async function anAssetGroupAdminSeesNoSchedulesHeading(): Promise<void> {
+  renderPanel(1.25, {}, userWithRole("asset_group_admin"));
+  await previewResolved();
+
+  expect(screen.getByRole("button", { name: "Export PDF" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Schedules" })).not.toBeInTheDocument();
+}
+
 /** `F3.5b` R-18 — an admin sees the Schedules heading. */
 export async function anAdminSeesTheSchedulesHeading(): Promise<void> {
   renderPanel(1.25, {}, userWithRole("admin"));

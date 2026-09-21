@@ -14,6 +14,7 @@ import {
   anAdminMustChooseAnOrganizationBeforeSaving,
   anAdminSaveSendsTheFormatAndTheOrganizationInOrder,
   anAdminSeesTheSchedulesHeading,
+  anAssetGroupAdminSeesNoSchedulesHeading,
   anUnconfiguredPreviewShowsTheDashAndTheReason,
   exportPdfCallsTheApiWithTheRange,
   saveCallsTheApiByPositionAndRendersTheSavedLine,
@@ -92,6 +93,10 @@ describe("F3.5a reports panel — PDF export, Save to history, role gate", () =>
 
   it("F3.5b — a viewer sees no Schedules heading; Export PDF is the control", async () => {
     await aViewerSeesNoSchedulesHeading();
+  });
+
+  it("F3.5b — an asset_group_admin sees no Schedules heading; Export PDF is the control", async () => {
+    await anAssetGroupAdminSeesNoSchedulesHeading();
   });
 
   it("F3.5b — an admin sees the Schedules heading", async () => {
