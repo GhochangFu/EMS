@@ -9,9 +9,11 @@ import {
   aMeasuredRatioRendersInTheReportsPanel,
   aNullCostRendersTheDashInTheReportsPanel,
   aRefusedSaveRendersTheApiSentence,
+  aViewerSeesNoSchedulesHeading,
   aViewerSeesThePdfButtonAndNoSaveOrHistory,
   anAdminMustChooseAnOrganizationBeforeSaving,
   anAdminSaveSendsTheFormatAndTheOrganizationInOrder,
+  anAdminSeesTheSchedulesHeading,
   anUnconfiguredPreviewShowsTheDashAndTheReason,
   exportPdfCallsTheApiWithTheRange,
   saveCallsTheApiByPositionAndRendersTheSavedLine,
@@ -86,5 +88,13 @@ describe("F3.5a reports panel — PDF export, Save to history, role gate", () =>
 
   it("a refused save renders the API's sentence", async () => {
     await aRefusedSaveRendersTheApiSentence();
+  });
+
+  it("F3.5b — a viewer sees no Schedules heading; Export PDF is the control", async () => {
+    await aViewerSeesNoSchedulesHeading();
+  });
+
+  it("F3.5b — an admin sees the Schedules heading", async () => {
+    await anAdminSeesTheSchedulesHeading();
   });
 });
