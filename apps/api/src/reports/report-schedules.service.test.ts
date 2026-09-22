@@ -40,6 +40,8 @@ describe("F3.5b ReportSchedulesService — update (Q-3 / R-8)", () => {
   it("re-sending the stored cadence keeps nextRunAt", spec.patchOfTheSameCadenceKeepsNextRunAt);
   it("the write checks run on the new locationIds", spec.patchRunsTheWriteChecksOnTheNewLocationIds);
   it("the write checks run on the new channelId", spec.patchRunsTheWriteChecksOnTheNewChannelId);
+  it("a PATCH to an unheld location of the organization is 403 (item 7 A)", spec.patchToAnUnheldLocationOfTheOrganizationIs403);
+  it("a PATCH to [] under a location read scope is 403 (item 7 A)", spec.patchToAnEmptyScopeUnderALocationReadScopeIs403);
   it("a name-only PATCH asks no write-check read", spec.patchOfNameAloneAsksNoWriteCheckRead);
   it("out of scope is 403 before any write", spec.patchOutOfScopeIs403BeforeAnyWrite);
   it("an unknown id is 404", spec.patchOfAnUnknownIdIs404);
@@ -51,6 +53,7 @@ describe("F3.5b ReportSchedulesService — get and list", () => {
   it("listAppliesTheLocationPredicateOnlyForLocationAdmins — location", () => spec.listAppliesTheLocationPredicateOnlyForLocationAdmins("location"));
   it("listAppliesTheLocationPredicateOnlyForLocationAdmins — organization", () => spec.listAppliesTheLocationPredicateOnlyForLocationAdmins("organization"));
   it("listAppliesTheLocationPredicateOnlyForLocationAdmins — global", () => spec.listAppliesTheLocationPredicateOnlyForLocationAdmins("global"));
+  it("a location scope with no locations lists nothing, was 500 (item 7 B)", spec.listOfALocationScopeWithNoLocationsIsEmpty);
   it("list orders created_at desc, id desc", spec.listOrdersNewestFirst);
   it("list maps every row through the DTO", spec.listMapsEveryRowThroughTheDto);
 });

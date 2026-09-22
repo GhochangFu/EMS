@@ -54,6 +54,23 @@ export const SECOND: ReportFileDto = {
   createdAt: "2026-09-01T06:00:00.000Z",
 };
 
+/**
+ * `F3.5b` post-merge sweep (ADR 0071 Amendment 2 item 7 D): a scheduled
+ * file, `deliveryStatus: "none"` with a non-null `scheduleId` — the one
+ * fixture that observes the table's `scheduleId` wiring (every other fixture
+ * carries `null`, so replacing `file.scheduleId` with `null` left the suite
+ * green).
+ */
+export const SCHEDULED: ReportFileDto = {
+  ...FIRST,
+  id: "0f0a4a1e-1111-4a5b-8c4d-000000000003",
+  periodStart: "2026-09-08",
+  periodEnd: "2026-09-14",
+  filename: "energy-consumption-2026-09-08-to-2026-09-14.pdf",
+  scheduleId: "7b1c2d3e-4444-4a5b-8c4d-000000000020",
+  createdAt: "2026-09-15T06:00:00.000Z",
+};
+
 const UNAVAILABLE_503 = "Report history is unavailable: object storage is not configured";
 
 function renderHistory(): void {
@@ -102,6 +119,26 @@ export async function twoFilesRenderTwoRowsWithSizePeriodAndDelivery(): Promise<
   expect(within(second).getByText(periodLabel(SECOND))).toBeInTheDocument();
   expect(within(second).getByText("XLSX")).toBeInTheDocument();
   expect(screen.getAllByRole("button", { name: "Delete" })).toHaveLength(2);
+}
+
+/**
+ * A scheduled file's Origin cell reads "Scheduled" and its Delivery cell
+ * "Pending"; the on-demand row beside it reads "On demand" twice — the
+ * positive control that the cells are wired to the row's own `scheduleId`.
+ */
+export async function aScheduledFileRendersScheduledAndPending(): Promise<void> {
+  vi.spyOn(reportsApi, "fetchReportFiles").mockResolvedValue([FIRST, SCHEDULED]);
+
+  renderHistory();
+
+  const scheduled = await rowFor(SCHEDULED.filename);
+  expect(within(scheduled).getByText("Scheduled")).toBeInTheDocument();
+  expect(within(scheduled).getByText("Pending")).toBeInTheDocument();
+  expect(within(scheduled).queryByText("On demand")).not.toBeInTheDocument();
+
+  const onDemand = await rowFor(FIRST.filename);
+  expect(within(onDemand).getAllByText("On demand")).toHaveLength(2);
+  expect(within(onDemand).queryByText("Scheduled")).not.toBeInTheDocument();
 }
 
 /** Download hands the whole DTO to `downloadReportFile` — the filename comes from it. */

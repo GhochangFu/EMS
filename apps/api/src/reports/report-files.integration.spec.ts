@@ -105,6 +105,8 @@ export type ReportFileIntegrationFixtures = {
    * only and the `⊆` still holds.
    */
   readonly assetIdsOfLocation: (locationId: string) => Promise<Set<string>>;
+  /** The same read keyed by `organization_id` — the whole-organization render's tenant bound (F3.5b Amendment 2 item 7 E). */
+  readonly assetIdsOfOrganization: (organizationId: string) => Promise<Set<string>>;
   /** Every file id a row created, for the `afterAll` sweep of rows and audit rows. */
   readonly createdFileIds: string[];
   /** Every key a row put, for the `afterAll` sweep of the bucket. */
@@ -795,6 +797,12 @@ export async function openReportFileFixtures(
     assetIdsOfLocation: async (locationId) => {
       const { rows } = await fleetPool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE location_id = $1`, [
         locationId,
+      ]);
+      return new Set(rows.map((row) => row.id));
+    },
+    assetIdsOfOrganization: async (organizationId) => {
+      const { rows } = await fleetPool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE organization_id = $1`, [
+        organizationId,
       ]);
       return new Set(rows.map((row) => row.id));
     },

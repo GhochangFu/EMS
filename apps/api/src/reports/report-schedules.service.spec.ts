@@ -717,6 +717,42 @@ export async function patchRunsTheWriteChecksOnTheNewChannelId(): Promise<void> 
   assert(h.updates.length === 0, "nothing may be updated");
 }
 
+/**
+ * Post-merge sweep (Amendment 2 item 7 A): PATCH's two 403 branches of
+ * `assertWriteScope` were gated by no row — mutations `writableLocations:
+ * null` and `undefined` on `[]` left every row green. A `[WC]` row moved to
+ * a location of the organization the caller does not hold is 403 with the
+ * scope sentence; `organizationLocations` carries the target so the 400 of
+ * the row above cannot fire first.
+ */
+export async function patchToAnUnheldLocationOfTheOrganizationIs403(): Promise<void> {
+  const h = harness({
+    scheduleRows: [storedSchedule({ locationIds: [WC] })],
+    writableLocationIds: [WC],
+    writableOrganizationIds: [ORG_ID],
+    organizationLocations: [WC, OTHER_LOCATION],
+    readScope: { kind: "location", organizationIds: [ORG_ID], locationIds: [WC] },
+  });
+  const err = await captureRejection(() => h.service.update(JWT, SCHEDULE_ID, { locationIds: [OTHER_LOCATION] }));
+  assert(errorName(err) === "ForbiddenException", `expected 403, got ${errorName(err)}: ${errorMessage(err)}`);
+  assert(errorMessage(err) === "locationIds is outside your access scope", `got "${errorMessage(err)}"`);
+  assert(h.updates.length === 0, "nothing may be updated");
+}
+
+/** Item 7 A, the second branch: a `location` read scope moving its `[WC]` row to `[]` is 403 with the empty-scope sentence. */
+export async function patchToAnEmptyScopeUnderALocationReadScopeIs403(): Promise<void> {
+  const h = harness({
+    scheduleRows: [storedSchedule({ locationIds: [WC] })],
+    writableLocationIds: [WC],
+    writableOrganizationIds: [ORG_ID],
+    readScope: { kind: "location", organizationIds: [ORG_ID], locationIds: [WC] },
+  });
+  const err = await captureRejection(() => h.service.update(JWT, SCHEDULE_ID, { locationIds: [] }));
+  assert(errorName(err) === "ForbiddenException", `expected 403, got ${errorName(err)}: ${errorMessage(err)}`);
+  assert(errorMessage(err) === "An empty location scope requires organization-level rights", `got "${errorMessage(err)}"`);
+  assert(h.updates.length === 0, "nothing may be updated");
+}
+
 /** A name-only PATCH asks neither the locations read nor the channel read (the row's scope was verified by the verdict). */
 export async function patchOfNameAloneAsksNoWriteCheckRead(): Promise<void> {
   const h = await runPatch({ name: "renamed" });
@@ -775,6 +811,20 @@ export async function listAppliesTheLocationPredicateOnlyForLocationAdmins(kind:
     return;
   }
   assert(!hasPredicate, `${kind} must carry no location predicate; sql: ${where.sql}`);
+}
+
+/**
+ * Post-merge sweep (Amendment 2 item 7 B, security L1): a `location_admin`
+ * whose grants resolve to no location listed 500 — drizzle's
+ * `arrayContained(column, [])` throws `arrayContained requires at least one
+ * value` while the predicate is built. The list now fails closed: `[]`,
+ * before any select runs.
+ */
+export async function listOfALocationScopeWithNoLocationsIsEmpty(): Promise<void> {
+  const h = harness({ readScope: { kind: "location", organizationIds: [], locationIds: [] }, scheduleRows: [storedSchedule()] });
+  const dtos = await h.service.list(JWT);
+  assert(dtos.length === 0, `an empty location scope must list nothing; got ${dtos.length}`);
+  assert(h.listWheres.length === 0, `no list select may run for an empty location scope; ran ${h.listWheres.length}`);
 }
 
 /** R-12: `ORDER BY created_at DESC, id DESC` — asserted on the rendered `orderBy` arguments, not on the fake's row order. */

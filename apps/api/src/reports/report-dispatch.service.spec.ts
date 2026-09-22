@@ -8,7 +8,12 @@ import type { BmsDb } from "@bms/db";
 
 import type { QueueClient, QueueHandle } from "../queue/queue-registry";
 import { renderJobId } from "../queue/reports-render";
-import { REPORT_DISPATCH_CLAIM_LIMIT, ReportDispatchService, type ReportDispatchSummary } from "./report-dispatch.service";
+import {
+  REPORT_DISPATCH_CLAIM_LIMIT,
+  REPORT_DISPATCH_POISON_BACKOFF_MS,
+  ReportDispatchService,
+  type ReportDispatchSummary,
+} from "./report-dispatch.service";
 import { nextRunAt, periodFor } from "./report-period";
 
 /**
@@ -31,10 +36,14 @@ import { nextRunAt, periodFor } from "./report-period";
  * produce a different `periodEnd` for the three-days-late row and redden
  * the late-tick row's job id.
  *
- * **The poison row (R-6).** `"Not/AZone"` passes the casing regex and fails
- * `Intl.DateTimeFormat`, so `periodFor` throws `ReportPeriodError`; the
- * row is counted, warned once by id and error name — never by zone string
- * (§9.6: an operator-typed value stays out of the log) — and left untouched.
+ * **The poison row (R-6, changed by Amendment 2 item 7 C).** `"Not/AZone"`
+ * passes the casing regex and fails `Intl.DateTimeFormat`, so `periodFor`
+ * throws `ReportPeriodError`; the row is counted, warned once by id and
+ * error name — never by zone string (§9.6: an operator-typed value stays
+ * out of the log) — and **deferred**: one update sets `next_run_at = now +
+ * REPORT_DISPATCH_POISON_BACKOFF_MS` and touches nothing else. The old
+ * "left due" behaviour pinned the head of the `LIMIT 200` claim and
+ * starved every other tenant (the security sweep's 200-row probe).
  */
 
 export function assert(condition: boolean, message: string): void {
@@ -209,6 +218,15 @@ function updateNames(update: RecordedUpdate, id: string): boolean {
   return update.params.includes(id);
 }
 
+/** Item 7 C: the deferral is written in the post-loop phase with the advances — after every add. */
+export function assertPoisonDeferralIsWrittenAfterEveryAdd(h: DispatchHarness): void {
+  const expected = ["select", "add", "update", "update"];
+  assert(
+    JSON.stringify(h.calls) === JSON.stringify(expected),
+    `expected [select, add, update, update] — the deferral joins the advances after the adds, never between them; got ${h.calls.join(", ")}`,
+  );
+}
+
 export function assertRecordedOrderIsSelectThenAddsThenUpdates(h: DispatchHarness): void {
   const expected = ["select", "add", "add", "update", "update"];
   assert(
@@ -288,11 +306,29 @@ export function assertPoisonRowIsCountedSkippedInvalid(summary: ReportDispatchSu
   );
 }
 
-export function assertPoisonRowGetsNoUpdate(h: DispatchHarness): void {
+/**
+ * Amendment 2 item 7 C: the poison row is deferred, not left due. Exactly one
+ * update names it; its `next_run_at` parameter is `now +
+ * REPORT_DISPATCH_POISON_BACKOFF_MS` (one hour), and the statement carries
+ * two parameters and no `last_run_at` — the healthy row's advance carries
+ * four (`next_run_at`, `last_run_at`, `updated_at`, `id`).
+ */
+export function assertPoisonRowIsDeferredAnHourAndNothingElseMoves(h: DispatchHarness): void {
+  const mine = h.updates.filter((update) => updateNames(update, POISON_ID));
+  assert(mine.length === 1, `expected exactly one UPDATE naming the poison row (deferred, item 7 C); got ${mine.length}`);
+  const update = mine[0] as RecordedUpdate;
+  const expected = new Date(NOW.getTime() + REPORT_DISPATCH_POISON_BACKOFF_MS).toISOString();
+  const actual = nextRunAtOf(update).toISOString();
+  assert(actual === expected, `expected the poison row's next_run_at = now + 1h (${expected}); got ${actual}`);
   assert(
-    !h.updates.some((update) => updateNames(update, POISON_ID)),
-    `expected no UPDATE for the poison row — it stays due and enabled (R-6); updates=${JSON.stringify(h.updates.map((u) => u.params))}`,
+    update.params.length === 2 && !/last_run_at|updated_at|enabled/.test(update.sql),
+    `expected the deferral to set next_run_at only (two parameters, no last_run_at/updated_at/enabled); got ${update.sql} with ${update.params.length} parameters`,
   );
+}
+
+/** The one-hour backoff is a module constant, not a magic number in the tick. */
+export function assertTheBackoffIsOneHour(): void {
+  assert(REPORT_DISPATCH_POISON_BACKOFF_MS === 3_600_000, `expected REPORT_DISPATCH_POISON_BACKOFF_MS === 3_600_000; got ${REPORT_DISPATCH_POISON_BACKOFF_MS}`);
 }
 
 export function assertPoisonRowWarnsOnceWithIdAndErrorName(h: DispatchHarness): void {

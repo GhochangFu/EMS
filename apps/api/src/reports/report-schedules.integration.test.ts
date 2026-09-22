@@ -6,6 +6,7 @@ import {
   adminCreatesForEskomAndTheRowIsForced,
   theInsertStampedWithAForeignOrganizationIs42501,
   wcAdminCreatesOnlyWithItsOwnLocation,
+  wcAdminCannotPatchItsRowOutOfItsScope,
   assetGroupAdminIsRefusedOnEveryRoute,
   pheAdminListsOnlyPhewb,
   wcAdminSeesItsOwnAndNotTheAdminsEmptyScopeRow,
@@ -82,6 +83,14 @@ describe.skipIf(!connectionString || !storageConfig)("F3.5b — the schedule rou
 
   it("wcAdminCreatesOnlyWithItsOwnLocation — [] is 403", async () => {
     await wcAdminCreatesOnlyWithItsOwnLocation(fx, "EMPTY");
+  });
+
+  it("wcAdminCannotPatchItsRowOutOfItsScope — [WC] to [EC] is 403 (item 7 A)", async () => {
+    await wcAdminCannotPatchItsRowOutOfItsScope(fx, "OTHER");
+  });
+
+  it("wcAdminCannotPatchItsRowOutOfItsScope — [WC] to [] is 403 (item 7 A)", async () => {
+    await wcAdminCannotPatchItsRowOutOfItsScope(fx, "EMPTY");
   });
 
   it("assetGroupAdminIsRefusedOnEveryRoute", async () => {

@@ -422,12 +422,27 @@ function rendered(outcome: RenderOutcome): Extract<RenderOutcome, { kind: "rende
 // Phase A — the rows and objects a whole-organization schedule writes
 // ---------------------------------------------------------------------------
 
-/** Both formats: two rows stamped with the schedule, no author, `{}`; each object's length and hash equal the row's. */
+/**
+ * Both formats: two rows stamped with the schedule, no author, `{}`; each
+ * object's length and hash equal the row's. The asset scope is
+ * tenant-bounded (Amendment 2 item 7 E): every id the renderer received is
+ * an ESKOM asset and none is PHEWB's — read after the render, the
+ * `aLocationScopedScheduleReadsOnlyItsAssets` technique.
+ */
 export async function rendersBothFormatsForAWholeOrganizationSchedule(fx: RenderIntegrationFixtures): Promise<void> {
   const scheduleId = await insertSchedule(fx, { formats: ["pdf", "xlsx"] });
   const { svc } = service(fx);
   const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, fx.base.eskomId)));
   assert(outcome.written === 2 && outcome.skippedExisting === 0, `expected written=2 skippedExisting=0; got ${outcome.written}/${outcome.skippedExisting}`);
+
+  const eskomAssets = await fx.base.assetIdsOfOrganization(fx.base.eskomId);
+  const phewbAssets = await fx.base.assetIdsOfOrganization(fx.base.phewbId);
+  assert(outcome.assetIds.length > 0, "the positive control failed: the whole-organization render resolved no asset");
+  assert(phewbAssets.size > 0, "the positive control failed: PHEWB has no seeded asset to be excluded");
+  const outside = outcome.assetIds.filter((id) => !eskomAssets.has(id));
+  const foreign = outcome.assetIds.filter((id) => phewbAssets.has(id));
+  assert(outside.length === 0, `the render must read only ESKOM's assets; ${outside.length} of ${outcome.assetIds.length} are outside it`);
+  assert(foreign.length === 0, `the render must read none of PHEWB's assets; ${foreign.length} of ${outcome.assetIds.length} are PHEWB's`);
 
   const rows = await readFileRows(fx.base.fleetDb, scheduleId);
   assert(rows.map((r) => r.format).join(",") === "pdf,xlsx", `expected one pdf and one xlsx row; got ${rows.map((r) => r.format).join(",")}`);

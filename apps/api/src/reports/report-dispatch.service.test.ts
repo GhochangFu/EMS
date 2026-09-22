@@ -8,12 +8,14 @@ import {
   assertLateTickAdvancesStrictlyPastNow,
   assertLateTickEnqueuesOncePeriodBeforeTheDueInstant,
   assertNoUpdateWasRecordedAfterTheEnqueueFailure,
-  assertPoisonRowGetsNoUpdate,
+  assertPoisonDeferralIsWrittenAfterEveryAdd,
+  assertPoisonRowIsDeferredAnHourAndNothingElseMoves,
   assertPoisonRowIsCountedSkippedInvalid,
   assertPoisonRowWarnNeverNamesTheZone,
   assertPoisonRowWarnsOnceWithIdAndErrorName,
   assertRecordedOrderIsSelectThenAddsThenUpdates,
   assertSummaryCountsTwoDueTwoEnqueued,
+  assertTheBackoffIsOneHour,
   assertTheClaimCarriesTheLimit,
   assertTheOtherRowIsStillEnqueued,
   assertTickRejectedWithTheEnqueueError,
@@ -82,7 +84,7 @@ describe("F3.5b — ReportDispatchService.tick: enqueue before advance, the pois
     });
   });
 
-  describe("aPoisonRowIsCountedWarnedAndLeftDue", () => {
+  describe("aPoisonRowIsCountedWarnedAndDeferredAnHour", () => {
     let h: DispatchHarness;
     let summary: ReportDispatchSummary;
 
@@ -95,8 +97,16 @@ describe("F3.5b — ReportDispatchService.tick: enqueue before advance, the pois
       assertPoisonRowIsCountedSkippedInvalid(summary);
     });
 
-    it("records no update for the poison row", () => {
-      assertPoisonRowGetsNoUpdate(h);
+    it("defers the poison row one hour with one update that sets next_run_at only (item 7 C)", () => {
+      assertPoisonRowIsDeferredAnHourAndNothingElseMoves(h);
+    });
+
+    it("writes the deferral after every add, beside the advances", () => {
+      assertPoisonDeferralIsWrittenAfterEveryAdd(h);
+    });
+
+    it("the backoff constant is one hour", () => {
+      assertTheBackoffIsOneHour();
     });
 
     it("warns exactly once naming the schedule id and ReportPeriodError", () => {

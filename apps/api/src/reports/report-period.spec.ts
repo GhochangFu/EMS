@@ -83,7 +83,7 @@ export type ToInstantRow = readonly [
 /** `toInstant` rows for the DST gap and fold (plan R-7). */
 export const TO_INSTANT_ROWS: readonly ToInstantRow[] = [
   [
-    "gap: 01:30 on 2026-03-29 Europe/London resolves to the first instant after the gap, 2026-03-29T01:30Z (02:30 BST)",
+    "gap: 01:30 on 2026-03-29 Europe/London resolves to the naive instant minus the pre-gap offset, 2026-03-29T01:30Z (02:30 BST, the wall clock carried forward by the gap's width)",
     { year: 2026, month: 3, day: 29, hour: 1, minute: 30, zone: "Europe/London" },
     "2026-03-29T01:30:00.000Z",
   ],

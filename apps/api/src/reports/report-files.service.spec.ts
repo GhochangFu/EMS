@@ -795,6 +795,19 @@ export async function assertLocationAdminListAppliesBothPredicatesOnTheFleetBran
   );
 }
 
+/**
+ * `F3.5b` post-merge sweep (ADR 0071 Amendment 2 item 7 B, security L1):
+ * the byte-identical sibling of the schedules list — `arrayContained(column,
+ * [])` threw at predicate construction, so a `location_admin` with zero
+ * grants got a 500. Fails closed to `[]` before any select.
+ */
+export async function assertListOfALocationScopeWithNoLocationsIsEmpty(): Promise<void> {
+  const h = harness({ readScope: { kind: "location", organizationIds: [], locationIds: [] }, fileRows: [storedRow()] });
+  const dtos = await h.service.list(JWT, 50);
+  assert(dtos.length === 0, `an empty location scope must list nothing; got ${dtos.length}`);
+  assert(h.listWheres.length === 0, `no list select may run for an empty location scope; ran ${h.listWheres.length}`);
+}
+
 export async function assertListMapsRowsThroughTheDto(): Promise<void> {
   const h = harness({ fileRows: [storedRow()] });
   const [dto] = await h.service.list(JWT, 50);
