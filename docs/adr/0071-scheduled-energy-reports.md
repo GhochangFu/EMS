@@ -694,7 +694,10 @@ implementation code.
      `ReportSchedulesController {/api/v1/reports}` mapping five routes and
      no unresolved dependency. The HTTP matrix ran from the SPA tab (OIDC,
      the owner's sessions, via `browser-verifier`'s `javascript_tool`
-     assertions, 0 screenshots): **admin** — 18 claims, including 201 with
+     assertions, 0 screenshots): **admin** — 18 claims, 17 pass and one
+     expectation of the dispatch wrong (the pre-existing channel `DELETE`
+     answers 200 by `@HttpCode(OK)`, not 204 — the route is not this
+     row's); the 17 include 201 with
      `nextRunAt` equal to the hand-computed IST instant (diff 0 s), 400
      without `organizationId`, `asia/kolkata` 400 `fieldErrors.timezone`,
      `Not/AZone` 400, `formats: []`/`csv`/an extra key 400, a webhook
@@ -747,9 +750,16 @@ implementation code.
      PDF count of 1 used as a control). 0 console errors, 0 screenshots.
      Claims already held by the jsdom specs were not re-run in the browser
      except where a click reaches the server.
-   - **Full suite** with the CI env block: 5096 / 5097; the one failure is
-     the pre-existing leaked `mechanical-lift` draft (created 2026-09-19)
-     on this dev database, not this branch. Coverage is measured in CI.
+   - **Full suite** with the CI env block, after the review fix
+     (`02d32ca5`): **638 files, 5109 / 5109**, `--maxWorkers=2` in a
+     detached process (two in-session runs were killed by the machine for
+     low memory beside the compose stack). Coverage 83.64 statements ·
+     80.38 branches · 84.71 functions · 83.79 lines against the thresholds
+     80.2 / 77.4 / 81.3 / 80.4 — up from F3.5a's 83.21 / 80.00 / 84.36 /
+     83.35 on every axis; thresholds unchanged, as F3.5a left them. The
+     first run, before the fix, was 5096 / 5097 with one failure on a leaked
+     `mechanical-lift` draft template (created 2026-09-19) on this dev
+     database, not this branch; the draft was deleted before the final run.
 
 6. **Deferred, by name (added to this ADR's Consequences list).** Catch-up
    of missed periods, and a per-schedule "run now" route (Q-3). The orphan
