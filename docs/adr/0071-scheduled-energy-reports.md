@@ -768,3 +768,87 @@ implementation code.
    sweep row, nothing here builds it). The multi-organization
    `organization_admin` gap in the web create form (item 4, recorded
    above).
+
+7. **Post-merge sweep (2026-09-22; `code-reviewer` and `security-reviewer`
+   after the merge of #513).** Each finding with the row that reddens and
+   the mutation that proved it:
+   - **(High, false green — confirmed)** the two 403 branches of
+     `assertWriteScope` on the PATCH path — a `locationIds` outside the
+     writable set, and `[]` under a `location` read scope — were reached by
+     no row: passing `writableLocations: null` at `update`'s call site, or
+     turning a `[]` body into "not in this PATCH", left all 52 unit rows
+     green. Two rows on the unit spec
+     (`patchToAnUnheldLocationOfTheOrganizationIs403`,
+     `patchToAnEmptyScopeUnderALocationReadScopeIs403`) and two on real
+     grants (`wcAdminCannotPatchItsRowOutOfItsScope` — `wc-admin` moving
+     its `[WC]` row to `[EC]`, then to `[]`, both 403, the row re-read
+     still `[WC]`). Each call-site mutation now reddens exactly its row
+     (53 / 54).
+   - **(Security L1 — confirmed)** a `location_admin` whose grants resolve
+     to no location got a **500** from `GET /reports/schedules` and from
+     `GET /reports/files`: drizzle's `arrayContained(column, [])` throws
+     `arrayContained requires at least one value` while the predicate is
+     built. Both `list`s now answer `[]` before any select when
+     `scope.kind === "location"` and `locationIds` is empty — fail closed,
+     list nothing. One row per service spec (red first with that message;
+     removing the guard reddens both).
+   - **(Security L2 — confirmed; a change to plan R-6)** poison rows pinned
+     the head of the dispatch claim and starved every other tenant. R-6
+     said a row whose period computation throws is "left due and enabled";
+     with `ORDER BY next_run_at LIMIT 200`, 200 `Not/A_Zone` ESKOM rows due
+     two hours ago plus one valid PHEWB row gave three ticks of `due=200
+     enqueued=0 skippedInvalid=200` and PHEWB was never enqueued. **Ruled:
+     a poison row is deferred, not left due.** The tick sets `next_run_at =
+     now + REPORT_DISPATCH_POISON_BACKOFF_MS` (a module constant, one hour)
+     in the same transaction as the advances and leaves `last_run_at`,
+     `enabled` and `updated_at` alone, so the row retries hourly and the
+     warn fires once per hour per row instead of once per tick; a PATCH
+     that corrects the zone recomputes `next_run_at` and clears the backoff.
+     The unit block `aPoisonRowIsCountedWarnedAndLeftDue` became
+     `aPoisonRowIsCountedWarnedAndDeferredAnHour` (one update naming the
+     row, two parameters, `next_run_at = now + 1h`, written after every
+     add). The probe is an integration case under `withRollback` +
+     `tx.rollback()`: tick 1 cannot reach PHEWB whatever it does with the
+     poison rows (the claim is full of them), so **the claim is on tick 2 at
+     the same `now`** — PHEWB enqueued once and advanced, every poison row
+     an hour ahead. Leaving the rows due (the old behaviour) reddens the
+     tick-2 row with the probe's own signature (`got 0 of 0 adds; due=200
+     enqueued=0 skippedInvalid=200`). Measured while writing it: the poison
+     fixtures must be the *most* overdue rows in the table (ten years, not
+     two hours) — `report-schedules.integration.spec.ts` in the same run
+     parks a committed row a year overdue and stole one slot (`due=200
+     enqueued=1 skippedInvalid=199`), leaving one poison row to head tick 2.
+   - **(Medium, false green — confirmed)** the History table's `scheduleId`
+     wiring was observed by nothing: every fixture carried `scheduleId:
+     null`, so `originLabel({ scheduleId: null })` or
+     `deliveryStatusLabel(status, null)` in the component left 10 / 10
+     green. A `SCHEDULED` fixture (`deliveryStatus: "none"`, non-null
+     `scheduleId`) and one row: its Origin cell reads "Scheduled" and its
+     Delivery cell "Pending", while the on-demand row beside it reads "On
+     demand" twice. Either `null` reddens it.
+   - **(Low)** `rendersBothFormatsForAWholeOrganizationSchedule` did not
+     assert the asset scope is tenant-bounded. It now reads
+     `assetIdsOfOrganization` (a sibling of `assetIdsOfLocation` on the
+     `F3.5a` fixtures, after the render) for ESKOM and PHEWB and asserts
+     every rendered id is ESKOM's and none is PHEWB's, with both sets
+     non-empty as positive controls.
+   - **(Prose)** `tests/f4.24-worker-imports-no-api-loop.test.ts` said
+     `WORKER_LEAVES` "names the nine files" against a list of twenty-six;
+     the sentence now carries no number and a rule-1 row pins
+     `WORKER_LEAVES.length` to 26. `report-period.ts` and its spec said a
+     DST-gap wall time resolves to "the first instant after the gap"; the
+     code returns the naive instant minus the pre-gap offset — the wall
+     clock carried forward by the gap's width (London 01:30 → 02:30 BST,
+     `01:30Z`), not 02:00 BST — and both now say so; the gap branch's local
+     was renamed `preGapOffset` (the minimum candidate is the pre-gap
+     offset, since spring-forward raises it).
+
+   **Recorded, not changed.** A same-day cadence or run-time change can
+   lose one period: the render's idempotency key is `(schedule_id,
+   period_end, format)` and the `jobId` is `<scheduleId>_<periodEnd>`, so
+   a daily → weekly PATCH on a Monday morning yields the same `period_end`
+   as the daily report already written and the weekly report is skipped
+   as existing. Whether `period_start` joins the key is the owner's
+   decision (a later row). `report-render.service.ts`'s `format === "pdf"
+   ? energyPdf : energyXlsx` is non-exhaustive for a third format,
+   consistent with the on-demand sibling.

@@ -46,7 +46,8 @@ const apiSrc = join(repoRoot, "apps", "api", "src");
  * seventh loop site, the generic `LISTEN` loop it and the telemetry listener
  * share (`database/notify-listener.ts`) and its alarm adapter
  * (`alarms/alarm-notify.ts`) are the third and fourth loop hosts, and
- * `WORKER_LEAVES` names the nine files the worker's graph now reaches.
+ * `WORKER_LEAVES` names every leaf file the worker's graph reaches (the
+ * count is pinned by a rule-1 row, so this sentence carries no number).
  * Two rules were added: **rule 6**, the worker mounts exactly two
  * controllers (`health`, `metrics`) — the gate on Amendment 1 A1, where
  * importing `AuthModule` or `NotificationsModule` would have served `/auth`
@@ -326,6 +327,12 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
         "relative imports the walker could not resolve — an unresolved edge is a hole in the positive control:\n" +
           c.unresolved.join("\n"),
       ).toEqual([]);
+    });
+
+    it("WORKER_LEAVES names every leaf file: the count is pinned here so the docblock carries no number that can drift", () => {
+      // F3.5b post-merge sweep (ADR 0071 Amendment 2 item 7 F): the docblock
+      // once said "the nine files" against a list of twenty-six.
+      expect(WORKER_LEAVES.length).toBe(26);
     });
 
     it("reaches the modules WorkerModule is built from (the walker follows something)", () => {

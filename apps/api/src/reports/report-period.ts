@@ -30,9 +30,10 @@ import type { ReportCadence } from "@bms/shared";
  * instant that first guess yields; each candidate offset gives a candidate instant, and
  * a candidate is *valid* when formatting it back in the zone reproduces the
  * wall time. A wall time inside a DST **gap** (01:30 on the spring-forward
- * night) has no valid candidate and resolves to the first instant after the
- * gap (the naive instant minus the pre-gap offset — 02:30 BST for London's
- * 01:30). A wall time in a **fold** (01:30 on the fall-back night) has two
+ * night) has no valid candidate and resolves to the naive instant minus the
+ * pre-gap offset — the wall clock carried forward by the gap's width, so
+ * London's 01:30 becomes 02:30 BST (`01:30Z`), not the first instant after
+ * the gap (02:00 BST). A wall time in a **fold** (01:30 on the fall-back night) has two
  * valid candidates and resolves to the **earlier** one (the BST occurrence).
  * A plain two-pass resolution lands the fold on the later occurrence, which
  * is why the candidates are enumerated and the earliest valid one kept.
@@ -170,8 +171,9 @@ export function weekdayOf(date: LocalDate): number {
 }
 
 /**
- * The instant at which `zone` shows `date` + `clock`. Gap → the first
- * instant after the gap; fold → the earlier occurrence (see the docblock).
+ * The instant at which `zone` shows `date` + `clock`. Gap → the naive
+ * instant minus the pre-gap offset (the wall clock carried forward by the
+ * gap's width); fold → the earlier occurrence (see the docblock).
  */
 export function toInstant(date: LocalDate, clock: LocalClock, zone: string): Date {
   const naiveMs = Date.UTC(date.year, date.month - 1, date.day, clock.hour, clock.minute);
@@ -204,11 +206,12 @@ export function toInstant(date: LocalDate, clock: LocalClock, zone: string): Dat
   if (earliestValid !== undefined) {
     return new Date(earliestValid);
   }
-  // A gap: neither offset reproduces the wall time. The pre-gap offset is the
-  // larger candidate's complement — subtracting the smaller offset lands after
-  // the gap, so take the latest candidate instant (= the smallest offset).
-  const postGapOffset = Math.min(...candidates);
-  return new Date(naiveMs - postGapOffset * MINUTE_MS);
+  // A gap: neither offset reproduces the wall time. Spring-forward raises the
+  // offset, so the smallest candidate is the pre-gap offset; subtracting it
+  // carries the wall clock forward by the gap's width (London 01:30 → 02:30
+  // BST), the latest candidate instant.
+  const preGapOffset = Math.min(...candidates);
+  return new Date(naiveMs - preGapOffset * MINUTE_MS);
 }
 
 function satisfiesCadence(cadence: ReportCadence, date: LocalDate): boolean {

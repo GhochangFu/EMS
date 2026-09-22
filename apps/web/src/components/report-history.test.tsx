@@ -5,6 +5,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import {
   a503RendersTheApiSentence,
   aRefusedDownloadRendersTheApiSentence,
+  aScheduledFileRendersScheduledAndPending,
   anEmptyListRendersTheEmptySentence,
   anotherErrorRendersTheGenericSentence,
   deleteCallsTheApiOnceAndRefetchesTheList,
@@ -32,6 +33,10 @@ describe("F3.5a report history list", () => {
 
   it("renders two rows with size, period, format and delivery", async () => {
     await twoFilesRenderTwoRowsWithSizePeriodAndDelivery();
+  });
+
+  it("a scheduled file renders Scheduled and Pending beside an on-demand row (F3.5b item 7 D)", async () => {
+    await aScheduledFileRendersScheduledAndPending();
   });
 
   it("Download calls downloadReportFile with the row's DTO", async () => {

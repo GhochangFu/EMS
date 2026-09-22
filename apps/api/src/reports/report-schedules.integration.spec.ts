@@ -308,6 +308,25 @@ export async function wcAdminCreatesOnlyWithItsOwnLocation(fx: ScheduleIntegrati
   assert(errorMessage(err) === expected, `expected "${expected}", got "${errorMessage(err)}"`);
 }
 
+/**
+ * Post-merge sweep (Amendment 2 item 7 A) on real grants: `wc-admin` PATCHes
+ * its own `[WC]` row to `[EC]` (an ESKOM location it does not hold) → 403
+ * with the scope sentence; to `[]` → 403 with the empty-scope sentence. The
+ * row is created through the service (never due before tomorrow 07:00 IST,
+ * so the compose worker does not claim it) and re-read afterwards: its
+ * `locationIds` must still be `[WC]`.
+ */
+export async function wcAdminCannotPatchItsRowOutOfItsScope(fx: ScheduleIntegrationFixtures, scope: "OTHER" | "EMPTY"): Promise<void> {
+  const own = await createAs(fx, wcAdmin(), { locationIds: [fx.base.wcId], organizationId: undefined });
+  const locationIds = scope === "OTHER" ? [fx.ecId] : [];
+  const err = await captureRejection(() => fx.service.update(wcAdmin(), own.id, { locationIds }));
+  assert(errorName(err) === "ForbiddenException", `PATCH to ${scope} must be 403; got ${errorName(err)}: ${errorMessage(err)}`);
+  const expected = scope === "OTHER" ? "locationIds is outside your access scope" : "An empty location scope requires organization-level rights";
+  assert(errorMessage(err) === expected, `expected "${expected}", got "${errorMessage(err)}"`);
+  const after = await fx.service.get(wcAdmin(), own.id);
+  assert(JSON.stringify(after.locationIds) === JSON.stringify([fx.base.wcId]), `the row must still carry [WC]; got ${JSON.stringify(after.locationIds)}`);
+}
+
 /** Decision 6's `wc-hvac-admin` case: every route is 403 with the master-data sentence, before any read. */
 export async function assetGroupAdminIsRefusedOnEveryRoute(fx: ScheduleIntegrationFixtures): Promise<void> {
   const target = await createAs(fx, admin());

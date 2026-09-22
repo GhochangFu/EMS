@@ -250,6 +250,12 @@ export class ReportFilesService {
   async list(jwt: JwtPayload, limit: number): Promise<ReportFileDto[]> {
     requireStorageConfigured(this.client);
     const scope = await this.accessControl.reportFileReadScope(jwt);
+    if (scope.kind === "location" && scope.locationIds.length === 0) {
+      // F3.5b post-merge sweep (ADR 0071 Amendment 2 item 7 B): a location
+      // scope holding no location lists nothing — `arrayContained(column, [])`
+      // throws while the predicate is built, which answered 500.
+      return [];
+    }
     const organizationIds = scope.kind === "global" ? null : scope.organizationIds;
     const locationPredicate: SQL | undefined =
       scope.kind === "location"

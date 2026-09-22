@@ -5,19 +5,25 @@ import {
   assertBothDueRowsAdvancedStrictlyPastNow,
   assertBothDueRowsStampLastRunAtNow,
   assertBothDueRowsWereEnqueuedOnce,
+  assertEveryPoisonRowIsDeferredPastNowAfterTickOne,
+  assertPoisonRowsAreDeferredExactlyOneHourAndOtherwiseUntouched,
   assertTheDisabledRowIsNotAdvanced,
   assertTheDisabledRowIsNotEnqueued,
   assertTheLockedRowIsSkipped,
   assertTheNotDueRowIsUntouched,
   assertTheReleasedRowIsEnqueuedOnce,
+  assertTickOneSkippedThePoisonRowsAndDidNotReachPhewb,
+  assertTickTwoEnqueuesThePhewbRowOnceAndAdvancesIt,
   openDispatchFixtures,
   runDisabledRowScenario,
   runDueRowsScenario,
   runLockedRowScenario,
+  runPoisonRowsScenario,
   type ClaimedFacts,
   type DisabledFacts,
   type DispatchIntegrationFixtures,
   type LockedFacts,
+  type PoisonFacts,
 } from "./report-dispatch.integration.spec";
 
 /**
@@ -86,6 +92,30 @@ describe.skipIf(!connectionString)("F3.5b — ReportDispatchService.tick against
 
     it("does not advance the disabled row", () => {
       assertTheDisabledRowIsNotAdvanced(facts);
+    });
+  });
+
+  describe("poisonRowsAreDeferredSoTheOtherTenantIsClaimedOnTickTwo — tick 1 fills LIMIT 200 with them, tick 2 at the same now reaches PHEWB (Amendment 2 item 7 C)", () => {
+    let facts: PoisonFacts;
+
+    beforeAll(async () => {
+      facts = await runPoisonRowsScenario(fx);
+    });
+
+    it("tick 1 skipped the poison rows and did not reach PHEWB (negative control: the claim was full of them)", () => {
+      assertTickOneSkippedThePoisonRowsAndDidNotReachPhewb(facts);
+    });
+
+    it("after tick 1 every one of the 200 poison rows is past now", () => {
+      assertEveryPoisonRowIsDeferredPastNowAfterTickOne(facts);
+    });
+
+    it("the deferral is exactly one hour; last_run_at stays null and enabled stays true", () => {
+      assertPoisonRowsAreDeferredExactlyOneHourAndOtherwiseUntouched(facts);
+    });
+
+    it("tick 2 enqueues the PHEWB row exactly once and advances it — the other tenant is no longer starved", () => {
+      assertTickTwoEnqueuesThePhewbRowOnceAndAdvancesIt(facts);
     });
   });
 

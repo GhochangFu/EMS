@@ -56,16 +56,24 @@ import { nextRunAt, periodFor } from "./report-period";
  * once, for the period before its due instant, and its missed periods are
  * skipped, never caught up (out of scope; a backfill route is a later row).
  *
- * **The poison row (R-6).** Each row's `periodFor`/`nextRunAt` runs in its
- * own `try`: a throw (an unknown zone, an unparsable clock — the
- * `ReportPeriodError` class, or anything else) is one `warn` naming the
- * schedule id and the error's `name` — never the zone string, which is an
- * operator-typed value (§9.6) — counted `skippedInvalid`, and **the row is
- * left due and enabled**: a background job has no actor for the audit row a
- * disable would owe, and one warn per tick per row is the bounded,
- * Loki-retained signal; a PATCH re-validates the zone and clears it. An
- * `enqueue` throw is **not** per-row: it aborts the tick (the transaction
- * rolls back, every row stays due, BullMQ retries on `RETRY_DEFAULTS`).
+ * **The poison row (R-6, changed by Amendment 2 item 7 C).** Each row's
+ * `periodFor`/`nextRunAt` runs in its own `try`: a throw (an unknown zone,
+ * an unparsable clock — the `ReportPeriodError` class, or anything else) is
+ * one `warn` naming the schedule id and the error's `name` — never the zone
+ * string, which is an operator-typed value (§9.6) — counted
+ * `skippedInvalid`, and **the row is deferred, not left due**: the same
+ * transaction sets `next_run_at = now + REPORT_DISPATCH_POISON_BACKOFF_MS`
+ * and leaves `last_run_at`, `enabled` and `updated_at` alone, so the row
+ * retries hourly and the warn fires once per hour per row. The plan's
+ * "left due" reading pinned such rows at the head of the `ORDER BY
+ * next_run_at LIMIT 200` claim: 200 poison rows of one tenant, due two
+ * hours ago, were re-claimed every tick and a valid row of another tenant
+ * was never reached (the 2026-09-22 security sweep's probe;
+ * `report-dispatch.integration.spec.ts` gates it). A disable would owe an
+ * audit row a background job has no actor for; a PATCH that corrects the
+ * zone recomputes `next_run_at` and clears the backoff. An `enqueue` throw
+ * is **not** per-row: it aborts the tick (the transaction rolls back, every
+ * row stays due, BullMQ retries on `RETRY_DEFAULTS`).
  *
  * **Summary (R-17):** `{ due, enqueued, skippedInvalid, durationMs }` — the
  * host logs one `info` line with the four counts. No Redis key and no health
@@ -79,6 +87,14 @@ import { nextRunAt, periodFor } from "./report-period";
  * the claimed rows, never the rows left behind.
  */
 export const REPORT_DISPATCH_CLAIM_LIMIT: number = 200;
+
+/**
+ * How far a poison row is pushed past `now` (Amendment 2 item 7 C): one
+ * hour, so it retries and warns hourly instead of every tick and no longer
+ * heads the claim. Written inside the tick's own transaction beside the
+ * advances — bounded by the same commit, no separate write path.
+ */
+export const REPORT_DISPATCH_POISON_BACKOFF_MS: number = 3_600_000;
 
 export type ReportDispatchSummary = {
   readonly due: number;
@@ -152,6 +168,8 @@ export class ReportDispatchService {
 
       let skippedInvalid = 0;
       const advanced: { id: string; next: Date }[] = [];
+      const deferred: { id: string; next: Date }[] = [];
+      const backoffUntil = new Date(now.getTime() + REPORT_DISPATCH_POISON_BACKOFF_MS);
 
       for (const row of rows) {
         const dueAt = instantOf(row.id, row.next_run_at);
@@ -163,8 +181,9 @@ export class ReportDispatchService {
           next = nextRunAt({ cadence, runAtLocal: row.run_at_local, timezone: row.timezone }, now);
         } catch (err) {
           skippedInvalid += 1;
+          deferred.push({ id: row.id, next: backoffUntil });
           this.logger.warn(
-            `report schedule ${row.id}: skipped this tick with ${errorName(err)}; the row stays due and enabled until a PATCH corrects it (ADR 0071 decision 8, plan R-6)`,
+            `report schedule ${row.id}: skipped this tick with ${errorName(err)}; deferred one hour and still enabled until a PATCH corrects it (ADR 0071 decision 8, plan R-6, Amendment 2 item 7 C)`,
           );
           continue;
         }
@@ -185,6 +204,15 @@ export class ReportDispatchService {
         await tx.execute(sql`
           UPDATE bms.report_schedules
           SET next_run_at = ${next}, last_run_at = ${now}, updated_at = ${now}
+          WHERE id = ${id}
+        `);
+      }
+      // Item 7 C: the poison rows' backoff, in the same phase and the same
+      // transaction — `next_run_at` only; the row never ran.
+      for (const { id, next } of deferred) {
+        await tx.execute(sql`
+          UPDATE bms.report_schedules
+          SET next_run_at = ${next}
           WHERE id = ${id}
         `);
       }

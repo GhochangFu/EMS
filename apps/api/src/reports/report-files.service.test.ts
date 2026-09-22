@@ -46,6 +46,7 @@ describe("F3.5a ReportFilesService — list (R-7)", () => {
   it("a single-organization admin lists on the tenant with no predicate", spec.assertSingleOrganizationAdminListRunsOnTheTenantWithNoPredicate);
   it("a one-organization location admin applies the location predicate on the tenant branch", spec.assertLocationAdminListAppliesThePredicateOnTheTenantBranch);
   it("a two-organization location admin applies both predicates on the fleet branch", spec.assertLocationAdminListAppliesBothPredicatesOnTheFleetBranch);
+  it("a location scope with no locations lists nothing, was 500 (F3.5b item 7 B)", spec.assertListOfALocationScopeWithNoLocationsIsEmpty);
   it("maps rows through the DTO", spec.assertListMapsRowsThroughTheDto);
 });
 

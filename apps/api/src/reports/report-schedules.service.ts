@@ -87,7 +87,8 @@ type StoredRow = typeof reportSchedules.$inferSelect;
  * **`list` (R-12).** `reportFileReadScope` + `withOrganizationReadScope` +
  * the location predicate `cardinality(location_ids) > 0 AND location_ids <@
  * $writable` for the `location` kind on both branches, ordered `created_at
- * DESC, id DESC`, no query (the cap bounds the set).
+ * DESC, id DESC`, no query (the cap bounds the set). A `location` scope
+ * with no location answers `[]` before the select (Amendment 2 item 7 B).
  *
  * **`created_by`** is the actor's `bms.users.id` resolved the way
  * `MasterDataAuditService.write` resolves it (a private copy of F3.5a's
@@ -181,6 +182,12 @@ export class ReportSchedulesService {
 
   async list(jwt: JwtPayload): Promise<ReportScheduleDto[]> {
     const scope = await this.accessControl.reportFileReadScope(jwt);
+    if (scope.kind === "location" && scope.locationIds.length === 0) {
+      // Amendment 2 item 7 B: a location scope holding no location lists
+      // nothing — `arrayContained(column, [])` throws while the predicate is
+      // built, which answered 500. Fail closed before any select.
+      return [];
+    }
     const organizationIds = scope.kind === "global" ? null : scope.organizationIds;
     const locationPredicate: SQL | undefined =
       scope.kind === "location"

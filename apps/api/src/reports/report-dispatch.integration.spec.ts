@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import { Logger } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type pg from "pg";
+import { vi } from "vitest";
 
 import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -10,7 +12,12 @@ import type { BmsTx } from "../database/tenant-context";
 import type { QueueClient, QueueHandle } from "../queue/queue-registry";
 import { openIntegrationPool } from "../testing/integration-db-gate";
 import { withRollback } from "../testing/with-rollback";
-import { ReportDispatchService } from "./report-dispatch.service";
+import {
+  REPORT_DISPATCH_CLAIM_LIMIT,
+  REPORT_DISPATCH_POISON_BACKOFF_MS,
+  ReportDispatchService,
+  type ReportDispatchSummary,
+} from "./report-dispatch.service";
 
 /**
  * `F3.5b` U9 (ADR 0071 decision 8) — the dispatch tick against a real
@@ -54,8 +61,9 @@ import { ReportDispatchService } from "./report-dispatch.service";
  * on a rolled-back transaction claims and advances nothing that lasts, and
  * a `FOR UPDATE SKIP LOCKED` inside it still skips what connection A holds.
  *
- * Fixture names are `f3.5b-dispatch-<uuid>` / `f3.5b-locked-<uuid>`; the
- * organization is resolved by code (`ESKOM`), never by a uuid literal.
+ * Fixture names are `f3.5b-dispatch-<uuid>` / `f3.5b-locked-<uuid>` /
+ * `f3.5b-poison-<uuid>`; the organizations are resolved by code (`ESKOM`,
+ * `PHEWB`), never by a uuid literal.
  */
 
 export function assert(condition: boolean, message: string): void {
@@ -68,6 +76,8 @@ export type DispatchIntegrationFixtures = {
   readonly pool: pg.Pool;
   readonly fleetDb: BmsDb;
   readonly eskomId: string;
+  /** The second seeded organization — the tenant the poison rows must not starve (Amendment 2 item 7 C). */
+  readonly phewbId: string;
   readonly close: () => Promise<void>;
 };
 
@@ -100,7 +110,7 @@ type ScheduleRow = { id: string; next_run_at: Date; last_run_at: Date | null; en
 /** Inserts one fixture schedule on `tx` (or the pool) and returns its id. */
 async function insertSchedule(
   executor: Pick<BmsTx, "execute"> | Pick<BmsDb, "execute">,
-  eskomId: string,
+  organizationId: string,
   prefix: string,
   nextRunAt: Date,
   enabled: boolean,
@@ -110,9 +120,31 @@ async function insertSchedule(
     INSERT INTO bms.report_schedules
       (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, enabled, next_run_at)
     VALUES
-      (${id}, ${eskomId}, ${`${prefix}-${id}`}, 'energy_consumption', ARRAY['pdf']::text[], 'daily', '00:30:00', 'Asia/Kolkata', '{}'::uuid[], ${enabled}, ${nextRunAt})
+      (${id}, ${organizationId}, ${`${prefix}-${id}`}, 'energy_consumption', ARRAY['pdf']::text[], 'daily', '00:30:00', 'Asia/Kolkata', '{}'::uuid[], ${enabled}, ${nextRunAt})
   `);
   return id;
+}
+
+/**
+ * `count` poison rows in one multi-row insert — `Not/A_Zone` passes the
+ * casing regex and fails `Intl.DateTimeFormat` (`0078` carries no zone
+ * CHECK). Returns their ids.
+ */
+async function insertPoisonSchedules(tx: BmsTx, organizationId: string, count: number, nextRunAt: Date): Promise<string[]> {
+  const ids = Array.from({ length: count }, () => randomUUID());
+  const rows = sql.join(
+    ids.map(
+      (id) =>
+        sql`(${id}, ${organizationId}, ${`f3.5b-poison-${id}`}, 'energy_consumption', ARRAY['pdf']::text[], 'daily', '00:30:00', 'Not/A_Zone', '{}'::uuid[], true, ${nextRunAt})`,
+    ),
+    sql`, `,
+  );
+  await tx.execute(sql`
+    INSERT INTO bms.report_schedules
+      (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, enabled, next_run_at)
+    VALUES ${rows}
+  `);
+  return ids;
 }
 
 async function readSchedules(tx: BmsTx, ids: readonly string[]): Promise<Map<string, ScheduleRow>> {
@@ -142,16 +174,22 @@ async function readSchedules(tx: BmsTx, ids: readonly string[]): Promise<Map<str
 export async function openDispatchFixtures(connectionString: string, label: string): Promise<DispatchIntegrationFixtures> {
   const pool = await openIntegrationPool(connectionString, label);
   const fleetDb = createDb(pool);
-  const { rows } = await pool.query<{ id: string }>(`SELECT id FROM bms.organizations WHERE code = $1`, ["ESKOM"]);
-  const eskomId = rows[0]?.id;
-  if (!eskomId) {
-    await pool.end();
-    throw new Error(`${label}: organization ESKOM is missing — run pnpm db:seed`);
-  }
+  const idByCode = async (code: string): Promise<string> => {
+    const { rows } = await pool.query<{ id: string }>(`SELECT id FROM bms.organizations WHERE code = $1`, [code]);
+    const id = rows[0]?.id;
+    if (!id) {
+      await pool.end();
+      throw new Error(`${label}: organization ${code} is missing — run pnpm db:seed`);
+    }
+    return id;
+  };
+  const eskomId = await idByCode("ESKOM");
+  const phewbId = await idByCode("PHEWB");
   return {
     pool,
     fleetDb,
     eskomId,
+    phewbId,
     close: async () => {
       await pool.end();
     },
@@ -262,6 +300,129 @@ export function assertTheDisabledRowIsNotAdvanced(f: DisabledFacts): void {
   assert(
     f.after !== undefined && f.after.next_run_at.getTime() === f.original.getTime() && f.after.last_run_at === null,
     `expected the disabled row's next_run_at unchanged and last_run_at null; got next_run_at=${f.after?.next_run_at.toISOString()}, last_run_at=${String(f.after?.last_run_at)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// poisonRowsAreDeferredSoTheOtherTenantIsClaimedOnTickTwo (Amendment 2 item 7 C)
+// ---------------------------------------------------------------------------
+
+export type PoisonFacts = {
+  readonly now: Date;
+  readonly poisonIds: readonly string[];
+  readonly phewbScheduleId: string;
+  readonly phewbOrganizationId: string;
+  readonly tick1: { adds: readonly RecordedAdd[]; summary: ReportDispatchSummary };
+  readonly tick2: { adds: readonly RecordedAdd[]; summary: ReportDispatchSummary };
+  /** The poison rows and the PHEWB row after tick 1. */
+  readonly afterTick1: ReadonlyMap<string, ScheduleRow>;
+  /** The PHEWB row after tick 2. */
+  readonly afterTick2: ReadonlyMap<string, ScheduleRow>;
+};
+
+/**
+ * The 2026-09-22 security sweep's probe, as a case: `REPORT_DISPATCH_CLAIM_LIMIT`
+ * ESKOM rows with an unknown zone, overdue, and one valid PHEWB row due one
+ * hour ago. `ORDER BY next_run_at LIMIT 200` claims the poison rows first,
+ * so **tick 1 cannot reach PHEWB whatever it does with them** — the claim
+ * is on **tick 2, at the same `now`**: the deferred rows sit an hour ahead
+ * and leave the due set, and PHEWB is claimed. Under the old behaviour
+ * (left due) tick 2 re-claims the same 200 and PHEWB starves for ever
+ * (measured on the stack with the rows due two hours ago: three ticks,
+ * `due=200 enqueued=0 skippedInvalid=200`). Both ticks are savepoints on
+ * the case's transaction; everything rolls back. The 200 warns are
+ * swallowed by a spy for the run.
+ *
+ * **The poison rows are due ten years ago, not two hours.** The probe used
+ * two hours; here the rows must be the most overdue in the table, because a
+ * foreign due row older than them takes one of the 200 slots and one
+ * poison row survives tick 1 to head tick 2 — measured on the first run:
+ * `report-schedules.integration.spec.ts`, in the same vitest run, parks a
+ * committed row a year overdue (`reenableMovesNextRunAtOnARealRow`), and
+ * tick 1 answered `due=200 enqueued=1 skippedInvalid=199`.
+ */
+export async function runPoisonRowsScenario(fx: DispatchIntegrationFixtures): Promise<PoisonFacts> {
+  let facts: PoisonFacts | undefined;
+  await withRollback(fx.fleetDb, async (tx) => {
+    const now = new Date();
+    const tenYearsAgo = new Date(now.getTime() - 10 * 365 * 24 * 3_600_000);
+    const poisonIds = await insertPoisonSchedules(tx, fx.eskomId, REPORT_DISPATCH_CLAIM_LIMIT, tenYearsAgo);
+    const phewbScheduleId = await insertSchedule(tx, fx.phewbId, "f3.5b-dispatch", new Date(now.getTime() - 3_600_000), true);
+    const warn = vi.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+    try {
+      const first = recordingClient();
+      const summary1 = await new ReportDispatchService(first.client).tick(tx, now);
+      const afterTick1 = await readSchedules(tx, [...poisonIds, phewbScheduleId]);
+      const second = recordingClient();
+      const summary2 = await new ReportDispatchService(second.client).tick(tx, now);
+      const afterTick2 = await readSchedules(tx, [phewbScheduleId]);
+      facts = {
+        now,
+        poisonIds,
+        phewbScheduleId,
+        phewbOrganizationId: fx.phewbId,
+        tick1: { adds: first.adds, summary: summary1 },
+        tick2: { adds: second.adds, summary: summary2 },
+        afterTick1,
+        afterTick2,
+      };
+    } finally {
+      warn.mockRestore();
+    }
+    tx.rollback();
+  });
+  return facts as PoisonFacts;
+}
+
+/**
+ * After tick 1 every poison row is past now. Asserted on all 200 ids, not
+ * on the summary: a foreign due row older than the fixtures would steal one
+ * slot of the claim, and a survivor would head tick 2 silently.
+ */
+export function assertEveryPoisonRowIsDeferredPastNowAfterTickOne(f: PoisonFacts): void {
+  const stillDue = f.poisonIds.filter((id) => {
+    const row = f.afterTick1.get(id);
+    return row === undefined || !(row.next_run_at.getTime() > f.now.getTime());
+  });
+  assert(
+    stillDue.length === 0,
+    `expected all ${f.poisonIds.length} poison rows deferred past now=${f.now.toISOString()} after tick 1 (item 7 C); ${stillDue.length} still due; tick 1 summary ${JSON.stringify(f.tick1.summary)}`,
+  );
+}
+
+/** The deferral is exactly one hour; `last_run_at` stays null and `enabled` true — the row never ran and nobody disabled it. */
+export function assertPoisonRowsAreDeferredExactlyOneHourAndOtherwiseUntouched(f: PoisonFacts): void {
+  const expected = f.now.getTime() + REPORT_DISPATCH_POISON_BACKOFF_MS;
+  const wrong = f.poisonIds.filter((id) => {
+    const row = f.afterTick1.get(id);
+    return row === undefined || row.next_run_at.getTime() !== expected || row.last_run_at !== null || !row.enabled;
+  });
+  assert(
+    wrong.length === 0,
+    `expected every poison row at next_run_at = now + 1h (${new Date(expected).toISOString()}), last_run_at null, enabled; ${wrong.length} differ`,
+  );
+}
+
+/** Tick 1's negative control: the claim was full of the poison rows, and PHEWB was not reached — so tick 2 is where the claim is decided. */
+export function assertTickOneSkippedThePoisonRowsAndDidNotReachPhewb(f: PoisonFacts): void {
+  const phewbEnqueued = f.tick1.adds.some((add) => add.data.scheduleId === f.phewbScheduleId);
+  assert(
+    f.tick1.summary.due === REPORT_DISPATCH_CLAIM_LIMIT && f.tick1.summary.skippedInvalid >= 1 && !phewbEnqueued,
+    `expected tick 1's claim full (due = ${REPORT_DISPATCH_CLAIM_LIMIT}), poison rows skipped and PHEWB not reached (ORDER BY next_run_at); got ${JSON.stringify(f.tick1.summary)}, phewbEnqueued=${phewbEnqueued}`,
+  );
+}
+
+/** Tick 2, same `now`: the PHEWB row is enqueued exactly once, for PHEWB, and advanced past now — the deferred rows left the due set. */
+export function assertTickTwoEnqueuesThePhewbRowOnceAndAdvancesIt(f: PoisonFacts): void {
+  const mine = f.tick2.adds.filter((add) => add.data.scheduleId === f.phewbScheduleId);
+  const row = f.afterTick2.get(f.phewbScheduleId);
+  assert(
+    mine.length === 1 && mine[0]?.data.organizationId === f.phewbOrganizationId,
+    `expected tick 2 to enqueue the PHEWB row exactly once for PHEWB (the poison rows are deferred, not re-claimed — item 7 C); got ${mine.length} of ${f.tick2.adds.length} adds; summary ${JSON.stringify(f.tick2.summary)}`,
+  );
+  assert(
+    row !== undefined && row.next_run_at.getTime() > f.now.getTime() && row.last_run_at?.getTime() === f.now.getTime(),
+    `expected the PHEWB row advanced past now with last_run_at = now; got next_run_at=${row?.next_run_at.toISOString()}, last_run_at=${String(row?.last_run_at)}`,
   );
 }
 
