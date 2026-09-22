@@ -362,10 +362,22 @@ export async function assertTheShippedFeederImportsWholeAgainstTheRealVocabulary
   // (ADR 0070 decision 8); E4.2 PR 2 made it v4 — six more calendar-window
   // points after those (ADR 0072 decision 3, Q7 ruling (a)). The import
   // writes the derived rows through the same `template_points` path, so the
-  // stored count is the whole entry, not the measured half. This is also the
-  // one gate that proves the new codes are in the seeded vocabulary:
-  // `assertPointKeysActive` refuses the whole import otherwise (a stack that
-  // has not re-seeded fails here first).
+  // stored count is the whole entry, not the measured half.
+  //
+  // **It proves SIX of the fourteen codes `E4.2` PR 2 added, not all of them,
+  // and the earlier wording here ("the one gate that proves the new codes are
+  // in the seeded vocabulary") over-claimed.** `assertPointKeysActive` refuses
+  // the whole import if a code is missing or inactive, so a stack that has not
+  // re-seeded does fail here first — but the only codes this entry names are
+  // the feeder's six (`kwh_`, `energy_cost_` and `co2_kg_` × `_this_month` /
+  // `_this_year`). The other eight travel through other gates:
+  // `co2_avoided_kg_this_month` / `_this_year` on the solar-PV entry, the
+  // water classes' `kl_` and `water_cost_` pairs, and the two executive codes
+  // with no stock formula (`operational_efficiency_pct`, `water_recycle_pct`,
+  // ADR 0072 decision 4), which no asset template carries at all — the
+  // sustainability half of
+  // `dashboard-templates-instantiate-stock.integration.test.ts` is what puts
+  // those two in front of a real `bms.point_keys`, through `publish`.
   assert(draft.stockCode === FEEDER_CODE && draft.stockVersion === 4, "the feeder import is stamped v4");
   assert(draft.points.length === 48, `48 points must land, got ${draft.points.length}`);
   assert((await storedPointCount(pool, draft.id)) === 48, "48 template_points rows must be stored");
