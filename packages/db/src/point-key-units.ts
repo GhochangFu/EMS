@@ -759,4 +759,21 @@ export const UNIT_BY_KEY: Record<string, string> = {
   occupied_hours_day: "h",
   fan_hours_day: "h",
   uptime_pct_24h: "%",
+  // `E4.2` PR 2 (U6) — fourteen entries: the feeder's six *_this_month /
+  // *_this_year rows, solar PV's two, the six water classes' four, and the
+  // two executive codes with no stock formula (ADR 0072 decision 4).
+  kwh_this_month: "kWh",
+  kwh_this_year: "kWh",
+  energy_cost_this_month: "",
+  energy_cost_this_year: "",
+  co2_kg_this_month: "kg",
+  co2_kg_this_year: "kg",
+  co2_avoided_kg_this_month: "kg",
+  co2_avoided_kg_this_year: "kg",
+  operational_efficiency_pct: "%",
+  kl_this_month: "KL",
+  kl_this_year: "KL",
+  water_cost_this_month: "",
+  water_cost_this_year: "",
+  water_recycle_pct: "%",
 };

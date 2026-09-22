@@ -15,10 +15,20 @@
  * in (`apps/api/src/admin/asset-templates/stock-catalog/*.ts`), and the
  * plan is `docs/plans/e4.1c-stock-sustainability-points-and-tariff-absorption.md`.
  *
+ * **E4.2 PR 2 (ADR 0072 decision 3, Q7 ruling (a)) adds fourteen codes**: the
+ * `*_this_month` / `*_this_year` pair for `kwh`, `energy_cost`, `co2_kg`
+ * (feeder), `co2_avoided_kg` (solar PV) and `kl`, `water_cost` (the six
+ * water classes) — twelve codes — plus the two executive codes with no
+ * stock formula, `operational_efficiency_pct` and `water_recycle_pct`
+ * (decision 4). The eight cost and CO₂ period codes price the whole period
+ * at the `$key` effective at evaluation (Q7): a mid-period tariff or factor
+ * change re-prices the whole period from the next sweep, never a
+ * piecewise figure.
+ *
  * **Why this file exists at all, and why it is not `constants.ts`.**
  * `packages/shared/src/constants.ts` is at 974 lines against AGENTS.md §4.5's
- * 1000-line cap (read WHOLE-FILE by `.githooks/pre-commit.mjs`), and the 29
- * codes of the two stock PRs would take it past the cap with a docblock.
+ * 1000-line cap (read WHOLE-FILE by `.githooks/pre-commit.mjs`), and the 43
+ * codes of the stock PRs would take it past the cap with a docblock.
  * `facility-point-keys.ts` is the precedent for a sibling file (`E5.3` §12
  * ruling 1): `tests/f2.13`, `tests/f3.38` and `tests/f3.39` each hold a
  * `POINT_KEY_SOURCE_RELS` list with a **per-file anti-vacuity floor**, and this
@@ -73,6 +83,13 @@ export const SUSTAINABILITY_ELECTRICAL_POINT_KEYS = [
   "capacity_utilization_pct",
   // electrical-apfc (v2) — sortOrder 14
   "steps_per_day",
+  // electrical-feeder (v4, E4.2 PR 2) — sortOrder 42–47
+  "kwh_this_month", "kwh_this_year", "energy_cost_this_month",
+  "energy_cost_this_year", "co2_kg_this_month", "co2_kg_this_year",
+  // electrical-solar-pv (v3, E4.2 PR 2) — sortOrder 30–31
+  "co2_avoided_kg_this_month", "co2_avoided_kg_this_year",
+  // no stock formula (ADR 0072 decision 4) — an executive code
+  "operational_efficiency_pct",
 ] as const;
 
 export type SustainabilityElectricalPointKey = (typeof SUSTAINABILITY_ELECTRICAL_POINT_KEYS)[number];
@@ -89,6 +106,12 @@ export const SUSTAINABILITY_WATER_POINT_KEYS = [
   // water-stp, water-etp, water-cooling-tower, water-wtp, water-ro,
   // water-softener (each v2) — three rows appended after each class's last point
   "kl_today", "water_cost_today", "water_saving_vs_baseline_pct",
+  // water-stp, water-etp, water-cooling-tower, water-wtp, water-ro,
+  // water-softener (each v3, E4.2 PR 2) — four rows after each class's kl_today trio
+  "kl_this_month", "kl_this_year", "water_cost_this_month",
+  "water_cost_this_year",
+  // no stock formula (ADR 0072 decision 4) — an executive code
+  "water_recycle_pct",
 ] as const;
 
 export type SustainabilityWaterPointKey = (typeof SUSTAINABILITY_WATER_POINT_KEYS)[number];
@@ -166,6 +189,8 @@ export type SustainabilityFacilityPointKey = (typeof SUSTAINABILITY_FACILITY_POI
  */
 export const MONEY_POINT_KEY_CODES = [
   "energy_cost_per_h", "energy_cost_today", "water_cost_today",
+  "energy_cost_this_month", "energy_cost_this_year",
+  "water_cost_this_month", "water_cost_this_year",
 ] as const;
 
 export type MoneyPointKeyCode = (typeof MONEY_POINT_KEY_CODES)[number];

@@ -107,8 +107,12 @@ const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   "packages/shared/src/facility-point-keys.ts": 206,
   // 29 since E4.1c PR 2b: SUSTAINABILITY_ELECTRICAL_POINT_KEYS's 16 +
   // SUSTAINABILITY_WATER_POINT_KEYS's 3 (PR 2a) + the mechanical 5, HVAC 1
-  // and facility 4 PR 2b appended.
-  "packages/shared/src/sustainability-point-keys.ts": 29,
+  // and facility 4 PR 2b appended. **43 since E4.2 PR 2**: 29 + electrical's
+  // 9 (energy_cost_this_month/_this_year, co2_kg_this_month/_this_year,
+  // kwh_this_month/_this_year, co2_avoided_kg_this_month/_this_year,
+  // operational_efficiency_pct) + water's 5 (kl_this_month/_this_year,
+  // water_cost_this_month/_this_year, water_recycle_pct).
+  "packages/shared/src/sustainability-point-keys.ts": 43,
 };
 
 /** The sources as one list, for an assertion message. */
