@@ -3,7 +3,9 @@
  * `bms-calc-v3` derived points ADR 0070 decision 8 (as widened by the rulings
  * of 2026-09-19, plan §3.7) authors onto the stock catalog.
  *
- * **Source and status.** Every code below is a DERIVED template point: a
+ * **Source and status.** Every code below except the two executive codes
+ * with no stock formula (`operational_efficiency_pct`, `water_recycle_pct`
+ * — ADR 0072 decision 4) is a DERIVED template point: a
  * formula over a measured point the same entry declares, a `$key` from the
  * twelve-key parameter vocabulary migration `0074` seeds
  * (`bms.calc_parameter_keys`, ADR 0070 decision 2), and — where the quantity
