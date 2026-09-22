@@ -500,3 +500,261 @@ the branch before the PR:
     `02-30` to `03-01`; it is `03-02`. The panel docblock overclaimed that
     every disabled state renders its sentence — the pending state carries it
     in the button label instead.
+
+## Amendment 2 — `F3.5b` plan rulings, corrections and what the build measured (2026-09-22)
+
+The step-3 plan (`docs/plans/f3.5b-report-schedules.md`) put six questions
+to the owner and made nineteen further rulings where this ADR is silent;
+the owner accepted all as recommended on 2026-09-21, before any
+implementation code.
+
+1. **Owner rulings (2026-09-21), all as the plan recommended.** **Q-1** the
+   compose `worker` service gains `api`'s seven `OBJECT_STORAGE_*` lines,
+   verbatim, and `depends_on: minio: service_healthy`. **Q-2** files are
+   removed with their schedule: `report_files.schedule_id` carries no
+   `ON DELETE` clause — Postgres's default is `NO ACTION`, identical to
+   `RESTRICT` for a constraint that is not `DEFERRABLE`, which this one is
+   not (the plan and the already-applied `0078` migration header both say
+   `RESTRICT`; corrected below to the accurate term) — and the DELETE route
+   removes the schedule's `report_files` rows, then the schedule row, then
+   the objects, best-effort, after commit. **Q-3** a tick never catches up a
+   missed period; each due row is enqueued once, for the period ending
+   before its due instant, and advances to the next occurrence after now.
+   **Q-4** `runProcessor` gains a post-commit continuation
+   (`ProcessorContinuation.afterCommit`), awaited after the transaction
+   commits and never when the handler threw or the commit failed; the
+   render job's phase B (object prune, attachment read-back, email) and
+   phase C (`delivery_status` update) run there. **Q-5**
+   `MAX_REPORT_SCHEDULES_PER_ORGANIZATION = 50`, enforced under
+   `pg_advisory_xact_lock` before any write. **Q-6** a `location_admin`
+   cannot attach a channel — `canManageNotificationChannel` is `false` for
+   that role, and no permission moves to change it; the create/edit form
+   offers no channel select for that role and reads "Email delivery needs
+   an organization administrator" instead.
+
+   R-1..R-19 were accepted without change; the ones that correct or extend
+   this ADR's text are folded into items 2–4 below. The rest (period
+   signatures, dispatcher counters, DTO shape, config readers, the two
+   byte-identical extraction commits, the web component split) are as the
+   plan states and are not restated here.
+
+2. **Three decision sentences measured false before code, corrected here.**
+   - Decision 8's `jobId` `<scheduleId>:<periodEnd>` cannot be enqueued:
+     `assertJobId` (`apps/api/src/queue/queue-registry.ts`) refuses any `:`,
+     and BullMQ 5.81.5 throws `Custom Id cannot contain :` for one that
+     reaches Redis regardless. The id is `<scheduleId>_<periodEnd>`, an
+     underscore (`queue/reports-render.ts`).
+   - Decision 13's "Compose and CI change nothing" is false for the worker:
+     the compose `worker` service carried none of them (`api` carries six
+     `OBJECT_STORAGE_*` lines plus the empty-string `ALLOW_INSECURE`
+     default), so `readStorageConfig`
+     answered `unconfigured` there and every render would have refused with
+     `Object storage is not configured` on the reference stack. Corrected by
+     Q-1.
+   - `storage.module.ts`'s docblock claim "never `WorkerModule`: no job
+     reads an object" is false since `F3.5b`: `WorkerModule` now imports
+     `StorageModule` so the render job can put and read report objects.
+     Consequences, measured rather than assumed: the worker's `GET /health`
+     carries a `storage` section (`configured: true`; with MinIO stopped,
+     `status: "degraded"`, `storage.reachable: false`, HTTP 200, recovering
+     roughly 3 s after MinIO restarts); `StorageBootstrap.onModuleInit` runs
+     `ensureBucket` on both processes; the worker image now loads
+     `@aws-sdk/client-s3`, `xlsx` and the `pdfmake` singleton at start.
+
+3. **Measured at the units — plan defects and rulings this ADR was silent
+   on.**
+   - **U3 (`report-period.ts`).** ICU canonicalises `Asia/Kolkata` to
+     `Asia/Calcutta` on both Node 20.20.2 (the `api` container) and 24.17.0
+     (the host) — `Intl.supportedValuesOf("timeZone")` lists
+     `Asia/Calcutta` only — so a `resolvedOptions().timeZone === zone`
+     equality check refuses the pilot's own zone. Owner-ruled instead:
+     `isValidTimeZone` requires a `/`, a construction that does not throw
+     `RangeError`, and every `/`-segment starting with an uppercase letter
+     (`asia/kolkata` still refused). A plain two-pass UTC-offset
+     computation lands a DST fold on the later occurrence; `toInstant`
+     enumerates candidate offsets and keeps the earliest instant that
+     round-trips (the `01:30` fold on 2026-10-25 in `Europe/London` lands
+     on `00:30Z`). Two of the plan's mutations were inert against the
+     first draft of the spec — dropping the second offset pass survived
+     the BST-crossing row, and a local-midnight `getDay()` was
+     self-consistent under the default host zone — and were replaced by
+     mutations that redden (a `TZ=America/St_Johns` pin on the whole
+     `.test.ts` file for the second).
+   - **U6 (`runProcessor`).** `afterCommit` must also be skipped when the
+     **commit** fails after the handler already resolved, not only when the
+     handler itself throws — a row for that case was added; the plan's
+     `finally`-based mutation for it was inert and was replaced.
+   - **U7/U8 (storage extraction and render job).** R-15's
+     `discardObjectsBestEffort(client, logger, keysByFileId)` did not exist
+     at U7; it is written at U8 as the plural best-effort discard the
+     render job's phase B and the DELETE route both call.
+   - **U8 (`ReportRenderService`).** Delivery runs in **two** tenant
+     transactions (read the rows still at `none` plus the channel, commit;
+     then the S3 read-back and the SMTP send; then a second `withTenant` for
+     the status update) — a tenant connection is never held across a
+     network round trip. `RenderOutcome` carries `channelId`, `assetIds`
+     and `prunedKeys: Map<fileId, key>`, fields the plan's shape did not
+     name — `prunedKeys` is what lets phase B's best-effort discard run
+     without re-reading the pruned rows — so `finish` never re-reads the
+     schedule. A JS array inside a drizzle `sql` template
+     expands to `($1, $2)`, which `any(...)` refuses as a row constructor
+     (measured) — the location predicate uses `inArray`/`pgArray` instead.
+     `tests/f3.3`'s row that pinned "the worker gets no storage" was
+     inverted to the positive. The `CalcModule` fence mutation — adding
+     `import { CalcModule } from "../calc/calc.module"` to
+     `ReportsCoreModule.imports` — reddened four rows naming
+     `calc/calc.module.ts` and `telemetry/telemetry.module.ts` in
+     `tests/f4.24-worker-imports-no-api-loop.test.ts`.
+   - **U9 (dispatcher).** Drizzle's raw `execute` returns a `timestamptz`
+     column as the driver's **text**, not a `Date` — the first integration
+     run warned `RangeError` on every real row while the `Date`-carrying
+     unit fake passed; `tick` now reads the instant the way drizzle's own
+     column mapper does. `tick` accepts `BmsDb | BmsTx`, and
+     `NodePgTransaction.transaction` opens a savepoint on the same session,
+     so a `withRollback` integration case claims its own inserts. The
+     mutation swapping the dispatch/render declarations' order in
+     `startQueueWorkers`'s array is inert — array order is not behaviour,
+     each `Worker` is built from its own registration's `decl.name` — a
+     plan claim recorded as a defect, not acted on.
+   - **U10/U11 (email, routes).** The plan's row `aFailedFinishLeavesRowsAtNone`
+     assumed "the sender throws once" leaves a row at `none`; it does not —
+     `EmailTransport.send` catches the throw and returns `failed`. The row
+     fails phase B through a `getObject` that throws once instead. `pg`
+     returns a `time(0)` column as `"HH:MM:SS"` text; `runAtLocal` is
+     sliced to `HH:MM`.
+   - **U11 (routes and rights).** `ChannelsService` is not `@Global()`, so
+     `ReportsModule` imports `NotificationsCoreModule` to reach it — a DI
+     hole `pnpm build` cannot see; only the compose boot proved the wiring.
+     `created_by` on a schedule route is resolved the way `F3.5a` resolves
+     it (`resolveActorId`, a private copy — the plan named no shared
+     source). A PATCH counts as a change when a value differs from the
+     stored row, never by key presence alone. `remove` on a schedule needs
+     storage configured (503 otherwise, since its objects must be
+     discardable).
+   - **U13 (web).** `fetchAdminLocations` takes the literal `"true"`, not
+     `"active"` — it is a `MasterDataActiveFilter` (`"true" | "false" |
+     "all"`), a plan defect recorded and not built as written. Disabling a
+     schedule is a per-row toggle: a first-draft global-disable control
+     would have made the "two deletes" row unreachable and was not built.
+     An empty PATCH (no changed keys) answers "Nothing changed yet" rather
+     than a guaranteed 400.
+
+4. **Step-5 reviews (2026-09-22; `code-reviewer`, `security-reviewer`,
+   `migration-reviewer` on Opus, `agents-compliance-reviewer` on Sonnet):
+   no Critical or High.** Applied in `02d32ca5`, each with the row that
+   reddens:
+   - (Medium, false green) a committed **due** render fixture on a shared
+     database was claimed by the live compose worker inside 60 s — green in
+     CI (no worker runs there), flaky locally. Render fixtures now set
+     `next_run_at = now() + interval '10 years'`; the dispatch claim row
+     used to prove the `FOR UPDATE SKIP LOCKED` lock lives only inside its
+     own scenario.
+   - (Low) with retention set below the format count, the prune deleted one
+     of the run's own just-written rows (same `now()`, a uuid tie in
+     `created_at DESC, id DESC` ordering). `REPORT_RETENTION_PER_SCHEDULE`
+     is now clamped to `max(value, REPORT_FILE_FORMATS.length)` with one
+     warn — R-14 had said floor 1.
+   - (Low) the post-commit continuation row now asserts that `finish` was
+     **not** called before `afterCommit()` ran, not only that it was called
+     after.
+   - (Security, Low) `REPORT_HISTORY_URL` is normalised on read: userinfo
+     cleared, the value trimmed, a trailing slash removed.
+   - (Security, Low) `ReportPeriodError` messages name the field only,
+     never the zone value or the clock reading.
+   - (Security, Low) the dispatch claim carries `LIMIT 200`
+     (`REPORT_DISPATCH_CLAIM_LIMIT`), so a slow Redis bounds how long one
+     lock-holding transaction can run.
+   - (Migration, Low) `run_at_local` is `time("run_at_local", { precision: 0
+     })`; two prose sites and a test title that had said `RESTRICT` now say
+     `NO ACTION` (item 2).
+   - (nit) the `location_admin` empty-scope refusal reads "Choose at least
+     one location".
+
+   Recorded, not changed: the compliance reviewer's note that in-code
+   comments cite "Amendment 2" before this text existed — true at merge
+   time; the `0078` migration file's header comment still says `RESTRICT`
+   and is frozen (forward-only, already applied to the dev database — see
+   `6f5aa0b0`); `locationIds.max(200)` is a step-3 bound, not this row's to
+   change; an `organization_admin` holding several organizations sends no
+   `organizationId` in the schedule create body (R-18 carries `F3.5a`'s
+   limitation forward — the organization select renders for the global
+   admin only); the notification-channel DELETE route answers 200, a
+   pre-existing shape this row did not touch.
+
+5. **§4.6, what ran against the stack (compose from the repo root,
+   2026-09-22).**
+   - **Database.** `0078` applied (ledger id 87, hash equal to the file);
+     `\d bms.report_schedules` and `\d bms.report_files` show `FORCE`, the
+     own-column policy, and the four privileges for `bms_tenant` and
+     `bms_fleet`. The cold start was **not** re-run on this branch —
+     `F3.5a`'s cold-start result stands, and CI's fresh database is the
+     gate for `0078`.
+   - **API.** The container was rebuilt three times (U10, U11, the review
+     fix; last `CreatedAt 2026-09-22 04:24:38 +0530`); Nest booted with
+     `ReportSchedulesController {/api/v1/reports}` mapping five routes and
+     no unresolved dependency. The HTTP matrix ran from the SPA tab (OIDC,
+     the owner's sessions, via `browser-verifier`'s `javascript_tool`
+     assertions, 0 screenshots): **admin** — 18 claims, including 201 with
+     `nextRunAt` equal to the hand-computed IST instant (diff 0 s), 400
+     without `organizationId`, `asia/kolkata` 400 `fieldErrors.timezone`,
+     `Not/AZone` 400, `formats: []`/`csv`/an extra key 400, a webhook
+     channel 400, an email channel 201, list newest first, `PATCH
+     { enabled: false }` then `{ enabled: true }`, an empty PATCH body 400,
+     a strict-unknown-key PATCH 400, `locationIds` `[WC]` 200 and a foreign
+     uuid 400, the cap — 201 up to the organization's 50th row then 409
+     "This organization already has 50 report schedules; delete one before
+     creating another" — then 47 DELETEs 204 and a second DELETE 404.
+     **wc-admin** — 16 claims, including the three whole-organization rows
+     invisible in the list and in `/reports/files`, `[WC]` 201, `[]` 403,
+     `CSMOC-GP` (a foreign location) 403, a channel 403, the admin's row
+     403 on GET, PATCH to `[]` 403, DELETE 204. **wc-hvac-admin** — 7
+     claims, every route 403 with the master-data sentence.
+   - **Worker.** Rebuilt (`CreatedAt 2026-09-22 04:24:39`); four
+     `worker started` lines, no unresolved dependency. A schedule inserted
+     as `bms_fleet` was claimed on the next tick
+     (`due=1 enqueued=1 skippedInvalid=0 durationMs=76`), rendered
+     (`written=2 skippedExisting=0 pruned=0 assets=100`), `next_run_at`
+     advanced to the next 00:30 IST with the period equal to the previous
+     local day. Counters: `bms_report_files_written_total{format="pdf"} 1`,
+     `{format="xlsx"} 1`, `bms_report_deliveries_total{status="skipped_unconfigured"} 1`.
+     `pg_stat_activity` for the worker's address: 0 backends at rest, a
+     peak of 2 during one render (1 `bms_fleet`, 1 `bms_tenant`) — the
+     number this ADR's Consequences paragraph promised.
+   - **Object store.** Two keys under `org/<ESKOM>/reports/` per run,
+     `\d`-equal sizes to the rows' `byte_size`; all fixtures removed
+     afterwards (0 keys left).
+   - **Email.** Mailpit via a one-off worker container
+     (`docker compose run --rm -d -e SMTP_HOST=mailpit -e SMTP_PORT=1025
+     -e REPORT_DISPATCH_INTERVAL_MS=10000 worker`, with the compose worker
+     stopped first — `tests/adr-0041` keeps `SMTP_HOST` out of
+     `docker-compose.yml` itself). One message received, subject
+     `f3.5b-mail-sched — 2026-09-21 to 2026-09-21`, body the four summary
+     lines (`Total energy: 414.16 kWh`, `Peak demand`, `PUE estimate: 1.88`,
+     `Indicative cost: ZAR 890.45`) and the no-URL sentence, two
+     attachments — `energy-consumption-2026-09-21-to-2026-09-21.pdf`
+     (5486 bytes) and the `.xlsx` (19742 bytes), equal to the rows'
+     `byte_size` — and both rows `sent` with `delivery_error NULL`. The
+     compose worker was restored afterward.
+   - **Browser.** Served bundle `index-T1l0lSHy.js` after a hard reload
+     (rebuilt after the review fix). `admin@bms.local`: the Schedules
+     heading, the History table's Origin column with "Scheduled" rows and
+     "Email not configured", a create whose Next run equals the
+     hand-computed IST instant, Edit toggling Enabled off/on, Delete, and
+     "Enter a name". `wc-admin@bms.local`: no organization select, no
+     whole-organization option, `RSMOC-WC` listed, the Q-6 sentence,
+     "Choose at least one location", a create with one location, a delete.
+     `wc-hvac-admin@bms.local`: no Schedules heading, no History (Export
+     PDF count of 1 used as a control). 0 console errors, 0 screenshots.
+     Claims already held by the jsdom specs were not re-run in the browser
+     except where a click reaches the server.
+   - **Full suite** with the CI env block: 5096 / 5097; the one failure is
+     the pre-existing leaked `mechanical-lift` draft (created 2026-09-19)
+     on this dev database, not this branch. Coverage is measured in CI.
+
+6. **Deferred, by name (added to this ADR's Consequences list).** Catch-up
+   of missed periods, and a per-schedule "run now" route (Q-3). The orphan
+   sweep row (ADR 0066 decision 11 — the worker now has its second job
+   kind that can leave an orphaned object; the `F3.5b` closure files the
+   sweep row, nothing here builds it). The multi-organization
+   `organization_admin` gap in the web create form (item 4, recorded
+   above).

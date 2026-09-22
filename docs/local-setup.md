@@ -282,6 +282,26 @@ LOG_LEVEL=info
 # default 50, floor 1; a non-integer value falls back to the default with
 # one warning that names the variable.
 # REPORT_ONDEMAND_CAP=50
+# F3.5b (ADR 0071 Amendment 2). Optional, each falls back to its default
+# with one warning that names the variable on a bad value.
+# How often the worker's reports-dispatch queue ticks over
+# bms.report_schedules. Default 60000, floor 10000.
+# REPORT_DISPATCH_INTERVAL_MS=60000
+# How many rendered files a schedule keeps before the render job prunes
+# the oldest, row-then-object. Default 24; clamped up to the number of
+# report formats (currently 2) if set lower, so a run never prunes its own
+# just-written rows.
+# REPORT_RETENTION_PER_SCHEDULE=24
+# Ceiling, in bytes, on the summed attachment size of one scheduled
+# delivery email. Above it the mail is sent without attachments and the
+# body names the history instead. Default 10485760 (10 MiB).
+# REPORT_EMAIL_MAX_BYTES=10485760
+# Base URL a scheduled delivery email links back to (e.g.
+# https://bms.example.com). Unset: the email carries a fixed sentence
+# ("Open Reports & Analytics in TRINETRA to download the files.") instead
+# of a link. Normalised on read: userinfo cleared, trimmed, trailing slash
+# removed.
+# REPORT_HISTORY_URL=
 ```
 
 Create `apps/web/.env` (do not commit):
@@ -598,6 +618,27 @@ Mailpit listens for SMTP on `localhost:1025` and serves the inbox at
 fails the build if one appears there. With no host configured, email channels
 record `skipped_unconfigured` deliveries and the rules page shows a readiness
 banner; that is the intended behaviour, not a fault.
+
+Since `F3.5b` (ADR 0071 Amendment 2) the compose `worker` service also
+carries `api`'s seven `OBJECT_STORAGE_*` variables and depends on `minio`
+being healthy, because the scheduled-report render job puts and reads
+objects from the worker process, not only from `api`. To watch a scheduled
+report reach Mailpit: create a report schedule with `runAtLocal` a few
+minutes ahead in a channel of kind `email`, stop the compose worker, then
+run
+
+```bash
+docker compose stop worker
+docker compose run --rm -d -e SMTP_HOST=mailpit -e SMTP_PORT=1025 \
+  -e REPORT_DISPATCH_INTERVAL_MS=10000 worker
+```
+
+so the one-off worker ticks every 10 s instead of the default 60 s; the
+email arrives in the Mailpit inbox with the rendered PDF/XLSX attached, or
+with `channel unavailable` / `SMTP_HOST is not set` recorded on the
+schedule's `report_files.delivery_status` if the channel or SMTP host is
+missing. Restore the compose worker afterward with
+`docker compose up -d worker`.
 
 ---
 
