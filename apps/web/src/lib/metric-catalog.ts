@@ -59,6 +59,16 @@ export const METRIC_CATALOG_PRESENTATION: Readonly<
     // value" rather than a fabricated zero, so the description must not promise a number.
     description: "The weighted mean health score across the assets in scope.",
   },
+  // `E4.2` / ADR 0072 decision 2. Neither entry reaches a picker (`catalogKeysFor` hides an
+  // entry with `params`), but the inspector and the inline error still read these labels.
+  "sustainability.total": {
+    label: "Sustainability total",
+    description: "One point key summed or averaged across the assets in scope.",
+  },
+  "sustainability.by_location": {
+    label: "Sustainability by site",
+    description: "The same roll-up, one row per site in scope, with its coverage.",
+  },
 };
 
 /** The label alone — the common read, and the one a picker option and an inline error share. */
@@ -78,11 +88,18 @@ export function metricCatalogLabel(key: MetricCatalogKey): string {
  *
  * Returns `[]` for a type that binds no catalog entry — a gauge, a tank, a chart — which is the
  * caller's signal to render no picker at all rather than an empty one.
+ *
+ * **An entry that declares `params` is hidden too** (`E4.2`, ADR 0072 decision 2, plan OQ3).
+ * The picker and `WidgetEditor` add a source with `params: {}`, and the sustainability entries'
+ * write schema is strict on `{ pointKey, aggregate }` — so offering one would be the same
+ * 400-from-a-form-that-suggested-it the shape filter exists to prevent. The stock template and
+ * the API are the two ways to bind these until a params editor lands as its own row.
  */
 export function catalogKeysFor(widgetType: WidgetType): MetricCatalogKey[] {
   const drawable = WIDGET_SOURCE_SHAPES[widgetType];
-  return (Object.keys(METRIC_CATALOG) as MetricCatalogKey[]).filter((key) =>
-    drawable.includes(METRIC_CATALOG[key].shape),
+  return (Object.keys(METRIC_CATALOG) as MetricCatalogKey[]).filter(
+    (key) =>
+      drawable.includes(METRIC_CATALOG[key].shape) && METRIC_CATALOG[key].params === undefined,
   );
 }
 
@@ -115,6 +132,11 @@ export const METRIC_CATALOG_COLUMN_LABELS: Readonly<Record<string, string>> = {
   priority: "Priority",
   title: "Title",
   dueAt: "Due",
+  // `E4.2` — `sustainability.by_location`. "Site ID" / "Site" mirror "Asset ID" / "Asset" above.
+  locationCode: "Site ID",
+  locationName: "Site",
+  value: "Value",
+  coverage: "Coverage",
 };
 
 /**

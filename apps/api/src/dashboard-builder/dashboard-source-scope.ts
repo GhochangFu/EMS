@@ -23,10 +23,11 @@ import type { BmsTx } from "../database/tenant-context";
  * **What leaks if this is deleted is smaller than the point side's leak, and still real.** A
  * point binding carries `assetId`, which a caller turns into a `telemetry.*` read one HTTP call
  * later — a cross-tenant telemetry read, as that file records. A catalog binding carries no id
- * at all: the key is a name, and `params` is gated to declare none
- * (`METRIC_CATALOG_PARAMS_WRITE`). So the leak here is *which catalog entries another tenant's
- * widget binds*, not their data. That is still another organization's dashboard configuration,
- * and the fix costs one `eq`.
+ * at all: the key is a name, and `params` is gated to declare no id
+ * (`METRIC_CATALOG_PARAMS_WRITE` — the sustainability entries' `pointKey` is a fleet-wide
+ * catalog code, not a row of any tenant). So the leak here is *which catalog entries another
+ * tenant's widget binds, and with which point key*, not their data. That is still another
+ * organization's dashboard configuration, and the fix costs one `eq`.
  *
  * **There is no `assertBoundSourcesInOrganization` counterpart, and that is decision 4 rather
  * than an omission.** The write-side guard on the point path exists because a submitted

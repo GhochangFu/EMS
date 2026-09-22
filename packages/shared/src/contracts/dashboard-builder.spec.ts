@@ -17,6 +17,7 @@ import {
   metricCatalogValueDtoSchema,
   pointAggregateFunctionSchema,
   radialGaugeConfigSchema,
+  sustainabilityAggregateSchema,
   valueTileConfigSchema,
   widgetIconSchema,
   widgetPointRoleSchema,
@@ -787,5 +788,83 @@ export function runDashboardAssetScopeFieldsTests(): void {
     dashboardDtoSchema,
     dashboardWithoutAssetId,
     "a dashboard missing assetId",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// `E4.2` / ADR 0072 decision 2 — the two parameterised sustainability entries.
+// One exported function per claim, so a mutation reddens the `it` that owns it.
+// ---------------------------------------------------------------------------
+
+const metricArm = {
+  shape: "metric" as const,
+  key: "sustainability.total" as const,
+  value: 30,
+  unit: "kL",
+};
+
+/** The metric arm still parses with neither `coverage` nor `currency` — the three older
+ * emitters do not change (ADR 0072 decision 2). */
+export function metricArmParsesWithoutCoverage(): void {
+  expectAccepts(
+    metricCatalogValueDtoSchema,
+    metricArm,
+    "a metric with no coverage and no currency is every existing emitter's payload",
+  );
+}
+
+/** The metric arm parses with a well-formed coverage pair. */
+export function metricArmParsesWithCoverage(): void {
+  expectAccepts(
+    metricCatalogValueDtoSchema,
+    { ...metricArm, coverage: { fresh: 4, carrying: 6 }, currency: "INR" },
+    "a roll-up carries coverage and a currency",
+  );
+}
+
+/** A negative `fresh` is not a count. */
+export function metricArmRefusesNegativeFresh(): void {
+  expectRejects(
+    metricCatalogValueDtoSchema,
+    { ...metricArm, coverage: { fresh: -1, carrying: 6 } },
+    "coverage.fresh below zero",
+  );
+}
+
+/** `sustainability.by_location` is a dataset with exactly the four benchmark columns. */
+export function byLocationDeclaresTheFourColumns(): void {
+  const entry = METRIC_CATALOG["sustainability.by_location"];
+  if (entry.shape !== "dataset") {
+    throw new Error("sustainability.by_location must be a dataset");
+  }
+  assert(
+    JSON.stringify(entry.columns) ===
+      JSON.stringify(["locationCode", "locationName", "value", "coverage"]),
+    `by_location columns are locationCode · locationName · value · coverage, got ${JSON.stringify(entry.columns)}`,
+  );
+}
+
+/** Both entries declare the same two params, in the same order, and no older entry declares any. */
+export function bothEntriesDeclarePointKeyAndAggregate(): void {
+  for (const key of ["sustainability.total", "sustainability.by_location"] as const) {
+    assert(
+      JSON.stringify(METRIC_CATALOG[key].params) === JSON.stringify(["pointKey", "aggregate"]),
+      `${key} must declare params ["pointKey","aggregate"], got ${JSON.stringify(METRIC_CATALOG[key].params)}`,
+    );
+  }
+  for (const key of metricCatalogKeySchema.options) {
+    if (key.startsWith("sustainability.")) continue;
+    assert(
+      METRIC_CATALOG[key].params === undefined,
+      `${key} declares params; only the sustainability entries take fields (ADR 0072)`,
+    );
+  }
+}
+
+/** The aggregate vocabulary is closed to `sum` and `avg`. */
+export function aggregateVocabularyIsSumAndAvg(): void {
+  assert(
+    JSON.stringify(sustainabilityAggregateSchema.options) === JSON.stringify(["sum", "avg"]),
+    `sustainabilityAggregateSchema is ["sum","avg"], got ${JSON.stringify(sustainabilityAggregateSchema.options)}`,
   );
 }

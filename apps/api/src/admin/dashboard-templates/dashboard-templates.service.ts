@@ -41,6 +41,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 // global `ZodErrorFilter` would report it as the caller's bad request.
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { METRIC_CATALOG_PARAMS_WRITE } from "../../dashboard-builder/dashboards.schema";
+import { assertSourceParamsPointKeysActive } from "../../dashboard-builder/source-params-point-keys";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -315,13 +316,15 @@ export class DashboardTemplatesService {
         // applies. The contract docblock claimed this happened and nothing did
         // it — found by the `F3.36` security review.
         //
-        // Every entry's schema is `z.object({}).strict()` today, so this refuses
-        // any non-empty `params`, exactly as `PUT /dashboards/:id/widgets` does.
-        // The risk it closes is not hypothetical in shape: an author could
-        // otherwise persist `{"locationId": "<foreign uuid>"}` into
-        // `dashboard_widget_sources.params`, which `dashboards.schema.ts` calls
-        // "an id inside jsonb that no foreign key covers and no orphan check can
-        // report". Latent only because no resolve path reads a param yet.
+        // The five Stage C entries are `z.object({}).strict()`, so this refuses
+        // any non-empty `params` on them, exactly as `PUT /dashboards/:id/widgets`
+        // does; the two sustainability entries require exactly
+        // `{ pointKey, aggregate }` (`E4.2`, ADR 0072 decision 2). The risk it
+        // closes is not hypothetical in shape: an author could otherwise persist
+        // `{"locationId": "<foreign uuid>"}` into `dashboard_widget_sources.params`,
+        // which `dashboards.schema.ts` calls "an id inside jsonb that no foreign
+        // key covers and no orphan check can report" — and since `E4.2` a
+        // resolve path does read a param, so a stored one is no longer latent.
         const paramsSchema = METRIC_CATALOG_PARAMS_WRITE[source.catalogKey];
         const parsed = paramsSchema.safeParse(source.params);
         if (!parsed.success) {
@@ -332,6 +335,15 @@ export class DashboardTemplatesService {
         }
       }
     }
+
+    // `E4.2` U3 — after every source's params have parsed above: the point key each names
+    // must be an active catalog code (ADR 0072 decision 2). Publish is where a stock import's
+    // draft is proved, and instantiation copies `params` verbatim, so this is the one gate on
+    // the template path — the same sentence the dashboard write path answers with.
+    await assertSourceParamsPointKeysActive(
+      this.fleetDb,
+      content.widgets.flatMap((widget) => widget.sources),
+    );
 
     const now = new Date();
     const published = await withTenant(this.tenantDb, template.organizationId, async (tx) => {

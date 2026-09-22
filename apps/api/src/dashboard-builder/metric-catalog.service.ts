@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { and, asc, desc, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 
 import {
   alarms,
@@ -7,6 +7,7 @@ import {
   assets,
   dashboards,
   dashboardWidgets,
+  locations,
   workOrders,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -16,6 +17,7 @@ import {
   type DashboardCatalogValuesResponse,
   type MetricCatalogKey,
   type MetricCatalogValueDto,
+  type SustainabilityAggregate,
 } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
@@ -24,28 +26,54 @@ import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { resolveWidgetSources } from "./dashboard-source-scope";
+import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
+import {
+  capRows,
+  readOrganizationCurrency,
+  readPointKeyUnit,
+  readRollupRows,
+  rollup,
+  rollupCurrency,
+} from "./sustainability-rollup";
 
 /**
  * What a resolver may reach for beyond the transaction.
  *
- * Passed explicitly rather than bound as `this`. Four of the five entries need nothing here, and
+ * Passed explicitly rather than bound as `this`. Six of the seven entries need nothing here, and
  * a `this`-bound map would have to be cast to reach the service's injected dependency — a cast
  * on the one path that calls another module's service.
  */
 type ResolverDeps = { readonly health: AssetHealthService };
 
-/** How the catalog's five entries resolve: four are SQL here, one delegates. */
+/**
+ * How the catalog's entries resolve: four are SQL here, one delegates, two roll up a point key.
+ *
+ * `params` is the binding's stored `params` AFTER `METRIC_CATALOG_PARAMS_WRITE[key]` has
+ * parsed it (`E4.2`): `{}` for the five Stage C entries, `{ pointKey, aggregate }` for the
+ * two sustainability entries. Positional and required rather than optional, so a resolver
+ * that reads a field cannot compile against a call that never passes one.
+ */
 type Resolver = (
   tx: BmsTx,
   organizationId: string,
   scope: readonly string[],
   deps: ResolverDeps,
+  params: unknown,
 ) => Promise<MetricCatalogValueDto>;
+
+/** The parsed shape of a sustainability binding's params — what `METRIC_CATALOG_PARAMS_WRITE`
+ * guarantees before a resolver runs, spelled once for the two entries that read it. */
+type SustainabilityParams = {
+  readonly pointKey: string;
+  readonly aggregate: SustainabilityAggregate;
+};
 
 /**
  * `F3.35` Stage C — resolving a dashboard's named catalog bindings (ADR 0048 decisions 1 and 2).
  *
- * **Four entries are SQL written here; one is a service call, and the asymmetry is deliberate.**
+ * **Six entries are SQL written here (four Stage C reads and the two `E4.2` roll-ups, whose
+ * statements live in `sustainability-rollup.ts`); one is a service call, and the asymmetry is
+ * deliberate.**
  * `assets.health.score` delegates to `AssetHealthService.summary(...).score` — `E1.3` and ADR
  * 0050 own the roll-up, its windowing, its band model and the `bms.automation_rules`-derived
  * definition of "in range". A fifth query here would be a second implementation of a formula the
@@ -66,14 +94,24 @@ type Resolver = (
  * narrowings are computed into one `assetIds` list before any entry runs, so no entry can forget
  * one of them.
  *
- * **`params` is read by nothing here, and that is Unit 3's decision arriving intact.**
- * `METRIC_CATALOG_PARAMS_WRITE` declares no fields for any entry, so there is no parameter to
- * read — a dataset's row cap comes from `MAX_DATASET_ROWS`, not from a request. When an entry
- * first needs a filter, it is a field on that entry's write schema (and the containment test
- * still passing), never a query-string parameter.
+ * **`params` is read by two entries, and only through the write schema.** The five Stage C
+ * entries declare no fields, so there is no parameter for them to read — a dataset's row cap
+ * comes from `MAX_DATASET_ROWS`, not from a request. The two `sustainability.*` entries
+ * (`E4.2`, ADR 0072 decision 2) take `{ pointKey, aggregate }`: the stored row is re-parsed
+ * through `METRIC_CATALOG_PARAMS_WRITE` before a resolver sees it, and a row that fails to
+ * parse is SKIPPED with one warning naming the field path (§4.3) — never thrown, because one
+ * bad binding must not take the whole dashboard's values down. A filter is always a field on
+ * the entry's write schema (and the containment test still passing), never a query-string
+ * parameter.
+ *
+ * **One resolve per distinct `(catalogKey, canonical params)`, not per key.** Two tiles
+ * binding `sustainability.total` with different `pointKey`s are two different numbers; two
+ * tiles binding `alarms.active.count` are still one query, because their params are both `{}`.
  */
 @Injectable()
 export class MetricCatalogService {
+  private readonly logger = new Logger(MetricCatalogService.name);
+
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
@@ -154,20 +192,48 @@ export class MetricCatalogService {
 
       const scope = await this.resolveAssetScope(tx, organizationId, dashboard, readableAssetIds);
 
-      // One resolve per DISTINCT key, not per binding. Two tiles binding
-      // `alarms.active.count` on one dashboard are one query, and the parameters that would
-      // make them differ do not exist yet.
-      const distinct = [...new Set(sources.map((source) => source.catalogKey))];
+      // One resolve per DISTINCT (catalogKey, canonical params), not per binding (`E4.2`).
+      // Two tiles binding `alarms.active.count` on one dashboard are one query; two tiles
+      // binding `sustainability.total` with different point keys are two.
+      const resolveKeyOf = new Map<string, string>();
+      const paramsByResolveKey = new Map<string, unknown>();
+      for (const source of sources) {
+        const key = source.catalogKey as MetricCatalogKey;
+        const schema = METRIC_CATALOG_PARAMS_WRITE[key];
+        if (schema === undefined) continue;
+        const parsed = schema.safeParse(source.params);
+        if (!parsed.success) {
+          // A stored row the write schema no longer accepts (a hand-edited row, or a schema
+          // tightened after the write). Skipped, not thrown: the other bindings still resolve.
+          // ONE string: `this.logger` is Nest's `Logger` routed through nestjs-pino, where a
+          // trailing string argument is read as the CONTEXT and an object becomes fields with
+          // no message. Field paths only, never the params values (§4.3 / §9.6).
+          this.logger.warn(
+            "catalog binding params failed the entry's write schema; binding skipped: " +
+              `dashboard ${dashboardId}, source ${source.id}, key ${key}, paths ` +
+              parsed.error.issues.map((issue) => issue.path.join(".")).join(","),
+          );
+          continue;
+        }
+        const resolveKey = `${key}\u0000${canonicalJson(parsed.data)}`;
+        resolveKeyOf.set(source.id, resolveKey);
+        paramsByResolveKey.set(resolveKey, parsed.data);
+      }
       const byKey = new Map<string, MetricCatalogValueDto>();
-      for (const key of distinct) {
-        const resolver = RESOLVERS[key as MetricCatalogKey];
+      for (const [resolveKey, params] of paramsByResolveKey) {
+        const key = resolveKey.slice(0, resolveKey.indexOf("\u0000")) as MetricCatalogKey;
+        const resolver = RESOLVERS[key];
         if (resolver === undefined) continue;
-        byKey.set(key, await resolver(tx, organizationId, scope, { health: this.health }));
+        byKey.set(
+          resolveKey,
+          await resolver(tx, organizationId, scope, { health: this.health }, params),
+        );
       }
 
       return {
         values: sources.flatMap((source) => {
-          const resolved = byKey.get(source.catalogKey);
+          const resolveKey = resolveKeyOf.get(source.id);
+          const resolved = resolveKey === undefined ? undefined : byKey.get(resolveKey);
           // `widgetId` and `catalogKey` travel beside `sourceId` because they are the pair the
           // viewer keys on — `sourceId` is regenerated by every widget save. The contract's own
           // docblock carries the failure that taught us.
@@ -194,8 +260,8 @@ export class MetricCatalogService {
    * simplification** (security and correctness review, High). `readableAssetIds` is `null` only
    * for `role === "admin"`, meaning "unrestricted across every organization"; returning it
    * unchanged for a dashboard with no location and no asset group let `null` reach the
-   * resolvers. Four of the five carry `eq(<table>.organizationId, organizationId)` and survived
-   * it. The fifth, `assets.health.score`, delegates to `AssetHealthService`, which injects the
+   * resolvers. The SQL entries carry `eq(<table>.organizationId, organizationId)` and survived
+   * it. `assets.health.score`, delegates to `AssetHealthService`, which injects the
    * `BYPASSRLS` fleet pool and whose `assetsInScope(null, undefined)` filters on
    * `assets.active` alone — so a PHEWB dashboard answered a weighted mean over ESKOM's assets
    * too. Nothing threw, nothing logged, and the tile rendered a number.
@@ -209,18 +275,30 @@ export class MetricCatalogService {
    * every entry answers as zero rather than as a query over everything.
    *
    * `bms.asset_groups.location_id` is NOT NULL, so an asset-group scope already implies a
-   * location and the two columns can never both be set (`dashboards_scope_check`). One branch
-   * each, no combination.
+   * location and no two of the three scope columns can be set at once
+   * (`dashboards_scope_check`; `asset_id` is the F3.2 third axis). One branch each, no
+   * combination.
    */
   private async resolveAssetScope(
     tx: BmsTx,
     organizationId: string,
-    dashboard: { locationId: string | null; assetGroupId: string | null },
+    dashboard: { locationId: string | null; assetGroupId: string | null; assetId: string | null },
     readableAssetIds: readonly string[] | null,
   ): Promise<readonly string[]> {
     let fromDashboard: string[] | null = null;
 
-    if (dashboard.locationId !== null) {
+    // `F3.2` / ADR 0067 decision 1 — the third scope axis. Found in the `E4.2` review: without
+    // this arm an asset-scoped dashboard fell to the ORGANIZATION branch, and its
+    // `sustainability.total` tile showed the organization's kWh under one asset's name (ADR
+    // 0072 ruling 3: "over the dashboard's scope, never wider"). The organization predicate
+    // is applied here too, so a mis-stamped foreign `asset_id` resolves to nothing.
+    if (dashboard.assetId !== null) {
+      const rows = await tx
+        .select({ id: assets.id })
+        .from(assets)
+        .where(and(eq(assets.id, dashboard.assetId), eq(assets.organizationId, organizationId)));
+      fromDashboard = rows.map((row) => row.id);
+    } else if (dashboard.locationId !== null) {
       const rows = await tx
         .select({ id: assets.id })
         .from(assets)
@@ -277,6 +355,21 @@ export class MetricCatalogService {
  * SHAPE — a zero count, an empty dataset — rather than preventing a crash. Keep them; do not
  * keep the reason.
  */
+/**
+ * A key-sorted JSON encoding, so `{ pointKey, aggregate }` and `{ aggregate, pointKey }` are
+ * one resolve. The write schemas are flat objects of scalars, so one level of sorting is the
+ * whole canonical form.
+ */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+  const record = value as Record<string, unknown>;
+  return JSON.stringify(
+    Object.fromEntries(Object.keys(record).sort().map((key) => [key, record[key]])),
+  );
+}
+
 function scopeIsEmpty(scope: readonly string[]): boolean {
   return scope.length === 0;
 }
@@ -461,5 +554,67 @@ const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
       new Date(),
     );
     return metricValue("assets.health.score", summary.score, null);
+  },
+
+  /**
+   * `E4.2` / ADR 0072 decision 2 — `pointKey` rolled up across the carrying assets in scope.
+   * `coverage` and `currency` are the metric arm's two optional fields and this is the one
+   * entry that emits them; `currency` is the organization's only for a money point (unit
+   * `""`, the E4.1c spelling), else `null`. An empty scope is `0/0` and `null`, like the
+   * other entries' "no source".
+   */
+  "sustainability.total": async (tx, organizationId, scope, _deps, params) => {
+    const { pointKey, aggregate } = params as SustainabilityParams;
+    const rows = await readRollupRows(tx, organizationId, scope, pointKey);
+    const { value, coverage } = rollup(rows, aggregate);
+    const unit = await readPointKeyUnit(tx, pointKey);
+    const currency =
+      unit === ""
+        ? rollupCurrency(new Set([await readOrganizationCurrency(tx, organizationId)]))
+        : null;
+    return {
+      shape: "metric",
+      key: "sustainability.total",
+      value,
+      unit: unit || null,
+      coverage,
+      currency,
+    };
+  },
+
+  /**
+   * The same roll-up grouped by location, one row per location that owns at least one asset
+   * in the resolved scope (plan OQ7), in `code` order. A location whose assets carry the point
+   * on no template is present as `null` / `"0/0"` — a site with no meters is visible as such
+   * (ADR 0072 ruling 3). `coverage` is the string `"fresh/carrying"` because a dataset cell is
+   * a scalar (plan OQ4). Capped like its dataset siblings: the location query reads
+   * `MAX_DATASET_ROWS + 1` and `capRows` decides `truncated` from what came back.
+   */
+  "sustainability.by_location": async (tx, organizationId, scope, _deps, params) => {
+    if (scopeIsEmpty(scope)) return datasetValue("sustainability.by_location", [], false);
+    const { pointKey, aggregate } = params as SustainabilityParams;
+    const inScope = await tx
+      .select({ id: locations.id, code: locations.code, name: locations.name })
+      .from(assets)
+      .innerJoin(locations, eq(locations.id, assets.locationId))
+      .where(and(eq(assets.organizationId, organizationId), scopedTo(assets.id, scope)))
+      .groupBy(locations.id, locations.code, locations.name)
+      .orderBy(asc(locations.code))
+      .limit(MAX_DATASET_ROWS + 1);
+    const carrying = await readRollupRows(tx, organizationId, scope, pointKey);
+    const capped = capRows(inScope);
+    const rows = capped.rows.map((location) => {
+      const { value, coverage } = rollup(
+        carrying.filter((row) => row.locationId === location.id),
+        aggregate,
+      );
+      return {
+        locationCode: location.code,
+        locationName: location.name,
+        value,
+        coverage: `${coverage.fresh}/${coverage.carrying}`,
+      };
+    });
+    return datasetValue("sustainability.by_location", rows, capped.truncated);
   },
 };

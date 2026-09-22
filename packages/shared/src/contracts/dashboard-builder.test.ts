@@ -1,6 +1,12 @@
 import { describe, it } from "vitest";
 
 import {
+  aggregateVocabularyIsSumAndAvg,
+  bothEntriesDeclarePointKeyAndAggregate,
+  byLocationDeclaresTheFourColumns,
+  metricArmParsesWithCoverage,
+  metricArmParsesWithoutCoverage,
+  metricArmRefusesNegativeFresh,
   runDashboardAssetScopeFieldsTests,
   runDashboardBuilderTests,
   runDashboardGridTests,
@@ -83,5 +89,35 @@ describe("F3.35 Stage A — aggregation and presentation on the tile and chart c
 describe("F3.2 — dashboardDto/dashboardSummaryDto gain the asset scope arm (ADR 0067)", () => {
   it("rejects a dashboard or summary row missing assetId; the summary alone also carries assetCode", () => {
     runDashboardAssetScopeFieldsTests();
+  });
+});
+
+/**
+ * `E4.2` / ADR 0072 decision 2 — two parameterised entries, and `coverage` / `currency`
+ * optional on the shared metric arm. One claim per `it`.
+ */
+describe("E4.2 — the sustainability catalog entries and the roll-up fields", () => {
+  it("parses a metric with neither coverage nor currency, as every older emitter sends", () => {
+    metricArmParsesWithoutCoverage();
+  });
+
+  it("parses a metric carrying coverage { fresh, carrying } and a currency", () => {
+    metricArmParsesWithCoverage();
+  });
+
+  it("refuses a negative fresh count", () => {
+    metricArmRefusesNegativeFresh();
+  });
+
+  it("declares sustainability.by_location as a dataset with exactly the four benchmark columns", () => {
+    byLocationDeclaresTheFourColumns();
+  });
+
+  it("declares params [pointKey, aggregate] on both entries and on no older one", () => {
+    bothEntriesDeclarePointKeyAndAggregate();
+  });
+
+  it("closes the aggregate vocabulary to sum and avg", () => {
+    aggregateVocabularyIsSumAndAvg();
   });
 });

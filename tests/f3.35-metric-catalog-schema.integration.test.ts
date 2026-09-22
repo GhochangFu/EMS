@@ -60,7 +60,8 @@ const RUN = randomUUID().slice(0, 8);
 const has = connectionString !== undefined && connectionString !== "";
 
 /**
- * The five keys `metricCatalogKeySchema` declares, restated rather than parsed.
+ * The keys `metricCatalogKeySchema` declares, restated rather than parsed. Five from Stage C
+ * (migration `0054`) and two from `E4.2` (migration `0079` widens the CHECK).
  *
  * The sibling static test already gates CHECK-against-enum drift by parsing both; repeating
  * that parse here would make this file red for a reason it does not own. What this list is for
@@ -73,6 +74,8 @@ const CATALOG_KEYS = [
   "workorders.open.count",
   "workorders.open",
   "assets.health.score",
+  "sustainability.total",
+  "sustainability.by_location",
 ] as const;
 
 type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
@@ -185,7 +188,7 @@ describe.skipIf(!has)("F3.35 Stage C — bms.dashboard_widget_sources against a 
       const widgetId = await seedWidget(run, orgA, "keys");
 
       // Every key, not a sample. A `varchar(64)` too narrow or a CHECK that silently never
-      // applied would show up on exactly one of them, and the picker offers all five.
+      // applied would show up on exactly one of them, and the picker offers every one it can fill.
       for (const key of CATALOG_KEYS) {
         const ok = await run(
           `INSERT INTO bms.dashboard_widget_sources (organization_id, widget_id, catalog_key)

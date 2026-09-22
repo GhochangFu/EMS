@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  hidesAMetricEntryThatDeclaresParams,
   keepsABoundEntryVisibleAndDisabled,
   labelsEveryOptionFromThePresentationMap,
   offersOnlyTheShapesTheWidgetCanDraw,
@@ -21,6 +22,10 @@ describe("F3.35 Stage C — the named-metric picker", () => {
 
   it("offers every metric entry and no dataset, for a widget that draws one number", () => {
     offersOnlyTheShapesTheWidgetCanDraw();
+  });
+
+  it("hides a metric entry that declares params, which the picker cannot fill (E4.2)", () => {
+    hidesAMetricEntryThatDeclaresParams();
   });
 
   it("labels every option from the presentation map rather than showing the key", () => {

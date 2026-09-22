@@ -706,3 +706,164 @@ export function runListDashboardsQueryTests(): void {
     "a non-uuid assetId must be refused at the field",
   );
 }
+
+// ---------------------------------------------------------------------------
+// `E4.2` / ADR 0072 decision 2 — the first entries with fields on their write
+// schema. One exported function per claim, so a mutation reddens the `it` that
+// owns it (a thrown assert stops the function, so a second claim would hide).
+// ---------------------------------------------------------------------------
+
+const sustainabilityTile = (params: Record<string, unknown>) => ({
+  widgets: [
+    {
+      widgetType: "value_tile" as const,
+      title: null,
+      gridX: 0,
+      gridY: 0,
+      gridW: 3,
+      gridH: 2,
+      config: {},
+      points: [],
+      sources: [{ catalogKey: "sustainability.total" as const, params }],
+    },
+  ],
+});
+
+const byLocationTable = (params: Record<string, unknown>) => ({
+  widgets: [
+    {
+      ...validTableWidget,
+      sources: [{ catalogKey: "sustainability.by_location" as const, params }],
+    },
+  ],
+});
+
+const SOURCE_PARAMS = ["widgets", 0, "sources", 0, "params"] as const;
+
+/** The well-formed binding parses. */
+export function sustainabilityTotalAcceptsPointKeyAndAggregate(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    sustainabilityTile({ pointKey: "kl_today", aggregate: "sum" }),
+    "a value_tile binding sustainability.total { kl_today, sum }",
+  );
+}
+
+/** A missing `aggregate` is one issue at `params.aggregate`, prefixed with the entry's key. */
+export function sustainabilityTotalRefusesMissingAggregate(): void {
+  const result = putDashboardWidgetsBodySchema.safeParse(
+    sustainabilityTile({ pointKey: "kl_today" }),
+  );
+  assert(result.success === false, "a binding with no aggregate must be refused");
+  const issues = result.error?.issues ?? [];
+  assert(issues.length === 1, `expected exactly one issue, got ${JSON.stringify(issues)}`);
+  const [issue] = issues;
+  assert(
+    JSON.stringify(issue?.path) === JSON.stringify([...SOURCE_PARAMS, "aggregate"]),
+    `the issue must sit at params.aggregate, got ${JSON.stringify(issue?.path)}`,
+  );
+  assert(
+    (issue?.message ?? "").startsWith("sustainability.total:"),
+    `the message must name the entry first, got "${issue?.message}"`,
+  );
+}
+
+/** An undeclared field is refused — the entry is strict. */
+export function sustainabilityTotalRefusesAnExtraField(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    sustainabilityTile({ pointKey: "kl_today", aggregate: "sum", period: "month" }),
+    [...SOURCE_PARAMS],
+    ["period"],
+    "a `period` field is not declared (the period is the stored tag's own, ADR 0072) and " +
+      "strict refuses it",
+  );
+}
+
+/** A 65-character point key is over the column's bound. */
+export function sustainabilityTotalRefusesALongPointKey(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    sustainabilityTile({ pointKey: "k".repeat(65), aggregate: "sum" }),
+    [...SOURCE_PARAMS, "pointKey"],
+    ["64"],
+    "pointKey is bounded at 64, the point-key catalog's `code` width",
+  );
+}
+
+/** A point key outside the catalog-code charset is refused before any lookup. */
+export function sustainabilityTotalRefusesACharsetViolation(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    sustainabilityTile({ pointKey: "kl today", aggregate: "sum" }),
+    [...SOURCE_PARAMS, "pointKey"],
+    ["letters, digits"],
+    "a space is outside CATALOG_CODE_PATTERN (F2.23), so the charset refuses it here",
+  );
+}
+
+/** The empty `params` the builder's picker would send is refused on `by_location` too. */
+export function byLocationRefusesEmptyParams(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    byLocationTable({}),
+    [...SOURCE_PARAMS, "pointKey"],
+    ["sustainability.by_location:"],
+    "params: {} on by_location is the picker's payload, and it must 400 here rather than store",
+  );
+}
+
+/** A `table` binds `by_location`. */
+export function byLocationAcceptsATable(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    byLocationTable({ pointKey: "kl_today", aggregate: "sum" }),
+    "a table binding sustainability.by_location { kl_today, sum }",
+  );
+}
+
+/** A `value_tile` cannot bind `by_location` — it draws one number and the entry returns rows. */
+export function byLocationRefusedOnAValueTile(): void {
+  const widget = sustainabilityTile({}).widgets[0];
+  assert(widget !== undefined, "fixture");
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        {
+          ...widget,
+          sources: [
+            {
+              catalogKey: "sustainability.by_location" as const,
+              params: { pointKey: "kl_today", aggregate: "sum" },
+            },
+          ],
+        },
+      ],
+    },
+    ["widgets", 0, "sources", 0, "catalogKey"],
+    [bindingShapeMessage("value_tile", "sustainability.by_location", "dataset")],
+    "the shape rule, not the params rule, refuses a dataset on a tile — well-formed params do " +
+      "not rescue it",
+  );
+}
+
+/** An older entry still refuses any field — the new fields did not leak sideways. */
+export function olderEntryStillRefusesPointKey(): void {
+  const widget = sustainabilityTile({}).widgets[0];
+  assert(widget !== undefined, "fixture");
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        {
+          ...widget,
+          sources: [{ catalogKey: "alarms.active.count" as const, params: { pointKey: "x" } }],
+        },
+      ],
+    },
+    [...SOURCE_PARAMS],
+    ["alarms.active.count:", "pointKey"],
+    "alarms.active.count declares no fields, so a pointKey on it is an unrecognized key",
+  );
+}
