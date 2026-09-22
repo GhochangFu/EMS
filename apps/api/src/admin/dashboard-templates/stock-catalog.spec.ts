@@ -315,6 +315,27 @@ export function runSustainabilitySection2Tests(): void {
       );
     }
   }
+
+  // ---- the positive control for KEPT_TILE_KEYS's exclusion above -----------
+  //
+  // The loop above only PROVES the fourteen new tiles; without this, a rename
+  // of one of the three kept keys would silently drop it out of both loops —
+  // exempt from the sustainability.total check because its (renamed) key is
+  // no longer in KEPT_TILE_KEYS, but the tile itself never checked at all.
+  const KEPT_TILE_CATALOG_KEYS: Readonly<Record<string, string>> = {
+    "alarms-tile": "alarms.active.count",
+    "workorders-tile": "workorders.open.count",
+    "health-tile": "assets.health.score",
+  };
+  for (const [key, catalogKey] of Object.entries(KEPT_TILE_CATALOG_KEYS)) {
+    const widget = entry.content.widgets.find((row) => row.key === key);
+    assert(
+      widget !== undefined && widget.widgetType === "value_tile" &&
+        widget.sources.length === 1 && widget.sources[0]?.catalogKey === catalogKey,
+      `the kept tile "${key}" must still be a value_tile bound to "${catalogKey}" — got ` +
+        `${widget === undefined ? "(no such widget)" : widget.sources.map((source) => source.catalogKey).join(", ") || "(none)"}`,
+    );
+  }
 }
 
 /**

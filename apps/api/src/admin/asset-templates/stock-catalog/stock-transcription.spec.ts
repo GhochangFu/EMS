@@ -585,6 +585,55 @@ export function sustainabilityClaims(
     }]);
   }
   claims.push(
+    [
+      `${code} — every _this_month/_this_year row's calendar token matches its own suffix, and its point ` +
+        "reference matches a sibling _today (or _per_h) row's, read from the ENTRY, not from this file's table",
+      () => {
+        // Plan §3.7's cross-check: a swapped inlet key pasted into BOTH the module and this
+        // file's `rows` table would pass the literal-pin loop above (the two sides agree with
+        // each other), so this claim derives the expected reference from a SEPARATE sibling
+        // formula already on the entry, which a co-mutation of the row alone cannot touch.
+        const refRe = /\{([a-z0-9_]+)\}/g;
+        const refsOf = (formula: string | null | undefined): Set<string> =>
+          new Set([...(formula ?? "").matchAll(refRe)].map((match) => match[1] as string));
+        const bad: string[] = [];
+        for (const point of tail()) {
+          const match = /^(.*)_this_(month|year)$/.exec(point.pointKey);
+          if (!match) continue;
+          const [, base, period] = match;
+          const token = period === "month" ? "this_month" : "this_year";
+          if (!(point.formula ?? "").includes(token)) {
+            bad.push(`${point.pointKey} does not read the ${token} calendar window: "${String(point.formula)}"`);
+            continue;
+          }
+          // The "_today" or "_per_h" sibling of the SAME base quantity, if the entry has one
+          // (kwh_today is MEASURED, so kwh_this_month/_this_year fall through to the wider
+          // search below).
+          const siblingRefs = new Set<string>();
+          for (const sibling of entry.points) {
+            if (sibling.pointKey === `${base}_today` || sibling.pointKey === `${base}_per_h`) {
+              for (const ref of refsOf(sibling.formula)) siblingRefs.add(ref);
+            }
+          }
+          if (siblingRefs.size === 0) {
+            for (const sibling of entry.points) {
+              if (sibling.kind === "derived" && sibling.pointKey.endsWith("_today")) {
+                for (const ref of refsOf(sibling.formula)) siblingRefs.add(ref);
+              }
+            }
+          }
+          const rowRefs = refsOf(point.formula);
+          const matches = [...rowRefs].some((ref) => siblingRefs.has(ref));
+          if (!matches) {
+            bad.push(
+              `${point.pointKey} reads {${[...rowRefs].join(",")}}, none of which match a sibling _today/_per_h ` +
+                `row's {${[...siblingRefs].join(",")}} — a swapped inlet`,
+            );
+          }
+        }
+        assert(bad.length === 0, `${code}: ${bad.join("; ")}`);
+      },
+    ],
     [`${code} — every E4.1c row is ${CALC_DIALECT_V3}, scheduled at 60 s`, () => {
       const off = tail().filter((p) => p.formulaDialect !== CALC_DIALECT_V3 || p.calcTrigger !== "scheduled" || p.calcIntervalSeconds !== 60);
       assert(off.length === 0, `${code}: ${off.map((p) => `${p.pointKey} ${String(p.formulaDialect)}/${String(p.calcTrigger)}/${String(p.calcIntervalSeconds)}`).join(", ")}`);

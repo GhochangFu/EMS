@@ -163,11 +163,12 @@ function feederDefects(source: string): string[] {
   const defects: string[] = [];
   const calls = extractFeederDerivedCalls(source);
   // E4.1c (ADR 0070 decision 8) appends six `bms-calc-v3` rows after F2.8's
-  // three, so the feeder carries nine `derived()` calls and F2.8's claim is
-  // about the FIRST THREE, in order: still `v2`, still scheduled. The six are
-  // `electrical-classes-3.spec.ts`'s claim, not this file's.
-  if (calls.length !== 9) {
-    defects.push(`expected exactly 9 derived() calls (F2.8's 3 + E4.1c's 6), found ${calls.length}`);
+  // three, and E4.2 PR 2 appends six more after those (ADR 0072 decision 3),
+  // so the feeder carries fifteen `derived()` calls and F2.8's claim is
+  // about the FIRST THREE, in order: still `v2`, still scheduled. The rest
+  // are `electrical-classes-3.spec.ts`'s claim, not this file's.
+  if (calls.length !== 15) {
+    defects.push(`expected exactly 15 derived() calls (F2.8's 3 + E4.1c's 6 + E4.2's 6), found ${calls.length}`);
   }
   const expectedKeys = ["site_kw", "it_kw", "pue"];
   calls.slice(0, 3).forEach((call, index) => {
@@ -184,11 +185,11 @@ function feederDefects(source: string): string[] {
       defects.push(`derived() call ${index} is missing calcTrigger: "scheduled" in its options`);
     }
   });
-  // F2.8 bumped the feeder to 2; E4.1c to 3 (ruling 10). Pinned exactly, as
-  // before — the class spec pins the same number, and both move together at
-  // the next bump.
-  if (!/stockVersion:\s*3\b/.test(source)) {
-    defects.push("stockVersion is not 3");
+  // F2.8 bumped the feeder to 2; E4.1c to 3; E4.2 PR 2 to 4 (ruling 10).
+  // Pinned exactly, as before — the class spec pins the same number, and
+  // both move together at the next bump.
+  if (!/stockVersion:\s*4\b/.test(source)) {
+    defects.push("stockVersion is not 4");
   }
   return defects;
 }
@@ -197,8 +198,8 @@ describe("F2.8 part (b) — electrical-feeder.ts authors the three v2 points on 
   const source = readFileSync(FEEDER_FILE, "utf8");
   const calls = extractFeederDerivedCalls(source);
 
-  it("found the nine derived() calls (F2.8's 3 + E4.1c's 6), so the scan below is not silently empty", () => {
-    expect(calls.length).toBe(9);
+  it("found the fifteen derived() calls (F2.8's 3 + E4.1c's 6 + E4.2's 6), so the scan below is not silently empty", () => {
+    expect(calls.length).toBe(15);
   });
 
   it("the real file has no defects", () => {
@@ -206,16 +207,16 @@ describe("F2.8 part (b) — electrical-feeder.ts authors the three v2 points on 
   });
 
   it("the analysis kills a mutation: stockVersion 1 or a missing derived() call", () => {
-    const stockVersion1 = source.replace(/stockVersion:\s*3/, "stockVersion: 1");
+    const stockVersion1 = source.replace(/stockVersion:\s*4/, "stockVersion: 1");
     expect(stockVersion1, "the mutation did not apply").not.toBe(source);
-    expect(feederDefects(stockVersion1)).toContain("stockVersion is not 3");
+    expect(feederDefects(stockVersion1)).toContain("stockVersion is not 4");
 
     // Remove the `pue` derived() call entirely (its whole object literal).
     const puePattern =
       /\s*\{\s*\.\.\.derived\("\{site_kw\} \/ \{it_kw\}"[\s\S]*?\},\n/;
     const removed = source.replace(puePattern, "\n");
     expect(removed, "the mutation did not apply — the pue block shape changed").not.toBe(source);
-    expect(feederDefects(removed)).toContain("expected exactly 9 derived() calls (F2.8's 3 + E4.1c's 6), found 8");
+    expect(feederDefects(removed)).toContain("expected exactly 15 derived() calls (F2.8's 3 + E4.1c's 6 + E4.2's 6), found 14");
   });
 
   it("each literal parses under bms-calc-v2 with the expected refs / crossRefs (crossRefKey's kind-prefixed shape)", () => {

@@ -302,7 +302,13 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
    */
   it("the scan actually found the catalog", () => {
     // 23 = 15 before + 8 in the new entry, over both files in `STOCK_RELS`.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
+    // **38 since `E4.2` PR 2 (U8)** — 23 (the pre-U8 actual) + the fifteen
+    // `pointKey:` occurrences `sustainability-overview`'s fourteen new
+    // sustainability.total value_tiles and its one sustainability.by_location
+    // table each carry (the three kept tiles — alarms/workorders/health —
+    // bind a catalogKey with no pointKey). Measured, not derived: raised past
+    // the actual (999999) to read the true 38, then set here.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(38);
     expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
     // Five: electrical, water, stp, etp, hvac. `sustainability` holds no point
     // binding at all and must not — the assertion at the end of this file's
