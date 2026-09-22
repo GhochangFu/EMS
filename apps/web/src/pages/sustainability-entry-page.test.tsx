@@ -6,6 +6,8 @@ import {
   noInstanceOpensTheFilteredList,
   opensTheNewestInstanceBySlug,
   theEntryAsksTheApiForTheSection,
+  theErrorStateShowsTheApiMessage,
+  theLoadingStateNamesWhatItIsOpening,
   theRedirectCarriesTheOrganizationId,
 } from "./sustainability-entry-page.spec";
 
@@ -34,5 +36,13 @@ describe("E4.2 sustainability entry page", () => {
 
   it("asks the API for the section rather than filtering client-side", async () => {
     await theEntryAsksTheApiForTheSection();
+  });
+
+  it("names what it is opening while the list is pending", () => {
+    theLoadingStateNamesWhatItIsOpening();
+  });
+
+  it("shows the API message on a failed read, and does not redirect", async () => {
+    await theErrorStateShowsTheApiMessage();
   });
 });

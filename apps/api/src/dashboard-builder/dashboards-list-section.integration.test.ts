@@ -14,6 +14,7 @@ import {
   requireIntegrationDb,
   resolveIntegrationRoleUrl,
 } from "../testing/integration-db-gate";
+import { resolveSeededAssetByCode } from "../testing/integration-fixtures";
 import { asRole } from "../testing/role-urls";
 import type { SectionListFixtures } from "./dashboards-list-section.integration.spec";
 import {
@@ -60,6 +61,18 @@ const ASSET_SCOPED_SLUG = `e42-sec-asset-${RUN}`;
 
 const EMPTY_CONTENT = JSON.stringify({ widgets: [] });
 
+/**
+ * A seeded ESKOM asset, **named rather than resolved by position**, and one no
+ * other suite claims — `tests/integration-fixture-sharing.test.ts` refuses a
+ * shared code: a seeded asset has no owner, so two suites that name it have no
+ * protocol about who writes to it or when. `CR-HVAC-1` was the first choice and
+ * is already held by `access-control.asset-dashboard.integration.spec.ts`.
+ *
+ * This suite only READS the id — it scopes one dashboard to the asset and never
+ * writes a point or a sample — but the rule is about the claim, not the verb.
+ */
+const FIXTURE_ASSET_CODE = "CR-ENV-VIDEOWALL";
+
 describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
   let ownerPool: pg.Pool;
   let tenantPool: pg.Pool;
@@ -104,14 +117,12 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
       throw new Error("E4.2: the ESKOM organization is not there — run pnpm db:seed");
     }
 
-    // `F4.53` — the OLDEST row is a seeded one, which predates every suite in
-    // the run and is the only one no concurrent suite can delete underneath us.
-    const asset = await ownerPool.query<{ id: string }>(
-      `SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
-      [eskomOrgId],
-    );
-    const assetId = asset.rows[0]?.id;
-    if (!assetId) throw new Error("E4.2: ESKOM has no asset — run pnpm db:seed");
+    // **Named, never positional.** `tests/integration-fixture-isolation.test.ts`
+    // refuses a positional read of `bms.assets`: it returns whatever currently
+    // sorts first, which is another suite's committed fixture as often as it is
+    // the seed, and `ORDER BY` only narrows that. See `FIXTURE_ASSET_CODE` for why it is that
+    // code and not another.
+    const assetId = await resolveSeededAssetByCode(ownerPool, FIXTURE_ASSET_CODE);
 
     const template = async (code: string, section: string): Promise<string> => {
       const row = await ownerPool.query<{ id: string }>(

@@ -13,6 +13,7 @@ import {
   anEmptyUnfilteredListKeepsItsOriginalWording,
   anOperatorSeesTheHintWithoutTheLink,
   theEmptySustainabilitySectionShowsTheImportHint,
+  theSectionIsPartOfTheQueryKey,
   theSectionQueryReachesTheApi,
   theSubtitleNamesTheSection,
 } from "./dashboards-page.spec";
@@ -81,5 +82,9 @@ describe("E4.2 — the dashboards list filtered by section", () => {
 
   it("names the section in the subtitle", async () => {
     await theSubtitleNamesTheSection();
+  });
+
+  it("keeps the section in the query key, so a cached unfiltered list is not reused", async () => {
+    await theSectionIsPartOfTheQueryKey();
   });
 });

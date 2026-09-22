@@ -299,3 +299,58 @@ export async function theSubtitleNamesTheSection(): Promise<void> {
     expect(screen.getByText("Sustainability section")).toBeInTheDocument();
   });
 }
+
+/**
+ * **The section is part of the query KEY, and only a shared cache can prove it.**
+ *
+ * Every other case here builds a fresh `QueryClient`, so removing `{ section }`
+ * from the key reddens none of them — the page's own comment claims the key is
+ * load-bearing and nothing held it to that. This renders the unfiltered list
+ * first and the filtered URL second **through one `QueryClient`**: with the
+ * section in the key the second render is a cache MISS and reads again; with a
+ * key that ignores it the second render is a hit and reads nothing.
+ *
+ * **`staleTime: Infinity` is what makes the mutation discriminate**, and it was
+ * missing from the first draft of this case. Without it TanStack refetches on
+ * mount even on a cache hit, so the key-ignoring version still reached the empty
+ * response and the hint still appeared — the gate was dead, and the assertion on
+ * the rendered hint could never have caught it. The call COUNT is the claim.
+ */
+export async function theSectionIsPartOfTheQueryKey(): Promise<void> {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const fetchSpy = vi
+    .spyOn(dashboardsApi, "fetchDashboards")
+    .mockImplementation((_org?: string, _asset?: string, section?: string) =>
+      Promise.resolve(section === "sustainability" ? { items: [] } : RESPONSE),
+    );
+
+  const renderThrough = (url: string) =>
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[url]}>
+          <DashboardsPage user={asUser("admin")} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+  const first = renderThrough("/dashboards");
+  await waitFor(() => {
+    expect(screen.getByText("Site A Overview")).toBeInTheDocument();
+  });
+  first.unmount();
+
+  renderThrough("/dashboards?section=sustainability");
+  await waitFor(() => {
+    expect(
+      screen.getByText(/No Sustainability dashboard yet/),
+      "the cached unfiltered row was served to the filtered URL — the section is not in the key",
+    ).toBeInTheDocument();
+  });
+  expect(
+    fetchSpy.mock.calls.length,
+    "two distinct keys mean two reads; one read means the filtered URL was served the cached " +
+      "unfiltered list, which is the defect this case exists for",
+  ).toBe(2);
+}

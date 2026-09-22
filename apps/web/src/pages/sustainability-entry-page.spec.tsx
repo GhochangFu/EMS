@@ -164,3 +164,63 @@ export async function theEntryAsksTheApiForTheSection(): Promise<void> {
     );
   });
 }
+
+/**
+ * While the list is pending the entry renders the shell with its own wording —
+ * it does not flash the dashboards list and then jump.
+ *
+ * `fetchDashboards` is stubbed with a promise that never settles, so the pending
+ * state is the whole render rather than a race the assertion might lose.
+ */
+export function theLoadingStateNamesWhatItIsOpening(): void {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockReturnValue(new Promise(() => {}));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/sustainability"]}>
+        <Routes>
+          <Route path="/sustainability" element={<SustainabilityEntryPage user={asUser()} />} />
+          <Route path="/dashboards/:slug" element={<SlugLanding />} />
+          <Route path="/dashboards" element={<ListLanding />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  expect(screen.getByText("Opening Sustainability…")).toBeInTheDocument();
+  expect(
+    screen.queryByText(/landed on/),
+    "nothing may have navigated while the query is still pending",
+  ).not.toBeInTheDocument();
+}
+
+/**
+ * A failed read shows the API's own message, not a redirect.
+ *
+ * Redirecting to the filtered list on an error would tell the operator the
+ * section is empty when the truth is that the read failed — the two conditions
+ * look identical on the landing page and only one of them is theirs to act on.
+ */
+export async function theErrorStateShowsTheApiMessage(): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockRejectedValue(new Error("dashboards 503"));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/sustainability"]}>
+        <Routes>
+          <Route path="/sustainability" element={<SustainabilityEntryPage user={asUser()} />} />
+          <Route path="/dashboards/:slug" element={<SlugLanding />} />
+          <Route path="/dashboards" element={<ListLanding />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  await waitFor(() => {
+    expect(screen.getByText(/dashboards 503/)).toBeInTheDocument();
+  });
+  expect(
+    screen.queryByText(/landed on/),
+    "a failed read must not be reported as an empty section",
+  ).not.toBeInTheDocument();
+}
