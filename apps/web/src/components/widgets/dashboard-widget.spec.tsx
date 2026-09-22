@@ -298,3 +298,53 @@ export function aStaleReadyValueTileShowsKpiTilesOwnStaleNote(): void {
   expect(screen.getByText(/stale/i)).toBeInTheDocument();
   expect(screen.getByText("750.0")).toBeInTheDocument();
 }
+
+/**
+ * `E4.2` U10, ADR 0072 decision 2 — a roll-up tile with an incomplete coverage
+ * renders the note under its value.
+ *
+ * Rendered end to end (`DashboardWidget` → `ValueTileWidget` → `toKpiTileProps`
+ * → `KpiTile`) rather than asserted on the props object: the pure function is
+ * proved in `widget-value.spec.ts`, and the claim here is that the string
+ * survives four components. A `note` prop `KpiTile` accepted and never rendered
+ * would pass every other test in this repository.
+ */
+/** The ready scalar arm with a coverage, built explicitly rather than spread from
+ * `READY_AT_750`: that constant is typed as the whole `WidgetData` union, and
+ * spreading a union produces an object literal the non-ready arm rejects. */
+function readyWithCoverage(coverage: { fresh: number; carrying: number }): WidgetData {
+  return { status: "ready", primary: 750, series: [], stale: false, coverage };
+}
+
+export function aValueTileWithAShortfallRendersTheCoverageNote(): void {
+  render(
+    <DashboardWidget
+      widget={sampleWidget("value_tile")}
+      data={readyWithCoverage({ fresh: 4, carrying: 6 })}
+    />,
+  );
+
+  expect(screen.getByText("4 of 6 assets")).toBeInTheDocument();
+}
+
+/**
+ * The other direction, with its adjacent positive control: full coverage draws
+ * no note **while the value is still there**.
+ *
+ * Without the control this passes on a tile that rendered nothing at all.
+ */
+export function aValueTileWithFullCoverageRendersNoNote(): void {
+  render(
+    <DashboardWidget
+      widget={sampleWidget("value_tile")}
+      data={readyWithCoverage({ fresh: 6, carrying: 6 })}
+    />,
+  );
+
+  expect(screen.getByText("750.0"), "the positive control — the tile rendered its value").toBeInTheDocument();
+  expect(screen.queryByText("6 of 6 assets")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/of 6 assets/),
+    "no coverage line at all, not merely not that wording",
+  ).not.toBeInTheDocument();
+}

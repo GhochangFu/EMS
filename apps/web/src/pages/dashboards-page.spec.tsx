@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -210,4 +210,158 @@ export async function anAssetScopedRowWithNoCodeStillReadsAsset(): Promise<void>
   expect(await screen.findByText("Codeless asset board")).toBeInTheDocument();
   expect(screen.getByText("Asset")).toBeInTheDocument();
   expect(screen.queryByText("Organization-wide")).not.toBeInTheDocument();
+}
+
+// ---------------------------------------------------------------------------
+// `E4.2` U11, ADR 0072 decision 1 — `?section=`
+// ---------------------------------------------------------------------------
+
+/**
+ * `renderPage` above mounts a bare `MemoryRouter`, so it can never carry a query
+ * string. This one does, and takes the response too, because the section cases
+ * turn on an EMPTY list rather than on `RESPONSE`'s one row.
+ */
+function renderAt(
+  user: AuthUser,
+  url: string,
+  response: DashboardsListResponse = RESPONSE,
+): void {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue(response);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[url]}>
+        <DashboardsPage user={user} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/** The section in the URL reaches the API call — the page must not fetch every
+ * dashboard and filter client-side. */
+export async function theSectionQueryReachesTheApi(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards?section=sustainability", { items: [] });
+
+  await waitFor(() => {
+    expect(dashboardsApi.fetchDashboards).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      "sustainability",
+    );
+  });
+}
+
+/** An empty filtered list tells a master-data admin how to fix it, with a link. */
+export async function theEmptySustainabilitySectionShowsTheImportHint(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards?section=sustainability", { items: [] });
+
+  await waitFor(() => {
+    expect(screen.getByText(/No Sustainability dashboard yet/)).toBeInTheDocument();
+  });
+  expect(screen.getByRole("link", { name: "Dashboard templates" })).toHaveAttribute(
+    "href",
+    "/admin/dashboard-templates",
+  );
+}
+
+/**
+ * The control, in the other direction: **without** the section the hint is
+ * absent and the original wording is there.
+ *
+ * Without the positive half this passes on a page that rendered nothing.
+ */
+export async function anEmptyUnfilteredListKeepsItsOriginalWording(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards", { items: [] });
+
+  await waitFor(() => {
+    expect(screen.getByText(/No dashboards are readable in your current scope yet/)).toBeInTheDocument();
+  });
+  expect(screen.queryByText(/No Sustainability dashboard yet/)).not.toBeInTheDocument();
+}
+
+/** An operator gets the same sentence without the link — `/admin/dashboard-templates`
+ * is a screen they cannot open, and sending them there is worse than saying
+ * nothing. */
+export async function anOperatorSeesTheHintWithoutTheLink(): Promise<void> {
+  renderAt(asUser("operator"), "/dashboards?section=sustainability", { items: [] });
+
+  await waitFor(() => {
+    expect(screen.getByText(/No Sustainability dashboard yet/)).toBeInTheDocument();
+  });
+  expect(screen.queryByRole("link", { name: "Dashboard templates" })).not.toBeInTheDocument();
+}
+
+/** The filtered page says which section it is showing. */
+export async function theSubtitleNamesTheSection(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards?section=sustainability");
+
+  await waitFor(() => {
+    expect(screen.getByText("Sustainability section")).toBeInTheDocument();
+  });
+}
+
+/**
+ * **The section is part of the query KEY, and only a shared cache can prove it.**
+ *
+ * Every other case here builds a fresh `QueryClient`, so removing `{ section }`
+ * from the key reddens none of them — the page's own comment claims the key is
+ * load-bearing and nothing held it to that. This renders the unfiltered list
+ * first and the filtered URL second **through one `QueryClient`**: with the
+ * section in the key the second render is a cache MISS and reads again; with a
+ * key that ignores it the second render is a hit and reads nothing.
+ *
+ * **`staleTime: Infinity` is what makes the mutation discriminate**, and it was
+ * missing from the first draft of this case. Without it TanStack refetches on
+ * mount even on a cache hit, so the key-ignoring version still reached the empty
+ * response and the hint still appeared — the gate was dead, and the assertion on
+ * the rendered hint could never have caught it.
+ *
+ * **The `waitFor` is what holds the claim, not the call count** — the sentence
+ * here used to say the opposite and the `E4.2` PR 2 review caught it. Under the
+ * key-ignoring mutation (`queryKey: ["dashboards", "list"]`) the second render
+ * is served the cached UNFILTERED list, so the empty-section hint never
+ * appears, the `waitFor` fails on its five-second timeout and the `expect` on
+ * the call count below is never reached. Measured, not reasoned:
+ * `Error: Test timed out in 5000ms`. The count assertion is a second, sharper
+ * statement of the same fact and is worth keeping — a failure that named it
+ * would say "one read" rather than "timed out" — but it is not what makes this
+ * case alive.
+ */
+export async function theSectionIsPartOfTheQueryKey(): Promise<void> {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const fetchSpy = vi
+    .spyOn(dashboardsApi, "fetchDashboards")
+    .mockImplementation((_org?: string, _asset?: string, section?: string) =>
+      Promise.resolve(section === "sustainability" ? { items: [] } : RESPONSE),
+    );
+
+  const renderThrough = (url: string) =>
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[url]}>
+          <DashboardsPage user={asUser("admin")} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+  const first = renderThrough("/dashboards");
+  await waitFor(() => {
+    expect(screen.getByText("Site A Overview")).toBeInTheDocument();
+  });
+  first.unmount();
+
+  renderThrough("/dashboards?section=sustainability");
+  await waitFor(() => {
+    expect(
+      screen.getByText(/No Sustainability dashboard yet/),
+      "the cached unfiltered row was served to the filtered URL — the section is not in the key",
+    ).toBeInTheDocument();
+  });
+  expect(
+    fetchSpy.mock.calls.length,
+    "two distinct keys mean two reads; one read means the filtered URL was served the cached " +
+      "unfiltered list, which is the defect this case exists for",
+  ).toBe(2);
 }

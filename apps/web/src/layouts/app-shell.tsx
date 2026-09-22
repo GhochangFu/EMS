@@ -24,6 +24,10 @@ const moduleGroups = [
       { label: "Alarm Centre", path: "/alarms" },
       { label: "Alarm Philosophy", path: "/alarm-kb" },
       { label: "Dashboards", path: "/dashboards" },
+      // `E4.2` / ADR 0072 decision 1 — the reference sidebar carries
+      // Sustainability beside Analytics and Reports; this group is the one that
+      // holds Dashboards, which is what it opens.
+      { label: "Sustainability", path: "/sustainability" },
       { label: "Assets", path: "/asset-browser" },
       { label: "Sites Map", path: "/map" },
       { label: "Electrical SLD", path: "/sld" },

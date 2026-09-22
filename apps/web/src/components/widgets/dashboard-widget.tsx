@@ -1,4 +1,4 @@
-import type { DashboardWidgetDto, PointAggregateStats } from "@bms/shared";
+import type { DashboardWidgetDto, PointAggregateStats, RollupCoverage } from "@bms/shared";
 
 import type { DatasetRow, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
@@ -51,6 +51,13 @@ export type WidgetData =
       stats?: PointAggregateStats | null;
       /** `F3.35` — the chosen level's bucket width, which the granularity cell reads. */
       bucketSeconds?: number | null;
+      /**
+       * `E4.2` / ADR 0072 decision 2 — how many of the assets carrying the
+       * roll-up's point key had a FRESH sample. Optional, and `null` when the
+       * bound metric is not a roll-up: `coverage` is optional on the contract's
+       * `metric` arm precisely so the three existing metrics need not emit it.
+       */
+      coverage?: RollupCoverage | null;
     }
   | WidgetRowsData;
 
@@ -152,6 +159,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
   const compareValue = scalar?.compareValue ?? null;
   const stats = scalar?.stats ?? null;
   const bucketSeconds = scalar?.bucketSeconds ?? null;
+  const coverage = scalar?.coverage ?? null;
 
   switch (widget.widgetType) {
     case "radial_gauge":
@@ -171,6 +179,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           stale={stale}
           config={widget.config}
           compareValue={compareValue}
+          coverage={coverage}
         />
       );
     case "chart":

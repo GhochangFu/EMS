@@ -491,3 +491,69 @@ export function runCatalogGateTests(): void {
     "one bound metric anywhere on the dashboard turns the path on",
   );
 }
+
+/**
+ * `E4.2` U10, ADR 0072 decision 2 — a resolved `coverage` reaches the scalar arm.
+ *
+ * The threading is the whole claim: `coverage` is optional on the contract's
+ * `metric` arm, so a `widgetDataFor` that never copied it would type-check, and
+ * every existing fixture (which carries no coverage) would stay green. The
+ * renderer would then draw no note on every roll-up tile forever.
+ */
+/** `COUNT_OF` is typed as the whole discriminated union, so spreading it produces
+ * a literal the dataset arm rejects. Built on the metric arm directly instead. */
+const COUNT_WITH_COVERAGE = (
+  value: number,
+  coverage: { fresh: number; carrying: number },
+): MetricCatalogValueDto => ({
+  shape: "metric",
+  key: "alarms.active.count",
+  value,
+  unit: null,
+  coverage,
+});
+
+export function runCoverageReachesTheScalarArmTests(): void {
+  const widget = tileWith([SOURCE]);
+  const withCoverage = widgetDataFor(
+    widget,
+    EMPTY_LATEST,
+    EMPTY_HISTORY,
+    NOW,
+    undefined,
+    resolution([[BINDING, COUNT_WITH_COVERAGE(7, { fresh: 4, carrying: 6 })]]),
+  );
+  assert(
+    isScalarData(withCoverage) && withCoverage.coverage?.fresh === 4,
+    `a resolved coverage must reach the scalar arm, got ${JSON.stringify(
+      isScalarData(withCoverage) ? withCoverage.coverage : undefined,
+    )}`,
+  );
+  assert(
+    isScalarData(withCoverage) && withCoverage.coverage?.carrying === 6,
+    "the carrying count travels with the fresh one — half of a coverage pair is not a coverage",
+  );
+}
+
+/** The other direction: the three existing metrics emit no `coverage` at all, and
+ * the scalar arm must then read `null` rather than a stale object or `undefined`. */
+export function runAbsentCoverageIsNullOnTheScalarArmTests(): void {
+  const data = widgetDataFor(
+    tileWith([SOURCE]),
+    EMPTY_LATEST,
+    EMPTY_HISTORY,
+    NOW,
+    undefined,
+    resolution([[BINDING, COUNT_OF(7)]]),
+  );
+  assert(
+    isScalarData(data) && data.primary === 7,
+    "the positive control — this fixture resolved, so the null below is about coverage alone",
+  );
+  assert(
+    isScalarData(data) && data.coverage === null,
+    `a metric that emits no coverage must read null, got ${JSON.stringify(
+      isScalarData(data) ? data.coverage : undefined,
+    )}`,
+  );
+}

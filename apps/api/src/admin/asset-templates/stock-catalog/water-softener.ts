@@ -10,8 +10,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * softening"*. PROVISIONAL: derived from published practice, not
  * client-confirmed.
  *
- * **12 POINTS — 4 core + 3 extended + 2 manual + 3 derived** (`E4.1c`'s three,
- * `sortOrder` 9–11, after §3's 9 table rows), §3's table rows in
+ * **16 POINTS — 4 core + 3 extended + 2 manual + 7 derived** (`E4.1c`'s three,
+ * `sortOrder` 9–11, plus `E4.2`'s four, 12–15, after §3's 9 table rows), §3's table rows in
  * the document's own order. **The smallest entry in the pack**, and the cheap
  * opposite end that proves the catalog mechanism is not tuned to one shape: the
  * cooling tower carries 21 points and four formulas, this carries nine points
@@ -134,6 +134,13 @@ import type { StockAssetTemplateEntry } from "./types";
  *    applying (`minCoverageRatio` governs a `@scope` aggregate only, ADR
  *    0055 decision 11); (4) the flow is tier C, so no `missing_input` arises
  *    on a correctly mapped asset.
+ *  - `water-softener` **v3** (2026-09-22, `E4.2` PR 2): four more
+ *    `bms-calc-v3` derived points appended at `sortOrder` 12–15 (ADR 0072
+ *    decision 3, Q7 ruling (a), plan §3.7) — `kl_this_month`,
+ *    `kl_this_year`, `water_cost_this_month`, `water_cost_this_year`, the
+ *    calendar-window siblings of `kl_today` / `water_cost_today`. The two
+ *    cost rows price the whole period at the tariff effective at evaluation
+ *    (Q7).
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -158,7 +165,7 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
     "carry a meaning and no limit, because the rated exchange capacity a softener is judged " +
     "against is an attribute of the vessel and is set per site at commissioning.",
-  stockVersion: 2,
+  stockVersion: 3,
   content: {
     contentVersion: 1,
     alarms: [
@@ -394,6 +401,41 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 11,
+    },
+    // `E4.2` PR 2 — ADR 0072 decision 3, Q7 ruling (a), plan §3.7. The
+    // calendar-window siblings of kl_today / water_cost_today; the two cost
+    // rows price the whole period at the tariff effective at evaluation (Q7).
+    {
+      ...derived("sum({inlet_flow_klh}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_this_month",
+      label: "Inlet water this month (calendar)",
+      unit: "KL",
+      required: false,
+      sortOrder: 12,
+    },
+    {
+      ...derived("sum({inlet_flow_klh}, this_year)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_this_year",
+      label: "Inlet water this year (calendar)",
+      unit: "KL",
+      required: false,
+      sortOrder: 13,
+    },
+    {
+      ...derived("sum({inlet_flow_klh}, this_month) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_this_month",
+      label: "Water cost this month (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 14,
+    },
+    {
+      ...derived("sum({inlet_flow_klh}, this_year) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_this_year",
+      label: "Water cost this year (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 15,
     },
   ],
 };

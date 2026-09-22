@@ -68,6 +68,9 @@ const SOLAR_PV_POINT_KEYS: readonly string[] = [
   "performance_ratio_pct",
   "specific_yield_kwh_kwp_day",
   "capacity_utilization_pct",
+  // E4.2 PR 2: two more — same file pins them, as part of SOLAR_PV_E41C's tail
+  "co2_avoided_kg_this_month",
+  "co2_avoided_kg_this_year",
 ];
 
 /**
@@ -107,16 +110,18 @@ function checkSolarPv(): void {
       `bms.asset_domains at import time; got "${entry.domain}"`,
   );
   assert(
-    entry.stockVersion === 2,
-    `${SOLAR_PV_CODE} is at stockVersion 2 since E4.1c (four v3 rows), got ${String(entry.stockVersion)}`,
+    entry.stockVersion === 3,
+    `${SOLAR_PV_CODE} is at stockVersion 3 since E4.2 PR 2 (E4.1c's four v3 rows plus two more calendar` +
+      `-window rows), got ${String(entry.stockVersion)}`,
   );
 
   // ---- 30 points, 9 core + 15 extended + 1 manual + 5 derived ------------
 
   assert(
-    entry.points.length === 30,
+    entry.points.length === 32,
     `tag list §5 has 26 rows; one is not declared (grid_export_kw), one v1 derived code is ` +
-      `authored and E4.1c authors four v3 rows, so the entry declares 30 points — got ${entry.points.length}`,
+      `authored, E4.1c authors four v3 rows and E4.2 PR 2 authors two more, so the entry declares ` +
+      `32 points — got ${entry.points.length}`,
   );
 
   const tierCount = (tier: string): number =>
@@ -136,10 +141,11 @@ function checkSolarPv(): void {
     `§5's one M row is soiling_loss_pct; the entry marks ${tierCount("manual")} manual`,
   );
   assert(
-    derivedPoints.length === 5,
+    derivedPoints.length === 7,
     `§5's seven derived codes reduce to one bms-calc-v1 can express ` +
-      `(inverter_efficiency_pct), and E4.1c authors four v3 rows (co2_avoided_kg_today, ` +
-      `performance_ratio_pct, specific_yield_kwh_kwp_day, capacity_utilization_pct); the entry ` +
+      `(inverter_efficiency_pct), E4.1c authors four v3 rows (co2_avoided_kg_today, ` +
+      `performance_ratio_pct, specific_yield_kwh_kwp_day, capacity_utilization_pct) and E4.2 PR 2 ` +
+      `authors two more (co2_avoided_kg_this_month, co2_avoided_kg_this_year); the entry ` +
       `authors ${derivedPoints.length}: ${derivedPoints.map((point) => point.pointKey).join(", ")}`,
   );
 
@@ -160,7 +166,7 @@ function checkSolarPv(): void {
   );
 
   const keySet = new Set(declaredKeys);
-  assert(keySet.size === 30, `${SOLAR_PV_CODE}: no point key may repeat`);
+  assert(keySet.size === 32, `${SOLAR_PV_CODE}: no point key may repeat`);
 
   // ---- the one §5 row that is deliberately NOT declared -------------------
 

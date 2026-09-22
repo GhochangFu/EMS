@@ -60,3 +60,26 @@ export async function fetchDashboardsSendsNoQueryWhenUnfiltered(): Promise<void>
   await fetchDashboards();
   expect(seen()).toBe(`${BASE}/api/v1/dashboards`);
 }
+
+/**
+ * `E4.2` U9 — `section` reaches the wire.
+ *
+ * The same trap this file's docblock names: `fetchDashboards` gained a third
+ * optional argument, so a body that drops it on the floor compiles and every
+ * consumer spec that stubs the function stays green. Only the captured URL says
+ * it is wired.
+ */
+export async function fetchDashboardsSendsSectionAlone(): Promise<void> {
+  const seen = captureUrl();
+  await fetchDashboards(undefined, undefined, "sustainability");
+  expect(seen()).toBe(`${BASE}/api/v1/dashboards?section=sustainability`);
+}
+
+/** The three keys together, in the helper's insertion order. */
+export async function fetchDashboardsSendsAllThreeKeysInOrder(): Promise<void> {
+  const seen = captureUrl();
+  await fetchDashboards(ORG_ID, ASSET_ID, "sustainability");
+  expect(seen()).toBe(
+    `${BASE}/api/v1/dashboards?organizationId=${ORG_ID}&assetId=${ASSET_ID}&section=sustainability`,
+  );
+}

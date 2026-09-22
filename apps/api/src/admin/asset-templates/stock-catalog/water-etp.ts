@@ -20,8 +20,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * PROVISIONAL — derived, not client-confirmed — because the other twelve rows
  * and every alarm and plan below are.
  *
- * **20 POINTS — 7 core + 8 extended + 2 manual + 3 derived** (`E4.1c`'s
- * three, `sortOrder` 17–19, after §6's 17 table rows), §6's table rows
+ * **24 POINTS — 7 core + 8 extended + 2 manual + 7 derived** (`E4.1c`'s
+ * three, `sortOrder` 17–19, plus `E4.2`'s four, 20–23, after §6's 17 table rows), §6's table rows
  * in the **document's own order**, which is what `sortOrder` follows. Tier `C`
  * is required and `meta.tier: "core"`; `X` is optional and `"extended"`; `M` is
  * optional and `"manual"`, entered by hand through `F1.8`/`F1.9` and never
@@ -156,6 +156,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *    applying (`minCoverageRatio` governs a `@scope` aggregate only, ADR
  *    0055 decision 11); (4) the flow is tier C, so no `missing_input` arises
  *    on a correctly mapped asset.
+ *  - `water-etp` **v3** (2026-09-22, `E4.2` PR 2): four more `bms-calc-v3`
+ *    derived points appended at `sortOrder` 20–23 (ADR 0072 decision 3, Q7
+ *    ruling (a), plan §3.7) — `kl_this_month`, `kl_this_year`,
+ *    `water_cost_this_month`, `water_cost_this_year`, the calendar-window
+ *    siblings of `kl_today` / `water_cost_today`. The two cost rows price the
+ *    whole period at the tariff effective at evaluation (Q7).
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (influent_flow_klh, discharge_flow_klh, neutralization_ph, discharge_ph, bio_mlss_mgl, bio_do_mgl, transfer_pump_status), plus one
@@ -179,7 +185,7 @@ export const WATER_ETP: StockAssetTemplateEntry = {
     "alarm rows carry a meaning and no limit, and the discharge-consent rows carry the CPCB " +
     "Schedule VI meaning rather than a number, because a consent value is per site and per " +
     "consent.",
-  stockVersion: 2,
+  stockVersion: 3,
   content: {
     contentVersion: 1,
     alarms: [
@@ -551,6 +557,41 @@ export const WATER_ETP: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 19,
+    },
+    // `E4.2` PR 2 — ADR 0072 decision 3, Q7 ruling (a), plan §3.7. The
+    // calendar-window siblings of kl_today / water_cost_today; the two cost
+    // rows price the whole period at the tariff effective at evaluation (Q7).
+    {
+      ...derived("sum({influent_flow_klh}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_this_month",
+      label: "Inlet water this month (calendar)",
+      unit: "KL",
+      required: false,
+      sortOrder: 20,
+    },
+    {
+      ...derived("sum({influent_flow_klh}, this_year)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_this_year",
+      label: "Inlet water this year (calendar)",
+      unit: "KL",
+      required: false,
+      sortOrder: 21,
+    },
+    {
+      ...derived("sum({influent_flow_klh}, this_month) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_this_month",
+      label: "Water cost this month (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 22,
+    },
+    {
+      ...derived("sum({influent_flow_klh}, this_year) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_this_year",
+      label: "Water cost this year (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 23,
     },
   ],
 };

@@ -92,11 +92,39 @@ export const updateDashboardTemplateBodySchema = z
  * role against **the target asset group's members**, so a group is what the
  * resolution needs. The created dashboard is asset-group scoped for the same
  * reason.
+ *
+ * **`.nullable()`, and only `E4.2`'s one case may use it** — ADR 0072 decision
+ * 1, an amendment to ADR 0049 decision 4. `asset_groups.location_id` is `NOT
+ * NULL`, so every instance was one location's group and the organization-wide
+ * enterprise roll-up that ADR names had nowhere to land. A `null` group
+ * instantiates organization-wide (both scope columns `NULL`) **only** when the
+ * pinned version's every widget has zero `bindings`; a template that binds a
+ * role still gets a 400, because a role resolves against the target group's
+ * members and with no group it would resolve nothing.
+ *
+ * The check is the SERVICE's and not this schema's on purpose: whether a
+ * template has bindings is a fact about the stored `content` of the pinned
+ * version, which a request schema cannot see. `section` is validated the same
+ * way and for the same reason.
  */
 export const instantiateSectionTemplateBodySchema = z
   .object({
-    assetGroupId: z.string().uuid(),
-    slug: z.string().min(1).max(64),
+    assetGroupId: z.string().uuid().nullable(),
+    /**
+     * **The same rule `dashboardFieldsSchema.slug` applies, because this is the
+     * same column.** Found by the `E4.2` PR 2 security review: the two write
+     * doors into `bms.dashboards.slug` disagreed — `POST /dashboards` took
+     * `.min(2).max(64).regex(/^[a-z0-9-]+$/)` and this one took any string of
+     * one to sixty-four characters. A slug is addressed as a PATH SEGMENT
+     * (`GET /dashboards/:slug`) and rendered into links, so a `/`, a `?` or a
+     * `#` in one is not a cosmetic difference; and a second door with a wider
+     * rule is how a value the first door refuses gets into the table anyway.
+     */
+    slug: z
+      .string()
+      .min(2)
+      .max(64)
+      .regex(/^[a-z0-9-]+$/),
     name: z.string().min(1).max(255),
     description: z.string().max(2000).nullish(),
   })

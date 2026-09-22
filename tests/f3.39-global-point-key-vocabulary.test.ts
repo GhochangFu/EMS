@@ -688,7 +688,9 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
       // sustainability codes (16 electrical + 3 water in 2a, 5 mechanical + 1
       // HVAC + 4 facility in 2b), measured on `point-key-units.ts` after the
       // move; PR 2a left this at 605 and the migration review named the slack.
-      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(634);
+      // **648 since `E4.2` PR 2** — 634 + the 14 new sustainability codes (9
+      // electrical + 5 water, U6).
+      expect(units.size, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(648);
 
       const missing: string[] = [];
       for (const arrayName of Object.keys(ARRAY_DOMAIN)) {

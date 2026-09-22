@@ -89,6 +89,15 @@ import { DashboardTemplatesService } from "./dashboard-templates.service";
  * **THE WHOLE INSTANTIATION IS ONE TRANSACTION.** A refused write must leave no
  * half-built dashboard behind — a dashboard row with no widgets is worse than no
  * dashboard, because it looks like a template that produces nothing.
+ *
+ * ---
+ *
+ * **`E4.2` / ADR 0072 DECISION 1 GAVE THIS METHOD A SECOND ARM.** A template
+ * whose every widget has zero `bindings` may instantiate with
+ * `assetGroupId: null`, and lands organization-wide: both scope columns `NULL`,
+ * no member resolution, `sources` copied verbatim as before. Everything above
+ * still describes the asset-group arm, which is unchanged — the second arm has
+ * no role to resolve, so it has no report to get wrong.
  */
 
 interface ResolvedMemberPoint {
@@ -138,48 +147,37 @@ export class DashboardTemplatesInstantiateService {
       );
     }
 
-    const [group] = await this.fleetDb
-      .select({ id: assetGroups.id, organizationId: assetGroups.organizationId })
-      .from(assetGroups)
-      .where(eq(assetGroups.id, body.assetGroupId))
-      .limit(1);
-    if (!group) {
-      throw new NotFoundException("Asset group not found");
-    }
-    // The group must belong to the template's organization. Checked here rather
-    // than left to the policy, so the caller gets a 403 naming the scope instead
-    // of a row-level-security error naming a policy.
-    if (group.organizationId !== template.organizationId) {
-      throw new ForbiddenException("Asset group is outside your access scope");
-    }
-
     /**
-     * **The TARGET-side check, and it was missing.**
+     * **The organization-wide arm — `E4.2`, ADR 0072 decision 1.**
      *
-     * The organization match above is not authorization: it only proves the
-     * group and the template belong to the same tenant. Without this, a
-     * `location_admin` at one site could instantiate into an asset group at any
-     * other site of the same organization — and the asymmetry proved it was
-     * wrong rather than merely untidy: `canManageDashboard` refuses that exact
-     * row, so the caller created a dashboard they could not then edit or delete
-     * through `/dashboards`.
+     * There is no group to look up, no organization match to make and no member
+     * to resolve. The one authorization question left is the one
+     * `DashboardsService.create` asks of the same row: may this caller create a
+     * dashboard with no scope column at all? `canManageDashboard` answers it
+     * with ADR 0047 Amendment 2 ruling 2 — an ownerless, tenant-wide row is the
+     * two organization-level roles' to make and nobody else's. Without this call
+     * the template door would let a `location_admin` create exactly the row
+     * `/dashboards` refuses them, which is the asymmetry the `F3.36` security
+     * review found on the group arm.
      *
-     * This is the predicate `DashboardsService.create` already applies to the
-     * same write, so the two doors into `bms.dashboards` now agree. Found by the
-     * `F3.36` security review.
+     * The binding refusal is NOT here: it needs the parsed `content`, so it sits
+     * immediately after the parse below. Authorization first means a caller who
+     * may not write here never learns whether the template binds a role.
      */
-    if (
-      !(await this.accessControl.canManageDashboard(jwt, template.organizationId, {
-        locationId: null,
-        assetGroupId: body.assetGroupId,
-        // `F3.2` — a section template instantiates into an ASSET GROUP, never an asset
-        // (ADR 0067 decision 1 gives the asset axis its own writer). Explicitly null rather
-        // than omitted: the field is required on the scope, so a later asset-scoped caller
-        // here has to state its intent instead of inheriting a default.
-        assetId: null,
-      }))
-    ) {
-      throw new ForbiddenException("Asset group is outside your access scope");
+    if (body.assetGroupId === null) {
+      if (
+        !(await this.accessControl.canManageDashboard(jwt, template.organizationId, {
+          locationId: null,
+          assetGroupId: null,
+          assetId: null,
+        }))
+      ) {
+        throw new ForbiddenException(
+          "Only an organization admin can create an organization-wide dashboard",
+        );
+      }
+    } else {
+      await this.assertGroupTargetIsWritable(jwt, template.organizationId, body.assetGroupId);
     }
 
     const content = parseStoredContract(
@@ -191,8 +189,36 @@ export class DashboardTemplatesInstantiateService {
       throw new BadRequestException("This template has no widgets to instantiate");
     }
 
-    const members = await this.loadMembersByRole(body.assetGroupId, template.organizationId);
-    const pointsByAsset = await this.loadActivePoints(template.organizationId);
+    /**
+     * **A template that binds a role still needs a group — ADR 0072 decision 1.**
+     *
+     * A binding names an asset-group ROLE (ADR 0049 decision 4) and resolves
+     * against the target group's members. With no group every binding would
+     * match nothing, so the whole canvas would land `unresolved`: a dashboard
+     * that looks imported and shows nothing. Amendment 2 decision 1's rule is
+     * that instantiation never succeeds silently, and this is the one case where
+     * the honest answer is a refusal rather than a report.
+     *
+     * Read from the PINNED version's stored `content`, which is the same content
+     * the widgets below are planned from — so the guard cannot disagree with
+     * what is about to be written.
+     */
+    if (body.assetGroupId === null && content.widgets.some((w) => w.bindings.length > 0)) {
+      throw new BadRequestException("A template with role bindings needs an asset group");
+    }
+
+    // Both maps are empty on the organization-wide arm: there is no group to
+    // read members from, and with no bindings there is no point to look up.
+    // `planWidget` still runs for every widget — Amendment 2 decision 1 wants a
+    // resolution entry per widget, and a zero-binding widget is already `bound`.
+    const members =
+      body.assetGroupId === null
+        ? new Map<string, GroupMember[]>()
+        : await this.loadMembersByRole(body.assetGroupId, template.organizationId);
+    const pointsByAsset =
+      body.assetGroupId === null
+        ? new Map<string, string>()
+        : await this.loadActivePoints(template.organizationId);
 
     const plans = content.widgets.map((widget) =>
       this.planWidget(widget, members, pointsByAsset),
@@ -293,6 +319,57 @@ export class DashboardTemplatesInstantiateService {
       dashboard,
       resolutions: plans.map((plan) => plan.resolution),
     };
+  }
+
+  /**
+   * The asset-group arm's two target checks, lifted out of `instantiate` when
+   * `E4.2` gave that method a second arm. **Byte-for-byte the same checks in the
+   * same order**, including both comments — a refactor that reordered them would
+   * be a security change, not a tidy-up.
+   *
+   * **The organization match is not authorization.** It only proves the group
+   * and the template belong to the same tenant. Without the second check a
+   * `location_admin` at one site could instantiate into an asset group at any
+   * other site of the same organization — and the asymmetry proved it was wrong
+   * rather than merely untidy: `canManageDashboard` refuses that exact row, so
+   * the caller created a dashboard they could not then edit or delete through
+   * `/dashboards`. This is the predicate `DashboardsService.create` already
+   * applies to the same write, so the two doors into `bms.dashboards` agree.
+   * Found by the `F3.36` security review.
+   */
+  private async assertGroupTargetIsWritable(
+    jwt: JwtPayload,
+    organizationId: string,
+    assetGroupId: string,
+  ): Promise<void> {
+    const [group] = await this.fleetDb
+      .select({ id: assetGroups.id, organizationId: assetGroups.organizationId })
+      .from(assetGroups)
+      .where(eq(assetGroups.id, assetGroupId))
+      .limit(1);
+    if (!group) {
+      throw new NotFoundException("Asset group not found");
+    }
+    // The group must belong to the template's organization. Checked here rather
+    // than left to the policy, so the caller gets a 403 naming the scope instead
+    // of a row-level-security error naming a policy.
+    if (group.organizationId !== organizationId) {
+      throw new ForbiddenException("Asset group is outside your access scope");
+    }
+
+    if (
+      !(await this.accessControl.canManageDashboard(jwt, organizationId, {
+        locationId: null,
+        assetGroupId,
+        // `F3.2` — a section template instantiates into an ASSET GROUP, never an asset
+        // (ADR 0067 decision 1 gives the asset axis its own writer). Explicitly null rather
+        // than omitted: the field is required on the scope, so a later asset-scoped caller
+        // here has to state its intent instead of inheriting a default.
+        assetId: null,
+      }))
+    ) {
+      throw new ForbiddenException("Asset group is outside your access scope");
+    }
   }
 
   /**

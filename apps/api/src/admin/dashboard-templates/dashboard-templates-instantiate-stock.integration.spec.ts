@@ -1,6 +1,9 @@
 import { expect } from "vitest";
 
-import type { InstantiateSectionTemplateResponse } from "@bms/shared";
+import type {
+  DashboardTemplateDto,
+  InstantiateSectionTemplateResponse,
+} from "@bms/shared";
 
 /**
  * `F3.45` — a rebound STOCK binding resolves `bound` against a real member and
@@ -129,4 +132,74 @@ export function assertAerationTileRowWasWritten(
       "and that row must belong to the fixture's aeration asset — the report says `bound`; " +
       "this is the insert that has to agree with it.",
   ).toEqual([fixtureAssetId]);
+}
+
+/** `sustainability-overview`'s widget count, counted from the catalog entry (6 + 6 + 5 + 1). */
+export const SUSTAINABILITY_WIDGET_COUNT = 18;
+
+/**
+ * `E4.2` U3 — the shipped `sustainability-overview` content SURVIVED
+ * `DashboardTemplatesService.publish`.
+ *
+ * That is the whole claim, and it is not a tautology: `publish` runs
+ * `assertSourceParamsPointKeysActive` over every source, so a status of
+ * `published` here means each of the fifteen `params.pointKey` values in the
+ * entry matched an ACTIVE row of `bms.point_keys` on the fleet pool. A code
+ * the seed does not carry — a typo, a rename, a key added to the catalog and
+ * forgotten in `point-keys-seed.ts` — makes `publish` throw a 400 naming it,
+ * and `beforeAll` fails rather than this assertion; either way the suite
+ * reddens, which is what the unit claims cannot do.
+ */
+export function assertSustainabilityOverviewPublished(template: DashboardTemplateDto): void {
+  expect(
+    { status: template.status, section: template.section },
+    "the shipped sustainability-overview content must publish against the seeded point-key " +
+      "catalog — a `Not in the active point-key catalog` 400 out of publish means a pointKey " +
+      "in stock-catalog.ts names a code bms.point_keys does not hold, or holds inactive.",
+  ).toEqual({ status: "published", section: "sustainability" });
+}
+
+/**
+ * `E4.2` U8b / ADR 0072 decision 1 — a role-free section template instantiates
+ * with every scope column `NULL`.
+ *
+ * The negative half matters as much as the positive: an `assetGroupId` that
+ * came back set would mean the group arm ran, and the group arm is the one
+ * this entry cannot take.
+ */
+export function assertSustainabilityInstantiatedOrganizationWide(
+  response: InstantiateSectionTemplateResponse,
+): void {
+  expect(
+    {
+      assetGroupId: response.dashboard.assetGroupId,
+      assetId: response.dashboard.assetId,
+      locationId: response.dashboard.locationId,
+    },
+    "a template with zero role bindings instantiates organization-wide: no location, no asset " +
+      "group and no asset (ADR 0072 decision 1).",
+  ).toEqual({ assetGroupId: null, assetId: null, locationId: null });
+}
+
+/**
+ * Every one of the eighteen widgets is reported, and every one of them is
+ * `bound`.
+ *
+ * A widget with no bindings is `bound` by construction, so this is the shape
+ * claim rather than a resolution one — but it is the control that stops the two
+ * assertions above from passing over a report with one widget in it, and it
+ * fails loudly if the organization-wide arm ever starts reporting `unresolved`
+ * for a catalog-only tile.
+ */
+export function assertSustainabilityWidgetsAllResolve(
+  response: InstantiateSectionTemplateResponse,
+): void {
+  expect(
+    {
+      count: response.resolutions.length,
+      outcomes: [...new Set(response.resolutions.map((entry) => entry.outcome))].sort(),
+    },
+    "one resolution entry per sustainability-overview widget (Amendment 2 decision 1), and " +
+      "every one `bound` — the entry binds no role, so nothing can be partial or unresolved.",
+  ).toEqual({ count: SUSTAINABILITY_WIDGET_COUNT, outcomes: ["bound"] });
 }

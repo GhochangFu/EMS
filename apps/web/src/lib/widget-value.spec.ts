@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import {
+  coverageNote,
   formatBucketWidth,
   formatDelta,
   formatWidgetValue,
@@ -339,4 +340,85 @@ export function formatBucketWidthCoversTheFourLadderRungs(): void {
   expect(formatBucketWidth(90), "a width that is no whole number of minutes says so").toBe("90 s");
   expect(formatBucketWidth(null), "no width yet renders the em dash, never 'null'").toBe("—");
   expect(formatBucketWidth(0), "a zero width is not a granularity").toBe("—");
+}
+
+/**
+ * `E4.2` U10, ADR 0072 decision 2 — `coverageNote` says how much of the plant a
+ * roll-up covered, and says it **only when something is missing**.
+ *
+ * One `it()` per claim in the sibling `.test.ts`: `assert`/`expect` throws, so
+ * four coverage shapes in one `it()` would mean only the first could ever
+ * redden.
+ */
+export function coverageNoteNamesAShortfall(): void {
+  expect(coverageNote({ fresh: 4, carrying: 6 })).toBe("4 of 6 assets");
+}
+
+/** Full coverage says nothing — a line on every tile trains the reader to stop
+ * reading the one tile that has something to say. */
+export function coverageNoteIsSilentWhenEveryAssetIsFresh(): void {
+  expect(coverageNote({ fresh: 6, carrying: 6 })).toBeUndefined();
+}
+
+/** No asset carries the code at all — the two executive slots of ADR 0072
+ * decision 4. There is no shortfall, only an absent quantity, and the tile's own
+ * em dash already says so. */
+export function coverageNoteIsSilentWhenNoAssetCarriesTheCode(): void {
+  expect(coverageNote({ fresh: 0, carrying: 0 })).toBeUndefined();
+}
+
+/** Every metric but `sustainability.total` omits `coverage` entirely — the field
+ * is optional on the contract's `metric` arm, so this is the ordinary case and
+ * not a defensive one. */
+export function coverageNoteIsSilentWithoutACoverageObject(): void {
+  expect(coverageNote(null)).toBeUndefined();
+  expect(coverageNote(undefined)).toBeUndefined();
+}
+
+/**
+ * An errored tile carries no note, even holding a coverage object — TanStack
+ * Query keeps the previous `data` through a refetch error.
+ *
+ * The adjacent positive control is in the same function on purpose: it is the
+ * SAME coverage object through the ready status, so a `note` that was never
+ * produced at all could not pass this pair.
+ */
+export function toKpiTilePropsWithholdsTheNoteWhenNotReady(): void {
+  const coverage = { fresh: 4, carrying: 6 } as const;
+  const errored = toKpiTileProps({
+    title: "Energy today",
+    status: "error",
+    primary: 12,
+    config: {},
+    coverage,
+  });
+  expect(
+    errored.note,
+    "'Could not load' above '4 of 6 assets' describes a number the tile refuses to show",
+  ).toBeUndefined();
+
+  const ready = toKpiTileProps({
+    title: "Energy today",
+    status: "ready",
+    primary: 12,
+    config: {},
+    coverage,
+  });
+  expect(ready.note, "the positive control — the same coverage, ready").toBe("4 of 6 assets");
+}
+
+/**
+ * The note is its own slot and does not displace the hint — ADR 0072's
+ * separation from `valueTileConfigSchema.hint`'s one-slot rule.
+ */
+export function theNoteDoesNotDisplaceTheHint(): void {
+  const props = toKpiTileProps({
+    title: "Energy today",
+    status: "ready",
+    primary: 12,
+    config: { hint: "Author-typed note" },
+    coverage: { fresh: 4, carrying: 6 },
+  });
+  expect(props.hint).toBe("Author-typed note");
+  expect(props.note).toBe("4 of 6 assets");
 }

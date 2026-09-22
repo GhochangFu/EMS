@@ -359,20 +359,35 @@ export async function assertTheShippedFeederImportsWholeAgainstTheRealVocabulary
   // F2.8 made the feeder stock v2 — 33 measured points plus the three
   // `bms-calc-v2` derived points (`site_kw`, `it_kw`, `pue`) on the incomer;
   // E4.1c made it v3 — six `bms-calc-v3` sustainability points after them
-  // (ADR 0070 decision 8). The import writes the derived rows through the
-  // same `template_points` path, so the stored count is the whole entry, not
-  // the measured half. This is also the one gate that proves the six new
-  // codes are in the seeded vocabulary: `assertPointKeysActive` refuses the
-  // whole import otherwise (a stack that has not re-seeded fails here first).
-  assert(draft.stockCode === FEEDER_CODE && draft.stockVersion === 3, "the feeder import is stamped v3");
-  assert(draft.points.length === 42, `42 points must land, got ${draft.points.length}`);
-  assert((await storedPointCount(pool, draft.id)) === 42, "42 template_points rows must be stored");
+  // (ADR 0070 decision 8); E4.2 PR 2 made it v4 — six more calendar-window
+  // points after those (ADR 0072 decision 3, Q7 ruling (a)). The import
+  // writes the derived rows through the same `template_points` path, so the
+  // stored count is the whole entry, not the measured half.
+  //
+  // **It proves SIX of the fourteen codes `E4.2` PR 2 added, not all of them,
+  // and the earlier wording here ("the one gate that proves the new codes are
+  // in the seeded vocabulary") over-claimed.** `assertPointKeysActive` refuses
+  // the whole import if a code is missing or inactive, so a stack that has not
+  // re-seeded does fail here first — but the only codes this entry names are
+  // the feeder's six (`kwh_`, `energy_cost_` and `co2_kg_` × `_this_month` /
+  // `_this_year`). The other eight travel through other gates:
+  // `co2_avoided_kg_this_month` / `_this_year` on the solar-PV entry, the
+  // water classes' `kl_` and `water_cost_` pairs, and the two executive codes
+  // with no stock formula (`operational_efficiency_pct`, `water_recycle_pct`,
+  // ADR 0072 decision 4), which no asset template carries at all — the
+  // sustainability half of
+  // `dashboard-templates-instantiate-stock.integration.test.ts` is what puts
+  // those two in front of a real `bms.point_keys`, through `publish`.
+  assert(draft.stockCode === FEEDER_CODE && draft.stockVersion === 4, "the feeder import is stamped v4");
+  assert(draft.points.length === 48, `48 points must land, got ${draft.points.length}`);
+  assert((await storedPointCount(pool, draft.id)) === 48, "48 template_points rows must be stored");
   const derivedKeys = draft.points.filter((point) => point.kind === "derived").map((point) => point.pointKey);
   assert(
-    derivedKeys.length === 9 &&
+    derivedKeys.length === 15 &&
       derivedKeys.join(",") ===
-        "site_kw,it_kw,pue,energy_cost_per_h,co2_kg_per_h,energy_cost_today,co2_kg_today,energy_saving_vs_baseline_pct,demand_vs_contract_pct",
-    `the three F2.8 and the six E4.1c derived points must land in order, got [${derivedKeys.join(",")}]`,
+        "site_kw,it_kw,pue,energy_cost_per_h,co2_kg_per_h,energy_cost_today,co2_kg_today,energy_saving_vs_baseline_pct,demand_vs_contract_pct," +
+        "kwh_this_month,kwh_this_year,energy_cost_this_month,energy_cost_this_year,co2_kg_this_month,co2_kg_this_year",
+    `the three F2.8, the six E4.1c and the six E4.2 derived points must land in order, got [${derivedKeys.join(",")}]`,
   );
   const alarms = (draft.content as { alarms?: Record<string, unknown>[] }).alarms ?? [];
   assert(alarms.length === 11, `11 alarms must survive, got ${alarms.length}`);

@@ -15,6 +15,8 @@ import {
   anUntitledWidgetFallsBackToItsCatalogLabel,
   eachNonReadyStateReplacesTheWidgetBody,
   everyCatalogTypeDrawsItsTitle,
+  aValueTileWithAShortfallRendersTheCoverageNote,
+  aValueTileWithFullCoverageRendersNoNote,
 } from "./dashboard-widget.spec";
 
 /**
@@ -74,5 +76,19 @@ describe("F3.1c widget rendering", () => {
 
   it("shows KpiTile's own stale note on a stale value tile", () => {
     aStaleReadyValueTileShowsKpiTilesOwnStaleNote();
+  });
+});
+
+describe("E4.2 — roll-up coverage on a value tile", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("renders the coverage note when fewer assets are fresh than carry the code", () => {
+    aValueTileWithAShortfallRendersTheCoverageNote();
+  });
+
+  it("renders no note when every carrying asset is fresh, and still renders the value", () => {
+    aValueTileWithFullCoverageRendersNoNote();
   });
 });

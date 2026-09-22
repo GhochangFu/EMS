@@ -139,11 +139,15 @@ describe("ADR 0070 part (a) — every stock-catalog formula literal parses ident
 
   /** Anti-vacuity for the `v3` arm: PR 2a authors 6 (feeder) + 1 + 5 + 4 + 1
    * (transformer, DG, solar, APFC) + 6 × 3 (water) = 35 `v3` stock literals;
-   * PR 2b adds fourteen more, for 49. A `V3_OPTION_RE` that stopped matching
-   * would drop them all into the `v1` set, where they fail to parse — loud
-   * either way, but this floor names the cause. */
-  it("found at least 49 v3-authored literals (E4.1c PR 2a + 2b)", () => {
-    expect(v3Literals.length).toBeGreaterThanOrEqual(49);
+   * PR 2b adds fourteen more, for 49. **81 since `E4.2` PR 2** — 49 + the 32
+   * new v3 literals (U7): feeder's 6, solar PV's 2, six water classes' 4
+   * each = 24; 6 + 2 + 24 = 32. Measured, not derived: run this file with
+   * the floor raised past the actual to read the true count before trusting
+   * the arithmetic. A `V3_OPTION_RE` that stopped matching would drop them
+   * all into the `v1` set, where they fail to parse — loud either way, but
+   * this floor names the cause. */
+  it("found at least 81 v3-authored literals (E4.1c PR 2a + 2b, E4.2 PR 2)", () => {
+    expect(v3Literals.length).toBeGreaterThanOrEqual(81);
   });
 
   it("every literal parses to the identical AST under its own authored dialect and under bms-calc-v3", () => {

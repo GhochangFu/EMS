@@ -176,6 +176,13 @@ import type { StockAssetTemplateEntry } from "./types";
  *    counted; (3) every row is `scheduled` at 60 s, at most one tick old,
  *    `minCoverageRatio` `null`; (4) `irradiance_wm2` is tier X — absent, the
  *    ratio refuses `missing_input`.
+ *  - `electrical-solar-pv` **v3** (2026-09-22, `E4.2` PR 2): two more
+ *    `bms-calc-v3` derived points appended at `sortOrder` 30–31 (ADR 0072
+ *    decision 3, Q7 ruling (a), plan §3.7) — `co2_avoided_kg_this_month`,
+ *    `co2_avoided_kg_this_year`, the calendar-window siblings of
+ *    `co2_avoided_kg_today`. Both price the whole calendar period at the
+ *    carbon factor effective at the evaluation instant (Q7): a mid-period
+ *    factor change re-prices the whole period from the next sweep.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (inv_status, inv_fault, ac_power_kw, dc_power_kw, energy_today_kwh, energy_total_kwh, ac_frequency_hz, dc_voltage_v), plus one
@@ -197,7 +204,7 @@ export const ELECTRICAL_SOLAR_PV: StockAssetTemplateEntry = {
     "client-confirmed). Net export at the point of connection is a §1 meter on another asset and " +
     "is not declared here. Tier C points are required, X optional, M entered by hand; alarm rows " +
     "carry a meaning and no limit.",
-  stockVersion: 2,
+  stockVersion: 3,
   content: {
     contentVersion: 1,
     alarms: [
@@ -508,6 +515,25 @@ export const ELECTRICAL_SOLAR_PV: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 29,
+    },
+    // `E4.2` PR 2 — ADR 0072 decision 3, Q7 ruling (a), plan §3.7. The
+    // calendar-window siblings of co2_avoided_kg_today; both price the whole
+    // period at the carbon factor effective at evaluation (Q7).
+    {
+      ...derived("delta({energy_total_kwh}, this_month) * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "co2_avoided_kg_this_month",
+      label: "CO₂ avoided this month (at the factor effective now)",
+      unit: "kg",
+      required: false,
+      sortOrder: 30,
+    },
+    {
+      ...derived("delta({energy_total_kwh}, this_year) * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "co2_avoided_kg_this_year",
+      label: "CO₂ avoided this year (at the factor effective now)",
+      unit: "kg",
+      required: false,
+      sortOrder: 31,
     },
   ],
 };

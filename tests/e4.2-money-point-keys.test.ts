@@ -60,10 +60,16 @@ describe("E4.2 — MONEY_POINT_KEY_CODES lists every catalogued cost code", () =
       .map(([code]) => code)
       .sort();
 
-  it("parses at least the three cost codes E4.1c seeded (anti-vacuity)", () => {
-    // A regex that matched nothing would make the claim below pass over an empty set. Three
-    // today: energy_cost_per_h, energy_cost_today, water_cost_today. PR 2 raises this.
-    expect(costCodes().length, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(3);
+  it("parses the seven cost codes the catalog now holds (anti-vacuity)", () => {
+    // A regex that matched nothing would make the claim below pass over an empty set, so this
+    // is the ACTUAL and never slack: at three-of-seven the containment claim below would run
+    // over a set missing every code `E4.2` PR 2 added and stay green, which is the one failure
+    // this file exists to prevent. The seven, measured off `UNIT_BY_KEY`:
+    //   E4.1c — energy_cost_per_h, energy_cost_today, water_cost_today
+    //   E4.2 PR 2 (U6) — energy_cost_this_month, energy_cost_this_year,
+    //                    water_cost_this_month, water_cost_this_year
+    // Raise this in the same commit that catalogues the eighth.
+    expect(costCodes().length, `UNIT_BY_KEY parsed as almost nothing`).toBeGreaterThanOrEqual(7);
   });
 
   it("lists every catalogued cost code, so a new one cannot ship without its currency", () => {

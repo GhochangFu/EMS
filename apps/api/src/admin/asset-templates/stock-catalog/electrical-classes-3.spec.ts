@@ -53,7 +53,7 @@ export function runFeederTagListBlock(): void {
   // `optional` is measured-only for the same reason: a derived row is optional
   // too, and folding the two together would let a lost tag-list row hide
   // behind a new formula.
-  assert(feeder.points.length === 42, `tag list §1's 33 rows + F2.8's 3 derived + E4.1c's 6; the entry declares ${feeder.points.length}`);
+  assert(feeder.points.length === 48, `tag list §1's 33 rows + F2.8's 3 derived + E4.1c's 6 + E4.2's 6; the entry declares ${feeder.points.length}`);
   const required = feeder.points.filter((point) => point.required);
   const optional = feeder.points.filter((point) => point.kind === "measured" && !point.required);
   assert(required.length === 17, `17 rows are tier C (required); got ${required.length}`);
@@ -65,7 +65,7 @@ export function runFeederTagListBlock(): void {
     );
   });
   const feederKeys = new Set(feeder.points.map((point) => point.pointKey));
-  assert(feederKeys.size === 42, "no point key may repeat");
+  assert(feederKeys.size === 48, "no point key may repeat");
 
   // **The first three derived rows are `F2.8`'s, not the tag list's** — ruling 1
   // of that row's gate (PUE lives on the site's incomer and nowhere else), and
@@ -139,9 +139,14 @@ const feederEntry = () => {
 
 const derivedOf = () => feederEntry().points.filter((point) => point.kind === "derived");
 
-/** `E4.1c`'s six, never an empty slice: a claim over zero rows is vacuous. */
+/**
+ * `E4.1c`'s six, never an empty slice: a claim over zero rows is vacuous.
+ * **Bounded at both ends** (`slice(3, 9)`, not `slice(3)`) since `E4.2` PR 2
+ * appended six more derived rows after these — an unbounded slice would fold
+ * `E4.2`'s rows into this claim and hide a difference between the two sets.
+ */
 const sixOf = () => {
-  const six = derivedOf().slice(3);
+  const six = derivedOf().slice(3, 9);
   assert(six.length === 6, `E4.1c authors six derived rows after F2.8's three; found ${six.length}`);
   return six;
 };
@@ -183,11 +188,13 @@ export const E41C_FEEDER_FORMULAS: ReadonlyArray<readonly [pointKey: string, for
 
 
 export function assertNineDerivedRowsInOrder(): void {
-  const codes = derivedOf().map((point) => point.pointKey);
+  // Bounded to the first nine: `E4.2` PR 2 appended six more derived rows
+  // after these, and an unbounded compare would fold them into this claim.
+  const codes = derivedOf().slice(0, 9).map((point) => point.pointKey);
   assert(
     codes.join(",") === FEEDER_DERIVED_CODES.join(","),
-    `${FEEDER_CODE} must author exactly nine derived rows in sortOrder order — F2.8's three, then ` +
-      `E4.1c's six (plan §3.7) — got ${codes.join(", ") || "(none)"}`,
+    `${FEEDER_CODE} must author F2.8's three then E4.1c's six as its FIRST nine derived rows, in ` +
+      `sortOrder order (plan §3.7) — got ${codes.join(", ") || "(none)"}`,
   );
 }
 
@@ -201,7 +208,9 @@ export function assertSortOrder36To41(): void {
 }
 
 export function assertDialectsV2ThenV3(): void {
-  const dialects = derivedOf().map((point) => String(point.formulaDialect));
+  // Bounded to the first nine, the same reason assertNineDerivedRowsInOrder
+  // is: E4.2's six trailing rows are also v3 but are not this claim's rows.
+  const dialects = derivedOf().slice(0, 9).map((point) => String(point.formulaDialect));
   const expected = [CALC_DIALECT_V2, CALC_DIALECT_V2, CALC_DIALECT_V2, ...Array<string>(6).fill(CALC_DIALECT_V3)];
   assert(
     dialects.join(",") === expected.join(","),
@@ -323,11 +332,11 @@ export function assertKwhTodayStillMeasured(): void {
   );
 }
 
-export function assertStockVersion3(): void {
+export function assertStockVersion4(): void {
   const version = feederEntry().stockVersion;
   assert(
-    version === 3,
-    `electrical-feeder is stockVersion 3 (ruling 10: v2 → v3 for E4.1c's six rows; an importing tenant ` +
+    version === 4,
+    `electrical-feeder is stockVersion 4 (ruling 10: v3 → v4 for E4.2's six rows; an importing tenant ` +
       `takes them by re-import, never by mutation) — got ${String(version)}`,
   );
 }
@@ -363,12 +372,20 @@ const DG_SET_E41C: readonly SustainabilityRow[] = [
  * `W/m²` over hours `/ 1000` is `kWh/m²` (plan §3.7). `capacity_utilization_pct`
  * is instantaneous and keeps the ADR's name; `specific_yield_kwh_kwp_day` is a
  * rolling `24h` (Q10); `co2_avoided_kg_today` supersedes `co2_avoided_kg`.
+ *
+ * **Six rows, not four, since `E4.2` PR 2** — `sustainabilityClaims`'s `tail()`
+ * reads the entry's LAST `rows.length` points, and `co2_avoided_kg_this_month`
+ * / `_this_year` (ADR 0072 decision 3, Q7 ruling (a)) are now appended right
+ * after the original four with nothing between, so the whole six-row run is
+ * pinned as ONE tail here rather than splitting it across two claim lists.
  */
 const SOLAR_PV_E41C: readonly SustainabilityRow[] = [
   ["co2_avoided_kg_today", "delta({energy_total_kwh}, today) * $grid_carbon_factor_kgco2_per_kwh", "kg"],
   ["performance_ratio_pct", "delta({energy_total_kwh}, today) / ($installed_kwp * sum({irradiance_wm2}, today) / 1000) * 100", "%"],
   ["specific_yield_kwh_kwp_day", "delta({energy_total_kwh}, 24h) / $installed_kwp", "kWh/kWp/day"],
   ["capacity_utilization_pct", "{ac_power_kw} / $installed_kwp * 100", "%"],
+  ["co2_avoided_kg_this_month", "delta({energy_total_kwh}, this_month) * $grid_carbon_factor_kgco2_per_kwh", "kg"],
+  ["co2_avoided_kg_this_year", "delta({energy_total_kwh}, this_year) * $grid_carbon_factor_kgco2_per_kwh", "kg"],
 ];
 
 /** APFC — the "only class with no derived point at all" claim ends here. */
@@ -376,11 +393,15 @@ const APFC_E41C: readonly SustainabilityRow[] = [
   ["steps_per_day", "delta({step_operation_count}, 24h)", ""],
 ];
 
-/** Every E4.1c class beside the feeder: `[code, rows, firstSortOrder, expectedVersion]`. */
+/**
+ * Every E4.1c class beside the feeder: `[code, rows, firstSortOrder,
+ * expectedVersion]`. **`electrical-solar-pv`'s version is 3, not 2** — `E4.2`
+ * PR 2 bumped it when its two rows joined `SOLAR_PV_E41C`'s tail above.
+ */
 export const E41C_ELECTRICAL_CLASSES: ReadonlyArray<readonly [string, readonly SustainabilityRow[], number, number]> = [
   ["electrical-transformer", TRANSFORMER_E41C, 30, 2],
   ["electrical-dg-set", DG_SET_E41C, 38, 2],
-  ["electrical-solar-pv", SOLAR_PV_E41C, 26, 2],
+  ["electrical-solar-pv", SOLAR_PV_E41C, 26, 3],
   ["electrical-apfc", APFC_E41C, 14, 2],
 ];
 
@@ -388,4 +409,27 @@ export function e41cElectricalClaims(): ReadonlyArray<readonly [name: string, ru
   return E41C_ELECTRICAL_CLASSES.flatMap(([code, rows, first, version]) =>
     sustainabilityClaims(code, requireStockEntry(code), rows, first, version),
   );
+}
+
+// ---- E4.2 PR 2 — the feeder's six calendar-window rows (ADR 0072 decision 3,
+// Q7 ruling (a), plan §3.7) --------------------------------------------------
+//
+// Pinned through the same `sustainabilityClaims` helper: these six ARE the
+// entry's last six points (sortOrder 42–47), so the tail-based claims apply
+// unmodified. `kwh_this_month` / `kwh_this_year` read no `$key` — the only
+// two E4.1c/E4.2 feeder rows that do not — and `sustainabilityClaims`'s
+// vocabulary claim does not require one, unlike this file's own bespoke
+// `assertParamRefsAreVocabulary` (which is scoped to E4.1c's original six).
+
+const FEEDER_E42: readonly SustainabilityRow[] = [
+  ["kwh_this_month", "delta({kwh_total}, this_month)", "kWh"],
+  ["kwh_this_year", "delta({kwh_total}, this_year)", "kWh"],
+  ["energy_cost_this_month", "delta({kwh_total}, this_month) * $energy_tariff_per_kwh", ""],
+  ["energy_cost_this_year", "delta({kwh_total}, this_year) * $energy_tariff_per_kwh", ""],
+  ["co2_kg_this_month", "delta({kwh_total}, this_month) * $grid_carbon_factor_kgco2_per_kwh", "kg"],
+  ["co2_kg_this_year", "delta({kwh_total}, this_year) * $grid_carbon_factor_kgco2_per_kwh", "kg"],
+];
+
+export function e42FeederClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
+  return sustainabilityClaims(FEEDER_CODE, feederEntry(), FEEDER_E42, 42, 4);
 }

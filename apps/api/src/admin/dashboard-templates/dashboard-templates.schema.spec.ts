@@ -1,4 +1,7 @@
-import { updateDashboardTemplateBodySchema } from "./dashboard-templates.schema";
+import {
+  instantiateSectionTemplateBodySchema,
+  updateDashboardTemplateBodySchema,
+} from "./dashboard-templates.schema";
 
 /**
  * `F3.61` Task 2 — the `PATCH` request boundary reaches the shared contract's
@@ -128,5 +131,74 @@ export function rejectsAPatchBodyWhoseChartWidgetCarriesAMetricSource(): void {
     ["content", "widgets", 0, "sources"],
     /at most 0/,
     "a PATCH body whose one widget is a chart carrying a metric source",
+  );
+}
+
+/**
+ * `E4.2` U8b, ADR 0072 decision 1 — the instantiate body accepts a **null**
+ * `assetGroupId`, which is what lets a role-free section template land
+ * organization-wide.
+ *
+ * Asserted at the REQUEST boundary and not only in the service: `assetGroupId`
+ * was `z.string().uuid()`, so before this a null never reached the service at
+ * all — the global `@Catch(ZodError)` filter turned it into a 400 the service
+ * could not have overridden.
+ */
+export function acceptsAnInstantiateBodyWithANullAssetGroup(): void {
+  expectAccepts(
+    instantiateSectionTemplateBodySchema,
+    { assetGroupId: null, slug: "enterprise-sustainability", name: "Sustainability" },
+    "an instantiate body with a null asset group (the organization-wide arm)",
+  );
+}
+
+/**
+ * The adjacent positive control, and the reason it is here: "null is accepted"
+ * alone would still pass if `.nullable()` had been widened to `z.any()`. A uuid
+ * must still be a uuid.
+ */
+export function stillRejectsAnInstantiateBodyWhoseAssetGroupIsNotAUuid(): void {
+  expectRejectsAt(
+    instantiateSectionTemplateBodySchema,
+    // The slug is a VALID one on purpose. It used to be `"x"`, which the slug
+    // rule below now refuses on two counts — so the fixture would have been
+    // refused whatever `assetGroupId` held, and this control would have gone on
+    // passing with the uuid rule deleted. A negative fixture must be wrong in
+    // exactly one place.
+    { assetGroupId: "not-a-uuid", slug: "valid-slug", name: "x" },
+    ["assetGroupId"],
+    /uuid/i,
+    "an instantiate body whose asset group is neither a uuid nor null",
+  );
+}
+
+/**
+ * `E4.2` PR 2 security review — the instantiate door applies the SAME slug rule
+ * as `POST /dashboards`.
+ *
+ * Both refusals and the positive control are here rather than split: the claim
+ * is that one rule governs one column, and a charset refusal with no accepted
+ * spelling beside it cannot tell "the regex is right" from "the regex refuses
+ * everything".
+ */
+export function theInstantiateSlugTakesTheSameCharsetAsTheDashboardWriteDoor(): void {
+  expectRejectsAt(
+    instantiateSectionTemplateBodySchema,
+    { assetGroupId: null, slug: "x?a=b", name: "Sustainability" },
+    ["slug"],
+    /Invalid/i,
+    "an instantiate body whose slug carries a query string — it is addressed as a path segment",
+  );
+  expectRejectsAt(
+    instantiateSectionTemplateBodySchema,
+    { assetGroupId: null, slug: "a/b", name: "Sustainability" },
+    ["slug"],
+    /Invalid/i,
+    "an instantiate body whose slug carries a path separator",
+  );
+  expectAccepts(
+    instantiateSectionTemplateBodySchema,
+    { assetGroupId: null, slug: "enterprise-sustainability-2026", name: "Sustainability" },
+    "an instantiate body whose slug is lowercase letters, digits and hyphens",
   );
 }

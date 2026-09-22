@@ -8,7 +8,14 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, dashboards, dashboardWidgetPoints, dashboardWidgetSources, dashboardWidgets } from "@bms/db";
+import {
+  assets,
+  dashboards,
+  dashboardTemplates,
+  dashboardWidgetPoints,
+  dashboardWidgetSources,
+  dashboardWidgets,
+} from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   DashboardDto,
@@ -101,6 +108,7 @@ export class DashboardsService {
     jwt: JwtPayload,
     organizationId?: string,
     assetId?: string,
+    section?: string,
   ): Promise<{ items: DashboardSummaryDto[] }> {
     const orgIds = await this.accessControl.readableOrganizationIds(jwt);
     return withOrganizationReadScope(
@@ -120,6 +128,30 @@ export class DashboardsService {
         // within the read scope and cannot widen it: an out-of-scope id answers `[]`, never 403.
         if (assetId) {
           conditions.push(eq(dashboards.assetId, assetId));
+        }
+        /**
+         * `E4.2` / ADR 0072 decision 1 — the dashboards of one section.
+         *
+         * **A LEFT join with the predicate in `conditions`, never an
+         * `innerJoin`.** A hand-built dashboard has `template_id IS NULL`, so an
+         * unconditional inner join would silently drop every one of them from
+         * the unfiltered list — and the filtered case would stay perfectly
+         * correct while it happened. With the join left and the section
+         * predicate ANDed beside the organization conditions, the filtered read
+         * behaves as an inner join and the unfiltered read is untouched. Same
+         * shape, and the same reason, as the `assets` join below.
+         *
+         * Narrows within the read scope and cannot widen it, exactly as
+         * `assetId` does: an unknown code answers `[]`, never a 403.
+         *
+         * `eq(dashboardTemplates.organizationId, dashboards.organizationId)` is
+         * part of the JOIN, not merely of the tenant policy. On the FLEET branch
+         * this runs as `bms_fleet` (`BYPASSRLS`), where nothing else would stop
+         * a mis-stamped `template_id` from matching another organization's
+         * template and admitting the row under that organization's section.
+         */
+        if (section) {
+          conditions.push(eq(dashboardTemplates.section, section));
         }
         // `F3.2` / ADR 0067 §"Gate questions" Q4 — the badge reads `Asset · <code>`, and the
         // summary DTO has no code of its own, so the code is joined here.
@@ -151,6 +183,15 @@ export class DashboardsService {
             // `asset_id` has been mis-stamped: the join would resolve it and the badge would
             // read it out. On the tenant branch it is redundant with RLS and costs nothing.
             and(eq(assets.id, dashboards.assetId), eq(assets.organizationId, dashboards.organizationId)),
+          )
+          // `E4.2` — see the `section` condition above for why this is LEFT and
+          // why the organization predicate is in the join.
+          .leftJoin(
+            dashboardTemplates,
+            and(
+              eq(dashboardTemplates.id, dashboards.templateId),
+              eq(dashboardTemplates.organizationId, dashboards.organizationId),
+            ),
           )
           .where(conditions.length > 0 ? and(...conditions) : undefined)
           .orderBy(asc(dashboards.slug));

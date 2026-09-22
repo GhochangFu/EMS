@@ -259,6 +259,181 @@ export function runStockCatalogTests(): void {
 }
 
 /**
+ * `E4.2` PR 2 (U8) — the `sustainability-overview` entry under test, or a
+ * thrown failure naming its absence.
+ *
+ * **One claim per exported function below, and that is the repair, not a
+ * style.** All five claims used to live in one `it()`, and `assert` throws:
+ * only the FIRST failing one ever printed. The `E4.2` PR 2 review proved it —
+ * `stockVersion: 1` and a wrong `aggregate` on `water-recycle-pct-tile` in the
+ * same edit reported the stockVersion alone, so the aggregate claim stayed
+ * unproven whenever a claim above it was also broken. Each function
+ * here is registered as its own `it()` in `stock-catalog.test.ts`; adding one
+ * without registering it is the vacuous shape to watch for.
+ */
+function sustainabilityEntry(): (typeof STOCK_DASHBOARD_TEMPLATE_CATALOG)[number] {
+  const entry = STOCK_DASHBOARD_TEMPLATE_CATALOG.find(
+    (row) => row.code === "sustainability-overview",
+  );
+  assert(entry !== undefined, "no stock template with code sustainability-overview");
+  return entry as (typeof STOCK_DASHBOARD_TEMPLATE_CATALOG)[number];
+}
+
+/**
+ * The three tiles KEPT from the v1 skeleton (plan §3.8) bind their own catalog
+ * entries, never `sustainability.total` — every claim below scopes itself to
+ * the fourteen new sustainability tiles by excluding these, and
+ * `runSustainabilityKeptTilesTest` is the positive control that stops a rename
+ * from dropping a tile out of every loop at once.
+ */
+const KEPT_TILE_KEYS = new Set(["alarms-tile", "workorders-tile", "health-tile"]);
+
+/**
+ * **The fourteen sustainability tiles, as `[widget key, pointKey, aggregate]`.**
+ *
+ * Restated as a literal table on purpose, and this is the one thing the first
+ * draft of these claims did not do: it read `params.pointKey` only to DERIVE
+ * the expected aggregate and never validated the key itself, so
+ * `energy-this-year-tile` could bind `kwh_this_month` and every suite stayed
+ * green while the shipped dashboard drew *Energy this month* and *Energy this
+ * year* with the same number. A derived expectation cannot catch an error in
+ * what it derives from.
+ *
+ * `aggregate` is `"sum"` except the two executive codes with no stock formula
+ * (`operational_efficiency_pct`, `water_recycle_pct`, ADR 0072 decision 4),
+ * which are `"avg"`: summing a percentage across sites is not the plant's
+ * average. Plan §U8 enumerates the same fourteen.
+ */
+const SUSTAINABILITY_TILE_BINDINGS: ReadonlyArray<readonly [string, string, string]> = [
+  // Row A — today
+  ["energy-today-tile", "kwh_today", "sum"],
+  ["energy-cost-today-tile", "energy_cost_today", "sum"],
+  ["water-today-tile", "kl_today", "sum"],
+  ["co2-today-tile", "co2_kg_today", "sum"],
+  ["water-recycle-pct-tile", "water_recycle_pct", "avg"],
+  ["operational-efficiency-pct-tile", "operational_efficiency_pct", "avg"],
+  // Row B — this month
+  ["energy-this-month-tile", "kwh_this_month", "sum"],
+  ["energy-cost-this-month-tile", "energy_cost_this_month", "sum"],
+  ["water-this-month-tile", "kl_this_month", "sum"],
+  ["co2-this-month-tile", "co2_kg_this_month", "sum"],
+  // Row C — this year
+  ["energy-this-year-tile", "kwh_this_year", "sum"],
+  ["energy-cost-this-year-tile", "energy_cost_this_year", "sum"],
+  ["water-this-year-tile", "kl_this_year", "sum"],
+  ["co2-this-year-tile", "co2_kg_this_year", "sum"],
+];
+
+/** `sustainability-overview` is `stockVersion: 2` (`E4.2` PR 2, ADR 0072). */
+export function runSustainabilityStockVersionTest(): void {
+  const entry = sustainabilityEntry();
+  assert(
+    entry.stockVersion === 2,
+    `sustainability-overview must be stockVersion 2 (E4.2 PR 2) — got ${String(entry.stockVersion)}`,
+  );
+}
+
+/** `sustainability-overview` carries 18 widgets: 6 + 6 + 5 tiles and 1 table. */
+export function runSustainabilityWidgetCountTest(): void {
+  const entry = sustainabilityEntry();
+  assert(
+    entry.content.widgets.length === 18,
+    `sustainability-overview must carry 18 widgets (6 today + 6 this-month + 5 this-year + 1 ` +
+      `table) — got ${entry.content.widgets.length}`,
+  );
+}
+
+/** Every new `value_tile` binds one `sustainability.total`; the one table binds `sustainability.by_location`. */
+export function runSustainabilityCatalogKeysTest(): void {
+  const entry = sustainabilityEntry();
+  for (const widget of entry.content.widgets) {
+    if (widget.widgetType === "value_tile" && !KEPT_TILE_KEYS.has(widget.key)) {
+      assert(
+        widget.sources.length === 1 && widget.sources[0]?.catalogKey === "sustainability.total",
+        `${widget.key} must bind exactly one sustainability.total source — got ` +
+          `${widget.sources.map((source) => source.catalogKey).join(", ") || "(none)"}`,
+      );
+    }
+    if (widget.widgetType === "table") {
+      // The table's own `params` are pinned here and not in
+      // `SUSTAINABILITY_TILE_BINDINGS`: it repeats `kl_today`, which the
+      // fourteen-distinct-keys claim there would refuse.
+      const params = widget.sources[0]?.params as
+        | { pointKey?: string; aggregate?: string }
+        | undefined;
+      assert(
+        widget.sources.length === 1 &&
+          widget.sources[0]?.catalogKey === "sustainability.by_location" &&
+          params?.pointKey === "kl_today" &&
+          params?.aggregate === "sum",
+        `${widget.key} table must bind sustainability.by_location with ` +
+          `{ pointKey: "kl_today", aggregate: "sum" } — got ` +
+          `${widget.sources.map((source) => source.catalogKey).join(", ") || "(none)"} / ` +
+          `${JSON.stringify(params ?? null)}`,
+      );
+    }
+  }
+}
+
+/** Each of the fourteen tiles binds the `pointKey` its title names, with its own `aggregate`. */
+export function runSustainabilityTileBindingsTest(): void {
+  const entry = sustainabilityEntry();
+  for (const [key, pointKey, aggregate] of SUSTAINABILITY_TILE_BINDINGS) {
+    const widget = entry.content.widgets.find((row) => row.key === key);
+    const params = widget?.sources[0]?.params as
+      | { pointKey?: string; aggregate?: string }
+      | undefined;
+    assert(
+      params?.pointKey === pointKey && params?.aggregate === aggregate,
+      `${key} must bind { pointKey: "${pointKey}", aggregate: "${aggregate}" } — got ` +
+        `${widget === undefined ? "(no such widget)" : JSON.stringify(params ?? null)}. The two ` +
+        "executive codes (operational_efficiency_pct, water_recycle_pct) average across the " +
+        "scope; every other code sums. A tile bound to the wrong period draws two rows with " +
+        "the same number and nothing else notices.",
+    );
+  }
+  // **Distinctness, because the table above cannot see a swap on its own.**
+  // Two tiles given the same `pointKey` each match their own row only if the
+  // table itself is wrong; this catches the catalog side — fourteen tiles,
+  // fourteen different codes. (The benchmark TABLE repeats `kl_today`, which
+  // is why this counts the tiles and not every `pointKey` in the entry.)
+  const bound = entry.content.widgets
+    .filter((widget) => widget.widgetType === "value_tile" && !KEPT_TILE_KEYS.has(widget.key))
+    .map((widget) => (widget.sources[0]?.params as { pointKey?: string } | undefined)?.pointKey);
+  assert(
+    bound.length === 14 && new Set(bound).size === 14,
+    `the fourteen sustainability tiles must bind fourteen DIFFERENT point keys — got ` +
+      `${bound.length} tiles and ${new Set(bound).size} distinct keys: ${bound.join(", ")}`,
+  );
+}
+
+/**
+ * The positive control for `KEPT_TILE_KEYS`'s exclusion.
+ *
+ * Every claim above only reaches the fourteen new tiles; without this, a rename
+ * of one of the three kept keys would silently drop it out of all of them —
+ * exempt from the `sustainability.total` check because its (renamed) key is no
+ * longer in `KEPT_TILE_KEYS`, but the tile itself never checked at all.
+ */
+export function runSustainabilityKeptTilesTest(): void {
+  const entry = sustainabilityEntry();
+  const KEPT_TILE_CATALOG_KEYS: Readonly<Record<string, string>> = {
+    "alarms-tile": "alarms.active.count",
+    "workorders-tile": "workorders.open.count",
+    "health-tile": "assets.health.score",
+  };
+  for (const [key, catalogKey] of Object.entries(KEPT_TILE_CATALOG_KEYS)) {
+    const widget = entry.content.widgets.find((row) => row.key === key);
+    assert(
+      widget !== undefined && widget.widgetType === "value_tile" &&
+        widget.sources.length === 1 && widget.sources[0]?.catalogKey === catalogKey,
+      `the kept tile "${key}" must still be a value_tile bound to "${catalogKey}" — got ` +
+        `${widget === undefined ? "(no such widget)" : widget.sources.map((source) => source.catalogKey).join(", ") || "(none)"}`,
+    );
+  }
+}
+
+/**
  * `F3.44` post-merge sweep (security L2) — every catalog code passes the
  * server's `stockCodeParamSchema` (`^[a-z0-9-]+$`, max 64). The web stock
  * card interpolates `entry.code` into a route path unencoded, and the shared

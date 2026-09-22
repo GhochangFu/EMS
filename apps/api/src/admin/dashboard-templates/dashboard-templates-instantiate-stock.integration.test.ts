@@ -5,7 +5,10 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { InstantiateSectionTemplateResponse } from "@bms/shared";
+import type {
+  DashboardTemplateDto,
+  InstantiateSectionTemplateResponse,
+} from "@bms/shared";
 
 import { jwtFor, SEEDED } from "../../auth/access-control.integration.spec";
 import { AccessControlService } from "../../auth/access-control.service";
@@ -23,6 +26,9 @@ import {
   assertAerationTileRowWasWritten,
   assertEveryWidgetReported,
   assertInletScreenIsTheRecordedV1Consequence,
+  assertSustainabilityInstantiatedOrganizationWide,
+  assertSustainabilityOverviewPublished,
+  assertSustainabilityWidgetsAllResolve,
 } from "./dashboard-templates-instantiate-stock.integration.spec";
 import { DashboardTemplatesInstantiateService } from "./dashboard-templates-instantiate.service";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
@@ -71,6 +77,36 @@ if (!stpOverview) {
 }
 const STP_OVERVIEW_CONTENT = stpOverview.content;
 
+/**
+ * `E4.2` PR 2 sweep — the SECOND stock entry this suite drives, and the reason
+ * it is here rather than beside the fourteen-triple unit claim.
+ *
+ * `sustainability-overview` carries fifteen `params.pointKey` values, and `U3`
+ * put the one gate on the template path inside `DashboardTemplatesService.publish`:
+ * `assertSourceParamsPointKeysActive` reads `bms.point_keys` on the fleet pool.
+ * With `stp-overview` the only entry this suite published — and published by a
+ * direct `INSERT ... status 'published'` that never calls the service at all —
+ * not one of those fifteen codes ever met the seeded vocabulary. A typo in any
+ * of them shipped green: the unit claims compare the catalog against ITSELF,
+ * and `tests/f3.38` compares it against repository SOURCE, which is not the
+ * same thing as a row in the database an organization actually reads.
+ *
+ * So this half inserts a DRAFT and calls `publish` through the service, which
+ * is the door the stock import path uses, and then instantiates it through the
+ * **organization-wide arm** (`assetGroupId: null`, U8b / ADR 0072 decision 1) —
+ * the only arm it can take: the entry ships zero role bindings, and the group
+ * arm's `assertGroupTargetIsWritable` has nothing to resolve them against.
+ */
+const sustainabilityOverview = STOCK_DASHBOARD_TEMPLATE_CATALOG.find(
+  (entry) => entry.code === "sustainability-overview",
+);
+if (!sustainabilityOverview) {
+  throw new Error("E4.2: the stock catalog no longer carries a `sustainability-overview` entry");
+}
+const SUSTAINABILITY_CONTENT = sustainabilityOverview.content;
+const SUSTAINABILITY_TEMPLATE_CODE = `e42-sust-tmpl-${RUN}`;
+const SUSTAINABILITY_SLUG = `e42-sust-${RUN}`;
+
 describe.skipIf(!connectionString)(
   "F3.45 — stp-overview resolves aeration_do_mgl as bound against a v1 plant asset",
   () => {
@@ -84,6 +120,8 @@ describe.skipIf(!connectionString)(
     let groupId: string | undefined;
     let plantAssetId: string;
     let response: InstantiateSectionTemplateResponse;
+    let sustainabilityPublished: DashboardTemplateDto;
+    let sustainabilityResponse: InstantiateSectionTemplateResponse;
 
     const templateIds: string[] = [];
     const dashboardIds: string[] = [];
@@ -91,7 +129,17 @@ describe.skipIf(!connectionString)(
 
     // Restated rather than exported from the F3.36 wrapper's describe — a
     // shared helper is a second thing to keep honest (the f2.13 precedent).
-    const makeInstantiate = (): DashboardTemplatesInstantiateService => {
+    //
+    // `E4.2` returns BOTH services, because the sustainability half publishes
+    // through `DashboardTemplatesService` — the door `U3`'s point-key check
+    // lives behind — before it instantiates. Building the templates service
+    // twice would give the instantiate service a different instance from the
+    // one that published, which is a difference this suite has no reason to
+    // introduce.
+    const makeServices = (): {
+      templates: DashboardTemplatesService;
+      instantiate: DashboardTemplatesInstantiateService;
+    } => {
       const tenantDb = createDb(tenantPool);
       const accessControl = new AccessControlService(createDb(authPool), fleetDb);
       const audit = new MasterDataAuditService(tenantDb, fleetDb);
@@ -103,13 +151,16 @@ describe.skipIf(!connectionString)(
         audit,
         vocabularies,
       );
-      return new DashboardTemplatesInstantiateService(
-        fleetDb,
-        tenantDb,
-        accessControl,
-        audit,
+      return {
         templates,
-      );
+        instantiate: new DashboardTemplatesInstantiateService(
+          fleetDb,
+          tenantDb,
+          accessControl,
+          audit,
+          templates,
+        ),
+      };
     };
 
     beforeAll(async () => {
@@ -186,13 +237,39 @@ describe.skipIf(!connectionString)(
       if (!templateId) throw new Error("F3.45: template insert returned no id");
       templateIds.push(templateId);
 
-      const service = makeInstantiate();
-      response = await service.instantiate(jwtFor(SEEDED.globalAdmin, "admin"), templateId, {
+      const { templates: templatesService, instantiate: service } = makeServices();
+      const admin = jwtFor(SEEDED.globalAdmin, "admin");
+      response = await service.instantiate(admin, templateId, {
         assetGroupId: groupId,
         slug: DASHBOARD_SLUG,
         name: "F3.45 stp-overview resolution proof",
       });
       dashboardIds.push(response.dashboard.id);
+
+      // ---- E4.2: the sustainability half ---------------------------------
+      //
+      // Inserted as a DRAFT, on purpose. `publish` runs `assertTransition`, so
+      // a row already `published` would skip the method this half exists to
+      // reach — and with it `assertSourceParamsPointKeysActive`, the U3 gate
+      // the fifteen shipped `pointKey` values have never met.
+      const draft = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.dashboard_templates
+           (organization_id, code, version, name, section, status, content)
+         VALUES ($1, $2, 1, 'E4.2 sustainability-overview fixture', 'sustainability', 'draft', $3)
+         RETURNING id`,
+        [eskomOrgId, SUSTAINABILITY_TEMPLATE_CODE, JSON.stringify(SUSTAINABILITY_CONTENT)],
+      );
+      const sustainabilityTemplateId = draft.rows[0]?.id;
+      if (!sustainabilityTemplateId) throw new Error("E4.2: sustainability draft insert returned no id");
+      templateIds.push(sustainabilityTemplateId);
+
+      sustainabilityPublished = await templatesService.publish(admin, sustainabilityTemplateId);
+      sustainabilityResponse = await service.instantiate(admin, sustainabilityTemplateId, {
+        assetGroupId: null,
+        slug: SUSTAINABILITY_SLUG,
+        name: "E4.2 sustainability-overview publish proof",
+      });
+      dashboardIds.push(sustainabilityResponse.dashboard.id);
     }, 60_000);
 
     // The post-merge sweep (F3.45): vitest runs `afterAll` after a failed
@@ -277,6 +354,18 @@ describe.skipIf(!connectionString)(
 
     it("the Aeration DO widget row carries exactly one point, on the fixture asset", () => {
       assertAerationTileRowWasWritten(response, plantAssetId);
+    });
+
+    it("sustainability-overview publishes — its fifteen pointKey values are in the seeded catalog (E4.2 U3)", () => {
+      assertSustainabilityOverviewPublished(sustainabilityPublished);
+    });
+
+    it("sustainability-overview instantiates organization-wide, with no scope column set (E4.2 U8b)", () => {
+      assertSustainabilityInstantiatedOrganizationWide(sustainabilityResponse);
+    });
+
+    it("every one of its 18 widgets resolves — a zero-binding widget is bound", () => {
+      assertSustainabilityWidgetsAllResolve(sustainabilityResponse);
     });
   },
 );

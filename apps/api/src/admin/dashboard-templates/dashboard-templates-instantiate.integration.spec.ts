@@ -276,3 +276,170 @@ export async function assertDraftCannotBeInstantiated(
     } as Parameters<DashboardTemplatesInstantiateService["instantiate"]>[2]),
   ).rejects.toThrow(/Only a published template can be instantiated/i);
 }
+
+// ---------------------------------------------------------------------------
+// `E4.2` U8b — the organization-wide instantiate arm (ADR 0072 decision 1, an
+// amendment to ADR 0049 decision 4)
+// ---------------------------------------------------------------------------
+
+/**
+ * **A section template could not reach the enterprise view, and that is what
+ * this arm fixes.** `instantiateSectionTemplateBodySchema.assetGroupId` was
+ * required and `asset_groups.location_id` is `NOT NULL`, so every instance was
+ * one location's group — the cross-site roll-up ADR 0072 names had nowhere to
+ * land. `assetGroupId` is now nullable **for a template with zero role bindings
+ * only**, and such an instance lands organization-wide: both scope columns
+ * `NULL`, which `dashboards_scope_check` has always allowed.
+ *
+ * The four arms below are asserted separately because they fail separately: the
+ * happy path, the binding refusal, the authorization refusal, and the
+ * asset-group control (`assertResolutionReportCoversEveryOutcome`, unchanged).
+ */
+export async function assertRoleFreeTemplateInstantiatesOrganizationWide(
+  service: DashboardTemplatesInstantiateService,
+  actor: JwtPayload,
+  roleFreeTemplateId: string,
+  slug: string,
+): Promise<{ dashboardId: string; widgetCount: number }> {
+  const response = await service.instantiate(actor, roleFreeTemplateId, {
+    assetGroupId: null,
+    slug,
+    name: "E4.2 organization-wide proof",
+  } as Parameters<DashboardTemplatesInstantiateService["instantiate"]>[2]);
+
+  expect(
+    response.dashboard.assetGroupId,
+    "an organization-wide instance carries NO asset group — ADR 0072 decision 1. This is the " +
+      "enterprise view the roll-up entries resolve over.",
+  ).toBeNull();
+
+  return { dashboardId: response.dashboard.id, widgetCount: response.dashboard.widgets.length };
+}
+
+/**
+ * Both scope columns `NULL` **on the row**, not merely on the DTO — read on a
+ * separate connection, the way the version-stamp assertion above is.
+ *
+ * The positive control is in the same read: `organization_id` is still the
+ * template's. "Both columns null" is an absence assertion, and an insert that
+ * wrote nothing at all would satisfy it without the adjacent check that the row
+ * exists and is homed.
+ */
+export async function assertOrganizationWideRowHasBothScopeColumnsNull(
+  ownerPool: pg.Pool,
+  dashboardId: string,
+  organizationId: string,
+): Promise<void> {
+  const rows = await ownerPool.query<{
+    location_id: string | null;
+    asset_group_id: string | null;
+    organization_id: string;
+  }>(
+    `SELECT location_id, asset_group_id, organization_id FROM bms.dashboards WHERE id = $1`,
+    [dashboardId],
+  );
+  expect(rows.rows[0]?.organization_id, "the row exists and is homed — the positive control").toBe(
+    organizationId,
+  );
+  expect(
+    rows.rows[0]?.location_id,
+    "location_id must be NULL: an organization-wide dashboard has no scope column, which is why " +
+      "only the two organization-level roles may create one (ADR 0047 Amendment 2 ruling 2).",
+  ).toBeNull();
+  expect(
+    rows.rows[0]?.asset_group_id,
+    "asset_group_id must be NULL — the whole point of the new arm.",
+  ).toBeNull();
+}
+
+/**
+ * **The sources' `params` survive the copy.** Instantiation copies `params`
+ * verbatim (it is not re-validated here), and `sustainability.total` is the
+ * first catalog entry whose params carry fields — an instance that landed with
+ * `{}` would render every roll-up tile as a 400 at the next publish and as an
+ * empty tile now, with nothing in this suite to say so.
+ */
+export async function assertOrganizationWideSourceParamsSurvive(
+  ownerPool: pg.Pool,
+  dashboardId: string,
+  expected: ReadonlyArray<Record<string, unknown>>,
+): Promise<void> {
+  const rows = await ownerPool.query<{ catalog_key: string; params: Record<string, unknown> }>(
+    `SELECT s.catalog_key, s.params
+       FROM bms.dashboard_widget_sources s
+       JOIN bms.dashboard_widgets w ON w.id = s.widget_id
+      WHERE w.dashboard_id = $1
+      ORDER BY s.catalog_key`,
+    [dashboardId],
+  );
+  expect(rows.rows.map((row) => row.params)).toEqual(expected);
+}
+
+/**
+ * A template that DOES bind a role refuses a null group with a 400 naming the
+ * reason.
+ *
+ * Roles resolve against the target group's members (ADR 0049 decision 4), so a
+ * role-binding template with no group would instantiate every widget
+ * `unresolved` — a dashboard that looks imported and binds nothing. Refusing is
+ * the only honest answer, and the message has to say which half is missing or
+ * the administrator retries the same call.
+ */
+export async function assertBindingTemplateRefusesNullGroup(
+  service: DashboardTemplatesInstantiateService,
+  ownerPool: pg.Pool,
+  actor: JwtPayload,
+  bindingTemplateId: string,
+  slug: string,
+): Promise<void> {
+  await expect(
+    service.instantiate(actor, bindingTemplateId, {
+      assetGroupId: null,
+      slug,
+      name: "E4.2 binding template null-group proof",
+    } as Parameters<DashboardTemplatesInstantiateService["instantiate"]>[2]),
+  ).rejects.toThrow(/role bindings needs an asset group/i);
+
+  const landed = await ownerPool.query(`SELECT id FROM bms.dashboards WHERE slug = $1`, [slug]);
+  expect(landed.rowCount, "a refused instantiate must leave no dashboard behind").toBe(0);
+}
+
+/**
+ * **A `location_admin` cannot create an organization-wide instance.**
+ *
+ * `canManageDashboard` refuses an all-null scope to every role below
+ * `organization_admin` (ADR 0047 Amendment 2 ruling 2, and its own comment calls
+ * this "the assertion a refactor is most likely to lose"). Without this call on
+ * the new branch a location admin could reach, through the template door, the
+ * exact ownerless row `DashboardsService.create` refuses them.
+ *
+ * The template is the ROLE-FREE one on purpose: the binding guard cannot fire,
+ * so only the authorization refusal can produce this rejection — and the
+ * negative assertion below states it, because one rejected promise cannot
+ * otherwise say which of two guards threw.
+ */
+export async function assertLocationAdminCannotInstantiateOrganizationWide(
+  service: DashboardTemplatesInstantiateService,
+  actor: JwtPayload,
+  roleFreeTemplateId: string,
+  slug: string,
+): Promise<void> {
+  const rejection = await service
+    .instantiate(actor, roleFreeTemplateId, {
+      assetGroupId: null,
+      slug,
+      name: "E4.2 location admin refusal proof",
+    } as Parameters<DashboardTemplatesInstantiateService["instantiate"]>[2])
+    .then(
+      () => null,
+      (err: unknown) => err as Error,
+    );
+
+  expect(rejection, "a location admin must not create an organization-wide dashboard").not.toBeNull();
+  expect(rejection?.message ?? "").toMatch(/organization admin/i);
+  expect(
+    rejection?.message ?? "",
+    "the refusal must be the AUTHORIZATION one, not the binding 400 — the template used here " +
+      "has no bindings, so a message about bindings would mean the wrong guard fired.",
+  ).not.toMatch(/role bindings/i);
+}

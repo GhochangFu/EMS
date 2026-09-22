@@ -1,4 +1,4 @@
-import type { WidgetIcon } from "@bms/shared";
+import type { RollupCoverage, WidgetIcon } from "@bms/shared";
 
 import { WIDGET_ICON_PATH, type ValueTileConfig, type WidgetStatus } from "../../lib/widget-catalog";
 import { toKpiTileProps } from "../../lib/widget-value";
@@ -12,6 +12,9 @@ type ValueTileWidgetProps = {
   config: ValueTileConfig;
   /** `F3.35` — the preceding window's number, when `config.compareToPrevious` asked for one. */
   compareValue?: number | null;
+  /** `E4.2` — the roll-up coverage of a `sustainability.total` binding; absent
+   * for every other metric. */
+  coverage?: RollupCoverage | null;
 };
 
 /**
@@ -66,7 +69,8 @@ export function ValueTileWidget({
   stale,
   config,
   compareValue,
+  coverage,
 }: ValueTileWidgetProps) {
-  const props = toKpiTileProps({ title, status, primary, config, compareValue });
+  const props = toKpiTileProps({ title, status, primary, config, compareValue, coverage });
   return <KpiTile {...props} icon={iconFor(props.icon)} stale={stale && status === "ready"} />;
 }

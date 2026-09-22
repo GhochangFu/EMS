@@ -4,12 +4,15 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addWidgetAddsAWidgetEditor,
+  bindingTemplateHidesTheOrganizationWideOption,
   addingAMetricListsItAndHidesTheRolePicker,
   deleteDraftLandsOnTheList,
   draftShowsPublishAndDelete,
   publishedShowsArchiveAndInstantiate,
   refusedDeleteStaysOnThePage,
+  organizationWideOptionSendsANullAssetGroup,
   resolutionReportNamesAPartialWidget,
+  roleFreeTemplateOffersTheOrganizationWideOption,
 } from "./dashboard-template-detail-page.spec";
 
 /**
@@ -49,5 +52,17 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("a refused Delete draft stays on the page with the error (F3.62)", async () => {
     await refusedDeleteStaysOnThePage();
+  });
+
+  it("a role-free template offers Organization-wide (no group) — E4.2", async () => {
+    await roleFreeTemplateOffersTheOrganizationWideOption();
+  });
+
+  it("a template that binds a role does not offer it", async () => {
+    await bindingTemplateHidesTheOrganizationWideOption();
+  });
+
+  it("choosing Organization-wide sends assetGroupId null", async () => {
+    await organizationWideOptionSendsANullAssetGroup();
   });
 });

@@ -13,8 +13,8 @@ import type { StockAssetTemplateEntry } from "./types";
  * fitted, add what is missing, correct names and units"*; the redline it comes
  * back as is `stockVersion` 2, never an edit to a shipped row (ADR 0015).
  *
- * **21 POINTS — 11 core + 5 extended + 2 manual + 3 derived** (`E4.1c`'s
- * three, `sortOrder` 18–20, after §5's 18 table rows), §5's table rows
+ * **25 POINTS — 11 core + 5 extended + 2 manual + 7 derived** (`E4.1c`'s
+ * three, `sortOrder` 18–20, plus `E4.2`'s four, 21–24, after §5's 18 table rows), §5's table rows
  * in the **document's own order**, which is what `sortOrder` follows. Tier `C`
  * is required and `meta.tier: "core"`; `X` is optional and `"extended"`; `M` is
  * optional and `"manual"`, entered by hand through `F1.8`/`F1.9` and never
@@ -151,6 +151,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *    applying (`minCoverageRatio` governs a `@scope` aggregate only, ADR
  *    0055 decision 11); (4) the flow is tier C, so no `missing_input` arises
  *    on a correctly mapped asset.
+ *  - `water-stp` **v3** (2026-09-22, `E4.2` PR 2): four more `bms-calc-v3`
+ *    derived points appended at `sortOrder` 21–24 (ADR 0072 decision 3, Q7
+ *    ruling (a), plan §3.7) — `kl_this_month`, `kl_this_year`,
+ *    `water_cost_this_month`, `water_cost_this_year`, the calendar-window
+ *    siblings of `kl_today` / `water_cost_today`. The two cost rows price the
+ *    whole period at the tariff effective at evaluation (Q7).
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (influent_flow_klh, effluent_flow_klh, aeration_do_mgl, mlss_mgl, effluent_turbidity_ntu, effluent_ph, effluent_cl2_residual_mgl, blower_status), plus one
@@ -172,7 +178,7 @@ export const WATER_STP: StockAssetTemplateEntry = {
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
     "carry a meaning and no limit, because a limit is set per site at commissioning. A plant " +
     "with no MBR stage or no UV stage strikes those rows at commissioning.",
-  stockVersion: 2,
+  stockVersion: 3,
   content: {
     contentVersion: 1,
     alarms: [
@@ -580,6 +586,41 @@ export const WATER_STP: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 20,
+    },
+    // `E4.2` PR 2 — ADR 0072 decision 3, Q7 ruling (a), plan §3.7. The
+    // calendar-window siblings of kl_today / water_cost_today; the two cost
+    // rows price the whole period at the tariff effective at evaluation (Q7).
+    {
+      ...derived("sum({influent_flow_klh}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_this_month",
+      label: "Inlet water this month (calendar)",
+      unit: "KL",
+      required: false,
+      sortOrder: 21,
+    },
+    {
+      ...derived("sum({influent_flow_klh}, this_year)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_this_year",
+      label: "Inlet water this year (calendar)",
+      unit: "KL",
+      required: false,
+      sortOrder: 22,
+    },
+    {
+      ...derived("sum({influent_flow_klh}, this_month) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_this_month",
+      label: "Water cost this month (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 23,
+    },
+    {
+      ...derived("sum({influent_flow_klh}, this_year) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_this_year",
+      label: "Water cost this year (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 24,
     },
   ],
 };

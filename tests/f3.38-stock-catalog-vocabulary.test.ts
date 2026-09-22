@@ -107,8 +107,12 @@ const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   "packages/shared/src/facility-point-keys.ts": 206,
   // 29 since E4.1c PR 2b: SUSTAINABILITY_ELECTRICAL_POINT_KEYS's 16 +
   // SUSTAINABILITY_WATER_POINT_KEYS's 3 (PR 2a) + the mechanical 5, HVAC 1
-  // and facility 4 PR 2b appended.
-  "packages/shared/src/sustainability-point-keys.ts": 29,
+  // and facility 4 PR 2b appended. **43 since E4.2 PR 2**: 29 + electrical's
+  // 9 (energy_cost_this_month/_this_year, co2_kg_this_month/_this_year,
+  // kwh_this_month/_this_year, co2_avoided_kg_this_month/_this_year,
+  // operational_efficiency_pct) + water's 5 (kl_this_month/_this_year,
+  // water_cost_this_month/_this_year, water_recycle_pct).
+  "packages/shared/src/sustainability-point-keys.ts": 43,
 };
 
 /** The sources as one list, for an assertion message. */
@@ -298,15 +302,37 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
    */
   it("the scan actually found the catalog", () => {
     // 23 = 15 before + 8 in the new entry, over both files in `STOCK_RELS`.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
+    // **38 since `E4.2` PR 2 (U8)** — 23 (the pre-U8 actual) + the fifteen
+    // `pointKey:` occurrences `sustainability-overview`'s fourteen new
+    // sustainability.total value_tiles and its one sustainability.by_location
+    // table each carry (the three kept tiles — alarms/workorders/health —
+    // bind a catalogKey with no pointKey). Measured, not derived: raised past
+    // the actual (999999) to read the true 38, then set here.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(38);
     expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(23);
-    // Five: electrical, water, stp, etp, hvac. `sustainability` holds no point
-    // binding at all and must not — the assertion at the end of this file's
-    // sibling spec is what keeps it that way.
+    // **Six since `E4.2` PR 2 (U8), and it was five until then.** The five were
+    // electrical, water, stp, etp and hvac; `sustainability` held no point
+    // binding at all, because its template shipped catalog SOURCES with no
+    // params. U8 gave it fifteen (`sustainability.total` on fourteen tiles plus
+    // `sustainability.by_location` on the benchmark table), so the old sentence
+    // here — "sustainability holds no point binding at all and must not" — is
+    // now false and the floor that went with it was slack: at five, the whole
+    // sustainability template could be parsed as nothing and this stayed green.
+    // Measured: electrical 11, sustainability 15, water/stp/etp/hvac 3 each.
+    const sections = new Set(pointKeys.map((entry) => entry.section));
     expect(
-      new Set(pointKeys.map((entry) => entry.section)).size,
+      sections.size,
       "every pointKey was attributed to one section — the section tracker is broken",
-    ).toBeGreaterThanOrEqual(5);
+    ).toBeGreaterThanOrEqual(6);
+    // Named, not just counted: a sixth section arriving while the whole
+    // sustainability template went unparsed would clear the floor above on the
+    // newcomer alone, and the fifteen codes U8 added would be checked against
+    // no vocabulary at all.
+    expect(
+      [...sections],
+      "no pointKey was attributed to the sustainability section — U8's fifteen bindings are " +
+        "not being scanned, so the membership claims below run over a set without them",
+    ).toContain("sustainability");
     // **Per source first.** The union below cannot say which file supplied it,
     // so a mistyped second path would leave `constants.ts`'s 396 clearing a
     // union floor of 396 with the whole facility pack parsed as nothing.

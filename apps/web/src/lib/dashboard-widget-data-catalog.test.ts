@@ -1,11 +1,13 @@
 import { describe, it } from "vitest";
 
 import {
+  runAbsentCoverageIsNullOnTheScalarArmTests,
   runBindingSurvivesARegeneratedSourceIdTests,
   runCatalogBindingSelectionTests,
   runCatalogBoundTileIsNotEmptyTests,
   runCatalogGateTests,
   runCatalogStalenessTests,
+  runCoverageReachesTheScalarArmTests,
   runDatasetBindingProducesRowsTests,
   runDatasetOnATileRendersNoValueTests,
   runUnansweredDatasetKeepsItsHeaderTests,
@@ -49,5 +51,15 @@ describe("F3.35 Stage C — catalog staleness", () => {
 describe("F3.35 Stage C — the catalog read gate", () => {
   it("stays off for every dashboard that binds no catalog entry", () => {
     runCatalogGateTests();
+  });
+});
+
+describe("E4.2 — roll-up coverage on the scalar arm", () => {
+  it("carries a resolved coverage through to the renderer", () => {
+    runCoverageReachesTheScalarArmTests();
+  });
+
+  it("reads null when the metric emits no coverage", () => {
+    runAbsentCoverageIsNullOnTheScalarArmTests();
   });
 });

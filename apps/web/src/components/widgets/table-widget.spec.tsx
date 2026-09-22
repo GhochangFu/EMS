@@ -194,3 +194,72 @@ export function anEmptyProjectionAsksTheAuthorToFixIt(): void {
   // Not the empty-dataset wording — the two states have different remedies.
   expect(screen.queryByText(/Nothing to show right now/i)).toBeNull();
 }
+
+/**
+ * `E4.2` U10, ADR 0072 decision 2 — the benchmark table.
+ *
+ * `sustainability.by_location` declares `locationCode · locationName · value ·
+ * coverage`, and `coverage` is the string `"fresh/carrying"` because a dataset
+ * cell is `string | number | boolean | null` and cannot carry an object (plan
+ * OQ4). **No renderer code was written for this** — the claim is exactly that
+ * the existing column labels and `tableCellText` already produce the right card,
+ * and a claim of "needs no code" is worth nothing unless something renders it.
+ */
+const BY_LOCATION_COLUMNS = ["locationCode", "locationName", "value", "coverage"];
+
+const BY_LOCATION_ROWS: DatasetRow[] = [
+  { locationCode: "WC-01", locationName: "Western Cape", value: 1234.5, coverage: "4/6" },
+  // A site with assets and no meters: the roll-up has nothing to report, which
+  // is a null value rather than a zero (ADR 0072 decision 2 — `0/0`).
+  { locationCode: "GP-02", locationName: "Gauteng", value: null, coverage: "0/0" },
+];
+
+/** The four §5 labels, written out rather than mapped — a test that mapped would
+ * pass against a map returning the raw column names. */
+export function theBenchmarkTableReadsItsFourLabels(): void {
+  render(
+    <TableWidget
+      title="Benchmark"
+      status="ready"
+      config={{}}
+      columns={BY_LOCATION_COLUMNS}
+      rows={BY_LOCATION_ROWS}
+      truncated={false}
+    />,
+  );
+
+  expect(headerTexts()).toEqual(["Site ID", "Site", "Value", "Coverage"]);
+}
+
+/** The coverage cell renders the `"n/m"` string verbatim. */
+export function theBenchmarkCoverageCellRendersTheRatio(): void {
+  render(
+    <TableWidget
+      title="Benchmark"
+      status="ready"
+      config={{ columns: ["coverage"] }}
+      columns={BY_LOCATION_COLUMNS}
+      rows={BY_LOCATION_ROWS}
+      truncated={false}
+    />,
+  );
+
+  expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["4/6", "0/0"]);
+}
+
+/** A site with no value renders the em dash, beside a site that has one — the
+ * adjacent positive control, in the same render. */
+export function theBenchmarkNullValueRendersTheEmDash(): void {
+  render(
+    <TableWidget
+      title="Benchmark"
+      status="ready"
+      config={{ columns: ["value"] }}
+      columns={BY_LOCATION_COLUMNS}
+      rows={BY_LOCATION_ROWS}
+      truncated={false}
+    />,
+  );
+
+  expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["1234.5", "—"]);
+}

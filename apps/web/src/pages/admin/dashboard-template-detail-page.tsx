@@ -384,7 +384,7 @@ function InstantiateDialog({
   const instantiateM = useMutation({
     mutationFn: () =>
       instantiateAdminDashboardTemplate(template.id, {
-        assetGroupId,
+        assetGroupId: assetGroupId === ORGANIZATION_WIDE ? null : assetGroupId,
         slug: slug.trim(),
         name: name.trim(),
       }),
@@ -394,6 +394,24 @@ function InstantiateDialog({
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
+
+  /**
+   * **`E4.2`, ADR 0072 decision 1 — the organization-wide option, offered only
+   * when the template binds no role.**
+   *
+   * A binding resolves against the target asset group's members (ADR 0049
+   * decision 4), so a template that binds one cannot instantiate without a group
+   * and the API refuses it with a 400. Offering the option anyway would put a
+   * choice in front of an administrator that is always an error — and the 400
+   * arrives after the slug and the name have been typed.
+   *
+   * Read from `template.content`, which the detail response already carries, so
+   * this costs no second fetch.
+   */
+  const bindsARole = template.content.widgets.some((widget) => widget.bindings.length > 0);
+  /** The sentinel the select uses for "no group". `""` is already taken by the
+   * "select one…" placeholder, which must stay unsubmittable. */
+  const ORGANIZATION_WIDE = "__organization_wide__";
 
   const canSubmit = assetGroupId !== "" && slug.trim() !== "" && name.trim() !== "";
 
@@ -417,6 +435,10 @@ function InstantiateDialog({
                 className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
               >
                 <option value="">Select an asset group…</option>
+                {/* `E4.2` / ADR 0072 decision 1 — see `bindsARole` above. */}
+                {bindsARole ? null : (
+                  <option value={ORGANIZATION_WIDE}>Organization-wide (no group)</option>
+                )}
                 {/**
                  * **The location qualifier is not decoration.** This rendered
                  * `group.name` alone, and a multi-location organization names

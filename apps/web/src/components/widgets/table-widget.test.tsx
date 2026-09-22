@@ -9,6 +9,9 @@ import {
   noProjectionShowsEveryDeclaredColumn,
   theConfigProjectionReachesTheHeader,
   truncationIsAnnouncedOnlyWhenItHappened,
+  theBenchmarkCoverageCellRendersTheRatio,
+  theBenchmarkNullValueRendersTheEmDash,
+  theBenchmarkTableReadsItsFourLabels,
 } from "./table-widget.spec";
 
 /** `F3.35` Stage B — Vitest wrapper for the table renderer (ADR 0014). */
@@ -39,5 +42,23 @@ describe("F3.35 Stage B — the table widget", () => {
 
   it("distinguishes a stale projection from an empty dataset", () => {
     anEmptyProjectionAsksTheAuthorToFixIt();
+  });
+});
+
+describe("E4.2 — the sustainability benchmark table", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("reads Site ID · Site · Value · Coverage", () => {
+    theBenchmarkTableReadsItsFourLabels();
+  });
+
+  it("renders the coverage ratio string verbatim", () => {
+    theBenchmarkCoverageCellRendersTheRatio();
+  });
+
+  it("renders the em dash for a site with no value, beside one that has one", () => {
+    theBenchmarkNullValueRendersTheEmDash();
   });
 });
