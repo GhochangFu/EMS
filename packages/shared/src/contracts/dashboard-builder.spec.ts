@@ -834,7 +834,9 @@ export function metricArmRefusesNegativeFresh(): void {
 /** `sustainability.by_location` is a dataset with exactly the four benchmark columns. */
 export function byLocationDeclaresTheFourColumns(): void {
   const entry = METRIC_CATALOG["sustainability.by_location"];
-  assert(entry.shape === "dataset", "sustainability.by_location must be a dataset");
+  if (entry.shape !== "dataset") {
+    throw new Error("sustainability.by_location must be a dataset");
+  }
   assert(
     JSON.stringify(entry.columns) ===
       JSON.stringify(["locationCode", "locationName", "value", "coverage"]),
