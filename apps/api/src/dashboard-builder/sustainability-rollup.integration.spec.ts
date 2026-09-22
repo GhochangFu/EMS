@@ -1,5 +1,6 @@
 import { expect } from "vitest";
 
+import { MAX_DATASET_ROWS } from "@bms/shared";
 import type { DashboardCatalogValuesResponse, MetricCatalogValueDto } from "@bms/shared";
 
 import type { MetricCatalogService } from "./metric-catalog.service";
@@ -170,4 +171,30 @@ export async function byLocationUnderTheCapIsNotTruncated(f: RollupFixture): Pro
   const table = valueOf(await resolveWide(f, f.wideTableDashboardId), f.wideTableSourceId);
   if (table.shape !== "dataset") throw new Error("by_location must resolve to a dataset");
   expect(table.truncated).toBe(false);
+}
+
+/** What the 201-location fixture hands its one claim. */
+export type CapFixture = {
+  readonly service: MetricCatalogService;
+  readonly orgId: string;
+  readonly dashboardId: string;
+  readonly sourceId: string;
+  /** The 201 template-less assets, one per location — the caller's readable set. */
+  readonly assetIds: readonly string[];
+};
+
+/**
+ * 201 locations in scope, each owning one asset that carries nothing: the table returns
+ * exactly `MAX_DATASET_ROWS` rows and `truncated: true`. This is the claim the mutations
+ * `capped.truncated -> false` and "remove the `+ 1` limit" must redden; the two-location
+ * control above stays green under both.
+ */
+export async function byLocationOverTheCapIsTruncated(f: CapFixture): Promise<void> {
+  const response = await f.service.resolveForDashboard(f.orgId, f.dashboardId, [...f.assetIds]);
+  const table = valueOf(response, f.sourceId);
+  if (table.shape !== "dataset") throw new Error("by_location must resolve to a dataset");
+  expect({ rows: table.rows.length, truncated: table.truncated }).toEqual({
+    rows: MAX_DATASET_ROWS,
+    truncated: true,
+  });
 }

@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { MAX_DATASET_ROWS } from "@bms/shared";
 
 import { AssetHealthService } from "../asset-health/asset-health.service";
 import {
@@ -28,6 +29,8 @@ import {
   wideSumExcludesTheStaleAssetButCountsIt,
   assetScopedDashboardRollsUpItsOneAsset,
   byLocationUnderTheCapIsNotTruncated,
+  byLocationOverTheCapIsTruncated,
+  type CapFixture,
   type RollupFixture,
 } from "./sustainability-rollup.integration.spec";
 
@@ -332,5 +335,110 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
 
   it("reports truncated: false for two locations (the cap control)", async () => {
     await byLocationUnderTheCapIsNotTruncated(fixture);
+  });
+});
+
+/**
+ * The cap fixture (review): 201 per-run locations, each with one template-less asset, so every
+ * row is `null` / "0/0" and no telemetry is needed. Two multi-row INSERTs; the read is scoped to
+ * the 201 assets through `readableAssetIds`, so the other fixture's locations do not join.
+ */
+describe.skipIf(!connectionString)("E4.2 U4 — the by_location cap is reached", () => {
+  const COUNT = MAX_DATASET_ROWS + 1;
+  let superuserPool: pg.Pool;
+  let fleetPool: pg.Pool;
+  let tenantPool: pg.Pool;
+  let fixture: CapFixture;
+  let orgId = "";
+  let dashboardId = "";
+  let locationIds: string[] = [];
+  let assetIds: string[] = [];
+
+  beforeAll(async () => {
+    const url = connectionString as string;
+    const POOL = { max: 1 } as const;
+    superuserPool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(url, "superuser", process.env),
+      "E4.2 U4 cap",
+      POOL,
+    );
+    fleetPool = await openIntegrationPool(url, "E4.2 U4 cap", POOL);
+    tenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
+      "E4.2 U4 cap",
+      POOL,
+    );
+    const fleetDb = createDb(fleetPool);
+    const service = new MetricCatalogService(
+      createDb(tenantPool),
+      fleetDb,
+      undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
+      new AssetHealthService(fleetDb),
+    );
+
+    const org = await fleetPool.query<{ id: string }>(
+      `SELECT id FROM bms.organizations WHERE code = 'ESKOM' LIMIT 1`,
+    );
+    orgId = org.rows[0]?.id ?? "";
+    if (!orgId) throw new Error("E4.2 U4 cap: ESKOM organization not found — run pnpm db:seed");
+    const domain = await fleetPool.query<{ code: string }>(
+      `SELECT code FROM bms.asset_domains ORDER BY code LIMIT 1`,
+    );
+    const domainCode = domain.rows[0]?.code ?? "";
+
+    const tags = Array.from({ length: COUNT }, (_, i) => String(i).padStart(3, "0"));
+    const locs = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+       SELECT $1, 'E42C' || t || '-' || $2, 'e42c' || t || '-' || $2, 'E4.2 cap ' || t, 'csmoc', 0, 0
+         FROM unnest($3::text[]) AS t
+       RETURNING id`,
+      [orgId, RUN, tags],
+    );
+    locationIds = locs.rows.map((row) => row.id);
+    const assets = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+       SELECT $1, l.id, 'E42C-' || l.code, 'E4.2 cap asset', 'E4.2', $2
+         FROM bms.locations l WHERE l.id = ANY($3::uuid[])
+       RETURNING id`,
+      [orgId, domainCode, locationIds],
+    );
+    assetIds = assets.rows.map((row) => row.id);
+    if (locationIds.length !== COUNT || assetIds.length !== COUNT) {
+      throw new Error(`E4.2 U4 cap: expected ${COUNT} locations and assets`);
+    }
+
+    const dash = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboards (organization_id, slug, name) VALUES ($1, $2, 'E4.2 U4 cap')
+       RETURNING id`,
+      [orgId, `e42u4-cap-${RUN}`],
+    );
+    dashboardId = dash.rows[0]?.id ?? "";
+    const widget = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboard_widgets (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
+       VALUES ($1, $2, 'table', 0, 0, 6, 4) RETURNING id`,
+      [orgId, dashboardId],
+    );
+    const source = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboard_widget_sources (organization_id, widget_id, catalog_key, params)
+       VALUES ($1, $2, 'sustainability.by_location', '{"pointKey": "kl_today", "aggregate": "sum"}')
+       RETURNING id`,
+      [orgId, widget.rows[0]?.id],
+    );
+    fixture = { service, orgId, dashboardId, sourceId: source.rows[0]?.id ?? "", assetIds };
+  }, 120_000);
+
+  afterAll(async () => {
+    if (dashboardId) await superuserPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [dashboardId]);
+    if (assetIds.length > 0) {
+      await superuserPool.query(`DELETE FROM bms.assets WHERE id = ANY($1::uuid[])`, [assetIds]);
+    }
+    if (locationIds.length > 0) {
+      await superuserPool.query(`DELETE FROM bms.locations WHERE id = ANY($1::uuid[])`, [locationIds]);
+    }
+    await Promise.all([superuserPool, fleetPool, tenantPool].filter(Boolean).map((p) => p.end()));
+  }, 60_000);
+
+  it("returns exactly MAX_DATASET_ROWS rows and truncated: true over 201 locations", async () => {
+    await byLocationOverTheCapIsTruncated(fixture);
   });
 });
