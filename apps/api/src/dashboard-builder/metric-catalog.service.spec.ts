@@ -1,3 +1,7 @@
+import type { BmsDb } from "@bms/db";
+import { METRIC_CATALOG } from "@bms/shared";
+
+import { AssetHealthService } from "../asset-health/asset-health.service";
 import type { BmsTx } from "../database/tenant-context";
 import { RESOLVERS } from "./metric-catalog.service";
 
@@ -27,7 +31,43 @@ const refusingTx = (): BmsTx => {
   return { execute: refuse, select: refuse } as unknown as BmsTx;
 };
 
-const noDeps = { health: undefined } as unknown as Parameters<(typeof RESOLVERS)["sustainability.total"]>[3];
+/** A database that refuses every statement, behind the REAL `AssetHealthService` — so the
+ * `assets.health.score` claim is about `assetsInScope`'s own empty-list guard, not a stub. */
+const refusingDb = (): BmsDb =>
+  new Proxy({} as BmsDb, {
+    get: (_target, property) => () => {
+      throw new Error(`the health service built SQL (${String(property)}) for an empty scope`);
+    },
+  });
+
+const noDeps = { health: new AssetHealthService(refusingDb()) } as Parameters<
+  (typeof RESOLVERS)["sustainability.total"]
+>[3];
+
+/** What each entry's parsed params look like — `{}` for the Stage C five, the pair for the two. */
+const paramsFor = (key: string): unknown =>
+  key.startsWith("sustainability.") ? { pointKey: "kl_today", aggregate: "sum" } : {};
+
+/**
+ * The sentence over `RESOLVERS` generalises over EVERY entry, so the gate enumerates them:
+ * each catalog key resolves over `[]` without a statement, and an eighth entry added without
+ * its guard fails here rather than in a `Logger.warn`. Keyed on `METRIC_CATALOG` (the shared
+ * declaration) so a key the record forgot is a type error, not a silent skip.
+ */
+export async function everyEntryOnAnEmptyScopeBuildsNoSql(): Promise<void> {
+  const keys = Object.keys(METRIC_CATALOG) as (keyof typeof RESOLVERS)[];
+  assert(keys.length >= 7, `expected the seven catalog entries, saw ${keys.length}`);
+  const failures: string[] = [];
+  for (const key of keys) {
+    try {
+      const resolved = await RESOLVERS[key](refusingTx(), "org", [], noDeps, paramsFor(key));
+      if (resolved.key !== key) failures.push(`${key}: answered as ${resolved.key}`);
+    } catch (error) {
+      failures.push(`${key}: ${(error as Error).message}`);
+    }
+  }
+  same(failures, [], "entries that built SQL for an empty scope");
+}
 
 /**
  * `sustainability.total` on an empty scope answers `0/0`, `null`, no unit and no currency

@@ -155,7 +155,8 @@ export type SustainabilityFacilityPointKey = (typeof SUSTAINABILITY_FACILITY_POI
  * `occupancy_count`, every `*_per_day` count …), and reading it as "money"
  * put a currency on a power factor. `E4.2` PR 2 appends its four cost period
  * codes here. A client-authored money point that is not listed gets
- * `currency: null` — a recorded limitation (ADR 0072 Amendment 1).
+ * `currency: null` — a limitation to be recorded in ADR 0072 Amendment 1
+ * (the closure PR's).
  *
  * **Not a domain array, and its name must not end in `POINT_KEYS`.** The three
  * text guards above parse `export const <NAME>_POINT_KEYS = [` — `[A-Z_]*`,

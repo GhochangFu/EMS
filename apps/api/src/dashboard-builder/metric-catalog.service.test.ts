@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   byLocationOnAnEmptyScopeBuildsNoSql,
+  everyEntryOnAnEmptyScopeBuildsNoSql,
   totalOnAnEmptyScopeBuildsNoSql,
 } from "./metric-catalog.service.spec";
 
@@ -13,5 +14,9 @@ describe("E4.2 sweep — the catalog's resolvers on an empty scope (no database)
 
   it("sustainability.by_location answers an empty dataset before any SQL (the control)", async () => {
     await byLocationOnAnEmptyScopeBuildsNoSql();
+  });
+
+  it("every catalog entry answers an empty scope before any SQL (the sentence over RESOLVERS)", async () => {
+    await everyEntryOnAnEmptyScopeBuildsNoSql();
   });
 });
