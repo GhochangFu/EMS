@@ -29,6 +29,7 @@ import { resolveWidgetSources } from "./dashboard-source-scope";
 import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 import {
   capRows,
+  isMoneyPointKey,
   readOrganizationCurrency,
   readPointKeyUnit,
   readRollupRows,
@@ -559,19 +560,19 @@ const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
   /**
    * `E4.2` / ADR 0072 decision 2 — `pointKey` rolled up across the carrying assets in scope.
    * `coverage` and `currency` are the metric arm's two optional fields and this is the one
-   * entry that emits them; `currency` is the organization's only for a money point (unit
-   * `""`, the E4.1c spelling), else `null`. An empty scope is `0/0` and `null`, like the
-   * other entries' "no source".
+   * entry that emits them; `currency` is the organization's only for a LISTED money code
+   * (`MONEY_POINT_KEY_CODES`, sweep ruling 2026-09-22 — the unit `""` is the no-unit
+   * spelling of 247 codes and decides nothing), else `null`. An empty scope is `0/0` and
+   * `null`, like the other entries' "no source".
    */
   "sustainability.total": async (tx, organizationId, scope, _deps, params) => {
     const { pointKey, aggregate } = params as SustainabilityParams;
     const rows = await readRollupRows(tx, organizationId, scope, pointKey);
     const { value, coverage } = rollup(rows, aggregate);
     const unit = await readPointKeyUnit(tx, pointKey);
-    const currency =
-      unit === ""
-        ? rollupCurrency(new Set([await readOrganizationCurrency(tx, organizationId)]))
-        : null;
+    const currency = isMoneyPointKey(pointKey)
+      ? rollupCurrency(new Set([await readOrganizationCurrency(tx, organizationId)]))
+      : null;
     return {
       shape: "metric",
       key: "sustainability.total",

@@ -4,6 +4,7 @@ import {
   MEASURED_ROLLUP_FRESH_MS,
   capRows,
   freshnessBoundSeconds,
+  isMoneyPointKey,
   rollup,
   rollupCurrency,
 } from "./sustainability-rollup";
@@ -71,6 +72,19 @@ export function twoCurrenciesAreNull(): void {
 /** A row with no currency beside one with a currency is `null` — a null is its own "currency". */
 export function aNullBesideACurrencyIsNull(): void {
   same(rollupCurrency(new Set(["INR", null])), null, "rollupCurrency({INR, null})");
+}
+
+/** A listed money code takes the organization's currency (sweep, owner ruling 2026-09-22). */
+export function aListedMoneyCodeIsMoney(): void {
+  same(isMoneyPointKey("energy_cost_today"), true, "isMoneyPointKey(energy_cost_today)");
+}
+
+/**
+ * `pf` carries the empty-string unit like every count and ratio — 247 codes share that
+ * spelling — and is NOT money: the list decides, never the unit.
+ */
+export function anUnlistedNoUnitCodeIsNotMoney(): void {
+  same(isMoneyPointKey("pf"), false, "isMoneyPointKey(pf)");
 }
 
 /** A scheduled derived point at 60 s is fresh for 180 s (3 × interval). */

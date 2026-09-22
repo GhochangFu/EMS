@@ -37,6 +37,8 @@ export type RollupFixture = {
   /** A `{ water_cost_today, sum }` by_location table on the money dashboard: no template carries it. */
   readonly wideMoneyTableSourceId: string;
   readonly wideMoneyAlarmsSourceId: string;
+  /** A `{ pf, avg }` tile on the money dashboard: unit `""` like money, and NOT money. */
+  readonly widePfSourceId: string;
   readonly nopeSourceId: string;
   /** A dashboard scoped to asset A alone (F3.2 asset scope), one `{ kl_today, sum }` tile. */
   readonly assetScopedDashboardId: string;
@@ -131,6 +133,16 @@ export async function moneyTileCarriesTheOrganizationCurrency(f: RollupFixture):
 /** The `kl_today` tile (unit `KL`) carries `currency: null`. */
 export async function quantityTileCarriesNoCurrency(f: RollupFixture): Promise<void> {
   const tile = metricOf(await resolveWide(f, f.l1DashboardId), f.l1SumSourceId);
+  expect(tile.currency).toBeNull();
+}
+
+/**
+ * The `pf` tile carries `currency: null` (sweep, owner ruling 2026-09-22): `""` is the shared
+ * no-unit spelling of 247 codes, and only a listed money code takes the currency. The
+ * `water_cost_today` claim above is this claim's positive control.
+ */
+export async function noUnitNonMoneyTileCarriesNoCurrency(f: RollupFixture): Promise<void> {
+  const tile = metricOf(await resolveWide(f, f.wideMoneyDashboardId), f.widePfSourceId);
   expect(tile.currency).toBeNull();
 }
 

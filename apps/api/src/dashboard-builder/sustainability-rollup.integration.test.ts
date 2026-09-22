@@ -23,6 +23,7 @@ import {
   l1SumIsThirtyWithFullCoverage,
   measuredPointUsesTheFifteenMinuteBound,
   moneyTileCarriesTheOrganizationCurrency,
+  noUnitNonMoneyTileCarriesNoCurrency,
   olderMetricEmitsNoCoverageOrCurrency,
   quantityTileCarriesNoCurrency,
   unparseableBindingIsSkippedNotThrown,
@@ -215,6 +216,8 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       { widgetType: "value_tile", catalogKey: "alarms.active.count", params: {} },
       // Hand-inserted past the write schema: the resolver must skip it, not throw.
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: { pointKey: "nope", aggregate: "sum" } },
+      // Appended (the source ids above are positional): unit `""` and NOT money — no currency.
+      { widgetType: "value_tile", catalogKey: "sustainability.total", params: { pointKey: "pf", aggregate: "avg" } },
     ]);
     const assetDash = await mkDashboard("asset", null, assetA, [
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: sum("kl_today") },
@@ -253,6 +256,7 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       wideMoneySourceId: moneyDash.sourceIds[0] ?? "",
       wideMoneyTableSourceId: moneyDash.sourceIds[1] ?? "",
       wideMoneyAlarmsSourceId: moneyDash.sourceIds[2] ?? "",
+      widePfSourceId: moneyDash.sourceIds[4] ?? "",
       nopeSourceId: broken.rows[0]?.id ?? "",
       assetScopedDashboardId: assetDash.dashboardId,
       assetScopedSourceId: assetDash.sourceIds[0] ?? "",
@@ -315,6 +319,10 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
 
   it("carries currency: null on a quantity point", async () => {
     await quantityTileCarriesNoCurrency(fixture);
+  });
+
+  it("carries currency: null on pf — unit \"\" but not a listed money code", async () => {
+    await noUnitNonMoneyTileCarriesNoCurrency(fixture);
   });
 
   it("skips a binding whose stored params fail the write schema, without throwing", async () => {

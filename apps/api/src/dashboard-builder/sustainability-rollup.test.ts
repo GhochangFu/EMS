@@ -1,8 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  aListedMoneyCodeIsMoney,
   aNullBesideACurrencyIsNull,
   allStaleIsNullNotZero,
+  anUnlistedNoUnitCodeIsNotMoney,
   avgSkipsTheStaleRowButCountsIt,
   capRowsAtTheCapIsNotTruncated,
   capRowsFlagsThe201stRow,
@@ -43,6 +45,14 @@ describe("E4.2 U4 — the sustainability roll-up's pure half", () => {
 
   it("returns null when a null sits beside a currency", () => {
     aNullBesideACurrencyIsNull();
+  });
+
+  it("treats a listed money code as money", () => {
+    aListedMoneyCodeIsMoney();
+  });
+
+  it("does not treat pf (unit \"\", unlisted) as money", () => {
+    anUnlistedNoUnitCodeIsNotMoney();
   });
 
   it("bounds a scheduled derived point at three intervals", () => {
