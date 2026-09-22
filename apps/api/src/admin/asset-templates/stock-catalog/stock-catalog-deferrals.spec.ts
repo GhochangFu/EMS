@@ -697,17 +697,20 @@ export function runStockCatalogDeferralTests(): void {
   // the per-entry loop's above, run over `DEFERRED_DERIVED_CODES[FEEDER_CODE]`
   // like every other entry's. This is the positive half, which only this entry
   // has: the three `F2.8` authored, then the six `E4.1c` authored (ADR 0070
-  // decision 8, plan §3.7), in `sortOrder` order, and nothing else.
+  // decision 8, plan §3.7), then `E4.2` PR 2's six more (ADR 0072 decision 3,
+  // Q7 ruling (a)), in `sortOrder` order, and nothing else.
   const feeder = requireStockEntry(FEEDER_CODE);
   const derived = feeder.points.filter((point) => point.kind === "derived").map((point) => point.pointKey);
   const FEEDER_AUTHORED =
     "site_kw,it_kw,pue," +
-    "energy_cost_per_h,co2_kg_per_h,energy_cost_today,co2_kg_today,energy_saving_vs_baseline_pct,demand_vs_contract_pct";
+    "energy_cost_per_h,co2_kg_per_h,energy_cost_today,co2_kg_today,energy_saving_vs_baseline_pct,demand_vs_contract_pct," +
+    "kwh_this_month,kwh_this_year,energy_cost_this_month,energy_cost_this_year,co2_kg_this_month,co2_kg_this_year";
   assert(
     derived.join(",") === FEEDER_AUTHORED,
-    `${FEEDER_CODE} must author exactly F2.8's site_kw, it_kw and pue, then E4.1c's six, in that order — got ` +
-      `${derived.join(", ") || "(none)"}. The first three are ruling 1 of F2.8's gate; the six are ADR 0070 ` +
-      `decision 8's (one of them, demand_vs_contract_pct, a promotion out of this ledger); anything else ` +
+    `${FEEDER_CODE} must author exactly F2.8's site_kw, it_kw and pue, then E4.1c's six, then E4.2's six, ` +
+      `in that order — got ${derived.join(", ") || "(none)"}. The first three are ruling 1 of F2.8's gate; ` +
+      `the next six are ADR 0070 decision 8's (one of them, demand_vs_contract_pct, a promotion out of ` +
+      `this ledger); the last six are ADR 0072 decision 3's; anything else ` +
       `is a deferred code or an unruled one. ${deferralReason(FEEDER_CODE)}`,
   );
   assert(

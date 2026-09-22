@@ -196,6 +196,18 @@ import type { StockAssetTemplateEntry } from "./types";
  *         refuses `demand_vs_contract_pct` as `missing_input`, visibly.
  *         `kwh_today` stays MEASURED (Q3): the today rows read
  *         `delta({kwh_total}, today)` themselves.
+ * *  - `electrical-feeder` **v4** (2026-09-22, `E4.2` PR 2): six more `bms-calc-v3`
+ *    derived points appended at `sortOrder` 42–47 (ADR 0072 decision 3, Q7
+ *    ruling (a), plan §3.7) — `kwh_this_month`, `kwh_this_year`,
+ *    `energy_cost_this_month`, `energy_cost_this_year`, `co2_kg_this_month`,
+ *    `co2_kg_this_year`. `kwh_this_month`/`_this_year` are the ONLY new
+ *    codes here with no `$key`: they read `delta({kwh_total}, …)` alone —
+ *    `kwh_today` stays MEASURED, but a monthly or annual register does not
+ *    exist on the meter, so the window rows are DERIVED (unlike `kwh_today`,
+ *    Q3 does not apply). The four cost/CO₂ rows price the WHOLE calendar
+ *    period at the `$key` effective at the evaluation instant (Q7): a
+ *    mid-period tariff or factor change re-prices the whole period from the
+ *    next sweep, never a piecewise figure — each label says so.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (kw, kva, pf, current_a, frequency_hz, kwh_today, breaker_main, meter_comms_ok), plus one
@@ -216,7 +228,7 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
     "docs/electrical-derived-taglist-v1.md §1 (PROVISIONAL — derived from industry practice, " +
     "not client-confirmed). Tier C points are required, tier X optional; alarm rows carry a " +
     "meaning and no limit — limits are set per site at commissioning.",
-  stockVersion: 3,
+  stockVersion: 4,
   content: {
     contentVersion: 1,
     alarms: [
@@ -519,6 +531,60 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 41,
+    },
+    // `E4.2` PR 2 — ADR 0072 decision 3, Q7 ruling (a), plan §3.7. Six more
+    // bms-calc-v3 rows: the calendar-window siblings of energy_cost_today /
+    // co2_kg_today, plus the two derived kwh windows (kwh_today stays
+    // MEASURED per Q3; a monthly/annual register does not exist). Every cost
+    // and CO₂ code prices the whole period at the $key effective at
+    // evaluation (Q7) — the label says so.
+    {
+      ...derived("delta({kwh_total}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kwh_this_month",
+      label: "Energy this month (calendar)",
+      unit: "kWh",
+      required: false,
+      sortOrder: 42,
+    },
+    {
+      ...derived("delta({kwh_total}, this_year)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kwh_this_year",
+      label: "Energy this year (calendar)",
+      unit: "kWh",
+      required: false,
+      sortOrder: 43,
+    },
+    {
+      ...derived("delta({kwh_total}, this_month) * $energy_tariff_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "energy_cost_this_month",
+      label: "Energy cost this month (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 44,
+    },
+    {
+      ...derived("delta({kwh_total}, this_year) * $energy_tariff_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "energy_cost_this_year",
+      label: "Energy cost this year (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 45,
+    },
+    {
+      ...derived("delta({kwh_total}, this_month) * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "co2_kg_this_month",
+      label: "CO₂ emitted this month (at the factor effective now)",
+      unit: "kg",
+      required: false,
+      sortOrder: 46,
+    },
+    {
+      ...derived("delta({kwh_total}, this_year) * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "co2_kg_this_year",
+      label: "CO₂ emitted this year (at the factor effective now)",
+      unit: "kg",
+      required: false,
+      sortOrder: 47,
     },
   ],
 };

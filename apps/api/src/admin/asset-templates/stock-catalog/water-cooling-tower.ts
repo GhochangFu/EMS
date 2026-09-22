@@ -9,9 +9,10 @@ import type { StockAssetTemplateEntry } from "./types";
  * **SOURCE.** `docs/e5.1-derived-taglist-v1.md` §4 — *"Cooling water / cooling
  * tower"*. PROVISIONAL: derived from published practice, not client-confirmed.
  *
- * **24 POINTS — 10 core + 6 extended + 1 manual + 7 DERIVED.** §4's 17 table
+ * **28 POINTS — 10 core + 6 extended + 1 manual + 11 DERIVED.** §4's 17 table
  * rows in the document's own order (`sortOrder` 0-16), then the four authored
- * derived codes (17-20), then `E4.1c`'s three `v3` rows (21-23). This is **the entry the derived machinery is first
+ * derived codes (17-20), then `E4.1c`'s three `v3` rows (21-23), then
+ * `E4.2`'s four (24-27, VERSION HISTORY v3). This is **the entry the derived machinery is first
  * proved on** in the water pack: four formulas, one `maxInputAgeSeconds`
  * override, and the first alarms anywhere in the catalog that bind a computed
  * point rather than a measured one.
@@ -147,6 +148,13 @@ import type { StockAssetTemplateEntry } from "./types";
  *    applying (`minCoverageRatio` governs a `@scope` aggregate only, ADR
  *    0055 decision 11); (4) the flow is tier C, so no `missing_input` arises
  *    on a correctly mapped asset.
+ *  - `water-cooling-tower` **v3** (2026-09-22, `E4.2` PR 2): four more
+ *    `bms-calc-v3` derived points appended at `sortOrder` 24–27 (ADR 0072
+ *    decision 3, Q7 ruling (a), plan §3.7) — `kl_this_month`,
+ *    `kl_this_year`, `water_cost_this_month`, `water_cost_this_year`, the
+ *    calendar-window siblings of `kl_today` / `water_cost_today`. The two
+ *    cost rows price the whole period at the tariff effective at evaluation
+ *    (Q7).
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (supply_temp_c, return_temp_c, circ_flow_klh, makeup_flow_klh, basin_level_pct, circ_conductivity_uscm, circ_ph, fan_status), plus one
@@ -171,7 +179,7 @@ export const WATER_COOLING_TOWER: StockAssetTemplateEntry = {
     "percentage of circulation, plus make-up water today, its cost and its saving against the " +
     "daily baseline (bms-calc-v3) — are computed from the measured rows and need no extra " +
     "instrument.",
-  stockVersion: 2,
+  stockVersion: 3,
   content: {
     contentVersion: 1,
     alarms: [
@@ -569,6 +577,41 @@ export const WATER_COOLING_TOWER: StockAssetTemplateEntry = {
       unit: "%",
       required: false,
       sortOrder: 23,
+    },
+    // `E4.2` PR 2 — ADR 0072 decision 3, Q7 ruling (a), plan §3.7. The
+    // calendar-window siblings of kl_today / water_cost_today; the two cost
+    // rows price the whole period at the tariff effective at evaluation (Q7).
+    {
+      ...derived("sum({makeup_flow_klh}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_this_month",
+      label: "Inlet water this month (calendar)",
+      unit: "KL",
+      required: false,
+      sortOrder: 24,
+    },
+    {
+      ...derived("sum({makeup_flow_klh}, this_year)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "kl_this_year",
+      label: "Inlet water this year (calendar)",
+      unit: "KL",
+      required: false,
+      sortOrder: 25,
+    },
+    {
+      ...derived("sum({makeup_flow_klh}, this_month) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_this_month",
+      label: "Water cost this month (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 26,
+    },
+    {
+      ...derived("sum({makeup_flow_klh}, this_year) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "water_cost_this_year",
+      label: "Water cost this year (at the tariff effective now)",
+      unit: "",
+      required: false,
+      sortOrder: 27,
     },
   ],
 };

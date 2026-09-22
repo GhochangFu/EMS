@@ -74,6 +74,11 @@ const RO_POINTS: readonly PointRow[] = [
   ["kl_today", "derived", "KL"],
   ["water_cost_today", "derived", ""],
   ["water_saving_vs_baseline_pct", "derived", "%"],
+  // E4.2 PR 2: four more calendar-window rows over the same inlet
+  ["kl_this_month", "derived", "KL"],
+  ["kl_this_year", "derived", "KL"],
+  ["water_cost_this_month", "derived", ""],
+  ["water_cost_this_year", "derived", ""],
 ];
 
 /** §2's two expressible derived codes. Both keep the 300 s default. */
@@ -88,6 +93,11 @@ const RO_DERIVED: readonly DerivedRow[] = [
   ["kl_today", "sum({feed_flow_klh}, today)", null],
   ["water_cost_today", "sum({feed_flow_klh}, today) * $water_tariff_per_kl", null],
   ["water_saving_vs_baseline_pct", "(1 - sum({feed_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
+  // E4.2 PR 2: four more calendar-window rows over the same inlet
+  ["kl_this_month", "sum({feed_flow_klh}, this_month)", null],
+  ["kl_this_year", "sum({feed_flow_klh}, this_year)", null],
+  ["water_cost_this_month", "sum({feed_flow_klh}, this_month) * $water_tariff_per_kl", null],
+  ["water_cost_this_year", "sum({feed_flow_klh}, this_year) * $water_tariff_per_kl", null],
 ];
 
 /** §2's six alarm bullets, one row each — nothing splits on this entry. */
@@ -145,17 +155,17 @@ function assertRecoveryIsOneCodeTwoFormulas(): void {
  */
 function checkRo(): void {
   const entry = requireStockEntry(RO_CODE);
-  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water", 2);
+  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water", 3);
 
-  // ---- 21 points, 10 core + 5 extended + 1 manual + 5 derived (3 E4.1c) -------------
+  // ---- 25 points, 10 core + 5 extended + 1 manual + 9 derived (3 E4.1c + 4 E4.2) -------------
 
   assert(
     tierCount(entry, "core") === 10 &&
       tierCount(entry, "extended") === 5 &&
       tierCount(entry, "manual") === 1 &&
-      tierCount(entry, "derived") === 5,
+      tierCount(entry, "derived") === 9,
     `§2 marks 10 rows C, 5 X and 1 M, and two of its four §2 derived codes are authored, plus ` +
-      `E4.1c's three v3 rows — 10/5/1/5. ` +
+      `E4.1c's three v3 rows and E4.2 PR 2's four more — 10/5/1/9. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
@@ -270,13 +280,22 @@ const SOFTENER_POINTS: readonly PointRow[] = [
   ["kl_today", "derived", "KL"],
   ["water_cost_today", "derived", ""],
   ["water_saving_vs_baseline_pct", "derived", "%"],
+  // E4.2 PR 2: four more calendar-window rows over the same inlet
+  ["kl_this_month", "derived", "KL"],
+  ["kl_this_year", "derived", "KL"],
+  ["water_cost_this_month", "derived", ""],
+  ["water_cost_this_year", "derived", ""],
 ];
 
-/** E4.1c's three v3 rows (plan §3.7), default input age. */
+/** E4.1c's three v3 rows (plan §3.7), default input age, plus E4.2's four. */
 const SOFTENER_DERIVED: readonly DerivedRow[] = [
   ["kl_today", "sum({inlet_flow_klh}, today)", null],
   ["water_cost_today", "sum({inlet_flow_klh}, today) * $water_tariff_per_kl", null],
   ["water_saving_vs_baseline_pct", "(1 - sum({inlet_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", null],
+  ["kl_this_month", "sum({inlet_flow_klh}, this_month)", null],
+  ["kl_this_year", "sum({inlet_flow_klh}, this_year)", null],
+  ["water_cost_this_month", "sum({inlet_flow_klh}, this_month) * $water_tariff_per_kl", null],
+  ["water_cost_this_year", "sum({inlet_flow_klh}, this_year) * $water_tariff_per_kl", null],
 ];
 
 /** §3's four alarm bullets, one row each — nothing splits on this entry. */
@@ -295,17 +314,17 @@ const SOFTENER_ALARMS: readonly AlarmRow[] = [
  */
 function checkSoftener(): void {
   const entry = requireStockEntry(SOFTENER_CODE);
-  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water", 2);
+  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water", 3);
 
-  // ---- 12 points, 4 core + 3 extended + 2 manual + 3 derived (3 E4.1c) ---------------
+  // ---- 16 points, 4 core + 3 extended + 2 manual + 7 derived (3 E4.1c + 4 E4.2) ---------------
 
   assert(
     tierCount(entry, "core") === 4 &&
       tierCount(entry, "extended") === 3 &&
       tierCount(entry, "manual") === 2 &&
-      tierCount(entry, "derived") === 3,
+      tierCount(entry, "derived") === 7,
     `§3 marks 4 rows C, 3 X and 2 M, and all three of its §3 derived codes are deferred; ` +
-      `E4.1c's three v3 rows are the only derived rows — 4/3/2/3. ` +
+      `E4.1c's three v3 rows and E4.2 PR 2's four more are the only derived rows — 4/3/2/7. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
@@ -394,24 +413,38 @@ export function runWaterClassEntryTests3(): void {
 // code, one meaning ("KL of inlet water today"). Pinned through
 // `sustainabilityClaims`, one `it()` per claim in the wrapper.
 
-/** water-ro over `{feed_flow_klh}`, §2's inlet — plan §3.7. */
+/**
+ * water-ro over `{feed_flow_klh}`, §2's inlet — plan §3.7. Seven rows, not
+ * three, since `E4.2` PR 2 — the same reason `water-classes.spec.ts`'s
+ * `STP_E41C` gives: `sustainabilityClaims`'s `tail()` reads the entry's LAST
+ * `rows.length` points, and the four calendar-window rows are appended right
+ * after these three with nothing between.
+ */
 const RO_E41C: readonly SustainabilityRow[] = [
   ["kl_today", "sum({feed_flow_klh}, today)", "KL"],
   ["water_cost_today", "sum({feed_flow_klh}, today) * $water_tariff_per_kl", ""],
   ["water_saving_vs_baseline_pct", "(1 - sum({feed_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+  ["kl_this_month", "sum({feed_flow_klh}, this_month)", "KL"],
+  ["kl_this_year", "sum({feed_flow_klh}, this_year)", "KL"],
+  ["water_cost_this_month", "sum({feed_flow_klh}, this_month) * $water_tariff_per_kl", ""],
+  ["water_cost_this_year", "sum({feed_flow_klh}, this_year) * $water_tariff_per_kl", ""],
 ];
 
-/** water-softener over `{inlet_flow_klh}`, §3's inlet — plan §3.7. */
+/** water-softener over `{inlet_flow_klh}`, §3's inlet — plan §3.7. Seven rows, the same reason as RO's above. */
 const SOFTENER_E41C: readonly SustainabilityRow[] = [
   ["kl_today", "sum({inlet_flow_klh}, today)", "KL"],
   ["water_cost_today", "sum({inlet_flow_klh}, today) * $water_tariff_per_kl", ""],
   ["water_saving_vs_baseline_pct", "(1 - sum({inlet_flow_klh}, today) / ($water_baseline_kl_per_day * hours(today) / 24)) * 100", "%"],
+  ["kl_this_month", "sum({inlet_flow_klh}, this_month)", "KL"],
+  ["kl_this_year", "sum({inlet_flow_klh}, this_year)", "KL"],
+  ["water_cost_this_month", "sum({inlet_flow_klh}, this_month) * $water_tariff_per_kl", ""],
+  ["water_cost_this_year", "sum({inlet_flow_klh}, this_year) * $water_tariff_per_kl", ""],
 ];
 
 /** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
 export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
-  ["water-softener", SOFTENER_E41C, 9, 2],
-  ["water-ro", RO_E41C, 18, 2],
+  ["water-softener", SOFTENER_E41C, 9, 3],
+  ["water-ro", RO_E41C, 18, 3],
 ];
 
 export function e41cWaterClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {

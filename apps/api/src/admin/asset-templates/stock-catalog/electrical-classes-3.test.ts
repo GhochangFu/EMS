@@ -12,10 +12,11 @@ import {
   assertParamRefsControl,
   assertScheduledAt60,
   assertSortOrder36To41,
-  assertStockVersion3,
+  assertStockVersion4,
   assertUnitsPerPlan,
   E41C_FEEDER_FORMULAS,
   e41cElectricalClaims,
+  e42FeederClaims,
   runFeederTagListBlock,
 } from "./electrical-classes-3.spec";
 
@@ -83,12 +84,17 @@ describe("stock asset-template catalog — the feeder class (F2.13 §1, F2.8, E4
     assertKwhTodayStillMeasured();
   });
 
-  it("E4.1c — stockVersion is 3 (ruling 10)", () => {
-    assertStockVersion3();
+  it("E4.2 — stockVersion is 4 (ruling 10, v3 → v4)", () => {
+    assertStockVersion4();
   });
 
   // The transformer, DG set, solar PV and APFC rows — one it() per claim.
   for (const [name, run] of e41cElectricalClaims()) {
+    it(name, run);
+  }
+
+  // E4.2 PR 2 — the feeder's six calendar-window rows, sortOrder 42–47.
+  for (const [name, run] of e42FeederClaims()) {
     it(name, run);
   }
 });
