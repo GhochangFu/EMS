@@ -242,3 +242,39 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
     );
   }
 }
+
+/**
+ * `E4.2` U9 — the controller passes `section` through to the service.
+ *
+ * **Its own function with its own `it()`, because an optional parameter at an
+ * adapter is invisible.** `list()`'s signature gained a fourth optional
+ * argument, so the controller keeps compiling whether or not it forwards one —
+ * the feature ships inert and every existing test stays green. Only the
+ * recorded argument list can say it is wired.
+ */
+export async function listForwardsTheSectionQueryToTheService(): Promise<void> {
+  const seen: unknown[][] = [];
+  const list = (...args: unknown[]) => {
+    seen.push(args);
+    return Promise.resolve({ items: [] });
+  };
+  const { controller } = controllerWith({
+    service: { list: list as unknown as ServiceStub["list"] },
+  });
+
+  await controller.list(ADMIN, { section: "sustainability" });
+  assert(
+    seen[0]?.[3] === "sustainability",
+    `list() must receive the section as its fourth argument; got ${JSON.stringify(seen[0])}`,
+  );
+
+  // The adjacent control: an omitted `section` must arrive as `undefined`, not
+  // as the previous call's value or an empty string — `queryString` on the web
+  // side already drops an empty one, so an empty string here would be a filter
+  // the client can never clear.
+  await controller.list(ADMIN, {});
+  assert(
+    seen[1]?.[3] === undefined,
+    `an omitted section must reach the service as undefined; got ${JSON.stringify(seen[1])}`,
+  );
+}

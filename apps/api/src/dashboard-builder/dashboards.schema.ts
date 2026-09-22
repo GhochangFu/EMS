@@ -6,6 +6,7 @@ import {
   bindingShapeMessage,
   CATALOG_CODE_MESSAGE,
   CATALOG_CODE_PATTERN,
+  dashboardSectionCodeSchema,
   sustainabilityAggregateSchema,
   chartConfigSchema,
   tableConfigSchema,
@@ -162,6 +163,17 @@ export type UpdateDashboardBody = z.infer<typeof updateDashboardBodySchema>;
 export const listDashboardsQuerySchema = z.object({
   organizationId: z.string().uuid().optional(),
   assetId: z.string().uuid().optional(),
+  /**
+   * `E4.2` / ADR 0072 decision 1 — the dashboards of one section, which is what
+   * the *Sustainability* sidebar entry opens.
+   *
+   * **`dashboardSectionCodeSchema`, the one declaration**, and not a second
+   * `z.string().max(64)` here: `bms.dashboard_sections` is an open vocabulary
+   * (ADR 0049 Amendment 2 decision 5), so an unknown code is a filter that
+   * matches nothing rather than a 400 — the same treatment `assetId` gets, and
+   * for the same ruling-4 reason (a refusal would confirm which codes exist).
+   */
+  section: dashboardSectionCodeSchema.optional(),
 });
 
 /** `GET /dashboards/:slug` — D5: on the fleet pool a slug may match more than one

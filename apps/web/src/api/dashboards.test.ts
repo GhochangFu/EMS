@@ -1,9 +1,11 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  fetchDashboardsSendsAllThreeKeysInOrder,
   fetchDashboardsSendsAssetIdAlone,
   fetchDashboardsSendsNoQueryWhenUnfiltered,
   fetchDashboardsSendsOrganizationIdThenAssetId,
+  fetchDashboardsSendsSectionAlone,
 } from "./dashboards.spec";
 
 /**
@@ -27,5 +29,13 @@ describe("F3.31 dashboards web client — assetId reaches the wire", () => {
 
   it("sends no query string at all when unfiltered", async () => {
     await fetchDashboardsSendsNoQueryWhenUnfiltered();
+  });
+
+  it("sends ?section= alone when only the section is given (E4.2)", async () => {
+    await fetchDashboardsSendsSectionAlone();
+  });
+
+  it("sends all three keys in the helper insertion order (E4.2)", async () => {
+    await fetchDashboardsSendsAllThreeKeysInOrder();
   });
 });

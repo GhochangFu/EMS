@@ -96,8 +96,11 @@ export type UpdateDashboardPayload = Partial<Omit<CreateDashboardPayload, "organ
 export async function fetchDashboards(
   organizationId?: string,
   assetId?: string,
+  /** `E4.2` / ADR 0072 decision 1 — one dashboard section, as the Sustainability
+   * entry opens it. An unknown code answers `{ items: [] }`, never a 400. */
+  section?: string,
 ): Promise<DashboardsListResponse> {
-  const path = `/dashboards${queryString({ organizationId, assetId })}`;
+  const path = `/dashboards${queryString({ organizationId, assetId, section })}`;
   return dashboardsFetch(path, dashboardsListResponseSchema, "dashboards");
 }
 
