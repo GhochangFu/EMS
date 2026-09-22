@@ -2,12 +2,14 @@ import { describe, it } from "vitest";
 
 import {
   runAbsentCoverageIsNullOnTheScalarArmTests,
+  runAbsentCurrencyIsNullOnTheScalarArmTests,
   runBindingSurvivesARegeneratedSourceIdTests,
   runCatalogBindingSelectionTests,
   runCatalogBoundTileIsNotEmptyTests,
   runCatalogGateTests,
   runCatalogStalenessTests,
   runCoverageReachesTheScalarArmTests,
+  runCurrencyReachesTheScalarArmTests,
   runDatasetBindingProducesRowsTests,
   runDatasetOnATileRendersNoValueTests,
   runUnansweredDatasetKeepsItsHeaderTests,
@@ -61,5 +63,15 @@ describe("E4.2 — roll-up coverage on the scalar arm", () => {
 
   it("reads null when the metric emits no coverage", () => {
     runAbsentCoverageIsNullOnTheScalarArmTests();
+  });
+});
+
+describe("E4.2 sweep — the money currency on the scalar arm", () => {
+  it("carries a resolved currency through to the renderer", () => {
+    runCurrencyReachesTheScalarArmTests();
+  });
+
+  it("reads null when the metric emits no currency", () => {
+    runAbsentCurrencyIsNullOnTheScalarArmTests();
   });
 });

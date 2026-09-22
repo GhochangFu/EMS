@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  aMoneyMetricRendersTheFormattedAmount,
+  aNonMoneyTileIsUnaffectedByTheCurrencyPath,
+  aNullCurrencyRendersThePlainNumber,
   coverageNoteIsSilentWhenEveryAssetIsFresh,
   coverageNoteIsSilentWhenNoAssetCarriesTheCode,
   coverageNoteIsSilentWithoutACoverageObject,
@@ -138,5 +141,19 @@ describe("widget-value", () => {
 
   it("puts the note in its own slot, leaving the hint alone", () => {
     theNoteDoesNotDisplaceTheHint();
+  });
+});
+
+describe("E4.2 sweep — the money tile renders the organization's currency", () => {
+  it("renders the formatted amount for a metric that ships a currency", () => {
+    aMoneyMetricRendersTheFormattedAmount();
+  });
+
+  it("renders the plain number when the currency is null", () => {
+    aNullCurrencyRendersThePlainNumber();
+  });
+
+  it("leaves a non-money tile's own formatting alone", () => {
+    aNonMoneyTileIsUnaffectedByTheCurrencyPath();
   });
 });

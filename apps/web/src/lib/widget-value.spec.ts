@@ -422,3 +422,70 @@ export function theNoteDoesNotDisplaceTheHint(): void {
   expect(props.hint).toBe("Author-typed note");
   expect(props.note).toBe("4 of 6 assets");
 }
+
+/**
+ * `E4.2` PR 2 post-merge sweep (owner ruling 2026-09-22) — **the money tile
+ * renders the currency the API already ships.**
+ *
+ * `metricCatalogValueDtoSchema` has carried `currency` on the metric arm since
+ * PR 1 and `sustainability.total` fills it for the seven money codes, but no
+ * reader existed: *Energy cost this year* drew a bare `1245000` under the
+ * static hint "organization currency", and nothing on the tile told INR from
+ * ZAR. ADR 0070 consequence 8 says the tile shows it.
+ *
+ * The expected string is COMPUTED from `Intl.NumberFormat`, never pinned —
+ * `money.spec.ts`'s rule, so the claim is locale-neutral — and the plain
+ * rendering is asserted to differ, so a `formatMoney` that silently returned
+ * the bare number could not pass.
+ */
+export function aMoneyMetricRendersTheFormattedAmount(): void {
+  const expected = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(1_245_000);
+  const props = toKpiTileProps({
+    title: "Energy cost this year",
+    status: "ready",
+    primary: 1_245_000,
+    config: {},
+    currency: "INR",
+  });
+  expect(props.value, `expected the INR-formatted amount ${JSON.stringify(expected)}`).toBe(expected);
+  expect(expected, "the control on the control — the currency string is not the bare number").not.toBe(
+    "1245000",
+  );
+}
+
+/**
+ * The adjacent positive control: the SAME amount with no currency still renders
+ * the plain number. `sustainability.total` answers `currency: null` for a scope
+ * that spans two currencies and for every non-money code, and the tile must not
+ * then read `null`, `undefined` or `NaN`.
+ */
+export function aNullCurrencyRendersThePlainNumber(): void {
+  const props = toKpiTileProps({
+    title: "Energy cost this year",
+    status: "ready",
+    primary: 1_245_000,
+    config: {},
+    currency: null,
+  });
+  expect(props.value).toBe("1245000");
+}
+
+/**
+ * A non-money tile is unaffected: no `currency` argument at all, and the
+ * `decimals`/`abbreviate` formatting the three older metrics rely on still
+ * applies. A currency branch that swallowed those options would silently
+ * reformat every tile on every dashboard.
+ */
+export function aNonMoneyTileIsUnaffectedByTheCurrencyPath(): void {
+  const props = toKpiTileProps({
+    title: "Water this month",
+    status: "ready",
+    primary: 1_250_000,
+    config: { abbreviate: true, decimals: 1 },
+  });
+  expect(props.value).toBe("1.25M");
+}

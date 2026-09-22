@@ -141,6 +141,16 @@ import type { StockAssetTemplateEntry } from "./types";
  *    calendar-window siblings of `kl_today` / `water_cost_today`. The two
  *    cost rows price the whole period at the tariff effective at evaluation
  *    (Q7).
+ *  - `water-softener` **v4** (2026-09-22, `E4.2` PR 2 post-merge sweep): no new
+ *    point. The four calendar-window labels gained the qualifier *estimated
+ *    over the whole period* and the entry `description` says why: a window
+ *    `sum` is `(Σ sum_value / Σ sample_count) * hoursOf(start, end)`
+ *    (`combineSegments`, `calc/calc-window-plan.ts`), so a period the meter
+ *    was offline for part of still reports a whole period, and the row is
+ *    rewritten every sweep so the roll-up counts the asset as fresh. ADR 0070
+ *    consequence 9 states it; ADR 0072 did not carry it forward. Label text
+ *    is written into `bms.template_points` at import, so a tenant on v3 keeps
+ *    the unqualified label until it re-imports.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
  * view, tiling the class's headline measured points as `value_tile`s in table order
@@ -164,8 +174,13 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     "docs/e5.1-derived-taglist-v1.md §3 (PROVISIONAL — derived from published practice, not " +
     "client-confirmed). Tier C points are required, X optional, M entered by hand; alarm rows " +
     "carry a meaning and no limit, because the rated exchange capacity a softener is judged " +
-    "against is an attribute of the vessel and is set per site at commissioning.",
-  stockVersion: 3,
+    "against is an attribute of the vessel and is set per site at commissioning." +
+    " The four calendar-window rows (kl_this_month, kl_this_year, water_cost_this_month, " +
+    "water_cost_this_year) are a window sum: the mean of the samples that arrived, multiplied by " +
+    "every hour that has elapsed in the period. A meter that was offline for part of the period " +
+    "still reports a whole period, and the derived point is rewritten at every sweep, so a roll-up " +
+    "still counts the asset as fresh. Read those four as an estimate, not as a meter reading.",
+  stockVersion: 4,
   content: {
     contentVersion: 1,
     alarms: [
@@ -408,7 +423,7 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     {
       ...derived("sum({inlet_flow_klh}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
       pointKey: "kl_this_month",
-      label: "Inlet water this month (calendar)",
+      label: "Inlet water this month (calendar, estimated over the whole period)",
       unit: "KL",
       required: false,
       sortOrder: 12,
@@ -416,7 +431,7 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     {
       ...derived("sum({inlet_flow_klh}, this_year)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
       pointKey: "kl_this_year",
-      label: "Inlet water this year (calendar)",
+      label: "Inlet water this year (calendar, estimated over the whole period)",
       unit: "KL",
       required: false,
       sortOrder: 13,
@@ -424,7 +439,7 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     {
       ...derived("sum({inlet_flow_klh}, this_month) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
       pointKey: "water_cost_this_month",
-      label: "Water cost this month (at the tariff effective now)",
+      label: "Water cost this month (at the tariff effective now, estimated over the whole period)",
       unit: "",
       required: false,
       sortOrder: 14,
@@ -432,7 +447,7 @@ export const WATER_SOFTENER: StockAssetTemplateEntry = {
     {
       ...derived("sum({inlet_flow_klh}, this_year) * $water_tariff_per_kl", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
       pointKey: "water_cost_this_year",
-      label: "Water cost this year (at the tariff effective now)",
+      label: "Water cost this year (at the tariff effective now, estimated over the whole period)",
       unit: "",
       required: false,
       sortOrder: 15,

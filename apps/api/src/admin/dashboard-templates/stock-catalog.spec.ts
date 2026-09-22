@@ -324,12 +324,13 @@ const SUSTAINABILITY_TILE_BINDINGS: ReadonlyArray<readonly [string, string, stri
   ["co2-this-year-tile", "co2_kg_this_year", "sum"],
 ];
 
-/** `sustainability-overview` is `stockVersion: 2` (`E4.2` PR 2, ADR 0072). */
+/** `sustainability-overview` is `stockVersion: 3` (`E4.2` PR 2 post-merge sweep). */
 export function runSustainabilityStockVersionTest(): void {
   const entry = sustainabilityEntry();
   assert(
-    entry.stockVersion === 2,
-    `sustainability-overview must be stockVersion 2 (E4.2 PR 2) — got ${String(entry.stockVersion)}`,
+    entry.stockVersion === 3,
+    `sustainability-overview must be stockVersion 3 (E4.2 PR 2 post-merge sweep — the currency ` +
+      `the tile now renders, and the KL unit spelling) — got ${String(entry.stockVersion)}`,
   );
 }
 

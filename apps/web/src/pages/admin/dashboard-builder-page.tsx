@@ -11,6 +11,13 @@ import { canCreateOrganizationWideDashboard } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { isScopeChosen, scopeColumns, type ChosenScopeValue } from "../../lib/dashboard-scope";
 import {
+  DASHBOARD_SLUG_HINT,
+  DASHBOARD_SLUG_MAX,
+  DASHBOARD_SLUG_MIN,
+  DASHBOARD_SLUG_PATTERN,
+  isDashboardSlug,
+} from "../../lib/dashboard-slug";
+import {
   blankDashboardWidgetRow,
   buildPutWidgetsPayload,
   dashboardBuilderErrors,
@@ -84,7 +91,10 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
   // disables with a reason nothing on the page shows.
   const summaryProblems = unselectedDashboardBuilderProblems(problems, selected);
   const scopeChosen = isScopeChosen(scope);
-  const blocked = name.trim() === "" || slug.trim() === "" || !scopeChosen || problems.length > 0;
+  // `E4.2` PR 2 sweep — the same slug rule the instantiate dialog now gates on.
+  // `dashboardFieldsSchema.slug` is `.min(2).max(64)` on `/^[a-z0-9-]+$/`, and a
+  // non-empty check let a typed name reach the API as a 400.
+  const blocked = name.trim() === "" || !isDashboardSlug(slug.trim()) || !scopeChosen || problems.length > 0;
 
   const saveM = useMutation({
     mutationFn: async () => {
@@ -158,14 +168,27 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                 className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
               />
             </label>
-            <label className="block space-y-1 text-xs">
-              <span className="font-semibold uppercase tracking-wide text-bms-muted">Slug</span>
-              <input
-                value={slug}
-                onChange={(event) => setSlug(event.target.value)}
-                className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
-              />
-            </label>
+            {/* The hint sits outside the `<label>` — see the instantiate
+                dialog's note: a wrapping label folds its whole text into the
+                field's accessible name. */}
+            <div className="space-y-1">
+              <label className="block space-y-1 text-xs">
+                <span className="font-semibold uppercase tracking-wide text-bms-muted">Slug</span>
+                <input
+                  value={slug}
+                  onChange={(event) => setSlug(event.target.value)}
+                  pattern={DASHBOARD_SLUG_PATTERN}
+                  minLength={DASHBOARD_SLUG_MIN}
+                  maxLength={DASHBOARD_SLUG_MAX}
+                  title={DASHBOARD_SLUG_HINT}
+                  aria-describedby="dashboard-slug-hint"
+                  className="w-full rounded border border-gray-200 px-2 py-1.5 text-xs"
+                />
+              </label>
+              <span id="dashboard-slug-hint" className="block text-[11px] text-bms-muted">
+                {DASHBOARD_SLUG_HINT}
+              </span>
+            </div>
           </div>
           <div className="mt-3">
             <DashboardScopeFields

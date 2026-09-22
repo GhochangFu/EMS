@@ -195,7 +195,7 @@ const STP_ALARMS: readonly AlarmRow[] = [
  */
 function checkStp(): void {
   const entry = requireStockEntry(STP_CODE);
-  assertEntryIdentity(STP_CODE, entry, "stp", "water", 3);
+  assertEntryIdentity(STP_CODE, entry, "stp", "water", 4);
 
   // ---- 25 points, 11 core + 5 extended + 2 manual + 7 derived (3 E4.1c + 4 E4.2) ----
 
@@ -351,7 +351,7 @@ const ETP_ALARMS: readonly AlarmRow[] = [
  */
 function checkEtp(): void {
   const entry = requireStockEntry(ETP_CODE);
-  assertEntryIdentity(ETP_CODE, entry, "etp", "water", 3);
+  assertEntryIdentity(ETP_CODE, entry, "etp", "water", 4);
 
   // ---- 24 points, 7 core + 8 extended + 2 manual + 7 derived (3 E4.1c + 4 E4.2) --------------
 
@@ -480,8 +480,8 @@ const ETP_E41C: readonly SustainabilityRow[] = [
 
 /** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
 export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
-  ["water-etp", ETP_E41C, 17, 3],
-  ["water-stp", STP_E41C, 18, 3],
+  ["water-etp", ETP_E41C, 17, 4],
+  ["water-stp", STP_E41C, 18, 4],
 ];
 
 export function e41cWaterClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {

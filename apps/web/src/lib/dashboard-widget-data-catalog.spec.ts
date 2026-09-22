@@ -557,3 +557,61 @@ export function runAbsentCoverageIsNullOnTheScalarArmTests(): void {
     )}`,
   );
 }
+
+/**
+ * `E4.2` PR 2 sweep (owner ruling 2026-09-22) — a resolved `currency` reaches
+ * the scalar arm, exactly as `coverage` does.
+ *
+ * The threading is the whole claim, for `coverage`'s reason: `currency` is
+ * optional on the contract's `metric` arm, so a `widgetDataFor` that never
+ * copied it type-checks and every existing fixture stays green — and the money
+ * tiles draw a bare number forever, which is what shipped in PR 2.
+ */
+const COST_WITH_CURRENCY = (value: number, currency: string | null): MetricCatalogValueDto => ({
+  shape: "metric",
+  key: "alarms.active.count",
+  value,
+  unit: null,
+  currency,
+});
+
+export function runCurrencyReachesTheScalarArmTests(): void {
+  const data = widgetDataFor(
+    tileWith([SOURCE]),
+    EMPTY_LATEST,
+    EMPTY_HISTORY,
+    NOW,
+    undefined,
+    resolution([[BINDING, COST_WITH_CURRENCY(1_245_000, "INR")]]),
+  );
+  assert(
+    isScalarData(data) && data.currency === "INR",
+    `a resolved currency must reach the scalar arm, got ${JSON.stringify(
+      isScalarData(data) ? data.currency : undefined,
+    )}`,
+  );
+}
+
+/** The other direction: a metric that emits no currency reads `null` on the arm,
+ * never `undefined` — a missing key and an explicit null must not mean two
+ * different things to the renderer. */
+export function runAbsentCurrencyIsNullOnTheScalarArmTests(): void {
+  const data = widgetDataFor(
+    tileWith([SOURCE]),
+    EMPTY_LATEST,
+    EMPTY_HISTORY,
+    NOW,
+    undefined,
+    resolution([[BINDING, COUNT_OF(7)]]),
+  );
+  assert(
+    isScalarData(data) && data.primary === 7,
+    "the positive control — this fixture resolved, so the null below is about currency alone",
+  );
+  assert(
+    isScalarData(data) && data.currency === null,
+    `a metric that emits no currency must read null, got ${JSON.stringify(
+      isScalarData(data) ? data.currency : undefined,
+    )}`,
+  );
+}

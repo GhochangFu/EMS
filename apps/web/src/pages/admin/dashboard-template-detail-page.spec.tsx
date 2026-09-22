@@ -352,3 +352,39 @@ export async function organizationWideOptionSendsANullAssetGroup(): Promise<void
   });
   expect((calls[0] as { assetGroupId: unknown }).assetGroupId).toBeNull();
 }
+
+/**
+ * `E4.2` PR 2 sweep — **the dialog gates on the slug RULE, not on emptiness.**
+ *
+ * PR 2 tightened `instantiateSectionTemplateBodySchema.slug` to
+ * `.min(2).max(64)` on `/^[a-z0-9-]+$/` and left `canSubmit` asking only for a
+ * character, so an administrator who typed a name filled the whole form and got
+ * a 400 on submit.
+ *
+ * The enabled half is the adjacent positive control, and it is in this function
+ * on purpose: a dialog whose button was disabled for an unrelated reason (a
+ * group never chosen, a mutation in flight) would pass the refusal alone.
+ */
+export async function aTypedNameLeavesTheInstantiateButtonDisabled(): Promise<void> {
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(roleFreeTemplate()) });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  await userEvent.selectOptions(
+    await screen.findByRole("combobox", { name: "Asset group" }),
+    "__organization_wide__",
+  );
+  const slugField = screen.getByRole("textbox", { name: "Slug" });
+  await userEvent.type(slugField, "Sustainability Overview");
+  expect(
+    screen.getByRole("button", { name: "Confirm instantiate" }),
+    "a capital and a space are a 400 from the API — the form must not offer to send them",
+  ).toBeDisabled();
+
+  await userEvent.clear(slugField);
+  await userEvent.type(slugField, "sustainability-overview");
+  expect(
+    screen.getByRole("button", { name: "Confirm instantiate" }),
+    "the positive control — the same form with a valid slug submits",
+  ).toBeEnabled();
+}

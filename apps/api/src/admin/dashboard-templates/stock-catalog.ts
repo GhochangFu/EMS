@@ -684,13 +684,23 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
   // decision 4), which are `"avg"` — summing a percentage across sites is
   // not the plant's average, and there is no formula on any class to sum in
   // the first place. 6 + 6 + 5 + 1 = 18, inside `MAX_DASHBOARD_WIDGETS` (40).
+  //
+  // **`stockVersion: 3` — the PR 2 post-merge sweep (owner ruling
+  // 2026-09-22).** Two content changes, no new widget. (1) The three
+  // energy-cost tiles dropped `config.hint: "organization currency"`: the tile
+  // now renders the amount in the organization's actual currency, which the
+  // API has shipped on the metric arm since PR 1 and nothing in `apps/web`
+  // read, so the static hint said less than the value beside it. (2) The three
+  // water tiles read `unit: "KL"`, the spelling `UNIT_BY_KEY` and every water
+  // point row use — `"kL"` was a second spelling of one vocabulary word. A
+  // tenant that already imported v2 takes both by re-import.
   // -------------------------------------------------------------------------
   {
     code: "sustainability-overview",
     name: "Sustainability Overview",
     section: "sustainability",
     description: "Energy, water and emissions rollups across the plant.",
-    stockVersion: 2,
+    stockVersion: 3,
     content: {
       widgets: [
         // ---- Row A (y=0) — today ------------------------------------------
@@ -716,7 +726,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [],
           sources: [{ catalogKey: "sustainability.total", params: { pointKey: "energy_cost_today", aggregate: "sum" }, sortOrder: 0 }],
           widgetType: "value_tile",
-          config: { hint: "organization currency" },
+          config: {},
         },
         {
           key: "water-today-tile",
@@ -728,7 +738,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [],
           sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "sum" }, sortOrder: 0 }],
           widgetType: "value_tile",
-          config: { icon: "drop", unit: "kL" },
+          config: { icon: "drop", unit: "KL" },
         },
         {
           key: "co2-today-tile",
@@ -789,7 +799,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [],
           sources: [{ catalogKey: "sustainability.total", params: { pointKey: "energy_cost_this_month", aggregate: "sum" }, sortOrder: 0 }],
           widgetType: "value_tile",
-          config: { hint: "organization currency" },
+          config: {},
         },
         {
           key: "water-this-month-tile",
@@ -801,7 +811,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [],
           sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_this_month", aggregate: "sum" }, sortOrder: 0 }],
           widgetType: "value_tile",
-          config: { unit: "kL" },
+          config: { unit: "KL" },
         },
         {
           key: "co2-this-month-tile",
@@ -862,7 +872,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [],
           sources: [{ catalogKey: "sustainability.total", params: { pointKey: "energy_cost_this_year", aggregate: "sum" }, sortOrder: 0 }],
           widgetType: "value_tile",
-          config: { hint: "organization currency" },
+          config: {},
         },
         {
           key: "water-this-year-tile",
@@ -874,7 +884,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           bindings: [],
           sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_this_year", aggregate: "sum" }, sortOrder: 0 }],
           widgetType: "value_tile",
-          config: { unit: "kL" },
+          config: { unit: "KL" },
         },
         {
           key: "co2-this-year-tile",

@@ -155,7 +155,7 @@ function assertRecoveryIsOneCodeTwoFormulas(): void {
  */
 function checkRo(): void {
   const entry = requireStockEntry(RO_CODE);
-  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water", 3);
+  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water", 4);
 
   // ---- 25 points, 10 core + 5 extended + 1 manual + 9 derived (3 E4.1c + 4 E4.2) -------------
 
@@ -314,7 +314,7 @@ const SOFTENER_ALARMS: readonly AlarmRow[] = [
  */
 function checkSoftener(): void {
   const entry = requireStockEntry(SOFTENER_CODE);
-  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water", 3);
+  assertEntryIdentity(SOFTENER_CODE, entry, "softener", "water", 4);
 
   // ---- 16 points, 4 core + 3 extended + 2 manual + 7 derived (3 E4.1c + 4 E4.2) ---------------
 
@@ -443,8 +443,8 @@ const SOFTENER_E41C: readonly SustainabilityRow[] = [
 
 /** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
 export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
-  ["water-softener", SOFTENER_E41C, 9, 3],
-  ["water-ro", RO_E41C, 18, 3],
+  ["water-softener", SOFTENER_E41C, 9, 4],
+  ["water-ro", RO_E41C, 18, 4],
 ];
 
 export function e41cWaterClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {

@@ -56,6 +56,13 @@ import {
   renderTemplateTile,
 } from "../../components/dashboard-templates/widget-editor";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import {
+  DASHBOARD_SLUG_HINT,
+  DASHBOARD_SLUG_MAX,
+  DASHBOARD_SLUG_MIN,
+  DASHBOARD_SLUG_PATTERN,
+  isDashboardSlug,
+} from "../../lib/dashboard-slug";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
@@ -413,7 +420,12 @@ function InstantiateDialog({
    * "select one…" placeholder, which must stay unsubmittable. */
   const ORGANIZATION_WIDE = "__organization_wide__";
 
-  const canSubmit = assetGroupId !== "" && slug.trim() !== "" && name.trim() !== "";
+  // `E4.2` PR 2 sweep — the slug rule, not just non-emptiness. PR 2 tightened
+  // `instantiateSectionTemplateBodySchema.slug` to `.min(2).max(64)` on
+  // `/^[a-z0-9-]+$/`, and this gate still only asked for one character: an
+  // administrator who typed "Sustainability Overview" filled the whole form and
+  // got a 400 on submit. The rule is stated once in `lib/dashboard-slug.ts`.
+  const canSubmit = assetGroupId !== "" && isDashboardSlug(slug.trim()) && name.trim() !== "";
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/30 p-4">
@@ -463,16 +475,35 @@ function InstantiateDialog({
               </select>
             </label>
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-bms-ink">
-                Slug
-                <input
-                  required
-                  value={slug}
-                  onChange={(event) => setSlug(event.target.value)}
-                  placeholder="electrical-plant-1"
-                  className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
-                />
-              </label>
+              {/**
+               * **The hint is a sibling of the `<label>`, never inside it.** A
+               * wrapping label contributes ALL of its text to the control's
+               * accessible name, so a hint inside it renames the field from
+               * "Slug" to "Slug Lowercase letters, digits and hyphens…" — which
+               * broke three existing `getByRole("textbox", { name: "Slug" })`
+               * cases the moment it was nested. `aria-describedby` is what ties
+               * it to the field instead.
+               */}
+              <div>
+                <label className="block text-xs font-semibold text-bms-ink">
+                  Slug
+                  <input
+                    required
+                    value={slug}
+                    onChange={(event) => setSlug(event.target.value)}
+                    placeholder="electrical-plant-1"
+                    pattern={DASHBOARD_SLUG_PATTERN}
+                    minLength={DASHBOARD_SLUG_MIN}
+                    maxLength={DASHBOARD_SLUG_MAX}
+                    title={DASHBOARD_SLUG_HINT}
+                    aria-describedby="instantiate-slug-hint"
+                    className="mt-1 w-full rounded border border-gray-200 px-2 py-1 text-xs font-normal"
+                  />
+                </label>
+                <span id="instantiate-slug-hint" className="mt-1 block text-[11px] text-bms-muted">
+                  {DASHBOARD_SLUG_HINT}
+                </span>
+              </div>
               <label className="block text-xs font-semibold text-bms-ink">
                 Name
                 <input
