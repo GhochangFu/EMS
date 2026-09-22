@@ -4,6 +4,9 @@ import {
   bindingExclusiveMessage,
   bindingRequiredMessage,
   bindingShapeMessage,
+  CATALOG_CODE_MESSAGE,
+  CATALOG_CODE_PATTERN,
+  sustainabilityAggregateSchema,
   chartConfigSchema,
   tableConfigSchema,
   commonConfigFields,
@@ -251,12 +254,19 @@ const pointsFieldFor = (widgetType: z.infer<typeof widgetTypeSchema>) => {
  * `dashboard_widget_sources_params_object_check`, which accepts `{"locationId": "<any uuid>"}`.
  * `tests/f3.35-metric-catalog-containment.test.ts` scans this map and fails the build on `.uuid(`.
  */
+const sustainabilityParamsFields = {
+  pointKey: z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE),
+  aggregate: sustainabilityAggregateSchema,
+};
+
 export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObject> = {
   "alarms.active.count": z.object({}).strict(),
   "alarms.active": z.object({}).strict(),
   "workorders.open.count": z.object({}).strict(),
   "workorders.open": z.object({}).strict(),
   "assets.health.score": z.object({}).strict(),
+  "sustainability.total": z.object({ ...sustainabilityParamsFields }).strict(),
+  "sustainability.by_location": z.object({ ...sustainabilityParamsFields }).strict(),
 };
 
 /**

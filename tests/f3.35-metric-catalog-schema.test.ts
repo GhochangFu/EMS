@@ -43,6 +43,14 @@ const tableBlock = (migration: string, table: string): string => {
 };
 
 const MIGRATION_REL = "packages/db/drizzle/0054_dashboard_widget_sources.sql";
+/**
+ * `E4.2` / ADR 0072 decision 2 — the migration that widens `catalog_key`'s CHECK to admit the
+ * two sustainability entries. `0054` is frozen (the pre-commit hook) and still lists five; the
+ * EFFECTIVE vocabulary is the one this later file declares, in the `0055` / `0050` pattern
+ * `tests/f3.35-table-widget-schema.test.ts` records.
+ */
+const WIDENING_MIGRATION_REL = "packages/db/drizzle/0079_dashboard_widget_sources_sustainability_keys.sql";
+const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const SCHEMA_REL = "packages/db/src/schema/dashboard-schema.ts";
 const TABLE = "dashboard_widget_sources";
@@ -309,7 +317,9 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
   });
 
   it("closes catalog_key to exactly the keys the shared enum declares", () => {
-    const migration = read(MIGRATION_REL);
+    // `E4.2`: the effective CHECK is the widened one in `0079`, not `0054`'s frozen five. The
+    // frozen list is pinned separately below so the two cannot be confused.
+    const migration = read(WIDENING_MIGRATION_REL);
     const keys = catalogKeys();
 
     expect(migration).toContain("CONSTRAINT dashboard_widget_sources_catalog_key_check");
@@ -319,8 +329,8 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     // passes for a CHECK that lists only the longer one. Both quote delimiters are inside the
     // needle for that reason, and the equality is what actually holds the set.
     const check =
-      /CONSTRAINT dashboard_widget_sources_catalog_key_check CHECK \(catalog_key IN \(([^)]*)\)\)/.exec(
-        migration,
+      /CONSTRAINT dashboard_widget_sources_catalog_key_check\s+CHECK \(catalog_key IN \(([^)]*)\)\)/.exec(
+        sqlOnly(migration),
       );
     expect(check, "the catalog_key CHECK must be an IN list this test can read").not.toBeNull();
     const listed = (check?.[1] ?? "")
@@ -339,6 +349,46 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     for (const key of keys) {
       expect(migration, `${key} must be accepted`).toContain(`'${key}'`);
     }
+  });
+
+  it("keeps 0054's frozen CHECK at the original five, and 0079 widens by DROP then ADD", () => {
+    // `0054` is frozen: its list must still be Stage C's five, or someone edited a committed
+    // migration instead of writing the next one.
+    const frozen =
+      /CONSTRAINT dashboard_widget_sources_catalog_key_check CHECK \(catalog_key IN \(([^)]*)\)\)/.exec(
+        read(MIGRATION_REL),
+      );
+    expect(frozen, "0054's CHECK must still be readable").not.toBeNull();
+    expect((frozen?.[1] ?? "").split(",").filter(Boolean)).toHaveLength(5);
+
+    // The constraint EXISTS before `0079` runs, so an `IF NOT EXISTS` guard on the ADD would
+    // find it and skip the widening while reporting success — `0055`'s header records the
+    // trap. DROP IF EXISTS then ADD is what widens, and the order matters.
+    const sql = sqlOnly(read(WIDENING_MIGRATION_REL));
+    const dropAt = sql.indexOf("DROP CONSTRAINT IF EXISTS dashboard_widget_sources_catalog_key_check");
+    const addAt = sql.indexOf("ADD CONSTRAINT dashboard_widget_sources_catalog_key_check");
+    expect(dropAt, "0079 must DROP the existing constraint").toBeGreaterThan(-1);
+    expect(addAt, "0079 must ADD the widened constraint").toBeGreaterThan(-1);
+    expect(dropAt, "the DROP must come before the ADD").toBeLessThan(addAt);
+    expect(/ADD CONSTRAINT[\s\S]*IF NOT EXISTS/.test(sql)).toBe(false);
+  });
+
+  it("journals 0079 after 0078, and the journal stays strictly increasing", () => {
+    expect(existsSync(join(repoRoot, WIDENING_MIGRATION_REL))).toBe(true);
+    const journal = JSON.parse(read(JOURNAL_REL)) as {
+      entries: { idx: number; tag: string; when: number }[];
+    };
+    const entry = journal.entries.find(
+      (row) => row.tag === "0079_dashboard_widget_sources_sustainability_keys",
+    );
+    expect(entry, "0079 must have a journal entry, or drizzle silently skips the file").toBeDefined();
+    const previous = journal.entries.find((row) => row.tag === "0078_report_schedules");
+    expect((entry?.when ?? 0) > (previous?.when ?? 0)).toBe(true);
+    const whens = journal.entries.map((row) => row.when);
+    expect(
+      whens.every((value, index) => index === 0 || (whens[index - 1] ?? 0) < value),
+      "journal `when` values must be strictly increasing",
+    ).toBe(true);
   });
 
   it("does not widen the widget vocabulary — `table` belongs to Stage B", () => {

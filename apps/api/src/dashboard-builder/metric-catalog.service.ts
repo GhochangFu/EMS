@@ -462,4 +462,9 @@ const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
     );
     return metricValue("assets.health.score", summary.score, null);
   },
+
+  // `E4.2` U1 stubs — U4 replaces both with the roll-up (ADR 0072 decision 2). They exist so
+  // the `Record` compiles between units; a tile bound to either resolves to "no value" meanwhile.
+  "sustainability.total": async () => metricValue("sustainability.total", null, null),
+  "sustainability.by_location": async () => datasetValue("sustainability.by_location", [], false),
 };

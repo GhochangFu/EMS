@@ -34,8 +34,11 @@ export function offersOnlyTheShapesTheWidgetCanDraw(): void {
     .map((option) => option.value)
     .filter((value) => value !== "");
 
+  // `E4.2` / ADR 0072 (plan OQ3): an entry that declares `params` is hidden too. The picker
+  // sends `params: {}`, which the entry's strict write schema refuses — an option here would be
+  // a 400 from a form that just offered it.
   const metrics = metricCatalogKeySchema.options.filter(
-    (key) => METRIC_CATALOG[key].shape === "metric",
+    (key) => METRIC_CATALOG[key].shape === "metric" && METRIC_CATALOG[key].params === undefined,
   );
   const datasets = metricCatalogKeySchema.options.filter(
     (key) => METRIC_CATALOG[key].shape === "dataset",
@@ -47,6 +50,28 @@ export function offersOnlyTheShapesTheWidgetCanDraw(): void {
     "a value_tile draws one number, so the picker must offer every metric entry and no dataset " +
       "— a dataset offered here is a 400 from a form that just suggested it",
   ).toEqual([...metrics].sort());
+}
+
+/**
+ * A metric-shaped entry that declares `params` is absent from the picker (`E4.2`, plan OQ3).
+ * The positive control — it IS a metric in the catalog — is what stops this passing because
+ * the key never existed.
+ */
+export function hidesAMetricEntryThatDeclaresParams(): void {
+  render(<MetricSourcePicker widgetType="value_tile" bound={[]} onAdd={() => {}} />);
+
+  expect(
+    METRIC_CATALOG["sustainability.total"].shape,
+    "the control: sustainability.total is a metric the tile could otherwise draw",
+  ).toBe("metric");
+  expect(
+    METRIC_CATALOG["sustainability.total"].params,
+    "the control: sustainability.total declares params, which is why it is hidden",
+  ).toBeDefined();
+  expect(
+    optionsOf("Add named metric").map((option) => option.value),
+    "the picker sends params: {} and the entry's strict schema refuses it — never offer it",
+  ).not.toContain("sustainability.total");
 }
 
 /** Every option reads its human label, never the raw key. */

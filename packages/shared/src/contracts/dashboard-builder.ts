@@ -514,8 +514,16 @@ export const bindingExclusiveMessage = (label: string): string =>
  * uncomputable, on the belief that the client still owed the roll-up formula from feature-sheet
  * row 12. That formula arrived on 2026-08-22 and shipped as `E1.3` / ADR 0050, so this entry
  * delegates to `AssetHealthService` rather than computing anything. Operational efficiency is
- * **not** here and must not be added until the client defines its numerator (ADR 0050 §B14) —
- * a key with no query is exactly the failure this vocabulary is closed to prevent.
+ * **not a catalog key** and must not become one until the client defines its numerator (ADR
+ * 0050 §B14) — a key with no query is exactly the failure this vocabulary is closed to prevent.
+ * `E4.2` / ADR 0072 decision 4 carries it as a **point key** (`operational_efficiency_pct`)
+ * named in a `sustainability.total` binding's `params`, where a code with no formula resolves
+ * to the catalog's `null` rather than to a query that does not exist.
+ *
+ * **The two `sustainability.*` entries are the first with parameters** (ADR 0072 decision 2):
+ * `{ pointKey, aggregate }` on their write schema, the roll-up across the assets in scope that
+ * carry `pointKey`. Must match `dashboard_widget_sources_catalog_key_check` as migration `0079`
+ * widened it (`0054` froze the first five).
  */
 export const metricCatalogKeySchema = z.enum([
   "alarms.active.count",
@@ -523,7 +531,27 @@ export const metricCatalogKeySchema = z.enum([
   "workorders.open.count",
   "workorders.open",
   "assets.health.score",
+  "sustainability.total",
+  "sustainability.by_location",
 ]);
+
+/**
+ * How a sustainability roll-up collapses the carrying assets' values (`E4.2`, ADR 0072 ruling
+ * 2): `sum` for a quantity (kWh, kL, cost, kg), `avg` for a ratio (`%`). The write schema
+ * accepts either; the stock template binds the right one, and nothing derives it from the unit.
+ */
+export const sustainabilityAggregateSchema = z.enum(["sum", "avg"]);
+
+/**
+ * How much of a roll-up's scope the value actually covers (`E4.2`, ADR 0072 ruling 1).
+ *
+ * `carrying` is the number of assets in scope whose template declares the point; `fresh` is
+ * how many of them had a sample younger than the point's freshness bound. A value with
+ * `fresh < carrying` is a partial roll-up, and the tile says so — never a value alone.
+ */
+export const rollupCoverageSchema = z
+  .object({ fresh: z.number().int().min(0), carrying: z.number().int().min(0) })
+  .readonly();
 
 /**
  * What each catalog entry resolves to (ADR 0048 decision 2).
@@ -537,10 +565,20 @@ export const metricCatalogKeySchema = z.enum([
  * no length check, and no empty array standing in for "not applicable". Stage B's column picker
  * chooses from this list; the resolve endpoint returns every declared column and the renderer
  * projects, so no column list travels in a request and no SQL is built from one.
+ *
+ * `params` (`E4.2`, ADR 0072 decision 2) names the fields an entry's write schema declares —
+ * the NAMES only, on both arms; the schemas themselves live in `apps/api`'s
+ * `METRIC_CATALOG_PARAMS_WRITE`, and `tests/f3.35-metric-catalog-containment.test.ts` holds the
+ * two lists equal. Absent for an entry that takes no fields, so `"params" in entry` is the
+ * builder's signal that its picker cannot bind it (it sends `params: {}`, plan OQ3).
  */
 export type CatalogEntryMeta =
-  | { readonly shape: "metric" }
-  | { readonly shape: "dataset"; readonly columns: readonly string[] };
+  | { readonly shape: "metric"; readonly params?: readonly string[] }
+  | {
+      readonly shape: "dataset";
+      readonly columns: readonly string[];
+      readonly params?: readonly string[];
+    };
 
 /**
  * The catalog itself — shape and declared columns, one entry per key.
@@ -565,6 +603,14 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
     columns: ["assetCode", "assetName", "status", "priority", "title", "dueAt"],
   },
   "assets.health.score": { shape: "metric" },
+  // `E4.2` / ADR 0072 decision 2 — the roll-up of one point key across the assets in scope.
+  // `columns` stays on one line: `tests/f3.35-metric-catalog-labels.test.ts` parses it.
+  "sustainability.total": { shape: "metric", params: ["pointKey", "aggregate"] },
+  "sustainability.by_location": {
+    shape: "dataset",
+    columns: ["locationCode", "locationName", "value", "coverage"],
+    params: ["pointKey", "aggregate"],
+  },
 };
 
 /**
@@ -873,6 +919,12 @@ const datasetCellSchema = z.union([z.string(), z.number(), z.boolean(), z.null()
  * **`truncated` is a field rather than an inference.** A caller cannot tell a dataset that has
  * exactly `MAX_DATASET_ROWS` rows from one that was cut off at it, and the difference decides
  * whether the card is showing the whole answer.
+ *
+ * **`coverage` and `currency` are optional on the metric arm, deliberately** (`E4.2`, ADR 0072
+ * decision 2). The arm is shared by every metric entry; `sustainability.total` emits both, the
+ * three older emitters emit neither and do not change. A required field here would make
+ * `checkResponse` throw on every existing dashboard in dev and test (ADR 0030). The dataset arm
+ * carries coverage as a column (`"fresh/carrying"`), not a field — a cell is a scalar.
  */
 export const metricCatalogValueDtoSchema = z.discriminatedUnion("shape", [
   z.object({
@@ -880,6 +932,8 @@ export const metricCatalogValueDtoSchema = z.discriminatedUnion("shape", [
     key: metricCatalogKeySchema,
     value: z.number().nullable(),
     unit: z.string().nullable(),
+    coverage: rollupCoverageSchema.optional(),
+    currency: z.string().nullable().optional(),
   }),
   z.object({
     shape: z.literal("dataset"),
