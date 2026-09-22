@@ -3,8 +3,9 @@
 ## Status
 
 Accepted — drafted and ruled at the §10 gate on 2026-09-22, before any
-implementation code. Six gate questions were put to the owner one at a time;
-all six were ruled as recommended. The rulings are recorded under *Gate
+implementation code. Seven gate questions were put to the owner one at a
+time (the seventh surfaced from a source read after the first six); all
+seven were ruled as recommended. The rulings are recorded under *Gate
 questions* and carried into *Decision*.
 
 Promotes nothing out of `AGENTS.md` §6 — the ESG module is `E4.x`, not a §6
@@ -207,16 +208,36 @@ surface) as `F3.5` was. **Recommended (a)** — effort 4–6 and no ⭐ enabler;
 `F3.5`'s split earned its two closure rows on a queue and a renderer, and
 this row has neither. **Ruled (a).**
 
+**Q7 — A `$key` resolves at the evaluation instant, and the parameter
+store is effective-dated.** `CalcParametersService` picks the row whose
+`[effective_from, effective_to)` contains one `at`
+(`apps/api/src/calc/calc-parameters.service.ts:39,90`), and a scheduled
+definition evaluates at one instant. So `energy_cost_this_year =
+delta({kwh_total}, this_year) * $energy_tariff_per_kwh` prices the whole
+year at the tariff effective now; the CO₂ factors and the water tariff
+behave the same. *(a)* **Keep the eight cost and CO₂ period codes with the
+semantics `energy_cost_today` already has inside a day — the parameters
+effective at evaluation — and state the limitation in this ADR, in each
+code's description and in the closure row: a mid-period tariff or factor
+change re-prices the whole period at the new value.** *(b)* Only the
+parameter-free codes (`kl`, `kwh`) get the two periods; cost and CO₂
+periods wait on a per-bucket `$key`. *(c)* Extend the engine now with a
+per-bucket `$key` — an ADR 0070 amendment and new grammar semantics.
+**Recommended (a)** — the SOW asks for monthly cost and CO₂, a tariff
+change is a dated and rare event, and the honest figure at the current rate
+is more useful than no figure; (c) is a row of its own. **Ruled (a).**
+
 ## Decision
 
 ### 1. The surface is the `sustainability` section, reached from the sidebar (Q1)
 
 `sustainability-overview` (`apps/api/src/admin/dashboard-templates/stock-catalog.ts`)
 goes to `stockVersion: 2`. Its content is: a tile row of roll-up totals bound
-to `sustainability.total` (decision 2) — energy cost today, water today
-(kL), CO₂ today, and the two executive slots of decision 4 — a second row
-for this month and this year, and one `table` widget bound to
-`sustainability.by_location` as the benchmark. The three skeleton tiles
+to `sustainability.total` (decision 2) — energy today (kWh, the feeder's
+MEASURED `kwh_today`), energy cost today, water today (kL), CO₂ today, and
+the two executive slots of decision 4 — a second row for this month and
+this year, and one `table` widget bound to `sustainability.by_location` as
+the benchmark. The three skeleton tiles
 (alarms, work orders, health) stay. The section keeps ADR 0049's whole
 lifecycle: import, version stamp, instantiate per organization.
 
@@ -254,7 +275,13 @@ scope intersected with the caller's readable assets (the existing
 point_key)`; drop samples older than the freshness bound (*Ruled here
 without a question* 1); `sum` or `avg` the rest. The response carries
 `value`, `coverage: { fresh, carrying }` and `currency` (decision 5 of the
-rulings list). `sustainability.by_location` does the same grouped by
+rulings list). `metricCatalogValueDtoSchema` is a discriminated union on
+`shape` shared by every entry, so `coverage` and `currency` are **optional
+on the `metric` arm** — present for `sustainability.total`, absent for the
+three existing metrics, whose emitters do not change; a required field
+there would make `checkResponse` throw on every existing dashboard in dev
+and test (ADR 0030). The dataset arm carries `coverage` as a column, not a
+field. `sustainability.by_location` does the same grouped by
 `bms.locations`, columns `locationCode · locationName · value · coverage`,
 ordered by `locationCode`.
 
@@ -276,6 +303,13 @@ the feeder (`delta({kwh_total}, …)`, *Ruled here without a question* 7),
 unlike `kwh_today` which stays MEASURED — the meter has no monthly
 register, so the ADR 0070 Amendment 2 Q3 reason does not apply. Twelve
 codes in all.
+
+**The eight cost and CO₂ period codes are priced at the parameters effective
+at evaluation (Q7).** A tariff or factor that changes mid-period re-prices
+the whole period at the new value from the next sweep. Each such code's
+description says so (*"at the tariff effective now"*), and no report or
+tile derives a piecewise figure from them. A per-bucket `$key` is a later
+row and an ADR 0070 amendment, not this one.
 
 The window budget is the engine's (`MAX_WINDOW_BUCKETS = 20_000`,
 `calc-window-plan.ts`): a year over the `1d` view is ≤ 366 buckets plus the
@@ -329,9 +363,18 @@ needs.
 ## Ruled here without a question
 
 1. **Freshness.** An asset contributes to a roll-up only when its latest
-   sample of `pointKey` is younger than **three times the point's own
-   `intervalSeconds`**; otherwise it is excluded and counted in the
-   denominator of `coverage`. `coverage` is `fresh / carrying`, where
+   sample of `pointKey` is younger than the point's freshness bound;
+   otherwise it is excluded and counted in the denominator of `coverage`.
+   For a **scheduled derived** point the bound is **three times its
+   `calc_interval_seconds`** (the stock `v3` points are at 60 s, so 180 s).
+   For a **measured** point — `kwh_today` on the feeder — there is no
+   interval to read: `bms.rtus` records no poll cadence, and the SPA's
+   `FRESH_MS = 25_000` (`schematic-telemetry.ts`) is a live-indicator
+   threshold, too tight for a daily total from an RTU that polls every few
+   minutes. The bound is a flat **`MEASURED_ROLLUP_FRESH_MS = 15 minutes`**,
+   one exported constant beside the derived rule, and the reason it is a
+   constant rather than a column is recorded here so that a later RTU
+   cadence column can replace it. `coverage` is `fresh / carrying`, where
    `carrying` is the number of assets in scope whose template declares the
    point. A roll-up over zero carrying assets is the catalog's existing
    `null` (no source); a roll-up with `coverage < 1` is a value **with** the
@@ -388,6 +431,10 @@ None.
 - **Two tiles are empty by design until B14 answers.** The closure row and
   the client-facing notes must say so, or the empty state reads as a
   defect.
+- **Monthly and annual money is at today's rate.** The eight cost and CO₂
+  period codes carry the Q7 limitation; the day a client changes a tariff
+  mid-year, the annual cost tile moves. The closure row and the codes'
+  descriptions say so.
 - **`F3.64` is created**, ⬜, `Depends: ADR`, for the per-role / per-user
   landing screen — gated on C19 and the §5 *Reference layout language*
   decision. The SOW §9 phrase "stakeholder persona defaults" resolves there.
