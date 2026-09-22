@@ -20,8 +20,11 @@ import { MetricSourcePicker } from "../dashboards/metric-source-picker";
  * block renders at all and when the picker stops, `catalogKeysFor` (inside
  * `MetricSourcePicker`) decides which entries a type may bind, and
  * `metricCatalogLabel` names a bound entry. Add sends `params: {}` and nothing
- * else — every entry's write schema is `z.object({}).strict()`, and a scope id
- * in `params` is the ADR 0019 problem the binding contract exists to refuse.
+ * else — every entry the picker offers has the write schema
+ * `z.object({}).strict()`; the sustainability entries declare
+ * `{ pointKey, aggregate }` (`E4.2`) and `catalogKeysFor` hides them from the
+ * picker. A scope id in `params` is the ADR 0019 problem the binding contract
+ * exists to refuse.
  * Remove patches `sources` alone: no column picker exists on a template widget
  * and no stock entry carries `config.columns`, so a `config` clear would be a
  * branch that can never fire (plan §5.3) and it would falsify `updateWidget`'s

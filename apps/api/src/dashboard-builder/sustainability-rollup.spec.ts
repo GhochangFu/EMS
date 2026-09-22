@@ -1,5 +1,8 @@
+import { MAX_DATASET_ROWS } from "@bms/shared";
+
 import {
   MEASURED_ROLLUP_FRESH_MS,
+  capRows,
   freshnessBoundSeconds,
   rollup,
   rollupCurrency,
@@ -95,5 +98,27 @@ export function derivedWithoutIntervalUsesTheConstant(): void {
     freshnessBoundSeconds({ kind: "derived", calcTrigger: "on_change", calcIntervalSeconds: null }),
     900,
     "derived without a scheduled interval",
+  );
+}
+
+/** `capRows` at `MAX_DATASET_ROWS + 1` rows: the cap's worth and `truncated: true`. */
+export function capRowsFlagsThe201stRow(): void {
+  const rows = Array.from({ length: MAX_DATASET_ROWS + 1 }, (_, i) => ({ i }));
+  const capped = capRows(rows);
+  same(
+    { length: capped.rows.length, truncated: capped.truncated },
+    { length: MAX_DATASET_ROWS, truncated: true },
+    "capRows over the cap",
+  );
+}
+
+/** Exactly `MAX_DATASET_ROWS` rows is not truncated — the flag is a fact, not a guess. */
+export function capRowsAtTheCapIsNotTruncated(): void {
+  const rows = Array.from({ length: MAX_DATASET_ROWS }, (_, i) => ({ i }));
+  const capped = capRows(rows);
+  same(
+    { length: capped.rows.length, truncated: capped.truncated },
+    { length: MAX_DATASET_ROWS, truncated: false },
+    "capRows at the cap",
   );
 }

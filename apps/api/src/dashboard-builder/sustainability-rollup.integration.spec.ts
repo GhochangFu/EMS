@@ -37,6 +37,9 @@ export type RollupFixture = {
   readonly wideMoneyTableSourceId: string;
   readonly wideMoneyAlarmsSourceId: string;
   readonly nopeSourceId: string;
+  /** A dashboard scoped to asset A alone (F3.2 asset scope), one `{ kl_today, sum }` tile. */
+  readonly assetScopedDashboardId: string;
+  readonly assetScopedSourceId: string;
 };
 
 const valueOf = (
@@ -151,4 +154,20 @@ export async function callerScopeIntersectsTheTable(f: RollupFixture): Promise<v
   if (table.shape !== "dataset") throw new Error("by_location must resolve to a dataset");
   const rows = table.rows.filter((row) => row.locationCode === f.l1Code || row.locationCode === f.l2Code);
   expect(rows.map((row) => [row.locationCode, row.value, row.coverage])).toEqual([[f.l1Code, 10, "1/1"]]);
+}
+
+/** An asset-scoped dashboard on A rolls up A alone: 10 with 1/1 (ADR 0072 ruling 3, review). */
+export async function assetScopedDashboardRollsUpItsOneAsset(f: RollupFixture): Promise<void> {
+  const tile = metricOf(await resolveWide(f, f.assetScopedDashboardId), f.assetScopedSourceId);
+  expect({ value: tile.value, coverage: tile.coverage }).toEqual({
+    value: 10,
+    coverage: { fresh: 1, carrying: 1 },
+  });
+}
+
+/** Two locations are under the cap: `truncated` is false (the control for the pure cap claim). */
+export async function byLocationUnderTheCapIsNotTruncated(f: RollupFixture): Promise<void> {
+  const table = valueOf(await resolveWide(f, f.wideTableDashboardId), f.wideTableSourceId);
+  if (table.shape !== "dataset") throw new Error("by_location must resolve to a dataset");
+  expect(table.truncated).toBe(false);
 }

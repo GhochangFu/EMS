@@ -4,6 +4,8 @@ import {
   aNullBesideACurrencyIsNull,
   allStaleIsNullNotZero,
   avgSkipsTheStaleRowButCountsIt,
+  capRowsAtTheCapIsNotTruncated,
+  capRowsFlagsThe201stRow,
   derivedWithoutIntervalUsesTheConstant,
   measuredBoundIsTheConstant,
   oneCurrencyIsTheCurrency,
@@ -53,5 +55,13 @@ describe("E4.2 U4 — the sustainability roll-up's pure half", () => {
 
   it("bounds a derived point with no scheduled interval at the constant too", () => {
     derivedWithoutIntervalUsesTheConstant();
+  });
+
+  it("caps a dataset at MAX_DATASET_ROWS and flags the row past it", () => {
+    capRowsFlagsThe201stRow();
+  });
+
+  it("does not flag a dataset of exactly MAX_DATASET_ROWS", () => {
+    capRowsAtTheCapIsNotTruncated();
   });
 });

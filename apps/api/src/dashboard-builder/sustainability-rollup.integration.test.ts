@@ -26,6 +26,8 @@ import {
   quantityTileCarriesNoCurrency,
   unparseableBindingIsSkippedNotThrown,
   wideSumExcludesTheStaleAssetButCountsIt,
+  assetScopedDashboardRollsUpItsOneAsset,
+  byLocationUnderTheCapIsNotTruncated,
   type RollupFixture,
 } from "./sustainability-rollup.integration.spec";
 
@@ -164,12 +166,13 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
     const mkDashboard = async (
       tag: string,
       locationId: string | null,
+      assetId: string | null,
       bindings: readonly { widgetType: "value_tile" | "table"; catalogKey: string; params: unknown }[],
     ): Promise<{ dashboardId: string; sourceIds: string[] }> => {
       const dash = await superuserPool.query<{ id: string }>(
-        `INSERT INTO bms.dashboards (organization_id, slug, name, location_id)
-         VALUES ($1, $2, $3, $4) RETURNING id`,
-        [orgId, `e42u4-${tag}-${RUN}`, `E4.2 U4 ${tag}`, locationId],
+        `INSERT INTO bms.dashboards (organization_id, slug, name, location_id, asset_id)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [orgId, `e42u4-${tag}-${RUN}`, `E4.2 U4 ${tag}`, locationId, assetId],
       );
       const dashboardId = dash.rows[0]?.id ?? "";
       dashboardIds.push(dashboardId);
@@ -192,23 +195,26 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
     };
 
     const sum = (pointKey: string) => ({ pointKey, aggregate: "sum" });
-    const l1Dash = await mkDashboard("l1", l1.id, [
+    const l1Dash = await mkDashboard("l1", l1.id, null, [
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: sum("kl_today") },
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "avg" } },
     ]);
-    const tableDash = await mkDashboard("table", null, [
+    const tableDash = await mkDashboard("table", null, null, [
       { widgetType: "table", catalogKey: "sustainability.by_location", params: sum("kl_today") },
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: sum("kl_today") },
     ]);
-    const kwhDash = await mkDashboard("kwh", null, [
+    const kwhDash = await mkDashboard("kwh", null, null, [
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: sum("kwh_today") },
     ]);
-    const moneyDash = await mkDashboard("money", null, [
+    const moneyDash = await mkDashboard("money", null, null, [
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: sum("water_cost_today") },
       { widgetType: "table", catalogKey: "sustainability.by_location", params: sum("water_cost_today") },
       { widgetType: "value_tile", catalogKey: "alarms.active.count", params: {} },
       // Hand-inserted past the write schema: the resolver must skip it, not throw.
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: { pointKey: "nope", aggregate: "sum" } },
+    ]);
+    const assetDash = await mkDashboard("asset", null, assetA, [
+      { widgetType: "value_tile", catalogKey: "sustainability.total", params: sum("kl_today") },
     ]);
     // `nope` is not a catalog code, so the write path would have refused it (U3); the row is
     // here to prove the READ path tolerates one. Its params DO parse — what fails is a second,
@@ -245,6 +251,8 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       wideMoneyTableSourceId: moneyDash.sourceIds[1] ?? "",
       wideMoneyAlarmsSourceId: moneyDash.sourceIds[2] ?? "",
       nopeSourceId: broken.rows[0]?.id ?? "",
+      assetScopedDashboardId: assetDash.dashboardId,
+      assetScopedSourceId: assetDash.sourceIds[0] ?? "",
     };
   }, 60_000);
 
@@ -316,5 +324,13 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
 
   it("intersects the caller's readable assets with the table's scope", async () => {
     await callerScopeIntersectsTheTable(fixture);
+  });
+
+  it("rolls up an asset-scoped dashboard over its one asset: 10 with 1/1", async () => {
+    await assetScopedDashboardRollsUpItsOneAsset(fixture);
+  });
+
+  it("reports truncated: false for two locations (the cap control)", async () => {
+    await byLocationUnderTheCapIsNotTruncated(fixture);
   });
 });

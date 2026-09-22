@@ -94,9 +94,11 @@ export function WidgetInspector({ row, problems, role, organizationId, onChange,
   /**
    * `F3.35` Stage C — adding a named metric.
    *
-   * **`params: {}` and nothing else, deliberately.** Every entry's write schema is
-   * `z.object({}).strict()` today, so any field added here would be refused with a 400 the
-   * author cannot act on — and a scope id in particular is the ADR 0019 problem the binding
+   * **`params: {}` and nothing else, deliberately.** Every entry this picker offers has the
+   * write schema `z.object({}).strict()`; the two sustainability entries declare
+   * `{ pointKey, aggregate }` (`E4.2`, ADR 0072) and `catalogKeysFor` hides them here, since
+   * `{}` would be refused with a 400 the author cannot act on. A scope id in particular is
+   * the ADR 0019 problem the binding
    * contract exists to refuse: a binding inherits the DASHBOARD's scope, so an id in `params`
    * would be a second, contradictory answer sitting in jsonb that no foreign key covers.
    */

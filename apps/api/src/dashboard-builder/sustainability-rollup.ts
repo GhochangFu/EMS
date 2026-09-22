@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 
+import { MAX_DATASET_ROWS } from "@bms/shared";
 import type { RollupCoverage, SustainabilityAggregate } from "@bms/shared";
 
 import type { BmsTx } from "../database/tenant-context";
@@ -92,6 +93,16 @@ export function rollupCurrency(currencies: ReadonlySet<string | null>): string |
   if (currencies.size !== 1) return null;
   const [only] = currencies;
   return only ?? null;
+}
+
+/**
+ * The dataset cap, as the sibling resolvers apply it: the first `MAX_DATASET_ROWS` rows, and
+ * `truncated` is a FACT read off the input's length rather than a guess — the caller reads
+ * `MAX_DATASET_ROWS + 1` (or, for `by_location`, groups every location in scope) and this
+ * decides. Pure, so the 201-row case is a unit test rather than a 201-location fixture.
+ */
+export function capRows<T>(rows: readonly T[]): { rows: T[]; truncated: boolean } {
+  return { rows: rows.slice(0, MAX_DATASET_ROWS), truncated: rows.length > MAX_DATASET_ROWS };
 }
 
 /** One carrying asset in scope, with its latest fresh sample (or none) and its location. */

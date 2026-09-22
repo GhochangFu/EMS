@@ -28,6 +28,7 @@ import { withTenant, type BmsTx } from "../database/tenant-context";
 import { resolveWidgetSources } from "./dashboard-source-scope";
 import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 import {
+  capRows,
   readOrganizationCurrency,
   readPointKeyUnit,
   readRollupRows,
@@ -204,14 +205,13 @@ export class MetricCatalogService {
         if (!parsed.success) {
           // A stored row the write schema no longer accepts (a hand-edited row, or a schema
           // tightened after the write). Skipped, not thrown: the other bindings still resolve.
+          // ONE string: `this.logger` is Nest's `Logger` routed through nestjs-pino, where a
+          // trailing string argument is read as the CONTEXT and an object becomes fields with
+          // no message. Field paths only, never the params values (§4.3 / §9.6).
           this.logger.warn(
-            {
-              dashboardId,
-              sourceId: source.id,
-              catalogKey: key,
-              paths: parsed.error.issues.map((issue) => issue.path.join(".")),
-            },
-            "catalog binding params failed the entry's write schema; binding skipped",
+            "catalog binding params failed the entry's write schema; binding skipped: " +
+              `dashboard ${dashboardId}, source ${source.id}, key ${key}, paths ` +
+              parsed.error.issues.map((issue) => issue.path.join(".")).join(","),
           );
           continue;
         }
@@ -275,18 +275,30 @@ export class MetricCatalogService {
    * every entry answers as zero rather than as a query over everything.
    *
    * `bms.asset_groups.location_id` is NOT NULL, so an asset-group scope already implies a
-   * location and the two columns can never both be set (`dashboards_scope_check`). One branch
-   * each, no combination.
+   * location and no two of the three scope columns can be set at once
+   * (`dashboards_scope_check`; `asset_id` is the F3.2 third axis). One branch each, no
+   * combination.
    */
   private async resolveAssetScope(
     tx: BmsTx,
     organizationId: string,
-    dashboard: { locationId: string | null; assetGroupId: string | null },
+    dashboard: { locationId: string | null; assetGroupId: string | null; assetId: string | null },
     readableAssetIds: readonly string[] | null,
   ): Promise<readonly string[]> {
     let fromDashboard: string[] | null = null;
 
-    if (dashboard.locationId !== null) {
+    // `F3.2` / ADR 0067 decision 1 — the third scope axis. Found in the `E4.2` review: without
+    // this arm an asset-scoped dashboard fell to the ORGANIZATION branch, and its
+    // `sustainability.total` tile showed the organization's kWh under one asset's name (ADR
+    // 0072 ruling 3: "over the dashboard's scope, never wider"). The organization predicate
+    // is applied here too, so a mis-stamped foreign `asset_id` resolves to nothing.
+    if (dashboard.assetId !== null) {
+      const rows = await tx
+        .select({ id: assets.id })
+        .from(assets)
+        .where(and(eq(assets.id, dashboard.assetId), eq(assets.organizationId, organizationId)));
+      fromDashboard = rows.map((row) => row.id);
+    } else if (dashboard.locationId !== null) {
       const rows = await tx
         .select({ id: assets.id })
         .from(assets)
@@ -575,8 +587,8 @@ const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    * in the resolved scope (plan OQ7), in `code` order. A location whose assets carry the point
    * on no template is present as `null` / `"0/0"` — a site with no meters is visible as such
    * (ADR 0072 ruling 3). `coverage` is the string `"fresh/carrying"` because a dataset cell is
-   * a scalar (plan OQ4). Never truncated: the row count is the location count, which
-   * `MAX_DATASET_ROWS` bounds comfortably.
+   * a scalar (plan OQ4). Capped like its dataset siblings: the location query reads
+   * `MAX_DATASET_ROWS + 1` and `capRows` decides `truncated` from what came back.
    */
   "sustainability.by_location": async (tx, organizationId, scope, _deps, params) => {
     if (scopeIsEmpty(scope)) return datasetValue("sustainability.by_location", [], false);
@@ -587,9 +599,11 @@ const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
       .innerJoin(locations, eq(locations.id, assets.locationId))
       .where(and(eq(assets.organizationId, organizationId), scopedTo(assets.id, scope)))
       .groupBy(locations.id, locations.code, locations.name)
-      .orderBy(asc(locations.code));
+      .orderBy(asc(locations.code))
+      .limit(MAX_DATASET_ROWS + 1);
     const carrying = await readRollupRows(tx, organizationId, scope, pointKey);
-    const rows = inScope.map((location) => {
+    const capped = capRows(inScope);
+    const rows = capped.rows.map((location) => {
       const { value, coverage } = rollup(
         carrying.filter((row) => row.locationId === location.id),
         aggregate,
@@ -601,6 +615,6 @@ const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
         coverage: `${coverage.fresh}/${coverage.carrying}`,
       };
     });
-    return datasetValue("sustainability.by_location", rows, false);
+    return datasetValue("sustainability.by_location", rows, capped.truncated);
   },
 };
