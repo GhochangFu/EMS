@@ -256,7 +256,7 @@ export async function theEmptySustainabilitySectionShowsTheImportHint(): Promise
   renderAt(asUser("admin"), "/dashboards?section=sustainability", { items: [] });
 
   await waitFor(() => {
-    expect(screen.getByText(/No Sustainability dashboard yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No dashboard in this section yet/)).toBeInTheDocument();
   });
   expect(screen.getByRole("link", { name: "Dashboard templates" })).toHaveAttribute(
     "href",
@@ -276,7 +276,30 @@ export async function anEmptyUnfilteredListKeepsItsOriginalWording(): Promise<vo
   await waitFor(() => {
     expect(screen.getByText(/No dashboards are readable in your current scope yet/)).toBeInTheDocument();
   });
-  expect(screen.queryByText(/No Sustainability dashboard yet/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/No dashboard in this section yet/)).not.toBeInTheDocument();
+}
+
+/**
+ * `E4.2` PR 2 sweep — **any section code, not `sustainability` alone.**
+ *
+ * The branch was `section === "sustainability"`, while its own comment stated
+ * the general rule: a filtered empty list is a different condition from an
+ * unfiltered one. `bms.dashboard_sections` has six rows, so `?section=stp` fell
+ * to "No dashboards are readable in your current scope yet" — the permission
+ * wording the branch exists to avoid. The negative half is the control: the
+ * unfiltered wording must NOT be on the page, or a render that showed both
+ * would pass.
+ */
+export async function anyEmptyFilteredSectionShowsTheImportHint(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards?section=stp", { items: [] });
+
+  await waitFor(() => {
+    expect(screen.getByText(/No dashboard in this section yet/)).toBeInTheDocument();
+  });
+  expect(
+    screen.queryByText(/No dashboards are readable in your current scope yet/),
+    "a filtered empty list must not read as a permission problem",
+  ).not.toBeInTheDocument();
 }
 
 /** An operator gets the same sentence without the link — `/admin/dashboard-templates`
@@ -286,7 +309,7 @@ export async function anOperatorSeesTheHintWithoutTheLink(): Promise<void> {
   renderAt(asUser("operator"), "/dashboards?section=sustainability", { items: [] });
 
   await waitFor(() => {
-    expect(screen.getByText(/No Sustainability dashboard yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No dashboard in this section yet/)).toBeInTheDocument();
   });
   expect(screen.queryByRole("link", { name: "Dashboard templates" })).not.toBeInTheDocument();
 }
@@ -355,7 +378,7 @@ export async function theSectionIsPartOfTheQueryKey(): Promise<void> {
   renderThrough("/dashboards?section=sustainability");
   await waitFor(() => {
     expect(
-      screen.getByText(/No Sustainability dashboard yet/),
+      screen.getByText(/No dashboard in this section yet/),
       "the cached unfiltered row was served to the filtered URL — the section is not in the key",
     ).toBeInTheDocument();
   });

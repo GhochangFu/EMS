@@ -93,10 +93,20 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
              * The import hint is gated on `isMasterDataAdmin`, because
              * `/admin/dashboard-templates` is: telling an operator to import a
              * template sends them to a screen they cannot open.
+             *
+             * **Any section code, not `"sustainability"` alone** (PR 2 sweep).
+             * The rule above is a statement about a FILTERED empty list, and
+             * `bms.dashboard_sections` is a vocabulary with six rows — a page
+             * opened on `?section=stp` was falling to the unfiltered wording and
+             * reading as a permission problem, which is the condition this
+             * branch exists to prevent. The sentence therefore names no section:
+             * the page cannot reach `dashboard_sections.label` without a second
+             * query, and spelling the raw code would render "No stp dashboard
+             * yet".
              */}
-            {section === "sustainability" ? (
+            {section ? (
               <>
-                No Sustainability dashboard yet. Import the stock template from{" "}
+                No dashboard in this section yet. Import the stock template from{" "}
                 {isMasterDataAdmin(user.role) ? (
                   <Link to="/admin/dashboard-templates" className="font-semibold underline">
                     Dashboard templates

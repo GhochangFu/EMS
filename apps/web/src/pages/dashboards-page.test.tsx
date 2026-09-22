@@ -12,6 +12,7 @@ import {
   viewerRoleSeesNoAuthoringAffordance,
   anEmptyUnfilteredListKeepsItsOriginalWording,
   anOperatorSeesTheHintWithoutTheLink,
+  anyEmptyFilteredSectionShowsTheImportHint,
   theEmptySustainabilitySectionShowsTheImportHint,
   theSectionIsPartOfTheQueryKey,
   theSectionQueryReachesTheApi,
@@ -70,6 +71,10 @@ describe("E4.2 — the dashboards list filtered by section", () => {
 
   it("shows the import hint with a link for a master-data admin", async () => {
     await theEmptySustainabilitySectionShowsTheImportHint();
+  });
+
+  it("shows the same hint for a section that is not sustainability", async () => {
+    await anyEmptyFilteredSectionShowsTheImportHint();
   });
 
   it("keeps the original empty wording when no section is set", async () => {

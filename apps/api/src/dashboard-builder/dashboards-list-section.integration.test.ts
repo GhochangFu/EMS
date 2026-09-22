@@ -219,20 +219,31 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
     };
   }, 60_000);
 
+  /**
+   * The four pools close in a `finally`, on its `F3.45` sibling's shape
+   * (`dashboard-templates-instantiate-stock.integration.test.ts`): a `DELETE`
+   * that raises must not leave four open connections behind, which is a leak
+   * the runner reports only as a hang at the end of the file. No reachable
+   * trigger was found here — this is the sibling's discipline applied, not a
+   * repair.
+   */
   afterAll(async () => {
-    if (dashboardIds.length > 0) {
-      await ownerPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [
-        dashboardIds,
-      ]);
+    try {
+      if (dashboardIds.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [
+          dashboardIds,
+        ]);
+      }
+      if (templateIds.length > 0) {
+        await ownerPool.query(`DELETE FROM bms.dashboard_templates WHERE id = ANY($1::uuid[])`, [
+          templateIds,
+        ]);
+      }
+    } finally {
+      await Promise.all(
+        [ownerPool, tenantPool, authPool, fleetPool].filter(Boolean).map((p) => p.end()),
+      );
     }
-    if (templateIds.length > 0) {
-      await ownerPool.query(`DELETE FROM bms.dashboard_templates WHERE id = ANY($1::uuid[])`, [
-        templateIds,
-      ]);
-    }
-    await Promise.all(
-      [ownerPool, tenantPool, authPool, fleetPool].filter(Boolean).map((p) => p.end()),
-    );
   }, 60_000);
 
   const actor = () => jwtFor(SEEDED.locationAdmin, "location_admin");

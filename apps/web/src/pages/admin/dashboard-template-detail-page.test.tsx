@@ -10,6 +10,7 @@ import {
   draftShowsPublishAndDelete,
   publishedShowsArchiveAndInstantiate,
   refusedDeleteStaysOnThePage,
+  aTypedNameLeavesTheInstantiateButtonDisabled,
   organizationWideOptionSendsANullAssetGroup,
   resolutionReportNamesAPartialWidget,
   roleFreeTemplateOffersTheOrganizationWideOption,
@@ -64,5 +65,9 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("choosing Organization-wide sends assetGroupId null", async () => {
     await organizationWideOptionSendsANullAssetGroup();
+  });
+
+  it("refuses to submit a typed name as a slug (PR 2 sweep)", async () => {
+    await aTypedNameLeavesTheInstantiateButtonDisabled();
   });
 });
