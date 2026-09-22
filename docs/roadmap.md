@@ -5643,3 +5643,53 @@ with no screenshot. Post-merge sweep #505: no behaviour defect, a test
 claim that named a guard the row does not have. **Unblocks `E4.2`, `E4.3`
 and `E1.6`.** Ships no Water
 Recycle % or Operational Efficiency % formula — B14 is still the client's.
+
+### `E4.2` — sustainability and benchmarking dashboards (ADR 0072) ✅ 2026-09-23
+
+Four pull requests on one ADR and one plan: #519 the read path (squash
+`bb598dc6`), #520 its post-merge sweep (`ca3ef9fc`), #521 the content and the
+surface (`b9d6e645`, thirteen commits), #522 its post-merge sweep (`542884cb`).
+Gated 2026-09-22 by
+[ADR 0072](./adr/0072-sustainability-and-benchmarking-dashboards.md), drafted
+and ruled the same day; seven questions, all ruled as recommended, and an
+eighth (Q7) found from source after the first six.
+
+`sustainability.total` and `sustainability.by_location` are the first
+`METRIC_CATALOG` entries that carry fields on their write schema —
+`{ pointKey, aggregate }` — so `bms.dashboard_widget_sources.params`, stored
+since ADR 0047 and read by nothing, now has a reader. Each resolves the latest
+sample per carrying asset inside a freshness bound (three times a scheduled
+derived point's interval, a flat fifteen minutes for a measured one) and
+answers a `coverage { fresh, carrying }` figure the tile renders as
+`n of m assets` and the benchmark table as `n/m`. On top of that: fourteen new
+point keys, twelve calendar-window stock rows on eight classes,
+`sustainability-overview` at `stockVersion: 2` with eighteen widgets,
+`GET /dashboards?section=`, and the *Sustainability* sidebar entry with its
+entry route. ADR 0072 decision 1 also amends ADR 0049 with an
+**organization-wide instantiate arm**: a section template could previously
+reach only an asset group, which made the enterprise view unreachable.
+
+Migration `0079` was needed and the plan said none — `0054` had frozen the
+`dashboard_widget_sources.catalog_key` CHECK to five keys. PR 2 needed none,
+verified from migration history rather than from the dev database.
+
+Eight reviews across the four PRs, and the two post-merge sweeps still found
+what the pre-merge passes missed. PR 1's sweep: `unit === ""` read as "this is
+money" when 247 catalog codes carry `""`, and `carrying` counting inactive
+assets on three of four scope arms. PR 2's pre-merge review: five gates green
+but dead, including a floor left at slack that its own comment said to raise,
+and nothing pinning which point key each of the fourteen tiles binds. PR 2's
+sweep: a calendar-window `sum` is `mean(observed) × every hour of the period`,
+so a partial outage reports a whole period while the asset still counts as
+fresh — the 24 water `sum` codes now say *estimated over the whole period*, and
+the guard itself is the new row `E4.4`.
+
+Verified against the running stack on a local-auth API built from the branch,
+the container being OIDC-only: import 201, publish 200 (which runs the
+point-key check over all fifteen bindings), organization-wide instantiate 201
+with all three scope columns NULL, `electrical-overview` with a null group 400,
+`?section=sustainability` exactly one instance and `?section=nope` empty, and
+coverage `{0,50}` then `{1,50}` with a value after one inserted sample. Browser
+N/A by gate — the extension runs on another machine. Ships no Water Recycle %
+or Operational Efficiency % formula: B14 is still the client's. Unblocks
+nothing on its own; `E4.3` waits on `E5.1`.

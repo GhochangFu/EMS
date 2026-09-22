@@ -471,3 +471,76 @@ None.
   integrated dashboard only with that row's period delta.
 - **`chore(agents):` sweep owed, separately** (§9.10): the status line and
   the §2 dashboards row gain this ADR. No §6 line moves.
+
+## Amendment 1 (2026-09-23) — what the build measured, and one sentence it falsified
+
+Written at the row's closure, as decision 6 requires. The decisions above are
+left as written; this is the record of where the implementation corrected,
+narrowed or widened them.
+
+1. **Decision 3 is wrong about what `coverage` catches, and the correction is
+   the one thing here a reader can act on.** The decision says: "A stalled
+   refresh fails closed as `windows_unresolved`, which the freshness bound then
+   turns into an excluded asset and a lower `coverage` — the roll-up never
+   shows a stale year as this year." That is true of a stalled continuous
+   aggregate and **false of a gap in the source data**. `combineSegments`
+   (`apps/api/src/calc/calc-window-plan.ts`) computes a window `sum` as
+   `(Σ sum_value / Σ sample_count) × hoursOf(start, end)` — the mean of the
+   *observed* samples times *every* hour of the period — and refuses only when
+   the window holds no sample at all. A WTP meter offline for ten days of a
+   thirty-day month, averaging 5 kL/h over the twenty days it did report,
+   answers `5 × 720 = 3600 kL` where the plant took 2400; the derived point is
+   rewritten every sweep, so the asset counts as **fresh** and `coverage` draws
+   no line. ADR 0070 consequence 9 already stated the mechanism and this ADR
+   did not carry it forward. The twenty-four `sum`-authored water codes now say
+   *estimated over the whole period* in their labels, on the Q7 precedent, and
+   the guard itself is backlog row `E4.4` with an ADR 0070 amendment of its
+   own. The eight `delta`-authored codes (the feeder's six, solar PV's two) are
+   immune: `delta` is last minus first.
+
+2. **Decision 2 rests on a false premise about money.** It reasons that a
+   catalog value carries `currency` when the point is a money quantity, and the
+   implementation read "money" as `unit === ""`. **247 catalog codes carry an
+   empty unit** — `pf`, `pue`, `occupancy_count`, every `*_per_day` — so every
+   one of them would have answered a currency. The repair is
+   `MONEY_POINT_KEY_CODES` in `packages/shared/src/sustainability-point-keys.ts`,
+   an explicit list, now seven codes. A client-authored money point that is not
+   on the list answers `currency: null`; that is the recorded limitation of an
+   explicit list, and `tests/e4.2-money-point-keys.test.ts` fails if a
+   catalogued cost code is missing from it.
+
+3. **A migration was needed and decision 6 said none was.** `0054` had frozen
+   `bms.dashboard_widget_sources.catalog_key` to five values, so the two new
+   keys needed
+   `0079_dashboard_widget_sources_sustainability_keys.sql`. PR 2 needed none,
+   and that was verified from migration history rather than from a running
+   database: `bms.point_keys.code` carries only a charset CHECK, and
+   `bms_tenant`'s SELECT on `bms.dashboard_templates` comes from `0041`'s
+   `ALTER DEFAULT PRIVILEGES` before `0056` creates the table as `bms_owner`.
+
+4. **Decision 6's file list under-describes both PRs.** PR 1 also touched
+   `packages/db` (the migration) and `apps/web` (the metric-source picker hides
+   an entry that declares `params`, so the picker never offers a binding the
+   API refuses), and split `dashboards.service.ts` into `dashboards.pure.ts`
+   to stay under the §4.5 cap. PR 2 also touched
+   `apps/web/src/pages/admin/dashboard-template-detail-page.tsx`: the
+   instantiate dialog needs an "Organization-wide (no group)" option, shown
+   only when the template binds no role, or decision 1's arm has no affordance.
+
+5. **Two facts the plan's open questions settled.** OQ1: `mixed_currency` is
+   unreachable on this route, because a tenant transaction reads one
+   organization and `organizations.currency` is `NOT NULL`. OQ2: a section
+   template instantiates **only** into an asset group
+   (`asset_groups.location_id` is `NOT NULL`), which is what made the
+   organization-wide arm of decision 1 necessary rather than convenient.
+
+6. **Residuals recorded at closure.** A deactivated point key blocks every
+   later `PUT` of a dashboard that still binds it, over all of its sources, not
+   only the changed one. A `streaming` derived point falls to the measured
+   fifteen-minute bound, because it has no interval to multiply.
+   `by_location`'s location query carries no `active` predicate, so a location
+   whose assets are all inactive still lists with `0/n`. Removing
+   `.limit(MAX_DATASET_ROWS + 1)` reddens no unit claim — the truncation gate is
+   the 201-location integration fixture. The slug rule `/^[a-z0-9-]+$/` is now
+   restated in nine places with no shared export. The `?section=` subtitle
+   renders the section code, not `bms.dashboard_sections.label`.
