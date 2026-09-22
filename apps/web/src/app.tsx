@@ -7,6 +7,7 @@ import { AlarmsPage } from "./pages/alarms-page";
 import { AssetsPage } from "./pages/assets-page";
 import { DashboardPage } from "./pages/dashboard-page";
 import { DashboardsPage } from "./pages/dashboards-page";
+import { SustainabilityEntryPage } from "./pages/sustainability-entry-page";
 import { DashboardViewerPage } from "./pages/dashboard-viewer-page";
 import { LocationDashboardPage } from "./pages/location-dashboard-page";
 import { MapPage } from "./pages/map-page";
@@ -166,6 +167,19 @@ export function App() {
         element={
           accessToken && user ? (
             <DashboardsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* `E4.2` / ADR 0072 decision 1 — the Sustainability sidebar entry. It
+          redirects; the same auth guard as /dashboards, because it reads the
+          same list. */}
+      <Route
+        path="/sustainability"
+        element={
+          accessToken && user ? (
+            <SustainabilityEntryPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )

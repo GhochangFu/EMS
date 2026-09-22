@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { fetchDashboards } from "../api/dashboards";
 import { apiErrorMessage } from "../lib/api-error-message";
-import { canAuthorDashboards } from "../lib/admin-access";
+import { canAuthorDashboards, isMasterDataAdmin } from "../lib/admin-access";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
@@ -30,9 +30,22 @@ type DashboardsPageProps = {
  * disagreement is gone, so the composite went with it.
  */
 export function DashboardsPage({ user }: DashboardsPageProps) {
+  /**
+   * `E4.2` / ADR 0072 decision 1 — `?section=` narrows the list to one dashboard
+   * section, which is where the Sustainability entry lands when the section has
+   * no instance yet.
+   *
+   * **The section is part of the query KEY.** TanStack Query caches by key, so a
+   * key that ignored it would serve the unfiltered list to the filtered URL and
+   * back, and the empty state below — the one that carries the import hint —
+   * would never be reached.
+   */
+  const [searchParams] = useSearchParams();
+  const section = searchParams.get("section") ?? undefined;
+
   const listQ = useQuery({
-    queryKey: ["dashboards", "list"],
-    queryFn: () => fetchDashboards(),
+    queryKey: ["dashboards", "list", { section: section ?? null }],
+    queryFn: () => fetchDashboards(undefined, undefined, section),
   });
 
   const rows = listQ.data?.items ?? [];
@@ -43,7 +56,11 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
         <PageHeader
           eyebrow="Monitoring"
           title="Dashboards"
-          subtitle="Configurable widget boards bound to live telemetry"
+          subtitle={
+            section
+              ? `${section.charAt(0).toUpperCase()}${section.slice(1)} section`
+              : "Configurable widget boards bound to live telemetry"
+          }
           actions={
             canAuthorDashboards(user.role) ? (
               <Link
@@ -65,7 +82,33 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
 
         {!listQ.isLoading && !listQ.isError && rows.length === 0 ? (
           <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
-            No dashboards are readable in your current scope yet.
+            {/**
+             * `E4.2` — a filtered, empty list is a DIFFERENT condition from an
+             * empty unfiltered one, and the wording has to say which. "No
+             * dashboards are readable in your current scope yet" on
+             * `?section=sustainability` reads as a permission problem, and the
+             * administrator who can fix it in one click would go looking for a
+             * grant instead.
+             *
+             * The import hint is gated on `isMasterDataAdmin`, because
+             * `/admin/dashboard-templates` is: telling an operator to import a
+             * template sends them to a screen they cannot open.
+             */}
+            {section === "sustainability" ? (
+              <>
+                No Sustainability dashboard yet. Import the stock template from{" "}
+                {isMasterDataAdmin(user.role) ? (
+                  <Link to="/admin/dashboard-templates" className="font-semibold underline">
+                    Dashboard templates
+                  </Link>
+                ) : (
+                  "Dashboard templates"
+                )}
+                .
+              </>
+            ) : (
+              "No dashboards are readable in your current scope yet."
+            )}
           </p>
         ) : null}
 

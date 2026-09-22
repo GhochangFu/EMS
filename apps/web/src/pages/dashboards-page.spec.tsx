@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -210,4 +210,92 @@ export async function anAssetScopedRowWithNoCodeStillReadsAsset(): Promise<void>
   expect(await screen.findByText("Codeless asset board")).toBeInTheDocument();
   expect(screen.getByText("Asset")).toBeInTheDocument();
   expect(screen.queryByText("Organization-wide")).not.toBeInTheDocument();
+}
+
+// ---------------------------------------------------------------------------
+// `E4.2` U11, ADR 0072 decision 1 — `?section=`
+// ---------------------------------------------------------------------------
+
+/**
+ * `renderPage` above mounts a bare `MemoryRouter`, so it can never carry a query
+ * string. This one does, and takes the response too, because the section cases
+ * turn on an EMPTY list rather than on `RESPONSE`'s one row.
+ */
+function renderAt(
+  user: AuthUser,
+  url: string,
+  response: DashboardsListResponse = RESPONSE,
+): void {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue(response);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[url]}>
+        <DashboardsPage user={user} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/** The section in the URL reaches the API call — the page must not fetch every
+ * dashboard and filter client-side. */
+export async function theSectionQueryReachesTheApi(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards?section=sustainability", { items: [] });
+
+  await waitFor(() => {
+    expect(dashboardsApi.fetchDashboards).toHaveBeenCalledWith(
+      undefined,
+      undefined,
+      "sustainability",
+    );
+  });
+}
+
+/** An empty filtered list tells a master-data admin how to fix it, with a link. */
+export async function theEmptySustainabilitySectionShowsTheImportHint(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards?section=sustainability", { items: [] });
+
+  await waitFor(() => {
+    expect(screen.getByText(/No Sustainability dashboard yet/)).toBeInTheDocument();
+  });
+  expect(screen.getByRole("link", { name: "Dashboard templates" })).toHaveAttribute(
+    "href",
+    "/admin/dashboard-templates",
+  );
+}
+
+/**
+ * The control, in the other direction: **without** the section the hint is
+ * absent and the original wording is there.
+ *
+ * Without the positive half this passes on a page that rendered nothing.
+ */
+export async function anEmptyUnfilteredListKeepsItsOriginalWording(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards", { items: [] });
+
+  await waitFor(() => {
+    expect(screen.getByText(/No dashboards are readable in your current scope yet/)).toBeInTheDocument();
+  });
+  expect(screen.queryByText(/No Sustainability dashboard yet/)).not.toBeInTheDocument();
+}
+
+/** An operator gets the same sentence without the link — `/admin/dashboard-templates`
+ * is a screen they cannot open, and sending them there is worse than saying
+ * nothing. */
+export async function anOperatorSeesTheHintWithoutTheLink(): Promise<void> {
+  renderAt(asUser("operator"), "/dashboards?section=sustainability", { items: [] });
+
+  await waitFor(() => {
+    expect(screen.getByText(/No Sustainability dashboard yet/)).toBeInTheDocument();
+  });
+  expect(screen.queryByRole("link", { name: "Dashboard templates" })).not.toBeInTheDocument();
+}
+
+/** The filtered page says which section it is showing. */
+export async function theSubtitleNamesTheSection(): Promise<void> {
+  renderAt(asUser("admin"), "/dashboards?section=sustainability");
+
+  await waitFor(() => {
+    expect(screen.getByText("Sustainability section")).toBeInTheDocument();
+  });
 }

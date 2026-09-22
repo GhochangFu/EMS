@@ -10,6 +10,11 @@ import {
   assetGroupAdminSeesTheManageLink,
   rendersEveryRowTheApiReturns,
   viewerRoleSeesNoAuthoringAffordance,
+  anEmptyUnfilteredListKeepsItsOriginalWording,
+  anOperatorSeesTheHintWithoutTheLink,
+  theEmptySustainabilitySectionShowsTheImportHint,
+  theSectionQueryReachesTheApi,
+  theSubtitleNamesTheSection,
 } from "./dashboards-page.spec";
 
 /**
@@ -49,5 +54,32 @@ describe("F3.1d dashboards page", () => {
 
   it("labels an asset-scoped row with no code 'Asset'", async () => {
     await anAssetScopedRowWithNoCodeStillReadsAsset();
+  });
+});
+
+describe("E4.2 — the dashboards list filtered by section", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("passes the section from the URL to the API", async () => {
+    await theSectionQueryReachesTheApi();
+  });
+
+  it("shows the import hint with a link for a master-data admin", async () => {
+    await theEmptySustainabilitySectionShowsTheImportHint();
+  });
+
+  it("keeps the original empty wording when no section is set", async () => {
+    await anEmptyUnfilteredListKeepsItsOriginalWording();
+  });
+
+  it("shows an operator the hint without the link", async () => {
+    await anOperatorSeesTheHintWithoutTheLink();
+  });
+
+  it("names the section in the subtitle", async () => {
+    await theSubtitleNamesTheSection();
   });
 });
