@@ -1,0 +1,208 @@
+import { sql } from "drizzle-orm";
+
+import type { RollupCoverage, SustainabilityAggregate } from "@bms/shared";
+
+import type { BmsTx } from "../database/tenant-context";
+
+/**
+ * `E4.2` U4 — the sustainability roll-up: one point key summed or averaged across the assets in
+ * a dashboard's scope that carry it (ADR 0072 decision 2). The `energy-cost.ts` shape: a pure
+ * half with a unit test, and a database half that reads the rows the pure half reduces.
+ *
+ * ## Freshness (ADR 0072 ruling 1)
+ *
+ * An asset contributes only when its latest sample of `pointKey` is younger than the point's
+ * freshness bound; otherwise it is excluded from the value and counted in `coverage.carrying`.
+ * For a **scheduled derived** point the bound is three times its effective
+ * `calc_interval_seconds` — `COALESCE(asset_points.calc_interval_seconds,
+ * template_points.calc_interval_seconds)`, ADR 0039 decisions 6–7. A **measured** point has no
+ * interval to read (`bms.rtus` records no poll cadence, and the SPA's 25 s live indicator is
+ * too tight for a daily total from an RTU polling every few minutes), so its bound is the flat
+ * `MEASURED_ROLLUP_FRESH_MS`. It is a constant rather than a column so that a later RTU cadence
+ * column can replace it in one place.
+ *
+ * ## Two statements, not one, and why
+ *
+ * `readRollupRows` first reads the CARRYING assets with their effective interval (no telemetry
+ * touched), computes each bound through `freshnessBoundSeconds` — the ONE declaration of the
+ * rule, the same one the unit test pins — and then reads the latest fresh sample per asset
+ * with the `unnest … CROSS JOIN LATERAL` idiom `CalcInputsService.getLatestSamplesForPairs`
+ * measured (10.1 ms against 14.3 s for `DISTINCT ON` over a pair set; do not "simplify" it
+ * back). Folding the bound into a SQL `CASE` would be a second declaration of the freshness
+ * rule that the test cannot see.
+ *
+ * ## Currency (ADR 0072 ruling 4, plan OQ1)
+ *
+ * `rollupCurrency` is the `energy-cost.ts` one-currency-else-`null` rule kept as a pure
+ * function. On this route `resolveForDashboard` runs inside ONE organization's tenant
+ * transaction and `bms.organizations.currency` is `NOT NULL`, so the set always has one member
+ * — the mixed case is unreachable here and the function exists so a later multi-organization
+ * read inherits the rule rather than re-deriving it.
+ */
+
+/** The flat freshness bound for a measured point: fifteen minutes. */
+export const MEASURED_ROLLUP_FRESH_MS = 15 * 60 * 1000;
+
+/** What decides a carrying asset's freshness bound — the point's kind and effective cadence. */
+export type FreshnessInput = {
+  readonly kind: string;
+  readonly calcTrigger: string | null;
+  readonly calcIntervalSeconds: number | null;
+};
+
+/**
+ * Seconds a sample stays fresh: `3 × interval` for a scheduled derived point with an interval,
+ * else the measured constant. A derived point with no scheduled interval (on-change, or a null
+ * interval) has no cadence to multiply, and falls to the same constant rather than to zero —
+ * a zero bound would silently exclude every such asset.
+ */
+export function freshnessBoundSeconds(row: FreshnessInput): number {
+  if (
+    row.kind === "derived" &&
+    row.calcTrigger === "scheduled" &&
+    row.calcIntervalSeconds !== null &&
+    row.calcIntervalSeconds > 0
+  ) {
+    return 3 * row.calcIntervalSeconds;
+  }
+  return MEASURED_ROLLUP_FRESH_MS / 1000;
+}
+
+/** One carrying asset's contribution: `value` is `null` when it had no fresh sample. */
+export type RollupInput = { readonly value: number | null };
+
+/**
+ * The roll-up itself. `carrying = rows.length`, `fresh` = rows with a value, `value = null`
+ * when nothing is fresh — never `?? 0`, because a zero here is a fabricated number in front
+ * of an operator (the contract's own reason for a nullable `value`).
+ */
+export function rollup(
+  rows: readonly RollupInput[],
+  aggregate: SustainabilityAggregate,
+): { value: number | null; coverage: RollupCoverage } {
+  const fresh = rows.flatMap((row) => (row.value === null ? [] : [row.value]));
+  const coverage = { fresh: fresh.length, carrying: rows.length };
+  if (fresh.length === 0) return { value: null, coverage };
+  const sum = fresh.reduce((acc, value) => acc + value, 0);
+  return { value: aggregate === "sum" ? sum : sum / fresh.length, coverage };
+}
+
+/** The one currency of the set, else `null`; a `null` member is its own "currency". */
+export function rollupCurrency(currencies: ReadonlySet<string | null>): string | null {
+  if (currencies.size !== 1) return null;
+  const [only] = currencies;
+  return only ?? null;
+}
+
+/** One carrying asset in scope, with its latest fresh sample (or none) and its location. */
+export type RollupRow = {
+  readonly assetId: string;
+  readonly assetCode: string;
+  readonly locationId: string;
+  readonly locationCode: string;
+  readonly locationName: string;
+  readonly value: number | null;
+};
+
+/**
+ * The carrying assets of `pointKey` inside `scope`, ordered by location code then asset code,
+ * each with its latest sample inside its own freshness bound. An empty `scope` returns `[]`
+ * before any SQL.
+ *
+ * `bms.assets.organization_id = $org` is written even though the tenant policy already holds
+ * it: the scope is a list of ids the caller resolved, and the predicate is what keeps this
+ * read correct under a role that ignores the policy (`dashboard-source-scope.ts` records the
+ * same reasoning).
+ */
+export async function readRollupRows(
+  tx: BmsTx,
+  organizationId: string,
+  scope: readonly string[],
+  pointKey: string,
+): Promise<RollupRow[]> {
+  if (scope.length === 0) return [];
+
+  // `sql.param` on purpose: a bare JS array inside drizzle's `sql` tag is expanded to a
+  // parenthesised list for `IN (...)`, which is not a Postgres array. `param` hands the array
+  // to node-postgres whole, which serialises it as one array literal for the cast.
+  const carrying = await tx.execute<{
+    asset_id: string;
+    asset_code: string;
+    location_id: string;
+    location_code: string;
+    location_name: string;
+    kind: string;
+    calc_trigger: string | null;
+    calc_interval_seconds: number | null;
+  }>(sql`
+    SELECT a.id AS asset_id,
+           a.code AS asset_code,
+           l.id AS location_id,
+           l.code AS location_code,
+           l.name AS location_name,
+           tp.kind,
+           COALESCE(ap.calc_trigger, tp.calc_trigger) AS calc_trigger,
+           COALESCE(ap.calc_interval_seconds, tp.calc_interval_seconds) AS calc_interval_seconds
+      FROM bms.assets a
+      JOIN bms.template_points tp
+        ON tp.template_id = a.template_id AND tp.point_key = ${pointKey}
+      JOIN bms.locations l ON l.id = a.location_id
+      LEFT JOIN bms.asset_points ap
+        ON ap.asset_id = a.id AND ap.point_key = ${pointKey}
+     WHERE a.id = ANY(${sql.param([...scope])}::uuid[])
+       AND a.organization_id = ${organizationId}
+     ORDER BY l.code, a.code
+  `);
+  if (carrying.rows.length === 0) return [];
+
+  const assetIds = carrying.rows.map((row) => row.asset_id);
+  const bounds = carrying.rows.map((row) =>
+    freshnessBoundSeconds({
+      kind: row.kind,
+      calcTrigger: row.calc_trigger,
+      calcIntervalSeconds: row.calc_interval_seconds,
+    }),
+  );
+  const latest = await tx.execute<{ asset_id: string; value: number }>(sql`
+    SELECT p.asset_id, s.value
+      FROM unnest(${sql.param(assetIds)}::uuid[], ${sql.param(bounds)}::int[]) AS p(asset_id, bound_seconds)
+      CROSS JOIN LATERAL (
+        SELECT v.value
+          FROM telemetry.point_values v
+         WHERE v.asset_id = p.asset_id
+           AND v.point_key = ${pointKey}
+           AND v.time > now() - make_interval(secs => p.bound_seconds)
+         ORDER BY v.time DESC
+         LIMIT 1
+      ) s
+  `);
+  const valueByAsset = new Map(latest.rows.map((row) => [row.asset_id, Number(row.value)]));
+
+  return carrying.rows.map((row) => ({
+    assetId: row.asset_id,
+    assetCode: row.asset_code,
+    locationId: row.location_id,
+    locationCode: row.location_code,
+    locationName: row.location_name,
+    value: valueByAsset.get(row.asset_id) ?? null,
+  }));
+}
+
+/** The point's catalog unit — `""` is the money spelling (E4.1c), `null` when the code is unknown. */
+export async function readPointKeyUnit(tx: BmsTx, pointKey: string): Promise<string | null> {
+  const result = await tx.execute<{ unit: string | null }>(
+    sql`SELECT unit FROM bms.point_keys WHERE code = ${pointKey} LIMIT 1`,
+  );
+  return result.rows[0]?.unit ?? null;
+}
+
+/** The organization's currency (`NOT NULL` since `0076`); `null` only if the row is missing. */
+export async function readOrganizationCurrency(
+  tx: BmsTx,
+  organizationId: string,
+): Promise<string | null> {
+  const result = await tx.execute<{ currency: string | null }>(
+    sql`SELECT currency FROM bms.organizations WHERE id = ${organizationId} LIMIT 1`,
+  );
+  return result.rows[0]?.currency ?? null;
+}
