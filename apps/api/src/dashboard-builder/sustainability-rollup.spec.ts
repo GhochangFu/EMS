@@ -1,4 +1,9 @@
-import { MAX_DATASET_ROWS } from "@bms/shared";
+import {
+  MAX_DATASET_ROWS,
+  MONEY_POINT_KEY_CODES,
+  SUSTAINABILITY_ELECTRICAL_POINT_KEYS,
+  SUSTAINABILITY_WATER_POINT_KEYS,
+} from "@bms/shared";
 
 import {
   MEASURED_ROLLUP_FRESH_MS,
@@ -85,6 +90,23 @@ export function aListedMoneyCodeIsMoney(): void {
  */
 export function anUnlistedNoUnitCodeIsNotMoney(): void {
   same(isMoneyPointKey("pf"), false, "isMoneyPointKey(pf)");
+}
+
+/**
+ * Every listed money code is a code the catalog actually declares (sweep review). Without
+ * this the list is gated against itself: a catalog RENAME leaves a stale spelling here, the
+ * money tile silently drops its currency, and every suite stays green.
+ */
+export function everyMoneyCodeIsADeclaredPointKey(): void {
+  const declared = new Set<string>([
+    ...SUSTAINABILITY_ELECTRICAL_POINT_KEYS,
+    ...SUSTAINABILITY_WATER_POINT_KEYS,
+  ]);
+  same(
+    MONEY_POINT_KEY_CODES.filter((code) => !declared.has(code)),
+    [],
+    "money codes declared by no sustainability array",
+  );
 }
 
 /** A scheduled derived point at 60 s is fresh for 180 s (3 × interval). */

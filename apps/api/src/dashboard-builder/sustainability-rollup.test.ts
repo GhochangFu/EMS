@@ -9,6 +9,7 @@ import {
   capRowsAtTheCapIsNotTruncated,
   capRowsFlagsThe201stRow,
   derivedWithoutIntervalUsesTheConstant,
+  everyMoneyCodeIsADeclaredPointKey,
   measuredBoundIsTheConstant,
   oneCurrencyIsTheCurrency,
   rollupOfNothingIsNullWithZeroCoverage,
@@ -53,6 +54,10 @@ describe("E4.2 U4 — the sustainability roll-up's pure half", () => {
 
   it("does not treat pf (unit \"\", unlisted) as money", () => {
     anUnlistedNoUnitCodeIsNotMoney();
+  });
+
+  it("lists only money codes the sustainability arrays declare", () => {
+    everyMoneyCodeIsADeclaredPointKey();
   });
 
   it("bounds a scheduled derived point at three intervals", () => {
