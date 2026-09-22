@@ -339,9 +339,10 @@ export function runDashboardsServiceUnitTests(): void {
       `got updates=${JSON.stringify(reorderedDiff.updates.map((w) => w.id))} unchanged=${JSON.stringify(reorderedDiff.unchangedIds)}`,
   );
 
-  // And `params` participates: same key, different parameters is a real change. Empty today
-  // (METRIC_CATALOG_PARAMS_WRITE declares no fields yet), so this guards the comparison rather
-  // than a shipping behaviour — and it is what makes Unit 5's first parameter safe to add.
+  // And `params` participates: same key, different parameters is a real change. Written when
+  // METRIC_CATALOG_PARAMS_WRITE declared no fields; since `E4.2` PR 1 the two sustainability
+  // entries take `{ pointKey, aggregate }`, and this comparison is what makes two tiles on the
+  // same key with different params two bindings rather than one.
   const paramsChanged = diffWidgets(sourceStored, [
     {
       ...(rebound as unknown as Record<string, unknown>),
