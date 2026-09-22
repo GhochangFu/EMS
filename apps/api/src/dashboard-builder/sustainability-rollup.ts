@@ -135,6 +135,11 @@ export type RollupRow = {
  * it: the scope is a list of ids the caller resolved, and the predicate is what keeps this
  * read correct under a role that ignores the policy (`dashboard-source-scope.ts` records the
  * same reasoning).
+ *
+ * `a.active` is written HERE, whichever arm of `resolveAssetScope` produced the ids (sweep):
+ * the organization arm filters `active`, the asset, location and asset-group arms do not, so
+ * without it a decommissioned meter still pinned to its template was a permanent denominator
+ * — and, while its last sample stayed fresh, a term — on every site dashboard.
  */
 export async function readRollupRows(
   tx: BmsTx,
@@ -173,6 +178,7 @@ export async function readRollupRows(
         ON ap.asset_id = a.id AND ap.point_key = ${pointKey}
      WHERE a.id = ANY(${sql.param([...scope])}::uuid[])
        AND a.organization_id = ${organizationId}
+       AND a.active
      ORDER BY l.code, a.code
   `);
   if (carrying.rows.length === 0) return [];

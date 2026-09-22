@@ -86,6 +86,21 @@ export async function l1AvgOnTheSameDashboardIsFifteen(f: RollupFixture): Promis
   ]).toEqual([30, 15]);
 }
 
+/**
+ * The inactive asset E at L1 (on the template, fresh `kl_today` = 40, in the caller's readable
+ * set) is neither a denominator nor a term on the L1 dashboard (sweep): 30 with 2/2, not 70
+ * with 3/3. The location arm of `resolveAssetScope` hands E's id over; the carrying query is
+ * what drops it. The claim reads the `avg` tile so it is not the `sum` claim restated: 15,
+ * where E counted would give 23.33….
+ */
+export async function inactiveAssetIsNotCarrying(f: RollupFixture): Promise<void> {
+  const tile = metricOf(await resolveWide(f, f.l1DashboardId), f.l1AvgSourceId);
+  expect({ value: tile.value, coverage: tile.coverage }).toEqual({
+    value: 15,
+    coverage: { fresh: 2, carrying: 2 },
+  });
+}
+
 /** Organization-wide `{ kl_today, sum }`: C's sample is 10 min old against a 180 s bound — 30, 2/3. */
 export async function wideSumExcludesTheStaleAssetButCountsIt(f: RollupFixture): Promise<void> {
   const tile = metricOf(await resolveWide(f, f.wideTableDashboardId), f.wideTotalSourceId);
