@@ -94,11 +94,31 @@ export type NotificationChannelRow = {
 };
 
 /**
+ * `F3.5b` (ADR 0071 decision 10) — one file to ride along with a message.
+ *
+ * `body` is the file's bytes, named as the ADR names it; `EmailTransport`
+ * renames it to nodemailer's `content` at the one place the two vocabularies
+ * meet. `filename` is operator-visible in the mail client and, like `subject`,
+ * never reaches a log line (§9.6).
+ */
+export type NotificationAttachment = {
+  readonly filename: string;
+  readonly contentType: string;
+  readonly body: Buffer;
+};
+
+/**
  * One notification, already rendered.
  *
  * `body` and `subject` are operator-facing text about an alarm. They must
  * never be logged (§9.6) — a transport logs the channel code and the rule, not
  * what was said or who it was said to.
+ *
+ * `attachments` (`F3.5b`, ADR 0071 decision 10) is the scheduled report's
+ * files. **Only the email transport forwards it**: `LogTransport` logs
+ * identifiers and `WebhookTransport` serialises its seven named fields, so
+ * both ignore the field — a webhook body keeps its shape and a log line
+ * never carries a filename.
  */
 export type NotificationMessage = {
   subject: string;
@@ -108,6 +128,7 @@ export type NotificationMessage = {
   alarmId: string | null;
   severity: string | null;
   channel: NotificationChannelRow;
+  readonly attachments?: readonly NotificationAttachment[];
 };
 
 export interface NotificationTransport {

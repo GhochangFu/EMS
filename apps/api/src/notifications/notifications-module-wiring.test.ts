@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertCoreExportsEmailTransport,
   assertEveryClassParamIsResolvable,
   assertEveryInjectedTokenIsResolvable,
   assertModuleStillDeclaresTheThreeControllers,
@@ -26,5 +27,9 @@ describe("F3.11 — NotificationsModule's controllers resolve after the provider
 
   it("every class-typed parameter a controller takes resolves the same way", () => {
     assertEveryClassParamIsResolvable();
+  });
+
+  it("F3.5b — the core exports EmailTransport for ReportsCoreModule (ADR 0071 decision 10)", () => {
+    assertCoreExportsEmailTransport();
   });
 });

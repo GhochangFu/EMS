@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -8,12 +7,12 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, arrayContained, count, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, arrayContained, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import type { Readable } from "node:stream";
 
-import { locations, organizations, reportFiles, users } from "@bms/db";
+import { locations, reportFiles, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { reportFileDtoSchema, reportTemplateIdSchema } from "@bms/shared";
 import type { JwtPayload, ReportFileDto, ReportFileFormat } from "@bms/shared";
@@ -30,8 +29,16 @@ import { buildReportObjectKey } from "../storage/object-key";
 import { deleteObject, getObject, putObject } from "../storage/storage-client";
 import type { StorageClient } from "../storage/storage-client";
 import { STORAGE_CLIENT } from "../storage/storage.tokens";
+import {
+  CONTENT_TYPES,
+  describeBuffer,
+  discardObjectUnlessTheRowCommitted,
+  errorName,
+  reportFilename,
+} from "./report-file-store";
 import type { ReportFilesConfig } from "./report-files-config";
 import { REPORT_FILES_CONFIG } from "./report-files.tokens";
+import { resolveReportOrganization } from "./report-organization";
 import { ReportsService } from "./reports.service";
 
 /** What the controller hands `saveOnDemand` after the body parse ran (U8's `saveEnergyReportFileBodySchema`). */
@@ -45,11 +52,6 @@ export type SaveEnergyReportFileBody = {
 
 /** The one sentence a covered role gets for a file its scope does not cover (ADR 0071 Amendment 1 item 3). */
 export const OUT_OF_SCOPE_SENTENCE = "Report file is outside your access scope";
-
-const CONTENT_TYPES: Record<ReportFileFormat, ReportFileDto["contentType"]> = {
-  pdf: "application/pdf",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-};
 
 /**
  * `F3.5a` (ADR 0071 decisions 4, 5, 6, 11; Amendment 1 items 1–3) — the
@@ -88,16 +90,17 @@ const CONTENT_TYPES: Record<ReportFileFormat, ReportFileDto["contentType"]> = {
  * count runs inside the tenant transaction under
  * `pg_advisory_xact_lock(hashtextextended('report_files:' || org, 0))` —
  * there is no parent row to `FOR UPDATE`, unlike F3.4's asset. Both compare
- * `!(n < cap)`, so a non-numeric count refuses rather than admits. Until
- * `0078` lands the count is every row of the organization.
+ * `!(n < cap)`, so a non-numeric count refuses rather than admits. Only
+ * on-demand rows count (`schedule_id IS NULL`, F3.5b U7).
  *
  * **Object first, then the row (decision 5, the F3.4 R-2 shape).** The
  * tenant transaction never holds a connection across an S3 call. A failed
  * `putObject` is one `warn` naming the file id and `err.name`, then 503. A
- * failure after the put runs `discardObjectUnlessTheRowCommitted` — a
- * private copy of F3.4's helper parameterised on `reportFiles` (R-12: the
- * F3.51 extraction precedent is narrow, and §9 rule 9 forbids lifting the
- * original in this row): it re-reads the row on `fleetDb` and keeps the
+ * failure after the put runs `discardObjectUnlessTheRowCommitted`
+ * (`report-file-store.ts` since F3.5b U7) — a copy of F3.4's helper
+ * parameterised on `reportFiles` (R-12: the F3.51 extraction precedent is
+ * narrow, and §9 rule 9 forbids lifting the original in this row): it
+ * re-reads the row on `fleetDb` and keeps the
  * object when the row cannot be proved absent, because a live row whose
  * object is gone is decision 4's bad state and the orphan is the tolerable
  * one.
@@ -148,7 +151,11 @@ export class ReportFilesService {
 
     // Decision 6: the role gate, before any other read.
     const writableLocations = await this.accessControl.writableLocationIds(jwt);
-    const organizationId = await this.resolveOrganization(jwt, body.organizationId);
+    const organizationId = await resolveReportOrganization(
+      { accessControl: this.accessControl, fleetDb: this.fleetDb },
+      jwt,
+      body.organizationId,
+    );
     const locationIds = await this.resolveLocationStamp(jwt, organizationId, writableLocations);
 
     // R-11: the cheap refusal, before the render and before any storage call.
@@ -163,9 +170,8 @@ export class ReportFilesService {
         : await this.reports.energyXlsx(query, assetIds);
 
     // R-3: the buffer is the only size and hash authority.
-    const sha256 = createHash("sha256").update(buffer).digest("hex");
-    const byteSize = buffer.length;
-    const filename = `energy-consumption-${body.startDate}-to-${body.endDate}.${body.format}`;
+    const { sha256, byteSize } = describeBuffer(buffer);
+    const filename = reportFilename(body.startDate, body.endDate, body.format);
     const contentType = CONTENT_TYPES[body.format];
     const createdBy = await this.resolveActorId(jwt);
 
@@ -203,6 +209,8 @@ export class ReportFilesService {
           filename,
           deliveryStatus: "none",
           deliveryError: null,
+          // On-demand save (ADR 0071 decision 4) — never a scheduled render.
+          scheduleId: null,
           createdBy,
         });
         await this.audit.write(
@@ -229,7 +237,11 @@ export class ReportFilesService {
     } catch (err) {
       // R-12: cleanup of the object the failed row would have served — only
       // after the row is proved absent.
-      await this.discardObjectUnlessTheRowCommitted(fileId, key);
+      await discardObjectUnlessTheRowCommitted(
+        { fleetDb: this.fleetDb, client: this.client, logger: this.logger },
+        fileId,
+        key,
+      );
       throw err;
     }
     return toReportFileDto(row);
@@ -324,50 +336,6 @@ export class ReportFilesService {
     }
   }
 
-  /** Amendment 1 item 1 — which organization the row belongs to, from the actor's own grants. */
-  private async resolveOrganization(jwt: JwtPayload, requested: string | undefined): Promise<string> {
-    const writable = await this.accessControl.writableOrganizationIds(jwt);
-    if (writable === null) {
-      if (requested === undefined) {
-        throw new BadRequestException("organizationId is required for a global admin");
-      }
-      // The global admin's id comes from the body, not from a grant, so its
-      // existence is checked here (fleet handle) — before the stamp, the cap
-      // pre-check and any storage call. Without this a well-formed uuid naming
-      // no organization reached `putObject` and then failed the FK: a 500 for
-      // a caller error. The other branches validate against `writable`, which
-      // came from real grants.
-      const [organization] = await this.fleetDb
-        .select({ organizationId: organizations.id })
-        .from(organizations)
-        .where(eq(organizations.id, requested))
-        .limit(1);
-      if (!organization) {
-        throw new NotFoundException("Organization not found");
-      }
-      return requested;
-    }
-    if (writable.length === 0) {
-      throw new ForbiddenException("No organization scope to file the report under");
-    }
-    if (writable.length === 1) {
-      const [only] = writable as [string];
-      if (requested !== undefined && requested !== only) {
-        throw new ForbiddenException("Report organization is outside your access scope");
-      }
-      return only;
-    }
-    if (requested === undefined) {
-      throw new BadRequestException(
-        `organizationId is required: you administer ${writable.length} organizations`,
-      );
-    }
-    if (!writable.includes(requested)) {
-      throw new ForbiddenException("Report organization is outside your access scope");
-    }
-    return requested;
-  }
-
   /** Amendment 1 item 2 — `{}` for a global or organization admin; the intersection for a location admin. */
   private async resolveLocationStamp(
     jwt: JwtPayload,
@@ -417,50 +385,6 @@ export class ReportFilesService {
     }
   }
 
-  /**
-   * A private copy of `AssetImagesWriteService.discardObjectUnlessTheRowCommitted`
-   * (F3.4, post-merge sweep C3) parameterised on `reportFiles` — R-12 says why
-   * it is copied and not lifted. `withTenant` rejects on any failure of the
-   * tenant transaction, and one of those failures is not a rollback: a
-   * connection dropped between the server's `COMMIT` and the acknowledgement
-   * leaves the row committed. Discarding then makes a live row whose object is
-   * gone. So the row is re-read on `fleetDb` (the tenant connection is the one
-   * that just failed); a present row, or a re-read that itself fails, keeps
-   * the object. Never throws — the caller rethrows the original error.
-   *
-   * The projection is `fileId`, not `id`, so the spec's fleet fake can tell
-   * this read from the others by its shape.
-   */
-  private async discardObjectUnlessTheRowCommitted(fileId: string, key: string): Promise<void> {
-    let committed: boolean;
-    try {
-      const rows = await this.fleetDb
-        .select({ fileId: reportFiles.id })
-        .from(reportFiles)
-        .where(eq(reportFiles.id, fileId))
-        .limit(1);
-      committed = rows.length > 0;
-    } catch (err) {
-      this.logger.warn(
-        `report file ${fileId}: the committed-row re-check failed with ${errorName(err)}; the object is kept (ADR 0071 decision 4)`,
-      );
-      return;
-    }
-    if (committed) {
-      this.logger.warn(
-        `report file ${fileId}: the row committed but the transaction reported failure; the object is kept (ADR 0071 decision 4)`,
-      );
-      return;
-    }
-    try {
-      await deleteObject(this.client, key);
-    } catch (err) {
-      this.logger.warn(
-        `report file ${fileId}: cleanup of the object after a failed row write failed with ${errorName(err)}; an orphan object remains (ADR 0066 decision 11)`,
-      );
-    }
-  }
-
   /** `created_by`: the `bms.users.id` the way `MasterDataAuditService.write` resolves its actor — on the fleet pool, `null` when absent. */
   private async resolveActorId(jwt: JwtPayload): Promise<string | null> {
     const [row] = await this.fleetDb
@@ -488,6 +412,7 @@ type StoredRow = {
   filename: string;
   deliveryStatus: string;
   deliveryError: string | null;
+  scheduleId: string | null;
   createdBy: string | null;
   createdAt: Date;
 };
@@ -509,18 +434,25 @@ function selectRows(db: BmsDb | BmsTx) {
       filename: reportFiles.filename,
       deliveryStatus: reportFiles.deliveryStatus,
       deliveryError: reportFiles.deliveryError,
+      scheduleId: reportFiles.scheduleId,
       createdBy: reportFiles.createdBy,
       createdAt: reportFiles.createdAt,
     })
     .from(reportFiles);
 }
 
-/** The per-organization count on whichever executor the caller is on (fleet pre-check, or the tenant transaction). */
+/**
+ * The per-organization count on whichever executor the caller is on (fleet
+ * pre-check, or the tenant transaction). Only on-demand rows count: a
+ * scheduled render (`schedule_id` set) never consumes the
+ * `REPORT_ONDEMAND_CAP` — F3.5a R-11's promised change, landed with F3.5b
+ * U7 and gated at integration by `aScheduledFileDoesNotCountTowardTheOnDemandCap`.
+ */
 async function countFiles(db: BmsDb | BmsTx, organizationId: string): Promise<number> {
   const [row] = await db
     .select({ count: count() })
     .from(reportFiles)
-    .where(eq(reportFiles.organizationId, organizationId));
+    .where(and(eq(reportFiles.organizationId, organizationId), isNull(reportFiles.scheduleId)));
   return Number(row?.count);
 }
 
@@ -556,14 +488,9 @@ export function toReportFileDto(row: StoredRow): ReportFileDto {
     filename: row.filename,
     deliveryStatus: row.deliveryStatus,
     deliveryError: row.deliveryError,
+    scheduleId: row.scheduleId,
     createdBy: row.createdBy,
     createdAt: row.createdAt.toISOString(),
   } satisfies Record<keyof ReportFileDto, unknown>;
   return parseStoredContract(reportFileDtoSchema, candidate, "report_files.to_dto.row");
-}
-
-function errorName(err: unknown): string {
-  return typeof err === "object" && err !== null && typeof (err as { name?: unknown }).name === "string"
-    ? (err as { name: string }).name
-    : "Error";
 }

@@ -9,6 +9,7 @@ import { DatabaseModule } from "../database/database.module";
 import { ObservabilityModule } from "../observability/observability.module";
 import { QueueModule } from "../queue/queue.module";
 import { repoRoot } from "../testing/repo-root";
+import { EmailTransport } from "./email.transport";
 import { EscalationDefaultsController, EscalationProfilesController } from "./escalation-profiles.controller";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationsCoreModule } from "./notifications-core.module";
@@ -178,4 +179,15 @@ export function assertEveryClassParamIsResolvable(): void {
   }
   expect(seen).toBeGreaterThanOrEqual(4);
   expect(missing, "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/**
+ * `F3.5b` (ADR 0071 decision 10) — the core exports `EmailTransport`, so
+ * `ReportsCoreModule` can inject it to email a scheduled report. Read from
+ * the same `@Module()` metadata Nest reads at boot; a green build says
+ * nothing about it (the `NOTIFICATIONS_CONFIG` lesson above).
+ */
+export function assertCoreExportsEmailTransport(): void {
+  const exported = moduleList(NotificationsCoreModule, "exports").map(tokenOf);
+  expect(exported, "NotificationsCoreModule.exports").toContain(EmailTransport);
 }

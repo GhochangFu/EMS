@@ -10,7 +10,9 @@ import { readWorkerConfig } from "./queue/queue-config";
 import { QueueModule } from "./queue/queue.module";
 import { WORKER_CONFIG } from "./queue/queue.tokens";
 import { WorkerHostService } from "./queue/worker-host.service";
+import { ReportsCoreModule } from "./reports/reports-core.module";
 import { RuleSweepModule } from "./rules/rule-sweep.module";
+import { StorageModule } from "./storage/storage.module";
 
 /**
  * The worker process's root (ADR 0063 decisions 2, 3; ADR 0064 decision 3,
@@ -24,6 +26,22 @@ import { RuleSweepModule } from "./rules/rule-sweep.module";
  * carves and no controller), the `@Global()` `AccessControlModule` that
  * `ChannelsService` resolves `AccessControlService` from without `AuthModule`,
  * and the one provider that does the work (`WorkerHostService`).
+ *
+ * **`F3.5b` (ADR 0071 decisions 8–10; plan R-3) adds two imports.**
+ * `ReportsCoreModule` is the loop-free carve of the reports domain — the
+ * render body (`ReportRenderService`), the renderer and, from U9, the
+ * dispatcher — built on the `RuleSweepModule` shape and gated by the same
+ * fence. `StorageModule` is imported because the render job writes and reads
+ * back report objects; `storage.module.ts` said "never `WorkerModule`" until
+ * this row, and its consequences are recorded rather than hidden: the
+ * worker's `GET /health` now carries the `storage` section
+ * (`livenessResponseSchema.storage` stays `.optional()` — a boot with
+ * storage unconfigured still answers), `StorageBootstrap.onModuleInit` runs
+ * `ensureBucket` on **both** processes (the `BUCKET_RACE_NAMES` race between
+ * them is already swallowed), and the worker image loads
+ * `@aws-sdk/client-s3` at start. A fourth the plan did not name: the core's
+ * closure reaches `reports.service.ts` and `energy-pdf.ts`, so the worker
+ * process also loads `xlsx` and the `pdfmake` singleton at start.
  *
  * **`WORKER_CONFIG` is a second, deterministic read of the environment
  * `worker.ts` already validated.** `readWorkerConfig` ran before any Nest
@@ -57,6 +75,9 @@ import { RuleSweepModule } from "./rules/rule-sweep.module";
     HealthModule,
     AccessControlModule,
     RuleSweepModule,
+    // `F3.5b` — R-3: the render job puts, gets and deletes report objects.
+    StorageModule,
+    ReportsCoreModule,
   ],
   providers: [
     WorkerHostService,

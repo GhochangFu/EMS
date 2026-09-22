@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertLogTransportIgnoresAttachments,
   runLogTransportTests,
   runNotificationsConfigTests,
   runStepLatenessConfigTests,
@@ -18,5 +19,9 @@ describe("F3.8 notifications config", () => {
 
   it("logs a skip with identifiers only, never recipients, secrets or content", async () => {
     await runLogTransportTests();
+  });
+
+  it("F3.5b — the logged line for a message with attachments carries no filename (ADR 0071 decision 10)", async () => {
+    await assertLogTransportIgnoresAttachments();
   });
 });

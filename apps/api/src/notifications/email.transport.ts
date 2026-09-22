@@ -23,13 +23,21 @@ import type {
  * says how many recipients there were, not who they are.
  */
 
-/** What nodemailer's `createTransport(...).sendMail` gives us, narrowed. */
+/**
+ * What nodemailer's `createTransport(...).sendMail` gives us, narrowed.
+ *
+ * `attachments` (`F3.5b`, ADR 0071 decision 10) carries nodemailer's own field
+ * names — `content`, not the message's `body` — because `createSender` hands
+ * `createTransport`'s transporter back unwrapped, so whatever `send` builds
+ * here is exactly what nodemailer receives.
+ */
 export type MailSender = {
   sendMail(options: {
     from: string;
     to: string[];
     subject: string;
     text: string;
+    attachments?: { filename: string; contentType: string; content: Buffer }[];
   }): Promise<unknown>;
 };
 
@@ -173,6 +181,22 @@ export class EmailTransport implements NotificationTransport {
       return { status: "skipped_unconfigured", error: "channel has no recipients configured" };
     }
 
+    // `F3.5b` (ADR 0071 decision 10): the message's `body` becomes nodemailer's
+    // `content`. A conditional spread, not `attachments: undefined` — the key
+    // is absent when there is nothing to attach, so an alarm mail's options
+    // are byte-for-byte what they were before the field existed.
+    const attachments = message.attachments;
+    const withAttachments =
+      attachments !== undefined && attachments.length > 0
+        ? {
+            attachments: attachments.map((a) => ({
+              filename: a.filename,
+              contentType: a.contentType,
+              content: a.body,
+            })),
+          }
+        : {};
+
     try {
       await withDeadline(
         this.sender.sendMail({
@@ -180,6 +204,7 @@ export class EmailTransport implements NotificationTransport {
           to,
           subject: message.subject,
           text: message.body,
+          ...withAttachments,
         }),
         this.deadlineMs,
       );

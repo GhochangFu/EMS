@@ -210,3 +210,52 @@ export async function runLogTransportTests(): Promise<void> {
     logger.warn = original;
   }
 }
+
+/**
+ * `F3.5b` (ADR 0071 decision 10) — the stand-in transport ignores
+ * `attachments`: its one line names identifiers, and a report filename is
+ * operator-visible content, not an identifier (§9.6). The channel code on the
+ * same line is the control that the line was written.
+ */
+export async function assertLogTransportIgnoresAttachments(): Promise<void> {
+  const lines: string[] = [];
+  const transport = new LogTransport();
+  const logger = (transport as unknown as { logger: { warn: (m: string) => void } }).logger;
+  const original = logger.warn.bind(logger);
+  logger.warn = (m: string) => {
+    lines.push(m);
+  };
+  const filename = "energy-consumption-2026-09-01-to-2026-09-07.pdf";
+  try {
+    await transport.send({
+      subject: "Energy consumption — 2026-09-01 to 2026-09-07",
+      body: "Total energy 1,234 kWh",
+      ruleId: null,
+      ruleCode: null,
+      alarmId: null,
+      severity: null,
+      channel: {
+        id: "33333333-3333-3333-3333-333333333333",
+        organizationId: "12121212-1212-1212-1212-121212121212",
+        code: "ops-email",
+        name: "Operations email",
+        kind: "email",
+        config: { to: ["control.room@ion-exchange.example"] },
+        secret: null,
+        secretState: "none",
+        enabled: true,
+        updatedAt: new Date("2020-01-01T00:00:00.000Z"),
+      },
+      attachments: [
+        { filename, contentType: "application/pdf", body: Buffer.from("%PDF-1.4 fixture") },
+      ],
+    });
+  } finally {
+    logger.warn = original;
+  }
+  assert(lines.length === 1, `expected exactly one log line, got ${lines.length}`);
+  const line = lines[0] ?? "";
+  assert(line.includes("channel=ops-email"), "the line names the channel (control)");
+  assert(!line.includes(filename), `the line must not carry the attachment filename: ${line}`);
+  assert(!line.includes("attachments"), `the line must not mention attachments at all: ${line}`);
+}

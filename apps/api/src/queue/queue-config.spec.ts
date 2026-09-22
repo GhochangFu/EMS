@@ -304,3 +304,63 @@ export function assertInvalidWorkerPortRefusalFiresBeforeRuleSweepGuard(): void 
     `the invalid-WORKER_PORT refusal must not also name RULE_SWEEP — got "${errorMessage(err)}"`,
   );
 }
+
+/**
+ * `REPORT_DISPATCH_INTERVAL_MS` (ADR 0071 decision 8, R-14, plan Unit 4).
+ * `readReportDispatchInterval`'s shape mirrors `readRuleSweepInterval`
+ * exactly; these rows are that suite's rows, retargeted.
+ */
+export function assertReportDispatchIntervalDefaultsTo60000(): void {
+  const config = readWorkerConfig({ REDIS_URL: "redis://r" });
+  assert(
+    config.reportDispatchIntervalMs === 60000,
+    `expected default reportDispatchIntervalMs 60000, got ${config.reportDispatchIntervalMs}`,
+  );
+}
+
+export function assertReportDispatchIntervalHonoursFloor(): void {
+  const config = readWorkerConfig({
+    REDIS_URL: "redis://r",
+    REPORT_DISPATCH_INTERVAL_MS: "10000",
+  });
+  assert(
+    config.reportDispatchIntervalMs === 10000,
+    `expected the floor 10000 to be accepted, got ${config.reportDispatchIntervalMs}`,
+  );
+}
+
+export const INVALID_REPORT_DISPATCH_INTERVALS = ["9999", "abc", "1.5", "3600001"] as const;
+
+export function assertInvalidReportDispatchIntervalThrowsNamingOnlyItself(raw: string): void {
+  const err = captureThrow(() =>
+    readWorkerConfig({ REDIS_URL: "redis://r", REPORT_DISPATCH_INTERVAL_MS: raw }),
+  );
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError" for REPORT_DISPATCH_INTERVAL_MS=${JSON.stringify(raw)}, got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes("REPORT_DISPATCH_INTERVAL_MS"),
+    `expected the message to name REPORT_DISPATCH_INTERVAL_MS for ${JSON.stringify(raw)}, got "${errorMessage(err)}"`,
+  );
+  assert(
+    !errorMessage(err).includes("RULE_SWEEP"),
+    `the REPORT_DISPATCH_INTERVAL_MS refusal must not also name RULE_SWEEP for ${JSON.stringify(raw)} — got "${errorMessage(err)}"`,
+  );
+}
+
+export function assertMissingRedisUrlRefusalFiresBeforeReportDispatchGuard(): void {
+  const err = captureThrow(() => readWorkerConfig({ REPORT_DISPATCH_INTERVAL_MS: "abc" }));
+  assert(
+    errorName(err) === "QueueConfigError",
+    `expected err.name === "QueueConfigError", got "${errorName(err)}"`,
+  );
+  assert(
+    errorMessage(err).includes("REDIS_URL"),
+    `expected the message to name REDIS_URL (guard order), got "${errorMessage(err)}"`,
+  );
+  assert(
+    !errorMessage(err).includes("REPORT_DISPATCH"),
+    `the missing-REDIS_URL refusal must not also name REPORT_DISPATCH — got "${errorMessage(err)}"`,
+  );
+}

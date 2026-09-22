@@ -3,8 +3,17 @@ import { describe, it } from "vitest";
 import {
   assertBlankCapDefaultsTo50,
   assertExplicitCapIsHonoured,
+  assertHistoryUrlIsTrimmedAndLosesItsTrailingSlash,
+  assertHistoryUrlUserinfoIsDropped,
   assertInvalidCapDefaultsWithOneWarnNamingTheVariableNotTheValue,
+  assertInvalidEmailMaxBytesDefaultsWithOneWarn,
+  assertInvalidRetentionPerScheduleDefaultsWithOneWarn,
+  assertNonHttpHistoryUrlDefaultsToNullWithOneWarnNamingTheVariable,
+  assertRetentionAtTheFormatCountIsHonouredWithNoWarn,
+  assertRetentionBelowTheFormatCountIsClampedToItWithOneWarn,
   assertUnsetCapDefaultsTo50,
+  assertUnsetThreeNewFieldsDefaultWithNoWarn,
+  assertValidHttpsHistoryUrlIsHonoured,
   INVALID_ONDEMAND_CAPS,
 } from "./report-files-config.spec";
 
@@ -32,4 +41,40 @@ describe("ADR 0071 decision 11 — readReportFilesConfig", () => {
       assertInvalidCapDefaultsWithOneWarnNamingTheVariableNotTheValue(raw);
     },
   );
+
+  it("defaults retentionPerSchedule, emailMaxBytes and historyUrl with no warn when unset", () => {
+    assertUnsetThreeNewFieldsDefaultWithNoWarn();
+  });
+
+  it("defaults retentionPerSchedule with one warn naming REPORT_RETENTION_PER_SCHEDULE for 0", () => {
+    assertInvalidRetentionPerScheduleDefaultsWithOneWarn();
+  });
+
+  it('clamps REPORT_RETENTION_PER_SCHEDULE="1" to the format count 2 with one warn (step-5 finding)', () => {
+    assertRetentionBelowTheFormatCountIsClampedToItWithOneWarn();
+  });
+
+  it('honours REPORT_RETENTION_PER_SCHEDULE="2" — at the floor — with no warn', () => {
+    assertRetentionAtTheFormatCountIsHonouredWithNoWarn();
+  });
+
+  it("defaults emailMaxBytes with one warn naming REPORT_EMAIL_MAX_BYTES for an invalid value", () => {
+    assertInvalidEmailMaxBytesDefaultsWithOneWarn();
+  });
+
+  it("defaults historyUrl to null with one warn naming REPORT_HISTORY_URL for a non-http(s) URL", () => {
+    assertNonHttpHistoryUrlDefaultsToNullWithOneWarnNamingTheVariable();
+  });
+
+  it("honours a valid https REPORT_HISTORY_URL", () => {
+    assertValidHttpsHistoryUrlIsHonoured();
+  });
+
+  it("drops the userinfo from REPORT_HISTORY_URL (step-5 security finding)", () => {
+    assertHistoryUrlUserinfoIsDropped();
+  });
+
+  it("trims REPORT_HISTORY_URL and removes its trailing slash", () => {
+    assertHistoryUrlIsTrimmedAndLosesItsTrailingSlash();
+  });
 });

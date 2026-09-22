@@ -10,8 +10,12 @@ import { AssetImagesService } from "../assets/asset-images.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
+import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
+import { ReportDispatchService } from "../reports/report-dispatch.service";
 import { ReportFilesService } from "../reports/report-files.service";
+import { ReportRenderService } from "../reports/report-render.service";
+import { ReportSchedulesService } from "../reports/report-schedules.service";
 import { ReportsService } from "../reports/reports.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import { RulesService } from "../rules/rules.service";
@@ -179,4 +183,48 @@ export function assertReportFilesServiceTenantSlot(): void {
 
 export function assertReportFilesServiceFleetSlot(): void {
   expect(injectedToken(ReportFilesService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F3.5b` — `ReportRenderService(tenantDb, client, config, reports, email,
+ * metrics, channels)`: the tenant pool in slot 0 and **no fleet token at
+ * all** — the schedule read and the asset resolution run on the processor's
+ * tenant transaction, and the render itself reaches the fleet pool only
+ * through `ReportsService` (ADR 0071 decision 9). A fleet handle here would
+ * be the second route the RLS scope could not see, the `RuleSweepService`
+ * reasoning. The slot-1 `STORAGE_CLIENT` pin is the spec's structural
+ * positive control (`report-render.service.spec.ts`).
+ */
+export function assertReportRenderServiceTenantSlot(): void {
+  expect(injectedToken(ReportRenderService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+/**
+ * `F3.5b` U9 — `ReportDispatchService(client)`: the queue client in slot 0
+ * and **no pool token at all** — the fleet handle is `tick(fleetDb)`'s
+ * argument from the `fleet`-tenancy processor, the `RuleSweepService`
+ * reasoning (a second `FLEET_DRIZZLE` route the processor mapping and
+ * `worker-host.service.spec.ts` could not see). `WorkerHostService` appended
+ * it in slot 6 and `ReportRenderService` in slot 7; the two slot-1/2 rows
+ * above are re-run unchanged as the proof the append moved nothing.
+ */
+export function assertReportDispatchServiceInjectsTheQueueClient(): void {
+  expect(injectedToken(ReportDispatchService, 0)).toBe(QUEUE_CLIENT);
+}
+
+/**
+ * `F3.5b` U11 — `ReportSchedulesService(tenantDb, fleetDb, client,
+ * accessControl, channels, audit)` (ADR 0071 decision 11; plan R-12): the
+ * insert, the update and the row-then-object delete run under `withTenant`
+ * on slot 0 and the schedule's organization — `0078`'s `WITH CHECK` refuses
+ * a foreign stamp there; the location existence read, the by-id read for the
+ * decision-6 verdict and the actor lookup on slot 1. A swap would insert on
+ * the BYPASSRLS pool. Two claims, one function each.
+ */
+export function assertReportSchedulesServiceTenantSlot(): void {
+  expect(injectedToken(ReportSchedulesService, 0)).toBe(TENANT_DRIZZLE);
+}
+
+export function assertReportSchedulesServiceFleetSlot(): void {
+  expect(injectedToken(ReportSchedulesService, 1)).toBe(FLEET_DRIZZLE);
 }

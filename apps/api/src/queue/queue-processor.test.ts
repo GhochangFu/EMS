@@ -1,6 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAfterCommitIsSkippedWhenTheCommitFailed,
+  assertAfterCommitIsSkippedWhenTheHandlerThrew,
+  assertAfterCommitRejectionFailsTheJob,
+  assertAfterCommitRunsAfterWithTenantResolved,
+  assertAfterCommitRunsForAFleetHandlerToo,
   assertFleetHandlerNeverEntersWithTenant,
   assertFleetHandlerReceivesTheFleetDb,
   assertFleetHandlerThrowPropagatesUnchanged,
@@ -72,6 +77,33 @@ describe("F4.24 — tenancy-bound processors", () => {
 
     it("propagates a handler throw unchanged", async () => {
       await assertFleetHandlerThrowPropagatesUnchanged();
+    });
+  });
+
+  /**
+   * F3.5b (ADR 0071 Amendment 2, plan R-5) — the post-commit continuation.
+   * The tenant and fleet rows above are the positive control: a handler that
+   * returns `void` still completes.
+   */
+  describe("post-commit continuation", () => {
+    it("runs afterCommit after withTenant resolved, never inside the transaction", async () => {
+      await assertAfterCommitRunsAfterWithTenantResolved();
+    });
+
+    it("runs afterCommit for a fleet handler after the handler, with no withTenant call", async () => {
+      await assertAfterCommitRunsForAFleetHandlerToo();
+    });
+
+    it("never runs afterCommit when the handler threw", async () => {
+      await assertAfterCommitIsSkippedWhenTheHandlerThrew();
+    });
+
+    it("never runs afterCommit when withTenant rejected after the handler (a commit failure)", async () => {
+      await assertAfterCommitIsSkippedWhenTheCommitFailed();
+    });
+
+    it("fails the job when afterCommit rejects, with the continuation's error unchanged", async () => {
+      await assertAfterCommitRejectionFailsTheJob();
     });
   });
 

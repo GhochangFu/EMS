@@ -5,14 +5,18 @@ import {
   assertBlankRuleSweepIntervalIsUnset,
   assertCredentialRefusalDoesNotEchoThePassword,
   assertCredentialsAndDbAreParsed,
+  assertInvalidReportDispatchIntervalThrowsNamingOnlyItself,
   assertInvalidRuleSweepIntervalThrowsNamingOnlyRuleSweep,
   assertInvalidUrlThrowsItsOwnMessageWithoutEchoingTheValue,
   assertInvalidWorkerPortRefusalFiresBeforeRuleSweepGuard,
   assertInvalidWorkerPortThrowsNamingWorkerPortNotRedisUrl,
   assertMinimalUrlParsesToHostAndPortOnly,
+  assertMissingRedisUrlRefusalFiresBeforeReportDispatchGuard,
   assertMissingRedisUrlRefusalFiresBeforeRuleSweepGuard,
   assertQueueConfigErrorNameIsStable,
   assertRedissSchemeMapsToTlsAndDefaultPort,
+  assertReportDispatchIntervalDefaultsTo60000,
+  assertReportDispatchIntervalHonoursFloor,
   assertRuleSweepIntervalDefaultsTo60000,
   assertRuleSweepIntervalHonoursCeiling,
   assertRuleSweepIntervalHonoursFloor,
@@ -20,6 +24,7 @@ import {
   assertWorkerConfigDefaultsPortTo4100,
   assertWorkerConfigHonoursExplicitPort,
   assertWorkerConfigRefusesMissingRedisUrlNamingOnlyRedisUrl,
+  INVALID_REPORT_DISPATCH_INTERVALS,
   INVALID_RULE_SWEEP_INTERVALS,
   INVALID_URL_ROWS,
   INVALID_WORKER_PORTS,
@@ -114,5 +119,24 @@ describe("F4.24 — queue and worker configuration readers", () => {
 
   it("refuses an invalid WORKER_PORT before checking RULE_SWEEP_INTERVAL_MS", () => {
     assertInvalidWorkerPortRefusalFiresBeforeRuleSweepGuard();
+  });
+
+  it("defaults reportDispatchIntervalMs to 60000", () => {
+    assertReportDispatchIntervalDefaultsTo60000();
+  });
+
+  it("accepts the REPORT_DISPATCH_INTERVAL_MS floor of 10000", () => {
+    assertReportDispatchIntervalHonoursFloor();
+  });
+
+  it.each(INVALID_REPORT_DISPATCH_INTERVALS)(
+    "refuses REPORT_DISPATCH_INTERVAL_MS=%s naming only REPORT_DISPATCH_INTERVAL_MS",
+    (raw) => {
+      assertInvalidReportDispatchIntervalThrowsNamingOnlyItself(raw);
+    },
+  );
+
+  it("refuses a missing REDIS_URL before checking REPORT_DISPATCH_INTERVAL_MS", () => {
+    assertMissingRedisUrlRefusalFiresBeforeReportDispatchGuard();
   });
 });

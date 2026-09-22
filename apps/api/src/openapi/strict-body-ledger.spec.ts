@@ -98,6 +98,10 @@ import {
   listReportFilesQuerySchema,
   saveEnergyReportFileBodySchema,
 } from "../reports/report-files.schema";
+import {
+  createReportScheduleBodySchema,
+  updateReportScheduleBodySchema,
+} from "../reports/report-schedules.schema";
 import { energyReportQuerySchema } from "../reports/reports.schema";
 import {
   assetHealthQuerySchema,
@@ -256,6 +260,10 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // — a fourth key (`locationIds`, the obvious one, which the server stamps
   // from the actor's grants) must be a 400 rather than dropped at 201.
   saveEnergyReportFileBodySchema,
+  // `F3.5b` (ADR 0071 decision 11). Both `.strict()`: `nextRunAt` is the key
+  // a client would send and the server computes — a 400, never dropped at 201.
+  createReportScheduleBodySchema,
+  updateReportScheduleBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,
   rulePreviewBodySchema,

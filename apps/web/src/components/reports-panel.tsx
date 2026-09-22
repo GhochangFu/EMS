@@ -20,6 +20,7 @@ import { formatLabel, saveBlockedReason } from "../lib/report-files-view";
 import type { AuthUser } from "../stores/auth-store";
 import { KpiTile } from "./kpi-tile";
 import { REPORT_FILES_QUERY_KEY, ReportHistory } from "./report-history";
+import { ReportSchedules } from "./report-schedules";
 
 type ReportCard = {
   title: string;
@@ -80,10 +81,10 @@ export type ReportsPanelProps = {
 /**
  * Sprint E Reports & Analytics panel with Energy Consumption preview/export;
  * `F3.5a` adds the PDF export, Save to history and the History list (ADR 0071
- * decision 12).
+ * decision 12); `F3.5b` adds the Schedules section (ADR 0071 R-18).
  *
  * The PDF button renders for everyone — the export routes are
- * `readableAssetIds`-scoped, like CSV. Save and History render only for
+ * `readableAssetIds`-scoped, like CSV. Save, History and Schedules render only for
  * `isMasterDataAdmin(user.role)` (R-13): the API's `POST` runs
  * `assertMasterDataRole` and the list route answers 403 for other roles
  * (`reportFileReadScope` runs the same guard), so a control shown to them
@@ -292,6 +293,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
         {preview ? <PreviewDetails preview={preview} /> : null}
 
         {canSave ? <ReportHistory /> : null}
+        {canSave ? <ReportSchedules user={user} /> : null}
       </section>
     </div>
   );

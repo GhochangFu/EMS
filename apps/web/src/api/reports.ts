@@ -2,8 +2,16 @@ import {
   energyReportPreviewSchema,
   reportFileDtoSchema,
   reportFileListResponseSchema,
+  reportScheduleDtoSchema,
+  reportScheduleListResponseSchema,
 } from "@bms/shared/contracts";
-import type { EnergyReportPreview, ReportFileDto, ReportFileFormat } from "@bms/shared";
+import type {
+  EnergyReportPreview,
+  ReportCadence,
+  ReportFileDto,
+  ReportFileFormat,
+  ReportScheduleDto,
+} from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
 import { adminFetch } from "./admin/client";
@@ -178,4 +186,74 @@ export async function deleteReportFile(id: string): Promise<void> {
   clearSessionOnAuthFailure(res);
   const text = await res.text();
   throw new ApiError(text || `report file delete ${res.status}`, res.status);
+}
+
+/**
+ * The request shape of `POST /api/v1/reports/schedules` — a plain TS type
+ * mirroring `createReportScheduleBodySchema`'s (`.strict()`) fields on the
+ * API, not a `z.infer`: ADR 0030 governs **response** types, and this repo
+ * has no schema package for a request body the API alone validates.
+ */
+export type CreateReportScheduleBody = {
+  name: string;
+  formats: ReportFileFormat[];
+  cadence: ReportCadence;
+  runAtLocal: string;
+  timezone: string;
+  locationIds: string[];
+  channelId?: string | null;
+  enabled?: boolean;
+  organizationId?: string;
+};
+
+/**
+ * The request shape of `PATCH /api/v1/reports/schedules/:id` —
+ * `updateReportScheduleBodySchema`'s fields, every one optional, and never
+ * `organizationId` (a schedule does not move between tenants).
+ */
+export type UpdateReportScheduleBody = Partial<Omit<CreateReportScheduleBody, "organizationId">>;
+
+/** `GET /api/v1/reports/schedules` (ADR 0071 R-12). */
+export async function fetchReportSchedules(): Promise<ReportScheduleDto[]> {
+  return adminFetch("/reports/schedules", reportScheduleListResponseSchema);
+}
+
+/** `POST /api/v1/reports/schedules` (ADR 0071 R-12). */
+export async function createReportSchedule(
+  body: CreateReportScheduleBody,
+): Promise<ReportScheduleDto> {
+  return adminFetch("/reports/schedules", reportScheduleDtoSchema, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** `PATCH /api/v1/reports/schedules/:id` (ADR 0071 R-12). */
+export async function updateReportSchedule(
+  id: string,
+  patch: UpdateReportScheduleBody,
+): Promise<ReportScheduleDto> {
+  return adminFetch(`/reports/schedules/${encodeURIComponent(id)}`, reportScheduleDtoSchema, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+}
+
+/**
+ * `DELETE /api/v1/reports/schedules/:id` — 204, no body (the `deleteReportFile`
+ * shape: success is `status === 204`, not `res.ok`).
+ */
+export async function deleteReportSchedule(id: string): Promise<void> {
+  const res = await fetch(
+    `${base}/api/v1/reports/schedules/${encodeURIComponent(id)}`,
+    withAuth({ method: "DELETE" }),
+  );
+  if (res.status === 204) {
+    return;
+  }
+  clearSessionOnAuthFailure(res);
+  const text = await res.text();
+  throw new ApiError(text || `report schedule delete ${res.status}`, res.status);
 }

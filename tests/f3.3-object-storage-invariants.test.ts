@@ -33,12 +33,17 @@ import { describe, expect, it } from "vitest";
  *    in the same file — allowed because decision 4 gates one object-key
  *    *file*, not one function; a row below counts that it too exists exactly
  *    once and lives in `object-key.ts`.
- * 4. **The worker gets no storage** (decision 9). `worker.module.ts` reaches
- *    nothing under `./storage/`, the two files in the worker's import
- *    closure pull in neither the module nor the SDK, and
- *    `HealthController.getHealth` guards the `@Optional()` service before it
- *    calls it — the worker resolves `undefined` there, so an unguarded call
- *    is a crash on `/health` at `WORKER_PORT` rather than a missing key.
+ * 4. **The health path never carries the SDK by itself** (decision 9, as
+ *    `F3.5b` re-states it). Until ADR 0071 plan R-3 this claim read "the
+ *    worker gets no storage": `worker.module.ts` reached nothing under
+ *    `./storage/`. The `reports-render` job now puts, reads back and
+ *    deletes report objects, so `WorkerModule` imports `StorageModule` and
+ *    the first row below is that positive. What stays: the three files on
+ *    the `/health` path pull in neither the module nor the SDK (the module
+ *    is the one door to `aws-s3-ops`), and `HealthController.getHealth`
+ *    guards the `@Optional()` service before it calls it — a process that
+ *    resolves `undefined` there (a future root without the module) must
+ *    answer rather than crash on `/health`.
  *
  * **Comment-stripping is load-bearing in four places**: the `buildObjectKey`
  * count and the key-literal scan (`object-key.ts`'s own docblock names
@@ -269,8 +274,24 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
       expect(sectionAfter(apiReplicaBlock(), /^\s*depends_on:\s*$/m)).toMatch(/^\s*minio:\s*$/m);
     });
 
-    it("the worker service sets no OBJECT_STORAGE_ variable at all (decision 9)", () => {
-      expect(workerBlock()).not.toMatch(/OBJECT_STORAGE_/);
+    // F3.5b (ADR 0071 Amendment 2, plan R-2 / Q-1, 2026-09-21): the render
+    // job reads and writes report objects, so the worker now carries the
+    // same seven lines `api` does. Decision 9's "no OBJECT_STORAGE_ on the
+    // worker" is overturned; the row that pinned it is inverted here, and
+    // the `depends_on` row keeps the boot order honest.
+    it("the worker service sets all six OBJECT_STORAGE_ variables (ADR 0071 Amendment 2 overturns decision 9)", () => {
+      const missing = missingVars(workerBlock());
+      expect(missing, `variables the worker service does not set: ${missing.join(", ")}`).toEqual([]);
+    });
+
+    it("the worker's depends_on names minio", () => {
+      expect(sectionAfter(workerBlock(), /^\s*depends_on:\s*$/m)).toMatch(/^\s*minio:\s*$/m);
+    });
+
+    it("the worker reads OBJECT_STORAGE_ALLOW_INSECURE as ${OBJECT_STORAGE_ALLOW_INSECURE:-} — an EMPTY default", () => {
+      expect(workerBlock()).toMatch(
+        /^\s*OBJECT_STORAGE_ALLOW_INSECURE:\s*"?\$\{OBJECT_STORAGE_ALLOW_INSECURE:-\}"?\s*$/m,
+      );
     });
 
     // Review finding E (2026-09-15): a pilot points the same compose file at
@@ -428,9 +449,18 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
     });
   });
 
-  describe("the worker gets no storage (decision 9, plan Q-A)", () => {
-    it("worker.module.ts reaches nothing under ./storage/", () => {
-      expect(source("worker.module.ts")).not.toMatch(/\.\/storage\//);
+  describe("the health path never carries the SDK by itself (decision 9, plan Q-A; F3.5b R-3)", () => {
+    // F3.5b (ADR 0071 plan R-3): the inverse of the F3.3 row — the worker
+    // imports StorageModule for the render job, and nothing else under
+    // ./storage/ (the module is the one door to the SDK).
+    it("worker.module.ts imports ./storage/storage.module and nothing else under ./storage/ (all three specifier forms)", () => {
+      const code = source("worker.module.ts");
+      const specifiers = [
+        /\bfrom\s*["'](\.\/storage\/[^"']+)["']/g,
+        /\bimport\s*["'](\.\/storage\/[^"']+)["']/g,
+        /\bimport\s*\(\s*["'](\.\/storage\/[^"']+)["']\s*\)/g,
+      ].flatMap((re) => [...code.matchAll(re)].map((m) => m[1]));
+      expect(specifiers).toEqual(["./storage/storage.module"]);
     });
 
     it("storage-health.service.ts imports neither storage.module, aws-s3-ops nor @aws-sdk", () => {

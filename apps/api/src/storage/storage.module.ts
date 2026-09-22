@@ -8,9 +8,12 @@ import { STORAGE_CLIENT } from "./storage.tokens";
 
 /**
  * The one `StorageModule` (ADR 0066 decisions 3, 9), imported by
- * `AppModule` **only** — never `WorkerModule`: no job reads an object, so
- * the worker gets no storage config and `tests/f4.24-worker-imports-no-api-loop.test.ts`
- * keeps this directory out of the worker's closure.
+ * `AppModule` and — since `F3.5b` (ADR 0071 decisions 8–10, plan R-3) — by
+ * `WorkerModule`, for the `reports-render` job that puts, reads back and
+ * deletes report objects. Until that row this docblock said "never
+ * `WorkerModule`: no job reads an object"; the job now exists, so
+ * `tests/f4.24-worker-imports-no-api-loop.test.ts` lists this file in
+ * `WORKER_LEAVES`, and both processes carry the storage config.
  *
  * `@Global()` like `QueueModule`, so `HealthModule` (which declares no
  * `imports`) can inject the health reader and `AssetsModule` can inject
@@ -35,11 +38,11 @@ import { STORAGE_CLIENT } from "./storage.tokens";
  *
  * `StorageHealthService` is provided and exported here, and
  * `HealthController` injects it `@Optional()` — so the same controller
- * serves both processes and only the API's body carries a `storage` key
- * (Q-A). The service itself imports only the token, the pure reader and
- * types, because `health.controller.ts` is in the worker's import closure;
- * importing it from **this** file would drag `aws-s3-ops` and the SDK in
- * behind it.
+ * serves both processes (Q-A). Since `F3.5b` both bodies carry a `storage`
+ * key; the contract keeps it `.optional()` because a process booted with
+ * storage unconfigured still answers. The service itself imports only the
+ * token, the pure reader and types — the SDK arrives behind `aws-s3-ops`
+ * through this file, which both roots now import.
  *
  * Nest wiring, uncovered like `main.ts`; the config reader and the client
  * are specced in `storage-config.spec.ts` and `storage-client.spec.ts`.

@@ -53,6 +53,23 @@ const apiSrc = join(repoRoot, "apps", "api", "src");
  * and `/notifications` on `WORKER_PORT`; and **rule 7**, the API's closure
  * reaches no queue consumer (ADR 0064 decision 7: one consumer, on the
  * worker), with the worker's closure as the positive control.
+ *
+ * **`F3.5b` (ADR 0071 decisions 8–10; plan R-3, R-4) grew `WORKER_LEAVES`
+ * again.** The worker now imports `StorageModule` — `storage.module.ts` said
+ * "never `WorkerModule`" until this row; the render job puts, gets and
+ * deletes report objects — and the loop-free `ReportsCoreModule`, a second
+ * carve on the `RuleSweepModule` shape: `ReportsService`,
+ * `ReportRenderService` and `CalcParametersService` **as a provider, never
+ * `CalcModule`** (whose import of `TelemetryModule` and its two calc hosts
+ * are three of the eighteen). Rule 2 is the gate on that sentence: U8
+ * added `import { CalcModule } from "../calc/calc.module"` to the core's
+ * `imports`, and this file went red on `calc/calc.module.ts`,
+ * `telemetry/telemetry.module.ts`, `telemetry/telemetry-notify.service.ts`,
+ * the three loop hosts and `telemetry/telemetry.controller.ts` (rule 6) —
+ * recorded in that unit's commit. `CONSUMER_FILES` and `WORKER_CONTROLLERS`
+ * are unchanged: the new bodies are reached by the API too, through
+ * `ReportsModule`, so they are leaves, not consumers, and the core mounts no
+ * route.
  */
 
 // ---------------------------------------------------------------------------
@@ -130,6 +147,23 @@ const WORKER_LEAVES = [
   "rules/rule-sweep.module.ts",
   "rules/rule-sweep.service.ts",
   "rules/rule-sweep.ts",
+  // F3.5b (ADR 0071 decisions 8–10; plan R-3, R-4): the storage module, the
+  // loop-free reports core with its render body and renderer, the shared
+  // file-store helpers, the stateless `CalcParametersService` provider, and
+  // the two queue declarations, and (U9) the dispatcher with the period
+  // arithmetic it alone imports — measured at U8: nothing in the closure
+  // reached `report-period.ts` until the dispatcher existed, so listing it
+  // before U9 reddened rule 1.
+  "storage/storage.module.ts",
+  "reports/reports-core.module.ts",
+  "reports/reports.service.ts",
+  "reports/report-render.service.ts",
+  "reports/report-dispatch.service.ts",
+  "reports/report-period.ts",
+  "reports/report-file-store.ts",
+  "calc/calc-parameters.service.ts",
+  "queue/reports-dispatch.ts",
+  "queue/reports-render.ts",
 ] as const;
 
 /**

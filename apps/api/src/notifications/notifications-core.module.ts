@@ -60,6 +60,11 @@ import { WebhookTransport } from "./webhook.transport";
   // ?)`, measured 2026-09-11. `notifications-module-wiring.spec.ts` now holds
   // the invariant: every token the three controllers inject is exported here,
   // provided beside them, or exported by a `@Global()` module.
-  exports: [NotificationsService, ChannelsService, NOTIFICATIONS_CONFIG],
+  //
+  // `EmailTransport` is exported for `F3.5b` (ADR 0071 decision 10):
+  // `ReportsCoreModule` injects it to email a scheduled report with
+  // `NotificationMessage.attachments`, bypassing `NotificationsService`'s
+  // ledger, which is an alarm's. The same wiring spec holds this export.
+  exports: [NotificationsService, ChannelsService, NOTIFICATIONS_CONFIG, EmailTransport],
 })
 export class NotificationsCoreModule {}

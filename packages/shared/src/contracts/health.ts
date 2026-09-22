@@ -313,10 +313,13 @@ export const storageHealthSchema = z
  * §15 ruling 1): the route is a liveness probe, and a dead worker is not a
  * reason for an orchestrator to restart a process that serves traffic.
  *
- * `storage` is **optional** (ADR 0066 Q-A): the worker has no `StorageModule`
- * and injects no `StorageHealthService`, so its response body carries no
- * `storage` key at all — never `{ configured: false, ... }`, which would
- * claim a state the worker never reads.
+ * `storage` is **optional** (ADR 0066 Q-A). Until `F3.5b` the worker had no
+ * `StorageModule` and its body carried no `storage` key; since ADR 0071
+ * plan R-3 the worker imports the module for the render job, and both
+ * processes answer the section. It stays `.optional()` rather than
+ * required: a process whose `HealthController` resolves no
+ * `StorageHealthService` (the `@Optional()` injection) still answers, and
+ * the key's absence — never `{ configured: false, ... }` — is what says so.
  */
 export const livenessResponseSchema = z
   .object({

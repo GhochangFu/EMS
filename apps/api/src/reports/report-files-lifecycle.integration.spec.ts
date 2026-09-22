@@ -176,7 +176,14 @@ type CapRun = {
 async function runCap(fx: ReportFileIntegrationFixtures): Promise<CapRun> {
   const recorder = recordingClient(fx);
   const countBefore = await countFilesForOrganization(fx.fleetDb, fx.phewbId);
-  const svc = service(fx, recorder.client, { config: { onDemandCap: countBefore + 2 } });
+  const svc = service(fx, recorder.client, {
+    config: {
+      onDemandCap: countBefore + 2,
+      retentionPerSchedule: 24,
+      emailMaxBytes: 10_485_760,
+      historyUrl: null,
+    },
+  });
   const renderSpy = vi.spyOn(fx.reports, "energyPdf");
   const saved: ReportFileDto[] = [];
   try {

@@ -9,6 +9,7 @@ import {
   deliveryStatusLabel,
   formatBytes,
   formatLabel,
+  originLabel,
   periodLabel,
 } from "../lib/report-files-view";
 
@@ -102,6 +103,7 @@ export function ReportHistory(): JSX.Element {
                 <th className="px-3 py-2">Period</th>
                 <th className="px-3 py-2">Format</th>
                 <th className="px-3 py-2 text-right">Size</th>
+                <th className="px-3 py-2">Origin</th>
                 <th className="px-3 py-2">Delivery</th>
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
@@ -115,7 +117,10 @@ export function ReportHistory(): JSX.Element {
                     <td className="px-3 py-2 text-bms-muted">{periodLabel(file)}</td>
                     <td className="px-3 py-2 text-bms-muted">{formatLabel(file.format)}</td>
                     <td className="px-3 py-2 text-right font-mono">{formatBytes(file.byteSize)}</td>
-                    <td className="px-3 py-2 text-bms-muted">{deliveryStatusLabel(file.deliveryStatus)}</td>
+                    <td className="px-3 py-2 text-bms-muted">{originLabel(file)}</td>
+                    <td className="px-3 py-2 text-bms-muted">
+                      {deliveryStatusLabel(file.deliveryStatus, file.scheduleId)}
+                    </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-3">
                         <button

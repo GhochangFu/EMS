@@ -8,14 +8,14 @@ type ReportsPageProps = {
   user: AuthUser;
 };
 
-/** Reports & Analytics screen — energy report preview, export and history (`F3.5a`). */
+/** Reports & Analytics screen — energy report preview, export, history (`F3.5a`) and schedules (`F3.5b`). */
 export function ReportsPage({ user }: ReportsPageProps) {
   return (
     <AppShell
       user={user}
       kpiRibbon={
         <span className="text-bms-ink">
-          Operations · Reports & Analytics · Energy report preview, export and history
+          Operations · Reports & Analytics · Energy report preview, export, history and schedules
         </span>
       }
     >
@@ -23,7 +23,7 @@ export function ReportsPage({ user }: ReportsPageProps) {
         <PageHeader
           eyebrow="R.rp"
           title="Reports & Analytics"
-          subtitle="One-click generation · Energy Consumption PDF · XLSX · CSV · saved report history"
+          subtitle="One-click generation · Energy Consumption PDF · XLSX · CSV · saved report history and schedules"
           actions={<StatusPill label="PDF · XLSX · CSV Active" />}
         />
 

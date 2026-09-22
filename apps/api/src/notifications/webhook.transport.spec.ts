@@ -264,3 +264,35 @@ export async function runWebhookTransportTests(): Promise<void> {
     assert(calls.length === 0, "no request may reach a loopback address");
   }
 }
+
+/**
+ * `F3.5b` (ADR 0071 decision 10) — the webhook body keeps its seven keys when
+ * the message carries `attachments`: a scheduled report's files are for the
+ * email transport only, and a JSON webhook must not grow a Buffer-shaped
+ * field nobody signed up to receive. `subject` in the same body is the
+ * control that the message was posted at all.
+ */
+export async function assertWebhookIgnoresAttachments(): Promise<void> {
+  const { fetch, calls } = stubFetch(() => new Response("ok", { status: 200 }));
+  const result = await transportWith(fetch).send({
+    ...message(),
+    attachments: [
+      {
+        filename: "energy-consumption-2026-09-01-to-2026-09-07.pdf",
+        contentType: "application/pdf",
+        body: Buffer.from("%PDF-1.4 fixture"),
+      },
+    ],
+  });
+  assert(result.status === "sent", `a 200 must be sent, got ${result.status}`);
+  assert(calls.length === 1, `expected one post, got ${calls.length}`);
+  const parsed = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+  assert(
+    !("attachments" in parsed),
+    `the webhook body must not carry attachments: ${Object.keys(parsed).join(",")}`,
+  );
+  assert(
+    parsed.subject === "Alarm: UPS-1 battery temperature",
+    "the body still carries the subject (control)",
+  );
+}

@@ -10,6 +10,8 @@ import { Worker } from "bullmq";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
+import { ReportDispatchService } from "../reports/report-dispatch.service";
+import { ReportRenderService } from "../reports/report-render.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import {
   HEARTBEAT_EVERY_MS,
@@ -28,6 +30,8 @@ import {
   type QueueDeclaration,
   type QueueHandle,
 } from "./queue-registry";
+import { REPORT_DISPATCH_SCHEDULER_ID, reportsDispatchQueue } from "./reports-dispatch";
+import { reportsRenderQueue } from "./reports-render";
 import {
   RULE_SWEEP_SCHEDULER_ID,
   recordRuleSweep,
@@ -39,19 +43,22 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
 
 /**
  * The worker process's one provider (ADR 0063 decisions 3, 6, 10, 12; ADR
- * 0064 decisions 2, 6, 7): on `onModuleInit` it upserts one repeatable job
- * per scheduled queue — the heartbeat's every `HEARTBEAT_EVERY_MS`, the
- * rules sweep's every `config.ruleSweepIntervalMs` — and starts one `Worker`
- * per registered processor; on `onModuleDestroy` it closes them
- * (`worker.ts` enables shutdown hooks for exactly this).
+ * 0064 decisions 2, 6, 7; ADR 0071 decisions 8, 9): on `onModuleInit` it
+ * upserts one repeatable job per scheduled queue — the heartbeat's every
+ * `HEARTBEAT_EVERY_MS`, the rules sweep's every
+ * `config.ruleSweepIntervalMs`, the report dispatch tick's every
+ * `config.reportDispatchIntervalMs` — and starts one `Worker` per registered
+ * processor; on `onModuleDestroy` it closes them (`worker.ts` enables
+ * shutdown hooks for exactly this).
  *
  * **Constructor order is a contract**: `(client, tenantDb, fleetDb,
- * metrics, ruleSweep, config)`. `runProcessor` receives `{ tenantDb,
- * fleetDb }` and a `tenant` queue's handler runs inside `withTenant(tenantDb,
- * …)` — swap the two pools and every tenant job runs on the BYPASSRLS pool
- * with a GUC nobody reads. No test boots `WorkerModule` (Amendment 1), so
- * `database/fleet-read-wiring.spec.ts` pins slots 1 and 2 by token; `F3.11`
- * **appended** slots 4 and 5 and moved nothing before them.
+ * metrics, ruleSweep, config, reportDispatch, reportRender)`. `runProcessor`
+ * receives `{ tenantDb, fleetDb }` and a `tenant` queue's handler runs
+ * inside `withTenant(tenantDb, …)` — swap the two pools and every tenant job
+ * runs on the BYPASSRLS pool with a GUC nobody reads. No test boots
+ * `WorkerModule` (Amendment 1), so `database/fleet-read-wiring.spec.ts` pins
+ * slots 1 and 2 by token; `F3.11` **appended** slots 4 and 5 and `F3.5b`
+ * **appended** slots 6 and 7, each moving nothing before them.
  *
  * **Every consumer is registered here, beside `ALL_QUEUES`'s declarations,
  * and not in a host of its own inside the module that owns the body.** One
@@ -59,15 +66,35 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  * and one spec (`worker-host.service.spec.ts`) asserts decision 12's
  * invariant — every declared queue has exactly one processor — as a set
  * equality, which two hosts in two modules could not. `F3.12` appends the
- * same way. The cost is this file's one `queue/ → rules/` import
- * (`RuleSweepService`), recorded here so nobody reads it as a layering slip.
+ * same way. The cost is this file's `queue/ → rules/` import
+ * (`RuleSweepService`) and, since `F3.5b`, its second such edge, `queue/ →
+ * reports/` (`ReportDispatchService`, `ReportRenderService`) — both recorded
+ * here so nobody reads them as a layering slip.
  *
  * **The heartbeat processor never touches Postgres.** `pg.Pool` connects
  * lazily and the handler ignores `ctx.db`, which is what made ADR 0063
  * Amendment 1's stack measurement hold for `F4.24`. Since `F3.11` the sweep
  * processor does open backends — the fleet read on `ctx.db` and the tenant
  * writes — so the worker's `pg_stat_activity` count is non-zero by design
- * (ADR 0064 Consequences record the numbers).
+ * (ADR 0064 Consequences record the numbers). `F3.5b` adds two more shapes:
+ * the dispatch tick is one fleet transaction per tick (`FOR UPDATE SKIP
+ * LOCKED`, then the enqueues, then the advances), and **every render job
+ * holds one tenant backend for its whole phase A** — the `withTenant`
+ * transaction `runProcessor` opens, in which the schedule read, the asset
+ * resolution, the unique checks, the puts and the row writes run — so a
+ * `pg_stat_activity` read during a render shows a `bms_tenant` backend for
+ * the worker's address beside the fleet one (U10 records the numbers).
+ *
+ * **What the two report handlers do.** The dispatch handler hands `ctx.db`
+ * (the fleet handle, decision 6's mechanism again — the service injects no
+ * fleet token of its own) to `ReportDispatchService.tick` and logs its
+ * four counts on one `info` line (R-17: no Redis key, no health field).
+ * The render handler hands `ctx.tx` to `ReportRenderService.render` and
+ * returns `runProcessor`'s post-commit continuation (R-5, Q-4): phase A ran
+ * in the transaction, and `finish(outcome)` — the pruned objects' deletes,
+ * the email, the `delivery_status` update — runs only after that
+ * transaction committed. Drop the `return` and the mail precedes the
+ * commit of the rows it names; `worker-host.service.spec.ts` reddens on it.
  *
  * **What the sweep handler does**, in order: `RuleSweepService.run(ctx.db)`
  * — `ctx.db` is the fleet handle `runProcessor` builds for a `fleet` queue
@@ -96,6 +123,8 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
     private readonly metrics: MetricsService,
     private readonly ruleSweep: RuleSweepService,
     @Inject(WORKER_CONFIG) private readonly config: WorkerConfig,
+    private readonly reportDispatch: ReportDispatchService,
+    private readonly reportRender: ReportRenderService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -111,7 +140,13 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
       { schedulerId: RULE_SWEEP_SCHEDULER_ID, everyMs: this.config.ruleSweepIntervalMs },
       {},
     );
-    // Both upserts passed, so the client is configured; `requireConfigured`
+    await upsertSchedule(
+      this.client,
+      reportsDispatchQueue,
+      { schedulerId: REPORT_DISPATCH_SCHEDULER_ID, everyMs: this.config.reportDispatchIntervalMs },
+      {},
+    );
+    // All three upserts passed, so the client is configured; `requireConfigured`
     // is the same refusal they applied, kept for the type narrowing.
     const { prefix } = requireConfigured(this.client);
     const dbs: ProcessorDbs = { tenantDb: this.tenantDb, fleetDb: this.fleetDb };
@@ -133,7 +168,18 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
       });
     });
 
-    this.host = startQueueWorkers(this.client, [heartbeat, sweep], {
+    const dispatch = runProcessor(reportsDispatchQueue, dbs, async (_payload, ctx) => {
+      const s = await this.reportDispatch.tick(ctx.db);
+      this.logger.log(
+        `reports-dispatch finished: due=${s.due} enqueued=${s.enqueued} skippedInvalid=${s.skippedInvalid} durationMs=${s.durationMs}`,
+      );
+    });
+    const render = runProcessor(reportsRenderQueue, dbs, async (payload, ctx) => {
+      const outcome = await this.reportRender.render(payload, ctx.tx);
+      return { afterCommit: () => this.reportRender.finish(outcome) };
+    });
+
+    this.host = startQueueWorkers(this.client, [heartbeat, sweep, dispatch, render], {
       createWorker: (name, process, opts) => new Worker(name, process, opts),
       metrics: this.metrics,
       logger: this.logger,

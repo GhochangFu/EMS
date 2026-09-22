@@ -6,7 +6,9 @@ import { expect, vi } from "vitest";
 
 import type { EnergyReportPreview, ReportFileDto } from "@bms/shared";
 
+import * as locationsApi from "../api/admin/locations";
 import * as organizationsApi from "../api/admin/organizations";
+import * as notificationsApi from "../api/notifications";
 import * as reportsApi from "../api/reports";
 import { ApiError } from "../lib/api-error";
 import type { AuthUser } from "../stores/auth-store";
@@ -67,6 +69,7 @@ const SAVED: ReportFileDto = {
   filename: "energy-consumption-2026-09-01-to-2026-09-05.pdf",
   deliveryStatus: "none",
   deliveryError: null,
+  scheduleId: null,
   createdBy: null,
   createdAt: "2026-09-05T12:00:00.000Z",
 };
@@ -113,6 +116,10 @@ function renderPanel(
   // admin roles; stubbed so no row here depends on the network.
   vi.spyOn(reportsApi, "fetchReportFiles").mockResolvedValue([]);
   vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({ items: [ESKOM] });
+  // `F3.5b` — the Schedules section reads three more lists at mount.
+  vi.spyOn(reportsApi, "fetchReportSchedules").mockResolvedValue([]);
+  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [] });
+  vi.spyOn(notificationsApi, "fetchNotificationChannels").mockResolvedValue({ items: [] });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -199,6 +206,35 @@ export async function aViewerSeesThePdfButtonAndNoSaveOrHistory(): Promise<void>
   expect(screen.getByRole("button", { name: "Export PDF" })).toBeInTheDocument();
   expect(screen.queryByText("Save to history")).not.toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "History" })).not.toBeInTheDocument();
+}
+
+/**
+ * `F3.5b` R-18 — a viewer sees no Schedules heading (the section shares the
+ * History gate); "Export PDF" is the positive control.
+ */
+export async function aViewerSeesNoSchedulesHeading(): Promise<void> {
+  renderPanel(1.25);
+  await previewResolved();
+
+  expect(screen.getByRole("button", { name: "Export PDF" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Schedules" })).not.toBeInTheDocument();
+}
+
+/** `F3.5b` R-18 — an `asset_group_admin` sees no Schedules heading either (the browser pass's third user). */
+export async function anAssetGroupAdminSeesNoSchedulesHeading(): Promise<void> {
+  renderPanel(1.25, {}, userWithRole("asset_group_admin"));
+  await previewResolved();
+
+  expect(screen.getByRole("button", { name: "Export PDF" })).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Schedules" })).not.toBeInTheDocument();
+}
+
+/** `F3.5b` R-18 — an admin sees the Schedules heading. */
+export async function anAdminSeesTheSchedulesHeading(): Promise<void> {
+  renderPanel(1.25, {}, userWithRole("admin"));
+  await previewResolved();
+
+  expect(screen.getByRole("heading", { name: "Schedules" })).toBeInTheDocument();
 }
 
 /** `F3.5a` — the deferred pill is gone; the preview heading is the positive control. */
