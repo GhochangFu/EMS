@@ -36,9 +36,12 @@ import { DashboardTemplateStockViewPage } from "./dashboard-template-stock-view-
  * binding count (eight) — not its distribution: the live entry carries those
  * eight bindings over six widgets (the phase-current chart holds three), the
  * fixture one per widget over eight, because the case counts widgets and
- * lists, never bindings per widget. `NO_BINDINGS` mirrors
- * `sustainability-overview` (four widgets, zero bindings) — the zero-binding
- * edge every metric-catalog-only entry has. **The fixtures now carry one
+ * lists, never bindings per widget. `NO_BINDINGS` mirrors the SHAPE
+ * `sustainability-overview` has — zero role bindings, every widget
+ * catalog-sourced — not its widget count, which is 18 since `E4.2` PR 2; the
+ * fixture stays its own small shape (four widgets, zero bindings) because
+ * this case tests the zero-binding edge every metric-catalog-only entry has,
+ * not the live entry's exact widget count. **The fixtures now carry one
  * *kind* per widget, bindings or a source but never both** (`F3.61`): the
  * contract refuses a widget carrying both, so `w0` and `w9` — the unbound
  * pair — carry the one catalog source that every bound widget used to carry

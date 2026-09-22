@@ -1,4 +1,4 @@
-import type { StockDashboardTemplateDto } from "@bms/shared";
+import { DASHBOARD_GRID, type StockDashboardTemplateDto } from "@bms/shared";
 
 import {
   BELOW_TILES_Y,
@@ -660,23 +660,162 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
   //
   // No `chart` widget for the same reason: `WIDGET_POINT_CARDINALITY.chart`
   // is `{min: 1, max: MAX_WIDGET_POINTS}` — a chart binds a POINT, always —
-  // and there is no role here to bind one against. Two tiles and a table,
-  // both catalog-sourced, is what is left once the role-bound half of the
-  // shared skeleton is correctly absent.
+  // and there is no role here to bind one against.
+  //
+  // **`E4.2` PR 2 took this to `stockVersion: 2`** (ADR 0072, plan §3.8):
+  // eighteen widgets on the 12-column grid (`TILE_W` 2, `TILE_H` 4), every
+  // `value_tile` bound to `sustainability.total {pointKey, aggregate}` and
+  // the one `table` to `sustainability.by_location`. Row A (`y=0`, six
+  // tiles): the six "today" figures. Row B (`y=BELOW_TILES_Y`, six tiles):
+  // the four "this month" figures plus the kept *Active Alarms* and *Open
+  // Work Orders* tiles. Row C (`y=BELOW_TILES_Y + TILE_H`, five tiles): the
+  // four "this year" figures plus the kept *Health Score* tile. Row D
+  // (`y=BELOW_TILES_Y + 2 * TILE_H`, one table, `gridW`
+  // `DASHBOARD_GRID.columns`, `gridH` `LOWER_ROW_H`): *Benchmark by site*.
+  // The v1 skeleton's *Open Work Orders* TABLE is removed — a role-free
+  // template's benchmark table is the one table this section needs, and a
+  // second table duplicated the same catalog entry's tile above it. Every
+  // `aggregate` is `"sum"` except the two executive codes with no stock
+  // formula (`operational_efficiency_pct`, `water_recycle_pct`, ADR 0072
+  // decision 4), which are `"avg"` — summing a percentage across sites is
+  // not the plant's average, and there is no formula on any class to sum in
+  // the first place. 6 + 6 + 5 + 1 = 18, inside `MAX_DASHBOARD_WIDGETS` (40).
   // -------------------------------------------------------------------------
   {
     code: "sustainability-overview",
     name: "Sustainability Overview",
     section: "sustainability",
     description: "Energy, water and emissions rollups across the plant.",
-    stockVersion: 1,
+    stockVersion: 2,
     content: {
       widgets: [
+        // ---- Row A (y=0) — today ------------------------------------------
+        {
+          key: "energy-today-tile",
+          title: "Energy today",
+          gridX: 0,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kwh_today", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { icon: "bolt", unit: "kWh" },
+        },
+        {
+          key: "energy-cost-today-tile",
+          title: "Energy cost today",
+          gridX: TILE_W,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "energy_cost_today", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { hint: "organization currency" },
+        },
+        {
+          key: "water-today-tile",
+          title: "Water today",
+          gridX: 2 * TILE_W,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { icon: "drop", unit: "kL" },
+        },
+        {
+          key: "co2-today-tile",
+          title: "CO₂ today",
+          gridX: 3 * TILE_W,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "co2_kg_today", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { unit: "kg" },
+        },
+        {
+          key: "water-recycle-pct-tile",
+          title: "Water Recycle %",
+          gridX: 4 * TILE_W,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "water_recycle_pct", aggregate: "avg" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { icon: "recycle", unit: "%" },
+        },
+        {
+          key: "operational-efficiency-pct-tile",
+          title: "Operational Efficiency %",
+          gridX: 5 * TILE_W,
+          gridY: TILE_ROW_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "operational_efficiency_pct", aggregate: "avg" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { icon: "gauge", unit: "%" },
+        },
+        // ---- Row B (y=BELOW_TILES_Y) — this month, plus the kept alarms/work-order tiles ----
+        {
+          key: "energy-this-month-tile",
+          title: "Energy this month",
+          gridX: 0,
+          gridY: BELOW_TILES_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kwh_this_month", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { unit: "kWh" },
+        },
+        {
+          key: "energy-cost-this-month-tile",
+          title: "Energy cost this month",
+          gridX: TILE_W,
+          gridY: BELOW_TILES_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "energy_cost_this_month", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { hint: "organization currency" },
+        },
+        {
+          key: "water-this-month-tile",
+          title: "Water this month",
+          gridX: 2 * TILE_W,
+          gridY: BELOW_TILES_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_this_month", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { unit: "kL" },
+        },
+        {
+          key: "co2-this-month-tile",
+          title: "CO₂ this month",
+          gridX: 3 * TILE_W,
+          gridY: BELOW_TILES_Y,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "co2_kg_this_month", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { unit: "kg" },
+        },
         {
           key: "alarms-tile",
           title: "Active Alarms",
-          gridX: 0,
-          gridY: TILE_ROW_Y,
+          gridX: 4 * TILE_W,
+          gridY: BELOW_TILES_Y,
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [],
@@ -687,8 +826,8 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
         {
           key: "workorders-tile",
           title: "Open Work Orders",
-          gridX: 2,
-          gridY: TILE_ROW_Y,
+          gridX: 5 * TILE_W,
+          gridY: BELOW_TILES_Y,
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [],
@@ -696,11 +835,60 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           widgetType: "value_tile",
           config: { icon: "clipboard" },
         },
+        // ---- Row C (y=BELOW_TILES_Y + TILE_H) — this year, plus the kept health-score tile ----
+        {
+          key: "energy-this-year-tile",
+          title: "Energy this year",
+          gridX: 0,
+          gridY: BELOW_TILES_Y + TILE_H,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kwh_this_year", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { unit: "kWh" },
+        },
+        {
+          key: "energy-cost-this-year-tile",
+          title: "Energy cost this year",
+          gridX: TILE_W,
+          gridY: BELOW_TILES_Y + TILE_H,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "energy_cost_this_year", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { hint: "organization currency" },
+        },
+        {
+          key: "water-this-year-tile",
+          title: "Water this year",
+          gridX: 2 * TILE_W,
+          gridY: BELOW_TILES_Y + TILE_H,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_this_year", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { unit: "kL" },
+        },
+        {
+          key: "co2-this-year-tile",
+          title: "CO₂ this year",
+          gridX: 3 * TILE_W,
+          gridY: BELOW_TILES_Y + TILE_H,
+          gridW: TILE_W,
+          gridH: TILE_H,
+          bindings: [],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "co2_kg_this_year", aggregate: "sum" }, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: { unit: "kg" },
+        },
         {
           key: "health-tile",
           title: "Health Score",
-          gridX: 4,
-          gridY: TILE_ROW_Y,
+          gridX: 4 * TILE_W,
+          gridY: BELOW_TILES_Y + TILE_H,
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [],
@@ -708,15 +896,16 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           widgetType: "value_tile",
           config: { icon: "gauge" },
         },
+        // ---- Row D (y=BELOW_TILES_Y + 2 * TILE_H) — the benchmark table ----
         {
-          key: "workorders-table",
-          title: "Open Work Orders",
+          key: "benchmark-by-site-table",
+          title: "Benchmark by site",
           gridX: 0,
-          gridY: BELOW_TILES_Y,
-          gridW: HALF_CANVAS_W,
+          gridY: BELOW_TILES_Y + 2 * TILE_H,
+          gridW: DASHBOARD_GRID.columns,
           gridH: LOWER_ROW_H,
           bindings: [],
-          sources: [{ catalogKey: "workorders.open", params: {}, sortOrder: 0 }],
+          sources: [{ catalogKey: "sustainability.by_location", params: { pointKey: "kl_today", aggregate: "sum" }, sortOrder: 0 }],
           widgetType: "table",
           config: {},
         },

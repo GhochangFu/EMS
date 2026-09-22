@@ -259,6 +259,65 @@ export function runStockCatalogTests(): void {
 }
 
 /**
+ * `E4.2` PR 2 (U8) — `sustainability-overview` takes `stockVersion: 2`:
+ * eighteen widgets, every `value_tile` bound to `sustainability.total`, the
+ * two executive codes (`operational_efficiency_pct`, `water_recycle_pct`)
+ * `aggregate: "avg"` and every other `value_tile` `aggregate: "sum"`, and the
+ * one `table` bound to `sustainability.by_location`. A separate `it` from
+ * `runStockCatalogTests`'s generic "no chart, zero bindings" claim, which
+ * stays true and unrestated here.
+ */
+export function runSustainabilitySection2Tests(): void {
+  const entry = STOCK_DASHBOARD_TEMPLATE_CATALOG.find((row) => row.code === "sustainability-overview");
+  assert(entry !== undefined, "no stock template with code sustainability-overview");
+  if (!entry) return;
+
+  assert(
+    entry.stockVersion === 2,
+    `sustainability-overview must be stockVersion 2 (E4.2 PR 2) — got ${String(entry.stockVersion)}`,
+  );
+
+  assert(
+    entry.content.widgets.length === 18,
+    `sustainability-overview must carry 18 widgets (6 today + 6 this-month + 5 this-year + 1 ` +
+      `table) — got ${entry.content.widgets.length}`,
+  );
+
+  const EXECUTIVE_KEYS = new Set(["operational_efficiency_pct", "water_recycle_pct"]);
+  // The three tiles KEPT from the v1 skeleton (plan §3.8) bind their own
+  // catalog entries, never sustainability.total — the assertion below scopes
+  // "every value_tile source is sustainability.total" to the fourteen new
+  // sustainability tiles, not these three.
+  const KEPT_TILE_KEYS = new Set(["alarms-tile", "workorders-tile", "health-tile"]);
+
+  for (const widget of entry.content.widgets) {
+    if (widget.widgetType === "value_tile" && !KEPT_TILE_KEYS.has(widget.key)) {
+      assert(
+        widget.sources.length === 1 && widget.sources[0]?.catalogKey === "sustainability.total",
+        `${widget.key} must bind exactly one sustainability.total source — got ` +
+          `${widget.sources.map((source) => source.catalogKey).join(", ") || "(none)"}`,
+      );
+      const params = widget.sources[0]?.params as { pointKey?: string; aggregate?: string } | undefined;
+      const expectedAggregate = params?.pointKey !== undefined && EXECUTIVE_KEYS.has(params.pointKey) ? "avg" : "sum";
+      assert(
+        params?.aggregate === expectedAggregate,
+        `${widget.key} (pointKey ${String(params?.pointKey)}) must carry aggregate ` +
+          `"${expectedAggregate}" — got "${String(params?.aggregate)}". The two executive codes ` +
+          "(operational_efficiency_pct, water_recycle_pct) average across the scope; every other " +
+          "code sums.",
+      );
+    }
+    if (widget.widgetType === "table") {
+      assert(
+        widget.sources.length === 1 && widget.sources[0]?.catalogKey === "sustainability.by_location",
+        `${widget.key} table must bind sustainability.by_location — got ` +
+          `${widget.sources.map((source) => source.catalogKey).join(", ") || "(none)"}`,
+      );
+    }
+  }
+}
+
+/**
  * `F3.44` post-merge sweep (security L2) — every catalog code passes the
  * server's `stockCodeParamSchema` (`^[a-z0-9-]+$`, max 64). The web stock
  * card interpolates `entry.code` into a route path unencoded, and the shared
