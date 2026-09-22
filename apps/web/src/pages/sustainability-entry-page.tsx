@@ -72,10 +72,22 @@ export function SustainabilityEntryPage({ user }: SustainabilityEntryPageProps) 
     return <Navigate replace to="/dashboards?section=sustainability" />;
   }
 
+  // `encodeURIComponent`, the way this file's sibling reader spells the same
+  // path (`api/dashboards.ts`, `fetchDashboard`). A slug is `[a-z0-9-]+` at
+  // both write doors, so nothing should reach here needing the escape — but
+  // this component reads a slug off the WIRE, not out of the schema, and an
+  // unencoded `?`, `#` or `/` in it does not merely mis-navigate: it hands the
+  // rest of the string to the router as query, fragment or an extra path
+  // segment. The encode costs nothing and does not depend on the far end
+  // staying correct. `organizationId` is a uuid from the same response and is
+  // encoded for the same reason.
   return (
     <Navigate
       replace
-      to={`/dashboards/${newest.slug}?organizationId=${newest.organizationId}`}
+      to={
+        `/dashboards/${encodeURIComponent(newest.slug)}` +
+        `?organizationId=${encodeURIComponent(newest.organizationId)}`
+      }
     />
   );
 }

@@ -139,6 +139,34 @@ export async function theRedirectCarriesTheOrganizationId(): Promise<void> {
   });
 }
 
+/**
+ * `E4.2` PR 2 security review — a slug that would break the path is ENCODED
+ * into it, never interpolated raw.
+ *
+ * The fixture slug carries the three characters that do not merely look wrong
+ * in a URL: `/` opens a second path segment, `?` opens the query string and `#`
+ * opens the fragment. Unencoded, `bad/slug?x=1#f` makes the router land on
+ * `/dashboards/bad` with `organizationId` gone and `x=1` in its place — the
+ * viewer then reads a different dashboard, or answers a 400 no operator can
+ * explain. The landing assertion below is the percent-encoded form, so an
+ * implementation that drops the encode lands somewhere else and reddens.
+ *
+ * Both write doors constrain a slug to `[a-z0-9-]+`, so this is defence in
+ * depth rather than a live path — but this page reads the slug off the wire and
+ * the constraint is not its to rely on.
+ */
+export async function aSlugThatWouldBreakThePathIsEncoded(): Promise<void> {
+  renderEntry({ items: [summary("bad/slug?x=1#f", "2026-09-01T00:00:00.000Z")] });
+
+  await waitFor(() => {
+    expect(
+      screen.getByText(/landed on the dashboard viewer/),
+      "the slug must reach the viewer as one path segment, with organizationId still in the " +
+        "query — an unencoded `/`, `?` or `#` re-cuts the URL",
+    ).toHaveTextContent(`/dashboards/bad%2Fslug%3Fx%3D1%23f?organizationId=${ORG_ID}`);
+  });
+}
+
 /** No instance: the entry opens the FILTERED list, so an admin sees the import
  * action rather than a 404. */
 export async function noInstanceOpensTheFilteredList(): Promise<void> {

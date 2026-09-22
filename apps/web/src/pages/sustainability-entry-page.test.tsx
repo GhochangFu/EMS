@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aSlugThatWouldBreakThePathIsEncoded,
   noInstanceOpensTheFilteredList,
   opensTheNewestInstanceBySlug,
   theEntryAsksTheApiForTheSection,
@@ -28,6 +29,10 @@ describe("E4.2 sustainability entry page", () => {
 
   it("carries organizationId on the redirect", async () => {
     await theRedirectCarriesTheOrganizationId();
+  });
+
+  it("encodes a slug that would otherwise re-cut the redirect URL", async () => {
+    await aSlugThatWouldBreakThePathIsEncoded();
   });
 
   it("opens the filtered list when the section has no instance", async () => {

@@ -34,6 +34,22 @@ export interface SectionListFixtures {
   /** Asset-scoped AND stamped from the sustainability template. */
   readonly assetScopedSustainabilityDashboardId: string;
   readonly assetId: string;
+  /**
+   * **The mis-stamped row — a dashboard of organization A whose `template_id`
+   * points at organization B's `sustainability` template.**
+   *
+   * It is physically possible: `dashboards.template_id` is a foreign key onto
+   * `dashboard_templates.id` and nothing in the column pair says the two rows
+   * must share an organization. On the TENANT branch RLS hides the foreign
+   * template and the join finds nothing; on the FLEET branch `bms_fleet` holds
+   * `BYPASSRLS`, so the organization predicate INSIDE the join is the only
+   * container there is.
+   */
+  readonly misStampedDashboardId: string;
+  /** The organization the mis-stamped row's template belongs to (not the dashboard's). */
+  readonly templateOwnerOrganizationId: string;
+  /** The organization the mis-stamped row itself belongs to. */
+  readonly dashboardOrganizationId: string;
 }
 
 /**
@@ -133,4 +149,86 @@ export async function assertAssetIdAndSectionCompose(
     "the organization-wide sustainability dashboard is in the SAME section and must still drop " +
       "out under the asset filter — the two predicates are ANDed.",
   ).not.toContain(fixtures.sustainabilityDashboardId);
+}
+
+/* ---------------------------------------------------------------------------
+ * The FLEET branch. `E4.2` PR 2 security review.
+ *
+ * Every case above runs as `wc-admin`, a single-organization actor, so the join
+ * only ever executed as `bms_tenant` under FORCE RLS — where the tenant policy
+ * would hide a foreign template even if the join had no organization predicate
+ * of its own. The three cases below run as a GLOBAL admin, whose
+ * `readableOrganizationIds` is `null`: `withOrganizationReadScope` takes the
+ * fleet branch, the query runs as `bms_fleet` (`BYPASSRLS`) and there is no
+ * `organizationIdFilter` either. On that branch
+ * `eq(dashboardTemplates.organizationId, dashboards.organizationId)` is the
+ * whole of the containment, and nothing was asking it to hold.
+ * ------------------------------------------------------------------------- */
+
+/**
+ * The positive control for the two refusals below, and it is not optional: an
+ * implementation that returned nothing at all on the fleet branch would satisfy
+ * both "not returned" claims for free.
+ */
+export async function assertFleetBranchStillReturnsACorrectlyStampedDashboard(
+  service: DashboardsService,
+  fleetActor: JwtPayload,
+  fixtures: SectionListFixtures,
+): Promise<void> {
+  const items = (await service.list(fleetActor, undefined, undefined, "sustainability")).items.map(
+    (item) => item.id,
+  );
+  expect(
+    items,
+    "the fleet branch must still answer the section filter — a dashboard stamped from its OWN " +
+      "organization's sustainability template is returned.",
+  ).toContain(fixtures.sustainabilityDashboardId);
+}
+
+/**
+ * **The claim.** Filtered to the mis-stamped dashboard's OWN organization, it is
+ * still absent: its `template_id` names a template of another organization, and
+ * the section of a foreign template is not this dashboard's section.
+ *
+ * Without the organization predicate in the join this row comes back — the
+ * dashboard's own organization matches the filter and the foreign template's
+ * `section` matches the filter, so the read admits it under a section it was
+ * never stamped into.
+ */
+export async function assertFleetBranchExcludesAMisStampedRowFromItsOwnOrganization(
+  service: DashboardsService,
+  fleetActor: JwtPayload,
+  fixtures: SectionListFixtures,
+): Promise<void> {
+  const items = (
+    await service.list(fleetActor, fixtures.dashboardOrganizationId, undefined, "sustainability")
+  ).items.map((item) => item.id);
+  expect(
+    items,
+    "a dashboard whose template_id points at ANOTHER organization's sustainability template is " +
+      "not in the sustainability section. On the fleet branch the organization predicate inside " +
+      "the join is the only thing that says so — BYPASSRLS means the tenant policy says nothing.",
+  ).not.toContain(fixtures.misStampedDashboardId);
+}
+
+/** …and it is not admitted under the TEMPLATE owner's organization either — the
+ * row belongs to the other organization, and a join is not a change of owner. */
+export async function assertFleetBranchExcludesAMisStampedRowFromTheTemplateOwner(
+  service: DashboardsService,
+  fleetActor: JwtPayload,
+  fixtures: SectionListFixtures,
+): Promise<void> {
+  const items = (
+    await service.list(
+      fleetActor,
+      fixtures.templateOwnerOrganizationId,
+      undefined,
+      "sustainability",
+    )
+  ).items.map((item) => item.id);
+  expect(
+    items,
+    "the mis-stamped dashboard belongs to the OTHER organization; matching a template here must " +
+      "not pull the row into this organization's section list.",
+  ).not.toContain(fixtures.misStampedDashboardId);
 }

@@ -7,6 +7,7 @@ import {
   rejectsAPatchBodyWhoseChartWidgetCarriesAMetricSource,
   rejectsAPatchBodyWhoseWidgetCarriesBothKinds,
   stillRejectsAnInstantiateBodyWhoseAssetGroupIsNotAUuid,
+  theInstantiateSlugTakesTheSameCharsetAsTheDashboardWriteDoor,
 } from "./dashboard-templates.schema.spec";
 
 /** `F3.61` Task 2 — Vitest entry point. Assertions live in the sibling `.spec`
@@ -39,5 +40,9 @@ describe("E4.2 — the instantiate body takes a null asset group", () => {
 
   it("still rejects an assetGroupId that is neither a uuid nor null", () => {
     stillRejectsAnInstantiateBodyWhoseAssetGroupIsNotAUuid();
+  });
+
+  it("applies the same slug charset as POST /dashboards (E4.2 PR 2 security review)", () => {
+    theInstantiateSlugTakesTheSameCharsetAsTheDashboardWriteDoor();
   });
 });

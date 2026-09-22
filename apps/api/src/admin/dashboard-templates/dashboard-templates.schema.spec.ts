@@ -160,9 +160,45 @@ export function acceptsAnInstantiateBodyWithANullAssetGroup(): void {
 export function stillRejectsAnInstantiateBodyWhoseAssetGroupIsNotAUuid(): void {
   expectRejectsAt(
     instantiateSectionTemplateBodySchema,
-    { assetGroupId: "not-a-uuid", slug: "x", name: "x" },
+    // The slug is a VALID one on purpose. It used to be `"x"`, which the slug
+    // rule below now refuses on two counts — so the fixture would have been
+    // refused whatever `assetGroupId` held, and this control would have gone on
+    // passing with the uuid rule deleted. A negative fixture must be wrong in
+    // exactly one place.
+    { assetGroupId: "not-a-uuid", slug: "valid-slug", name: "x" },
     ["assetGroupId"],
     /uuid/i,
     "an instantiate body whose asset group is neither a uuid nor null",
+  );
+}
+
+/**
+ * `E4.2` PR 2 security review — the instantiate door applies the SAME slug rule
+ * as `POST /dashboards`.
+ *
+ * Both refusals and the positive control are here rather than split: the claim
+ * is that one rule governs one column, and a charset refusal with no accepted
+ * spelling beside it cannot tell "the regex is right" from "the regex refuses
+ * everything".
+ */
+export function theInstantiateSlugTakesTheSameCharsetAsTheDashboardWriteDoor(): void {
+  expectRejectsAt(
+    instantiateSectionTemplateBodySchema,
+    { assetGroupId: null, slug: "x?a=b", name: "Sustainability" },
+    ["slug"],
+    /Invalid/i,
+    "an instantiate body whose slug carries a query string — it is addressed as a path segment",
+  );
+  expectRejectsAt(
+    instantiateSectionTemplateBodySchema,
+    { assetGroupId: null, slug: "a/b", name: "Sustainability" },
+    ["slug"],
+    /Invalid/i,
+    "an instantiate body whose slug carries a path separator",
+  );
+  expectAccepts(
+    instantiateSectionTemplateBodySchema,
+    { assetGroupId: null, slug: "enterprise-sustainability-2026", name: "Sustainability" },
+    "an instantiate body whose slug is lowercase letters, digits and hyphens",
   );
 }

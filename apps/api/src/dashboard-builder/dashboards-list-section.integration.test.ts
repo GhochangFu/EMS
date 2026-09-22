@@ -19,6 +19,9 @@ import { asRole } from "../testing/role-urls";
 import type { SectionListFixtures } from "./dashboards-list-section.integration.spec";
 import {
   assertAssetIdAndSectionCompose,
+  assertFleetBranchExcludesAMisStampedRowFromItsOwnOrganization,
+  assertFleetBranchExcludesAMisStampedRowFromTheTemplateOwner,
+  assertFleetBranchStillReturnsACorrectlyStampedDashboard,
   assertSectionFilterExcludesOtherSectionsAndHandBuiltRows,
   assertSectionFilterReturnsTheStampedDashboard,
   assertUnfilteredListStillContainsAHandBuiltDashboard,
@@ -58,6 +61,10 @@ const SUSTAINABILITY_SLUG = `e42-sec-sust-dash-${RUN}`;
 const ELECTRICAL_SLUG = `e42-sec-elec-dash-${RUN}`;
 const HAND_BUILT_SLUG = `e42-sec-hand-${RUN}`;
 const ASSET_SCOPED_SLUG = `e42-sec-asset-${RUN}`;
+// `E4.2` PR 2 security review — the fleet-branch fixture: a template owned by
+// the OTHER seeded organization, and an ESKOM dashboard mis-stamped with it.
+const OTHER_ORG_TEMPLATE_CODE = `e42-sec-other-${RUN}`;
+const MIS_STAMPED_SLUG = `e42-sec-misstamped-${RUN}`;
 
 const EMPTY_CONTENT = JSON.stringify({ widgets: [] });
 
@@ -117,6 +124,17 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
       throw new Error("E4.2: the ESKOM organization is not there — run pnpm db:seed");
     }
 
+    // The second seeded organization, named by CODE like everything else here.
+    // The fleet-branch cases need two real organizations: a mis-stamped
+    // `template_id` is only mis-stamped relative to another owner.
+    const others = await ownerPool.query<{ id: string }>(
+      `SELECT id FROM bms.organizations WHERE code = 'PHEWB'`,
+    );
+    const otherOrgId = others.rows[0]?.id;
+    if (!otherOrgId) {
+      throw new Error("E4.2: the PHEWB organization is not there — run pnpm db:seed");
+    }
+
     // **Named, never positional.** `tests/integration-fixture-isolation.test.ts`
     // refuses a positional read of `bms.assets`: it returns whatever currently
     // sorts first, which is another suite's committed fixture as often as it is
@@ -124,12 +142,16 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
     // code and not another.
     const assetId = await resolveSeededAssetByCode(ownerPool, FIXTURE_ASSET_CODE);
 
-    const template = async (code: string, section: string): Promise<string> => {
+    const template = async (
+      code: string,
+      section: string,
+      organizationId: string = eskomOrgId,
+    ): Promise<string> => {
       const row = await ownerPool.query<{ id: string }>(
         `INSERT INTO bms.dashboard_templates
            (organization_id, code, version, name, section, status, content, published_at)
          VALUES ($1, $2, 1, $3, $4, 'published', $5, now()) RETURNING id`,
-        [eskomOrgId, code, `E4.2 ${section} fixture`, section, EMPTY_CONTENT],
+        [organizationId, code, `E4.2 ${section} fixture`, section, EMPTY_CONTENT],
       );
       const id = row.rows[0]?.id ?? "";
       templateIds.push(id);
@@ -157,6 +179,17 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
       return id;
     };
 
+    // The mis-stamped row: an ESKOM dashboard whose `template_id` names PHEWB's
+    // sustainability template. Written with the superuser pool because that is
+    // the only role that can put a row into this shape at all — which is also
+    // why the READ side needs its own container rather than trusting the write
+    // side never to produce one.
+    const otherOrgSustainabilityTemplateId = await template(
+      OTHER_ORG_TEMPLATE_CODE,
+      "sustainability",
+      otherOrgId,
+    );
+
     fixtures = {
       sustainabilityDashboardId: await dashboard(
         SUSTAINABILITY_SLUG,
@@ -171,6 +204,13 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
         assetId,
       ),
       assetId,
+      misStampedDashboardId: await dashboard(
+        MIS_STAMPED_SLUG,
+        otherOrgSustainabilityTemplateId,
+        null,
+      ),
+      templateOwnerOrganizationId: otherOrgId,
+      dashboardOrganizationId: eskomOrgId,
     };
   }, 60_000);
 
@@ -208,5 +248,35 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
 
   it("assetId and section compose", async () => {
     await assertAssetIdAndSectionCompose(service, actor(), fixtures);
+  }, 60_000);
+
+  /**
+   * The FLEET branch — `E4.2` PR 2 security review.
+   *
+   * `admin@bms.local` is a global admin, so `readableOrganizationIds` answers
+   * `null` and `withOrganizationReadScope` runs the query as `bms_fleet` with
+   * no `organizationIdFilter`. That is the branch where the join's own
+   * organization predicate is the only container, and no case reached it.
+   */
+  const fleetActor = () => jwtFor(SEEDED.globalAdmin, "admin");
+
+  it("the fleet branch still returns a correctly stamped dashboard (the positive control)", async () => {
+    await assertFleetBranchStillReturnsACorrectlyStampedDashboard(service, fleetActor(), fixtures);
+  }, 60_000);
+
+  it("a mis-stamped template_id does not admit the row under its own organization's section", async () => {
+    await assertFleetBranchExcludesAMisStampedRowFromItsOwnOrganization(
+      service,
+      fleetActor(),
+      fixtures,
+    );
+  }, 60_000);
+
+  it("…nor under the template owner's organization", async () => {
+    await assertFleetBranchExcludesAMisStampedRowFromTheTemplateOwner(
+      service,
+      fleetActor(),
+      fixtures,
+    );
   }, 60_000);
 });

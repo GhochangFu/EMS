@@ -110,7 +110,21 @@ export const updateDashboardTemplateBodySchema = z
 export const instantiateSectionTemplateBodySchema = z
   .object({
     assetGroupId: z.string().uuid().nullable(),
-    slug: z.string().min(1).max(64),
+    /**
+     * **The same rule `dashboardFieldsSchema.slug` applies, because this is the
+     * same column.** Found by the `E4.2` PR 2 security review: the two write
+     * doors into `bms.dashboards.slug` disagreed — `POST /dashboards` took
+     * `.min(2).max(64).regex(/^[a-z0-9-]+$/)` and this one took any string of
+     * one to sixty-four characters. A slug is addressed as a PATH SEGMENT
+     * (`GET /dashboards/:slug`) and rendered into links, so a `/`, a `?` or a
+     * `#` in one is not a cosmetic difference; and a second door with a wider
+     * rule is how a value the first door refuses gets into the table anyway.
+     */
+    slug: z
+      .string()
+      .min(2)
+      .max(64)
+      .regex(/^[a-z0-9-]+$/),
     name: z.string().min(1).max(255),
     description: z.string().max(2000).nullish(),
   })
