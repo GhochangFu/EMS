@@ -353,10 +353,11 @@ export const dashboardWidgetPoints = bmsSchema.table(
  * one. An entry declared by an `INSERT` would satisfy every constraint and then return nothing,
  * in front of an operator, with a green console.
  *
- * **The vocabulary is frozen by `dashboard_widget_sources_catalog_key_check` in migration
- * `0054`**, which names the same five keys as `metricCatalogKeySchema`. Migrations are
- * forward-only, so a sixth entry costs a code change *and* a migration — decision 1's rule with
- * its real price. Anything expressible as a formula over points must be a derived point
+ * **The vocabulary is frozen by `dashboard_widget_sources_catalog_key_check`** — created in
+ * migration `0054` with Stage C's five keys and widened by `0079` (`E4.2`, ADR 0072) to the
+ * seven `metricCatalogKeySchema` names today. Migrations are forward-only, so a further entry
+ * costs a code change *and* a migration — decision 1's rule with its real price, paid once
+ * already. Anything expressible as a formula over points must be a derived point
  * (`assetPoints.kind`, ADR 0036/0037) instead.
  *
  * **The unique key is `(widgetId, catalogKey)`, deliberately not `(widgetId)`.** Every entry in

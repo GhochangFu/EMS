@@ -66,11 +66,12 @@ type Resolver = (
  * narrowings are computed into one `assetIds` list before any entry runs, so no entry can forget
  * one of them.
  *
- * **`params` is read by nothing here, and that is Unit 3's decision arriving intact.**
- * `METRIC_CATALOG_PARAMS_WRITE` declares no fields for any entry, so there is no parameter to
- * read — a dataset's row cap comes from `MAX_DATASET_ROWS`, not from a request. When an entry
- * first needs a filter, it is a field on that entry's write schema (and the containment test
- * still passing), never a query-string parameter.
+ * **`params` is read by nothing here yet.** `METRIC_CATALOG_PARAMS_WRITE` declares no fields
+ * for the five Stage C entries, so there is no parameter for them to read — a dataset's row
+ * cap comes from `MAX_DATASET_ROWS`, not from a request. The two `sustainability.*` entries
+ * declare `{ pointKey, aggregate }` (`E4.2`, ADR 0072 decision 2); their resolvers below are
+ * U1 stubs until U4 reads those fields. A filter is always a field on the entry's write schema
+ * (and the containment test still passing), never a query-string parameter.
  */
 @Injectable()
 export class MetricCatalogService {
