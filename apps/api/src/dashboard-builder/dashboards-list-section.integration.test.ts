@@ -84,6 +84,10 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
   let ownerPool: pg.Pool;
   let tenantPool: pg.Pool;
   let authPool: pg.Pool;
+  // Held, not discarded. `createDb(await openIntegrationPool(...))` kept no
+  // reference to the pool it opened, so `afterAll` ended three of the four and
+  // the fourth stayed open for the life of the worker.
+  let fleetPool: pg.Pool;
   let fleetDb: BmsDb;
   let service: DashboardsService;
 
@@ -105,7 +109,8 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "E4.2",
     );
-    fleetDb = createDb(await openIntegrationPool(url, "E4.2"));
+    fleetPool = await openIntegrationPool(url, "E4.2");
+    fleetDb = createDb(fleetPool);
 
     const tenantDb = createDb(tenantPool);
     const accessControl = new AccessControlService(createDb(authPool), fleetDb);
@@ -225,7 +230,9 @@ describe.skipIf(!connectionString)("E4.2 — GET /dashboards?section=", () => {
         templateIds,
       ]);
     }
-    await Promise.all([ownerPool, tenantPool, authPool].filter(Boolean).map((p) => p.end()));
+    await Promise.all(
+      [ownerPool, tenantPool, authPool, fleetPool].filter(Boolean).map((p) => p.end()),
+    );
   }, 60_000);
 
   const actor = () => jwtFor(SEEDED.locationAdmin, "location_admin");

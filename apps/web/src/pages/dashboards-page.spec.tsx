@@ -314,7 +314,18 @@ export async function theSubtitleNamesTheSection(): Promise<void> {
  * missing from the first draft of this case. Without it TanStack refetches on
  * mount even on a cache hit, so the key-ignoring version still reached the empty
  * response and the hint still appeared — the gate was dead, and the assertion on
- * the rendered hint could never have caught it. The call COUNT is the claim.
+ * the rendered hint could never have caught it.
+ *
+ * **The `waitFor` is what holds the claim, not the call count** — the sentence
+ * here used to say the opposite and the `E4.2` PR 2 review caught it. Under the
+ * key-ignoring mutation (`queryKey: ["dashboards", "list"]`) the second render
+ * is served the cached UNFILTERED list, so the empty-section hint never
+ * appears, the `waitFor` fails on its five-second timeout and the `expect` on
+ * the call count below is never reached. Measured, not reasoned:
+ * `Error: Test timed out in 5000ms`. The count assertion is a second, sharper
+ * statement of the same fact and is worth keeping — a failure that named it
+ * would say "one read" rather than "timed out" — but it is not what makes this
+ * case alive.
  */
 export async function theSectionIsPartOfTheQueryKey(): Promise<void> {
   const queryClient = new QueryClient({

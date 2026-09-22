@@ -196,7 +196,7 @@ import type { StockAssetTemplateEntry } from "./types";
  *         refuses `demand_vs_contract_pct` as `missing_input`, visibly.
  *         `kwh_today` stays MEASURED (Q3): the today rows read
  *         `delta({kwh_total}, today)` themselves.
- * *  - `electrical-feeder` **v4** (2026-09-22, `E4.2` PR 2): six more `bms-calc-v3`
+ *  - `electrical-feeder` **v4** (2026-09-22, `E4.2` PR 2): six more `bms-calc-v3`
  *    derived points appended at `sortOrder` 42–47 (ADR 0072 decision 3, Q7
  *    ruling (a), plan §3.7) — `kwh_this_month`, `kwh_this_year`,
  *    `energy_cost_this_month`, `energy_cost_this_year`, `co2_kg_this_month`,

@@ -322,14 +322,6 @@ export class DashboardTemplatesInstantiateService {
   }
 
   /**
-   * Members of one group, grouped by role and **ordered by `assets.code`**.
-   *
-   * The order is the whole reason "the first match" is an answer rather than a
-   * coin toss: `assets.code` is `NOT NULL UNIQUE`, so it is a total order.
-   * Members with no role are skipped — a membership with a NULL role plays no
-   * named part and no template widget can name it.
-   */
-  /**
    * The asset-group arm's two target checks, lifted out of `instantiate` when
    * `E4.2` gave that method a second arm. **Byte-for-byte the same checks in the
    * same order**, including both comments — a refactor that reordered them would
@@ -380,6 +372,14 @@ export class DashboardTemplatesInstantiateService {
     }
   }
 
+  /**
+   * Members of one group, grouped by role and **ordered by `assets.code`**.
+   *
+   * The order is the whole reason "the first match" is an answer rather than a
+   * coin toss: `assets.code` is `NOT NULL UNIQUE`, so it is a total order.
+   * Members with no role are skipped — a membership with a NULL role plays no
+   * named part and no template widget can name it.
+   */
   private async loadMembersByRole(
     assetGroupId: string,
     organizationId: string,

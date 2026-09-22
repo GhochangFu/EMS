@@ -666,7 +666,11 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
   // eighteen widgets on the 12-column grid (`TILE_W` 2, `TILE_H` 4), every
   // `value_tile` bound to `sustainability.total {pointKey, aggregate}` and
   // the one `table` to `sustainability.by_location`. Row A (`y=0`, six
-  // tiles): the six "today" figures. Row B (`y=BELOW_TILES_Y`, six tiles):
+  // tiles): the four "today" figures (energy, energy cost, water, CO₂) and
+  // the two executive codes, which carry no `_today` suffix and are not
+  // period figures at all — `water_recycle_pct` and
+  // `operational_efficiency_pct` are ratios, which is also why they average
+  // rather than sum. Row B (`y=BELOW_TILES_Y`, six tiles):
   // the four "this month" figures plus the kept *Active Alarms* and *Open
   // Work Orders* tiles. Row C (`y=BELOW_TILES_Y + TILE_H`, five tiles): the
   // four "this year" figures plus the kept *Health Score* tile. Row D

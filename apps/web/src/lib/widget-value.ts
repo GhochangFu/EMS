@@ -263,24 +263,6 @@ export type KpiTileWidgetProps = {
  *
  * `icon`: carried through by name only — see `KpiTileWidgetProps.icon`.
  */
-export function coverageNote(
-  coverage: RollupCoverage | null | undefined,
-): string | undefined {
-  if (!coverage) {
-    return undefined;
-  }
-  // `<`, never `<=`. Equal counts mean the roll-up covered every carrying asset,
-  // which is the ordinary case: a line on every tile saying "6 of 6 assets"
-  // would be noise on the majority of tiles and would train the reader to stop
-  // reading the one that says 4. `{0, 0}` is the two executive codes with no
-  // formula (ADR 0072 decision 4) — no asset carries them, so there is no
-  // shortfall to report and the em dash the tile already draws says enough.
-  if (coverage.fresh >= coverage.carrying) {
-    return undefined;
-  }
-  return `${coverage.fresh} of ${coverage.carrying} assets`;
-}
-
 export function toKpiTileProps(params: {
   readonly title: string;
   readonly status: WidgetStatus;
@@ -318,6 +300,34 @@ export function toKpiTileProps(params: {
     tone: WIDGET_TONE_TO_KPI_TONE[tone ?? config.tone ?? "ok"],
     icon: config.icon,
   };
+}
+
+/**
+ * `E4.2` U10, ADR 0072 decision 2 — the roll-up's coverage as one line, or
+ * nothing.
+ *
+ * **Below `toKpiTileProps` and not above it.** It was inserted between that
+ * function and its docblock, which left the docblock describing
+ * `tone`/`hint`/`compareValue`/`icon` attached to THIS function and the
+ * exported `toKpiTileProps` with none — AGENTS.md §4.1 asks every exported
+ * function for its own one-liner, and a reader gets the wrong one silently.
+ */
+export function coverageNote(
+  coverage: RollupCoverage | null | undefined,
+): string | undefined {
+  if (!coverage) {
+    return undefined;
+  }
+  // `<`, never `<=`. Equal counts mean the roll-up covered every carrying asset,
+  // which is the ordinary case: a line on every tile saying "6 of 6 assets"
+  // would be noise on the majority of tiles and would train the reader to stop
+  // reading the one that says 4. `{0, 0}` is the two executive codes with no
+  // formula (ADR 0072 decision 4) — no asset carries them, so there is no
+  // shortfall to report and the em dash the tile already draws says enough.
+  if (coverage.fresh >= coverage.carrying) {
+    return undefined;
+  }
+  return `${coverage.fresh} of ${coverage.carrying} assets`;
 }
 
 /**
