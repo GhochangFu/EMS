@@ -15,6 +15,9 @@ type ValueTileWidgetProps = {
   /** `E4.2` — the roll-up coverage of a `sustainability.total` binding; absent
    * for every other metric. */
   coverage?: RollupCoverage | null;
+  /** `E4.2` PR 2 sweep — the organization ISO 4217 code for a money metric;
+   * null for every other one, which renders the plain number. */
+  currency?: string | null;
 };
 
 /**
@@ -70,7 +73,8 @@ export function ValueTileWidget({
   config,
   compareValue,
   coverage,
+  currency,
 }: ValueTileWidgetProps) {
-  const props = toKpiTileProps({ title, status, primary, config, compareValue, coverage });
+  const props = toKpiTileProps({ title, status, primary, config, compareValue, coverage, currency });
   return <KpiTile {...props} icon={iconFor(props.icon)} stale={stale && status === "ready"} />;
 }

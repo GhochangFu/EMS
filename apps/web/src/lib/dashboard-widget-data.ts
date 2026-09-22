@@ -352,6 +352,11 @@ function catalogWidgetData(
     // arm's other optional fields are read the same way, and a missing key and
     // an explicit null must not mean two different things to the renderer.
     coverage: resolved?.shape === "metric" ? (resolved.coverage ?? null) : null,
+    // `E4.2` PR 2 sweep — read the same way and for the same reason as
+    // `coverage` above: `currency` is optional on the `metric` arm, the API has
+    // filled it for the seven money codes since PR 1, and until this line
+    // nothing in `apps/web` read it, so every cost tile drew a bare number.
+    currency: resolved?.shape === "metric" ? (resolved.currency ?? null) : null,
   };
 }
 

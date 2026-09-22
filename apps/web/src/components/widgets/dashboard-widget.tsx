@@ -58,6 +58,12 @@ export type WidgetData =
        * `metric` arm precisely so the three existing metrics need not emit it.
        */
       coverage?: RollupCoverage | null;
+      /**
+       * `E4.2` PR 2 sweep — the organization's ISO 4217 code for a money
+       * metric, `null` for every other one. Optional beside `coverage` and for
+       * the same contract reason: the three older metrics emit neither.
+       */
+      currency?: string | null;
     }
   | WidgetRowsData;
 
@@ -160,6 +166,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
   const stats = scalar?.stats ?? null;
   const bucketSeconds = scalar?.bucketSeconds ?? null;
   const coverage = scalar?.coverage ?? null;
+  const currency = scalar?.currency ?? null;
 
   switch (widget.widgetType) {
     case "radial_gauge":
@@ -180,6 +187,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           config={widget.config}
           compareValue={compareValue}
           coverage={coverage}
+          currency={currency}
         />
       );
     case "chart":

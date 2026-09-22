@@ -1,5 +1,6 @@
 import type { RollupCoverage, WidgetIcon, WidgetType } from "@bms/shared";
 
+import { formatMoney } from "./money";
 import { WIDGET_CATALOG, type ValueTileConfig, type WidgetStatus, type WidgetTone } from "./widget-catalog";
 
 /** `commonConfigFields` plus `value_tile`'s own `abbreviate` — every shape `formatWidgetValue` needs to read. */
@@ -274,8 +275,24 @@ export function toKpiTileProps(params: {
    * for every other metric (the field is optional on the contract's `metric`
    * arm). */
   readonly coverage?: RollupCoverage | null;
+  /**
+   * `E4.2` PR 2 sweep — the organization's ISO 4217 code, for the seven money
+   * point keys `sustainability.total` attaches it to. Optional on the
+   * contract's `metric` arm and `null` for everything else, so the tile falls
+   * back to the plain number rather than drawing a currency it was not given.
+   */
+  readonly currency?: string | null;
 }): KpiTileWidgetProps {
-  const { title, status, primary, config, tone, compareValue = null, coverage = null } = params;
+  const {
+    title,
+    status,
+    primary,
+    config,
+    tone,
+    compareValue = null,
+    coverage = null,
+    currency = null,
+  } = params;
   const ready = status === "ready";
   // **Gated on `ready` for the same reason `value` is.** TanStack Query keeps
   // the previous `data` through a refetch error, so a widget can hold a stale
@@ -289,7 +306,17 @@ export function toKpiTileProps(params: {
     // `unit` is passed to KpiTile separately below, which renders it in its
     // own span — not into `formatWidgetValue`'s `unit` option, or the tile
     // would read e.g. "7.1 kW kW".
-    value: ready ? formatWidgetValue(primary, { decimals: config.decimals, abbreviate: config.abbreviate }) : null,
+    // `E4.2` PR 2 sweep (ADR 0070 consequence 8) — a money metric renders in the
+    // organization's currency. `formatMoney` answers `null` when EITHER half is
+    // missing, so the `??` is the whole fallback: no currency, or no value, and
+    // the tile keeps the plain formatting every other metric gets. It is the
+    // ONE money formatter in the app (`lib/money.ts`) — never a second one here.
+    // `maximumFractionDigits` stays at its default 0: the money tiles set no
+    // `config.decimals`, and a currency string has its own rounding rules.
+    value: ready
+      ? (formatMoney(primary, currency) ??
+        formatWidgetValue(primary, { decimals: config.decimals, abbreviate: config.abbreviate }))
+      : null,
     unit: config.unit,
     hint: delta ? delta.text : config.hint,
     // **Gated on `ready`, for the reason `value` and `delta` are.** TanStack
