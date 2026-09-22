@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 
-import { MAX_DATASET_ROWS } from "@bms/shared";
+import { MAX_DATASET_ROWS, MONEY_POINT_KEY_CODES } from "@bms/shared";
 import type { RollupCoverage, SustainabilityAggregate } from "@bms/shared";
 
 import type { BmsTx } from "../database/tenant-context";
@@ -32,7 +32,13 @@ import type { BmsTx } from "../database/tenant-context";
  * back). Folding the bound into a SQL `CASE` would be a second declaration of the freshness
  * rule that the test cannot see.
  *
- * ## Currency (ADR 0072 ruling 4, plan OQ1)
+ * ## Currency (ADR 0072 ruling 4, plan OQ1; sweep ruling 2026-09-22)
+ *
+ * `isMoneyPointKey` decides WHETHER a tile carries a currency: membership in
+ * `MONEY_POINT_KEY_CODES`, never the point's unit. PR 1 read `unit === ""` as "money", but
+ * `""` is the shared no-unit spelling of 247 codes (`pf`, `pue`, the `*_per_day` counts), so
+ * a power factor tile carried the organization's currency. The unit is still read and
+ * reported; it just no longer decides.
  *
  * `rollupCurrency` is the `energy-cost.ts` one-currency-else-`null` rule kept as a pure
  * function. On this route `resolveForDashboard` runs inside ONE organization's tenant
@@ -88,6 +94,11 @@ export function rollup(
   return { value: aggregate === "sum" ? sum : sum / fresh.length, coverage };
 }
 
+/** Whether `pointKey` is a listed money code — the one test for attaching a currency. */
+export function isMoneyPointKey(pointKey: string): boolean {
+  return (MONEY_POINT_KEY_CODES as readonly string[]).includes(pointKey);
+}
+
 /** The one currency of the set, else `null`; a `null` member is its own "currency". */
 export function rollupCurrency(currencies: ReadonlySet<string | null>): string | null {
   if (currencies.size !== 1) return null;
@@ -124,6 +135,11 @@ export type RollupRow = {
  * it: the scope is a list of ids the caller resolved, and the predicate is what keeps this
  * read correct under a role that ignores the policy (`dashboard-source-scope.ts` records the
  * same reasoning).
+ *
+ * `a.active` is written HERE, whichever arm of `resolveAssetScope` produced the ids (sweep):
+ * the organization arm filters `active`, the asset, location and asset-group arms do not, so
+ * without it a decommissioned meter still pinned to its template was a permanent denominator
+ * — and, while its last sample stayed fresh, a term — on every site dashboard.
  */
 export async function readRollupRows(
   tx: BmsTx,
@@ -162,6 +178,7 @@ export async function readRollupRows(
         ON ap.asset_id = a.id AND ap.point_key = ${pointKey}
      WHERE a.id = ANY(${sql.param([...scope])}::uuid[])
        AND a.organization_id = ${organizationId}
+       AND a.active
      ORDER BY l.code, a.code
   `);
   if (carrying.rows.length === 0) return [];
@@ -199,7 +216,10 @@ export async function readRollupRows(
   }));
 }
 
-/** The point's catalog unit — `""` is the money spelling (E4.1c), `null` when the code is unknown. */
+/**
+ * The point's catalog unit, `null` when the code is unknown. `""` is the NO-UNIT spelling
+ * (E4.1c) shared by money, counts and ratios — it does not identify money (`isMoneyPointKey`).
+ */
 export async function readPointKeyUnit(tx: BmsTx, pointKey: string): Promise<string | null> {
   const result = await tx.execute<{ unit: string | null }>(
     sql`SELECT unit FROM bms.point_keys WHERE code = ${pointKey} LIMIT 1`,

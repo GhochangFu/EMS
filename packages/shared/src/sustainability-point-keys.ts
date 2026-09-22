@@ -145,3 +145,27 @@ export const SUSTAINABILITY_FACILITY_POINT_KEYS = [
 ] as const;
 
 export type SustainabilityFacilityPointKey = (typeof SUSTAINABILITY_FACILITY_POINT_KEYS)[number];
+
+/**
+ * The money codes — the ONLY point keys the `E4.2` roll-up resolver
+ * (`apps/api/src/dashboard-builder/metric-catalog.service.ts`,
+ * `sustainability.total`) attaches the organization's `currency` to (E4.2 PR 1
+ * sweep, owner ruling 2026-09-22). The empty-string unit is NOT the test:
+ * `""` is the shared no-unit spelling of 247 codes (`pf`, `pue`,
+ * `occupancy_count`, every `*_per_day` count …), and reading it as "money"
+ * put a currency on a power factor. `E4.2` PR 2 appends its four cost period
+ * codes here. A client-authored money point that is not listed gets
+ * `currency: null` — a limitation to be recorded in ADR 0072 Amendment 1
+ * (the closure PR's).
+ *
+ * **Not a domain array, and its name must not end in `POINT_KEYS`.** The three
+ * text guards above parse `export const <NAME>_POINT_KEYS = [` — `[A-Z_]*`,
+ * no domain prefix required — and `tests/f3.39` refuses an array its
+ * `ARRAY_DOMAIN` table does not map; these codes already have their domain
+ * from the arrays above, so a second array would give each of them two.
+ */
+export const MONEY_POINT_KEY_CODES = [
+  "energy_cost_per_h", "energy_cost_today", "water_cost_today",
+] as const;
+
+export type MoneyPointKeyCode = (typeof MONEY_POINT_KEY_CODES)[number];

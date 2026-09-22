@@ -1,9 +1,15 @@
-import { MAX_DATASET_ROWS } from "@bms/shared";
+import {
+  MAX_DATASET_ROWS,
+  MONEY_POINT_KEY_CODES,
+  SUSTAINABILITY_ELECTRICAL_POINT_KEYS,
+  SUSTAINABILITY_WATER_POINT_KEYS,
+} from "@bms/shared";
 
 import {
   MEASURED_ROLLUP_FRESH_MS,
   capRows,
   freshnessBoundSeconds,
+  isMoneyPointKey,
   rollup,
   rollupCurrency,
 } from "./sustainability-rollup";
@@ -71,6 +77,36 @@ export function twoCurrenciesAreNull(): void {
 /** A row with no currency beside one with a currency is `null` — a null is its own "currency". */
 export function aNullBesideACurrencyIsNull(): void {
   same(rollupCurrency(new Set(["INR", null])), null, "rollupCurrency({INR, null})");
+}
+
+/** A listed money code takes the organization's currency (sweep, owner ruling 2026-09-22). */
+export function aListedMoneyCodeIsMoney(): void {
+  same(isMoneyPointKey("energy_cost_today"), true, "isMoneyPointKey(energy_cost_today)");
+}
+
+/**
+ * `pf` carries the empty-string unit like every count and ratio — 247 codes share that
+ * spelling — and is NOT money: the list decides, never the unit.
+ */
+export function anUnlistedNoUnitCodeIsNotMoney(): void {
+  same(isMoneyPointKey("pf"), false, "isMoneyPointKey(pf)");
+}
+
+/**
+ * Every listed money code is a code the catalog actually declares (sweep review). Without
+ * this the list is gated against itself: a catalog RENAME leaves a stale spelling here, the
+ * money tile silently drops its currency, and every suite stays green.
+ */
+export function everyMoneyCodeIsADeclaredPointKey(): void {
+  const declared = new Set<string>([
+    ...SUSTAINABILITY_ELECTRICAL_POINT_KEYS,
+    ...SUSTAINABILITY_WATER_POINT_KEYS,
+  ]);
+  same(
+    MONEY_POINT_KEY_CODES.filter((code) => !declared.has(code)),
+    [],
+    "money codes declared by no sustainability array",
+  );
 }
 
 /** A scheduled derived point at 60 s is fresh for 180 s (3 × interval). */

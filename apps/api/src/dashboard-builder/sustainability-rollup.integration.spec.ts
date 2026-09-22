@@ -37,6 +37,8 @@ export type RollupFixture = {
   /** A `{ water_cost_today, sum }` by_location table on the money dashboard: no template carries it. */
   readonly wideMoneyTableSourceId: string;
   readonly wideMoneyAlarmsSourceId: string;
+  /** A `{ pf, avg }` tile on the money dashboard: unit `""` like money, and NOT money. */
+  readonly widePfSourceId: string;
   readonly nopeSourceId: string;
   /** A dashboard scoped to asset A alone (F3.2 asset scope), one `{ kl_today, sum }` tile. */
   readonly assetScopedDashboardId: string;
@@ -82,6 +84,21 @@ export async function l1AvgOnTheSameDashboardIsFifteen(f: RollupFixture): Promis
     metricOf(response, f.l1SumSourceId).value,
     metricOf(response, f.l1AvgSourceId).value,
   ]).toEqual([30, 15]);
+}
+
+/**
+ * The inactive asset E at L1 (on the template, fresh `kl_today` = 40, in the caller's readable
+ * set) is neither a denominator nor a term on the L1 dashboard (sweep): 30 with 2/2, not 70
+ * with 3/3. The location arm of `resolveAssetScope` hands E's id over; the carrying query is
+ * what drops it. The claim reads the `avg` tile so it is not the `sum` claim restated: 15,
+ * where E counted would give 23.33….
+ */
+export async function inactiveAssetIsNotCarrying(f: RollupFixture): Promise<void> {
+  const tile = metricOf(await resolveWide(f, f.l1DashboardId), f.l1AvgSourceId);
+  expect({ value: tile.value, coverage: tile.coverage }).toEqual({
+    value: 15,
+    coverage: { fresh: 2, carrying: 2 },
+  });
 }
 
 /** Organization-wide `{ kl_today, sum }`: C's sample is 10 min old against a 180 s bound — 30, 2/3. */
@@ -131,6 +148,16 @@ export async function moneyTileCarriesTheOrganizationCurrency(f: RollupFixture):
 /** The `kl_today` tile (unit `KL`) carries `currency: null`. */
 export async function quantityTileCarriesNoCurrency(f: RollupFixture): Promise<void> {
   const tile = metricOf(await resolveWide(f, f.l1DashboardId), f.l1SumSourceId);
+  expect(tile.currency).toBeNull();
+}
+
+/**
+ * The `pf` tile carries `currency: null` (sweep, owner ruling 2026-09-22): `""` is the shared
+ * no-unit spelling of 247 codes, and only a listed money code takes the currency. The
+ * `water_cost_today` claim above is this claim's positive control.
+ */
+export async function noUnitNonMoneyTileCarriesNoCurrency(f: RollupFixture): Promise<void> {
+  const tile = metricOf(await resolveWide(f, f.wideMoneyDashboardId), f.widePfSourceId);
   expect(tile.currency).toBeNull();
 }
 

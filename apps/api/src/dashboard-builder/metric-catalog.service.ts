@@ -29,6 +29,7 @@ import { resolveWidgetSources } from "./dashboard-source-scope";
 import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 import {
   capRows,
+  isMoneyPointKey,
   readOrganizationCurrency,
   readPointKeyUnit,
   readRollupRows,
@@ -346,7 +347,11 @@ export class MetricCatalogService {
 
 /**
  * An empty scope is a real state — a caller scoped to an asset group holding no assets — and
- * every entry below routes it to a zero answer before building SQL.
+ * every entry below routes it to a zero answer before building SQL (`assets.health.score`
+ * through `AssetHealthService.summary`'s own guard; `sustainability.total` since the `E4.2`
+ * PR 1 sweep — it read the point's unit and the organization's currency first, and
+ * `metric-catalog.service.spec.ts` now drives each sustainability entry with a transaction
+ * that refuses every statement).
  *
  * **This comment used to claim `inArray(x, [])` emits `in ()`, a Postgres syntax error. That is
  * false at the pinned version** (security review), and it was copied here from
@@ -431,7 +436,8 @@ const openWorkOrderWhere = (organizationId: string, scope: readonly string[]) =>
     scopedTo(workOrders.assetId, scope),
   );
 
-const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
+/** Exported for `metric-catalog.service.spec.ts`'s no-database claims only; the service is the API. */
+export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
   "alarms.active.count": async function (tx, organizationId, scope) {
     if (scopeIsEmpty(scope)) return metricValue("alarms.active.count", 0, null);
     const [row] = await tx
@@ -559,19 +565,30 @@ const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
   /**
    * `E4.2` / ADR 0072 decision 2 — `pointKey` rolled up across the carrying assets in scope.
    * `coverage` and `currency` are the metric arm's two optional fields and this is the one
-   * entry that emits them; `currency` is the organization's only for a money point (unit
-   * `""`, the E4.1c spelling), else `null`. An empty scope is `0/0` and `null`, like the
-   * other entries' "no source".
+   * entry that emits them; `currency` is the organization's only for a LISTED money code
+   * (`MONEY_POINT_KEY_CODES`, sweep ruling 2026-09-22 — the unit `""` is the no-unit
+   * spelling of 247 codes and decides nothing), else `null`. An empty scope is `0/0`,
+   * `null`, no unit and no currency before any SQL (sweep — PR 1 read the unit and the
+   * currency first), like the other entries' "no source".
    */
   "sustainability.total": async (tx, organizationId, scope, _deps, params) => {
+    if (scopeIsEmpty(scope)) {
+      return {
+        shape: "metric",
+        key: "sustainability.total",
+        value: null,
+        unit: null,
+        coverage: { fresh: 0, carrying: 0 },
+        currency: null,
+      };
+    }
     const { pointKey, aggregate } = params as SustainabilityParams;
     const rows = await readRollupRows(tx, organizationId, scope, pointKey);
     const { value, coverage } = rollup(rows, aggregate);
     const unit = await readPointKeyUnit(tx, pointKey);
-    const currency =
-      unit === ""
-        ? rollupCurrency(new Set([await readOrganizationCurrency(tx, organizationId)]))
-        : null;
+    const currency = isMoneyPointKey(pointKey)
+      ? rollupCurrency(new Set([await readOrganizationCurrency(tx, organizationId)]))
+      : null;
     return {
       shape: "metric",
       key: "sustainability.total",

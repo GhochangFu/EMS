@@ -19,10 +19,12 @@ import {
   byLocationListsL1ThenL2WithStringCoverage,
   byLocationShowsASiteWithNoMetersAsZeroOverZero,
   callerScopeIntersectsTheTable,
+  inactiveAssetIsNotCarrying,
   l1AvgOnTheSameDashboardIsFifteen,
   l1SumIsThirtyWithFullCoverage,
   measuredPointUsesTheFifteenMinuteBound,
   moneyTileCarriesTheOrganizationCurrency,
+  noUnitNonMoneyTileCarriesNoCurrency,
   olderMetricEmitsNoCoverageOrCurrency,
   quantityTileCarriesNoCurrency,
   unparseableBindingIsSkippedNotThrown,
@@ -50,8 +52,9 @@ import {
  *
  * The fixture (plan U4): a published asset template with `kl_today` (derived, scheduled, 60 s)
  * and `kwh_today` (measured); assets A and B at L1 on it, C at L2 on it, D at L1 on no
- * template. Samples: `kl_today` A = 10 (now), B = 20 (now), C = 99 (now − 10 min, stale at
- * 180 s); `kwh_today` A = 5 (now − 14 min, fresh at 15 min), B = 7 (now − 16 min, stale).
+ * template, E at L1 on it and INACTIVE (sweep). Samples: `kl_today` A = 10 (now), B = 20
+ * (now), C = 99 (now − 10 min, stale at 180 s), E = 40 (now, and excluded as inactive);
+ * `kwh_today` A = 5 (now − 14 min, fresh at 15 min), B = 7 (now − 16 min, stale).
  */
 const connectionString = requireIntegrationDb({
   item: "E4.2",
@@ -140,11 +143,16 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       [orgId, templateId],
     );
 
-    const mkAsset = async (locationId: string, tag: string, onTemplate: boolean): Promise<string> => {
+    const mkAsset = async (
+      locationId: string,
+      tag: string,
+      onTemplate: boolean,
+      active = true,
+    ): Promise<string> => {
       const row = await superuserPool.query<{ id: string }>(
-        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain, template_id)
-         VALUES ($1, $2, $3, $4, 'E4.2', $5, $6) RETURNING id`,
-        [orgId, locationId, `E42-${tag}-${RUN}`, `E4.2 ${tag} ${RUN}`, domainCode, onTemplate ? templateId : null],
+        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain, template_id, active)
+         VALUES ($1, $2, $3, $4, 'E4.2', $5, $6, $7) RETURNING id`,
+        [orgId, locationId, `E42-${tag}-${RUN}`, `E4.2 ${tag} ${RUN}`, domainCode, onTemplate ? templateId : null, active],
       );
       const id = row.rows[0]?.id ?? "";
       assetIds.push(id);
@@ -154,6 +162,10 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
     const assetB = await mkAsset(l1.id, "B", true);
     const assetC = await mkAsset(l2.id, "C", true);
     await mkAsset(l1.id, "D", false);
+    // E (sweep): INACTIVE, on the template at L1, with a FRESH sample — a decommissioned meter
+    // that must be neither a denominator nor a term on the L1 dashboard (the location arm of
+    // `resolveAssetScope` does not filter `active`; the carrying query must).
+    const assetE = await mkAsset(l1.id, "E", true, false);
 
     await superuserPool.query(
       `INSERT INTO telemetry.point_values (time, asset_id, point_key, value) VALUES
@@ -161,8 +173,9 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
          (now(), $2, 'kl_today', 20),
          (now() - interval '10 minutes', $3, 'kl_today', 99),
          (now() - interval '14 minutes', $1, 'kwh_today', 5),
-         (now() - interval '16 minutes', $2, 'kwh_today', 7)`,
-      [assetA, assetB, assetC],
+         (now() - interval '16 minutes', $2, 'kwh_today', 7),
+         (now(), $4, 'kl_today', 40)`,
+      [assetA, assetB, assetC, assetE],
     );
 
     /** A dashboard with N widgets, each bound to one catalog entry with the given params. */
@@ -215,6 +228,8 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       { widgetType: "value_tile", catalogKey: "alarms.active.count", params: {} },
       // Hand-inserted past the write schema: the resolver must skip it, not throw.
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: { pointKey: "nope", aggregate: "sum" } },
+      // Appended (the source ids above are positional): unit `""` and NOT money — no currency.
+      { widgetType: "value_tile", catalogKey: "sustainability.total", params: { pointKey: "pf", aggregate: "avg" } },
     ]);
     const assetDash = await mkDashboard("asset", null, assetA, [
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: sum("kl_today") },
@@ -253,6 +268,7 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       wideMoneySourceId: moneyDash.sourceIds[0] ?? "",
       wideMoneyTableSourceId: moneyDash.sourceIds[1] ?? "",
       wideMoneyAlarmsSourceId: moneyDash.sourceIds[2] ?? "",
+      widePfSourceId: moneyDash.sourceIds[4] ?? "",
       nopeSourceId: broken.rows[0]?.id ?? "",
       assetScopedDashboardId: assetDash.dashboardId,
       assetScopedSourceId: assetDash.sourceIds[0] ?? "",
@@ -293,6 +309,10 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
     await l1AvgOnTheSameDashboardIsFifteen(fixture);
   });
 
+  it("does not count the inactive asset E at L1 as carrying, nor its fresh 40 as a term", async () => {
+    await inactiveAssetIsNotCarrying(fixture);
+  });
+
   it("excludes the 10-minute-old sample at a 180 s bound and counts it: 30 with 2/3", async () => {
     await wideSumExcludesTheStaleAssetButCountsIt(fixture);
   });
@@ -315,6 +335,10 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
 
   it("carries currency: null on a quantity point", async () => {
     await quantityTileCarriesNoCurrency(fixture);
+  });
+
+  it("carries currency: null on pf — unit \"\" but not a listed money code", async () => {
+    await noUnitNonMoneyTileCarriesNoCurrency(fixture);
   });
 
   it("skips a binding whose stored params fail the write schema, without throwing", async () => {
