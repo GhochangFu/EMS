@@ -116,9 +116,15 @@ export interface UpdateDashboardTemplateInput {
   content?: SectionTemplateContentInput;
 }
 
-/** `POST /admin/dashboard-templates/:id/instantiate` — ADR 0049 decision 4. */
+/**
+ * `POST /admin/dashboard-templates/:id/instantiate` — ADR 0049 decision 4.
+ *
+ * `assetGroupId` is `null` for the organization-wide arm (`E4.2`, ADR 0072
+ * decision 1), which the API accepts **only** for a template whose every widget
+ * has zero `bindings`.
+ */
 export interface InstantiateDashboardTemplateInput {
-  assetGroupId: string;
+  assetGroupId: string | null;
   slug: string;
   name: string;
   description?: string | null;

@@ -92,10 +92,24 @@ export const updateDashboardTemplateBodySchema = z
  * role against **the target asset group's members**, so a group is what the
  * resolution needs. The created dashboard is asset-group scoped for the same
  * reason.
+ *
+ * **`.nullable()`, and only `E4.2`'s one case may use it** — ADR 0072 decision
+ * 1, an amendment to ADR 0049 decision 4. `asset_groups.location_id` is `NOT
+ * NULL`, so every instance was one location's group and the organization-wide
+ * enterprise roll-up that ADR names had nowhere to land. A `null` group
+ * instantiates organization-wide (both scope columns `NULL`) **only** when the
+ * pinned version's every widget has zero `bindings`; a template that binds a
+ * role still gets a 400, because a role resolves against the target group's
+ * members and with no group it would resolve nothing.
+ *
+ * The check is the SERVICE's and not this schema's on purpose: whether a
+ * template has bindings is a fact about the stored `content` of the pinned
+ * version, which a request schema cannot see. `section` is validated the same
+ * way and for the same reason.
  */
 export const instantiateSectionTemplateBodySchema = z
   .object({
-    assetGroupId: z.string().uuid(),
+    assetGroupId: z.string().uuid().nullable(),
     slug: z.string().min(1).max(64),
     name: z.string().min(1).max(255),
     description: z.string().max(2000).nullish(),

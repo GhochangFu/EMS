@@ -71,6 +71,23 @@ function publishedTemplate() {
   };
 }
 
+/** `E4.2` — the published fixture with its one binding removed. */
+function roleFreeTemplate() {
+  return {
+    ...publishedTemplate(),
+    section: "sustainability",
+    content: {
+      widgets: [
+        {
+          ...publishedTemplate().content.widgets[0],
+          bindings: [],
+          sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+        },
+      ],
+    },
+  };
+}
+
 const GROUPS = { items: [{ id: "grp-1", name: "Electrical train", locationName: "Plant 1", memberCount: 2 }] };
 
 const VOCABULARIES = {
@@ -264,4 +281,74 @@ export async function refusedDeleteStaysOnThePage(): Promise<void> {
   expect(await screen.findByText("Only a draft can be deleted")).toBeInTheDocument();
   expect(screen.queryByText(LIST_LANDING_TEXT)).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete draft" })).toBeInTheDocument();
+}
+
+/**
+ * `E4.2` U8b, ADR 0072 decision 1 — the instantiate dialog offers
+ * **Organization-wide (no group)** for a template that binds no role.
+ *
+ * `publishedTemplate()` binds `incoming-supply/kW`, so the fixture below strips
+ * the bindings rather than reusing it: the option's whole condition is the
+ * absence of a binding, and a fixture that carried one would assert the
+ * opposite direction by accident.
+ */
+export async function roleFreeTemplateOffersTheOrganizationWideOption(): Promise<void> {
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(roleFreeTemplate()) });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  expect(
+    await screen.findByRole("option", { name: "Organization-wide (no group)" }),
+  ).toBeInTheDocument();
+}
+
+/**
+ * The other direction, and the adjacent positive control with it.
+ *
+ * A template that binds a role must NOT offer the option — the API answers that
+ * combination with a 400, after the slug and the name have been typed. The
+ * control is the asset-group option, which proves the select rendered and the
+ * absence assertion is reading a real, populated dropdown rather than an empty
+ * one.
+ */
+export async function bindingTemplateHidesTheOrganizationWideOption(): Promise<void> {
+  stubApi({ fetchAdminDashboardTemplate: () => Promise.resolve(publishedTemplate()) });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  expect(
+    await screen.findByRole("option", { name: /Electrical train/ }),
+    "the positive control — the group dropdown rendered and is populated",
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("option", { name: "Organization-wide (no group)" }),
+  ).not.toBeInTheDocument();
+}
+
+/** The dialog sends `assetGroupId: null` when the organization-wide option is
+ * chosen — the sentinel `__organization_wide__` is a `<select>` value and must
+ * never reach the wire. */
+export async function organizationWideOptionSendsANullAssetGroup(): Promise<void> {
+  const calls: unknown[] = [];
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(roleFreeTemplate()),
+    instantiateAdminDashboardTemplate: (_id: string, input: unknown) => {
+      calls.push(input);
+      return Promise.resolve({ dashboard: { id: "d1", name: "Sustainability" }, resolutions: [] });
+    },
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  await userEvent.selectOptions(
+    await screen.findByRole("combobox", { name: "Asset group" }),
+    "__organization_wide__",
+  );
+  await userEvent.type(screen.getByRole("textbox", { name: "Slug" }), "enterprise");
+  await userEvent.click(screen.getByRole("button", { name: "Confirm instantiate" }));
+
+  await waitFor(() => {
+    expect(calls).toHaveLength(1);
+  });
+  expect((calls[0] as { assetGroupId: unknown }).assetGroupId).toBeNull();
 }

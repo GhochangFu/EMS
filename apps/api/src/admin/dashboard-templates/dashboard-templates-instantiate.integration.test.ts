@@ -19,9 +19,14 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { DashboardTemplatesInstantiateService } from "./dashboard-templates-instantiate.service";
 import {
+  assertBindingTemplateRefusesNullGroup,
   assertDraftCannotBeInstantiated,
   assertForeignGroupIsRefusedAndLeavesNothing,
+  assertLocationAdminCannotInstantiateOrganizationWide,
+  assertOrganizationWideRowHasBothScopeColumnsNull,
+  assertOrganizationWideSourceParamsSurvive,
   assertResolutionReportCoversEveryOutcome,
+  assertRoleFreeTemplateInstantiatesOrganizationWide,
   assertTemplateStampIsOnTheDashboardRow,
 } from "./dashboard-templates-instantiate.integration.spec";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
@@ -58,6 +63,11 @@ const DRAFT_CODE = `f336-inst-draft-${RUN}`;
 const REPORT_SLUG = `f336-report-${RUN}`;
 const FOREIGN_SLUG = `f336-foreign-${RUN}`;
 const DRAFT_SLUG = `f336-draftinst-${RUN}`;
+/** `E4.2` U8b — the organization-wide arm's own fixtures. */
+const ROLE_FREE_CODE = `e42-rolefree-tmpl-${RUN}`;
+const ORG_WIDE_SLUG = `e42-orgwide-${RUN}`;
+const ORG_WIDE_REFUSED_SLUG = `e42-orgwide-refused-${RUN}`;
+const ORG_WIDE_FORBIDDEN_SLUG = `e42-orgwide-forbidden-${RUN}`;
 
 /** Six widgets: one per outcome, plus the mixed-role regression case. */
 const TEMPLATE_CONTENT = {
@@ -144,6 +154,51 @@ const TEMPLATE_CONTENT = {
   ],
 };
 
+/**
+ * `E4.2` U8b — a template with **zero role bindings**, which is the only kind
+ * ADR 0072 decision 1 lets instantiate without an asset group. Its two sources
+ * are deliberately one with params and one without: `sustainability.total` is
+ * the first catalog entry whose write schema declares fields, and the copy has
+ * to carry them through verbatim.
+ */
+const ROLE_FREE_CONTENT = {
+  widgets: [
+    {
+      key: "rollup-tile",
+      title: "Energy today",
+      gridX: 0,
+      gridY: 0,
+      gridW: 3,
+      gridH: 2,
+      bindings: [],
+      sources: [
+        {
+          catalogKey: "sustainability.total",
+          params: { pointKey: "kwh_today", aggregate: "sum" },
+          sortOrder: 0,
+        },
+      ],
+      widgetType: "value_tile",
+      config: {},
+    },
+    {
+      key: "alarms-tile",
+      title: "Active alarms",
+      gridX: 3,
+      gridY: 0,
+      gridW: 3,
+      gridH: 2,
+      bindings: [],
+      sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+      widgetType: "value_tile",
+      config: {},
+    },
+  ],
+};
+
+/** Ordered by `catalog_key`, which is what the read in the spec sorts on. */
+const ROLE_FREE_EXPECTED_PARAMS = [{}, { pointKey: "kwh_today", aggregate: "sum" }];
+
 describe.skipIf(!connectionString)(
   "F3.36 — section template instantiation and the Amendment 2 resolution report",
   () => {
@@ -159,6 +214,9 @@ describe.skipIf(!connectionString)(
     let publishedTemplateId: string;
     let firstChillerAssetId: string;
     let draftTemplateId: string;
+    let roleFreeTemplateId: string;
+    /** Set by the first `E4.2` case and read by the two that assert on its row. */
+    let organizationWideDashboardId: string;
 
     const templateIds: string[] = [];
     const dashboardIds: string[] = [];
@@ -341,6 +399,16 @@ describe.skipIf(!connectionString)(
       draftTemplateId = draft.rows[0]?.id ?? "";
       templateIds.push(draftTemplateId);
 
+      const roleFree = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.dashboard_templates
+           (organization_id, code, version, name, section, status, content, published_at)
+         VALUES ($1, $2, 1, 'E4.2 role-free fixture', 'sustainability', 'published', $3, now())
+         RETURNING id`,
+        [eskomOrgId, ROLE_FREE_CODE, JSON.stringify(ROLE_FREE_CONTENT)],
+      );
+      roleFreeTemplateId = roleFree.rows[0]?.id ?? "";
+      templateIds.push(roleFreeTemplateId);
+
       // The canvas is 12 columns wide; the fixture's widest row is gridX 9 + gridW 3.
       if (DASHBOARD_GRID.columns < 12) {
         throw new Error("F3.36: the fixture assumes a canvas at least as wide as it lays out");
@@ -357,7 +425,14 @@ describe.skipIf(!connectionString)(
         ]);
       }
       await ownerPool.query(`DELETE FROM bms.dashboards WHERE slug = ANY($1::text[])`, [
-        [REPORT_SLUG, FOREIGN_SLUG, DRAFT_SLUG],
+        [
+          REPORT_SLUG,
+          FOREIGN_SLUG,
+          DRAFT_SLUG,
+          ORG_WIDE_SLUG,
+          ORG_WIDE_REFUSED_SLUG,
+          ORG_WIDE_FORBIDDEN_SLUG,
+        ],
       ]);
       if (templateIds.length > 0) {
         await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [
@@ -464,6 +539,58 @@ describe.skipIf(!connectionString)(
         draftTemplateId,
         eskomGroupId,
         DRAFT_SLUG,
+      );
+    }, 60_000);
+
+    it("a role-free template instantiates organization-wide when assetGroupId is null", async () => {
+      const service = makeInstantiate();
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+      const { dashboardId } = await assertRoleFreeTemplateInstantiatesOrganizationWide(
+        service,
+        globalAdmin,
+        roleFreeTemplateId,
+        ORG_WIDE_SLUG,
+      );
+      organizationWideDashboardId = dashboardId;
+      dashboardIds.push(dashboardId);
+    }, 60_000);
+
+    it("the organization-wide row carries both scope columns NULL", async () => {
+      await assertOrganizationWideRowHasBothScopeColumnsNull(
+        ownerPool,
+        organizationWideDashboardId,
+        eskomOrgId,
+      );
+    }, 60_000);
+
+    it("the organization-wide instance keeps its sources' params", async () => {
+      await assertOrganizationWideSourceParamsSurvive(
+        ownerPool,
+        organizationWideDashboardId,
+        ROLE_FREE_EXPECTED_PARAMS,
+      );
+    }, 60_000);
+
+    it("a template with role bindings refuses a null asset group", async () => {
+      const service = makeInstantiate();
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+      await assertBindingTemplateRefusesNullGroup(
+        service,
+        ownerPool,
+        globalAdmin,
+        publishedTemplateId,
+        ORG_WIDE_REFUSED_SLUG,
+      );
+    }, 60_000);
+
+    it("a location admin cannot instantiate an organization-wide dashboard", async () => {
+      const service = makeInstantiate();
+      const locationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+      await assertLocationAdminCannotInstantiateOrganizationWide(
+        service,
+        locationAdmin,
+        roleFreeTemplateId,
+        ORG_WIDE_FORBIDDEN_SLUG,
       );
     }, 60_000);
   },
