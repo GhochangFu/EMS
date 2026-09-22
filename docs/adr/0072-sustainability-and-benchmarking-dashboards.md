@@ -2,9 +2,10 @@
 
 ## Status
 
-Proposed — drafted 2026-09-22 at the §10 gate, before any implementation
-code. Six gate questions are put to the owner one at a time; each ruling is
-recorded under *Gate questions* and carried into *Decision*.
+Accepted — drafted and ruled at the §10 gate on 2026-09-22, before any
+implementation code. Six gate questions were put to the owner one at a time;
+all six were ruled as recommended. The rulings are recorded under *Gate
+questions* and carried into *Decision*.
 
 Promotes nothing out of `AGENTS.md` §6 — the ESG module is `E4.x`, not a §6
 item (ADR 0070 *Consequences*). The `chore(agents):` sweep owed is the status
@@ -142,7 +143,7 @@ beside `/energy`, hand-built like `EnergyPage`. *(c)* (a) plus the two KPI
 tiles on `/`'s ribbon now, without a period delta. **Recommended (a)** — the
 section, the stock slot and the instantiation path are ADR 0049's and
 already shipped; (b) builds a second dashboard pattern for one page; (c)
-ships half of `F3.28`'s tile inside a human-gated row.
+ships half of `F3.28`'s tile inside a human-gated row. **Ruled (a).**
 
 **Q2 — The read path for the roll-up.** *(a)* **Two new `METRIC_CATALOG`
 entries, the first with fields on their write schema: `sustainability.total`
@@ -158,7 +159,7 @@ outside the catalog. **Recommended (a)** — it is the surface ADR 0070 Context
 8 named, it puts the parameter on the write schema as the service docblock
 prescribes, and the period stays a property of the stored tag so the engine's
 timezone and budget rules apply once. (b) duplicates `calc-windows.service`
-with a second set of edge cases; (c) is a route the builder cannot bind.
+with a second set of edge cases; (c) is a route the builder cannot bind. **Ruled (a).**
 
 **Q3 — Periods beyond today.** *(a)* **This row authors `*_this_month` and
 `*_this_year` derived points for the five today quantities of Context 1
@@ -171,7 +172,7 @@ row. **Recommended (a)** — the engine already resolves `this_month` and
 Amendment 1), so a monthly tag costs one definition and a budgeted read; (b)
 is wrong across an IST midnight unless the `5m` buckets are re-planned at
 read time — which is (a) done twice; (c) leaves the row's own name
-("daily→enterprise") unmet.
+("daily→enterprise") unmet. **Ruled (a).**
 
 **Q4 — The two executive KPIs.** *(a)* **Two vocabulary codes,
 `water_recycle_pct` and `operational_efficiency_pct` (unit `%`), seeded into
@@ -183,7 +184,7 @@ formula under that code on their template.** *(b)* Ship a placeholder
 formula. *(c)* Omit the tiles until B14 answers. **Recommended (a)** — it is
 the only option consistent with the three refusals in Context 4 that still
 gives the client a slot with a name; (b) is the refused thing; (c) hides
-that the slot exists.
+that the slot exists. **Ruled (a).**
 
 **Q5 — Persona defaults with C19 open.** *(a)* **Nothing in this row. The
 Sustainability section is the Sustainability persona's screen; a per-role or
@@ -194,7 +195,7 @@ Add `bms.users.default_dashboard_id` now as a per-user landing preference.
 **Recommended (a)** — the personas have no reviewer and no vocabulary
 (Context 5); (b) is a schema change for a preference nobody has asked for by
 name; (c) conflates authorization with audience, which `asset_group_admin`
-(ADR 0058) already shows are different axes.
+(ADR 0058) already shows are different axes. **Ruled (a).**
 
 **Q6 — Split the row?** *(a)* **One row, two pull requests, serial: PR 1
 the two catalog entries with their write-schema fields, the freshness rule
@@ -204,11 +205,126 @@ table, the sidebar entry, and the tile's coverage rendering (`apps/api` stock,
 `apps/web`).** *(b)* Split into `E4.2a` (read path) and `E4.2b` (content and
 surface) as `F3.5` was. **Recommended (a)** — effort 4–6 and no ⭐ enabler;
 `F3.5`'s split earned its two closure rows on a queue and a renderer, and
-this row has neither.
+this row has neither. **Ruled (a).**
 
 ## Decision
 
-*(Filled in from the rulings.)*
+### 1. The surface is the `sustainability` section, reached from the sidebar (Q1)
+
+`sustainability-overview` (`apps/api/src/admin/dashboard-templates/stock-catalog.ts`)
+goes to `stockVersion: 2`. Its content is: a tile row of roll-up totals bound
+to `sustainability.total` (decision 2) — energy cost today, water today
+(kL), CO₂ today, and the two executive slots of decision 4 — a second row
+for this month and this year, and one `table` widget bound to
+`sustainability.by_location` as the benchmark. The three skeleton tiles
+(alarms, work orders, health) stay. The section keeps ADR 0049's whole
+lifecycle: import, version stamp, instantiate per organization.
+
+`apps/web/src/layouts/app-shell.tsx` gains one entry, **Sustainability**,
+in the group that holds *Dashboards*. It opens the caller's organization's
+instance of the `sustainability` section — the newest dashboard stamped
+from a template whose `section` is `sustainability`, scoped to the
+organization (`location_id IS NULL`). When no instance exists the entry
+opens `/dashboards` filtered to the section, so an admin sees the import
+action rather than a 404.
+
+The `/` KPI ribbon is **not** edited by this row. The two executive KPIs
+join it under `F3.28`, with the period delta that row owns.
+
+### 2. Two catalog entries with fields on their write schema (Q2)
+
+`METRIC_CATALOG` gains:
+
+| key | shape | params | resolves to |
+|---|---|---|---|
+| `sustainability.total` | `metric` | `{ pointKey, aggregate }` | one number, or `null` |
+| `sustainability.by_location` | `dataset` | `{ pointKey, aggregate }` | one row per location in scope |
+
+`pointKey` is a code of the point-key catalog (`z.string().max(64)`,
+verified against `bms.point_keys` at write time — an unknown code is a
+400, the `assertPointKeysActive` rule at the binding). `aggregate` is
+`"sum" | "avg"`. `METRIC_CATALOG_PARAMS_WRITE` declares both fields for both
+entries — the first entries with fields, as the service docblock
+anticipated; the containment test extends to cover them.
+
+Resolution, in `MetricCatalogService`: take the assets in the dashboard's
+scope intersected with the caller's readable assets (the existing
+`assetIds`); keep those whose asset template declares `pointKey`
+(`carrying`); read the latest `bms.point_values` sample per `(asset_id,
+point_key)`; drop samples older than the freshness bound (*Ruled here
+without a question* 1); `sum` or `avg` the rest. The response carries
+`value`, `coverage: { fresh, carrying }` and `currency` (decision 5 of the
+rulings list). `sustainability.by_location` does the same grouped by
+`bms.locations`, columns `locationCode · locationName · value · coverage`,
+ordered by `locationCode`.
+
+The period is the stored tag's own. `sustainability.total { pointKey:
+"kl_today" }` is today because `kl_today` is; there is no period parameter
+and no window maths at read time.
+
+### 3. Monthly and annual tags in stock (Q3)
+
+The eight classes of Context 1 gain, per today quantity, a `*_this_month`
+and a `*_this_year` derived point with the same formula and a calendar
+window: `kl_this_month = sum({raw_water_flow_klh}, this_month)` on the WTP,
+`energy_cost_this_year = delta({kwh_total}, this_year) * $energy_tariff_per_kwh`
+on the feeder, and so on — ten new codes in
+`packages/shared/src/sustainability-point-keys.ts` (five quantities × two
+periods), each with a `UNIT_BY_KEY` entry, each stock class bumped one
+version. Two more, `kwh_this_month` / `kwh_this_year`, are **derived** on
+the feeder (`delta({kwh_total}, …)`, *Ruled here without a question* 7),
+unlike `kwh_today` which stays MEASURED — the meter has no monthly
+register, so the ADR 0070 Amendment 2 Q3 reason does not apply. Twelve
+codes in all.
+
+The window budget is the engine's (`MAX_WINDOW_BUCKETS = 20_000`,
+`calc-window-plan.ts`): a year over the `1d` view is ≤ 366 buckets plus the
+two-day `1h`/`5m` tail, inside the budget. A stalled refresh fails closed
+as `windows_unresolved`, which the freshness bound then turns into an
+excluded asset and a lower `coverage` — the roll-up never shows a stale
+year as this year.
+
+### 4. Two executive codes with no formula (Q4)
+
+`water_recycle_pct` and `operational_efficiency_pct` are seeded into the
+point-key catalog (unit `%`, domain `water` and `electrical` respectively)
+with **no stock template declaring them**. The stock template binds two
+tiles to `sustainability.total { pointKey, aggregate: "avg" }`. With no
+carrying asset the tile renders the catalog's existing no-source state,
+titled *Water Recycle %* / *Operational Efficiency %*. The day the client
+authors a `bms-calc-v3` formula under one of these codes on their own
+template, the tile fills. **No formula for either ships in this row or any
+later one without a B14 answer** — ADR 0070 Context 3 and ADR 0050 stand.
+
+### 5. Persona defaults are not this row (Q5)
+
+Nothing here reads or stores a persona. The Sustainability section is the
+Sustainability stakeholder's screen; the others (Executive, Operations,
+Maintenance, Utility, Facility) have no reviewer (C19). A per-role or
+per-user default landing screen is a new row, `F3.64`, `Depends: ADR`,
+gated on C19 and on the §5 *Reference layout language* decision. `E4.2`'s
+title keeps "stakeholder persona defaults" so the SOW mapping row still
+resolves; the closure row records that the phrase moved to `F3.64`.
+
+### 6. One row, two pull requests, serial (Q6)
+
+**PR 1** — `packages/shared` (the two catalog keys, the params schema, the
+`coverage` field on the metric value DTO), `apps/api` (`METRIC_CATALOG_PARAMS_WRITE`
+fields, the point-key check at write, resolution in `MetricCatalogService`,
+the freshness bound). Verified by the catalog integration spec against a
+scoped dashboard, a stale asset and a two-currency organization.
+
+**PR 2** — `apps/api` stock (the ten codes, eight class bumps, the two
+executive codes, `sustainability-overview` v2), `apps/web` (the sidebar
+entry, the coverage rendering on `value_tile` and the benchmark table's
+`coverage` column). Verified by the stock-catalog specs, the jsdom specs
+and a `browser-verifier` pass on the running stack.
+
+PR 2 branches off merged `main`, never off PR 1 (the squash-merge rebase
+trap, ADR 0070 Amendment 1). Each PR pays its own `verify`, four review
+agents and the §4.6 live-stack pass. The closure PR is the third: the
+backlog row in its four views, the roadmap, and any amendment this ADR
+needs.
 
 ## Ruled here without a question
 
@@ -237,6 +353,16 @@ this row has neither.
 5. **No new dependency.** Nothing under §9.4 moves.
 6. **`E4.3` and `E1.6` are not here.** Water balance is `E4.3`; money on
    advisories is `E1.6`. The campus tier is `F2.10`.
+7. **Energy itself gets the two periods.** Q3 named the five today
+   quantities, none of which is kWh because `kwh_today` is measured. A
+   sustainability screen without a monthly kWh is not one, so the feeder
+   also gains `kwh_this_month` and `kwh_this_year`, derived — the cost and
+   CO₂ periods already read `delta({kwh_total}, …)` inline, and the energy
+   figure is the same read stored under its own code.
+8. **The tile shows coverage.** `value_tile` renders `n of m assets` under
+   the value when `coverage.fresh < coverage.carrying`; the benchmark table
+   carries it as a column. A viewer never sees a partial roll-up as a whole
+   one.
 
 ## Dependencies
 
@@ -244,4 +370,28 @@ None.
 
 ## Consequences
 
-*(Filled in from the rulings.)*
+- **The catalog's `params` column is read for the first time.** Every
+  later entry that needs a filter follows this shape: a field on its write
+  schema, verified at the binding, resolved in the service. The containment
+  test (`dashboard-source-scope`) now has a parameterised entry to cover,
+  and the `(widgetId, catalogKey)` natural key the viewer matches on is
+  unchanged — one widget, one source.
+- **A roll-up is only as fresh as its slowest asset, and says so.** The
+  freshness bound and `coverage` are the cost of summing latest values
+  rather than re-planning windows at read time. A wall display shows
+  "4 of 6 assets" during an RTU outage, which is the honest figure.
+- **Eight stock classes bump again**, one version each, and the point-key
+  vocabulary grows by fourteen codes (twelve period codes, two executive
+  codes). The `tests/f3.38`/`f3.39` floors move with them. An organization
+  that imported the previous stock version sees the new points through the
+  ADR 0039 migrate path, not automatically.
+- **Two tiles are empty by design until B14 answers.** The closure row and
+  the client-facing notes must say so, or the empty state reads as a
+  defect.
+- **`F3.64` is created**, ⬜, `Depends: ADR`, for the per-role / per-user
+  landing screen — gated on C19 and the §5 *Reference layout language*
+  decision. The SOW §9 phrase "stakeholder persona defaults" resolves there.
+- **`F3.28` keeps the `/` ribbon.** The two executive KPIs reach the
+  integrated dashboard only with that row's period delta.
+- **`chore(agents):` sweep owed, separately** (§9.10): the status line and
+  the §2 dashboards row gain this ADR. No §6 line moves.
