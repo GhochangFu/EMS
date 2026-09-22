@@ -41,6 +41,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 // global `ZodErrorFilter` would report it as the caller's bad request.
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { METRIC_CATALOG_PARAMS_WRITE } from "../../dashboard-builder/dashboards.schema";
+import { assertSourceParamsPointKeysActive } from "../../dashboard-builder/source-params-point-keys";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -334,6 +335,15 @@ export class DashboardTemplatesService {
         }
       }
     }
+
+    // `E4.2` U3 — after every source's params have parsed above: the point key each names
+    // must be an active catalog code (ADR 0072 decision 2). Publish is where a stock import's
+    // draft is proved, and instantiation copies `params` verbatim, so this is the one gate on
+    // the template path — the same sentence the dashboard write path answers with.
+    await assertSourceParamsPointKeysActive(
+      this.fleetDb,
+      content.widgets.flatMap((widget) => widget.sources),
+    );
 
     const now = new Date();
     const published = await withTenant(this.tenantDb, template.organizationId, async (tx) => {

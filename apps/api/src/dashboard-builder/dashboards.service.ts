@@ -25,6 +25,7 @@ import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
 import { SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
+import { assertSourceParamsPointKeysActive } from "./source-params-point-keys";
 import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody } from "./dashboards.schema";
 
 import {
@@ -432,6 +433,15 @@ export class DashboardsService {
     if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope))) {
       throw new NotFoundException("Dashboard not found");
     }
+
+    // `E4.2` U3 — every `params.pointKey` the submitted sources name must be an active catalog
+    // code (ADR 0072 decision 2). Once per request over ALL widgets, on the fleet pool, BEFORE
+    // the tenant transaction: the catalog is fleet-wide, and a refusal here costs no rollback.
+    // `create` has no widgets, so this is the one dashboard write path that carries a source.
+    await assertSourceParamsPointKeysActive(
+      this.fleetDb,
+      body.widgets.flatMap((widget) => widget.sources),
+    );
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       const storedWidgets = await tx
