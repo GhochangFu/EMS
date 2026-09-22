@@ -243,11 +243,23 @@ lifecycle: import, version stamp, instantiate per organization.
 
 `apps/web/src/layouts/app-shell.tsx` gains one entry, **Sustainability**,
 in the group that holds *Dashboards*. It opens the caller's organization's
-instance of the `sustainability` section — the newest dashboard stamped
-from a template whose `section` is `sustainability`, scoped to the
-organization (`location_id IS NULL`). When no instance exists the entry
-opens `/dashboards` filtered to the section, so an admin sees the import
-action rather than a 404.
+newest instance of the `sustainability` section — the newest dashboard
+stamped from a template whose `section` is `sustainability`, whatever its
+scope. When no instance exists the entry opens `/dashboards` filtered to
+the section, so an admin sees the import action rather than a 404.
+
+**The organization-wide instance needs a new instantiate arm (plan OQ2,
+ruled 2026-09-22).** A section template instantiates only into an asset
+group (`instantiateSectionTemplateBodySchema.assetGroupId` is required,
+`asset_groups.location_id` is `NOT NULL`), so every instance today is one
+location's group and the enterprise view this ADR names could not be
+reached. `assetGroupId` becomes nullable **only for a template with zero
+role bindings** — the sustainability template has none, every other stock
+section template has some — and such an instance lands with `location_id`
+and `asset_group_id` both `NULL`. A template with a role binding still
+refuses a null group with the existing 400. This is an amendment to ADR
+0049 decision 4's instantiation shape, recorded here rather than there
+because it exists for this section alone.
 
 The `/` KPI ribbon is **not** edited by this row. The two executive KPIs
 join it under `F3.28`, with the period delta that row owns.
@@ -283,7 +295,23 @@ there would make `checkResponse` throw on every existing dashboard in dev
 and test (ADR 0030). The dataset arm carries `coverage` as a column, not a
 field. `sustainability.by_location` does the same grouped by
 `bms.locations`, columns `locationCode · locationName · value · coverage`,
-ordered by `locationCode`.
+ordered by `locationCode`. The rows are the locations that own at least
+one asset in the resolved scope (plan OQ7): containment is inherited from
+the asset scope, a site with assets and no meters appears as `0/0`, and a
+site with no assets at all is absent. `coverage` in the dataset is the
+string `"fresh/carrying"` (plan OQ4) — a dataset cell is `string | number
+| boolean | null`.
+
+`resolveForDashboard` runs inside one organization's tenant transaction
+and `bms.organizations.currency` is `NOT NULL`, so `mixed_currency` is
+unreachable on this route (plan OQ1, measured): no `reason` field ships;
+`currency` is the organization's for a money point (unit `""`) and `null`
+otherwise; the one-currency-else-`null` rule lives in a pure
+`rollupCurrency` with a unit test so a later multi-organization read
+inherits it. The builder's metric picker hides any entry that declares
+`params` (plan OQ3) — it sends `params: {}` and would earn a 400 — so the
+stock template and the organization-wide arm are the two ways to bind
+these entries; a params editor is a later row.
 
 The period is the stored tag's own. `sustainability.total { pointKey:
 "kl_today" }` is today because `kl_today` is; there is no period parameter
@@ -348,10 +376,11 @@ fields, the point-key check at write, resolution in `MetricCatalogService`,
 the freshness bound). Verified by the catalog integration spec against a
 scoped dashboard, a stale asset and a two-currency organization.
 
-**PR 2** — `apps/api` stock (the ten codes, eight class bumps, the two
-executive codes, `sustainability-overview` v2), `apps/web` (the sidebar
-entry, the coverage rendering on `value_tile` and the benchmark table's
-`coverage` column). Verified by the stock-catalog specs, the jsdom specs
+**PR 2** — `apps/api` stock (the twelve codes, eight class bumps, the two
+executive codes, `sustainability-overview` v2), the organization-wide
+instantiate arm for a role-free section template (decision 1) and
+`GET /dashboards?section=`, `apps/web` (the sidebar entry, the coverage
+rendering on `value_tile` and the benchmark table's `coverage` column). Verified by the stock-catalog specs, the jsdom specs
 and a `browser-verifier` pass on the running stack.
 
 PR 2 branches off merged `main`, never off PR 1 (the squash-merge rebase
@@ -390,9 +419,9 @@ needs.
    carrying asset is a row with `null` value and `0/0` coverage — present, so
    a site with no meters is visible as such rather than absent.
 4. **Money is in the organization's currency** (`bms.organizations.currency`,
-   ADR 0070 decision 7). A roll-up under the multi-organization branch of
-   `withOrganizationReadScope` over two currencies is `null` with reason
-   `mixed_currency`, the `energy-cost.ts` rule unchanged.
+   ADR 0070 decision 7). The `energy-cost.ts` one-currency-else-`null` rule
+   is kept as a pure function; the route itself is single-organization
+   (decision 2, plan OQ1).
 5. **No new dependency.** Nothing under §9.4 moves.
 6. **`E4.3` and `E1.6` are not here.** Water balance is `E4.3`; money on
    advisories is `E1.6`. The campus tier is `F2.10`.
