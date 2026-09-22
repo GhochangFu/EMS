@@ -237,14 +237,21 @@ const pointsFieldFor = (widgetType: z.infer<typeof widgetTypeSchema>) => {
  * here.** That is the same forcing `WIDGET_POINT_CARDINALITY` gives the point side, and it is
  * why this is a map rather than one shared schema.
  *
- * **Every entry is empty today, and that is a decision.** No resolve service reads a parameter
- * yet (Unit 5), and a parameter nothing reads is a value an author sets, saves, and sees no
- * effect from — the `F4.43` shape with the store on its side rather than the renderer's. Each
- * entry gains fields when the query that reads them is written.
+ * **An entry declares a field only when the query that reads it exists.** A parameter nothing
+ * reads is a value an author sets, saves, and sees no effect from — the `F4.43` shape with the
+ * store on its side rather than the renderer's. The five Stage C entries are still empty for
+ * that reason. `E4.2` / ADR 0072 decision 2 added the first two with fields: the sustainability
+ * roll-ups take `{ pointKey, aggregate }`, and `MetricCatalogService` reads both. `pointKey` is
+ * bounded and charset-checked here; whether it names an ACTIVE catalog code is the write path's
+ * check against `bms.point_keys` (the `assertPointKeysActive` rule, ADR 0072 decision 2), which
+ * a schema with no database cannot make.
  *
- * **DO NOT COLLAPSE THIS MAP INTO ONE SCHEMA.** The five entries are identical today and will
- * not stay identical: `alarms.active` takes a severity filter and `workorders.open` takes a
- * status, and one shared object would silently give every entry both.
+ * **DO NOT COLLAPSE THIS MAP INTO ONE SCHEMA.** The Stage C entries are identical and will not
+ * stay identical: `alarms.active` takes a severity filter and `workorders.open` takes a status,
+ * and one shared object would silently give every entry both. The two sustainability entries
+ * spread ONE fields const (`sustainabilityParamsFields`) into TWO strict objects: the fields
+ * are spelled once, the schemas stay separate, and the containment test counts `.strict()` per
+ * key and reads the spread const for the id bans.
  *
  * **NO ENTRY MAY DECLARE A `z.string().uuid()` FIELD**, and this is the load-bearing rule rather
  * than a style note. A binding inherits its dashboard's scope (`dashboards.location_id` /
@@ -298,11 +305,12 @@ const sourceBindingWriteSchema = z
   })
   .describe(
     "One named catalog binding (ADR 0048 decision 4). `params` is validated against the " +
-      "entry's own schema, which differs per `catalogKey` and today declares no fields for any " +
-      "entry — zod-to-json-schema emits nothing for a refinement, so without this line the " +
-      "document would promise that any record of scalars is accepted where the API answers 400 " +
-      "(ADR 0029 Amendment 1). No entry may declare a uuid: an id inside `params` is an id " +
-      "inside jsonb that no foreign key covers.",
+      "entry's own schema, which differs per `catalogKey`: the five Stage C entries declare no " +
+      "fields (`{}` only), and `sustainability.total` / `sustainability.by_location` require " +
+      "exactly `{ pointKey, aggregate }` (ADR 0072) — zod-to-json-schema emits nothing for a " +
+      "refinement, so without this line the document would promise that any record of scalars " +
+      "is accepted where the API answers 400 (ADR 0029 Amendment 1). No entry may declare a " +
+      "uuid: an id inside `params` is an id inside jsonb that no foreign key covers.",
   );
 
 const DUPLICATE_SOURCE_MESSAGE =

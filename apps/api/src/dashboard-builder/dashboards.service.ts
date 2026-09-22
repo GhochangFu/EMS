@@ -889,7 +889,8 @@ export class DashboardsService {
    * code with no foreign row to be outside anything.
    *
    * `params` is stored as submitted, after `METRIC_CATALOG_PARAMS_WRITE` has parsed it per entry
-   * — which today means it is `{}`, because no resolve service reads a parameter yet.
+   * — `{}` for the five Stage C entries, `{ pointKey, aggregate }` for the two sustainability
+   * roll-ups (`E4.2`, ADR 0072 decision 2), which `MetricCatalogService` reads back.
    */
   private async insertSources(
     tx: BmsTx,

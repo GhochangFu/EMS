@@ -34,6 +34,66 @@ const paramsMapSource = (): string => {
   return source.slice(start, end + 3);
 };
 
+/**
+ * `E4.2` — the source of every `const <name> = { … };` the map spreads into an entry
+ * (`z.object({ ...sustainabilityParamsFields })`). The fields are spelled once, above the map,
+ * so the map slice alone cannot see them: the containment bans below must read this text too,
+ * or a `.uuid()` moved into the shared const would pass the scan that exists to refuse it.
+ */
+const spreadFieldsSource = (name: string): string => {
+  const source = read(SCHEMA_REL);
+  const start = source.indexOf(`const ${name} = {`);
+  if (start < 0) throw new Error(`could not find const ${name} = { … } in ${SCHEMA_REL}`);
+  const end = source.indexOf("\n};", start);
+  if (end < 0) throw new Error(`unterminated const ${name}`);
+  return source.slice(start, end + 3);
+};
+
+/** The names a `{ … }` object literal declares at its top level — `a: …` and `...spread` resolved. */
+const fieldNamesOf = (objectBody: string): string[] => {
+  const names: string[] = [];
+  for (const match of objectBody.matchAll(/(?:^|[{,])\s*(?:(\w+)\s*:|\.\.\.(\w+))/g)) {
+    if (match[1] !== undefined) names.push(match[1]);
+    else if (match[2] !== undefined) {
+      const body = spreadFieldsSource(match[2]);
+      names.push(...fieldNamesOf(body.slice(body.indexOf("{") + 1, body.lastIndexOf("}"))));
+    }
+  }
+  return names;
+};
+
+/** One entry's text in the map — from `"key":` to the next entry or the closing brace. */
+const entrySource = (map: string, key: string): string => {
+  const start = map.indexOf(`"${key}":`);
+  if (start < 0) throw new Error(`${key} has no entry in METRIC_CATALOG_PARAMS_WRITE`);
+  const rest = map.slice(start + key.length + 3);
+  const next = rest.search(/^\s*"[^"]+":/m);
+  return next < 0 ? rest.slice(0, rest.lastIndexOf("\n};")) : rest.slice(0, next);
+};
+
+/** The `params: [ … ]` list each `METRIC_CATALOG` entry declares, keyed by catalog key. */
+const contractParams = (): Map<string, string[] | undefined> => {
+  const catalog = /export const METRIC_CATALOG: Record<[\s\S]*?> = \{([\s\S]*?)\n\};/.exec(
+    read(CONTRACT_REL),
+  );
+  if (catalog === null) throw new Error(`could not find METRIC_CATALOG in ${CONTRACT_REL}`);
+  const out = new Map<string, string[] | undefined>();
+  for (const key of catalogKeys()) {
+    const entry = entrySource(`${catalog[1] ?? ""}\n};`, key);
+    const params = /params:\s*\[([^\]]*)\]/.exec(entry);
+    out.set(
+      key,
+      params === null
+        ? undefined
+        : (params[1] ?? "")
+            .split(",")
+            .map((name) => name.trim().replace(/^"|"$/g, ""))
+            .filter(Boolean),
+    );
+  }
+  return out;
+};
+
 /** The catalog keys the shared vocabulary declares, parsed from source. */
 const catalogKeys = (): string[] => {
   const block = /export const metricCatalogKeySchema = z\.enum\(\[([\s\S]*?)\]\)/.exec(
@@ -116,6 +176,52 @@ describe("F3.35 Stage C — no id reaches a catalog binding's params", () => {
     expect(map, "name the scope on the dashboard, never inside a binding's params").not.toMatch(
       /\b(locationId|assetGroupId|assetId|pointId|organizationId|dashboardId|widgetId)\b/,
     );
+  });
+
+  it("declares on each entry exactly the fields its METRIC_CATALOG params name, and none elsewhere", () => {
+    // `E4.2` / ADR 0072 decision 2: the contract's `params` list is the NAMES the builder reads
+    // (to hide the entry) and this map's entry is the SCHEMA the write path applies. Two
+    // declarations of one vocabulary, held equal here — in both directions, per key.
+    const map = paramsMapSource();
+    const declared = contractParams();
+    let withParams = 0;
+
+    for (const [key, params] of declared) {
+      const entry = entrySource(map, key);
+      if (params === undefined) {
+        expect(entry.trim(), `${key} declares no params, so its schema is the empty strict object`).toMatch(
+          /^z\.object\(\{\}\)\.strict\(\),?$/,
+        );
+        continue;
+      }
+      withParams += 1;
+      const objectAt = entry.indexOf("z.object(");
+      expect(objectAt, `${key} must be a z.object`).toBeGreaterThan(-1);
+      const body = entry.slice(entry.indexOf("{", objectAt) + 1, entry.lastIndexOf("}"));
+      expect(
+        [...fieldNamesOf(body)].sort(),
+        `${key}'s write schema must declare exactly the fields the contract's params name`,
+      ).toEqual([...params].sort());
+    }
+
+    // The walk is only a gate while at least one entry has params (`E4.2` added two).
+    expect(withParams, "no entry with params parsed — the walk is broken").toBeGreaterThan(0);
+  });
+
+  it("applies the id bans to the fields a spread pulls into an entry", () => {
+    // The map slice cannot see `const sustainabilityParamsFields = { … }`; the bans above
+    // would pass a `.uuid()` moved there. Every spread the map uses is scanned here.
+    const map = paramsMapSource();
+    const spreads = [...map.matchAll(/\.\.\.(\w+)/g)].map((match) => match[1] as string);
+    expect(spreads.length, "the map spreads at least one shared fields const").toBeGreaterThan(0);
+    for (const name of new Set(spreads)) {
+      const fields = spreadFieldsSource(name);
+      expect(fields).not.toMatch(/\.uuid\s*\(/);
+      expect(fields).not.toMatch(/\.(cuid2?|ulid|nanoid)\s*\(/);
+      expect(fields).not.toMatch(
+        /(locationId|assetGroupId|assetId|pointId|organizationId|dashboardId|widgetId)/,
+      );
+    }
   });
 
   it("keeps every entry strict, and keeps them separate", () => {
