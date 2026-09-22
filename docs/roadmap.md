@@ -418,13 +418,15 @@ Process (`AGENTS.md` §10).
   browser-based Reports smoke checks passed.
 
 #### Phase 5 Sprint F — Report storage
-- **Status:** complete — closed 2026-09-21 by `F3.5a` (ADR 0071, PR #509,
-  squash `e7920c57`). The sprint was skipped from 2026-08 until the owner
-  ruled at the §10 gate that generated reports are stored, listed and
-  downloaded from history (`F3.5a`), and that a per-organization schedule
-  renders them on the worker and mails them (`F3.5b`, still open). PDF
-  output, which Sprint E deferred "until the report content stabilizes",
-  landed in `F3.5a` as the third format beside CSV and XLSX.
+- **Status:** complete — closed 2026-09-22 by `F3.5b` (ADR 0071, PR #513,
+  squash `24fa4eb6`), after `F3.5a` (PR #509, `e7920c57`) on 2026-09-21. The
+  sprint was skipped from 2026-08 until the owner ruled at the §10 gate that
+  generated reports are stored, listed and downloaded from history
+  (`F3.5a`), and that a per-organization schedule renders them on the
+  worker and mails them (`bms.report_schedules`, the `reports-dispatch` and
+  `reports-render` queues, the email attachment, the Schedules section).
+  PDF output, which Sprint E deferred "until the report content
+  stabilizes", landed in `F3.5a` as the third format beside CSV and XLSX.
 - **Goal:** persist generated report files only after reports are useful.
 - **Deliverables**
   - ~~Promote MinIO/object storage if persisted report files are required.~~
