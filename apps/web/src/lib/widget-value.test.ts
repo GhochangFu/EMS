@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  coverageNoteIsSilentWhenEveryAssetIsFresh,
+  coverageNoteIsSilentWhenNoAssetCarriesTheCode,
+  coverageNoteIsSilentWithoutACoverageObject,
+  coverageNoteNamesAShortfall,
   formatBucketWidthCoversTheFourLadderRungs,
   formatDeltaIsNullWithoutAComputablePercentage,
   formatDeltaMatchesTheMocksExactWording,
@@ -22,6 +26,8 @@ import {
   toKpiTilePropsMapsAllFourTonesExhaustively,
   toKpiTilePropsReadsToneFromConfigThroughTheExistingMap,
   widgetTitleFallsBackToTheCatalogLabel,
+  theNoteDoesNotDisplaceTheHint,
+  toKpiTilePropsWithholdsTheNoteWhenNotReady,
 } from "./widget-value.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -108,5 +114,29 @@ describe("widget-value", () => {
 
   it("names each of the four ladder bucket widths, and any width that is none of them", () => {
     formatBucketWidthCoversTheFourLadderRungs();
+  });
+
+  it("names a coverage shortfall", () => {
+    coverageNoteNamesAShortfall();
+  });
+
+  it("says nothing when every carrying asset is fresh", () => {
+    coverageNoteIsSilentWhenEveryAssetIsFresh();
+  });
+
+  it("says nothing when no asset carries the code", () => {
+    coverageNoteIsSilentWhenNoAssetCarriesTheCode();
+  });
+
+  it("says nothing without a coverage object", () => {
+    coverageNoteIsSilentWithoutACoverageObject();
+  });
+
+  it("withholds the note unless the widget is ready", () => {
+    toKpiTilePropsWithholdsTheNoteWhenNotReady();
+  });
+
+  it("puts the note in its own slot, leaving the hint alone", () => {
+    theNoteDoesNotDisplaceTheHint();
   });
 });

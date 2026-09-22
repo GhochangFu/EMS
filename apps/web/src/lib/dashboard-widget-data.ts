@@ -346,6 +346,12 @@ function catalogWidgetData(
     primary: resolved?.shape === "metric" ? resolved.value : null,
     series: [],
     stale,
+    // `E4.2` / ADR 0072 decision 2 — `coverage` is optional on the contract's
+    // `metric` arm, so the three existing metrics answer `undefined` and the
+    // tile draws no note. `?? null` rather than leaving it undefined: the scalar
+    // arm's other optional fields are read the same way, and a missing key and
+    // an explicit null must not mean two different things to the renderer.
+    coverage: resolved?.shape === "metric" ? (resolved.coverage ?? null) : null,
   };
 }
 

@@ -8,6 +8,13 @@ type KpiTileProps = {
   value: string | null;
   unit?: string;
   hint?: string;
+  /**
+   * `E4.2` / ADR 0072 decision 2 — one more line under the value, and its own
+   * slot rather than a second use of `hint`: `hint` already carries at most one
+   * of the computed delta and the author note, and a data-completeness warning
+   * must not displace either.
+   */
+  note?: string;
   stale?: boolean;
   tone?: "default" | "warning" | "critical";
   icon?: ReactNode;
@@ -19,6 +26,7 @@ export function KpiTile({
   value,
   unit,
   hint,
+  note,
   stale,
   tone = "default",
   icon,
@@ -63,6 +71,9 @@ export function KpiTile({
       )}
       {hint ? (
         <p className="mt-1 text-[11px] text-bms-muted">{hint}</p>
+      ) : null}
+      {note ? (
+        <p className="mt-1 text-[11px] font-medium text-amber-700">{note}</p>
       ) : null}
       {stale && status === "ready" ? (
         <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-amber-700">

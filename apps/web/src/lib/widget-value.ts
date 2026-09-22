@@ -1,4 +1,4 @@
-import type { WidgetIcon, WidgetType } from "@bms/shared";
+import type { RollupCoverage, WidgetIcon, WidgetType } from "@bms/shared";
 
 import { WIDGET_CATALOG, type ValueTileConfig, type WidgetStatus, type WidgetTone } from "./widget-catalog";
 
@@ -226,6 +226,18 @@ export type KpiTileWidgetProps = {
    * slot `valueTileConfigSchema.hint`'s own docblock rules.
    */
   readonly hint?: string;
+  /**
+   * `E4.2` / ADR 0072 decision 2 — the roll-up's coverage, as its own line under
+   * the value.
+   *
+   * **Not the `hint` slot.** `hint` already carries at most one of two things
+   * (the computed delta or the author's note) and `valueTileConfigSchema.hint`'s
+   * docblock rules that it is one slot. Coverage is neither: it is a statement
+   * about how much of the plant the number covers, and putting it in `hint`
+   * would make an author's note and a data-completeness warning displace each
+   * other at random.
+   */
+  readonly note?: string;
   readonly tone: "default" | "warning" | "critical";
   /**
    * A name, not an element — this file is `.ts` and cannot hold JSX.
@@ -251,6 +263,24 @@ export type KpiTileWidgetProps = {
  *
  * `icon`: carried through by name only — see `KpiTileWidgetProps.icon`.
  */
+export function coverageNote(
+  coverage: RollupCoverage | null | undefined,
+): string | undefined {
+  if (!coverage) {
+    return undefined;
+  }
+  // `<`, never `<=`. Equal counts mean the roll-up covered every carrying asset,
+  // which is the ordinary case: a line on every tile saying "6 of 6 assets"
+  // would be noise on the majority of tiles and would train the reader to stop
+  // reading the one that says 4. `{0, 0}` is the two executive codes with no
+  // formula (ADR 0072 decision 4) — no asset carries them, so there is no
+  // shortfall to report and the em dash the tile already draws says enough.
+  if (coverage.fresh >= coverage.carrying) {
+    return undefined;
+  }
+  return `${coverage.fresh} of ${coverage.carrying} assets`;
+}
+
 export function toKpiTileProps(params: {
   readonly title: string;
   readonly status: WidgetStatus;
@@ -258,8 +288,12 @@ export function toKpiTileProps(params: {
   readonly config: ValueTileConfig;
   readonly tone?: WidgetTone;
   readonly compareValue?: number | null;
+  /** `E4.2` — the roll-up coverage of a `sustainability.total` binding, absent
+   * for every other metric (the field is optional on the contract's `metric`
+   * arm). */
+  readonly coverage?: RollupCoverage | null;
 }): KpiTileWidgetProps {
-  const { title, status, primary, config, tone, compareValue = null } = params;
+  const { title, status, primary, config, tone, compareValue = null, coverage = null } = params;
   const ready = status === "ready";
   // **Gated on `ready` for the same reason `value` is.** TanStack Query keeps
   // the previous `data` through a refetch error, so a widget can hold a stale
@@ -276,6 +310,11 @@ export function toKpiTileProps(params: {
     value: ready ? formatWidgetValue(primary, { decimals: config.decimals, abbreviate: config.abbreviate }) : null,
     unit: config.unit,
     hint: delta ? delta.text : config.hint,
+    // **Gated on `ready`, for the reason `value` and `delta` are.** TanStack
+    // Query keeps the previous `data` through a refetch error, so an errored
+    // tile can still hold a coverage object. "Could not load" above "4 of 6
+    // assets" would describe a number the tile is refusing to show.
+    note: ready ? coverageNote(coverage) : undefined,
     tone: WIDGET_TONE_TO_KPI_TONE[tone ?? config.tone ?? "ok"],
     icon: config.icon,
   };
