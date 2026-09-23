@@ -5693,3 +5693,35 @@ coverage `{0,50}` then `{1,50}` with a value after one inserted sample. Browser
 N/A by gate — the extension runs on another machine. Ships no Water Recycle %
 or Operational Efficiency % formula: B14 is still the client's. Unblocks
 nothing on its own; `E4.3` waits on `E5.1`.
+
+### `E4.4` — a coverage guard for a windowed `sum` (ADR 0070 Amendments 3–4) ✅ 2026-09-23
+
+Two pull requests on one ADR amendment and one plan: #525 the gate (squash
+`c24c6ceb`) and #526 the build (`bbca792e`, fifteen commits). The `E4.2` PR 2
+post-merge sweep raised the row, and it was gated, built and closed the same
+day. Four gate questions were ruled as recommended. Of the four plan
+questions, three were ruled as recommended and one against the recommendation:
+reword all nineteen catalog docblocks.
+
+A window `sum` is `mean(observed samples) × every elapsed hour`. A meter
+offline for ten days of a month therefore reported a whole month, and the
+asset still counted as fresh. The sum now refuses `window_sparse` when less
+than 90% of the elapsed window holds samples. Coverage is counted inside the
+level statement the read already runs, so no statement is added. A `1d`
+bucket counts a day, and every finer level counts clock hours. The guard sits
+in `combineSegments`, so it covers every window `sum`: 49 stock rows, not the
+44 the row named, and every client formula.
+
+The code review found the one real defect. The planner splits the live-tail
+hour between a `5m` segment and a `1m` segment, and each part counted only if
+it held a sample itself. A fifteen-minute poller therefore refused early every
+day on the `today` rows. The owner ruled that a shared hour is merged
+(Amendment 4 item 1). The review also found the `1h` coverage unit gated by
+nothing (S6 added) and a cleanup that skipped the re-materialize after a seed
+failure.
+
+Verified on the compose database: the sparse suite passed 11/11 and the E4.1b
+suite 18/18. The branch image was deployed to `bms-api-1` and booted cleanly.
+The live refusal on the stack is N/A by gate (owner ruling): no stack asset
+carries a window-`sum` point. Browser N/A by gate. A `55P03` retry for
+`materializeCompleteBuckets` is left to no row. Unblocks nothing.
