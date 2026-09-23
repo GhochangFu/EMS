@@ -78,8 +78,8 @@ export const METRIC_CATALOG_PRESENTATION: Readonly<
   "water.balance": {
     label: "Water balance by site",
     description:
-      "Intake, reuse, discharge and consumed-or-lost water per site for one period, over the " +
-      "assets carrying a balance role.",
+      "Intake, reuse, discharge and consumed-or-lost water per site for one period, for each " +
+      "site with an asset in the intake, reuse or discharge role.",
   },
 };
 
