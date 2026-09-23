@@ -15,6 +15,8 @@ import {
   nothingCarryingIsAllNullAtZeroOverZero,
   oneOfTwoDischargeAssetsCarryingReadsConsumedAsNull,
   oneOfTwoIntakeAssetsCarryingReadsConsumedAsNull,
+  oneOfTwoIntakeAssetsWithNoDischargeReadsConsumedAsNull,
+  partlyStaleIntakeWithNoDischargeReadsConsumedAsNull,
   partlyStaleDischargeReadsConsumedAsNull,
   partlyStaleIntakeReadsConsumedAsNull,
   reuseIsTheReuseSum,
@@ -100,6 +102,14 @@ describe("E4.3 U9 — the water balance's pure half", () => {
 
   it("reads consumed as null for intake [50, null] over two assets (intake ruling)", () => {
     partlyStaleIntakeReadsConsumedAsNull();
+  });
+
+  it("reads consumed as null when one of two intake-roled assets carries nothing and there is no discharge asset", () => {
+    oneOfTwoIntakeAssetsWithNoDischargeReadsConsumedAsNull();
+  });
+
+  it("reads consumed as null for intake [50, null] when there is no discharge asset", () => {
+    partlyStaleIntakeWithNoDischargeReadsConsumedAsNull();
   });
 
   it("keeps the intake column at 50 when a second intake-roled asset carries nothing", () => {

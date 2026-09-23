@@ -1,7 +1,7 @@
 import { waterBalanceRow, type WaterBalanceInputs } from "./water-balance";
 
 /**
- * `E4.3` U9 — the pure half of `water.balance` (ADR 0073 decision 3; plan rulings Q8, Q9 and the PR 2 review rulings).
+ * `E4.3` U9 — the pure half of `water.balance` (ADR 0073 decision 3; plan rulings Q8, Q9, the PR 2 review rulings and the intake ruling).
  * Assertions live here; `water-balance.test.ts` is the Vitest entry point (ADR 0014). One
  * exported function per claim, so a mutation reddens the claim it targets and no other.
  */
@@ -214,6 +214,33 @@ export function nonCarryingIntakeAssetKeepsTheIntakeColumn(): void {
       .intake,
     50,
     "intake with intake [50] over two intake-roled assets",
+  );
+}
+
+/**
+ * The intake ruling holds on a site with NO discharge meter too: intake `[50]` over two
+ * intake-roled assets, one carrying nothing, no discharge asset — consumed is `null`, never
+ * `50 − 0`. Pins the order of the guards: the intake count runs before the no-discharge branch.
+ */
+export function oneOfTwoIntakeAssetsWithNoDischargeReadsConsumedAsNull(): void {
+  same(
+    waterBalanceRow({ intake: rows(50), reuse: [], discharge: [], dischargeAssets: 0, intakeAssets: 2 })
+      .consumed,
+    null,
+    "consumed with intake [50] over two intake-roled assets and no discharge asset",
+  );
+}
+
+/**
+ * The same order for the freshness guard: intake `[50, null]`, no discharge asset — consumed is
+ * `null`, never `50 − 0`.
+ */
+export function partlyStaleIntakeWithNoDischargeReadsConsumedAsNull(): void {
+  same(
+    waterBalanceRow({ intake: rows(50, null), reuse: [], discharge: [], dischargeAssets: 0, intakeAssets: 2 })
+      .consumed,
+    null,
+    "consumed with intake [50, null] and no discharge asset",
   );
 }
 

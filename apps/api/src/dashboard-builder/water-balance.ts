@@ -5,7 +5,8 @@ import { rollup, type RollupInput } from "./sustainability-rollup";
  * shape: this file folds rows the database half has already read, and holds every rule of the
  * row so the unit test pins each one without a database.
  *
- * One row per site, over the assets carrying a water balance role:
+ * One row per site that owns an asset in the `intake`, `reuse` or `discharge` role (an
+ * `internal` asset alone makes no row):
  *
  * - **intake / reuse / discharge** are each `rollup(rows, "sum").value` over that role's
  *   carrying assets — `null` when none of them has a fresh sample, never `0`.
@@ -35,11 +36,11 @@ import { rollup, type RollupInput } from "./sustainability-rollup";
  * key is NOT in the denominator. `carrying` keeps the one meaning it has everywhere else —
  * the `sustainability.by_location` table on the same dashboard uses the same string — and a
  * period no template carries still reads `"0/0"` (a pre-v5 tenant's reuse and discharge read
- * `null` and add nothing, as the resolver's re-import note says, while its intake counts). The
- * signal behind a `null` consumed at full coverage is the `null` discharge column beside it:
- * the site has a discharge meter and no reading from it. An intake meter that cannot report
- * has no such signal: the intake column still shows the other intakes' sum, and only the
- * `null` consumed beside a number says that one intake is missing.
+ * `null` and add nothing, as the resolver's re-import note says, while its intake counts). So a
+ * `null` consumed at full coverage does not always have a column signal beside it: when every
+ * discharge meter cannot report, the discharge column is `null`; but when only one of several
+ * intake or discharge meters cannot report, that column still shows the others' sum, and only
+ * the `null` consumed says that a meter is missing.
  */
 
 /** One site's rows, split by role — what the resolver hands the fold. */
