@@ -299,6 +299,30 @@ describe("E4.3 U11 — seed.ts runs seedWaterPlantDemo where both of its depende
   });
 });
 
+/**
+ * The SELECT of `assignEskomAssetRtus` — the first backtick template inside
+ * that function's body — with its SQL `--` comments removed (so a filter that
+ * is commented out does not count) and its whitespace collapsed. Fails closed,
+ * naming what is missing, if the function or its SELECT cannot be found.
+ */
+function assignRtusSelectSql(): string {
+  const source = read("packages/db/src/hierarchy-seed.ts");
+  const start = source.indexOf("export async function assignEskomAssetRtus(");
+  if (start < 0) throw new Error("assignEskomAssetRtus is missing from hierarchy-seed.ts");
+  const end = source.indexOf("\n}\n", start);
+  if (end < 0) throw new Error("assignEskomAssetRtus has no closing brace at column 0");
+  const body = source.slice(start, end);
+  const open = body.indexOf("`");
+  const close = open < 0 ? -1 : body.indexOf("`", open + 1);
+  if (close < 0) throw new Error("assignEskomAssetRtus has no SQL template");
+  const sql = body
+    .slice(open + 1, close)
+    .replace(/--[^\n]*/g, "")
+    .replace(/\s+/g, " ");
+  if (!/^\s*SELECT\b/.test(sql)) throw new Error("assignEskomAssetRtus's first SQL template is not its SELECT");
+  return sql;
+}
+
 describe("E4.3 U11 — the water domain reaches the RTU and group derivations", () => {
   it("DOMAIN_RTU_SUFFIX names water as WATER (owner ruling Q4)", () => {
     const literal = soleLiteral(
@@ -307,6 +331,15 @@ describe("E4.3 U11 — the water domain reaches the RTU and group derivations", 
       "hierarchy-seed.ts DOMAIN_RTU_SUFFIX",
     );
     expect(soleCapture(literal, /\bwater:\s*"([^"]+)"/, "DOMAIN_RTU_SUFFIX water")).toBe("WATER");
+  });
+
+  // Owner ruling R3 (2026-09-24): the WATER RTU exists at every location, but
+  // assignEskomAssetRtus selects a water asset only when its code starts with
+  // WTR-. Without the filter every non-manual ESKOM water asset is moved to
+  // SIM-RTU-<loc>-WATER and flipped to telemetrySource simulator on each boot;
+  // apps/sim feeds it nothing (R2), and ingest drops a real meter's readings.
+  it("assignEskomAssetRtus selects a water asset only when its code starts with WTR- (owner ruling R3)", () => {
+    expect(assignRtusSelectSql()).toContain("AND (a.domain <> 'water' OR a.code LIKE 'WTR-%')");
   });
 
   it("demoGroupCodesForAsset files a water asset under the water group alone", () => {
@@ -353,15 +386,38 @@ const SIM_WATER_FLOW_KEYS = [
   "discharge_flow_klh",
 ] as const;
 
-function simBodyOf(name: string): string {
-  const code = read("apps/sim/src/index.js")
+/** apps/sim/src/index.js with its comments removed. */
+function simCode(): string {
+  return read("apps/sim/src/index.js")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+function simBodyOf(name: string): string {
+  const code = simCode();
   const start = code.indexOf(`function ${name}(`);
   if (start < 0) throw new Error(`${name}() is missing from apps/sim/src/index.js`);
   const end = code.indexOf("\n}\n", start);
   if (end < 0) throw new Error(`${name}() has no closing brace at column 0`);
   return code.slice(start, end);
+}
+
+/** The module-scope `WATER_POINT_KEYS` list; fails closed on a missing or empty list. */
+function bannerWaterPointKeys(): string[] {
+  const inner = soleCapture(simCode(), /const WATER_POINT_KEYS = \[([^\]]*)\]/, "apps/sim WATER_POINT_KEYS");
+  const keys = [...inner.matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]!);
+  if (keys.length === 0) throw new Error("apps/sim WATER_POINT_KEYS: found no keys");
+  return keys;
+}
+
+/** Every key of every `<CLASS>: { ... }` entry of stepWater's WATER_FLOWS; fails closed on none. */
+function waterFlowsKeyUnion(): string[] {
+  const table = soleCapture(simBodyOf("stepWater"), /const WATER_FLOWS = \{([\s\S]*?)\n\s*\};/, "stepWater WATER_FLOWS");
+  const entries = [...table.matchAll(/\b[A-Z]+:\s*\{([^{}]*)\}/g)].map((m) => m[1]!);
+  if (entries.length === 0) throw new Error("stepWater WATER_FLOWS: found no class entry");
+  const keys = entries.flatMap((inner) => [...inner.matchAll(/([a-z0-9_]+)\s*:/g)].map((m) => m[1]!));
+  if (keys.length === 0) throw new Error("stepWater WATER_FLOWS: found no flow keys");
+  return keys;
 }
 
 /**
@@ -410,8 +466,17 @@ describe("E4.3 U12 — apps/sim emits the demo plant's flows", () => {
     expect(simBodyOf("tick")).toContain('row.domain === "water"');
   });
 
-  it("tick() calls stepWater(", () => {
-    expect(simBodyOf("tick")).toContain("stepWater(");
+  // The claim above and a bare "stepWater(" check both stay green when the
+  // water arm calls stepElectrical while stepWater( appears elsewhere in
+  // tick(). This one reads the arm itself.
+  it('tick()\'s row.domain === "water" arm calls stepWater(row.id, row.code)', () => {
+    expect(simBodyOf("tick")).toMatch(/row\.domain\s*===\s*"water"\s*\?\s*stepWater\(\s*row\.id\s*,\s*row\.code\s*\)/);
+  });
+
+  // WATER_POINT_KEYS is the startup banner's hand-kept copy of the keys
+  // stepWater emits; removing one from it left every other claim green.
+  it("the banner's WATER_POINT_KEYS equals, as a set, the union of stepWater's WATER_FLOWS keys", () => {
+    expect([...new Set(bannerWaterPointKeys())].sort()).toEqual([...new Set(waterFlowsKeyUnion())].sort());
   });
 
   it("stepWater() names the twelve distinct flow keys (thirteen per-class flows)", () => {
