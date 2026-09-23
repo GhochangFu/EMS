@@ -50,9 +50,10 @@ type ResolverDeps = { readonly health: AssetHealthService };
  * How the catalog's entries resolve: four are SQL here, one delegates, two roll up a point key.
  *
  * `params` is the binding's stored `params` AFTER `METRIC_CATALOG_PARAMS_WRITE[key]` has
- * parsed it (`E4.2`): `{}` for the five Stage C entries, `{ pointKey, aggregate }` for the
- * two sustainability entries. Positional and required rather than optional, so a resolver
- * that reads a field cannot compile against a call that never passes one.
+ * parsed it (`E4.2`): `{}` for the five Stage C entries, `{ pointKey, aggregate }` and an
+ * optional `balanceRole` (`E4.3`) for the two sustainability entries. Positional and required
+ * rather than optional, so a resolver that reads a field cannot compile against a call that
+ * never passes one.
  */
 type Resolver = (
   tx: BmsTx,

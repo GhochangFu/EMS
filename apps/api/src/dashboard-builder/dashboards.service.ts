@@ -746,8 +746,9 @@ export class DashboardsService {
    * code with no foreign row to be outside anything.
    *
    * `params` is stored as submitted, after `METRIC_CATALOG_PARAMS_WRITE` has parsed it per entry
-   * — `{}` for the five Stage C entries, `{ pointKey, aggregate }` for the two sustainability
-   * roll-ups (`E4.2`, ADR 0072 decision 2), which `MetricCatalogService` reads back.
+   * — `{}` for the five Stage C entries, `{ pointKey, aggregate }` plus an optional
+   * `balanceRole` for the two sustainability roll-ups (`E4.2` / ADR 0072 decision 2, `E4.3` /
+   * ADR 0073 decision 2), which `MetricCatalogService` reads back.
    */
   private async insertSources(
     tx: BmsTx,
