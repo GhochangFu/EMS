@@ -619,6 +619,23 @@ export function runV3HintNamesLocalMidnightTests(): void {
 }
 
 /**
+ * `E4.4` (ADR 0070 Amendment 3) — the help sentence names the refusal, not
+ * just the old "even where samples are missing" hedge: a `sum` below 90%
+ * coverage of its elapsed window now refuses `window_sparse` rather than
+ * silently answering short.
+ */
+export function runV3WindowHelpNamesTheSparseRefusalTests(): void {
+  assert(
+    V3_WINDOW_HELP.includes("window_sparse"),
+    `the window help names the window_sparse refusal — got ${V3_WINDOW_HELP}`,
+  );
+  assert(
+    V3_WINDOW_HELP.includes("90%"),
+    `the window help states the 90% coverage threshold — got ${V3_WINDOW_HELP}`,
+  );
+}
+
+/**
  * The calendar warning names the counter the sweep records and where the
  * fix lives, so an author who sees it knows what to do (`E4.1b` plan design
  * decision 15). A static sentence: it carries no fragment of the formula.

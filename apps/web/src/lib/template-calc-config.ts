@@ -143,14 +143,17 @@ export const V3_PARAMETER_HELP =
  * help. Three sentences carry the three things an author gets wrong: `sum` is
  * the time integral and not a sum of samples (plan ruling Q5 — `hours()` on a
  * rolling window is the literal duration, and `sum` integrates over the whole
- * of it); `delta` is last minus first and so means something only on a
- * cumulative counter (ruling Q7: the grammar cannot know cumulativeness, so
- * the sentence says it and no per-point warning does); `hours` prorates.
+ * of it) and, since `E4.4` (ADR 0070 Amendment 3), refuses `window_sparse`
+ * below 90% coverage of the elapsed window rather than answering short;
+ * `delta` is last minus first and so means something only on a cumulative
+ * counter (ruling Q7: the grammar cannot know cumulativeness, so the sentence
+ * says it and no per-point warning does); `hours` prorates.
  */
 export const V3_WINDOW_HELP =
-  "sum({kw}, 24h) is the time integral (avg × hours: a kW point gives kWh, over the whole window " +
-  "even where samples are missing); delta({kwh}, today) is last minus first, for cumulative " +
-  "counters; hours(today) prorates a daily baseline; a rolling window is <n>m/<n>h/<n>d up to 366d.";
+  "sum({kw}, 24h) is the time integral (avg × hours: a kW point gives kWh over the whole window) " +
+  "and refuses window_sparse when less than 90% of the elapsed window holds samples — an hour with " +
+  "a sample counts as covered; delta({kwh}, today) is last minus first, for cumulative counters; " +
+  "hours(today) prorates a daily baseline; a rolling window is <n>m/<n>h/<n>d up to 366d.";
 
 /**
  * Rendered beside a row's editor when its formula reads a calendar window

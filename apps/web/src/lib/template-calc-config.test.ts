@@ -14,6 +14,7 @@ import {
   runV2IsScheduledOnlyTests,
   runV3HintNamesLocalMidnightTests,
   runV3LabelNamesWindowsTests,
+  runV3WindowHelpNamesTheSparseRefusalTests,
   runValidConfigTests,
 } from "./template-calc-config.spec";
 
@@ -69,6 +70,10 @@ describe("template calc config", () => {
 
   it("says a calendar window is up to one interval behind local midnight, and what sum and delta are", () => {
     runV3HintNamesLocalMidnightTests();
+  });
+
+  it("names window_sparse and the 90% threshold in the window help (E4.4)", () => {
+    runV3WindowHelpNamesTheSparseRefusalTests();
   });
 
   it("names timezone_unset and Admin → Locations in the calendar warning", () => {
