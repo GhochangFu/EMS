@@ -252,6 +252,11 @@ export async function assertSumIsTheTimeIntegral(pool: pg.Pool, fixture: Windows
   const tick = fixture.dMs + DAY_MS;
   const result = await resolveOne(pool, fixture.u, windowFn("sum", KW, rolling(1440)), tick);
   // Σ sum_value = 1200 over 11 samples → avg 109.09…, × 24 h = 2618.18…
+  // Coverage (ADR 0070 Amendment 3, E4.4): day D holds samples in only two of
+  // its 24 hours. This sum answers because the fixture's materialize moved
+  // the 1d watermark past D, so the day is served from 1d at day resolution
+  // (24 of 24 h covered). Served from 1h, it would refuse window_sparse — if
+  // W2, W2c or W8 turns red, look at the level that served the day first.
   assert(result !== undefined && result.ok === true && near(result.value, 2618.181818), `W2: sum({kw}, 24h) is avg × 24 = 2618.18…, got ${JSON.stringify(result)}`);
 }
 
