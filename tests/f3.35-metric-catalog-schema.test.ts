@@ -90,7 +90,7 @@ const catalogKeys = (): string[] => {
     throw new Error(
       `could not find metricCatalogKeySchema's z.enum([...]) in ${CONTRACT_REL}. If it was ` +
         "renamed or reshaped, fix this parser — do not delete the assertion, because the " +
-        "CHECK in migration 0054 and that enum are two declarations of one vocabulary.",
+        "effective CHECK (migration 0081) and that enum are two declarations of one vocabulary.",
     );
   }
   const keys = (block[1] ?? "")
