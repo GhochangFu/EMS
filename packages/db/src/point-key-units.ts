@@ -776,4 +776,9 @@ export const UNIT_BY_KEY: Record<string, string> = {
   water_cost_this_month: "",
   water_cost_this_year: "",
   water_recycle_pct: "%",
+  // `E4.3` PR 2 (U5) — three outlet codes on five of the six water classes
+  // (ADR 0073 decision 4; the softener carries none, owner ruling Q2).
+  outlet_kl_today: "KL",
+  outlet_kl_this_month: "KL",
+  outlet_kl_this_year: "KL",
 };

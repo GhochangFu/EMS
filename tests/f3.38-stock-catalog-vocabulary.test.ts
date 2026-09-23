@@ -111,8 +111,10 @@ const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   // 9 (energy_cost_this_month/_this_year, co2_kg_this_month/_this_year,
   // kwh_this_month/_this_year, co2_avoided_kg_this_month/_this_year,
   // operational_efficiency_pct) + water's 5 (kl_this_month/_this_year,
-  // water_cost_this_month/_this_year, water_recycle_pct).
-  "packages/shared/src/sustainability-point-keys.ts": 43,
+  // water_cost_this_month/_this_year, water_recycle_pct). **46 since E4.3 PR
+  // 2 (U5)**: 43 + water's 3 outlet codes (outlet_kl_today/_this_month/_this_year,
+  // ADR 0073 decision 4).
+  "packages/shared/src/sustainability-point-keys.ts": 46,
 };
 
 /** The sources as one list, for an assertion message. */
