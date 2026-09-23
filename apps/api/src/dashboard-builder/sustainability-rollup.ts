@@ -226,6 +226,44 @@ export async function readRollupRows(
   }));
 }
 
+/** A location that owns at least one roled asset in scope — one `water.balance` row. */
+export type BalanceLocation = { readonly id: string; readonly code: string; readonly name: string };
+
+/**
+ * `E4.3` U9 (ADR 0073 decision 3) — the `water.balance` ROW set: the locations owning at least
+ * one ACTIVE asset in `scope` whose `water_balance_role` is set, in `code` order, reading
+ * `MAX_DATASET_ROWS + 1` so `capRows` decides `truncated`. An empty `scope` returns `[]` before
+ * any SQL.
+ *
+ * Unlike `sustainability.by_location` (E4.2 OQ7: every location owning an asset in scope), a
+ * site with no roled asset is no row: it has no balance to show, and a row of `null`s there
+ * would read as a silent meter. The rule is role-based, not sample-based — a site whose roled
+ * assets carry no point for the period is still a row, at `"0/0"`. `a.active` is written for
+ * the reason `readRollupRows` gives: a decommissioned roled meter must not hold a site's row
+ * open when it can never be a term. The organization predicate is explicit for the same reason
+ * as there.
+ */
+export async function readBalanceLocations(
+  tx: BmsTx,
+  organizationId: string,
+  scope: readonly string[],
+): Promise<BalanceLocation[]> {
+  if (scope.length === 0) return [];
+  const result = await tx.execute<{ id: string; code: string; name: string }>(sql`
+    SELECT l.id, l.code, l.name
+      FROM bms.assets a
+      JOIN bms.locations l ON l.id = a.location_id
+     WHERE a.id = ANY(${sql.param([...scope])}::uuid[])
+       AND a.organization_id = ${organizationId}
+       AND a.active
+       AND a.water_balance_role IS NOT NULL
+     GROUP BY l.id, l.code, l.name
+     ORDER BY l.code
+     LIMIT ${MAX_DATASET_ROWS + 1}
+  `);
+  return result.rows.map((row) => ({ id: row.id, code: row.code, name: row.name }));
+}
+
 /**
  * The point's catalog unit, `null` when the code is unknown. `""` is the NO-UNIT spelling
  * (E4.1c) shared by money, counts and ratios — it does not identify money (`isMoneyPointKey`).

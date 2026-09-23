@@ -285,3 +285,126 @@ export async function dischargeTableGivesL1NullOverZeroOfZero(f: RollupFixture):
     coverage: "0/0",
   });
 }
+
+// ---------------------------------------------------------------------------
+// `E4.3` U9 / ADR 0073 decision 3 — `water.balance`. L1: W intake (`kl_today` 50), S reuse
+// (`outlet_kl_today` 11), E discharge (`outlet_kl_today` 7), R internal (`outlet_kl_today` 5,
+// in no column). L2: N with a `NULL` role. L3: I intake (`kl_today` 20) and D discharge
+// (`outlet_kl_today` stale at now − 10 min). One claim per function.
+// ---------------------------------------------------------------------------
+
+/** What the balance fixture hands every claim. */
+export type BalanceFixture = {
+  readonly service: MetricCatalogService;
+  readonly orgId: string;
+  readonly l1Code: string;
+  readonly l2Code: string;
+  readonly l3Code: string;
+  readonly assetW: string;
+  /** Every fixture asset — the caller's readable set on each org-wide read. */
+  readonly fixtureAssets: readonly string[];
+  /** An org-wide dashboard: `water.balance { today }`, `water.balance { this_month }`, and a
+   * `sustainability.by_location { kl_today, sum }` table beside them (the L2 positive control). */
+  readonly dashboardId: string;
+  readonly todaySourceId: string;
+  readonly thisMonthSourceId: string;
+  readonly byLocationSourceId: string;
+};
+
+type BalanceCell = string | number | boolean | null;
+
+const balanceRows = async (
+  f: BalanceFixture,
+  sourceId: string,
+  readable: readonly string[] = f.fixtureAssets,
+): Promise<Record<string, BalanceCell>[]> => {
+  const response = await f.service.resolveForDashboard(f.orgId, f.dashboardId, [...readable]);
+  const table = valueOf(response, sourceId);
+  if (table.shape !== "dataset") throw new Error(`binding ${sourceId} is not a dataset`);
+  return table.rows;
+};
+
+const balanceRow = async (f: BalanceFixture, locationCode: string) =>
+  (await balanceRows(f, f.todaySourceId)).find((row) => row.locationCode === locationCode);
+
+const fiveOf = (row: Record<string, BalanceCell> | undefined) =>
+  row && [row.intake, row.reuse, row.discharge, row.consumed, row.coverage];
+
+/**
+ * The balance rows are exactly `[L1, L3]`, in code order: L2's one asset has no role, so L2
+ * is no row — the row set is the locations owning a ROLED asset in scope. An exact list, not
+ * a "does not contain", so an empty table cannot pass it.
+ */
+export async function balanceRowsAreL1ThenL3WithoutL2(f: BalanceFixture): Promise<void> {
+  const rows = await balanceRows(f, f.todaySourceId);
+  expect(rows.map((row) => row.locationCode)).toEqual([f.l1Code, f.l3Code]);
+}
+
+/** The positive control for the claim above: L2 IS in scope — the `by_location` table on the
+ * same dashboard lists it (E4.2 OQ7 is untouched by the balance). */
+export async function byLocationBesideTheBalanceStillListsL2(f: BalanceFixture): Promise<void> {
+  const rows = await balanceRows(f, f.byLocationSourceId);
+  expect(rows.map((row) => row.locationCode)).toEqual([f.l1Code, f.l2Code, f.l3Code]);
+}
+
+/** L1 intake reads `kl_today` over W alone: 50. */
+export async function l1IntakeIsFifty(f: BalanceFixture): Promise<void> {
+  expect((await balanceRow(f, f.l1Code))?.intake).toBe(50);
+}
+
+/** L1 reuse reads `outlet_kl_today` over S alone: 11 (R's internal 5 is no term). */
+export async function l1ReuseIsEleven(f: BalanceFixture): Promise<void> {
+  expect((await balanceRow(f, f.l1Code))?.reuse).toBe(11);
+}
+
+/** L1 discharge reads `outlet_kl_today` over E alone: 7 (R's internal 5 is no term). */
+export async function l1DischargeIsSeven(f: BalanceFixture): Promise<void> {
+  expect((await balanceRow(f, f.l1Code))?.discharge).toBe(7);
+}
+
+/** L1 consumed = 50 − 7 = 43; reuse is NOT added (ADR 0073 decision 3, Q7) — not 54. */
+export async function l1ConsumedIsFortyThree(f: BalanceFixture): Promise<void> {
+  expect((await balanceRow(f, f.l1Code))?.consumed).toBe(43);
+}
+
+/** L1 coverage counts W, S and E: `"3/3"` — R (internal) feeds no column and no count (Q9). */
+export async function l1CoverageIsThreeOfThree(f: BalanceFixture): Promise<void> {
+  expect((await balanceRow(f, f.l1Code))?.coverage).toBe("3/3");
+}
+
+/** L3's only discharge asset is stale: consumed `null`, never `20 − 0` (Q8). */
+export async function l3ConsumedIsNullWithAStaleDischarge(f: BalanceFixture): Promise<void> {
+  expect((await balanceRow(f, f.l3Code))?.consumed).toBeNull();
+}
+
+/** L3 coverage: I fresh, D carrying and stale — `"1/2"`. */
+export async function l3CoverageIsOneOfTwo(f: BalanceFixture): Promise<void> {
+  expect((await balanceRow(f, f.l3Code))?.coverage).toBe("1/2");
+}
+
+/**
+ * `{ period: "this_month" }` — the fixture template has no `kl_this_month` or
+ * `outlet_kl_this_month` row, so nothing carries; L1 is still a row, all `null` at `"0/0"`.
+ * The row rule is role-based, not sample-based.
+ */
+export async function thisMonthKeepsL1AsANullRow(f: BalanceFixture): Promise<void> {
+  const rows = await balanceRows(f, f.thisMonthSourceId);
+  expect(fiveOf(rows.find((row) => row.locationCode === f.l1Code))).toEqual([
+    null,
+    null,
+    null,
+    null,
+    "0/0",
+  ]);
+}
+
+/**
+ * Caller scope ∩: a caller who can read only W gets one row, L1 `{50, null, null, 50, "1/1"}`
+ * — no discharge asset carries in that scope, so consumed is `intake − 0` (Q8).
+ */
+export async function callerScopeOfWAloneIsOneRow(f: BalanceFixture): Promise<void> {
+  const rows = await balanceRows(f, f.todaySourceId, [f.assetW]);
+  expect(rows.map((row) => [row.locationCode, ...(fiveOf(row) ?? [])])).toEqual([
+    [f.l1Code, 50, null, null, 50, "1/1"],
+  ]);
+}
