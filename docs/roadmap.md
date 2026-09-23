@@ -5724,4 +5724,4 @@ Verified on the compose database: the sparse suite passed 11/11 and the E4.1b
 suite 18/18. The branch image was deployed to `bms-api-1` and booted cleanly.
 The live refusal on the stack is N/A by gate (owner ruling): no stack asset
 carries a window-`sum` point. Browser N/A by gate. A `55P03` retry for
-`materializeCompleteBuckets` is left to no row. Unblocks nothing.
+`materializeCompleteBuckets` is the new row `F4.149`. Unblocks nothing.

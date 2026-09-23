@@ -845,7 +845,7 @@ written. This is the record of where the build and its reviews corrected it.
    window-`sum` point. A live probe needed throwaway derived points on a
    shared template, and the owner declined it. The deployed image was proved
    to hold the guard, and the stack was proved to boot and sweep.
-7. **One fault left to no row.** `materializeCompleteBuckets` has no retry on
-   `55P03`. A manual refresh that overlaps a running refresh therefore
-   reddens a CI run when DB suites run in parallel. The result is a red run,
-   not a false green.
+7. **One fault left to backlog row `F4.149`.** `materializeCompleteBuckets`
+   has no retry on `55P03`. A manual refresh that overlaps a running refresh
+   therefore reddens a CI run when DB suites run in parallel. The result is a
+   red run, not a false green.
