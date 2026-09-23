@@ -694,13 +694,34 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
   // water tiles read `unit: "KL"`, the spelling `UNIT_BY_KEY` and every water
   // point row use — `"kL"` was a second spelling of one vocabulary word. A
   // tenant that already imported v2 takes both by re-import.
+  //
+  // **`stockVersion: 4` (`E4.3` PR 2, U10, ADR 0073 decision 2).** Fixes the
+  // double count `sustainability.total`/`sustainability.by_location` would
+  // otherwise draw for water: every one of the six water classes carries its
+  // own `kl_*` inlet row, so a role-free `kl_today` sum reads intake PLUS
+  // every internal/reuse/discharge stage's inlet as if each were a separate
+  // supply. `balanceRole: "intake"` on the three `kl_*` tiles and the
+  // benchmark table narrows the carrying (and coverage) set to the assets an
+  // operator has pinned `intake` — one row per site, not one per stage. **Only
+  // `intake`**, not `internal`/`reuse`/`discharge`, because those three
+  // catalog entries answer "how much water entered the site", which is what
+  // `energy_cost_*` and `co2_kg_*` already answer for their own domains; v3
+  // has no `water_cost_*` tiles (ADR 0073's Context sentence naming them is
+  // wrong — see Amendment 1), so the role is added to no other binding. A v3
+  // tenant that already imported this template takes the role, the new table
+  // and the fix by RE-IMPORT — nothing here is a migration on stored widgets.
+  // Two costs an admin should expect after re-import: the three water tiles
+  // read `0/0` until an `intake` role is set on at least one water asset, and
+  // the new *Water balance by site* table's `period: "this_month"` reads
+  // `null` / `0/3` cells until a month boundary (Q5 ruling, fact 15, ADR 0070
+  // Amendment 3) — both are the recorded cost of the fix, not a defect in it.
   // -------------------------------------------------------------------------
   {
     code: "sustainability-overview",
     name: "Sustainability Overview",
     section: "sustainability",
     description: "Energy, water and emissions rollups across the plant.",
-    stockVersion: 3,
+    stockVersion: 4,
     content: {
       widgets: [
         // ---- Row A (y=0) — today ------------------------------------------
@@ -736,7 +757,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [],
-          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "sum" }, sortOrder: 0 }],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" }, sortOrder: 0 }],
           widgetType: "value_tile",
           config: { icon: "drop", unit: "KL" },
         },
@@ -809,7 +830,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [],
-          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_this_month", aggregate: "sum" }, sortOrder: 0 }],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_this_month", aggregate: "sum", balanceRole: "intake" }, sortOrder: 0 }],
           widgetType: "value_tile",
           config: { unit: "KL" },
         },
@@ -882,7 +903,7 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: TILE_W,
           gridH: TILE_H,
           bindings: [],
-          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_this_year", aggregate: "sum" }, sortOrder: 0 }],
+          sources: [{ catalogKey: "sustainability.total", params: { pointKey: "kl_this_year", aggregate: "sum", balanceRole: "intake" }, sortOrder: 0 }],
           widgetType: "value_tile",
           config: { unit: "KL" },
         },
@@ -919,7 +940,24 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
           gridW: DASHBOARD_GRID.columns,
           gridH: LOWER_ROW_H,
           bindings: [],
-          sources: [{ catalogKey: "sustainability.by_location", params: { pointKey: "kl_today", aggregate: "sum" }, sortOrder: 0 }],
+          sources: [{ catalogKey: "sustainability.by_location", params: { pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" }, sortOrder: 0 }],
+          widgetType: "table",
+          config: {},
+        },
+        // ---- Row E (y=BELOW_TILES_Y + 2 * TILE_H + LOWER_ROW_H) — the water
+        // balance table (`E4.3` / ADR 0073 decision 3, U10). `period:
+        // "this_month"` per the owner's Q5 ruling — the demo shows `null` /
+        // `0/3` cells until a month boundary (fact 15, ADR 0070 Amendment 3),
+        // which is expected, not a bug.
+        {
+          key: "water-balance-by-site-table",
+          title: "Water balance by site",
+          gridX: 0,
+          gridY: BELOW_TILES_Y + 2 * TILE_H + LOWER_ROW_H,
+          gridW: DASHBOARD_GRID.columns,
+          gridH: LOWER_ROW_H,
+          bindings: [],
+          sources: [{ catalogKey: "water.balance", params: { period: "this_month" }, sortOrder: 0 }],
           widgetType: "table",
           config: {},
         },

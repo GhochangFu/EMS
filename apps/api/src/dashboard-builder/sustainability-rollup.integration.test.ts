@@ -36,6 +36,23 @@ import {
   assetScopedDashboardRollsUpItsOneAsset,
   byLocationUnderTheCapIsNotTruncated,
   byLocationOverTheCapIsTruncated,
+  balanceRowsAreL1L3L4,
+  inactiveRoledAssetAloneMakesNoRow,
+  internalOnlyL5IsNoRowBesideL1,
+  l4ConsumedIsNullWithAPreV5Discharge,
+  l4CoverageIsOneOfOne,
+  l6ByLocationListsL6,
+  byLocationBesideTheBalanceStillListsL2,
+  callerScopeOfWAloneIsOneRow,
+  l1ConsumedIsFortyThree,
+  l1CoverageIsThreeOfThree,
+  l1DischargeIsSeven,
+  l1IntakeIsFifty,
+  l1ReuseIsEleven,
+  l3ConsumedIsNullWithAStaleDischarge,
+  l3CoverageIsOneOfTwo,
+  thisMonthKeepsL1AsANullRow,
+  type BalanceFixture,
   type CapFixture,
   type RollupFixture,
 } from "./sustainability-rollup.integration.spec";
@@ -54,7 +71,8 @@ import {
  * younger than one hour, so `time > now() - interval '1 hour'` confines the delete to the
  * chunks that can hold them.
  *
- * The fixture (plan U4): a published asset template with `kl_today` (derived, scheduled, 60 s)
+ * The fixture (plan U4): a published asset template with `kl_today` (derived, scheduled, 60 s,
+ * over the self-reference formula `{kl_today}` — the U9 fixture below gives the reason)
  * and `kwh_today` (measured); assets A and B at L1 on it, C at L2 on it, D at L1 on no
  * template, E at L1 on it and INACTIVE (sweep). Samples: `kl_today` A = 10 (now), B = 20
  * (now), C = 99 (now − 10 min, stale at 180 s), E = 40 (now, and excluded as inactive);
@@ -146,7 +164,7 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
     await superuserPool.query(
       `INSERT INTO bms.template_points
          (organization_id, template_id, point_key, kind, formula, formula_dialect, calc_trigger, calc_interval_seconds, required)
-       VALUES ($1, $2, 'kl_today', 'derived', '1', 'bms-calc-v1', 'scheduled', 60, false),
+       VALUES ($1, $2, 'kl_today', 'derived', '{kl_today}', 'bms-calc-v1', 'scheduled', 60, false),
               ($1, $2, 'kwh_today', 'measured', NULL, NULL, NULL, NULL, false)`,
       [orgId, templateId],
     );
@@ -514,5 +532,319 @@ describe.skipIf(!connectionString)("E4.2 U4 — the by_location cap is reached",
 
   it("returns exactly MAX_DATASET_ROWS rows and truncated: true over 201 locations", async () => {
     await byLocationOverTheCapIsTruncated(fixture);
+  });
+});
+
+/**
+ * `E4.3` U9 — the `water.balance` fixture (ADR 0073 decision 3; plan U9). Its own template,
+ * carrying `kl_today` and `outlet_kl_today` (both derived, scheduled, 60 s), and six per-run
+ * locations: L1 holds W intake, S reuse, E discharge and R internal; L2 holds N with a `NULL`
+ * role; L3 holds I intake and D discharge, D's one sample 10 minutes old (stale at 180 s).
+ *
+ * The PR 2 review added three: L4 holds P intake (`kl_today` 30) and Q discharge pinned to a
+ * second, PRE-v5 template that carries a measured `kl_today` and no `outlet_kl_today` (F1);
+ * L5 holds T internal alone (F6, the row rule); L6 holds V intake, INACTIVE, with a fresh
+ * `kl_today` 60 (F3). V is read through a dashboard scoped to L6, because the organization arm
+ * of `resolveAssetScope` already drops inactive assets — only a location scope reaches V, so
+ * only there can `readBalanceLocations`' own `a.active` decide.
+ *
+ * Every row carries the `E43`/`e43` per-run prefix and is deleted in `afterAll`; nothing here
+ * runs inside a transaction, so nothing depends on a rollback. The telemetry DELETE is bounded
+ * by time for the hypertable reason the first fixture states.
+ *
+ * **Each derived point's formula reads the point itself, on purpose.** A constant formula
+ * (`'1'`, as the first fixture wrote until the PR 2 review) is a live definition to the
+ * running API's scheduled calc sweep, which evaluates it within a minute of its cache refresh
+ * and writes a fresh `1` over the fixture's samples. Observed in U9: the API log carried `calc write` lines for these
+ * fixture points, and one run reddened both L3 claims (D's stale sample turned fresh) under a
+ * mutation that cannot touch L3. A self-reference is refused by `toActiveDefinition` at load
+ * (`self_reference`), so no host ever writes these points, while `readRollupRows` still reads
+ * them as scheduled derived points with a 180 s bound.
+ */
+describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () => {
+  let superuserPool: pg.Pool;
+  let fleetPool: pg.Pool;
+  let tenantPool: pg.Pool;
+  let fixture: BalanceFixture;
+  let orgId = "";
+  const templateIds: string[] = [];
+  const dashboardIds: string[] = [];
+  const locationIds: string[] = [];
+  const assetIds: string[] = [];
+
+  beforeAll(async () => {
+    const url = connectionString as string;
+    const POOL = { max: 1 } as const;
+    superuserPool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(url, "superuser", process.env),
+      "E4.3 U9",
+      POOL,
+    );
+    fleetPool = await openIntegrationPool(url, "E4.3 U9", POOL);
+    tenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
+      "E4.3 U9",
+      POOL,
+    );
+    const fleetDb = createDb(fleetPool);
+    const service = new MetricCatalogService(
+      createDb(tenantPool),
+      fleetDb,
+      undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
+      new AssetHealthService(fleetDb),
+    );
+
+    const org = await fleetPool.query<{ id: string }>(
+      `SELECT id FROM bms.organizations WHERE code = 'ESKOM' LIMIT 1`,
+    );
+    orgId = org.rows[0]?.id ?? "";
+    if (!orgId) throw new Error("E4.3 U9: ESKOM organization not found — run pnpm db:seed");
+    const domain = await fleetPool.query<{ code: string }>(
+      `SELECT code FROM bms.asset_domains ORDER BY code LIMIT 1`,
+    );
+    const domainCode = domain.rows[0]?.code ?? "";
+
+    const mkLocation = async (tag: string): Promise<{ id: string; code: string }> => {
+      const code = `E43${tag}-${RUN}`;
+      const row = await superuserPool.query<{ id: string }>(
+        `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+         VALUES ($1, $2, $3, $4, 'csmoc', 0, 0) RETURNING id`,
+        [orgId, code, `e43${tag.toLowerCase()}-${RUN}`, `E4.3 site ${tag} ${RUN}`],
+      );
+      const id = row.rows[0]?.id ?? "";
+      locationIds.push(id);
+      return { id, code };
+    };
+    const l1 = await mkLocation("L1");
+    const l2 = await mkLocation("L2");
+    const l3 = await mkLocation("L3");
+    const l4 = await mkLocation("L4");
+    const l5 = await mkLocation("L5");
+    const l6 = await mkLocation("L6");
+
+    const template = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain, status, published_at)
+       VALUES ($1, $2, 'E4.3 U9 template', 'meter', $3, 'published', now()) RETURNING id`,
+      [orgId, `e43-u9-${RUN}`, domainCode],
+    );
+    const templateId = template.rows[0]?.id ?? "";
+    templateIds.push(templateId);
+    // F1 — a PRE-v5 water template: `kl_today` (measured, so no calc sweep writes it) and no
+    // `outlet_kl_today`, so `readRollupRows` returns no discharge row for an asset on it.
+    const preV5 = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain, status, published_at)
+       VALUES ($1, $2, 'E4.3 pre-v5 template', 'meter', $3, 'published', now()) RETURNING id`,
+      [orgId, `e43-u9p-${RUN}`, domainCode],
+    );
+    const preV5TemplateId = preV5.rows[0]?.id ?? "";
+    templateIds.push(preV5TemplateId);
+    await superuserPool.query(
+      `INSERT INTO bms.template_points (organization_id, template_id, point_key, kind, required)
+       VALUES ($1, $2, 'kl_today', 'measured', false)`,
+      [orgId, preV5TemplateId],
+    );
+    await superuserPool.query(
+      `INSERT INTO bms.template_points
+         (organization_id, template_id, point_key, kind, formula, formula_dialect, calc_trigger, calc_interval_seconds, required)
+       VALUES ($1, $2, 'kl_today', 'derived', '{kl_today}', 'bms-calc-v1', 'scheduled', 60, false),
+              ($1, $2, 'outlet_kl_today', 'derived', '{outlet_kl_today}', 'bms-calc-v1', 'scheduled', 60, false)`,
+      [orgId, templateId],
+    );
+
+    const mkAsset = async (
+      locationId: string,
+      tag: string,
+      role: string | null,
+      onTemplate = templateId,
+      active = true,
+    ): Promise<string> => {
+      const row = await superuserPool.query<{ id: string }>(
+        `INSERT INTO bms.assets
+           (organization_id, location_id, code, name, site_name, domain, template_id, water_balance_role, active)
+         VALUES ($1, $2, $3, $4, 'E4.3', $5, $6, $7, $8) RETURNING id`,
+        [orgId, locationId, `E43-${tag}-${RUN}`, `E4.3 ${tag} ${RUN}`, domainCode, onTemplate, role, active],
+      );
+      const id = row.rows[0]?.id ?? "";
+      assetIds.push(id);
+      return id;
+    };
+    const w = await mkAsset(l1.id, "W", "intake");
+    const s = await mkAsset(l1.id, "S", "reuse");
+    const e = await mkAsset(l1.id, "E", "discharge");
+    const r = await mkAsset(l1.id, "R", "internal");
+    await mkAsset(l2.id, "N", null);
+    const i = await mkAsset(l3.id, "I", "intake");
+    const d = await mkAsset(l3.id, "D", "discharge");
+    const p = await mkAsset(l4.id, "P", "intake");
+    await mkAsset(l4.id, "Q", "discharge", preV5TemplateId);
+    await mkAsset(l5.id, "T", "internal");
+    const v = await mkAsset(l6.id, "V", "intake", templateId, false);
+
+    await superuserPool.query(
+      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value) VALUES
+         (now(), $1, 'kl_today', 50),
+         (now(), $2, 'outlet_kl_today', 11),
+         (now(), $3, 'outlet_kl_today', 7),
+         (now(), $4, 'outlet_kl_today', 5),
+         (now(), $5, 'kl_today', 20),
+         (now() - interval '10 minutes', $6, 'outlet_kl_today', 3),
+         (now(), $7, 'kl_today', 30),
+         (now(), $8, 'kl_today', 60)`,
+      [w, s, e, r, i, d, p, v],
+    );
+
+    /** A dashboard of `table` widgets, one per binding; `locationId` scopes it to one site. */
+    const mkDashboard = async (
+      tag: string,
+      locationId: string | null,
+      bindings: readonly { catalogKey: string; params: unknown }[],
+    ): Promise<{ dashboardId: string; sourceIds: string[] }> => {
+      const dash = await superuserPool.query<{ id: string }>(
+        `INSERT INTO bms.dashboards (organization_id, slug, name, location_id)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [orgId, `e43u9-${tag}-${RUN}`, `E4.3 U9 ${tag}`, locationId],
+      );
+      const dashboardId = dash.rows[0]?.id ?? "";
+      dashboardIds.push(dashboardId);
+      const sourceIds: string[] = [];
+      for (const [index, binding] of bindings.entries()) {
+        const widget = await superuserPool.query<{ id: string }>(
+          `INSERT INTO bms.dashboard_widgets
+             (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
+           VALUES ($1, $2, 'table', 0, $3, 6, 4) RETURNING id`,
+          [orgId, dashboardId, index * 4],
+        );
+        const source = await superuserPool.query<{ id: string }>(
+          `INSERT INTO bms.dashboard_widget_sources (organization_id, widget_id, catalog_key, params)
+           VALUES ($1, $2, $3, $4) RETURNING id`,
+          [orgId, widget.rows[0]?.id, binding.catalogKey, JSON.stringify(binding.params)],
+        );
+        sourceIds.push(source.rows[0]?.id ?? "");
+      }
+      return { dashboardId, sourceIds };
+    };
+    const today = { catalogKey: "water.balance", params: { period: "today" } };
+    const byLocation = {
+      catalogKey: "sustainability.by_location",
+      params: { pointKey: "kl_today", aggregate: "sum" },
+    };
+    const orgDash = await mkDashboard("balance", null, [
+      today,
+      { catalogKey: "water.balance", params: { period: "this_month" } },
+      byLocation,
+    ]);
+    const l6Dash = await mkDashboard("l6", l6.id, [today, byLocation]);
+
+    fixture = {
+      service,
+      orgId,
+      l1Code: l1.code,
+      l2Code: l2.code,
+      l3Code: l3.code,
+      l4Code: l4.code,
+      l5Code: l5.code,
+      l6Code: l6.code,
+      assetW: w,
+      fixtureAssets: [...assetIds],
+      dashboardId: orgDash.dashboardId,
+      todaySourceId: orgDash.sourceIds[0] ?? "",
+      thisMonthSourceId: orgDash.sourceIds[1] ?? "",
+      byLocationSourceId: orgDash.sourceIds[2] ?? "",
+      l6DashboardId: l6Dash.dashboardId,
+      l6TodaySourceId: l6Dash.sourceIds[0] ?? "",
+      l6ByLocationSourceId: l6Dash.sourceIds[1] ?? "",
+    };
+  }, 60_000);
+
+  afterAll(async () => {
+    // Guarded on truthiness: `beforeAll` can fail partway. Widgets and sources cascade with the
+    // dashboard; template points with the template. Assets go before the templates (FK).
+    const dashboards = dashboardIds.filter(Boolean);
+    if (dashboards.length > 0) {
+      await superuserPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [dashboards]);
+    }
+    const assets = assetIds.filter(Boolean);
+    if (assets.length > 0) {
+      await superuserPool.query(
+        `DELETE FROM telemetry.point_values
+          WHERE asset_id = ANY($1::uuid[]) AND time > now() - interval '1 hour'`,
+        [assets],
+      );
+      await superuserPool.query(`DELETE FROM bms.asset_points WHERE asset_id = ANY($1::uuid[])`, [assets]);
+      await superuserPool.query(`DELETE FROM bms.assets WHERE id = ANY($1::uuid[])`, [assets]);
+    }
+    const templates = templateIds.filter(Boolean);
+    if (templates.length > 0) {
+      await superuserPool.query(`DELETE FROM bms.asset_templates WHERE id = ANY($1::uuid[])`, [templates]);
+    }
+    const locs = locationIds.filter(Boolean);
+    if (locs.length > 0) {
+      await superuserPool.query(`DELETE FROM bms.locations WHERE id = ANY($1::uuid[])`, [locs]);
+    }
+    await Promise.all([superuserPool, fleetPool, tenantPool].filter(Boolean).map((p) => p.end()));
+  }, 60_000);
+
+  it("lists balance rows L1, L3, L4 — L2 (no role) and L5 (internal only) absent", async () => {
+    await balanceRowsAreL1L3L4(fixture);
+  });
+
+  it("still lists L1 to L5 in the by_location table on the same dashboard (the control)", async () => {
+    await byLocationBesideTheBalanceStillListsL2(fixture);
+  });
+
+  it("reads L1 intake as 50 (kl_today over the intake asset)", async () => {
+    await l1IntakeIsFifty(fixture);
+  });
+
+  it("reads L1 reuse as 11 (outlet_kl_today over the reuse asset)", async () => {
+    await l1ReuseIsEleven(fixture);
+  });
+
+  it("reads L1 discharge as 7 (the internal asset's 5 is no term)", async () => {
+    await l1DischargeIsSeven(fixture);
+  });
+
+  it("reads L1 consumed as 43: intake − discharge, reuse not added (ADR 0073 decision 3)", async () => {
+    await l1ConsumedIsFortyThree(fixture);
+  });
+
+  it("reads L1 coverage as \"3/3\": the internal asset is not counted (Q9)", async () => {
+    await l1CoverageIsThreeOfThree(fixture);
+  });
+
+  it("reads L3 consumed as null: its discharge asset is stale (Q8)", async () => {
+    await l3ConsumedIsNullWithAStaleDischarge(fixture);
+  });
+
+  it("reads L3 coverage as \"1/2\"", async () => {
+    await l3CoverageIsOneOfTwo(fixture);
+  });
+
+  it("keeps L1 as an all-null \"0/0\" row for a period no template point carries", async () => {
+    await thisMonthKeepsL1AsANullRow(fixture);
+  });
+
+  it("intersects the caller's scope: W alone gives L1 {50, null, null, 50, \"1/1\"}", async () => {
+    await callerScopeOfWAloneIsOneRow(fixture);
+  });
+
+  it("reads L4 as intake 30, consumed null: its discharge asset is on a pre-v5 template (F1)", async () => {
+    await l4ConsumedIsNullWithAPreV5Discharge(fixture);
+  });
+
+  it("reads L4 coverage as \"1/1\": the non-carrying discharge asset is no denominator", async () => {
+    await l4CoverageIsOneOfOne(fixture);
+  });
+
+  it("makes no row for L5, whose only asset is internal, beside the L1 row (F6)", async () => {
+    await internalOnlyL5IsNoRowBesideL1(fixture);
+  });
+
+  it("makes no row for L6 on its location dashboard: its one roled asset is inactive (F3)", async () => {
+    await inactiveRoledAssetAloneMakesNoRow(fixture);
+  });
+
+  it("lists L6 in by_location on the same L6 dashboard: the inactive asset IS in scope", async () => {
+    await l6ByLocationListsL6(fixture);
   });
 });

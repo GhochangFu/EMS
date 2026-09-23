@@ -79,6 +79,12 @@ const RO_POINTS: readonly PointRow[] = [
   ["kl_this_year", "derived", "KL"],
   ["water_cost_this_month", "derived", ""],
   ["water_cost_this_year", "derived", ""],
+  // `E4.3` PR 2 (U6), ADR 0073 decision 4 — the outlet volume codes, over the
+  // RO's own outlet (`permeate_flow_klh`); `reject_flow_klh` is not an outlet
+  // here (the RO is internal wherever its reject feeds the ETP).
+  ["outlet_kl_today", "derived", "KL"],
+  ["outlet_kl_this_month", "derived", "KL"],
+  ["outlet_kl_this_year", "derived", "KL"],
 ];
 
 /** §2's two expressible derived codes. Both keep the 300 s default. */
@@ -98,6 +104,10 @@ const RO_DERIVED: readonly DerivedRow[] = [
   ["kl_this_year", "sum({feed_flow_klh}, this_year)", null],
   ["water_cost_this_month", "sum({feed_flow_klh}, this_month) * $water_tariff_per_kl", null],
   ["water_cost_this_year", "sum({feed_flow_klh}, this_year) * $water_tariff_per_kl", null],
+  // E4.3 PR 2 (U6): three outlet rows over permeate_flow_klh
+  ["outlet_kl_today", "sum({permeate_flow_klh}, today)", null],
+  ["outlet_kl_this_month", "sum({permeate_flow_klh}, this_month)", null],
+  ["outlet_kl_this_year", "sum({permeate_flow_klh}, this_year)", null],
 ];
 
 /** §2's six alarm bullets, one row each — nothing splits on this entry. */
@@ -155,17 +165,17 @@ function assertRecoveryIsOneCodeTwoFormulas(): void {
  */
 function checkRo(): void {
   const entry = requireStockEntry(RO_CODE);
-  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water", 4);
+  assertEntryIdentity(RO_CODE, entry, "ro_skid", "water", 5);
 
-  // ---- 25 points, 10 core + 5 extended + 1 manual + 9 derived (3 E4.1c + 4 E4.2) -------------
+  // ---- 28 points, 10 core + 5 extended + 1 manual + 12 derived (3 E4.1c + 4 E4.2 + 3 E4.3) -------------
 
   assert(
     tierCount(entry, "core") === 10 &&
       tierCount(entry, "extended") === 5 &&
       tierCount(entry, "manual") === 1 &&
-      tierCount(entry, "derived") === 9,
+      tierCount(entry, "derived") === 12,
     `§2 marks 10 rows C, 5 X and 1 M, and two of its four §2 derived codes are authored, plus ` +
-      `E4.1c's three v3 rows and E4.2 PR 2's four more — 10/5/1/9. ` +
+      `E4.1c's three v3 rows, E4.2 PR 2's four more and E4.3 PR 2's three outlet rows — 10/5/1/12. ` +
       `Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
@@ -409,16 +419,20 @@ export function runWaterClassEntryTests3(): void {
 
 // ---- E4.1c — the bms-calc-v3 water rows (ADR 0070 decision 8, Q5) -------
 //
-// The same three codes on every water class, each over ITS inlet flow — one
-// code, one meaning ("KL of inlet water today"). Pinned through
-// `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// The same three codes on every water class, each over ITS inlet flow, plus
+// (since `E4.3` PR 2) three more over five of the six classes' OUTLET flow —
+// one code, one meaning per pair ("KL of inlet/outlet water today"). Pinned
+// through `sustainabilityClaims`, one `it()` per claim in the wrapper. The
+// softener is the exception: it carries no outlet rows (ADR 0073 decision 4,
+// owner ruling Q2), so `SOFTENER_E41C` below stays at seven.
 
 /**
- * water-ro over `{feed_flow_klh}`, §2's inlet — plan §3.7. Seven rows, not
- * three, since `E4.2` PR 2 — the same reason `water-classes.spec.ts`'s
- * `STP_E41C` gives: `sustainabilityClaims`'s `tail()` reads the entry's LAST
- * `rows.length` points, and the four calendar-window rows are appended right
- * after these three with nothing between.
+ * water-ro over `{feed_flow_klh}`, §2's inlet — plan §3.7. Ten rows, not
+ * three — the same reason `water-classes.spec.ts`'s `STP_E41C` gives:
+ * `sustainabilityClaims`'s `tail()` reads the entry's LAST `rows.length`
+ * points, and the four calendar-window rows plus the three outlet rows over
+ * `{permeate_flow_klh}` (ADR 0073 decision 4) are appended right after these
+ * three with nothing between.
  */
 const RO_E41C: readonly SustainabilityRow[] = [
   ["kl_today", "sum({feed_flow_klh}, today)", "KL"],
@@ -428,6 +442,13 @@ const RO_E41C: readonly SustainabilityRow[] = [
   ["kl_this_year", "sum({feed_flow_klh}, this_year)", "KL"],
   ["water_cost_this_month", "sum({feed_flow_klh}, this_month) * $water_tariff_per_kl", ""],
   ["water_cost_this_year", "sum({feed_flow_klh}, this_year) * $water_tariff_per_kl", ""],
+  // `E4.3` PR 2 (U6), ADR 0073 decision 4 — the outlet volume codes, over the
+  // RO's own outlet (`permeate_flow_klh`); `reject_flow_klh` is not an outlet
+  // here (ADR 0073 decision 4 — the RO is internal wherever its reject feeds
+  // the ETP, which counts it).
+  ["outlet_kl_today", "sum({permeate_flow_klh}, today)", "KL"],
+  ["outlet_kl_this_month", "sum({permeate_flow_klh}, this_month)", "KL"],
+  ["outlet_kl_this_year", "sum({permeate_flow_klh}, this_year)", "KL"],
 ];
 
 /** water-softener over `{inlet_flow_klh}`, §3's inlet — plan §3.7. Seven rows, the same reason as RO's above. */
@@ -444,7 +465,7 @@ const SOFTENER_E41C: readonly SustainabilityRow[] = [
 /** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
 export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
   ["water-softener", SOFTENER_E41C, 9, 4],
-  ["water-ro", RO_E41C, 18, 4],
+  ["water-ro", RO_E41C, 18, 5],
 ];
 
 export function e41cWaterClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {

@@ -354,8 +354,9 @@ export const dashboardWidgetPoints = bmsSchema.table(
  * in front of an operator, with a green console.
  *
  * **The vocabulary is frozen by `dashboard_widget_sources_catalog_key_check`** — created in
- * migration `0054` with Stage C's five keys and widened by `0079` (`E4.2`, ADR 0072) to the
- * seven `metricCatalogKeySchema` names today. Migrations are forward-only, so a further entry
+ * migration `0054` with Stage C's five keys, widened by `0079` (`E4.2`, ADR 0072) to seven, and
+ * widened again by `0081` (`E4.3`, ADR 0073) to the eight `metricCatalogKeySchema` names today.
+ * Migrations are forward-only, so a further entry
  * costs a code change *and* a migration — decision 1's rule with its real price, paid once
  * already. Anything expressible as a formula over points must be a derived point
  * (`assetPoints.kind`, ADR 0036/0037) instead.

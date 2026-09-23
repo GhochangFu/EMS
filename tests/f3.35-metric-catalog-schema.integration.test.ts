@@ -61,7 +61,8 @@ const has = connectionString !== undefined && connectionString !== "";
 
 /**
  * The keys `metricCatalogKeySchema` declares, restated rather than parsed. Five from Stage C
- * (migration `0054`) and two from `E4.2` (migration `0079` widens the CHECK).
+ * (migration `0054`), two from `E4.2` (migration `0079` widens the CHECK), and one from `E4.3`
+ * (migration `0081` widens it again).
  *
  * The sibling static test already gates CHECK-against-enum drift by parsing both; repeating
  * that parse here would make this file red for a reason it does not own. What this list is for
@@ -76,6 +77,7 @@ const CATALOG_KEYS = [
   "assets.health.score",
   "sustainability.total",
   "sustainability.by_location",
+  "water.balance",
 ] as const;
 
 type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;

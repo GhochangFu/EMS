@@ -103,6 +103,13 @@ export type SustainabilityElectricalPointKey = (typeof SUSTAINABILITY_ELECTRICAL
  * reads `$water_tariff_per_kl`; a tenant whose inlet is not purchased water
  * (an STP's sewage influent) leaves the parameter unset — a counted
  * `parameter_unset` — or deletes the row on the imported draft.
+ *
+ * **E4.3 PR 2 (U5) adds three outlet codes**: `outlet_kl_today`,
+ * `outlet_kl_this_month`, `outlet_kl_this_year` — ONE meaning across five of
+ * the six water classes ("KL leaving the class's outlet in the period", ADR
+ * 0073 decision 4). The softener carries none of the three: its outlet is a
+ * resetting totalizer, and the owner ruled (Q2) against giving it a
+ * mismatched formula.
  */
 export const SUSTAINABILITY_WATER_POINT_KEYS = [
   // water-stp, water-etp, water-cooling-tower, water-wtp, water-ro,
@@ -114,6 +121,10 @@ export const SUSTAINABILITY_WATER_POINT_KEYS = [
   "water_cost_this_year",
   // no stock formula (ADR 0072 decision 4) — an executive code
   "water_recycle_pct",
+  // water-wtp, water-ro, water-cooling-tower, water-stp, water-etp (each v5,
+  // E4.3 PR 2, U5) — three rows appended after each class's last point; the
+  // softener does not author these (ADR 0073 decision 4, owner ruling Q2)
+  "outlet_kl_today", "outlet_kl_this_month", "outlet_kl_this_year",
 ] as const;
 
 export type SustainabilityWaterPointKey = (typeof SUSTAINABILITY_WATER_POINT_KEYS)[number];

@@ -18,6 +18,11 @@ import {
   sustainabilityTotalRefusesALongPointKey,
   sustainabilityTotalRefusesAnExtraField,
   sustainabilityTotalRefusesMissingAggregate,
+  waterBalanceAcceptsToday,
+  waterBalanceRefusesAnInvalidPeriod,
+  waterBalanceRefusesEmptyParams,
+  waterBalanceRefusesAnExtraField,
+  waterBalanceRefusedOnAValueTile,
 } from "./dashboards.schema.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -100,5 +105,28 @@ describe("E4.3 — balanceRole on the sustainability entries' write-side params"
 
   it("refuses a 65-character balanceRole", () => {
     sustainabilityTotalRefusesALongBalanceRole();
+  });
+});
+
+/** `E4.3` / ADR 0073 decision 3 — `water.balance`'s write-side params. */
+describe("E4.3 — water.balance's write-side params", () => {
+  it("accepts a table binding water.balance { period: today }", () => {
+    waterBalanceAcceptsToday();
+  });
+
+  it("refuses an unknown period token at the field, prefixed by the entry key", () => {
+    waterBalanceRefusesAnInvalidPeriod();
+  });
+
+  it("refuses params: {} — period is required", () => {
+    waterBalanceRefusesEmptyParams();
+  });
+
+  it("refuses an undeclared field — the entry is strict", () => {
+    waterBalanceRefusesAnExtraField();
+  });
+
+  it("refuses water.balance on a value_tile with the shape message", () => {
+    waterBalanceRefusedOnAValueTile();
   });
 });

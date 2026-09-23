@@ -14,15 +14,16 @@ import {
   dashboardWidgetSourceDtoSchema,
   dashboardWidgetSpecSchema,
   metricCatalogKeySchema,
-  metricCatalogValueDtoSchema,
   pointAggregateFunctionSchema,
   radialGaugeConfigSchema,
   sustainabilityAggregateSchema,
   valueTileConfigSchema,
+  waterBalancePeriodSchema,
   widgetIconSchema,
   widgetPointRoleSchema,
   widgetTypeSchema,
 } from "./dashboard-builder";
+import { metricCatalogValueDtoSchema } from "./metric-catalog-values";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -857,10 +858,10 @@ export function bothEntriesDeclarePointKeyAndAggregate(): void {
     );
   }
   for (const key of metricCatalogKeySchema.options) {
-    if (key.startsWith("sustainability.")) continue;
+    if (key.startsWith("sustainability.") || key === "water.balance") continue;
     assert(
       METRIC_CATALOG[key].params === undefined,
-      `${key} declares params; only the sustainability entries take fields (ADR 0072)`,
+      `${key} declares params; only the sustainability entries and water.balance take fields`,
     );
   }
 }
@@ -870,5 +871,42 @@ export function aggregateVocabularyIsSumAndAvg(): void {
   assert(
     JSON.stringify(sustainabilityAggregateSchema.options) === JSON.stringify(["sum", "avg"]),
     `sustainabilityAggregateSchema is ["sum","avg"], got ${JSON.stringify(sustainabilityAggregateSchema.options)}`,
+  );
+}
+
+/**
+ * `E4.3` / ADR 0073 decision 3 — `water.balance` is a dataset with exactly the seven columns
+ * ADR 0073 names, in order, and takes one param, `period`.
+ */
+export function waterBalanceDeclaresSevenColumnsAndPeriodParam(): void {
+  const entry = METRIC_CATALOG["water.balance"];
+  if (entry.shape !== "dataset") {
+    throw new Error("water.balance must be a dataset");
+  }
+  const expectedColumns = [
+    "locationCode",
+    "locationName",
+    "intake",
+    "reuse",
+    "discharge",
+    "consumed",
+    "coverage",
+  ];
+  assert(
+    JSON.stringify(entry.columns) === JSON.stringify(expectedColumns),
+    `water.balance columns must be ${JSON.stringify(expectedColumns)}, got ${JSON.stringify(entry.columns)}`,
+  );
+  assert(
+    JSON.stringify(entry.params) === JSON.stringify(["period"]),
+    `water.balance must declare params ["period"], got ${JSON.stringify(entry.params)}`,
+  );
+}
+
+/** `waterBalancePeriodSchema` is closed to the three tokens ADR 0073 decision 3 names. */
+export function waterBalancePeriodVocabularyIsThreeTokens(): void {
+  assert(
+    JSON.stringify(waterBalancePeriodSchema.options) ===
+      JSON.stringify(["today", "this_month", "this_year"]),
+    `waterBalancePeriodSchema is ["today","this_month","this_year"], got ${JSON.stringify(waterBalancePeriodSchema.options)}`,
   );
 }

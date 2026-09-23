@@ -18,6 +18,7 @@ import {
   type MetricCatalogKey,
   type MetricCatalogValueDto,
   type SustainabilityAggregate,
+  type WaterBalancePeriod,
 } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
@@ -30,28 +31,33 @@ import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
 import {
   capRows,
   isMoneyPointKey,
+  readBalanceLocations,
   readOrganizationCurrency,
   readPointKeyUnit,
   readRollupRows,
   rollup,
   rollupCurrency,
+  type RollupRow,
 } from "./sustainability-rollup";
+import { waterBalanceRow } from "./water-balance";
 
 /**
  * What a resolver may reach for beyond the transaction.
  *
- * Passed explicitly rather than bound as `this`. Six of the seven entries need nothing here, and
- * a `this`-bound map would have to be cast to reach the service's injected dependency — a cast
+ * Passed explicitly rather than bound as `this`. Seven of the eight entries need nothing here,
+ * and a `this`-bound map would have to be cast to reach the service's injected dependency — a cast
  * on the one path that calls another module's service.
  */
 type ResolverDeps = { readonly health: AssetHealthService };
 
 /**
- * How the catalog's entries resolve: four are SQL here, one delegates, two roll up a point key.
+ * How the catalog's entries resolve: four are SQL here, one delegates, two roll up a point key,
+ * and one (`water.balance`, `E4.3`) folds three role-filtered roll-ups into a row per site.
  *
  * `params` is the binding's stored `params` AFTER `METRIC_CATALOG_PARAMS_WRITE[key]` has
  * parsed it (`E4.2`): `{}` for the five Stage C entries, `{ pointKey, aggregate }` and an
- * optional `balanceRole` (`E4.3`) for the two sustainability entries. Positional and required
+ * optional `balanceRole` (`E4.3`) for the two sustainability entries, and `{ period }` for
+ * `water.balance`. Positional and required
  * rather than optional, so a resolver that reads a field cannot compile against a call that
  * never passes one.
  */
@@ -72,11 +78,15 @@ type SustainabilityParams = {
   readonly balanceRole?: string;
 };
 
+/** `E4.3` — the parsed shape of a `water.balance` binding's params. */
+type WaterBalanceParams = { readonly period: WaterBalancePeriod };
+
 /**
  * `F3.35` Stage C — resolving a dashboard's named catalog bindings (ADR 0048 decisions 1 and 2).
  *
- * **Six entries are SQL written here (four Stage C reads and the two `E4.2` roll-ups, whose
- * statements live in `sustainability-rollup.ts`); one is a service call, and the asymmetry is
+ * **Seven entries are SQL written here (four Stage C reads, the two `E4.2` roll-ups and the
+ * `E4.3` water balance, whose statements live in `sustainability-rollup.ts`); one is a service
+ * call, and the asymmetry is
  * deliberate.**
  * `assets.health.score` delegates to `AssetHealthService.summary(...).score` — `E1.3` and ADR
  * 0050 own the roll-up, its windowing, its band model and the `bms.automation_rules`-derived
@@ -98,11 +108,12 @@ type SustainabilityParams = {
  * narrowings are computed into one `assetIds` list before any entry runs, so no entry can forget
  * one of them.
  *
- * **`params` is read by two entries, and only through the write schema.** The five Stage C
+ * **`params` is read by three entries, and only through the write schema.** The five Stage C
  * entries declare no fields, so there is no parameter for them to read — a dataset's row cap
  * comes from `MAX_DATASET_ROWS`, not from a request. The two `sustainability.*` entries
  * (`E4.2`, ADR 0072 decision 2) take `{ pointKey, aggregate }` and, since `E4.3` (ADR 0073
- * decision 2), an optional `balanceRole` that narrows the carrying set: the stored row is re-parsed
+ * decision 2), an optional `balanceRole` that narrows the carrying set; `water.balance` (`E4.3`,
+ * ADR 0073 decision 3) takes `{ period }`. The stored row is re-parsed
  * through `METRIC_CATALOG_PARAMS_WRITE` before a resolver sees it, and a row that fails to
  * parse is SKIPPED with one warning naming the field path (§4.3) — never thrown, because one
  * bad binding must not take the whole dashboard's values down. A filter is always a field on
@@ -639,5 +650,51 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
       };
     });
     return datasetValue("sustainability.by_location", rows, capped.truncated);
+  },
+
+  /**
+   * `E4.3` / ADR 0073 decision 3 — one row per site: intake, reuse, discharge, consumed-or-lost
+   * and coverage for one `period`. The rules of the row live in `water-balance.ts`
+   * (`waterBalanceRow`); this reads what it folds.
+   *
+   * **The point keys are derived from `period` here and nowhere else**: intake is
+   * `kl_<period>` over the `intake` assets, reuse and discharge are `outlet_kl_<period>` over
+   * the `reuse` and `discharge` assets. `internal` assets are read by no column. A tenant whose
+   * water templates predate v5 carries no `outlet_kl_*` row, so reuse and discharge read `0/0`
+   * until the templates are re-imported (ADR 0073 decision 2's re-import rule) — and a site
+   * with such a discharge asset reads `consumed` as `null`, never `intake − 0`, because
+   * `readBalanceLocations` counts the discharge assets that cannot report (PR 2 review).
+   *
+   * Four to seven statements per resolve: the location read, then three `readRollupRows`
+   * calls of one statement each, or two when anything carries. An empty scope returns the empty
+   * dataset before any SQL.
+   */
+  "water.balance": async (tx, organizationId, scope, _deps, params) => {
+    if (scopeIsEmpty(scope)) return datasetValue("water.balance", [], false);
+    const { period } = params as WaterBalanceParams;
+    const locationsInScope = await readBalanceLocations(tx, organizationId, scope);
+    const intake = await readRollupRows(tx, organizationId, scope, `kl_${period}`, "intake");
+    const reuse = await readRollupRows(tx, organizationId, scope, `outlet_kl_${period}`, "reuse");
+    const discharge = await readRollupRows(
+      tx,
+      organizationId,
+      scope,
+      `outlet_kl_${period}`,
+      "discharge",
+    );
+    const capped = capRows(locationsInScope);
+    const at = (rows: readonly RollupRow[], locationId: string) =>
+      rows.filter((row) => row.locationId === locationId);
+    const rows = capped.rows.map((location) => ({
+      locationCode: location.code,
+      locationName: location.name,
+      ...waterBalanceRow({
+        intake: at(intake, location.id),
+        reuse: at(reuse, location.id),
+        discharge: at(discharge, location.id),
+        dischargeAssets: location.dischargeAssets,
+      }),
+    }));
+    return datasetValue("water.balance", rows, capped.truncated);
   },
 };

@@ -44,9 +44,14 @@ const noDeps = { health: new AssetHealthService(refusingDb()) } as Parameters<
   (typeof RESOLVERS)["sustainability.total"]
 >[3];
 
-/** What each entry's parsed params look like — `{}` for the Stage C five, the pair for the two. */
+/** What each entry's parsed params look like — `{}` for the Stage C five, the pair for the two
+ * roll-ups, `{ period }` for `water.balance` (`E4.3`). */
 const paramsFor = (key: string): unknown =>
-  key.startsWith("sustainability.") ? { pointKey: "kl_today", aggregate: "sum" } : {};
+  key.startsWith("sustainability.")
+    ? { pointKey: "kl_today", aggregate: "sum" }
+    : key === "water.balance"
+      ? { period: "today" }
+      : {};
 
 /**
  * The sentence over `RESOLVERS` generalises over EVERY entry, so the gate enumerates them:
@@ -56,7 +61,7 @@ const paramsFor = (key: string): unknown =>
  */
 export async function everyEntryOnAnEmptyScopeBuildsNoSql(): Promise<void> {
   const keys = Object.keys(METRIC_CATALOG) as (keyof typeof RESOLVERS)[];
-  assert(keys.length >= 7, `expected the seven catalog entries, saw ${keys.length}`);
+  assert(keys.length >= 8, `expected the eight catalog entries, saw ${keys.length}`);
   const failures: string[] = [];
   for (const key of keys) {
     try {
@@ -104,5 +109,18 @@ export async function byLocationOnAnEmptyScopeBuildsNoSql(): Promise<void> {
     { shape: resolved.shape, rows: resolved.shape === "dataset" ? resolved.rows : undefined },
     { shape: "dataset", rows: [] },
     "sustainability.by_location over []",
+  );
+}
+
+/** `E4.3` U9 — `water.balance` on an empty scope is an empty dataset of its seven columns
+ * before any SQL: the location read and the three roll-up reads are all skipped. */
+export async function waterBalanceOnAnEmptyScopeBuildsNoSql(): Promise<void> {
+  const resolved = await RESOLVERS["water.balance"](refusingTx(), "org", [], noDeps, {
+    period: "today",
+  });
+  same(
+    resolved.shape === "dataset" ? { columns: resolved.columns.length, rows: resolved.rows } : resolved,
+    { columns: 7, rows: [] },
+    "water.balance over []",
   );
 }

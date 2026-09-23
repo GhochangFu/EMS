@@ -12,6 +12,8 @@ import {
   theBenchmarkCoverageCellRendersTheRatio,
   theBenchmarkNullValueRendersTheEmDash,
   theBenchmarkTableReadsItsFourLabels,
+  theWaterBalanceNullConsumedCellRendersTheEmDash,
+  theWaterBalanceTableReadsItsSevenLabels,
 } from "./table-widget.spec";
 
 /** `F3.35` Stage B — Vitest wrapper for the table renderer (ADR 0014). */
@@ -60,5 +62,19 @@ describe("E4.2 — the sustainability benchmark table", () => {
 
   it("renders the em dash for a site with no value, beside one that has one", () => {
     theBenchmarkNullValueRendersTheEmDash();
+  });
+});
+
+describe("E4.3 — the water balance by site table", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("reads Site ID · Site · Intake (KL) · Reuse (KL) · Discharge (KL) · Consumed or lost (KL) · Coverage", () => {
+    theWaterBalanceTableReadsItsSevenLabels();
+  });
+
+  it("renders the em dash for a stale-discharge site's consumed cell, beside a populated sibling", () => {
+    theWaterBalanceNullConsumedCellRendersTheEmDash();
   });
 });

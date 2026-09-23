@@ -134,8 +134,12 @@ export function assertAerationTileRowWasWritten(
   ).toEqual([fixtureAssetId]);
 }
 
-/** `sustainability-overview`'s widget count, counted from the catalog entry (6 + 6 + 5 + 1). */
-export const SUSTAINABILITY_WIDGET_COUNT = 18;
+/**
+ * `sustainability-overview`'s widget count, counted from the catalog entry
+ * (6 + 6 + 5 + 2). **19 since `E4.3` PR 2 (U10)** — the stock template gained
+ * `water-balance-by-site-table` alongside the existing benchmark table.
+ */
+export const SUSTAINABILITY_WIDGET_COUNT = 19;
 
 /**
  * `E4.2` U3 — the shipped `sustainability-overview` content SURVIVED
@@ -182,7 +186,7 @@ export function assertSustainabilityInstantiatedOrganizationWide(
 }
 
 /**
- * Every one of the eighteen widgets is reported, and every one of them is
+ * Every one of the nineteen widgets is reported, and every one of them is
  * `bound`.
  *
  * A widget with no bindings is `bound` by construction, so this is the shape

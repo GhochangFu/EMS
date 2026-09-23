@@ -31,6 +31,7 @@ export * from "./envelopes";
 export * from "./escalation";
 export * from "./health";
 export * from "./mapping-sheet";
+export * from "./metric-catalog-values";
 export type * from "./schema-types";
 export * from "./notifications";
 export * from "./onboarding";

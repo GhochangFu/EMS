@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  hidesADatasetEntryThatDeclaresParams,
   hidesAMetricEntryThatDeclaresParams,
   keepsABoundEntryVisibleAndDisabled,
   labelsEveryOptionFromThePresentationMap,
@@ -26,6 +27,10 @@ describe("F3.35 Stage C — the named-metric picker", () => {
 
   it("hides a metric entry that declares params, which the picker cannot fill (E4.2)", () => {
     hidesAMetricEntryThatDeclaresParams();
+  });
+
+  it("hides a dataset entry that declares params too (E4.3, water.balance)", () => {
+    hidesADatasetEntryThatDeclaresParams();
   });
 
   it("labels every option from the presentation map rather than showing the key", () => {
