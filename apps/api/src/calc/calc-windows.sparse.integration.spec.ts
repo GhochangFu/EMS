@@ -52,7 +52,9 @@ import { CalcWindowsService, windowRequestKey, type WindowReadRequest, type Wind
  *
  * `cleanup` deletes the rows by asset id, deletes the asset and re-covers
  * both ranges (the `0027` standing obligation), so no materialized bucket
- * outlives the run.
+ * outlives the run. The ranges come from `sparseAnchors`, which the wrapper
+ * computes before the seed — a seed that throws after its insert still
+ * leaves `cleanup` both ranges to re-cover.
  */
 
 export const TEST_CODE = `E44-SPARSE-${randomUUID().replace(/-/g, "").slice(0, 10).toUpperCase()}`;
@@ -72,13 +74,30 @@ const WINDOW_DAYS = 10;
 const COVERED_DAYS = 7;
 const WINDOW_MINUTES = WINDOW_DAYS * 1440;
 
-export type SparseFixture = {
-  readonly assetId: string;
+/** The fixture's instants, computed BEFORE the seed so that `cleanup` can
+ * re-cover both ranges even when the seed throws after its asset insert
+ * (code review finding 5): the wrapper holds these from the start, not the
+ * seed's return value. */
+export type SparseAnchors = {
+  /** The clock reading every range below is derived from. */
+  readonly nowMs: number;
   /** `floor_1d(now) − 60 d`, epoch ms: the month's start. */
   readonly sMs: number;
   /** `floor_1h(now) − 3 h`, epoch ms: the hour-floor cases' anchor. */
   readonly hMs: number;
 };
+
+export type SparseFixture = SparseAnchors & {
+  readonly assetId: string;
+};
+
+export function sparseAnchors(nowMs: number): SparseAnchors {
+  return {
+    nowMs,
+    sMs: Math.floor(nowMs / DAY_MS) * DAY_MS - 60 * DAY_MS,
+    hMs: Math.floor(nowMs / HOUR_MS) * HOUR_MS - 3 * HOUR_MS,
+  };
+}
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -86,26 +105,24 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-export async function cleanup(pool: pg.Pool, fixture?: SparseFixture): Promise<void> {
+export async function cleanup(pool: pg.Pool, anchors?: SparseAnchors): Promise<void> {
   const { rows } = await pool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE code LIKE $1`, [`${TEST_CODE}%`]);
   const ids = rows.map((row) => row.id);
   if (ids.length > 0) {
     await pool.query(`DELETE FROM telemetry.point_values WHERE asset_id = ANY($1::uuid[])`, [ids]);
   }
   await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${TEST_CODE}%`]);
-  if (fixture) {
+  if (anchors) {
     // the `0027` standing obligation: the deleted rows' buckets are re-covered
     // so the materialized views forget them too
-    await materializeCompleteBuckets(pool, fixture.sMs, fixture.sMs + WINDOW_DAYS * DAY_MS, Date.now());
-    await materializeCompleteBuckets(pool, fixture.hMs - HOUR_MS, fixture.hMs + 2 * HOUR_MS, Date.now());
+    await materializeCompleteBuckets(pool, anchors.sMs, anchors.sMs + WINDOW_DAYS * DAY_MS, Date.now());
+    await materializeCompleteBuckets(pool, anchors.hMs - HOUR_MS, anchors.hMs + 2 * HOUR_MS, Date.now());
   }
 }
 
-export async function seedSparseFixture(pool: pg.Pool, fx: Fixtures): Promise<SparseFixture> {
+export async function seedSparseFixture(pool: pg.Pool, fx: Fixtures, anchors: SparseAnchors): Promise<SparseFixture> {
   const db = createDb(pool);
-  const nowMs = Date.now();
-  const sMs = Math.floor(nowMs / DAY_MS) * DAY_MS - 60 * DAY_MS;
-  const hMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS - 3 * HOUR_MS;
+  const { nowMs, sMs, hMs } = anchors;
 
   const { rows: foreign } = await pool.query<{ organization_id: string }>(`SELECT organization_id FROM bms.locations WHERE id = $1`, [
     fx.foreignLocationId,
@@ -158,7 +175,7 @@ export async function seedSparseFixture(pool: pg.Pool, fx: Fixtures): Promise<Sp
   await materializeCompleteBuckets(pool, sMs, sMs + WINDOW_DAYS * DAY_MS, nowMs);
   await materializeCompleteBuckets(pool, hMs - HOUR_MS, hMs + 2 * HOUR_MS, nowMs);
 
-  return { assetId, sMs, hMs };
+  return { ...anchors, assetId };
 }
 
 // ---- helpers (copied from calc-windows.integration.spec.ts; see the file docblock) ----

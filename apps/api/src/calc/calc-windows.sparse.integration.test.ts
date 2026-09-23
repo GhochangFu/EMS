@@ -24,6 +24,8 @@ import {
   assertTheSparseBatchRunsTwoStatements,
   cleanup,
   seedSparseFixture,
+  sparseAnchors,
+  type SparseAnchors,
   type SparseFixture,
 } from "./calc-windows.sparse.integration.spec";
 
@@ -45,18 +47,22 @@ const connectionString = requireIntegrationDb({
 describe.skipIf(!connectionString)("E4.4 — a window sum refuses window_sparse below 90% coverage", () => {
   let pool: pg.Pool | undefined;
   let fixture: SparseFixture;
+  // computed before the seed, so `afterAll` re-covers both ranges even when
+  // the seed throws after its asset insert and `fixture` stays unset
+  let anchors: SparseAnchors | undefined;
 
   beforeAll(async () => {
     const created = await openIntegrationPool(connectionString as string, "E4.4");
     pool = created;
     const fx = await loadFixtures(created);
     await cleanup(created);
-    fixture = await seedSparseFixture(created, fx);
+    anchors = sparseAnchors(Date.now());
+    fixture = await seedSparseFixture(created, fx, anchors);
   }, 300_000);
 
   afterAll(async () => {
     if (pool) {
-      await cleanup(pool, fixture);
+      await cleanup(pool, anchors);
       await pool.end();
     }
   }, 300_000);
