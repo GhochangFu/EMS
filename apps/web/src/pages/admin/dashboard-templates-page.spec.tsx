@@ -72,6 +72,7 @@ const VOCABULARIES = {
   alarmSeverities: [],
   alarmSkills: [],
   assetRoles: [],
+  waterBalanceRoles: [],
   dashboardSections: [
     { code: "f336-spec-section", label: "Spec Section", description: null, sortOrder: 10, active: true },
   ],
