@@ -22,6 +22,9 @@ import {
   changeFromStoredLiveRoleToInactiveRoleIs400,
   resaveOfStoredRetiredBalanceRoleStores,
   resaveOfStoredRetiredPointKeyStores,
+  retiredPointKeyStoredOnlyAsARoleIs400,
+  retiredPointKeyStoredOnlyElsewhereIs400,
+  retiredRoleStoredOnlyElsewhereIs400,
   tileBinding,
   draftWithUnknownBalanceRoleRefusesToPublish,
   inactiveBalanceRoleIs400,
@@ -301,5 +304,18 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
       liveDashboardId,
       INACTIVE_ROLE,
     );
+  });
+
+  it("refuses a retired balanceRole that only another dashboard stores (F1 control)", async () => {
+    await retiredRoleStoredOnlyElsewhereIs400(makeServices().dashboards, actor, liveDashboardId, RETIRED_ROLE);
+  });
+
+  it("refuses a retired pointKey that only another dashboard stores (F1 control)", async () => {
+    await retiredPointKeyStoredOnlyElsewhereIs400(makeServices().dashboards, actor, liveDashboardId, RETIRED_KEY);
+  });
+
+  it("refuses a retired pointKey this dashboard stores only as a balanceRole (F1 control)", async () => {
+    // RETIRED_KEY and RETIRED_ROLE are the same string; roleDashboardId stores it as a role only.
+    await retiredPointKeyStoredOnlyAsARoleIs400(makeServices().dashboards, actor, roleDashboardId, RETIRED_KEY);
   });
 });

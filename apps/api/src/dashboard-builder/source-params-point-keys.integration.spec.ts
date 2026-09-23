@@ -217,3 +217,46 @@ export async function changeFromStoredLiveRoleToInactiveRoleIs400(
   );
   expect(err.message).toBe(`Not a live water balance role: ${inactiveRole}`);
 }
+
+// ---------------------------------------------------------------------------
+// Review F1 — the stored set is THIS dashboard's, and per field. A retired value another
+// dashboard stores, or the same string stored under the other field, is still checked.
+// ---------------------------------------------------------------------------
+
+/** A retired role stored only by ANOTHER dashboard is a 400 here. */
+export async function retiredRoleStoredOnlyElsewhereIs400(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+  retiredRole: string,
+): Promise<void> {
+  const err = await refusal(() =>
+    service.putWidgets(actor, dashboardId, tileBinding("kl_today", retiredRole)),
+  );
+  expect(err.message).toBe(`Not a live water balance role: ${retiredRole}`);
+}
+
+/** A retired point key stored only by ANOTHER dashboard is a 400 here. */
+export async function retiredPointKeyStoredOnlyElsewhereIs400(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+  retiredKey: string,
+): Promise<void> {
+  const err = await refusal(() => service.putWidgets(actor, dashboardId, tileBinding(retiredKey)));
+  expect(err.message).toBe(`Not in the active point-key catalog: ${retiredKey}`);
+}
+
+/**
+ * A retired point key whose string this dashboard stores only as a `balanceRole` is a 400: the
+ * two stored sets are per field, never merged.
+ */
+export async function retiredPointKeyStoredOnlyAsARoleIs400(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+  retiredKey: string,
+): Promise<void> {
+  const err = await refusal(() => service.putWidgets(actor, dashboardId, tileBinding(retiredKey)));
+  expect(err.message).toBe(`Not in the active point-key catalog: ${retiredKey}`);
+}
