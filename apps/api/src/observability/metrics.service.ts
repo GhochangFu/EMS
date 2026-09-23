@@ -41,7 +41,14 @@ import type { CalcSkipReason } from "../calc/calc-definition";
  * not know — the operator sets it on the location form; never a guessed
  * zone) and `windows_unresolved` (the batched read of the aggregates failed,
  * so every formula holding a window read is refused this sweep — the mirror
- * of `parameters_unresolved`, plan ruling Q8). */
+ * of `parameters_unresolved`, plan ruling Q8).
+ *
+ * The last is `E4.4`'s (ADR 0070 Amendment 3): `window_sparse` (a window
+ * `sum` whose covered time is below 90% of its elapsed window — the mean of
+ * the samples that arrived would be extrapolated across the gap). The host
+ * treats it exactly as `window_empty`: the formula writes nothing, this
+ * counter counts it and `CalcStatusRegistry` records it; `window_empty` keeps
+ * precedence. */
 export type CalcRuntimeSkipReason =
   | CalcSkipReason
   | "missing_input"
@@ -56,7 +63,8 @@ export type CalcRuntimeSkipReason =
   | "parameters_unresolved"
   | "window_empty"
   | "timezone_unset"
-  | "windows_unresolved";
+  | "windows_unresolved"
+  | "window_sparse";
 
 @Injectable()
 export class MetricsService {

@@ -7,6 +7,7 @@ import {
   noWindowReadsMakesNoCall,
   parameterUnsetStillBatchesWindows,
   requestsAreTheDistinctSetOfDueDefinitions,
+  sparseWindowRefusesWithoutARow,
   staleInputWinsOverEmptyWindow,
   subMinuteIntervalEndsOnTheMinute,
   unsetZoneRefusesWithoutARow,
@@ -23,6 +24,10 @@ describe("window reads in the scheduled sweep (ADR 0070 decision 5, E4.1b)", () 
 
   it("H2 the owed guard: window_empty → exactly one skip and no row; the v1 sibling still writes", async () => {
     await emptyWindowRefusesWithoutARow();
+  });
+
+  it("H11 window_sparse (E4.4) → exactly one skip and no row, as window_empty; the v1 sibling still writes", async () => {
+    await sparseWindowRefusesWithoutARow();
   });
 
   it("H3 timezone_unset → exactly one skip and no row", async () => {
