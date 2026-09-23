@@ -323,7 +323,8 @@ export class DashboardTemplatesService {
         // any non-empty `params` on them, exactly as `PUT /dashboards/:id/widgets`
         // does; the two sustainability entries require `{ pointKey, aggregate }`
         // (`E4.2`, ADR 0072 decision 2) and accept an optional `balanceRole`
-        // (`E4.3`, ADR 0073 decision 2), and nothing else. The risk it
+        // (`E4.3`, ADR 0073 decision 2), and nothing else; `water.balance`
+        // requires `{ period }` (`E4.3`, ADR 0073 decision 3). The risk it
         // closes is not hypothetical in shape: an author could otherwise persist
         // `{"locationId": "<foreign uuid>"}` into `dashboard_widget_sources.params`,
         // which `dashboards.schema.ts` calls "an id inside jsonb that no foreign
