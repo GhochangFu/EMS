@@ -37,6 +37,8 @@ export async function createAdminAsset(input: {
   // ADR 0018: optional — null means the asset has no gateway.
   rtuId?: string | null;
   domain: string;
+  // ADR 0073 decision 1: a `bms.water_balance_roles` code, or null for "not in the balance".
+  waterBalanceRole?: string | null;
 }): Promise<AdminAssetDto> {
   return adminFetch("/admin/assets", adminAssetDtoSchema, {
     method: "POST",
@@ -55,6 +57,8 @@ export async function updateAdminAsset(
     // ADR 0018: optional — null means the asset has no gateway.
   rtuId?: string | null;
     domain: string;
+    // ADR 0073 decision 1: omitted leaves the stored role alone; null clears it.
+    waterBalanceRole: string | null;
   }>,
 ): Promise<AdminAssetDto> {
   return adminFetch(`/admin/assets/${id}`, adminAssetDtoSchema, {

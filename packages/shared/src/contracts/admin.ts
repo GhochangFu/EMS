@@ -81,6 +81,7 @@ export const adminAssetDtoSchema = z.object({
   rtuId: z.string().nullable(),
   rtuDisplayName: z.string().nullable(),
   domain: z.string(),
+  waterBalanceRole: z.string().nullable(), // ADR 0073 d1: bms.water_balance_roles; null = none
   active: z.boolean(),
   // `F2.6` (ADR 0039 decision 8): which template *version* this asset is pinned
   // to. Added because the Versions view is defined as "listing which assets sit

@@ -53,6 +53,8 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
     // exists. The value is replaced by `defaultDomainCode` in the "Add asset"
     // handler below, which is what actually opens the form.
     domain: "electrical",
+    // ADR 0073 decision 1 (E4.3): "" is "not in the balance" and is sent as `null`.
+    waterBalanceRole: "",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +67,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
     staleTime: 5 * 60 * 1000,
   });
   const assetDomains = vocabQ.data?.assetDomains ?? [];
+  const waterBalanceRoles = vocabQ.data?.waterBalanceRoles ?? [];
 
   const locationSummaryQ = useQuery({
     queryKey: ["admin", "location-summary", locationId],
@@ -133,7 +136,13 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
     mutationFn: async () => {
       // ADR 0018: an empty select means "no gateway", not an empty uuid. The
       // API validates rtuId as `uuid().nullish()`, so "" is a 400.
-      const payload = { ...form, rtuId: form.rtuId || null };
+      // ADR 0073 decision 1: the empty option is "not in the balance", which the API spells
+      // `null` — the same translation as the gateway, and on update it clears a stored role.
+      const payload = {
+        ...form,
+        rtuId: form.rtuId || null,
+        waterBalanceRole: form.waterBalanceRole || null,
+      };
       if (editing) {
         return updateAdminAsset(editing.id, payload);
       }
@@ -175,6 +184,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                 locationId: locationId ?? selection.locationId ?? "",
                 rtuId: rtuId ?? selection.rtuId ?? "",
                 domain: defaultDomainCode(vocabQ.data?.assetDomains),
+                waterBalanceRole: "",
               });
               setModalOpen(true);
             }}
@@ -207,6 +217,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
               <th className="px-2 py-2">Location</th>
               <th className="px-2 py-2">RTU</th>
               <th className="px-2 py-2">Domain</th>
+              <th className="px-2 py-2">Water balance</th>
               <th className="px-2 py-2">Status</th>
               <th className="px-2 py-2">Actions</th>
             </tr>
@@ -223,6 +234,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                 <td className="px-2 py-2">{item.locationName}</td>
                 <td className="px-2 py-2">{item.rtuDisplayName}</td>
                 <td className="px-2 py-2">{item.domain}</td>
+                <td className="px-2 py-2">{item.waterBalanceRole ?? "—"}</td>
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}
@@ -245,6 +257,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                           // means "no gateway", not "not yet loaded".
                           rtuId: item.rtuId ?? "",
                           domain: item.domain,
+                          waterBalanceRole: item.waterBalanceRole ?? "",
                         });
                         setModalOpen(true);
                       }}
@@ -378,6 +391,29 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                   {assetDomains.map((domain) => (
                     <option key={domain.code} value={domain.code}>
                       {domain.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+                Water balance role
+                {/*
+                  ADR 0073 decision 1 (E4.3): the asset's place in its site's
+                  water balance. Options come from `bms.water_balance_roles`
+                  through the vocabulary fetch, never spelled here (the F4.43
+                  rule `tests/e4.3-water-balance-roles-schema.test.ts` gates):
+                  the only literal is the empty "not in the balance" option,
+                  which the save handler sends as null.
+                */}
+                <select
+                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  value={form.waterBalanceRole}
+                  onChange={(event) => setForm({ ...form, waterBalanceRole: event.target.value })}
+                >
+                  <option value="">Not in the balance</option>
+                  {waterBalanceRoles.map((role) => (
+                    <option key={role.code} value={role.code}>
+                      {role.label}
                     </option>
                   ))}
                 </select>

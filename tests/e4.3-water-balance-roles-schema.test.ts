@@ -134,4 +134,30 @@ describe("E4.3 water balance role vocabulary (ADR 0073 decision 1)", () => {
     expect(schema).toContain('bmsSchema.table("water_balance_roles"');
     expect(schema).toContain("references(() => waterBalanceRoles.code)");
   });
+
+  /**
+   * `E4.3` U3 — the `F4.43` guard in its source form, as `tests/f3.37-asset-role-vocabulary.test.ts`
+   * holds it for the role picker. A `<select>` whose value matches no option renders its FIRST
+   * option, so a hardcoded list falling behind `bms.water_balance_roles` does not look broken —
+   * it looks like a different role. `assets-page.spec.tsx` asserts the rendered options come from
+   * a stub; this asserts the source never grew a literal.
+   */
+  it("builds the asset form's water balance select from the vocabulary, not from literal options", () => {
+    const page = read("apps/web/src/pages/admin/assets-page.tsx");
+
+    // Anti-vacuity: the select exists and is fed by the vocabulary fetch, so deleting it cannot
+    // turn the absence check below green.
+    expect(page).toContain("Water balance role");
+    expect(page).toContain("vocabQ.data?.waterBalanceRoles");
+
+    // The only literal <option> values permitted anywhere on the page are empty ones ("Not in
+    // the balance", "Select location", "No gateway"); every code arrives through a `{…}`.
+    const literalOptions = [...page.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1]);
+    expect(
+      literalOptions.filter((value) => value !== ""),
+      "assets-page.tsx spells a code into an <option>. The balance roles live in " +
+        "bms.water_balance_roles and arrive through GET /api/v1/vocabularies; a hardcoded list " +
+        "that falls behind renders the FIRST option for an unknown value. That is F4.43.",
+    ).toEqual([]);
+  });
 });
