@@ -22,6 +22,7 @@ import {
   assertTheHourFloorClipsTheHead,
   assertTheHourFloorClipsTheTail,
   assertTheSparseBatchRunsTwoStatements,
+  assertThreeCoveredHoursOn1hAnswers,
   cleanup,
   seedSparseFixture,
   sparseAnchors,
@@ -115,5 +116,10 @@ describe.skipIf(!connectionString)("E4.4 — a window sum refuses window_sparse 
   it("S5c — both hours covered → the window answers", async () => {
     if (!pool) throw new Error("pool required");
     await assertBothHoursCoveredAnswers(pool, fixture);
+  });
+
+  it("S6 — three covered hours of three, served from 1h alone, answer: the 1h coverage unit is an hour", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertThreeCoveredHoursOn1hAnswers(pool, fixture);
   });
 });

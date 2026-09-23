@@ -336,6 +336,8 @@ export class CalcWindowsService {
     // Nor can a case redden the 1d unit alone: every 1d bucket starts at a
     // UTC midnight, so counting it by hour gives the same distinct days;
     // coveredHoursOf's 24 h width for 1d is what the dense month holds.
+    // The 1h unit IS gated: the sparse suite's S6 reads three covered hours
+    // from 1h alone, and '1 day' there collapses them into one or two days.
     const { rows: result } = await this.pool.query<{
       idx: number;
       sum_value: number | null;

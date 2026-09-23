@@ -65,6 +65,7 @@ const DENSE = `e44_dense_${RUN}`;
 const CLIP_HEAD = `e44_clip_head_${RUN}`;
 const CLIP_TAIL = `e44_clip_tail_${RUN}`;
 const CLIP_BOTH = `e44_clip_both_${RUN}`;
+const HOURLY = `e44_hourly_${RUN}`;
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -160,6 +161,9 @@ export async function seedSparseFixture(pool: pg.Pool, fx: Fixtures, anchors: Sp
   for (const timeMs of head) values.push({ key: CLIP_HEAD, timeMs });
   for (const timeMs of tail) values.push({ key: CLIP_TAIL, timeMs });
   for (const timeMs of [...head, ...tail]) values.push({ key: CLIP_BOTH, timeMs });
+  // S6: one sample in each of hours H−1, H and H+1 — inside the range the
+  // second refresh below already re-covers
+  for (const timeMs of [at(-30), at(30), at(90)]) values.push({ key: HOURLY, timeMs });
 
   await pool.query(
     `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
@@ -304,4 +308,30 @@ export async function assertBothHoursCoveredAnswers(pool: pg.Pool, fixture: Spar
   const result = await resolveOne(pool, fixture.assetId, windowFn("sum", CLIP_BOTH, rolling(60)), clipTick(fixture));
   // 45 min + 15 min = the whole hour; the three in-window samples average 10, × 1 h
   assert(result !== undefined && result.ok === true && near(result.value, 10), `S5c: both hours covered → the window answers 10 × 1 h, got ${JSON.stringify(result)}`);
+}
+
+// ---- S6 — the 1h coverage unit (code review finding 2) --------------------------------------------
+
+/**
+ * A rolling 180 minutes ending at H+2h — `[H−1h, H+2h)`, three whole clock
+ * hours, one sample in each. The seed's second refresh re-covers
+ * `[H−1h, H+2h)` and H+2h is a complete hour before `now`, so the `1h`
+ * watermark is at H+2h or later and the planner serves the whole window from
+ * `1h`: one `1h` level statement. The relation check is exact, as S4's is — a
+ * window split between `1h` and `5m` would let the `1h` part hide a wrong
+ * coverage unit. Under `'1 day'` for `1h` the three hours collapse into one
+ * or two distinct days, 1/3 or 2/3 of the window, and the sum refuses.
+ */
+export async function assertThreeCoveredHoursOn1hAnswers(pool: pg.Pool, fixture: SparseFixture): Promise<void> {
+  const counted = countedService(pool);
+  const node = windowFn("sum", HOURLY, rolling(180));
+  const tick = fixture.hMs + 2 * HOUR_MS;
+  const map = await counted.service.resolveReads([{ ownerAssetId: fixture.assetId, readAssetId: fixture.assetId, node, endMs: tick }]);
+  // positive control first: 3 covered hours of 3, avg 10 × 3 h
+  const result = map.get(windowRequestKey(fixture.assetId, node, tick));
+  assert(result?.ok === true && near(result.value, 30), `S6: three covered hours of three on 1h answer 10 × 3 = 30, got ${JSON.stringify(result)}`);
+  assert(
+    counted.statements() === 2 && counted.relations().join(",") === "telemetry.point_values_1h",
+    `S6: the read is served from 1h alone — got ${counted.statements()} statements reading ${counted.relations().join(",")}`,
+  );
 }
