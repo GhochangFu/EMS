@@ -463,16 +463,18 @@ export function runWaterClassEntryTests(): void {
 
 // ---- E4.1c — the bms-calc-v3 water rows (ADR 0070 decision 8, Q5) -------
 //
-// The same three codes on every water class, each over ITS inlet flow — one
-// code, one meaning ("KL of inlet water today"). Pinned through
-// `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// The same three codes on every water class, each over ITS inlet flow, plus
+// (since `E4.3` PR 2) three more over five of the six classes' OUTLET flow —
+// one code, one meaning per pair ("KL of inlet/outlet water today"). Pinned
+// through `sustainabilityClaims`, one `it()` per claim in the wrapper.
 
 /**
- * water-stp over `{influent_flow_klh}`, §5's inlet — plan §3.7. **Seven rows,
- * not three, since `E4.2` PR 2** — `sustainabilityClaims`'s `tail()` reads the
- * entry's LAST `rows.length` points, and the four calendar-window rows (ADR
- * 0072 decision 3, Q7 ruling (a)) are appended right after these three with
- * nothing between, so the whole seven-row run is pinned as ONE tail.
+ * water-stp over `{influent_flow_klh}`, §5's inlet — plan §3.7. **Ten rows,
+ * not three** — `sustainabilityClaims`'s `tail()` reads the entry's LAST
+ * `rows.length` points, and the four calendar-window rows (ADR 0072 decision
+ * 3, Q7 ruling (a)) plus the three outlet rows over `{effluent_flow_klh}`
+ * (ADR 0073 decision 4) are appended right after these three with nothing
+ * between, so the whole ten-row run is pinned as ONE tail.
  */
 const STP_E41C: readonly SustainabilityRow[] = [
   ["kl_today", "sum({influent_flow_klh}, today)", "KL"],
@@ -490,7 +492,7 @@ const STP_E41C: readonly SustainabilityRow[] = [
   ["outlet_kl_this_year", "sum({effluent_flow_klh}, this_year)", "KL"],
 ];
 
-/** water-etp over `{influent_flow_klh}`, §6's inlet — plan §3.7. Seven rows, the same reason as STP's above. */
+/** water-etp over `{influent_flow_klh}`, §6's inlet — plan §3.7. Ten rows, the same reason as STP's above. */
 const ETP_E41C: readonly SustainabilityRow[] = [
   ["kl_today", "sum({influent_flow_klh}, today)", "KL"],
   ["water_cost_today", "sum({influent_flow_klh}, today) * $water_tariff_per_kl", ""],

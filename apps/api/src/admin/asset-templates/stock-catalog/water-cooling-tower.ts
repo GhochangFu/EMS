@@ -9,10 +9,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * **SOURCE.** `docs/e5.1-derived-taglist-v1.md` §4 — *"Cooling water / cooling
  * tower"*. PROVISIONAL: derived from published practice, not client-confirmed.
  *
- * **28 POINTS — 10 core + 6 extended + 1 manual + 11 DERIVED.** §4's 17 table
+ * **31 POINTS — 10 core + 6 extended + 1 manual + 14 DERIVED.** §4's 17 table
  * rows in the document's own order (`sortOrder` 0-16), then the four authored
  * derived codes (17-20), then `E4.1c`'s three `v3` rows (21-23), then
- * `E4.2`'s four (24-27, VERSION HISTORY v3). This is **the entry the derived machinery is first
+ * `E4.2`'s four (24-27, VERSION HISTORY v3), then `E4.3`'s three outlet rows
+ * (28-30, VERSION HISTORY v5). This is **the entry the derived machinery is first
  * proved on** in the water pack: four formulas, one `maxInputAgeSeconds`
  * override, and the first alarms anywhere in the catalog that bind a computed
  * point rather than a measured one.

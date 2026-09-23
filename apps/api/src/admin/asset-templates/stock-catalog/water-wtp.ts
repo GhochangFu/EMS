@@ -10,10 +10,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * plant (clarifier + filtration + disinfection)"*. PROVISIONAL: derived from
  * published practice, not client-confirmed.
  *
- * **27 POINTS — 11 core + 5 extended + 2 manual + 9 DERIVED.** §1's 18 table
+ * **30 POINTS — 11 core + 5 extended + 2 manual + 12 DERIVED.** §1's 18 table
  * rows in the document's own order (`sortOrder` 0-17), then the two authored
  * derived codes (18-19), then `E4.1c`'s three `v3` rows (20-22), then
- * `E4.2`'s four (23-26, VERSION HISTORY v3).
+ * `E4.2`'s four (23-26, VERSION HISTORY v3), then `E4.3`'s three outlet rows
+ * (27-29, VERSION HISTORY v5).
  *
  * **THE TWO FORMULAS** (plan §5.0):
  *

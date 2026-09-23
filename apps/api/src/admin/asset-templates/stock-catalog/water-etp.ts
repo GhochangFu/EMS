@@ -20,8 +20,9 @@ import type { StockAssetTemplateEntry } from "./types";
  * PROVISIONAL — derived, not client-confirmed — because the other twelve rows
  * and every alarm and plan below are.
  *
- * **24 POINTS — 7 core + 8 extended + 2 manual + 7 derived** (`E4.1c`'s
- * three, `sortOrder` 17–19, plus `E4.2`'s four, 20–23, after §6's 17 table rows), §6's table rows
+ * **27 POINTS — 7 core + 8 extended + 2 manual + 10 derived** (`E4.1c`'s
+ * three, `sortOrder` 17–19, plus `E4.2`'s four, 20–23, plus `E4.3`'s three
+ * outlet rows, 24–26, after §6's 17 table rows), §6's table rows
  * in the **document's own order**, which is what `sortOrder` follows. Tier `C`
  * is required and `meta.tier: "core"`; `X` is optional and `"extended"`; `M` is
  * optional and `"manual"`, entered by hand through `F1.8`/`F1.9` and never

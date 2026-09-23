@@ -419,16 +419,20 @@ export function runWaterClassEntryTests3(): void {
 
 // ---- E4.1c — the bms-calc-v3 water rows (ADR 0070 decision 8, Q5) -------
 //
-// The same three codes on every water class, each over ITS inlet flow — one
-// code, one meaning ("KL of inlet water today"). Pinned through
-// `sustainabilityClaims`, one `it()` per claim in the wrapper.
+// The same three codes on every water class, each over ITS inlet flow, plus
+// (since `E4.3` PR 2) three more over five of the six classes' OUTLET flow —
+// one code, one meaning per pair ("KL of inlet/outlet water today"). Pinned
+// through `sustainabilityClaims`, one `it()` per claim in the wrapper. The
+// softener is the exception: it carries no outlet rows (ADR 0073 decision 4,
+// owner ruling Q2), so `SOFTENER_E41C` below stays at seven.
 
 /**
- * water-ro over `{feed_flow_klh}`, §2's inlet — plan §3.7. Seven rows, not
- * three, since `E4.2` PR 2 — the same reason `water-classes.spec.ts`'s
- * `STP_E41C` gives: `sustainabilityClaims`'s `tail()` reads the entry's LAST
- * `rows.length` points, and the four calendar-window rows are appended right
- * after these three with nothing between.
+ * water-ro over `{feed_flow_klh}`, §2's inlet — plan §3.7. Ten rows, not
+ * three — the same reason `water-classes.spec.ts`'s `STP_E41C` gives:
+ * `sustainabilityClaims`'s `tail()` reads the entry's LAST `rows.length`
+ * points, and the four calendar-window rows plus the three outlet rows over
+ * `{permeate_flow_klh}` (ADR 0073 decision 4) are appended right after these
+ * three with nothing between.
  */
 const RO_E41C: readonly SustainabilityRow[] = [
   ["kl_today", "sum({feed_flow_klh}, today)", "KL"],

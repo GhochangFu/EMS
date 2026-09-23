@@ -14,10 +14,11 @@ import type { StockAssetTemplateEntry } from "./types";
  * already use it beside `feeder`, `test_rig` and `test_skid`. Plan §12 ruling 4
  * confirmed it.
  *
- * **25 POINTS — 10 core + 5 extended + 1 manual + 9 DERIVED.** §2's 16 table
+ * **28 POINTS — 10 core + 5 extended + 1 manual + 12 DERIVED.** §2's 16 table
  * rows in the document's own order (`sortOrder` 0-15), then the two authored
  * derived codes (16-17), then `E4.1c`'s three `v3` rows (18-20), then
- * `E4.2`'s four (21-24, VERSION HISTORY v3).
+ * `E4.2`'s four (21-24, VERSION HISTORY v3), then `E4.3`'s three outlet rows
+ * (25-27, VERSION HISTORY v5).
  *
  * **THE TWO FORMULAS** (plan §5.0), both keeping the 300 s default
  * `maxInputAgeSeconds` because each takes both inputs from the skid's own
