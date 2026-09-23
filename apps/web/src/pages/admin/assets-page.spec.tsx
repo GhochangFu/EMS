@@ -93,9 +93,9 @@ const VOCABULARIES = {
 
 const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
 
-function stubApi(): void {
+function stubApi(items: readonly AdminAssetDto[] = [FIRST, SECOND]): void {
   vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({
-    items: [FIRST, SECOND],
+    items: [...items],
   } as never);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES as never);
   // The form's location <select> is `required`; one option lets a submit through.
@@ -245,4 +245,62 @@ export async function editPrefillsTheStoredRole(): Promise<void> {
   await within(select).findByRole("option", { name: "Intake" });
 
   expect(select.value).toBe("intake");
+}
+
+// ---------------------------------------------------------------------------
+// Post-merge sweep L1 — an asset whose stored role is no longer in the vocabulary. Without an
+// option for it the select shows its first option ("Not in the balance") while the form still
+// holds the code, so the author reads a state the save would not send.
+// ---------------------------------------------------------------------------
+
+/** A code the vocabulary stub does not carry: retired since the asset stored it. */
+const RETIRED_ROLE = "legacy_blowdown";
+const RETIRED = asset({
+  id: "44444444-4444-4444-8444-444444444444",
+  code: "BLD-03",
+  name: "Blowdown 3",
+  waterBalanceRole: RETIRED_ROLE,
+});
+
+/** Opens Edit on the only row, waiting on a vocabulary option so the list has loaded. */
+async function editTheOnlyRowAndFindRoleSelect(): Promise<HTMLSelectElement> {
+  const edit = await screen.findByRole("button", { name: "Edit" });
+  await userEvent.click(edit);
+  const select = screen.getByRole("combobox", { name: /Water balance role/ }) as HTMLSelectElement;
+  await within(select).findByRole("option", { name: "Intake" });
+  return select;
+}
+
+/** Edit of an asset with a retired stored role keeps that code as the select's value. */
+export async function editOfARetiredStoredRoleKeepsItsValue(): Promise<void> {
+  stubApi([RETIRED]);
+  renderPage();
+
+  const select = await editTheOnlyRowAndFindRoleSelect();
+
+  expect(select.value).toBe(RETIRED_ROLE);
+}
+
+/** The same edit renders one extra option for the stored code, marked "(retired)". */
+export async function editOfARetiredStoredRoleOffersItMarkedRetired(): Promise<void> {
+  stubApi([RETIRED]);
+  renderPage();
+
+  const select = await editTheOnlyRowAndFindRoleSelect();
+
+  const option = within(select).getByRole("option", { name: `${RETIRED_ROLE} (retired)` });
+  expect((option as HTMLOptionElement).value).toBe(RETIRED_ROLE);
+}
+
+/** Control: an asset whose stored role is live renders no "(retired)" option. */
+export async function editOfALiveStoredRoleOffersNoRetiredOption(): Promise<void> {
+  stubApi([SECOND]);
+  renderPage();
+
+  const select = await editTheOnlyRowAndFindRoleSelect();
+
+  expect(select.value).toBe("intake");
+  expect(
+    Array.from(select.options).filter((option) => option.textContent?.includes("(retired)")),
+  ).toEqual([]);
 }
