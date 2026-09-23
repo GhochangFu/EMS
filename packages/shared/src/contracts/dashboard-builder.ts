@@ -625,8 +625,7 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
     columns: ["locationCode", "locationName", "value", "coverage"],
     params: ["pointKey", "aggregate", "balanceRole"],
   },
-  // `E4.3` / ADR 0073 decision 3 — one row per site carrying a balance role. `columns` stays on
-  // one line: `tests/f3.35-metric-catalog-labels.test.ts` parses it.
+  // `E4.3` / ADR 0073 decision 3 — one row per site carrying a balance role.
   "water.balance": {
     shape: "dataset",
     columns: ["locationCode", "locationName", "intake", "reuse", "discharge", "consumed", "coverage"],

@@ -44,15 +44,16 @@ const tableBlock = (migration: string, table: string): string => {
 
 const MIGRATION_REL = "packages/db/drizzle/0054_dashboard_widget_sources.sql";
 /**
- * `E4.2` / ADR 0072 decision 2 — the migration that widens `catalog_key`'s CHECK to admit the
- * two sustainability entries. `0054` is frozen (the pre-commit hook) and still lists five; the
- * EFFECTIVE vocabulary is the one this later file declares, in the `0055` / `0050` pattern
- * `tests/f3.35-table-widget-schema.test.ts` records.
+ * `E4.3` / ADR 0073 decision 3 — the migration that widens `catalog_key`'s CHECK to admit
+ * `water.balance`. `0054` is frozen (the pre-commit hook) and still lists five, `0079` is frozen
+ * in its own turn and still lists seven; the EFFECTIVE vocabulary is the one this later file
+ * declares, in the `0055` / `0050` pattern `tests/f3.35-table-widget-schema.test.ts` records.
  */
 const WIDENING_MIGRATION_REL = "packages/db/drizzle/0081_dashboard_widget_sources_water_balance_key.sql";
 /**
- * `E4.2`'s own widening, now frozen in its turn (`0081` is the current EFFECTIVE list). Kept
- * as its own constant so the frozen-seven pin below reads as clearly as `0054`'s frozen five.
+ * `E4.2`'s own widening (ADR 0072 decision 2 — the two sustainability entries), now frozen in
+ * its turn. Kept as its own constant so the frozen-seven pin below reads as clearly as `0054`'s
+ * frozen five.
  */
 const PREVIOUS_WIDENING_MIGRATION_REL =
   "packages/db/drizzle/0079_dashboard_widget_sources_sustainability_keys.sql";
@@ -323,8 +324,8 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
   });
 
   it("closes catalog_key to exactly the keys the shared enum declares", () => {
-    // `E4.2`: the effective CHECK is the widened one in `0079`, not `0054`'s frozen five. The
-    // frozen list is pinned separately below so the two cannot be confused.
+    // `E4.3`: the effective CHECK is the widened one in `0081`, not `0054`'s or `0079`'s frozen
+    // lists. Both frozen lists are pinned separately below so the three cannot be confused.
     const migration = read(WIDENING_MIGRATION_REL);
     const keys = catalogKeys();
 
