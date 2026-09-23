@@ -384,9 +384,13 @@ export type AlarmSkillCode = z.infer<typeof Op.alarmSkillCodeSchema>;
 export type AssetRoleDto = z.infer<typeof Op.assetRoleDtoSchema>;
 /** What part a member plays in its group, as a code into `bms.asset_roles` (ADR 0049). */
 export type AssetRoleCode = z.infer<typeof Op.assetRoleCodeSchema>;
+/** ADR 0073 — one row of `bms.water_balance_roles`. No `rank`/`tone`: a balance role drives no styling. */
+export type WaterBalanceRoleDto = z.infer<typeof Op.waterBalanceRoleDtoSchema>;
+/** An asset's place in a site's water balance, as a code into `bms.water_balance_roles` (ADR 0073). */
+export type WaterBalanceRoleCode = z.infer<typeof Op.waterBalanceRoleCodeSchema>;
 /** The `StatusPill` palette, as a type. Closed; see `pillToneSchema`. */
 export type PillTone = z.infer<typeof Op.pillToneSchema>;
-/** `GET /api/v1/vocabularies` — all five open vocabularies, so a page renders none half-loaded. */
+/** `GET /api/v1/vocabularies` — all seven open vocabularies, so a page renders none half-loaded. */
 export type VocabulariesResponse = z.infer<typeof Op.vocabulariesResponseSchema>;
 export type AutomationRuleOperator = z.infer<typeof Op.automationRuleOperatorSchema>;
 export type AutomationRuleSeverity = z.infer<typeof Op.automationRuleSeveritySchema>;

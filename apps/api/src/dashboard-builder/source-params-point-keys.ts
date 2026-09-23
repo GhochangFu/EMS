@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 
-import { pointKeys } from "@bms/db";
+import { pointKeys, waterBalanceRoles } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { METRIC_CATALOG } from "@bms/shared";
 import type { MetricCatalogKey } from "@bms/shared";
@@ -27,6 +27,13 @@ import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
  * **Two halves, so the pure one is testable without a connection** (§4.6, the `energy-cost.ts`
  * shape): `sourceParamsPointKeys` lifts the keys out of a submitted source list;
  * `assertSourceParamsPointKeysActive` runs the one `SELECT` and throws.
+ *
+ * **The file holds both vocabulary checks a catalog binding's params need.** `E4.3` / ADR 0073
+ * decision 2 added the optional `balanceRole`, verified the same way against
+ * `bms.water_balance_roles` (`sourceParamsBalanceRoles` / `assertSourceParamsBalanceRolesActive`):
+ * a code that is only shape-valid narrows the carrying set to no asset, and the tile answers
+ * `0/0` with a green console — the same silent failure one field over. The file keeps its name
+ * so the two call sites' imports and the `E4.2` references stay true.
  */
 
 /** The minimum of a submitted source this module reads. */
@@ -45,17 +52,35 @@ export type SubmittedSource = {
  * reports a missing key for a binding that will not store anyway.
  */
 export function sourceParamsPointKeys(sources: readonly SubmittedSource[]): string[] {
-  const keys = new Set<string>();
+  return sourceParamsStrings(sources, "pointKey");
+}
+
+/**
+ * The distinct `balanceRole` strings of the sources, in first-seen order — the same rules as
+ * `sourceParamsPointKeys` (an entry with no `params`, or params that do not parse, contributes
+ * nothing). A binding without the field contributes nothing either: the role is optional, and
+ * its absence means "every carrying asset" (ADR 0073 decision 2).
+ */
+export function sourceParamsBalanceRoles(sources: readonly SubmittedSource[]): string[] {
+  return sourceParamsStrings(sources, "balanceRole");
+}
+
+/** One string field lifted out of every source whose params parse under its entry's schema. */
+function sourceParamsStrings(
+  sources: readonly SubmittedSource[],
+  field: "pointKey" | "balanceRole",
+): string[] {
+  const values = new Set<string>();
   for (const source of sources) {
     if (!(source.catalogKey in METRIC_CATALOG)) continue;
     const key = source.catalogKey as MetricCatalogKey;
     if (METRIC_CATALOG[key].params === undefined) continue;
     const parsed = METRIC_CATALOG_PARAMS_WRITE[key].safeParse(source.params);
     if (!parsed.success) continue;
-    const pointKey = (parsed.data as { pointKey?: unknown }).pointKey;
-    if (typeof pointKey === "string") keys.add(pointKey);
+    const value = (parsed.data as Record<string, unknown>)[field];
+    if (typeof value === "string") values.add(value);
   }
-  return [...keys];
+  return [...values];
 }
 
 /**
@@ -82,4 +107,44 @@ export async function assertSourceParamsPointKeysActive(
   if (missing.length > 0) {
     throw new BadRequestException(`Not in the active point-key catalog: ${missing.join(", ")}`);
   }
+}
+
+/**
+ * Throws a 400 naming every `balanceRole` the sources bind that is not an active
+ * `bms.water_balance_roles` code (ADR 0073 decision 2).
+ *
+ * The `assertSourceParamsPointKeysActive` shape: one `SELECT … WHERE active AND code = ANY(...)`
+ * on the fleet pool (the vocabulary is global, no tenant GUC), skipped when no source names a
+ * role, and the message bounded by `boundedMissingPointKeys` — the bound is about the length
+ * of a list of codes, not about point keys.
+ */
+export async function assertSourceParamsBalanceRolesActive(
+  fleetDb: BmsDb,
+  sources: readonly SubmittedSource[],
+): Promise<void> {
+  const codes = sourceParamsBalanceRoles(sources);
+  if (codes.length === 0) return;
+
+  const rows = await fleetDb
+    .select({ code: waterBalanceRoles.code })
+    .from(waterBalanceRoles)
+    .where(and(eq(waterBalanceRoles.active, true), inArray(waterBalanceRoles.code, codes)));
+  const active = new Set(rows.map((row) => row.code));
+  const missing = codes.filter((code) => !active.has(code));
+  if (missing.length > 0) {
+    throw new BadRequestException(balanceRoleRefusalMessage(missing));
+  }
+}
+
+/**
+ * The 400's sentence for the roles that are not live, each echoed with its non-printable
+ * characters stripped (review L1) — `VocabulariesService.unknownCodeMessage`'s rule. The write
+ * schema bounds `balanceRole`'s length and deliberately not its charset, so a code carrying
+ * `\r\n` reaches here and would otherwise split the line in a log sink. The strip runs before
+ * `boundedMissingPointKeys`, so its cut bounds the string actually interpolated.
+ */
+export function balanceRoleRefusalMessage(missing: readonly string[]): string {
+  const printable = missing.map((code) => code.replace(/[^\x20-\x7e]/g, ""));
+  const shown = boundedMissingPointKeys(printable);
+  return `Not a live water balance role: ${shown.join(", ")}`;
 }

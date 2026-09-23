@@ -8,6 +8,7 @@ import {
   CATALOG_CODE_PATTERN,
   dashboardSectionCodeSchema,
   sustainabilityAggregateSchema,
+  waterBalanceRoleCodeSchema,
   chartConfigSchema,
   tableConfigSchema,
   commonConfigFields,
@@ -256,7 +257,12 @@ const pointsFieldFor = (widgetType: z.infer<typeof widgetTypeSchema>) => {
  * roll-ups take `{ pointKey, aggregate }`, and `MetricCatalogService` reads both. `pointKey` is
  * bounded and charset-checked here; whether it names an ACTIVE catalog code is the write path's
  * check against `bms.point_keys` (the `assertPointKeysActive` rule, ADR 0072 decision 2), which
- * a schema with no database cannot make.
+ * a schema with no database cannot make. `E4.3` / ADR 0073 decision 2 added an optional third,
+ * `balanceRole`: it narrows the carrying set (and so the coverage) to assets whose
+ * `water_balance_role` is that code, and `readRollupRows` reads it. Shape only here; that the
+ * code is a LIVE `bms.water_balance_roles` row is the write path's check
+ * (`assertSourceParamsBalanceRolesActive`) — an unknown code would otherwise match no asset
+ * and answer `0/0` with a green console.
  *
  * **DO NOT COLLAPSE THIS MAP INTO ONE SCHEMA.** The Stage C entries are identical and will not
  * stay identical: `alarms.active` takes a severity filter and `workorders.open` takes a status,
@@ -276,6 +282,7 @@ const pointsFieldFor = (widgetType: z.infer<typeof widgetTypeSchema>) => {
 const sustainabilityParamsFields = {
   pointKey: z.string().min(1).max(64).regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE),
   aggregate: sustainabilityAggregateSchema,
+  balanceRole: waterBalanceRoleCodeSchema.optional(),
 };
 
 export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObject> = {
@@ -319,7 +326,9 @@ const sourceBindingWriteSchema = z
     "One named catalog binding (ADR 0048 decision 4). `params` is validated against the " +
       "entry's own schema, which differs per `catalogKey`: the five Stage C entries declare no " +
       "fields (`{}` only), and `sustainability.total` / `sustainability.by_location` require " +
-      "exactly `{ pointKey, aggregate }` (ADR 0072) — zod-to-json-schema emits nothing for a " +
+      "`{ pointKey, aggregate }` (ADR 0072) plus an optional `balanceRole`, a " +
+      "`bms.water_balance_roles` code that narrows the carrying assets to that role (ADR 0073 " +
+      "decision 2; without it, every asset carrying the point counts) — zod-to-json-schema emits nothing for a " +
       "refinement, so without this line the document would promise that any record of scalars " +
       "is accepted where the API answers 400 (ADR 0029 Amendment 1). No entry may declare a " +
       "uuid: an id inside `params` is an id inside jsonb that no foreign key covers.",

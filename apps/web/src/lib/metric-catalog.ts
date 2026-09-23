@@ -91,7 +91,8 @@ export function metricCatalogLabel(key: MetricCatalogKey): string {
  *
  * **An entry that declares `params` is hidden too** (`E4.2`, ADR 0072 decision 2, plan OQ3).
  * The picker and `WidgetEditor` add a source with `params: {}`, and the sustainability entries'
- * write schema is strict on `{ pointKey, aggregate }` — so offering one would be the same
+ * write schema is strict on `{ pointKey, aggregate }` (plus an optional `balanceRole`, `E4.3`)
+ * — so offering one would be the same
  * 400-from-a-form-that-suggested-it the shape filter exists to prevent. The stock template and
  * the API are the two ways to bind these until a params editor lands as its own row.
  */

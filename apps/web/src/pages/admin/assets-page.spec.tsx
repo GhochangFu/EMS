@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -8,6 +8,8 @@ import { adminAssetDtoSchema } from "@bms/shared/contracts";
 import type { AdminAssetDto } from "@bms/shared";
 
 import * as assetsApi from "../../api/admin/assets";
+import * as locationsApi from "../../api/admin/locations";
+import * as rtusApi from "../../api/admin/rtus";
 import * as assetImagesApi from "../../api/asset-images";
 import * as vocabApi from "../../api/vocabularies";
 import type { AuthUser } from "../../stores/auth-store";
@@ -34,7 +36,9 @@ const user: AuthUser = {
 } as unknown as AuthUser;
 
 /** A DTO the contract accepts — an off-shape fixture would fail somewhere else. */
-function asset(overrides: Pick<AdminAssetDto, "id" | "code" | "name">): AdminAssetDto {
+function asset(
+  overrides: Pick<AdminAssetDto, "id" | "code" | "name"> & Partial<AdminAssetDto>,
+): AdminAssetDto {
   return adminAssetDtoSchema.parse({
     siteName: "Plant 1",
     locationId: "22222222-2222-4222-8222-222222222222",
@@ -43,6 +47,7 @@ function asset(overrides: Pick<AdminAssetDto, "id" | "code" | "name">): AdminAss
     rtuId: null,
     rtuDisplayName: null,
     domain: "electrical",
+    waterBalanceRole: null,
     active: true,
     templateId: null,
     templateCode: null,
@@ -67,6 +72,8 @@ const SECOND = asset({
   id: "33333333-3333-4333-8333-333333333333",
   code: "PMP-02",
   name: "Pump 2",
+  // `E4.3` — the one row with a role, so the edit prefill claim reads a real value.
+  waterBalanceRole: "intake",
 });
 
 const VOCABULARIES = {
@@ -75,13 +82,27 @@ const VOCABULARIES = {
   alarmSeverities: [],
   alarmSkills: [],
   assetRoles: [],
+  // `E4.3` (ADR 0073 decision 1) — the four seeded rows, in `0080`'s sort order.
+  waterBalanceRoles: [
+    { code: "intake", label: "Intake", sortOrder: 10, active: true },
+    { code: "discharge", label: "Discharge", sortOrder: 20, active: true },
+    { code: "reuse", label: "Reuse", sortOrder: 30, active: true },
+    { code: "internal", label: "Internal", sortOrder: 40, active: true },
+  ],
 };
+
+const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
 
 function stubApi(): void {
   vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({
     items: [FIRST, SECOND],
   } as never);
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES as never);
+  // The form's location <select> is `required`; one option lets a submit through.
+  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({
+    items: [{ id: LOCATION_ID, name: "Plant 1" }],
+  } as never);
+  vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items: [] } as never);
   // The panel mounts a gallery as soon as it opens; both reads are stubbed so
   // no row here depends on the network.
   vi.spyOn(assetImagesApi, "fetchAssetImages").mockResolvedValue([]);
@@ -139,4 +160,89 @@ export async function closeRemovesThePanelAndLeavesTheRow(): Promise<void> {
 
   expect(screen.getByText("PMP-02")).toBeInTheDocument();
   expect(screen.queryByRole("heading", { name: "Images · PMP-02" })).toBeNull();
+}
+
+// ---------------------------------------------------------------------------
+// `E4.3` U3 (ADR 0073 decision 1) — the water balance role select. One claim
+// per exported function; the options come from the vocabulary stub above.
+// ---------------------------------------------------------------------------
+
+/** The role <select>, found by its label once the vocabulary's options have rendered. */
+async function openAddAndFindRoleSelect(): Promise<HTMLSelectElement> {
+  await userEvent.click(await screen.findByRole("button", { name: "Add asset" }));
+  const select = screen.getByRole("combobox", { name: /Water balance role/ }) as HTMLSelectElement;
+  // Wait on what the vocabulary produces: the select itself renders before the fetch resolves,
+  // holding only the empty option.
+  await within(select).findByRole("option", { name: "Reuse" });
+  return select;
+}
+
+/** Fills the three required text fields and the location, so the form can submit. */
+async function fillRequiredFields(): Promise<void> {
+  await userEvent.type(screen.getByRole("textbox", { name: "Code" }), "WTR-01");
+  await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Water 1");
+  await userEvent.type(screen.getByRole("textbox", { name: "Site name" }), "Plant 1");
+  const location = screen.getByRole("combobox", { name: /Location/ });
+  await within(location).findByRole("option", { name: "Plant 1" });
+  await userEvent.selectOptions(location, LOCATION_ID);
+}
+
+/** Five options — "not in the balance" first, then the four vocabulary rows. */
+export async function roleSelectOffersTheVocabularyAfterAnEmptyOption(): Promise<void> {
+  stubApi();
+  renderPage();
+
+  const select = await openAddAndFindRoleSelect();
+
+  expect(
+    Array.from(select.options).map((option) => [option.value, option.textContent]),
+  ).toEqual([
+    ["", "Not in the balance"],
+    ["intake", "Intake"],
+    ["discharge", "Discharge"],
+    ["reuse", "Reuse"],
+    ["internal", "Internal"],
+  ]);
+}
+
+/** Saving with `reuse` selected sends `waterBalanceRole: "reuse"`. */
+export async function savingWithARoleSendsIt(): Promise<void> {
+  stubApi();
+  const create = vi.spyOn(assetsApi, "createAdminAsset").mockResolvedValue(FIRST);
+  renderPage();
+
+  const select = await openAddAndFindRoleSelect();
+  await fillRequiredFields();
+  await userEvent.selectOptions(select, "reuse");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create.mock.calls[0]?.[0]).toMatchObject({ waterBalanceRole: "reuse" });
+}
+
+/** Saving with nothing selected sends `null`, never `""` (the schema's `min(1)` would 400). */
+export async function savingWithNoRoleSendsNull(): Promise<void> {
+  stubApi();
+  const create = vi.spyOn(assetsApi, "createAdminAsset").mockResolvedValue(FIRST);
+  renderPage();
+
+  await openAddAndFindRoleSelect();
+  await fillRequiredFields();
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(create.mock.calls[0]?.[0]).toMatchObject({ waterBalanceRole: null });
+}
+
+/** Edit prefills the select from the row's stored role. */
+export async function editPrefillsTheStoredRole(): Promise<void> {
+  stubApi();
+  renderPage();
+
+  const edits = await screen.findAllByRole("button", { name: "Edit" });
+  await userEvent.click(edits[1] as HTMLElement);
+  const select = screen.getByRole("combobox", { name: /Water balance role/ }) as HTMLSelectElement;
+  await within(select).findByRole("option", { name: "Intake" });
+
+  expect(select.value).toBe("intake");
 }

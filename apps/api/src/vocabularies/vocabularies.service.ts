@@ -6,6 +6,7 @@ import {
   assetRoles,
   dashboardSections,
   ruleCategories,
+  waterBalanceRoles,
 } from "@bms/db";
 import { asc, eq } from "drizzle-orm";
 
@@ -18,17 +19,19 @@ import type {
   DashboardSectionDto,
   RuleCategoryDto,
   VocabulariesResponse,
+  WaterBalanceRoleDto,
 } from "@bms/shared";
 
 import { MAX_ECHOED_CELL_CHARS } from "../admin/spreadsheet-guard";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 
 /**
- * Six open vocabularies — rule concerns and plant domains (ADR 0031
- * Amendment 1), alarm severity (ADR 0032), alarm skill (ADR 0034), and the
- * asset role a group membership plays (ADR 0049 decision 5, `F3.37`), and the
+ * Seven open vocabularies — rule concerns and plant domains (ADR 0031
+ * Amendment 1), alarm severity (ADR 0032), alarm skill (ADR 0034), the
+ * asset role a group membership plays (ADR 0049 decision 5, `F3.37`), the
  * dashboard section a template belongs to (ADR 0049 Amendment 2 decision 5,
- * `F3.36`).
+ * `F3.36`), and an asset's place in a site's water balance (ADR 0073
+ * decision 1, `E4.3`).
  *
  * **Why this service exists at all.** Both vocabularies used to be `z.enum`s, so
  * a bad value was rejected by the request schema with a clear 400 naming the
@@ -59,7 +62,7 @@ export class VocabulariesService {
    * stops being offered for new work while existing rows keep resolving.
    */
   async list(): Promise<VocabulariesResponse> {
-    const [categories, domains, severities, skills, roles, sections] = await Promise.all([
+    const [categories, domains, severities, skills, roles, sections, balanceRoles] = await Promise.all([
       this.db
         .select({
           code: ruleCategories.code,
@@ -145,6 +148,20 @@ export class VocabulariesService {
         .from(dashboardSections)
         .where(eq(dashboardSections.active, true))
         .orderBy(asc(dashboardSections.sortOrder), asc(dashboardSections.code)),
+      // ADR 0073 decision 1 (`E4.3`): the seventh global vocabulary, ordered
+      // by sortOrder like assetDomains, alarmSkills, assetRoles and
+      // dashboardSections — a balance role carries no urgency, so no rank
+      // column.
+      this.db
+        .select({
+          code: waterBalanceRoles.code,
+          label: waterBalanceRoles.label,
+          sortOrder: waterBalanceRoles.sortOrder,
+          active: waterBalanceRoles.active,
+        })
+        .from(waterBalanceRoles)
+        .where(eq(waterBalanceRoles.active, true))
+        .orderBy(asc(waterBalanceRoles.sortOrder), asc(waterBalanceRoles.code)),
     ]);
 
     return {
@@ -158,6 +175,7 @@ export class VocabulariesService {
       alarmSkills: skills as AlarmSkillDto[],
       assetRoles: roles as AssetRoleDto[],
       dashboardSections: sections as DashboardSectionDto[],
+      waterBalanceRoles: balanceRoles as WaterBalanceRoleDto[],
     };
   }
 
@@ -253,6 +271,28 @@ export class VocabulariesService {
   }
 
   /**
+   * Rejects a water balance role that is not a live vocabulary row (ADR 0073
+   * decision 1). Same shape as `assertAssetRole` — without this an unknown
+   * code would travel to Postgres and return as
+   * `assets_water_balance_role_fkey`, a 500 where there should be a 400.
+   *
+   * `waterBalanceRoleCodeSchema` is a `z.string()` and not a `z.enum` on
+   * purpose, so the request schema checks shape only and this is the whole
+   * boundary.
+   */
+  async assertWaterBalanceRole(code: string): Promise<void> {
+    const [row] = await this.db
+      .select({ active: waterBalanceRoles.active })
+      .from(waterBalanceRoles)
+      .where(eq(waterBalanceRoles.code, code))
+      .limit(1);
+
+    if (!row || !row.active) {
+      throw new BadRequestException(await this.unknownCodeMessage("water balance role", code));
+    }
+  }
+
+  /**
    * Names the valid values back to the caller.
    *
    * The enum did this for free — a Zod `invalid_enum_value` lists its options —
@@ -260,7 +300,7 @@ export class VocabulariesService {
    * import sheet. Costs one extra query on the failure path only.
    */
   private async unknownCodeMessage(
-    field: "domain" | "category" | "severity" | "skill" | "role",
+    field: "domain" | "category" | "severity" | "skill" | "role" | "water balance role",
     code: string,
   ): Promise<string> {
     // A lookup rather than the nested ternary this was until `F3.37`. Four
@@ -302,6 +342,12 @@ export class VocabulariesService {
           .from(assetRoles)
           .where(eq(assetRoles.active, true))
           .orderBy(asc(assetRoles.sortOrder)),
+      "water balance role": () =>
+        this.db
+          .select({ code: waterBalanceRoles.code })
+          .from(waterBalanceRoles)
+          .where(eq(waterBalanceRoles.active, true))
+          .orderBy(asc(waterBalanceRoles.sortOrder)),
     };
 
     const available = await liveCodes[field]();

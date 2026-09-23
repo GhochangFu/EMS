@@ -10,6 +10,10 @@ import {
   runDashboardsSchemaTests,
   runListDashboardsQueryTests,
   sustainabilityTotalAcceptsPointKeyAndAggregate,
+  sustainabilityTotalAcceptsABalanceRole,
+  byLocationAcceptsABalanceRole,
+  sustainabilityTotalRefusesAnEmptyBalanceRole,
+  sustainabilityTotalRefusesALongBalanceRole,
   sustainabilityTotalRefusesACharsetViolation,
   sustainabilityTotalRefusesALongPointKey,
   sustainabilityTotalRefusesAnExtraField,
@@ -77,5 +81,24 @@ describe("E4.2 — the sustainability entries' write-side params", () => {
 
   it("still refuses params on alarms.active.count — the fields did not leak to an older entry", () => {
     olderEntryStillRefusesPointKey();
+  });
+});
+
+/** `E4.3` / ADR 0073 decision 2 — the optional `balanceRole` on the two sustainability entries. */
+describe("E4.3 — balanceRole on the sustainability entries' write-side params", () => {
+  it("accepts balanceRole: intake on sustainability.total", () => {
+    sustainabilityTotalAcceptsABalanceRole();
+  });
+
+  it("accepts balanceRole: intake on sustainability.by_location", () => {
+    byLocationAcceptsABalanceRole();
+  });
+
+  it("refuses an empty balanceRole at the field", () => {
+    sustainabilityTotalRefusesAnEmptyBalanceRole();
+  });
+
+  it("refuses a 65-character balanceRole", () => {
+    sustainabilityTotalRefusesALongBalanceRole();
   });
 });

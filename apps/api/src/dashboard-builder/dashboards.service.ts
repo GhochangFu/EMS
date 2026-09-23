@@ -32,7 +32,10 @@ import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
 import { SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
-import { assertSourceParamsPointKeysActive } from "./source-params-point-keys";
+import {
+  assertSourceParamsBalanceRolesActive,
+  assertSourceParamsPointKeysActive,
+} from "./source-params-point-keys";
 import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody } from "./dashboards.schema";
 
 import {
@@ -483,6 +486,12 @@ export class DashboardsService {
       this.fleetDb,
       body.widgets.flatMap((widget) => widget.sources),
     );
+    // `E4.3` — and every `params.balanceRole` a live `bms.water_balance_roles` code (ADR 0073
+    // decision 2), on the same terms: fleet pool, before the transaction.
+    await assertSourceParamsBalanceRolesActive(
+      this.fleetDb,
+      body.widgets.flatMap((widget) => widget.sources),
+    );
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       const storedWidgets = await tx
@@ -737,8 +746,9 @@ export class DashboardsService {
    * code with no foreign row to be outside anything.
    *
    * `params` is stored as submitted, after `METRIC_CATALOG_PARAMS_WRITE` has parsed it per entry
-   * — `{}` for the five Stage C entries, `{ pointKey, aggregate }` for the two sustainability
-   * roll-ups (`E4.2`, ADR 0072 decision 2), which `MetricCatalogService` reads back.
+   * — `{}` for the five Stage C entries, `{ pointKey, aggregate }` plus an optional
+   * `balanceRole` for the two sustainability roll-ups (`E4.2` / ADR 0072 decision 2, `E4.3` /
+   * ADR 0073 decision 2), which `MetricCatalogService` reads back.
    */
   private async insertSources(
     tx: BmsTx,

@@ -802,6 +802,50 @@ export function sustainabilityTotalRefusesACharsetViolation(): void {
   );
 }
 
+// `E4.3` / ADR 0073 decision 2 — the optional `balanceRole` on both sustainability entries.
+// Shape only here; whether the code is a LIVE `bms.water_balance_roles` row is the write path's
+// check (`assertSourceParamsBalanceRolesActive`), which a schema with no database cannot make.
+
+/** `sustainability.total` accepts `balanceRole: "intake"`. */
+export function sustainabilityTotalAcceptsABalanceRole(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    sustainabilityTile({ pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" }),
+    "a value_tile binding sustainability.total { kl_today, sum, balanceRole: intake }",
+  );
+}
+
+/** `sustainability.by_location` accepts `balanceRole: "intake"`. */
+export function byLocationAcceptsABalanceRole(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    byLocationTable({ pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" }),
+    "a table binding sustainability.by_location { kl_today, sum, balanceRole: intake }",
+  );
+}
+
+/** An empty `balanceRole` is refused at the field — "" is not "no role", omission is. */
+export function sustainabilityTotalRefusesAnEmptyBalanceRole(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    sustainabilityTile({ pointKey: "kl_today", aggregate: "sum", balanceRole: "" }),
+    [...SOURCE_PARAMS, "balanceRole"],
+    ["sustainability.total:"],
+    "balanceRole is min(1): an empty code would match no asset and answer 0/0 silently",
+  );
+}
+
+/** A 65-character `balanceRole` is over the vocabulary's `code` width. */
+export function sustainabilityTotalRefusesALongBalanceRole(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    sustainabilityTile({ pointKey: "kl_today", aggregate: "sum", balanceRole: "r".repeat(65) }),
+    [...SOURCE_PARAMS, "balanceRole"],
+    ["64"],
+    "balanceRole is bounded at 64, bms.water_balance_roles' code width",
+  );
+}
+
 /** The empty `params` the builder's picker would send is refused on `by_location` too. */
 export function byLocationRefusesEmptyParams(): void {
   expectRejectsAt(

@@ -1,4 +1,8 @@
-import { sourceParamsPointKeys } from "./source-params-point-keys";
+import {
+  balanceRoleRefusalMessage,
+  sourceParamsBalanceRoles,
+  sourceParamsPointKeys,
+} from "./source-params-point-keys";
 
 /**
  * `E4.2` U3 — the pure half of the point-key check at a catalog binding's write (ADR 0072
@@ -64,4 +68,71 @@ export function pointKeysAreDeduplicated(): void {
 export function unknownCatalogKeyYieldsNothing(): void {
   const keys = sourceParamsPointKeys([{ catalogKey: "energy.nope", params: { pointKey: "x" } }]);
   assert(keys.length === 0, `expected [] for an unknown catalog key, got ${JSON.stringify(keys)}`);
+}
+
+// `E4.3` / ADR 0073 decision 2 — the same lift for the optional `balanceRole`.
+
+/** The five Stage C entries yield no balance role. */
+export function oldEntriesYieldNoBalanceRole(): void {
+  const roles = sourceParamsBalanceRoles(
+    FIVE_OLD_KEYS.map((catalogKey) => ({ catalogKey, params: {} })),
+  );
+  assert(roles.length === 0, `expected [] for the five old entries, got ${JSON.stringify(roles)}`);
+}
+
+/** A binding carrying `balanceRole: "intake"` yields it. */
+export function sustainabilitySourceYieldsItsBalanceRole(): void {
+  const roles = sourceParamsBalanceRoles([
+    {
+      catalogKey: "sustainability.by_location",
+      params: { pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" },
+    },
+  ]);
+  assert(
+    JSON.stringify(roles) === JSON.stringify(["intake"]),
+    `expected ["intake"], got ${JSON.stringify(roles)}`,
+  );
+}
+
+/** A binding without the field yields nothing — the role is optional. */
+export function sourceWithoutABalanceRoleYieldsNothing(): void {
+  const roles = sourceParamsBalanceRoles([
+    { catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "sum" } },
+  ]);
+  assert(roles.length === 0, `expected [] without balanceRole, got ${JSON.stringify(roles)}`);
+}
+
+/** The same role on two widgets is one lookup. */
+export function balanceRolesAreDeduplicated(): void {
+  const roles = sourceParamsBalanceRoles([
+    { catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" } },
+    { catalogKey: "sustainability.by_location", params: { pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" } },
+    { catalogKey: "sustainability.total", params: { pointKey: "kl_this_month", aggregate: "sum", balanceRole: "reuse" } },
+  ]);
+  assert(
+    JSON.stringify(roles) === JSON.stringify(["intake", "reuse"]),
+    `expected ["intake","reuse"], got ${JSON.stringify(roles)}`,
+  );
+}
+
+/**
+ * Review L1 — the refusal echoes the caller's code, and a code carrying `\r\n` would split the
+ * line in a log sink. The schema bounds the length only (no charset, by ruling), so the echo
+ * strips non-printables, as `VocabulariesService.unknownCodeMessage` does.
+ */
+export function refusalEchoStripsControlCharacters(): void {
+  const message = balanceRoleRefusalMessage(["bad\r\nrole"]);
+  assert(
+    message === "Not a live water balance role: badrole",
+    `expected the CR/LF stripped, got ${JSON.stringify(message)}`,
+  );
+}
+
+/** The control: a printable code is echoed intact. */
+export function refusalEchoKeepsAPrintableCode(): void {
+  const message = balanceRoleRefusalMessage(["nope"]);
+  assert(
+    message === "Not a live water balance role: nope",
+    `expected the code intact, got ${JSON.stringify(message)}`,
+  );
 }

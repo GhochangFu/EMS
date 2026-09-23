@@ -26,6 +26,7 @@ const VOCABULARIES = {
     { code: "f336-spec-beta", label: "Spec Beta Role", sortOrder: 20, active: true },
   ],
   dashboardSections: [],
+  waterBalanceRoles: [],
 };
 
 function renderPicker(onAdd = vi.fn()) {

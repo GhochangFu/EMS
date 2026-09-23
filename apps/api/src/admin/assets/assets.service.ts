@@ -178,6 +178,14 @@ export class AssetsAdminService {
     // schema can only check shape. Without this the code would reach
     // `assets_domain_fk` and return a 500 where the enum used to give a 400.
     await this.vocabularies.assertAssetDomain(body.domain);
+    // ADR 0073 decision 1 (E4.3) — the same reason, one column over: without this an unknown
+    // balance role reaches `assets_water_balance_role_fkey` and answers a 500. Checked only
+    // when a code is sent; omitted or `null` means "not in the balance". No domain gate: an
+    // admin may place any asset in the balance (a chiller's makeup line is water too), and a
+    // rule nobody asked for is one more thing to unwind (YAGNI).
+    if (typeof body.waterBalanceRole === "string") {
+      await this.vocabularies.assertWaterBalanceRole(body.waterBalanceRole);
+    }
     // Resolve the org from the location BEFORE the write, so the RTU check and
     // the insert both run under the tenant GUC (E7.1b).
     const organizationId = await this.resolveLocationOrg(body.locationId);
@@ -207,6 +215,7 @@ export class AssetsAdminService {
           locationId: body.locationId,
           rtuId: body.rtuId ?? null,
           domain: body.domain,
+          waterBalanceRole: body.waterBalanceRole ?? null,
           organizationId,
           meta: storedMeta,
           active: true,
@@ -263,6 +272,10 @@ export class AssetsAdminService {
     // `undefined` means "leave alone"; an explicit `null` unwires the asset
     // (ADR 0018), which `??` alone could not express.
     const nextRtuId = body.rtuId === undefined ? existing.rtuId : body.rtuId;
+    // ADR 0073 decision 1 (E4.3) — the same idiom: `undefined` leaves the stored role alone,
+    // an explicit `null` takes the asset out of the balance.
+    const nextWaterBalanceRole =
+      body.waterBalanceRole === undefined ? existing.waterBalanceRole : body.waterBalanceRole;
 
     // Authorize the DESTINATION, not just the asset's current home.
     // `canManageAsset` above resolves through the asset's *existing* location,
@@ -283,6 +296,16 @@ export class AssetsAdminService {
     // touch.
     if (body.domain !== undefined) {
       await this.vocabularies.assertAssetDomain(body.domain);
+    }
+    // Only when a code is supplied AND differs from the stored one, for the reason above: the
+    // asset form always sends the field, so a rename of an asset whose role was retired since
+    // re-sends that same code, and re-checking a value the edit did not change would refuse it
+    // (review C1). A different code is still checked, retired or unknown.
+    if (
+      typeof body.waterBalanceRole === "string" &&
+      body.waterBalanceRole !== existing.waterBalanceRole
+    ) {
+      await this.vocabularies.assertWaterBalanceRole(body.waterBalanceRole);
     }
 
     const organizationId = await this.resolveLocationOrg(nextLocationId);
@@ -335,6 +358,7 @@ export class AssetsAdminService {
           locationId: nextLocationId,
           rtuId: nextRtuId,
           domain: body.domain ?? existing.domain,
+          waterBalanceRole: nextWaterBalanceRole,
           organizationId,
           meta: nextMeta,
         })
@@ -579,6 +603,7 @@ export class AssetsAdminService {
       rtuId: asset.rtuId,
       rtuDisplayName: row.rtuDisplayName,
       domain: asset.domain,
+      waterBalanceRole: asset.waterBalanceRole,
       active: asset.active,
       templateId: asset.templateId,
       templateCode: row.templateCode,

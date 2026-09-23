@@ -1,4 +1,9 @@
-import { assetDomainCodeSchema, CATALOG_CODE_MESSAGE, CATALOG_CODE_PATTERN } from "@bms/shared";
+import {
+  assetDomainCodeSchema,
+  CATALOG_CODE_MESSAGE,
+  CATALOG_CODE_PATTERN,
+  waterBalanceRoleCodeSchema,
+} from "@bms/shared";
 import { z } from "zod";
 
 export const createAssetBodySchema = z
@@ -19,6 +24,13 @@ export const createAssetBodySchema = z
     // `VocabulariesService.assertAssetDomain`, which is what keeps an unknown
     // domain a 400 naming the options rather than a 500 from `assets_domain_fk`.
     domain: assetDomainCodeSchema,
+    // ADR 0073 decision 1 (E4.3): the asset's place in its site's water balance. **Shape
+    // only**, for the `domain` reason above: the set is data (`bms.water_balance_roles`), and
+    // the live check is `VocabulariesService.assertWaterBalanceRole` in `AssetsService`, which
+    // keeps an unknown code a 400 naming the options rather than a 500 from
+    // `assets_water_balance_role_fkey`. Omitted or `null` = not in the balance; on update,
+    // omitted leaves the stored role alone and `null` clears it.
+    waterBalanceRole: waterBalanceRoleCodeSchema.nullish(),
     meta: z.record(z.unknown()).optional(),
   })
   .strict();

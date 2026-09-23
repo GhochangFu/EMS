@@ -22,7 +22,8 @@ import { MetricSourcePicker } from "../dashboards/metric-source-picker";
  * `metricCatalogLabel` names a bound entry. Add sends `params: {}` and nothing
  * else — every entry the picker offers has the write schema
  * `z.object({}).strict()`; the sustainability entries declare
- * `{ pointKey, aggregate }` (`E4.2`) and `catalogKeysFor` hides them from the
+ * `{ pointKey, aggregate }` (`E4.2`), with an optional `balanceRole` (`E4.3`),
+ * and `catalogKeysFor` hides them from the
  * picker. A scope id in `params` is the ADR 0019 problem the binding contract
  * exists to refuse.
  * Remove patches `sources` alone: no column picker exists on a template widget

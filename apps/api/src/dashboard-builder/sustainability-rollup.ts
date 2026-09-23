@@ -140,14 +140,23 @@ export type RollupRow = {
  * the organization arm filters `active`, the asset, location and asset-group arms do not, so
  * without it a decommissioned meter still pinned to its template was a permanent denominator
  * — and, while its last sample stayed fresh, a term — on every site dashboard.
+ *
+ * `balanceRole` (`E4.3`, ADR 0073 decision 2), when given, keeps only the assets whose
+ * `water_balance_role` is that code. It narrows the CARRYING set, so the coverage is counted
+ * over it too (`carrying` is the row count) — a stale intake meter is `0/1`, never hidden by
+ * the fresh treatment stages beside it. Omitted, every carrying asset counts, which on a water
+ * plant sums every stage's inlet: the double count the parameter exists to remove.
  */
 export async function readRollupRows(
   tx: BmsTx,
   organizationId: string,
   scope: readonly string[],
   pointKey: string,
+  balanceRole?: string,
 ): Promise<RollupRow[]> {
   if (scope.length === 0) return [];
+  const roleFilter =
+    balanceRole === undefined ? sql`` : sql`AND a.water_balance_role = ${balanceRole}`;
 
   // `sql.param` on purpose: a bare JS array inside drizzle's `sql` tag is expanded to a
   // parenthesised list for `IN (...)`, which is not a Postgres array. `param` hands the array
@@ -179,6 +188,7 @@ export async function readRollupRows(
      WHERE a.id = ANY(${sql.param([...scope])}::uuid[])
        AND a.organization_id = ${organizationId}
        AND a.active
+       ${roleFilter}
      ORDER BY l.code, a.code
   `);
   if (carrying.rows.length === 0) return [];

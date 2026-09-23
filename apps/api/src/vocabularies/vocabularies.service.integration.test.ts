@@ -12,6 +12,9 @@ import {
   assertAssetRoleRejectsUnknownCode,
   assertListReturnsAlarmSkillsOrdered,
   assertListReturnsAssetRolesOrdered,
+  assertListReturnsWaterBalanceRolesOrdered,
+  assertWaterBalanceRoleRejectsInactiveCode,
+  assertWaterBalanceRoleRejectsUnknownCode,
 } from "./vocabularies.service.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 
@@ -101,6 +104,52 @@ describe.skipIf(!roleConnectionString)(
 
     it("rejects a retired asset role code", async () => {
       await assertAssetRoleRejectsInactiveCode(db);
+    });
+  },
+);
+
+/**
+ * `E4.3` (ADR 0073 decision 1) — the seventh vocabulary. Its own guard and
+ * its own pool, for the reason the `F3.37` block above gives.
+ */
+const waterBalanceRoleConnectionString = requireIntegrationDb({
+  item: "E4.3",
+  label: "VocabulariesService water balance role tests",
+  because:
+    "a green run here would assert that list() serves bms.water_balance_roles ordered " +
+    "and active-only, and that assertWaterBalanceRole turns an unknown or retired code " +
+    "into a 400 rather than letting assets_water_balance_role_fkey surface as a 500 — " +
+    "while nothing checked any of it against a real database. Fix the pipeline, do not " +
+    "relax this guard.",
+});
+
+describe.skipIf(!waterBalanceRoleConnectionString)(
+  "E4.3 — VocabulariesService water balance roles against a real database",
+  () => {
+    let pool: pg.Pool;
+    let db: BmsDb;
+
+    beforeAll(async () => {
+      pool = await openIntegrationPool(waterBalanceRoleConnectionString as string, "E4.3");
+      db = createDb(pool);
+    });
+
+    afterAll(async () => {
+      if (pool) {
+        await pool.end();
+      }
+    });
+
+    it("returns water balance roles ordered by sortOrder, active only", async () => {
+      await assertListReturnsWaterBalanceRolesOrdered(db);
+    });
+
+    it("rejects a water balance role code with no matching row, listing live codes", async () => {
+      await assertWaterBalanceRoleRejectsUnknownCode(db);
+    });
+
+    it("rejects a retired water balance role code", async () => {
+      await assertWaterBalanceRoleRejectsInactiveCode(db);
     });
   },
 );

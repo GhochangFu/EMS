@@ -16,6 +16,10 @@ import {
 import { asRole } from "../testing/role-urls";
 import { MetricCatalogService } from "./metric-catalog.service";
 import {
+  intakeTileAtL1IsTenWithOneOfOne,
+  intakeTableGivesL1TenOverOneOfOne,
+  intakeTableKeepsL2AsARowAtZeroOverZero,
+  dischargeTableGivesL1NullOverZeroOfZero,
   byLocationListsL1ThenL2WithStringCoverage,
   byLocationShowsASiteWithNoMetersAsZeroOverZero,
   callerScopeIntersectsTheTable,
@@ -55,6 +59,10 @@ import {
  * template, E at L1 on it and INACTIVE (sweep). Samples: `kl_today` A = 10 (now), B = 20
  * (now), C = 99 (now − 10 min, stale at 180 s), E = 40 (now, and excluded as inactive);
  * `kwh_today` A = 5 (now − 14 min, fresh at 15 min), B = 7 (now − 16 min, stale).
+ *
+ * `E4.3` U4 (ADR 0073 decision 2): A's `water_balance_role` is `intake`, B's `internal`, C's
+ * `NULL`, so a `balanceRole` binding and the unfiltered one read the SAME rows — the unfiltered
+ * L1 sum staying 30 with 2/2 is the double-count control for the filtered 10 with 1/1.
  */
 const connectionString = requireIntegrationDb({
   item: "E4.2",
@@ -148,18 +156,29 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       tag: string,
       onTemplate: boolean,
       active = true,
+      waterBalanceRole: string | null = null,
     ): Promise<string> => {
       const row = await superuserPool.query<{ id: string }>(
-        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain, template_id, active)
-         VALUES ($1, $2, $3, $4, 'E4.2', $5, $6, $7) RETURNING id`,
-        [orgId, locationId, `E42-${tag}-${RUN}`, `E4.2 ${tag} ${RUN}`, domainCode, onTemplate ? templateId : null, active],
+        `INSERT INTO bms.assets
+           (organization_id, location_id, code, name, site_name, domain, template_id, active, water_balance_role)
+         VALUES ($1, $2, $3, $4, 'E4.2', $5, $6, $7, $8) RETURNING id`,
+        [
+          orgId,
+          locationId,
+          `E42-${tag}-${RUN}`,
+          `E4.2 ${tag} ${RUN}`,
+          domainCode,
+          onTemplate ? templateId : null,
+          active,
+          waterBalanceRole,
+        ],
       );
       const id = row.rows[0]?.id ?? "";
       assetIds.push(id);
       return id;
     };
-    const assetA = await mkAsset(l1.id, "A", true);
-    const assetB = await mkAsset(l1.id, "B", true);
+    const assetA = await mkAsset(l1.id, "A", true, true, "intake");
+    const assetB = await mkAsset(l1.id, "B", true, true, "internal");
     const assetC = await mkAsset(l2.id, "C", true);
     await mkAsset(l1.id, "D", false);
     // E (sweep): INACTIVE, on the template at L1, with a FRESH sample — a decommissioned meter
@@ -231,6 +250,16 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       // Appended (the source ids above are positional): unit `""` and NOT money — no currency.
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: { pointKey: "pf", aggregate: "avg" } },
     ]);
+    // `E4.3` U4 — the role-filtered bindings, on dashboards of their own so every earlier
+    // source id stays where it was.
+    const role = (balanceRole: string) => ({ pointKey: "kl_today", aggregate: "sum", balanceRole });
+    const roleL1Dash = await mkDashboard("role-l1", l1.id, null, [
+      { widgetType: "value_tile", catalogKey: "sustainability.total", params: role("intake") },
+    ]);
+    const roleTableDash = await mkDashboard("role-table", null, null, [
+      { widgetType: "table", catalogKey: "sustainability.by_location", params: role("intake") },
+      { widgetType: "table", catalogKey: "sustainability.by_location", params: role("discharge") },
+    ]);
     const assetDash = await mkDashboard("asset", null, assetA, [
       { widgetType: "value_tile", catalogKey: "sustainability.total", params: sum("kl_today") },
     ]);
@@ -272,6 +301,11 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       nopeSourceId: broken.rows[0]?.id ?? "",
       assetScopedDashboardId: assetDash.dashboardId,
       assetScopedSourceId: assetDash.sourceIds[0] ?? "",
+      roleL1DashboardId: roleL1Dash.dashboardId,
+      roleL1IntakeSourceId: roleL1Dash.sourceIds[0] ?? "",
+      roleTableDashboardId: roleTableDash.dashboardId,
+      roleTableIntakeSourceId: roleTableDash.sourceIds[0] ?? "",
+      roleTableDischargeSourceId: roleTableDash.sourceIds[1] ?? "",
     };
   }, 60_000);
 
@@ -359,6 +393,22 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
 
   it("reports truncated: false for two locations (the cap control)", async () => {
     await byLocationUnderTheCapIsNotTruncated(fixture);
+  });
+
+  it("narrows the L1 sum to the intake asset: 10 with 1/1 (E4.3)", async () => {
+    await intakeTileAtL1IsTenWithOneOfOne(fixture);
+  });
+
+  it("narrows the by_location L1 row to the intake asset: 10, \"1/1\" (E4.3)", async () => {
+    await intakeTableGivesL1TenOverOneOfOne(fixture);
+  });
+
+  it("keeps L2 as a by_location row under a role filter: null, \"0/0\" (E4.3)", async () => {
+    await intakeTableKeepsL2AsARowAtZeroOverZero(fixture);
+  });
+
+  it("answers null, \"0/0\" at L1 for a role no asset there carries (E4.3)", async () => {
+    await dischargeTableGivesL1NullOverZeroOfZero(fixture);
   });
 });
 

@@ -41,7 +41,10 @@ import { AccessControlService } from "../../auth/access-control.service";
 // global `ZodErrorFilter` would report it as the caller's bad request.
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { METRIC_CATALOG_PARAMS_WRITE } from "../../dashboard-builder/dashboards.schema";
-import { assertSourceParamsPointKeysActive } from "../../dashboard-builder/source-params-point-keys";
+import {
+  assertSourceParamsBalanceRolesActive,
+  assertSourceParamsPointKeysActive,
+} from "../../dashboard-builder/source-params-point-keys";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -318,8 +321,9 @@ export class DashboardTemplatesService {
         //
         // The five Stage C entries are `z.object({}).strict()`, so this refuses
         // any non-empty `params` on them, exactly as `PUT /dashboards/:id/widgets`
-        // does; the two sustainability entries require exactly
-        // `{ pointKey, aggregate }` (`E4.2`, ADR 0072 decision 2). The risk it
+        // does; the two sustainability entries require `{ pointKey, aggregate }`
+        // (`E4.2`, ADR 0072 decision 2) and accept an optional `balanceRole`
+        // (`E4.3`, ADR 0073 decision 2), and nothing else. The risk it
         // closes is not hypothetical in shape: an author could otherwise persist
         // `{"locationId": "<foreign uuid>"}` into `dashboard_widget_sources.params`,
         // which `dashboards.schema.ts` calls "an id inside jsonb that no foreign
@@ -341,6 +345,12 @@ export class DashboardTemplatesService {
     // draft is proved, and instantiation copies `params` verbatim, so this is the one gate on
     // the template path — the same sentence the dashboard write path answers with.
     await assertSourceParamsPointKeysActive(
+      this.fleetDb,
+      content.widgets.flatMap((widget) => widget.sources),
+    );
+    // `E4.3` — the balance role, likewise (ADR 0073 decision 2): instantiation copies `params`
+    // verbatim, so a role that is not live must stop here or never.
+    await assertSourceParamsBalanceRolesActive(
       this.fleetDb,
       content.widgets.flatMap((widget) => widget.sources),
     );
