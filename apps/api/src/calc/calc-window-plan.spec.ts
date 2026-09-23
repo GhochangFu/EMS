@@ -372,7 +372,7 @@ const seg = (level: Segment["level"], from: string, to: string): Segment => ({ l
 const near = (actual: number, expected: number): boolean => Math.abs(actual - expected) < 1e-9;
 const facts = (coveredUnits: number, headCovered: boolean, tailCovered: boolean): SegmentCoverageFacts => ({ coveredUnits, headCovered, tailCovered });
 
-/** C1 — a 1d segment: 24 h per covered day; the clips are zero on an aligned segment even with both flags set */
+/** C1 — a 1d segment: 24 h per covered day; an aligned segment has no partial head or tail, so both days count in full even with both flags set */
 export function runCoveredHours1dTests(): void {
   const covered = coveredHoursOf([{ segment: seg("1d", `${T}T00:00:00Z`, "2026-09-20T00:00:00Z"), coverage: facts(2, true, true) }]);
   assert(covered === 48, `C1: two covered days of a 1d segment are 48 h, got ${covered}`);
@@ -391,7 +391,7 @@ export function runCoveredHoursClipBothEndsTests(): void {
   assert(near(covered, 23 / 60), `C3: both covered hours are clipped to the segment, 23/60 h, got ${covered}`);
 }
 
-/** C4 — a 1m segment whose head hour is NOT covered: no head clip is subtracted, and the tail ends on the hour */
+/** C4 — a 1m segment whose head hour is NOT covered: the uncovered head hour contributes nothing, and the covered tail hour counts in full */
 export function runCoveredHoursClipHeadOnlyTests(): void {
   const covered = coveredHoursOf([{ segment: seg("1m", `${T}T09:57:00Z`, `${T}T11:00:00Z`), coverage: facts(1, false, true) }]);
   assert(covered === 1, `C4: one covered whole hour (10:00–11:00) with an uncovered head is 1 h, got ${covered}`);

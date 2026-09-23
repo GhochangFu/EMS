@@ -205,7 +205,9 @@ export const WATER_ETP: StockAssetTemplateEntry = {
     "every hour that has elapsed in the period, and since E4.4 (ADR 0070 Amendment 3) the row " +
     "refuses window_sparse once the meter's coverage of the elapsed window drops below 90%. Within " +
     "that margin the derived point is rewritten at every sweep, so a roll-up still counts the asset " +
-    "as fresh. Read those four as an estimate, not as a meter reading.",
+    "as fresh. On a completed day old enough to be served from daily storage (about two days " +
+    "back) coverage is judged by the day, not the hour, so one sample anywhere in that day " +
+    "counts it as covered. Read those four as an estimate, not as a meter reading.",
   stockVersion: 4,
   content: {
     contentVersion: 1,

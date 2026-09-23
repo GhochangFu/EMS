@@ -74,7 +74,7 @@ describe("calc window plan — segment composition over the continuous aggregate
 });
 
 describe("calc window plan — the covered-time fold and the window_sparse guard (ADR 0070 Amendment 3, E4.4)", () => {
-  it("C1 a 1d segment counts 24 h per covered day; the clips are zero on an aligned segment", () => {
+  it("C1 a 1d segment counts 24 h per covered day; an aligned segment has no partial head or tail", () => {
     runCoveredHours1dTests();
   });
   it("C2 a 1h segment counts 1 h per covered hour", () => {
@@ -83,7 +83,7 @@ describe("calc window plan — the covered-time fold and the window_sparse guard
   it("C3 a 5m segment clips both covered hours to the segment (23/60 h)", () => {
     runCoveredHoursClipBothEndsTests();
   });
-  it("C4 a 1m segment with an uncovered head hour subtracts no head clip (1 h)", () => {
+  it("C4 a 1m segment with an uncovered head hour contributes nothing from it (1 h)", () => {
     runCoveredHoursClipHeadOnlyTests();
   });
   it("C5 a covered segment inside one hour counts its own length (0.05 h)", () => {
