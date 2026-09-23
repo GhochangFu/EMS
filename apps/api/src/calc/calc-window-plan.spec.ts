@@ -524,3 +524,46 @@ export function runMaxOverSparseRowsAnswersTests(): void {
 export function runMinWindowCoverageIsNinetyPercentTests(): void {
   assert(MIN_WINDOW_COVERAGE === 0.9, `G8: MIN_WINDOW_COVERAGE is 0.9, got ${MIN_WINDOW_COVERAGE}`);
 }
+
+// ---- the float boundary (post-merge sweep L1) ----
+//
+// A rolling 100m window [00:30, 02:10) planned as `5m [00:30, 01:55)` + `1m
+// [01:55, 02:10)`, with samples at :04, :19, :34 and :49 of each hour and none
+// yet in hour 02: 90 of the 100 elapsed minutes are covered — exactly the
+// threshold — but `coveredHoursOf(rows) / elapsedHours` computes it as
+// `1.5 / 1.6666666666666667`, which is `0.8999999999999999` in IEEE 754, one
+// bit short of `0.9`. Comparing in integer milliseconds instead of the hour
+// fraction is what admits it.
+
+const FLOAT_5M = seg("5m", `${T}T00:30:00Z`, `${T}T01:55:00Z`);
+const FLOAT_1M = seg("1m", `${T}T01:55:00Z`, `${T}T02:10:00Z`);
+const FLOAT_ELAPSED_HOURS = 100 / 60;
+
+/** H1 — 90 of 100 elapsed minutes covered answers, despite the hour-fraction rounding down */
+export function runSumAtFloatBoundaryCoverageAnswersTests(): void {
+  const rows: SegmentRow[] = [
+    { segment: FLOAT_5M, coverage: facts(2, true, true), sumValue: 60, sampleCount: 6, minValue: 10, maxValue: 10 },
+    { segment: FLOAT_1M, coverage: facts(0, false, false), sumValue: null, sampleCount: 0, minValue: null, maxValue: null },
+  ];
+  const result = combineSegments("sum", rows, FLOAT_ELAPSED_HOURS);
+  assert(
+    result.ok === true,
+    `H1: 90 of 100 elapsed minutes covered answers rather than refusing on a rounded fraction, got ${JSON.stringify(result)}`,
+  );
+}
+
+const FLOAT89_5M = seg("5m", `${T}T00:31:00Z`, `${T}T01:56:00Z`);
+const FLOAT89_1M = seg("1m", `${T}T01:56:00Z`, `${T}T02:11:00Z`);
+
+/** H2 — one minute below the boundary (89 of 100) still refuses: the fix did not loosen the threshold */
+export function runSumJustBelowFloatBoundaryCoverageRefusesTests(): void {
+  const rows: SegmentRow[] = [
+    { segment: FLOAT89_5M, coverage: facts(2, true, true), sumValue: 60, sampleCount: 6, minValue: 10, maxValue: 10 },
+    { segment: FLOAT89_1M, coverage: facts(0, false, false), sumValue: null, sampleCount: 0, minValue: null, maxValue: null },
+  ];
+  const result = combineSegments("sum", rows, FLOAT_ELAPSED_HOURS);
+  assert(
+    result.ok === false && result.reason === "window_sparse",
+    `H2: 89 of 100 elapsed minutes covered still refuses window_sparse, got ${JSON.stringify(result)}`,
+  );
+}

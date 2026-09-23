@@ -21,6 +21,8 @@ import {
   runSharedHourUncoveredInBothPartsTests,
   runSingleSegmentKeepsItsWindowClipTests,
   runSumAtExactlyTheThresholdAnswersTests,
+  runSumAtFloatBoundaryCoverageAnswersTests,
+  runSumJustBelowFloatBoundaryCoverageRefusesTests,
   runSumJustBelowTheThresholdRefusesTests,
   runDeltaOfTests,
   runWindowBoundsTests,
@@ -128,5 +130,11 @@ describe("calc window plan — the covered-time fold and the window_sparse guard
   });
   it("G8 MIN_WINDOW_COVERAGE is 0.9", () => {
     runMinWindowCoverageIsNinetyPercentTests();
+  });
+  it("H1 90 of 100 elapsed minutes covered answers, despite the hour-fraction float rounding (post-merge sweep L1)", () => {
+    runSumAtFloatBoundaryCoverageAnswersTests();
+  });
+  it("H2 89 of 100 elapsed minutes covered still refuses window_sparse — the fix did not loosen the threshold", () => {
+    runSumJustBelowFloatBoundaryCoverageRefusesTests();
   });
 });
