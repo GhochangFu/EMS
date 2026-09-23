@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — drafted at the §10 gate on 2026-09-23, before any implementation
+Accepted — drafted at the §10 gate on 2026-09-23, before any implementation
 code. Seven gate questions were put to the owner one at a time; five were
 ruled as recommended and **two against the recommendation** — Q1 (fold the
 double count into this row rather than open a row and label it now) and Q6
@@ -10,7 +10,7 @@ double count into this row rather than open a row and label it now) and Q6
 balance formula that the Q5 option text stated. The rulings are recorded
 under *Gate questions* and carried into *Decision*. One point was decided
 without a question and is listed under *Ruled here without a question*.
-The status moves to Accepted when the owner merges this record.
+The owner merged this record on 2026-09-23 (PR #530).
 
 Promotes nothing out of `AGENTS.md` §6 — the ESG module is `E4.x`, not a §6
 item (ADR 0070 *Consequences*, ADR 0072 *Status*).
