@@ -1,5 +1,6 @@
 import {
   balanceRoleRefusalMessage,
+  codesNotStored,
   sourceParamsBalanceRoles,
   sourceParamsPointKeys,
 } from "./source-params-point-keys";
@@ -134,5 +135,50 @@ export function refusalEchoKeepsAPrintableCode(): void {
   assert(
     message === "Not a live water balance role: nope",
     `expected the code intact, got ${JSON.stringify(message)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Review Q3 — `codesNotStored`, the post-merge sweep M1 subtraction, without a connection.
+// ---------------------------------------------------------------------------
+
+const tile = (params: Record<string, unknown>) => ({ catalogKey: "sustainability.total", params });
+
+/** A value the stored sources carry is subtracted; a new one is kept. */
+export function storedValueIsSubtracted(): void {
+  const codes = codesNotStored(
+    [tile({ pointKey: "kl_today", aggregate: "sum" }), tile({ pointKey: "kl_new", aggregate: "sum" })],
+    [tile({ pointKey: "kl_today", aggregate: "sum" })],
+    "pointKey",
+  );
+  assert(
+    JSON.stringify(codes) === JSON.stringify(["kl_new"]),
+    `expected ["kl_new"], got ${JSON.stringify(codes)}`,
+  );
+}
+
+/** The same string stored under the OTHER field is not subtracted: the sets are per field. */
+export function sameStringUnderTheOtherFieldIsNotSubtracted(): void {
+  const codes = codesNotStored(
+    [tile({ pointKey: "shared_code", aggregate: "sum" })],
+    [tile({ pointKey: "kl_today", aggregate: "sum", balanceRole: "shared_code" })],
+    "pointKey",
+  );
+  assert(
+    JSON.stringify(codes) === JSON.stringify(["shared_code"]),
+    `expected ["shared_code"], got ${JSON.stringify(codes)}`,
+  );
+}
+
+/** `stored = []` (the template publish call) subtracts nothing. */
+export function emptyStoredSubtractsNothing(): void {
+  const codes = codesNotStored(
+    [tile({ pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" })],
+    [],
+    "balanceRole",
+  );
+  assert(
+    JSON.stringify(codes) === JSON.stringify(["intake"]),
+    `expected ["intake"], got ${JSON.stringify(codes)}`,
   );
 }

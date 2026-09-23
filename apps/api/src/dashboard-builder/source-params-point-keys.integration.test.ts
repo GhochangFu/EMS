@@ -19,6 +19,13 @@ import { asRole } from "../testing/role-urls";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { DashboardsService } from "./dashboards.service";
 import {
+  changeFromStoredLiveRoleToInactiveRoleIs400,
+  resaveOfStoredRetiredBalanceRoleStores,
+  resaveOfStoredRetiredPointKeyStores,
+  retiredPointKeyStoredOnlyAsARoleIs400,
+  retiredPointKeyStoredOnlyElsewhereIs400,
+  retiredRoleStoredOnlyElsewhereIs400,
+  tileBinding,
   draftWithUnknownBalanceRoleRefusesToPublish,
   inactiveBalanceRoleIs400,
   seededBalanceRoleStoresItsParams,
@@ -51,6 +58,13 @@ const DRAFT_CODE_GOOD = `e42-u3-good-${RUN}`;
 // `E4.3` U4 — a per-run inactive balance role and a draft binding an unknown one.
 const INACTIVE_ROLE = `e43_off_${RUN}`;
 const DRAFT_CODE_ROLE = `e43-u4-role-${RUN}`;
+// Post-merge sweep M1 — a role and a point key that are live when a dashboard stores them and
+// retired before it is saved again, and three dashboards that each carry stored sources.
+const RETIRED_ROLE = `e43_ret_${RUN}`;
+const RETIRED_KEY = `e43_ret_${RUN}`;
+const ROLE_DASHBOARD_SLUG = `e43-m1-role-${RUN}`;
+const KEY_DASHBOARD_SLUG = `e43-m1-key-${RUN}`;
+const LIVE_DASHBOARD_SLUG = `e43-m1-live-${RUN}`;
 
 const draftContent = (pointKey: string, balanceRole?: string) => ({
   widgets: [
@@ -86,6 +100,9 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
   let badDraftId: string;
   let goodDraftId: string;
   let roleDraftId: string;
+  let roleDashboardId: string;
+  let keyDashboardId: string;
+  let liveDashboardId: string;
   const actor = jwtFor(SEEDED.globalAdmin, "admin");
 
   const makeServices = () => {
@@ -175,12 +192,45 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
     );
     roleDraftId = roleDraft.rows[0]?.id ?? "";
     if (!roleDraftId) throw new Error("E4.3: role draft insert returned no id");
+
+    // Post-merge sweep M1 — store the retired-to-be values through the service while they are
+    // live, then retire them, so the stored params are exactly what a real author would carry.
+    await superuserPool.query(
+      `INSERT INTO bms.water_balance_roles (code, label, active) VALUES ($1, 'E4.3 M1 retired', true)`,
+      [RETIRED_ROLE],
+    );
+    await superuserPool.query(
+      `INSERT INTO bms.point_keys (code, name, active) VALUES ($1, 'E4.3 M1 retired', true)`,
+      [RETIRED_KEY],
+    );
+    const more = await superuserPool.query<{ id: string; slug: string }>(
+      `INSERT INTO bms.dashboards (organization_id, slug, name)
+       VALUES ($1, $2, 'E4.3 M1 fixture'), ($1, $3, 'E4.3 M1 fixture'), ($1, $4, 'E4.3 M1 fixture')
+       RETURNING id, slug`,
+      [eskomOrgId, ROLE_DASHBOARD_SLUG, KEY_DASHBOARD_SLUG, LIVE_DASHBOARD_SLUG],
+    );
+    const idOf = (slug: string) => more.rows.find((row) => row.slug === slug)?.id ?? "";
+    roleDashboardId = idOf(ROLE_DASHBOARD_SLUG);
+    keyDashboardId = idOf(KEY_DASHBOARD_SLUG);
+    liveDashboardId = idOf(LIVE_DASHBOARD_SLUG);
+    if (!roleDashboardId || !keyDashboardId || !liveDashboardId) {
+      throw new Error("E4.3 M1: dashboard insert returned no ids");
+    }
+    const { dashboards } = makeServices();
+    await dashboards.putWidgets(actor, roleDashboardId, tileBinding("kl_today", RETIRED_ROLE));
+    await dashboards.putWidgets(actor, keyDashboardId, tileBinding(RETIRED_KEY));
+    await dashboards.putWidgets(actor, liveDashboardId, tileBinding("kl_today", "intake"));
+    await superuserPool.query(`UPDATE bms.water_balance_roles SET active = false WHERE code = $1`, [
+      RETIRED_ROLE,
+    ]);
+    await superuserPool.query(`UPDATE bms.point_keys SET active = false WHERE code = $1`, [RETIRED_KEY]);
   }, 60_000);
 
   afterAll(async () => {
-    if (dashboardId) {
-      await superuserPool.query(`DELETE FROM bms.audit_log WHERE entity_id = $1`, [dashboardId]);
-      await superuserPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [dashboardId]);
+    const dashboardIds = [dashboardId, roleDashboardId, keyDashboardId, liveDashboardId].filter(Boolean);
+    if (dashboardIds.length > 0) {
+      await superuserPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [dashboardIds]);
+      await superuserPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [dashboardIds]);
     }
     const draftIds = [badDraftId, goodDraftId, roleDraftId].filter(Boolean);
     if (draftIds.length > 0) {
@@ -188,7 +238,10 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
       await superuserPool.query(`DELETE FROM bms.dashboard_templates WHERE id = ANY($1::uuid[])`, [draftIds]);
     }
     await superuserPool.query(`DELETE FROM bms.point_keys WHERE code = $1`, [INACTIVE_CODE]);
-    await superuserPool.query(`DELETE FROM bms.water_balance_roles WHERE code = $1`, [INACTIVE_ROLE]);
+    await superuserPool.query(`DELETE FROM bms.water_balance_roles WHERE code = ANY($1::text[])`, [
+      [INACTIVE_ROLE, RETIRED_ROLE],
+    ]);
+    await superuserPool.query(`DELETE FROM bms.point_keys WHERE code = $1`, [RETIRED_KEY]);
     await Promise.all([fleetPool.end(), superuserPool.end(), tenantPool.end(), authPool.end()]);
   });
 
@@ -226,5 +279,43 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
 
   it("refuses to publish a draft whose source names an unknown balanceRole", async () => {
     await draftWithUnknownBalanceRoleRefusesToPublish(makeServices().templates, actor, roleDraftId);
+  });
+
+  it("stores a re-save that re-sends a stored balanceRole retired since (M1)", async () => {
+    await resaveOfStoredRetiredBalanceRoleStores(makeServices().dashboards, actor, roleDashboardId, RETIRED_ROLE);
+  });
+
+  it("stores a re-save that re-sends a stored pointKey retired since (M1)", async () => {
+    await resaveOfStoredRetiredPointKeyStores(makeServices().dashboards, actor, keyDashboardId, RETIRED_KEY);
+  });
+
+  it("still refuses an unknown balanceRole on a dashboard carrying stored sources (M1 control)", async () => {
+    await unknownBalanceRoleIs400NamingIt(makeServices().dashboards, actor, roleDashboardId);
+  });
+
+  it("still refuses an unknown pointKey on a dashboard carrying stored sources (M1 control)", async () => {
+    await unknownCodeIs400NamingIt(makeServices().dashboards, actor, keyDashboardId, UNKNOWN_CODE);
+  });
+
+  it("refuses a change from a stored live balanceRole to an inactive one (M1 control)", async () => {
+    await changeFromStoredLiveRoleToInactiveRoleIs400(
+      makeServices().dashboards,
+      actor,
+      liveDashboardId,
+      INACTIVE_ROLE,
+    );
+  });
+
+  it("refuses a retired balanceRole that only another dashboard stores (F1 control)", async () => {
+    await retiredRoleStoredOnlyElsewhereIs400(makeServices().dashboards, actor, liveDashboardId, RETIRED_ROLE);
+  });
+
+  it("refuses a retired pointKey that only another dashboard stores (F1 control)", async () => {
+    await retiredPointKeyStoredOnlyElsewhereIs400(makeServices().dashboards, actor, liveDashboardId, RETIRED_KEY);
+  });
+
+  it("refuses a retired pointKey this dashboard stores only as a balanceRole (F1 control)", async () => {
+    // RETIRED_KEY and RETIRED_ROLE are the same string; roleDashboardId stores it as a role only.
+    await retiredPointKeyStoredOnlyAsARoleIs400(makeServices().dashboards, actor, roleDashboardId, RETIRED_KEY);
   });
 });

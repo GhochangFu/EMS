@@ -4,6 +4,9 @@ import { cleanup } from "@testing-library/react";
 
 import {
   closeRemovesThePanelAndLeavesTheRow,
+  editOfALiveStoredRoleOffersNoRetiredOption,
+  editOfARetiredStoredRoleKeepsItsValue,
+  editOfARetiredStoredRoleOffersItMarkedRetired,
   editPrefillsTheStoredRole,
   imagesOpensThePanelForThatRow,
   roleSelectOffersTheVocabularyAfterAnEmptyOption,
@@ -52,5 +55,17 @@ describe("E4.3 assets page water balance role", () => {
 
   it("prefills the select from the row's stored role on edit", async () => {
     await editPrefillsTheStoredRole();
+  });
+
+  it("keeps a retired stored role as the select's value on edit (sweep L1)", async () => {
+    await editOfARetiredStoredRoleKeepsItsValue();
+  });
+
+  it("offers the retired stored role as an option marked (retired) (sweep L1)", async () => {
+    await editOfARetiredStoredRoleOffersItMarkedRetired();
+  });
+
+  it("offers no (retired) option when the stored role is live (sweep L1 control)", async () => {
+    await editOfALiveStoredRoleOffersNoRetiredOption();
   });
 });

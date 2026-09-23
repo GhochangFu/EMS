@@ -68,6 +68,15 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
   });
   const assetDomains = vocabQ.data?.assetDomains ?? [];
   const waterBalanceRoles = vocabQ.data?.waterBalanceRoles ?? [];
+  // Post-merge sweep L1 — the editing asset's STORED role when the loaded vocabulary no longer
+  // carries it. Keyed on the stored code, not the form state, so the option stays after the
+  // author picks a live role and they can pick it back; and only once the vocabulary has loaded,
+  // so no live code shows as retired while the fetch is in flight.
+  const storedRole = editing?.waterBalanceRole ?? null;
+  const retiredStoredRole =
+    storedRole !== null && vocabQ.isSuccess && !waterBalanceRoles.some((role) => role.code === storedRole)
+      ? storedRole
+      : null;
 
   const locationSummaryQ = useQuery({
     queryKey: ["admin", "location-summary", locationId],
@@ -416,6 +425,9 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                       {role.label}
                     </option>
                   ))}
+                  {retiredStoredRole !== null ? (
+                    <option value={retiredStoredRole}>{retiredStoredRole} (retired)</option>
+                  ) : null}
                 </select>
               </label>
             </div>

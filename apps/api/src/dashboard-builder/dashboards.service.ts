@@ -478,21 +478,6 @@ export class DashboardsService {
       throw new NotFoundException("Dashboard not found");
     }
 
-    // `E4.2` U3 — every `params.pointKey` the submitted sources name must be an active catalog
-    // code (ADR 0072 decision 2). Once per request over ALL widgets, on the fleet pool, BEFORE
-    // the tenant transaction: the catalog is fleet-wide, and a refusal here costs no rollback.
-    // `create` has no widgets, so this is the one dashboard write path that carries a source.
-    await assertSourceParamsPointKeysActive(
-      this.fleetDb,
-      body.widgets.flatMap((widget) => widget.sources),
-    );
-    // `E4.3` — and every `params.balanceRole` a live `bms.water_balance_roles` code (ADR 0073
-    // decision 2), on the same terms: fleet pool, before the transaction.
-    await assertSourceParamsBalanceRolesActive(
-      this.fleetDb,
-      body.widgets.flatMap((widget) => widget.sources),
-    );
-
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       const storedWidgets = await tx
         .select()
@@ -518,6 +503,20 @@ export class DashboardsService {
         list.push(source);
         sourcesByWidget.set(source.widgetId, list);
       }
+
+      // `E4.2` U3 — every `params.pointKey` the submitted sources name that the dashboard does
+      // not already store must be an active catalog code (ADR 0072 decision 2). Once per request
+      // over ALL widgets, before any write. `create` has no widgets, so this is the one dashboard
+      // write path that carries a source. Post-merge sweep M1 — the subtraction is the `C1` rule
+      // of `AssetsService.update`: the builder re-sends stored params verbatim, so a role or key
+      // retired since would otherwise 400 every save of the dashboard. The stored set is this
+      // transaction's own read (review C1), so it is the set the diff below writes against; the
+      // vocabulary lookups stay on the fleet pool, as the vocabularies are global tables.
+      const submittedSources = body.widgets.flatMap((widget) => widget.sources);
+      await assertSourceParamsPointKeysActive(this.fleetDb, submittedSources, storedSources);
+      // `E4.3` — and every `params.balanceRole` a live `bms.water_balance_roles` code (ADR 0073
+      // decision 2), on the same terms.
+      await assertSourceParamsBalanceRolesActive(this.fleetDb, submittedSources, storedSources);
 
       const forDiff: StoredWidgetForDiff[] = storedWidgets.map((widget) => ({
         id: widget.id,

@@ -34,6 +34,16 @@ import { METRIC_CATALOG_PARAMS_WRITE } from "./dashboards.schema";
  * a code that is only shape-valid narrows the carrying set to no asset, and the tile answers
  * `0/0` with a green console — the same silent failure one field over. The file keeps its name
  * so the two call sites' imports and the `E4.2` references stay true.
+ *
+ * **A value the dashboard already stores is not re-checked** (post-merge sweep M1, the `C1` rule
+ * of `AssetsService.update`). The web builder has no params editor and re-sends stored params
+ * verbatim, so re-checking them would make every save of a dashboard 400 once one of its roles
+ * or point keys is retired — for a value the edit did not touch. Both `assert…Active` functions
+ * therefore take the stored sources and check only the submitted values NOT among them
+ * (`codesNotStored`); a new or changed value is still checked against live rows. The set is
+ * dashboard-wide, not per widget: a stored retired value moved to another widget of the same
+ * dashboard passes, as the owner's ruling reads ("not already carried by the stored sources").
+ * Template publish passes `[]` — a new published version must not introduce a retired value.
  */
 
 /** The minimum of a submitted source this module reads. */
@@ -65,6 +75,20 @@ export function sourceParamsBalanceRoles(sources: readonly SubmittedSource[]): s
   return sourceParamsStrings(sources, "balanceRole");
 }
 
+/**
+ * The distinct `field` values the submitted sources name that the stored sources do NOT already
+ * carry, in first-seen order. Stored params go through the same parse as submitted ones, so a
+ * stored value counts exactly when it would have been lifted had it been submitted.
+ */
+export function codesNotStored(
+  submitted: readonly SubmittedSource[],
+  stored: readonly SubmittedSource[],
+  field: "pointKey" | "balanceRole",
+): string[] {
+  const carried = new Set(sourceParamsStrings(stored, field));
+  return sourceParamsStrings(submitted, field).filter((code) => !carried.has(code));
+}
+
 /** One string field lifted out of every source whose params parse under its entry's schema. */
 function sourceParamsStrings(
   sources: readonly SubmittedSource[],
@@ -84,7 +108,8 @@ function sourceParamsStrings(
 }
 
 /**
- * Throws a 400 naming every point key the sources bind that is not an active catalog code.
+ * Throws a 400 naming every point key the sources bind that is not an active catalog code and
+ * that `stored` does not already carry (see the file docblock; publish passes `[]`).
  *
  * One `SELECT … WHERE active AND code = ANY(...)` on the fleet pool, skipped entirely when no
  * source names a key — the five Stage C entries cost nothing here. The message is bounded by
@@ -94,8 +119,9 @@ function sourceParamsStrings(
 export async function assertSourceParamsPointKeysActive(
   fleetDb: BmsDb,
   sources: readonly SubmittedSource[],
+  stored: readonly SubmittedSource[],
 ): Promise<void> {
-  const codes = sourceParamsPointKeys(sources);
+  const codes = codesNotStored(sources, stored, "pointKey");
   if (codes.length === 0) return;
 
   const rows = await fleetDb
@@ -111,7 +137,7 @@ export async function assertSourceParamsPointKeysActive(
 
 /**
  * Throws a 400 naming every `balanceRole` the sources bind that is not an active
- * `bms.water_balance_roles` code (ADR 0073 decision 2).
+ * `bms.water_balance_roles` code (ADR 0073 decision 2) and that `stored` does not already carry.
  *
  * The `assertSourceParamsPointKeysActive` shape: one `SELECT … WHERE active AND code = ANY(...)`
  * on the fleet pool (the vocabulary is global, no tenant GUC), skipped when no source names a
@@ -121,8 +147,9 @@ export async function assertSourceParamsPointKeysActive(
 export async function assertSourceParamsBalanceRolesActive(
   fleetDb: BmsDb,
   sources: readonly SubmittedSource[],
+  stored: readonly SubmittedSource[],
 ): Promise<void> {
-  const codes = sourceParamsBalanceRoles(sources);
+  const codes = codesNotStored(sources, stored, "balanceRole");
   if (codes.length === 0) return;
 
   const rows = await fleetDb
