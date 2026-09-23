@@ -17,8 +17,14 @@ import { CalcWindowsService, windowRequestKey, type WindowReadRequest, type Wind
  * distinct units, the head and tail flags at the one-hour floor — and that
  * they ride in that statement without adding one.
  *
- * **The month sits sixty days in the past on purpose.** `S = floor_1d(now) −
- * 60 d`, window `[S, S + 30 d)`, tick `S + 30 d`, a rolling `30d`. That is
+ * **The "month" is ten days, by owner ruling (2026-09-23).** The first cut
+ * used thirty, and its two refreshes cost about 150 s of CI; the guard is a
+ * fraction, so the window's length proves nothing a shorter one does not.
+ * Seven covered days of ten is 70%, as twenty of thirty was 67% — both well
+ * under 90%. The `month*` names below are kept from the plan's vocabulary.
+ *
+ * **The window sits sixty days in the past on purpose.** `S = floor_1d(now) −
+ * 60 d`, window `[S, S + 10 d)`, tick `S + 10 d`, a rolling `10d`. That is
  * behind every watermark, so the planner serves the whole window from `1d`
  * and the batch runs exactly two statements (the watermarks and the `1d`
  * level) — the statement-budget claim is then an exact count, not a bound.
@@ -26,11 +32,11 @@ import { CalcWindowsService, windowRequestKey, type WindowReadRequest, type Wind
  * re-covers their buckets. On the compose stack, measured 2026-09-23, no row
  * of `telemetry.point_values` lies in that range (the oldest is
  * 2026-08-29) and CI's database is fresh, so the refresh recomputes only the
- * fixture's buckets. **It is slow, and the hook timeouts say so**: measured
- * the same day, the `1m` refresh over the thirty days is about 60 s and each
- * `materializeCompleteBuckets` call over the month about 73 s — once in the
- * seed and once in `cleanup` — so the wrapper gives each hook 300 s. The `1d`
- * view is refreshed from the finer ones, so the `1m` pass cannot be skipped.
+ * fixture's buckets. **It is still the slow part**: over thirty days the `1m`
+ * refresh was about 60 s and each `materializeCompleteBuckets` call about
+ * 73 s (measured 2026-09-23); the cost scales with the range, and it runs
+ * once in the seed and once in `cleanup`. The `1d` view is refreshed from the
+ * finer ones, so the `1m` pass cannot be skipped.
  *
  * **The hour-floor cases sit three hours in the past**, at `5m` resolution:
  * `H = floor_1h(now) − 3 h`, window `[H:15, H+1:15)`. `CLIP_HEAD` holds two
@@ -61,7 +67,10 @@ const CLIP_BOTH = `e44_clip_both_${RUN}`;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
-const MONTH_MINUTES = 30 * 1440;
+/** The window's length and how many of its leading days hold samples. */
+const WINDOW_DAYS = 10;
+const COVERED_DAYS = 7;
+const WINDOW_MINUTES = WINDOW_DAYS * 1440;
 
 export type SparseFixture = {
   readonly assetId: string;
@@ -87,7 +96,7 @@ export async function cleanup(pool: pg.Pool, fixture?: SparseFixture): Promise<v
   if (fixture) {
     // the `0027` standing obligation: the deleted rows' buckets are re-covered
     // so the materialized views forget them too
-    await materializeCompleteBuckets(pool, fixture.sMs, fixture.sMs + 30 * DAY_MS, Date.now());
+    await materializeCompleteBuckets(pool, fixture.sMs, fixture.sMs + WINDOW_DAYS * DAY_MS, Date.now());
     await materializeCompleteBuckets(pool, fixture.hMs - HOUR_MS, fixture.hMs + 2 * HOUR_MS, Date.now());
   }
 }
@@ -118,12 +127,12 @@ export async function seedSparseFixture(pool: pg.Pool, fx: Fixtures): Promise<Sp
   const assetId = created[0].id;
 
   const values: { key: string; timeMs: number }[] = [];
-  // SPARSE: one sample per hour on days 0–19, nothing on days 20–29.
-  // DENSE: one sample per hour on all thirty days.
-  for (let hour = 0; hour < 30 * 24; hour += 1) {
+  // SPARSE: one sample per hour on days 0–6, nothing on days 7–9.
+  // DENSE: one sample per hour on all ten days.
+  for (let hour = 0; hour < WINDOW_DAYS * 24; hour += 1) {
     const timeMs = sMs + hour * HOUR_MS + 30 * MINUTE_MS;
     values.push({ key: DENSE, timeMs });
-    if (hour < 20 * 24) {
+    if (hour < COVERED_DAYS * 24) {
       values.push({ key: SPARSE, timeMs });
     }
   }
@@ -146,7 +155,7 @@ export async function seedSparseFixture(pool: pg.Pool, fx: Fixtures): Promise<Sp
       values.map(() => "x"),
     ],
   );
-  await materializeCompleteBuckets(pool, sMs, sMs + 30 * DAY_MS, nowMs);
+  await materializeCompleteBuckets(pool, sMs, sMs + WINDOW_DAYS * DAY_MS, nowMs);
   await materializeCompleteBuckets(pool, hMs - HOUR_MS, hMs + 2 * HOUR_MS, nowMs);
 
   return { assetId, sMs, hMs };
@@ -201,9 +210,9 @@ async function resolveOne(pool: pg.Pool, ownerAssetId: string, node: CalcWindowR
 
 const near = (actual: number, expected: number): boolean => Math.abs(actual - expected) < 1e-6;
 
-const monthTick = (fixture: SparseFixture): number => fixture.sMs + 30 * DAY_MS;
+const monthTick = (fixture: SparseFixture): number => fixture.sMs + WINDOW_DAYS * DAY_MS;
 const monthRead = (pool: pg.Pool, fixture: SparseFixture, fn: CalcWindowFn["fn"], key: string): Promise<WindowReadResult | undefined> =>
-  resolveOne(pool, fixture.assetId, windowFn(fn, key, rolling(MONTH_MINUTES)), monthTick(fixture));
+  resolveOne(pool, fixture.assetId, windowFn(fn, key, rolling(WINDOW_MINUTES)), monthTick(fixture));
 
 /** The hour-floor window `[H:15, H+1:15)`, a rolling 60 minutes ending at H+1:15. */
 const clipTick = (fixture: SparseFixture): number => fixture.hMs + 75 * MINUTE_MS;
@@ -212,14 +221,14 @@ const clipTick = (fixture: SparseFixture): number => fixture.hMs + 75 * MINUTE_M
 
 export async function assertASparseMonthRefusesWindowSparse(pool: pg.Pool, fixture: SparseFixture): Promise<void> {
   const result = await monthRead(pool, fixture, "sum", SPARSE);
-  // 20 covered days of 30: 480 / 720 h ≈ 67% < 90%
-  assert(result !== undefined && result.ok === false && result.reason === "window_sparse", `S1: sum over a month with ten dark days refuses window_sparse, got ${JSON.stringify(result)}`);
+  // 7 covered days of 10: 168 / 240 h = 70% < 90%
+  assert(result !== undefined && result.ok === false && result.reason === "window_sparse", `S1: sum over ten days with three dark days refuses window_sparse, got ${JSON.stringify(result)}`);
 }
 
 export async function assertADenseMonthAnswers(pool: pg.Pool, fixture: SparseFixture): Promise<void> {
   const result = await monthRead(pool, fixture, "sum", DENSE);
-  // avg 10 × 720 h
-  assert(result !== undefined && result.ok === true && near(result.value, 7200), `S2: sum over the dense month answers 10 × 720 = 7200, got ${JSON.stringify(result)}`);
+  // avg 10 × 240 h
+  assert(result !== undefined && result.ok === true && near(result.value, 2400), `S2: sum over the dense ten days answers 10 × 240 = 2400, got ${JSON.stringify(result)}`);
 }
 
 // ---- S3 — avg, min, max and delta are not guarded ---------------------------------------------
@@ -248,7 +257,7 @@ export async function assertDeltaOverTheSparseMonthAnswers(pool: pg.Pool, fixtur
 
 export async function assertTheSparseBatchRunsTwoStatements(pool: pg.Pool, fixture: SparseFixture): Promise<void> {
   const counted = countedService(pool);
-  const node = windowFn("sum", SPARSE, rolling(MONTH_MINUTES));
+  const node = windowFn("sum", SPARSE, rolling(WINDOW_MINUTES));
   const tick = monthTick(fixture);
   const map = await counted.service.resolveReads([{ ownerAssetId: fixture.assetId, readAssetId: fixture.assetId, node, endMs: tick }]);
   // positive control first: the read reached the level statement and was refused by coverage

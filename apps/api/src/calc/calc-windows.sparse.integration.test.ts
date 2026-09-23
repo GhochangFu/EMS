@@ -61,12 +61,12 @@ describe.skipIf(!connectionString)("E4.4 — a window sum refuses window_sparse 
     }
   }, 300_000);
 
-  it("S1 — sum over a thirty-day month with ten dark days refuses window_sparse", async () => {
+  it("S1 — sum over ten days with three dark days refuses window_sparse", async () => {
     if (!pool) throw new Error("pool required");
     await assertASparseMonthRefusesWindowSparse(pool, fixture);
   });
 
-  it("S2 — positive control: sum over the dense month answers 7200", async () => {
+  it("S2 — positive control: sum over the dense ten days answers 2400", async () => {
     if (!pool) throw new Error("pool required");
     await assertADenseMonthAnswers(pool, fixture);
   });
