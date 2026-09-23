@@ -319,6 +319,11 @@ export class CalcWindowsService {
     }
     const pointKeyOf = (request: WindowReadRequest): string =>
       request.node.kind === "window" ? request.node.ref.pointKey : "";
+    // `Object.hasOwn`, not a bare index — the `aggregateRelation` guard: this
+    // string is interpolated into SQL too.
+    if (!Object.hasOwn(COVERAGE_UNIT_SQL, level)) {
+      throw new Error(`calc windows: no coverage unit for level ${level}`);
+    }
     const unit = COVERAGE_UNIT_SQL[level];
     // The last three columns are the segment's coverage facts (ADR 0070
     // Amendment 3 decision 3). count(DISTINCT unit), never count(*): two
