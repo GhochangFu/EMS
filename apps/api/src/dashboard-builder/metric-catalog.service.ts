@@ -660,9 +660,10 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    * **The point keys are derived from `period` here and nowhere else**: intake is
    * `kl_<period>` over the `intake` assets, reuse and discharge are `outlet_kl_<period>` over
    * the `reuse` and `discharge` assets. `internal` assets are read by no column. A tenant whose
-   * water templates predate v5 carries no `outlet_kl_*` row, so reuse and discharge read `0/0`
-   * until the templates are re-imported (ADR 0073 decision 2's re-import rule) — and a site
-   * with such a discharge asset reads `consumed` as `null`, never `intake − 0`, because
+   * water templates predate v5 carries no `outlet_kl_*` row, so reuse and discharge read `null`
+   * and add nothing to the coverage (not `"0/0"`: intake still counts) until the templates are
+   * re-imported (ADR 0073 decision 2's re-import rule) — and a site with such a discharge
+   * asset reads `consumed` as `null`, never `intake − 0`, because
    * `readBalanceLocations` counts the discharge assets that cannot report (PR 2 review). It
    * counts the intake assets the same way, so an intake meter without the period's `kl_*`
    * point makes `consumed` `null` too (the PR 2 post-merge sweep ruling).
