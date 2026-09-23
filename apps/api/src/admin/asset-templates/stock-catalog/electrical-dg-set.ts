@@ -170,9 +170,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    an asset-scope row) is a counted `parameter_unset` until entered on
  *    `/admin/calc-parameters`, nearest scope wins; (2) the rolling `24h`
  *    windows need no time zone; (3) every row is `scheduled` at 60 s —
- *    at most one tick old — no coverage guard applies (`minCoverageRatio`
- *    governs a `@scope` aggregate only, ADR 0055 decision 11); a window with
- *    no samples refuses `window_empty`;
+ *    at most one tick old — `minCoverageRatio` governs a `@scope` aggregate
+ *    only (ADR 0055 decision 11); a window `sum` refuses `window_sparse`
+ *    below 90% coverage of the elapsed window (ADR 0070 Amendment 3, `E4.4`)
+ *    and a window with no samples refuses `window_empty`;
  *    (4) `fuel_rate_lph` and `start_count` are tier X, so an asset without
  *    them refuses `fuel_hours_remaining_h` / `starts_per_day` as
  *    `missing_input`, visibly.
@@ -543,8 +544,10 @@ export const ELECTRICAL_DG_SET: StockAssetTemplateEntry = {
       sortOrder: 37,
     },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. Five `bms-calc-v3` rows, every
-    // one scheduled at 60 s; no coverage guard applies (`minCoverageRatio`
-    // governs a `@scope` aggregate only, ADR 0055 decision 11), no `meta`.
+    // one scheduled at 60 s; `minCoverageRatio` governs a `@scope` aggregate
+    // only (ADR 0055 decision 11); a window `sum` refuses `window_sparse`
+    // below 90% coverage of the elapsed window (ADR 0070 Amendment 3, `E4.4`)
+    // and a window with no samples refuses `window_empty`, no `meta`.
     // The windowed pair read `dg_shutdown` inline (design decision 6). A count
     // per day carries the empty-string unit (Q8).
     {

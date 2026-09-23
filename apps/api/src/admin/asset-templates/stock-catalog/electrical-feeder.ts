@@ -188,10 +188,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *         `hours(today) = 0` in `energy_saving_vs_baseline_pct` is never
  *         reached.
  *      3. **The value is at most one 60 s tick old** — every row is
- *         `scheduled`, the ADR 0055 decision 10 cost; no coverage guard
- *         applies (`minCoverageRatio` governs a `@scope` aggregate only,
- *         ADR 0055 decision 11) — a window with no samples refuses
- *         `window_empty`.
+ *         `scheduled`, the ADR 0055 decision 10 cost; `minCoverageRatio`
+ *         governs a `@scope` aggregate only (ADR 0055 decision 11); a window
+ *         `sum` refuses `window_sparse` below 90% coverage of the elapsed
+ *         window (ADR 0070 Amendment 3, `E4.4`) and a window with no samples
+ *         refuses `window_empty` — this file's rows are `delta` and `hours`,
+ *         so neither guard touches them.
  *      4. **`max_demand_kva` is tier X** — an asset that has not mapped it
  *         refuses `demand_vs_contract_pct` as `missing_input`, visibly.
  *         `kwh_today` stays MEASURED (Q3): the today rows read
@@ -477,9 +479,11 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
       sortOrder: 35,
     },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. Six `bms-calc-v3` rows, every
-    // one scheduled at 60 s; no coverage guard applies (`minCoverageRatio`
-    // governs a `@scope` aggregate only, ADR 0055 decision 11) and no
-    // `meta` (nothing fits a computed point). Each `$key` is a `0074`
+    // one scheduled at 60 s; `minCoverageRatio` governs a `@scope` aggregate
+    // only (ADR 0055 decision 11); a window `sum` refuses `window_sparse`
+    // below 90% coverage of the elapsed window (ADR 0070 Amendment 3, `E4.4`)
+    // and a window with no samples refuses `window_empty` — these rows are
+    // `delta` and no `meta` (nothing fits a computed point). Each `$key` is a `0074`
     // parameter; each window read is inline, never a derived sibling's. The
     // money rows carry `unit: ""` — the organization's currency (Q8).
     {

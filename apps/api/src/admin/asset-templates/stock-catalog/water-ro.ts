@@ -147,9 +147,11 @@ import type { StockAssetTemplateEntry } from "./types";
  *    is empty, so every `today` row refuses `window_empty` for one tick — the
  *    scheduler resolves the window reads before `evaluate()`, so no division
  *    by `hours(today) = 0` is ever reached; (3) every row is
- *    `scheduled` at 60 s — at most one tick old — with no coverage guard
- *    applying (`minCoverageRatio` governs a `@scope` aggregate only, ADR
- *    0055 decision 11); (4) the flow is tier C, so no `missing_input` arises
+ *    `scheduled` at 60 s — at most one tick old — `minCoverageRatio`
+ *    governs a `@scope` aggregate only (ADR 0055 decision 11); a window
+ *    `sum` refuses `window_sparse` below 90% coverage of the elapsed window
+ *    (ADR 0070 Amendment 3, `E4.4`) and a window with no samples refuses
+ *    `window_empty`; (4) the flow is tier C, so no `missing_input` arises
  *    on a correctly mapped asset.
  *  - `water-ro` **v3** (2026-09-22, `E4.2` PR 2): four more `bms-calc-v3`
  *    derived points appended at `sortOrder` 21–24 (ADR 0072 decision 3, Q7
@@ -164,9 +166,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *    (`combineSegments`, `calc/calc-window-plan.ts`), so a period the meter
  *    was offline for part of still reports a whole period, and the row is
  *    rewritten every sweep so the roll-up counts the asset as fresh. ADR 0070
- *    consequence 9 states it; ADR 0072 did not carry it forward. Label text
- *    is written into `bms.template_points` at import, so a tenant on v3 keeps
- *    the unqualified label until it re-imports.
+ *    consequence 9 states it; ADR 0072 did not carry it forward. Since `E4.4`
+ *    (ADR 0070 Amendment 3) the same window `sum` refuses `window_sparse`
+ *    below 90% coverage of the elapsed window; the label stays, because up to
+ *    that 10% margin the period is still extrapolated, not refused. Label
+ *    text is written into `bms.template_points` at import, so a tenant on v3
+ *    keeps the unqualified label until it re-imports.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (feed_flow_klh, permeate_flow_klh, reject_flow_klh, feed_pressure_bar, feed_conductivity_uscm, permeate_conductivity_uscm, feed_ph, hp_pump_status), plus one
@@ -191,9 +196,10 @@ export const WATER_RO: StockAssetTemplateEntry = {
     "computed from the measured rows and need no extra instrument." +
     " The four calendar-window rows (kl_this_month, kl_this_year, water_cost_this_month, " +
     "water_cost_this_year) are a window sum: the mean of the samples that arrived, multiplied by " +
-    "every hour that has elapsed in the period. A meter that was offline for part of the period " +
-    "still reports a whole period, and the derived point is rewritten at every sweep, so a roll-up " +
-    "still counts the asset as fresh. Read those four as an estimate, not as a meter reading.",
+    "every hour that has elapsed in the period, and since E4.4 (ADR 0070 Amendment 3) the row " +
+    "refuses window_sparse once the meter's coverage of the elapsed window drops below 90%. Within " +
+    "that margin the derived point is rewritten at every sweep, so a roll-up still counts the asset " +
+    "as fresh. Read those four as an estimate, not as a meter reading.",
   stockVersion: 4,
   content: {
     contentVersion: 1,
