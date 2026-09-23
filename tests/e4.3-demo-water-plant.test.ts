@@ -556,3 +556,35 @@ describe("E4.3 U12 — waterClassOf sends each infix to its own class", () => {
     expect(guard, "waterClassOf tests an infix before the WTR- guard").toBeLessThan(body.indexOf("code.includes("));
   });
 });
+
+/**
+ * The PR 3 sweep review: the verify pin count pairs each demo asset code with its
+ * own class's template code. A revert to a `DEMO-WATER-` prefix match stays green
+ * on every fresh database (no demo asset is pinned to another mirror there), so
+ * the pairing is held here by text. SQL comments are stripped first.
+ */
+function verifyWaterSql(): string {
+  const source = read("packages/db/src/verify-hierarchy-seed.ts").replace(/--.*$/gm, "");
+  const at = source.indexOf("AS eskom_water_assets_on_demo_templates");
+  if (at < 0) throw new Error("eskom_water_assets_on_demo_templates is missing from verify-hierarchy-seed.ts");
+  const start = source.lastIndexOf("(SELECT COUNT(*)", at);
+  if (start < 0) throw new Error("the pin count's SELECT was not found");
+  return source.slice(start, at);
+}
+
+describe("E4.3 PR 3 sweep — the verify pin count pairs each demo asset with its own template", () => {
+  it("pairs the asset codes ($2) with the template codes ($3) through unnest", () => {
+    expect(verifyWaterSql().replace(/\s+/g, " ")).toContain(
+      "(a.code, t.code) IN ( SELECT x.asset_code, x.template_code FROM unnest($2::varchar[], $3::varchar[])",
+    );
+  });
+
+  it("does not match the pin by a DEMO-WATER- prefix", () => {
+    expect(verifyWaterSql()).not.toMatch(/LIKE\s+'DEMO-WATER-/);
+  });
+
+  it("binds DEMO_WATER_TEMPLATE_CODES as $3, after the asset codes", () => {
+    const source = read("packages/db/src/verify-hierarchy-seed.ts");
+    expect(source).toMatch(/\[\s*eskomOrgId,\s*DEMO_WATER_ASSET_CODES,\s*DEMO_WATER_TEMPLATE_CODES\s*\]/);
+  });
+});

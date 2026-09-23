@@ -132,9 +132,12 @@ export async function resolveEskomSimRtuId(
 }
 
 /**
- * Wires every non-manual, non-`PHE-` ESKOM asset to its location's simulator
- * RTU for its domain, on every boot: any existing `rtu_id` is overwritten and
- * `meta.telemetrySource` is set to `simulator`. A `water` asset is wired only
+ * Wires every non-manual, non-`PHE-` ESKOM asset whose domain has a simulator
+ * RTU at its `site_name` to that RTU, on every boot (an asset of a domain
+ * with no `DOMAIN_RTU_SUFFIX` entry, such as `mechanical` or `facility`, or
+ * one whose `site_name` matches no ESKOM location, is skipped silently). The
+ * function overwrites an existing `rtu_id` and sets `meta.telemetrySource` to
+ * `simulator`. A `water` asset is wired only
  * when its code starts with `WTR-` (owner ruling R3); any other water asset
  * keeps its `rtu_id` and its `telemetrySource`.
  */

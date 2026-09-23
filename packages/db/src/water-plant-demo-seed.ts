@@ -67,10 +67,11 @@ import type { EskomAssetSpec } from "./eskom-assets-seed";
  * and to carry a non-null role, so an operator who re-pins a demo asset to
  * any other template, or clears its role, fails the next boot. A change from
  * one non-null role to another passes the post-condition.
- * `verify-hierarchy-seed.ts`'s water counts fail on a cleared role, on a pin
- * to a template whose code does not start with `DEMO-WATER-`, and on an
- * intake count other than one; its pin count does not see a swap between two
- * mirrors. The seed never overwrites the change; it refuses it loudly.
+ * `verify-hierarchy-seed.ts`'s water counts fail the same way: on a cleared
+ * role, on an intake count other than one, and on a demo asset pinned to any
+ * template other than its own class's mirror (a swap between two mirrors
+ * included — its pin count pairs each asset code with its own template code).
+ * The seed never overwrites the change; it refuses it loudly.
  */
 
 /** The site the plant is seeded at — ruling Q10. */
