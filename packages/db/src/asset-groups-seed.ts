@@ -173,6 +173,11 @@ export function demoGroupCodesForAsset(code: string, domain: string): readonly s
   if (domain === "environment") {
     return ["environment"];
   }
+  // `E4.3` U11 — without this branch a water asset fell through to the
+  // electrical default below and joined its site's ELECTRICAL group.
+  if (domain === "water") {
+    return ["water"];
+  }
   if (code.includes("UPS") || code.includes("BATT")) {
     return ["ups-battery"];
   }

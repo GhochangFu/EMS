@@ -200,3 +200,32 @@ export function assertNoPheDeviceJoinsItLoad(): void {
   }
   expect(seen.size, "the PHE catalog no longer holds 48 devices").toBe(48);
 }
+
+/**
+ * `E4.3` U11 — a water asset joins its site's `water` group, and only that.
+ *
+ * Before the branch, `demoGroupCodesForAsset` fell through to `["electrical"]`
+ * for any domain it did not name (plan fact 13), so the five demo water assets
+ * at CSMOC Gauteng would have joined the site's ELECTRICAL group — and
+ * `verifyHierarchySeed`'s `eskom_water_group_members = 5` would read 0. The
+ * group's picker name comes from the default capitaliser: *Water*.
+ */
+export function assertAWaterAssetJoinsTheWaterGroup(): void {
+  expect(demoGroupCodesForAsset("WTR-WTP-01", "water")).toEqual(["water"]);
+}
+
+/** The group's picker name is *Water*, from the default capitaliser. */
+export function assertTheWaterGroupIsNamedWater(): void {
+  expect(demoGroupName("water")).toBe("Water");
+}
+
+/**
+ * A water asset takes no train role: `demoRoleForAsset` roles electrical
+ * assets only. Green before U11 as well — the domain guard already returns
+ * `null` — and held here so a later branch cannot role the water plant by code.
+ * The water BALANCE role is a different column (`bms.assets.water_balance_role`),
+ * written by `water-plant-demo-seed.ts`.
+ */
+export function assertAWaterAssetTakesNoTrainRole(): void {
+  expect(demoRoleForAsset("WTR-WTP-01", "water")).toBeNull();
+}

@@ -96,6 +96,10 @@ export async function verifyHierarchySeed(
       eskom_it_load_members: string;
       eskom_it_rack_kw_points: string;
       eskom_energy_tariff_rows: string;
+      eskom_water_assets_roled: string;
+      eskom_water_assets_on_demo_templates: string;
+      eskom_water_intake_assets: string;
+      eskom_water_group_members: string;
     }>(`
       SELECT
         (SELECT COUNT(*)::text FROM bms.locations l
@@ -156,7 +160,35 @@ export async function verifyHierarchySeed(
           WHERE cp.organization_id = $1
             AND cp.key = 'energy_tariff_per_kwh'
             AND cp.location_id IS NULL
-            AND cp.asset_id IS NULL) AS eskom_energy_tariff_rows
+            AND cp.asset_id IS NULL) AS eskom_energy_tariff_rows,
+        -- E4.3 U11. THE FOUR COUNTS BELOW PROVE THE DEMO WATER PLANT LANDED.
+        -- Fixed cardinalities read off the repository file
+        -- water-plant-demo-seed.ts (five classes, one intake), NOT lifetime
+        -- counters. They catch a role that was not written, a pin that was
+        -- dropped, a wrong intake, and a water asset filed under another
+        -- group (the demoGroupCodesForAsset branch). The seed ORDER is held
+        -- elsewhere: run after seedAssetTemplateHealth on a cold database,
+        -- the health seed pins the five assets to a BASELINE-WATER that
+        -- declares no point and throws unusable = 1 before this check runs.
+        --
+        -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
+        (SELECT COUNT(*)::text FROM bms.assets a
+          INNER JOIN bms.organizations o ON o.id = a.organization_id
+          WHERE o.code = 'ESKOM' AND a.domain = 'water'
+            AND a.water_balance_role IS NOT NULL) AS eskom_water_assets_roled,
+        (SELECT COUNT(*)::text FROM bms.assets a
+          INNER JOIN bms.asset_templates t ON t.id = a.template_id
+          INNER JOIN bms.organizations o ON o.id = a.organization_id
+          WHERE o.code = 'ESKOM' AND a.domain = 'water'
+            AND t.code LIKE 'DEMO-WATER-%') AS eskom_water_assets_on_demo_templates,
+        (SELECT COUNT(*)::text FROM bms.assets a
+          INNER JOIN bms.organizations o ON o.id = a.organization_id
+          WHERE o.code = 'ESKOM' AND a.domain = 'water'
+            AND a.water_balance_role = 'intake') AS eskom_water_intake_assets,
+        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+          INNER JOIN bms.organizations o ON o.id = ag.organization_id
+          WHERE o.code = 'ESKOM' AND ag.code = 'water') AS eskom_water_group_members
     `, [eskomOrgId]);
     const row = res.rows[0];
     // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
@@ -191,6 +223,17 @@ export async function verifyHierarchySeed(
     expect("ESKOM incomers pinned to BASELINE-ELECTRICAL-INCOMER", row?.eskom_incomers_on_pue_template, 9);
     expect("ESKOM IT_LOAD group members", row?.eskom_it_load_members, 14);
     expect("ESKOM IT assets with a rack_kw catalog row", row?.eskom_it_rack_kw_points, 14);
+    // `E4.3` U11 (owner ruling Q7). Five demo water assets at CSMOC Gauteng,
+    // each carrying a balance role and pinned to its `DEMO-WATER-<CLASS>`
+    // mirror; one of them (`WTR-WTP-01`) is the balance's `intake`; all five
+    // are members of the site's `water` group (`demoGroupCodesForAsset`).
+    // Fixed cardinalities read off `water-plant-demo-seed.ts`. An admin who
+    // clears a demo role or re-pins a demo asset fails these on the next boot
+    // — the same exposure the PUE incomer count above carries.
+    expect("ESKOM water assets carrying a balance role", row?.eskom_water_assets_roled, 5);
+    expect("ESKOM water assets pinned to a DEMO-WATER template", row?.eskom_water_assets_on_demo_templates, 5);
+    expect("ESKOM water intake assets", row?.eskom_water_intake_assets, 1);
+    expect("ESKOM water group members", row?.eskom_water_group_members, 5);
     // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
     // the floor is written as its own check.
     if (Number(row?.eskom_energy_tariff_rows) < 1) {

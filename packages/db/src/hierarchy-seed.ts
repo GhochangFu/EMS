@@ -9,6 +9,11 @@ const DOMAIN_RTU_SUFFIX: Record<string, string> = {
   hvac: "HVAC",
   it: "IT",
   environment: "ENV",
+  // `E4.3` U11 (owner ruling Q4) — one simulator RTU per ESKOM location, the
+  // same as every other domain. The demo water plant lives at CSMOC Gauteng
+  // only, so ten of the eleven WATER RTUs carry no asset; the owner accepted
+  // that for the uniformity (every existing mechanism works unchanged).
+  water: "WATER",
 };
 
 /** Maps asset domain to simulator RTU domain column. */
