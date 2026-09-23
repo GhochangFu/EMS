@@ -37,6 +37,7 @@ const VOCABULARIES = {
   alarmSkills: [],
   assetRoles: [{ code: "incoming-supply", label: "Incoming Supply", sortOrder: 10, active: true }],
   dashboardSections: [],
+  waterBalanceRoles: [],
 };
 
 const ROLE: SectionTemplateBindingInput = {

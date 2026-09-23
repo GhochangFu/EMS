@@ -88,6 +88,7 @@ const VOCABULARIES = {
   alarmSkills: [],
   assetRoles: [],
   dashboardSections: [],
+  waterBalanceRoles: [],
 };
 
 /** No scored or unscored tags, so `87%` appears exactly once on the card. */

@@ -256,6 +256,7 @@ const VOCABULARIES = {
   alarmSkills: [],
   assetRoles: [],
   dashboardSections: [],
+  waterBalanceRoles: [],
 };
 
 /**

@@ -171,6 +171,7 @@ const VOCABULARIES = {
   alarmSkills: [],
   assetRoles: [{ code: "meter", label: "Meter", description: null, sortOrder: 10, active: true }],
   dashboardSections: [],
+  waterBalanceRoles: [],
 };
 
 /**

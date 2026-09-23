@@ -60,6 +60,7 @@ const VOCABULARIES = {
   alarmSkills: [],
   assetRoles: [],
   dashboardSections: [],
+  waterBalanceRoles: [],
 } as unknown as VocabulariesResponse;
 
 const ACK_AT = "2026-09-06T09:30:00.000Z";

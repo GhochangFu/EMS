@@ -44,6 +44,7 @@ const VOCABULARIES: VocabulariesResponse = {
   alarmSkills: [],
   assetRoles: [],
   dashboardSections: [],
+  waterBalanceRoles: [],
 } as unknown as VocabulariesResponse;
 
 /**

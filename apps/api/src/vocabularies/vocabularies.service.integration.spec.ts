@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { is, TransactionRollbackError } from "drizzle-orm";
 
-import { alarmSkills, assetRoles } from "@bms/db";
+import { alarmSkills, assetRoles, waterBalanceRoles } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { VocabulariesService } from "./vocabularies.service";
@@ -220,6 +220,106 @@ export async function assertAssetRoleRejectsInactiveCode(db: BmsDb): Promise<voi
     assert(
       rejected,
       "assertAssetRole must reject a retired (active=false) code with a BadRequestException, not just a missing one",
+    );
+
+    tx.rollback();
+  });
+}
+
+/**
+ * `E4.3` (ADR 0073 decision 1) — the seventh vocabulary, `bms.water_balance_roles`.
+ *
+ * Same three properties as the vocabularies before it, for the same reason:
+ * ordering and the active/inactive distinction are properties of the query
+ * against real rows. The seeded contents (`intake`/`discharge`/`reuse`/
+ * `internal`) are deliberately not asserted here — they are rows now, so a
+ * list restated here would be a copy of migration 0080.
+ */
+
+/** `list()` returns `waterBalanceRoles`, ordered by `sortOrder` then `code`, active only. */
+export async function assertListReturnsWaterBalanceRolesOrdered(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    await tx.insert(waterBalanceRoles).values([
+      { code: "e43_test_z_role", label: "Z Test Role", sortOrder: 5 },
+      { code: "e43_test_inactive_role", label: "Inactive Test Role", sortOrder: 5, active: false },
+    ]);
+
+    const service = new VocabulariesService(tx);
+    const { waterBalanceRoles: roles } = await service.list();
+
+    const testRoles = roles.filter((r) => r.code.startsWith("e43_test_"));
+    assert(
+      testRoles.length === 1 && testRoles[0]?.code === "e43_test_z_role",
+      `expected only the active test role in list(), got: ${testRoles.map((r) => r.code).join(", ")}`,
+    );
+
+    // sortOrder 5 sorts before every seeded role (10-40), so it must lead.
+    assert(
+      roles[0]?.code === "e43_test_z_role",
+      `expected the sortOrder-5 test role first, got: ${roles.slice(0, 3).map((r) => r.code).join(", ")}`,
+    );
+
+    const out = roles.map((r) => r.sortOrder);
+    assert(
+      out.every((v, i) => i === 0 || (out[i - 1] as number) <= v),
+      `expected waterBalanceRoles ordered by sortOrder ascending, got: ${out.join(", ")}`,
+    );
+    assert(
+      roles.every((r) => r.active),
+      "expected list() to exclude retired water balance roles entirely",
+    );
+
+    tx.rollback();
+  });
+}
+
+/** `assertWaterBalanceRole` rejects a code that names no row, listing live codes. */
+export async function assertWaterBalanceRoleRejectsUnknownCode(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const service = new VocabulariesService(tx);
+    const { waterBalanceRoles: live } = await service.list();
+
+    let rejected = false;
+    let message = "";
+    try {
+      await service.assertWaterBalanceRole("e43_test_not_a_real_role");
+    } catch (err) {
+      rejected = err instanceof BadRequestException;
+      message = err instanceof Error ? err.message : String(err);
+    }
+    assert(
+      rejected,
+      "assertWaterBalanceRole must reject a code with no matching row with a BadRequestException",
+    );
+    assert(
+      message.includes("water balance role") &&
+        live.length > 0 &&
+        live.every((row) => message.includes(row.code)),
+      `expected the rejection message to name the field and list live codes, got: ${message}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/** `assertWaterBalanceRole` rejects an inactive (retired) code — existence is not enough. */
+export async function assertWaterBalanceRoleRejectsInactiveCode(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    await tx
+      .insert(waterBalanceRoles)
+      .values({ code: "e43_test_retired_role", label: "Retired Test Role", active: false });
+
+    const service = new VocabulariesService(tx);
+
+    let rejected = false;
+    try {
+      await service.assertWaterBalanceRole("e43_test_retired_role");
+    } catch (err) {
+      rejected = err instanceof BadRequestException;
+    }
+    assert(
+      rejected,
+      "assertWaterBalanceRole must reject a retired (active=false) code with a BadRequestException, not just a missing one",
     );
 
     tx.rollback();

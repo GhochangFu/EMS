@@ -428,7 +428,27 @@ export const dashboardSectionDtoSchema = z.object({
 });
 
 /**
- * `GET /api/v1/vocabularies` — all six open vocabularies in one response.
+ * A water balance role code (ADR 0073 decision 1, `E4.3`). Shape only, for
+ * the same reason as `assetRoleCodeSchema`: the set lives in
+ * `bms.water_balance_roles` and is closed by `assets_water_balance_role_fkey`,
+ * not by this file. **Never make this a `z.enum`** — `assetRoleCodeSchema`'s
+ * docblock gives the reasoning verbatim; `VocabulariesService.assertWaterBalanceRole`
+ * is the boundary that turns an unknown code into a 400.
+ */
+export const waterBalanceRoleCodeSchema = z.string().min(1).max(64);
+
+/** One row of `bms.water_balance_roles` (ADR 0073). Matches `assetRoleDtoSchema`'s
+ * shape — no `tone`, no `rank`: a balance role drives no styling and carries
+ * no urgency. */
+export const waterBalanceRoleDtoSchema = z.object({
+  code: waterBalanceRoleCodeSchema,
+  label: z.string(),
+  sortOrder: z.number(),
+  active: z.boolean(),
+});
+
+/**
+ * `GET /api/v1/vocabularies` — all seven open vocabularies in one response.
  *
  * One endpoint rather than four because every consumer needs them together:
  * the rules page renders a concern badge beside a plant badge and a severity
@@ -465,6 +485,14 @@ export const vocabulariesResponseSchema = z.object({
    * renders the wrong option — starts with exactly that inconvenience.
    */
   dashboardSections: z.array(dashboardSectionDtoSchema),
+  /**
+   * ADR 0073 decision 1 (`E4.3`). Ordered by `sortOrder` ascending, like
+   * `assetDomains`/`alarmSkills`/`assetRoles`/`dashboardSections` — a balance
+   * role carries no urgency, so no `rank` column. The seventh global
+   * vocabulary served here for the same reason as the sixth: a picker fed
+   * from anywhere else is the one vocabulary a reader has to go looking for.
+   */
+  waterBalanceRoles: z.array(waterBalanceRoleDtoSchema),
 });
 export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
 /**

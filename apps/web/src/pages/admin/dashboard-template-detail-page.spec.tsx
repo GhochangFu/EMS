@@ -97,6 +97,7 @@ const VOCABULARIES = {
   alarmSkills: [],
   assetRoles: [{ code: "incoming-supply", label: "Incoming Supply", sortOrder: 10, active: true }],
   dashboardSections: [],
+  waterBalanceRoles: [],
 };
 
 function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {

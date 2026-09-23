@@ -346,6 +346,7 @@ const emptyVocabularies: VocabulariesResponse = {
   alarmSkills: [],
   assetRoles: [],
   dashboardSections: [],
+  waterBalanceRoles: [],
 };
 
 /**

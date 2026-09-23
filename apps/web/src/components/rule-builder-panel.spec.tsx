@@ -42,6 +42,7 @@ const vocabularies: VocabulariesResponse = {
   alarmSkills: [],
   assetRoles: [],
   dashboardSections: [],
+  waterBalanceRoles: [],
 };
 
 const thresholdRule: RuleListItem = {
