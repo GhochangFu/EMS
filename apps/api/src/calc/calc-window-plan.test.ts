@@ -1,8 +1,22 @@
 import { describe, it } from "vitest";
 
 import {
+  runAvgOverSparseRowsAnswersTests,
   runBucketBudgetTests,
   runCombineSegmentsTests,
+  runCoveredHours1dTests,
+  runCoveredHours1hTests,
+  runCoveredHoursClipBothEndsTests,
+  runCoveredHoursClipHeadOnlyTests,
+  runCoveredHoursSingleUnitEmptyTests,
+  runCoveredHoursSingleUnitTests,
+  runEmptyBeatsSparseTests,
+  runMaxOverSparseRowsAnswersTests,
+  runMinOverSparseRowsAnswersTests,
+  runMinWindowCoverageIsNinetyPercentTests,
+  runNaNCoverageRefusesTests,
+  runSumAtExactlyTheThresholdAnswersTests,
+  runSumJustBelowTheThresholdRefusesTests,
   runDeltaOfTests,
   runWindowBoundsTests,
   runWindowPlanEmptyTests,
@@ -49,5 +63,50 @@ describe("calc window plan — segment composition over the continuous aggregate
   });
   it("P11 refuses a 366d read on stalled coarse policies (buckets) and every aggregate read on a blocked refresh (raw minutes); a healthy stack passes both", () => {
     runBucketBudgetTests();
+  });
+});
+
+describe("calc window plan — the covered-time fold and the window_sparse guard (ADR 0070 Amendment 3, E4.4)", () => {
+  it("C1 a 1d segment counts 24 h per covered day; the clips are zero on an aligned segment", () => {
+    runCoveredHours1dTests();
+  });
+  it("C2 a 1h segment counts 1 h per covered hour", () => {
+    runCoveredHours1hTests();
+  });
+  it("C3 a 5m segment clips both covered hours to the segment (23/60 h)", () => {
+    runCoveredHoursClipBothEndsTests();
+  });
+  it("C4 a 1m segment with an uncovered head hour subtracts no head clip (1 h)", () => {
+    runCoveredHoursClipHeadOnlyTests();
+  });
+  it("C5 a covered segment inside one hour counts its own length (0.05 h)", () => {
+    runCoveredHoursSingleUnitTests();
+  });
+  it("C5b an uncovered segment inside one hour counts 0 h", () => {
+    runCoveredHoursSingleUnitEmptyTests();
+  });
+  it("G1 a sum at exactly 90% coverage (648/720) answers", () => {
+    runSumAtExactlyTheThresholdAnswersTests();
+  });
+  it("G2 a sum just below 90% coverage (647/720) refuses window_sparse", () => {
+    runSumJustBelowTheThresholdRefusesTests();
+  });
+  it("G3 a NaN coverage fraction refuses window_sparse (fail closed)", () => {
+    runNaNCoverageRefusesTests();
+  });
+  it("G4 an empty sum window is window_empty, never window_sparse", () => {
+    runEmptyBeatsSparseTests();
+  });
+  it("G5 avg over sparse rows answers", () => {
+    runAvgOverSparseRowsAnswersTests();
+  });
+  it("G6 min over sparse rows answers", () => {
+    runMinOverSparseRowsAnswersTests();
+  });
+  it("G7 max over sparse rows answers", () => {
+    runMaxOverSparseRowsAnswersTests();
+  });
+  it("G8 MIN_WINDOW_COVERAGE is 0.9", () => {
+    runMinWindowCoverageIsNinetyPercentTests();
   });
 });

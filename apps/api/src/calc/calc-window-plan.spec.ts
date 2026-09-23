@@ -3,16 +3,19 @@ import {
   bucketCount,
   budgetDefect,
   combineSegments,
+  coveredHoursOf,
   deltaOf,
   hoursOf,
   LEVEL_MS,
   MAX_LIVE_MINUTES,
   MAX_WINDOW_BUCKETS,
+  MIN_WINDOW_COVERAGE,
   planWindowSegments,
   rollingStartMs,
   WINDOW_LEVELS,
   windowEndMs,
   type Segment,
+  type SegmentRow,
   type Watermarks,
 } from "./calc-window-plan";
 
@@ -233,9 +236,11 @@ export function runWindowPlanTilingProperty(): void {
 
 /** P8 — combineSegments: sum is the time integral, never Σ sum_value */
 export function runCombineSegmentsTests(): void {
-  const rows = [
-    { sumValue: 1000, sampleCount: 10, minValue: 100, maxValue: 100 },
-    { sumValue: 200, sampleCount: 1, minValue: 200, maxValue: 200 },
+  // the full day is covered (ADR 0070 Amendment 3): 24 h in one row, so the
+  // coverage guard answers and P8's claims are about the fold alone
+  const rows: SegmentRow[] = [
+    { sumValue: 1000, sampleCount: 10, minValue: 100, maxValue: 100, coveredHours: 24 },
+    { sumValue: 200, sampleCount: 1, minValue: 200, maxValue: 200, coveredHours: 0 },
   ];
   const sum = combineSegments("sum", rows, 24);
   assert(
@@ -256,12 +261,12 @@ export function runCombineSegmentsTests(): void {
   // a segment with no rows contributes nothing and nulls are skipped
   const withEmpty = combineSegments(
     "min",
-    [{ sumValue: null, sampleCount: 0, minValue: null, maxValue: null }, ...rows],
+    [{ sumValue: null, sampleCount: 0, minValue: null, maxValue: null, coveredHours: 0 }, ...rows],
     24,
   );
   assert(withEmpty.ok === true && withEmpty.value === 100, "P8: an empty segment beside full ones is ignored");
 
-  const empty = combineSegments("avg", [{ sumValue: null, sampleCount: 0, minValue: null, maxValue: null }], 24);
+  const empty = combineSegments("avg", [{ sumValue: null, sampleCount: 0, minValue: null, maxValue: null, coveredHours: 0 }], 24);
   assert(
     empty.ok === false && empty.reason === "window_empty",
     `P8: Σcount 0 is window_empty, got ${JSON.stringify(empty)}`,
@@ -337,4 +342,111 @@ export function runBucketBudgetTests(): void {
   assert(bucketCount([]) === 0, "P11: no segments fold no buckets");
   assert(bucketCount([{ level: "1h", fromMs: 0, toMs: 7_200_000 }]) === 2, "P11: two hour buckets");
   assert(MAX_WINDOW_BUCKETS === 20_000 && MAX_LIVE_MINUTES === 180, "the budgets the cases above are written against");
+}
+
+// ---- E4.4 — the covered-time fold and the window_sparse guard (ADR 0070 Amendment 3) ----
+
+/**
+ * `coveredHoursOf` — decision 3's three rules as a pure fold over the three
+ * facts the level statement returns per segment: a `1d` bucket with samples
+ * is 24 h, a `1h` bucket is 1 h, and on `5m`/`1m` each distinct clock hour
+ * holding a non-empty bucket counts, clipped to the segment (the one-hour
+ * floor). Every instant is built from ISO strings in UTC.
+ */
+const T = "2026-09-17";
+const seg = (level: Segment["level"], from: string, to: string): Segment => ({ level, fromMs: utc(from), toMs: utc(to) });
+const near = (actual: number, expected: number): boolean => Math.abs(actual - expected) < 1e-9;
+
+/** C1 — a 1d segment: 24 h per covered day; the clips are zero on an aligned segment even with both flags set */
+export function runCoveredHours1dTests(): void {
+  const covered = coveredHoursOf(seg("1d", `${T}T00:00:00Z`, "2026-09-20T00:00:00Z"), { coveredUnits: 2, headCovered: true, tailCovered: true });
+  assert(covered === 48, `C1: two covered days of a 1d segment are 48 h, got ${covered}`);
+}
+
+/** C2 — a 1h segment: 1 h per covered hour */
+export function runCoveredHours1hTests(): void {
+  const covered = coveredHoursOf(seg("1h", `${T}T10:00:00Z`, `${T}T15:00:00Z`), { coveredUnits: 3, headCovered: true, tailCovered: true });
+  assert(covered === 3, `C2: three covered hours of a 1h segment are 3 h, got ${covered}`);
+}
+
+/** C3 — a 5m segment spanning two clock hours, both covered: each end is clipped to the segment */
+export function runCoveredHoursClipBothEndsTests(): void {
+  const covered = coveredHoursOf(seg("5m", `${T}T09:57:00Z`, `${T}T10:20:00Z`), { coveredUnits: 2, headCovered: true, tailCovered: true });
+  // hour 09 clipped to 09:57–10:00 (3 min), hour 10 clipped to 10:00–10:20 (20 min)
+  assert(near(covered, 23 / 60), `C3: both covered hours are clipped to the segment, 23/60 h, got ${covered}`);
+}
+
+/** C4 — a 1m segment whose head hour is NOT covered: no head clip is subtracted, and the tail ends on the hour */
+export function runCoveredHoursClipHeadOnlyTests(): void {
+  const covered = coveredHoursOf(seg("1m", `${T}T09:57:00Z`, `${T}T11:00:00Z`), { coveredUnits: 1, headCovered: false, tailCovered: true });
+  assert(covered === 1, `C4: one covered whole hour (10:00–11:00) with an uncovered head is 1 h, got ${covered}`);
+}
+
+/** C5 — a 1m segment inside one clock hour, covered: the segment's own length */
+export function runCoveredHoursSingleUnitTests(): void {
+  const covered = coveredHoursOf(seg("1m", `${T}T10:00:00Z`, `${T}T10:03:00Z`), { coveredUnits: 1, headCovered: true, tailCovered: true });
+  assert(covered === 0.05, `C5: a covered segment inside one hour counts its own 3 minutes (0.05 h), got ${covered}`);
+}
+
+/** C5b — the same segment, uncovered: zero */
+export function runCoveredHoursSingleUnitEmptyTests(): void {
+  const covered = coveredHoursOf(seg("1m", `${T}T10:00:00Z`, `${T}T10:03:00Z`), { coveredUnits: 0, headCovered: false, tailCovered: false });
+  assert(covered === 0, `C5b: an uncovered segment inside one hour is 0 h, got ${covered}`);
+}
+
+/** Rows at a constant 10, split over two segments, whose covered hours total `covered`. */
+function rowsCovering(first: number, second: number): SegmentRow[] {
+  return [
+    { sumValue: 500, sampleCount: 10, minValue: 20, maxValue: 80, coveredHours: first },
+    { sumValue: 100, sampleCount: 10, minValue: 5, maxValue: 15, coveredHours: second },
+  ];
+}
+
+/** G1 — covered 648 of 720 elapsed hours is exactly 0.9: a sum answers */
+export function runSumAtExactlyTheThresholdAnswersTests(): void {
+  const result = combineSegments("sum", rowsCovering(600, 48), 720);
+  // Σsum 600 / Σcount 20 = 30, × 720 h
+  assert(result.ok === true && result.value === 21_600, `G1: a sum at exactly 90% coverage answers 30 × 720, got ${JSON.stringify(result)}`);
+}
+
+/** G2 — covered 647 of 720: just below, a sum refuses window_sparse */
+export function runSumJustBelowTheThresholdRefusesTests(): void {
+  const result = combineSegments("sum", rowsCovering(600, 47), 720);
+  assert(result.ok === false && result.reason === "window_sparse", `G2: a sum at 647/720 coverage refuses window_sparse, got ${JSON.stringify(result)}`);
+}
+
+/** G3 — a NaN fraction refuses (fail closed): the answering branch is the comparison false for NaN */
+export function runNaNCoverageRefusesTests(): void {
+  const result = combineSegments("sum", rowsCovering(24, 0), Number.NaN);
+  assert(result.ok === false && result.reason === "window_sparse", `G3: a NaN coverage fraction refuses window_sparse, got ${JSON.stringify(result)}`);
+}
+
+/** G4 — a window with no sample is window_empty, never window_sparse, on a sum */
+export function runEmptyBeatsSparseTests(): void {
+  const result = combineSegments("sum", [{ sumValue: null, sampleCount: 0, minValue: null, maxValue: null, coveredHours: 0 }], 24);
+  assert(result.ok === false && result.reason === "window_empty", `G4: an empty sum window is window_empty, got ${JSON.stringify(result)}`);
+  assert(!(result.ok === false && result.reason === "window_sparse"), "G4: an empty window is never reported as window_sparse");
+}
+
+/** G5 — avg over the same sparse rows answers: only sum extrapolates */
+export function runAvgOverSparseRowsAnswersTests(): void {
+  const result = combineSegments("avg", rowsCovering(600, 47), 720);
+  assert(result.ok === true && result.value === 30, `G5: avg over 647/720 coverage answers 30, got ${JSON.stringify(result)}`);
+}
+
+/** G6 — min over the same sparse rows answers */
+export function runMinOverSparseRowsAnswersTests(): void {
+  const result = combineSegments("min", rowsCovering(600, 47), 720);
+  assert(result.ok === true && result.value === 5, `G6: min over 647/720 coverage answers 5, got ${JSON.stringify(result)}`);
+}
+
+/** G7 — max over the same sparse rows answers */
+export function runMaxOverSparseRowsAnswersTests(): void {
+  const result = combineSegments("max", rowsCovering(600, 47), 720);
+  assert(result.ok === true && result.value === 80, `G7: max over 647/720 coverage answers 80, got ${JSON.stringify(result)}`);
+}
+
+/** G8 — the threshold the cases above are written against (ADR 0070 Amendment 3 decision 4) */
+export function runMinWindowCoverageIsNinetyPercentTests(): void {
+  assert(MIN_WINDOW_COVERAGE === 0.9, `G8: MIN_WINDOW_COVERAGE is 0.9, got ${MIN_WINDOW_COVERAGE}`);
 }
