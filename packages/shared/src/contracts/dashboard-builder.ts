@@ -506,9 +506,9 @@ export const bindingExclusiveMessage = (label: string): string =>
  * tables, and roll-ups across assets**. A number expressible as a formula over points is a
  * derived point, and a reviewer should refuse it here.
  *
- * Must match `dashboard_widget_sources_catalog_key_check` in migration `0054` exactly —
- * `tests/f3.35-metric-catalog-schema.test.ts` parses that `CHECK` and compares the two lists,
- * so drift fails the build rather than a page.
+ * Must match `dashboard_widget_sources_catalog_key_check` as migration `0081` declares it
+ * exactly — `tests/f3.35-metric-catalog-schema.test.ts` parses that `CHECK` and compares the
+ * two lists, so drift fails the build rather than a page.
  *
  * **`assets.health.score` is here because its formula arrived.** ADR 0048 §7 listed it as
  * uncomputable, on the belief that the client still owed the roll-up formula from feature-sheet
@@ -618,7 +618,9 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
   },
   "assets.health.score": { shape: "metric" },
   // `E4.2` / ADR 0072 decision 2 — the roll-up of one point key across the assets in scope.
-  // `columns` stays on one line: `tests/f3.35-metric-catalog-labels.test.ts` parses it.
+  // `tests/f3.35-metric-catalog-labels.test.ts` parses each `columns` list with a pattern that
+  // spans newlines, so a list may wrap. It scans comments too: never spell the key, colon and
+  // bracket together in one.
   "sustainability.total": { shape: "metric", params: ["pointKey", "aggregate", "balanceRole"] },
   "sustainability.by_location": {
     shape: "dataset",

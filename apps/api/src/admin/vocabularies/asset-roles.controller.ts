@@ -27,7 +27,7 @@ import { AssetRolesAdminService } from "./asset-roles.service";
  * `F3.40` / ADR 0051 decision 5 — `/api/v1/admin/vocabularies/asset-roles`.
  *
  * **`admin/vocabularies/…` and not `vocabularies/…`.** `VocabulariesController`
- * serves the read side of all six vocabularies at `GET /api/v1/vocabularies`
+ * serves the read side of all seven vocabularies at `GET /api/v1/vocabularies`
  * to every authenticated user, deliberately unscoped. This is the write side of
  * one of them and it is gated to the global `admin` role, so it belongs under
  * the `admin/` prefix where every other master-data route lives.
