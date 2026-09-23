@@ -35,6 +35,7 @@ import type * as E from "./contracts/envelopes";
 import type * as Esc from "./contracts/escalation";
 import type * as He from "./contracts/health";
 import type * as Ms from "./contracts/mapping-sheet";
+import type * as Cv from "./contracts/metric-catalog-values";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
@@ -202,14 +203,14 @@ export type DashboardWidgetSourceDto = z.infer<typeof Db.dashboardWidgetSourceDt
  * `value` is nullable because an entry can legitimately resolve to nothing, and
  * rendering that as `0` would put a fabricated number in front of an operator.
  */
-export type MetricCatalogValueDto = z.infer<typeof Db.metricCatalogValueDtoSchema>;
+export type MetricCatalogValueDto = z.infer<typeof Cv.metricCatalogValueDtoSchema>;
 /** `E4.2` — how a sustainability roll-up collapses its carrying assets: `sum` or `avg`. */
 export type SustainabilityAggregate = z.infer<typeof Db.sustainabilityAggregateSchema>;
 /** `E4.2` — `{ fresh, carrying }`: how much of a roll-up's scope the value covers. */
 export type RollupCoverage = z.infer<typeof Db.rollupCoverageSchema>;
-export type DashboardCatalogValueDto = z.infer<typeof Db.dashboardCatalogValueDtoSchema>;
+export type DashboardCatalogValueDto = z.infer<typeof Cv.dashboardCatalogValueDtoSchema>;
 export type DashboardCatalogValuesResponse = z.infer<
-  typeof Db.dashboardCatalogValuesResponseSchema
+  typeof Cv.dashboardCatalogValuesResponseSchema
 >;
 
 // --- F3.35 Stage A — aggregation and presentation (ADR 0048) ----------------

@@ -14,7 +14,6 @@ import {
   dashboardWidgetSourceDtoSchema,
   dashboardWidgetSpecSchema,
   metricCatalogKeySchema,
-  metricCatalogValueDtoSchema,
   pointAggregateFunctionSchema,
   radialGaugeConfigSchema,
   sustainabilityAggregateSchema,
@@ -23,6 +22,7 @@ import {
   widgetPointRoleSchema,
   widgetTypeSchema,
 } from "./dashboard-builder";
+import { metricCatalogValueDtoSchema } from "./metric-catalog-values";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
