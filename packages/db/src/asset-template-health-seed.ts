@@ -17,15 +17,19 @@ import type pg from "pg";
  * fabricated *Excellent* on an executive screen — and it is why the cut-points
  * have to be *seeded* rather than defaulted.
  *
- * **Four domain baselines, not one, and that is forced rather than chosen.**
+ * **Five domain baselines, not one, and that is forced rather than chosen.**
  * `asset_templates.domain` is a foreign key to `bms.asset_domains`, and the 71
- * scored assets span all four domains the seed uses (electrical 50, environment
- * 14, it 4, hvac 3). One template can carry one domain, so pinning every asset
+ * scored assets span four domains (electrical 50, environment 14, it 4, hvac
+ * 3). Since `E4.3` U11 the seed has a fifth domain, `water`: the five demo
+ * water plant assets (`water-plant-demo-seed.ts`), so `BASELINE-WATER` exists
+ * too. It declares nine points (the demo's distinct flow keys) and pins no
+ * asset, because the demo pins its five assets to their `DEMO-WATER-*` mirrors
+ * before this module runs. One template can carry one domain, so pinning every asset
  * to a single row would mean pinning a chiller to an electrical template — a
  * mismatch no constraint catches and every reader has to un-learn. ADR 0031
  * Amendment 1 already ruled the other direction of the same pair: instantiation
  * copies the template's domain onto the asset precisely so the two cannot
- * disagree. A fifth `BASELINE-*` row exists since `F2.8` —
+ * disagree. One more `BASELINE-*` row exists since `F2.8` —
  * `BASELINE-ELECTRICAL-INCOMER`, written by `pue-demo-seed.ts` *after* this
  * module. It is not a domain baseline: it carries the same bands and the same
  * seven measured points as `BASELINE-ELECTRICAL`, plus three `bms-calc-v2`
@@ -112,7 +116,9 @@ export const HEALTH_BASELINE_CONTENT: TemplateContent = {
  *
  * Written as an expression rather than a literal list so the set follows the
  * seeded estate: a domain added to `bms.assets` later gets a template on the
- * next seed, and a domain with no assets (`water`, today) gets none. The
+ * next seed, and a domain with no active asset gets none. (`water` had none
+ * until `E4.3` U11; it now has the five demo assets, so `BASELINE-WATER` is
+ * written.) The
  * `name` comes from `bms.asset_domains.label` for the same reason —
  * `initcap('hvac')` would render *Hvac*.
  */

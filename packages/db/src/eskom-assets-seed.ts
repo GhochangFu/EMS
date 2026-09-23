@@ -5,12 +5,14 @@ import type { BmsDb } from "./client";
 import { provinceCode } from "./eskom-locations-seed";
 import { resolveEskomSimRtuId } from "./hierarchy-seed";
 import { assets } from "./schema/bms-schema";
+import { DEMO_WATER_PLANT_ASSETS } from "./water-plant-demo-seed";
 
 /**
  * The Eskom demo asset catalog and its upsert, split out of `seed.ts` to keep
  * it under the AGENTS.md §4.5 1000-line cap. Pure move — the catalog order is
  * load-bearing (the alarm seed keys off the first two inserted assets), so the
- * entries stay in their original sequence with the RSMOC block last.
+ * entries stay in their original sequence with the RSMOC block and then the
+ * `E4.3` demo water plant last.
  */
 
 /** One catalog entry; `meta` defaults to the simulator marker when absent. */
@@ -322,6 +324,9 @@ export function buildEskomAssetCatalog(
       domain: "environment",
     },
     ...rsmocDemoAssets,
+    // `E4.3` U11 — the demo water plant at CSMOC Gauteng (ADR 0073 decision
+    // 6). LAST, after the RSMOC block, so the order above is untouched.
+    ...DEMO_WATER_PLANT_ASSETS,
   ];
 }
 

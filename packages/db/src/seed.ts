@@ -24,6 +24,7 @@ import { seedAutomationRules, seedEskomLadderRules } from "./automation-rules-se
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import { seedAssetTemplateHealth } from "./asset-template-health-seed";
 import { seedPueDemo, seedPueDemoRackKwPoints } from "./pue-demo-seed";
+import { seedWaterPlantDemo } from "./water-plant-demo-seed";
 import { seedCalcParametersDemo } from "./calc-parameters-demo-seed";
 import {
   seedDemoAlarms,
@@ -248,6 +249,19 @@ async function main(): Promise<void> {
       // the second, on a published and therefore immutable version (ADR 0015).
       // Run 1 would not equal run N, and only a cold start could show it.
       await seedPueDemoRackKwPoints(pool, eskomOrgId);
+      // `E4.3` U11 — the demo water plant's mirror templates, flow catalog
+      // rows, pins and balance roles. Both sides of this position are
+      // load-bearing. After `seedPointKeyCatalog`, because every flow and
+      // volume key is an FK into `bms.point_keys`. BEFORE
+      // `seedAssetTemplateHealth`, because that module pins every
+      // `template_id IS NULL` asset of a domain to `BASELINE-<DOMAIN>`: run
+      // after it on a cold database, the five water assets would be pinned
+      // to a `BASELINE-WATER` that declares no point (the flow rows below do
+      // not exist yet), and `seedAssetTemplateHealth` would throw
+      // `unusable = 1` and stop the boot. `tests/e4.3-demo-water-plant.test.ts`
+      // holds the order; `verifyHierarchySeed`'s four ESKOM water counts hold
+      // the result.
+      await seedWaterPlantDemo(pool, eskomOrgId);
       // `F4.75` — after the catalog, because the templates declare the points
       // the call above writes. This is what gives a scored asset a *band*: the
       // score was demonstrable from `F4.69` on, but `bms.asset_templates` held

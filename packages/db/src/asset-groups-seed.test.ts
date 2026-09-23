@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   assertAnUndecidedCodeStaysNull,
+  assertAWaterAssetJoinsTheWaterGroup,
+  assertAWaterAssetTakesNoTrainRole,
+  assertTheWaterGroupIsNamedWater,
   assertBothPumpShapesTakeOneRole,
   assertEskomReadingsAreUnchanged,
   assertEveryItAssetJoinsItRackAndItLoad,
@@ -44,5 +47,19 @@ describe("F2.8 — demoGroupCodesForAsset files every IT asset under IT_LOAD as 
 
   it("gives no PHE device an IT_LOAD membership", () => {
     assertNoPheDeviceJoinsItLoad();
+  });
+});
+
+describe("E4.3 U11 — demoGroupCodesForAsset files a water asset under water", () => {
+  it("gives WTR-WTP-01 the water group alone", () => {
+    assertAWaterAssetJoinsTheWaterGroup();
+  });
+
+  it("names the water group Water", () => {
+    assertTheWaterGroupIsNamedWater();
+  });
+
+  it("gives a water asset no train role", () => {
+    assertAWaterAssetTakesNoTrainRole();
   });
 });
