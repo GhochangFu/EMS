@@ -35,9 +35,6 @@ import { SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
 import {
   assertSourceParamsBalanceRolesActive,
   assertSourceParamsPointKeysActive,
-  sourceParamsBalanceRoles,
-  sourceParamsPointKeys,
-  type SubmittedSource,
 } from "./source-params-point-keys";
 import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody } from "./dashboards.schema";
 
@@ -481,20 +478,6 @@ export class DashboardsService {
       throw new NotFoundException("Dashboard not found");
     }
 
-    // `E4.2` U3 — every `params.pointKey` the submitted sources name must be an active catalog
-    // code (ADR 0072 decision 2). Once per request over ALL widgets, on the fleet pool, BEFORE
-    // the tenant transaction: the catalog is fleet-wide, and a refusal here costs no rollback.
-    // `create` has no widgets, so this is the one dashboard write path that carries a source.
-    // Post-merge sweep M1 — only values the dashboard does NOT already store are checked (the
-    // `C1` rule of `AssetsService.update`): the builder re-sends stored params verbatim, so a
-    // role or key retired since would otherwise 400 every save of the dashboard.
-    const submittedSources = body.widgets.flatMap((widget) => widget.sources);
-    const stored = await this.storedSourcesIfParamsNamed(id, existing.organizationId, submittedSources);
-    await assertSourceParamsPointKeysActive(this.fleetDb, submittedSources, stored);
-    // `E4.3` — and every `params.balanceRole` a live `bms.water_balance_roles` code (ADR 0073
-    // decision 2), on the same terms: fleet pool, before the transaction.
-    await assertSourceParamsBalanceRolesActive(this.fleetDb, submittedSources, stored);
-
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       const storedWidgets = await tx
         .select()
@@ -520,6 +503,20 @@ export class DashboardsService {
         list.push(source);
         sourcesByWidget.set(source.widgetId, list);
       }
+
+      // `E4.2` U3 — every `params.pointKey` the submitted sources name that the dashboard does
+      // not already store must be an active catalog code (ADR 0072 decision 2). Once per request
+      // over ALL widgets, before any write. `create` has no widgets, so this is the one dashboard
+      // write path that carries a source. Post-merge sweep M1 — the subtraction is the `C1` rule
+      // of `AssetsService.update`: the builder re-sends stored params verbatim, so a role or key
+      // retired since would otherwise 400 every save of the dashboard. The stored set is this
+      // transaction's own read (review C1), so it is the set the diff below writes against; the
+      // vocabulary lookups stay on the fleet pool, as the vocabularies are global tables.
+      const submittedSources = body.widgets.flatMap((widget) => widget.sources);
+      await assertSourceParamsPointKeysActive(this.fleetDb, submittedSources, storedSources);
+      // `E4.3` — and every `params.balanceRole` a live `bms.water_balance_roles` code (ADR 0073
+      // decision 2), on the same terms.
+      await assertSourceParamsBalanceRolesActive(this.fleetDb, submittedSources, storedSources);
 
       const forDiff: StoredWidgetForDiff[] = storedWidgets.map((widget) => ({
         id: widget.id,
@@ -777,32 +774,6 @@ export class DashboardsService {
    * pre-GUC shape `assets.service.ts:189-191` uses. `canManageDashboard` (called by every
    * caller of this method) is the isolation control for the row this returns.
    */
-  /**
-   * Post-merge sweep M1 — the dashboard's stored catalog bindings, read on `fleetDb` before the
-   * tenant transaction for the two vocabulary checks. Skipped (`[]`) when the submitted sources
-   * name no `pointKey` and no `balanceRole`, so a save of the five Stage C entries costs no extra
-   * query. `resolveWidgetSources` carries the explicit organization predicate the `BYPASSRLS`
-   * fleet role needs (`dashboard-source-scope.ts`).
-   */
-  private async storedSourcesIfParamsNamed(
-    dashboardId: string,
-    organizationId: string,
-    submitted: readonly SubmittedSource[],
-  ): Promise<ResolvedWidgetSource[]> {
-    if (sourceParamsPointKeys(submitted).length === 0 && sourceParamsBalanceRoles(submitted).length === 0) {
-      return [];
-    }
-    const widgets = await this.fleetDb
-      .select({ id: dashboardWidgets.id })
-      .from(dashboardWidgets)
-      .where(eq(dashboardWidgets.dashboardId, dashboardId));
-    return resolveWidgetSources(
-      this.fleetDb,
-      organizationId,
-      widgets.map((widget) => widget.id),
-    );
-  }
-
   private async fetchRowForWrite(id: string): Promise<DashboardRow> {
     const [row] = await this.fleetDb.select().from(dashboards).where(eq(dashboards.id, id)).limit(1);
     if (!row) {
