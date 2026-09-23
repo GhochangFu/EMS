@@ -800,3 +800,52 @@ The owner can overturn either at the plan gate.
 - **`chore(agents):` sweep owed at closure, separately** (§9.10): AGENTS.md's
   calculation paragraph describes the `E4.1b` windows and gains the guard.
   No §6 line moves.
+
+## Amendment 4 (2026-09-23) — what `E4.4`'s build changed in Amendment 3
+
+Written at the row's closure (PRs #525 and #526). Amendment 3 is left as
+written. This is the record of where the build and its reviews corrected it.
+
+1. **Decision 3's "clipped to the segment" is superseded by "an hour that
+   holds a sample counts as covered"** (owner ruling at the code review). The
+   planner can split one clock hour between two adjacent sub-day segments. At
+   the live tail, a `5m` segment ends at the `5m` watermark and a `1m` segment
+   covers the rest. The first cut counted each part only if that part held a
+   sample. A fifteen-minute poller read at 01:32Z — segments
+   `5m [00:00, 01:20)` and `1m [01:20, 01:32)`, a sample at 01:04 — therefore
+   scored 80/92 = 87% and refused `window_sparse`, although both clock hours
+   held samples. It recurred for the first two or three hours of every local
+   day on the eighteen `today` rows. `coveredHoursOf` now folds the coverage
+   facts across all of a read's segments at once. A shared hour is covered
+   when any of its parts holds a sample, and it then counts all of its
+   in-window time. `1d` segments keep day resolution, because their
+   boundaries lie on day lines.
+2. **The guard's integration case is the split proof, not an end-to-end
+   write** (plan-gate Q2). Consequences names a real-database case that
+   "writes **no row**" with a dense positive control. The shipped proof has
+   two halves. `calc-windows.sparse.integration.test.ts` proves the read on a
+   real database: a sparse window refuses, and the dense window answers.
+   H11 in `calc-scheduler.windows.test.ts` proves that the host passes
+   `window_sparse` through and writes no row, with H1 as its control. The
+   host code did not change.
+3. **The fixture is ten days, not thirty** (owner ruling during the build).
+   Seven covered days of ten is 70%. The two refreshes over thirty days had
+   cost about 150 s. The guard is a fraction, so the window's length proves
+   nothing that a shorter one does not.
+4. **Two coverage units, two different test facts.** On `1d`, the mutation
+   `'1 day'` → `'1 hour'` is an equivalent mutant. Every `1d` bucket starts at
+   UTC midnight, so a distinct-hour count equals a distinct-day count. On
+   `1h`, no test covered the unit until the code review added S6, which is
+   served from `1h` alone.
+5. **All nineteen catalog docblocks were reworded, not thirteen** (plan-gate
+   Q4, ruled against the recommendation). The six classes that hold no window
+   `sum` now carry the same sentence. It is written so that it stays true for
+   their `delta`, `avg` and `hours` rows.
+6. **Not verified on the stack, by gate.** No stack asset carries a
+   window-`sum` point. A live probe needed throwaway derived points on a
+   shared template, and the owner declined it. The deployed image was proved
+   to hold the guard, and the stack was proved to boot and sweep.
+7. **One fault left to backlog row `F4.149`.** `materializeCompleteBuckets`
+   has no retry on `55P03`. A manual refresh that overlaps a running refresh
+   therefore reddens a CI run when DB suites run in parallel. The result is a
+   red run, not a false green.
