@@ -607,3 +607,196 @@ left as written.
    before `evaluate()` runs. `minCoverageRatio` governs `@scope` aggregates
    only (ADR 0055 decision 11); a window `sum` is `avg × hours` and no
    coverage guard applies to a windowed point.
+
+## Amendment 3 (2026-09-23) — a window `sum` refuses when less than 90% of its window holds samples (`E4.4`)
+
+Drafted and ruled at the §10 gate on 2026-09-23, before any implementation
+code. Four questions were put to the owner one at a time; all four were ruled
+as recommended. Decision 5 and Amendment 2 item 9 are left as written; this
+amendment supersedes, for `sum`, the one sentence of item 9 a later reader
+would act on — "no coverage guard applies to a windowed point".
+
+| Gate question | Ruling |
+| --- | --- |
+| Q1 — what a sparse window `sum` does | **Refuse**, under a new reason `window_sparse` |
+| Q2 — which reads carry the guard | **Every window `sum`**, in the engine; `avg`, `min`, `max`, `delta` and `hours` are untouched |
+| Q3 — how coverage is measured | **Per segment, with a one-hour floor**, inside the statements the read already runs |
+| Q4 — the threshold | **One fraction, 90%**, of the elapsed window |
+
+### The fault
+
+Decision 5 defines `sum({kw}, window)` as `avg × hours(window)` (ruled at
+Q6), and `combineSegments` (`apps/api/src/calc/calc-window-plan.ts`) computes
+it as `(Σ sum_value / Σ sample_count) × hoursOf(start, end)`. The mean is
+over the samples that **arrived**; the multiplier is **every** elapsed hour.
+The only refusal is `Σ sample_count === 0` (`window_empty`). So a WTP meter
+offline for ten days of a thirty-day month, averaging 5 kL/h over the twenty
+days it reported, answers `5 × 720 = 3600 kL` where the plant took 2400.
+
+During the outage itself the formula already refuses: the meter's latest
+reading is older than `max_input_age_seconds`, so the definition counts
+`stale_input` (ADR 0037 decision 5). The fault is what happens **after the
+meter comes back** — the next tick writes a whole month computed from twenty
+days, the derived point is fresh again, and ADR 0072's roll-up counts the
+asset in `coverage { fresh, carrying }` as if nothing had happened. ADR 0072
+Amendment 1 item 1 records the sentence of that ADR the fault falsified; the
+`E4.2` post-merge sweep labelled the twenty-four water month/year codes
+*estimated over the whole period* as a stopgap.
+
+### Decision 1 — refuse, as `window_sparse` (Q1)
+
+A window `sum` whose covered fraction (decision 3) is below the threshold
+(decision 4) answers `{ ok: false, reason: "window_sparse" }`. The host
+treats it exactly as it treats `window_empty`: the formula writes nothing,
+`bms_api_calc_skipped_total{reason="window_sparse"}` counts it, and
+`CalcStatusRegistry` records it for the calc-points page. `window_empty`
+keeps precedence — a window with no sample is empty, not sparse.
+
+What an operator sees follows from existing machinery, with no new surface:
+the per-asset tile keeps the last value written before coverage fell and
+turns stale (`kpi-tile.tsx`'s stale ring); ADR 0072's freshness bound (three
+times the point's interval — three minutes at the stock 60 s) drops the asset
+from the roll-up, so the sustainability tile reads `n-1 of m assets`.
+
+**The cost, stated so it is not rediscovered.** Coverage is measured over the
+elapsed window, so a gap early in a period can hold the refusal for the rest
+of it. A four-day outage in the first week leaves `kl_this_month` at most
+26/30 ≈ 87% for the whole month, so it refuses until the month rolls over. A
+three-hour morning outage refuses `kl_today` for the rest of that day. A
+rolling `24h` window recovers a day after the gap. This is the ruled
+behaviour: an unknown month is shown as unknown, not as a number.
+
+**Declined, and why.**
+- *Answer with a coverage figure of its own.* A derived value is one row in
+  `telemetry.point_values`, which has no quality column, and
+  `CalcStatusRegistry` is in-process by its own docblock (anything
+  authoritative "must not be built on this"). The figure therefore needed
+  either a new `v3` function (`coverage({kl}, this_month)`) with about 49
+  companion stock rows and new tile bindings, or a column on the hypertable.
+- *Prorate* — `mean × covered hours`. It removes the extrapolation by
+  under-reporting instead: ten dark days report twenty days of water as the
+  month, and coverage stays invisible.
+
+### Decision 2 — every window `sum`, enforced in the engine (Q2)
+
+The guard lives in `combineSegments`, so it applies to every
+`sum(…, window)` read, rolling or calendar, stock or client-authored. There
+is no per-row list to keep. In the stock catalog on this date that is **49
+rows**, not the 44 the backlog row named:
+
+- the 24 water `kl_this_month` / `kl_this_year` / `water_cost_this_month` /
+  `water_cost_this_year` rows (six classes);
+- the 18 `E4.1c` `today` rows — `kl_today`, `water_cost_today`,
+  `water_saving_vs_baseline_pct` (six classes);
+- `isolation_hours_month` (fire panel) and `out_of_service_hours_month`
+  (lift);
+- five the row did not name: `downtime_h_24h` (DG set), `occupied_hours_day`
+  (occupancy zone), `fan_hours_day` (parking level), `fan_energy_kwh_day`
+  (AHU) — all rolling `24h` — and solar PV's `performance_ratio_pct`, whose
+  denominator is `sum({irradiance_wm2}, today)`.
+
+A formula with several window reads refuses when any one of them is sparse —
+the host already returns on the first refused read.
+
+**Out of scope, named.** `avg`, `min` and `max` do not extrapolate, so they
+are not guarded. That leaves one exposure: when a device reports its own
+state (`device_online`, `lift_in_service`), an offline device sends nothing,
+and `avg({lift_in_service}, 24h)` over the samples that remain can read 100%.
+The five `availability_pct_24h` / `uptime_pct_24h` rows carry it. It is a
+different question — what an availability figure means while the device is
+silent — and no row owns it yet.
+
+### Decision 3 — coverage per segment, with a one-hour floor (Q3)
+
+Coverage is **covered time ÷ elapsed window time**, where covered time is
+counted inside the per-level statements `readLevel` already runs — no new
+statement, so decision 5's budget of seven statements per sweep holds:
+
+- a `1d` segment contributes 24 h for each bucket with `sample_count > 0`;
+- a `1h` segment contributes 1 h for each such bucket;
+- a `5m` or `1m` segment contributes each distinct clock hour that holds such
+  a bucket, **clipped to the segment**.
+
+`sample_count > 0` is the test `combineSegments` already applies; the
+continuous aggregates (`0027`) have no gapfill, so a bucket row exists only
+where samples do.
+
+**Why a one-hour floor.** A measured point declares no polling interval —
+ADR 0072 uses a flat fifteen minutes as its freshness bound for exactly that
+reason — so coverage cannot be judged finer than the slowest normal poller.
+A five-minute poller fills one `1m` bucket in five and would read about 20%.
+An hour that holds a sample counts as covered.
+
+**The limit, stated.** The planner serves completed days behind the `1d`
+watermark (about two days) from `1d` buckets, so on those days the resolution
+is a day: a day with one sample counts as covered. The ten-day outage is
+caught; a twelve-hour gap inside an old day is not.
+
+**Declined, and why.**
+- *Always one-hour resolution* — one more batched statement counting
+  non-empty hours on `point_values_1h` over the whole window. By the
+  planner's own measurement (8–31 ms per pair per month from `1h`) that is
+  roughly 100–370 ms per pair per tick for `this_year`, every 60 s.
+- *Samples against an expected rate* — not buildable: the expected count
+  needs a polling interval a measured point does not have.
+
+### Decision 4 — one fraction, 90% (Q4)
+
+A named constant beside `MAX_WINDOW_BUCKETS` in `calc-window-plan.ts`. A
+window `sum` answers when covered ÷ elapsed is **at least** 0.9 and refuses
+otherwise — written so that a `NaN` fraction refuses: the comparison that is
+false for `NaN` must be the answering branch's condition, never the refusing
+one. The tolerance scales with the period: about 2.4 hours of a day, three
+days of a month, 36 days of a year.
+
+**Declined, and why.**
+- *A fraction per window kind* — four numbers to justify and test, and a
+  rolling `7d` or `30d` window would need its own rule.
+- *A calc parameter* (`window_min_coverage`, nearest scope wins). Buildable
+  through `CalcParametersService.resolveForAssets`, but decision 2 allows no
+  default value: every organization would need a seeded row, by a backfill
+  migration and on organization create, or every window `sum` in it would
+  refuse as `parameter_unset`.
+
+### Ruled here without a question
+
+The owner can overturn either at the plan gate.
+
+1. **No tile change.** With refusal ruled, the one way to show the reason on
+   a tile needs a durable per-point status store, which does not exist
+   (decision 1). The stale ring, the roll-up's `n of m`, the calc-points
+   page and the counter are the surfaces.
+2. **The labels stay as they are.** Above the threshold a window `sum` still
+   extrapolates over up to 10% of its window, so the twenty-four *estimated
+   over the whole period* labels remain true and stay. The other twenty-five
+   rows gain no qualifier: the guard bounds the estimate, and a relabel would
+   bump the stock version of thirteen more classes for no change in meaning.
+   `window-sum-qualifier.spec.ts` keeps `RULED_OUT_OF_SCOPE`, with its
+   docblock rewritten to cite this amendment.
+
+### Consequences
+
+- **It touches** `apps/api`: `calc-window-plan.ts` (the fraction, the
+  constant, the new reason on `WindowValue`), `calc-windows.service.ts`
+  (covered time in `readLevel`'s statement), `metrics.service.ts`
+  (`CalcRuntimeSkipReason` gains `window_sparse` and its docblock
+  paragraph); and `apps/web/src/lib/template-calc-config.ts`, whose
+  `V3_WINDOW_HELP` says a `sum` covers the whole window "even where samples
+  are missing" — true of the arithmetic, incomplete without the refusal. No
+  migration. No contract change: `lastSkipReason` is `z.string()` by design
+  (`packages/shared/src/contracts/admin.ts`). No stock-version bump.
+- **The guards `E4.4` owes**, named so the closure can be checked against
+  them: the covered-time fold as a pure spec — `1d`, `1h`, and the hour floor
+  with clipping on `5m` and `1m`; the boundary as two claims, exactly 0.9
+  answers and just below refuses; a `NaN` fraction refuses; `window_empty`
+  still wins over `window_sparse`; `avg`, `min`, `max` and `delta` answer
+  over the same sparse rows; an integration case on a real database — a
+  thirty-day month with ten dark days refuses `window_sparse` and writes
+  **no row**, with a positive control that the dense month writes one, and
+  the sweep still runs no more than seven statements; the qualifier spec
+  still green.
+- **The five availability rows' exposure** (decision 2) is the owner's to
+  raise as a row or decline.
+- **`chore(agents):` sweep owed at closure, separately** (§9.10): AGENTS.md's
+  calculation paragraph describes the `E4.1b` windows and gains the guard.
+  No §6 line moves.
