@@ -228,13 +228,15 @@ export async function readRollupRows(
 
 /**
  * A location that owns at least one `intake`, `reuse` or `discharge` asset in scope — one
- * `water.balance` row — with its count of discharge-roled assets, carrying or not.
+ * `water.balance` row — with its counts of discharge-roled and intake-roled assets, carrying or
+ * not.
  */
 export type BalanceLocation = {
   readonly id: string;
   readonly code: string;
   readonly name: string;
   readonly dischargeAssets: number;
+  readonly intakeAssets: number;
 };
 
 /**
@@ -255,7 +257,10 @@ export type BalanceLocation = {
  * `dischargeAssets` counts the same active discharge-roled assets WHATEVER template they are
  * pinned to — the fold compares it with the discharge rows `readRollupRows` returned, so a
  * discharge meter on a pre-v5 template (no `outlet_kl_*` row) makes `consumed` `null` rather
- * than disappearing into `intake − 0` (the PR 2 review ruling on Q8). `::int` because
+ * than disappearing into `intake − 0` (the PR 2 review ruling on Q8). `intakeAssets` is the
+ * same count over the intake-roled assets, under the same predicates: an intake meter on a
+ * template without the period's `kl_*` point makes `consumed` `null` rather than a loss
+ * computed from the other intakes alone (the PR 2 post-merge sweep ruling). `::int` because
  * node-postgres returns a `bigint` count as a string.
  */
 export async function readBalanceLocations(
@@ -269,9 +274,11 @@ export async function readBalanceLocations(
     code: string;
     name: string;
     discharge_assets: number;
+    intake_assets: number;
   }>(sql`
     SELECT l.id, l.code, l.name,
-           (COUNT(*) FILTER (WHERE a.water_balance_role = ${"discharge"}))::int AS discharge_assets
+           (COUNT(*) FILTER (WHERE a.water_balance_role = ${"discharge"}))::int AS discharge_assets,
+           (COUNT(*) FILTER (WHERE a.water_balance_role = ${"intake"}))::int AS intake_assets
       FROM bms.assets a
       JOIN bms.locations l ON l.id = a.location_id
      WHERE a.id = ANY(${sql.param([...scope])}::uuid[])
@@ -287,6 +294,7 @@ export async function readBalanceLocations(
     code: row.code,
     name: row.name,
     dischargeAssets: Number(row.discharge_assets),
+    intakeAssets: Number(row.intake_assets),
   }));
 }
 

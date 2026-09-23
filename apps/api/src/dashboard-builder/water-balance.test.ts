@@ -11,9 +11,12 @@ import {
   noIntakeAssetReadsIntakeAsNull,
   nonCarryingDischargeAssetIsNotInCoverage,
   nonCarryingDischargeAssetReadsConsumedAsNull,
+  nonCarryingIntakeAssetKeepsTheIntakeColumn,
   nothingCarryingIsAllNullAtZeroOverZero,
   oneOfTwoDischargeAssetsCarryingReadsConsumedAsNull,
+  oneOfTwoIntakeAssetsCarryingReadsConsumedAsNull,
   partlyStaleDischargeReadsConsumedAsNull,
+  partlyStaleIntakeReadsConsumedAsNull,
   reuseIsTheReuseSum,
   reuseSkipsTheStaleRow,
   reuseStaleRowCountsInCarrying,
@@ -89,6 +92,18 @@ describe("E4.3 U9 — the water balance's pure half", () => {
 
   it("leaves a non-carrying discharge asset out of coverage: \"1/1\"", () => {
     nonCarryingDischargeAssetIsNotInCoverage();
+  });
+
+  it("reads consumed as null when one of two intake-roled assets carries nothing (intake ruling)", () => {
+    oneOfTwoIntakeAssetsCarryingReadsConsumedAsNull();
+  });
+
+  it("reads consumed as null for intake [50, null] over two assets (intake ruling)", () => {
+    partlyStaleIntakeReadsConsumedAsNull();
+  });
+
+  it("keeps the intake column at 50 when a second intake-roled asset carries nothing", () => {
+    nonCarryingIntakeAssetKeepsTheIntakeColumn();
   });
 
   it("answers every column null and \"0/0\" when nothing carries", () => {

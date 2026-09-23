@@ -26,6 +26,7 @@ const FULL: WaterBalanceInputs = {
   reuse: rows(11),
   discharge: rows(7),
   dischargeAssets: 1,
+  intakeAssets: 1,
 };
 
 /** Intake is the `sum` over the intake rows: 50. */
@@ -56,7 +57,7 @@ export function coverageCountsTheThreeColumns(): void {
 /** The site has no discharge-roled asset at all (Q8): consumed is `intake − 0` = 50, never `null`. */
 export function noDischargeAssetReadsConsumedAsIntake(): void {
   same(
-    waterBalanceRow({ intake: rows(50), reuse: rows(11), discharge: [], dischargeAssets: 0 }).consumed,
+    waterBalanceRow({ intake: rows(50), reuse: rows(11), discharge: [], dischargeAssets: 0, intakeAssets: 1 }).consumed,
     50,
     "consumed with discharge []",
   );
@@ -65,7 +66,7 @@ export function noDischargeAssetReadsConsumedAsIntake(): void {
 /** No discharge-roled asset: coverage counts the two carrying assets, `"2/2"`. */
 export function noDischargeAssetCoverageIsTwoOfTwo(): void {
   same(
-    waterBalanceRow({ intake: rows(50), reuse: rows(11), discharge: [], dischargeAssets: 0 }).coverage,
+    waterBalanceRow({ intake: rows(50), reuse: rows(11), discharge: [], dischargeAssets: 0, intakeAssets: 1 }).coverage,
     "2/2",
     "coverage with discharge []",
   );
@@ -74,7 +75,7 @@ export function noDischargeAssetCoverageIsTwoOfTwo(): void {
 /** The one discharge asset carries and is stale (Q8): consumed is `null`, never `intake − 0`. */
 export function staleDischargeReadsConsumedAsNull(): void {
   same(
-    waterBalanceRow({ intake: rows(50), reuse: rows(11), discharge: rows(null), dischargeAssets: 1 }).consumed,
+    waterBalanceRow({ intake: rows(50), reuse: rows(11), discharge: rows(null), dischargeAssets: 1, intakeAssets: 1 }).consumed,
     null,
     "consumed with discharge [null]",
   );
@@ -83,7 +84,7 @@ export function staleDischargeReadsConsumedAsNull(): void {
 /** The stale discharge asset is carrying and not fresh: `"2/3"`. */
 export function staleDischargeCoverageIsTwoOfThree(): void {
   same(
-    waterBalanceRow({ intake: rows(50), reuse: rows(11), discharge: rows(null), dischargeAssets: 1 }).coverage,
+    waterBalanceRow({ intake: rows(50), reuse: rows(11), discharge: rows(null), dischargeAssets: 1, intakeAssets: 1 }).coverage,
     "2/3",
     "coverage with discharge [null]",
   );
@@ -92,7 +93,7 @@ export function staleDischargeCoverageIsTwoOfThree(): void {
 /** No intake asset carries: intake is `null` — never `0`. */
 export function noIntakeAssetReadsIntakeAsNull(): void {
   same(
-    waterBalanceRow({ intake: [], reuse: rows(11), discharge: rows(7), dischargeAssets: 1 }).intake,
+    waterBalanceRow({ intake: [], reuse: rows(11), discharge: rows(7), dischargeAssets: 1, intakeAssets: 0 }).intake,
     null,
     "intake with intake []",
   );
@@ -101,7 +102,7 @@ export function noIntakeAssetReadsIntakeAsNull(): void {
 /** No intake: consumed is `null` whatever discharge reads (Q8) — never `0 − 7`. */
 export function noIntakeAssetReadsConsumedAsNull(): void {
   same(
-    waterBalanceRow({ intake: [], reuse: rows(11), discharge: rows(7), dischargeAssets: 1 }).consumed,
+    waterBalanceRow({ intake: [], reuse: rows(11), discharge: rows(7), dischargeAssets: 1, intakeAssets: 0 }).consumed,
     null,
     "consumed with intake []",
   );
@@ -110,7 +111,7 @@ export function noIntakeAssetReadsConsumedAsNull(): void {
 /** Reuse `[null, 4]`: the stale row is excluded from the sum, which is 4. */
 export function reuseSkipsTheStaleRow(): void {
   same(
-    waterBalanceRow({ intake: [], reuse: rows(null, 4), discharge: [], dischargeAssets: 0 }).reuse,
+    waterBalanceRow({ intake: [], reuse: rows(null, 4), discharge: [], dischargeAssets: 0, intakeAssets: 0 }).reuse,
     4,
     "reuse of [null, 4]",
   );
@@ -119,7 +120,7 @@ export function reuseSkipsTheStaleRow(): void {
 /** Reuse `[null, 4]` alone: coverage is one fresh of two carrying, `"1/2"`. */
 export function reuseStaleRowCountsInCarrying(): void {
   same(
-    waterBalanceRow({ intake: [], reuse: rows(null, 4), discharge: [], dischargeAssets: 0 }).coverage,
+    waterBalanceRow({ intake: [], reuse: rows(null, 4), discharge: [], dischargeAssets: 0, intakeAssets: 0 }).coverage,
     "1/2",
     "coverage of reuse [null, 4]",
   );
@@ -131,7 +132,7 @@ export function reuseStaleRowCountsInCarrying(): void {
  */
 export function partlyStaleDischargeReadsConsumedAsNull(): void {
   same(
-    waterBalanceRow({ intake: rows(50), reuse: [], discharge: rows(7, null), dischargeAssets: 2 })
+    waterBalanceRow({ intake: rows(50), reuse: [], discharge: rows(7, null), dischargeAssets: 2, intakeAssets: 1 })
       .consumed,
     null,
     "consumed with discharge [7, null] over two discharge assets",
@@ -144,7 +145,7 @@ export function partlyStaleDischargeReadsConsumedAsNull(): void {
  */
 export function nonCarryingDischargeAssetReadsConsumedAsNull(): void {
   same(
-    waterBalanceRow({ intake: rows(50), reuse: [], discharge: [], dischargeAssets: 1 }).consumed,
+    waterBalanceRow({ intake: rows(50), reuse: [], discharge: [], dischargeAssets: 1, intakeAssets: 1 }).consumed,
     null,
     "consumed with discharge [] over one discharge-roled asset",
   );
@@ -156,7 +157,7 @@ export function nonCarryingDischargeAssetReadsConsumedAsNull(): void {
  */
 export function oneOfTwoDischargeAssetsCarryingReadsConsumedAsNull(): void {
   same(
-    waterBalanceRow({ intake: rows(50), reuse: [], discharge: rows(7), dischargeAssets: 2 })
+    waterBalanceRow({ intake: rows(50), reuse: [], discharge: rows(7), dischargeAssets: 2, intakeAssets: 1 })
       .consumed,
     null,
     "consumed with discharge [7] over two discharge-roled assets",
@@ -169,16 +170,57 @@ export function oneOfTwoDischargeAssetsCarryingReadsConsumedAsNull(): void {
  */
 export function nonCarryingDischargeAssetIsNotInCoverage(): void {
   same(
-    waterBalanceRow({ intake: rows(50), reuse: [], discharge: [], dischargeAssets: 1 }).coverage,
+    waterBalanceRow({ intake: rows(50), reuse: [], discharge: [], dischargeAssets: 1, intakeAssets: 1 }).coverage,
     "1/1",
     "coverage with discharge [] over one discharge-roled asset",
+  );
+}
+
+/**
+ * PR 2 post-merge sweep (the intake ruling): intake `[50]` fresh, but the site has TWO
+ * intake-roled assets and the other carries no `kl_*` point for the period — consumed is
+ * `null`, never `50 − 7`. Discharge is clean, so only the intake count comparison decides.
+ */
+export function oneOfTwoIntakeAssetsCarryingReadsConsumedAsNull(): void {
+  same(
+    waterBalanceRow({ intake: rows(50), reuse: [], discharge: rows(7), dischargeAssets: 1, intakeAssets: 2 })
+      .consumed,
+    null,
+    "consumed with intake [50] over two intake-roled assets",
+  );
+}
+
+/**
+ * The intake ruling, freshness: intake `[50, null]` over two carrying intake assets — one meter
+ * is silent, so consumed is `null`, never `50 − 7`. The count matches, so only the intake
+ * freshness check decides.
+ */
+export function partlyStaleIntakeReadsConsumedAsNull(): void {
+  same(
+    waterBalanceRow({ intake: rows(50, null), reuse: [], discharge: rows(7), dischargeAssets: 1, intakeAssets: 2 })
+      .consumed,
+    null,
+    "consumed with intake [50, null] over two intake assets",
+  );
+}
+
+/**
+ * The intake ruling changes `consumed` only: the intake COLUMN stays the sum of the fresh rows,
+ * 50, when a second intake-roled asset carries nothing.
+ */
+export function nonCarryingIntakeAssetKeepsTheIntakeColumn(): void {
+  same(
+    waterBalanceRow({ intake: rows(50), reuse: [], discharge: rows(7), dischargeAssets: 1, intakeAssets: 2 })
+      .intake,
+    50,
+    "intake with intake [50] over two intake-roled assets",
   );
 }
 
 /** Every input empty: all four numbers `null` and coverage `"0/0"`. */
 export function nothingCarryingIsAllNullAtZeroOverZero(): void {
   same(
-    waterBalanceRow({ intake: [], reuse: [], discharge: [], dischargeAssets: 0 }),
+    waterBalanceRow({ intake: [], reuse: [], discharge: [], dischargeAssets: 0, intakeAssets: 0 }),
     { intake: null, reuse: null, discharge: null, consumed: null, coverage: "0/0" },
     "every input empty",
   );
