@@ -166,6 +166,13 @@ import type { StockAssetTemplateEntry } from "./types";
  *    that 10% margin the period is still extrapolated, not refused. Label
  *    text is written into `bms.template_points` at import, so a tenant on v3
  *    keeps the unqualified label until it re-imports.
+ *  - `water-wtp` **v5** (2026-09-23, `E4.3` PR 2, U6): three more
+ *    `bms-calc-v3` derived points appended at `sortOrder` 27–29 (ADR 0073
+ *    decision 4) — `outlet_kl_today = sum({treated_water_flow_klh}, today)`
+ *    and its `_this_month` / `_this_year` calendar siblings, the same
+ *    scheduled/window/coverage rules as the inlet rows above. This is the
+ *    class's outlet for the site water balance (`water.balance`, ADR 0073
+ *    decision 3): the treated water this plant sends onward.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6).** One view, tiling the
  * class's headline measured points as `value_tile`s in table order (raw_water_flow_klh, treated_water_flow_klh, raw_turbidity_ntu, filtered_turbidity_ntu, treated_cl2_residual_mgl, clearwell_level_pct, filter_dp_bar, intake_pump_status), plus one
@@ -195,8 +202,10 @@ export const WATER_WTP: StockAssetTemplateEntry = {
     "that margin the derived point is rewritten at every sweep, so a roll-up still counts the asset " +
     "as fresh. On a completed day old enough to be served from daily storage (about two days " +
     "back) coverage is judged by the day, not the hour, so one sample anywhere in that day " +
-    "counts it as covered. Read those four as an estimate, not as a meter reading.",
-  stockVersion: 4,
+    "counts it as covered. Read those four as an estimate, not as a meter reading. Three more " +
+    "rows (outlet_kl_today, outlet_kl_this_month, outlet_kl_this_year, ADR 0073 decision 4) sum " +
+    "the treated water leaving the plant, the same estimate shape as the four above.",
+  stockVersion: 5,
   content: {
     contentVersion: 1,
     alarms: [
@@ -584,6 +593,33 @@ export const WATER_WTP: StockAssetTemplateEntry = {
       unit: "",
       required: false,
       sortOrder: 26,
+    },
+    // `E4.3` PR 2 (U6) — ADR 0073 decision 4: the outlet volume codes, over
+    // this class's own outlet (treated_water_flow_klh). Same spread as the
+    // inlet rows above; the E4.4 window_sparse guard applies to every sum.
+    {
+      ...derived("sum({treated_water_flow_klh}, today)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "outlet_kl_today",
+      label: "Outlet water today",
+      unit: "KL",
+      required: false,
+      sortOrder: 27,
+    },
+    {
+      ...derived("sum({treated_water_flow_klh}, this_month)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "outlet_kl_this_month",
+      label: "Outlet water this month (calendar, estimated over the whole period)",
+      unit: "KL",
+      required: false,
+      sortOrder: 28,
+    },
+    {
+      ...derived("sum({treated_water_flow_klh}, this_year)", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
+      pointKey: "outlet_kl_this_year",
+      label: "Outlet water this year (calendar, estimated over the whole period)",
+      unit: "KL",
+      required: false,
+      sortOrder: 29,
     },
   ],
 };

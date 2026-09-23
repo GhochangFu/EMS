@@ -141,13 +141,16 @@ describe("ADR 0070 part (a) — every stock-catalog formula literal parses ident
    * (transformer, DG, solar, APFC) + 6 × 3 (water) = 35 `v3` stock literals;
    * PR 2b adds fourteen more, for 49. **81 since `E4.2` PR 2** — 49 + the 32
    * new v3 literals (U7): feeder's 6, solar PV's 2, six water classes' 4
-   * each = 24; 6 + 2 + 24 = 32. Measured, not derived: run this file with
-   * the floor raised past the actual to read the true count before trusting
-   * the arithmetic. A `V3_OPTION_RE` that stopped matching would drop them
-   * all into the `v1` set, where they fail to parse — loud either way, but
-   * this floor names the cause. */
-  it("found at least 81 v3-authored literals (E4.1c PR 2a + 2b, E4.2 PR 2)", () => {
-    expect(v3Literals.length).toBeGreaterThanOrEqual(81);
+   * each = 24; 6 + 2 + 24 = 32. **96 since `E4.3` PR 2 (U6)** — 81 + 15 new
+   * outlet literals (three `outlet_kl_*` rows on five of the six water
+   * classes; the softener carries none, ADR 0073 decision 4, owner ruling
+   * Q2). Measured, not derived: run this file with the floor raised past the
+   * actual to read the true count before trusting the arithmetic. A
+   * `V3_OPTION_RE` that stopped matching would drop them all into the `v1`
+   * set, where they fail to parse — loud either way, but this floor names
+   * the cause. */
+  it("found at least 96 v3-authored literals (E4.1c PR 2a + 2b, E4.2 PR 2, E4.3 PR 2)", () => {
+    expect(v3Literals.length).toBeGreaterThanOrEqual(96);
   });
 
   it("every literal parses to the identical AST under its own authored dialect and under bms-calc-v3", () => {

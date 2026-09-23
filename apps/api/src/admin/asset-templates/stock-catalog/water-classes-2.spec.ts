@@ -90,6 +90,11 @@ const TOWER_POINTS: readonly PointRow[] = [
   ["kl_this_year", "derived", "KL"],
   ["water_cost_this_month", "derived", ""],
   ["water_cost_this_year", "derived", ""],
+  // `E4.3` PR 2 (U6), ADR 0073 decision 4 — the outlet volume codes, over the
+  // tower's own outlet (`blowdown_flow_klh`).
+  ["outlet_kl_today", "derived", "KL"],
+  ["outlet_kl_this_month", "derived", "KL"],
+  ["outlet_kl_this_year", "derived", "KL"],
 ];
 
 /**
@@ -116,6 +121,10 @@ const TOWER_DERIVED: readonly DerivedRow[] = [
   ["kl_this_year", "sum({makeup_flow_klh}, this_year)", null],
   ["water_cost_this_month", "sum({makeup_flow_klh}, this_month) * $water_tariff_per_kl", null],
   ["water_cost_this_year", "sum({makeup_flow_klh}, this_year) * $water_tariff_per_kl", null],
+  // E4.3 PR 2 (U6): three outlet rows over blowdown_flow_klh
+  ["outlet_kl_today", "sum({blowdown_flow_klh}, today)", null],
+  ["outlet_kl_this_month", "sum({blowdown_flow_klh}, this_month)", null],
+  ["outlet_kl_this_year", "sum({blowdown_flow_klh}, this_year)", null],
 ];
 
 /**
@@ -142,7 +151,7 @@ const TOWER_ALARMS: readonly AlarmRow[] = [
  */
 function checkCoolingTower(): void {
   const entry = requireStockEntry(TOWER_CODE);
-  assertEntryIdentity(TOWER_CODE, entry, "cooling_tower", "water", 4);
+  assertEntryIdentity(TOWER_CODE, entry, "cooling_tower", "water", 5);
 
   // ---- 28 points, 10 core + 6 extended + 1 manual + 11 derived (3 E4.1c + 4 E4.2) -------------
 
@@ -150,9 +159,10 @@ function checkCoolingTower(): void {
     tierCount(entry, "core") === 10 &&
       tierCount(entry, "extended") === 6 &&
       tierCount(entry, "manual") === 1 &&
-      tierCount(entry, "derived") === 11,
+      tierCount(entry, "derived") === 14,
     `§4 marks 10 rows C, 6 X and 1 M, and four of its five §4 derived codes are authored, ` +
-      `plus E4.1c's three v3 rows and E4.2 PR 2's four more — 10/6/1/11. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `plus E4.1c's three v3 rows, E4.2 PR 2's four more and E4.3 PR 2's three outlet rows — ` +
+      `10/6/1/14. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(TOWER_CODE, "§4", entry, TOWER_POINTS);
@@ -281,6 +291,11 @@ const WTP_POINTS: readonly PointRow[] = [
   ["kl_this_year", "derived", "KL"],
   ["water_cost_this_month", "derived", ""],
   ["water_cost_this_year", "derived", ""],
+  // `E4.3` PR 2 (U6), ADR 0073 decision 4 — the outlet volume codes, over the
+  // WTP's own outlet (`treated_water_flow_klh`).
+  ["outlet_kl_today", "derived", "KL"],
+  ["outlet_kl_this_month", "derived", "KL"],
+  ["outlet_kl_this_year", "derived", "KL"],
 ];
 
 /**
@@ -304,6 +319,10 @@ const WTP_DERIVED: readonly DerivedRow[] = [
   ["kl_this_year", "sum({raw_water_flow_klh}, this_year)", null],
   ["water_cost_this_month", "sum({raw_water_flow_klh}, this_month) * $water_tariff_per_kl", null],
   ["water_cost_this_year", "sum({raw_water_flow_klh}, this_year) * $water_tariff_per_kl", null],
+  // E4.3 PR 2 (U6): three outlet rows over treated_water_flow_klh
+  ["outlet_kl_today", "sum({treated_water_flow_klh}, today)", null],
+  ["outlet_kl_this_month", "sum({treated_water_flow_klh}, this_month)", null],
+  ["outlet_kl_this_year", "sum({treated_water_flow_klh}, this_year)", null],
 ];
 
 /**
@@ -326,7 +345,7 @@ const WTP_ALARMS: readonly AlarmRow[] = [
  */
 function checkWtp(): void {
   const entry = requireStockEntry(WTP_CODE);
-  assertEntryIdentity(WTP_CODE, entry, "wtp", "water", 4);
+  assertEntryIdentity(WTP_CODE, entry, "wtp", "water", 5);
 
   // ---- 27 points, 11 core + 5 extended + 2 manual + 9 derived (3 E4.1c + 4 E4.2) -------------
 
@@ -334,9 +353,10 @@ function checkWtp(): void {
     tierCount(entry, "core") === 11 &&
       tierCount(entry, "extended") === 5 &&
       tierCount(entry, "manual") === 2 &&
-      tierCount(entry, "derived") === 9,
+      tierCount(entry, "derived") === 12,
     `§1 marks 11 rows C, 5 X and 2 M, and two of its three §1 derived codes are authored, ` +
-      `plus E4.1c's three v3 rows and E4.2 PR 2's four more — 11/5/2/9. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
+      `plus E4.1c's three v3 rows, E4.2 PR 2's four more and E4.3 PR 2's three outlet rows — ` +
+      `11/5/2/12. Got ${tierCount(entry, "core")}/${tierCount(entry, "extended")}/` +
       `${tierCount(entry, "manual")}/${tierCount(entry, "derived")}`,
   );
   assertPointTable(WTP_CODE, "§1", entry, WTP_POINTS);
@@ -437,6 +457,11 @@ const TOWER_E41C: readonly SustainabilityRow[] = [
   ["kl_this_year", "sum({makeup_flow_klh}, this_year)", "KL"],
   ["water_cost_this_month", "sum({makeup_flow_klh}, this_month) * $water_tariff_per_kl", ""],
   ["water_cost_this_year", "sum({makeup_flow_klh}, this_year) * $water_tariff_per_kl", ""],
+  // `E4.3` PR 2 (U6), ADR 0073 decision 4 — the outlet volume codes, over the
+  // tower's own outlet (`blowdown_flow_klh`).
+  ["outlet_kl_today", "sum({blowdown_flow_klh}, today)", "KL"],
+  ["outlet_kl_this_month", "sum({blowdown_flow_klh}, this_month)", "KL"],
+  ["outlet_kl_this_year", "sum({blowdown_flow_klh}, this_year)", "KL"],
 ];
 
 /** water-wtp over `{raw_water_flow_klh}`, §1's inlet — plan §3.7. Seven rows, the same reason as the tower's above. */
@@ -448,12 +473,17 @@ const WTP_E41C: readonly SustainabilityRow[] = [
   ["kl_this_year", "sum({raw_water_flow_klh}, this_year)", "KL"],
   ["water_cost_this_month", "sum({raw_water_flow_klh}, this_month) * $water_tariff_per_kl", ""],
   ["water_cost_this_year", "sum({raw_water_flow_klh}, this_year) * $water_tariff_per_kl", ""],
+  // `E4.3` PR 2 (U6), ADR 0073 decision 4 — the outlet volume codes, over the
+  // WTP's own outlet (`treated_water_flow_klh`).
+  ["outlet_kl_today", "sum({treated_water_flow_klh}, today)", "KL"],
+  ["outlet_kl_this_month", "sum({treated_water_flow_klh}, this_month)", "KL"],
+  ["outlet_kl_this_year", "sum({treated_water_flow_klh}, this_year)", "KL"],
 ];
 
 /** `[code, rows, firstSortOrder, expectedVersion]` for each class in this file. */
 export const E41C_WATER_CLASSES: Array<readonly [string, readonly SustainabilityRow[], number, number]> = [
-  ["water-wtp", WTP_E41C, 20, 4],
-  ["water-cooling-tower", TOWER_E41C, 21, 4],
+  ["water-wtp", WTP_E41C, 20, 5],
+  ["water-cooling-tower", TOWER_E41C, 21, 5],
 ];
 
 export function e41cWaterClaims(): ReadonlyArray<readonly [name: string, run: () => void]> {
