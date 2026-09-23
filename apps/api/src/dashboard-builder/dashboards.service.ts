@@ -32,7 +32,10 @@ import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
 import { SCOPE_REFUSAL_MESSAGE } from "./dashboards.schema";
-import { assertSourceParamsPointKeysActive } from "./source-params-point-keys";
+import {
+  assertSourceParamsBalanceRolesActive,
+  assertSourceParamsPointKeysActive,
+} from "./source-params-point-keys";
 import type { CreateDashboardBody, PutDashboardWidgetsBody, UpdateDashboardBody } from "./dashboards.schema";
 
 import {
@@ -480,6 +483,12 @@ export class DashboardsService {
     // the tenant transaction: the catalog is fleet-wide, and a refusal here costs no rollback.
     // `create` has no widgets, so this is the one dashboard write path that carries a source.
     await assertSourceParamsPointKeysActive(
+      this.fleetDb,
+      body.widgets.flatMap((widget) => widget.sources),
+    );
+    // `E4.3` — and every `params.balanceRole` a live `bms.water_balance_roles` code (ADR 0073
+    // decision 2), on the same terms: fleet pool, before the transaction.
+    await assertSourceParamsBalanceRolesActive(
       this.fleetDb,
       body.widgets.flatMap((widget) => widget.sources),
     );

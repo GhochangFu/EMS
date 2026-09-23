@@ -67,6 +67,8 @@ type Resolver = (
 type SustainabilityParams = {
   readonly pointKey: string;
   readonly aggregate: SustainabilityAggregate;
+  /** `E4.3` / ADR 0073 decision 2 — narrows the carrying set to one water balance role. */
+  readonly balanceRole?: string;
 };
 
 /**
@@ -98,7 +100,8 @@ type SustainabilityParams = {
  * **`params` is read by two entries, and only through the write schema.** The five Stage C
  * entries declare no fields, so there is no parameter for them to read — a dataset's row cap
  * comes from `MAX_DATASET_ROWS`, not from a request. The two `sustainability.*` entries
- * (`E4.2`, ADR 0072 decision 2) take `{ pointKey, aggregate }`: the stored row is re-parsed
+ * (`E4.2`, ADR 0072 decision 2) take `{ pointKey, aggregate }` and, since `E4.3` (ADR 0073
+ * decision 2), an optional `balanceRole` that narrows the carrying set: the stored row is re-parsed
  * through `METRIC_CATALOG_PARAMS_WRITE` before a resolver sees it, and a row that fails to
  * parse is SKIPPED with one warning naming the field path (§4.3) — never thrown, because one
  * bad binding must not take the whole dashboard's values down. A filter is always a field on
@@ -582,8 +585,8 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
         currency: null,
       };
     }
-    const { pointKey, aggregate } = params as SustainabilityParams;
-    const rows = await readRollupRows(tx, organizationId, scope, pointKey);
+    const { pointKey, aggregate, balanceRole } = params as SustainabilityParams;
+    const rows = await readRollupRows(tx, organizationId, scope, pointKey, balanceRole);
     const { value, coverage } = rollup(rows, aggregate);
     const unit = await readPointKeyUnit(tx, pointKey);
     const currency = isMoneyPointKey(pointKey)
@@ -609,7 +612,9 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    */
   "sustainability.by_location": async (tx, organizationId, scope, _deps, params) => {
     if (scopeIsEmpty(scope)) return datasetValue("sustainability.by_location", [], false);
-    const { pointKey, aggregate } = params as SustainabilityParams;
+    const { pointKey, aggregate, balanceRole } = params as SustainabilityParams;
+    // The ROW set is not narrowed by `balanceRole` (E4.2 OQ7 stands): a location owning an
+    // asset in scope is a row even when none of its assets has the role — it reads `0/0`.
     const inScope = await tx
       .select({ id: locations.id, code: locations.code, name: locations.name })
       .from(assets)
@@ -618,7 +623,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
       .groupBy(locations.id, locations.code, locations.name)
       .orderBy(asc(locations.code))
       .limit(MAX_DATASET_ROWS + 1);
-    const carrying = await readRollupRows(tx, organizationId, scope, pointKey);
+    const carrying = await readRollupRows(tx, organizationId, scope, pointKey, balanceRole);
     const capped = capRows(inScope);
     const rows = capped.rows.map((location) => {
       const { value, coverage } = rollup(

@@ -844,12 +844,16 @@ export function byLocationDeclaresTheFourColumns(): void {
   );
 }
 
-/** Both entries declare the same two params, in the same order, and no older entry declares any. */
+/**
+ * Both entries declare the same three params, in the same order, and no older entry declares any
+ * (`balanceRole` is ADR 0073 decision 2's, optional on the write schema).
+ */
 export function bothEntriesDeclarePointKeyAndAggregate(): void {
+  const expected = ["pointKey", "aggregate", "balanceRole"];
   for (const key of ["sustainability.total", "sustainability.by_location"] as const) {
     assert(
-      JSON.stringify(METRIC_CATALOG[key].params) === JSON.stringify(["pointKey", "aggregate"]),
-      `${key} must declare params ["pointKey","aggregate"], got ${JSON.stringify(METRIC_CATALOG[key].params)}`,
+      JSON.stringify(METRIC_CATALOG[key].params) === JSON.stringify(expected),
+      `${key} must declare params ${JSON.stringify(expected)}, got ${JSON.stringify(METRIC_CATALOG[key].params)}`,
     );
   }
   for (const key of metricCatalogKeySchema.options) {

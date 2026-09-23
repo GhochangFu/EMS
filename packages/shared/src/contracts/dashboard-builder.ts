@@ -522,7 +522,7 @@ export const bindingExclusiveMessage = (label: string): string =>
  *
  * **The two `sustainability.*` entries are the first with parameters** (ADR 0072 decision 2):
  * `{ pointKey, aggregate }` on their write schema, the roll-up across the assets in scope that
- * carry `pointKey`. Must match `dashboard_widget_sources_catalog_key_check` as migration `0079`
+ * carry `pointKey`; ADR 0073 decision 2 adds an optional `balanceRole` narrowing them. Must match `dashboard_widget_sources_catalog_key_check` as migration `0079`
  * widened it (`0054` froze the first five).
  */
 export const metricCatalogKeySchema = z.enum([
@@ -605,11 +605,11 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
   "assets.health.score": { shape: "metric" },
   // `E4.2` / ADR 0072 decision 2 — the roll-up of one point key across the assets in scope.
   // `columns` stays on one line: `tests/f3.35-metric-catalog-labels.test.ts` parses it.
-  "sustainability.total": { shape: "metric", params: ["pointKey", "aggregate"] },
+  "sustainability.total": { shape: "metric", params: ["pointKey", "aggregate", "balanceRole"] },
   "sustainability.by_location": {
     shape: "dataset",
     columns: ["locationCode", "locationName", "value", "coverage"],
-    params: ["pointKey", "aggregate"],
+    params: ["pointKey", "aggregate", "balanceRole"],
   },
 };
 

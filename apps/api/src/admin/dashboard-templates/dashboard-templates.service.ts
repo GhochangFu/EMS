@@ -41,7 +41,10 @@ import { AccessControlService } from "../../auth/access-control.service";
 // global `ZodErrorFilter` would report it as the caller's bad request.
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { METRIC_CATALOG_PARAMS_WRITE } from "../../dashboard-builder/dashboards.schema";
-import { assertSourceParamsPointKeysActive } from "../../dashboard-builder/source-params-point-keys";
+import {
+  assertSourceParamsBalanceRolesActive,
+  assertSourceParamsPointKeysActive,
+} from "../../dashboard-builder/source-params-point-keys";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -341,6 +344,12 @@ export class DashboardTemplatesService {
     // draft is proved, and instantiation copies `params` verbatim, so this is the one gate on
     // the template path — the same sentence the dashboard write path answers with.
     await assertSourceParamsPointKeysActive(
+      this.fleetDb,
+      content.widgets.flatMap((widget) => widget.sources),
+    );
+    // `E4.3` — the balance role, likewise (ADR 0073 decision 2): instantiation copies `params`
+    // verbatim, so a role that is not live must stop here or never.
+    await assertSourceParamsBalanceRolesActive(
       this.fleetDb,
       content.widgets.flatMap((widget) => widget.sources),
     );

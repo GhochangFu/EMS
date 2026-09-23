@@ -43,6 +43,13 @@ export type RollupFixture = {
   /** A dashboard scoped to asset A alone (F3.2 asset scope), one `{ kl_today, sum }` tile. */
   readonly assetScopedDashboardId: string;
   readonly assetScopedSourceId: string;
+  /** `E4.3` — an L1 dashboard, one `{ kl_today, sum, balanceRole: "intake" }` tile. */
+  readonly roleL1DashboardId: string;
+  readonly roleL1IntakeSourceId: string;
+  /** `E4.3` — an org-wide dashboard, two by_location tables: `intake` and `discharge`. */
+  readonly roleTableDashboardId: string;
+  readonly roleTableIntakeSourceId: string;
+  readonly roleTableDischargeSourceId: string;
 };
 
 const valueOf = (
@@ -223,5 +230,58 @@ export async function byLocationOverTheCapIsTruncated(f: CapFixture): Promise<vo
   expect({ rows: table.rows.length, truncated: table.truncated }).toEqual({
     rows: MAX_DATASET_ROWS,
     truncated: true,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// `E4.3` U4 / ADR 0073 decision 2 — `balanceRole` narrows the carrying set, and with it the
+// coverage. A = `intake`, B = `internal`, C = `NULL`. One claim per function.
+// ---------------------------------------------------------------------------
+
+/**
+ * L1 `{ kl_today, sum, balanceRole: "intake" }` = A alone: 10 with 1/1. The unfiltered tile on
+ * the L1 dashboard reads 30 with 2/2 from the same rows (`l1SumIsThirtyWithFullCoverage`) — the
+ * double count this parameter exists to remove, held in both directions by one fixture.
+ */
+export async function intakeTileAtL1IsTenWithOneOfOne(f: RollupFixture): Promise<void> {
+  const tile = metricOf(await resolveWide(f, f.roleL1DashboardId), f.roleL1IntakeSourceId);
+  expect({ value: tile.value, coverage: tile.coverage }).toEqual({
+    value: 10,
+    coverage: { fresh: 1, carrying: 1 },
+  });
+}
+
+const roleTableRow = async (f: RollupFixture, sourceId: string, locationCode: string) => {
+  const table = valueOf(await resolveWide(f, f.roleTableDashboardId), sourceId);
+  if (table.shape !== "dataset") throw new Error("by_location must resolve to a dataset");
+  const row = table.rows.find((candidate) => candidate.locationCode === locationCode);
+  return row === undefined ? undefined : { value: row.value, coverage: row.coverage };
+};
+
+/** The org-wide intake table's L1 row: A alone, 10 with `"1/1"`. */
+export async function intakeTableGivesL1TenOverOneOfOne(f: RollupFixture): Promise<void> {
+  expect(await roleTableRow(f, f.roleTableIntakeSourceId, f.l1Code)).toEqual({
+    value: 10,
+    coverage: "1/1",
+  });
+}
+
+/**
+ * L2 is still a row under the role filter: `null` / `"0/0"`. The row set is "locations owning
+ * an asset in scope" (E4.2 OQ7) and the role filters the carrying set only — a filter on the
+ * location query would drop L2, whose one asset C has no role.
+ */
+export async function intakeTableKeepsL2AsARowAtZeroOverZero(f: RollupFixture): Promise<void> {
+  expect(await roleTableRow(f, f.roleTableIntakeSourceId, f.l2Code)).toEqual({
+    value: null,
+    coverage: "0/0",
+  });
+}
+
+/** `discharge` — no fixture asset carries it — answers L1 `null` / `"0/0"`, not the unfiltered 30. */
+export async function dischargeTableGivesL1NullOverZeroOfZero(f: RollupFixture): Promise<void> {
+  expect(await roleTableRow(f, f.roleTableDischargeSourceId, f.l1Code)).toEqual({
+    value: null,
+    coverage: "0/0",
   });
 }

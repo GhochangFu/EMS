@@ -19,6 +19,10 @@ import { asRole } from "../testing/role-urls";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { DashboardsService } from "./dashboards.service";
 import {
+  draftWithUnknownBalanceRoleRefusesToPublish,
+  inactiveBalanceRoleIs400,
+  seededBalanceRoleStoresItsParams,
+  unknownBalanceRoleIs400NamingIt,
   draftWithSeededCodePublishes,
   draftWithUnknownCodeRefusesToPublish,
   inactiveCodeIs400,
@@ -44,8 +48,11 @@ const UNKNOWN_CODE = `e42_nope_${RUN}`;
 const INACTIVE_CODE = `e42_off_${RUN}`;
 const DRAFT_CODE_BAD = `e42-u3-bad-${RUN}`;
 const DRAFT_CODE_GOOD = `e42-u3-good-${RUN}`;
+// `E4.3` U4 — a per-run inactive balance role and a draft binding an unknown one.
+const INACTIVE_ROLE = `e43_off_${RUN}`;
+const DRAFT_CODE_ROLE = `e43-u4-role-${RUN}`;
 
-const draftContent = (pointKey: string) => ({
+const draftContent = (pointKey: string, balanceRole?: string) => ({
   widgets: [
     {
       key: "tile",
@@ -55,7 +62,13 @@ const draftContent = (pointKey: string) => ({
       gridW: 2,
       gridH: 4,
       bindings: [],
-      sources: [{ catalogKey: "sustainability.total", params: { pointKey, aggregate: "sum" }, sortOrder: 0 }],
+      sources: [
+        {
+          catalogKey: "sustainability.total",
+          params: { pointKey, aggregate: "sum", ...(balanceRole === undefined ? {} : { balanceRole }) },
+          sortOrder: 0,
+        },
+      ],
       widgetType: "value_tile",
       config: {},
     },
@@ -72,6 +85,7 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
   let dashboardId: string;
   let badDraftId: string;
   let goodDraftId: string;
+  let roleDraftId: string;
   const actor = jwtFor(SEEDED.globalAdmin, "admin");
 
   const makeServices = () => {
@@ -146,6 +160,21 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
     badDraftId = drafts.rows[0]?.id ?? "";
     goodDraftId = drafts.rows[1]?.id ?? "";
     if (!badDraftId || !goodDraftId) throw new Error("E4.2: draft insert returned no ids");
+
+    // `E4.3` U4 — the inactive role is per-run for the reason the inactive point key is: only a
+    // row that exists with `active = false` tells "inactive is refused" from "absent is refused".
+    await superuserPool.query(
+      `INSERT INTO bms.water_balance_roles (code, label, active) VALUES ($1, 'E4.3 U4 inactive', false)`,
+      [INACTIVE_ROLE],
+    );
+    const roleDraft = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboard_templates (organization_id, code, version, name, section, status, content)
+       VALUES ($1, $2, 1, 'E4.3 U4 role draft', 'sustainability', 'draft', $3)
+       RETURNING id`,
+      [eskomOrgId, DRAFT_CODE_ROLE, JSON.stringify(draftContent("kl_today", "nope"))],
+    );
+    roleDraftId = roleDraft.rows[0]?.id ?? "";
+    if (!roleDraftId) throw new Error("E4.3: role draft insert returned no id");
   }, 60_000);
 
   afterAll(async () => {
@@ -153,12 +182,13 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
       await superuserPool.query(`DELETE FROM bms.audit_log WHERE entity_id = $1`, [dashboardId]);
       await superuserPool.query(`DELETE FROM bms.dashboards WHERE id = $1`, [dashboardId]);
     }
-    const draftIds = [badDraftId, goodDraftId].filter(Boolean);
+    const draftIds = [badDraftId, goodDraftId, roleDraftId].filter(Boolean);
     if (draftIds.length > 0) {
       await superuserPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [draftIds]);
       await superuserPool.query(`DELETE FROM bms.dashboard_templates WHERE id = ANY($1::uuid[])`, [draftIds]);
     }
     await superuserPool.query(`DELETE FROM bms.point_keys WHERE code = $1`, [INACTIVE_CODE]);
+    await superuserPool.query(`DELETE FROM bms.water_balance_roles WHERE code = $1`, [INACTIVE_ROLE]);
     await Promise.all([fleetPool.end(), superuserPool.end(), tenantPool.end(), authPool.end()]);
   });
 
@@ -180,5 +210,21 @@ describe.skipIf(!connectionString)("E4.2 U3 — pointKey verified at the binding
 
   it("publishes the same draft shape with kl_today (control)", async () => {
     await draftWithSeededCodePublishes(makeServices().templates, actor, goodDraftId);
+  });
+
+  it("refuses an unknown balanceRole with a 400 naming it", async () => {
+    await unknownBalanceRoleIs400NamingIt(makeServices().dashboards, actor, dashboardId);
+  });
+
+  it("refuses a balanceRole whose vocabulary row is active = false", async () => {
+    await inactiveBalanceRoleIs400(makeServices().dashboards, actor, dashboardId, INACTIVE_ROLE);
+  });
+
+  it("stores a seeded balanceRole and its params (control)", async () => {
+    await seededBalanceRoleStoresItsParams(makeServices().dashboards, actor, dashboardId);
+  });
+
+  it("refuses to publish a draft whose source names an unknown balanceRole", async () => {
+    await draftWithUnknownBalanceRoleRefusesToPublish(makeServices().templates, actor, roleDraftId);
   });
 });

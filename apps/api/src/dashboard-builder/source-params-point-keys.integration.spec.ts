@@ -15,7 +15,7 @@ import type { DashboardsService } from "./dashboards.service";
  * database lifecycle and the per-run rows. One exported function per claim.
  */
 
-const tileBinding = (pointKey: string) =>
+const tileBinding = (pointKey: string, balanceRole?: string) =>
   putDashboardWidgetsBodySchema.parse({
     widgets: [
       {
@@ -27,7 +27,16 @@ const tileBinding = (pointKey: string) =>
         gridH: 2,
         config: {},
         points: [],
-        sources: [{ catalogKey: "sustainability.total", params: { pointKey, aggregate: "sum" } }],
+        sources: [
+          {
+            catalogKey: "sustainability.total",
+            params: {
+              pointKey,
+              aggregate: "sum",
+              ...(balanceRole === undefined ? {} : { balanceRole }),
+            },
+          },
+        ],
       },
     ],
   });
@@ -103,4 +112,59 @@ export async function draftWithSeededCodePublishes(
 ): Promise<void> {
   const dto = await templates.publish(actor, draftId);
   expect(dto.status).toBe("published");
+}
+
+// ---------------------------------------------------------------------------
+// `E4.3` / ADR 0073 decision 2 — `balanceRole` verified against `bms.water_balance_roles` at the
+// same two writes. Every refusal below binds the seeded `kl_today`, so the point-key guard
+// cannot be the one that fired: the sentence asserted is the role check's own.
+// ---------------------------------------------------------------------------
+
+/** An unknown role is a 400 naming it. */
+export async function unknownBalanceRoleIs400NamingIt(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+): Promise<void> {
+  const err = await refusal(() =>
+    service.putWidgets(actor, dashboardId, tileBinding("kl_today", "nope")),
+  );
+  expect(err.message).toBe("Not a live water balance role: nope");
+}
+
+/** A role row with `active = false` is refused exactly as an absent one. */
+export async function inactiveBalanceRoleIs400(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+  inactiveRole: string,
+): Promise<void> {
+  const err = await refusal(() =>
+    service.putWidgets(actor, dashboardId, tileBinding("kl_today", inactiveRole)),
+  );
+  expect(err.message).toBe(`Not a live water balance role: ${inactiveRole}`);
+}
+
+/** A seeded role stores, and the stored `params` carry it (the positive control). */
+export async function seededBalanceRoleStoresItsParams(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+): Promise<void> {
+  const dto = await service.putWidgets(actor, dashboardId, tileBinding("kl_today", "intake"));
+  expect(dto.widgets[0]?.sources[0]?.params).toEqual({
+    pointKey: "kl_today",
+    aggregate: "sum",
+    balanceRole: "intake",
+  });
+}
+
+/** A draft whose one source names `balanceRole: "nope"` refuses to publish with the same sentence. */
+export async function draftWithUnknownBalanceRoleRefusesToPublish(
+  templates: DashboardTemplatesService,
+  actor: JwtPayload,
+  draftId: string,
+): Promise<void> {
+  const err = await refusal(() => templates.publish(actor, draftId));
+  expect(err.message).toBe("Not a live water balance role: nope");
 }
