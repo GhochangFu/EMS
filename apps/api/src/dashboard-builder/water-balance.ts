@@ -34,7 +34,8 @@ import { rollup, type RollupInput } from "./sustainability-rollup";
  * **Coverage decision (PR 2 review):** a role-holding asset that does not carry the period's
  * key is NOT in the denominator. `carrying` keeps the one meaning it has everywhere else —
  * the `sustainability.by_location` table on the same dashboard uses the same string — and a
- * period no template carries still reads `"0/0"` as the resolver's re-import note says. The
+ * period no template carries still reads `"0/0"` (a pre-v5 tenant's reuse and discharge read
+ * `null` and add nothing, as the resolver's re-import note says, while its intake counts). The
  * signal behind a `null` consumed at full coverage is the `null` discharge column beside it:
  * the site has a discharge meter and no reading from it. An intake meter that cannot report
  * has no such signal: the intake column still shows the other intakes' sum, and only the
