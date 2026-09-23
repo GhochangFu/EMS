@@ -238,8 +238,12 @@ export function assertDerivedRowsAreScheduledAndMeasuredRowsAreNot(): void {
 }
 
 /** Only a derived row runs every 60 s; a measured row's interval is NULL. */
-export function assertDerivedRowsRunEverySixtySecondsAndMeasuredRowsNever(): void {
+export function assertTheCalcIntervalIsSixtySeconds(): void {
   expect(DEMO_WATER_CALC_INTERVAL_SECONDS).toBe(60);
+}
+
+/** Only a derived row gets the interval: the CASE has no ELSE, so a measured row reads NULL. */
+export function assertOnlyDerivedRowsGetTheInterval(): void {
   expect(DEMO_WATER_TEMPLATE_POINTS_SQL).toContain("CASE WHEN d.kind = 'derived' THEN 60 END");
 }
 

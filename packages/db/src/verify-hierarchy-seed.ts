@@ -3,7 +3,7 @@ import pg from "pg";
 import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
 import { getOrganizationId } from "./hierarchy-seed";
 import { withOrganization } from "./seed-tenant";
-import { DEMO_WATER_ASSET_CODES } from "./water-plant-demo-seed";
+import { DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES } from "./water-plant-demo-seed";
 
 /** The rows migration `0029` inserts: electrical, hvac, it, environment, water. */
 const MIGRATION_0029_ASSET_DOMAINS = 5;
@@ -173,7 +173,10 @@ export async function verifyHierarchySeed(
         -- declares no point and throws unusable = 1 before this check runs.
         -- Each count reads ONLY the five demo asset codes, passed as $2 from
         -- DEMO_WATER_ASSET_CODES (owner ruling R1, 2026-09-24), so another
-        -- water asset in ESKOM cannot move them.
+        -- water asset in ESKOM cannot move them. The pin count pairs each
+        -- asset code with its own class template code ($3, from
+        -- DEMO_WATER_TEMPLATE_CODES, the same class order), so a demo asset
+        -- pinned to another class mirror is not counted.
         --
         -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
         (SELECT COUNT(*)::text FROM bms.assets a
@@ -186,7 +189,10 @@ export async function verifyHierarchySeed(
           INNER JOIN bms.organizations o ON o.id = a.organization_id
           WHERE o.code = 'ESKOM' AND a.domain = 'water'
             AND a.code = ANY($2::varchar[])
-            AND t.code LIKE 'DEMO-WATER-%') AS eskom_water_assets_on_demo_templates,
+            AND (a.code, t.code) IN (
+              SELECT x.asset_code, x.template_code
+              FROM unnest($2::varchar[], $3::varchar[]) AS x(asset_code, template_code)
+            )) AS eskom_water_assets_on_demo_templates,
         (SELECT COUNT(*)::text FROM bms.assets a
           INNER JOIN bms.organizations o ON o.id = a.organization_id
           WHERE o.code = 'ESKOM' AND a.domain = 'water'
@@ -198,7 +204,7 @@ export async function verifyHierarchySeed(
           INNER JOIN bms.assets a ON a.id = agm.asset_id
           WHERE o.code = 'ESKOM' AND ag.code = 'water'
             AND a.code = ANY($2::varchar[])) AS eskom_water_group_members
-    `, [eskomOrgId, DEMO_WATER_ASSET_CODES]);
+    `, [eskomOrgId, DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES]);
     const row = res.rows[0];
     // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
     // needs in order to tell `WHERE active = true` apart from no predicate.
@@ -244,7 +250,7 @@ export async function verifyHierarchySeed(
     // carries. An admin's own water assets, or a leaked test fixture in the
     // water domain, can no longer move these counts.
     expect("ESKOM water assets carrying a balance role", row?.eskom_water_assets_roled, 5);
-    expect("ESKOM water assets pinned to a DEMO-WATER template", row?.eskom_water_assets_on_demo_templates, 5);
+    expect("ESKOM water demo assets pinned to their own DEMO-WATER template", row?.eskom_water_assets_on_demo_templates, 5);
     expect("ESKOM water intake assets", row?.eskom_water_intake_assets, 1);
     expect("ESKOM water group members", row?.eskom_water_group_members, 5);
     // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so

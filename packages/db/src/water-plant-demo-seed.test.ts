@@ -7,7 +7,8 @@ import {
   assertDerivedRowsCarryNoTier,
   assertDerivedRowsCarryTheirFormula,
   assertDerivedRowsCarryUnitKl,
-  assertDerivedRowsRunEverySixtySecondsAndMeasuredRowsNever,
+  assertOnlyDerivedRowsGetTheInterval,
+  assertTheCalcIntervalIsSixtySeconds,
   assertEveryPositionalArrayHasTheSameLength,
   assertMeasuredRowsAreKindMeasured,
   assertMeasuredRowsCarryNoFormula,
@@ -110,8 +111,12 @@ describe("E4.3 U11 — the demo water plant's template point params", () => {
     assertDerivedRowsAreScheduledAndMeasuredRowsAreNot();
   });
 
-  it("runs a derived row every 60 s, and a measured row never", () => {
-    assertDerivedRowsRunEverySixtySecondsAndMeasuredRowsNever();
+  it("runs the calculations every 60 s", () => {
+    assertTheCalcIntervalIsSixtySeconds();
+  });
+
+  it("gives the interval to a derived row only, never a measured row", () => {
+    assertOnlyDerivedRowsGetTheInterval();
   });
 });
 
