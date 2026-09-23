@@ -321,11 +321,13 @@ describe("E4.3 U11 — the water domain reaches the RTU and group derivations", 
 });
 
 /**
- * `E4.3` U12 — EXPECTED RED UNTIL U12 LANDS. `apps/sim/src/index.js` dispatches
- * by domain with an electrical default (plan fact 14), so until U12 adds
- * `stepWater` the five water assets would emit `kw`/`voltage_l1_v`. Written
- * with U11 so U12 has its red test waiting; not skipped, so it cannot be
- * forgotten green.
+ * `E4.3` U12 — `apps/sim/src/index.js` dispatches by domain with an
+ * electrical default (plan fact 14); without `stepWater` the five water
+ * assets would emit `kw`/`voltage_l1_v` instead of their flows. Written with
+ * U11 so U12 had its red test waiting; the per-class claims below (added with
+ * U12) additionally hold each class's emitted key SET equal to the seed's
+ * `measuredFlowKeys`, so a `stepWater` that names every key somewhere but
+ * emits the wrong class's keys on an asset still reddens.
  */
 const SIM_WATER_FLOW_KEYS = [
   "raw_water_flow_klh",
@@ -353,7 +355,47 @@ function simBodyOf(name: string): string {
   return code.slice(start, end);
 }
 
-describe("E4.3 U12 (EXPECTED RED until U12) — apps/sim emits the demo plant's flows", () => {
+/**
+ * Extras `stepWater` emits beyond the class's `measuredFlowKeys` (E4.3 U11):
+ * realistic third flows no balance formula reads. Exact, not a superset check
+ * — a class must emit precisely its `measuredFlowKeys` plus this list, no
+ * more and no fewer, or a swapped/dropped key reddens the claim below.
+ */
+const SIM_ONLY_FLOWS: Record<string, readonly string[]> = {
+  WTP: [],
+  RO: ["reject_flow_klh"],
+  CT: ["circ_flow_klh"],
+  STP: ["ras_flow_klh"],
+  ETP: [],
+};
+
+/** `[assetCode, stockClass, role, infixClass]`. */
+const CLASSES_WITH_INFIX: readonly (readonly [string, string, string, string])[] = [
+  ["WTR-WTP-01", "water-wtp", "intake", "WTP"],
+  ["WTR-RO-01", "water-ro", "internal", "RO"],
+  ["WTR-CT-01", "water-cooling-tower", "internal", "CT"],
+  ["WTR-STP-01", "water-stp", "reuse", "STP"],
+  ["WTR-ETP-01", "water-etp", "discharge", "ETP"],
+];
+
+/**
+ * The one `<CLASS>: { key: number, ... }` entry of `stepWater`'s `WATER_FLOWS`
+ * table, as a key set. No entry's values nest braces, so a plain (non
+ * brace-stack) capture is exact here; fails closed, naming the class, on zero
+ * or more than one match, or on a match with no keys inside it — an empty set
+ * must never equal an empty set.
+ */
+function simFlowKeysFor(klass: string): string[] {
+  const body = simBodyOf("stepWater");
+  const inner = soleCapture(body, new RegExp(`\\b${klass}:\\s*\\{([^{}]*)\\}`), `stepWater WATER_FLOWS.${klass}`);
+  const keys = [...inner.matchAll(/([a-z0-9_]+)\s*:/g)].map((m) => m[1]!);
+  if (keys.length === 0) {
+    throw new Error(`stepWater WATER_FLOWS.${klass}: found no flow keys — an empty set must not equal an empty set`);
+  }
+  return keys;
+}
+
+describe("E4.3 U12 — apps/sim emits the demo plant's flows", () => {
   it('tick() dispatches row.domain === "water"', () => {
     expect(simBodyOf("tick")).toContain('row.domain === "water"');
   });
@@ -368,4 +410,24 @@ describe("E4.3 U12 (EXPECTED RED until U12) — apps/sim emits the demo plant's 
     // both emit influent_flow_klh. There is no thirteenth key to look for.
     expect(SIM_WATER_FLOW_KEYS.filter((key) => !body.includes(key))).toEqual([]);
   });
+
+  // A `stepWater` that names all twelve keys somewhere in its body still
+  // passes the claim above even if it emits the RO keys on the WTP asset —
+  // and then the WTP's `kl_today`/`outlet_kl_today` calc rows read nothing.
+  // This claim reads the sim's per-class key SET and holds it equal to the
+  // seed's `measuredFlowKeys` for that class, plus the one realistic extra
+  // (if any) the class carries — taken from the seed module, not repeated by
+  // hand, so a `measuredFlowKeys` edit in U11's file cannot silently pass here.
+  for (const [assetCode, , , klass] of CLASSES_WITH_INFIX) {
+    it(`${assetCode}'s -${klass}- flows equal the seed's measuredFlowKeys plus its realistic extras`, () => {
+      const literal = seedClass(assetCode);
+      const flowsText = soleCapture(literal, /measuredFlowKeys:\s*\[([^\]]*)\]/, `${assetCode} measuredFlowKeys`);
+      const measured = [...flowsText.matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
+      const expected = [...measured, ...SIM_ONLY_FLOWS[klass]!].sort();
+      const actual = simFlowKeysFor(klass).sort();
+      expect(actual, `apps/sim/src/index.js stepWater's ${klass} flows do not match ${assetCode}'s measuredFlowKeys`).toEqual(
+        expected,
+      );
+    });
+  }
 });

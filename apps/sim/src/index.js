@@ -1,7 +1,16 @@
 /**
- * Telemetry simulator — writes electrical points for `electrical` assets and
- * HVAC/environment points for their domains into `telemetry.point_values`, then
- * `pg_notify('bms_telemetry', …)` for the API WebSocket fan-out.
+ * Telemetry simulator — writes electrical points for `electrical` assets,
+ * HVAC/environment/IT points for their domains, and (E4.3 U12) water flow
+ * points for the demo water plant's five `water` assets, into
+ * `telemetry.point_values`, then `pg_notify('bms_telemetry', …)` for the API
+ * WebSocket fan-out.
+ *
+ * **`SIM_ASSET_COUNT` and the demo water plant.** The default of `64` selects
+ * the first 64 assets by code (`loadAssets`, ordered `order by code asc`), and
+ * `WTR-*` sorts after every ESKOM code the seed ships today, so a local run
+ * with the default never reaches the water assets. `docker-compose.yml` sets
+ * `SIM_ASSET_COUNT=all`, and a local run that wants the water plant's flows
+ * must do the same: `SIM_ASSET_COUNT=all pnpm --filter sim start`.
  */
 import { config } from "dotenv";
 import http from "node:http";
@@ -88,6 +97,34 @@ const itState = new Map();
 
 /** @type {Map<string, { tempC: number, humidityPct: number, leakState: number, smokeState: number }>} */
 const environmentState = new Map();
+
+/** @type {Map<string, Map<string, number>>} one flow-key → value map per water asset. */
+const waterState = new Map();
+
+/**
+ * The banner's list of every flow key the demo water plant emits, across all
+ * five classes — a plain duplicate of `stepWater`'s own `WATER_FLOWS` table
+ * (kept inside the function so `tests/e4.3-demo-water-plant.test.ts` can read
+ * it back from `stepWater`'s body text alone). Twelve distinct keys: the STP
+ * and the ETP both carry `influent_flow_klh` (E4.3 plan, PR 3 U12).
+ */
+const WATER_POINT_KEYS = [
+  "raw_water_flow_klh",
+  "treated_water_flow_klh",
+  "feed_flow_klh",
+  "permeate_flow_klh",
+  "reject_flow_klh",
+  "makeup_flow_klh",
+  "blowdown_flow_klh",
+  "circ_flow_klh",
+  "influent_flow_klh",
+  "effluent_flow_klh",
+  "ras_flow_klh",
+  "discharge_flow_klh",
+];
+
+/** Warned-once set, so an unrecognized water code logs one line, not one per tick. */
+const warnedUnknownWaterCodes = new Set();
 
 function rndWalk(prev, delta, min, max) {
   const x = prev + (Math.random() * 2 - 1) * delta;
@@ -219,6 +256,80 @@ function stepEnvironment(assetId, code) {
     { assetId, pointKey: "temperature_c", value: s.tempC, unit: "°C", time: t },
     { assetId, pointKey: "humidity_pct", value: s.humidityPct, unit: "%", time: t },
   ];
+}
+
+/** `assetId → Map<flowKey, value>`, one map per demo water plant asset. */
+function ensureWaterState(assetId, code) {
+  let s = waterState.get(assetId);
+  if (!s) {
+    s = new Map();
+    waterState.set(assetId, s);
+  }
+  return s;
+}
+
+/**
+ * The code infix names the class (`WTR-<CLASS>-01`, `eskom-assets-seed.ts`
+ * via `water-plant-demo-seed.ts`). `null` for a water asset with none of the
+ * five known infixes — `stepWater` skips it and warns once, rather than
+ * emitting an arbitrary class's flows (fail closed, never fail silent-wrong).
+ */
+function waterClassOf(code) {
+  if (code.includes("-WTP-")) return "WTP";
+  if (code.includes("-RO-")) return "RO";
+  if (code.includes("-CT-")) return "CT";
+  if (code.includes("-STP-")) return "STP";
+  if (code.includes("-ETP-")) return "ETP";
+  return null;
+}
+
+/**
+ * `E4.3` PR 3 U12 — the demo water plant's five stages. Bases are `KL/hr`,
+ * chosen so the site's daily balance reads intake ≈ 1200 KL (WTP raw × 24),
+ * reuse ≈ 264 (STP effluent × 24), discharge ≈ 168 (ETP discharge × 24),
+ * consumed ≈ 1032, matching the plan's worked figures. `reject_flow_klh`
+ * (RO), `circ_flow_klh` (CT) and `ras_flow_klh` (STP) are realistic third
+ * flows no balance formula reads — `water-plant-demo-seed.ts`'s
+ * `measuredFlowKeys` for those three classes correctly omits them (E4.3 U11);
+ * `tests/e4.3-demo-water-plant.test.ts` holds this table's per-class key set
+ * equal to `measuredFlowKeys` plus exactly those three named extras, so a
+ * class emitting another class's keys — or dropping one of its own — reddens.
+ *
+ * The table is declared inside this function, not at module scope, so
+ * `tests/e4.3-demo-water-plant.test.ts`'s `simBodyOf("stepWater")` (a text
+ * read of this function's body only) can see the key names; `WATER_POINT_KEYS`
+ * above is the same list, kept separately for the startup banner.
+ */
+function stepWater(assetId, code) {
+  const WATER_FLOWS = {
+    WTP: { raw_water_flow_klh: 50, treated_water_flow_klh: 46 },
+    RO: { feed_flow_klh: 20, permeate_flow_klh: 15, reject_flow_klh: 5 },
+    CT: { makeup_flow_klh: 6, blowdown_flow_klh: 1.5, circ_flow_klh: 300 },
+    STP: { influent_flow_klh: 12, effluent_flow_klh: 11, ras_flow_klh: 4 },
+    ETP: { influent_flow_klh: 8, discharge_flow_klh: 7 },
+  };
+  const klass = waterClassOf(code);
+  if (!klass) {
+    if (!warnedUnknownWaterCodes.has(code)) {
+      warnedUnknownWaterCodes.add(code);
+      console.warn(
+        `[sim] water asset ${code} matches none of -WTP-/-RO-/-CT-/-STP-/-ETP- — emitting no flows`,
+      );
+    }
+    return [];
+  }
+  const bases = WATER_FLOWS[klass];
+  const s = ensureWaterState(assetId, code);
+  const t = new Date();
+  const points = [];
+  for (const key of Object.keys(bases)) {
+    const base = bases[key];
+    const prev = s.has(key) ? s.get(key) : base;
+    const value = rndWalk(prev, Math.max(base * 0.1, 0.01), 0, base * 1.5);
+    s.set(key, value);
+    points.push({ assetId, pointKey: key, value, unit: "KL/hr", time: t });
+  }
+  return points;
 }
 
 function stepElectrical(assetId, code = "") {
@@ -435,7 +546,9 @@ async function tick(rows) {
             ? stepHvac(row.id)
             : row.domain === "environment"
               ? stepEnvironment(row.id, row.code)
-              : stepElectrical(row.id, row.code);
+              : row.domain === "water"
+                ? stepWater(row.id, row.code)
+                : stepElectrical(row.id, row.code);
       for (const r of batch) {
         outRows.push([r.time, r.assetId, r.pointKey, r.value, r.unit]);
         readings.push({
@@ -448,18 +561,24 @@ async function tick(rows) {
       }
     }
 
-    const values = outRows
-      .map(
-        (_, i) =>
-          `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`,
-      )
-      .join(", ");
-    const flat = outRows.flat();
-    await client.query(
-      `insert into telemetry.point_values ("time", asset_id, point_key, value, unit) values ${values}`,
-      flat,
-    );
-    pointsWritten.inc(outRows.length);
+    if (outRows.length > 0) {
+      // `stepWater` can return zero points for an unrecognized water code
+      // (fail-closed, warned once) — nothing else here ever does, but the
+      // guard is unconditional so the INSERT is never built with an empty
+      // `values (...)` list.
+      const values = outRows
+        .map(
+          (_, i) =>
+            `($${i * 5 + 1}, $${i * 5 + 2}, $${i * 5 + 3}, $${i * 5 + 4}, $${i * 5 + 5})`,
+        )
+        .join(", ");
+      const flat = outRows.flat();
+      await client.query(
+        `insert into telemetry.point_values ("time", asset_id, point_key, value, unit) values ${values}`,
+        flat,
+      );
+      pointsWritten.inc(outRows.length);
+    }
 
     for (const part of chunkReadingsForNotify(readings)) {
       await client.query("select pg_notify($1, $2)", [
@@ -503,16 +622,18 @@ async function main() {
   }
   const hvacN = assetRows.filter((r) => r.domain === "hvac").length;
   const itN = assetRows.filter((r) => r.domain === "it").length;
-  const elecN = assetRows.length - hvacN - itN;
+  const waterN = assetRows.filter((r) => r.domain === "water").length;
+  const elecN = assetRows.length - hvacN - itN - waterN;
   process.stdout.write(
-    `[sim] ${assetRows.length} assets (${elecN} electrical, ${hvacN} hvac, ${itN} it) @ ${rateHz} Hz\n` +
+    `[sim] ${assetRows.length} assets (${elecN} electrical, ${hvacN} hvac, ${itN} it, ${waterN} water) @ ${rateHz} Hz\n` +
       (siteNames.length > 0 ? `  sites: ${siteNames.join(", ")}\n` : "") +
       `  electrical: ${ELECTRICAL_POINT_KEYS.join(", ")}\n` +
       `  control-room electrical: ${CONTROL_ROOM_ELECTRICAL_POINT_KEYS.join(", ")}\n` +
       `  control-room ups: ${CONTROL_ROOM_UPS_POINT_KEYS.join(", ")}\n` +
       `  control-room it: ${CONTROL_ROOM_IT_POINT_KEYS.join(", ")}\n` +
       `  control-room environment: ${CONTROL_ROOM_ENVIRONMENT_POINT_KEYS.join(", ")}\n` +
-      `  hvac: ${HVAC_POINT_KEYS.join(", ")}\n`,
+      `  hvac: ${HVAC_POINT_KEYS.join(", ")}\n` +
+      `  water: ${WATER_POINT_KEYS.join(", ")}\n`,
   );
 
   const loop = async () => {
