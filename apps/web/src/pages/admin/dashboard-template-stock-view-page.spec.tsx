@@ -38,7 +38,7 @@ import { DashboardTemplateStockViewPage } from "./dashboard-template-stock-view-
  * fixture one per widget over eight, because the case counts widgets and
  * lists, never bindings per widget. `NO_BINDINGS` mirrors the SHAPE
  * `sustainability-overview` has — zero role bindings, every widget
- * catalog-sourced — not its widget count, which is 18 since `E4.2` PR 2; the
+ * catalog-sourced — not its widget count, which is 19 since `E4.3` PR 2 (U10); the
  * fixture stays its own small shape (four widgets, zero bindings) because
  * this case tests the zero-binding edge every metric-catalog-only entry has,
  * not the live entry's exact widget count. **The fixtures now carry one

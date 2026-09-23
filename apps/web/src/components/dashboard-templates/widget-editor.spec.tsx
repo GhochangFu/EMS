@@ -187,3 +187,79 @@ export function hidesTheMetricPickerAtTheCardinalityMax(): void {
     "the metric picker rendered at `WIDGET_CATALOG.value_tile.sources.max`",
   ).toBeNull();
 }
+
+/**
+ * `E4.3` U10, ADR 0073 "Ruled here without a question" / Q6 clarification —
+ * the water-balance-role note.
+ *
+ * Cases 10–13 below hold both directions plus two negative controls. Each is
+ * its own `it`, and each absence case carries a positive control in the same
+ * render (the source label), per the discipline `hidesTheRolePickerOnceAMetricIsBound`
+ * already follows.
+ */
+const KL_TODAY_NO_ROLE: SectionTemplateSourceInput = {
+  catalogKey: "sustainability.total",
+  params: { pointKey: "kl_today", aggregate: "sum" },
+  sortOrder: 0,
+};
+const KL_TODAY_WITH_ROLE: SectionTemplateSourceInput = {
+  catalogKey: "sustainability.total",
+  params: { pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" },
+  sortOrder: 0,
+};
+const KWH_TODAY_NO_ROLE: SectionTemplateSourceInput = {
+  catalogKey: "sustainability.total",
+  params: { pointKey: "kwh_today", aggregate: "sum" },
+  sortOrder: 0,
+};
+const OUTLET_KL_TODAY_NO_ROLE: SectionTemplateSourceInput = {
+  catalogKey: "sustainability.total",
+  params: { pointKey: "outlet_kl_today", aggregate: "sum" },
+  sortOrder: 0,
+};
+const NOTE_TEXT = /sums every stage's inlet/;
+
+/** Case 10 — a `kl_*` source with no `balanceRole` shows the note. */
+export function showsTheWaterBalanceNoteForAnUnroledWaterVolumeSource(): void {
+  renderEditor(tile({ sources: [KL_TODAY_NO_ROLE] }), true);
+
+  expect(screen.getByText("Sustainability total")).toBeInTheDocument();
+  expect(screen.getByText(NOTE_TEXT)).toBeInTheDocument();
+}
+
+/** Case 11 — the same `kl_*` source WITH `balanceRole` shows no note. */
+export function hidesTheWaterBalanceNoteForARoledWaterVolumeSource(): void {
+  renderEditor(tile({ sources: [KL_TODAY_WITH_ROLE] }), true);
+
+  expect(screen.getByText("Sustainability total")).toBeInTheDocument();
+  expect(screen.queryByText(NOTE_TEXT)).toBeNull();
+}
+
+/** Case 12 — a non-water `pointKey` (energy) with no `balanceRole` shows no note. */
+export function hidesTheWaterBalanceNoteForANonWaterSource(): void {
+  renderEditor(tile({ sources: [KWH_TODAY_NO_ROLE] }), true);
+
+  expect(screen.getByText("Sustainability total")).toBeInTheDocument();
+  expect(screen.queryByText(NOTE_TEXT)).toBeNull();
+}
+
+/**
+ * Case 13 — `outlet_kl_today`, an outlet-volume code, shows no note even
+ * without `balanceRole`. The Q6 ruling names `kl_*` (the intake volumes)
+ * only; the note's own sentence names "every stage's INLET", which would be
+ * a false claim under an outlet-keyed tile, and no stock template binds
+ * `outlet_kl_*` today to prove the note is even wanted there.
+ */
+export function hidesTheWaterBalanceNoteForAnOutletVolumeSource(): void {
+  renderEditor(tile({ sources: [OUTLET_KL_TODAY_NO_ROLE] }), true);
+
+  expect(screen.getByText("Sustainability total")).toBeInTheDocument();
+  expect(screen.queryByText(NOTE_TEXT)).toBeNull();
+}
+
+/** Case 14 — read-only: the stock viewer (`F3.44`) renders the same block, and the note must still fire there. */
+export function showsTheWaterBalanceNoteReadOnlyToo(): void {
+  renderEditor(tile({ sources: [KL_TODAY_NO_ROLE] }), false);
+
+  expect(screen.getByText(NOTE_TEXT)).toBeInTheDocument();
+}

@@ -63,11 +63,15 @@ export const METRIC_CATALOG_PRESENTATION: Readonly<
   // entry with `params`), but the inspector and the inline error still read these labels.
   "sustainability.total": {
     label: "Sustainability total",
-    description: "One point key summed or averaged across the assets in scope.",
+    description:
+      "One point key summed or averaged across the assets in scope. Without balanceRole, " +
+      "every asset carrying the point counts, so a water total sums every stage's inlet.",
   },
   "sustainability.by_location": {
     label: "Sustainability by site",
-    description: "The same roll-up, one row per site in scope, with its coverage.",
+    description:
+      "The same roll-up, one row per site in scope, with its coverage. Without balanceRole, " +
+      "every asset carrying the point counts, so a water total sums every stage's inlet.",
   },
   // `E4.3` / ADR 0073 decision 3. Hidden from the picker too (`catalogKeysFor` hides any entry
   // with `params`).

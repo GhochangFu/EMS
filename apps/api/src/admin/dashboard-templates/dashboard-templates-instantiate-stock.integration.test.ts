@@ -364,7 +364,7 @@ describe.skipIf(!connectionString)(
       assertSustainabilityInstantiatedOrganizationWide(sustainabilityResponse);
     });
 
-    it("every one of its 18 widgets resolves — a zero-binding widget is bound", () => {
+    it("every one of its 19 widgets resolves — a zero-binding widget is bound", () => {
       assertSustainabilityWidgetsAllResolve(sustainabilityResponse);
     });
   },

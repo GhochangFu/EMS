@@ -8,9 +8,14 @@ import {
   hidesTheMetricPickerAtTheCardinalityMax,
   hidesTheMetricPickerOnceARoleIsBound,
   hidesTheRolePickerOnceAMetricIsBound,
+  hidesTheWaterBalanceNoteForANonWaterSource,
+  hidesTheWaterBalanceNoteForAnOutletVolumeSource,
+  hidesTheWaterBalanceNoteForARoledWaterVolumeSource,
   listsEachSourceByItsCatalogLabelReadOnly,
   removingAMetricPatchesOnlySources,
   showsTheBlockForATable,
+  showsTheWaterBalanceNoteForAnUnroledWaterVolumeSource,
+  showsTheWaterBalanceNoteReadOnlyToo,
 } from "./widget-editor.spec";
 
 /**
@@ -53,5 +58,25 @@ describe("F3.61 — the template WidgetEditor's Named metric block", () => {
 
   it("hides the metric picker at the cardinality maximum", () => {
     hidesTheMetricPickerAtTheCardinalityMax();
+  });
+
+  it("shows the water-balance note for an unroled kl_* source", () => {
+    showsTheWaterBalanceNoteForAnUnroledWaterVolumeSource();
+  });
+
+  it("hides the water-balance note once balanceRole is set", () => {
+    hidesTheWaterBalanceNoteForARoledWaterVolumeSource();
+  });
+
+  it("hides the water-balance note for a non-water pointKey", () => {
+    hidesTheWaterBalanceNoteForANonWaterSource();
+  });
+
+  it("hides the water-balance note for an outlet-volume pointKey", () => {
+    hidesTheWaterBalanceNoteForAnOutletVolumeSource();
+  });
+
+  it("shows the water-balance note read-only too (the stock viewer)", () => {
+    showsTheWaterBalanceNoteReadOnlyToo();
   });
 });

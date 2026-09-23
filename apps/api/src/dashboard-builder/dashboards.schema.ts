@@ -331,7 +331,8 @@ const sourceBindingWriteSchema = z
       "fields (`{}` only), and `sustainability.total` / `sustainability.by_location` require " +
       "`{ pointKey, aggregate }` (ADR 0072) plus an optional `balanceRole`, a " +
       "`bms.water_balance_roles` code that narrows the carrying assets to that role (ADR 0073 " +
-      "decision 2; without it, every asset carrying the point counts), and `water.balance` " +
+      "decision 2; without it, every asset carrying the point counts, so a water total sums " +
+      "every stage's inlet), and `water.balance` " +
       "requires `{ period }` (ADR 0073 decision 3; today / this_month / this_year) — " +
       "zod-to-json-schema emits nothing for a " +
       "refinement, so without this line the document would promise that any record of scalars " +

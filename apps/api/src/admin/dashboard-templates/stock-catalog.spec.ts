@@ -3,6 +3,7 @@ import {
   metricCatalogKeySchema,
   sectionTemplateContentSchema,
   stockDashboardTemplateDtoSchema,
+  SUSTAINABILITY_WATER_POINT_KEYS,
   WIDGET_POINT_CARDINALITY,
   WIDGET_SOURCE_CARDINALITY,
 } from "@bms/shared";
@@ -304,92 +305,128 @@ const KEPT_TILE_KEYS = new Set(["alarms-tile", "workorders-tile", "health-tile"]
  * which are `"avg"`: summing a percentage across sites is not the plant's
  * average. Plan §U8 enumerates the same fourteen.
  */
-const SUSTAINABILITY_TILE_BINDINGS: ReadonlyArray<readonly [string, string, string]> = [
+const SUSTAINABILITY_TILE_BINDINGS: ReadonlyArray<
+  readonly [string, string, string, string | undefined]
+> = [
   // Row A — today
-  ["energy-today-tile", "kwh_today", "sum"],
-  ["energy-cost-today-tile", "energy_cost_today", "sum"],
-  ["water-today-tile", "kl_today", "sum"],
-  ["co2-today-tile", "co2_kg_today", "sum"],
-  ["water-recycle-pct-tile", "water_recycle_pct", "avg"],
-  ["operational-efficiency-pct-tile", "operational_efficiency_pct", "avg"],
+  ["energy-today-tile", "kwh_today", "sum", undefined],
+  ["energy-cost-today-tile", "energy_cost_today", "sum", undefined],
+  ["water-today-tile", "kl_today", "sum", "intake"],
+  ["co2-today-tile", "co2_kg_today", "sum", undefined],
+  ["water-recycle-pct-tile", "water_recycle_pct", "avg", undefined],
+  ["operational-efficiency-pct-tile", "operational_efficiency_pct", "avg", undefined],
   // Row B — this month
-  ["energy-this-month-tile", "kwh_this_month", "sum"],
-  ["energy-cost-this-month-tile", "energy_cost_this_month", "sum"],
-  ["water-this-month-tile", "kl_this_month", "sum"],
-  ["co2-this-month-tile", "co2_kg_this_month", "sum"],
+  ["energy-this-month-tile", "kwh_this_month", "sum", undefined],
+  ["energy-cost-this-month-tile", "energy_cost_this_month", "sum", undefined],
+  ["water-this-month-tile", "kl_this_month", "sum", "intake"],
+  ["co2-this-month-tile", "co2_kg_this_month", "sum", undefined],
   // Row C — this year
-  ["energy-this-year-tile", "kwh_this_year", "sum"],
-  ["energy-cost-this-year-tile", "energy_cost_this_year", "sum"],
-  ["water-this-year-tile", "kl_this_year", "sum"],
-  ["co2-this-year-tile", "co2_kg_this_year", "sum"],
+  ["energy-this-year-tile", "kwh_this_year", "sum", undefined],
+  ["energy-cost-this-year-tile", "energy_cost_this_year", "sum", undefined],
+  ["water-this-year-tile", "kl_this_year", "sum", "intake"],
+  ["co2-this-year-tile", "co2_kg_this_year", "sum", undefined],
 ];
 
-/** `sustainability-overview` is `stockVersion: 3` (`E4.2` PR 2 post-merge sweep). */
+/** `sustainability-overview` is `stockVersion: 4` (`E4.3` PR 2, U10, ADR 0073 decision 2). */
 export function runSustainabilityStockVersionTest(): void {
   const entry = sustainabilityEntry();
   assert(
-    entry.stockVersion === 3,
-    `sustainability-overview must be stockVersion 3 (E4.2 PR 2 post-merge sweep — the currency ` +
-      `the tile now renders, and the KL unit spelling) — got ${String(entry.stockVersion)}`,
+    entry.stockVersion === 4,
+    `sustainability-overview must be stockVersion 4 (E4.3 PR 2, U10 — balanceRole: "intake" on ` +
+      `the four water bindings, and the new water-balance-by-site-table) — got ${String(entry.stockVersion)}`,
   );
 }
 
-/** `sustainability-overview` carries 18 widgets: 6 + 6 + 5 tiles and 1 table. */
+/** `sustainability-overview` carries 19 widgets: 6 + 6 + 5 tiles and 2 tables. */
 export function runSustainabilityWidgetCountTest(): void {
   const entry = sustainabilityEntry();
   assert(
-    entry.content.widgets.length === 18,
-    `sustainability-overview must carry 18 widgets (6 today + 6 this-month + 5 this-year + 1 ` +
-      `table) — got ${entry.content.widgets.length}`,
+    entry.content.widgets.length === 19,
+    `sustainability-overview must carry 19 widgets (6 today + 6 this-month + 5 this-year + 2 ` +
+      `tables) — got ${entry.content.widgets.length}`,
   );
 }
 
-/** Every new `value_tile` binds one `sustainability.total`; the one table binds `sustainability.by_location`. */
+/** Every new `value_tile` binds one `sustainability.total`; the benchmark table binds `sustainability.by_location`. */
 export function runSustainabilityCatalogKeysTest(): void {
   const entry = sustainabilityEntry();
   for (const widget of entry.content.widgets) {
-    if (widget.widgetType === "value_tile" && !KEPT_TILE_KEYS.has(widget.key)) {
+    if (
+      widget.widgetType === "value_tile" &&
+      !KEPT_TILE_KEYS.has(widget.key)
+    ) {
       assert(
         widget.sources.length === 1 && widget.sources[0]?.catalogKey === "sustainability.total",
         `${widget.key} must bind exactly one sustainability.total source — got ` +
           `${widget.sources.map((source) => source.catalogKey).join(", ") || "(none)"}`,
       );
     }
-    if (widget.widgetType === "table") {
-      // The table's own `params` are pinned here and not in
-      // `SUSTAINABILITY_TILE_BINDINGS`: it repeats `kl_today`, which the
-      // fourteen-distinct-keys claim there would refuse.
-      const params = widget.sources[0]?.params as
-        | { pointKey?: string; aggregate?: string }
-        | undefined;
-      assert(
-        widget.sources.length === 1 &&
-          widget.sources[0]?.catalogKey === "sustainability.by_location" &&
-          params?.pointKey === "kl_today" &&
-          params?.aggregate === "sum",
-        `${widget.key} table must bind sustainability.by_location with ` +
-          `{ pointKey: "kl_today", aggregate: "sum" } — got ` +
-          `${widget.sources.map((source) => source.catalogKey).join(", ") || "(none)"} / ` +
-          `${JSON.stringify(params ?? null)}`,
-      );
-    }
   }
 }
 
-/** Each of the fourteen tiles binds the `pointKey` its title names, with its own `aggregate`. */
+/**
+ * The benchmark table's own `params` are pinned here and not in
+ * `SUSTAINABILITY_TILE_BINDINGS`: it repeats `kl_today`, which the
+ * fourteen-distinct-keys claim there would refuse.
+ */
+export function runBenchmarkTableBindingTest(): void {
+  const entry = sustainabilityEntry();
+  const widget = entry.content.widgets.find((row) => row.key === "benchmark-by-site-table");
+  const params = widget?.sources[0]?.params as
+    | { pointKey?: string; aggregate?: string; balanceRole?: string }
+    | undefined;
+  assert(
+    widget !== undefined &&
+      widget.widgetType === "table" &&
+      widget.sources.length === 1 &&
+      widget.sources[0]?.catalogKey === "sustainability.by_location" &&
+      params?.pointKey === "kl_today" &&
+      params?.aggregate === "sum" &&
+      params?.balanceRole === "intake",
+    `benchmark-by-site-table must bind sustainability.by_location with ` +
+      `{ pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" } — got ` +
+      `${widget === undefined ? "(no such widget)" : JSON.stringify(params ?? null)}`,
+  );
+}
+
+/**
+ * The new `water.balance` table (`E4.3` PR 2, U10, ADR 0073 decision 3, Q5
+ * ruling — `period: "this_month"`).
+ */
+export function runWaterBalanceTableBindingTest(): void {
+  const entry = sustainabilityEntry();
+  const widget = entry.content.widgets.find((row) => row.key === "water-balance-by-site-table");
+  const params = widget?.sources[0]?.params as { period?: string } | undefined;
+  assert(
+    widget !== undefined &&
+      widget.widgetType === "table" &&
+      widget.sources.length === 1 &&
+      widget.sources[0]?.catalogKey === "water.balance" &&
+      params?.period === "this_month" &&
+      Object.keys(params ?? {}).length === 1,
+    `water-balance-by-site-table must bind water.balance with { period: "this_month" } and ` +
+      `nothing else — got ${widget === undefined ? "(no such widget)" : JSON.stringify(params ?? null)}`,
+  );
+}
+
+/** Each of the fourteen tiles binds the `pointKey` its title names, with its own `aggregate` and `balanceRole`. */
 export function runSustainabilityTileBindingsTest(): void {
   const entry = sustainabilityEntry();
-  for (const [key, pointKey, aggregate] of SUSTAINABILITY_TILE_BINDINGS) {
+  for (const [key, pointKey, aggregate, balanceRole] of SUSTAINABILITY_TILE_BINDINGS) {
     const widget = entry.content.widgets.find((row) => row.key === key);
     const params = widget?.sources[0]?.params as
-      | { pointKey?: string; aggregate?: string }
+      | { pointKey?: string; aggregate?: string; balanceRole?: string }
       | undefined;
     assert(
-      params?.pointKey === pointKey && params?.aggregate === aggregate,
-      `${key} must bind { pointKey: "${pointKey}", aggregate: "${aggregate}" } — got ` +
+      params?.pointKey === pointKey &&
+        params?.aggregate === aggregate &&
+        params?.balanceRole === balanceRole,
+      `${key} must bind { pointKey: "${pointKey}", aggregate: "${aggregate}", balanceRole: ` +
+        `${JSON.stringify(balanceRole)} } — got ` +
         `${widget === undefined ? "(no such widget)" : JSON.stringify(params ?? null)}. The two ` +
         "executive codes (operational_efficiency_pct, water_recycle_pct) average across the " +
-        "scope; every other code sums. A tile bound to the wrong period draws two rows with " +
+        "scope; every other code sums. Only the three kl_* tiles carry balanceRole: \"intake\" " +
+        "(ADR 0073 decision 2, Q1 ruling). A tile bound to the wrong period draws two rows with " +
         "the same number and nothing else notices.",
     );
   }
@@ -405,6 +442,64 @@ export function runSustainabilityTileBindingsTest(): void {
     bound.length === 14 && new Set(bound).size === 14,
     `the fourteen sustainability tiles must bind fourteen DIFFERENT point keys — got ` +
       `${bound.length} tiles and ${new Set(bound).size} distinct keys: ${bound.join(", ")}`,
+  );
+}
+
+/**
+ * **No non-water binding carries `balanceRole`** (Q1 ruling (a) — the four
+ * water bindings only, and no `water_cost_*` tiles exist to add it to either,
+ * C1). A separate `it`, walking every source on every widget (tiles and both
+ * tables), so a mutation that adds the field to, say, `co2-today-tile`
+ * reddens THIS claim even though `runSustainabilityTileBindingsTest`'s own
+ * row for `co2-today-tile` also reddens first in that function — the two
+ * claims must not share one `assert` chain (a thrown `assert` stops its own
+ * function, not a sibling one).
+ *
+ * "Water" is defined as the `kl_` prefixed subset of
+ * `SUSTAINABILITY_WATER_POINT_KEYS` — the intake-volume codes — not
+ * membership in the whole array, which also holds `water_cost_*`,
+ * `water_saving_vs_baseline_pct`, `water_recycle_pct` and the `outlet_kl_*`
+ * codes. None of THOSE take a role either: `water_recycle_pct` and
+ * `operational-efficiency-pct-tile` are ratios with no formula to filter, and
+ * there are no `outlet_kl_*` or `water_cost_*` bindings anywhere in this
+ * template to test.
+ */
+export function runNoNonWaterBindingCarriesBalanceRoleTest(): void {
+  const entry = sustainabilityEntry();
+  const WATER_VOLUME_KEYS: ReadonlySet<string> = new Set(
+    SUSTAINABILITY_WATER_POINT_KEYS.filter((key) => key.startsWith("kl_")),
+  );
+  const withRole: string[] = [];
+  const withoutRole: string[] = [];
+  for (const widget of entry.content.widgets) {
+    for (const source of widget.sources) {
+      const params = source.params as { pointKey?: string; balanceRole?: string } | undefined;
+      if (params?.balanceRole === undefined) continue;
+      if (
+        params.pointKey !== undefined &&
+        WATER_VOLUME_KEYS.has(params.pointKey) &&
+        params.balanceRole === "intake"
+      ) {
+        withRole.push(widget.key);
+      } else {
+        withoutRole.push(
+          `${widget.key} (pointKey ${JSON.stringify(params.pointKey)}, balanceRole ` +
+            `${JSON.stringify(params.balanceRole)})`,
+        );
+      }
+    }
+  }
+  assert(
+    withoutRole.length === 0,
+    `a non-water binding carries balanceRole — Q1 ruling gives the role to the three kl_* ` +
+      `tiles and the benchmark table only: ${withoutRole.join(", ")}`,
+  );
+  // Positive control: exactly four sources carry the role, and each is "intake" — an absence
+  // claim alone would pass on a catalog that dropped the role from everywhere.
+  assert(
+    withRole.length === 4,
+    `expected exactly four sources to carry balanceRole (the three kl_* tiles and the ` +
+      `benchmark table) — got ${withRole.length}: ${withRole.join(", ")}`,
   );
 }
 

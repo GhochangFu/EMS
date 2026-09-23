@@ -1,3 +1,4 @@
+import { METRIC_CATALOG } from "@bms/shared";
 import { render, screen, within } from "@testing-library/react";
 import { expect } from "vitest";
 
@@ -262,4 +263,83 @@ export function theBenchmarkNullValueRendersTheEmDash(): void {
   );
 
   expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["1234.5", "—"]);
+}
+
+/**
+ * `E4.3` PR 2, U10 (plan "PR 2 gates and verification" Browser bullet) — the
+ * `water.balance` dataset's seven columns. Columns are read from
+ * `METRIC_CATALOG["water.balance"].columns` (the contract) rather than
+ * hand-typed, so a column added or reordered there is what this claim
+ * actually exercises; the seven §5 LABELS are still written out literally —
+ * a test that mapped every label through `metricCatalogColumnLabel` would
+ * pass against a map returning the raw column names.
+ */
+const WATER_BALANCE_ENTRY = METRIC_CATALOG["water.balance"];
+if (WATER_BALANCE_ENTRY.shape !== "dataset") {
+  throw new Error("water.balance is no longer a dataset entry — this test's columns source is gone");
+}
+const WATER_BALANCE_COLUMNS = WATER_BALANCE_ENTRY.columns;
+
+const WATER_BALANCE_ROWS: DatasetRow[] = [
+  {
+    locationCode: "GP-01",
+    locationName: "CSMOC Gauteng",
+    intake: 1200,
+    reuse: 264,
+    discharge: 168,
+    consumed: 1032,
+    coverage: "3/3",
+  },
+  // A site with a stale discharge meter: consumed is `null` rather than a
+  // guessed number (Q8 ruling), beside a site whose row is fully populated —
+  // the adjacent positive control for the em-dash claim below.
+  {
+    locationCode: "WC-02",
+    locationName: "RSMOC Western Cape",
+    intake: 800,
+    reuse: 100,
+    discharge: null,
+    consumed: null,
+    coverage: "2/3",
+  },
+];
+
+/** A `water.balance` row renders the seven §5 headers, in the contract's order. */
+export function theWaterBalanceTableReadsItsSevenLabels(): void {
+  render(
+    <TableWidget
+      title="Water balance by site"
+      status="ready"
+      config={{}}
+      columns={WATER_BALANCE_COLUMNS}
+      rows={WATER_BALANCE_ROWS}
+      truncated={false}
+    />,
+  );
+
+  expect(headerTexts()).toEqual([
+    "Site ID",
+    "Site",
+    "Intake (KL)",
+    "Reuse (KL)",
+    "Discharge (KL)",
+    "Consumed or lost (KL)",
+    "Coverage",
+  ]);
+}
+
+/** A `null` cell (a stale-discharge site's `consumed`) renders the em dash, beside a populated sibling row's number. */
+export function theWaterBalanceNullConsumedCellRendersTheEmDash(): void {
+  render(
+    <TableWidget
+      title="Water balance by site"
+      status="ready"
+      config={{ columns: ["consumed"] }}
+      columns={WATER_BALANCE_COLUMNS}
+      rows={WATER_BALANCE_ROWS}
+      truncated={false}
+    />,
+  );
+
+  expect(screen.getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["1032", "—"]);
 }
