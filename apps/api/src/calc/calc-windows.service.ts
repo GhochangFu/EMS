@@ -327,6 +327,9 @@ export class CalcWindowsService {
     // filter is the test combineSegments applies; the views have no
     // gapfill, so a bucket row exists only where samples do and no case
     // can redden that filter.
+    // Nor can a case redden the 1d unit alone: every 1d bucket starts at a
+    // UTC midnight, so counting it by hour gives the same distinct days;
+    // coveredHoursOf's 24 h width for 1d is what the dense month holds.
     const { rows: result } = await this.pool.query<{
       idx: number;
       sum_value: number | null;

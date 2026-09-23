@@ -66,18 +66,6 @@ const HOUR_MS = 3_600_000;
 export const MAX_WINDOW_BUCKETS = 20_000;
 
 /**
- * The least covered fraction of its elapsed window a window `sum` answers at
- * (ADR 0070 Amendment 3 decision 4, `E4.4`). Below it the read refuses as
- * `window_sparse`: `sum` is `avg × elapsed hours`, and a mean over the samples
- * that arrived, multiplied by every hour, extrapolates across a gap. One
- * fraction for every window kind — about 2.4 hours of a day, three days of a
- * month, 36 days of a year. `combineSegments` writes the comparison so that
- * the answering branch is `fraction >= MIN_WINDOW_COVERAGE`, the comparison
- * that is false for `NaN`: a fraction that is not a number refuses.
- */
-export const MIN_WINDOW_COVERAGE = 0.9;
-
-/**
  * The second half of the same ruling. A blocked refresh stalls ALL four
  * policies at once, and then the bucket count above never bites: the `1d`
  * view still serves the whole past and only the stalled part falls to `1m`
@@ -90,6 +78,18 @@ export const MIN_WINDOW_COVERAGE = 0.9;
  * the watermark, which is what surfaces the stall.
  */
 export const MAX_LIVE_MINUTES = 180;
+
+/**
+ * The least covered fraction of its elapsed window a window `sum` answers at
+ * (ADR 0070 Amendment 3 decision 4, `E4.4`). Below it the read refuses as
+ * `window_sparse`: `sum` is `avg × elapsed hours`, and a mean over the samples
+ * that arrived, multiplied by every hour, extrapolates across a gap. One
+ * fraction for every window kind — about 2.4 hours of a day, three days of a
+ * month, 36 days of a year. `combineSegments` writes the comparison so that
+ * the answering branch is `fraction >= MIN_WINDOW_COVERAGE`, the comparison
+ * that is false for `NaN`: a fraction that is not a number refuses.
+ */
+export const MIN_WINDOW_COVERAGE = 0.9;
 
 /** How many buckets a plan folds — the cost `MAX_WINDOW_BUCKETS` bounds. */
 export function bucketCount(segments: readonly Segment[]): number {
