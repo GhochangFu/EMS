@@ -15,7 +15,8 @@ import type { DashboardsService } from "./dashboards.service";
  * database lifecycle and the per-run rows. One exported function per claim.
  */
 
-const tileBinding = (pointKey: string, balanceRole?: string) =>
+/** One `sustainability.total` tile binding — exported so the entry point's setup stores the same shape. */
+export const tileBinding = (pointKey: string, balanceRole?: string) =>
   putDashboardWidgetsBodySchema.parse({
     widgets: [
       {
@@ -167,4 +168,52 @@ export async function draftWithUnknownBalanceRoleRefusesToPublish(
 ): Promise<void> {
   const err = await refusal(() => templates.publish(actor, draftId));
   expect(err.message).toBe("Not a live water balance role: nope");
+}
+
+// ---------------------------------------------------------------------------
+// Post-merge sweep M1 — a re-save re-sends the stored params verbatim (the web builder has no
+// params editor), so a value the dashboard ALREADY carries is not re-checked: the `C1` rule of
+// `AssetsService.update`. A value that is new or changed is still checked against live rows.
+// The controls (`unknownCodeIs400NamingIt`, `unknownBalanceRoleIs400NamingIt` and the change
+// below) run on dashboards that carry stored sources, so they prove the subtraction removes only
+// the stored values, not every check once anything is stored.
+// ---------------------------------------------------------------------------
+
+/** Re-sending a stored `balanceRole` whose vocabulary row was retired since stores (200). */
+export async function resaveOfStoredRetiredBalanceRoleStores(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+  retiredRole: string,
+): Promise<void> {
+  const dto = await service.putWidgets(actor, dashboardId, tileBinding("kl_today", retiredRole));
+  expect(dto.widgets[0]?.sources[0]?.params).toEqual({
+    pointKey: "kl_today",
+    aggregate: "sum",
+    balanceRole: retiredRole,
+  });
+}
+
+/** Re-sending a stored `pointKey` whose catalog row was retired since stores (200). */
+export async function resaveOfStoredRetiredPointKeyStores(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+  retiredKey: string,
+): Promise<void> {
+  const dto = await service.putWidgets(actor, dashboardId, tileBinding(retiredKey));
+  expect(dto.widgets[0]?.sources[0]?.params).toEqual({ pointKey: retiredKey, aggregate: "sum" });
+}
+
+/** Control: a CHANGE from a stored live role to a different inactive role is a 400. */
+export async function changeFromStoredLiveRoleToInactiveRoleIs400(
+  service: DashboardsService,
+  actor: JwtPayload,
+  dashboardId: string,
+  inactiveRole: string,
+): Promise<void> {
+  const err = await refusal(() =>
+    service.putWidgets(actor, dashboardId, tileBinding("kl_today", inactiveRole)),
+  );
+  expect(err.message).toBe(`Not a live water balance role: ${inactiveRole}`);
 }

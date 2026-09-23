@@ -344,15 +344,18 @@ export class DashboardTemplatesService {
     // must be an active catalog code (ADR 0072 decision 2). Publish is where a stock import's
     // draft is proved, and instantiation copies `params` verbatim, so this is the one gate on
     // the template path — the same sentence the dashboard write path answers with.
+    // Publish stays strict (post-merge sweep M1): a new version must not introduce a retired value.
     await assertSourceParamsPointKeysActive(
       this.fleetDb,
       content.widgets.flatMap((widget) => widget.sources),
+      [],
     );
     // `E4.3` — the balance role, likewise (ADR 0073 decision 2): instantiation copies `params`
     // verbatim, so a role that is not live must stop here or never.
     await assertSourceParamsBalanceRolesActive(
       this.fleetDb,
       content.widgets.flatMap((widget) => widget.sources),
+      [],
     );
 
     const now = new Date();
