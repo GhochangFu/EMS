@@ -25,8 +25,8 @@ import { describe, expect, it } from "vitest";
  * with a message naming the code — two `undefined`s never compare equal here.
  *
  * **Nothing is parsed at collection time.** Every read runs inside an `it()`,
- * so one red claim (the U12 simulator claims below stay red until U12 lands)
- * cannot stop the file from collecting and hide the drift gate's result. The
+ * so one red claim (for example a simulator claim below) cannot stop the file
+ * from collecting and hide the drift gate's result. The
  * five classes and six codes are written out here rather than derived from
  * the seed text, so an empty parse cannot produce zero tests and pass.
  */
@@ -324,10 +324,19 @@ describe("E4.3 U11 — the water domain reaches the RTU and group derivations", 
  * `E4.3` U12 — `apps/sim/src/index.js` dispatches by domain with an
  * electrical default (plan fact 14); without `stepWater` the five water
  * assets would emit `kw`/`voltage_l1_v` instead of their flows. Written with
- * U11 so U12 had its red test waiting; the per-class claims below (added with
- * U12) additionally hold each class's emitted key SET equal to the seed's
- * `measuredFlowKeys`, so a `stepWater` that names every key somewhere but
- * emits the wrong class's keys on an asset still reddens.
+ * U11 so U12 had its red test waiting. What the claims below hold, and what
+ * they do not:
+ *
+ * - The per-class claims hold each ENTRY of `stepWater`'s `WATER_FLOWS` table
+ *   (the key set written under a class name) equal to the seed's
+ *   `measuredFlowKeys` for that class, plus its named extras. An entry that
+ *   carries another class's keys, or drops one of its own, reddens.
+ * - They do NOT see which entry an asset reads. That is `waterClassOf`'s
+ *   answer, and the class-map claims below hold it separately: exactly five
+ *   `-X-` infix to class pairs, each infix `-X-` returning class `X`, and the
+ *   `WTR-` guard first (owner ruling R2). Before those claims, a
+ *   `waterClassOf` that sent `-WTP-` to `RO` left every claim here green.
+ * - Neither reads the walk's numbers; the balance figures are the stack's.
  */
 const SIM_WATER_FLOW_KEYS = [
   "raw_water_flow_klh",
@@ -358,8 +367,9 @@ function simBodyOf(name: string): string {
 /**
  * Extras `stepWater` emits beyond the class's `measuredFlowKeys` (E4.3 U11):
  * realistic third flows no balance formula reads. Exact, not a superset check
- * — a class must emit precisely its `measuredFlowKeys` plus this list, no
- * more and no fewer, or a swapped/dropped key reddens the claim below.
+ * — a class's `WATER_FLOWS` entry must list precisely its `measuredFlowKeys`
+ * plus this list, no more and no fewer, or a swapped/dropped key reddens the
+ * claim below.
  */
 const SIM_ONLY_FLOWS: Record<string, readonly string[]> = {
   WTP: [],
@@ -412,12 +422,14 @@ describe("E4.3 U12 — apps/sim emits the demo plant's flows", () => {
   });
 
   // A `stepWater` that names all twelve keys somewhere in its body still
-  // passes the claim above even if it emits the RO keys on the WTP asset —
-  // and then the WTP's `kl_today`/`outlet_kl_today` calc rows read nothing.
-  // This claim reads the sim's per-class key SET and holds it equal to the
-  // seed's `measuredFlowKeys` for that class, plus the one realistic extra
+  // passes the claim above even if its WTP entry lists the RO keys — and
+  // then the WTP's `kl_today`/`outlet_kl_today` calc rows read nothing.
+  // This claim reads each WATER_FLOWS ENTRY's key set and holds it equal to
+  // the seed's `measuredFlowKeys` for that class, plus the one realistic extra
   // (if any) the class carries — taken from the seed module, not repeated by
   // hand, so a `measuredFlowKeys` edit in U11's file cannot silently pass here.
+  // It does not see which entry an asset reads; the waterClassOf claims below
+  // hold that.
   for (const [assetCode, , , klass] of CLASSES_WITH_INFIX) {
     it(`${assetCode}'s -${klass}- flows equal the seed's measuredFlowKeys plus its realistic extras`, () => {
       const literal = seedClass(assetCode);
@@ -430,4 +442,52 @@ describe("E4.3 U12 — apps/sim emits the demo plant's flows", () => {
       );
     });
   }
+});
+
+/**
+ * Every `code.includes("-X-")) return "Y"` pair in `waterClassOf`'s body, as
+ * `[infix, class]`. Fails closed: a body that yields no pair throws, naming
+ * the function, so a reformatted or renamed body can never pass as zero
+ * pairs that trivially match.
+ */
+function classPairsIn(body: string): (readonly [string, string])[] {
+  const pairs = [...body.matchAll(/code\.includes\(\s*"-([A-Z]+)-"\s*\)\s*\)\s*return\s+"([A-Z]+)"/g)].map(
+    (m) => [m[1]!, m[2]!] as const,
+  );
+  if (pairs.length === 0) {
+    throw new Error('waterClassOf: parsed no code.includes("-X-")) return "Y" pair — the class map is not held');
+  }
+  return pairs;
+}
+
+describe("E4.3 U12 — waterClassOf sends each infix to its own class (anti-vacuity)", () => {
+  it("the pair parser fails closed on a body with no pair", () => {
+    expect(() => classPairsIn("function waterClassOf(code) {\n  return null;")).toThrow(/parsed no/);
+  });
+});
+
+describe("E4.3 U12 — waterClassOf sends each infix to its own class", () => {
+  it("parses exactly five infix-to-class pairs", () => {
+    expect(classPairsIn(simBodyOf("waterClassOf")).map(([infix]) => infix).sort()).toEqual(
+      CLASSES_WITH_INFIX.map(([, , , klass]) => klass).sort(),
+    );
+  });
+
+  for (const [assetCode, , , klass] of CLASSES_WITH_INFIX) {
+    it(`-${klass}- (${assetCode}) returns class ${klass}`, () => {
+      const matching = classPairsIn(simBodyOf("waterClassOf")).filter(([infix]) => infix === klass);
+      expect(matching.length, `waterClassOf has ${matching.length} -${klass}- branches, wanted exactly one`).toBe(1);
+      expect(
+        matching[0]![1],
+        `waterClassOf sends -${klass}- to ${matching[0]![1]}: ${assetCode} would emit another class's flows`,
+      ).toBe(klass);
+    });
+  }
+
+  it("returns null for any code that does not start with WTR- (owner ruling R2), before any infix test", () => {
+    const body = simBodyOf("waterClassOf").replace(/\s+/g, " ");
+    const guard = body.indexOf('if (!code.startsWith("WTR-")) return null;');
+    expect(guard, "waterClassOf does not return null for a non-WTR- code").toBeGreaterThan(-1);
+    expect(guard, "waterClassOf tests an infix before the WTR- guard").toBeLessThan(body.indexOf("code.includes("));
+  });
 });

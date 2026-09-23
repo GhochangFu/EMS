@@ -3,6 +3,7 @@ import pg from "pg";
 import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
 import { getOrganizationId } from "./hierarchy-seed";
 import { withOrganization } from "./seed-tenant";
+import { DEMO_WATER_ASSET_CODES } from "./water-plant-demo-seed";
 
 /** The rows migration `0029` inserts: electrical, hvac, it, environment, water. */
 const MIGRATION_0029_ASSET_DOMAINS = 5;
@@ -170,26 +171,34 @@ export async function verifyHierarchySeed(
         -- elsewhere: run after seedAssetTemplateHealth on a cold database,
         -- the health seed pins the five assets to a BASELINE-WATER that
         -- declares no point and throws unusable = 1 before this check runs.
+        -- Each count reads ONLY the five demo asset codes, passed as $2 from
+        -- DEMO_WATER_ASSET_CODES (owner ruling R1, 2026-09-24), so another
+        -- water asset in ESKOM cannot move them.
         --
         -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
         (SELECT COUNT(*)::text FROM bms.assets a
           INNER JOIN bms.organizations o ON o.id = a.organization_id
           WHERE o.code = 'ESKOM' AND a.domain = 'water'
+            AND a.code = ANY($2::varchar[])
             AND a.water_balance_role IS NOT NULL) AS eskom_water_assets_roled,
         (SELECT COUNT(*)::text FROM bms.assets a
           INNER JOIN bms.asset_templates t ON t.id = a.template_id
           INNER JOIN bms.organizations o ON o.id = a.organization_id
           WHERE o.code = 'ESKOM' AND a.domain = 'water'
+            AND a.code = ANY($2::varchar[])
             AND t.code LIKE 'DEMO-WATER-%') AS eskom_water_assets_on_demo_templates,
         (SELECT COUNT(*)::text FROM bms.assets a
           INNER JOIN bms.organizations o ON o.id = a.organization_id
           WHERE o.code = 'ESKOM' AND a.domain = 'water'
+            AND a.code = ANY($2::varchar[])
             AND a.water_balance_role = 'intake') AS eskom_water_intake_assets,
         (SELECT COUNT(*)::text FROM bms.asset_group_members agm
           INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
           INNER JOIN bms.organizations o ON o.id = ag.organization_id
-          WHERE o.code = 'ESKOM' AND ag.code = 'water') AS eskom_water_group_members
-    `, [eskomOrgId]);
+          INNER JOIN bms.assets a ON a.id = agm.asset_id
+          WHERE o.code = 'ESKOM' AND ag.code = 'water'
+            AND a.code = ANY($2::varchar[])) AS eskom_water_group_members
+    `, [eskomOrgId, DEMO_WATER_ASSET_CODES]);
     const row = res.rows[0];
     // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
     // needs in order to tell `WHERE active = true` apart from no predicate.
@@ -227,9 +236,13 @@ export async function verifyHierarchySeed(
     // each carrying a balance role and pinned to its `DEMO-WATER-<CLASS>`
     // mirror; one of them (`WTR-WTP-01`) is the balance's `intake`; all five
     // are members of the site's `water` group (`demoGroupCodesForAsset`).
-    // Fixed cardinalities read off `water-plant-demo-seed.ts`. An admin who
-    // clears a demo role or re-pins a demo asset fails these on the next boot
-    // — the same exposure the PUE incomer count above carries.
+    // Fixed cardinalities read off `water-plant-demo-seed.ts`, and each count
+    // reads only the five codes in `DEMO_WATER_ASSET_CODES` (owner ruling R1,
+    // 2026-09-24). What still fails the boot is a change to a demo asset
+    // itself: an admin who clears a demo asset's role or re-pins it fails
+    // these on the next boot — the same exposure the PUE incomer count above
+    // carries. An admin's own water assets, or a leaked test fixture in the
+    // water domain, can no longer move these counts.
     expect("ESKOM water assets carrying a balance role", row?.eskom_water_assets_roled, 5);
     expect("ESKOM water assets pinned to a DEMO-WATER template", row?.eskom_water_assets_on_demo_templates, 5);
     expect("ESKOM water intake assets", row?.eskom_water_intake_assets, 1);

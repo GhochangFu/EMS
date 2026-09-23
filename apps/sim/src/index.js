@@ -259,7 +259,7 @@ function stepEnvironment(assetId, code) {
 }
 
 /** `assetId → Map<flowKey, value>`, one map per demo water plant asset. */
-function ensureWaterState(assetId, code) {
+function ensureWaterState(assetId) {
   let s = waterState.get(assetId);
   if (!s) {
     s = new Map();
@@ -270,11 +270,17 @@ function ensureWaterState(assetId, code) {
 
 /**
  * The code infix names the class (`WTR-<CLASS>-01`, `eskom-assets-seed.ts`
- * via `water-plant-demo-seed.ts`). `null` for a water asset with none of the
- * five known infixes — `stepWater` skips it and warns once, rather than
- * emitting an arbitrary class's flows (fail closed, never fail silent-wrong).
+ * via `water-plant-demo-seed.ts`). Only a code that starts with `WTR-` — a
+ * demo water plant asset — has a class (owner ruling R2, 2026-09-24): an
+ * administrator's own water asset, whatever its code, gets `null`. `null` also
+ * for a `WTR-` code with none of the five known infixes. On `null`,
+ * `stepWater` skips the asset and warns once, rather than emitting an
+ * arbitrary class's flows (fail closed, never fail silent-wrong).
+ * `tests/e4.3-demo-water-plant.test.ts` reads this body: each `-X-` infix
+ * must return class `X`, and the `WTR-` guard must come first.
  */
 function waterClassOf(code) {
+  if (!code.startsWith("WTR-")) return null;
   if (code.includes("-WTP-")) return "WTP";
   if (code.includes("-RO-")) return "RO";
   if (code.includes("-CT-")) return "CT";
@@ -291,9 +297,18 @@ function waterClassOf(code) {
  * (RO), `circ_flow_klh` (CT) and `ras_flow_klh` (STP) are realistic third
  * flows no balance formula reads — `water-plant-demo-seed.ts`'s
  * `measuredFlowKeys` for those three classes correctly omits them (E4.3 U11);
- * `tests/e4.3-demo-water-plant.test.ts` holds this table's per-class key set
- * equal to `measuredFlowKeys` plus exactly those three named extras, so a
- * class emitting another class's keys — or dropping one of its own — reddens.
+ * `tests/e4.3-demo-water-plant.test.ts` holds each ENTRY of this table (its
+ * key set under a class name) equal to that class's `measuredFlowKeys` plus
+ * exactly those three named extras, so an entry that carries another class's
+ * keys, or drops one of its own, reddens. Which entry an asset reads is
+ * `waterClassOf`'s answer, and the same test holds that separately: each
+ * `-X-` infix must return class `X`.
+ *
+ * Each flow is a clamped random walk in `[base * 0.5, base * 1.5]`. A clamped
+ * walk settles to a roughly even spread between its bounds, so its long-run
+ * mean is their midpoint. These bounds centre on `base`, so the daily figures
+ * above hold; the earlier `[0, base * 1.5]` centred on `0.75 * base` (a
+ * replica read the WTP's raw intake at a median of 887 KL/day, not 1200).
  *
  * The table is declared inside this function, not at module scope, so
  * `tests/e4.3-demo-water-plant.test.ts`'s `simBodyOf("stepWater")` (a text
@@ -313,19 +328,19 @@ function stepWater(assetId, code) {
     if (!warnedUnknownWaterCodes.has(code)) {
       warnedUnknownWaterCodes.add(code);
       console.warn(
-        `[sim] water asset ${code} matches none of -WTP-/-RO-/-CT-/-STP-/-ETP- — emitting no flows`,
+        `[sim] water asset ${code} is not a WTR- demo asset with one of -WTP-/-RO-/-CT-/-STP-/-ETP- — emitting no flows`,
       );
     }
     return [];
   }
   const bases = WATER_FLOWS[klass];
-  const s = ensureWaterState(assetId, code);
+  const s = ensureWaterState(assetId);
   const t = new Date();
   const points = [];
   for (const key of Object.keys(bases)) {
     const base = bases[key];
     const prev = s.has(key) ? s.get(key) : base;
-    const value = rndWalk(prev, Math.max(base * 0.1, 0.01), 0, base * 1.5);
+    const value = rndWalk(prev, Math.max(base * 0.1, 0.01), base * 0.5, base * 1.5);
     s.set(key, value);
     points.push({ assetId, pointKey: key, value, unit: "KL/hr", time: t });
   }

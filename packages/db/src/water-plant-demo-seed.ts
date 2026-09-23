@@ -59,7 +59,11 @@ import type { EskomAssetSpec } from "./eskom-assets-seed";
  * `ON CONFLICT DO NOTHING` (a published version is immutable, ADR 0015); the
  * pin and the role are written by one UPDATE predicated on
  * `template_id IS NULL`, so a re-seed never moves an operator's pin or
- * reverts a role an administrator set.
+ * reverts a role an administrator set. The guard does not make such a change
+ * safe, though: the post-condition below then reads fewer than five pinned or
+ * roled demo assets and throws, so an operator who re-pins a demo asset or
+ * clears its role fails the next boot (and so does `verify-hierarchy-seed.ts`'s
+ * water counts). The seed never overwrites the change; it refuses it loudly.
  */
 
 /** The site the plant is seeded at — ruling Q10. */
@@ -226,6 +230,13 @@ export const DEMO_WATER_CLASSES: readonly DemoWaterClass[] = [
     ],
   },
 ];
+
+/**
+ * The five demo asset codes — the one list the post-condition below and
+ * `verify-hierarchy-seed.ts`'s four water counts scope to (owner ruling R1,
+ * 2026-09-24), so another water asset in ESKOM cannot move either count.
+ */
+export const DEMO_WATER_ASSET_CODES: readonly string[] = DEMO_WATER_CLASSES.map((c) => c.assetCode);
 
 /**
  * The five assets as `buildEskomAssetCatalog` entries, appended LAST in that
@@ -477,7 +488,7 @@ export async function seedWaterPlantDemo(
 
   const check = await pool.query<DemoWaterVerifyRow>(DEMO_WATER_VERIFY_SQL, [
     organizationId,
-    DEMO_WATER_CLASSES.map((c) => c.assetCode),
+    DEMO_WATER_ASSET_CODES,
     DEMO_WATER_FLOW_PAIRS.map((pair) => pair.assetCode),
     DEMO_WATER_FLOW_PAIRS.map((pair) => pair.pointKey),
   ]);
