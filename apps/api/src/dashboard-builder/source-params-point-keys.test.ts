@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  emptyStoredSubtractsNothing,
+  sameStringUnderTheOtherFieldIsNotSubtracted,
+  storedValueIsSubtracted,
   refusalEchoKeepsAPrintableCode,
   refusalEchoStripsControlCharacters,
   balanceRolesAreDeduplicated,
@@ -64,5 +67,20 @@ describe("E4.3 — balanceRoleRefusalMessage", () => {
 
   it("echoes a printable code intact", () => {
     refusalEchoKeepsAPrintableCode();
+  });
+});
+
+/** Review Q3 — the post-merge sweep M1 subtraction. */
+describe("E4.3 — codesNotStored", () => {
+  it("subtracts a value the stored sources carry and keeps a new one", () => {
+    storedValueIsSubtracted();
+  });
+
+  it("does not subtract the same string stored under the other field", () => {
+    sameStringUnderTheOtherFieldIsNotSubtracted();
+  });
+
+  it("subtracts nothing when stored is empty", () => {
+    emptyStoredSubtractsNothing();
   });
 });
