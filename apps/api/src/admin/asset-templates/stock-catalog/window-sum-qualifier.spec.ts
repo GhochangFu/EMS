@@ -14,8 +14,8 @@ import { assert } from "./stock-catalog.spec";
  * `sum` is `avg × hours`, and the label has to say so.**
  *
  * `combineSegments` (`apps/api/src/calc/calc-window-plan.ts`) returns a window
- * `sum` as `(Σ sum_value / Σ sample_count) * hoursCovered`, where
- * `hoursCovered` is `hoursOf(startMs, endMs)` — every hour that has elapsed in
+ * `sum` as `(Σ sum_value / Σ sample_count) * elapsedHours`, where
+ * `elapsedHours` is `hoursOf(startMs, endMs)` — every hour that has elapsed in
  * the calendar period, not the hours a sample actually arrived in. So a flow
  * meter that was offline for part of a calendar month still reports a whole
  * month of water, computed from the days it did report, and the derived point

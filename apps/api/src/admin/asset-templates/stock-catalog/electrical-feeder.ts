@@ -482,8 +482,11 @@ export const ELECTRICAL_FEEDER: StockAssetTemplateEntry = {
     // one scheduled at 60 s; `minCoverageRatio` governs a `@scope` aggregate
     // only (ADR 0055 decision 11); a window `sum` refuses `window_sparse`
     // below 90% coverage of the elapsed window (ADR 0070 Amendment 3, `E4.4`)
-    // and a window with no samples refuses `window_empty` — these rows are
-    // `delta` and no `meta` (nothing fits a computed point). Each `$key` is a `0074`
+    // and a window with no samples refuses `window_empty`. The window reads
+    // in these rows are `delta` and `hours(today)`, so neither the
+    // `minCoverageRatio` nor the `window_sparse` guard touches them (a `delta`
+    // over fewer than two samples still refuses `window_empty`); no `meta`
+    // (nothing fits a computed point). Each `$key` is a `0074`
     // parameter; each window read is inline, never a derived sibling's. The
     // money rows carry `unit: ""` — the organization's currency (Q8).
     {

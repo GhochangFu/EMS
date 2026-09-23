@@ -622,7 +622,7 @@ export function runV3HintNamesLocalMidnightTests(): void {
  * `E4.4` (ADR 0070 Amendment 3) — the help sentence names the refusal, not
  * just the old "even where samples are missing" hedge: a `sum` below 90%
  * coverage of its elapsed window now refuses `window_sparse` rather than
- * silently answering short.
+ * silently extrapolating across the gap.
  */
 export function runV3WindowHelpNamesTheSparseRefusalTests(): void {
   assert(

@@ -290,7 +290,7 @@ export async function assertTheSparseBatchRunsTwoStatements(pool: pg.Pool, fixtu
   );
 }
 
-// ---- S5 — the one-hour floor, clipped to the segment ---------------------------------------------
+// ---- S5 — the one-hour floor, clipped to the window (one 5m segment here, so no hour is shared) ----
 
 export async function assertTheHourFloorClipsTheHead(pool: pg.Pool, fixture: SparseFixture): Promise<void> {
   const result = await resolveOne(pool, fixture.assetId, windowFn("sum", CLIP_HEAD, rolling(60)), clipTick(fixture));

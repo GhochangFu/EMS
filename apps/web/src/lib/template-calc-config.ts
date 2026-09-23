@@ -144,7 +144,7 @@ export const V3_PARAMETER_HELP =
  * the time integral and not a sum of samples (plan ruling Q5 — `hours()` on a
  * rolling window is the literal duration, and `sum` integrates over the whole
  * of it) and, since `E4.4` (ADR 0070 Amendment 3), refuses `window_sparse`
- * below 90% coverage of the elapsed window rather than answering short;
+ * below 90% coverage of the elapsed window rather than extrapolating across the gap;
  * `delta` is last minus first and so means something only on a cumulative
  * counter (ruling Q7: the grammar cannot know cumulativeness, so the sentence
  * says it and no per-point warning does); `hours` prorates.

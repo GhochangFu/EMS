@@ -665,7 +665,9 @@ export function runFacilityClassEntryTests(): void {
 // `isolation_hours_month` is the ledger record discharged under its own name:
 // a CALENDAR window (`this_month`), so it needs the location's time zone
 // (`E4.1b`) — a NULL zone refuses `timezone_unset`, counted — and at local
-// midnight on the first of the month a read refuses `window_empty` for one tick.
+// midnight on the first of the month a read refuses `window_empty` for one tick;
+// below 90% coverage of the elapsed month it refuses `window_sparse` (ADR 0070
+// Amendment 3, `E4.4`).
 
 /** facility-fire-panel — plan §3.7, sortOrder 24. */
 const FIRE_PANEL_E41C: readonly SustainabilityRow[] = [
