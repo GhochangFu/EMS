@@ -335,8 +335,18 @@ export function combineSegments(
     case "avg":
       return { ok: true, value: sum / count };
     case "sum": {
-      const fraction = coveredHoursOf(rows) / elapsedHours;
-      if (fraction >= MIN_WINDOW_COVERAGE) {
+      // Integer milliseconds, not the hour fraction (post-merge sweep L1,
+      // 2026-09-23): coveredHoursOf(rows) and elapsedHours are each a
+      // division of milliseconds by HOUR_MS, and IEEE 754 can round their
+      // ratio down through the threshold even when the underlying minutes
+      // divide exactly — 90 of 100 min gives 1.5 / 1.6666666666666667 =
+      // 0.8999999999999999, refusing a window that is exactly at 90%. The
+      // rounded products still compare exactly at whole-millisecond inputs,
+      // and NaN stays NaN through Math.round, so a NaN fraction still fails
+      // this comparison and still refuses.
+      const coveredMs = Math.round(coveredHoursOf(rows) * HOUR_MS);
+      const elapsedMs = Math.round(elapsedHours * HOUR_MS);
+      if (coveredMs / elapsedMs >= MIN_WINDOW_COVERAGE) {
         return { ok: true, value: (sum / count) * elapsedHours };
       }
       return { ok: false, reason: "window_sparse" };

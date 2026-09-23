@@ -333,10 +333,22 @@ export class CalcWindowsService {
     // filter is the test combineSegments applies; the views have no
     // gapfill, so a bucket row exists only where samples do and no case
     // can redden that filter.
-    // Nor can a case redden the 1d unit alone: every 1d bucket starts at a
-    // UTC midnight, so counting it by hour gives the same distinct days;
-    // coveredHoursOf's 24 h width for 1d is what the dense month holds.
-    // The 1h unit IS gated: the sparse suite's S6 reads three covered hours
+    // Nor can a case redden the 1d unit alone. `'1 day'` → `'1 hour'` on the
+    // 1d level is an equivalent mutant, but not because the flags are
+    // unaffected: `v.bucket`, `from_t` and `to_t` are already day-aligned, so
+    // covered_units and head_covered are unchanged, but tail_covered goes
+    // from "the last day had a sample" to always false — `time_bucket('1
+    // hour', to_t - 1ms)` lands on 23:00 of the last day, which a
+    // midnight-aligned `v.bucket` never equals. `coveredHoursOf`'s interior
+    // term makes up the difference: on an aligned 1d segment the tail chunk
+    // is a full day, the same width as any interior day, so a day the
+    // forced-false tail flag no longer credits is instead credited by
+    // `interior = coveredUnits - head - tail` counting one more day — the
+    // same 24 h lands in `wholeMs` either way. The same reasoning makes
+    // forcing `head_covered` or `tail_covered` false equivalent on ANY
+    // aligned 1d or 1h segment (a head or tail chunk equal to a whole unit).
+    // Only S5a and S5b, which read a partial (unaligned) hour, actually gate
+    // the flags. The 1h unit IS gated: the sparse suite's S6 reads three covered hours
     // from 1h alone, and '1 day' there collapses them into one or two days.
     const { rows: result } = await this.pool.query<{
       idx: number;

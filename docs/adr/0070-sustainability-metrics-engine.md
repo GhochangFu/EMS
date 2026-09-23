@@ -849,3 +849,12 @@ written. This is the record of where the build and its reviews corrected it.
    has no retry on `55P03`. A manual refresh that overlaps a running refresh
    therefore reddens a CI run when DB suites run in parallel. The result is a
    red run, not a false green.
+8. **The post-merge sweep (2026-09-23).**
+   - Security: no findings.
+   - Code: the three late units were verified by a 10,000-plan brute-force
+     oracle with 0 mismatches.
+   - L1 (the float boundary) fixed with an integer-ms compare, plus a 90/100
+     test.
+   - M1: the day-resolution limit is now stated in the user-facing prose
+     (owner ruling).
+   - Nits.
