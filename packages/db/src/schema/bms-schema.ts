@@ -224,6 +224,26 @@ export const assetRoles = bmsSchema.table("asset_roles", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * The water balance role vocabulary (ADR 0073 decision 1) — an asset's place
+ * in a site's water balance: `intake` (inlet crosses the site boundary
+ * inward), `discharge` (outlet leaves the site), `reuse` (outlet returns to
+ * use on-site), `internal` (neither flow crosses the boundary). Same shape as
+ * `assetRoles` above and for the same reason: a role's behaviour is "match
+ * this asset", which *is* the code, so it is data, not a `z.enum`.
+ *
+ * Global — no `organizationId`, no RLS — the code must mean the same thing in
+ * every organization, same as `assetRoles`. Migration `0080`'s header carries
+ * the full record.
+ */
+export const waterBalanceRoles = bmsSchema.table("water_balance_roles", {
+  code: varchar("code", { length: 64 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(100),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const assets = bmsSchema.table("assets", {
   id: uuid("id").primaryKey().defaultRandom(),
   // E7.1b (ADR 0043 §5): NOT NULL — migration 0047 applied the SET NOT NULL.
@@ -265,6 +285,12 @@ export const assets = bmsSchema.table("assets", {
   // because a row in `asset_templates` IS a version. Null means hand-created,
   // which every seeded asset is. Publishing a newer version never touches it.
   templateId: uuid("template_id").references(() => assetTemplates.id),
+  // ADR 0073 decision 1 (migration 0080). Nullable, no default: NULL means
+  // "not in the water balance" — a default would be a claim, the reason 0029
+  // dropped this table's `domain` default. Set through the ordinary asset
+  // write path, never a template field (the same water class is `intake` on
+  // one site and `internal` on the next).
+  waterBalanceRole: varchar("water_balance_role", { length: 64 }).references(() => waterBalanceRoles.code),
   active: boolean("active").notNull().default(true),
   meta: jsonb("meta"),
   createdAt: timestamp("created_at", { withTimezone: true })
