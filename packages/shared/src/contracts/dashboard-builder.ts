@@ -522,8 +522,13 @@ export const bindingExclusiveMessage = (label: string): string =>
  *
  * **The two `sustainability.*` entries are the first with parameters** (ADR 0072 decision 2):
  * `{ pointKey, aggregate }` on their write schema, the roll-up across the assets in scope that
- * carry `pointKey`; ADR 0073 decision 2 adds an optional `balanceRole` narrowing them. Must match `dashboard_widget_sources_catalog_key_check` as migration `0079`
- * widened it (`0054` froze the first five).
+ * carry `pointKey`; ADR 0073 decision 2 adds an optional `balanceRole` narrowing them.
+ *
+ * **`water.balance`** (ADR 0073 decision 3) is the second entry with parameters — `{ period }` —
+ * and the first dataset among them: one row per site carrying a balance role, with intake,
+ * reuse, discharge, consumed-or-lost and coverage. Must match
+ * `dashboard_widget_sources_catalog_key_check` as migration `0081` widened it (`0054` froze the
+ * first five, `0079` froze the next two).
  */
 export const metricCatalogKeySchema = z.enum([
   "alarms.active.count",
@@ -533,7 +538,16 @@ export const metricCatalogKeySchema = z.enum([
   "assets.health.score",
   "sustainability.total",
   "sustainability.by_location",
+  "water.balance",
 ]);
+
+/**
+ * The three periods `water.balance` (ADR 0073 decision 3) can be asked for. Not
+ * `sustainabilityAggregateSchema`'s `{ pointKey, aggregate }` shape: this entry reads three
+ * fixed point-key families (`kl_<period>`, `outlet_kl_<period>`) rather than one named key, so
+ * the parameter is which calendar window, not which point.
+ */
+export const waterBalancePeriodSchema = z.enum(["today", "this_month", "this_year"]);
 
 /**
  * How a sustainability roll-up collapses the carrying assets' values (`E4.2`, ADR 0072 ruling
@@ -610,6 +624,13 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
     shape: "dataset",
     columns: ["locationCode", "locationName", "value", "coverage"],
     params: ["pointKey", "aggregate", "balanceRole"],
+  },
+  // `E4.3` / ADR 0073 decision 3 — one row per site carrying a balance role. `columns` stays on
+  // one line: `tests/f3.35-metric-catalog-labels.test.ts` parses it.
+  "water.balance": {
+    shape: "dataset",
+    columns: ["locationCode", "locationName", "intake", "reuse", "discharge", "consumed", "coverage"],
+    params: ["period"],
   },
 };
 

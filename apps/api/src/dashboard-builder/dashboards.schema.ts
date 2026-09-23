@@ -8,6 +8,7 @@ import {
   CATALOG_CODE_PATTERN,
   dashboardSectionCodeSchema,
   sustainabilityAggregateSchema,
+  waterBalancePeriodSchema,
   waterBalanceRoleCodeSchema,
   chartConfigSchema,
   tableConfigSchema,
@@ -293,6 +294,8 @@ export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObjec
   "assets.health.score": z.object({}).strict(),
   "sustainability.total": z.object({ ...sustainabilityParamsFields }).strict(),
   "sustainability.by_location": z.object({ ...sustainabilityParamsFields }).strict(),
+  // `E4.3` / ADR 0073 decision 3 — one row per balance-carrying site for one calendar period.
+  "water.balance": z.object({ period: waterBalancePeriodSchema }).strict(),
 };
 
 /**
@@ -328,7 +331,9 @@ const sourceBindingWriteSchema = z
       "fields (`{}` only), and `sustainability.total` / `sustainability.by_location` require " +
       "`{ pointKey, aggregate }` (ADR 0072) plus an optional `balanceRole`, a " +
       "`bms.water_balance_roles` code that narrows the carrying assets to that role (ADR 0073 " +
-      "decision 2; without it, every asset carrying the point counts) — zod-to-json-schema emits nothing for a " +
+      "decision 2; without it, every asset carrying the point counts), and `water.balance` " +
+      "requires `{ period }` (ADR 0073 decision 3; today / this_month / this_year) — " +
+      "zod-to-json-schema emits nothing for a " +
       "refinement, so without this line the document would promise that any record of scalars " +
       "is accepted where the API answers 400 (ADR 0029 Amendment 1). No entry may declare a " +
       "uuid: an id inside `params` is an id inside jsonb that no foreign key covers.",

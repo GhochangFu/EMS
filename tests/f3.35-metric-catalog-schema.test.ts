@@ -49,7 +49,13 @@ const MIGRATION_REL = "packages/db/drizzle/0054_dashboard_widget_sources.sql";
  * EFFECTIVE vocabulary is the one this later file declares, in the `0055` / `0050` pattern
  * `tests/f3.35-table-widget-schema.test.ts` records.
  */
-const WIDENING_MIGRATION_REL = "packages/db/drizzle/0079_dashboard_widget_sources_sustainability_keys.sql";
+const WIDENING_MIGRATION_REL = "packages/db/drizzle/0081_dashboard_widget_sources_water_balance_key.sql";
+/**
+ * `E4.2`'s own widening, now frozen in its turn (`0081` is the current EFFECTIVE list). Kept
+ * as its own constant so the frozen-seven pin below reads as clearly as `0054`'s frozen five.
+ */
+const PREVIOUS_WIDENING_MIGRATION_REL =
+  "packages/db/drizzle/0079_dashboard_widget_sources_sustainability_keys.sql";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const SCHEMA_REL = "packages/db/src/schema/dashboard-schema.ts";
@@ -351,7 +357,7 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     }
   });
 
-  it("keeps 0054's frozen CHECK at the original five, and 0079 widens by DROP then ADD", () => {
+  it("keeps 0054's frozen CHECK at the original five, and 0081 widens by DROP then ADD", () => {
     // `0054` is frozen: its list must still be Stage C's five, or someone edited a committed
     // migration instead of writing the next one.
     const frozen =
@@ -361,28 +367,40 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
     expect(frozen, "0054's CHECK must still be readable").not.toBeNull();
     expect((frozen?.[1] ?? "").split(",").filter(Boolean)).toHaveLength(5);
 
-    // The constraint EXISTS before `0079` runs, so an `IF NOT EXISTS` guard on the ADD would
+    // The constraint EXISTS before `0081` runs, so an `IF NOT EXISTS` guard on the ADD would
     // find it and skip the widening while reporting success — `0055`'s header records the
     // trap. DROP IF EXISTS then ADD is what widens, and the order matters.
     const sql = sqlOnly(read(WIDENING_MIGRATION_REL));
     const dropAt = sql.indexOf("DROP CONSTRAINT IF EXISTS dashboard_widget_sources_catalog_key_check");
     const addAt = sql.indexOf("ADD CONSTRAINT dashboard_widget_sources_catalog_key_check");
-    expect(dropAt, "0079 must DROP the existing constraint").toBeGreaterThan(-1);
-    expect(addAt, "0079 must ADD the widened constraint").toBeGreaterThan(-1);
+    expect(dropAt, "0081 must DROP the existing constraint").toBeGreaterThan(-1);
+    expect(addAt, "0081 must ADD the widened constraint").toBeGreaterThan(-1);
     expect(dropAt, "the DROP must come before the ADD").toBeLessThan(addAt);
     expect(/ADD CONSTRAINT[\s\S]*IF NOT EXISTS/.test(sql)).toBe(false);
   });
 
-  it("journals 0079 after 0078, and the journal stays strictly increasing", () => {
+  // `E4.3` / ADR 0073 decision 3 — `0079` is now frozen in its own turn, the `0054`/`0079`
+  // pattern one generation on. Pinned separately from the `0081`-is-effective assertion above
+  // so the two widenings cannot be confused with each other.
+  it("keeps 0079's frozen CHECK at exactly seven, before 0081 widens it to eight", () => {
+    const frozen =
+      /CONSTRAINT dashboard_widget_sources_catalog_key_check\s+CHECK \(catalog_key IN \(([^)]*)\)\)/.exec(
+        sqlOnly(read(PREVIOUS_WIDENING_MIGRATION_REL)),
+      );
+    expect(frozen, "0079's CHECK must still be readable").not.toBeNull();
+    expect((frozen?.[1] ?? "").split(",").filter(Boolean)).toHaveLength(7);
+  });
+
+  it("journals 0081 after 0080, and the journal stays strictly increasing", () => {
     expect(existsSync(join(repoRoot, WIDENING_MIGRATION_REL))).toBe(true);
     const journal = JSON.parse(read(JOURNAL_REL)) as {
       entries: { idx: number; tag: string; when: number }[];
     };
     const entry = journal.entries.find(
-      (row) => row.tag === "0079_dashboard_widget_sources_sustainability_keys",
+      (row) => row.tag === "0081_dashboard_widget_sources_water_balance_key",
     );
-    expect(entry, "0079 must have a journal entry, or drizzle silently skips the file").toBeDefined();
-    const previous = journal.entries.find((row) => row.tag === "0078_report_schedules");
+    expect(entry, "0081 must have a journal entry, or drizzle silently skips the file").toBeDefined();
+    const previous = journal.entries.find((row) => row.tag === "0080_water_balance_roles");
     expect((entry?.when ?? 0) > (previous?.when ?? 0)).toBe(true);
     const whens = journal.entries.map((row) => row.when);
     expect(

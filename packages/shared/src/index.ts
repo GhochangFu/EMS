@@ -212,6 +212,8 @@ export type DashboardCatalogValueDto = z.infer<typeof Cv.dashboardCatalogValueDt
 export type DashboardCatalogValuesResponse = z.infer<
   typeof Cv.dashboardCatalogValuesResponseSchema
 >;
+/** `E4.3` — the three periods `water.balance` can be asked for. */
+export type WaterBalancePeriod = z.infer<typeof Db.waterBalancePeriodSchema>;
 
 // --- F3.35 Stage A — aggregation and presentation (ADR 0048) ----------------
 /**

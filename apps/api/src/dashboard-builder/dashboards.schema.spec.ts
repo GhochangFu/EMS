@@ -911,3 +911,80 @@ export function olderEntryStillRefusesPointKey(): void {
     "alarms.active.count declares no fields, so a pointKey on it is an unrecognized key",
   );
 }
+
+// ---------------------------------------------------------------------------
+// `E4.3` / ADR 0073 decision 3 — `water.balance`, a dataset entry taking one
+// param, `period`.
+// ---------------------------------------------------------------------------
+
+const waterBalanceTable = (params: Record<string, unknown>) => ({
+  widgets: [
+    {
+      ...validTableWidget,
+      sources: [{ catalogKey: "water.balance" as const, params }],
+    },
+  ],
+});
+
+/** A `table` binds `water.balance { period: "today" }`. */
+export function waterBalanceAcceptsToday(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    waterBalanceTable({ period: "today" }),
+    "a table binding water.balance { period: today }",
+  );
+}
+
+/** An unknown `period` token is refused at the field, prefixed with the entry's key. */
+export function waterBalanceRefusesAnInvalidPeriod(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    waterBalanceTable({ period: "yesterday" }),
+    [...SOURCE_PARAMS, "period"],
+    ["water.balance:"],
+    "period is closed to today / this_month / this_year",
+  );
+}
+
+/** An empty `params` (the picker's payload) is refused — `period` is required. */
+export function waterBalanceRefusesEmptyParams(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    waterBalanceTable({}),
+    [...SOURCE_PARAMS, "period"],
+    ["water.balance:"],
+    "params: {} on water.balance must 400 rather than store with no period",
+  );
+}
+
+/** An undeclared field is refused — the entry is strict. */
+export function waterBalanceRefusesAnExtraField(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    waterBalanceTable({ period: "today", pointKey: "x" }),
+    [...SOURCE_PARAMS],
+    ["pointKey"],
+    "water.balance declares only period; pointKey is an unrecognized key",
+  );
+}
+
+/** A `value_tile` cannot bind `water.balance` — it draws one number and the entry returns rows. */
+export function waterBalanceRefusedOnAValueTile(): void {
+  const widget = sustainabilityTile({}).widgets[0];
+  assert(widget !== undefined, "fixture");
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    {
+      widgets: [
+        {
+          ...widget,
+          sources: [{ catalogKey: "water.balance" as const, params: { period: "today" } }],
+        },
+      ],
+    },
+    ["widgets", 0, "sources", 0, "catalogKey"],
+    [bindingShapeMessage("value_tile", "water.balance", "dataset")],
+    "the shape rule, not the params rule, refuses a dataset on a tile — a well-formed period " +
+      "does not rescue it",
+  );
+}

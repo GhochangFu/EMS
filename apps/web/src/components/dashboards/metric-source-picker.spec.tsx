@@ -106,6 +106,29 @@ export function keepsABoundEntryVisibleAndDisabled(): void {
   expect(bound?.disabled, "an already-bound entry must be disabled").toBe(true);
 }
 
+/**
+ * `E4.3` / ADR 0073 decision 3 — a dataset entry that declares `params` is hidden too, same as
+ * a metric one (`hidesAMetricEntryThatDeclaresParams`). The positive control — `water.balance`
+ * IS a dataset a `table` could otherwise draw — is what stops this passing because the key
+ * never existed.
+ */
+export function hidesADatasetEntryThatDeclaresParams(): void {
+  render(<MetricSourcePicker widgetType="table" bound={[]} onAdd={() => {}} />);
+
+  expect(
+    METRIC_CATALOG["water.balance"].shape,
+    "the control: water.balance is a dataset a table could otherwise draw",
+  ).toBe("dataset");
+  expect(
+    METRIC_CATALOG["water.balance"].params,
+    "the control: water.balance declares params, which is why it is hidden",
+  ).toBeDefined();
+  expect(
+    optionsOf("Add named metric").map((option) => option.value),
+    "the picker sends params: {} and the entry's strict schema refuses it — never offer it",
+  ).not.toContain("water.balance");
+}
+
 /** A widget type that draws no catalog shape renders nothing at all. */
 export function rendersNothingForATypeThatBindsNoMetric(): void {
   const { container } = render(

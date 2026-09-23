@@ -19,6 +19,8 @@ import {
   runStageATileBoundsTests,
   runStageAVocabulariesAreClosedTests,
   runWidgetPointCardinalityTests,
+  waterBalanceDeclaresSevenColumnsAndPeriodParam,
+  waterBalancePeriodVocabularyIsThreeTokens,
 } from "./dashboard-builder.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -119,5 +121,16 @@ describe("E4.2 — the sustainability catalog entries and the roll-up fields", (
 
   it("closes the aggregate vocabulary to sum and avg", () => {
     aggregateVocabularyIsSumAndAvg();
+  });
+});
+
+/** `E4.3` / ADR 0073 decision 3 — the `water.balance` dataset entry and its `period` param. */
+describe("E4.3 — the water.balance catalog entry", () => {
+  it("declares a dataset with the seven ADR-named columns and one param, period", () => {
+    waterBalanceDeclaresSevenColumnsAndPeriodParam();
+  });
+
+  it("closes the period vocabulary to today, this_month and this_year", () => {
+    waterBalancePeriodVocabularyIsThreeTokens();
   });
 });

@@ -640,4 +640,9 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
     });
     return datasetValue("sustainability.by_location", rows, capped.truncated);
   },
+
+  // `E4.3` / ADR 0073 decision 3 — a stub so the `Record` compiles until `U9` replaces it with
+  // the real resolver (the `E4.2` U1 precedent: an empty dataset, never a thrown error, for an
+  // entry the write path already admits).
+  "water.balance": async () => datasetValue("water.balance", [], false),
 };
