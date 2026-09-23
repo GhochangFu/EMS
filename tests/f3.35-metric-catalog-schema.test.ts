@@ -58,6 +58,13 @@ const WIDENING_MIGRATION_REL = "packages/db/drizzle/0081_dashboard_widget_source
 const PREVIOUS_WIDENING_MIGRATION_REL =
   "packages/db/drizzle/0079_dashboard_widget_sources_sustainability_keys.sql";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
+/** A CHECK's `IN (...)` body as its sorted, unquoted values — what the frozen pins compare. */
+const inListValues = (body: string | undefined): string[] =>
+  (body ?? "")
+    .split(",")
+    .map((value) => value.trim().replace(/^'|'$/g, ""))
+    .filter(Boolean)
+    .sort();
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const SCHEMA_REL = "packages/db/src/schema/dashboard-schema.ts";
 const TABLE = "dashboard_widget_sources";
@@ -366,7 +373,14 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
         read(MIGRATION_REL),
       );
     expect(frozen, "0054's CHECK must still be readable").not.toBeNull();
-    expect((frozen?.[1] ?? "").split(",").filter(Boolean)).toHaveLength(5);
+    // The exact values, not a count: a swapped value keeps the length (PR 2 review L2).
+    expect(inListValues(frozen?.[1])).toEqual([
+      "alarms.active",
+      "alarms.active.count",
+      "assets.health.score",
+      "workorders.open",
+      "workorders.open.count",
+    ]);
 
     // The constraint EXISTS before `0081` runs, so an `IF NOT EXISTS` guard on the ADD would
     // find it and skip the widening while reporting success — `0055`'s header records the
@@ -389,7 +403,15 @@ describe("F3.35 Stage C — bms.dashboard_widget_sources (migration 0054)", () =
         sqlOnly(read(PREVIOUS_WIDENING_MIGRATION_REL)),
       );
     expect(frozen, "0079's CHECK must still be readable").not.toBeNull();
-    expect((frozen?.[1] ?? "").split(",").filter(Boolean)).toHaveLength(7);
+    expect(inListValues(frozen?.[1])).toEqual([
+      "alarms.active",
+      "alarms.active.count",
+      "assets.health.score",
+      "sustainability.by_location",
+      "sustainability.total",
+      "workorders.open",
+      "workorders.open.count",
+    ]);
   });
 
   it("journals 0081 after 0080, and the journal stays strictly increasing", () => {
