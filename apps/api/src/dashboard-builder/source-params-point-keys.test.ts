@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  refusalEchoKeepsAPrintableCode,
+  refusalEchoStripsControlCharacters,
   balanceRolesAreDeduplicated,
   oldEntriesYieldNoBalanceRole,
   oldEntriesYieldNothing,
@@ -51,5 +53,16 @@ describe("E4.3 — sourceParamsBalanceRoles", () => {
 
   it("de-duplicates a role bound on more than one widget", () => {
     balanceRolesAreDeduplicated();
+  });
+});
+
+/** Review L1 — the refusal's echo of the caller's code. */
+describe("E4.3 — balanceRoleRefusalMessage", () => {
+  it("strips CR/LF from an echoed code", () => {
+    refusalEchoStripsControlCharacters();
+  });
+
+  it("echoes a printable code intact", () => {
+    refusalEchoKeepsAPrintableCode();
   });
 });

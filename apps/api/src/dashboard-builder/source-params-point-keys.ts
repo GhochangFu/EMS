@@ -130,8 +130,21 @@ export async function assertSourceParamsBalanceRolesActive(
     .from(waterBalanceRoles)
     .where(and(eq(waterBalanceRoles.active, true), inArray(waterBalanceRoles.code, codes)));
   const active = new Set(rows.map((row) => row.code));
-  const missing = boundedMissingPointKeys(codes.filter((code) => !active.has(code)));
+  const missing = codes.filter((code) => !active.has(code));
   if (missing.length > 0) {
-    throw new BadRequestException(`Not a live water balance role: ${missing.join(", ")}`);
+    throw new BadRequestException(balanceRoleRefusalMessage(missing));
   }
+}
+
+/**
+ * The 400's sentence for the roles that are not live, each echoed with its non-printable
+ * characters stripped (review L1) — `VocabulariesService.unknownCodeMessage`'s rule. The write
+ * schema bounds `balanceRole`'s length and deliberately not its charset, so a code carrying
+ * `\r\n` reaches here and would otherwise split the line in a log sink. The strip runs before
+ * `boundedMissingPointKeys`, so its cut bounds the string actually interpolated.
+ */
+export function balanceRoleRefusalMessage(missing: readonly string[]): string {
+  const printable = missing.map((code) => code.replace(/[^\x20-\x7e]/g, ""));
+  const shown = boundedMissingPointKeys(printable);
+  return `Not a live water balance role: ${shown.join(", ")}`;
 }

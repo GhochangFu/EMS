@@ -1,4 +1,8 @@
-import { sourceParamsBalanceRoles, sourceParamsPointKeys } from "./source-params-point-keys";
+import {
+  balanceRoleRefusalMessage,
+  sourceParamsBalanceRoles,
+  sourceParamsPointKeys,
+} from "./source-params-point-keys";
 
 /**
  * `E4.2` U3 — the pure half of the point-key check at a catalog binding's write (ADR 0072
@@ -108,5 +112,27 @@ export function balanceRolesAreDeduplicated(): void {
   assert(
     JSON.stringify(roles) === JSON.stringify(["intake", "reuse"]),
     `expected ["intake","reuse"], got ${JSON.stringify(roles)}`,
+  );
+}
+
+/**
+ * Review L1 — the refusal echoes the caller's code, and a code carrying `\r\n` would split the
+ * line in a log sink. The schema bounds the length only (no charset, by ruling), so the echo
+ * strips non-printables, as `VocabulariesService.unknownCodeMessage` does.
+ */
+export function refusalEchoStripsControlCharacters(): void {
+  const message = balanceRoleRefusalMessage(["bad\r\nrole"]);
+  assert(
+    message === "Not a live water balance role: badrole",
+    `expected the CR/LF stripped, got ${JSON.stringify(message)}`,
+  );
+}
+
+/** The control: a printable code is echoed intact. */
+export function refusalEchoKeepsAPrintableCode(): void {
+  const message = balanceRoleRefusalMessage(["nope"]);
+  assert(
+    message === "Not a live water balance role: nope",
+    `expected the code intact, got ${JSON.stringify(message)}`,
   );
 }
