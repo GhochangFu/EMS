@@ -537,6 +537,15 @@ describe.skipIf(!connectionString)("E4.2 U4 — the by_location cap is reached",
  * Every row carries the `E43`/`e43` per-run prefix and is deleted in `afterAll`; nothing here
  * runs inside a transaction, so nothing depends on a rollback. The telemetry DELETE is bounded
  * by time for the hypertable reason the first fixture states.
+ *
+ * **Each derived point's formula reads the point itself, on purpose.** A constant formula
+ * (`'1'`, as the first fixture writes) is a live definition to the running API's scheduled
+ * calc sweep, which evaluates it within a minute of its cache refresh and writes a fresh `1`
+ * over the fixture's samples. Observed in U9: the API log carried `calc write` lines for these
+ * fixture points, and one run reddened both L3 claims (D's stale sample turned fresh) under a
+ * mutation that cannot touch L3. A self-reference is refused by `toActiveDefinition` at load
+ * (`self_reference`), so no host ever writes these points, while `readRollupRows` still reads
+ * them as scheduled derived points with a 180 s bound.
  */
 describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () => {
   let superuserPool: pg.Pool;
@@ -605,8 +614,8 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
     await superuserPool.query(
       `INSERT INTO bms.template_points
          (organization_id, template_id, point_key, kind, formula, formula_dialect, calc_trigger, calc_interval_seconds, required)
-       VALUES ($1, $2, 'kl_today', 'derived', '1', 'bms-calc-v1', 'scheduled', 60, false),
-              ($1, $2, 'outlet_kl_today', 'derived', '1', 'bms-calc-v1', 'scheduled', 60, false)`,
+       VALUES ($1, $2, 'kl_today', 'derived', '{kl_today}', 'bms-calc-v1', 'scheduled', 60, false),
+              ($1, $2, 'outlet_kl_today', 'derived', '{outlet_kl_today}', 'bms-calc-v1', 'scheduled', 60, false)`,
       [orgId, templateId],
     );
 
