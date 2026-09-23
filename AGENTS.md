@@ -411,7 +411,16 @@
 > pilot), and refuses `timezone_unset` where none is set; an empty window
 > refuses `window_empty`; **a stalled refresh policy fails closed** under two
 > budgets per read (20,000 buckets; 180 minutes of raw rows beyond the `1m`
-> watermark) as `windows_unresolved`. **And the content that waited on both**
+> watermark) as `windows_unresolved`. **And a sparse window `sum` refuses**
+> (`E4.4`, 2026-09-23, PRs #525 and #526 — ADR 0070 Amendments 3 and 4; four
+> gate and four plan questions, one ruled against the recommendation; three
+> reviews): a `sum` over a window whose covered time is below 90% of the elapsed
+> window refuses `window_sparse` rather than extrapolating the observed mean
+> across the gap. `avg`, `min`, `max` and `delta` are not guarded. Coverage is
+> counted inside the level statement the read already runs: a `1d` bucket counts
+> its day, finer levels count clock hours, and a clock hour that two segments
+> share is covered when any part of it holds a sample. `window_empty` keeps
+> precedence. **And the content that waited on both**
 > (`E4.1c`, 2026-09-20, PRs #502, #503 and #504 — twelve plan rulings, three
 > against the recommendation; fourteen reviews and a post-merge sweep applied;
 > ADR 0070 Amendment 2): the Rand tariff is gone — `DashboardService` and
@@ -488,7 +497,8 @@
 > Recorded at closure (Amendment 1): a calendar-window `sum` is the mean of the
 > observed samples times every hour of the period, so a partial outage reports
 > a whole period while the asset still counts as fresh — the twenty-four water
-> `sum` codes say *estimated over the whole period* and `E4.4` owns the guard.
+> `sum` codes say *estimated over the whole period*, and `E4.4` built the guard
+> (`window_sparse`, above).
 > `water_recycle_pct` and `operational_efficiency_pct` ship with no formula
 > while B14 is open. Not a §6 promotion: no §6 line named this surface.
 > General
