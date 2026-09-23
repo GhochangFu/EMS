@@ -9,7 +9,11 @@ import {
   noDischargeAssetReadsConsumedAsIntake,
   noIntakeAssetReadsConsumedAsNull,
   noIntakeAssetReadsIntakeAsNull,
+  nonCarryingDischargeAssetIsNotInCoverage,
+  nonCarryingDischargeAssetReadsConsumedAsNull,
   nothingCarryingIsAllNullAtZeroOverZero,
+  oneOfTwoDischargeAssetsCarryingReadsConsumedAsNull,
+  partlyStaleDischargeReadsConsumedAsNull,
   reuseIsTheReuseSum,
   reuseSkipsTheStaleRow,
   reuseStaleRowCountsInCarrying,
@@ -31,7 +35,7 @@ describe("E4.3 U9 — the water balance's pure half", () => {
     dischargeIsTheDischargeSum();
   });
 
-  it("reads consumed as intake − discharge = 43, reuse not added (Q7)", () => {
+  it("reads consumed as intake − discharge = 43, reuse not added (ADR 0073 decision 3)", () => {
     consumedIsIntakeMinusDischargeWithoutReuse();
   });
 
@@ -39,15 +43,15 @@ describe("E4.3 U9 — the water balance's pure half", () => {
     coverageCountsTheThreeColumns();
   });
 
-  it("reads consumed as intake − 0 = 50 when no discharge asset carries (Q8)", () => {
+  it("reads consumed as intake − 0 = 50 when the site has no discharge-roled asset (Q8)", () => {
     noDischargeAssetReadsConsumedAsIntake();
   });
 
-  it("counts coverage \"2/2\" when no discharge asset carries", () => {
+  it("counts coverage \"2/2\" when the site has no discharge-roled asset", () => {
     noDischargeAssetCoverageIsTwoOfTwo();
   });
 
-  it("reads consumed as null when every carrying discharge asset is stale (Q8)", () => {
+  it("reads consumed as null when the one discharge asset is stale (Q8)", () => {
     staleDischargeReadsConsumedAsNull();
   });
 
@@ -69,6 +73,22 @@ describe("E4.3 U9 — the water balance's pure half", () => {
 
   it("counts reuse [null, 4] as \"1/2\"", () => {
     reuseStaleRowCountsInCarrying();
+  });
+
+  it("reads consumed as null for discharge [7, null] over two assets (Q8 partial staleness)", () => {
+    partlyStaleDischargeReadsConsumedAsNull();
+  });
+
+  it("reads consumed as null when the one discharge-roled asset carries nothing (pre-v5)", () => {
+    nonCarryingDischargeAssetReadsConsumedAsNull();
+  });
+
+  it("reads consumed as null when one of two discharge-roled assets carries nothing", () => {
+    oneOfTwoDischargeAssetsCarryingReadsConsumedAsNull();
+  });
+
+  it("leaves a non-carrying discharge asset out of coverage: \"1/1\"", () => {
+    nonCarryingDischargeAssetIsNotInCoverage();
   });
 
   it("answers every column null and \"0/0\" when nothing carries", () => {

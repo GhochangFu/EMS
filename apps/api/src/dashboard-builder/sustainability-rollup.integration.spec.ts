@@ -290,7 +290,9 @@ export async function dischargeTableGivesL1NullOverZeroOfZero(f: RollupFixture):
 // `E4.3` U9 / ADR 0073 decision 3 — `water.balance`. L1: W intake (`kl_today` 50), S reuse
 // (`outlet_kl_today` 11), E discharge (`outlet_kl_today` 7), R internal (`outlet_kl_today` 5,
 // in no column). L2: N with a `NULL` role. L3: I intake (`kl_today` 20) and D discharge
-// (`outlet_kl_today` stale at now − 10 min). One claim per function.
+// (`outlet_kl_today` stale at now − 10 min). PR 2 review: L4 P intake (`kl_today` 30) and Q
+// discharge on a pre-v5 template (no `outlet_kl_today`); L5 T internal alone; L6 V intake,
+// INACTIVE, read through an L6-scoped dashboard. One claim per function.
 // ---------------------------------------------------------------------------
 
 /** What the balance fixture hands every claim. */
@@ -300,6 +302,9 @@ export type BalanceFixture = {
   readonly l1Code: string;
   readonly l2Code: string;
   readonly l3Code: string;
+  readonly l4Code: string;
+  readonly l5Code: string;
+  readonly l6Code: string;
   readonly assetW: string;
   /** Every fixture asset — the caller's readable set on each org-wide read. */
   readonly fixtureAssets: readonly string[];
@@ -309,6 +314,11 @@ export type BalanceFixture = {
   readonly todaySourceId: string;
   readonly thisMonthSourceId: string;
   readonly byLocationSourceId: string;
+  /** Scoped to L6 (the location arm, which does not filter `active`): `water.balance { today }`
+   * and the same `by_location` table, the positive control that V reaches the scope. */
+  readonly l6DashboardId: string;
+  readonly l6TodaySourceId: string;
+  readonly l6ByLocationSourceId: string;
 };
 
 type BalanceCell = string | number | boolean | null;
@@ -317,8 +327,9 @@ const balanceRows = async (
   f: BalanceFixture,
   sourceId: string,
   readable: readonly string[] = f.fixtureAssets,
+  dashboardId: string = f.dashboardId,
 ): Promise<Record<string, BalanceCell>[]> => {
-  const response = await f.service.resolveForDashboard(f.orgId, f.dashboardId, [...readable]);
+  const response = await f.service.resolveForDashboard(f.orgId, dashboardId, [...readable]);
   const table = valueOf(response, sourceId);
   if (table.shape !== "dataset") throw new Error(`binding ${sourceId} is not a dataset`);
   return table.rows;
@@ -331,20 +342,28 @@ const fiveOf = (row: Record<string, BalanceCell> | undefined) =>
   row && [row.intake, row.reuse, row.discharge, row.consumed, row.coverage];
 
 /**
- * The balance rows are exactly `[L1, L3]`, in code order: L2's one asset has no role, so L2
- * is no row — the row set is the locations owning a ROLED asset in scope. An exact list, not
- * a "does not contain", so an empty table cannot pass it.
+ * The balance rows are exactly `[L1, L3, L4]`, in code order: L2's one asset has no role and
+ * L5's only asset is `internal`, so neither is a row — the row set is the locations owning an
+ * `intake`, `reuse` or `discharge` asset in scope. L6 is absent too: the organization arm of
+ * the scope drops its inactive asset before the balance reads. An exact list, not a "does not
+ * contain", so an empty table cannot pass it.
  */
-export async function balanceRowsAreL1ThenL3WithoutL2(f: BalanceFixture): Promise<void> {
+export async function balanceRowsAreL1L3L4(f: BalanceFixture): Promise<void> {
   const rows = await balanceRows(f, f.todaySourceId);
-  expect(rows.map((row) => row.locationCode)).toEqual([f.l1Code, f.l3Code]);
+  expect(rows.map((row) => row.locationCode)).toEqual([f.l1Code, f.l3Code, f.l4Code]);
 }
 
-/** The positive control for the claim above: L2 IS in scope — the `by_location` table on the
- * same dashboard lists it (E4.2 OQ7 is untouched by the balance). */
+/** The positive control for the claims above: L2 and L5 ARE in scope — the `by_location` table
+ * on the same dashboard lists them (E4.2 OQ7 is untouched by the balance). */
 export async function byLocationBesideTheBalanceStillListsL2(f: BalanceFixture): Promise<void> {
   const rows = await balanceRows(f, f.byLocationSourceId);
-  expect(rows.map((row) => row.locationCode)).toEqual([f.l1Code, f.l2Code, f.l3Code]);
+  expect(rows.map((row) => row.locationCode)).toEqual([
+    f.l1Code,
+    f.l2Code,
+    f.l3Code,
+    f.l4Code,
+    f.l5Code,
+  ]);
 }
 
 /** L1 intake reads `kl_today` over W alone: 50. */
@@ -362,7 +381,7 @@ export async function l1DischargeIsSeven(f: BalanceFixture): Promise<void> {
   expect((await balanceRow(f, f.l1Code))?.discharge).toBe(7);
 }
 
-/** L1 consumed = 50 − 7 = 43; reuse is NOT added (ADR 0073 decision 3, Q7) — not 54. */
+/** L1 consumed = 50 − 7 = 43; reuse is NOT added (ADR 0073 decision 3) — not 54. */
 export async function l1ConsumedIsFortyThree(f: BalanceFixture): Promise<void> {
   expect((await balanceRow(f, f.l1Code))?.consumed).toBe(43);
 }
@@ -400,11 +419,56 @@ export async function thisMonthKeepsL1AsANullRow(f: BalanceFixture): Promise<voi
 
 /**
  * Caller scope ∩: a caller who can read only W gets one row, L1 `{50, null, null, 50, "1/1"}`
- * — no discharge asset carries in that scope, so consumed is `intake − 0` (Q8).
+ * — no discharge-roled asset is in that scope, so consumed is `intake − 0` (Q8).
  */
 export async function callerScopeOfWAloneIsOneRow(f: BalanceFixture): Promise<void> {
   const rows = await balanceRows(f, f.todaySourceId, [f.assetW]);
   expect(rows.map((row) => [row.locationCode, ...(fiveOf(row) ?? [])])).toEqual([
     [f.l1Code, 50, null, null, 50, "1/1"],
   ]);
+}
+
+/**
+ * F1 (the PR 2 review ruling on Q8): L4's discharge asset Q is pinned to a pre-v5 template with
+ * no `outlet_kl_today`, so it cannot report — consumed is `null`, never `intake − 0` = 30.
+ * Intake is in the same assertion as the positive control: the row is there and has a number.
+ */
+export async function l4ConsumedIsNullWithAPreV5Discharge(f: BalanceFixture): Promise<void> {
+  const row = await balanceRow(f, f.l4Code);
+  expect(row && [row.intake, row.consumed]).toEqual([30, null]);
+}
+
+/**
+ * The coverage decision: Q carries no `outlet_kl_today`, so it is no denominator — L4 reads
+ * `"1/1"` (P alone). The `null` discharge column is what explains the `null` consumed.
+ */
+export async function l4CoverageIsOneOfOne(f: BalanceFixture): Promise<void> {
+  expect((await balanceRow(f, f.l4Code))?.coverage).toBe("1/1");
+}
+
+/**
+ * F6, the row rule: L5's only asset T is `internal`, so L5 is no row. Filtered to the two codes
+ * so the positive control (L1 IS a row) rides in the same assertion as the absence.
+ */
+export async function internalOnlyL5IsNoRowBesideL1(f: BalanceFixture): Promise<void> {
+  const rows = await balanceRows(f, f.todaySourceId);
+  const codes = rows.map((row) => row.locationCode);
+  expect(codes.filter((code) => code === f.l1Code || code === f.l5Code)).toEqual([f.l1Code]);
+}
+
+/**
+ * F3: on the L6-scoped dashboard the scope is V alone (the location arm of `resolveAssetScope`
+ * does not filter `active`), and V is INACTIVE — `readBalanceLocations`' own `a.active` is
+ * what makes L6 no row.
+ */
+export async function inactiveRoledAssetAloneMakesNoRow(f: BalanceFixture): Promise<void> {
+  const rows = await balanceRows(f, f.l6TodaySourceId, f.fixtureAssets, f.l6DashboardId);
+  expect(rows.map((row) => row.locationCode)).toEqual([]);
+}
+
+/** The positive control for F3: the same L6 dashboard's `by_location` table lists L6, so the
+ * inactive V did reach the scope the balance read. */
+export async function l6ByLocationListsL6(f: BalanceFixture): Promise<void> {
+  const rows = await balanceRows(f, f.l6ByLocationSourceId, f.fixtureAssets, f.l6DashboardId);
+  expect(rows.map((row) => row.locationCode)).toEqual([f.l6Code]);
 }

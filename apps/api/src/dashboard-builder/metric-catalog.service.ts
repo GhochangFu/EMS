@@ -661,7 +661,9 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    * `kl_<period>` over the `intake` assets, reuse and discharge are `outlet_kl_<period>` over
    * the `reuse` and `discharge` assets. `internal` assets are read by no column. A tenant whose
    * water templates predate v5 carries no `outlet_kl_*` row, so reuse and discharge read `0/0`
-   * until the templates are re-imported (ADR 0073 decision 2's re-import rule).
+   * until the templates are re-imported (ADR 0073 decision 2's re-import rule) — and a site
+   * with such a discharge asset reads `consumed` as `null`, never `intake − 0`, because
+   * `readBalanceLocations` counts the discharge assets that cannot report (PR 2 review).
    *
    * Four to seven statements per resolve: the location read, then three `readRollupRows`
    * calls of one statement each, or two when anything carries. An empty scope returns the empty
@@ -690,6 +692,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
         intake: at(intake, location.id),
         reuse: at(reuse, location.id),
         discharge: at(discharge, location.id),
+        dischargeAssets: location.dischargeAssets,
       }),
     }));
     return datasetValue("water.balance", rows, capped.truncated);
