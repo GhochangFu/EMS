@@ -10,7 +10,6 @@ import { aggregateRelation, type AggregateLevel } from "../telemetry/point-aggre
 import {
   budgetDefect,
   combineSegments,
-  coveredHoursOf,
   deltaOf,
   hoursOf,
   planWindowSegments,
@@ -143,8 +142,10 @@ type Planned = {
  * hours below) holding a non-empty bucket, and whether the segment's first
  * and last units are among them — inside the same lateral, over the same
  * single scan. No statement is added, so the budget of seven holds;
- * `coveredHoursOf` turns the three facts into hours, and `combineSegments`
- * guards `sum` alone.
+ * `combineSegments` folds the facts into hours with `coveredHoursOf` across
+ * all of a read's segments at once — a clock hour two adjacent segments share
+ * is merged, covered when any of its parts holds a sample (owner ruling
+ * 2026-09-23, from the `E4.4` code review) — and guards `sum` alone.
  */
 @Injectable()
 export class CalcWindowsService {
@@ -375,17 +376,20 @@ export class CalcWindowsService {
       const target = targets[row.idx];
       const list = rows.get(target.index) ?? [];
       // `sample_count` is `numeric` in the view and `covered_units` a
-      // `bigint` count; both arrive as strings
+      // `bigint` count; both arrive as strings. The facts stay raw here:
+      // `combineSegments` folds them across the read's segments at once, so a
+      // clock hour two segments share is merged (owner ruling 2026-09-23)
       list.push({
+        segment: target.segment,
+        coverage: {
+          coveredUnits: Number(row.covered_units ?? 0),
+          headCovered: row.head_covered === true,
+          tailCovered: row.tail_covered === true,
+        },
         sumValue: row.sum_value,
         sampleCount: row.sample_count === null ? 0 : Number(row.sample_count),
         minValue: row.min_value,
         maxValue: row.max_value,
-        coveredHours: coveredHoursOf(target.segment, {
-          coveredUnits: Number(row.covered_units ?? 0),
-          headCovered: row.head_covered === true,
-          tailCovered: row.tail_covered === true,
-        }),
       });
       rows.set(target.index, list);
     }

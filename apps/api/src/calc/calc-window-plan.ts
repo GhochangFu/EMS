@@ -206,45 +206,86 @@ export interface SegmentCoverageFacts {
   readonly tailCovered: boolean;
 }
 
+/** One segment of a read and the three coverage facts its level statement
+ * returned for it — the input of the covered-time fold. */
+export interface SegmentCoverage {
+  readonly segment: Segment;
+  readonly coverage: SegmentCoverageFacts;
+}
+
 /**
- * The covered hours of one segment (ADR 0070 Amendment 3 decision 3, `E4.4`).
- * Three rules: a `1d` segment contributes 24 h for each day holding a
- * non-empty bucket; a `1h` segment 1 h for each such hour; a `5m` or `1m`
- * segment each distinct clock hour holding such a bucket, **clipped to the
- * segment** — the one-hour floor, because a measured point declares no
- * polling interval and a five-minute poller fills one `1m` bucket in five. A
- * covered unit that straddles the segment's start (or end) counts only the
- * part inside it. `1d` and `1h` segments are aligned to their unit by the
- * planner, so both clips are zero there and only `coveredUnits` matters. A
- * segment inside one unit counts its own length when covered, else nothing.
+ * The covered hours of one read, folded once across ALL of its segments (ADR
+ * 0070 Amendment 3 decision 3, `E4.4`). Three rules: a `1d` segment
+ * contributes 24 h for each day holding a non-empty bucket; a `1h` segment 1 h
+ * for each such hour; a `5m` or `1m` segment each distinct clock hour holding
+ * such a bucket — the one-hour floor, because a measured point declares no
+ * polling interval and a five-minute poller fills one `1m` bucket in five.
+ *
+ * **A clock hour two segments share is one hour** (owner ruling 2026-09-23,
+ * from the `E4.4` code review — "an hour that holds a sample counts as
+ * covered" wins over "clipped to the segment"). The planner can split one
+ * clock hour between adjacent sub-day segments — at the live tail, a `5m`
+ * segment ending at the `5m` watermark (say 01:20) and a `1m` segment after
+ * it. That hour is covered when ANY of its in-window parts holds a sample,
+ * and a covered hour contributes ALL of its in-window time: the sum of its
+ * parts in every segment, which is clipped to the window only, never to one
+ * segment. So each segment's head and tail units are collected by unit, and
+ * the units wholly inside a segment (never shared) are counted from
+ * `coveredUnits`. A segment inside one unit is a single part, covered when
+ * `coveredUnits > 0`. `1d` segments keep day resolution: their boundaries lie
+ * on day lines, so they never share a unit with an hour piece, and the unit
+ * key carries the width so the two can never collide. The fold does not
+ * depend on the rows' order — `resolveReads` hands them over level by level.
  *
  * **The limit, stated.** Completed days behind the `1d` watermark are served
  * from `1d` buckets, so on those days the resolution is a day: a day with one
  * sample counts as covered. A ten-day outage is caught; a twelve-hour gap
  * inside an old day is not.
  */
-export function coveredHoursOf(segment: Segment, facts: SegmentCoverageFacts): number {
-  const unitMs = segment.level === "1d" ? LEVEL_MS["1d"] : HOUR_MS;
-  const headUnit = floorTo(segment.fromMs, unitMs);
-  const tailUnit = floorTo(segment.toMs - 1, unitMs);
-  if (headUnit === tailUnit) {
-    return facts.coveredUnits > 0 ? (segment.toMs - segment.fromMs) / HOUR_MS : 0;
+export function coveredHoursOf(parts: readonly SegmentCoverage[]): number {
+  let wholeMs = 0;
+  const edges = new Map<string, { ms: number; covered: boolean }>();
+  const addEdge = (unitMs: number, unitStart: number, ms: number, covered: boolean): void => {
+    const key = `${unitMs}@${unitStart}`;
+    const edge = edges.get(key);
+    if (edge === undefined) {
+      edges.set(key, { ms, covered });
+    } else {
+      edge.ms += ms;
+      edge.covered = edge.covered || covered;
+    }
+  };
+  for (const { segment, coverage } of parts) {
+    const unitMs = segment.level === "1d" ? LEVEL_MS["1d"] : HOUR_MS;
+    const headUnit = floorTo(segment.fromMs, unitMs);
+    const tailUnit = floorTo(segment.toMs - 1, unitMs);
+    if (headUnit === tailUnit) {
+      addEdge(unitMs, headUnit, segment.toMs - segment.fromMs, coverage.coveredUnits > 0);
+      continue;
+    }
+    addEdge(unitMs, headUnit, headUnit + unitMs - segment.fromMs, coverage.headCovered);
+    addEdge(unitMs, tailUnit, segment.toMs - tailUnit, coverage.tailCovered);
+    const interior = coverage.coveredUnits - (coverage.headCovered ? 1 : 0) - (coverage.tailCovered ? 1 : 0);
+    wholeMs += interior * unitMs;
   }
-  const headClip = facts.headCovered ? (segment.fromMs - headUnit) / HOUR_MS : 0;
-  const tailClip = facts.tailCovered ? (tailUnit + unitMs - segment.toMs) / HOUR_MS : 0;
-  return (facts.coveredUnits * unitMs) / HOUR_MS - headClip - tailClip;
+  for (const edge of edges.values()) {
+    if (edge.covered) {
+      wholeMs += edge.ms;
+    }
+  }
+  return wholeMs / HOUR_MS;
 }
 
-/** What one level's statement returns per segment: the four aggregate
- * columns folded over the segment's buckets, and the segment's covered hours
- * (`coveredHoursOf`). Every value is `null`, the count `0` and the covered
- * hours `0` when no bucket exists in the range. */
-export interface SegmentRow {
+/** What one level's statement returns per segment: the segment itself, the
+ * four aggregate columns folded over its buckets, and its three coverage
+ * facts — `combineSegments` folds the facts across the read's segments
+ * (`coveredHoursOf`), never per segment. Every value is `null`, the count `0`
+ * and the facts `{ 0, false, false }` when no bucket exists in the range. */
+export interface SegmentRow extends SegmentCoverage {
   readonly sumValue: number | null;
   readonly sampleCount: number;
   readonly minValue: number | null;
   readonly maxValue: number | null;
-  readonly coveredHours: number;
 }
 
 export type WindowValue = { ok: true; value: number } | { ok: false; reason: "window_empty" | "window_sparse" };
@@ -258,8 +299,9 @@ export type WindowValue = { ok: true; value: number } | { ok: false; reason: "wi
  * scales with the polling rate — is never returned.
  *
  * **A `sum` refuses `window_sparse` below `MIN_WINDOW_COVERAGE`** (ADR 0070
- * Amendment 3, `E4.4`): the rows' `coveredHours` over `elapsedHours` must be
- * at least the threshold, because the mean covers only the samples that
+ * Amendment 3, `E4.4`): the rows' covered hours — `coveredHoursOf` over all
+ * the rows at once, so a clock hour two segments share is merged — over
+ * `elapsedHours` must be at least the threshold, because the mean covers only the samples that
  * arrived while the multiplier is every elapsed hour. The answering branch is
  * the `>=` comparison, so a `NaN` fraction refuses. `Σ sample_count === 0` is
  * `window_empty` and is decided first — a window with no sample is empty, not
@@ -272,11 +314,9 @@ export function combineSegments(
 ): WindowValue {
   let sum = 0;
   let count = 0;
-  let covered = 0;
   let min: number | null = null;
   let max: number | null = null;
   for (const row of rows) {
-    covered += row.coveredHours;
     if (row.sampleCount > 0 && row.sumValue !== null) {
       sum += row.sumValue;
       count += row.sampleCount;
@@ -295,7 +335,7 @@ export function combineSegments(
     case "avg":
       return { ok: true, value: sum / count };
     case "sum": {
-      const fraction = covered / elapsedHours;
+      const fraction = coveredHoursOf(rows) / elapsedHours;
       if (fraction >= MIN_WINDOW_COVERAGE) {
         return { ok: true, value: (sum / count) * elapsedHours };
       }

@@ -15,6 +15,7 @@ import {
   WINDOW_LEVELS,
   windowEndMs,
   type Segment,
+  type SegmentCoverageFacts,
   type SegmentRow,
   type Watermarks,
 } from "./calc-window-plan";
@@ -234,13 +235,23 @@ export function runWindowPlanTilingProperty(): void {
   }
 }
 
+/** No bucket in the segment's range: the three coverage facts of an empty row. */
+const NO_COVERAGE = { coveredUnits: 0, headCovered: false, tailCovered: false } as const;
+const P8_DAY: Segment = { level: "1d", fromMs: Date.parse("2026-09-17T00:00:00Z"), toMs: Date.parse("2026-09-18T00:00:00Z") };
+const P8_MINUTE: Segment = { level: "1m", fromMs: Date.parse("2026-09-18T00:00:00Z"), toMs: Date.parse("2026-09-18T00:01:00Z") };
+const P8_EARLIER: Segment = { level: "1m", fromMs: Date.parse("2026-09-16T23:59:00Z"), toMs: Date.parse("2026-09-17T00:00:00Z") };
+/** A row whose range holds no bucket. */
+function emptyRow(segment: Segment): SegmentRow {
+  return { segment, coverage: NO_COVERAGE, sumValue: null, sampleCount: 0, minValue: null, maxValue: null };
+}
+
 /** P8 — combineSegments: sum is the time integral, never Σ sum_value */
 export function runCombineSegmentsTests(): void {
-  // the full day is covered (ADR 0070 Amendment 3): 24 h in one row, so the
-  // coverage guard answers and P8's claims are about the fold alone
+  // the full day is covered (ADR 0070 Amendment 3): one covered 1d segment is
+  // 24 h, so the coverage guard answers and P8's claims are about the fold alone
   const rows: SegmentRow[] = [
-    { sumValue: 1000, sampleCount: 10, minValue: 100, maxValue: 100, coveredHours: 24 },
-    { sumValue: 200, sampleCount: 1, minValue: 200, maxValue: 200, coveredHours: 0 },
+    { segment: P8_DAY, coverage: { coveredUnits: 1, headCovered: true, tailCovered: true }, sumValue: 1000, sampleCount: 10, minValue: 100, maxValue: 100 },
+    { segment: P8_MINUTE, coverage: NO_COVERAGE, sumValue: 200, sampleCount: 1, minValue: 200, maxValue: 200 },
   ];
   const sum = combineSegments("sum", rows, 24);
   assert(
@@ -261,12 +272,12 @@ export function runCombineSegmentsTests(): void {
   // a segment with no rows contributes nothing and nulls are skipped
   const withEmpty = combineSegments(
     "min",
-    [{ sumValue: null, sampleCount: 0, minValue: null, maxValue: null, coveredHours: 0 }, ...rows],
+    [emptyRow(P8_EARLIER), ...rows],
     24,
   );
   assert(withEmpty.ok === true && withEmpty.value === 100, "P8: an empty segment beside full ones is ignored");
 
-  const empty = combineSegments("avg", [{ sumValue: null, sampleCount: 0, minValue: null, maxValue: null, coveredHours: 0 }], 24);
+  const empty = combineSegments("avg", [emptyRow(P8_DAY)], 24);
   assert(
     empty.ok === false && empty.reason === "window_empty",
     `P8: Σcount 0 is window_empty, got ${JSON.stringify(empty)}`,
@@ -348,57 +359,120 @@ export function runBucketBudgetTests(): void {
 
 /**
  * `coveredHoursOf` — decision 3's three rules as a pure fold over the three
- * facts the level statement returns per segment: a `1d` bucket with samples
- * is 24 h, a `1h` bucket is 1 h, and on `5m`/`1m` each distinct clock hour
- * holding a non-empty bucket counts, clipped to the segment (the one-hour
- * floor). Every instant is built from ISO strings in UTC.
+ * facts the level statement returns per segment, folded once across a read's
+ * segments: a `1d` bucket with samples is 24 h, a `1h` bucket is 1 h, and on
+ * `5m`/`1m` each distinct clock hour holding a non-empty bucket counts (the
+ * one-hour floor), clipped to the window. A clock hour two adjacent segments
+ * share is ONE hour (owner ruling 2026-09-23): covered when any of its parts
+ * holds a sample, and then worth all of its in-window time. Every instant is
+ * built from ISO strings in UTC.
  */
 const T = "2026-09-17";
 const seg = (level: Segment["level"], from: string, to: string): Segment => ({ level, fromMs: utc(from), toMs: utc(to) });
 const near = (actual: number, expected: number): boolean => Math.abs(actual - expected) < 1e-9;
+const facts = (coveredUnits: number, headCovered: boolean, tailCovered: boolean): SegmentCoverageFacts => ({ coveredUnits, headCovered, tailCovered });
 
 /** C1 — a 1d segment: 24 h per covered day; the clips are zero on an aligned segment even with both flags set */
 export function runCoveredHours1dTests(): void {
-  const covered = coveredHoursOf(seg("1d", `${T}T00:00:00Z`, "2026-09-20T00:00:00Z"), { coveredUnits: 2, headCovered: true, tailCovered: true });
+  const covered = coveredHoursOf([{ segment: seg("1d", `${T}T00:00:00Z`, "2026-09-20T00:00:00Z"), coverage: facts(2, true, true) }]);
   assert(covered === 48, `C1: two covered days of a 1d segment are 48 h, got ${covered}`);
 }
 
 /** C2 — a 1h segment: 1 h per covered hour */
 export function runCoveredHours1hTests(): void {
-  const covered = coveredHoursOf(seg("1h", `${T}T10:00:00Z`, `${T}T15:00:00Z`), { coveredUnits: 3, headCovered: true, tailCovered: true });
+  const covered = coveredHoursOf([{ segment: seg("1h", `${T}T10:00:00Z`, `${T}T15:00:00Z`), coverage: facts(3, true, true) }]);
   assert(covered === 3, `C2: three covered hours of a 1h segment are 3 h, got ${covered}`);
 }
 
 /** C3 — a 5m segment spanning two clock hours, both covered: each end is clipped to the segment */
 export function runCoveredHoursClipBothEndsTests(): void {
-  const covered = coveredHoursOf(seg("5m", `${T}T09:57:00Z`, `${T}T10:20:00Z`), { coveredUnits: 2, headCovered: true, tailCovered: true });
+  const covered = coveredHoursOf([{ segment: seg("5m", `${T}T09:57:00Z`, `${T}T10:20:00Z`), coverage: facts(2, true, true) }]);
   // hour 09 clipped to 09:57–10:00 (3 min), hour 10 clipped to 10:00–10:20 (20 min)
   assert(near(covered, 23 / 60), `C3: both covered hours are clipped to the segment, 23/60 h, got ${covered}`);
 }
 
 /** C4 — a 1m segment whose head hour is NOT covered: no head clip is subtracted, and the tail ends on the hour */
 export function runCoveredHoursClipHeadOnlyTests(): void {
-  const covered = coveredHoursOf(seg("1m", `${T}T09:57:00Z`, `${T}T11:00:00Z`), { coveredUnits: 1, headCovered: false, tailCovered: true });
+  const covered = coveredHoursOf([{ segment: seg("1m", `${T}T09:57:00Z`, `${T}T11:00:00Z`), coverage: facts(1, false, true) }]);
   assert(covered === 1, `C4: one covered whole hour (10:00–11:00) with an uncovered head is 1 h, got ${covered}`);
 }
 
 /** C5 — a 1m segment inside one clock hour, covered: the segment's own length */
 export function runCoveredHoursSingleUnitTests(): void {
-  const covered = coveredHoursOf(seg("1m", `${T}T10:00:00Z`, `${T}T10:03:00Z`), { coveredUnits: 1, headCovered: true, tailCovered: true });
+  const covered = coveredHoursOf([{ segment: seg("1m", `${T}T10:00:00Z`, `${T}T10:03:00Z`), coverage: facts(1, true, true) }]);
   assert(covered === 0.05, `C5: a covered segment inside one hour counts its own 3 minutes (0.05 h), got ${covered}`);
 }
 
 /** C5b — the same segment, uncovered: zero */
 export function runCoveredHoursSingleUnitEmptyTests(): void {
-  const covered = coveredHoursOf(seg("1m", `${T}T10:00:00Z`, `${T}T10:03:00Z`), { coveredUnits: 0, headCovered: false, tailCovered: false });
+  const covered = coveredHoursOf([{ segment: seg("1m", `${T}T10:00:00Z`, `${T}T10:03:00Z`), coverage: facts(0, false, false) }]);
   assert(covered === 0, `C5b: an uncovered segment inside one hour is 0 h, got ${covered}`);
 }
 
-/** Rows at a constant 10, split over two segments, whose covered hours total `covered`. */
-function rowsCovering(first: number, second: number): SegmentRow[] {
+// ---- the shared hour (owner ruling 2026-09-23, E4.4 code review finding 1) ----
+//
+// The trace: a 15-min poller reports at :04, :19, :34, :49; a `today` read at
+// an Etc/UTC location ticks at 01:32Z; the 5m watermark is 01:20. The planner
+// gives `5m [00:00, 01:20)` and `1m [01:20, 01:32)` — hour 01 is split between
+// them, and the 1m part (01:20–01:32) holds no sample. 92 elapsed minutes.
+
+const SHARED_5M = seg("5m", `${T}T00:00:00Z`, `${T}T01:20:00Z`);
+const SHARED_1M = seg("1m", `${T}T01:20:00Z`, `${T}T01:32:00Z`);
+const SHARED_ELAPSED_HOURS = 92 / 60;
+
+/** F1a — the trace: hour 01 holds a sample in its 5m part, none in its 1m part — it counts in full, 92 min */
+export function runSharedHourCoveredByTheHeadPartTests(): void {
+  const covered = coveredHoursOf([
+    { segment: SHARED_5M, coverage: facts(2, true, true) },
+    { segment: SHARED_1M, coverage: facts(0, false, false) },
+  ]);
+  assert(near(covered, 92 / 60), `F1a: both clock hours hold a sample, so all 92 in-window minutes are covered, got ${covered * 60} min`);
+}
+
+/** F1a2 — the same trace through combineSegments: the sum answers, not window_sparse */
+export function runSharedHourTraceSumAnswersTests(): void {
+  const rows: SegmentRow[] = [
+    { segment: SHARED_5M, coverage: facts(2, true, true), sumValue: 60, sampleCount: 6, minValue: 10, maxValue: 10 },
+    { segment: SHARED_1M, coverage: facts(0, false, false), sumValue: null, sampleCount: 0, minValue: null, maxValue: null },
+  ];
+  const result = combineSegments("sum", rows, SHARED_ELAPSED_HOURS);
+  assert(result.ok === true && near(result.value, 10 * SHARED_ELAPSED_HOURS), `F1a2: the trace's sum answers 10 × 92/60, got ${JSON.stringify(result)}`);
+}
+
+/** F1b — the mirror: hour 01's 5m part is empty, its 1m part holds a sample — hour 01 counts in full, 32 min */
+export function runSharedHourCoveredByTheTailPartTests(): void {
+  const covered = coveredHoursOf([
+    { segment: SHARED_5M, coverage: facts(1, true, false) },
+    { segment: SHARED_1M, coverage: facts(1, true, true) },
+  ]);
+  // hour 00: 60 min; hour 01: 01:00–01:20 in 5m + 01:20–01:32 in 1m = 32 min
+  assert(near(covered, 92 / 60), `F1b: hour 00 (60 min) and all of hour 01 in the window (32 min), got ${covered * 60} min`);
+}
+
+/** F1c — neither part of the shared hour holds a sample: that hour counts 0 */
+export function runSharedHourUncoveredInBothPartsTests(): void {
+  const covered = coveredHoursOf([
+    { segment: SHARED_5M, coverage: facts(1, true, false) },
+    { segment: SHARED_1M, coverage: facts(0, false, false) },
+  ]);
+  assert(covered === 1, `F1c: only hour 00 is covered, 60 min, got ${covered * 60} min`);
+}
+
+/** F1d — a single segment keeps its clip to the window: [10:15, 11:15) with only hour 10 covered is 45 min */
+export function runSingleSegmentKeepsItsWindowClipTests(): void {
+  const covered = coveredHoursOf([{ segment: seg("5m", `${T}T10:15:00Z`, `${T}T11:15:00Z`), coverage: facts(1, true, false) }]);
+  assert(covered === 0.75, `F1d: a lone segment's covered head hour counts only its in-window 45 min, got ${covered * 60} min`);
+}
+
+const G_DAYS = seg("1d", "2026-08-01T00:00:00Z", "2026-08-26T00:00:00Z");
+const G_HOURS = seg("1h", "2026-08-26T00:00:00Z", "2026-08-31T00:00:00Z");
+/** Rows at a constant 10 over two segments — 25 days on `1d`, 120 hours on
+ * `1h` — whose covered hours are `coveredDayHours + coveredHours`. */
+function rowsCovering(coveredDayHours: number, coveredHours: number): SegmentRow[] {
+  const days = coveredDayHours / 24;
   return [
-    { sumValue: 500, sampleCount: 10, minValue: 20, maxValue: 80, coveredHours: first },
-    { sumValue: 100, sampleCount: 10, minValue: 5, maxValue: 15, coveredHours: second },
+    { segment: G_DAYS, coverage: facts(days, days > 0, days === 25), sumValue: 500, sampleCount: 10, minValue: 20, maxValue: 80 },
+    { segment: G_HOURS, coverage: facts(coveredHours, coveredHours > 0, coveredHours === 120), sumValue: 100, sampleCount: 10, minValue: 5, maxValue: 15 },
   ];
 }
 
@@ -423,7 +497,7 @@ export function runNaNCoverageRefusesTests(): void {
 
 /** G4 — a window with no sample is window_empty, never window_sparse, on a sum */
 export function runEmptyBeatsSparseTests(): void {
-  const result = combineSegments("sum", [{ sumValue: null, sampleCount: 0, minValue: null, maxValue: null, coveredHours: 0 }], 24);
+  const result = combineSegments("sum", [emptyRow(P8_DAY)], 24);
   assert(result.ok === false && result.reason === "window_empty", `G4: an empty sum window is window_empty, got ${JSON.stringify(result)}`);
   assert(!(result.ok === false && result.reason === "window_sparse"), "G4: an empty window is never reported as window_sparse");
 }

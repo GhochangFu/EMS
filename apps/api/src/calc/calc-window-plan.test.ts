@@ -15,6 +15,11 @@ import {
   runMinOverSparseRowsAnswersTests,
   runMinWindowCoverageIsNinetyPercentTests,
   runNaNCoverageRefusesTests,
+  runSharedHourCoveredByTheHeadPartTests,
+  runSharedHourCoveredByTheTailPartTests,
+  runSharedHourTraceSumAnswersTests,
+  runSharedHourUncoveredInBothPartsTests,
+  runSingleSegmentKeepsItsWindowClipTests,
   runSumAtExactlyTheThresholdAnswersTests,
   runSumJustBelowTheThresholdRefusesTests,
   runDeltaOfTests,
@@ -84,6 +89,21 @@ describe("calc window plan — the covered-time fold and the window_sparse guard
   });
   it("C5b an uncovered segment inside one hour counts 0 h", () => {
     runCoveredHoursSingleUnitEmptyTests();
+  });
+  it("F1a a clock hour split between a 5m and a 1m segment, covered only in its 5m part, counts in full (92 min)", () => {
+    runSharedHourCoveredByTheHeadPartTests();
+  });
+  it("F1a2 the shared-hour trace's sum answers rather than window_sparse", () => {
+    runSharedHourTraceSumAnswersTests();
+  });
+  it("F1b the mirror: covered only in its 1m part, the shared hour counts in full (92 min)", () => {
+    runSharedHourCoveredByTheTailPartTests();
+  });
+  it("F1c a shared hour with no sample in either part counts 0 h", () => {
+    runSharedHourUncoveredInBothPartsTests();
+  });
+  it("F1d a single segment keeps its clip to the window (45 min)", () => {
+    runSingleSegmentKeepsItsWindowClipTests();
   });
   it("G1 a sum at exactly 90% coverage (648/720) answers", () => {
     runSumAtExactlyTheThresholdAnswersTests();
