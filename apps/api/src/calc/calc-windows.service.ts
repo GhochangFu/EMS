@@ -35,8 +35,10 @@ export type WindowReadRequest = {
 
 /** `windows_unresolved` here is the budget refusal (`MAX_WINDOW_BUCKETS` / `MAX_LIVE_MINUTES`):
  * the read was not attempted, and `detail` names the watermarks so the host
- * can warn once per sweep. The other two are data. */
-export type WindowReadReason = "window_empty" | "timezone_unset" | "windows_unresolved";
+ * can warn once per sweep. The other three are data: `window_sparse` is a
+ * `sum` whose covered time is below `MIN_WINDOW_COVERAGE` of its elapsed
+ * window (ADR 0070 Amendment 3, `E4.4`). */
+export type WindowReadReason = "window_empty" | "window_sparse" | "timezone_unset" | "windows_unresolved";
 
 export type WindowReadResult = { ok: true; value: number } | { ok: false; reason: WindowReadReason; detail?: string };
 
@@ -53,6 +55,20 @@ const VIEW_NAMES: Readonly<Record<AggregateLevel, string>> = {
   "5m": "point_values_5m",
   "1h": "point_values_1h",
   "1d": "point_values_1d",
+};
+
+/** The coverage unit per level (ADR 0070 Amendment 3 decision 3) — a
+ * literal chosen here from a closed map, never from the formula, like
+ * `PERIOD_UNIT`: a `1d` bucket with samples covers its day; every finer level
+ * is counted in clock hours (the one-hour floor). `time_bucket` on a
+ * `timestamptz` at these widths is epoch-aligned in UTC — the alignment of the
+ * `0027` views and of `LEVEL_MS` flooring in the planner — so the session
+ * `TimeZone` cannot leak in. `coveredHoursOf` reads the same widths. */
+const COVERAGE_UNIT_SQL: Readonly<Record<AggregateLevel, string>> = {
+  "1d": "INTERVAL '1 day'",
+  "1h": "INTERVAL '1 hour'",
+  "5m": "INTERVAL '1 hour'",
+  "1m": "INTERVAL '1 hour'",
 };
 
 /** `date_trunc` unit per calendar window — mapped in TS, never interpolated
@@ -118,6 +134,18 @@ type Planned = {
  * rows beyond the `1m` watermark (a blocked refresh) is refused before any
  * level statement runs, as `windows_unresolved` with the watermarks in
  * `detail`.
+ *
+ * **Covered time rides in the level statement** (ADR 0070 Amendment 3
+ * decision 3, `E4.4`). A window `sum` refuses `window_sparse` below
+ * `MIN_WINDOW_COVERAGE`, so each level statement returns three more
+ * aggregates per segment — the distinct coverage units (days on `1d`, clock
+ * hours below) holding a non-empty bucket, and whether the segment's first
+ * and last units are among them — inside the same lateral, over the same
+ * single scan. No statement is added, so the budget of seven holds;
+ * `combineSegments` folds the facts into hours with `coveredHoursOf` across
+ * all of a read's segments at once — a clock hour two adjacent segments share
+ * is merged, covered when any of its parts holds a sample (owner ruling
+ * 2026-09-23, from the `E4.4` code review) — and guards `sum` alone.
  */
 @Injectable()
 export class CalcWindowsService {
@@ -292,21 +320,46 @@ export class CalcWindowsService {
     }
     const pointKeyOf = (request: WindowReadRequest): string =>
       request.node.kind === "window" ? request.node.ref.pointKey : "";
+    // `Object.hasOwn`, not a bare index — the `aggregateRelation` guard: this
+    // string is interpolated into SQL too.
+    if (!Object.hasOwn(COVERAGE_UNIT_SQL, level)) {
+      throw new Error(`calc windows: no coverage unit for level ${level}`);
+    }
+    const unit = COVERAGE_UNIT_SQL[level];
+    // The last three columns are the segment's coverage facts (ADR 0070
+    // Amendment 3 decision 3). count(DISTINCT unit), never count(*): two
+    // buckets in one hour are one covered hour. Never sum(DISTINCT length)
+    // either, which dedupes by value, not by hour. The sample_count > 0
+    // filter is the test combineSegments applies; the views have no
+    // gapfill, so a bucket row exists only where samples do and no case
+    // can redden that filter.
+    // Nor can a case redden the 1d unit alone: every 1d bucket starts at a
+    // UTC midnight, so counting it by hour gives the same distinct days;
+    // coveredHoursOf's 24 h width for 1d is what the dense month holds.
+    // The 1h unit IS gated: the sparse suite's S6 reads three covered hours
+    // from 1h alone, and '1 day' there collapses them into one or two days.
     const { rows: result } = await this.pool.query<{
       idx: number;
       sum_value: number | null;
       sample_count: string | number | null;
       min_value: number | null;
       max_value: number | null;
+      covered_units: string | number | null;
+      head_covered: boolean | null;
+      tail_covered: boolean | null;
     }>(
-      `SELECT p.idx, x.sum_value, x.sample_count, x.min_value, x.max_value
+      `SELECT p.idx, x.sum_value, x.sample_count, x.min_value, x.max_value,
+              x.covered_units, x.head_covered, x.tail_covered
          FROM unnest($1::int[], $2::uuid[], $3::varchar[], $4::timestamptz[], $5::timestamptz[])
               AS p(idx, asset_id, point_key, from_t, to_t)
          CROSS JOIN LATERAL (
            SELECT sum(v.sum_value) AS sum_value,
                   sum(v.sample_count) AS sample_count,
                   min(v.min_value) AS min_value,
-                  max(v.max_value) AS max_value
+                  max(v.max_value) AS max_value,
+                  count(DISTINCT time_bucket(${unit}, v.bucket)) FILTER (WHERE v.sample_count > 0) AS covered_units,
+                  coalesce(bool_or(time_bucket(${unit}, v.bucket) = time_bucket(${unit}, p.from_t)) FILTER (WHERE v.sample_count > 0), false) AS head_covered,
+                  coalesce(bool_or(time_bucket(${unit}, v.bucket) = time_bucket(${unit}, p.to_t - INTERVAL '1 millisecond')) FILTER (WHERE v.sample_count > 0), false) AS tail_covered
              FROM ${relation} v
             WHERE v.asset_id = p.asset_id
               AND v.point_key = p.point_key
@@ -324,8 +377,17 @@ export class CalcWindowsService {
     for (const row of result) {
       const target = targets[row.idx];
       const list = rows.get(target.index) ?? [];
-      // `sample_count` is `numeric` in the view and arrives as a string
+      // `sample_count` is `numeric` in the view and `covered_units` a
+      // `bigint` count; both arrive as strings. The facts stay raw here:
+      // `combineSegments` folds them across the read's segments at once, so a
+      // clock hour two segments share is merged (owner ruling 2026-09-23)
       list.push({
+        segment: target.segment,
+        coverage: {
+          coveredUnits: Number(row.covered_units ?? 0),
+          headCovered: row.head_covered === true,
+          tailCovered: row.tail_covered === true,
+        },
         sumValue: row.sum_value,
         sampleCount: row.sample_count === null ? 0 : Number(row.sample_count),
         minValue: row.min_value,

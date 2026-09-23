@@ -20,7 +20,8 @@ function count(skips: readonly string[], reason: string): number {
  * host collects every read of every DUE `v3` definition once per sweep,
  * hands them to `CalcWindowsService` in one call, and serves `evaluate`'s
  * fifth map from the answers. An `ok: false` answer is a counted refusal
- * under its own reason (`window_empty` / `timezone_unset`) that writes
+ * under its own reason (`window_empty` / `window_sparse` / `timezone_unset`
+ * — `window_sparse` since `E4.4`, ADR 0070 Amendment 3) that writes
  * nothing; a thrown batch refuses every definition holding a window read as
  * `windows_unresolved` (plan ruling Q8, the mirror of
  * `parameters_unresolved`) and touches nothing else. The order inside one
@@ -30,7 +31,7 @@ function count(skips: readonly string[], reason: string): number {
  */
 const V3 = { dialect: CALC_DIALECT_V3 } as const;
 const ok = (value: number): WindowReadResult => ({ ok: true, value });
-const refused = (reason: "window_empty" | "timezone_unset"): WindowReadResult => ({ ok: false, reason });
+const refused = (reason: "window_empty" | "window_sparse" | "timezone_unset"): WindowReadResult => ({ ok: false, reason });
 
 function readsOf(formula: string): CalcWindowRead[] {
   return def({ ...V3, formula }).windowReads;
@@ -69,6 +70,23 @@ export async function emptyWindowRefusesWithoutARow(): Promise<void> {
   assert(count(skips, "window_empty") === 1 && skips.length === 1, `exactly one window_empty skip, got ${JSON.stringify(skips)}`);
   const recorded = status.get("asset-1", "tp-kwh");
   assert(recorded?.outcome === "skipped" && recorded.reason === "window_empty", `the registry reads skipped/window_empty, got ${JSON.stringify(recorded)}`);
+}
+
+/** H11 — window_sparse (ADR 0070 Amendment 3, E4.4) is treated exactly as window_empty: one skip, no row, the v1 sibling still writes */
+export async function sparseWindowRefusesWithoutARow(): Promise<void> {
+  const daily = def({ ...V3, pointKey: "KWH_DAY", templatePointId: "tp-kwh", formula: "sum({kw}, 24h)" });
+  const plain = def({ pointKey: "PLAIN", templatePointId: "tp-plain", formula: "{kw} * 2" });
+  const [sumRead] = readsOf("sum({kw}, 24h)");
+  const samples = new Map([["asset-1:kw", { value: 200, timeMs: 0 }]]);
+  const windows = new Map([[windowFakeKey("asset-1", sumRead), refused("window_sparse")]]);
+  const { deps, writes, skips, status } = buildSweepDeps([daily, plain], samples, { windows });
+  await runScheduledSweep(deps, new Map(), 0);
+  const batch = writes.flat();
+  assert(batch.length === 1 && batch[0]?.pointKey === "PLAIN" && batch[0].value === 400, `only the v1 sibling writes, got ${JSON.stringify(batch)}`);
+  assert(!batch.some((w) => w.pointKey === "KWH_DAY"), "a sparse window writes NO row — never an extrapolated sum");
+  assert(count(skips, "window_sparse") === 1 && skips.length === 1, `exactly one window_sparse skip, got ${JSON.stringify(skips)}`);
+  const recorded = status.get("asset-1", "tp-kwh");
+  assert(recorded?.outcome === "skipped" && recorded.reason === "window_sparse", `the registry reads skipped/window_sparse, got ${JSON.stringify(recorded)}`);
 }
 
 /** H3 — timezone_unset likewise */

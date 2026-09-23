@@ -79,6 +79,18 @@ export const MAX_WINDOW_BUCKETS = 20_000;
  */
 export const MAX_LIVE_MINUTES = 180;
 
+/**
+ * The least covered fraction of its elapsed window a window `sum` answers at
+ * (ADR 0070 Amendment 3 decision 4, `E4.4`). Below it the read refuses as
+ * `window_sparse`: `sum` is `avg × elapsed hours`, and a mean over the samples
+ * that arrived, multiplied by every hour, extrapolates across a gap. One
+ * fraction for every window kind — about 2.4 hours of a day, three days of a
+ * month, 36 days of a year. `combineSegments` writes the comparison so that
+ * the answering branch is `fraction >= MIN_WINDOW_COVERAGE`, the comparison
+ * that is false for `NaN`: a fraction that is not a number refuses.
+ */
+export const MIN_WINDOW_COVERAGE = 0.9;
+
 /** How many buckets a plan folds — the cost `MAX_WINDOW_BUCKETS` bounds. */
 export function bucketCount(segments: readonly Segment[]): number {
   let total = 0;
@@ -183,31 +195,122 @@ export function planWindowSegments(args: { startMs: number; endMs: number; water
   return segments.sort((a, b) => a.fromMs - b.fromMs);
 }
 
-/** What one level's statement returns per segment: the four aggregate
- * columns folded over the segment's buckets. Every value is `null` and the
- * count `0` when no bucket exists in the range. */
-export interface SegmentRow {
+/** The three coverage facts one level's statement returns per segment (ADR
+ * 0070 Amendment 3 decision 3): how many distinct coverage units — clock days
+ * on `1d`, clock hours on the other three levels — hold a bucket with
+ * `sample_count > 0`, and whether the unit holding the segment's first
+ * instant and the one holding its last instant are among them. */
+export interface SegmentCoverageFacts {
+  readonly coveredUnits: number;
+  readonly headCovered: boolean;
+  readonly tailCovered: boolean;
+}
+
+/** One segment of a read and the three coverage facts its level statement
+ * returned for it — the input of the covered-time fold. */
+export interface SegmentCoverage {
+  readonly segment: Segment;
+  readonly coverage: SegmentCoverageFacts;
+}
+
+/**
+ * The covered hours of one read, folded once across ALL of its segments (ADR
+ * 0070 Amendment 3 decision 3, `E4.4`). Three rules: a `1d` segment
+ * contributes 24 h for each day holding a non-empty bucket; a `1h` segment 1 h
+ * for each such hour; a `5m` or `1m` segment each distinct clock hour holding
+ * such a bucket — the one-hour floor, because a measured point declares no
+ * polling interval and a five-minute poller fills one `1m` bucket in five.
+ *
+ * **A clock hour two segments share is one hour** (owner ruling 2026-09-23,
+ * from the `E4.4` code review — "an hour that holds a sample counts as
+ * covered" wins over "clipped to the segment"). The planner can split one
+ * clock hour between adjacent sub-day segments — at the live tail, a `5m`
+ * segment ending at the `5m` watermark (say 01:20) and a `1m` segment after
+ * it. That hour is covered when ANY of its in-window parts holds a sample,
+ * and a covered hour contributes ALL of its in-window time: the sum of its
+ * parts in every segment, which is clipped to the window only, never to one
+ * segment. So each segment's head and tail units are collected by unit, and
+ * the units wholly inside a segment (never shared) are counted from
+ * `coveredUnits`. A segment inside one unit is a single part, covered when
+ * `coveredUnits > 0`. `1d` segments keep day resolution: their boundaries lie
+ * on day lines, so they never share a unit with an hour piece, and the unit
+ * key carries the width so the two can never collide. The fold does not
+ * depend on the rows' order — `resolveReads` hands them over level by level.
+ *
+ * **The limit, stated.** Completed days behind the `1d` watermark are served
+ * from `1d` buckets, so on those days the resolution is a day: a day with one
+ * sample counts as covered. A ten-day outage is caught; a twelve-hour gap
+ * inside an old day is not.
+ */
+export function coveredHoursOf(parts: readonly SegmentCoverage[]): number {
+  let wholeMs = 0;
+  const edges = new Map<string, { ms: number; covered: boolean }>();
+  const addEdge = (unitMs: number, unitStart: number, ms: number, covered: boolean): void => {
+    const key = `${unitMs}@${unitStart}`;
+    const edge = edges.get(key);
+    if (edge === undefined) {
+      edges.set(key, { ms, covered });
+    } else {
+      edge.ms += ms;
+      edge.covered = edge.covered || covered;
+    }
+  };
+  for (const { segment, coverage } of parts) {
+    const unitMs = segment.level === "1d" ? LEVEL_MS["1d"] : HOUR_MS;
+    const headUnit = floorTo(segment.fromMs, unitMs);
+    const tailUnit = floorTo(segment.toMs - 1, unitMs);
+    if (headUnit === tailUnit) {
+      addEdge(unitMs, headUnit, segment.toMs - segment.fromMs, coverage.coveredUnits > 0);
+      continue;
+    }
+    addEdge(unitMs, headUnit, headUnit + unitMs - segment.fromMs, coverage.headCovered);
+    addEdge(unitMs, tailUnit, segment.toMs - tailUnit, coverage.tailCovered);
+    const interior = coverage.coveredUnits - (coverage.headCovered ? 1 : 0) - (coverage.tailCovered ? 1 : 0);
+    wholeMs += interior * unitMs;
+  }
+  for (const edge of edges.values()) {
+    if (edge.covered) {
+      wholeMs += edge.ms;
+    }
+  }
+  return wholeMs / HOUR_MS;
+}
+
+/** What one level's statement returns per segment: the segment itself, the
+ * four aggregate columns folded over its buckets, and its three coverage
+ * facts — `combineSegments` folds the facts across the read's segments
+ * (`coveredHoursOf`), never per segment. Every value is `null`, the count `0`
+ * and the facts `{ 0, false, false }` when no bucket exists in the range. */
+export interface SegmentRow extends SegmentCoverage {
   readonly sumValue: number | null;
   readonly sampleCount: number;
   readonly minValue: number | null;
   readonly maxValue: number | null;
 }
 
-export type WindowValue = { ok: true; value: number } | { ok: false; reason: "window_empty" };
+export type WindowValue = { ok: true; value: number } | { ok: false; reason: "window_empty" | "window_sparse" };
 
 /**
  * Folds the per-segment rows into the window's value (plan design decision
  * 6). `avg` is `Σ sum_value / Σ sample_count` — the only correct mean over
  * unequal buckets (`point-aggregates.ts` reason 1). **`sum` is `avg ×
- * hoursCovered`, the time integral** (ADR 0070 decision 5, ruled at Q6): a kW
- * point gives kWh over the whole window, samples missing or not. `Σ
- * sum_value` — a sum of raw samples that scales with the polling rate — is
- * never returned. `Σ sample_count === 0` is `window_empty`.
+ * elapsedHours`, the time integral** (ADR 0070 decision 5, ruled at Q6): a kW
+ * point gives kWh over the window. `Σ sum_value` — a sum of raw samples that
+ * scales with the polling rate — is never returned.
+ *
+ * **A `sum` refuses `window_sparse` below `MIN_WINDOW_COVERAGE`** (ADR 0070
+ * Amendment 3, `E4.4`): the rows' covered hours — `coveredHoursOf` over all
+ * the rows at once, so a clock hour two segments share is merged — over
+ * `elapsedHours` must be at least the threshold, because the mean covers only the samples that
+ * arrived while the multiplier is every elapsed hour. The answering branch is
+ * the `>=` comparison, so a `NaN` fraction refuses. `Σ sample_count === 0` is
+ * `window_empty` and is decided first — a window with no sample is empty, not
+ * sparse. `avg`, `min` and `max` do not extrapolate and ignore coverage.
  */
 export function combineSegments(
   fn: Exclude<CalcWindowFnName, "delta">,
   rows: readonly SegmentRow[],
-  hoursCovered: number,
+  elapsedHours: number,
 ): WindowValue {
   let sum = 0;
   let count = 0;
@@ -231,8 +334,13 @@ export function combineSegments(
   switch (fn) {
     case "avg":
       return { ok: true, value: sum / count };
-    case "sum":
-      return { ok: true, value: (sum / count) * hoursCovered };
+    case "sum": {
+      const fraction = coveredHoursOf(rows) / elapsedHours;
+      if (fraction >= MIN_WINDOW_COVERAGE) {
+        return { ok: true, value: (sum / count) * elapsedHours };
+      }
+      return { ok: false, reason: "window_sparse" };
+    }
     case "min":
       return { ok: true, value: min };
     case "max":

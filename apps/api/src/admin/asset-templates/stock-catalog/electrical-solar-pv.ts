@@ -481,8 +481,10 @@ export const ELECTRICAL_SOLAR_PV: StockAssetTemplateEntry = {
       sortOrder: 25,
     },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. Four `bms-calc-v3` rows, each
-    // scheduled at 60 s; no coverage guard applies (`minCoverageRatio` governs
-    // a `@scope` aggregate only, ADR 0055 decision 11), no `meta`; every
+    // scheduled at 60 s; `minCoverageRatio` governs a `@scope` aggregate only
+    // (ADR 0055 decision 11); a window `sum` refuses `window_sparse` below
+    // 90% coverage of the elapsed window (ADR 0070 Amendment 3, `E4.4`) and a
+    // window with no samples refuses `window_empty`, no `meta`; every
     // window read inline (design decision 6).
     {
       ...derived("delta({energy_total_kwh}, today) * $grid_carbon_factor_kgco2_per_kwh", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),

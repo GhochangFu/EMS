@@ -159,9 +159,12 @@ import type { StockAssetTemplateEntry } from "./types";
  *    derived point appended at `sortOrder` 30 — `tap_changes_per_day =
  *    delta({oltc_operation_count}, 24h)`, the ledger promotion (ADR 0070
  *    decision 8). What an importing tenant must know: the row is `scheduled`
- *    at 60 s, so the value is at most one tick old; no coverage guard
- *    applies (`minCoverageRatio` governs a `@scope` aggregate only, ADR 0055
- *    decision 11); `oltc_operation_count` is tier X and an asset that
+ *    at 60 s, so the value is at most one tick old; `minCoverageRatio`
+ *    governs a `@scope` aggregate only (ADR 0055 decision 11), a window
+ *    `sum` refuses `window_sparse` below 90% coverage of the elapsed window
+ *    (ADR 0070 Amendment 3, `E4.4`) and a window with no samples refuses
+ *    `window_empty` — this row is `delta`, so neither guard touches it;
+ *    `oltc_operation_count` is tier X and an asset that
  *    has not mapped it refuses `missing_input`; a rolling `24h` window needs
  *    no time zone (a calendar one would). No `$key`, so nothing to enter on
  *    `/admin/calc-parameters`.

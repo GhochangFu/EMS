@@ -187,7 +187,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    Four things an importing tenant must know: (1) the row reads no `$key`,
  *    so it never waits on `/admin/calc-parameters`; (2) the rolling `24h`
  *    window needs no time zone; (3) the row is `scheduled` at 60 s — at most
- *    one tick old — — no coverage guard applies (`minCoverageRatio` governs `@scope` aggregates only, ADR 0055 decision 11) and a window with no samples refuses `window_empty`; (4) `kw` is
+ *    one tick old — `minCoverageRatio` governs a `@scope` aggregate only
+ *    (ADR 0055 decision 11); this row's `sum` refuses `window_sparse` below
+ *    90% coverage of the elapsed window (ADR 0070 Amendment 3, `E4.4`) and a
+ *    window with no samples refuses `window_empty`; (4) `kw` is
  *    tier X, so an asset without it refuses `missing_input`, visibly.
  *    Nothing on a stack is mutated by the bump — a re-import opens the next
  *    version, still stamped.
@@ -692,7 +695,10 @@ export const HVAC_AHU: StockAssetTemplateEntry = {
       sortOrder: 27,
     },
     // `E4.1c` — ADR 0070 decision 8, plan §3.7. One `bms-calc-v3` row,
-    // scheduled at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`. The
+    // scheduled at 60 s; `minCoverageRatio` governs a `@scope` aggregate only
+    // (ADR 0055 decision 11); this `sum` refuses `window_sparse` below 90%
+    // coverage of the elapsed window (ADR 0070 Amendment 3, `E4.4`) and a
+    // window with no samples refuses `window_empty`, no `meta`. The
     // window read is inline (design decision 6); `kw` is tier X (declared, not
     // required), which is legal and refuses `missing_input` where absent.
     {

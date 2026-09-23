@@ -14,14 +14,25 @@ import { assert } from "./stock-catalog.spec";
  * `sum` is `avg × hours`, and the label has to say so.**
  *
  * `combineSegments` (`apps/api/src/calc/calc-window-plan.ts`) returns a window
- * `sum` as `(Σ sum_value / Σ sample_count) * hoursCovered`, where
- * `hoursCovered` is `hoursOf(startMs, endMs)` — every hour that has elapsed in
- * the calendar period, not the hours a sample actually arrived in. The only
- * refusal is `Σ sample_count === 0`. So a flow meter that was offline for ten
- * days of a thirty-day month still reports a whole month of water, computed
- * from the twenty days it did report, and the derived point is written a minute
- * ago so the roll-up counts the asset as `fresh`. ADR 0070 consequence 9 states
- * this; ADR 0072 did not carry it forward onto the codes it shipped.
+ * `sum` as `(Σ sum_value / Σ sample_count) * elapsedHours`, where
+ * `elapsedHours` is `hoursOf(startMs, endMs)` — every hour that has elapsed in
+ * the calendar period, not the hours a sample actually arrived in. So a flow
+ * meter that was offline for part of a calendar month still reports a whole
+ * month of water, computed from the days it did report, and the derived point
+ * is written a minute ago so the roll-up counts the asset as `fresh`. ADR 0070
+ * consequence 9 states this; ADR 0072 did not carry it forward onto the codes
+ * it shipped.
+ *
+ * **Since `E4.4` (ADR 0070 Amendment 3) the mechanism is guarded, not
+ * unconditional.** The refusal used to be `Σ sample_count === 0` alone; now the
+ * same `sum` refuses `window_sparse` below 90% coverage of the elapsed window,
+ * and `window_empty` still fires first on no samples at all. The qualifier
+ * this file pins remains true only **above** that threshold — within the 10%
+ * margin the label's "estimated over the whole period" is exactly what the
+ * value is; below it the row answers nothing at all, so there is no label left
+ * to qualify. The assertions here are unchanged: `window_sparse` is a runtime
+ * refusal at evaluation, not a property of the stock label text this module
+ * scans.
  *
  * **The claim is driven from the formula text, never from a list of the
  * twenty-four codes that exist today.** A hardcoded list is green the day a
@@ -30,9 +41,10 @@ import { assert } from "./stock-catalog.spec";
  *
  * **The `delta` control is the half that matters.** `delta({kwh_total},
  * this_month)` is last-minus-first over the window — a real register
- * difference, immune to the mechanism — so the feeder's and the solar PV's
- * eight calendar-window codes must NOT carry the qualifier. Without that
- * assertion, appending the phrase to every row in the catalog would pass.
+ * difference, immune to the mechanism (and to the `E4.4` coverage guard, which
+ * governs `sum` only) — so the feeder's and the solar PV's eight
+ * calendar-window codes must NOT carry the qualifier. Without that assertion,
+ * appending the phrase to every row in the catalog would pass.
  */
 
 /** The phrase every affected label carries. Spelled once here, and once per
@@ -55,7 +67,14 @@ const CALENDAR_PERIOD = /,\s*(this_month|this_year)\s*\)/;
  * and both carry the same limitation. Named — never silently filtered by
  * domain — so that the owner's ruling on the twenty-four is what this
  * exemption records, and so a third such row is a new line here rather than an
- * invisible pass. */
+ * invisible pass.
+ *
+ * The exemption is from the **label** only. Since `E4.4` these two rows'
+ * `sum` refuses `window_sparse` below 90% coverage exactly like every other
+ * window `sum` in the catalog — `combineSegments` does not read a pointKey to
+ * decide whether to guard. What `RULED_OUT_OF_SCOPE` withholds is the
+ * "estimated over the whole period" wording on their labels, which is a
+ * separate, owner-ruled decision about text, not about the engine. */
 const RULED_OUT_OF_SCOPE: ReadonlySet<string> = new Set([
   "isolation_hours_month",
   "out_of_service_hours_month",

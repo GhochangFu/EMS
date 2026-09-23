@@ -203,8 +203,10 @@ import type { StockAssetTemplateEntry } from "./types";
  *    points at `sortOrder` 80-83 (plan §3.7; the bullet above). A tenant must
  *    know: no row reads a `$key`; `this_month` needs the location's zone and
  *    refuses `window_empty` for one tick after local midnight on the first;
- *    every row is `scheduled` at 60 s; no coverage guard applies (ADR 0055
- *    decision 11 — `@scope` only); `door_cycle_count` and `trip_count` are tier X — absent, the two
+ *    every row is `scheduled` at 60 s; `minCoverageRatio` governs `@scope`
+ *    only (ADR 0055 decision 11); `out_of_service_hours_month`'s `sum`
+ *    refuses `window_sparse` below 90% coverage (ADR 0070 Amendment 3,
+ *    `E4.4`); `door_cycle_count` and `trip_count` are tier X — absent, the two
  *    counts refuse `missing_input`. A re-import opens the next version.
  *
  * **`content.dashboards.overview` — F3.2 (ADR 0067 decision 6, amended by Q9).** One
@@ -972,8 +974,10 @@ export const MECHANICAL_LIFT: StockAssetTemplateEntry = {
       sortOrder: 79,
     },
     // ---- `E4.1c` — ADR 0070 decision 8, plan §3.7. Four `bms-calc-v3` rows,
-    // scheduled at 60 s, no coverage guard (a window with no samples refuses `window_empty`), no `meta`; a
-    // count carries "" (Q8). Two-line rows: this module is near the §4.5 cap.
+    // scheduled at 60 s; `minCoverageRatio` governs `@scope` only (ADR 0055
+    // decision 11); the last row's `sum` refuses `window_sparse` below 90%
+    // coverage (ADR 0070 Amendment 3, `E4.4`), no `meta`; a count carries ""
+    // (Q8). Two-line rows: this module is near the §4.5 cap.
     {
       ...derived("avg({lift_in_service}, 24h) * 100", { calcTrigger: "scheduled", calcIntervalSeconds: 60, formulaDialect: CALC_DIALECT_V3 }),
       pointKey: "availability_pct_24h", label: "Availability, trailing 24 h", unit: "%", required: false, sortOrder: 80,
