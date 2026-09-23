@@ -42,6 +42,7 @@ import {
   l4ConsumedIsNullWithAPreV5Discharge,
   l4CoverageIsOneOfOne,
   l6ByLocationListsL6,
+  l7ConsumedIsNullWithANonCarryingIntake,
   byLocationBesideTheBalanceStillListsL2,
   callerScopeOfWAloneIsOneRow,
   l1ConsumedIsFortyThree,
@@ -548,6 +549,11 @@ describe.skipIf(!connectionString)("E4.2 U4 — the by_location cap is reached",
  * of `resolveAssetScope` already drops inactive assets — only a location scope reaches V, so
  * only there can `readBalanceLocations`' own `a.active` decide.
  *
+ * The PR 2 post-merge sweep added L7 (the intake ruling): X intake (`kl_today` 1000), Y intake
+ * pinned to a third template with no `kl_today`, and Z discharge (`outlet_kl_today` 300). L7
+ * is read through an L7-scoped dashboard with X, Y and Z as the readable set; they are left out
+ * of `fixtureAssets`, so no org-wide claim sees them.
+ *
  * Every row carries the `E43`/`e43` per-run prefix and is deleted in `afterAll`; nothing here
  * runs inside a transaction, so nothing depends on a rollback. The telemetry DELETE is bounded
  * by time for the hypertable reason the first fixture states.
@@ -621,6 +627,7 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
     const l4 = await mkLocation("L4");
     const l5 = await mkLocation("L5");
     const l6 = await mkLocation("L6");
+    const l7 = await mkLocation("L7");
 
     const template = await superuserPool.query<{ id: string }>(
       `INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain, status, published_at)
@@ -643,6 +650,16 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
        VALUES ($1, $2, 'kl_today', 'measured', false)`,
       [orgId, preV5TemplateId],
     );
+    // The PR 2 post-merge sweep (the intake ruling) — a water template with NO `kl_today` and
+    // no points at all, so no calc sweep writes anything for it and `readRollupRows` returns no
+    // intake row for an asset pinned to it.
+    const noKl = await superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain, status, published_at)
+       VALUES ($1, $2, 'E4.3 no-kl template', 'meter', $3, 'published', now()) RETURNING id`,
+      [orgId, `e43-u9n-${RUN}`, domainCode],
+    );
+    const noKlTemplateId = noKl.rows[0]?.id ?? "";
+    templateIds.push(noKlTemplateId);
     await superuserPool.query(
       `INSERT INTO bms.template_points
          (organization_id, template_id, point_key, kind, formula, formula_dialect, calc_trigger, calc_interval_seconds, required)
@@ -679,6 +696,12 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
     await mkAsset(l4.id, "Q", "discharge", preV5TemplateId);
     await mkAsset(l5.id, "T", "internal");
     const v = await mkAsset(l6.id, "V", "intake", templateId, false);
+    // L7 is read only through its own dashboard with its own readable set, so it moves none of
+    // the org-wide claims above: X intake 1000, Y intake on the no-kl template, Z discharge 300.
+    const x = await mkAsset(l7.id, "X", "intake");
+    const y = await mkAsset(l7.id, "Y", "intake", noKlTemplateId);
+    const z = await mkAsset(l7.id, "Z", "discharge");
+    const l7Assets = [x, y, z];
 
     await superuserPool.query(
       `INSERT INTO telemetry.point_values (time, asset_id, point_key, value) VALUES
@@ -689,8 +712,10 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
          (now(), $5, 'kl_today', 20),
          (now() - interval '10 minutes', $6, 'outlet_kl_today', 3),
          (now(), $7, 'kl_today', 30),
-         (now(), $8, 'kl_today', 60)`,
-      [w, s, e, r, i, d, p, v],
+         (now(), $8, 'kl_today', 60),
+         (now(), $9, 'kl_today', 1000),
+         (now(), $10, 'outlet_kl_today', 300)`,
+      [w, s, e, r, i, d, p, v, x, z],
     );
 
     /** A dashboard of `table` widgets, one per binding; `locationId` scopes it to one site. */
@@ -734,6 +759,7 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
       byLocation,
     ]);
     const l6Dash = await mkDashboard("l6", l6.id, [today, byLocation]);
+    const l7Dash = await mkDashboard("l7", l7.id, [today]);
 
     fixture = {
       service,
@@ -744,8 +770,10 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
       l4Code: l4.code,
       l5Code: l5.code,
       l6Code: l6.code,
+      l7Code: l7.code,
       assetW: w,
-      fixtureAssets: [...assetIds],
+      fixtureAssets: assetIds.filter((id) => !l7Assets.includes(id)),
+      l7Assets,
       dashboardId: orgDash.dashboardId,
       todaySourceId: orgDash.sourceIds[0] ?? "",
       thisMonthSourceId: orgDash.sourceIds[1] ?? "",
@@ -753,6 +781,8 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
       l6DashboardId: l6Dash.dashboardId,
       l6TodaySourceId: l6Dash.sourceIds[0] ?? "",
       l6ByLocationSourceId: l6Dash.sourceIds[1] ?? "",
+      l7DashboardId: l7Dash.dashboardId,
+      l7TodaySourceId: l7Dash.sourceIds[0] ?? "",
     };
   }, 60_000);
 
@@ -846,5 +876,9 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
 
   it("lists L6 in by_location on the same L6 dashboard: the inactive asset IS in scope", async () => {
     await l6ByLocationListsL6(fixture);
+  });
+
+  it("reads L7 as intake 1000, discharge 300, consumed null: an intake asset carries no kl_today", async () => {
+    await l7ConsumedIsNullWithANonCarryingIntake(fixture);
   });
 });

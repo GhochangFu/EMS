@@ -5,15 +5,21 @@ import { rollup, type RollupInput } from "./sustainability-rollup";
  * shape: this file folds rows the database half has already read, and holds every rule of the
  * row so the unit test pins each one without a database.
  *
- * One row per site, over the assets carrying a water balance role:
+ * One row per site that owns an asset in the `intake`, `reuse` or `discharge` role (an
+ * `internal` asset alone makes no row):
  *
  * - **intake / reuse / discharge** are each `rollup(rows, "sum").value` over that role's
  *   carrying assets — `null` when none of them has a fresh sample, never `0`.
  * - **consumed** ("consumed or lost") is `intake − discharge`. **Reuse is not added** (ADR
  *   0073 decision 3): recovered water already left the intake meter once, and adding it back
  *   would count it twice. The edges (ruling Q8, and the PR 2 review ruling on partial
- *   staleness):
+ *   staleness, and the PR 2 post-merge sweep ruling that gives intake the same guard):
  *   - `null` when intake is `null` — there is nothing to subtract from;
+ *   - `null` when the site has an intake-roled asset that does not carry the period's `kl_*`
+ *     point (the rows fall short of `intakeAssets`), or when ANY carrying intake asset is
+ *     stale — the fresh intakes alone would understate the intake and so the loss. The intake
+ *     COLUMN is unchanged by this: it stays the sum of the fresh rows, as reuse and discharge
+ *     do;
  *   - `intake − 0` ONLY when the site has NO discharge-roled asset in scope at all — a site
  *     with no discharge meter loses nothing through one;
  *   - `null` when the site has a discharge-roled asset that does not carry the period's
@@ -29,9 +35,12 @@ import { rollup, type RollupInput } from "./sustainability-rollup";
  * **Coverage decision (PR 2 review):** a role-holding asset that does not carry the period's
  * key is NOT in the denominator. `carrying` keeps the one meaning it has everywhere else —
  * the `sustainability.by_location` table on the same dashboard uses the same string — and a
- * period no template carries still reads `"0/0"` as the resolver's re-import note says. The
- * signal behind a `null` consumed at full coverage is the `null` discharge column beside it:
- * the site has a discharge meter and no reading from it.
+ * period no template carries still reads `"0/0"` (a pre-v5 tenant's reuse and discharge read
+ * `null` and add nothing, as the resolver's re-import note says, while its intake counts). So a
+ * `null` consumed at full coverage does not always have a column signal beside it: when every
+ * discharge meter cannot report, the discharge column is `null`; but when only one of several
+ * intake or discharge meters cannot report, that column still shows the others' sum, and only
+ * the `null` consumed says that a meter is missing.
  */
 
 /** One site's rows, split by role — what the resolver hands the fold. */
@@ -45,6 +54,11 @@ export type WaterBalanceInputs = {
    * report.
    */
   readonly dischargeAssets: number;
+  /**
+   * Every active intake-roled asset of the site in scope, carrying or not
+   * (`readBalanceLocations`). Compared with `intake.length` for the same reason.
+   */
+  readonly intakeAssets: number;
 };
 
 /** One site's balance, in the dataset's cell types. */
@@ -64,6 +78,10 @@ export function waterBalanceRow(inputs: WaterBalanceInputs): WaterBalanceRow {
 
   let consumed: number | null;
   if (intake.value === null) consumed = null;
+  // The intake guards run BEFORE the no-discharge branch: a site with no discharge meter still
+  // needs every intake meter to report.
+  else if (inputs.intake.length !== inputs.intakeAssets) consumed = null;
+  else if (intake.coverage.fresh !== intake.coverage.carrying) consumed = null;
   else if (inputs.dischargeAssets === 0 && inputs.discharge.length === 0) consumed = intake.value;
   // `!==`, not `<`: a count that disagrees in either direction is not a number to subtract.
   else if (inputs.discharge.length !== inputs.dischargeAssets) consumed = null;

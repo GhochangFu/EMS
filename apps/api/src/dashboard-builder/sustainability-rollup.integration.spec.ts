@@ -292,7 +292,9 @@ export async function dischargeTableGivesL1NullOverZeroOfZero(f: RollupFixture):
 // in no column). L2: N with a `NULL` role. L3: I intake (`kl_today` 20) and D discharge
 // (`outlet_kl_today` stale at now − 10 min). PR 2 review: L4 P intake (`kl_today` 30) and Q
 // discharge on a pre-v5 template (no `outlet_kl_today`); L5 T internal alone; L6 V intake,
-// INACTIVE, read through an L6-scoped dashboard. One claim per function.
+// INACTIVE, read through an L6-scoped dashboard. PR 2 post-merge sweep: L7 X intake (`kl_today`
+// 1000), Y intake on a template with no `kl_today`, Z discharge (`outlet_kl_today` 300), read
+// through an L7-scoped dashboard. One claim per function.
 // ---------------------------------------------------------------------------
 
 /** What the balance fixture hands every claim. */
@@ -305,9 +307,12 @@ export type BalanceFixture = {
   readonly l4Code: string;
   readonly l5Code: string;
   readonly l6Code: string;
+  readonly l7Code: string;
   readonly assetW: string;
-  /** Every fixture asset — the caller's readable set on each org-wide read. */
+  /** Every fixture asset but L7's — the caller's readable set on each org-wide read. */
   readonly fixtureAssets: readonly string[];
+  /** X, Y and Z — the readable set on the L7 dashboard, and on no other read. */
+  readonly l7Assets: readonly string[];
   /** An org-wide dashboard: `water.balance { today }`, `water.balance { this_month }`, and a
    * `sustainability.by_location { kl_today, sum }` table beside them (the L2 positive control). */
   readonly dashboardId: string;
@@ -319,6 +324,9 @@ export type BalanceFixture = {
   readonly l6DashboardId: string;
   readonly l6TodaySourceId: string;
   readonly l6ByLocationSourceId: string;
+  /** Scoped to L7: `water.balance { today }` alone. */
+  readonly l7DashboardId: string;
+  readonly l7TodaySourceId: string;
 };
 
 type BalanceCell = string | number | boolean | null;
@@ -471,4 +479,16 @@ export async function inactiveRoledAssetAloneMakesNoRow(f: BalanceFixture): Prom
 export async function l6ByLocationListsL6(f: BalanceFixture): Promise<void> {
   const rows = await balanceRows(f, f.l6ByLocationSourceId, f.fixtureAssets, f.l6DashboardId);
   expect(rows.map((row) => row.locationCode)).toEqual([f.l6Code]);
+}
+
+/**
+ * The PR 2 post-merge sweep (the intake ruling): L7's intake asset Y is pinned to a template
+ * with no `kl_today`, so it cannot report — consumed is `null`, never `1000 − 300` = 700.
+ * Intake and discharge ride in the same assertion as the positive control: the row is there,
+ * the intake column is still the fresh sum, and the discharge has a number.
+ */
+export async function l7ConsumedIsNullWithANonCarryingIntake(f: BalanceFixture): Promise<void> {
+  const rows = await balanceRows(f, f.l7TodaySourceId, f.l7Assets, f.l7DashboardId);
+  const row = rows.find((candidate) => candidate.locationCode === f.l7Code);
+  expect(row && [row.intake, row.discharge, row.consumed]).toEqual([1000, 300, null]);
 }

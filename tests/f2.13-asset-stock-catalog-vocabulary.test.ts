@@ -188,8 +188,10 @@ const POINT_KEY_SOURCE_FLOOR: Readonly<Record<string, number>> = {
   // 29 since E4.1c PR 2b: SUSTAINABILITY_ELECTRICAL_POINT_KEYS's 16 +
   // SUSTAINABILITY_WATER_POINT_KEYS's 3 (PR 2a) + the mechanical 5, HVAC 1
   // and facility 4 PR 2b appended. **43 since E4.2 PR 2** — 29 + electrical's
-  // 9 and water's 5 (U6; see tests/f3.38's identical note).
-  "packages/shared/src/sustainability-point-keys.ts": 43,
+  // 9 and water's 5 (U6; see tests/f3.38's identical note). **46 since E4.3
+  // PR 2 (U5)** — 43 + water's 3 outlet codes (outlet_kl_today/_this_month/
+  // _this_year, ADR 0073 decision 4); raised in the PR 2 post-merge sweep.
+  "packages/shared/src/sustainability-point-keys.ts": 46,
 };
 
 /** The sources as one list, for an assertion message. */
