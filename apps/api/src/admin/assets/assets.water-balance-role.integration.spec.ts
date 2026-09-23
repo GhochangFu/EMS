@@ -22,6 +22,10 @@ export type AssetsWaterBalanceRoleCtx = {
   readonly svc: AssetsAdminService;
   /** `bms_fleet` (BYPASSRLS) — read-back only. */
   readonly fixturePool: pg.Pool;
+  /** Superuser — stages a stored role the service would refuse to write (a retired one). */
+  readonly superuserPool: pg.Pool;
+  /** A per-run `bms.water_balance_roles` row with `active = false`. */
+  readonly retiredRole: string;
   readonly locationId: string;
   readonly domain: string;
   readonly createdAssetIds: string[];
@@ -203,4 +207,44 @@ export async function assertTheCreateAuditRecordsTheRole(
     throw new Error(`E4.3 U3: no master.asset.create audit row for ${created.id}`);
   }
   expect(res.rows[0].role).toBe("intake");
+}
+
+/** Stages an asset whose stored role is the per-run RETIRED code — only SQL can write one. */
+async function assetOnTheRetiredRole(
+  ctx: AssetsWaterBalanceRoleCtx,
+  jwt: JwtPayload,
+): Promise<string> {
+  const created = await createThroughService(ctx, jwt, undefined);
+  await ctx.superuserPool.query("UPDATE bms.assets SET water_balance_role = $1 WHERE id = $2", [
+    ctx.retiredRole,
+    created.id,
+  ]);
+  return created.id;
+}
+
+/**
+ * Review C1 — the web form always sends `waterBalanceRole`, so a rename of an asset whose
+ * stored role was retired since re-sends that same code. Re-checking a value the edit did not
+ * change would refuse the rename; the update succeeds and keeps the stored code.
+ */
+export async function assertARenameResendingARetiredStoredRoleSucceeds(
+  ctx: AssetsWaterBalanceRoleCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const id = await assetOnTheRetiredRole(ctx, jwt);
+  const dto = await ctx.svc.update(jwt, id, {
+    name: `E4.3 U3 renamed ${id}`,
+    waterBalanceRole: ctx.retiredRole,
+  });
+  expect(dto.waterBalanceRole).toBe(ctx.retiredRole);
+}
+
+/** The control for C1: the same asset moved to a DIFFERENT code that is not live still 400s. */
+export async function assertChangingARetiredRoleToAnUnknownOneIs400(
+  ctx: AssetsWaterBalanceRoleCtx,
+  jwt: JwtPayload,
+): Promise<void> {
+  const id = await assetOnTheRetiredRole(ctx, jwt);
+  const err = await refusal(() => ctx.svc.update(jwt, id, { waterBalanceRole: "nope" }));
+  expect(err.message).toBe(NOPE_MESSAGE);
 }

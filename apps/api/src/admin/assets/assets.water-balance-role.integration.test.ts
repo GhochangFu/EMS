@@ -5,13 +5,19 @@ import { createDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import {
+  openIntegrationPool,
+  requireIntegrationDb,
+  resolveIntegrationRoleUrl,
+} from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetsAdminService } from "./assets.service";
 import {
   assertARenameLeavesTheRoleAlone,
+  assertARenameResendingARetiredStoredRoleSucceeds,
+  assertChangingARetiredRoleToAnUnknownOneIs400,
   assertCreateRefusesAnUnknownRoleWith400,
   assertCreateReturnsTheRole,
   assertCreateStoresTheRole,
@@ -39,6 +45,8 @@ const connectionString = requireIntegrationDb({
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
 const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000005";
+// Review C1 — a per-run retired role; the prefix names its author if it leaks.
+const RETIRED_ROLE = `e43_u3_retired_${Date.now()}`;
 
 function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
   return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role };
@@ -48,6 +56,7 @@ describe.skipIf(!connectionString)("E4.3 U3 — the water balance role on the as
   let fixturePool: pg.Pool;
   let authPool: pg.Pool;
   let tenantPool: pg.Pool;
+  let superuserPool: pg.Pool;
   let ctx: AssetsWaterBalanceRoleCtx;
 
   const jwt = jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin");
@@ -56,6 +65,14 @@ describe.skipIf(!connectionString)("E4.3 U3 — the water balance role on the as
   beforeAll(async () => {
     const url = connectionString as string;
     fixturePool = await openIntegrationPool(url, "E4.3 U3");
+    superuserPool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(url, "superuser", process.env),
+      "E4.3 U3",
+    );
+    await superuserPool.query(
+      "INSERT INTO bms.water_balance_roles (code, label, active) VALUES ($1, 'E4.3 U3 retired', false)",
+      [RETIRED_ROLE],
+    );
     authPool = await openIntegrationPool(
       process.env.DATABASE_URL_AUTH ?? asRole(url, "bms_auth", "bms_auth_dev"),
       "E4.3 U3",
@@ -102,6 +119,8 @@ describe.skipIf(!connectionString)("E4.3 U3 — the water balance role on the as
         new VocabulariesService(fleetDb),
       ),
       fixturePool,
+      superuserPool,
+      retiredRole: RETIRED_ROLE,
       locationId: loc.rows[0].id,
       domain: dom.rows[0].code,
       createdAssetIds,
@@ -114,7 +133,14 @@ describe.skipIf(!connectionString)("E4.3 U3 — the water balance role on the as
       await fixturePool.query("DELETE FROM bms.audit_log WHERE entity_id = ANY($1)", [createdAssetIds]);
       await fixturePool.query("DELETE FROM bms.assets WHERE id = ANY($1)", [createdAssetIds]);
     }
-    await Promise.all([fixturePool?.end(), authPool?.end(), tenantPool?.end()]);
+    // After the assets: `assets_water_balance_role_fkey` references the row.
+    await superuserPool?.query("DELETE FROM bms.water_balance_roles WHERE code = $1", [RETIRED_ROLE]);
+    await Promise.all([
+      fixturePool?.end(),
+      authPool?.end(),
+      tenantPool?.end(),
+      superuserPool?.end(),
+    ]);
   }, 60_000);
 
   // One claim per `it`: `expect` throws, so a second claim would never run on the first's failure.
@@ -156,5 +182,13 @@ describe.skipIf(!connectionString)("E4.3 U3 — the water balance role on the as
 
   it("records the role in the create audit payload", async () => {
     await assertTheCreateAuditRecordsTheRole(ctx, jwt);
+  }, 30_000);
+
+  it("renames an asset whose stored role was retired when the form re-sends that role", async () => {
+    await assertARenameResendingARetiredStoredRoleSucceeds(ctx, jwt);
+  }, 30_000);
+
+  it("still refuses moving a retired-role asset to an unknown role", async () => {
+    await assertChangingARetiredRoleToAnUnknownOneIs400(ctx, jwt);
   }, 30_000);
 });

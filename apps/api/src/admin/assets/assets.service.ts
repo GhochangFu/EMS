@@ -297,9 +297,14 @@ export class AssetsAdminService {
     if (body.domain !== undefined) {
       await this.vocabularies.assertAssetDomain(body.domain);
     }
-    // Only when a code is supplied, for the reason above: a rename must not fail on an asset
-    // whose stored role was retired since.
-    if (typeof body.waterBalanceRole === "string") {
+    // Only when a code is supplied AND differs from the stored one, for the reason above: the
+    // asset form always sends the field, so a rename of an asset whose role was retired since
+    // re-sends that same code, and re-checking a value the edit did not change would refuse it
+    // (review C1). A different code is still checked, retired or unknown.
+    if (
+      typeof body.waterBalanceRole === "string" &&
+      body.waterBalanceRole !== existing.waterBalanceRole
+    ) {
       await this.vocabularies.assertWaterBalanceRole(body.waterBalanceRole);
     }
 
