@@ -36,11 +36,16 @@ type ListCall = Parameters<AlarmsService["list"]>[0];
 
 function harness(readable: string[] | null) {
   const listCalls: ListCall[] = [];
+  const summaryCalls: (string[] | null | undefined)[] = [];
   let scopeReads = 0;
   const service = {
     list: async (opts: ListCall) => {
       listCalls.push(opts);
       return { items: [], nextCursor: null };
+    },
+    activeCountsBySeverity: async (assetIds: string[] | null | undefined) => {
+      summaryCalls.push(assetIds);
+      return { items: [], total: 0 };
     },
   } as unknown as AlarmsService;
   const accessControl = {
@@ -55,7 +60,41 @@ function harness(readable: string[] | null) {
     {} as unknown as AlarmDetailsService,
     {} as unknown as AlarmEnrichmentService,
   );
-  return { controller, listCalls, scopeReads: () => scopeReads };
+  return { controller, listCalls, summaryCalls, scopeReads: () => scopeReads };
+}
+
+/** `GET /alarms/summary`: a requested id outside the readable set is dropped, as on the list. */
+export async function assertARequestedForeignAssetNeverWidensTheSummary(): Promise<void> {
+  const h = harness([READABLE_A, READABLE_B]);
+  await h.controller.summary(USER, { assetIds: [READABLE_A, FOREIGN] });
+  const passed = h.summaryCalls[0];
+  assert(
+    JSON.stringify(passed) === JSON.stringify([READABLE_A]),
+    `the summary got ${JSON.stringify(passed)}, not the intersection [READABLE_A]`,
+  );
+}
+
+/** `GET /alarms/summary` with no filter reads the caller's whole readable set. */
+export async function assertAnEmptySummaryQueryUsesTheReadableScope(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.summary(USER, {});
+  const passed = h.summaryCalls[0];
+  assert(
+    JSON.stringify(passed) === JSON.stringify([READABLE_A]),
+    `the summary got ${JSON.stringify(passed)}, not the readable set`,
+  );
+}
+
+/** The summary takes no `state`: it is an unknown key there, and a 400. */
+export async function assertAMalformedSummaryQueryIsABadRequest(): Promise<void> {
+  const h = harness([READABLE_A]);
+  let thrown: unknown;
+  try {
+    await h.controller.summary(USER, { state: "active" });
+  } catch (err) {
+    thrown = err;
+  }
+  assert(thrown instanceof BadRequestException, `state on the summary threw ${String(thrown)}, not a 400`);
 }
 
 /** A requested id outside the readable set is dropped: the service gets only the overlap. */

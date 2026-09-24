@@ -19,6 +19,13 @@ import {
   assertDefaultStateReturnsBothRows,
   assertRequestedAssetIdsNarrowWithinScope,
   assertRequestedForeignAssetReturnsNothing,
+  assertSummaryCountsAcknowledgedUncleared,
+  assertSummaryForRequestedForeignAssetCountsNothing,
+  assertSummaryIgnoresClearedUnacknowledged,
+  assertSummaryIgnoresForeignOrgAlarm,
+  assertSummaryIsInRankOrder,
+  assertSummaryReportsZeroForASeverityWithNoAlarm,
+  assertSummaryTotalIsTheSum,
   assertAlarmListReturnsBothOrgsForTwoOrgActor,
   assertAlarmListScopedByAssetIds,
   assertSingleOrgListRunsOnTenantTransaction,
@@ -314,5 +321,34 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
 
   it("F3.28 a requested foreign org's asset returns nothing", async () => {
     await assertRequestedForeignAssetReturnsNothing(ctx);
+  });
+
+  // F3.28 (plan decision 7) — active alarm counts by severity.
+  it("F3.28 summary counts an acknowledged, uncleared alarm", async () => {
+    await assertSummaryCountsAcknowledgedUncleared(ctx);
+  });
+
+  it("F3.28 summary does not count a cleared, unacknowledged alarm", async () => {
+    await assertSummaryIgnoresClearedUnacknowledged(ctx);
+  });
+
+  it("F3.28 summary lists every active severity in ascending rank order", async () => {
+    await assertSummaryIsInRankOrder(ctx);
+  });
+
+  it("F3.28 summary reports count 0 for a severity with no alarm", async () => {
+    await assertSummaryReportsZeroForASeverityWithNoAlarm(ctx);
+  });
+
+  it("F3.28 summary total equals the sum of the counts", async () => {
+    await assertSummaryTotalIsTheSum(ctx);
+  });
+
+  it("F3.28 summary does not count the foreign org's alarm on the fleet path", async () => {
+    await assertSummaryIgnoresForeignOrgAlarm(ctx);
+  });
+
+  it("F3.28 summary for a requested foreign asset counts nothing", async () => {
+    await assertSummaryForRequestedForeignAssetCountsNothing(ctx);
   });
 });

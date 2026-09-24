@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import pg from "pg";
 
 import type { BmsDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
+import type { AlarmSummaryResponse, JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { countingDb } from "../testing/counting-db";
@@ -320,4 +320,111 @@ export async function assertRequestedForeignAssetReturnsNothing(
   expect(control, "positive control: the same caller, unfiltered, lists their own alarm").toContain(
     ctx.ackedUnclearedAlarmId,
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* F3.28 — active alarm counts by severity (plan decision 7)                   */
+/* -------------------------------------------------------------------------- */
+
+function countOf(summary: AlarmSummaryResponse, code: string): number | undefined {
+  return summary.items.find((i) => i.code === code)?.count;
+}
+
+async function activeSeverityCodes(ctx: AlarmsRlsFixtures): Promise<string[]> {
+  const { rows } = await ctx.ownerPool.query<{ code: string }>(
+    "SELECT code FROM bms.alarm_severities WHERE active = true ORDER BY rank",
+  );
+  return rows.map((r) => r.code);
+}
+
+/** The acknowledged, uncleared alarm is counted: active is `cleared_at IS NULL`. */
+export async function assertSummaryCountsAcknowledgedUncleared(ctx: AlarmsRlsFixtures): Promise<void> {
+  const summary = await ctx.svc.activeCountsBySeverity([ctx.pairAssetId]);
+  expect(
+    countOf(summary, ctx.ackedUnclearedSeverity),
+    "the acknowledged, uncleared alarm counts at its severity",
+  ).toBe(1);
+}
+
+/** The cleared, unacknowledged alarm is not counted. */
+export async function assertSummaryIgnoresClearedUnacknowledged(ctx: AlarmsRlsFixtures): Promise<void> {
+  const summary = await ctx.svc.activeCountsBySeverity([ctx.pairAssetId]);
+  expect(
+    countOf(summary, ctx.clearedUnackedSeverity),
+    "the cleared, unacknowledged alarm's severity counts 0",
+  ).toBe(0);
+  expect(
+    countOf(summary, ctx.ackedUnclearedSeverity),
+    "positive control: the active alarm on the same asset is counted",
+  ).toBe(1);
+}
+
+/** Every active severity, in ascending rank — the `GET /vocabularies` order. */
+export async function assertSummaryIsInRankOrder(ctx: AlarmsRlsFixtures): Promise<void> {
+  const summary = await ctx.svc.activeCountsBySeverity([ctx.pairAssetId]);
+  expect(
+    summary.items.map((i) => i.code),
+    "the items are the active severities in ascending rank order",
+  ).toEqual(await activeSeverityCodes(ctx));
+}
+
+/** A severity with no alarm at all in scope still has its row, at 0. */
+export async function assertSummaryReportsZeroForASeverityWithNoAlarm(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const quiet = (await activeSeverityCodes(ctx)).find(
+    (c) => c !== ctx.ackedUnclearedSeverity && c !== ctx.clearedUnackedSeverity,
+  );
+  if (!quiet) {
+    throw new Error("F3.28: need a third active alarm_severities row — run pnpm db:seed.");
+  }
+  const summary = await ctx.svc.activeCountsBySeverity([ctx.pairAssetId]);
+  expect(countOf(summary, quiet), `severity ${quiet} has no alarm and reports count 0`).toBe(0);
+  expect(
+    countOf(summary, ctx.ackedUnclearedSeverity),
+    "positive control: the same read counts the active alarm",
+  ).toBe(1);
+}
+
+/** `total` is the sum of the counts — here exactly the one active alarm. */
+export async function assertSummaryTotalIsTheSum(ctx: AlarmsRlsFixtures): Promise<void> {
+  const summary = await ctx.svc.activeCountsBySeverity([ctx.pairAssetId]);
+  expect(summary.total, "total equals the sum of the per-severity counts").toBe(
+    summary.items.reduce((s, i) => s + i.count, 0),
+  );
+  expect(summary.total, "positive control: the sum is the one active alarm, not 0").toBe(1);
+}
+
+/**
+ * The foreign org's active alarm is not counted. The scope spans two orgs
+ * (the pair asset and an alarm-less org-B asset), so `withReadScope` takes the
+ * fleet path — `bms_fleet` bypasses RLS and the `assetIds` predicate is the
+ * only isolation control, which is the path a dropped predicate would leak on.
+ */
+export async function assertSummaryIgnoresForeignOrgAlarm(ctx: AlarmsRlsFixtures): Promise<void> {
+  const foreign = await alarmRow(ctx.ownerPool, ctx.foreignAlarmId);
+  expect(foreign?.cleared_at, "precondition: the foreign alarm is active").toBeNull();
+  const summary = await ctx.svc.activeCountsBySeverity([ctx.pairAssetId, ctx.foreignQuietAssetId]);
+  expect(summary.total, "only the in-scope active alarm is counted, not the foreign org's").toBe(1);
+  expect(
+    countOf(summary, ctx.ackedUnclearedSeverity),
+    "positive control: the in-scope active alarm is counted on the fleet path",
+  ).toBe(1);
+}
+
+/**
+ * Through the controller: a requested foreign asset leaves an empty scope,
+ * which counts nothing — every active severity at 0, never the whole fleet.
+ */
+export async function assertSummaryForRequestedForeignAssetCountsNothing(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const summary = await controllerFor(ctx, [ctx.pairAssetId]).summary(ACTOR_PAYLOAD, {
+    assetIds: ctx.foreignAssetId,
+  });
+  expect(summary.total, "a requested foreign asset counts nothing").toBe(0);
+  expect(
+    summary.items.map((i) => i.code),
+    "positive control: every active severity is still listed, at 0",
+  ).toEqual(await activeSeverityCodes(ctx));
 }

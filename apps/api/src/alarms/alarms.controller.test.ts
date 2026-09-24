@@ -3,6 +3,9 @@ import { describe, it } from "vitest";
 import {
   assertAMalformedListQueryIsABadRequest,
   assertAMalformedListQueryRunsNothing,
+  assertAMalformedSummaryQueryIsABadRequest,
+  assertAnEmptySummaryQueryUsesTheReadableScope,
+  assertARequestedForeignAssetNeverWidensTheSummary,
   assertAnAllForeignRequestBecomesAnEmptyScope,
   assertAnEmptyQueryKeepsTodaysRead,
   assertAnUnrestrictedScopeStaysNull,
@@ -43,5 +46,19 @@ describe("alarms.controller — GET /alarms query wiring (F3.28)", () => {
 
   it("runs neither the scope read nor the list on a malformed query", async () => {
     await assertAMalformedListQueryRunsNothing();
+  });
+});
+
+describe("alarms.controller — GET /alarms/summary query wiring (F3.28)", () => {
+  it("passes only the readable part of a requested assetIds to the summary", async () => {
+    await assertARequestedForeignAssetNeverWidensTheSummary();
+  });
+
+  it("uses the caller's readable set when the summary query names no assets", async () => {
+    await assertAnEmptySummaryQueryUsesTheReadableScope();
+  });
+
+  it("answers a summary query with an unknown key with 400", async () => {
+    await assertAMalformedSummaryQueryIsABadRequest();
   });
 });

@@ -20,7 +20,7 @@ import type { JwtPayload } from "@bms/shared";
 import { AccessControlService } from "../auth/access-control.service";
 import { intersectReadable } from "../auth/asset-scope";
 import { alarmAckBodySchema } from "./ack.schema";
-import { alarmListQuerySchema } from "./alarm-list.schema";
+import { alarmListQuerySchema, alarmSummaryQuerySchema } from "./alarm-list.schema";
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsService } from "./alarms.service";
@@ -75,6 +75,20 @@ export class AlarmsController {
       state: dto.state,
       assetIds: intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
     });
+  }
+
+  /**
+   * `F3.28` (ADR 0074 decision 4, plan decision 7) — active alarm counts per
+   * severity, for the same optional `assetIds` as `list`, intersected the
+   * same way. Declared before every `:id` route so `summary` is never read as
+   * an alarm id.
+   */
+  @Get("summary")
+  async summary(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
+    const dto = parseQuery(alarmSummaryQuerySchema, query);
+    return this.alarms.activeCountsBySeverity(
+      intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
+    );
   }
 
   /** ADR 0034 decision 5. A read, gated by asset scope like `list` — no

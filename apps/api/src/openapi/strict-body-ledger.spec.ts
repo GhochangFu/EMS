@@ -66,7 +66,7 @@ import {
 } from "../admin/rtus/rtus.schema";
 import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
 import { alarmAckBodySchema } from "../alarms/ack.schema";
-import { alarmListQuerySchema } from "../alarms/alarm-list.schema";
+import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
@@ -329,6 +329,9 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // &limit=&state=&assetIds=`, ADR 0074 decision 4) — `.strict()`, no body, no
   // ledger entry, the `mappingSheetQuerySchema` precedent.
   alarmListQuerySchema,
+  // 19 -> 20: `F3.28` registered `alarmSummaryQuerySchema`
+  // (`GET /alarms/summary?assetIds=`, plan decision 7) — `.strict()`, no body.
+  alarmSummaryQuerySchema,
   mappingSheetQuerySchema,
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.
@@ -821,7 +824,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(19);
+  ).toBe(20);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
