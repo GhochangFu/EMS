@@ -97,6 +97,33 @@ export function assertEmptyLimitIsAbsent(): void {
   assert(result.success && result.data.limit === undefined, "limit= must parse as absent");
 }
 
+/** Plan decision 4: `limit=Infinity` parses, as `Number("Infinity")` did; the service clamps it to 100. */
+export function assertInfiniteLimitParsesForTheServiceClamp(): void {
+  const result = alarmListQuerySchema.safeParse({ limit: "Infinity" });
+  assert(
+    result.success && result.data.limit === Number.POSITIVE_INFINITY,
+    `limit=Infinity must parse to Infinity: ${JSON.stringify(result.success ? result.data.limit : result.error.issues)}`,
+  );
+}
+
+/** Plan decision 4: `limit=0.5` parses; the service clamps it to 1 as before. */
+export function assertSubOneFractionalLimitParses(): void {
+  const result = alarmListQuerySchema.safeParse({ limit: "0.5" });
+  assert(
+    result.success && result.data.limit === 0.5,
+    `limit=0.5 must parse to 0.5: ${JSON.stringify(result.success ? result.data.limit : result.error.issues)}`,
+  );
+}
+
+/** Plan decision 4: `limit=150.5` parses; the service clamps it to 100 as before. */
+export function assertOverCapFractionalLimitParses(): void {
+  const result = alarmListQuerySchema.safeParse({ limit: "150.5" });
+  assert(
+    result.success && result.data.limit === 150.5,
+    `limit=150.5 must parse to 150.5: ${JSON.stringify(result.success ? result.data.limit : result.error.issues)}`,
+  );
+}
+
 /** Plan decision 4: a non-numeric `limit` is still a 400, as before. */
 export function assertNonNumericLimitIsRefused(): void {
   const result = alarmListQuerySchema.safeParse({ limit: "abc" });

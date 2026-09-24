@@ -97,7 +97,10 @@ export class AlarmsService {
     assetIds?: string[] | null;
     state?: "all" | "active";
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
-    const limit = Math.min(100, Math.max(1, opts.limit));
+    // Truncated after the clamp (plan decision 4): the schema lets a fractional
+    // `limit` through, as the old `Number(limitRaw)` did, and SQL's `LIMIT`
+    // must never see one — `50.5` asks for 50 rows.
+    const limit = Math.trunc(Math.min(100, Math.max(1, opts.limit)));
     const cursor = opts.cursor;
     const filters = [
       ...(opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : []),

@@ -6,8 +6,11 @@ import {
   assertAnUnknownKeyIsRefused,
   assertAssetIdsIsCappedAtTheSharedMaximum,
   assertEmptyLimitIsAbsent,
+  assertInfiniteLimitParsesForTheServiceClamp,
   assertNegativeLimitParsesForTheServiceClamp,
   assertNonNumericLimitIsRefused,
+  assertOverCapFractionalLimitParses,
+  assertSubOneFractionalLimitParses,
   assertSummaryQueryAcceptsAssetIdsAndRefusesUnknownKeys,
   assertUnknownStateValueIsRefused,
   assertZeroLimitParsesForTheServiceClamp,
@@ -45,6 +48,18 @@ describe("F3.28 — alarmListQuerySchema (ADR 0074, plan decisions 1 and 4)", ()
 
   it("reads an empty limit= as absent", () => {
     assertEmptyLimitIsAbsent();
+  });
+
+  it("parses limit=Infinity for the service clamp", () => {
+    assertInfiniteLimitParsesForTheServiceClamp();
+  });
+
+  it("parses limit=0.5 for the service clamp", () => {
+    assertSubOneFractionalLimitParses();
+  });
+
+  it("parses limit=150.5 for the service clamp", () => {
+    assertOverCapFractionalLimitParses();
   });
 
   it("refuses a non-numeric limit", () => {

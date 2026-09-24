@@ -8,6 +8,7 @@ import {
   assertARequestedForeignAssetNeverWidensTheSummary,
   assertAnAllForeignRequestBecomesAnEmptyScope,
   assertAnEmptyQueryKeepsTodaysRead,
+  assertANonNumericLimitIsABadRequest,
   assertAnUnrestrictedScopeStaysNull,
   assertARequestedForeignAssetNeverWidensTheList,
   assertLimitIsCoercedAndPassedThrough,
@@ -42,6 +43,10 @@ describe("alarms.controller — GET /alarms query wiring (F3.28)", () => {
 
   it("answers a malformed list query with 400", async () => {
     await assertAMalformedListQueryIsABadRequest();
+  });
+
+  it("answers limit=abc with 400", async () => {
+    await assertANonNumericLimitIsABadRequest();
   });
 
   it("runs neither the scope read nor the list on a malformed query", async () => {

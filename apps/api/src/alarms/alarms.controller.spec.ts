@@ -172,6 +172,13 @@ export async function assertAMalformedListQueryIsABadRequest(): Promise<void> {
   assert(thrown instanceof BadRequestException, `state=open threw ${String(thrown)}, not a 400`);
 }
 
+/** Plan decision 4: `limit=abc` is still a 400 at the controller, as before. */
+export async function assertANonNumericLimitIsABadRequest(): Promise<void> {
+  const h = harness([READABLE_A]);
+  const thrown = await listRejection(h, { limit: "abc" });
+  assert(thrown instanceof BadRequestException, `limit=abc threw ${String(thrown)}, not a 400`);
+}
+
 /** A malformed query reads no scope and lists nothing. */
 export async function assertAMalformedListQueryRunsNothing(): Promise<void> {
   const h = harness([READABLE_A]);

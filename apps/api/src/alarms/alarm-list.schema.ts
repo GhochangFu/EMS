@@ -9,19 +9,23 @@ import { assetIdsQueryField } from "../auth/asset-scope.schema";
  * sends nothing. `"active"` is the alarms rail's read: raised and not yet
  * cleared, acknowledged or not (`activeAlarmFilter`, task 1.5).
  *
- * `limit` keeps today's semantics (plan decision 4): the service owns the
- * `Math.min(100, Math.max(1, …))` clamp, so `0` and a negative number clamp to
- * 1 as they did before, and an empty `limit=` is absent (the default 20), as
- * the old `limitRaw ? Number(limitRaw) : 20` read it. Only a non-numeric value
- * is a 400, as before — and a fractional one, which the old read passed to
- * SQL's `LIMIT` as a non-integer.
+ * `limit` keeps today's semantics exactly (plan decision 4): the old read was
+ * `limitRaw ? Number(limitRaw) : 20`, and the service owns the
+ * `Math.min(100, Math.max(1, …))` clamp. So every numeric value parses and
+ * clamps as before — `0` and a negative number to 1, `Infinity` and `150.5`
+ * to 100, `0.5` to 1 — and an empty `limit=` is absent (the default 20). Only
+ * a non-numeric value (`NaN` after coercion) is a 400, as before. There is no
+ * `.int()`: a fractional value is not refused here; the service truncates
+ * after the clamp, so none reaches SQL's `LIMIT` as a non-integer (the old
+ * read let one through). zod 3's `z.number()` accepts `Infinity`, so no
+ * `.finite()` and no explicit allowance.
  */
 export const alarmListQuerySchema = z
   .object({
     cursor: z.string().optional(),
     limit: z.preprocess(
       (value) => (value === "" ? undefined : value),
-      z.coerce.number().int().optional(),
+      z.coerce.number().optional(),
     ),
     state: z.enum(["all", "active"]).default("all"),
     assetIds: assetIdsQueryField,
