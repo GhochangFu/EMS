@@ -8,6 +8,8 @@ import {
   emptyIdsFetchNothing,
   failedReadSaysUnavailableNotNone,
   fetchesForTheGivenIds,
+  noIdsWhenAssetsFailedSaysUnavailableNotNone,
+  noIdsWhileAssetsPendingSaysLoadingNotNone,
   noWorstSeverityReadsAllGood,
   offlineAssetsAppendTheOfflineCount,
   pausedReadSaysLoadingNotNone,
@@ -61,6 +63,14 @@ describe("F3.28 asset class strip", () => {
 
   it("fetches the role summary for the given ids", async () => {
     await fetchesForTheGivenIds();
+  });
+
+  it("says loading, not the empty text, with no ids while the page's assets are pending", () => {
+    noIdsWhileAssetsPendingSaysLoadingNotNone();
+  });
+
+  it("says unavailable, not the empty text, with no ids when the page's assets failed", () => {
+    noIdsWhenAssetsFailedSaysUnavailableNotNone();
   });
 
   it("fetches nothing with no ids", async () => {

@@ -8,6 +8,7 @@ import type {
   AssetRoleSummaryResponse,
 } from "@bms/shared";
 
+import type { AssetsStatus } from "./active-alarms-rail";
 import { AssetClassStrip } from "./asset-class-strip";
 
 /**
@@ -61,16 +62,21 @@ const TRANSFORMER: AssetRoleSummaryItem = {
 
 type Setup = {
   ids?: string[];
+  assetsStatus?: AssetsStatus;
   answer?: () => Promise<AssetRoleSummaryResponse>;
 };
 
-function renderStrip({ ids = IDS, answer = () => Promise.resolve({ items: [] }) }: Setup = {}): void {
+function renderStrip({
+  ids = IDS,
+  assetsStatus = "success",
+  answer = () => Promise.resolve({ items: [] }),
+}: Setup = {}): void {
   mocks.handlers.clear();
   mocks.fetchAssetRoleSummary.mockImplementation(answer);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <AssetClassStrip assetIds={ids} />
+      <AssetClassStrip assetIds={ids} assetsStatus={assetsStatus} />
     </QueryClientProvider>,
   );
 }
@@ -160,4 +166,28 @@ export async function socketEventRefetchesTheRoleSummary(): Promise<void> {
     handler?.(event);
   });
   await waitFor(() => expect(mocks.fetchAssetRoleSummary).toHaveBeenCalledTimes(2));
+}
+
+/**
+ * No ids because the page's asset read is still pending: the strip says it is
+ * loading. One claim — the loading text shown and the empty text absent.
+ */
+export function noIdsWhileAssetsPendingSaysLoadingNotNone(): void {
+  renderStrip({ ids: [], assetsStatus: "pending" });
+  expect([
+    screen.queryByText("Loading asset classes…") !== null,
+    screen.queryByText("No asset classes in scope") !== null,
+  ]).toEqual([true, false]);
+}
+
+/**
+ * No ids because the page's asset read failed: the strip says unavailable.
+ * One claim — the unavailable text shown and the empty text absent.
+ */
+export function noIdsWhenAssetsFailedSaysUnavailableNotNone(): void {
+  renderStrip({ ids: [], assetsStatus: "error" });
+  expect([
+    screen.queryByText("Asset classes unavailable.") !== null,
+    screen.queryByText("No asset classes in scope") !== null,
+  ]).toEqual([true, false]);
 }

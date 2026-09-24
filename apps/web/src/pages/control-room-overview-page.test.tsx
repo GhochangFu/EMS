@@ -39,6 +39,7 @@ import {
   theListViewWarnsOnAnSldOnlyPointKey,
   theClassStripShowsTheRoleSummary,
   theClassStripQueriesThePageAssetIds,
+  theClassStripSaysLoadingWhileTheAssetsArePending,
   theOtherThreeTilesWearNoIcon,
   theStateLegendRendersNormalTheVocabularyAndOffline,
   theViewModeDoesNotSurviveARemount,
@@ -239,5 +240,9 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("asks the class strip read for the page's asset ids", async () => {
     await theClassStripQueriesThePageAssetIds();
+  });
+
+  it("the class strip says loading while the context's assets are pending", () => {
+    theClassStripSaysLoadingWhileTheAssetsArePending();
   });
 });

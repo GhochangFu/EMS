@@ -904,6 +904,13 @@ export async function theClassStripShowsTheRoleSummary(): Promise<void> {
   expect(await screen.findByText("MCCs 4 · 1 Critical")).toBeInTheDocument();
 }
 
+/** The context's asset read is pending: the class strip says it is loading. */
+export function theClassStripSaysLoadingWhileTheAssetsArePending(): void {
+  renderPage({ assetsStatus: "pending" });
+  const strip = screen.getByRole("region", { name: "Asset classes" });
+  expect(within(strip).getByText("Loading asset classes…")).toBeInTheDocument();
+}
+
 export async function theClassStripQueriesThePageAssetIds(): Promise<void> {
   renderPage();
   await waitFor(() =>
