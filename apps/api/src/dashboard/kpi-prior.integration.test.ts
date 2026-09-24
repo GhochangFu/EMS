@@ -8,6 +8,7 @@ import {
   assertAlarmClearedBeforeAtIsNotCounted,
   assertAlarmRaisedAfterAtIsNotCounted,
   assertAlarmRaisedBeforeAndUnclearedIsCounted,
+  assertComposedPriorReadsEveryFieldAtAt,
   assertLivePueStillReadsAFreshPair,
   assertPriorKwIsNullWithNoSampleAtOrBeforeAt,
   assertPriorKwIsTheLatestSampleAtOrBeforeAt,
@@ -68,4 +69,6 @@ describe.skipIf(!connectionString)("F3.28 — KPI prior reads against Postgres",
   it("ignores a PUE pair older than at − 900 s", run(assertPriorPueIgnoresAPairOlderThanTheWindow));
 
   it("still reads a fresh PUE pair on the live read (no at)", run(assertLivePueStillReadsAFreshPair));
+
+  it("composes every prior field from its own read at at", run(assertComposedPriorReadsEveryFieldAtAt));
 });

@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 
 import { latestPueRatio } from "../telemetry/pue-ratio";
-import { priorInstant, priorOpenAlarms, priorTotalKw } from "./kpi-prior";
+import { priorInstant, priorOpenAlarms, priorTotalKw, readKpiPrior } from "./kpi-prior";
 
 /**
  * `F3.28` — the KPI prior reads (ADR 0074 decision 5, the owner's ruling OQ2)
@@ -209,6 +209,31 @@ export async function assertPriorPueIgnoresAPairOlderThanTheWindow(client: pg.Po
   await insertSample(client, s.assetId, "it_kw", secondsFrom(s.at, -1_200), 30);
   const got = await latestPueRatio(client, [s.assetId], s.at);
   assert(got === null, `a pair 1200 s before at is outside the 900 s window, got ${JSON.stringify(got)}`);
+}
+
+/**
+ * The composition `DashboardService.kpis` ships: every field from its own read,
+ * all at `at`. Each field has a distinct value, and a live PUE pair (90 / 30 =
+ * 3) sits beside the prior one (60 / 30 = 2), so dropping `at` from the
+ * `latestPueRatio` call — which tsc cannot see, the parameter being optional —
+ * answers 3, and swapping two same-typed fields cannot pass either.
+ */
+export async function assertComposedPriorReadsEveryFieldAtAt(client: pg.PoolClient): Promise<void> {
+  const s = await seedAsset(client);
+  await insertSample(client, s.assetId, "kw", s.at, 6);
+  await insertSample(client, s.assetId, "kw", s.now, 9);
+  await insertSample(client, s.assetId, "site_kw", secondsFrom(s.at, -60), 60);
+  await insertSample(client, s.assetId, "it_kw", secondsFrom(s.at, -60), 30);
+  const fresh = new Date(Date.now() - 60 * SECOND_MS);
+  await insertSample(client, s.assetId, "site_kw", fresh, 90);
+  await insertSample(client, s.assetId, "it_kw", fresh, 30);
+  await insertAlarm(client, s, hoursBefore(s.now, 30), hoursBefore(s.now, 23));
+  const got = await readKpiPrior(client, [s.assetId], s.at);
+  const expected = { asOf: s.at.toISOString(), totalKw: 6, alarmsOpen: 1, pueEstimate: 2 };
+  assert(
+    JSON.stringify(got) === JSON.stringify(expected),
+    `readKpiPrior must read every field at at: expected ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`,
+  );
 }
 
 /** Without `at` the live read is unchanged: a pair a minute old reads 2. */
