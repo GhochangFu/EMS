@@ -12,6 +12,16 @@ const RAIL_ROWS = 8;
 
 type RailTab = "active" | "summary";
 
+/** The page's asset read — TanStack's `status` for `GET /api/v1/assets`. */
+export type AssetsStatus = "pending" | "success" | "error";
+
+/** What the rail says when it has no ids, by why it has none. */
+const NO_IDS_NOTE: Record<AssetsStatus, string> = {
+  pending: "Loading alarms…",
+  error: "Alarms unavailable.",
+  success: "No assets in scope",
+};
+
 function tabClass(selected: boolean): string {
   return `rounded border px-3 py-1.5 text-xs font-semibold ${
     selected
@@ -45,15 +55,16 @@ function RailNote({ text }: { text: string }) {
  */
 export function ActiveAlarmsRail({
   assetIds,
-  assetsResolving = false,
+  assetsStatus = "success",
 }: {
   assetIds: readonly string[];
   /**
-   * The page's asset ids are still resolving. With no ids the two reads are
-   * disabled, and a disabled query is not loading — so without this the rail
-   * would say "No active alarms" on every cold load, before it has asked.
+   * The state of the page's asset read, which resolves `assetIds`. With no ids
+   * the two reads are disabled, and a disabled query answers nothing — so
+   * without this the rail would say "No active alarms" on every cold load,
+   * before it has asked, and "Loading alarms…" forever after a failed read.
    */
-  assetsResolving?: boolean;
+  assetsStatus?: AssetsStatus;
 }) {
   const [tab, setTab] = useState<RailTab>("active");
   const { active, summary } = useActiveAlarms(assetIds);
@@ -66,8 +77,7 @@ export function ActiveAlarmsRail({
   const rows = (active.data?.items ?? []).slice(0, RAIL_ROWS);
   const counts = [...(summary.data?.items ?? [])].reverse();
   // With no ids nothing is fetched: say why, never "No active alarms".
-  const noIdsNote =
-    assetIds.length > 0 ? null : assetsResolving ? "Loading alarms…" : "No assets in scope";
+  const noIdsNote = assetIds.length > 0 ? null : NO_IDS_NOTE[assetsStatus];
 
   return (
     <section aria-label="Alarms" className="rounded border border-gray-200 bg-white p-4">

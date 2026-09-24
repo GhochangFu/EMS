@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -51,6 +51,11 @@ const state = vi.hoisted(() => ({
   rules: [] as unknown[],
   /** One stable map: the page memoises its alarm ids on this identity. */
   idByCode: new Map<string, string>(),
+  /** Also stable: the map before `GET /assets` answers, or after it fails. */
+  emptyIdByCode: new Map<string, string>(),
+  /** What the mocked context hands the page on this render. */
+  currentIdByCode: new Map<string, string>(),
+  assetsStatus: "success" as "pending" | "success" | "error",
   fetchActiveAlarms: vi.fn(),
   fetchAlarmSummary: vi.fn(),
 }));
@@ -119,8 +124,8 @@ vi.mock("../components/live-svg/schematic-telemetry-context", async () => {
       stale: false,
     }),
     useSchematicTelemetryContext: () => ({
-      idByCode: state.idByCode,
-      assetsResolved: true,
+      idByCode: state.currentIdByCode,
+      assetsStatus: state.assetsStatus,
       assetMetaById: new Map(),
       byAssetId: {},
       totalKw: null,
@@ -230,13 +235,22 @@ type Setup = {
   telemetry?: Record<string, SchematicTelemetrySlice>;
   rules?: RuleListItem[];
   scope?: AccessibleScope;
+  /** The context's asset read; anything but `"success"` resolves no id. */
+  assetsStatus?: "pending" | "success" | "error";
 };
 
-function renderPage({ telemetry = liveTelemetry(), rules = [], scope = GLOBAL_SCOPE }: Setup = {}): void {
+function renderPage({
+  telemetry = liveTelemetry(),
+  rules = [],
+  scope = GLOBAL_SCOPE,
+  assetsStatus = "success",
+}: Setup = {}): void {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
   state.telemetry = telemetry;
   state.rules = rules;
+  state.assetsStatus = assetsStatus;
+  state.currentIdByCode = assetsStatus === "success" ? state.idByCode : state.emptyIdByCode;
   state.fetchActiveAlarms.mockImplementation(
     (): Promise<AlarmsListResponse> => Promise.resolve({ items: [RAIL_ALARM], nextCursor: null }),
   );
@@ -426,6 +440,27 @@ export async function alarmsRailQueriesThePageAssetIds(): Promise<void> {
       CR_TRACKED_ASSET_CODES.map((code) => assetIdFor(code)),
     ),
   );
+}
+
+/** The context's asset read is pending: the rail says it is loading. */
+export function alarmsRailSaysLoadingWhileTheAssetsArePending(): void {
+  renderPage({ assetsStatus: "pending" });
+  expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
+}
+
+/** The context's asset read is pending: the rail fetches no alarms — it has no ids. */
+export async function alarmsRailFetchesNothingWhileTheAssetsArePending(): Promise<void> {
+  renderPage({ assetsStatus: "pending" });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(state.fetchActiveAlarms).not.toHaveBeenCalled();
+}
+
+/** The context's asset read failed: the rail says unavailable, not loading forever. */
+export function alarmsRailSaysUnavailableWhenTheAssetsFailed(): void {
+  renderPage({ assetsStatus: "error" });
+  expect(screen.getByText("Alarms unavailable.")).toBeInTheDocument();
 }
 
 /** A critical rule matched on a live asset: the subtitle leads with the count. */

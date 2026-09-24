@@ -4,7 +4,10 @@ import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "../stores/auth-store";
 import {
+  alarmsRailFetchesNothingWhileTheAssetsArePending,
   alarmsRailQueriesThePageAssetIds,
+  alarmsRailSaysLoadingWhileTheAssetsArePending,
+  alarmsRailSaysUnavailableWhenTheAssetsFailed,
   alarmsRailShowsTheMessageVerbatim,
   alarmsRailSummaryShowsTheCounts,
   alarmsRailViewAllLinksToTheAlarmsPage,
@@ -103,6 +106,18 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("queries the alarms rail with the page's asset ids", async () => {
     await alarmsRailQueriesThePageAssetIds();
+  });
+
+  it("says the alarms rail is loading while the page's assets are pending", () => {
+    alarmsRailSaysLoadingWhileTheAssetsArePending();
+  });
+
+  it("fetches no alarms while the page's assets are pending", async () => {
+    await alarmsRailFetchesNothingWhileTheAssetsArePending();
+  });
+
+  it("says the alarms rail is unavailable when the page's asset read failed", () => {
+    alarmsRailSaysUnavailableWhenTheAssetsFailed();
   });
 
   it("leads the subtitle with the live critical count", async () => {

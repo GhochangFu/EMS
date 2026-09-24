@@ -92,10 +92,10 @@ function alarm(index: number, overrides: Partial<AlarmListItem> = {}): AlarmList
 type Setup = {
   ids?: string[];
   items?: AlarmListItem[];
-  assetsResolving?: boolean;
+  assetsStatus?: "pending" | "success" | "error";
 };
 
-function renderRail({ ids = IDS, items = [alarm(1)], assetsResolving = false }: Setup = {}): void {
+function renderRail({ ids = IDS, items = [alarm(1)], assetsStatus = "success" }: Setup = {}): void {
   mocks.handlers.clear();
   mocks.fetchActiveAlarms.mockImplementation(
     (): Promise<AlarmsListResponse> => Promise.resolve({ items, nextCursor: null }),
@@ -116,7 +116,7 @@ function renderRail({ ids = IDS, items = [alarm(1)], assetsResolving = false }: 
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <ActiveAlarmsRail assetIds={ids} assetsResolving={assetsResolving} />
+        <ActiveAlarmsRail assetIds={ids} assetsStatus={assetsStatus} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -218,9 +218,24 @@ export async function rendersTheEmptyStateForNoActiveAlarms(): Promise<void> {
  * is loading, never "No active alarms" — it has not asked the server.
  */
 export async function resolvingIdsSayLoadingNotNone(): Promise<void> {
-  renderRail({ ids: [], assetsResolving: true });
+  renderRail({ ids: [], assetsStatus: "pending" });
   expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
   expect(screen.queryByText("No active alarms")).not.toBeInTheDocument();
+}
+
+/**
+ * No ids because the page's asset read failed: the rail says so, never
+ * "Loading alarms…" — a failed read does not retry into an answer.
+ */
+export function failedAssetReadSaysUnavailable(): void {
+  renderRail({ ids: [], assetsStatus: "error" });
+  expect(screen.getByText("Alarms unavailable.")).toBeInTheDocument();
+}
+
+/** The positive control beside the error case: a failed read is not "loading". */
+export function failedAssetReadDoesNotSayLoading(): void {
+  renderRail({ ids: [], assetsStatus: "error" });
+  expect(screen.queryByText("Loading alarms…")).not.toBeInTheDocument();
 }
 
 /**

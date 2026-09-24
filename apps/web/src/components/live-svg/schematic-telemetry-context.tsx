@@ -38,12 +38,13 @@ export type { SchematicTelemetrySlice };
 type Ctx = {
   idByCode: Map<string, string>;
   /**
-   * `true` once `GET /api/v1/assets` has answered (`F3.28`). Until then
-   * `idByCode` is empty because nothing has resolved, not because no asset is
-   * in scope — a consumer that keys a read on the ids must say "loading", not
-   * "none", for that interval.
+   * The state of `GET /api/v1/assets` (`F3.28`) — TanStack's query `status`.
+   * Until `"success"`, `idByCode` is empty because nothing has resolved, not
+   * because no asset is in scope: a consumer that keys a read on the ids must
+   * say "loading" while `"pending"` and "unavailable" on `"error"`, never
+   * "none" and never "loading" forever.
    */
-  assetsResolved: boolean;
+  assetsStatus: "pending" | "success" | "error";
   assetMetaById: Map<
     string,
     { code: string; name: string; siteName: string; domain: string }
@@ -264,18 +265,18 @@ export function SchematicTelemetryProvider({
     return { totalKw: sum.total, staleAssets: sum.staleExcluded };
   }, [byAssetId, trackedIds, staleTick]);
 
-  const assetsResolved = assetsQ.isSuccess;
+  const assetsStatus = assetsQ.status;
   const value = useMemo(
     () => ({
       idByCode,
-      assetsResolved,
+      assetsStatus,
       assetMetaById,
       byAssetId,
       totalKw,
       staleAssets,
       staleTick,
     }),
-    [idByCode, assetsResolved, assetMetaById, byAssetId, totalKw, staleAssets, staleTick],
+    [idByCode, assetsStatus, assetMetaById, byAssetId, totalKw, staleAssets, staleTick],
   );
 
   useEffect(() => {

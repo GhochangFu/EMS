@@ -6,6 +6,8 @@ import { onlineManager } from "@tanstack/react-query";
 import {
   emptyIdsFetchNoActiveList,
   emptyIdsFetchNoSummary,
+  failedAssetReadDoesNotSayLoading,
+  failedAssetReadSaysUnavailable,
   fetchesTheActiveListForTheGivenIds,
   pausedActiveTabSaysLoadingNotNone,
   pausedSummaryTabSaysLoadingNotNone,
@@ -79,6 +81,14 @@ describe("F3.28 active alarms rail", () => {
 
   it("says loading, not none, while the page's assets resolve", async () => {
     await resolvingIdsSayLoadingNotNone();
+  });
+
+  it("says unavailable when the page's asset read failed", () => {
+    failedAssetReadSaysUnavailable();
+  });
+
+  it("does not say loading when the page's asset read failed", () => {
+    failedAssetReadDoesNotSayLoading();
   });
 
   it("says loading, not none, on the Active tab while the read is paused", () => {

@@ -441,7 +441,7 @@ function ControlRoomOverviewContent() {
           {canElectrical ? <MiniSld rules={rules} /> : <ScopedUnavailable label="Electrical SLD" />}
         </section>
 
-        <ActiveAlarmsRail assetIds={alarmAssetIds} assetsResolving={!telemetryCtx?.assetsResolved} />
+        <ActiveAlarmsRail assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">
