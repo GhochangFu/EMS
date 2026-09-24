@@ -365,7 +365,10 @@ export function pointValuesAtInstantAcceptsASampledAndAnUnsampledRef(): void {
   );
 }
 
-/** `time` and `value` are independently nullable in the schema — a half-null row is still refused by the producer, not the contract, but the contract must not force them to travel together. */
+/**
+ * The two required keys: a response with no `at` is refused, and an item with
+ * no `pointRef` is refused even when its other fields are present.
+ */
 export function pointValuesAtInstantRequiresPointRefAndAt(): void {
   expectRejects(
     pointValuesAtInstantResponseSchema,
