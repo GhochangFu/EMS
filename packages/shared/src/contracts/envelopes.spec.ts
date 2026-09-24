@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import {
+  alarmSummaryResponseSchema,
   assetListResponseSchema,
   assetListRowSchema,
   notificationDeliveriesResponseSchema,
@@ -317,6 +318,29 @@ export function deliveryEventIsRequiredOnEveryRow(): void {
     notificationDeliveriesResponseSchema,
     { items: [withoutEvent] },
     "a delivery row with no `event` must be refused — the field is required, not optional",
+  );
+}
+
+const alarmSummaryRow = { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1 };
+
+/**
+ * `F3.28` — `alarmSummaryResponseSchema` carries every active severity's row,
+ * including one with a zero count, plus the running `total`.
+ */
+export function alarmSummaryResponseAcceptsAZeroCountRow(): void {
+  expectAccepts(
+    alarmSummaryResponseSchema,
+    { items: [alarmSummaryRow, { ...alarmSummaryRow, code: "warning", tone: "warning", rank: 20, count: 0 }], total: 1 },
+    "a zero-count severity row must parse — every active severity is represented",
+  );
+}
+
+/** A response with no `total` field is refused — it is required, not derived by the client. */
+export function alarmSummaryResponseRequiresTotal(): void {
+  expectRejects(
+    alarmSummaryResponseSchema,
+    { items: [alarmSummaryRow] },
+    "alarmSummaryResponseSchema must require total",
   );
 }
 

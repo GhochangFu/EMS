@@ -4,15 +4,21 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
-import { alarms, assets, auditLog, users } from "@bms/db";
+import { alarms, alarmSeverities, assets, auditLog, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AlarmListItem, JwtPayload } from "@bms/shared";
+import type {
+  AlarmListItem,
+  AlarmSeverityCount,
+  AlarmSummaryResponse,
+  JwtPayload,
+} from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
+import { activeAlarmFilter } from "./active-alarm-filter";
 import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
 import { AlarmsGateway } from "./alarms.gateway";
 
@@ -78,15 +84,28 @@ export class AlarmsService {
 
   /**
    * Keyset pagination on `(raised_at DESC, id DESC)`.
+   *
+   * `F3.28` (ADR 0074 decision 4): `state: "active"` keeps only rows matching
+   * `activeAlarmFilter` (`cleared_at IS NULL`); absent or `"all"` is today's
+   * read, unchanged. `assetIds` is the caller's already-narrowed scope — the
+   * controller intersects a requested filter with `readableAssetIds` before it
+   * reaches here, so this method never sees an id the caller cannot read.
    */
   async list(opts: {
     cursor?: string;
     limit: number;
     assetIds?: string[] | null;
+    state?: "all" | "active";
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
-    const limit = Math.min(100, Math.max(1, opts.limit));
+    // Truncated after the clamp (plan decision 4): the schema lets a fractional
+    // `limit` through, as the old `Number(limitRaw)` did, and SQL's `LIMIT`
+    // must never see one — `50.5` asks for 50 rows.
+    const limit = Math.trunc(Math.min(100, Math.max(1, opts.limit)));
     const cursor = opts.cursor;
-    const filters = opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : [];
+    const filters = [
+      ...(opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : []),
+      ...(opts.state === "active" ? [activeAlarmFilter] : []),
+    ];
 
     return withReadScope(
       this.db,
@@ -137,6 +156,79 @@ export class AlarmsService {
         };
       },
     );
+  }
+
+  /**
+   * `F3.28` (ADR 0074 decision 4, plan decision 7) — active alarm counts per
+   * severity for the alarms rail's summary tab.
+   *
+   * Every **active** severity is a row, in ascending `rank` order (the
+   * `GET /vocabularies` order), with its count — zero allowed — so the rail
+   * never has to invent a missing level. `bms.alarm_severities LEFT JOIN
+   * bms.alarms`: the active predicate and the scope predicate both sit in the
+   * `ON` clause, not in `WHERE`, so a severity with no matching alarm keeps its
+   * row, and `count(alarms.id)` (never `count(*)`) counts it as 0.
+   *
+   * `assetIds` is the caller's already-narrowed scope, routed through
+   * `withReadScope` like `list`. On the fleet path (an admin, or a scope
+   * spanning organizations) the `inArray` in the `ON` clause is the only
+   * isolation control. An empty scope — `[]`, or ids that resolve to no
+   * asset — never reads `bms.alarms`: it returns every active severity at 0.
+   */
+  async activeCountsBySeverity(
+    assetIds: string[] | null | undefined,
+  ): Promise<AlarmSummaryResponse> {
+    const severityColumns = {
+      code: alarmSeverities.code,
+      label: alarmSeverities.label,
+      tone: alarmSeverities.tone,
+      rank: alarmSeverities.rank,
+    };
+    // `tone` is closed by `alarm_severities_tone_check` in SQL, so the
+    // column's `string` is narrowed to the contract's palette here.
+    const toCount = (r: { code: string; label: string; tone: string; rank: number; count: number }) =>
+      ({ ...r, tone: r.tone as AlarmSeverityCount["tone"] }) satisfies AlarmSeverityCount;
+
+    const counted = await withReadScope(
+      this.db,
+      this.fleetDb,
+      assetIds,
+      () => null,
+      (tx) =>
+        tx
+          .select({
+            ...severityColumns,
+            count: sql<number>`count(${alarms.id})::int`,
+          })
+          .from(alarmSeverities)
+          .leftJoin(
+            alarms,
+            and(
+              eq(alarms.severity, alarmSeverities.code),
+              activeAlarmFilter,
+              ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+            ),
+          )
+          .where(eq(alarmSeverities.active, true))
+          .groupBy(
+            alarmSeverities.code,
+            alarmSeverities.label,
+            alarmSeverities.tone,
+            alarmSeverities.rank,
+          )
+          .orderBy(asc(alarmSeverities.rank)),
+    );
+    const rows =
+      counted ??
+      (
+        await this.fleetDb
+          .select(severityColumns)
+          .from(alarmSeverities)
+          .where(eq(alarmSeverities.active, true))
+          .orderBy(asc(alarmSeverities.rank))
+      ).map((s) => ({ ...s, count: 0 }));
+    const items = rows.map(toCount);
+    return { items, total: items.reduce((sum, i) => sum + i.count, 0) };
   }
 
   /**

@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import { fetchRules } from "../api/rules";
+import { ActiveAlarmsRail } from "../components/control-room/active-alarms-rail";
 import { KpiTile } from "../components/kpi-tile";
 import {
   CR_BREAKERS,
@@ -13,6 +15,7 @@ import {
   type SchematicTelemetrySlice,
   SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
+  useSchematicTelemetryContext,
 } from "../components/live-svg/schematic-telemetry-context";
 import { PageHeader } from "../components/page-header";
 import { StaticTspan } from "../components/static-value";
@@ -225,6 +228,14 @@ function ControlRoomOverviewContent() {
     refetchInterval: 15_000,
   });
   const rules = rulesQuery.data?.items ?? [];
+  // The alarms rail reads the server's alarms for this page's assets (ADR 0074
+  // decision 4); a code the context has not resolved is simply not asked for.
+  const telemetryCtx = useSchematicTelemetryContext();
+  const idByCode = telemetryCtx?.idByCode;
+  const alarmAssetIds = useMemo(
+    () => CR_TRACKED_ASSET_CODES.flatMap((code) => idByCode?.get(code) ?? []),
+    [idByCode],
+  );
   // One clock per render. Thirty inline `Date.now()` calls could straddle a
   // millisecond boundary and made the staleness decision non-uniform across a
   // single frame.
@@ -430,7 +441,7 @@ function ControlRoomOverviewContent() {
           {canElectrical ? <MiniSld rules={rules} /> : <ScopedUnavailable label="Electrical SLD" />}
         </section>
 
-        <ActiveRulesPanel states={activeRuleStates} />
+        <ActiveAlarmsRail assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">
@@ -694,47 +705,6 @@ function EnvironmentSnapshot({
       ) : envStatus.matchedRule ? (
         <p className="mt-2 text-xs font-medium text-amber-900">{envStatus.matchedRule.name}</p>
       ) : null}
-    </section>
-  );
-}
-
-function ActiveRulesPanel({
-  states,
-}: {
-  states: { code: string; state: RuleState }[];
-}) {
-  const active = states
-    .filter((item) => item.state.matchedRule)
-    .slice(0, 6);
-  return (
-    <section className="rounded border border-gray-200 bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="font-condensed text-lg font-bold text-bms-ink">
-            Active Rule Warnings
-          </h2>
-          <p className="text-xs text-bms-muted">
-            SLD, IT, UPS, Battery, HVAC, and Environment rules
-          </p>
-        </div>
-        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${active.length > 0 ? "border-amber-200 bg-amber-100 text-amber-900" : "border-bms-green/20 bg-bms-green/10 text-bms-green"}`}>
-          {active.length} active
-        </span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {active.length === 0 ? (
-          <div className="rounded border border-gray-200 bg-gray-50 p-3 text-sm text-bms-muted">
-            No enabled CR SLD or rack-power rules are currently matched.
-          </div>
-        ) : (
-          active.map((item) => (
-            <div key={`${item.code}-${item.state.matchedRule?.id}`} className={`rounded border p-3 text-sm ${statusPillClass(item.state.status)}`}>
-              <div className="font-semibold">{item.code}</div>
-              <div className="mt-1 text-xs">{item.state.matchedRule?.name}</div>
-            </div>
-          ))
-        )}
-      </div>
     </section>
   );
 }

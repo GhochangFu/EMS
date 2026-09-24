@@ -18,7 +18,9 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
+import { intersectReadable } from "../auth/asset-scope";
 import { alarmAckBodySchema } from "./ack.schema";
+import { alarmListQuerySchema, alarmSummaryQuerySchema } from "./alarm-list.schema";
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsService } from "./alarms.service";
@@ -34,6 +36,18 @@ import { alarmEnrichmentUpsertBodySchema } from "./enrichment.schema";
  */
 const alarmIdParamSchema = z.string().uuid();
 
+/** A query schema's `ZodError` is the caller's mistake: a 400, as the body routes answer. */
+function parseQuery<S extends z.ZodTypeAny>(schema: S, query: unknown): z.output<S> {
+  try {
+    return schema.parse(query) as z.output<S>;
+  } catch (err) {
+    if (err instanceof ZodError) {
+      throw new BadRequestException(err.flatten());
+    }
+    throw err;
+  }
+}
+
 @Controller("alarms")
 @UseGuards(JwtAuthGuard)
 export class AlarmsController {
@@ -44,21 +58,37 @@ export class AlarmsController {
     private readonly enrichment: AlarmEnrichmentService,
   ) {}
 
+  /**
+   * `F3.28` (ADR 0074 decision 4). The query is parsed before access control
+   * runs, so a malformed one is a 400 that costs no scope read. A requested
+   * `assetIds` is only ever **intersected** with the caller's readable set
+   * (`intersectReadable`) — an id outside it is dropped, and an empty
+   * intersection reaches the service as `[]`, which `withReadScope` answers
+   * with an empty page, never with every row.
+   */
   @Get()
-  async list(
-    @CurrentUser() user: JwtPayload,
-    @Query("cursor") cursor?: string,
-    @Query("limit") limitRaw?: string,
-  ) {
-    const limit = limitRaw ? Number(limitRaw) : 20;
-    if (Number.isNaN(limit)) {
-      throw new BadRequestException("Invalid limit");
-    }
+  async list(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
+    const dto = parseQuery(alarmListQuerySchema, query);
     return this.alarms.list({
-      cursor,
-      limit,
-      assetIds: await this.accessControl.readableAssetIds(user),
+      cursor: dto.cursor,
+      limit: dto.limit ?? 20,
+      state: dto.state,
+      assetIds: intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
     });
+  }
+
+  /**
+   * `F3.28` (ADR 0074 decision 4, plan decision 7) — active alarm counts per
+   * severity, for the same optional `assetIds` as `list`, intersected the
+   * same way. Declared before every `:id` route so `summary` is never read as
+   * an alarm id.
+   */
+  @Get("summary")
+  async summary(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
+    const dto = parseQuery(alarmSummaryQuerySchema, query);
+    return this.alarms.activeCountsBySeverity(
+      intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
+    );
   }
 
   /** ADR 0034 decision 5. A read, gated by asset scope like `list` — no

@@ -81,6 +81,7 @@ import {
   updateNotificationChannelBodySchema,
 } from "../notifications/notifications.schema";
 import { alarmAckBodySchema } from "../alarms/ack.schema";
+import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
@@ -173,6 +174,8 @@ import {
  */
 export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AlarmsController_acknowledge: alarmAckBodySchema,
+  AlarmsController_list: alarmListQuerySchema,
+  AlarmsController_summary: alarmSummaryQuerySchema,
   AlarmsController_upsertEnrichment: alarmEnrichmentUpsertBodySchema,
   AssetGroupMembersAdminController_setRole: setAssetGroupMemberRoleBodySchema,
   AssetPointCalcOverrideController_set: assetPointCalcOverrideBodySchema,

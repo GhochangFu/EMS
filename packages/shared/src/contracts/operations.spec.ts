@@ -1,4 +1,4 @@
-import { vocabulariesResponseSchema } from "./operations";
+import { alarmSeverityCountSchema, vocabulariesResponseSchema } from "./operations";
 
 /**
  * `E4.3` (ADR 0073 decision 1) — the seventh open vocabulary,
@@ -55,5 +55,41 @@ export function assertAcceptsWaterBalanceRoleRow(): void {
     `vocabulariesResponseSchema refused a well-formed waterBalanceRoles row: ${JSON.stringify(
       !result.success ? result.error.issues : undefined,
     )}`,
+  );
+}
+
+/**
+ * `F3.28` (ADR 0074 decision 3 / plan decision 7) — `alarmSeverityCountSchema`
+ * allows a `count` of zero. Every active severity is represented, whether or
+ * not it currently has an alarm, so a zero row is not an anomaly.
+ */
+export function assertAlarmSeverityCountAllowsZero(): void {
+  const result = alarmSeverityCountSchema.safeParse({
+    code: "critical",
+    label: "Critical",
+    tone: "critical",
+    rank: 30,
+    count: 0,
+  });
+  assert(
+    result.success === true,
+    `alarmSeverityCountSchema refused a zero count: ${JSON.stringify(
+      !result.success ? result.error.issues : undefined,
+    )}`,
+  );
+}
+
+/** A negative count is never a valid severity count. */
+export function assertAlarmSeverityCountRefusesNegative(): void {
+  const result = alarmSeverityCountSchema.safeParse({
+    code: "critical",
+    label: "Critical",
+    tone: "critical",
+    rank: 30,
+    count: -1,
+  });
+  assert(
+    result.success === false,
+    "alarmSeverityCountSchema accepted a negative count",
   );
 }

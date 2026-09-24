@@ -359,6 +359,25 @@ export const alarmSeverityDtoSchema = z.object({
   active: z.boolean(),
 });
 
+/**
+ * One severity row of the active-alarm-count summary (`F3.28`, ADR 0074
+ * decision 3 / plan decision 7) — `GET /api/v1/alarms/summary`.
+ *
+ * Every active severity is represented, `count: 0` allowed, in rank order —
+ * the summary is a complete picture of the scope's severities, not a sparse
+ * list of the ones that happen to have an alarm right now. `label`/`tone`/
+ * `rank` are read straight off `bms.alarm_severities`, matching
+ * `alarmSeverityDtoSchema`; this is a narrower projection with `count` added,
+ * a fresh `z.object` rather than `.extend()` (ADR 0030).
+ */
+export const alarmSeverityCountSchema = z.object({
+  code: alarmSeverityCodeSchema,
+  label: z.string(),
+  tone: pillToneSchema,
+  rank: z.number(),
+  count: z.number().int().nonnegative(),
+});
+
 /** One row of `bms.alarm_skills` (ADR 0034). No `tone`, no `rank` — a skill
  * drives no styling and carries no urgency; matches `assetDomainDtoSchema`'s
  * shape, not `alarmSeverityDtoSchema`'s. */

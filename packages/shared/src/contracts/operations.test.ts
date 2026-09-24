@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   assertAcceptsEmptyWaterBalanceRoles,
   assertAcceptsWaterBalanceRoleRow,
+  assertAlarmSeverityCountAllowsZero,
+  assertAlarmSeverityCountRefusesNegative,
   assertRefusesResponseWithoutWaterBalanceRoles,
 } from "./operations.spec";
 
@@ -21,5 +23,15 @@ describe("vocabulariesResponseSchema — waterBalanceRoles (ADR 0073 decision 1)
 
   it("accepts a well-formed waterBalanceRoles row", () => {
     assertAcceptsWaterBalanceRoleRow();
+  });
+});
+
+describe("alarmSeverityCountSchema (F3.28, ADR 0074 decision 3)", () => {
+  it("allows a zero count — every active severity is represented", () => {
+    assertAlarmSeverityCountAllowsZero();
+  });
+
+  it("refuses a negative count", () => {
+    assertAlarmSeverityCountRefusesNegative();
   });
 });

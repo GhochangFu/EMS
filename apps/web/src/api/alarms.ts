@@ -2,18 +2,19 @@ import {
   alarmDetailsResponseSchema,
   alarmListItemSchema,
   alarmsListResponseSchema,
+  alarmSummaryResponseSchema,
 } from "@bms/shared/contracts";
-import type { AlarmDetailsResponse, AlarmListItem } from "@bms/shared";
+import type {
+  AlarmDetailsResponse,
+  AlarmListItem,
+  AlarmsListResponse,
+  AlarmSummaryResponse,
+} from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
-
-export type AlarmsListResponse = {
-  items: AlarmListItem[];
-  nextCursor: string | null;
-};
 
 export async function fetchAlarmsPage(
   cursor?: string,
@@ -29,6 +30,47 @@ export async function fetchAlarmsPage(
     throw new Error(`alarms ${res.status}`);
   }
   return checkResponse(alarmsListResponseSchema, await res.json(), "alarms");
+}
+
+/**
+ * The alarms rail's rows on `/cr-overview` (`F3.28`, ADR 0074 decision 4):
+ * active alarms (`cleared_at IS NULL`) on the given assets, newest first.
+ * `assetIds` is one repeated parameter per id; the API intersects it with the
+ * caller's readable assets, so it can only narrow the read.
+ */
+export async function fetchActiveAlarms(
+  assetIds: readonly string[],
+  limit = 8,
+): Promise<AlarmsListResponse> {
+  const params = new URLSearchParams({ state: "active", limit: String(limit) });
+  for (const id of assetIds) {
+    params.append("assetIds", id);
+  }
+  const res = await fetch(`${base}/api/v1/alarms?${params}`, withAuth());
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    throw new Error(`alarms ${res.status}`);
+  }
+  return checkResponse(alarmsListResponseSchema, await res.json(), "alarms");
+}
+
+/**
+ * `GET /api/v1/alarms/summary` — active-alarm counts per severity, every
+ * active severity present (`count: 0` allowed), in ascending rank.
+ */
+export async function fetchAlarmSummary(
+  assetIds: readonly string[],
+): Promise<AlarmSummaryResponse> {
+  const params = new URLSearchParams();
+  for (const id of assetIds) {
+    params.append("assetIds", id);
+  }
+  const res = await fetch(`${base}/api/v1/alarms/summary?${params}`, withAuth());
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    throw new Error(`alarms/summary ${res.status}`);
+  }
+  return checkResponse(alarmSummaryResponseSchema, await res.json(), "alarms/summary");
 }
 
 export async function ackAlarm(

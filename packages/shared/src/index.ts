@@ -379,6 +379,8 @@ export type RuleCategoryDto = z.infer<typeof Op.ruleCategoryDtoSchema>;
 export type AssetDomainDto = z.infer<typeof Op.assetDomainDtoSchema>;
 /** ADR 0032 — one row of `bms.alarm_severities`, with its `rank` and `tone`. */
 export type AlarmSeverityDto = z.infer<typeof Op.alarmSeverityDtoSchema>;
+/** `F3.28` — one severity row of `GET /api/v1/alarms/summary`, `count` allowed to be zero. */
+export type AlarmSeverityCount = z.infer<typeof Op.alarmSeverityCountSchema>;
 /** ADR 0034 — one row of `bms.alarm_skills`. No `rank`/`tone`: a skill drives no styling. */
 export type AlarmSkillDto = z.infer<typeof Op.alarmSkillDtoSchema>;
 /** A skill/trade code, as a code into `bms.alarm_skills` (ADR 0034). */
@@ -680,6 +682,8 @@ export type TemplateMigrationResultResponse = z.infer<
   typeof E.templateMigrationResultResponseSchema
 >;
 export type AlarmsListResponse = z.infer<typeof E.alarmsListResponseSchema>;
+/** `GET /api/v1/alarms/summary` (`F3.28`, ADR 0074 decision 3). */
+export type AlarmSummaryResponse = z.infer<typeof E.alarmSummaryResponseSchema>;
 export type WorkOrdersListResponse = z.infer<typeof E.workOrdersListResponseSchema>;
 export type MaintenanceSchedulesResponse = z.infer<
   typeof E.maintenanceSchedulesResponseSchema
