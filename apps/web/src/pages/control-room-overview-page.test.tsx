@@ -37,6 +37,7 @@ import {
   theListTabShowsTwelveBreakerRows,
   theListViewShowsAStaleBreakerOffline,
   theListViewWarnsOnAnSldOnlyPointKey,
+  SLD_ONLY_POINT_KEYS,
   theClassStripShowsTheRoleSummary,
   theClassStripQueriesThePageAssetIds,
   theClassStripSaysLoadingWhileTheAssetsArePending,
@@ -210,9 +211,12 @@ describe("F3.28 characterization of /cr-overview", () => {
     await theListViewShowsAStaleBreakerOffline();
   });
 
-  it("warns in the List view on a point key only /cr-sld read before", async () => {
-    await theListViewWarnsOnAnSldOnlyPointKey();
-  });
+  it.each(SLD_ONLY_POINT_KEYS.map((row) => row.pointKey))(
+    "warns in the List view on %s, a point key only /cr-sld read before",
+    async (pointKey) => {
+      await theListViewWarnsOnAnSldOnlyPointKey(pointKey);
+    },
+  );
 
   it("renders the state legend with Normal, the vocabulary and Offline", async () => {
     await theStateLegendRendersNormalTheVocabularyAndOffline();

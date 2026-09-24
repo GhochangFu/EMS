@@ -782,29 +782,54 @@ export async function theListViewShowsAStaleBreakerOffline(): Promise<void> {
 }
 
 /**
- * A rule on a breaker key only `/cr-sld` used to read (`frequency_hz`) turns
- * the List row WARN, as the SLD page's own table does for the same rule.
- * CR-Q4, with no rule, reading CLOSED is the positive control.
+ * The four breaker keys only `/cr-sld` used to read (`3038698d`): each
+ * point key, the slice field `pointValue` reads for it, and a reading above
+ * the `gt` threshold. `slice` is typed as a slice key, so a field that does
+ * not exist fails the typecheck.
  */
-export async function theListViewWarnsOnAnSldOnlyPointKey(): Promise<void> {
+export const SLD_ONLY_POINT_KEYS: readonly {
+  pointKey: string;
+  slice: keyof SchematicTelemetrySlice;
+  value: number;
+  threshold: number;
+}[] = [
+  { pointKey: "voltage_l1_v", slice: "voltage", value: 245, threshold: 240 },
+  { pointKey: "kvar", slice: "kvar", value: 6, threshold: 5 },
+  { pointKey: "frequency_hz", slice: "frequencyHz", value: 50.4, threshold: 50.2 },
+  { pointKey: "kwh_today", slice: "kwhToday", value: 130, threshold: 120 },
+];
+
+/**
+ * A rule on one of those keys turns the List row WARN, as the SLD page's own
+ * table does for the same rule. CR-Q4, with no rule, reading CLOSED is the
+ * positive control. One claim: both rows' states together.
+ */
+export async function theListViewWarnsOnAnSldOnlyPointKey(
+  pointKey: string,
+): Promise<void> {
+  const row = SLD_ONLY_POINT_KEYS.find((candidate) => candidate.pointKey === pointKey);
+  if (!row) throw new Error(`no SLD-only case for ${pointKey}`);
   const telemetry = liveTelemetry();
-  telemetry["CR-Q5"] = liveSlice({ frequencyHz: 50.4 });
+  telemetry["CR-Q5"] = liveSlice({ [row.slice]: row.value });
   renderPage({
     telemetry,
     rules: [
       thresholdRule({
         assetId: "asset-cr-q5",
         assetCode: "CR-Q5",
-        pointKey: "frequency_hz",
-        thresholdValue: 50.2,
+        pointKey: row.pointKey,
+        thresholdValue: row.threshold,
       }),
     ],
   });
   await openListView();
-  const rowFor = (label: string) =>
-    within(sldSection()).getByText(label).closest("tr") as HTMLElement;
-  expect(within(rowFor("Q4 · UPS-1 OUT")).getByText("CLOSED")).toBeInTheDocument();
-  expect(within(rowFor("Q5 · UPS-2 OUT")).getByText("WARN")).toBeInTheDocument();
+  const stateOf = (label: string) =>
+    ["CLOSED", "WARN"].find(
+      (text) =>
+        within(within(sldSection()).getByText(label).closest("tr") as HTMLElement).queryByText(text) !==
+        null,
+    );
+  expect([stateOf("Q4 · UPS-1 OUT"), stateOf("Q5 · UPS-2 OUT")]).toEqual(["CLOSED", "WARN"]);
 }
 
 // ---------------------------------------------------------------------------
