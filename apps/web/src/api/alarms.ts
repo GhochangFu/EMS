@@ -4,17 +4,17 @@ import {
   alarmsListResponseSchema,
   alarmSummaryResponseSchema,
 } from "@bms/shared/contracts";
-import type { AlarmDetailsResponse, AlarmListItem, AlarmSummaryResponse } from "@bms/shared";
+import type {
+  AlarmDetailsResponse,
+  AlarmListItem,
+  AlarmsListResponse,
+  AlarmSummaryResponse,
+} from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
-
-export type AlarmsListResponse = {
-  items: AlarmListItem[];
-  nextCursor: string | null;
-};
 
 export async function fetchAlarmsPage(
   cursor?: string,
