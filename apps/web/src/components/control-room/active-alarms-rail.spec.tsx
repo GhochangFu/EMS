@@ -92,9 +92,10 @@ function alarm(index: number, overrides: Partial<AlarmListItem> = {}): AlarmList
 type Setup = {
   ids?: string[];
   items?: AlarmListItem[];
+  assetsResolving?: boolean;
 };
 
-function renderRail({ ids = IDS, items = [alarm(1)] }: Setup = {}): void {
+function renderRail({ ids = IDS, items = [alarm(1)], assetsResolving = false }: Setup = {}): void {
   mocks.handlers.clear();
   mocks.fetchActiveAlarms.mockImplementation(
     (): Promise<AlarmsListResponse> => Promise.resolve({ items, nextCursor: null }),
@@ -115,7 +116,7 @@ function renderRail({ ids = IDS, items = [alarm(1)] }: Setup = {}): void {
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <ActiveAlarmsRail assetIds={ids} />
+        <ActiveAlarmsRail assetIds={ids} assetsResolving={assetsResolving} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -188,7 +189,7 @@ export async function socketEventRefetchesTheSummary(): Promise<void> {
 /** No ids: the active list is never fetched. */
 export async function emptyIdsFetchNoActiveList(): Promise<void> {
   renderRail({ ids: [] });
-  expect(await screen.findByText("No active alarms")).toBeInTheDocument();
+  expect(await screen.findByText("No assets in scope")).toBeInTheDocument();
   await act(async () => {
     await Promise.resolve();
   });
@@ -198,7 +199,7 @@ export async function emptyIdsFetchNoActiveList(): Promise<void> {
 /** No ids: the summary is never fetched. */
 export async function emptyIdsFetchNoSummary(): Promise<void> {
   renderRail({ ids: [] });
-  expect(await screen.findByText("No active alarms")).toBeInTheDocument();
+  expect(await screen.findByText("No assets in scope")).toBeInTheDocument();
   await act(async () => {
     await Promise.resolve();
   });
@@ -210,6 +211,16 @@ export async function rendersTheEmptyStateForNoActiveAlarms(): Promise<void> {
   renderRail({ items: [] });
   await waitFor(() => expect(mocks.fetchActiveAlarms).toHaveBeenCalledTimes(1));
   expect(await screen.findByText("No active alarms")).toBeInTheDocument();
+}
+
+/**
+ * No ids yet because the page's assets are still resolving: the rail says it
+ * is loading, never "No active alarms" — it has not asked the server.
+ */
+export async function resolvingIdsSayLoadingNotNone(): Promise<void> {
+  renderRail({ ids: [], assetsResolving: true });
+  expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
+  expect(screen.queryByText("No active alarms")).not.toBeInTheDocument();
 }
 
 /** "View All" links to the alarms page. */

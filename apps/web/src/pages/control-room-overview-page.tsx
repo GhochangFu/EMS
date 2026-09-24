@@ -230,7 +230,8 @@ function ControlRoomOverviewContent() {
   const rules = rulesQuery.data?.items ?? [];
   // The alarms rail reads the server's alarms for this page's assets (ADR 0074
   // decision 4); a code the context has not resolved is simply not asked for.
-  const idByCode = useSchematicTelemetryContext()?.idByCode;
+  const telemetryCtx = useSchematicTelemetryContext();
+  const idByCode = telemetryCtx?.idByCode;
   const alarmAssetIds = useMemo(
     () => CR_TRACKED_ASSET_CODES.flatMap((code) => idByCode?.get(code) ?? []),
     [idByCode],
@@ -440,7 +441,7 @@ function ControlRoomOverviewContent() {
           {canElectrical ? <MiniSld rules={rules} /> : <ScopedUnavailable label="Electrical SLD" />}
         </section>
 
-        <ActiveAlarmsRail assetIds={alarmAssetIds} />
+        <ActiveAlarmsRail assetIds={alarmAssetIds} assetsResolving={!telemetryCtx?.assetsResolved} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-4">

@@ -9,6 +9,7 @@ import {
   pillToneComesFromTheVocabulary,
   rendersEightRowsAndNoNinth,
   rendersTheEmptyStateForNoActiveAlarms,
+  resolvingIdsSayLoadingNotNone,
   socketEventRefetchesTheActiveList,
   socketEventRefetchesTheSummary,
   summaryTabListsCountsMostUrgentFirst,
@@ -70,6 +71,10 @@ describe("F3.28 active alarms rail", () => {
 
   it("renders the empty state when no alarm is active", async () => {
     await rendersTheEmptyStateForNoActiveAlarms();
+  });
+
+  it("says loading, not none, while the page's assets resolve", async () => {
+    await resolvingIdsSayLoadingNotNone();
   });
 
   it("links View All to /alarms", () => {

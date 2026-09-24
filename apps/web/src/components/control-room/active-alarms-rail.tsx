@@ -39,7 +39,18 @@ function RailNote({ text }: { text: string }) {
  * the API returns ascending rank, so the order is reversed here — then the
  * total.
  */
-export function ActiveAlarmsRail({ assetIds }: { assetIds: readonly string[] }) {
+export function ActiveAlarmsRail({
+  assetIds,
+  assetsResolving = false,
+}: {
+  assetIds: readonly string[];
+  /**
+   * The page's asset ids are still resolving. With no ids the two reads are
+   * disabled, and a disabled query is not loading — so without this the rail
+   * would say "No active alarms" on every cold load, before it has asked.
+   */
+  assetsResolving?: boolean;
+}) {
   const [tab, setTab] = useState<RailTab>("active");
   const { active, summary } = useActiveAlarms(assetIds);
   const vocabQ = useQuery({
@@ -50,6 +61,9 @@ export function ActiveAlarmsRail({ assetIds }: { assetIds: readonly string[] }) 
   const severities = vocabQ.data?.alarmSeverities ?? [];
   const rows = (active.data?.items ?? []).slice(0, RAIL_ROWS);
   const counts = [...(summary.data?.items ?? [])].reverse();
+  // With no ids nothing is fetched: say why, never "No active alarms".
+  const noIdsNote =
+    assetIds.length > 0 ? null : assetsResolving ? "Loading alarms…" : "No assets in scope";
 
   return (
     <section aria-label="Alarms" className="rounded border border-gray-200 bg-white p-4">
@@ -67,7 +81,9 @@ export function ActiveAlarmsRail({ assetIds }: { assetIds: readonly string[] }) 
         </Link>
       </div>
       <div className="mt-3" role="tabpanel">
-        {tab === "active" ? (
+        {noIdsNote ? (
+          <RailNote text={noIdsNote} />
+        ) : tab === "active" ? (
           active.isLoading ? (
             <RailNote text="Loading alarms…" />
           ) : active.isError ? (

@@ -120,6 +120,7 @@ vi.mock("../components/live-svg/schematic-telemetry-context", async () => {
     }),
     useSchematicTelemetryContext: () => ({
       idByCode: state.idByCode,
+      assetsResolved: true,
       assetMetaById: new Map(),
       byAssetId: {},
       totalKw: null,

@@ -37,6 +37,13 @@ export type { SchematicTelemetrySlice };
 
 type Ctx = {
   idByCode: Map<string, string>;
+  /**
+   * `true` once `GET /api/v1/assets` has answered (`F3.28`). Until then
+   * `idByCode` is empty because nothing has resolved, not because no asset is
+   * in scope — a consumer that keys a read on the ids must say "loading", not
+   * "none", for that interval.
+   */
+  assetsResolved: boolean;
   assetMetaById: Map<
     string,
     { code: string; name: string; siteName: string; domain: string }
@@ -257,16 +264,18 @@ export function SchematicTelemetryProvider({
     return { totalKw: sum.total, staleAssets: sum.staleExcluded };
   }, [byAssetId, trackedIds, staleTick]);
 
+  const assetsResolved = assetsQ.isSuccess;
   const value = useMemo(
     () => ({
       idByCode,
+      assetsResolved,
       assetMetaById,
       byAssetId,
       totalKw,
       staleAssets,
       staleTick,
     }),
-    [idByCode, assetMetaById, byAssetId, totalKw, staleAssets, staleTick],
+    [idByCode, assetsResolved, assetMetaById, byAssetId, totalKw, staleAssets, staleTick],
   );
 
   useEffect(() => {
