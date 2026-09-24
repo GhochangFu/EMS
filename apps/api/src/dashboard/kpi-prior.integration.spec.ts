@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 
 import { latestPueRatio } from "../telemetry/pue-ratio";
+import { DashboardService } from "./dashboard.service";
 import { priorInstant, priorOpenAlarms, priorTotalKw, readKpiPrior } from "./kpi-prior";
 
 /**
@@ -234,6 +235,119 @@ export async function assertComposedPriorReadsEveryFieldAtAt(client: pg.PoolClie
     JSON.stringify(got) === JSON.stringify(expected),
     `readKpiPrior must read every field at at: expected ${JSON.stringify(expected)}, got ${JSON.stringify(got)}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// `DashboardService.kpis()` → `prior`: the composition the endpoint ships, and
+// its scope boundary on the BYPASSRLS `FLEET_POOL`.
+// ---------------------------------------------------------------------------
+
+/**
+ * `E4.1c` — the tariff resolver the service takes. Nothing here reads cost, so
+ * every asset resolves to no tariff (as `dashboard.integration.spec.ts` does).
+ */
+const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
+
+interface ScopeFixture {
+  /** The in-scope asset — the only id handed to `kpis` / `priorTotalKw`. */
+  readonly a: Seeded;
+  /** The out-of-scope asset. Only its ids are used; its `now`/`at` are not. */
+  readonly b: Seeded;
+  /** `priorInstant(t0)`, for the direct reads. */
+  readonly at: Date;
+}
+
+/**
+ * Two assets, one clock. `t0` is captured once, after both assets are seeded
+ * and just before the caller reads, and every sample is placed relative to it
+ * with margin — `kpis()` takes its own `now` a few milliseconds later, so its
+ * `prior` instant lands inside every window below with ~60 s to spare.
+ *
+ * Every figure is distinct, so no mutation can pass by coincidence:
+ *
+ * | | A (in scope) | B (out of scope) |
+ * |---|---|---|
+ * | `kw` at t0 − 24 h − 60 s | 6 | 100 |
+ * | `kw` at t0 − 5 s (live) | 9 | — |
+ * | PUE pair at t0 − 24 h − 120 s | 60 / 30 = 2 | 300 / 30 (mixed: 360 / 60 = 6) |
+ * | PUE pair at t0 − 60 s (live) | 90 / 30 = 3 | — |
+ * | alarm | raised t0 − 30 h, cleared t0 − 23 h (open at `at`, not now) | raised t0 − 30 h, never cleared |
+ *
+ * The `kpis` reads run on the checked-out client, as a `bms_fleet`
+ * (`BYPASSRLS`) connection — the production pool's role — so no RLS policy
+ * hides B and the `$1` scope is the only thing that can.
+ */
+async function seedScopeFixture(client: pg.PoolClient): Promise<ScopeFixture> {
+  const a = await seedAsset(client);
+  const b = await seedAsset(client);
+  const t0 = new Date();
+  const priorKwAt = new Date(t0.getTime() - 24 * HOUR_MS - 60 * SECOND_MS);
+  const priorPueAt = new Date(t0.getTime() - 24 * HOUR_MS - 120 * SECOND_MS);
+  await insertSample(client, a.assetId, "kw", priorKwAt, 6);
+  await insertSample(client, a.assetId, "kw", secondsFrom(t0, -5), 9);
+  await insertSample(client, a.assetId, "site_kw", priorPueAt, 60);
+  await insertSample(client, a.assetId, "it_kw", priorPueAt, 30);
+  await insertSample(client, a.assetId, "site_kw", secondsFrom(t0, -60), 90);
+  await insertSample(client, a.assetId, "it_kw", secondsFrom(t0, -60), 30);
+  await insertAlarm(client, a, hoursBefore(t0, 30), hoursBefore(t0, 23));
+  await insertSample(client, b.assetId, "kw", priorKwAt, 100);
+  await insertSample(client, b.assetId, "site_kw", priorPueAt, 300);
+  await insertSample(client, b.assetId, "it_kw", priorPueAt, 30);
+  await insertAlarm(client, b, hoursBefore(t0, 30), null);
+  return { a, b, at: priorInstant(t0) };
+}
+
+async function kpisForA(client: pg.PoolClient) {
+  const f = await seedScopeFixture(client);
+  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+  return { f, kpis: await service.kpis([f.a.assetId]) };
+}
+
+/** `prior.asOf` is exactly 24 h before the response's own `asOf`. */
+export async function assertKpisPriorAsOfIsExactly24HoursBeforeAsOf(client: pg.PoolClient): Promise<void> {
+  const { kpis } = await kpisForA(client);
+  const gap = Date.parse(kpis.asOf) - Date.parse(kpis.prior.asOf);
+  assert(
+    gap === 86_400_000,
+    `prior.asOf must be asOf − 86 400 000 ms, got a gap of ${gap} ms (asOf ${kpis.asOf}, prior.asOf ${kpis.prior.asOf})`,
+  );
+}
+
+/** `prior.totalKw` is A's own prior `kw` (6) — not B's 100 added, not A's live 9. */
+export async function assertKpisPriorTotalKwIsTheInScopeAssetsOwn(client: pg.PoolClient): Promise<void> {
+  const { kpis } = await kpisForA(client);
+  assert(
+    kpis.prior.totalKw === 6,
+    `prior.totalKw must be the in-scope asset's own prior kw (6), got ${JSON.stringify(kpis.prior.totalKw)}`,
+  );
+}
+
+/**
+ * `prior.alarmsOpen` counts A's alarm (open at `at`) and not B's. 1 is both the
+ * positive control (A's is counted) and the exclusion (B's would make it 2).
+ */
+export async function assertKpisPriorAlarmsOpenExcludesTheOutOfScopeAlarm(client: pg.PoolClient): Promise<void> {
+  const { kpis } = await kpisForA(client);
+  assert(
+    kpis.prior.alarmsOpen === 1,
+    `prior.alarmsOpen must count only the in-scope alarm open at at (1), got ${kpis.prior.alarmsOpen}`,
+  );
+}
+
+/** `prior.pueEstimate` is A's own ratio (2) — B's pair would make it 6. */
+export async function assertKpisPriorPueExcludesTheOutOfScopePair(client: pg.PoolClient): Promise<void> {
+  const { kpis } = await kpisForA(client);
+  assert(
+    kpis.prior.pueEstimate === 2,
+    `prior.pueEstimate must be the in-scope pair's own ratio (2), got ${JSON.stringify(kpis.prior.pueEstimate)}`,
+  );
+}
+
+/** `priorTotalKw` scoped to [A] reads A's 6 and not A + B's 106. */
+export async function assertPriorTotalKwScopedExcludesTheOutOfScopeAsset(client: pg.PoolClient): Promise<void> {
+  const f = await seedScopeFixture(client);
+  const got = await priorTotalKw(client, [f.a.assetId], f.at);
+  assert(got === 6, `priorTotalKw([A]) must exclude B's kw (6, not 106), got ${JSON.stringify(got)}`);
 }
 
 /** Without `at` the live read is unchanged: a pair a minute old reads 2. */

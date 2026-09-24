@@ -9,7 +9,12 @@ import {
   assertAlarmRaisedAfterAtIsNotCounted,
   assertAlarmRaisedBeforeAndUnclearedIsCounted,
   assertComposedPriorReadsEveryFieldAtAt,
+  assertKpisPriorAlarmsOpenExcludesTheOutOfScopeAlarm,
+  assertKpisPriorAsOfIsExactly24HoursBeforeAsOf,
+  assertKpisPriorPueExcludesTheOutOfScopePair,
+  assertKpisPriorTotalKwIsTheInScopeAssetsOwn,
   assertLivePueStillReadsAFreshPair,
+  assertPriorTotalKwScopedExcludesTheOutOfScopeAsset,
   assertPriorKwIsNullWithNoSampleAtOrBeforeAt,
   assertPriorKwIsTheLatestSampleAtOrBeforeAt,
   assertPriorPueIgnoresAPairAfterAt,
@@ -71,4 +76,32 @@ describe.skipIf(!connectionString)("F3.28 — KPI prior reads against Postgres",
   it("still reads a fresh PUE pair on the live read (no at)", run(assertLivePueStillReadsAFreshPair));
 
   it("composes every prior field from its own read at at", run(assertComposedPriorReadsEveryFieldAtAt));
+});
+
+describe.skipIf(!connectionString)("F3.28 — DashboardService.kpis() prior: composition and scope", () => {
+  let pool: pg.Pool | undefined;
+
+  beforeAll(async () => {
+    pool = await openIntegrationPool(connectionString as string, "F3.28");
+  }, 60_000);
+
+  afterAll(async () => {
+    await pool?.end();
+  }, 60_000);
+
+  const run = (fn: (client: pg.PoolClient) => Promise<void>) => () =>
+    inRolledBackTransaction(pool as pg.Pool, fn);
+
+  it("reports prior.asOf exactly 24 h before asOf", run(assertKpisPriorAsOfIsExactly24HoursBeforeAsOf));
+
+  it("reads prior.totalKw from the in-scope asset only", run(assertKpisPriorTotalKwIsTheInScopeAssetsOwn));
+
+  it(
+    "counts the in-scope alarm open at the prior instant and not the out-of-scope one",
+    run(assertKpisPriorAlarmsOpenExcludesTheOutOfScopeAlarm),
+  );
+
+  it("reads prior.pueEstimate from the in-scope pair only", run(assertKpisPriorPueExcludesTheOutOfScopePair));
+
+  it("priorTotalKw scoped to one asset excludes another", run(assertPriorTotalKwScopedExcludesTheOutOfScopeAsset));
 });
