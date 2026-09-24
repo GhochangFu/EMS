@@ -5761,8 +5761,13 @@ Verified on the rebuilt stack on boot day: `verifyHierarchySeed` exit 0, each
 local-auth `:4001` answering carrying 1 for `kl_today` with the `intake` role
 and carrying 5 without it. The balance itself read one `CSMOC-GP` row with
 `null` cells and `0/3`, because every volume row refuses as `window_sparse`
-until a full `today` window exists. The balance numbers are checked on
-2026-09-25: `DAY-2 CHECK (2026-09-25): <to be filled>`. Browser N/A by gate.
+until a full `today` window exists. The balance numbers were checked the
+same night, once the CSMOC Gauteng day (Africa/Johannesburg) had begun under
+the running simulator: intake 204.52 KL, reuse 43.02, discharge 29.82,
+consumed 174.70 (reuse not added), coverage `3/3`, matching the flows
+(mean × elapsed hours); the STP as `discharge` read reuse `null`, discharge
+72.85, consumed 131.67, `3/3` — the expectation written before the run.
+Browser N/A by gate.
 ADR 0073 Amendment 1 records fifteen corrections. New rows: `F4.151` (a
 `WTR-*` code that already exists), `F4.152` (the builder notes for a role-less
 water total) and `F4.153` (CI has no general check that refuses an edit
