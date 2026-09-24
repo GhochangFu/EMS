@@ -10,14 +10,17 @@ import type {
   AlarmListItem,
   AlarmSummaryResponse,
   AlarmsListResponse,
+  PointValuesAtInstantResponse,
   RuleListItem,
 } from "@bms/shared";
+import { encodePointRef } from "@bms/shared";
 
 import {
   CR_BREAKERS,
   CR_TRACKED_ASSET_CODES,
 } from "../components/live-svg/control-room-bindings";
 import { emptySlice, type SchematicTelemetrySlice } from "../lib/schematic-telemetry";
+import { WIDGET_ICON_PATH } from "../lib/widget-catalog";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { ControlRoomOverviewPage } from "./control-room-overview-page";
 
@@ -58,6 +61,9 @@ const state = vi.hoisted(() => ({
   assetsStatus: "success" as "pending" | "success" | "error",
   fetchActiveAlarms: vi.fn(),
   fetchAlarmSummary: vi.fn(),
+  fetchPointValuesAt: vi.fn(),
+  /** The "vs yesterday" value per encoded point ref; an absent ref reads `null`. */
+  priors: {} as Record<string, number | null>,
 }));
 
 /** Every tracked code resolves to `asset-<code>`, so the rail's ids are knowable. */
@@ -92,6 +98,16 @@ vi.mock("../api/rules", () => ({
 vi.mock("../api/alarms", () => ({
   fetchActiveAlarms: state.fetchActiveAlarms,
   fetchAlarmSummary: state.fetchAlarmSummary,
+}));
+
+/**
+ * `F3.28` task 2.7 — the prior read behind the tile deltas. Only
+ * `fetchPointValuesAt` is replaced; the item echoes the ref as sent, which is
+ * what `GET /telemetry/points/at-instant` does (`telemetry.controller.ts`).
+ */
+vi.mock("../api/telemetry", async (importActual) => ({
+  ...(await importActual<typeof import("../api/telemetry")>()),
+  fetchPointValuesAt: state.fetchPointValuesAt,
 }));
 
 vi.mock("../api/vocabularies", () => ({
@@ -237,6 +253,8 @@ type Setup = {
   scope?: AccessibleScope;
   /** The context's asset read; anything but `"success"` resolves no id. */
   assetsStatus?: "pending" | "success" | "error";
+  /** Prior values by encoded point ref (`F3.28` task 2.7); none by default. */
+  priors?: Record<string, number | null>;
 };
 
 function renderPage({
@@ -244,6 +262,7 @@ function renderPage({
   rules = [],
   scope = GLOBAL_SCOPE,
   assetsStatus = "success",
+  priors = {},
 }: Setup = {}): void {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
@@ -256,6 +275,17 @@ function renderPage({
   );
   state.fetchAlarmSummary.mockImplementation(
     (): Promise<AlarmSummaryResponse> => Promise.resolve(RAIL_SUMMARY),
+  );
+  state.priors = priors;
+  state.fetchPointValuesAt.mockImplementation(
+    (refs: readonly string[], at: string): Promise<PointValuesAtInstantResponse> =>
+      Promise.resolve({
+        at,
+        items: refs.map((pointRef) => {
+          const value = state.priors[pointRef] ?? null;
+          return { pointRef, time: value === null ? null : at, value, unit: null };
+        }),
+      }),
   );
   useAuthStore.setState({ scope });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -468,4 +498,132 @@ export async function subtitleLeadsWithTheLiveCriticalCount(): Promise<void> {
   renderPage({ rules: [thresholdRule({ severity: "critical" })] });
   // The default subtitle renders first; this waits on the rules query.
   expect(await screen.findByText(/^1 ACTIVE CRITICAL · /)).toBeInTheDocument();
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 2.7 — "vs yesterday" deltas and icons on the KPI tiles.
+//
+// Refs and expected strings are literals here, never imported from
+// `control-room-tiles.ts`, so a mutated ref table or constant cannot carry its
+// assertion with it.
+// ---------------------------------------------------------------------------
+
+const Q1_KW = encodePointRef(assetIdFor("CR-Q1"), "kw");
+const NET_RACK_KW_REF = encodePointRef(assetIdFor("CR-NET-RACK"), "rack_kw");
+const VW_RACK_KW_REF = encodePointRef(assetIdFor("CR-VW-SRV-RACK"), "rack_kw");
+const UPS1_BACKUP = encodePointRef(assetIdFor("CR-UPS-1"), "backup_min");
+const UPS2_BACKUP = encodePointRef(assetIdFor("CR-UPS-2"), "backup_min");
+
+/** Each Total CR Load input 10 % lower yesterday: 12.87 against a live 14.3. */
+const TOTAL_PRIORS = { [Q1_KW]: 11.07, [NET_RACK_KW_REF]: 1.08, [VW_RACK_KW_REF]: 0.72 };
+
+/** The worst backup was 50 min yesterday; with a live worst of 40 that is ↓ 20.0 %. */
+const UPS_PRIORS = { [UPS1_BACKUP]: 50, [UPS2_BACKUP]: 60 };
+
+/** `liveTelemetry()` plus both UPS units live, worst backup 40 min. */
+function liveTelemetryWithUps(): Record<string, SchematicTelemetrySlice> {
+  return {
+    ...liveTelemetry(),
+    "CR-UPS-1": liveSlice({ backupMin: 40 }),
+    "CR-UPS-2": liveSlice({ backupMin: 90 }),
+  };
+}
+
+/**
+ * The positive control for the no-delta cases: the UPS Backup delta is data
+ * the prior read produces, so once it renders the prior has settled and an
+ * absent delta elsewhere is a decision, not a race.
+ */
+async function upsDeltaRendered(): Promise<void> {
+  expect(
+    await within(tileLabelled("UPS Backup")).findByText("↓ 20.0% vs yesterday"),
+  ).toBeInTheDocument();
+}
+
+/** A Total CR Load prior 10 % lower renders "↑ 11.1% vs yesterday". */
+export async function totalCrLoadRendersARiseAgainstALowerPrior(): Promise<void> {
+  renderPage({ priors: TOTAL_PRIORS });
+  expect(
+    await within(tileLabelled("Total CR Load")).findByText("↑ 11.1% vs yesterday"),
+  ).toBeInTheDocument();
+}
+
+/** No Total CR Load prior: the tile keeps "main bus + IT racks". */
+export async function aNullPriorKeepsTheTotalCrLoadHint(): Promise<void> {
+  renderPage({ telemetry: liveTelemetryWithUps(), priors: UPS_PRIORS });
+  await upsDeltaRendered();
+  expect(within(tileLabelled("Total CR Load")).getByText("main bus + IT racks")).toBeInTheDocument();
+}
+
+/**
+ * SLD Status carries no delta. Total CR Load's delta in the same render is the
+ * positive control: it proves the prior settled and a delta can render.
+ */
+export async function sldStatusHasNoDelta(): Promise<void> {
+  renderPage({ priors: TOTAL_PRIORS });
+  await within(tileLabelled("Total CR Load")).findByText("↑ 11.1% vs yesterday");
+  expect(within(tileLabelled("SLD Status")).queryByText(/vs yesterday/)).not.toBeInTheDocument();
+}
+
+/** The page asks the prior for exactly its five points, in one call. */
+export async function thePriorReadAsksForExactlyFiveRefs(): Promise<void> {
+  renderPage();
+  await waitFor(() => expect(state.fetchPointValuesAt).toHaveBeenCalled());
+  expect(state.fetchPointValuesAt.mock.calls[0][0]).toEqual([
+    Q1_KW,
+    NET_RACK_KW_REF,
+    VW_RACK_KW_REF,
+    UPS1_BACKUP,
+    UPS2_BACKUP,
+  ]);
+}
+
+/**
+ * All three Total CR Load inputs live, one without a prior: no delta. A
+ * baseline over the two priors that exist (12.15) against the three-input
+ * live sum (14.3) would print a false "↑ 17.7%".
+ */
+export async function aMissingPriorAmongLiveInputsGivesNoDelta(): Promise<void> {
+  renderPage({
+    telemetry: liveTelemetryWithUps(),
+    priors: { ...UPS_PRIORS, [Q1_KW]: 11.07, [NET_RACK_KW_REF]: 1.08 },
+  });
+  await upsDeltaRendered();
+  expect(within(tileLabelled("Total CR Load")).queryByText(/vs yesterday/)).not.toBeInTheDocument();
+}
+
+/** The `d` of the one icon path inside a tile, or `null` when the tile has no icon. */
+function iconPathOf(tile: HTMLElement): string | null {
+  const svg = tile.querySelector("svg");
+  return svg ? (svg.querySelector("path")?.getAttribute("d") ?? "") : null;
+}
+
+/** Plan decision 8: Rule Warnings wears `alert`. */
+export function ruleWarningsWearsTheAlertIcon(): void {
+  renderPage();
+  expect(iconPathOf(tileLabelled("Rule Warnings"))).toBe(WIDGET_ICON_PATH.alert);
+}
+
+/** Plan decision 8: Total CR Load wears `bolt`. */
+export function totalCrLoadWearsTheBoltIcon(): void {
+  renderPage();
+  expect(iconPathOf(tileLabelled("Total CR Load"))).toBe(WIDGET_ICON_PATH.bolt);
+}
+
+/** Plan decision 8: Rack Load wears `bolt`. */
+export function rackLoadWearsTheBoltIcon(): void {
+  renderPage();
+  expect(iconPathOf(tileLabelled("Rack Load"))).toBe(WIDGET_ICON_PATH.bolt);
+}
+
+/**
+ * Plan decision 8: SLD Status, UPS Backup and Environment wear none. Rule
+ * Warnings in the same render is the positive control for the query.
+ */
+export function theOtherThreeTilesWearNoIcon(): void {
+  renderPage();
+  expect(iconPathOf(tileLabelled("Rule Warnings")), "no icon rendered anywhere").not.toBeNull();
+  expect(
+    ["SLD Status", "UPS Backup", "Environment"].map((label) => iconPathOf(tileLabelled(label))),
+  ).toEqual([null, null, null]);
 }

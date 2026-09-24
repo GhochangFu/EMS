@@ -20,7 +20,19 @@ import {
 import { PageHeader } from "../components/page-header";
 import { StaticTspan } from "../components/static-value";
 import { StatusPill } from "../components/status-pill";
+import { WidgetIconGlyph } from "../components/widget-icon";
+import { usePriorPointValues } from "../hooks/use-prior-point-values";
 import { AppShell } from "../layouts/app-shell";
+import {
+  avgOf,
+  crPriorRefs,
+  minOf,
+  priorOf,
+  sumOf,
+  type TileInput,
+  tileDeltaText,
+  tileHint,
+} from "../lib/control-room-tiles";
 import { freshValue, isStale } from "../lib/schematic-telemetry";
 import { canAccessControlRoomArea } from "../lib/control-room-access";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
@@ -236,6 +248,12 @@ function ControlRoomOverviewContent() {
     () => CR_TRACKED_ASSET_CODES.flatMap((code) => idByCode?.get(code) ?? []),
     [idByCode],
   );
+  // `F3.28` task 2.7 — the five "vs yesterday" refs (see `control-room-tiles.ts`).
+  // Until the read settles no baseline exists: a disabled query is pending,
+  // not loading (TanStack v5), so the gate is `isPending`.
+  const priorRefs = useMemo(() => crPriorRefs(idByCode), [idByCode]);
+  const prior = usePriorPointValues(priorRefs);
+  const priorByRef = prior.isPending ? new Map<string, number | null>() : prior.byRef;
   // One clock per render. Thirty inline `Date.now()` calls could straddle a
   // millisecond boundary and made the staleness decision non-uniform across a
   // single frame.
@@ -346,49 +364,39 @@ function ControlRoomOverviewContent() {
   const hvacStatus = mergeStatus(hvacStates.map((item) => item.state));
   const environmentStatus = mergeStatus(environmentStates.map((item) => item.state));
   // ADR 0027 decision 4. These used `?? 0`, so a dead asset counted as zero
-  // load / zero degrees and the KPI read as measured. `liveOnly` keeps `null`
-  // ("nothing reporting") distinct from a genuine `0`.
-  const liveOnly = (values: Array<[SchematicTelemetrySlice, number | null]>) => {
-    const kept = values
-      .filter(([slice]) => !isStale(slice.lastSeenMs, nowMs))
-      .map(([, v]) => v)
-      .filter((v): v is number => v != null && !Number.isNaN(v));
-    return kept.length === 0 ? null : kept;
-  };
-  const sumLive = (values: Array<[SchematicTelemetrySlice, number | null]>) => {
-    const kept = liveOnly(values);
-    return kept === null ? null : kept.reduce((a, b) => a + b, 0);
-  };
-  const avgLive = (values: Array<[SchematicTelemetrySlice, number | null]>) => {
-    const kept = liveOnly(values);
-    return kept === null ? null : kept.reduce((a, b) => a + b, 0) / kept.length;
-  };
-  const totalLoad = sumLive([
-    [main, main.kw],
-    [netRack, netRack.rackKw],
-    [vwRack, vwRack.rackKw],
-  ]);
-  const backupValues = liveOnly([
-    [ups1, ups1.backupMin],
-    [ups2, ups2.backupMin],
-  ]);
-  const worstBackup = backupValues === null ? null : Math.min(...backupValues);
-  const rackLoad = sumLive([
-    [netRack, netRack.rackKw],
-    [vwRack, vwRack.rackKw],
-  ]);
-  const batteryHealth = avgLive([
-    [batt1, batt1.healthPct],
-    [batt2, batt2.healthPct],
-  ]);
-  const avgReturnAir = avgLive([
-    [hvac1, hvac1.returnAirTempC],
-    [hvac2, hvac2.returnAirTempC],
-  ]);
+  // load / zero degrees and the KPI read as measured. `live` nulls a stale
+  // reading, and `sumOf`/`avgOf`/`minOf` drop it, so `null` ("nothing
+  // reporting") stays distinct from a genuine `0`.
+  const live = (slice: SchematicTelemetrySlice, value: number | null) =>
+    freshValue(value, isStale(slice.lastSeenMs, nowMs));
+  // A tile input pairs the live value with its prior; the prior is historical
+  // and is never tested for staleness (`control-room-tiles.ts`).
+  const input = (slice: SchematicTelemetrySlice, value: number | null, code: string, pointKey: string): TileInput => ({
+    current: live(slice, value),
+    prior: priorOf(priorByRef, idByCode, code, pointKey),
+  });
+  const rackInputs = [
+    input(netRack, netRack.rackKw, "CR-NET-RACK", "rack_kw"),
+    input(vwRack, vwRack.rackKw, "CR-VW-SRV-RACK", "rack_kw"),
+  ];
+  const totalInputs = [input(main, main.kw, "CR-Q1", "kw"), ...rackInputs];
+  const backupInputs = [
+    input(ups1, ups1.backupMin, "CR-UPS-1", "backup_min"),
+    input(ups2, ups2.backupMin, "CR-UPS-2", "backup_min"),
+  ];
+  const currents = (inputs: TileInput[]) => inputs.map((item) => item.current);
+  const totalLoad = sumOf(currents(totalInputs));
+  const worstBackup = minOf(currents(backupInputs));
+  const rackLoad = sumOf(currents(rackInputs));
+  const totalLoadDelta = tileDeltaText(totalInputs, sumOf);
+  const rackLoadDelta = tileDeltaText(rackInputs, sumOf);
+  const backupDelta = tileDeltaText(backupInputs, minOf);
+  const batteryHealth = avgOf([live(batt1, batt1.healthPct), live(batt2, batt2.healthPct)]);
+  const avgReturnAir = avgOf([live(hvac1, hvac1.returnAirTempC), live(hvac2, hvac2.returnAirTempC)]);
   // The literal "a dead zone counted as 0 C" case.
-  const avgRoomTemp = avgLive(
-    [envConsole, envVideowall, envRackA, envRackB, envBattery, envUps].map(
-      (slice) => [slice, slice.temperatureC] as [SchematicTelemetrySlice, number | null],
+  const avgRoomTemp = avgOf(
+    [envConsole, envVideowall, envRackA, envRackB, envBattery, envUps].map((slice) =>
+      live(slice, slice.temperatureC),
     ),
   );
   // ADR 0027 decision 2's mitigation on the page an operator opens first: with
@@ -417,11 +425,11 @@ function ControlRoomOverviewContent() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-        <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled rules inside your CR scope" />
-        <KpiTile label="Total CR Load" status={canElectrical || canIt ? "ready" : "empty"} value={canElectrical || canIt ? n(totalLoad) : null} unit="kW" hint={canElectrical || canIt ? "main bus + IT racks" : "outside your asset-group scope"} />
+        <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled rules inside your CR scope" icon={WidgetIconGlyph("alert")} />
+        <KpiTile label="Total CR Load" status={canElectrical || canIt ? "ready" : "empty"} value={canElectrical || canIt ? n(totalLoad) : null} unit="kW" hint={canElectrical || canIt ? tileHint(null, totalLoadDelta, "main bus + IT racks") : "outside your asset-group scope"} icon={WidgetIconGlyph("bolt")} />
         <KpiTile label="SLD Status" status={canElectrical ? "ready" : "empty"} value={canElectrical ? statusLabel(electricalStatus.status) : null} tone={statusTone(electricalStatus.status)} hint={canElectrical ? electricalStatus.matchedRule?.name ?? "electrical feeders" : "outside your asset-group scope"} />
-        <KpiTile label="Rack Load" status={canIt ? "ready" : "empty"} value={canIt ? n(rackLoad) : null} unit="kW" tone={statusTone(itStatus.status)} hint={canIt ? itStatus.matchedRule?.name ?? "network + videowall racks" : "outside your asset-group scope"} />
-        <KpiTile label="UPS Backup" status={canUpsBattery ? "ready" : "empty"} value={canUpsBattery ? n(worstBackup, 0) : null} unit="min" tone={statusTone(upsStatus.status)} hint={canUpsBattery ? upsStatus.matchedRule?.name ?? "worst-case reported backup" : "outside your asset-group scope"} />
+        <KpiTile label="Rack Load" status={canIt ? "ready" : "empty"} value={canIt ? n(rackLoad) : null} unit="kW" tone={statusTone(itStatus.status)} hint={canIt ? tileHint(itStatus.matchedRule?.name, rackLoadDelta, "network + videowall racks") : "outside your asset-group scope"} icon={WidgetIconGlyph("bolt")} />
+        <KpiTile label="UPS Backup" status={canUpsBattery ? "ready" : "empty"} value={canUpsBattery ? n(worstBackup, 0) : null} unit="min" tone={statusTone(upsStatus.status)} hint={canUpsBattery ? tileHint(upsStatus.matchedRule?.name, backupDelta, "worst-case reported backup") : "outside your asset-group scope"} />
         <KpiTile label="Environment" status={canEnvironment ? "ready" : "empty"} value={canEnvironment ? statusLabel(environmentStatus.status) : null} tone={statusTone(environmentStatus.status)} hint={canEnvironment ? environmentStatus.matchedRule?.name ?? `${n(avgRoomTemp, 1)} C avg room` : "outside your asset-group scope"} />
       </div>
 
