@@ -52,6 +52,8 @@ const POWER_FACTOR_CONFIG: RadialGaugeConfig = {
 
 type GaugeProps = {
   title: string;
+  /** The page's scope gate for this gauge's area; `false` shows the scope note, never a reading. */
+  enabled: boolean;
   primary: number | null;
   stale: boolean;
   config: RadialGaugeConfig;
@@ -65,10 +67,16 @@ type GaugeProps = {
  * card shows "—" instead, with `WidgetFrame`'s "Offline" badge when the slice
  * is stale, or "No data" when it is fresh but carries no value.
  */
-function Gauge({ title, primary, stale, config }: GaugeProps) {
+function Gauge({ title, enabled, primary, stale, config }: GaugeProps) {
   return (
     <div role="group" aria-label={title}>
-      {primary === null ? (
+      {!enabled ? (
+        <WidgetFrame title={title} status="ready">
+          <div className="flex flex-1 items-center justify-center text-sm text-bms-muted">
+            Outside your asset-group scope
+          </div>
+        </WidgetFrame>
+      ) : primary === null ? (
         <WidgetFrame title={title} status="ready" stale={stale}>
           <div className="flex flex-1 flex-col items-center justify-center gap-1 text-bms-muted">
             <span className="text-2xl font-semibold">—</span>
@@ -89,6 +97,8 @@ type KeyParametersProps = {
   batt2: SchematicTelemetrySlice;
   main: SchematicTelemetrySlice;
   nowMs: number;
+  /** The page's area gates: UPS and battery on `upsBattery`, the power factor on `electrical`. */
+  access: { upsBattery: boolean; electrical: boolean };
 };
 
 /**
@@ -96,6 +106,10 @@ type KeyParametersProps = {
  * `RadialGaugeWidget`s — UPS-1 load %, UPS-2 load %, battery health % and the
  * main incomer's power factor. The page already subscribes to all five
  * slices this needs; this component opens no subscription of its own.
+ *
+ * **Scope.** Each gauge takes the page's area gate, as the page's other cards
+ * do: a user outside that area sees "Outside your asset-group scope" in the
+ * card, never a reading or an "Offline" badge.
  *
  * Every `primary` is `freshValue(rawValue, isStale(...))` (ADR 0027) — never
  * the raw slice value — so a dead asset's frozen last reading renders as the
@@ -109,7 +123,7 @@ type KeyParametersProps = {
  * value (`avgOf` already returns
  * `null` on an empty input, so this file states no extra rule for that case).
  */
-export function KeyParameters({ ups1, ups2, batt1, batt2, main, nowMs }: KeyParametersProps) {
+export function KeyParameters({ ups1, ups2, batt1, batt2, main, nowMs, access }: KeyParametersProps) {
   const ups1Stale = isStale(ups1.lastSeenMs, nowMs);
   const ups2Stale = isStale(ups2.lastSeenMs, nowMs);
   const batt1Stale = isStale(batt1.lastSeenMs, nowMs);
@@ -127,24 +141,28 @@ export function KeyParameters({ ups1, ups2, batt1, batt2, main, nowMs }: KeyPara
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Gauge
           title="UPS-1 Load"
+          enabled={access.upsBattery}
           primary={freshValue(ups1.loadPct, ups1Stale)}
           stale={ups1Stale}
           config={UPS_LOAD_CONFIG}
         />
         <Gauge
           title="UPS-2 Load"
+          enabled={access.upsBattery}
           primary={freshValue(ups2.loadPct, ups2Stale)}
           stale={ups2Stale}
           config={UPS_LOAD_CONFIG}
         />
         <Gauge
           title="Battery Health"
+          enabled={access.upsBattery}
           primary={batteryHealth}
           stale={batt1Stale && batt2Stale}
           config={BATTERY_HEALTH_CONFIG}
         />
         <Gauge
           title="Main Power Factor"
+          enabled={access.electrical}
           primary={freshValue(main.pf, mainStale)}
           stale={mainStale}
           config={POWER_FACTOR_CONFIG}

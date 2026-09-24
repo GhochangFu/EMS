@@ -195,6 +195,26 @@ const ELECTRICAL_ONLY_SCOPE: AccessibleScope = {
   assetIds: [],
 };
 
+/**
+ * `ELECTRICAL_ONLY_SCOPE`'s shape with one other group code. An `electrical`
+ * group also grants `upsBattery` (`canAccessControlRoomArea`), so that
+ * fixture cannot hold the UPS gate: these two can.
+ */
+function singleGroupScope(code: string, name: string): AccessibleScope {
+  return {
+    kind: "asset_group",
+    locations: [],
+    assetGroups: [{ id: "g1", locationId: "l1", code, name, organizationId: "o1" }],
+    assetIds: [],
+  };
+}
+
+/** No `electrical`, no `ups-battery`: all four Key Parameters gauges are out of scope. */
+const IT_RACK_ONLY_SCOPE = singleGroupScope("it-rack", "IT Racks");
+
+/** `ups-battery` and nothing else: the UPS and battery gauges in scope, the power factor not. */
+const UPS_BATTERY_ONLY_SCOPE = singleGroupScope("ups-battery", "UPS & Battery");
+
 function liveSlice(overrides: Partial<SchematicTelemetrySlice> = {}): SchematicTelemetrySlice {
   return { ...emptySlice(), breaker: 1, lastSeenMs: LIVE_SEEN_MS, ...overrides };
 }
@@ -818,6 +838,38 @@ export function rendersTheFourKeyParameterGaugeTitles(): void {
   expect(screen.getByText("UPS-2 Load")).toBeInTheDocument();
   expect(screen.getByText("Battery Health")).toBeInTheDocument();
   expect(screen.getByText("Main Power Factor")).toBeInTheDocument();
+}
+
+const GAUGE_SCOPE_NOTE = "Outside your asset-group scope";
+
+/**
+ * Whether each named gauge shows the scope note. Scoped to the gauge's own
+ * `group`: under a restricted scope the module cards carry the same words.
+ */
+function gaugesSayOutsideScope(titles: string[]): boolean[] {
+  return titles.map(
+    (title) =>
+      within(screen.getByRole("group", { name: title })).queryByText(GAUGE_SCOPE_NOTE) !== null,
+  );
+}
+
+/** No UPS/battery area in scope: the UPS-1, UPS-2 and battery gauges say so. */
+export function keyParametersUpsGaugesAreOutsideAScopeWithoutUpsBattery(): void {
+  renderPage({ scope: IT_RACK_ONLY_SCOPE });
+  expect(gaugesSayOutsideScope(["UPS-1 Load", "UPS-2 Load", "Battery Health"])).toEqual([
+    true,
+    true,
+    true,
+  ]);
+}
+
+/**
+ * `ups-battery` only: the power factor gauge says it is outside the scope,
+ * and UPS-1, in scope, beside it does not.
+ */
+export function keyParametersPowerFactorIsOutsideAScopeWithoutElectrical(): void {
+  renderPage({ scope: UPS_BATTERY_ONLY_SCOPE });
+  expect(gaugesSayOutsideScope(["Main Power Factor", "UPS-1 Load"])).toEqual([true, false]);
 }
 
 // ---------------------------------------------------------------------------

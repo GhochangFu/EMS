@@ -48,6 +48,7 @@ function renderGauges(overrides: Partial<Record<SliceName, SchematicTelemetrySli
       batt2={liveSlice({ healthPct: 80 })}
       main={liveSlice({ pf: 0.95 })}
       nowMs={NOW}
+      access={{ upsBattery: true, electrical: true }}
       {...overrides}
     />,
   );

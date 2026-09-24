@@ -24,6 +24,8 @@ import {
   rackLoadRendersItsOwnDelta,
   rendersAllSevenFooterItems,
   rendersTheFourKeyParameterGaugeTitles,
+  keyParametersUpsGaugesAreOutsideAScopeWithoutUpsBattery,
+  keyParametersPowerFactorIsOutsideAScopeWithoutElectrical,
   ruleWarningsCountsAMatchedThresholdRule,
   ruleWarningsWearsTheAlertIcon,
   sldStatusHasNoDelta,
@@ -217,6 +219,14 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("renders the four Key Parameters gauge titles", () => {
     rendersTheFourKeyParameterGaugeTitles();
+  });
+
+  it("says the UPS and battery gauges are outside a scope without UPS/battery", () => {
+    keyParametersUpsGaugesAreOutsideAScopeWithoutUpsBattery();
+  });
+
+  it("says the power factor gauge is outside a scope without electrical", () => {
+    keyParametersPowerFactorIsOutsideAScopeWithoutElectrical();
   });
 
   it("renders all seven capability footer items", () => {

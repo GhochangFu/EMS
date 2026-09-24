@@ -498,7 +498,7 @@ function ControlRoomOverviewContent() {
         <ActiveAlarmsRail assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />
       </div>
 
-      <KeyParameters ups1={ups1} ups2={ups2} batt1={batt1} batt2={batt2} main={main} nowMs={nowMs} />
+      <KeyParameters ups1={ups1} ups2={ups2} batt1={batt1} batt2={batt2} main={main} nowMs={nowMs} access={{ upsBattery: canUpsBattery, electrical: canElectrical }} />
 
       <div className="grid gap-4 lg:grid-cols-4">
         <ModuleSummaryCard enabled={canUpsBattery} title="UPS Monitoring" to="/cr-ups" status={upsStatus} primary={`${n(worstBackup, 0)} min`} secondary={`${n(freshValue(ups1.loadPct, isStale(ups1.lastSeenMs, nowMs)), 0)}% / ${n(freshValue(ups2.loadPct, isStale(ups2.lastSeenMs, nowMs)), 0)}% load`} />
