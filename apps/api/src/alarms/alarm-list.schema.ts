@@ -9,15 +9,20 @@ import { assetIdsQueryField } from "../auth/asset-scope.schema";
  * sends nothing. `"active"` is the alarms rail's read: raised and not yet
  * cleared, acknowledged or not (`activeAlarmFilter`, task 1.5).
  *
- * `limit` keeps today's clamp-to-100 semantics — the service still owns the
- * `Math.min(100, Math.max(1, …))` clamp, so this schema only checks that a
- * caller who sends one sends a whole, positive number, never that it is
- * inside the clamp's own bound.
+ * `limit` keeps today's semantics (plan decision 4): the service owns the
+ * `Math.min(100, Math.max(1, …))` clamp, so `0` and a negative number clamp to
+ * 1 as they did before, and an empty `limit=` is absent (the default 20), as
+ * the old `limitRaw ? Number(limitRaw) : 20` read it. Only a non-numeric value
+ * is a 400, as before — and a fractional one, which the old read passed to
+ * SQL's `LIMIT` as a non-integer.
  */
 export const alarmListQuerySchema = z
   .object({
     cursor: z.string().optional(),
-    limit: z.coerce.number().int().positive().optional(),
+    limit: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.coerce.number().int().optional(),
+    ),
     state: z.enum(["all", "active"]).default("all"),
     assetIds: assetIdsQueryField,
   })

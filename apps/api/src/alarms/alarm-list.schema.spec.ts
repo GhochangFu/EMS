@@ -78,3 +78,27 @@ export function assertSummaryQueryAcceptsAssetIdsAndRefusesUnknownKeys(): void {
   const unknown = alarmSummaryQuerySchema.safeParse({ state: "active" });
   assert(unknown.success === false, "an unknown key on the summary query must be refused");
 }
+
+/** Plan decision 4: `limit=0` parses and reaches the service, which clamps it to 1 as before. */
+export function assertZeroLimitParsesForTheServiceClamp(): void {
+  const result = alarmListQuerySchema.safeParse({ limit: "0" });
+  assert(result.success && result.data.limit === 0, "limit=0 must parse to 0 — the service clamps it");
+}
+
+/** Plan decision 4: a negative `limit` parses; the service clamps it to 1 as before. */
+export function assertNegativeLimitParsesForTheServiceClamp(): void {
+  const result = alarmListQuerySchema.safeParse({ limit: "-5" });
+  assert(result.success && result.data.limit === -5, "limit=-5 must parse to -5 — the service clamps it");
+}
+
+/** Plan decision 4: an empty `limit=` is absent, so the controller's default of 20 applies, as before. */
+export function assertEmptyLimitIsAbsent(): void {
+  const result = alarmListQuerySchema.safeParse({ limit: "" });
+  assert(result.success && result.data.limit === undefined, "limit= must parse as absent");
+}
+
+/** Plan decision 4: a non-numeric `limit` is still a 400, as before. */
+export function assertNonNumericLimitIsRefused(): void {
+  const result = alarmListQuerySchema.safeParse({ limit: "abc" });
+  assert(result.success === false, "limit=abc must be refused");
+}
