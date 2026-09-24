@@ -316,3 +316,55 @@ The live read keeps its one-sided `time > now() − 900 s`; the upper bound
 applies only when `at` is given. `totalKw` and its prior stay unbounded, as
 decision 5 states. Decision 5's text is left as written; this erratum is the
 correction.
+
+## Amendment 1 (2026-09-24) — closure: rulings the build needed
+
+Written at the row's closure. The decisions above are left as written; this
+records where the three pull requests (#542 `feat/F3.28-alarms`, squash
+`5fcb5b9f`; #543 `feat/F3.28-kpi`, squash `14094473`; #545
+`feat/F3.28-page`, squash `a42289e7`) and their reviews narrowed or ruled on
+a point the decisions did not settle.
+
+1. **Slice 2 review ruling — the `/` Total load delta.** The `/` ribbon's
+   Total load delta keeps decision 5 as written: each site's prior uses its
+   own live definition, so a site with no reading yesterday shows today's
+   whole total as growth. `/cr-overview`'s tiles keep their own rule from
+   decision 5 unchanged: no delta unless every live input feeding the tile
+   also has a prior. The two are separate rules on separate surfaces, not one
+   rule narrowed at closure.
+
+2. **Slice 3, security finding L1 — the role summary's read scope.** `GET
+   /api/v1/assets/role-summary` counts a group membership only when the
+   caller can read the group itself. For a location- or organization-scoped
+   caller that means groups at the caller's readable locations, through the
+   existing `scopeFromSource`.
+
+3. **Slice 3 — inactive assets are excluded from the role summary.** An
+   asset with `bms.assets.active = false` is not counted under any role.
+
+4. **Slice 3 — a null Key Parameters reading.** A gauge with no fresh
+   sample shows an em dash with "Offline" or "No data", never a dial resting
+   at zero — zero is a value, and reads as one. `RadialGaugeWidget` is
+   unchanged; the null state is composed by the page around it.
+
+5. **Accepted without a new row.** The class strip opens a second
+   `/ws/alarms` socket on `/cr-overview`, beside the rail's own — a
+   duplicate subscription, not a correctness fault, left as found (LOW).
+   Commit `3038698d` added four point keys (`voltage_l1_v`, `kvar`,
+   `frequency_hz`, `kwh_today`) to the overview's `pointValue` so the List
+   view agrees with `/cr-sld`; this also changes what the *Rule Warnings*
+   and *SLD Status* tiles, `MiniSld`, and the live-critical subtitle count
+   for rules on those keys, since they already read the same `pointValue`
+   map.
+
+6. **Implementation note, not a ruling.** The role-summary query, planned
+   with a bound `interval` parameter, made TimescaleDB plan every
+   `point_values` chunk (520–1900 ms); a literal built from the same
+   positive-integer-checked constant through `sql.raw` plans in 42–100 ms.
+   Recorded here because the next window-bound query over this table will
+   want the fact.
+
+7. **`worstSeverity` carries `tone`.** The role-summary read returns
+   `worstSeverity { code, label, tone, rank } | null`, one field more than
+   decision 6 named — added so the strip can colour a role without a second
+   lookup.

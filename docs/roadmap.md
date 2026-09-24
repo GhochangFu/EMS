@@ -5773,3 +5773,53 @@ ADR 0073 Amendment 1 records fifteen corrections. New rows: `F4.151` (a
 water total) and `F4.153` (CI has no general check that refuses an edit
 to a committed migration). Ships no Water Recycle % formula: B14 is still the client's.
 Unblocks nothing.
+
+### `F3.28` — domain dashboard parity with the client reference layout (ADR 0074) ✅ 2026-09-24
+
+Three pull requests on one ADR and one plan: #542 the alarms rail (squash
+`5fcb5b9f`), #543 the KPI deltas (squash `14094473`, unblocked by #544's
+MinIO move, squash `7bf7e9dd`, once quay.io started answering 401), and #545
+the class strip and page (squash `a42289e7`). Gated 2026-09-24 by
+[ADR 0074](./adr/0074-domain-dashboard-parity.md) (#541), drafted and ruled
+the same day; ten questions and one follow-up, ten ruled as recommended, Q1
+answered outside its options — the light canvas stays the default and a user
+light/dark switch becomes its own row, `F3.65`.
+
+The row built the missing affordances on `/cr-overview`'s existing pattern
+rather than a new page. Slice 1 composed the breach value into the alarm
+text on write, added `state` and `assetIds` to `GET /alarms`, and replaced
+the rules-based right rail with an Active Alarms rail plus severity summary.
+Slice 2 added a `prior` value to `GET /dashboard/kpis` and a point-at-instant
+read, giving `/` and `/cr-overview` "vs yesterday" deltas and icons computed
+on the server, on each value's own live definition. Slice 3 added a
+per-ADR-0049-role summary read, the class strip, the state legend, a
+Diagram/List toggle over `BreakerTable` (extracted from `/cr-sld`), four Key
+Parameters gauges and the capability footer.
+
+ADR 0074 Amendment 1 records seven rulings the build needed: the `/` Total
+load delta keeps decision 5's own-definition rule per tile, so a new site's
+whole reading counts as growth, while `/cr-overview` keeps its separate
+same-inputs rule; the role summary counts a group only when the caller can
+read it, narrowed to readable locations for a scoped caller; inactive assets
+are excluded from it; a null Key Parameters reading shows an em dash rather
+than a dial at zero; a second `/ws/alarms` socket and four point keys shared
+with `/cr-sld`'s tiles (and `MiniSld` and the live-critical subtitle) were
+accepted as found; a bound query parameter made the role-summary read plan
+every chunk until rewritten as a checked literal; and `worstSeverity` carries
+`tone` beyond what the plan named.
+
+Verified per slice on every layer named. Slice 1: suite 664/664 files green;
+API on local-auth `:4001` and browser 11/11. Slice 2: suite 674/674 files
+green; API 13/13 on local-auth `:4001` (the prior at exactly 86 400 000 ms
+before `asOf`, scoped priors, the at-instant scope checks); database — the
+hand-queried prior figures matched the API exactly; browser 10/10. Slice 3:
+5874/5879 tests, one real failure (`integration-fixture-isolation`, fixed in
+`a64f36fe`) and four load timeouts, all five files passing alone at 89/89;
+API 11/11 on local-auth `:4001`; database — offline both directions across a
+35 s simulator stop; browser 8/8. No migration in any slice.
+
+**Cascade:** no row lists `F3.28` in *Depends*. New row from the closure:
+`F4.155` — the `/locations/:id` "Unacknowledged rows" hint is stale the same
+way `/`'s was before slice 2 fixed it. `F3.65` and `F4.154`, raised at the
+gate, are unaffected. `F3.28` keeps Wave `—`, per the ADR's own Consequences.
+Owed separately: the `chore(agents):` sweep for ADR 0074.
