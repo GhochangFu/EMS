@@ -5,7 +5,9 @@ import { cleanup } from "@testing-library/react";
 import {
   fetchesWithRefsAndExposesByRef,
   isDisabledWithZeroRefs,
+  previousValuesStayVisibleWhileTheNextMinuteFetches,
   queryKeyChangesWhenTheMinuteChanges,
+  reRendersInsideOneMinuteFetchOnce,
 } from "./use-prior-point-values.spec";
 
 /**
@@ -29,5 +31,13 @@ describe("F3.28 usePriorPointValues", () => {
 
   it("changes its query key when the floored minute changes", async () => {
     await queryKeyChangesWhenTheMinuteChanges();
+  });
+
+  it("fetches once across re-renders inside the same minute", async () => {
+    await reRendersInsideOneMinuteFetchOnce();
+  });
+
+  it("keeps the previous minute's values visible while the next minute fetches", async () => {
+    await previousValuesStayVisibleWhileTheNextMinuteFetches();
   });
 });

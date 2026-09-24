@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { fetchPointValuesAt } from "../api/telemetry";
 import { priorInstantIso } from "../lib/prior-instant";
@@ -12,8 +12,13 @@ export const priorPointValuesQueryPrefix = ["telemetry", "priorPointValues"] as 
  *
  * The query key carries `priorInstantIso(Date.now())`, minute-floored so the
  * key — and the cache entry — stays the same across renders inside one
- * minute; `refetchInterval: 60_000` then re-runs it once the minute rolls
- * over, picking up the new key rather than refetching the same stale `at`.
+ * minute. `refetchInterval: 60_000` refetches the **current** key with its
+ * closure's `at`; only a re-render recomputes `at` and so moves the key.
+ *
+ * **`placeholderData: keepPreviousData`.** When a re-render rolls the key into
+ * a new minute, the new key has no data yet; without it the three
+ * `/cr-overview` deltas would blank for the length of the fetch every minute.
+ * The previous minute's values stay visible until the new ones arrive.
  *
  * With no refs there is nothing to ask about, the same reasoning
  * `useActiveAlarms` applies: an empty `refs` array would read as *every*
@@ -34,6 +39,7 @@ export function usePriorPointValues(refs: readonly string[]) {
     queryFn: () => fetchPointValuesAt(refs, at),
     enabled,
     refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
   });
 
   const byRef = new Map<string, number | null>();
