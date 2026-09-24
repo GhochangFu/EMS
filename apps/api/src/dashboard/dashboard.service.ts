@@ -16,6 +16,7 @@ import {
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
 import { latestPueRatio, windowedPueRatio } from "../telemetry/pue-ratio";
+import { emptyKpiPrior, priorInstant, readKpiPrior, type KpiPrior } from "./kpi-prior";
 
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
 type LocationDashboardTelemetrySample = LocationDashboardAssetRow["telemetry"][number];
@@ -449,7 +450,14 @@ export class DashboardService {
     alarmsCritical: number;
     pueEstimate: number | null;
     asOf: string;
+    prior: KpiPrior;
   }> {
+    // Captured once so every return site's `asOf`/`prior.asOf` pair reports the
+    // same instant — two `new Date()` calls a query apart would let `prior`
+    // drift 24 h behind a slightly different `asOf` than the one shipped.
+    const now = new Date();
+    const prior = priorInstant(now);
+    const emptyPrior = (): KpiPrior => emptyKpiPrior(prior);
     if (assetIds && assetIds.length === 0) {
       return {
         totalKw: 0,
@@ -458,7 +466,8 @@ export class DashboardService {
         alarmsOpen: 0,
         alarmsCritical: 0,
         pueEstimate: null,
-        asOf: new Date().toISOString(),
+        asOf: now.toISOString(),
+        prior: emptyPrior(),
       };
     }
     const r = await this.pool.query<{
@@ -499,7 +508,8 @@ export class DashboardService {
         alarmsOpen: 0,
         alarmsCritical: 0,
         pueEstimate: null,
-        asOf: new Date().toISOString(),
+        asOf: now.toISOString(),
+        prior: emptyPrior(),
       };
     }
     const totalKw = Number(row.total_kw);
@@ -512,10 +522,12 @@ export class DashboardService {
       // A second query rather than a join into the CTE above: the PUE read pairs
       // two point keys per asset and drops the unpaired ones, which is a
       // different shape from `kw_latest`'s per-asset sum and would obscure both.
-      // Same pool, same `$1` scope, and no freshness bound — deliberately, for
-      // parity with `kw_latest` (see `pue-ratio.ts`).
+      // Same pool, same `$1` scope; unlike `kw_latest` it has a 900 s freshness
+      // bound (`PUE_LATEST_MAX_AGE_SECONDS`, the ruling of 2026-09-06).
       pueEstimate: await latestPueRatio(this.pool, assetIds ?? null),
-      asOf: new Date().toISOString(),
+      asOf: now.toISOString(),
+      // ADR 0074 decision 5 / OQ2: the same three reads at `asOf − 24 h`.
+      prior: await readKpiPrior(this.pool, assetIds ?? null, prior),
     };
   }
 

@@ -4,6 +4,8 @@ import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "../stores/auth-store";
 import {
+  aMissingPriorAmongLiveInputsGivesNoDelta,
+  aNullPriorKeepsTheTotalCrLoadHint,
   alarmsRailFetchesNothingWhileTheAssetsArePending,
   alarmsRailQueriesThePageAssetIds,
   alarmsRailSaysLoadingWhileTheAssetsArePending,
@@ -13,17 +15,25 @@ import {
   alarmsRailViewAllLinksToTheAlarmsPage,
   itRackLoadSectionSaysItIsOutsideTheScope,
   rackLoadReadsADashOutsideTheItScope,
+  rackLoadWearsTheBoltIcon,
   rackLoadReadsTheRackSumUnderAGlobalScope,
   rackLoadSaysItIsOutsideTheScope,
   rendersTheSectionHeadings,
   rendersThePageTitle,
   rendersTheSixKpiLabelsInOrder,
+  rackLoadRendersItsOwnDelta,
   ruleWarningsCountsAMatchedThresholdRule,
+  ruleWarningsWearsTheAlertIcon,
+  sldStatusHasNoDelta,
   sldStatusReadsOfflineWhenTheMainIncomerIsStale,
   sldStatusReadsOkWhenEveryBreakerIsLive,
   subtitleLeadsWithTheLiveCriticalCount,
+  theOtherThreeTilesWearNoIcon,
+  thePriorReadAsksForExactlyFiveRefs,
   totalCrLoadExcludesAStaleMainIncomer,
+  totalCrLoadRendersARiseAgainstALowerPrior,
   totalCrLoadSumsTheMainBusAndBothRacks,
+  totalCrLoadWearsTheBoltIcon,
 } from "./control-room-overview-page.spec";
 
 /**
@@ -122,5 +132,45 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("leads the subtitle with the live critical count", async () => {
     await subtitleLeadsWithTheLiveCriticalCount();
+  });
+
+  it("renders a Total CR Load rise against a prior 10 % lower", async () => {
+    await totalCrLoadRendersARiseAgainstALowerPrior();
+  });
+
+  it("keeps the Total CR Load hint when its prior is null", async () => {
+    await aNullPriorKeepsTheTotalCrLoadHint();
+  });
+
+  it("renders Rack Load's own delta, not Total CR Load's", async () => {
+    await rackLoadRendersItsOwnDelta();
+  });
+
+  it("renders no delta on SLD Status", async () => {
+    await sldStatusHasNoDelta();
+  });
+
+  it("asks the prior read for exactly five refs", async () => {
+    await thePriorReadAsksForExactlyFiveRefs();
+  });
+
+  it("renders no Total CR Load delta when one live input has no prior", async () => {
+    await aMissingPriorAmongLiveInputsGivesNoDelta();
+  });
+
+  it("puts the alert icon on Rule Warnings", () => {
+    ruleWarningsWearsTheAlertIcon();
+  });
+
+  it("puts the bolt icon on Total CR Load", () => {
+    totalCrLoadWearsTheBoltIcon();
+  });
+
+  it("puts the bolt icon on Rack Load", () => {
+    rackLoadWearsTheBoltIcon();
+  });
+
+  it("puts no icon on SLD Status, UPS Backup or Environment", () => {
+    theOtherThreeTilesWearNoIcon();
   });
 });

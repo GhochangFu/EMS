@@ -67,7 +67,7 @@ import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
 } from "../asset-health/asset-health.schema";
-import { pointAggregateQuerySchema } from "../telemetry/telemetry.schema";
+import { pointAggregateQuerySchema, pointValuesAtQuerySchema } from "../telemetry/telemetry.schema";
 import {
   createEscalationProfileBodySchema,
   escalationDefaultsQuerySchema,
@@ -295,6 +295,12 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RulesController_setRuleNotifications: setRuleNotificationsBodySchema,
   RulesController_updateRule: ruleUpdateBodySchema,
   TelemetryController_aggregate: pointAggregateQuerySchema,
+  // `F3.28` (ADR 0074 decision 2 / plan decision 2) — the batched instant read
+  // `TelemetryController_atInstant` implements in task 2.3. A GET with two
+  // query parameters and no body, registered ahead of the controller method
+  // for the `F4.20` reason every entry here exists: an undocumented `refs`
+  // bound is exactly the omission that finding is about.
+  TelemetryController_atInstant: pointValuesAtQuerySchema,
   WorkOrdersController_close: closeWorkOrderBodySchema,
   WorkOrdersController_create: createWorkOrderBodySchema,
   WorkOrdersController_reorder: reorderWorkOrdersBodySchema,

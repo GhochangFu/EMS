@@ -298,3 +298,21 @@ None. Nothing under §9.4 moves.
   gate; its C19 gate stands.
 - **`F3.28` keeps Wave `—`.** It was never scheduled into a wave; the §5 gate
   that held it is now resolved, and the row is started directly.
+
+## Errata
+
+### 1. The PUE read has a 900 s bound (2026-09-24)
+
+Decision 5 says `pueEstimate` is read with no freshness bound, and that the
+prior values carry none either. **That holds for `totalKw` only.**
+`latestPueRatio` (`apps/api/src/telemetry/pue-ratio.ts`) ignores any
+`site_kw` or `it_kw` sample older than `PUE_LATEST_MAX_AGE_SECONDS =
+3 × DEFAULT_MAX_INPUT_AGE_SECONDS = 3 × 300 = 900 s` — the owner's ruling of
+2026-09-06, which predates this ADR.
+
+The owner's ruling OQ2 (2026-09-24) keeps the bound and moves it: the prior
+`pueEstimate` reads samples in `(at − 900 s, at]`, where `at = asOf − 24 h`.
+The live read keeps its one-sided `time > now() − 900 s`; the upper bound
+applies only when `at` is given. `totalKw` and its prior stay unbounded, as
+decision 5 states. Decision 5's text is left as written; this erratum is the
+correction.

@@ -4,6 +4,15 @@ import {
   assertAMalformedPointRefIsABadRequest,
   assertAPointInsideScopeIsRead,
   assertAPointOutsideScopeIsRefusedBeforeAnyRead,
+  assertAtInstantAdminPasses,
+  assertAtInstantHandsTheDecodedPairsToTheService,
+  assertAtInstantKeepsRequestOrder,
+  assertAtInstantMalformedRefIsABadRequest,
+  assertAtInstantNonUuidAssetIsABadRequest,
+  assertAtInstantOutOfRangeAtIsABadRequest,
+  assertAtInstantRefusalRunsBeforeTheRead,
+  assertAtInstantRefusesMoreThanFiftyRefs,
+  assertAtInstantRefusesWhenOneRefIsForeign,
   assertQueryBoundsAreEnforced,
   assertTheCompareFlagReadsItsOwnNegative,
   assertTheDefaultsAreATileRequest,
@@ -35,5 +44,43 @@ describe("F3.35 Stage A — the aggregate endpoint's query contract", () => {
 
   it("defaults to a one-day tile request that asks for no buckets", async () => {
     await assertTheDefaultsAreATileRequest();
+  });
+});
+
+describe("F3.28 — the at-instant endpoint (ADR 0074 decision 2)", () => {
+  it("refuses the whole request with a 403 when one of two refs is foreign", async () => {
+    await assertAtInstantRefusesWhenOneRefIsForeign();
+  });
+
+  it("does not call the service when a ref is foreign", async () => {
+    await assertAtInstantRefusalRunsBeforeTheRead();
+  });
+
+  it("answers a ref with no separator with a 400", async () => {
+    await assertAtInstantMalformedRefIsABadRequest();
+  });
+
+  it("answers a non-UUID asset id with a 400, not a 500 at the uuid cast", async () => {
+    await assertAtInstantNonUuidAssetIsABadRequest();
+  });
+
+  it("answers 51 refs with a 400", async () => {
+    await assertAtInstantRefusesMoreThanFiftyRefs();
+  });
+
+  it("answers an `at` in year 0 with the range refine's 400 and no read", async () => {
+    await assertAtInstantOutOfRangeAtIsABadRequest();
+  });
+
+  it("lets an unrestricted admin read any asset", async () => {
+    await assertAtInstantAdminPasses();
+  });
+
+  it("keeps request order and echoes each ref and at as sent", async () => {
+    await assertAtInstantKeepsRequestOrder();
+  });
+
+  it("hands the decoded pairs and the parsed instant to the service", async () => {
+    await assertAtInstantHandsTheDecodedPairsToTheService();
   });
 });

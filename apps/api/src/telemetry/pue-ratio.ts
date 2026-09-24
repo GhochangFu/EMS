@@ -172,12 +172,27 @@ function ratioOfRow(row: PueSumsRow | undefined): number | null {
  * incomer must not be worse than none — keeping its site load while dropping
  * its IT load would inflate every estate figure it appeared in.
  *
+ * ## `at` — the same read, 24 h ago (`F3.28`, the owner's ruling OQ2 of 2026-09-24)
+ *
+ * With `at` the window is `(at − 900 s, at]`: the same bound, moved back, so the
+ * KPI ribbon's "vs yesterday" PUE compares like with like. Without it the read
+ * is unchanged — `time > now() − 900 s` and **no** upper bound, still one-sided
+ * for the reasons in the module docblock. The ceiling is conditional
+ * (`$3 IS NULL OR time <= $3`) rather than `time <= COALESCE($3, now())` on
+ * purpose: that form would drop future-stamped rows from the live read, which
+ * reverses the one-sided decision and makes the 2031 fixture in
+ * `pue-ratio.integration.spec.ts` invisible (measured: four of its cases fail).
+ * `$3` is cast to `timestamptz` everywhere it appears, because an untyped
+ * `null` parameter fails with "could not determine data type of parameter $3".
+ *
  * @param assetIds the caller's scope. `null` is every incomer; an empty array is
  *   nothing, and answers `null` — the same treatment `kw_latest` gives it.
+ * @param at the instant to read at; omitted means now, with no upper bound.
  */
 export async function latestPueRatio(
-  pool: Pool,
+  pool: Pick<Pool, "query">,
   assetIds: string[] | null,
+  at?: Date,
 ): Promise<number | null> {
   const r = await pool.query<PueSumsRow>(
     `
@@ -185,7 +200,8 @@ export async function latestPueRatio(
       SELECT DISTINCT ON (asset_id, point_key) asset_id, point_key, value
       FROM telemetry.point_values
       WHERE point_key IN ('site_kw', 'it_kw')
-        AND time > now() - ($2::int * interval '1 second')
+        AND time > COALESCE($3::timestamptz, now()) - ($2::int * interval '1 second')
+        AND ($3::timestamptz IS NULL OR time <= $3::timestamptz)
         AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
       ORDER BY asset_id, point_key, time DESC
     ),
@@ -202,7 +218,7 @@ export async function latestPueRatio(
            COALESCE(SUM(it_kw), 0)::float8 AS it_kw
     FROM paired
     `,
-    [assetIds ?? null, PUE_LATEST_MAX_AGE_SECONDS],
+    [assetIds ?? null, PUE_LATEST_MAX_AGE_SECONDS, at ? at.toISOString() : null],
   );
   return ratioOfRow(r.rows[0]);
 }

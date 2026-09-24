@@ -195,3 +195,190 @@ export async function assertTheDefaultsAreATileRequest(): Promise<void> {
   assert(calls[1]?.options.bucketFunction === "avg", "a named bucket function must reach the service");
   assert(calls[1]?.options.windowMinutes === 60, "the window must be coerced from the query string");
 }
+
+// ---------------------------------------------------------------------------
+// `F3.28` (ADR 0074 decision 2 / plan decision 2) — `GET /telemetry/points/at-instant`.
+// ---------------------------------------------------------------------------
+
+const FOREIGN_ASSET_ID = "99999999-9999-4999-8999-999999999999";
+const AT = "2026-09-23T10:30:00.000Z";
+
+type Point = { assetId: string; pointKey: string };
+
+/**
+ * The fake service answers each point with values derived from THAT point, so
+ * a reorder, an index shift or a dropped item changes what the response says
+ * at each position rather than leaving it looking right.
+ */
+function atInstantStubs(readable: string[] | null) {
+  const calls: { points: readonly Point[]; at: Date }[] = [];
+  const service = {
+    pointValuesAt: async (points: readonly Point[], at: Date) => {
+      calls.push({ points, at });
+      return points.map((p) => ({
+        time: AT,
+        value: p.pointKey.length + (p.assetId === ASSET_ID ? 100 : 200),
+        unit: `unit-${p.pointKey}`,
+      }));
+    },
+  } as unknown as TelemetryService;
+  const access = {
+    readableAssetIds: async () => readable,
+  } as unknown as AccessControlService;
+  return { controller: new TelemetryController(service, access), calls };
+}
+
+/**
+ * One of two refs is foreign → 403. The in-scope ref is FIRST, so a guard that
+ * only checks `refs[0]` lets this through.
+ */
+export async function assertAtInstantRefusesWhenOneRefIsForeign(): Promise<void> {
+  const { controller } = atInstantStubs([ASSET_ID]);
+  await rejects(
+    () =>
+      controller.atInstant(USER, {
+        at: AT,
+        refs: [encodePointRef(ASSET_ID, "kw"), encodePointRef(FOREIGN_ASSET_ID, "kw")],
+      }),
+    (err) =>
+      err instanceof ForbiddenException && err.message === "Asset is outside your access scope",
+    "a request naming one foreign ref must be refused whole with the aggregate's 403",
+  );
+}
+
+/**
+ * **The read must not happen**, not only the response be withheld: the call
+ * count is its own claim so the guard-after-read mutation reddens THIS case.
+ */
+export async function assertAtInstantRefusalRunsBeforeTheRead(): Promise<void> {
+  const { controller, calls } = atInstantStubs([ASSET_ID]);
+  try {
+    await controller.atInstant(USER, {
+      at: AT,
+      refs: [encodePointRef(ASSET_ID, "kw"), encodePointRef(FOREIGN_ASSET_ID, "kw")],
+    });
+  } catch {
+    // The 403 itself is the case above.
+  }
+  assert(
+    calls.length === 0,
+    `the service was called ${calls.length} time(s) despite the refusal; the guard must run before the read`,
+  );
+}
+
+/** A ref with no separator → 400 from the decode guard, and no read. */
+export async function assertAtInstantMalformedRefIsABadRequest(): Promise<void> {
+  const { controller, calls } = atInstantStubs(null);
+  await rejects(
+    () => controller.atInstant(USER, { at: AT, refs: ["not-a-point-ref"] }),
+    (err) => err instanceof BadRequestException && err.message === "Invalid point reference",
+    "a ref with no separator must be the decode guard's 400",
+  );
+  assert(calls.length === 0, "a malformed ref must not reach the service");
+}
+
+/**
+ * A ref WITH a separator whose asset id is not a UUID → 400 from the UUID
+ * guard. Unchecked, it reaches `$1::uuid[]` and becomes a 500.
+ */
+export async function assertAtInstantNonUuidAssetIsABadRequest(): Promise<void> {
+  const { controller, calls } = atInstantStubs(null);
+  await rejects(
+    () => controller.atInstant(USER, { at: AT, refs: [encodePointRef("not-a-uuid", "kw")] }),
+    (err) =>
+      err instanceof BadRequestException &&
+      err.message === "Invalid point reference: the asset id is not a UUID",
+    "a non-UUID asset id must be the UUID guard's 400",
+  );
+  assert(calls.length === 0, "a non-UUID asset id must not reach the service");
+}
+
+/** 51 VALID refs → 400 from the bound, not from a decode guard. */
+export async function assertAtInstantRefusesMoreThanFiftyRefs(): Promise<void> {
+  const { controller, calls } = atInstantStubs(null);
+  const refs = Array.from({ length: 51 }, (_, i) => encodePointRef(ASSET_ID, `kw_${i}`));
+  await rejects(
+    () => controller.atInstant(USER, { at: AT, refs }),
+    (err) =>
+      err instanceof BadRequestException &&
+      err.message.includes("50") &&
+      !err.message.startsWith("Invalid point reference"),
+    "51 refs must be refused by the MAX_AT_INSTANT_REFS bound",
+  );
+  assert(calls.length === 0, "an over-bound request must not reach the service");
+}
+
+/**
+ * An `at` in year 0 → 400 from the schema's range refine, and no read.
+ * Unbounded, it reaches `$2::timestamptz` and Postgres answers a 500. An
+ * unrestricted admin, so no scope guard could be the one that refused.
+ */
+export async function assertAtInstantOutOfRangeAtIsABadRequest(): Promise<void> {
+  const { controller, calls } = atInstantStubs(null);
+  await rejects(
+    () =>
+      controller.atInstant(USER, { at: "0000-01-01T00:00:00Z", refs: [encodePointRef(ASSET_ID, "kw")] }),
+    (err) =>
+      err instanceof BadRequestException &&
+      err.message === "at must lie between 1970-01-01T00:00:00Z and one day after now",
+    "an `at` in year 0 must be the range refine's 400",
+  );
+  assert(calls.length === 0, "an out-of-range `at` must not reach the service");
+}
+
+/** An unrestricted admin (`readableAssetIds` → null) reads any asset. */
+export async function assertAtInstantAdminPasses(): Promise<void> {
+  const { controller, calls } = atInstantStubs(null);
+  const result = await controller.atInstant(USER, {
+    at: AT,
+    refs: [encodePointRef(FOREIGN_ASSET_ID, "kw")],
+  });
+  assert(calls.length === 1, `an admin must be read, got ${calls.length} read(s)`);
+  assert(result.items.length === 1, "an admin must get one item per ref");
+}
+
+/**
+ * The response keeps request order, echoes each ref as sent and `at` as sent,
+ * and the service receives the decoded pairs in that same order.
+ */
+export async function assertAtInstantKeepsRequestOrder(): Promise<void> {
+  const { controller } = atInstantStubs([ASSET_ID, FOREIGN_ASSET_ID]);
+  const refs = [
+    encodePointRef(FOREIGN_ASSET_ID, "kwh_total"),
+    encodePointRef(ASSET_ID, "kw"),
+    encodePointRef(ASSET_ID, "kw"),
+  ];
+  const at = "2026-09-23T12:30:00+02:00";
+  const result = await controller.atInstant(USER, { at, refs });
+  const expected = {
+    at,
+    items: [
+      { pointRef: refs[0], time: AT, value: 209, unit: "unit-kwh_total" },
+      { pointRef: refs[1], time: AT, value: 102, unit: "unit-kw" },
+      { pointRef: refs[2], time: AT, value: 102, unit: "unit-kw" },
+    ],
+  };
+  assert(
+    JSON.stringify(result) === JSON.stringify(expected),
+    `expected ${JSON.stringify(expected)}, got ${JSON.stringify(result)}`,
+  );
+}
+
+/** The service receives `at` as the instant and the DECODED pairs, in request order. */
+export async function assertAtInstantHandsTheDecodedPairsToTheService(): Promise<void> {
+  const { controller, calls } = atInstantStubs(null);
+  await controller.atInstant(USER, {
+    // `12:30+02:00` is `10:30Z`, which is `AT`.
+    at: "2026-09-23T12:30:00+02:00",
+    refs: [encodePointRef(FOREIGN_ASSET_ID, "kwh_total"), encodePointRef(ASSET_ID, "kw")],
+  });
+  const got = JSON.stringify({ at: calls[0]?.at.toISOString(), points: calls[0]?.points });
+  const expected = JSON.stringify({
+    at: AT,
+    points: [
+      { assetId: FOREIGN_ASSET_ID, pointKey: "kwh_total" },
+      { assetId: ASSET_ID, pointKey: "kw" },
+    ],
+  });
+  assert(got === expected, `expected ${expected}, got ${got}`);
+}

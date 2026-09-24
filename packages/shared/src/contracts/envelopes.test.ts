@@ -10,6 +10,8 @@ import {
   deliveryEventEnvelopeAdmitsEveryKind,
   deliveryEventEnvelopeRefusesAnInventedKind,
   deliveryEventIsRequiredOnEveryRow,
+  pointValuesAtInstantAcceptsASampledAndAnUnsampledRef,
+  pointValuesAtInstantRequiresPointRefAndAt,
   runNotificationDeliveryStatusEnvelopeTests,
   runPointAggregateBucketSecondsTests,
   runPointAggregateEmptyWindowTests,
@@ -63,6 +65,16 @@ describe("F3.28 — alarmSummaryResponseSchema (ADR 0074 decision 3)", () => {
 
   it("requires total", () => {
     alarmSummaryResponseRequiresTotal();
+  });
+});
+
+describe("F3.28 — pointValuesAtInstantResponseSchema (ADR 0074 decision 2)", () => {
+  it("accepts a sampled ref and an unsampled ref in the same response", () => {
+    pointValuesAtInstantAcceptsASampledAndAnUnsampledRef();
+  });
+
+  it("requires `at` on the response and `pointRef` on every item", () => {
+    pointValuesAtInstantRequiresPointRefAndAt();
   });
 });
 

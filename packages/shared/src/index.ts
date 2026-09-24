@@ -266,6 +266,10 @@ export type PointAggregateBucket = z.infer<typeof E.pointAggregateBucketSchema>;
 export type PointAggregateStats = z.infer<typeof E.pointAggregateStatsSchema>;
 /** `GET /telemetry/points/:pointRef/aggregate`. */
 export type PointAggregateResponse = z.infer<typeof E.pointAggregateResponseSchema>;
+/** `F3.28` (ADR 0074) — one requested point at `at`, in `GET /telemetry/points/at-instant`. */
+export type PointValuesAtInstantItem = z.infer<typeof E.pointValuesAtInstantItemSchema>;
+/** `GET /telemetry/points/at-instant` (`F3.28`, ADR 0074 decision 2). */
+export type PointValuesAtInstantResponse = z.infer<typeof E.pointValuesAtInstantResponseSchema>;
 
 /** Builds the REST path segment for `GET .../points/:pointRef/recent`. */
 export function encodePointRef(assetId: string, pointKey: string): string {
