@@ -5,9 +5,10 @@
  * (`GET /api/v1/assets/role-summary`).
  *
  * It is the same 25 s the web freshness gate uses — `FRESH_MS = 25_000` in
- * `apps/web/src/lib/schematic-telemetry.ts` (ADR 0027) — so the class strip's
- * offline count and the schematic's stale styling cannot disagree about one
- * asset. `tests/f3.28-offline-bound-single-source.test.ts` pins
+ * `apps/web/src/lib/schematic-telemetry.ts` (ADR 0027) — so the class strip
+ * and the schematic use the same window. They can still disagree about one
+ * asset: the strip counts a sample of any point, while the web gate judges
+ * each reading on its own. `tests/f3.28-offline-bound-single-source.test.ts` pins
  * `LIVE_TELEMETRY_MAX_AGE_SECONDS * 1000` to `FRESH_MS`.
  *
  * The role-summary SQL binds this as a parameter; it never restates the
