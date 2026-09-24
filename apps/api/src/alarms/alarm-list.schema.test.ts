@@ -11,7 +11,9 @@ import {
   assertNonNumericLimitIsRefused,
   assertOverCapFractionalLimitParses,
   assertSubOneFractionalLimitParses,
-  assertSummaryQueryAcceptsAssetIdsAndRefusesUnknownKeys,
+  assertSummaryQueryAcceptsAnEmptyQuery,
+  assertSummaryQueryAcceptsAssetIdsAlone,
+  assertSummaryQueryRefusesAnUnknownKey,
   assertUnknownStateValueIsRefused,
   assertZeroLimitParsesForTheServiceClamp,
 } from "./alarm-list.schema.spec";
@@ -68,7 +70,15 @@ describe("F3.28 — alarmListQuerySchema (ADR 0074, plan decisions 1 and 4)", ()
 });
 
 describe("F3.28 — alarmSummaryQuerySchema", () => {
-  it("accepts assetIds alone, an empty query, and refuses an unknown key", () => {
-    assertSummaryQueryAcceptsAssetIdsAndRefusesUnknownKeys();
+  it("accepts assetIds alone", () => {
+    assertSummaryQueryAcceptsAssetIdsAlone();
+  });
+
+  it("accepts an empty query", () => {
+    assertSummaryQueryAcceptsAnEmptyQuery();
+  });
+
+  it("refuses an unknown key", () => {
+    assertSummaryQueryRefusesAnUnknownKey();
   });
 });

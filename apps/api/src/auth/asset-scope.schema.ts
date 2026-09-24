@@ -12,11 +12,10 @@ import { z } from "zod";
 export const MAX_SCOPE_ASSET_IDS = 200;
 
 /**
- * `?assetIds=a&assetIds=b` as a repeated query parameter, normalised to an
- * array (plan decision 1). Nest's `@Query()` hands a bare string for one
- * occurrence and an array for more than one, so the preprocess step folds
- * both shapes — and an absent parameter — into one before the element and
- * bound checks run.
+ * Folds a repeated query parameter into an array (plan decision 1). Nest's
+ * `@Query()` hands a bare string for one occurrence and an array for more
+ * than one, so both shapes — and an absent parameter — become one before
+ * {@link assetIdsQueryField}'s element and bound checks run.
  *
  * **Past 20 occurrences Express does not hand an array.** Its extended query
  * parser is `qs` with the default `arrayLimit: 20`, and a 21st repeat turns
@@ -43,6 +42,12 @@ export function foldRepeatedQueryValue(value: unknown): unknown {
   return [value];
 }
 
+/**
+ * `?assetIds=a&assetIds=b` as a repeated query parameter, normalised to an
+ * array of at most {@link MAX_SCOPE_ASSET_IDS} uuids (plan decision 1). The
+ * fold is {@link foldRepeatedQueryValue}; the result only ever narrows a
+ * caller's readable set, never widens it.
+ */
 export const assetIdsQueryField = z
   .preprocess(foldRepeatedQueryValue, z.array(z.string().uuid()).max(MAX_SCOPE_ASSET_IDS))
   .optional();

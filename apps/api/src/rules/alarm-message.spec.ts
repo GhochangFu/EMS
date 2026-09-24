@@ -79,7 +79,6 @@ function testPowerFactor(): void {
     composeAlarmMessage(rule({ pointKey: "pf", unit: null }), 0.79) === "Power factor low (0.79)",
     "pf renders without a unit, matching pre-merge behaviour (dimensionless)",
   );
-
 }
 
 /**

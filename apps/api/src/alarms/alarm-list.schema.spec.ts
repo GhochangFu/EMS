@@ -64,19 +64,25 @@ export function assertAssetIdsIsCappedAtTheSharedMaximum(): void {
   assert(overCap.success === false, `${MAX_SCOPE_ASSET_IDS + 1} assetIds must be refused`);
 }
 
-/** `alarmSummaryQuerySchema` accepts `assetIds` alone and refuses an unknown key. */
-export function assertSummaryQueryAcceptsAssetIdsAndRefusesUnknownKeys(): void {
-  const withAssetIds = alarmSummaryQuerySchema.safeParse({ assetIds: [randomUUID()] });
+/** `alarmSummaryQuerySchema` accepts `assetIds` alone. */
+export function assertSummaryQueryAcceptsAssetIdsAlone(): void {
+  const result = alarmSummaryQuerySchema.safeParse({ assetIds: [randomUUID()] });
   assert(
-    withAssetIds.success === true,
-    `assetIds alone must parse: ${JSON.stringify(withAssetIds.success ? undefined : withAssetIds.error.issues)}`,
+    result.success === true,
+    `assetIds alone must parse: ${JSON.stringify(result.success ? undefined : result.error.issues)}`,
   );
+}
 
-  const empty = alarmSummaryQuerySchema.safeParse({});
-  assert(empty.success === true, "an empty summary query must parse — assetIds is optional");
+/** `alarmSummaryQuerySchema` accepts an empty query — `assetIds` is optional. */
+export function assertSummaryQueryAcceptsAnEmptyQuery(): void {
+  const result = alarmSummaryQuerySchema.safeParse({});
+  assert(result.success === true, "an empty summary query must parse — assetIds is optional");
+}
 
-  const unknown = alarmSummaryQuerySchema.safeParse({ state: "active" });
-  assert(unknown.success === false, "an unknown key on the summary query must be refused");
+/** `alarmSummaryQuerySchema` refuses an unknown key — `state` is not one of its keys. */
+export function assertSummaryQueryRefusesAnUnknownKey(): void {
+  const result = alarmSummaryQuerySchema.safeParse({ state: "active" });
+  assert(result.success === false, "an unknown key on the summary query must be refused");
 }
 
 /** Plan decision 4: `limit=0` parses and reaches the service, which clamps it to 1 as before. */
