@@ -1,4 +1,5 @@
 import { RadialGaugeWidget } from "../widgets/radial-gauge-widget";
+import { WidgetFrame } from "../widgets/widget-frame";
 import type { RadialGaugeConfig } from "../../lib/widget-catalog";
 import { freshValue, isStale, type SchematicTelemetrySlice } from "../../lib/schematic-telemetry";
 import { avgOf } from "../../lib/control-room-tiles";
@@ -56,11 +57,27 @@ type GaugeProps = {
   config: RadialGaugeConfig;
 };
 
-/** One gauge, in a `group` named by its title so a reader can scope a query to it. */
+/**
+ * One gauge, in a `group` named by its title so a reader can scope a query to it.
+ *
+ * A `null` reading draws no dial: the shared `RadialGaugeWidget` pins the
+ * needle at `config.min` and prints "0 %", which reads as a real zero. The
+ * card shows "—" instead, with `WidgetFrame`'s "Offline" badge when the slice
+ * is stale, or "No data" when it is fresh but carries no value.
+ */
 function Gauge({ title, primary, stale, config }: GaugeProps) {
   return (
     <div role="group" aria-label={title}>
-      <RadialGaugeWidget title={title} status="ready" primary={primary} stale={stale} config={config} />
+      {primary === null ? (
+        <WidgetFrame title={title} status="ready" stale={stale}>
+          <div className="flex flex-1 flex-col items-center justify-center gap-1 text-bms-muted">
+            <span className="text-2xl font-semibold">—</span>
+            {stale ? null : <span className="text-sm">No data</span>}
+          </div>
+        </WidgetFrame>
+      ) : (
+        <RadialGaugeWidget title={title} status="ready" primary={primary} stale={stale} config={config} />
+      )}
     </div>
   );
 }
@@ -81,14 +98,15 @@ type KeyParametersProps = {
  * slices this needs; this component opens no subscription of its own.
  *
  * Every `primary` is `freshValue(rawValue, isStale(...))` (ADR 0027) — never
- * the raw slice value — so a dead asset's frozen last reading renders as
- * "no data" (the needle at `config.min`) rather than a stale number presented
- * as current.
+ * the raw slice value — so a dead asset's frozen last reading renders as the
+ * "—" placeholder (see `Gauge`) rather than a stale number presented as
+ * current.
  *
  * **Battery health average.** `CR-BATT-1` and `CR-BATT-2` are averaged using
  * only the units that are currently fresh; a stale unit is dropped from the
  * average rather than contributing its frozen `health_pct`, and the gauge
- * reads `null` only when *both* units are stale (`avgOf` already returns
+ * reads `null`, so shows the placeholder, only when no unit gives a fresh
+ * value (`avgOf` already returns
  * `null` on an empty input, so this file states no extra rule for that case).
  */
 export function KeyParameters({ ups1, ups2, batt1, batt2, main, nowMs }: KeyParametersProps) {

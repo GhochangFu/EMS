@@ -92,15 +92,93 @@ export function rendersTheFourGaugeTitles(): void {
   expect(screen.getByText("Main Power Factor")).toBeInTheDocument();
 }
 
-/**
- * UPS-1 stale: the "Offline" badge shows on its card, and its gauge needle
- * sits at `config.min` (0) — the rendered evidence of `primary: null`, since
- * a raw `loadPct` of 42 would move the needle away from 0.
- */
-export function aStaleSliceRendersOfflineAndNoNeedleMovement(): void {
+/** Which of `texts` the named gauge's card shows, in order. */
+function shows(title: string, texts: string[]): boolean[] {
+  return texts.map((text) => within(gauge(title)).queryByText(text) !== null);
+}
+
+/** Whether each named gauge draws a dial, in order. */
+function dials(titles: string[]): boolean[] {
+  return titles.map((title) => dialOf(title) !== null);
+}
+
+// ---------------------------------------------------------------------------
+// A null reading draws no dial (owner ruling on review item 4). Each case pairs
+// the null gauge with a live neighbour that does draw one, so a card that drew
+// nothing at all could not pass.
+// ---------------------------------------------------------------------------
+
+/** UPS-1 stale: no dial; UPS-2, live, draws one. */
+export function aStaleUps1DrawsNoDial(): void {
   renderGauges({ ups1: liveSlice({ loadPct: 42, lastSeenMs: STALE_SEEN_MS }) });
-  expect(within(gauge("UPS-1 Load")).getByText("Offline")).toBeInTheDocument();
-  expect(needleOf("UPS-1 Load")).toBe(0);
+  expect(dials(["UPS-1 Load", "UPS-2 Load"])).toEqual([false, true]);
+}
+
+/** UPS-1 stale: its card reads "—" with the "Offline" badge, not "No data". */
+export function aStaleUps1ShowsADashAndOffline(): void {
+  renderGauges({ ups1: liveSlice({ loadPct: 42, lastSeenMs: STALE_SEEN_MS }) });
+  expect(shows("UPS-1 Load", ["—", "Offline", "No data"])).toEqual([true, true, false]);
+}
+
+/** UPS-1 fresh with no load reading: "—" and "No data", not "Offline". */
+export function aFreshNullUps1ShowsADashAndNoData(): void {
+  renderGauges({ ups1: liveSlice({ loadPct: null }) });
+  expect(shows("UPS-1 Load", ["—", "No data", "Offline"])).toEqual([true, true, false]);
+}
+
+/** UPS-2 stale: no dial; UPS-1, live, draws one. */
+export function aStaleUps2DrawsNoDial(): void {
+  renderGauges({ ups2: liveSlice({ loadPct: 55, lastSeenMs: STALE_SEEN_MS }) });
+  expect(dials(["UPS-2 Load", "UPS-1 Load"])).toEqual([false, true]);
+}
+
+/** Both battery units stale: no battery dial; UPS-1, live, draws one. */
+export function bothBatteriesStaleDrawNoDial(): void {
+  renderGauges({
+    batt1: liveSlice({ healthPct: 90, lastSeenMs: STALE_SEEN_MS }),
+    batt2: liveSlice({ healthPct: 80, lastSeenMs: STALE_SEEN_MS }),
+  });
+  expect(dials(["Battery Health", "UPS-1 Load"])).toEqual([false, true]);
+}
+
+/** Main incomer stale: no power factor dial; UPS-1, live, draws one. */
+export function aStaleMainDrawsNoPowerFactorDial(): void {
+  renderGauges({ main: liveSlice({ pf: 0.95, lastSeenMs: STALE_SEEN_MS }) });
+  expect(dials(["Main Power Factor", "UPS-1 Load"])).toEqual([false, true]);
+}
+
+// ---------------------------------------------------------------------------
+// A fresh reading reaches its own needle.
+// ---------------------------------------------------------------------------
+
+export function ups1NeedleReadsItsLoad(): void {
+  renderGauges();
+  expect(needleOf("UPS-1 Load")).toBe(42);
+}
+
+export function ups2NeedleReadsItsLoad(): void {
+  renderGauges();
+  expect(needleOf("UPS-2 Load")).toBe(55);
+}
+
+/** Both units fresh at 90 and 80: the needle reads their average, 85. */
+export function batteryNeedleReadsTheAverageOfBothFreshUnits(): void {
+  renderGauges();
+  expect(needleOf("Battery Health")).toBe(85);
+}
+
+/** `batt1` fresh at 90, `batt2` stale at 50: the stale unit is dropped, so 90, not 70. */
+export function batteryNeedleAveragesOnlyTheFreshUnit(): void {
+  renderGauges({
+    batt1: liveSlice({ healthPct: 90 }),
+    batt2: liveSlice({ healthPct: 50, lastSeenMs: STALE_SEEN_MS }),
+  });
+  expect(needleOf("Battery Health")).toBe(90);
+}
+
+export function powerFactorNeedleReadsTheMainPf(): void {
+  renderGauges();
+  expect(needleOf("Main Power Factor")).toBe(0.95);
 }
 
 // ---------------------------------------------------------------------------
