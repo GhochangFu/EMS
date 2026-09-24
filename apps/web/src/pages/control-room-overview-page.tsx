@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { fetchRules } from "../api/rules";
 import { ActiveAlarmsRail } from "../components/control-room/active-alarms-rail";
+import { AssetClassStrip } from "../components/control-room/asset-class-strip";
 import { BreakerTable } from "../components/control-room/breaker-table";
 import { CapabilityFooter } from "../components/control-room/capability-footer";
 import { QuickDrilldown } from "../components/control-room/quick-drilldown";
@@ -460,6 +461,8 @@ function ControlRoomOverviewContent() {
         <KpiTile label="UPS Backup" status={canUpsBattery ? "ready" : "empty"} value={canUpsBattery ? n(worstBackup, 0) : null} unit="min" tone={statusTone(upsStatus.status)} hint={canUpsBattery ? tileHint(upsStatus.matchedRule?.name, backupDelta, "worst-case reported backup") : "outside your asset-group scope"} />
         <KpiTile label="Environment" status={canEnvironment ? "ready" : "empty"} value={canEnvironment ? statusLabel(environmentStatus.status) : null} tone={statusTone(environmentStatus.status)} hint={canEnvironment ? environmentStatus.matchedRule?.name ?? `${n(avgRoomTemp, 1)} C avg room` : "outside your asset-group scope"} />
       </div>
+
+      <AssetClassStrip assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />
 
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
         <section className="rounded border border-gray-200 bg-white p-4">

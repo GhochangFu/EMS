@@ -35,6 +35,8 @@ import {
   theListTabShowsTwelveBreakerRows,
   theListViewShowsAStaleBreakerOffline,
   theListViewWarnsOnAnSldOnlyPointKey,
+  theClassStripShowsTheRoleSummary,
+  theClassStripQueriesThePageAssetIds,
   theOtherThreeTilesWearNoIcon,
   theStateLegendRendersNormalTheVocabularyAndOffline,
   theViewModeDoesNotSurviveARemount,
@@ -219,5 +221,13 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("renders all seven capability footer items", () => {
     rendersAllSevenFooterItems();
+  });
+
+  it("mounts the class strip with the role summary", async () => {
+    await theClassStripShowsTheRoleSummary();
+  });
+
+  it("asks the class strip read for the page's asset ids", async () => {
+    await theClassStripQueriesThePageAssetIds();
   });
 });

@@ -10,6 +10,7 @@ import type {
   AlarmListItem,
   AlarmSummaryResponse,
   AlarmsListResponse,
+  AssetRoleSummaryResponse,
   PointValuesAtInstantResponse,
   RuleListItem,
 } from "@bms/shared";
@@ -62,6 +63,7 @@ const state = vi.hoisted(() => ({
   fetchActiveAlarms: vi.fn(),
   fetchAlarmSummary: vi.fn(),
   fetchPointValuesAt: vi.fn(),
+  fetchAssetRoleSummary: vi.fn(),
   /** The "vs yesterday" value per encoded point ref; an absent ref reads `null`. */
   priors: {} as Record<string, number | null>,
 }));
@@ -117,6 +119,15 @@ vi.mock("../api/alarms", () => ({
 vi.mock("../api/telemetry", async (importActual) => ({
   ...(await importActual<typeof import("../api/telemetry")>()),
   fetchPointValuesAt: state.fetchPointValuesAt,
+}));
+
+/**
+ * `F3.28` task 3.3 — the class strip's read. Only `fetchAssetRoleSummary` is
+ * replaced; the strip's own spec owns its text rules.
+ */
+vi.mock("../api/assets", async (importActual) => ({
+  ...(await importActual<typeof import("../api/assets")>()),
+  fetchAssetRoleSummary: state.fetchAssetRoleSummary,
 }));
 
 vi.mock("../api/vocabularies", () => ({
@@ -230,6 +241,20 @@ function thresholdRule(overrides: Partial<RuleListItem>): RuleListItem {
   } as unknown as RuleListItem;
 }
 
+/** One role at a worst severity, so the strip's mount shows a real item. */
+const STRIP_SUMMARY: AssetRoleSummaryResponse = {
+  items: [
+    {
+      code: "mcc",
+      label: "MCCs",
+      count: 4,
+      worstSeverity: { code: "critical", label: "Critical", tone: "critical", rank: 30 },
+      worstCount: 1,
+      offlineCount: 0,
+    },
+  ],
+};
+
 /** A server-raised alarm; its message carries the task 1.2 breach value. */
 const RAIL_ALARM: AlarmListItem = {
   id: "alarm-1",
@@ -284,6 +309,9 @@ function renderPage({
   );
   state.fetchAlarmSummary.mockImplementation(
     (): Promise<AlarmSummaryResponse> => Promise.resolve(RAIL_SUMMARY),
+  );
+  state.fetchAssetRoleSummary.mockImplementation(
+    (): Promise<AssetRoleSummaryResponse> => Promise.resolve(STRIP_SUMMARY),
   );
   state.priors = priors;
   state.fetchPointValuesAt.mockImplementation(
@@ -814,3 +842,21 @@ export function rendersAllSevenFooterItems(): void {
   }
 }
 
+
+/**
+ * `F3.28` task 3.3 — the class strip is mounted and reads the same ids the
+ * rail reads: every tracked asset the page resolved.
+ */
+export async function theClassStripShowsTheRoleSummary(): Promise<void> {
+  renderPage();
+  expect(await screen.findByText("MCCs 4 · 1 Critical")).toBeInTheDocument();
+}
+
+export async function theClassStripQueriesThePageAssetIds(): Promise<void> {
+  renderPage();
+  await waitFor(() =>
+    expect(state.fetchAssetRoleSummary).toHaveBeenCalledWith(
+      CR_TRACKED_ASSET_CODES.map(assetIdFor),
+    ),
+  );
+}
