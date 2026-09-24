@@ -449,7 +449,23 @@ export class DashboardService {
     alarmsCritical: number;
     pueEstimate: number | null;
     asOf: string;
+    prior: {
+      asOf: string;
+      totalKw: number | null;
+      alarmsOpen: number;
+      pueEstimate: number | null;
+    };
   }> {
+    // Captured once so every return site's `asOf`/`prior.asOf` pair reports the
+    // same instant — two `new Date()` calls a query apart would let `prior`
+    // drift 24 h behind a slightly different `asOf` than the one shipped.
+    const now = new Date();
+    const emptyPrior = (): { asOf: string; totalKw: number | null; alarmsOpen: number; pueEstimate: number | null } => ({
+      asOf: new Date(now.getTime() - 24 * 3_600_000).toISOString(),
+      totalKw: null,
+      alarmsOpen: 0,
+      pueEstimate: null,
+    });
     if (assetIds && assetIds.length === 0) {
       return {
         totalKw: 0,
@@ -458,7 +474,8 @@ export class DashboardService {
         alarmsOpen: 0,
         alarmsCritical: 0,
         pueEstimate: null,
-        asOf: new Date().toISOString(),
+        asOf: now.toISOString(),
+        prior: emptyPrior(),
       };
     }
     const r = await this.pool.query<{
@@ -499,7 +516,8 @@ export class DashboardService {
         alarmsOpen: 0,
         alarmsCritical: 0,
         pueEstimate: null,
-        asOf: new Date().toISOString(),
+        asOf: now.toISOString(),
+        prior: emptyPrior(),
       };
     }
     const totalKw = Number(row.total_kw);
@@ -515,7 +533,9 @@ export class DashboardService {
       // Same pool, same `$1` scope, and no freshness bound — deliberately, for
       // parity with `kw_latest` (see `pue-ratio.ts`).
       pueEstimate: await latestPueRatio(this.pool, assetIds ?? null),
-      asOf: new Date().toISOString(),
+      asOf: now.toISOString(),
+      // Task 2.2 composes the real prior here.
+      prior: emptyPrior(),
     };
   }
 

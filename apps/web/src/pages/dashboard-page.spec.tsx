@@ -51,6 +51,9 @@ function kpis(pueEstimate: number | null): DashboardKpis {
     alarmsCritical: 0,
     pueEstimate,
     asOf: "2026-09-05T12:00:00.000Z",
+    // Task 2.2 composes the real prior; this fixture carries the placeholder
+    // shape `DashboardService.kpis` ships until then.
+    prior: { asOf: "2026-09-04T12:00:00.000Z", totalKw: null, alarmsOpen: 0, pueEstimate: null },
   };
 }
 

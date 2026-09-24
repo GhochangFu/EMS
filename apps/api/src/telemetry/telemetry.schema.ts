@@ -1,6 +1,8 @@
 import { MAX_WIDGET_WINDOW_MINUTES, pointAggregateFunctionSchema } from "@bms/shared";
 import { z } from "zod";
 
+import { foldRepeatedQueryValue } from "../auth/asset-scope.schema";
+
 /**
  * `F3.35` Stage A (ADR 0048 decision 3) — the query contract for
  * `GET /telemetry/points/:pointRef/aggregate`.
@@ -47,3 +49,32 @@ export const pointAggregateQuerySchema = z.object({
 });
 
 export type PointAggregateQuery = z.infer<typeof pointAggregateQuerySchema>;
+
+/**
+ * `F3.28` (ADR 0074 decision 2 / plan decision 2) — the query contract for
+ * `GET /telemetry/points/at-instant?at=<ISO offset>&refs=<ref>&refs=<ref>`.
+ *
+ * **`refs` is folded the way `assetIdsQueryField` folds a repeated asset-scope
+ * parameter** (`../auth/asset-scope.schema.ts`), for the identical reason:
+ * Nest hands a bare string for one occurrence and an array for more than one,
+ * and past 20 occurrences `qs`'s default `arrayLimit` turns the value into an
+ * index-keyed object instead. Only `foldRepeatedQueryValue`'s exact overflow
+ * shape folds back into an array; any other object reaches `z.array` as an
+ * object and is refused.
+ *
+ * **`at` requires an explicit offset.** `z.string().datetime()` without
+ * `{ offset: true }` accepts only a bare `Z`, and a caller's local offset
+ * (`+02:00`) would be a 400 for no reason this route needs — the "prior
+ * instant" it feeds is always compared against stored UTC timestamps, so any
+ * valid offset resolves to the same instant.
+ */
+export const MAX_AT_INSTANT_REFS = 50;
+
+export const pointValuesAtQuerySchema = z
+  .object({
+    at: z.string().datetime({ offset: true }),
+    refs: z.preprocess(foldRepeatedQueryValue, z.array(z.string()).min(1).max(MAX_AT_INSTANT_REFS)),
+  })
+  .strict();
+
+export type PointValuesAtQuery = z.infer<typeof pointValuesAtQuerySchema>;

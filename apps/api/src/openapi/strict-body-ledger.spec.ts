@@ -108,7 +108,7 @@ import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
 } from "../asset-health/asset-health.schema";
-import { pointAggregateQuerySchema } from "../telemetry/telemetry.schema";
+import { pointAggregateQuerySchema, pointValuesAtQuerySchema } from "../telemetry/telemetry.schema";
 import {
   listRuleExecutionsQuerySchema,
   ruleDraftBodySchema,
@@ -332,6 +332,11 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // 19 -> 20: `F3.28` registered `alarmSummaryQuerySchema`
   // (`GET /alarms/summary?assetIds=`, plan decision 7) — `.strict()`, no body.
   alarmSummaryQuerySchema,
+  // 20 -> 21: `F3.28` registered `pointValuesAtQuerySchema`
+  // (`GET /telemetry/points/at-instant?at=&refs=`, ADR 0074 decision 2 / plan
+  // decision 2) — `.strict()`, no body, no ledger entry, the
+  // `mappingSheetQuerySchema` precedent.
+  pointValuesAtQuerySchema,
   mappingSheetQuerySchema,
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.
@@ -815,6 +820,14 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // `limit`, `.strict()`, no body. The one body that row adds,
   // `saveEnergyReportFileBodySchema`, is in `BODY_SCHEMAS` with its decision.
   //
+  // 18 -> 19, 19 -> 20: `F3.28` (see the two entries above, in `QUERY_SCHEMAS`
+  // itself) registered `alarmListQuerySchema` and `alarmSummaryQuerySchema`.
+  //
+  // 20 -> 21: `F3.28` registered `pointValuesAtQuerySchema`
+  // (`GET /telemetry/points/at-instant?at=&refs=`, ADR 0074 decision 2 / plan
+  // decision 2): a required `at` and a bounded `refs` array, `.strict()`, no
+  // body — the `mappingSheetQuerySchema` precedent again.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -824,7 +837,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(20);
+  ).toBe(21);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

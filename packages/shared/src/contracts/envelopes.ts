@@ -357,6 +357,28 @@ export const pointAggregateResponseSchema = z.object({
    */
   buckets: z.array(pointAggregateBucketSchema).nullable(),
 });
+/**
+ * One requested point at the instant `at` — `GET /telemetry/points/at-instant`
+ * (`F3.28`, ADR 0074 decision 2 / plan decision 2).
+ *
+ * `time` and `value` go `null` together when the point has no sample at or
+ * before `at` — the same "no data is an answer" shape
+ * `pointAggregateStatsSchema` uses, not an omitted row: the response carries
+ * one item per requested `pointRef`, in request order, so a caller can zip it
+ * against the refs it sent without a lookup.
+ */
+export const pointValuesAtInstantItemSchema = z.object({
+  pointRef: z.string(),
+  time: z.string().nullable(),
+  value: z.number().nullable(),
+  unit: z.string().nullable(),
+});
+
+export const pointValuesAtInstantResponseSchema = z.object({
+  at: z.string(),
+  items: z.array(pointValuesAtInstantItemSchema),
+});
+
 export const energySourceMixResponseSchema = z.object({
   points: z.array(energySourceMixPointSchema),
 });

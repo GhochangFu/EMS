@@ -129,6 +129,21 @@ export const dashboardKpisSchema = z.object({
   // and no `1` sentinel: a fabricated 1.0 reads as a perfect data centre.
   pueEstimate: z.number().nullable(),
   asOf: z.string(),
+  /**
+   * `F3.28` (ADR 0074 decision 5) — the same instant 24 h before `asOf`, one
+   * value per live field, each on that field's own definition (`totalKw`
+   * sums `kw_latest` as of the prior instant; `pueEstimate` re-runs
+   * `latestPueRatio` at that instant; `alarmsOpen` counts alarms open at that
+   * instant, not alarms raised in the last 24 h). `alarmsOpen` is not
+   * nullable — `bms.alarms` is complete history, so there is always an
+   * answer, even when it is `0`.
+   */
+  prior: z.object({
+    asOf: z.string(),
+    totalKw: z.number().nullable(),
+    alarmsOpen: z.number(),
+    pueEstimate: z.number().nullable(),
+  }),
 });
 
 /** Aggregated load curve for trend chart. */

@@ -8,6 +8,7 @@ import {
   pointAggregateBucketSchema,
   pointAggregateResponseSchema,
   pointAggregateStatsSchema,
+  pointValuesAtInstantResponseSchema,
 } from "./envelopes";
 // The whole module as a record, for the "old name is gone" assertion. A static
 // namespace import rather than `await import("./envelopes")`: `typecheck:tests`
@@ -341,6 +342,40 @@ export function alarmSummaryResponseRequiresTotal(): void {
     alarmSummaryResponseSchema,
     { items: [alarmSummaryRow] },
     "alarmSummaryResponseSchema must require total",
+  );
+}
+
+/**
+ * `F3.28` — `pointValuesAtInstantResponseSchema` (ADR 0074 decision 2 / plan
+ * decision 2): one item per requested ref, `time`/`value` nullable together
+ * for a ref with no sample at or before `at`, and `unit` carried alongside so
+ * a caller need not re-look it up.
+ */
+export function pointValuesAtInstantAcceptsASampledAndAnUnsampledRef(): void {
+  expectAccepts(
+    pointValuesAtInstantResponseSchema,
+    {
+      at: "2026-09-24T10:00:00.000Z",
+      items: [
+        { pointRef: "00000000-0000-4000-8000-000000000001:kw", time: "2026-09-24T09:58:00.000Z", value: 12.4, unit: "kW" },
+        { pointRef: "00000000-0000-4000-8000-000000000002:kw", time: null, value: null, unit: null },
+      ],
+    },
+    "a mix of a sampled ref and an unsampled ref must both parse in the same response",
+  );
+}
+
+/** `time` and `value` are independently nullable in the schema — a half-null row is still refused by the producer, not the contract, but the contract must not force them to travel together. */
+export function pointValuesAtInstantRequiresPointRefAndAt(): void {
+  expectRejects(
+    pointValuesAtInstantResponseSchema,
+    { items: [] },
+    "a response with no `at` must be refused",
+  );
+  expectRejects(
+    pointValuesAtInstantResponseSchema,
+    { at: "2026-09-24T10:00:00.000Z", items: [{ time: null, value: null, unit: null }] },
+    "an item with no `pointRef` must be refused",
   );
 }
 
