@@ -1,9 +1,14 @@
-import type { AssetListRow, AssetPointPickerListResponse } from "@bms/shared";
+import type {
+  AssetListRow,
+  AssetPointPickerListResponse,
+  AssetRoleSummaryResponse,
+} from "@bms/shared";
 import {
   assetListResponseSchema,
   assetPointPickerListResponseSchema,
+  assetRoleSummaryResponseSchema,
 } from "@bms/shared/contracts";
-import { withAuth } from "./http";
+import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
@@ -50,4 +55,28 @@ export async function fetchAssetPoints(assetId: string): Promise<AssetPointPicke
     throw new Error(`asset points ${res.status}`);
   }
   return checkResponse(assetPointPickerListResponseSchema, await res.json(), "asset points");
+}
+
+/**
+ * `GET /api/v1/assets/role-summary` — per asset role: how many assets hold it,
+ * the worst active severity among them and how many sit at it, and how many
+ * are offline (`F3.28`, ADR 0074, owner rulings OQ4 and OQ6). The source of
+ * the `/cr-overview` class strip.
+ *
+ * `assetIds` goes on the wire as one repeated parameter per id (plan decision
+ * 1). The server only ever intersects it with the caller's readable set.
+ */
+export async function fetchAssetRoleSummary(
+  assetIds: readonly string[] = [],
+): Promise<AssetRoleSummaryResponse> {
+  const params = new URLSearchParams();
+  for (const id of assetIds) {
+    params.append("assetIds", id);
+  }
+  const res = await fetch(`${base}/api/v1/assets/role-summary?${params}`, withAuth());
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res);
+    throw new Error(`assets/role-summary ${res.status}`);
+  }
+  return checkResponse(assetRoleSummaryResponseSchema, await res.json(), "assets/role-summary");
 }

@@ -415,6 +415,44 @@ export const assetRoleDtoSchema = z.object({
 });
 
 /**
+ * The worst active alarm severity among a role's assets (`F3.28`, ADR 0074,
+ * plan task 3.2). `code`/`label`/`tone`/`rank` are read straight off
+ * `bms.alarm_severities` — `alarmSeverityCountSchema`'s projection without
+ * `count`, a fresh `z.object` rather than `.omit()` (ADR 0030). `tone` is
+ * carried so the class strip styles the level from data, not from its code.
+ */
+export const assetRoleWorstSeveritySchema = z.object({
+  code: alarmSeverityCodeSchema,
+  label: z.string(),
+  tone: pillToneSchema,
+  rank: z.number(),
+});
+
+/**
+ * One row of the per-role asset summary (`F3.28`, ADR 0074, owner rulings OQ1,
+ * OQ4 and OQ6) — `GET /api/v1/assets/role-summary`.
+ *
+ * - `count`: distinct assets holding the role in any group, within scope.
+ * - `worstSeverity`: the highest-`rank` **active** severity among them, or
+ *   `null` when none of them has an active alarm.
+ * - `worstCount`: how many of them sit at that worst severity (OQ4) — `0`
+ *   when `worstSeverity` is `null`.
+ * - `offlineCount`: how many have no sample of any point in the last
+ *   `LIVE_TELEMETRY_MAX_AGE_SECONDS` (OQ1).
+ *
+ * `label` is `asset_roles.label` verbatim (OQ6). A retired role that an asset
+ * still holds is included (plan decision 7).
+ */
+export const assetRoleSummaryItemSchema = z.object({
+  code: assetRoleCodeSchema,
+  label: z.string(),
+  count: z.number().int().nonnegative(),
+  worstSeverity: assetRoleWorstSeveritySchema.nullable(),
+  worstCount: z.number().int().nonnegative(),
+  offlineCount: z.number().int().nonnegative(),
+});
+
+/**
  * A code into `bms.dashboard_sections` — `F3.36`, ADR 0049 Amendment 2
  * decision 5.
  *

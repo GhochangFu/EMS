@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -10,6 +10,7 @@ import type {
   AlarmListItem,
   AlarmSummaryResponse,
   AlarmsListResponse,
+  AssetRoleSummaryResponse,
   PointValuesAtInstantResponse,
   RuleListItem,
 } from "@bms/shared";
@@ -62,8 +63,18 @@ const state = vi.hoisted(() => ({
   fetchActiveAlarms: vi.fn(),
   fetchAlarmSummary: vi.fn(),
   fetchPointValuesAt: vi.fn(),
+  fetchAssetRoleSummary: vi.fn(),
   /** The "vs yesterday" value per encoded point ref; an absent ref reads `null`. */
   priors: {} as Record<string, number | null>,
+}));
+
+/**
+ * `F3.28` task 3.6 — the Key Parameters gauges mount `RadialGaugeWidget`,
+ * which renders a real `echarts-for-react` chart; stubbed here as it is in
+ * `key-parameters.spec.tsx`, since this file does not test gauge internals.
+ */
+vi.mock("echarts-for-react", () => ({
+  default: () => <div data-testid="echarts-stub" />,
 }));
 
 /** Every tracked code resolves to `asset-<code>`, so the rail's ids are knowable. */
@@ -108,6 +119,15 @@ vi.mock("../api/alarms", () => ({
 vi.mock("../api/telemetry", async (importActual) => ({
   ...(await importActual<typeof import("../api/telemetry")>()),
   fetchPointValuesAt: state.fetchPointValuesAt,
+}));
+
+/**
+ * `F3.28` task 3.3 — the class strip's read. Only `fetchAssetRoleSummary` is
+ * replaced; the strip's own spec owns its text rules.
+ */
+vi.mock("../api/assets", async (importActual) => ({
+  ...(await importActual<typeof import("../api/assets")>()),
+  fetchAssetRoleSummary: state.fetchAssetRoleSummary,
 }));
 
 vi.mock("../api/vocabularies", () => ({
@@ -175,6 +195,26 @@ const ELECTRICAL_ONLY_SCOPE: AccessibleScope = {
   assetIds: [],
 };
 
+/**
+ * `ELECTRICAL_ONLY_SCOPE`'s shape with one other group code. An `electrical`
+ * group also grants `upsBattery` (`canAccessControlRoomArea`), so that
+ * fixture cannot hold the UPS gate: these two can.
+ */
+function singleGroupScope(code: string, name: string): AccessibleScope {
+  return {
+    kind: "asset_group",
+    locations: [],
+    assetGroups: [{ id: "g1", locationId: "l1", code, name, organizationId: "o1" }],
+    assetIds: [],
+  };
+}
+
+/** No `electrical`, no `ups-battery`: all four Key Parameters gauges are out of scope. */
+const IT_RACK_ONLY_SCOPE = singleGroupScope("it-rack", "IT Racks");
+
+/** `ups-battery` and nothing else: the UPS and battery gauges in scope, the power factor not. */
+const UPS_BATTERY_ONLY_SCOPE = singleGroupScope("ups-battery", "UPS & Battery");
+
 function liveSlice(overrides: Partial<SchematicTelemetrySlice> = {}): SchematicTelemetrySlice {
   return { ...emptySlice(), breaker: 1, lastSeenMs: LIVE_SEEN_MS, ...overrides };
 }
@@ -220,6 +260,20 @@ function thresholdRule(overrides: Partial<RuleListItem>): RuleListItem {
     ...overrides,
   } as unknown as RuleListItem;
 }
+
+/** One role at a worst severity, so the strip's mount shows a real item. */
+const STRIP_SUMMARY: AssetRoleSummaryResponse = {
+  items: [
+    {
+      code: "mcc",
+      label: "MCCs",
+      count: 4,
+      worstSeverity: { code: "critical", label: "Critical", tone: "critical", rank: 30 },
+      worstCount: 1,
+      offlineCount: 0,
+    },
+  ],
+};
 
 /** A server-raised alarm; its message carries the task 1.2 breach value. */
 const RAIL_ALARM: AlarmListItem = {
@@ -275,6 +329,9 @@ function renderPage({
   );
   state.fetchAlarmSummary.mockImplementation(
     (): Promise<AlarmSummaryResponse> => Promise.resolve(RAIL_SUMMARY),
+  );
+  state.fetchAssetRoleSummary.mockImplementation(
+    (): Promise<AssetRoleSummaryResponse> => Promise.resolve(STRIP_SUMMARY),
   );
   state.priors = priors;
   state.fetchPointValuesAt.mockImplementation(
@@ -336,6 +393,7 @@ export const KPI_LABELS = [
 
 export const SECTION_HEADINGS = [
   "Single Line Diagram · Power Flow",
+  "Key Parameters",
   "IT Rack Load",
   "Critical Systems Summary",
   "Energy Snapshot",
@@ -639,4 +697,250 @@ export function theOtherThreeTilesWearNoIcon(): void {
   expect(
     ["SLD Status", "UPS Backup", "Environment"].map((label) => iconPathOf(tileLabelled(label))),
   ).toEqual([null, null, null]);
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 3.5 — the Diagram/List toggle on the SLD section.
+//
+// Every query here is scoped to the SLD section: the KPI tiles carry `svg`
+// icons, and SLD Status also reads OFFLINE for a stale breaker, so a
+// page-wide query would pass with the toggle or the row label broken.
+// ---------------------------------------------------------------------------
+
+/** The section headed "Single Line Diagram · Power Flow". */
+function sldSection(): HTMLElement {
+  const section = screen
+    .getByRole("heading", { level: 2, name: "Single Line Diagram · Power Flow" })
+    .closest("section");
+  expect(section, "no section around the SLD heading").toBeTruthy();
+  return section as HTMLElement;
+}
+
+/** The breaker table's body rows inside the SLD section; the header row is not one. */
+function breakerBodyRows(): HTMLElement[] {
+  return Array.from(sldSection().querySelectorAll<HTMLElement>("tbody tr"));
+}
+
+async function openListView(): Promise<void> {
+  await userEvent.click(within(sldSection()).getByRole("tab", { name: "List" }));
+}
+
+/** No click: the SLD section renders the diagram `svg`. */
+export function theDefaultViewIsTheDiagram(): void {
+  renderPage();
+  expect(sldSection().querySelector("svg")).not.toBeNull();
+}
+
+/** The List tab renders one row per breaker: twelve. */
+export async function theListTabShowsTwelveBreakerRows(): Promise<void> {
+  renderPage();
+  await openListView();
+  expect(breakerBodyRows()).toHaveLength(12);
+}
+
+/** The List tab hides the diagram. The rows are the positive control. */
+export async function theListTabHidesTheDiagramSvg(): Promise<void> {
+  renderPage();
+  await openListView();
+  expect(breakerBodyRows().length, "the List view rendered no rows").toBeGreaterThan(0);
+  expect(sldSection().querySelector("svg")).toBeNull();
+}
+
+/**
+ * The view is component state, never persisted: after an unmount and a fresh
+ * mount the Diagram tab is selected again. The first assertion proves the
+ * click took effect before the remount.
+ */
+export async function theViewModeDoesNotSurviveARemount(): Promise<void> {
+  renderPage();
+  await openListView();
+  expect(
+    within(sldSection()).getByRole("tab", { name: "List" }),
+    "the List tab was never selected",
+  ).toHaveAttribute("aria-selected", "true");
+  cleanup();
+  renderPage();
+  expect(within(sldSection()).getByRole("tab", { name: "Diagram" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+}
+
+/**
+ * CR-Q5 last seen 30 s ago: its List row reads OFFLINE, not CLOSED. CR-Q4,
+ * live in the same render, reading CLOSED is the positive control.
+ */
+export async function theListViewShowsAStaleBreakerOffline(): Promise<void> {
+  const telemetry = liveTelemetry();
+  telemetry["CR-Q5"] = liveSlice({ current: 12, lastSeenMs: STALE_SEEN_MS });
+  renderPage({ telemetry });
+  await openListView();
+  const rowFor = (label: string) =>
+    within(sldSection()).getByText(label).closest("tr") as HTMLElement;
+  expect(within(rowFor("Q4 · UPS-1 OUT")).getByText("CLOSED")).toBeInTheDocument();
+  expect(within(rowFor("Q5 · UPS-2 OUT")).getByText("OFFLINE")).toBeInTheDocument();
+}
+
+/**
+ * The four breaker keys only `/cr-sld` used to read (`3038698d`): each
+ * point key, the slice field `pointValue` reads for it, and a reading above
+ * the `gt` threshold. `slice` is typed as a slice key, so a field that does
+ * not exist fails the typecheck.
+ */
+export const SLD_ONLY_POINT_KEYS: readonly {
+  pointKey: string;
+  slice: keyof SchematicTelemetrySlice;
+  value: number;
+  threshold: number;
+}[] = [
+  { pointKey: "voltage_l1_v", slice: "voltage", value: 245, threshold: 240 },
+  { pointKey: "kvar", slice: "kvar", value: 6, threshold: 5 },
+  { pointKey: "frequency_hz", slice: "frequencyHz", value: 50.4, threshold: 50.2 },
+  { pointKey: "kwh_today", slice: "kwhToday", value: 130, threshold: 120 },
+];
+
+/**
+ * A rule on one of those keys turns the List row WARN, as the SLD page's own
+ * table does for the same rule. CR-Q4, with no rule, reading CLOSED is the
+ * positive control. One claim: both rows' states together.
+ */
+export async function theListViewWarnsOnAnSldOnlyPointKey(
+  pointKey: string,
+): Promise<void> {
+  const row = SLD_ONLY_POINT_KEYS.find((candidate) => candidate.pointKey === pointKey);
+  if (!row) throw new Error(`no SLD-only case for ${pointKey}`);
+  const telemetry = liveTelemetry();
+  telemetry["CR-Q5"] = liveSlice({ [row.slice]: row.value });
+  renderPage({
+    telemetry,
+    rules: [
+      thresholdRule({
+        assetId: "asset-cr-q5",
+        assetCode: "CR-Q5",
+        pointKey: row.pointKey,
+        thresholdValue: row.threshold,
+      }),
+    ],
+  });
+  await openListView();
+  const stateOf = (label: string) =>
+    ["CLOSED", "WARN"].find(
+      (text) =>
+        within(within(sldSection()).getByText(label).closest("tr") as HTMLElement).queryByText(text) !==
+        null,
+    );
+  expect([stateOf("Q4 · UPS-1 OUT"), stateOf("Q5 · UPS-2 OUT")]).toEqual(["CLOSED", "WARN"]);
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 3.4 — the state legend is mounted on the page.
+// ---------------------------------------------------------------------------
+
+/**
+ * The page's `vocabularies` mock (above) carries `warning` and `critical`;
+ * the legend renders Normal, both severities, then Offline.
+ */
+export async function theStateLegendRendersNormalTheVocabularyAndOffline(): Promise<void> {
+  renderPage();
+  const legend = await screen.findByLabelText("State legend");
+  await waitFor(() => expect(legend.children.length).toBeGreaterThan(2));
+  expect(Array.from(legend.children).map((child) => child.textContent)).toEqual([
+    "Normal",
+    "Warning",
+    "Critical",
+    "Offline",
+  ]);
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 3.6 — the Key Parameters gauges are mounted on the page.
+// ---------------------------------------------------------------------------
+
+/** The four gauge titles all render, from the page's own telemetry slices. */
+export function rendersTheFourKeyParameterGaugeTitles(): void {
+  renderPage();
+  expect(screen.getByText("UPS-1 Load")).toBeInTheDocument();
+  expect(screen.getByText("UPS-2 Load")).toBeInTheDocument();
+  expect(screen.getByText("Battery Health")).toBeInTheDocument();
+  expect(screen.getByText("Main Power Factor")).toBeInTheDocument();
+}
+
+const GAUGE_SCOPE_NOTE = "Outside your asset-group scope";
+
+/**
+ * Whether each named gauge shows the scope note. Scoped to the gauge's own
+ * `group`: under a restricted scope the module cards carry the same words.
+ */
+function gaugesSayOutsideScope(titles: string[]): boolean[] {
+  return titles.map(
+    (title) =>
+      within(screen.getByRole("group", { name: title })).queryByText(GAUGE_SCOPE_NOTE) !== null,
+  );
+}
+
+/** No UPS/battery area in scope: the UPS-1, UPS-2 and battery gauges say so. */
+export function keyParametersUpsGaugesAreOutsideAScopeWithoutUpsBattery(): void {
+  renderPage({ scope: IT_RACK_ONLY_SCOPE });
+  expect(gaugesSayOutsideScope(["UPS-1 Load", "UPS-2 Load", "Battery Health"])).toEqual([
+    true,
+    true,
+    true,
+  ]);
+}
+
+/**
+ * `ups-battery` only: the power factor gauge says it is outside the scope,
+ * and UPS-1, in scope, beside it does not.
+ */
+export function keyParametersPowerFactorIsOutsideAScopeWithoutElectrical(): void {
+  renderPage({ scope: UPS_BATTERY_ONLY_SCOPE });
+  expect(gaugesSayOutsideScope(["Main Power Factor", "UPS-1 Load"])).toEqual([true, false]);
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 3.7 — the capability footer is mounted on the page.
+// ---------------------------------------------------------------------------
+
+export const FOOTER_ITEMS = [
+  "Real-time Monitoring",
+  "Intelligent Alerts",
+  "Predictive Maintenance",
+  "Automated Workflows",
+  "Energy & Water Optimization",
+  "Sustainability Insights",
+  "Mobile Ready",
+] as const;
+
+/** All seven footer items render, verbatim (`docs/ux/ion-exchange-reference-alignment.md:104`). */
+export function rendersAllSevenFooterItems(): void {
+  renderPage();
+  for (const item of FOOTER_ITEMS) {
+    expect(screen.getByText(item)).toBeInTheDocument();
+  }
+}
+
+
+/**
+ * `F3.28` task 3.3 — the class strip is mounted and reads the same ids the
+ * rail reads: every tracked asset the page resolved.
+ */
+export async function theClassStripShowsTheRoleSummary(): Promise<void> {
+  renderPage();
+  expect(await screen.findByText("MCCs 4 · 1 Critical")).toBeInTheDocument();
+}
+
+/** The context's asset read is pending: the class strip says it is loading. */
+export function theClassStripSaysLoadingWhileTheAssetsArePending(): void {
+  renderPage({ assetsStatus: "pending" });
+  const strip = screen.getByRole("region", { name: "Asset classes" });
+  expect(within(strip).getByText("Loading asset classes…")).toBeInTheDocument();
+}
+
+export async function theClassStripQueriesThePageAssetIds(): Promise<void> {
+  renderPage();
+  await waitFor(() =>
+    expect(state.fetchAssetRoleSummary).toHaveBeenCalledWith(
+      CR_TRACKED_ASSET_CODES.map(assetIdFor),
+    ),
+  );
 }

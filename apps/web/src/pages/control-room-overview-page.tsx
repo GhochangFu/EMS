@@ -1,10 +1,16 @@
-import { Link } from "react-router-dom";
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { fetchRules } from "../api/rules";
 import { ActiveAlarmsRail } from "../components/control-room/active-alarms-rail";
+import { AssetClassStrip } from "../components/control-room/asset-class-strip";
+import { BreakerTable } from "../components/control-room/breaker-table";
+import { CapabilityFooter } from "../components/control-room/capability-footer";
+import { QuickDrilldown } from "../components/control-room/quick-drilldown";
+import { ScopedActionLink } from "../components/control-room/scoped-action-link";
+import { StateLegend } from "../components/control-room/state-legend";
+import { KeyParameters } from "../components/control-room/key-parameters";
 import { KpiTile } from "../components/kpi-tile";
 import {
   CR_BREAKERS,
@@ -23,6 +29,7 @@ import { StatusPill } from "../components/status-pill";
 import { WidgetIconGlyph } from "../components/widget-icon";
 import { usePriorPointValues } from "../hooks/use-prior-point-values";
 import { AppShell } from "../layouts/app-shell";
+import { breakerTableRow } from "../lib/breaker-table-rows";
 import {
   avgOf,
   crPriorRefs,
@@ -86,14 +93,22 @@ function compareValue(
 
 function pointValue(slice: SchematicTelemetrySlice, pointKey: string): number | null {
   switch (pointKey) {
+    case "voltage_l1_v":
+      return slice.voltage;
     case "current_a":
       return slice.current;
     case "kw":
       return slice.kw;
+    case "kvar":
+      return slice.kvar;
     case "pf":
       return slice.pf;
     case "breaker_main":
       return slice.breaker;
+    case "frequency_hz":
+      return slice.frequencyHz;
+    case "kwh_today":
+      return slice.kwhToday;
     case "pdu_util_pct":
       return slice.pduUtilPct;
     case "rack_kw":
@@ -227,7 +242,15 @@ function statusLabel(status: CrStatus): string {
   }
 }
 
+/** `F3.28` task 3.5 — held in component state only, so a reload is the diagram again. */
+type SldViewMode = "diagram" | "list";
+
+function viewTabClass(selected: boolean): string {
+  return `rounded border px-3 py-1.5 text-xs font-semibold ${selected ? "border-bms-green bg-emerald-50 text-emerald-900" : "border-gray-200 bg-white text-bms-ink"}`;
+}
+
 function ControlRoomOverviewContent() {
+  const [viewMode, setViewMode] = useState<SldViewMode>("diagram");
   const scope = useAuthStore((state) => state.scope);
   const canElectrical = canAccessControlRoomArea(scope, "electrical");
   const canIt = canAccessControlRoomArea(scope, "it");
@@ -314,6 +337,10 @@ function ControlRoomOverviewContent() {
     code: row.code,
     state: deriveRuleState(row.code, breakerSlices[row.code], rules, nowMs),
   }));
+  // The List view's rows: the same per-breaker states, values gated on them.
+  const breakerRows = CR_BREAKERS.map((row, i) =>
+    breakerTableRow(row, breakerSlices[row.code], breakerStates[i].state),
+  );
   const pduStates = [
     { code: "CR-NET-RACK-PDU-A", state: deriveRuleState("CR-NET-RACK-PDU-A", netPduA, rules, nowMs) },
     { code: "CR-NET-RACK-PDU-B", state: deriveRuleState("CR-NET-RACK-PDU-B", netPduB, rules, nowMs) },
@@ -424,6 +451,8 @@ function ControlRoomOverviewContent() {
         actions={<StatusPill label="2D foundation" />}
       />
 
+      <StateLegend />
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled rules inside your CR scope" icon={WidgetIconGlyph("alert")} />
         <KpiTile label="Total CR Load" status={canElectrical || canIt ? "ready" : "empty"} value={canElectrical || canIt ? n(totalLoad) : null} unit="kW" hint={canElectrical || canIt ? tileHint(null, totalLoadDelta, "main bus + IT racks") : "outside your asset-group scope"} icon={WidgetIconGlyph("bolt")} />
@@ -432,6 +461,8 @@ function ControlRoomOverviewContent() {
         <KpiTile label="UPS Backup" status={canUpsBattery ? "ready" : "empty"} value={canUpsBattery ? n(worstBackup, 0) : null} unit="min" tone={statusTone(upsStatus.status)} hint={canUpsBattery ? tileHint(upsStatus.matchedRule?.name, backupDelta, "worst-case reported backup") : "outside your asset-group scope"} />
         <KpiTile label="Environment" status={canEnvironment ? "ready" : "empty"} value={canEnvironment ? statusLabel(environmentStatus.status) : null} tone={statusTone(environmentStatus.status)} hint={canEnvironment ? environmentStatus.matchedRule?.name ?? `${n(avgRoomTemp, 1)} C avg room` : "outside your asset-group scope"} />
       </div>
+
+      <AssetClassStrip assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />
 
       <div className="grid gap-4 xl:grid-cols-[2fr_1fr]">
         <section className="rounded border border-gray-200 bg-white p-4">
@@ -444,13 +475,30 @@ function ControlRoomOverviewContent() {
                 Utility → Main Panel → 2x30 kVA UPS → critical loads
               </p>
             </div>
-            <ScopedActionLink enabled={canElectrical} to="/cr-sld" label="Open Full SLD" />
+            <div className="flex items-center gap-2">
+              <div className="flex gap-2" role="tablist" aria-label="SLD view">
+                {(["diagram", "list"] as const).map((mode) => (
+                  <button key={mode} type="button" role="tab" aria-selected={viewMode === mode} className={viewTabClass(viewMode === mode)} onClick={() => setViewMode(mode)}>
+                    {mode === "diagram" ? "Diagram" : "List"}
+                  </button>
+                ))}
+              </div>
+              <ScopedActionLink enabled={canElectrical} to="/cr-sld" label="Open Full SLD" />
+            </div>
           </div>
-          {canElectrical ? <MiniSld rules={rules} /> : <ScopedUnavailable label="Electrical SLD" />}
+          {!canElectrical ? (
+            <ScopedUnavailable label="Electrical SLD" />
+          ) : viewMode === "list" ? (
+            <div className="mt-4"><BreakerTable rows={breakerRows} /></div>
+          ) : (
+            <MiniSld rules={rules} />
+          )}
         </section>
 
         <ActiveAlarmsRail assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />
       </div>
+
+      <KeyParameters ups1={ups1} ups2={ups2} batt1={batt1} batt2={batt2} main={main} nowMs={nowMs} access={{ upsBattery: canUpsBattery, electrical: canElectrical }} />
 
       <div className="grid gap-4 lg:grid-cols-4">
         <ModuleSummaryCard enabled={canUpsBattery} title="UPS Monitoring" to="/cr-ups" status={upsStatus} primary={`${n(worstBackup, 0)} min`} secondary={`${n(freshValue(ups1.loadPct, isStale(ups1.lastSeenMs, nowMs)), 0)}% / ${n(freshValue(ups2.loadPct, isStale(ups2.lastSeenMs, nowMs)), 0)}% load`} />
@@ -489,6 +537,8 @@ function ControlRoomOverviewContent() {
           }}
         />
       </div>
+
+      <CapabilityFooter />
     </div>
   );
 }
@@ -829,89 +879,6 @@ function EnergySnapshot({
         {enabled ? "Live CR load · current simulator window" : "Outside your asset-group scope"}
       </p>
     </section>
-  );
-}
-
-function QuickDrilldown({
-  access,
-}: {
-  access: {
-    electrical: boolean;
-    it: boolean;
-    upsBattery: boolean;
-    hvac: boolean;
-    environment: boolean;
-  };
-}) {
-  return (
-    <section className="rounded border border-gray-200 bg-white p-4">
-      <h2 className="font-condensed text-lg font-bold text-bms-ink">
-        Quick Drilldown
-      </h2>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-        <DrilldownItem enabled={access.electrical} to="/cr-sld" label="Electrical SLD" />
-        <DrilldownItem enabled={access.it} to="/cr-it" label="IT & Racks" />
-        <DrilldownItem enabled={access.upsBattery} to="/cr-ups" label="UPS Monitoring" />
-        <DrilldownItem enabled={access.upsBattery} to="/cr-battery" label="Battery Bank" />
-        <DrilldownItem enabled={access.hvac} to="/cr-hvac" label="HVAC System" />
-        <DrilldownItem enabled={access.environment} to="/cr-env" label="Environment" />
-        {["Security", "Trends"].map((label) => (
-          <span key={label} className="cursor-not-allowed rounded border border-gray-200 p-3 text-bms-muted">
-            {label} · deferred
-          </span>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ScopedActionLink({
-  enabled,
-  to,
-  label,
-  className = "",
-}: {
-  enabled: boolean;
-  to: string;
-  label: string;
-  className?: string;
-}) {
-  const classes = `${className} inline-flex rounded px-3 py-1.5 text-xs font-semibold ${
-    enabled
-      ? "bg-bms-green text-white"
-      : "cursor-not-allowed bg-gray-100 text-gray-500"
-  }`;
-  return enabled ? (
-    <Link className={classes} to={to}>
-      {label}
-    </Link>
-  ) : (
-    <span className={classes} title="Outside your asset-group scope">
-      {label}
-    </span>
-  );
-}
-
-function DrilldownItem({
-  enabled,
-  to,
-  label,
-}: {
-  enabled: boolean;
-  to: string;
-  label: string;
-}) {
-  const classes = enabled
-    ? "rounded border border-bms-green/30 bg-bms-green/10 p-3 font-semibold text-bms-green hover:bg-bms-green/15"
-    : "cursor-not-allowed rounded border border-gray-200 bg-gray-50 p-3 font-semibold text-gray-400";
-  return enabled ? (
-    <Link className={classes} to={to}>
-      {label}
-    </Link>
-  ) : (
-    <span className={classes} title="Outside your asset-group scope">
-      {label}
-    </span>
   );
 }
 

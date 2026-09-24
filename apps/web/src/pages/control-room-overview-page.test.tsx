@@ -22,13 +22,28 @@ import {
   rendersThePageTitle,
   rendersTheSixKpiLabelsInOrder,
   rackLoadRendersItsOwnDelta,
+  rendersAllSevenFooterItems,
+  rendersTheFourKeyParameterGaugeTitles,
+  keyParametersUpsGaugesAreOutsideAScopeWithoutUpsBattery,
+  keyParametersPowerFactorIsOutsideAScopeWithoutElectrical,
   ruleWarningsCountsAMatchedThresholdRule,
   ruleWarningsWearsTheAlertIcon,
   sldStatusHasNoDelta,
   sldStatusReadsOfflineWhenTheMainIncomerIsStale,
   sldStatusReadsOkWhenEveryBreakerIsLive,
   subtitleLeadsWithTheLiveCriticalCount,
+  theDefaultViewIsTheDiagram,
+  theListTabHidesTheDiagramSvg,
+  theListTabShowsTwelveBreakerRows,
+  theListViewShowsAStaleBreakerOffline,
+  theListViewWarnsOnAnSldOnlyPointKey,
+  SLD_ONLY_POINT_KEYS,
+  theClassStripShowsTheRoleSummary,
+  theClassStripQueriesThePageAssetIds,
+  theClassStripSaysLoadingWhileTheAssetsArePending,
   theOtherThreeTilesWearNoIcon,
+  theStateLegendRendersNormalTheVocabularyAndOffline,
+  theViewModeDoesNotSurviveARemount,
   thePriorReadAsksForExactlyFiveRefs,
   totalCrLoadExcludesAStaleMainIncomer,
   totalCrLoadRendersARiseAgainstALowerPrior,
@@ -52,6 +67,8 @@ describe("F3.28 characterization of /cr-overview", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     useAuthStore.setState({ scope: null });
+    // Nothing here writes it; a persisted view mode must not leak across it()s.
+    localStorage.clear();
   });
 
   it("renders the page title", () => {
@@ -172,5 +189,64 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("puts no icon on SLD Status, UPS Backup or Environment", () => {
     theOtherThreeTilesWearNoIcon();
+  });
+
+  it("shows the diagram by default", () => {
+    theDefaultViewIsTheDiagram();
+  });
+
+  it("shows twelve breaker rows on the List tab", async () => {
+    await theListTabShowsTwelveBreakerRows();
+  });
+
+  it("hides the diagram svg on the List tab", async () => {
+    await theListTabHidesTheDiagramSvg();
+  });
+
+  it("does not keep the view mode across a remount", async () => {
+    await theViewModeDoesNotSurviveARemount();
+  });
+
+  it("shows a stale breaker as OFFLINE in the List view", async () => {
+    await theListViewShowsAStaleBreakerOffline();
+  });
+
+  it.each(SLD_ONLY_POINT_KEYS.map((row) => row.pointKey))(
+    "warns in the List view on %s, a point key only /cr-sld read before",
+    async (pointKey) => {
+      await theListViewWarnsOnAnSldOnlyPointKey(pointKey);
+    },
+  );
+
+  it("renders the state legend with Normal, the vocabulary and Offline", async () => {
+    await theStateLegendRendersNormalTheVocabularyAndOffline();
+  });
+
+  it("renders the four Key Parameters gauge titles", () => {
+    rendersTheFourKeyParameterGaugeTitles();
+  });
+
+  it("says the UPS and battery gauges are outside a scope without UPS/battery", () => {
+    keyParametersUpsGaugesAreOutsideAScopeWithoutUpsBattery();
+  });
+
+  it("says the power factor gauge is outside a scope without electrical", () => {
+    keyParametersPowerFactorIsOutsideAScopeWithoutElectrical();
+  });
+
+  it("renders all seven capability footer items", () => {
+    rendersAllSevenFooterItems();
+  });
+
+  it("mounts the class strip with the role summary", async () => {
+    await theClassStripShowsTheRoleSummary();
+  });
+
+  it("asks the class strip read for the page's asset ids", async () => {
+    await theClassStripQueriesThePageAssetIds();
+  });
+
+  it("the class strip says loading while the context's assets are pending", () => {
+    theClassStripSaysLoadingWhileTheAssetsArePending();
   });
 });
