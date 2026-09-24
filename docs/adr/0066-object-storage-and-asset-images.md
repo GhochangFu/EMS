@@ -358,3 +358,33 @@ The post-merge review sweep of PR #456 found four items. Each is gated by a row 
 **The reviewer's two nits, recorded and not fixed.** A **duplicate `caption` part** fails closed with no row of its own: `@nestjs/platform-express`'s `append-field` turns two same-named fields into an array, `assetImageUploadFieldsSchema`'s `z.string()` refuses it, and the global `ZodErrorFilter` answers 400 — correct behaviour reached through three components, none of which names the case. `openImagesFor` on the location dashboard **survives a filter change** (Amendment 3's plan deviations already record that a stale id renders nothing): the row holding the open gallery unmounts, so nothing is rendered and no request is made.
 
 **Verification (§4.6), layers: the API and browser layers are the caller's at step 6.** This sweep touches no migration and no seed, so the database layer is N/A beyond the rows Amendment 3 already measured. The unit and component suites, `tests/adr-0030-contract-derivation.test.ts`, `tests/f4.108-service-parses-are-guarded.test.ts`, `tests/f3.3-object-storage-invariants.test.ts` and `tests/repo-invariants.test.ts` were run from the worktree root, with `pnpm typecheck` and `pnpm run typecheck:tests`.
+
+## Amendment 5 — the MinIO registry moves to `pgsty/minio` (2026-09-24)
+
+**Owner ruling (2026-09-24).** MinIO's own `quay.io` repositories stopped
+answering anonymous pulls: `quay.io/minio/minio`, `quay.io/minio/mc` and
+`GET https://quay.io/api/v1/repository/minio/minio` all return **401**, while
+an unrelated public repository on the same registry (`prometheus/busybox`)
+returns 200. `main`'s CI passed at 09:19 UTC; from 13:15 UTC every run failed
+at "Start MinIO for the storage integration spec" with `unauthorized`, before
+any test ran. Docker Hub's `minio/minio` still does not exist (Amendment 1).
+
+Decision 9 and Amendment 1's registry note now read
+**`pgsty/minio:RELEASE.2026-08-04T00-00-00Z`** (Docker Hub, digest
+`sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372`),
+a community build of the same open-source MinIO server. Measured before the
+change: it pulls without a login, answers `/minio/health/live` 2 s after
+`server /data --console-address :9001`, and serves the console on `:9001`.
+Rejected, measured: `cgr.dev/chainguard/minio:latest` pulls but exits with
+`Unable to initialize backend: file access denied` under the CI command, and
+offers no dated tag; `bitnami/minio` is not found.
+
+The intent of decision 9 is unchanged — one pinned, dated MinIO image,
+byte-identical in `docker-compose.yml` and `.github/workflows/ci.yml` — and
+`tests/f3.3-object-storage-invariants.test.ts` now pins the `pgsty/minio`
+prefix. The trade-off is a third-party build in place of MinIO's own. The
+server moves from `RELEASE.2025-09-07` to `RELEASE.2026-08-04`; the code
+comments in `aws-s3-ops.ts` and `storage.integration.spec.ts` record what was
+measured on the older release, and CI's storage integration spec is the gate
+for the newer one. `AGENTS.md` still names `quay.io/minio/minio` (§2 stack
+table); that line is a `chore(agents):` sweep item, not part of this change.
