@@ -308,6 +308,24 @@ export async function assertAtInstantRefusesMoreThanFiftyRefs(): Promise<void> {
   assert(calls.length === 0, "an over-bound request must not reach the service");
 }
 
+/**
+ * An `at` in year 0 → 400 from the schema's range refine, and no read.
+ * Unbounded, it reaches `$2::timestamptz` and Postgres answers a 500. An
+ * unrestricted admin, so no scope guard could be the one that refused.
+ */
+export async function assertAtInstantOutOfRangeAtIsABadRequest(): Promise<void> {
+  const { controller, calls } = atInstantStubs(null);
+  await rejects(
+    () =>
+      controller.atInstant(USER, { at: "0000-01-01T00:00:00Z", refs: [encodePointRef(ASSET_ID, "kw")] }),
+    (err) =>
+      err instanceof BadRequestException &&
+      err.message === "at must lie between 1970-01-01T00:00:00Z and one day after now",
+    "an `at` in year 0 must be the range refine's 400",
+  );
+  assert(calls.length === 0, "an out-of-range `at` must not reach the service");
+}
+
 /** An unrestricted admin (`readableAssetIds` → null) reads any asset. */
 export async function assertAtInstantAdminPasses(): Promise<void> {
   const { controller, calls } = atInstantStubs(null);

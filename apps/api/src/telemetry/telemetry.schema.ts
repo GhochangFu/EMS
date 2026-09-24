@@ -50,6 +50,25 @@ export const pointAggregateQuerySchema = z.object({
 
 export type PointAggregateQuery = z.infer<typeof pointAggregateQuerySchema>;
 
+/** The most refs one `GET /telemetry/points/at-instant` call may name. */
+export const MAX_AT_INSTANT_REFS = 50;
+
+/** The earliest `at` the at-instant read accepts: the Unix epoch. */
+export const MIN_AT_INSTANT_MS = 0;
+
+/** How far past the server's clock an `at` may lie: one day of clock skew. */
+export const MAX_AT_INSTANT_LEAD_MS = 86_400_000;
+
+/**
+ * `true` when `at` names an instant in `[1970-01-01T00:00:00Z, now + 1 day]`.
+ * Parsed with `new Date(at)`, the same parse the controller hands the service,
+ * so the bound checks the instant that reaches SQL. Written so `NaN` fails.
+ */
+export function atInstantIsInRange(at: string, nowMs: number = Date.now()): boolean {
+  const ms = new Date(at).getTime();
+  return Number.isFinite(ms) && ms >= MIN_AT_INSTANT_MS && ms <= nowMs + MAX_AT_INSTANT_LEAD_MS;
+}
+
 /**
  * `F3.28` (ADR 0074 decision 2 / plan decision 2) — the query contract for
  * `GET /telemetry/points/at-instant?at=<ISO offset>&refs=<ref>&refs=<ref>`.
@@ -67,12 +86,23 @@ export type PointAggregateQuery = z.infer<typeof pointAggregateQuerySchema>;
  * (`+02:00`) would be a 400 for no reason this route needs — the "prior
  * instant" it feeds is always compared against stored UTC timestamps, so any
  * valid offset resolves to the same instant.
+ *
+ * **`at` is bounded to `[1970-01-01T00:00:00Z, now + 1 day]`.** The datetime
+ * format admits year `0000`, which Postgres refuses as a `timestamptz` — a 500
+ * where the caller made an ordinary mistake. Refused here as a 400 instead.
  */
-export const MAX_AT_INSTANT_REFS = 50;
-
 export const pointValuesAtQuerySchema = z
   .object({
-    at: z.string().datetime({ offset: true }),
+    at: z
+      .string()
+      .datetime({ offset: true })
+      .refine((at) => atInstantIsInRange(at), {
+        message: "at must lie between 1970-01-01T00:00:00Z and one day after now",
+      })
+      .describe(
+        "An ISO 8601 instant with an explicit offset, not before 1970-01-01T00:00:00Z and " +
+          "not more than one day after the server's clock.",
+      ),
     refs: z.preprocess(foldRepeatedQueryValue, z.array(z.string()).min(1).max(MAX_AT_INSTANT_REFS)),
   })
   .strict();

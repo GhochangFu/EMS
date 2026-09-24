@@ -109,6 +109,48 @@ export function assertAnUnknownKeyIsRefused(): void {
   assert(result.success === false, "an unknown query key must be refused");
 }
 
+/**
+ * `at` is bounded to `[1970-01-01T00:00:00Z, now + 1 day]`: outside it the
+ * instant reaches Postgres, which refuses year 0 as a `timestamptz` — a 500.
+ * Each bound is its own function, with an in-range positive control, so a
+ * mutation to one side reddens that side's case.
+ */
+function atIsRefused(at: string): boolean {
+  const result = pointValuesAtQuerySchema.safeParse(parseAsTheApiDoes(refsQueryString(at, refs(1))));
+  return (
+    result.success === false &&
+    result.error.issues.some((i) => i.path[0] === "at" && i.message.startsWith("at must lie between"))
+  );
+}
+
+/** Year 0 — a valid datetime string, and a 500 in Postgres — is the range refine's 400. */
+export function assertAtInYearZeroIsRefused(): void {
+  assert(atIsRefused("0000-01-01T00:00:00Z"), "an `at` in year 0 must be refused by the range bound");
+}
+
+/** One second before the epoch is refused by the lower bound. */
+export function assertAtBeforeTheEpochIsRefused(): void {
+  assert(atIsRefused("1969-12-31T23:59:59Z"), "an `at` in 1969 must be refused by the range bound");
+}
+
+/** More than one day past the clock is refused by the upper bound. */
+export function assertAtFarInTheFutureIsRefused(): void {
+  const future = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  assert(atIsRefused(future), `an \`at\` two days ahead (${future}) must be refused by the range bound`);
+  assert(atIsRefused("9999-12-31T23:59:59Z"), "an `at` in year 9999 must be refused by the range bound");
+}
+
+/** The positive control: an ordinary past instant, and the epoch itself, parse. */
+export function assertAnOrdinaryPastAtParses(): void {
+  for (const at of [AT, "1970-01-01T00:00:00Z", new Date(Date.now() - 86_400_000).toISOString()]) {
+    const result = pointValuesAtQuerySchema.safeParse(parseAsTheApiDoes(refsQueryString(at, refs(1))));
+    assert(
+      result.success === true && result.data.at === at,
+      `${at} must parse: ${JSON.stringify(result.success ? undefined : result.error.issues)}`,
+    );
+  }
+}
+
 /** A missing `at` is refused. */
 export function assertMissingAtIsRefused(): void {
   const result = pointValuesAtQuerySchema.safeParse(parseAsTheApiDoes(`refs=${refs(1)[0]}`));

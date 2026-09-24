@@ -1,7 +1,11 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAnOrdinaryPastAtParses,
   assertAnUnknownKeyIsRefused,
+  assertAtBeforeTheEpochIsRefused,
+  assertAtFarInTheFutureIsRefused,
+  assertAtInYearZeroIsRefused,
   assertAtWithoutOffsetIsRefused,
   assertFiftyOneRefsAreRefused,
   assertFiftyRefsParse,
@@ -38,5 +42,21 @@ describe("F3.28 — pointValuesAtQuerySchema (ADR 0074 decision 2)", () => {
 
   it("refuses a missing `at`", () => {
     assertMissingAtIsRefused();
+  });
+
+  it("refuses an `at` in year 0", () => {
+    assertAtInYearZeroIsRefused();
+  });
+
+  it("refuses an `at` before 1970", () => {
+    assertAtBeforeTheEpochIsRefused();
+  });
+
+  it("refuses an `at` more than a day in the future", () => {
+    assertAtFarInTheFutureIsRefused();
+  });
+
+  it("parses an ordinary past `at` and the epoch itself", () => {
+    assertAnOrdinaryPastAtParses();
   });
 });

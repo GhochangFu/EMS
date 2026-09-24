@@ -9,6 +9,7 @@ import {
   assertAtInstantKeepsRequestOrder,
   assertAtInstantMalformedRefIsABadRequest,
   assertAtInstantNonUuidAssetIsABadRequest,
+  assertAtInstantOutOfRangeAtIsABadRequest,
   assertAtInstantRefusalRunsBeforeTheRead,
   assertAtInstantRefusesMoreThanFiftyRefs,
   assertAtInstantRefusesWhenOneRefIsForeign,
@@ -65,6 +66,10 @@ describe("F3.28 — the at-instant endpoint (ADR 0074 decision 2)", () => {
 
   it("answers 51 refs with a 400", async () => {
     await assertAtInstantRefusesMoreThanFiftyRefs();
+  });
+
+  it("answers an `at` in year 0 with the range refine's 400 and no read", async () => {
+    await assertAtInstantOutOfRangeAtIsABadRequest();
   });
 
   it("lets an unrestricted admin read any asset", async () => {
