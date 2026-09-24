@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
+import { onlineManager } from "@tanstack/react-query";
 
 import {
   emptyIdsFetchNoActiveList,
   emptyIdsFetchNoSummary,
   fetchesTheActiveListForTheGivenIds,
+  pausedActiveTabSaysLoadingNotNone,
+  pausedSummaryTabSaysLoadingNotNone,
   pillToneComesFromTheVocabulary,
   rendersEightRowsAndNoNinth,
   rendersTheEmptyStateForNoActiveAlarms,
@@ -31,6 +34,7 @@ describe("F3.28 active alarms rail", () => {
 
   afterEach(() => {
     cleanup();
+    onlineManager.setOnline(true);
   });
 
   it("renders eight rows and no ninth", async () => {
@@ -75,6 +79,14 @@ describe("F3.28 active alarms rail", () => {
 
   it("says loading, not none, while the page's assets resolve", async () => {
     await resolvingIdsSayLoadingNotNone();
+  });
+
+  it("says loading, not none, on the Active tab while the read is paused", () => {
+    pausedActiveTabSaysLoadingNotNone();
+  });
+
+  it("says loading, not none, on the Summary tab while the read is paused", async () => {
+    await pausedSummaryTabSaysLoadingNotNone();
   });
 
   it("links View All to /alarms", () => {

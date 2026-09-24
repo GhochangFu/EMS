@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { onlineManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -219,6 +219,28 @@ export async function rendersTheEmptyStateForNoActiveAlarms(): Promise<void> {
  */
 export async function resolvingIdsSayLoadingNotNone(): Promise<void> {
   renderRail({ ids: [], assetsResolving: true });
+  expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
+  expect(screen.queryByText("No active alarms")).not.toBeInTheDocument();
+}
+
+/**
+ * With ids but the network paused, the read is pending and not fetching:
+ * `isLoading` is false there, so a rail gated on it fell through to "No
+ * active alarms" before it had an answer. The wrapper restores the online
+ * state in `afterEach`, so a red run cannot leak it into a later `it()`.
+ */
+export function pausedActiveTabSaysLoadingNotNone(): void {
+  onlineManager.setOnline(false);
+  renderRail();
+  expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
+  expect(screen.queryByText("No active alarms")).not.toBeInTheDocument();
+}
+
+/** The same paused read on the Alarm Summary tab: loading, never "No active alarms". */
+export async function pausedSummaryTabSaysLoadingNotNone(): Promise<void> {
+  onlineManager.setOnline(false);
+  renderRail();
+  await userEvent.click(screen.getByRole("tab", { name: "Alarm Summary" }));
   expect(screen.getByText("Loading alarms…")).toBeInTheDocument();
   expect(screen.queryByText("No active alarms")).not.toBeInTheDocument();
 }

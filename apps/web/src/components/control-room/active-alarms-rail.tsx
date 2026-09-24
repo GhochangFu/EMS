@@ -38,6 +38,10 @@ function RailNote({ text }: { text: string }) {
  * verbatim. *Alarm Summary* is the count per severity, most urgent first —
  * the API returns ascending rank, so the order is reversed here — then the
  * total.
+ *
+ * Both tabs gate on `isPending` — no answer yet — rather than `isLoading`,
+ * which is `isPending && isFetching`: a paused read (offline) is pending but
+ * not fetching, and would otherwise fall through to "No active alarms".
  */
 export function ActiveAlarmsRail({
   assetIds,
@@ -84,7 +88,7 @@ export function ActiveAlarmsRail({
         {noIdsNote ? (
           <RailNote text={noIdsNote} />
         ) : tab === "active" ? (
-          active.isLoading ? (
+          active.isPending ? (
             <RailNote text="Loading alarms…" />
           ) : active.isError ? (
             <RailNote text="Alarms unavailable." />
@@ -116,12 +120,10 @@ export function ActiveAlarmsRail({
               </tbody>
             </table>
           )
-        ) : summary.isLoading ? (
+        ) : summary.isPending ? (
           <RailNote text="Loading alarms…" />
         ) : summary.isError ? (
           <RailNote text="Alarms unavailable." />
-        ) : !summary.data ? (
-          <RailNote text="No active alarms" />
         ) : (
           <div className="text-sm">
             <ul className="space-y-2" aria-label="Active alarms by severity">
