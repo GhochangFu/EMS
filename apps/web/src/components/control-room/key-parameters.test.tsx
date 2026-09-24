@@ -18,6 +18,7 @@ import {
   powerFactorBandsAreWarningBelowPointNine,
   rendersTheFourGaugeTitles,
   upsLoadBandsRiseFromOkToCritical,
+  ups2LoadBandsRiseFromOkToCritical,
 } from "./key-parameters.spec";
 
 /**
@@ -84,6 +85,10 @@ describe("F3.28 Key Parameters gauges", () => {
 
   it("paints the UPS load bands ok, warning from 80, critical from 95", () => {
     upsLoadBandsRiseFromOkToCritical();
+  });
+
+  it("paints the UPS-2 load bands ok, warning from 80, critical from 95", () => {
+    ups2LoadBandsRiseFromOkToCritical();
   });
 
   it("paints the battery health bands critical below 70, warning below 85, ok from 85", () => {

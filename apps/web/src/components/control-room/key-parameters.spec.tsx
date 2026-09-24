@@ -193,6 +193,12 @@ export function upsLoadBandsRiseFromOkToCritical(): void {
   expect(bandTonesAt("UPS-1 Load", [0.5, 0.9, 0.97])).toEqual(["ok", "warning", "critical"]);
 }
 
+/** UPS-2 has its own dial and config reference: the same bands as UPS-1. */
+export function ups2LoadBandsRiseFromOkToCritical(): void {
+  renderGauges();
+  expect(bandTonesAt("UPS-2 Load", [0.5, 0.9, 0.97])).toEqual(["ok", "warning", "critical"]);
+}
+
 /** Battery health: critical below 70, warning below 85, ok from 85. */
 export function batteryHealthBandsFallFromOkToCritical(): void {
   renderGauges();
