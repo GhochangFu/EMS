@@ -245,3 +245,138 @@ None. Nothing under §9.4 moves.
 - **`F2.10`** stays the home of real asset-to-asset topology. When it lands,
   the balance role can be derived from it, and this column retired.
 - The PR split and unit order are the plan's (`plan-architect`).
+
+## Amendment 1 (2026-09-24) — what the build measured, and the rulings it needed
+
+Written at the row's closure. The decisions above are left as written; this is
+the record of where the plan
+(`docs/plans/e4.3-water-balance-and-wastewater-recovery.md`), its twelve
+owner rulings of 2026-09-23 (Q1–Q12, all as recommended; C1–C8 are the plan's
+contradictions table) and the reviews of the six pull requests corrected,
+narrowed or sharpened them. The build ran as three serial PRs, each with a
+post-merge sweep (Q12): #531 / #533, #534 / #535, #536 / #537.
+
+1. **The *Context* sentence "the water-cost tiles have the same fault" is
+   false as written, and decision 2 names widgets that do not exist** (C1,
+   Q1). `sustainability-overview` v3 has no `water_cost_*` tiles — its cost
+   tiles are `energy_cost_*`. v4 sets `balanceRole: "intake"` on the four water
+   bindings v3 has: the three `kl_*` tiles and the benchmark table (#534).
+
+2. **The role order is decision 1's, and it did not change.** Decision 1 lists
+   `intake`, `discharge`, `reuse`, `internal`; `0080` seeds them in that order
+   (`sort_order` 10–40). The plan's U1/U2 text used another order (`intake`,
+   `internal`, `reuse`, `discharge`); the owner ruled to keep `0080`'s, and the
+   plan's order was not adopted (#531).
+
+3. **Decision 4 has no softener row** (C2, Q2). `outlet_flow_totalizer_kl` is
+   *treated volume since regeneration* and resets, so `delta()` over a window
+   holding a regeneration under-reports or goes negative, and `delta` sits
+   outside the `window_sparse` guard. The softener carries no outlet codes and
+   stays at stock v4; the WTP, RO, cooling tower, STP and ETP carry the three
+   `sum` rows at **v5** — the classes were at v4 before `E4.3`, not v3 (C7)
+   (#534).
+
+4. **Decision 6's demo plant is a mirror, not a stock import** (C3, Q3, Q10,
+   Q11). `packages/db` cannot import the stock catalog in `apps/api`, and the
+   seed runs before the API exists. Read decision 6's first bullet as: the
+   ESKOM seed gains one water plant at **CSMOC Gauteng** on seed-side mirror
+   templates `DEMO-WATER-<CLASS>` v1 (`stock_code` and `stock_version` NULL),
+   whose formulas `tests/e4.3-demo-water-plant.test.ts` holds byte-equal to the
+   stock modules. The mirrors carry the flows the formulas read plus the six
+   volume rows `kl_*` / `outlet_kl_*` — 40 template points; `water_cost_*`,
+   `water_saving_vs_baseline_pct`, `recovery_pct` and the alarm and health
+   content are omitted (#536). *Context*'s "no demo water" is no longer true.
+
+5. **Decision 6's "exact ESKOM counts rise" had no count to rise** (C4, Q7).
+   `verifyHierarchySeed` pinned no ESKOM asset total, so four exact counts were
+   added: roled 5, on the demo templates 5, intake 1, water-group members 5.
+   Owner ruling R1 (#536, migration review M1) scoped them to the five `WTR-*`
+   demo codes, because a domain-wide count let one admin-created water asset,
+   or a leaked fixture, stop `migrate` and every service behind it. The #537
+   sweep pairs each demo asset with its own template code.
+
+6. **The seed and the simulator had no water path** (C8, Q4). `water` had no
+   entry in `DOMAIN_RTU_SUFFIX` (seeding a water asset threw) and no simulator
+   branch (a water asset would have emitted electrical keys). `water: "WATER"`
+   was added — eleven `SIM-RTU-<site>-WATER` RTUs, ten of them empty — with a
+   `water` branch in `demoGroupCodesForAsset` and `stepWater` in `apps/sim`
+   (#536).
+
+7. **The v4 table's `this_month` shows nothing on a new stack** (C5, Q5).
+   Under ADR 0070 Amendment 3 a window `sum` below 90 % coverage refuses as
+   `window_sparse`, so the stock table reads `null` cells and `0/3` until the
+   first of the month after the boot. That is the expected state, not a
+   failure.
+
+8. **The help sentence of *Ruled here without a question* reaches one editor
+   only** (C6, Q6). It is in the presentation description, the write schema's
+   `.describe()`, and a note in the template `WidgetEditor` for a `kl_*` source
+   without `balanceRole` — never for an energy or CO₂ key (#534). Two gaps
+   remain: the dashboard builder's `WidgetInspector` shows no note for the same
+   binding, and a role-less `outlet_kl_*` total sums the reuse, discharge and
+   internal outlets together with no note anywhere. Both are backlog row
+   `F4.152`.
+
+9. **Decision 3's `consumed` rule is stricter than written** (Q8, the PR 2
+   review rulings, the #535 sweep). `consumed` is `null` when **any** discharge
+   or intake asset at the site is stale or does not carry the period's key
+   (`outlet_kl_*` or `kl_*` — a pre-v5 template does not). `intake − 0` applies
+   only when the site has no discharge-roled asset at all. The intake column
+   stays the sum of the fresh intake rows. Before the sweep, a site with one
+   fresh intake of 1000, a second intake that could not report and a discharge
+   of 300 read `consumed` 700; it now reads `null`.
+
+10. **Decision 3's coverage is not "over the location's role-carrying assets"**
+    (Q9, the PR 2 review). Coverage is `fresh/carrying` over the `intake`,
+    `reuse` and `discharge` assets only — an `internal` asset feeds no column —
+    and a role holder that does not carry the period's key is not counted in
+    it.
+
+11. **Decision 3's row-rule sentences are false** (the PR 2 review ruling). A
+    site is a `water.balance` row only when it owns an `intake`, `reuse` or
+    `discharge` asset; `internal` alone makes no row. That is not the
+    `sustainability.by_location` row rule, which lists every location owning an
+    asset in scope (ADR 0072, `E4.2` OQ7).
+
+12. **ADR 0072's "verified at write time" now excludes stored values** (#533).
+    `PUT /dashboards/:id/widgets` checks a submitted `pointKey` or
+    `balanceRole` against live rows only when the dashboard's stored sources do
+    not already carry it, inside the widget transaction; without that, one
+    retired value blocked every later save, because the builder re-sends stored
+    params and has no params editor. Template publish stays strict.
+
+13. **What PR 3 measured** (#536, #537).
+    - `BASELINE-WATER` now appears in ESKOM — 9 points, 0 pins — whichever order
+      the seeds run. The plan's fact 11 said running the module before
+      `seedAssetTemplateHealth` would prevent it; that was false.
+    - The simulator's flows are **twelve** distinct keys, not the plan's
+      thirteen.
+    - The walk is bounded to `[0.5·base, 1.5·base]`; the first clamp,
+      `[0, 1.5·base]`, averaged about 0.75·base.
+    - Owner ruling **R2** (security review): the simulator emits water flows
+      only for `WTR-` codes; any other water code gets none and one warning.
+    - Owner ruling **R3** (#537): only `WTR-` water assets are wired to the
+      simulator RTU. Before it, every non-manual ESKOM water asset was moved to
+      `SIM-RTU-<site>-WATER` and `telemetrySource: simulator` on each boot, so
+      an admin's MQTT water meter went dark. R3 does not restore an asset an
+      earlier boot moved.
+    - The plan's STP-to-discharge expectation was corrected: coverage is one
+      string over the three columns, so the row reads `3/3`, never a per-column
+      `0/0` or `2/2`.
+
+14. **Security residual, open.** The simulator's `telemetrySource <> 'mqtt'`
+    filter is the only barrier between it and an asset of any other domain; R2
+    closed that for water alone.
+
+15. **Residuals recorded at closure.** A `WTR-*` code that already exists —
+    in another tenant, as an ESKOM admin's own asset, or as a non-demo `WTR-`
+    water asset — stops or rewrites the seed (`F4.151`). CI has no general check
+    that refuses an edit to a committed migration — only content pins in
+    `tests/` that catch an edit to the strings they pin; the Claude hook and the
+    git pre-commit hook both have a bypass, and `E4.1a`'s `0074` was applied
+    locally from draft bytes (`F4.153`; `F4.94` owns only the journal stamps).
+    `packages/shared/src/contracts/admin.ts` is at the line cap (`F4.150`).
+    The live balance figures were checked on 2026-09-24 on the running stack,
+    once the CSMOC Gauteng day (Africa/Johannesburg) had begun under the
+    simulator: intake 204.52, reuse 43.02, discharge 29.82, consumed 174.70,
+    coverage `3/3`; the backlog row carries the full result.
