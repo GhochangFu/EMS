@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 
 import { z } from "zod";
 
@@ -66,4 +67,55 @@ export function assertTheCapIsEnforced(): void {
 export function assertANonUuidIsRefused(): void {
   const result = probe.safeParse({ assetIds: ["not-a-uuid"] });
   assert(result.success === false, "a non-uuid assetIds value must be refused");
+}
+
+/**
+ * The query string as the API's own Express parses it (`qs`, `arrayLimit: 20`),
+ * not a hand-built array — the parser is what turned 21 repeats into an
+ * object. Resolved through `@nestjs/platform-express`, the adapter `main.ts`
+ * boots, so it is the same `express` build the running API uses.
+ */
+function parseAsTheApiDoes(query: string): Record<string, unknown> {
+  const adapterRequire = createRequire(require.resolve("@nestjs/platform-express"));
+  const express = adapterRequire("express") as () => { get(name: string): (q: string) => Record<string, unknown> };
+  return express().get("query parser fn")(query);
+}
+
+function repeated(values: string[]): string {
+  return values.map((value) => `assetIds=${value}`).join("&");
+}
+
+/** 21 repeats — one past qs's arrayLimit — still parse, in order. */
+export function assertTwentyOneRepeatsParseInOrder(): void {
+  const sent = ids(21);
+  const result = probe.safeParse(parseAsTheApiDoes(repeated(sent)));
+  assert(result.success === true, `21 repeated assetIds must parse: ${JSON.stringify(result.success ? undefined : result.error.issues)}`);
+  assert(
+    result.success && JSON.stringify(result.data.assetIds) === JSON.stringify(sent),
+    "21 repeated assetIds must arrive in the order sent",
+  );
+}
+
+/** The cap, sent through the parser: 200 repeats parse. */
+export function assertTheCapParsesThroughTheParser(): void {
+  const result = probe.safeParse(parseAsTheApiDoes(repeated(ids(MAX_SCOPE_ASSET_IDS))));
+  assert(result.success && result.data.assetIds?.length === MAX_SCOPE_ASSET_IDS, "200 repeated assetIds must parse");
+}
+
+/** One past the cap, sent through the parser, is refused. */
+export function assertOnePastTheCapIsRefusedThroughTheParser(): void {
+  const result = probe.safeParse(parseAsTheApiDoes(repeated(ids(MAX_SCOPE_ASSET_IDS + 1))));
+  assert(result.success === false, "201 repeated assetIds must be refused");
+}
+
+/** A named key (`assetIds[a]=…`) is an object, not the overflow shape: refused. */
+export function assertANamedKeyObjectIsRefused(): void {
+  const result = probe.safeParse(parseAsTheApiDoes(`assetIds[a]=${randomUUID()}`));
+  assert(result.success === false, "assetIds[a]=… must be refused");
+}
+
+/** A sparse index (`assetIds[30]=…`) is an object without key 0: refused. */
+export function assertASparseIndexObjectIsRefused(): void {
+  const result = probe.safeParse(parseAsTheApiDoes(`assetIds[30]=${randomUUID()}`));
+  assert(result.success === false, "assetIds[30]=… must be refused");
 }
