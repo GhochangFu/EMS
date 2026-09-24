@@ -78,3 +78,17 @@ export async function rendersNoStandbyPill(): Promise<void> {
   await legendLabels();
   expect(screen.queryByText("Standby")).not.toBeInTheDocument();
 }
+
+/**
+ * An inactive severity ("Minor", rank 15) renders no pill. One claim: Minor
+ * absent and High, an active severity in the same render, present — so a
+ * legend that rendered no severity at all could not pass.
+ */
+export async function omitsAnInactiveSeverity(): Promise<void> {
+  renderLegend([
+    ...SEVERITIES,
+    { code: "minor", label: "Minor", tone: "info", rank: 15, active: false },
+  ]);
+  const labels = await legendLabels();
+  expect([labels.includes("Minor"), labels.includes("High")]).toEqual([false, true]);
+}

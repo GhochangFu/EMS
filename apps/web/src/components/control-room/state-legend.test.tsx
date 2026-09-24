@@ -2,7 +2,11 @@
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
-import { rendersInRankOrderWithNormalFirstAndOfflineLast, rendersNoStandbyPill } from "./state-legend.spec";
+import {
+  omitsAnInactiveSeverity,
+  rendersInRankOrderWithNormalFirstAndOfflineLast,
+  rendersNoStandbyPill,
+} from "./state-legend.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
@@ -24,5 +28,9 @@ describe("F3.28 state legend", () => {
 
   it("renders no Standby pill", async () => {
     await rendersNoStandbyPill();
+  });
+
+  it("omits an inactive severity, beside an active one", async () => {
+    await omitsAnInactiveSeverity();
   });
 });
