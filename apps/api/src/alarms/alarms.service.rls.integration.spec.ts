@@ -4,7 +4,11 @@ import pg from "pg";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import type { AccessControlService } from "../auth/access-control.service";
 import { countingDb } from "../testing/counting-db";
+import type { AlarmDetailsService } from "./alarm-details.service";
+import type { AlarmEnrichmentService } from "./alarm-enrichment.service";
+import { AlarmsController } from "./alarms.controller";
 import type { AlarmsService } from "./alarms.service";
 
 /**
@@ -66,6 +70,53 @@ export type AlarmsRlsFixtures = {
   foreignAlarmId: string;
   /** The acting user's `bms.users.id` — `acknowledged_by` must resolve to it. */
   actorUserId: string;
+  /**
+   * `F3.28` — a second org-A asset carrying the discriminating pair below and
+   * nothing else, so the `state` and summary assertions never read the alarm
+   * `assertAcknowledgeRefusesForeignAlarmButAllowsInScope` mutates.
+   */
+  pairAssetId: string;
+  /** On `pairAssetId`: acknowledged, never cleared — ACTIVE (ADR 0057). */
+  ackedUnclearedAlarmId: string;
+  /** `ackedUnclearedAlarmId`'s severity. */
+  ackedUnclearedSeverity: string;
+  /** On `pairAssetId`: cleared, never acknowledged — NOT active. */
+  clearedUnackedAlarmId: string;
+  /** `clearedUnackedAlarmId`'s severity — deliberately not `ackedUnclearedSeverity`. */
+  clearedUnackedSeverity: string;
+  /** An org-B asset with no alarm — puts a scope on the fleet path without adding a row. */
+  foreignQuietAssetId: string;
+};
+
+/**
+ * `F3.28` — the real controller over the real service, with only
+ * `readableAssetIds` stubbed, so the foreign-asset proof covers the
+ * controller's parse → `intersectReadable` wiring against real RLS. The two
+ * services `list` never touches are empty stubs.
+ */
+function controllerFor(ctx: AlarmsRlsFixtures, readable: string[] | null): AlarmsController {
+  return new AlarmsController(
+    ctx.svc,
+    { readableAssetIds: async () => readable } as unknown as AccessControlService,
+    {} as unknown as AlarmDetailsService,
+    {} as unknown as AlarmEnrichmentService,
+  );
+}
+
+async function listIds(
+  ctx: AlarmsRlsFixtures,
+  readable: string[] | null,
+  query: Record<string, unknown>,
+): Promise<string[]> {
+  const page = await controllerFor(ctx, readable).list(ACTOR_PAYLOAD, { limit: "100", ...query });
+  return page.items.map((i) => i.id);
+}
+
+const ACTOR_PAYLOAD: JwtPayload = {
+  sub: "00000000-0000-4000-8000-000000000009",
+  email: "phe-admin@bms.local",
+  name: "F3.28 rls",
+  role: "viewer",
 };
 
 async function alarmRow(
@@ -200,4 +251,73 @@ export async function assertAcknowledgeRefusesForeignAlarmButAllowsInScope(
   expect(row?.cleared_at, "the acknowledge write leaves cleared_at NULL").toBeNull();
   expect(row?.acknowledged_by, "the actor resolves under bms_fleet, not NULL").toBe(actorUserId);
   expect(row?.organization_id, "acknowledge leaves the org untouched").toBe(organizationId);
+}
+
+/* -------------------------------------------------------------------------- */
+/* F3.28 — `state` and `assetIds` on GET /alarms (ADR 0074 decision 4)         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `state=active` keeps an acknowledged, uncleared alarm: ADR 0057 decision 1
+ * makes `cleared_at IS NULL` the active predicate, and acknowledgement is an
+ * annotation. A predicate on `acknowledged_at` drops this row.
+ */
+export async function assertActiveStateKeepsAcknowledgedUncleared(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const ids = await listIds(ctx, [ctx.pairAssetId], { state: "active" });
+  expect(ids, "the acknowledged, uncleared alarm is still active").toContain(
+    ctx.ackedUnclearedAlarmId,
+  );
+}
+
+/** `state=active` drops a cleared, unacknowledged alarm — it is closed by the sweep, not by a press. */
+export async function assertActiveStateExcludesClearedUnacknowledged(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const ids = await listIds(ctx, [ctx.pairAssetId], { state: "active" });
+  expect(ids, "the cleared, unacknowledged alarm is not active").not.toContain(
+    ctx.clearedUnackedAlarmId,
+  );
+  expect(ids, "positive control: the same read returns the active row").toContain(
+    ctx.ackedUnclearedAlarmId,
+  );
+}
+
+/** No `state` is `all`: today's read, both rows of the pair. */
+export async function assertDefaultStateReturnsBothRows(ctx: AlarmsRlsFixtures): Promise<void> {
+  const ids = await listIds(ctx, [ctx.pairAssetId], {});
+  expect(ids, "the default state lists the cleared row too").toContain(ctx.clearedUnackedAlarmId);
+  expect(ids, "the default state lists the uncleared row").toContain(ctx.ackedUnclearedAlarmId);
+}
+
+/** A requested `assetIds` inside the readable set narrows the read to it. */
+export async function assertRequestedAssetIdsNarrowWithinScope(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const ids = await listIds(ctx, [ctx.inScopeAssetId, ctx.pairAssetId], {
+    assetIds: ctx.pairAssetId,
+  });
+  expect(ids, "an alarm on a readable asset that was not requested is dropped").not.toContain(
+    ctx.inScopeAlarmId,
+  );
+  expect(ids, "positive control: the requested asset's alarm is listed").toContain(
+    ctx.ackedUnclearedAlarmId,
+  );
+}
+
+/**
+ * A requested asset in another organization returns nothing — the request
+ * never widens the caller's scope. Through the controller: the service alone
+ * trusts its `assetIds`, so only the controller's intersection holds this.
+ */
+export async function assertRequestedForeignAssetReturnsNothing(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const ids = await listIds(ctx, [ctx.pairAssetId], { assetIds: ctx.foreignAssetId });
+  expect(ids, "a foreign org's asset, requested, lists nothing").toEqual([]);
+  const control = await listIds(ctx, [ctx.pairAssetId], {});
+  expect(control, "positive control: the same caller, unfiltered, lists their own alarm").toContain(
+    ctx.ackedUnclearedAlarmId,
+  );
 }

@@ -14,6 +14,11 @@ import { AlarmsService } from "./alarms.service";
 import type { AlarmsGateway } from "./alarms.gateway";
 import {
   assertAcknowledgeRefusesForeignAlarmButAllowsInScope,
+  assertActiveStateExcludesClearedUnacknowledged,
+  assertActiveStateKeepsAcknowledgedUncleared,
+  assertDefaultStateReturnsBothRows,
+  assertRequestedAssetIdsNarrowWithinScope,
+  assertRequestedForeignAssetReturnsNothing,
   assertAlarmListReturnsBothOrgsForTwoOrgActor,
   assertAlarmListScopedByAssetIds,
   assertSingleOrgListRunsOnTenantTransaction,
@@ -170,6 +175,68 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
     const inScope = await seed(orgAId, `${PREFIX}A`);
     const foreign = await seed(orgBId, `${PREFIX}B`);
 
+    // F3.28: the discriminating pair on its own org-A asset, each at a
+    // different active severity so a wrong active predicate moves the count
+    // from one severity to the other rather than leaving the total unchanged.
+    const pairSev = await fleetPool.query<{ code: string }>(
+      "SELECT code FROM bms.alarm_severities WHERE active = true ORDER BY rank LIMIT 2",
+    );
+    if (pairSev.rows.length < 2) {
+      throw new Error("E7.1b/F3.28: need two active alarm_severities rows — run pnpm db:seed.");
+    }
+    const ackedUnclearedSeverity = pairSev.rows[0].code;
+    const clearedUnackedSeverity = pairSev.rows[1].code;
+    const assetRow = async (orgId: string, code: string) => {
+      const loc = await fleetPool.query<{ id: string }>(
+        `SELECT id FROM bms.locations
+           WHERE organization_id = $1 AND active = true ORDER BY created_at, code LIMIT 1`,
+        [orgId],
+      );
+      return {
+        organizationId: orgId,
+        code,
+        name: "F3.28 alarm filter asset",
+        siteName: "E7.1b Site",
+        locationId: loc.rows[0].id,
+        domain,
+        active: true,
+      };
+    };
+    const pair = await withTenant(tenantDb, orgAId, async (tx) => {
+      const [asset] = await tx
+        .insert(assets)
+        .values(await assetRow(orgAId, `${PREFIX}P`))
+        .returning({ id: assets.id });
+      const now = new Date();
+      const [acked] = await tx
+        .insert(alarms)
+        .values({
+          organizationId: orgAId,
+          assetId: asset.id,
+          severity: ackedUnclearedSeverity,
+          message: "F3.28 acknowledged, uncleared",
+          acknowledgedAt: now,
+        })
+        .returning({ id: alarms.id });
+      const [cleared] = await tx
+        .insert(alarms)
+        .values({
+          organizationId: orgAId,
+          assetId: asset.id,
+          severity: clearedUnackedSeverity,
+          message: "F3.28 cleared, unacknowledged",
+          clearedAt: now,
+        })
+        .returning({ id: alarms.id });
+      return { assetId: asset.id, ackedId: acked.id, clearedId: cleared.id };
+    });
+    const [quiet] = await withTenant(tenantDb, orgBId, async (tx) =>
+      tx
+        .insert(assets)
+        .values(await assetRow(orgBId, `${PREFIX}Q`))
+        .returning({ id: assets.id }),
+    );
+
     const fleetDb = createDb(fleetPool);
     const makeService = (t: BmsDb, f: BmsDb): AlarmsService =>
       new AlarmsService(t, f, gatewayStub);
@@ -185,6 +252,12 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
       foreignAssetId: foreign.assetId,
       foreignAlarmId: foreign.alarmId,
       actorUserId,
+      pairAssetId: pair.assetId,
+      ackedUnclearedAlarmId: pair.ackedId,
+      ackedUnclearedSeverity,
+      clearedUnackedAlarmId: pair.clearedId,
+      clearedUnackedSeverity,
+      foreignQuietAssetId: quiet.id,
     };
   });
 
@@ -220,5 +293,26 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
 
   it("refuses acknowledging a foreign alarm and acknowledges an in-scope one under the org GUC", async () => {
     await assertAcknowledgeRefusesForeignAlarmButAllowsInScope(ctx, actor);
+  });
+
+  // F3.28 (ADR 0074 decision 4) — GET /alarms `state` and `assetIds`.
+  it("F3.28 state=active keeps an acknowledged, uncleared alarm", async () => {
+    await assertActiveStateKeepsAcknowledgedUncleared(ctx);
+  });
+
+  it("F3.28 state=active excludes a cleared, unacknowledged alarm", async () => {
+    await assertActiveStateExcludesClearedUnacknowledged(ctx);
+  });
+
+  it("F3.28 the default state returns both the cleared and the uncleared alarm", async () => {
+    await assertDefaultStateReturnsBothRows(ctx);
+  });
+
+  it("F3.28 a requested assetIds inside the readable set narrows the list", async () => {
+    await assertRequestedAssetIdsNarrowWithinScope(ctx);
+  });
+
+  it("F3.28 a requested foreign org's asset returns nothing", async () => {
+    await assertRequestedForeignAssetReturnsNothing(ctx);
   });
 });

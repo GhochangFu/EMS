@@ -13,6 +13,7 @@ import type { AlarmListItem, JwtPayload } from "@bms/shared";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
+import { activeAlarmFilter } from "./active-alarm-filter";
 import { alarmListItemColumns, toAlarmListItem } from "./alarm-list-item";
 import { AlarmsGateway } from "./alarms.gateway";
 
@@ -78,15 +79,25 @@ export class AlarmsService {
 
   /**
    * Keyset pagination on `(raised_at DESC, id DESC)`.
+   *
+   * `F3.28` (ADR 0074 decision 4): `state: "active"` keeps only rows matching
+   * `activeAlarmFilter` (`cleared_at IS NULL`); absent or `"all"` is today's
+   * read, unchanged. `assetIds` is the caller's already-narrowed scope — the
+   * controller intersects a requested filter with `readableAssetIds` before it
+   * reaches here, so this method never sees an id the caller cannot read.
    */
   async list(opts: {
     cursor?: string;
     limit: number;
     assetIds?: string[] | null;
+    state?: "all" | "active";
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
     const limit = Math.min(100, Math.max(1, opts.limit));
     const cursor = opts.cursor;
-    const filters = opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : [];
+    const filters = [
+      ...(opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : []),
+      ...(opts.state === "active" ? [activeAlarmFilter] : []),
+    ];
 
     return withReadScope(
       this.db,
