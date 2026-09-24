@@ -541,7 +541,7 @@
 > light canvas stays the default**, and a user light/dark switch is a new row
 > with its own ADR (`F3.65`); `F3.28` ships no `dark:` class and no colour-token
 > layer of its own. Slice 1 (#542): `composeAlarmMessage`'s fallback becomes
-> `<rule name> (<value><unit>)` (value rounded, unit from `condition.unit`,
+> `<rule name> (<value> <unit>)` (value rounded, unit from `condition.unit`,
 > omitted when null; the four special cases are unchanged; "Overload (112%)"
 > is **not** produced — the engine does not know the rating); `GET
 > /api/v1/alarms` gains `state` (`all` | `active`, default `all`) and a bounded
