@@ -75,10 +75,16 @@ export function assertANonUuidIsRefused(): void {
  * object. Resolved through `@nestjs/platform-express`, the adapter `main.ts`
  * boots, so it is the same `express` build the running API uses.
  */
+// Loaded once, at import: a cold `require("express")` inside the first `it()`
+// took over a second alone and crossed the 5 s timeout in a combined run.
+const apiQueryParser = (
+  createRequire(require.resolve("@nestjs/platform-express"))("express") as () => {
+    get(name: string): (q: string) => Record<string, unknown>;
+  }
+)().get("query parser fn");
+
 function parseAsTheApiDoes(query: string): Record<string, unknown> {
-  const adapterRequire = createRequire(require.resolve("@nestjs/platform-express"));
-  const express = adapterRequire("express") as () => { get(name: string): (q: string) => Record<string, unknown> };
-  return express().get("query parser fn")(query);
+  return apiQueryParser(query);
 }
 
 function repeated(values: string[]): string {
