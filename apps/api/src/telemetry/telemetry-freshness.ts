@@ -11,8 +11,9 @@
  * each reading on its own. `tests/f3.28-offline-bound-single-source.test.ts` pins
  * `LIVE_TELEMETRY_MAX_AGE_SECONDS * 1000` to `FRESH_MS`.
  *
- * The role-summary SQL binds this as a parameter; it never restates the
- * number as an interval literal. The older `locationDashboard` fresh counts in
+ * The role-summary SQL builds its interval from this constant (a plan-time
+ * literal, so TimescaleDB can exclude chunks); it never restates the number.
+ * The older `locationDashboard` fresh counts in
  * `dashboard.service.ts` still carry their own literal and are out of this
  * row's scope (the plan's rejected `kw`-only alternatives).
  */

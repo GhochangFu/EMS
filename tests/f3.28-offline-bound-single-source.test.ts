@@ -18,7 +18,8 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
  * with no shared import, so a source read is the only thing that can hold
  * them together.
  *
- * The second rule keeps the service honest: its SQL binds the constant, and a
+ * The second rule keeps the service honest: its SQL interval is built from the
+ * constant, and a
  * restated `interval 'N seconds'` literal would silently decouple it from the
  * constant this file pins.
  */
@@ -49,6 +50,11 @@ describe("F3.28 — the offline bound has one source (ADR 0074, OQ1)", () => {
 
   it("the role-summary service reads the constant (positive control)", () => {
     const source = readFileSync(SERVICE, "utf8");
-    expect(source).toMatch(/make_interval\(secs => \$\{LIVE_TELEMETRY_MAX_AGE_SECONDS\}/);
+    expect(source).toMatch(/interval '\$\{LIVE_TELEMETRY_MAX_AGE_SECONDS\} seconds'/);
+  });
+
+  it("the live CTE compares against the window built from the constant", () => {
+    const source = readFileSync(SERVICE, "utf8");
+    expect(source).toMatch(/pv\.time > now\(\) - \$\{LIVE_WINDOW\}/);
   });
 });

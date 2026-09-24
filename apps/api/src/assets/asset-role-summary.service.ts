@@ -11,6 +11,22 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withReadScope } from "../database/tenant-read-scope";
 import { LIVE_TELEMETRY_MAX_AGE_SECONDS } from "../telemetry/telemetry-freshness";
 
+if (!Number.isInteger(LIVE_TELEMETRY_MAX_AGE_SECONDS) || LIVE_TELEMETRY_MAX_AGE_SECONDS <= 0) {
+  throw new Error("LIVE_TELEMETRY_MAX_AGE_SECONDS must be a positive integer");
+}
+
+/**
+ * The `live` window as a literal interval built from the constant, not a bound
+ * parameter. TimescaleDB excludes `point_values` chunks at plan time only for
+ * `now() - <constant interval>`; a bound `$n` (or `make_interval($n)`) plans
+ * every chunk and prunes at executor start instead. Measured on the dev
+ * database (2026-09-24, ~5.4k chunks, as `bms_fleet`): the whole role-summary
+ * query planned in 520–1900 ms with the parameter and 42–100 ms with the
+ * literal. `sql.raw` is safe here: the value is a module constant, checked to be a positive
+ * integer above, never request input.
+ */
+const LIVE_WINDOW = sql.raw(`interval '${LIVE_TELEMETRY_MAX_AGE_SECONDS} seconds'`);
+
 /**
  * The asset groups whose memberships the caller may count (security L1,
  * owner ruling 2026-09-24). `null` is unrestricted; `groupIds` names the
@@ -82,9 +98,9 @@ interface RoleSummaryRow extends Record<string, unknown> {
  *    (`activeAlarmFilter`: raised and not cleared, acknowledged or not).
  *    Higher `rank` is more urgent (ADR 0032).
  * 3. `live` — the member assets with a sample of **any** point newer than
- *    `LIVE_TELEMETRY_MAX_AGE_SECONDS` (OQ1). The bound is a bound parameter,
- *    never a restated literal — `tests/f3.28-offline-bound-single-source`
- *    holds that.
+ *    `LIVE_TELEMETRY_MAX_AGE_SECONDS` (OQ1), written into the SQL as
+ *    {@link LIVE_WINDOW} — never a restated number;
+ *    `tests/f3.28-offline-bound-single-source` holds that.
  * 4. `role_worst` — each role's highest asset rank.
  * 5. The final group counts the role's assets, those at the role's worst rank
  *    (`worstCount`, OQ4) and those not live (`offlineCount`), and joins the
@@ -149,7 +165,7 @@ export class AssetRoleSummaryService {
           live AS (
             SELECT DISTINCT pv.asset_id
             FROM telemetry.point_values pv
-            WHERE pv.time > now() - make_interval(secs => ${LIVE_TELEMETRY_MAX_AGE_SECONDS}::double precision)
+            WHERE pv.time > now() - ${LIVE_WINDOW}
               AND pv.asset_id IN (SELECT asset_id FROM members)
           ),
           per_asset AS (
