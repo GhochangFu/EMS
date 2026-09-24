@@ -345,7 +345,8 @@ a point the decisions did not settle.
 4. **Slice 3 — a null Key Parameters reading.** A gauge with no fresh
    sample shows an em dash with "Offline" or "No data", never a dial resting
    at zero — zero is a value, and reads as one. `RadialGaugeWidget` is
-   unchanged; the null state is composed by the page around it.
+   unchanged; the null state is composed around it by `KeyParameters`
+   (`components/control-room/key-parameters.tsx`).
 
 5. **Accepted without a new row.** The class strip opens a second
    `/ws/alarms` socket on `/cr-overview`, beside the rail's own — a
