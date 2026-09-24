@@ -5725,3 +5725,46 @@ suite 18/18. The branch image was deployed to `bms-api-1` and booted cleanly.
 The live refusal on the stack is N/A by gate (owner ruling): no stack asset
 carries a window-`sum` point. Browser N/A by gate. A `55P03` retry for
 `materializeCompleteBuckets` is the new row `F4.149`. Unblocks nothing.
+
+### `E4.3` — water balance and wastewater recovery (ADR 0073) ✅ 2026-09-24
+
+Six pull requests on one ADR and one plan: #531 the role (squash `732bec9e`),
+#533 its post-merge sweep (`d96a0004`), #534 the balance (`86612d51`, fourteen
+commits), #535 its sweep (`397157dd`), #536 the demo water plant
+(`a1da8399`) and #537 its sweep (`15138527`). Gated 2026-09-23 by
+[ADR 0073](./adr/0073-water-balance-and-wastewater-recovery.md) (#530),
+drafted and ruled the same day; seven questions, two ruled against the
+recommendation. The plan's twelve questions were all ruled as recommended.
+
+The gate found that the shipped Sustainability Overview double-counted water:
+each water class summed its own inlet, so a series plant counted the same
+water once per stage. Each asset now carries a water balance role (`intake`,
+`discharge`, `reuse` or `internal`, migration `0080`), and an optional
+`balanceRole` on `sustainability.total` / `by_location` narrows the sum to one
+role. `sustainability-overview` v4 sets `intake` on its four water bindings and
+adds a *Water balance by site* table on the new `water.balance` dataset
+(migration `0081`): Intake, Reuse, Discharge, Consumed or lost = Intake −
+Discharge, and coverage. Five water classes gained `outlet_kl_*` rows at stock
+v5; the softener did not, because its totalizer resets. The ESKOM seed gained
+a five-asset demo plant at CSMOC Gauteng on mirror templates, and the
+simulator emits its flows for `WTR-` codes only.
+
+The two later sweeps found what the reviews missed. The PR 2 sweep: a site
+whose second intake meter could not report still answered a confident
+`consumed`; it now answers `null`, like a stale discharge. The PR 3 sweep: the
+seed moved every ESKOM water asset onto the simulator RTU on each boot, so an
+admin's MQTT water meter went dark (owner ruling R3: `WTR-` codes only), and
+an admin's own `DEMO-WATER-PILOT` template stopped the boot.
+
+Verified on the rebuilt stack on boot day: `verifyHierarchySeed` exit 0, each
+`WTR-*` asset writing only its own class's flows, and the API on the
+local-auth `:4001` answering carrying 1 for `kl_today` with the `intake` role
+and carrying 5 without it. The balance itself read one `CSMOC-GP` row with
+`null` cells and `0/3`, because every volume row refuses as `window_sparse`
+until a full `today` window exists. The balance numbers are checked on
+2026-09-25: `DAY-2 CHECK (2026-09-25): <to be filled>`. Browser N/A by gate.
+ADR 0073 Amendment 1 records fifteen corrections. New rows: `F4.151` (a
+`WTR-*` code that already exists), `F4.152` (the builder notes for a role-less
+water total) and `F4.153` (CI has no general check that refuses an edit
+to a committed migration). Ships no Water Recycle % formula: B14 is still the client's.
+Unblocks nothing.
