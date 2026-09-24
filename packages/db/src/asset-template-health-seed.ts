@@ -135,7 +135,7 @@ const TEMPLATE_CODE_EXPR = `'BASELINE-' || upper(a.domain)`;
  * established. One literal, two statements, and they cannot drift.
  *
  * `'baseline'` rather than a per-domain type because that is what these are —
- * one class of thing, four domains — and `asset_templates_org_asset_type_idx`
+ * one class of thing, one row per domain — and `asset_templates_org_asset_type_idx`
  * groups the picker by it.
  */
 const TEMPLATE_ASSET_TYPE = "baseline";

@@ -12,7 +12,8 @@ import { STOCK_POINT_KEY_CODES } from "./point-keys-seed";
  *   branches, but every seeded location was active, so dropping the filter
  *   changed no test result.
  * - ADR 0018 made `assets.rtu_id` nullable so an asset can exist without a
- *   gateway, but `assignEskomAssetRtus` backfills every ESKOM asset and the PHE
+ *   gateway, but `assignEskomAssetRtus` backfills every ESKOM asset (a water asset only
+ *   when its code starts with `WTR-`, E4.3 R3) and the PHE
  *   seed wires every PHE one — so the state the ADR exists to permit occurred
  *   zero times, and a scope query that started joining through `bms.rtus` would
  *   have gone unnoticed.

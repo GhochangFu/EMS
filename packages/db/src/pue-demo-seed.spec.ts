@@ -249,7 +249,7 @@ export function assertRackKwRowsSatisfyTheSourceRefCheck(): void {
  *
  * `asset_type = 'baseline'` puts the row under `HEALTH_TEMPLATE_VERIFY_SQL`'s
  * `unusable` check on every later seed; `content` is the same
- * `HEALTH_BASELINE_CONTENT` the four domain baselines carry.
+ * `HEALTH_BASELINE_CONTENT` every domain baseline carries.
  */
 export function assertTheIncomerTemplateKeepsItsHealthBand(): void {
   expect(PUE_DEMO_TEMPLATE_SQL).toContain("'baseline'");

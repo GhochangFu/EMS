@@ -404,7 +404,7 @@ SELECT
   ) AS pinned_incomers
 `;
 
-/** `[organizationId, content]` — the same bands the four domain baselines carry. */
+/** `[organizationId, content]` — the same bands every domain baseline carries. */
 export function pueDemoTemplateParams(organizationId: string): [string, string] {
   return [organizationId, JSON.stringify(HEALTH_BASELINE_CONTENT)];
 }

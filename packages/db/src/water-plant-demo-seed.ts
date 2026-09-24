@@ -45,7 +45,9 @@ import type { EskomAssetSpec } from "./eskom-assets-seed";
  * (nine: the STP and the ETP both carry `influent_flow_klh`) and pins no
  * asset. The assets themselves come from `eskom-assets-seed.ts`
  * ({@link DEMO_WATER_PLANT_ASSETS}, last in the catalog), and their RTU from
- * `DOMAIN_RTU_SUFFIX`'s `water: "WATER"` (ruling Q4).
+ * `DOMAIN_RTU_SUFFIX`'s `water: "WATER"` (ruling Q4), which
+ * `assignEskomAssetRtus` applies to a water asset only when its code starts
+ * with `WTR-` (ruling R3).
  *
  * **Tenant context.** Called inside the ESKOM `withOrganization` bracket, so
  * every statement below — including the post-condition read-back — runs in
@@ -58,12 +60,18 @@ import type { EskomAssetSpec } from "./eskom-assets-seed";
  * **Idempotent under `compose up`.** Templates and points are
  * `ON CONFLICT DO NOTHING` (a published version is immutable, ADR 0015); the
  * pin and the role are written by one UPDATE predicated on
- * `template_id IS NULL`, so a re-seed never moves an operator's pin or
- * reverts a role an administrator set. The guard does not make such a change
- * safe, though: the post-condition below then reads fewer than five pinned or
- * roled demo assets and throws, so an operator who re-pins a demo asset or
- * clears its role fails the next boot (and so does `verify-hierarchy-seed.ts`'s
- * water counts). The seed never overwrites the change; it refuses it loudly.
+ * `template_id IS NULL`, so a re-seed never moves a pin an operator set, and
+ * never rewrites the role of a pinned asset. The seed does not accept every
+ * such change, though. The post-condition below requires each of the five
+ * assets to be pinned to its OWN class's mirror (any version of that code)
+ * and to carry a non-null role, so an operator who re-pins a demo asset to
+ * any other template, or clears its role, fails the next boot. A change from
+ * one non-null role to another passes the post-condition.
+ * `verify-hierarchy-seed.ts`'s water counts fail the same way: on a cleared
+ * role, on an intake count other than one, and on a demo asset pinned to any
+ * template other than its own class's mirror (a swap between two mirrors
+ * included — its pin count pairs each asset code with its own template code).
+ * The seed never overwrites the change; it refuses it loudly.
  */
 
 /** The site the plant is seeded at — ruling Q10. */
@@ -239,6 +247,15 @@ export const DEMO_WATER_CLASSES: readonly DemoWaterClass[] = [
 export const DEMO_WATER_ASSET_CODES: readonly string[] = DEMO_WATER_CLASSES.map((c) => c.assetCode);
 
 /**
+ * The five mirror template codes, in the order of {@link DEMO_WATER_ASSET_CODES}
+ * — both are one `map` over `DEMO_WATER_CLASSES`, so entry `i` of each names
+ * the same class. The post-condition reads exactly these codes, never a
+ * `DEMO-WATER-` prefix: an administrator's own `DEMO-WATER-PILOT` version 1
+ * would otherwise add its points to the count and stop the boot.
+ */
+export const DEMO_WATER_TEMPLATE_CODES: readonly string[] = DEMO_WATER_CLASSES.map((c) => c.templateCode);
+
+/**
  * The five assets as `buildEskomAssetCatalog` entries, appended LAST in that
  * catalog so its load-bearing order (the alarm seed keys off the first two
  * entries) is untouched.
@@ -360,22 +377,31 @@ WHERE a.organization_id = $1
 
 /**
  * The post-condition, read back inside the same tenant bracket: how many of
- * the five asset codes are pinned to a `DEMO-WATER-*` template, how many carry
- * a balance role, how many template points the five mirrors declare, and how
- * many `(asset code, flow key)` pairs have a catalog row. The last is
+ * the five `(asset code, template code)` pairs have the asset pinned to its
+ * OWN class's mirror (`$2` and `$5` zipped — a WTP pinned to `DEMO-WATER-ETP`
+ * does not count), how many of the five assets carry a balance role, how many
+ * template points the five mirror codes declare at version 1 (`$5` exactly, no
+ * prefix match), and how many `(asset code, flow key)` pairs have a catalog
+ * row. The pin is matched by template code, not version, so an ADR 0039 move
+ * to a later version of the same mirror still counts. The last count is
  * existence only — no `ap.active` — for `PUE_DEMO_VERIFY_SQL`'s reason: every
  * write here is `DO NOTHING` and cannot re-activate a row an administrator
- * deactivated, so an `active` predicate would fail every later boot.
+ * deactivated, so an `active` predicate would fail every later boot. Params:
+ * {@link demoWaterVerifyParams}.
  */
 export const DEMO_WATER_VERIFY_SQL = `
 SELECT
   (
     SELECT count(*)::int
-    FROM bms.assets a
-    JOIN bms.asset_templates t ON t.id = a.template_id
-    WHERE a.organization_id = $1
-      AND a.code = ANY($2::varchar[])
-      AND t.code LIKE 'DEMO-WATER-%'
+    FROM unnest($2::varchar[], $5::varchar[]) AS p(asset_code, template_code)
+    WHERE EXISTS (
+      SELECT 1
+      FROM bms.assets a
+      JOIN bms.asset_templates t ON t.id = a.template_id
+      WHERE a.organization_id = $1
+        AND a.code = p.asset_code
+        AND t.code = p.template_code
+    )
   ) AS pinned,
   (
     SELECT count(*)::int
@@ -389,7 +415,7 @@ SELECT
     FROM bms.template_points tp
     JOIN bms.asset_templates t ON t.id = tp.template_id
     WHERE t.organization_id = $1
-      AND t.code LIKE 'DEMO-WATER-%'
+      AND t.code = ANY($5::varchar[])
       AND t.version = 1
   ) AS template_points,
   (
@@ -457,6 +483,21 @@ const DEMO_WATER_FLOW_PAIRS = DEMO_WATER_CLASSES.flatMap((c) =>
 );
 
 /**
+ * `[org, assetCodes, flowPairAssetCodes, flowPairPointKeys, templateCodes]` —
+ * the params of {@link DEMO_WATER_VERIFY_SQL}. `$2` and `$5` are zipped by
+ * position, so entry `i` of each must name the same class.
+ */
+export function demoWaterVerifyParams(organizationId: string): unknown[] {
+  return [
+    organizationId,
+    DEMO_WATER_ASSET_CODES,
+    DEMO_WATER_FLOW_PAIRS.map((pair) => pair.assetCode),
+    DEMO_WATER_FLOW_PAIRS.map((pair) => pair.pointKey),
+    DEMO_WATER_TEMPLATE_CODES,
+  ];
+}
+
+/**
  * Seeds the five mirror templates, the flow catalog rows, the pins and the
  * roles, and proves all of it. Must run inside the ESKOM `withOrganization`
  * bracket (module docblock). A `rowCount` of 0 is the correct answer on a
@@ -486,12 +527,7 @@ export async function seedWaterPlantDemo(
     pinned += pin.rowCount ?? 0;
   }
 
-  const check = await pool.query<DemoWaterVerifyRow>(DEMO_WATER_VERIFY_SQL, [
-    organizationId,
-    DEMO_WATER_ASSET_CODES,
-    DEMO_WATER_FLOW_PAIRS.map((pair) => pair.assetCode),
-    DEMO_WATER_FLOW_PAIRS.map((pair) => pair.pointKey),
-  ]);
+  const check = await pool.query<DemoWaterVerifyRow>(DEMO_WATER_VERIFY_SQL, demoWaterVerifyParams(organizationId));
   const row = check.rows[0];
   const pinnedNow = row?.pinned ?? -1;
   const roledNow = row?.roled ?? -1;
@@ -505,7 +541,7 @@ export async function seedWaterPlantDemo(
   ) {
     throw new Error(
       `seedWaterPlantDemo: ${pinnedNow} of ${DEMO_WATER_CLASSES.length} demo water assets are pinned ` +
-        `to a DEMO-WATER template, ${roledNow} carry a water balance role, and the mirrors declare ` +
+        `to their own class's DEMO-WATER template, ${roledNow} carry a water balance role, and the mirrors declare ` +
         `${pointsNow} template point(s) (wanted ${DEMO_WATER_TEMPLATE_POINT_TOTAL}), and ${flowsNow} of ` +
         `${DEMO_WATER_FLOW_PAIRS.length} flow catalog rows exist. A FORCE-RLS write ` +
         "can drop rows without raising, so each is read back rather than inferred from the " +

@@ -12,10 +12,14 @@ const DOMAIN_RTU_SUFFIX: Record<string, string> = {
   // `E4.3` U11 (owner ruling Q4) — one simulator RTU per ESKOM location, the
   // same as every other domain. The demo water plant lives at CSMOC Gauteng
   // only, so ten of the eleven WATER RTUs carry no asset; the owner accepted
-  // that for the uniformity (every existing mechanism works unchanged). With
-  // this entry, `assignEskomAssetRtus` wires EVERY non-manual ESKOM water
-  // asset — not only the five demo assets — to `SIM-RTU-<loc>-WATER` on each
-  // boot, the same as it does for the other four domains.
+  // that for the uniformity (every existing mechanism works unchanged). The
+  // RTU exists at every location, but `assignEskomAssetRtus` wires a `water`
+  // asset to it ONLY when the asset's code starts with `WTR-` (owner ruling
+  // R3, 2026-09-24) — the demo plant's codes, and the only water codes
+  // `apps/sim` emits flows for (ruling R2). Any other ESKOM water asset keeps
+  // its own `rtu_id` and `meta.telemetrySource` on every boot, so a real MQTT
+  // water meter is not moved onto a simulator RTU that feeds it nothing.
+  // Assets of the other domains are wired as before.
   water: "WATER",
 };
 
@@ -127,7 +131,16 @@ export async function resolveEskomSimRtuId(
   return id;
 }
 
-/** Assigns rtu_id on Eskom assets that are missing it. */
+/**
+ * Wires every non-manual, non-`PHE-` ESKOM asset whose domain has a simulator
+ * RTU at its `site_name` to that RTU, on every boot (an asset of a domain
+ * with no `DOMAIN_RTU_SUFFIX` entry, such as `mechanical` or `facility`, or
+ * one whose `site_name` matches no ESKOM location, is skipped silently). The
+ * function overwrites an existing `rtu_id` and sets `meta.telemetrySource` to
+ * `simulator`. A `water` asset is wired only
+ * when its code starts with `WTR-` (owner ruling R3); any other water asset
+ * keeps its `rtu_id` and its `telemetrySource`.
+ */
 export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
   const rows = await pool.query<{
     id: string;
@@ -146,6 +159,10 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
       -- the second db:seed would wire it and the fixture would silently stop
       -- being a fixture. Any hand-read asset is exempt, not just that one.
       AND COALESCE(a.meta->>'sourceKind', '') <> 'manual'
+      -- E4.3 owner ruling R3: a water asset is wired only when its code starts
+      -- with WTR- (the demo plant, the only water codes apps/sim feeds). Any
+      -- other water asset keeps its rtu_id and its telemetrySource.
+      AND (a.domain <> 'water' OR a.code LIKE 'WTR-%')
   `);
 
   for (const row of rows.rows) {
