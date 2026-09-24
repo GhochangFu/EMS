@@ -2,15 +2,15 @@
 
 ## Status
 
-Proposed — drafted at the §10 gate on 2026-09-24, before any implementation
+Accepted — drafted at the §10 gate on 2026-09-24, before any implementation
 code. Ten gate questions and one follow-up (1b) were put to the owner one at
 a time. Ten were ruled as recommended. **Q1 was answered outside its
 options**: the light canvas stays the default, and end users get a light/dark
 switch; follow-up 1b placed that switch in a new row (`F3.65`) with its own
 ADR. The rulings are recorded under *Gate questions* and carried into
 *Decision*. Six points were decided without a question and are listed under
-*Ruled here without a question*. The status moves to Accepted when the owner
-merges this record.
+*Ruled here without a question*. The owner approved the merge of this record
+on 2026-09-24 (PR #541).
 
 Resolves the `docs/BACKLOG.md` §5 row *Reference layout language* ⚠ (Q1).
 Promotes nothing out of `AGENTS.md` §6 — `F3.28` is a backlog row, not a §6
