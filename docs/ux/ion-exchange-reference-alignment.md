@@ -142,8 +142,9 @@ than depend on someone having read this file first. This section records the
 
 **These were carried into `docs/BACKLOG.md` on 2026-08-16 as seven new rows**
 (`F3.28`–`F3.31`, `F4.46`–`F4.48`) plus two `§5` ADR-queue entries. The board is
-the tracker; the `Row` column below is the only status this document carries,
-and it is a pointer, not a state.
+the tracker; the `Row` column below is a pointer, not a state — with one
+exception: where the table below marks an entry **delivered**, that word
+names a PR that shipped, and the board is what confirms it is still current.
 
 The original search was keyword-based over a prose-heavy file, so each of these
 began as *no row **found***, not *no row exists* — worth remembering if one of
@@ -153,15 +154,15 @@ them turns out to duplicate something.
 |---|---|---|
 | 1 | **Domain-first navigation IA** — reference sidebar is one flat entry per *domain* (Electrical, Water, STP, ETP, HVAC); ours is five *function* groups with 20+ entries. See §4.3: cheaper than it looks. | **§5 ADR** *(gated)* · surface in `F3.29` |
 | 2 | **Persistent site selector in the top bar** — reference scopes the whole app to one site from the header; we use org filter pills *inside* the dashboard body. | `F3.29` |
-| 3 | **Diagram View / List View toggle** — we have no list fallback for the SLD. | `F3.28` |
-| 4 | **KPI period-delta and tile icons** — "↓6.8% vs yesterday" on every tile. `KpiTile` has **no comparison-to-prior-period concept anywhere**; needs a prior-period query, not a prop. | `F3.28` |
-| 5 | **Breach value inline in alarm text** — "Overload (112%)". Our rows carry a message; the triggering value is not composed into it. | `F3.28` |
-| 6 | **Status legend row** — Normal · Warning · **High** · Critical · Offline. | `F3.28` (legend) · `F4.46` (the missing `high`) |
+| 3 | **Diagram View / List View toggle** — we have no list fallback for the SLD. | `F3.28` — **delivered** (ADR 0074 decision 2, PR #545): the toggle reuses `BreakerTable`, extracted from `/cr-sld`. |
+| 4 | **KPI period-delta and tile icons** — "↓6.8% vs yesterday" on every tile. `KpiTile` has **no comparison-to-prior-period concept anywhere**; needs a prior-period query, not a prop. | `F3.28` — **delivered** (ADR 0074 decision 5, PR #543), **not on every tile**: `totalKw`, `alarmsOpen` and `pueEstimate` get a "vs yesterday" delta at `asOf − 24 h`; `sitesOnline`, *Rule Warnings* and *SLD Status* (live-state tiles) get none. |
+| 5 | **Breach value inline in alarm text** — "Overload (112%)". Our rows carry a message; the triggering value is not composed into it. | `F3.28` — **delivered** (ADR 0074 decision 3, PR #542), a narrower shape: `composeAlarmMessage`'s fallback is now `<rule name> (<value><unit>)`, e.g. "Oil Temperature High (65.3 °C)". "Overload (112%)" is **not** produced — a percentage of a rating needs the rating, which the rule engine does not carry. |
+| 6 | **Status legend row** — Normal · Warning · **High** · Critical · Offline. | `F3.28` (legend) — **delivered** (ADR 0074, PR #545): `alarmSeverities` from `GET /vocabularies` in rank order plus *Normal* and *Offline*. · `F4.46` (the missing `high`) still open, pending the client's B9 answer. |
 | 7 | **System Status + Data Quality** — the genuinely new concept. A natural rollup of `F4.37`/`F4.38`/`F4.39`, which built telemetry-freshness checks precisely because pages rendered stale data as live. | `F3.30` |
 | 8 | **Operator-facing Assets browser** — ours is `/admin/assets`, a master-data editor under Administration. | `F3.31` |
-| 9 | **Per-asset-class health strip with worst state** — "MCCs 4 · *1 Critical*". Distinct from `E1.3`'s per-asset score. | `F3.28` |
-| 10 | **"Key Parameters" gauge strip** — radial-gauge and tank-level widget types, named by neither `F3.1` nor `F4.41`. | `F3.28` · detail added to `F3.1` |
-| 11 | **Footer capability ribbon** — cosmetic; folded in rather than given its own row. | `F3.28` |
+| 9 | **Per-asset-class health strip with worst state** — "MCCs 4 · *1 Critical*". Distinct from `E1.3`'s per-asset score. | `F3.28` — **delivered** (ADR 0074 decision 6, PR #545): `GET /assets/role-summary` on the ADR 0049 role vocabulary, with a worst-active-severity and an offline count per role. |
+| 10 | **"Key Parameters" gauge strip** — radial-gauge and tank-level widget types, named by neither `F3.1` nor `F4.41`. | `F3.28` · detail added to `F3.1` — **delivered on `/cr-overview`** (ADR 0074 "Ruled here without a question" 3, PR #545) with the existing `F3.1c` renderers and literal configs; **radial gauges only**, since `/cr-overview` has no tank asset — the tank-level widget type is unexercised by this row. |
+| 11 | **Footer capability ribbon** — cosmetic; folded in rather than given its own row. | `F3.28` — **delivered** (ADR 0074 "Ruled here without a question" 5, PR #545): static copy from §2's Page 10 footer ribbon row, on `/cr-overview` only. |
 | 12 | **The rule builder persists a downgraded severity on save** — a live defect, not a layout gap. See §4.4. | `F4.46` **P0** |
 
 **Two more rows came out of this work rather than out of the reference:**
@@ -173,20 +174,22 @@ them turns out to duplicate something.
 
 ### 3.3 Needs the human §10 gate — do not decide these without an ADR
 
-**Both are now queued in `docs/BACKLOG.md` §5 (Decision ADR queue)**, which is
-where this repo holds decisions owed before the affected items start.
+**One of the two below is now decided.** It is recorded here rather than
+removed, because the row below is the resolution and the reasoning that led
+to it stays useful.
 
 | Decision | Queued as | Why it is gated |
 |---|---|---|
-| **Dark canvas** | §5 *Reference layout language* — blocks `F3.28` and any theme work | See §4.5. Both mockups are light-canvas by explicit token. AGENTS.md §5 names one of them as *the* UX spec. |
-| **Domain-first IA** | §5 *Domain-first navigation IA* — blocks `F3.29`, informs `E5.1` | AGENTS.md §5: "Match the original screen's information architecture first." Reordering the sidebar around domains is a deliberate departure from that instruction, not an implementation detail. |
+| **Dark canvas** | §5 *Reference layout language* — **resolved 2026-09-24** (ADR 0074, Q1): the light canvas stays the default. It no longer blocks `F3.28`, which is delivered. A user-selectable dark theme is wanted and is its own new row and ADR, `F3.65` (the colour-token layer, the storage of the choice, and the dark palette); `F3.28` shipped no `dark:` class and no token layer for it to unwind. | See §4.5. Both mockups are light-canvas by explicit token. AGENTS.md §5 names one of them as *the* UX spec — that spec is unchanged by the ruling. |
+| **Domain-first IA** | §5 *Domain-first navigation IA* — still open, blocks `F3.29`, informs `E5.1` | AGENTS.md §5: "Match the original screen's information architecture first." Reordering the sidebar around domains is a deliberate departure from that instruction, not an implementation detail. |
 
-**One promotion is owed either way and is not an agent's to make.** If either
-decision is taken, `AGENTS.md` §5 is what an agent reads before building any
-screen, and it currently describes only the `ESKOM_SMOC.html` shell — so it
-would need a pointer to this document and to whichever ADR results. AGENTS.md
-may only be edited through a `chore(agents):` PR (§9.10), so that is recorded
-here rather than done.
+**The dark-canvas promotion is done by this PR; the domain-first-IA one is
+still owed.** `AGENTS.md` §5 now carries a pointer to ADR 0074 and to this
+document recording the dark-canvas resolution and what `F3.28` delivered
+(§3.2 above). If the domain-first IA decision is taken, `AGENTS.md` §5 will
+need a second pointer, to this document and to whichever ADR results.
+AGENTS.md may only be edited through a `chore(agents):` PR (§9.10), so that
+one is recorded here rather than done.
 
 ---
 
@@ -377,13 +380,15 @@ throughout.
 
 So adopting the reference palette contradicts **the §5 spec, the current
 branding mockup, and every shipped page**. That is a §10 scope decision and
-belongs to the human, not to an implementation pass.
+belonged to the human, not to an implementation pass — **decided 2026-09-24**
+(ADR 0074, Q1): the light canvas stays, see §3.3.
 
 Worth separating two things that look like one: the reference's **information
 density and component vocabulary** (right-hand alarm rail, process diagram,
 workflow stepper, health donut) are entirely achievable in the existing light
-palette. **Only the canvas colour is gated.** Nothing in §3.1 or §3.2 has to
-wait on the theme decision.
+palette, and `F3.28` built them there. **Only the canvas colour was gated**,
+and it no longer is. Nothing in §3.1 or §3.2 had to wait on the theme
+decision.
 
 ---
 
