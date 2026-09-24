@@ -7,6 +7,7 @@ import { ActiveAlarmsRail } from "../components/control-room/active-alarms-rail"
 import { BreakerTable } from "../components/control-room/breaker-table";
 import { QuickDrilldown } from "../components/control-room/quick-drilldown";
 import { ScopedActionLink } from "../components/control-room/scoped-action-link";
+import { StateLegend } from "../components/control-room/state-legend";
 import { KpiTile } from "../components/kpi-tile";
 import {
   CR_BREAKERS,
@@ -446,6 +447,8 @@ function ControlRoomOverviewContent() {
         }
         actions={<StatusPill label="2D foundation" />}
       />
+
+      <StateLegend />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <KpiTile label="Rule Warnings" status="ready" value={String(activeRuleStates.length)} tone={activeRuleStates.length > 0 ? "warning" : "default"} hint="enabled rules inside your CR scope" icon={WidgetIconGlyph("alert")} />

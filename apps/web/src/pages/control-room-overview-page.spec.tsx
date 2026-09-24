@@ -748,3 +748,24 @@ export async function theListViewWarnsOnAnSldOnlyPointKey(): Promise<void> {
   expect(within(rowFor("Q4 · UPS-1 OUT")).getByText("CLOSED")).toBeInTheDocument();
   expect(within(rowFor("Q5 · UPS-2 OUT")).getByText("WARN")).toBeInTheDocument();
 }
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 3.4 — the state legend is mounted on the page.
+// ---------------------------------------------------------------------------
+
+/**
+ * The page's `vocabularies` mock (above) carries `warning` and `critical`;
+ * the legend renders Normal, both severities, then Offline.
+ */
+export async function theStateLegendRendersNormalTheVocabularyAndOffline(): Promise<void> {
+  renderPage();
+  const legend = await screen.findByLabelText("State legend");
+  await waitFor(() => expect(legend.children.length).toBeGreaterThan(2));
+  expect(Array.from(legend.children).map((child) => child.textContent)).toEqual([
+    "Normal",
+    "Warning",
+    "Critical",
+    "Offline",
+  ]);
+}
+

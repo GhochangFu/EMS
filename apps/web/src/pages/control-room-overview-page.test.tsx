@@ -34,6 +34,7 @@ import {
   theListViewShowsAStaleBreakerOffline,
   theListViewWarnsOnAnSldOnlyPointKey,
   theOtherThreeTilesWearNoIcon,
+  theStateLegendRendersNormalTheVocabularyAndOffline,
   theViewModeDoesNotSurviveARemount,
   thePriorReadAsksForExactlyFiveRefs,
   totalCrLoadExcludesAStaleMainIncomer,
@@ -204,5 +205,9 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("warns in the List view on a point key only /cr-sld read before", async () => {
     await theListViewWarnsOnAnSldOnlyPointKey();
+  });
+
+  it("renders the state legend with Normal, the vocabulary and Offline", async () => {
+    await theStateLegendRendersNormalTheVocabularyAndOffline();
   });
 });
