@@ -1,12 +1,22 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { AccessibleScope, RuleListItem } from "@bms/shared";
+import type {
+  AccessibleScope,
+  AlarmListItem,
+  AlarmSummaryResponse,
+  AlarmsListResponse,
+  RuleListItem,
+} from "@bms/shared";
 
-import { CR_BREAKERS } from "../components/live-svg/control-room-bindings";
+import {
+  CR_BREAKERS,
+  CR_TRACKED_ASSET_CODES,
+} from "../components/live-svg/control-room-bindings";
 import { emptySlice, type SchematicTelemetrySlice } from "../lib/schematic-telemetry";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { ControlRoomOverviewPage } from "./control-room-overview-page";
@@ -39,7 +49,19 @@ const STALE_SEEN_MS = NOW - 30_000;
 const state = vi.hoisted(() => ({
   telemetry: {} as Record<string, unknown>,
   rules: [] as unknown[],
+  /** One stable map: the page memoises its alarm ids on this identity. */
+  idByCode: new Map<string, string>(),
+  fetchActiveAlarms: vi.fn(),
+  fetchAlarmSummary: vi.fn(),
 }));
+
+/** Every tracked code resolves to `asset-<code>`, so the rail's ids are knowable. */
+function assetIdFor(code: string): string {
+  return `asset-${code}`;
+}
+for (const code of CR_TRACKED_ASSET_CODES) {
+  state.idByCode.set(code, assetIdFor(code));
+}
 
 /**
  * The page opens no socket of its own once the provider is mocked, but the
@@ -55,6 +77,30 @@ vi.mock("socket.io-client", () => ({
 
 vi.mock("../api/rules", () => ({
   fetchRules: () => Promise.resolve({ items: state.rules }),
+}));
+
+/**
+ * The alarms rail (`F3.28` Task 1.7) reads two endpoints and the severity
+ * vocabulary. All three are replaced so no test here dials the network; the
+ * rail's own spec owns their behaviour.
+ */
+vi.mock("../api/alarms", () => ({
+  fetchActiveAlarms: state.fetchActiveAlarms,
+  fetchAlarmSummary: state.fetchAlarmSummary,
+}));
+
+vi.mock("../api/vocabularies", () => ({
+  vocabulariesQueryKey: ["vocabularies"],
+  fetchVocabularies: () =>
+    Promise.resolve({
+      ruleCategories: [],
+      assetDomains: [],
+      alarmSeverities: [
+        { code: "warning", label: "Warning", tone: "warning", rank: 20, active: true },
+        { code: "critical", label: "Critical", tone: "critical", rank: 30, active: true },
+      ],
+      alarmSkills: [],
+    }),
 }));
 
 vi.mock("../components/live-svg/schematic-telemetry-context", async () => {
@@ -73,7 +119,7 @@ vi.mock("../components/live-svg/schematic-telemetry-context", async () => {
       stale: false,
     }),
     useSchematicTelemetryContext: () => ({
-      idByCode: new Map<string, string>(),
+      idByCode: state.idByCode,
       assetMetaById: new Map(),
       byAssetId: {},
       totalKw: null,
@@ -153,6 +199,32 @@ function thresholdRule(overrides: Partial<RuleListItem>): RuleListItem {
   } as unknown as RuleListItem;
 }
 
+/** A server-raised alarm; its message carries the task 1.2 breach value. */
+const RAIL_ALARM: AlarmListItem = {
+  id: "alarm-1",
+  assetId: "asset-CR-Q1",
+  ruleKey: null,
+  ruleId: "r1",
+  severity: "critical",
+  message: "CR main incomer load high (12.3 kW)",
+  raisedAt: new Date(NOW - 60_000).toISOString(),
+  acknowledgedAt: null,
+  acknowledgedBy: null,
+  clearedAt: null,
+  assetCode: "CR-Q1",
+  assetName: "CR Main Incomer",
+  siteName: "SMOC",
+};
+
+/** Ascending rank, as `GET /alarms/summary` returns it. */
+const RAIL_SUMMARY: AlarmSummaryResponse = {
+  items: [
+    { code: "warning", label: "Warning", tone: "warning", rank: 20, count: 2 },
+    { code: "critical", label: "Critical", tone: "critical", rank: 30, count: 1 },
+  ],
+  total: 3,
+};
+
 type Setup = {
   telemetry?: Record<string, SchematicTelemetrySlice>;
   rules?: RuleListItem[];
@@ -164,6 +236,12 @@ function renderPage({ telemetry = liveTelemetry(), rules = [], scope = GLOBAL_SC
   vi.setSystemTime(NOW);
   state.telemetry = telemetry;
   state.rules = rules;
+  state.fetchActiveAlarms.mockImplementation(
+    (): Promise<AlarmsListResponse> => Promise.resolve({ items: [RAIL_ALARM], nextCursor: null }),
+  );
+  state.fetchAlarmSummary.mockImplementation(
+    (): Promise<AlarmSummaryResponse> => Promise.resolve(RAIL_SUMMARY),
+  );
   useAuthStore.setState({ scope });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -213,7 +291,6 @@ export const KPI_LABELS = [
 
 export const SECTION_HEADINGS = [
   "Single Line Diagram · Power Flow",
-  "Active Rule Warnings",
   "IT Rack Load",
   "Critical Systems Summary",
   "Energy Snapshot",
@@ -315,6 +392,39 @@ export function itRackLoadSectionSaysItIsOutsideTheScope(): void {
   expect(
     screen.getByText("IT Rack Load is outside your assigned asset-group scope."),
   ).toBeInTheDocument();
+}
+
+/** The alarms rail shows a server alarm's message verbatim. */
+export async function alarmsRailShowsTheMessageVerbatim(): Promise<void> {
+  renderPage();
+  expect(await screen.findByText("CR main incomer load high (12.3 kW)")).toBeInTheDocument();
+}
+
+/** The rail's Alarm Summary tab shows the counts, most urgent first. */
+export async function alarmsRailSummaryShowsTheCounts(): Promise<void> {
+  renderPage();
+  await userEvent.click(screen.getByRole("tab", { name: "Alarm Summary" }));
+  const list = await screen.findByRole("list", { name: "Active alarms by severity" });
+  const rows = within(list)
+    .getAllByRole("listitem")
+    .map((item) => item.textContent);
+  expect(rows).toEqual(["Critical1", "Warning2"]);
+}
+
+/** The rail's "View All" opens the alarms page. */
+export function alarmsRailViewAllLinksToTheAlarmsPage(): void {
+  renderPage();
+  expect(screen.getByRole("link", { name: "View All" })).toHaveAttribute("href", "/alarms");
+}
+
+/** The rail asks for this page's tracked assets, resolved through `idByCode`. */
+export async function alarmsRailQueriesThePageAssetIds(): Promise<void> {
+  renderPage();
+  await waitFor(() =>
+    expect(state.fetchActiveAlarms).toHaveBeenCalledWith(
+      CR_TRACKED_ASSET_CODES.map((code) => assetIdFor(code)),
+    ),
+  );
 }
 
 /** A critical rule matched on a live asset: the subtitle leads with the count. */

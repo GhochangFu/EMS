@@ -1,7 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { io, type Socket } from "socket.io-client";
 
 import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
@@ -19,20 +18,13 @@ import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
-import { useAuthStore, type AuthUser } from "../stores/auth-store";
-import type { AlarmListItem, AlarmSocketEvent } from "@bms/shared";
+import { useAlarmsSocket } from "../hooks/use-alarms-socket";
+import type { AuthUser } from "../stores/auth-store";
+import type { AlarmListItem } from "@bms/shared";
 
 type AlarmsPageProps = {
   user: AuthUser;
 };
-
-function socketBase(): string {
-  return (
-    import.meta.env.VITE_WS_URL ??
-    import.meta.env.VITE_API_URL ??
-    "http://localhost:4000"
-  );
-}
 
 type AlarmSubsystem = "UPS" | "Battery" | "HVAC" | "IT" | "Security";
 
@@ -108,7 +100,6 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   const [ackError, setAckError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
-  const accessToken = useAuthStore((state) => state.accessToken);
 
   const listQ = useInfiniteQuery({
     queryKey: ["alarms", "list"],
@@ -117,20 +108,10 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 
-  useEffect(() => {
-    const socket: Socket = io(`${socketBase()}/ws/alarms`, {
-      transports: ["websocket"],
-      auth: { token: accessToken },
-    });
-    socket.on("alarm", (evt: AlarmSocketEvent) => {
-      void evt;
-      void qc.invalidateQueries({ queryKey: ["alarms", "list"] });
-      void qc.invalidateQueries({ queryKey: ["dashboard", "kpis"] });
-    });
-    return () => {
-      socket.disconnect();
-    };
-  }, [accessToken, qc]);
+  useAlarmsSocket(() => {
+    void qc.invalidateQueries({ queryKey: ["alarms", "list"] });
+    void qc.invalidateQueries({ queryKey: ["dashboard", "kpis"] });
+  });
 
   const ackM = useMutation({
     mutationFn: ({ id, r }: { id: string; r: string }) => ackAlarm(id, r),

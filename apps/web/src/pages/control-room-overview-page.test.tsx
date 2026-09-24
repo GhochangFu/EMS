@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, describe, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "../stores/auth-store";
 import {
+  alarmsRailQueriesThePageAssetIds,
+  alarmsRailShowsTheMessageVerbatim,
+  alarmsRailSummaryShowsTheCounts,
+  alarmsRailViewAllLinksToTheAlarmsPage,
   itRackLoadSectionSaysItIsOutsideTheScope,
   rackLoadReadsADashOutsideTheItScope,
   rackLoadReadsTheRackSumUnderAGlobalScope,
@@ -25,6 +29,11 @@ import {
  * (ADR 0042 decision 2).
  */
 describe("F3.28 characterization of /cr-overview", () => {
+  beforeEach(() => {
+    // The alarm fetch mocks keep their call history across `it()`s otherwise.
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
@@ -78,6 +87,22 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("replaces the IT Rack Load section with its scope message", () => {
     itRackLoadSectionSaysItIsOutsideTheScope();
+  });
+
+  it("shows a server alarm's message verbatim in the alarms rail", async () => {
+    await alarmsRailShowsTheMessageVerbatim();
+  });
+
+  it("shows the alarm summary counts most urgent first", async () => {
+    await alarmsRailSummaryShowsTheCounts();
+  });
+
+  it("links the alarms rail's View All to /alarms", () => {
+    alarmsRailViewAllLinksToTheAlarmsPage();
+  });
+
+  it("queries the alarms rail with the page's asset ids", async () => {
+    await alarmsRailQueriesThePageAssetIds();
   });
 
   it("leads the subtitle with the live critical count", async () => {
