@@ -1,9 +1,10 @@
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { fetchRules } from "../api/rules";
 import { ActiveAlarmsRail } from "../components/control-room/active-alarms-rail";
+import { BreakerTable } from "../components/control-room/breaker-table";
 import { QuickDrilldown } from "../components/control-room/quick-drilldown";
 import { ScopedActionLink } from "../components/control-room/scoped-action-link";
 import { KpiTile } from "../components/kpi-tile";
@@ -24,6 +25,7 @@ import { StatusPill } from "../components/status-pill";
 import { WidgetIconGlyph } from "../components/widget-icon";
 import { usePriorPointValues } from "../hooks/use-prior-point-values";
 import { AppShell } from "../layouts/app-shell";
+import { breakerTableRow } from "../lib/breaker-table-rows";
 import {
   avgOf,
   crPriorRefs,
@@ -228,7 +230,15 @@ function statusLabel(status: CrStatus): string {
   }
 }
 
+/** `F3.28` task 3.5 — held in component state only, so a reload is the diagram again. */
+type SldViewMode = "diagram" | "list";
+
+function viewTabClass(selected: boolean): string {
+  return `rounded border px-3 py-1.5 text-xs font-semibold ${selected ? "border-bms-green bg-emerald-50 text-emerald-900" : "border-gray-200 bg-white text-bms-ink"}`;
+}
+
 function ControlRoomOverviewContent() {
+  const [viewMode, setViewMode] = useState<SldViewMode>("diagram");
   const scope = useAuthStore((state) => state.scope);
   const canElectrical = canAccessControlRoomArea(scope, "electrical");
   const canIt = canAccessControlRoomArea(scope, "it");
@@ -315,6 +325,10 @@ function ControlRoomOverviewContent() {
     code: row.code,
     state: deriveRuleState(row.code, breakerSlices[row.code], rules, nowMs),
   }));
+  // The List view's rows: the same per-breaker states, values gated on them.
+  const breakerRows = CR_BREAKERS.map((row, i) =>
+    breakerTableRow(row, breakerSlices[row.code], breakerStates[i].state),
+  );
   const pduStates = [
     { code: "CR-NET-RACK-PDU-A", state: deriveRuleState("CR-NET-RACK-PDU-A", netPduA, rules, nowMs) },
     { code: "CR-NET-RACK-PDU-B", state: deriveRuleState("CR-NET-RACK-PDU-B", netPduB, rules, nowMs) },
@@ -445,9 +459,24 @@ function ControlRoomOverviewContent() {
                 Utility → Main Panel → 2x30 kVA UPS → critical loads
               </p>
             </div>
-            <ScopedActionLink enabled={canElectrical} to="/cr-sld" label="Open Full SLD" />
+            <div className="flex items-center gap-2">
+              <div className="flex gap-2" role="tablist" aria-label="SLD view">
+                {(["diagram", "list"] as const).map((mode) => (
+                  <button key={mode} type="button" role="tab" aria-selected={viewMode === mode} className={viewTabClass(viewMode === mode)} onClick={() => setViewMode(mode)}>
+                    {mode === "diagram" ? "Diagram" : "List"}
+                  </button>
+                ))}
+              </div>
+              <ScopedActionLink enabled={canElectrical} to="/cr-sld" label="Open Full SLD" />
+            </div>
           </div>
-          {canElectrical ? <MiniSld rules={rules} /> : <ScopedUnavailable label="Electrical SLD" />}
+          {!canElectrical ? (
+            <ScopedUnavailable label="Electrical SLD" />
+          ) : viewMode === "list" ? (
+            <div className="mt-4"><BreakerTable rows={breakerRows} /></div>
+          ) : (
+            <MiniSld rules={rules} />
+          )}
         </section>
 
         <ActiveAlarmsRail assetIds={alarmAssetIds} assetsStatus={telemetryCtx?.assetsStatus ?? "pending"} />

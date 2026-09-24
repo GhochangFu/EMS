@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
@@ -639,4 +639,86 @@ export function theOtherThreeTilesWearNoIcon(): void {
   expect(
     ["SLD Status", "UPS Backup", "Environment"].map((label) => iconPathOf(tileLabelled(label))),
   ).toEqual([null, null, null]);
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 3.5 — the Diagram/List toggle on the SLD section.
+//
+// Every query here is scoped to the SLD section: the KPI tiles carry `svg`
+// icons, and SLD Status also reads OFFLINE for a stale breaker, so a
+// page-wide query would pass with the toggle or the row label broken.
+// ---------------------------------------------------------------------------
+
+/** The section headed "Single Line Diagram · Power Flow". */
+function sldSection(): HTMLElement {
+  const section = screen
+    .getByRole("heading", { level: 2, name: "Single Line Diagram · Power Flow" })
+    .closest("section");
+  expect(section, "no section around the SLD heading").toBeTruthy();
+  return section as HTMLElement;
+}
+
+/** The breaker table's body rows inside the SLD section; the header row is not one. */
+function breakerBodyRows(): HTMLElement[] {
+  return Array.from(sldSection().querySelectorAll<HTMLElement>("tbody tr"));
+}
+
+async function openListView(): Promise<void> {
+  await userEvent.click(within(sldSection()).getByRole("tab", { name: "List" }));
+}
+
+/** No click: the SLD section renders the diagram `svg`. */
+export function theDefaultViewIsTheDiagram(): void {
+  renderPage();
+  expect(sldSection().querySelector("svg")).not.toBeNull();
+}
+
+/** The List tab renders one row per breaker: twelve. */
+export async function theListTabShowsTwelveBreakerRows(): Promise<void> {
+  renderPage();
+  await openListView();
+  expect(breakerBodyRows()).toHaveLength(12);
+}
+
+/** The List tab hides the diagram. The rows are the positive control. */
+export async function theListTabHidesTheDiagramSvg(): Promise<void> {
+  renderPage();
+  await openListView();
+  expect(breakerBodyRows().length, "the List view rendered no rows").toBeGreaterThan(0);
+  expect(sldSection().querySelector("svg")).toBeNull();
+}
+
+/**
+ * The view is component state, never persisted: after an unmount and a fresh
+ * mount the Diagram tab is selected again. The first assertion proves the
+ * click took effect before the remount.
+ */
+export async function theViewModeDoesNotSurviveARemount(): Promise<void> {
+  renderPage();
+  await openListView();
+  expect(
+    within(sldSection()).getByRole("tab", { name: "List" }),
+    "the List tab was never selected",
+  ).toHaveAttribute("aria-selected", "true");
+  cleanup();
+  renderPage();
+  expect(within(sldSection()).getByRole("tab", { name: "Diagram" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+}
+
+/**
+ * CR-Q5 last seen 30 s ago: its List row reads OFFLINE, not CLOSED. CR-Q4,
+ * live in the same render, reading CLOSED is the positive control.
+ */
+export async function theListViewShowsAStaleBreakerOffline(): Promise<void> {
+  const telemetry = liveTelemetry();
+  telemetry["CR-Q5"] = liveSlice({ current: 12, lastSeenMs: STALE_SEEN_MS });
+  renderPage({ telemetry });
+  await openListView();
+  const rowFor = (label: string) =>
+    within(sldSection()).getByText(label).closest("tr") as HTMLElement;
+  expect(within(rowFor("Q4 · UPS-1 OUT")).getByText("CLOSED")).toBeInTheDocument();
+  expect(within(rowFor("Q5 · UPS-2 OUT")).getByText("OFFLINE")).toBeInTheDocument();
 }

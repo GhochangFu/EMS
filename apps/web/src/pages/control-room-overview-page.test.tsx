@@ -28,7 +28,12 @@ import {
   sldStatusReadsOfflineWhenTheMainIncomerIsStale,
   sldStatusReadsOkWhenEveryBreakerIsLive,
   subtitleLeadsWithTheLiveCriticalCount,
+  theDefaultViewIsTheDiagram,
+  theListTabHidesTheDiagramSvg,
+  theListTabShowsTwelveBreakerRows,
+  theListViewShowsAStaleBreakerOffline,
   theOtherThreeTilesWearNoIcon,
+  theViewModeDoesNotSurviveARemount,
   thePriorReadAsksForExactlyFiveRefs,
   totalCrLoadExcludesAStaleMainIncomer,
   totalCrLoadRendersARiseAgainstALowerPrior,
@@ -52,6 +57,8 @@ describe("F3.28 characterization of /cr-overview", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     useAuthStore.setState({ scope: null });
+    // Nothing here writes it; a persisted view mode must not leak across it()s.
+    localStorage.clear();
   });
 
   it("renders the page title", () => {
@@ -172,5 +179,25 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("puts no icon on SLD Status, UPS Backup or Environment", () => {
     theOtherThreeTilesWearNoIcon();
+  });
+
+  it("shows the diagram by default", () => {
+    theDefaultViewIsTheDiagram();
+  });
+
+  it("shows twelve breaker rows on the List tab", async () => {
+    await theListTabShowsTwelveBreakerRows();
+  });
+
+  it("hides the diagram svg on the List tab", async () => {
+    await theListTabHidesTheDiagramSvg();
+  });
+
+  it("does not keep the view mode across a remount", async () => {
+    await theViewModeDoesNotSurviveARemount();
+  });
+
+  it("shows a stale breaker as OFFLINE in the List view", async () => {
+    await theListViewShowsAStaleBreakerOffline();
   });
 });

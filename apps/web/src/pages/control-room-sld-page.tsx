@@ -3,6 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { fetchRules } from "../api/rules";
 import {
+  BreakerTable,
+  type BreakerVisualStatus,
+} from "../components/control-room/breaker-table";
+import {
   CR_BREAKERS,
   CR_POINT_KEYS,
   CR_TRACKED_ASSET_CODES,
@@ -16,6 +20,7 @@ import { PageHeader } from "../components/page-header";
 import { StaticTspan } from "../components/static-value";
 import { StatusPill } from "../components/status-pill";
 import { AppShell } from "../layouts/app-shell";
+import { type BreakerRowState, breakerTableRow } from "../lib/breaker-table-rows";
 import {
   freshValue,
   isHvacRunning,
@@ -37,41 +42,10 @@ function useCr(code: string) {
 }
 
 /**
- * `offline` is distinct from `open` (ADR 0027 decision 5). `open` asserts the
- * breaker is open — a fact about the plant, only knowable from a current
- * reading. `offline` says we cannot see the breaker at all. On a single-line
- * diagram those must never look the same.
+ * `offline` is distinct from `open` (ADR 0027 decision 5) — see
+ * `BreakerVisualStatus` in `components/control-room/breaker-table.tsx`.
  */
-type BreakerVisualStatus =
-  | "normal"
-  | "warning"
-  | "critical"
-  | "open"
-  | "offline";
-
-type BreakerRuleState = {
-  status: BreakerVisualStatus;
-  matchedRule: RuleListItem | null;
-  /** True when the asset has stopped reporting (ADR 0027). */
-  stale: boolean;
-};
-
-function statusClass(status: BreakerVisualStatus): string {
-  if (status === "open") {
-    return "border-gray-200 bg-gray-100 text-gray-700";
-  }
-  // A deliberately different grey from `open` — see BreakerVisualStatus.
-  if (status === "offline") {
-    return "border-gray-300 bg-gray-200 text-gray-600";
-  }
-  if (status === "critical") {
-    return "border-red-200 bg-red-100 text-red-800";
-  }
-  if (status === "warning") {
-    return "border-amber-200 bg-amber-100 text-amber-900";
-  }
-  return "border-bms-green/20 bg-bms-green/10 text-bms-green";
-}
+type BreakerRuleState = BreakerRowState;
 
 function pointValue(slice: SchematicTelemetrySlice, pointKey: string): number | null {
   switch (pointKey) {
@@ -225,7 +199,7 @@ function ControlRoomSldContent() {
         </div>
       </section>
 
-      <BreakerTable rules={rules} />
+      <SldBreakerTable rules={rules} />
     </div>
   );
 }
@@ -515,7 +489,30 @@ function Pdu({ y, breaker, code, title, loadCode, rules }: { y: number; breaker:
   );
 }
 
-function BreakerTable({ rules }: { rules: RuleListItem[] }) {
+/**
+ * The breaker table (`F3.28` task 3.5). `BreakerTable` is presentational and
+ * shared with the List view of `/cr-overview`; the status is still derived
+ * here, per row, through `deriveBreakerRuleState`.
+ */
+function SldBreakerTable({ rules }: { rules: RuleListItem[] }) {
+  const slices: Record<string, SchematicTelemetrySlice> = {
+    "CR-Q1": useCr("CR-Q1"),
+    "CR-Q2": useCr("CR-Q2"),
+    "CR-Q3": useCr("CR-Q3"),
+    "CR-Q4": useCr("CR-Q4"),
+    "CR-Q5": useCr("CR-Q5"),
+    "CR-Q6": useCr("CR-Q6"),
+    "CR-Q7": useCr("CR-Q7"),
+    "CR-Q8": useCr("CR-Q8"),
+    "CR-Q9": useCr("CR-Q9"),
+    "CR-Q10": useCr("CR-Q10"),
+    "CR-Q11": useCr("CR-Q11"),
+    "CR-Q12": useCr("CR-Q12"),
+  };
+  const nowMs = Date.now();
+  const rows = CR_BREAKERS.map((row) =>
+    breakerTableRow(row, slices[row.code], deriveBreakerRuleState(row.code, slices[row.code], rules, nowMs)),
+  );
   return (
     <section className="rounded border border-gray-200 bg-white">
       <div className="border-b border-gray-200 px-4 py-3">
@@ -523,69 +520,8 @@ function BreakerTable({ rules }: { rules: RuleListItem[] }) {
           Breakers · Status & Energy
         </h2>
       </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
-          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wide text-bms-muted">
-            <tr>
-              <th className="px-3 py-2">Breaker</th>
-              <th className="px-3 py-2">Position</th>
-              <th className="px-3 py-2">Rating</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2 text-right">I (A)</th>
-              <th className="px-3 py-2 text-right">kW</th>
-              <th className="px-3 py-2 text-right">kWh</th>
-              <th className="px-3 py-2">Trip Cause</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-200">
-            {CR_BREAKERS.map((row) => (
-              <BreakerRow key={row.code} row={row} rules={rules} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <BreakerTable rows={rows} />
     </section>
-  );
-}
-
-function BreakerRow({ row, rules }: { row: (typeof CR_BREAKERS)[number]; rules: RuleListItem[] }) {
-  const s = useCr(row.code);
-  const state = deriveBreakerRuleState(row.code, s, rules, Date.now());
-  // `offline` is tested FIRST in every chain on this page, and that ordering is
-  // the fix rather than a style choice: each of these ternaries ends in a green
-  // "healthy" default, so a status the chain does not name falls through to
-  // *closed and energised*. Before this arm existed a breaker whose telemetry
-  // had died read "CLOSED" — the exact claim F4.38 exists to stop the page
-  // making. The compiler could not catch it because these are ternaries, not
-  // exhaustive switches.
-  const statusLabel =
-    state.status === "offline"
-      ? "OFFLINE"
-      : state.status === "open"
-        ? "OPEN"
-        : state.status === "critical"
-          ? "CRITICAL"
-          : state.status === "warning"
-            ? "WARN"
-            : "CLOSED";
-  const tripCause = state.stale
-    ? STALE_VALUE
-    : (state.matchedRule?.name ?? (state.status === "open" ? row.tripCause : "-"));
-  return (
-    <tr>
-      <td className="px-3 py-2 font-medium text-bms-ink">{row.label}</td>
-      <td className="px-3 py-2 text-bms-muted">{row.position}</td>
-      <td className="px-3 py-2">{row.rating}</td>
-      <td className="px-3 py-2">
-        <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusClass(state.status)}`}>
-          {statusLabel}
-        </span>
-      </td>
-      <td className="px-3 py-2 text-right font-mono">{n(freshValue(s.current, state.stale), 1)}</td>
-      <td className="px-3 py-2 text-right font-mono">{n(freshValue(s.kw, state.stale), 2)}</td>
-      <td className="px-3 py-2 text-right font-mono">{n(freshValue(s.kwhToday, state.stale), 1)}</td>
-      <td className="px-3 py-2 text-bms-muted">{tripCause}</td>
-    </tr>
   );
 }
 
