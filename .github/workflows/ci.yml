@@ -209,7 +209,8 @@ jobs:
       - name: Validate the aggregate backfill script
         run: pnpm db:refresh-aggregates
 
-      # ADR 0066 decision 10 and Amendment 1 Q-D (F3.3). A `docker run` STEP,
+      # ADR 0066 decision 10, Amendment 1 Q-D (F3.3) and Amendment 5 (the
+      # registry moved to Docker Hub's pgsty/minio). A `docker run` STEP,
       # not a `services:` entry: a services entry accepts no `command:`, and
       # this image's entrypoint has no default server command — `minio` alone
       # prints usage and exits, so a services entry would report "started"
@@ -228,7 +229,7 @@ jobs:
             -p 9000:9000 \
             -e MINIO_ROOT_USER=bms_minio_dev \
             -e MINIO_ROOT_PASSWORD=bms_minio_dev_secret \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            pgsty/minio:RELEASE.2026-08-04T00-00-00Z server /data
           for attempt in $(seq 1 30); do
             if curl -sf http://localhost:9000/minio/health/live; then
               echo "MinIO is live after ${attempt} attempt(s)."

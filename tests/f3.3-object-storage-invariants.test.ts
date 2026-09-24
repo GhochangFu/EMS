@@ -12,8 +12,9 @@ import { describe, expect, it } from "vitest";
  * Four claims live here, and each is a claim no unit test can make:
  *
  * 1. **MinIO is pinned and on loopback** (decisions 8, 9). The image tag is a
- *    `RELEASE.<stamp>` on `quay.io` — never `latest`, and never Docker Hub,
- *    which no longer hosts the repository (Amendment 1, registry) — and both
+ *    `RELEASE.<stamp>` of Docker Hub's `pgsty/minio` — never `latest`; MinIO's
+ *    own `quay.io` repositories stopped answering anonymous pulls (Amendment 5,
+ *    which supersedes Amendment 1's registry note) — and both
  *    published ports bind `127.0.0.1` only, because the bucket carries
  *    unencrypted tenant bytes over plain http.
  * 2. **CI runs the engine compose runs** (decision 10, Q-D). The tag strings
@@ -156,14 +157,14 @@ function missingVars(text: string): string[] {
 }
 
 /**
- * The pinned image line, in the one shape Amendment 1 allows: MinIO's own
- * registry and a dated `RELEASE.` stamp. `latest` cannot match it.
+ * The pinned image line, in the one shape Amendment 5 allows: Docker Hub's
+ * `pgsty/minio` and a dated `RELEASE.` stamp. `latest` cannot match it.
  */
 const IMAGE_LINE =
-  /^\s*image:\s*quay\.io\/minio\/minio:RELEASE\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\s*$/m;
+  /^\s*image:\s*pgsty\/minio:RELEASE\.\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z\s*$/m;
 
 /** The tag alone, so the CI match stops before ` server /data`. */
-const TAG = /quay\.io\/minio\/minio:RELEASE\.[0-9TZ-]+/;
+const TAG = /pgsty\/minio:RELEASE\.[0-9TZ-]+/;
 
 /** A string literal that STARTS with the key prefix — not `org/` mid-sentence in a test name. */
 const KEY_LITERAL = /["'`]org\//;
@@ -201,7 +202,7 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
       expect(compose).toMatch(/^ {2}minio:\s*$/m);
     });
 
-    it("pins quay.io/minio/minio to a dated RELEASE tag, never latest", () => {
+    it("pins pgsty/minio to a dated RELEASE tag, never latest", () => {
       expect(minioBlock()).toMatch(IMAGE_LINE);
     });
 
@@ -331,9 +332,9 @@ describe("F3.3 — object storage in compose and CI (ADR 0066 decisions 4, 8, 9,
       const inCi = TAG.exec(ci)?.[0];
       expect(
         inCompose,
-        "docker-compose.yml must carry a quay.io/minio/minio:RELEASE. tag",
+        "docker-compose.yml must carry a pgsty/minio:RELEASE. tag",
       ).toBeDefined();
-      expect(inCi, "ci.yml must carry a quay.io/minio/minio:RELEASE. tag").toBeDefined();
+      expect(inCi, "ci.yml must carry a pgsty/minio:RELEASE. tag").toBeDefined();
       expect(inCi).toBe(inCompose);
     });
 
