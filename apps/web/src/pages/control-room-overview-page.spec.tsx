@@ -548,6 +548,19 @@ export async function totalCrLoadRendersARiseAgainstALowerPrior(): Promise<void>
   ).toBeInTheDocument();
 }
 
+/**
+ * Rack Load reads its own delta, not Total CR Load's. The racks were 2.5 kW
+ * yesterday (↓ 20.0 % against a live 2.0) while the whole bus was 13.57 kW
+ * (↑ 5.4 % against 14.3), so a swap of the two tiles' deltas prints the wrong
+ * figure on both.
+ */
+export async function rackLoadRendersItsOwnDelta(): Promise<void> {
+  renderPage({ priors: { [Q1_KW]: 11.07, [NET_RACK_KW_REF]: 1.6, [VW_RACK_KW_REF]: 0.9 } });
+  expect(
+    await within(tileLabelled("Rack Load")).findByText("↓ 20.0% vs yesterday"),
+  ).toBeInTheDocument();
+}
+
 /** No Total CR Load prior: the tile keeps "main bus + IT racks". */
 export async function aNullPriorKeepsTheTotalCrLoadHint(): Promise<void> {
   renderPage({ telemetry: liveTelemetryWithUps(), priors: UPS_PRIORS });

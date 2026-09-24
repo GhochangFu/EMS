@@ -21,6 +21,7 @@ import {
   rendersTheSectionHeadings,
   rendersThePageTitle,
   rendersTheSixKpiLabelsInOrder,
+  rackLoadRendersItsOwnDelta,
   ruleWarningsCountsAMatchedThresholdRule,
   ruleWarningsWearsTheAlertIcon,
   sldStatusHasNoDelta,
@@ -139,6 +140,10 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("keeps the Total CR Load hint when its prior is null", async () => {
     await aNullPriorKeepsTheTotalCrLoadHint();
+  });
+
+  it("renders Rack Load's own delta, not Total CR Load's", async () => {
+    await rackLoadRendersItsOwnDelta();
   });
 
   it("renders no delta on SLD Status", async () => {
