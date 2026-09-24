@@ -234,6 +234,61 @@ export class TelemetryService {
   }
 
   /**
+   * `F3.28` (ADR 0074 decision 2) — for each requested point, the latest sample
+   * with `time <= at`, in one statement.
+   *
+   * The result has **one entry per requested point, in request order**,
+   * duplicates included: `unnest … WITH ORDINALITY` numbers the requests and
+   * `LEFT JOIN LATERAL` keeps a point with no sample as a row of nulls (the
+   * `rule-samples.ts` shape is a `CROSS JOIN`, which would drop it). Mapped
+   * back by ordinal rather than trusting row order alone.
+   *
+   * **`TENANT_POOL`, like `pointAggregate`** — and the controller's scope guard
+   * is the only containment, since `telemetry.point_values` has no RLS.
+   */
+  async pointValuesAt(
+    points: readonly { assetId: string; pointKey: string }[],
+    at: Date,
+  ): Promise<{ time: string | null; value: number | null; unit: string | null }[]> {
+    if (points.length === 0) {
+      return [];
+    }
+    const result = await this.pool.query<{
+      ord: string;
+      time: Date | null;
+      value: number | string | null;
+      unit: string | null;
+    }>(
+      `SELECT r.ord, s.time, s.value, s.unit
+       FROM unnest($1::uuid[], $2::text[]) WITH ORDINALITY AS r(asset_id, point_key, ord)
+       LEFT JOIN LATERAL (
+         SELECT pv.time, pv.value, pv.unit
+         FROM telemetry.point_values pv
+         WHERE pv.asset_id = r.asset_id
+           AND pv.point_key = r.point_key
+           AND pv.time <= $3::timestamptz
+         ORDER BY pv.time DESC
+         LIMIT 1
+       ) s ON true
+       ORDER BY r.ord`,
+      [points.map((p) => p.assetId), points.map((p) => p.pointKey), at.toISOString()],
+    );
+
+    const byOrdinal = new Map(result.rows.map((row) => [Number(row.ord), row]));
+    return points.map((_, i) => {
+      const row = byOrdinal.get(i + 1);
+      if (!row || row.time === null) {
+        return { time: null, value: null, unit: null };
+      }
+      return {
+        time: new Date(row.time).toISOString(),
+        value: numberOrNull(row.value),
+        unit: row.unit,
+      };
+    });
+  }
+
+  /**
    * Postgres renders a `timestamptz` inside `to_jsonb` as `+00:00`, not `Z`, and
    * a `bigint` as a JSON number. Both are normalised here so the response
    * matches `pointAggregateStatsSchema` rather than nearly matching it.
