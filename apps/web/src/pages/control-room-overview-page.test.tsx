@@ -22,6 +22,7 @@ import {
   rendersThePageTitle,
   rendersTheSixKpiLabelsInOrder,
   rackLoadRendersItsOwnDelta,
+  rendersAllSevenFooterItems,
   rendersTheFourKeyParameterGaugeTitles,
   ruleWarningsCountsAMatchedThresholdRule,
   ruleWarningsWearsTheAlertIcon,
@@ -214,5 +215,9 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("renders the four Key Parameters gauge titles", () => {
     rendersTheFourKeyParameterGaugeTitles();
+  });
+
+  it("renders all seven capability footer items", () => {
+    rendersAllSevenFooterItems();
   });
 });

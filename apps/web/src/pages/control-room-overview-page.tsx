@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { fetchRules } from "../api/rules";
 import { ActiveAlarmsRail } from "../components/control-room/active-alarms-rail";
 import { BreakerTable } from "../components/control-room/breaker-table";
+import { CapabilityFooter } from "../components/control-room/capability-footer";
 import { QuickDrilldown } from "../components/control-room/quick-drilldown";
 import { ScopedActionLink } from "../components/control-room/scoped-action-link";
 import { StateLegend } from "../components/control-room/state-legend";
@@ -533,6 +534,8 @@ function ControlRoomOverviewContent() {
           }}
         />
       </div>
+
+      <CapabilityFooter />
     </div>
   );
 }

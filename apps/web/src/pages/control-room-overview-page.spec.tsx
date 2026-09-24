@@ -792,3 +792,25 @@ export function rendersTheFourKeyParameterGaugeTitles(): void {
   expect(screen.getByText("Main Power Factor")).toBeInTheDocument();
 }
 
+// ---------------------------------------------------------------------------
+// `F3.28` task 3.7 — the capability footer is mounted on the page.
+// ---------------------------------------------------------------------------
+
+export const FOOTER_ITEMS = [
+  "Real-time Monitoring",
+  "Intelligent Alerts",
+  "Predictive Maintenance",
+  "Automated Workflows",
+  "Energy & Water Optimization",
+  "Sustainability Insights",
+  "Mobile Ready",
+] as const;
+
+/** All seven footer items render, verbatim (`docs/ux/ion-exchange-reference-alignment.md:104`). */
+export function rendersAllSevenFooterItems(): void {
+  renderPage();
+  for (const item of FOOTER_ITEMS) {
+    expect(screen.getByText(item)).toBeInTheDocument();
+  }
+}
+
