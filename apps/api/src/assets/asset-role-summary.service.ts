@@ -1,14 +1,54 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { inArray, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
-import { assetGroupMembers } from "@bms/db";
+import { assetGroupMembers, assetGroups } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AssetRoleSummaryItem, AssetRoleSummaryResponse } from "@bms/shared";
+import type { AccessibleScope, AssetRoleSummaryItem, AssetRoleSummaryResponse } from "@bms/shared";
 
 import { activeAlarmFilter } from "../alarms/active-alarm-filter";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withReadScope } from "../database/tenant-read-scope";
 import { LIVE_TELEMETRY_MAX_AGE_SECONDS } from "../telemetry/telemetry-freshness";
+
+/**
+ * The asset groups whose memberships the caller may count (security L1,
+ * owner ruling 2026-09-24). `null` is unrestricted; `groupIds` names the
+ * readable groups outright; `locationIds` admits every group sited at one of
+ * those locations (`bms.asset_groups.location_id` is NOT NULL, so every
+ * group has one).
+ */
+export type RoleSummaryGroupScope =
+  | null
+  | { readonly groupIds: readonly string[] }
+  | { readonly locationIds: readonly string[] };
+
+/**
+ * Derives {@link RoleSummaryGroupScope} from the caller's `AccessibleScope`,
+ * reusing the rule `scopeFromSource` (`auth/access-scope-sources.ts`)
+ * already applied to the caller's grants — no new readability rule:
+ *
+ * - `global` (admin only) → `null`, the `dashboard.controller.ts` precedent;
+ * - `asset_group` → `scope.assetGroups`: the granted groups whose location
+ *   is active, the same set the caller's `assetIds` were read from;
+ * - `location` (a location grant, or an organization grant, which also
+ *   resolves to `kind: "location"`) → `scope.locations`: a group is readable
+ *   when it is sited at a readable location. `scope.assetGroups` is `[]` for
+ *   this kind, so it must never be used here;
+ * - `none`, or any kind added later → no group at all (fail closed).
+ */
+export function readableGroupScope(scope: AccessibleScope): RoleSummaryGroupScope {
+  switch (scope.kind) {
+    case "global":
+      return null;
+    case "asset_group":
+      return { groupIds: scope.assetGroups.map((group) => group.id) };
+    case "location":
+      return { locationIds: scope.locations.map((location) => location.id) };
+    default:
+      return { groupIds: [] };
+  }
+}
 
 interface RoleSummaryRow extends Record<string, unknown> {
   code: string;
@@ -31,9 +71,13 @@ interface RoleSummaryRow extends Record<string, unknown> {
  * land:
  *
  * 1. `members` — the **distinct** `(asset_id, role)` memberships that carry a
- *    role. The same asset holding the same role in two groups counts once; an
- *    asset holding two roles counts under each. A membership with no role is
- *    not a class and never appears.
+ *    role, of an **active** asset (`bms.assets.active`, code-review item 3),
+ *    in a group the caller **can read** (`groups`, security L1). The same
+ *    asset holding the same role in two readable groups counts once; an asset
+ *    holding two roles counts under each. A role an asset holds only in a
+ *    group the caller cannot read is not counted. A membership with no role is
+ *    not a class and never appears. An inactive asset is absent from
+ *    `count`, `worstCount` and `offlineCount`.
  * 2. `asset_worst` — each member asset's highest active severity `rank`
  *    (`activeAlarmFilter`: raised and not cleared, acknowledged or not).
  *    Higher `rank` is more urgent (ADR 0032).
@@ -51,13 +95,15 @@ interface RoleSummaryRow extends Record<string, unknown> {
  * Ordered by the role's `sort_order`, then `code`; `label` is verbatim (OQ6).
  *
  * **Scope.** `assetIds` is the caller's already-narrowed scope
- * (`intersectReadable`), routed through `withReadScope`. A single-organization
+ * (`intersectReadable`), routed through `withReadScope`; `groups` is
+ * {@link readableGroupScope} of the same caller, applied on
+ * `asset_group_members.asset_group_id`. Both filters hold on both branches. A single-organization
  * caller runs inside `withTenant`, so the `0047` policy scopes
  * `asset_group_members` and `alarms`; on the fleet branch (an admin or a
  * multi-organization scope) the `inArray` on `members` is the only isolation
  * control. `telemetry.point_values` has no policy, so `asset_worst` and
  * `live` read only assets already in `members`. An empty scope never queries
- * and returns `{ items: [] }`.
+ * and returns `{ items: [] }`, as does an empty group or location list.
  */
 @Injectable()
 export class AssetRoleSummaryService {
@@ -66,7 +112,14 @@ export class AssetRoleSummaryService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
   ) {}
 
-  async summarize(assetIds: string[] | null | undefined): Promise<AssetRoleSummaryResponse> {
+  async summarize(
+    assetIds: string[] | null | undefined,
+    groups: RoleSummaryGroupScope,
+  ): Promise<AssetRoleSummaryResponse> {
+    const groupFilter = groupScopeFilter(groups);
+    if (groupFilter === null) {
+      return { items: [] };
+    }
     const scopeFilter = assetIds ? inArray(assetGroupMembers.assetId, assetIds) : sql`TRUE`;
 
     const rows = await withReadScope(
@@ -79,8 +132,11 @@ export class AssetRoleSummaryService {
           WITH members AS (
             SELECT DISTINCT asset_group_members.asset_id, asset_group_members.role
             FROM bms.asset_group_members
+            JOIN bms.assets ON assets.id = asset_group_members.asset_id
             WHERE asset_group_members.role IS NOT NULL
+              AND assets.active = true
               AND ${scopeFilter}
+              AND ${groupFilter}
           ),
           asset_worst AS (
             SELECT alarms.asset_id, MAX(sev.rank) AS rank
@@ -130,6 +186,22 @@ export class AssetRoleSummaryService {
 
     return { items: rows.map(toItem) };
   }
+}
+
+/** The `members` predicate for {@link RoleSummaryGroupScope}; `null` when no group is readable. */
+function groupScopeFilter(groups: RoleSummaryGroupScope): SQL | null {
+  if (groups === null) {
+    return sql`TRUE`;
+  }
+  if ("groupIds" in groups) {
+    return groups.groupIds.length === 0 ? null : inArray(assetGroupMembers.assetGroupId, [...groups.groupIds]);
+  }
+  if (groups.locationIds.length === 0) {
+    return null;
+  }
+  return sql`${assetGroupMembers.assetGroupId} IN (
+    SELECT asset_groups.id FROM bms.asset_groups WHERE ${inArray(assetGroups.locationId, [...groups.locationIds])}
+  )`;
 }
 
 function toItem(row: RoleSummaryRow): AssetRoleSummaryItem {

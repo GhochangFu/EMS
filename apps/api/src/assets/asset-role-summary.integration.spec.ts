@@ -1,14 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import { asc, ne, sql } from "drizzle-orm";
+import { asc, eq, ne, sql } from "drizzle-orm";
 
-import { alarms, assetGroupMembers, assetGroups, assetRoles, locations } from "@bms/db";
+import { alarms, assetGroupMembers, assetGroups, assetRoles, assets, locations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { assetRoleSummaryResponseSchema } from "@bms/shared";
 import type { AssetRoleSummaryItem, AssetRoleSummaryResponse } from "@bms/shared";
 
 import { intersectReadable } from "../auth/asset-scope";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
+import type { FixtureLocation } from "../testing/integration-fixtures";
 import { withRollback } from "../testing/with-rollback";
 import { AssetRoleSummaryService } from "./asset-role-summary.service";
 
@@ -41,6 +42,12 @@ import { AssetRoleSummaryService } from "./asset-role-summary.service";
  * | own[2]  | `roleR` (retired) in g1               | info (+ cleared critical) | none       |
  * | own[3]  | g1, no role                           | critical            | one, 1 s         |
  * | foreign | `roleA` in a foreign-org group        | critical            | one, 1 s         |
+ *
+ * Every case above reads with `groups = null` (unrestricted). The security-L1
+ * group cases, the inactive-asset cases and the quiet-role cases add their own
+ * rows and roles **inside their own case**, after `buildScene`, so the shared
+ * scene (and the exact role list `assertOnlyHeldRolesInSortOrder` pins) is
+ * unchanged, and each mutation reddens only the case that owns its claim.
  */
 
 function assert(condition: boolean, message: string): void {
@@ -50,6 +57,10 @@ function assert(condition: boolean, message: string): void {
 }
 
 interface Scene {
+  readonly tx: Tx;
+  readonly run: string;
+  readonly location: FixtureLocation;
+  readonly groups: { readonly g1: string; readonly g2: string; readonly g3: string };
   readonly own: readonly string[];
   readonly foreign: string;
   readonly roleA: string;
@@ -149,6 +160,10 @@ async function buildScene(tx: Tx): Promise<Scene> {
   `);
 
   return {
+    tx,
+    run,
+    location,
+    groups: { g1, g2, g3 },
     own,
     foreign: foreign as string,
     roleA,
@@ -160,7 +175,7 @@ async function buildScene(tx: Tx): Promise<Scene> {
 
 /** The caller's scope as the controller builds it: the own assets readable, the foreign one requested too. */
 async function summarizeAsCaller(scene: Scene): Promise<AssetRoleSummaryResponse> {
-  return scene.service.summarize(intersectReadable(scene.own, [...scene.own, scene.foreign]));
+  return scene.service.summarize(intersectReadable(scene.own, [...scene.own, scene.foreign]), null);
 }
 
 function item(response: AssetRoleSummaryResponse, code: string): AssetRoleSummaryItem {
@@ -276,9 +291,9 @@ export async function assertForeignAssetIsDropped(db: BmsDb): Promise<void> {
 /** An empty scope answers `{ items: [] }`; the own scope, in the same scene, does not (positive control). */
 export async function assertEmptyScopeIsEmptyItems(db: BmsDb): Promise<void> {
   await withScene(db, async (scene) => {
-    const control = await scene.service.summarize([...scene.own]);
+    const control = await scene.service.summarize([...scene.own], null);
     assert(control.items.length > 0, "control: the own scope must return rows in this scene");
-    const empty = await scene.service.summarize(intersectReadable(scene.own, [scene.foreign]));
+    const empty = await scene.service.summarize(intersectReadable(scene.own, [scene.foreign]), null);
     assert(
       JSON.stringify(empty) === JSON.stringify({ items: [] }),
       `an empty intersection must answer { items: [] }, got ${JSON.stringify(empty)}`,
@@ -291,5 +306,169 @@ export async function assertResponseMatchesTheContract(db: BmsDb): Promise<void>
   await withScene(db, async (scene) => {
     const parsed = assetRoleSummaryResponseSchema.safeParse(await summarizeAsCaller(scene));
     assert(parsed.success, `the response must parse: ${parsed.success ? "" : parsed.error.message}`);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Security L1, code-review items 3 and 5 — each case adds its own rows
+// ---------------------------------------------------------------------------
+
+/** Inserts one active role, sorted after the scene's three, and returns its code. */
+async function addRole(scene: Scene, suffix: string): Promise<string> {
+  const code = `F328RS-${scene.run}-${suffix}`;
+  await scene.tx
+    .insert(assetRoles)
+    .values({ code, label: `F328RS ${scene.run} ${suffix}`, sortOrder: 9, active: true });
+  return code;
+}
+
+/** Adds a live (1 s old) sample for each asset. */
+async function addLiveSamples(scene: Scene, assetIds: readonly string[]): Promise<void> {
+  for (const assetId of assetIds) {
+    await scene.tx.execute(sql`
+      INSERT INTO telemetry.point_values (time, asset_id, point_key, value)
+      VALUES (now() - make_interval(secs => 1), ${assetId}, 'kw', 1)
+    `);
+  }
+}
+
+/**
+ * Security L1, group axis: own[0] holds roleA in g1 and g2 and roleB only in
+ * g3. A caller who can read g1 and g2 but not g3 sees roleA (the positive
+ * control: the same asset's readable membership) and no roleB row.
+ */
+export async function assertUnreadableGroupMembershipIsNotCounted(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    const response = await scene.service.summarize([...scene.own], {
+      groupIds: [scene.groups.g1, scene.groups.g2],
+    });
+    const roleA = item(response, scene.roleA);
+    assert(roleA.count === 2, `control: roleA in readable g1/g2 must count own[0] and own[1], got ${roleA.count}`);
+    const roleB = response.items.find((i) => i.code === scene.roleB);
+    assert(
+      roleB === undefined,
+      `own[0] holds roleB only in g3, which the caller cannot read: expected no roleB row, got ${JSON.stringify(roleB)}`,
+    );
+  });
+}
+
+/**
+ * Security L1, location axis: a location-scoped caller reads the groups sited
+ * at its locations. A readable asset holding `roleL` only in a group sited at
+ * a second location of the same organization is not counted under `roleL`;
+ * its `roleA` membership in g1 (at the readable location) is (the control).
+ */
+export async function assertGroupAtUnreadableLocationIsNotCounted(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    const { tx, run, location } = scene;
+    const [otherLocation] = await tx
+      .insert(locations)
+      .values({
+        organizationId: location.organizationId,
+        code: `F328RS-${run}-L2`,
+        slug: `f328rs-${run}-l2`,
+        name: `F328RS ${run} second location`,
+        type: "rsmoc",
+        latitude: 0,
+        longitude: 0,
+      })
+      .returning({ id: locations.id });
+    const [gX] = await tx
+      .insert(assetGroups)
+      .values({
+        organizationId: location.organizationId,
+        locationId: otherLocation?.id as string,
+        code: `F328RS-${run}-GX`,
+        name: `F328RS ${run} group at the second location`,
+      })
+      .returning({ id: assetGroups.id });
+    const [a4] = (await createFixtureAssets(tx as unknown as BmsDb, 1, "F328RS", location)) as [string];
+    const roleL = await addRole(scene, "L");
+    await tx.insert(assetGroupMembers).values([
+      { assetGroupId: gX?.id as string, assetId: a4, role: roleL },
+      { assetGroupId: scene.groups.g1, assetId: a4, role: scene.roleA },
+    ]);
+
+    const response = await scene.service.summarize([...scene.own, a4], {
+      locationIds: [location.locationId],
+    });
+    const roleA = item(response, scene.roleA);
+    assert(roleA.count === 3, `control: roleA in g1 must count own[0], own[1] and the new asset, got ${roleA.count}`);
+    const row = response.items.find((i) => i.code === roleL);
+    assert(
+      row === undefined,
+      `roleL is held only in a group at an unreadable location: expected no roleL row, got ${JSON.stringify(row)}`,
+    );
+  });
+}
+
+/**
+ * Two assets under a new role in g1: one active and live, one inactive with
+ * no sample. Returns the role's row — `item()` failing here means the active
+ * sibling (the positive control) was not counted either.
+ */
+async function inactiveRow(scene: Scene): Promise<AssetRoleSummaryItem> {
+  const [live, retired] = (await createFixtureAssets(
+    scene.tx as unknown as BmsDb,
+    2,
+    "F328RS",
+    scene.location,
+  )) as [string, string];
+  await scene.tx.update(assets).set({ active: false }).where(eq(assets.id, retired));
+  const [check] = await scene.tx.select({ active: assets.active }).from(assets).where(eq(assets.id, retired));
+  assert(check?.active === false, "control: the retired asset is inactive");
+  const roleI = await addRole(scene, "I");
+  await scene.tx.insert(assetGroupMembers).values([
+    { assetGroupId: scene.groups.g1, assetId: live, role: roleI },
+    { assetGroupId: scene.groups.g1, assetId: retired, role: roleI },
+  ]);
+  await addLiveSamples(scene, [live]);
+  return item(await scene.service.summarize([...scene.own, live, retired], null), roleI);
+}
+
+/** Code-review item 3: an inactive asset is absent from `count`; its active sibling is counted (control). */
+export async function assertInactiveAssetIsNotCounted(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    const roleI = await inactiveRow(scene);
+    assert(roleI.count === 1, `only the active sibling counts: expected count 1, got ${roleI.count}`);
+  });
+}
+
+/** Code-review item 3: an inactive asset with no sample is not offline; the live sibling keeps the row (control). */
+export async function assertInactiveAssetIsNotOffline(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    const roleI = await inactiveRow(scene);
+    assert(
+      roleI.offlineCount === 0,
+      `the inactive asset must not count as offline: expected offlineCount 0, got ${roleI.offlineCount}`,
+    );
+  });
+}
+
+/** Code-review item 5: a role whose only asset is live with no active alarm. */
+async function quietRow(scene: Scene): Promise<AssetRoleSummaryItem> {
+  const [quiet] = (await createFixtureAssets(scene.tx as unknown as BmsDb, 1, "F328RS", scene.location)) as [string];
+  const roleQ = await addRole(scene, "Q");
+  await scene.tx.insert(assetGroupMembers).values({ assetGroupId: scene.groups.g1, assetId: quiet, role: roleQ });
+  await addLiveSamples(scene, [quiet]);
+  return item(await scene.service.summarize([...scene.own, quiet], null), roleQ);
+}
+
+/** A role with no active alarm still has a row, and its `worstSeverity` is `null`. */
+export async function assertQuietRoleHasNullWorstSeverity(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    const roleQ = await quietRow(scene);
+    assert(
+      roleQ.worstSeverity === null,
+      `a quiet role's worstSeverity must be null, got ${JSON.stringify(roleQ.worstSeverity)}`,
+    );
+  });
+}
+
+/** A role with no active alarm still has a row, and its `worstCount` is 0. */
+export async function assertQuietRoleHasZeroWorstCount(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    const roleQ = await quietRow(scene);
+    assert(roleQ.worstCount === 0, `a quiet role's worstCount must be 0, got ${roleQ.worstCount}`);
   });
 }

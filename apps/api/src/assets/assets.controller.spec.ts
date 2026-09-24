@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { AssetPointPickerRow, AssetRoleSummaryResponse, JwtPayload } from "@bms/shared";
+import type { AccessibleScope, AssetPointPickerRow, AssetRoleSummaryResponse, JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { repoRoot } from "../testing/repo-root";
 import { methodBody } from "../testing/source-scan";
-import type { AssetRoleSummaryService } from "./asset-role-summary.service";
+import type { AssetRoleSummaryService, RoleSummaryGroupScope } from "./asset-role-summary.service";
 import { AssetsController } from "./assets.controller";
 import type { AssetsService } from "./assets.service";
 
@@ -81,16 +81,23 @@ const POINT: AssetPointPickerRow = {
   unit: "°C",
 };
 
-function accessStub(opts: { canReadAsset: boolean; readable?: string[] | null }) {
+const NO_SCOPE: AccessibleScope = { kind: "none", locations: [], assetGroups: [], assetIds: [] };
+
+function accessStub(opts: { canReadAsset: boolean; readable?: string[] | null; scope?: AccessibleScope }) {
   const canReadAssetCalls: string[] = [];
+  const currentUserCalls: JwtPayload[] = [];
   const access = {
+    currentUser: async (user: JwtPayload) => {
+      currentUserCalls.push(user);
+      return { user: { id: user.sub, email: user.email, displayName: user.name, role: user.role }, scope: opts.scope ?? NO_SCOPE };
+    },
     canReadAsset: async (_user: JwtPayload, assetId: string) => {
       canReadAssetCalls.push(assetId);
       return opts.canReadAsset;
     },
     readableAssetIds: async () => (opts.readable === undefined ? null : opts.readable),
   } as unknown as AccessControlService;
-  return { access, canReadAssetCalls };
+  return { access, canReadAssetCalls, currentUserCalls };
 }
 
 /** Records every call so a test can assert a read did NOT happen, not only that it threw. */
@@ -108,13 +115,18 @@ function assetsStub() {
 /** Records the scope each `summarize` call received. */
 function roleSummaryStub() {
   const calls: (string[] | null | undefined)[] = [];
+  const groupCalls: RoleSummaryGroupScope[] = [];
   const roleSummary = {
-    summarize: async (assetIds: string[] | null | undefined): Promise<AssetRoleSummaryResponse> => {
+    summarize: async (
+      assetIds: string[] | null | undefined,
+      groups: RoleSummaryGroupScope,
+    ): Promise<AssetRoleSummaryResponse> => {
       calls.push(assetIds);
+      groupCalls.push(groups);
       return { items: [] };
     },
   } as unknown as AssetRoleSummaryService;
-  return { roleSummary, calls };
+  return { roleSummary, calls, groupCalls };
 }
 
 async function rejects(run: () => Promise<unknown>): Promise<unknown> {
@@ -251,6 +263,63 @@ export async function assertRoleSummaryUnrestrictedReaderPassesNull(): Promise<v
   assert(
     calls.length === 1 && calls[0] === null,
     `expected one summarize call with null, got ${JSON.stringify(calls)}`,
+  );
+}
+
+const LOCATION_ID = "44444444-4444-4444-8444-444444444444";
+const GROUP_ID = "55555555-5555-4555-8555-555555555555";
+const LOCATION = { id: LOCATION_ID, code: "L1", slug: "l1", name: "Site 1", type: "rsmoc" as const, province: null };
+const GROUP = { id: GROUP_ID, locationId: LOCATION_ID, code: "G1", name: "Group 1", organizationId: "org-1" };
+
+async function groupsPassedFor(scope: AccessibleScope): Promise<RoleSummaryGroupScope[]> {
+  const { access } = accessStub({ canReadAsset: true, readable: [ASSET_ID], scope });
+  const { roleSummary, groupCalls } = roleSummaryStub();
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  await controller.listRoleSummary(USER, {});
+  return groupCalls;
+}
+
+/** Security L1: an asset-group caller counts only its granted groups (`scope.assetGroups`). */
+export async function assertRoleSummaryAssetGroupCallerPassesItsGroups(): Promise<void> {
+  const calls = await groupsPassedFor({
+    kind: "asset_group",
+    locations: [LOCATION],
+    assetGroups: [GROUP],
+    assetIds: [ASSET_ID],
+  });
+  assert(
+    JSON.stringify(calls) === JSON.stringify([{ groupIds: [GROUP_ID] }]),
+    `expected one summarize call with { groupIds: [${GROUP_ID}] }, got ${JSON.stringify(calls)}`,
+  );
+}
+
+/**
+ * Security L1: a location-scoped caller's `scope.assetGroups` is `[]`, so its
+ * readable groups are the groups at its readable locations — never `[]`,
+ * which would blank the strip for every location and organization reader.
+ */
+export async function assertRoleSummaryLocationCallerPassesItsLocations(): Promise<void> {
+  const calls = await groupsPassedFor({
+    kind: "location",
+    locations: [LOCATION],
+    assetGroups: [],
+    assetIds: [ASSET_ID],
+  });
+  assert(
+    JSON.stringify(calls) === JSON.stringify([{ locationIds: [LOCATION_ID] }]),
+    `expected one summarize call with { locationIds: [${LOCATION_ID}] }, got ${JSON.stringify(calls)}`,
+  );
+}
+
+/** An unrestricted reader passes `null` groups and never resolves `currentUser`. */
+export async function assertRoleSummaryUnrestrictedReaderPassesNullGroups(): Promise<void> {
+  const { access, currentUserCalls } = accessStub({ canReadAsset: true, readable: null });
+  const { roleSummary, groupCalls } = roleSummaryStub();
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  await controller.listRoleSummary(USER, {});
+  assert(
+    groupCalls.length === 1 && groupCalls[0] === null && currentUserCalls.length === 0,
+    `expected null groups and no currentUser call, got groups ${JSON.stringify(groupCalls)}, ${currentUserCalls.length} currentUser call(s)`,
   );
 }
 

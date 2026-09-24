@@ -18,7 +18,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { intersectReadable } from "../auth/asset-scope";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { AssetRoleSummaryService } from "./asset-role-summary.service";
+import { AssetRoleSummaryService, readableGroupScope } from "./asset-role-summary.service";
 import { assetRoleSummaryQuerySchema } from "./assets.schema";
 import { AssetsService } from "./assets.service";
 
@@ -96,6 +96,13 @@ export class AssetsController {
    * `assetIds` is only ever **intersected** with the caller's readable set
    * (`intersectReadable`) — a foreign id is dropped, and an empty
    * intersection reaches the service as `[]`, which answers `{ items: [] }`.
+   *
+   * **Readable groups only** (security L1). A membership counts only in a
+   * group the caller can read: `readableGroupScope` of the caller's
+   * `AccessibleScope` — the granted groups for an asset-group caller, the
+   * groups at a readable location for a location or organization caller.
+   * An unrestricted reader (`readableAssetIds` null) is `null` here too,
+   * and `currentUser` is not called for it.
    */
   @Get("role-summary")
   async listRoleSummary(
@@ -111,9 +118,10 @@ export class AssetsController {
       }
       throw err;
     }
-    return this.roleSummary.summarize(
-      intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
-    );
+    const readable = await this.accessControl.readableAssetIds(user);
+    const groups =
+      readable === null ? null : readableGroupScope((await this.accessControl.currentUser(user)).scope);
+    return this.roleSummary.summarize(intersectReadable(readable, dto.assetIds), groups);
   }
 
   /** `GET /api/v1/assets/:assetId/points` — the asset's active points, five fields each

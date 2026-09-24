@@ -9,11 +9,14 @@ import {
   assertListPointsRefusesWithTheScopeMessage,
   assertNonUuidSegmentNeverReachesTheGuard,
   assertNonUuidSegmentThrowsZodError,
+  assertRoleSummaryAssetGroupCallerPassesItsGroups,
   assertRoleSummaryDropsAForeignRequestedId,
   assertRoleSummaryIsDeclaredBeforeAssetPoints,
+  assertRoleSummaryLocationCallerPassesItsLocations,
   assertRoleSummaryUnknownKeyIsBadRequest,
   assertRoleSummaryUnknownKeyNeverReachesTheService,
   assertRoleSummaryUnrestrictedReaderPassesNull,
+  assertRoleSummaryUnrestrictedReaderPassesNullGroups,
   assertScanFindsTheListHandlerOnReadableAssetIds,
 } from "./assets.controller.spec";
 
@@ -69,6 +72,18 @@ describe("F3.28 — GET /assets/role-summary over stubs (ADR 0074, plan task 3.2
 
   it("passes null for an unrestricted reader with no request (positive control)", async () => {
     await assertRoleSummaryUnrestrictedReaderPassesNull();
+  });
+
+  it("an asset-group caller passes its granted group ids", async () => {
+    await assertRoleSummaryAssetGroupCallerPassesItsGroups();
+  });
+
+  it("a location-scoped caller passes its readable location ids, not an empty group list", async () => {
+    await assertRoleSummaryLocationCallerPassesItsLocations();
+  });
+
+  it("an unrestricted reader passes null groups without resolving currentUser", async () => {
+    await assertRoleSummaryUnrestrictedReaderPassesNullGroups();
   });
 
   it("answers an unknown query key with BadRequestException", async () => {

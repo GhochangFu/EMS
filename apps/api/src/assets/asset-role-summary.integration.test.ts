@@ -10,13 +10,19 @@ import {
   assertClearedAlarmDoesNotCount,
   assertEmptyScopeIsEmptyItems,
   assertForeignAssetIsDropped,
+  assertGroupAtUnreadableLocationIsNotCounted,
+  assertInactiveAssetIsNotCounted,
+  assertInactiveAssetIsNotOffline,
   assertNoRoleAssetIsAbsent,
   assertOfflineCountIsOne,
   assertOnlyHeldRolesInSortOrder,
+  assertQuietRoleHasNullWorstSeverity,
+  assertQuietRoleHasZeroWorstCount,
   assertResponseMatchesTheContract,
   assertRetiredRoleIsIncluded,
   assertSameRoleInTwoGroupsCountsOnce,
   assertTwoRolesCountUnderEach,
+  assertUnreadableGroupMembershipIsNotCounted,
   assertWorstCountIsAssetsAtTheWorst,
   assertWorstIsByRank,
 } from "./asset-role-summary.integration.spec";
@@ -96,5 +102,29 @@ describe.skipIf(!connectionString)("F3.28 — GET /assets/role-summary counts (r
 
   it("the response matches the shared contract", async () => {
     await assertResponseMatchesTheContract(db);
+  }, 60_000);
+
+  it("a membership in an unreadable group is not counted, the readable one is", async () => {
+    await assertUnreadableGroupMembershipIsNotCounted(db);
+  }, 60_000);
+
+  it("a location-scoped caller does not count a group at an unreadable location", async () => {
+    await assertGroupAtUnreadableLocationIsNotCounted(db);
+  }, 60_000);
+
+  it("an inactive asset is absent from count", async () => {
+    await assertInactiveAssetIsNotCounted(db);
+  }, 60_000);
+
+  it("an inactive asset is absent from offlineCount", async () => {
+    await assertInactiveAssetIsNotOffline(db);
+  }, 60_000);
+
+  it("a role with no active alarm has worstSeverity null", async () => {
+    await assertQuietRoleHasNullWorstSeverity(db);
+  }, 60_000);
+
+  it("a role with no active alarm has worstCount 0", async () => {
+    await assertQuietRoleHasZeroWorstCount(db);
   }, 60_000);
 });
