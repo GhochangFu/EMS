@@ -1,4 +1,4 @@
-import { composeAlarmMessage, type AlarmMessageRule } from "./alarm-message";
+import { composeAlarmMessage, formatAlarmValue, type AlarmMessageRule } from "./alarm-message";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -81,14 +81,43 @@ function testPowerFactorAndFallback(): void {
   );
 
   // An unrecognised marker AND an unrecognised pointKey — the generic
-  // fallback, never empty and never a misleading fixed string.
+  // fallback, never empty and never a misleading fixed string. The breach
+  // value is composed into the text (F3.28 plan decision 6), unit-suffixed
+  // exactly like the four special cases above.
   assert(
     composeAlarmMessage(
       rule({ name: "Chiller supply temp high", pointKey: "supply_temp_c", alarmMessage: null }),
       31.5,
-    ) === "Chiller supply temp high matched at 31.5",
+    ) === "Chiller supply temp high (31.5)",
     "an unrecognised rule falls through to a generic, non-empty message",
   );
+
+  assert(
+    composeAlarmMessage(
+      rule({
+        name: "Chiller supply temp high",
+        pointKey: "supply_temp_c",
+        alarmMessage: null,
+        unit: "°C",
+      }),
+      31.5,
+    ) === "Chiller supply temp high (31.5 °C)",
+    "the fallback carries the unit, space-separated, matching the four special cases",
+  );
+}
+
+/**
+ * `formatAlarmValue` — F3.28 plan decision 6's rounding table, exercised
+ * directly rather than only through `composeAlarmMessage`'s fallback.
+ */
+function testFormatAlarmValue(): void {
+  assert(formatAlarmValue(65.34) === "65.3", "one decimal, rounded");
+  assert(formatAlarmValue(112) === "112", "|v| >= 100 stays an integer");
+  assert(formatAlarmValue(112.6) === "113", "|v| >= 100 rounds to the nearest integer");
+  assert(formatAlarmValue(3) === "3", "a trailing .0 is dropped");
+  assert(formatAlarmValue(0.79) === "0.8", "one decimal, rounded up");
+  assert(formatAlarmValue(-0.04) === "0", "-0 prints as 0, not -0.0 or -0");
+  assert(formatAlarmValue(NaN) === "NaN", "a non-finite value prints as-is");
 }
 
 /**
@@ -153,4 +182,5 @@ export function runAlarmMessageTests(): void {
   testUnitFromCondition();
   testPowerFactorAndFallback();
   testEskomLegacyLadderParity();
+  testFormatAlarmValue();
 }

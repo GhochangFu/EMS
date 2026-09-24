@@ -24,6 +24,26 @@ export type AlarmMessageRule = {
   unit: string | null;
 };
 
+/**
+ * Formats a breach value for the generic fallback message (F3.28 plan
+ * decision 6). At most one decimal, a trailing `.0` dropped, `|v| >= 100`
+ * rounded to an integer, `-0` printed as `0`, a non-finite value printed
+ * as-is — never thrown on, since the caller has no other way to render it.
+ */
+export function formatAlarmValue(value: number): string {
+  if (!Number.isFinite(value)) {
+    return String(value);
+  }
+  if (Math.abs(value) >= 100) {
+    return String(Math.round(value));
+  }
+  const oneDecimal = value.toFixed(1);
+  if (oneDecimal === "0.0" || oneDecimal === "-0.0") {
+    return "0";
+  }
+  return oneDecimal.endsWith(".0") ? oneDecimal.slice(0, -2) : oneDecimal;
+}
+
 export function composeAlarmMessage(rule: AlarmMessageRule, value: number): string {
   const unitSuffix = rule.unit ? ` ${rule.unit}` : "";
 
@@ -42,7 +62,7 @@ export function composeAlarmMessage(rule: AlarmMessageRule, value: number): stri
   if (rule.pointKey === "pf") {
     return `Power factor low (${value.toFixed(2)})`;
   }
-  return `${rule.name} matched at ${value}`;
+  return `${rule.name} (${formatAlarmValue(value)}${unitSuffix})`;
 }
 
 /**
