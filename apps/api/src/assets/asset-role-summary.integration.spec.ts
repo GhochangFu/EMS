@@ -414,8 +414,11 @@ async function inactiveRow(scene: Scene): Promise<AssetRoleSummaryItem> {
     "F328RS",
     scene.location,
   )) as [string, string];
-  await scene.tx.update(assets).set({ active: false }).where(eq(assets.id, retired));
-  const [check] = await scene.tx.select({ active: assets.active }).from(assets).where(eq(assets.id, retired));
+  const [check] = await scene.tx
+    .update(assets)
+    .set({ active: false })
+    .where(eq(assets.id, retired))
+    .returning({ active: assets.active });
   assert(check?.active === false, "control: the retired asset is inactive");
   const roleI = await addRole(scene, "I");
   await scene.tx.insert(assetGroupMembers).values([
