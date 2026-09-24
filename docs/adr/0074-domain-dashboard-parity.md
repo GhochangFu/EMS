@@ -2,15 +2,15 @@
 
 ## Status
 
-Accepted — drafted at the §10 gate on 2026-09-24, before any implementation
-code. Nine gate questions and one follow-up (1b) were put to the owner one at
-a time. Nine were ruled as recommended. **Q1 was answered outside its
+Proposed — drafted at the §10 gate on 2026-09-24, before any implementation
+code. Ten gate questions and one follow-up (1b) were put to the owner one at
+a time. Ten were ruled as recommended. **Q1 was answered outside its
 options**: the light canvas stays the default, and end users get a light/dark
 switch; follow-up 1b placed that switch in a new row (`F3.65`) with its own
-ADR. The
-rulings are recorded under *Gate questions* and carried into *Decision*.
-Five points were decided without a question and are listed under *Ruled here
-without a question*.
+ADR. The rulings are recorded under *Gate questions* and carried into
+*Decision*. Six points were decided without a question and are listed under
+*Ruled here without a question*. The status moves to Accepted when the owner
+merges this record.
 
 Resolves the `docs/BACKLOG.md` §5 row *Reference layout language* ⚠ (Q1).
 Promotes nothing out of `AGENTS.md` §6 — `F3.28` is a backlog row, not a §6
@@ -83,7 +83,11 @@ L155–L164.
 1. **The §5 *Reference layout language* decision.** Options: keep light,
    leave it open, adopt the dark canvas. Recommended: keep light. **Ruled
    outside the options: light is the default now, and end users must be able
-   to switch between light and dark.**
+   to switch between light and dark.** The owner's words: *"We will follow
+   the light canvas, but there should be a option of going back to the dark
+   canvas as well. So both the options should be there and the system system
+   must have a provision for the end users so that they can switch between
+   light and dark."* This is the provenance of `F3.65`.
 1b. **Where does that switch work live?** Options: a new row with its own
    ADR, inside `F3.28`, or colour tokens on `F3.28`'s surfaces only.
    **Ruled as recommended: a new row with its own ADR** (`F3.65`).
@@ -113,6 +117,12 @@ L155–L164.
    server read on the same alarm source as the rail.**
 9. **The pull-request split.** Options: three vertical slices, API then web,
    one PR. **Ruled as recommended: three serial vertical slices.**
+10. **How do the `/cr-overview` tiles get their value from 24 h ago?** Those
+    tiles are composed in the browser from live values of named assets, and
+    no server read computes them. Options: a batched value-at-instant read
+    the page composes over, a delta on `/` only, or a `/cr-overview`-specific
+    server endpoint (the tile formulas then exist twice). **Ruled as
+    recommended: the batched value-at-instant read.**
 
 ## Decision
 
@@ -166,18 +176,31 @@ rating. ADR 0034's Details fields are not touched.
   refreshes on `/ws/alarms` events. The *Rule Warnings* KPI tile keeps the
   browser rule state.
 
-### 5. The period delta is the same instant 24 h ago (Q6, Q7)
+### 5. The period delta is the same instant 24 h ago (Q6, Q7, Q10)
 
+- **A prior value uses its live value's definition, evaluated at the earlier
+  instant.** A delta between two different definitions measures the
+  definitions, not the plant. Today `totalKw` is the sum over assets of each
+  asset's latest raw `kw` sample in `telemetry.point_values`, with no
+  freshness bound (`kw_latest`, `apps/api/src/dashboard/dashboard.service.ts`),
+  and `pueEstimate` is `latestPueRatio` over the same raw relation
+  (`apps/api/src/telemetry/pue-ratio.ts`). Their prior values are therefore
+  the same reads restricted to samples at or before `asOf − 24 h` — not a
+  continuous-aggregate bucket average. Raw retention is 730 days
+  (migration `0028`), so the instant is always in range.
 - `GET /api/v1/dashboard/kpis` gains a nullable prior value for `totalKw`,
-  `alarmsOpen` and `pueEstimate` at `asOf − 24 h`. Load and PUE read the
-  continuous aggregates; open alarms count rows raised before that instant
-  and not cleared by it. `sitesOnline` gets none — a live-state count has no
-  stored history.
-- A new bounded read returns, for a list of readable point references, each
-  value at a given instant from `telemetry.point_values_1m`. `/cr-overview`
-  composes its tile formulas over those values the same way it composes them
-  over live values. Tiles that count live states (*Rule Warnings*, *SLD
-  Status*) get no delta.
+  `alarmsOpen` and `pueEstimate` at `asOf − 24 h`. Open alarms count rows
+  raised at or before that instant and not cleared by it. `sitesOnline` gets
+  none — a live-state count has no stored history.
+- A new bounded read returns, for a list of point references, each point's
+  latest raw sample at or before a given instant. Each reference is checked
+  against the caller's readable assets; the read never widens scope.
+  `/cr-overview` applies its existing tile formulas to those values, the same
+  way it applies them to live values. Tiles that count live states (*Rule
+  Warnings*, *SLD Status*) get no delta.
+- **No freshness bound, on purpose, for parity with the live read.** An asset
+  that was silent yesterday contributes its older sample to the prior value,
+  exactly as a silent asset contributes to today's `totalKw`.
 - The tiles reuse `F3.35`'s `formatDelta` and the `KpiTile` hint slot. ADR 0048
   said `F3.35` builds the delta and `F3.28` uses it; the presentation is used
   as ruled, and the prior-value source is new because `F3.35`'s is one point
@@ -189,13 +212,13 @@ rating. ADR 0034's Details fields are not touched.
 
 ### 6. The class strip reads roles on the server (Q8)
 
-- A class is an ADR 0049 role on `asset_group_members.role`. An asset that
-  holds two distinct roles is counted under each; an asset with no role is
-  not in the strip, and the strip says nothing about it.
+- A class is an ADR 0049 role on `asset_group_members.role`. An asset with no
+  role is not in the strip, and the strip says nothing about it.
 - A new read returns, per role for an optional bounded `assetIds` list:
   `code`, `label`, `count`, the worst active-alarm severity (by rank, or null)
-  and an offline count. It uses the same alarm source as the rail, so the
-  strip and the rail cannot disagree.
+  and an offline count. `assetIds` is intersected with the caller's readable
+  assets; it never widens a read. It uses the same alarm source as the rail,
+  so the strip and the rail cannot disagree.
 - **Offline must reuse an existing staleness definition.** If the API has none
   that fits, the plan raises it to the owner before building; it does not
   invent a threshold.
@@ -230,6 +253,12 @@ Unit order inside each slice is the plan's (`plan-architect`).
    fitting icon has none; the set does not grow in this row.
 5. **The footer capability ribbon is static copy** from the alignment document
    L104, on `/cr-overview` only.
+6. **An asset that holds two distinct roles is counted under each** (decision
+   6). A role lives on a group membership, so an asset in two groups can carry
+   two. Counting it once needs a precedence between roles that no record
+   defines; counting it under each shows the true state of each class.
+   ADR 0049 Amendment 2 rules a different case — a role that matches more
+   members than a widget can hold — and does not reach this one.
 
 ## Found in flight — raised, not fixed
 
@@ -255,6 +284,13 @@ None. Nothing under §9.4 moves.
   (`/cr-overview`, `/`, new components, `BreakerTable` extraction).
 - **Old alarm rows keep "matched at" text** until they clear. The rail shows
   both shapes for a while.
+- **The new message text reaches every reader of `alarms.message`**, not only
+  the rail: the list and Details reads, the `alarms.active` catalog dataset,
+  and the raise, escalation, reminder and cleared notifications that embed it
+  (`apps/api/src/notifications/notifications.service.ts`,
+  `apps/api/src/alarms/alarm-lifecycle.ts`). Each carries the text verbatim;
+  none parses it, and the dedupe key is the rule and the alarm, not the text
+  (`apps/api/src/notifications/dedupe-key.ts`).
 - **The strip is electrical-only on the demo** until an admin gives other
   assets roles; the ADR 0049 vocabulary has no UPS or DG role.
 - **New rows:** `F3.65` (the user light/dark switch, `Depends: ADR`) and
