@@ -376,5 +376,7 @@ post-merge sweep (Q12): #531 / #533, #534 / #535, #536 / #537.
     git pre-commit hook both have a bypass, and `E4.1a`'s `0074` was applied
     locally from draft bytes (`F4.153`; `F4.94` owns only the journal stamps).
     `packages/shared/src/contracts/admin.ts` is at the line cap (`F4.150`).
-    The live balance figures need a full `today` window and are checked the
-    day after the stack boots; the backlog row carries the result.
+    The live balance figures were checked on 2026-09-24 on the running stack,
+    once the CSMOC Gauteng day (Africa/Johannesburg) had begun under the
+    simulator: intake 204.52, reuse 43.02, discharge 29.82, consumed 174.70,
+    coverage `3/3`; the backlog row carries the full result.
