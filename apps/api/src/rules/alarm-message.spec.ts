@@ -74,16 +74,22 @@ function testUnitFromCondition(): void {
   );
 }
 
-function testPowerFactorAndFallback(): void {
+function testPowerFactor(): void {
   assert(
     composeAlarmMessage(rule({ pointKey: "pf", unit: null }), 0.79) === "Power factor low (0.79)",
     "pf renders without a unit, matching pre-merge behaviour (dimensionless)",
   );
 
-  // An unrecognised marker AND an unrecognised pointKey — the generic
-  // fallback, never empty and never a misleading fixed string. The breach
-  // value is composed into the text (F3.28 plan decision 6), unit-suffixed
-  // exactly like the four special cases above.
+}
+
+/**
+ * The generic fallback — an unrecognised marker AND an unrecognised pointKey:
+ * never empty and never a misleading fixed string. The breach value is
+ * composed into the text (ADR 0074 decision 3), unit-suffixed exactly like the
+ * four special cases above. One exported function per claim, so each has its
+ * own `it()` and a mutation reddens the claim it breaks, not an earlier one.
+ */
+export function testFallbackWithoutUnit(): void {
   assert(
     composeAlarmMessage(
       rule({ name: "Chiller supply temp high", pointKey: "supply_temp_c", alarmMessage: null }),
@@ -91,7 +97,9 @@ function testPowerFactorAndFallback(): void {
     ) === "Chiller supply temp high (31.5)",
     "an unrecognised rule falls through to a generic, non-empty message",
   );
+}
 
+export function testFallbackWithUnit(): void {
   assert(
     composeAlarmMessage(
       rule({
@@ -107,17 +115,23 @@ function testPowerFactorAndFallback(): void {
 }
 
 /**
- * `formatAlarmValue` — F3.28 plan decision 6's rounding table, exercised
- * directly rather than only through `composeAlarmMessage`'s fallback.
+ * `formatAlarmValue` — ADR 0074 decision 3's rounding rule (plan decision 6),
+ * exercised directly. A table rather than one function of asserts: `assert`
+ * throws, so in one function only the first failing case would ever redden.
  */
-function testFormatAlarmValue(): void {
-  assert(formatAlarmValue(65.34) === "65.3", "one decimal, rounded");
-  assert(formatAlarmValue(112) === "112", "|v| >= 100 stays an integer");
-  assert(formatAlarmValue(112.6) === "113", "|v| >= 100 rounds to the nearest integer");
-  assert(formatAlarmValue(3) === "3", "a trailing .0 is dropped");
-  assert(formatAlarmValue(0.79) === "0.8", "one decimal, rounded up");
-  assert(formatAlarmValue(-0.04) === "0", "-0 prints as 0, not -0.0 or -0");
-  assert(formatAlarmValue(NaN) === "NaN", "a non-finite value prints as-is");
+export const FORMAT_ALARM_VALUE_CASES: ReadonlyArray<readonly [number, string, string]> = [
+  [65.34, "65.3", "one decimal, rounded"],
+  [112, "112", "|v| >= 100 stays an integer"],
+  [112.6, "113", "|v| >= 100 rounds to the nearest integer"],
+  [3, "3", "a trailing .0 is dropped"],
+  [0.79, "0.8", "one decimal, rounded up"],
+  [-0.04, "0", "-0 prints as 0, not -0.0 or -0"],
+  [NaN, "NaN", "a non-finite value prints as-is"],
+];
+
+export function testFormatAlarmValueCase(input: number, expected: string, claim: string): void {
+  const actual = formatAlarmValue(input);
+  assert(actual === expected, `${claim}: formatAlarmValue(${input}) returned "${actual}"`);
 }
 
 /**
@@ -180,7 +194,6 @@ function testEskomLegacyLadderParity(): void {
 export function runAlarmMessageTests(): void {
   testMigration0022Markers();
   testUnitFromCondition();
-  testPowerFactorAndFallback();
+  testPowerFactor();
   testEskomLegacyLadderParity();
-  testFormatAlarmValue();
 }
