@@ -83,6 +83,7 @@ import {
 import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
+import { assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import {
@@ -202,6 +203,11 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `parseActiveFilter` is not one.
   AssetRolesAdminController_create: createAssetRoleBodySchema,
   AssetRolesAdminController_update: updateAssetRoleBodySchema,
+  // `F3.28` (ADR 0074, plan task 3.2) — the per-role summary's one optional
+  // repeated `assetIds` parameter. A GET with no body, registered for the
+  // `F4.20` reason every entry here exists: an undocumented scope parameter
+  // and its `MAX_SCOPE_ASSET_IDS` bound are exactly that finding's omission.
+  AssetsController_listRoleSummary: assetRoleSummaryQuerySchema,
   AssetHealthController_forAsset: assetHealthQuerySchema,
   AssetHealthController_summary: healthSummaryQuerySchema,
   AssetsAdminController_create: createAssetBodySchema,

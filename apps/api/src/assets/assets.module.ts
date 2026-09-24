@@ -5,6 +5,7 @@ import { AssetImagesController } from "./asset-images.controller";
 import { AssetImagesService } from "./asset-images.service";
 import { AssetImagesWriteController } from "./asset-images-write.controller";
 import { AssetImagesWriteService } from "./asset-images-write.service";
+import { AssetRoleSummaryService } from "./asset-role-summary.service";
 import { AssetsController } from "./assets.controller";
 import { AssetsService } from "./assets.service";
 
@@ -23,6 +24,12 @@ import { AssetsService } from "./assets.service";
  */
 @Module({
   controllers: [AssetsController, AssetImagesController, AssetImagesWriteController],
-  providers: [AssetsService, AssetImagesService, AssetImagesWriteService, MasterDataAuditService],
+  providers: [
+    AssetsService,
+    AssetImagesService,
+    AssetImagesWriteService,
+    AssetRoleSummaryService,
+    MasterDataAuditService,
+  ],
 })
 export class AssetsModule {}

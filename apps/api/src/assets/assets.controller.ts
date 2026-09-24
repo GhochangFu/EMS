@@ -8,11 +8,18 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { z, ZodError } from "zod";
-import type { AssetPointPickerListResponse, JwtPayload } from "@bms/shared";
+import type {
+  AssetPointPickerListResponse,
+  AssetRoleSummaryResponse,
+  JwtPayload,
+} from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
+import { intersectReadable } from "../auth/asset-scope";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { AssetRoleSummaryService } from "./asset-role-summary.service";
+import { assetRoleSummaryQuerySchema } from "./assets.schema";
 import { AssetsService } from "./assets.service";
 
 /** Same shape as `idParamSchema` (`admin/admin.schema.ts`), kept local rather
@@ -44,6 +51,7 @@ export class AssetsController {
   constructor(
     private readonly assets: AssetsService,
     private readonly accessControl: AccessControlService,
+    private readonly roleSummary: AssetRoleSummaryService,
   ) {}
 
   /**
@@ -76,6 +84,36 @@ export class AssetsController {
       }
       throw err;
     }
+  }
+
+  /**
+   * `F3.28` (ADR 0074, plan task 3.2) — `GET /api/v1/assets/role-summary`,
+   * the per-role counts behind the `/cr-overview` class strip.
+   *
+   * **Declared before `:assetId/points`** so the router never reads
+   * `role-summary` as an asset id. The query is parsed before access control
+   * runs, so a malformed one is a 400 that costs no scope read. A requested
+   * `assetIds` is only ever **intersected** with the caller's readable set
+   * (`intersectReadable`) — a foreign id is dropped, and an empty
+   * intersection reaches the service as `[]`, which answers `{ items: [] }`.
+   */
+  @Get("role-summary")
+  async listRoleSummary(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: Record<string, unknown>,
+  ): Promise<AssetRoleSummaryResponse> {
+    let dto;
+    try {
+      dto = assetRoleSummaryQuerySchema.parse(query);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+    return this.roleSummary.summarize(
+      intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
+    );
   }
 
   /** `GET /api/v1/assets/:assetId/points` — the asset's active points, five fields each

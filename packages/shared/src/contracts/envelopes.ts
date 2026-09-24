@@ -40,6 +40,7 @@ import { dashboardTemplateSummaryDtoSchema, stockDashboardTemplateDtoSchema } fr
 import {
   alarmListItemSchema,
   alarmSeverityCountSchema,
+  assetRoleSummaryItemSchema,
   maintenanceScheduleItemSchema,
   ruleBuilderCatalogAssetSchema,
   ruleExecutionItemSchema,
@@ -426,6 +427,13 @@ export const assetListRowSchema = z.object({
 });
 
 export const assetListResponseSchema = z.array(assetListRowSchema);
+
+/**
+ * `GET /api/v1/assets/role-summary` (`F3.28`, ADR 0074, plan task 3.2) — one
+ * row per asset role held within the caller's scope, ordered by the role's
+ * `sort_order`, then `code`. An empty scope is `{ items: [] }`.
+ */
+export const assetRoleSummaryResponseSchema = itemsOf(assetRoleSummaryItemSchema);
 
 // --- notifications (`F3.8`, ADR 0041) ---------------------------------------
 //

@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import type { AssetPointPickerRow, JwtPayload } from "@bms/shared";
+import type { AssetPointPickerRow, AssetRoleSummaryResponse, JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { repoRoot } from "../testing/repo-root";
 import { methodBody } from "../testing/source-scan";
+import type { AssetRoleSummaryService } from "./asset-role-summary.service";
 import { AssetsController } from "./assets.controller";
 import type { AssetsService } from "./assets.service";
 
@@ -43,9 +44,9 @@ function source(): string {
   return readFileSync(CONTROLLER, "utf8");
 }
 
-/** `list` runs from its `async list(` to the points route's decorator. */
+/** `list` runs from its `async list(` to the next route's decorator — `role-summary` since `F3.28`. */
 function listBody(text: string): string {
-  return methodBody(text, "async list(", '@Get(":assetId/points")');
+  return methodBody(text, "async list(", '@Get("role-summary")');
 }
 
 /** `listPoints` is the last handler, so its body runs to the end of the file — which holds ONLY
@@ -80,13 +81,14 @@ const POINT: AssetPointPickerRow = {
   unit: "°C",
 };
 
-function accessStub(opts: { canReadAsset: boolean }) {
+function accessStub(opts: { canReadAsset: boolean; readable?: string[] | null }) {
   const canReadAssetCalls: string[] = [];
   const access = {
     canReadAsset: async (_user: JwtPayload, assetId: string) => {
       canReadAssetCalls.push(assetId);
       return opts.canReadAsset;
     },
+    readableAssetIds: async () => (opts.readable === undefined ? null : opts.readable),
   } as unknown as AccessControlService;
   return { access, canReadAssetCalls };
 }
@@ -101,6 +103,18 @@ function assetsStub() {
     },
   } as unknown as AssetsService;
   return { assets, calls };
+}
+
+/** Records the scope each `summarize` call received. */
+function roleSummaryStub() {
+  const calls: (string[] | null | undefined)[] = [];
+  const roleSummary = {
+    summarize: async (assetIds: string[] | null | undefined): Promise<AssetRoleSummaryResponse> => {
+      calls.push(assetIds);
+      return { items: [] };
+    },
+  } as unknown as AssetRoleSummaryService;
+  return { roleSummary, calls };
 }
 
 async function rejects(run: () => Promise<unknown>): Promise<unknown> {
@@ -123,7 +137,7 @@ function errorName(err: unknown): string {
 async function runDenied() {
   const { access } = accessStub({ canReadAsset: false });
   const { assets, calls } = assetsStub();
-  const controller = new AssetsController(assets, access);
+  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary);
   const err = await rejects(() => controller.listPoints(USER, ASSET_ID));
   return { err, calls };
 }
@@ -142,7 +156,7 @@ export async function assertDeniedAssetNeverReachesTheService(): Promise<void> {
 export async function assertAllowedAssetReachesTheServiceOnce(): Promise<void> {
   const { access } = accessStub({ canReadAsset: true });
   const { assets, calls } = assetsStub();
-  const controller = new AssetsController(assets, access);
+  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary);
   const result = await controller.listPoints(USER, ASSET_ID);
   assert(
     calls.length === 1 && calls[0] === `listPoints ${ASSET_ID}` && result.items.length === 1,
@@ -154,7 +168,7 @@ export async function assertAllowedAssetReachesTheServiceOnce(): Promise<void> {
 export async function assertAllowedAssetReachesTheGuardOnce(): Promise<void> {
   const { access, canReadAssetCalls } = accessStub({ canReadAsset: true });
   const { assets } = assetsStub();
-  const controller = new AssetsController(assets, access);
+  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary);
   await controller.listPoints(USER, ASSET_ID);
   assert(
     canReadAssetCalls.length === 1 && canReadAssetCalls[0] === ASSET_ID,
@@ -165,7 +179,7 @@ export async function assertAllowedAssetReachesTheGuardOnce(): Promise<void> {
 async function runNonUuid() {
   const { access, canReadAssetCalls } = accessStub({ canReadAsset: true });
   const { assets, calls } = assetsStub();
-  const controller = new AssetsController(assets, access);
+  const controller = new AssetsController(assets, access, roleSummaryStub().roleSummary);
   const err = await rejects(() => controller.listPoints(USER, "not-a-uuid"));
   return { err, canReadAssetCalls, calls };
 }
@@ -208,4 +222,62 @@ export function assertScanFindsTheListHandlerOnReadableAssetIds(): void {
   const text = source();
   assert(listBody(text).includes("readableAssetIds"), "list must still narrow through readableAssetIds");
   assert(!listPointsBody(text).includes("readableAssetIds"), "listPoints must gate on canReadAsset, not readableAssetIds");
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` (ADR 0074, plan task 3.2) — GET /assets/role-summary
+// ---------------------------------------------------------------------------
+
+const FOREIGN_ID = "44444444-4444-4444-8444-444444444444";
+
+/** A requested id outside the caller's readable set is dropped before the service. */
+export async function assertRoleSummaryDropsAForeignRequestedId(): Promise<void> {
+  const { access } = accessStub({ canReadAsset: true, readable: [ASSET_ID] });
+  const { roleSummary, calls } = roleSummaryStub();
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  await controller.listRoleSummary(USER, { assetIds: [ASSET_ID, FOREIGN_ID] });
+  assert(
+    calls.length === 1 && JSON.stringify(calls[0]) === JSON.stringify([ASSET_ID]),
+    `expected one summarize call with [${ASSET_ID}], got ${JSON.stringify(calls)}`,
+  );
+}
+
+/** The positive control: an admin (`readableAssetIds` null) with no request reaches the service unrestricted. */
+export async function assertRoleSummaryUnrestrictedReaderPassesNull(): Promise<void> {
+  const { access } = accessStub({ canReadAsset: true, readable: null });
+  const { roleSummary, calls } = roleSummaryStub();
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  await controller.listRoleSummary(USER, {});
+  assert(
+    calls.length === 1 && calls[0] === null,
+    `expected one summarize call with null, got ${JSON.stringify(calls)}`,
+  );
+}
+
+async function runUnknownKey() {
+  const { access } = accessStub({ canReadAsset: true, readable: [ASSET_ID] });
+  const { roleSummary, calls } = roleSummaryStub();
+  const controller = new AssetsController(assetsStub().assets, access, roleSummary);
+  const err = await rejects(() => controller.listRoleSummary(USER, { assetId: ASSET_ID }));
+  return { err, calls };
+}
+
+/** `.strict()`: a misspelt `assetId` is a 400, not a silently unscoped read. */
+export async function assertRoleSummaryUnknownKeyIsBadRequest(): Promise<void> {
+  const { err } = await runUnknownKey();
+  assert(errorName(err) === "BadRequestException", `an unknown query key threw ${errorName(err)}`);
+}
+
+export async function assertRoleSummaryUnknownKeyNeverReachesTheService(): Promise<void> {
+  const { calls } = await runUnknownKey();
+  assert(calls.length === 0, `an unknown query key reached summarize: ${JSON.stringify(calls)}`);
+}
+
+/** `role-summary` must be declared before `:assetId/points`, or the router could read it as an id. */
+export function assertRoleSummaryIsDeclaredBeforeAssetPoints(): void {
+  const text = source();
+  const summary = text.indexOf('@Get("role-summary")');
+  const points = text.indexOf('@Get(":assetId/points")');
+  assert(summary > -1 && points > -1, "the scan must find both route decorators");
+  assert(summary < points, `role-summary (at ${summary}) is declared after :assetId/points (at ${points})`);
 }

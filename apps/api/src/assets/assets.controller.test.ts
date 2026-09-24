@@ -9,6 +9,11 @@ import {
   assertListPointsRefusesWithTheScopeMessage,
   assertNonUuidSegmentNeverReachesTheGuard,
   assertNonUuidSegmentThrowsZodError,
+  assertRoleSummaryDropsAForeignRequestedId,
+  assertRoleSummaryIsDeclaredBeforeAssetPoints,
+  assertRoleSummaryUnknownKeyIsBadRequest,
+  assertRoleSummaryUnknownKeyNeverReachesTheService,
+  assertRoleSummaryUnrestrictedReaderPassesNull,
   assertScanFindsTheListHandlerOnReadableAssetIds,
 } from "./assets.controller.spec";
 
@@ -54,5 +59,27 @@ describe("F3.63 — assets controller source scan", () => {
 
   it("list still narrows through readableAssetIds and listPoints does not (positive control)", () => {
     assertScanFindsTheListHandlerOnReadableAssetIds();
+  });
+});
+
+describe("F3.28 — GET /assets/role-summary over stubs (ADR 0074, plan task 3.2)", () => {
+  it("drops a requested id outside the readable set before the service", async () => {
+    await assertRoleSummaryDropsAForeignRequestedId();
+  });
+
+  it("passes null for an unrestricted reader with no request (positive control)", async () => {
+    await assertRoleSummaryUnrestrictedReaderPassesNull();
+  });
+
+  it("answers an unknown query key with BadRequestException", async () => {
+    await assertRoleSummaryUnknownKeyIsBadRequest();
+  });
+
+  it("never calls the service for an unknown query key", async () => {
+    await assertRoleSummaryUnknownKeyNeverReachesTheService();
+  });
+
+  it("declares role-summary before :assetId/points", () => {
+    assertRoleSummaryIsDeclaredBeforeAssetPoints();
   });
 });

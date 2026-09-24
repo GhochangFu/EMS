@@ -393,6 +393,12 @@ export type AlarmSkillCode = z.infer<typeof Op.alarmSkillCodeSchema>;
 export type AssetRoleDto = z.infer<typeof Op.assetRoleDtoSchema>;
 /** What part a member plays in its group, as a code into `bms.asset_roles` (ADR 0049). */
 export type AssetRoleCode = z.infer<typeof Op.assetRoleCodeSchema>;
+/** `F3.28` — one role row of `GET /api/v1/assets/role-summary`. */
+export type AssetRoleSummaryItem = z.infer<typeof Op.assetRoleSummaryItemSchema>;
+/** `F3.28` — the worst active severity among a role's assets, or its absence. */
+export type AssetRoleWorstSeverity = z.infer<typeof Op.assetRoleWorstSeveritySchema>;
+/** `F3.28` — `GET /api/v1/assets/role-summary` (ADR 0074, plan task 3.2). */
+export type AssetRoleSummaryResponse = z.infer<typeof E.assetRoleSummaryResponseSchema>;
 /** ADR 0073 — one row of `bms.water_balance_roles`. No `rank`/`tone`: a balance role drives no styling. */
 export type WaterBalanceRoleDto = z.infer<typeof Op.waterBalanceRoleDtoSchema>;
 /** An asset's place in a site's water balance, as a code into `bms.water_balance_roles` (ADR 0073). */
