@@ -8,6 +8,7 @@ import type { DashboardKpis, HealthSummaryResponse, UserRole } from "@bms/shared
 import * as assetHealthApi from "../api/asset-health";
 import * as locationsApi from "../api/locations";
 import * as executiveDashboard from "../hooks/use-executive-dashboard";
+import { WIDGET_ICON_PATH } from "../lib/widget-catalog";
 import type { AuthUser } from "../stores/auth-store";
 import { DashboardPage } from "./dashboard-page";
 
@@ -42,7 +43,7 @@ function asUser(role: UserRole): AuthUser {
   } as unknown as AuthUser;
 }
 
-function kpis(pueEstimate: number | null): DashboardKpis {
+function kpis(pueEstimate: number | null, overrides: Partial<DashboardKpis> = {}): DashboardKpis {
   return {
     totalKw: 1447.3,
     sitesOnline: 9,
@@ -51,9 +52,11 @@ function kpis(pueEstimate: number | null): DashboardKpis {
     alarmsCritical: 0,
     pueEstimate,
     asOf: "2026-09-05T12:00:00.000Z",
-    // Task 2.2 composes the real prior; this fixture carries the placeholder
-    // shape `DashboardService.kpis` ships until then.
+    // No prior value that yields a delta: every hint here is the fixed line,
+    // which is what the `F2.8` PUE cases below assert. The `F3.28` cases pass
+    // `overrides` to give a prior.
     prior: { asOf: "2026-09-04T12:00:00.000Z", totalKw: null, alarmsOpen: 0, pueEstimate: null },
+    ...overrides,
   };
 }
 
@@ -61,9 +64,13 @@ function kpis(pueEstimate: number | null): DashboardKpis {
  * The hook is stubbed whole rather than at its two fetches: it opens a Socket.IO
  * connection on mount, and a unit test has no business dialling one.
  */
-function stubDashboard(pueEstimate: number | null, stale = false): void {
+function stubDashboard(
+  pueEstimate: number | null,
+  stale = false,
+  overrides: Partial<DashboardKpis> = {},
+): void {
   vi.spyOn(executiveDashboard, "useExecutiveDashboard").mockReturnValue({
-    kpiQuery: { data: kpis(pueEstimate), isLoading: false, isError: false },
+    kpiQuery: { data: kpis(pueEstimate, overrides), isLoading: false, isError: false },
     trendQuery: { data: { points: [] }, isLoading: false, isError: false },
     stale,
     displayTotalKw: 1447.3,
@@ -174,4 +181,142 @@ export async function aMeasuredPueTileStillCarriesTheStaleRing(): Promise<void> 
   const pue = tileLabelled("PUE");
   expect(await within(pue).findByText("1.42")).toBeInTheDocument();
   expect(pue.className).toContain(STALE_RING);
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 2.5 — vs-yesterday deltas, the OQ5 alarm hint, and the icons.
+//
+// Expected strings are literals here, never imported from `kpi-ribbon.ts`, so
+// a mutated constant cannot carry its assertion with it.
+// ---------------------------------------------------------------------------
+
+const PRIOR = { asOf: "2026-09-04T12:00:00.000Z", totalKw: null, alarmsOpen: 0, pueEstimate: null };
+
+/**
+ * A 10 % rise in the **server's** `totalKw` over its prior renders in the Total
+ * load tile. `displayTotalKw` stays 1447.3 in the stub, so a delta computed from
+ * the displayed socket sum would print 44.7 % — this case also holds plan
+ * decision 5 (server against server).
+ */
+export async function aTenPercentLoadRiseRendersInTheTotalLoadTile(): Promise<void> {
+  stubDashboard(null, false, { totalKw: 1100, prior: { ...PRIOR, totalKw: 1000 } });
+  renderPage();
+
+  const tile = tileLabelled("Total load");
+  expect(await within(tile).findByText("↑ 10.0% vs yesterday")).toBeInTheDocument();
+}
+
+/** A null prior: the Total load tile keeps its fixed line. */
+export async function aNullLoadPriorRendersTheFixedHint(): Promise<void> {
+  stubDashboard(null, false, { totalKw: 1100 });
+  renderPage();
+
+  const tile = tileLabelled("Total load");
+  expect(await within(tile).findByText("Sum of latest kW per asset")).toBeInTheDocument();
+}
+
+/** OQ5: with no alarm delta the Open alarms hint reads "Active — not yet cleared". */
+export async function openAlarmsWithoutADeltaReadActiveNotYetCleared(): Promise<void> {
+  stubDashboard(null, false, { alarmsOpen: 3 });
+  renderPage();
+
+  const tile = tileLabelled("Open alarms");
+  expect(await within(tile).findByText("Active — not yet cleared")).toBeInTheDocument();
+}
+
+/**
+ * OQ5: the old "Unacknowledged rows" literal is gone. The positive control is
+ * the alarm count — data the stub produces and that the literal cannot change —
+ * awaited first, so the absence check runs against a rendered tile.
+ */
+export async function theUnacknowledgedRowsLiteralIsGone(): Promise<void> {
+  stubDashboard(null, false, { alarmsOpen: 3 });
+  renderPage();
+
+  const tile = tileLabelled("Open alarms");
+  expect(await within(tile).findByText("3")).toBeInTheDocument();
+  expect(within(tile).queryByText("Unacknowledged rows")).not.toBeInTheDocument();
+}
+
+/**
+ * OQ5: "N critical" renders on `KpiTile`'s note line — the amber
+ * `text-amber-700` paragraph — not in the muted hint slot.
+ */
+export async function theCriticalCountRendersInTheNote(): Promise<void> {
+  stubDashboard(null, false, { alarmsOpen: 3, alarmsCritical: 2 });
+  renderPage();
+
+  const tile = tileLabelled("Open alarms");
+  const note = await within(tile).findByText("2 critical");
+  expect(note.className, "the critical count is not on the note line").toContain("text-amber-700");
+}
+
+/**
+ * A PUE delta replaces `pueTileProps`' hint on the page. The page chooses
+ * between the two itself, so the pure `kpi-ribbon` spec cannot hold this.
+ */
+export async function aPueFallRendersInThePueTile(): Promise<void> {
+  stubDashboard(1.5, false, { prior: { ...PRIOR, pueEstimate: 2 } });
+  renderPage();
+
+  const tile = tileLabelled("PUE");
+  expect(await within(tile).findByText("↓ 25.0% vs yesterday")).toBeInTheDocument();
+}
+
+/**
+ * The icon cases wait on the Sites online value: data the stub produces that no
+ * hint or note change can alter, so an icon case reddens only on its icon.
+ */
+async function ribbonSettled(): Promise<void> {
+  await within(tileLabelled("Sites online")).findByText("9 / 9");
+}
+
+/** The `d` of the one icon path inside a tile, or `null` when the tile has no icon. */
+function iconPathOf(tile: HTMLElement): string | null {
+  const svg = tile.querySelector("svg");
+  return svg ? (svg.querySelector("path")?.getAttribute("d") ?? "") : null;
+}
+
+/** Plan decision 8: Total load wears `bolt`. */
+export async function totalLoadWearsTheBoltIcon(): Promise<void> {
+  stubDashboard(1.42);
+  renderPage();
+
+  await ribbonSettled();
+  const tile = tileLabelled("Total load");
+  expect(iconPathOf(tile)).toBe(WIDGET_ICON_PATH.bolt);
+}
+
+/** Plan decision 8: Open alarms wears `alert`. */
+export async function openAlarmsWearsTheAlertIcon(): Promise<void> {
+  stubDashboard(1.42);
+  renderPage();
+
+  await ribbonSettled();
+  const tile = tileLabelled("Open alarms");
+  expect(iconPathOf(tile)).toBe(WIDGET_ICON_PATH.alert);
+}
+
+/** Plan decision 8: PUE wears `gauge`. */
+export async function pueWearsTheGaugeIcon(): Promise<void> {
+  stubDashboard(1.42);
+  renderPage();
+
+  await ribbonSettled();
+  const tile = tileLabelled("PUE");
+  expect(iconPathOf(tile)).toBe(WIDGET_ICON_PATH.gauge);
+}
+
+/**
+ * Plan decision 8: Sites online wears no icon. The PUE tile in the same render
+ * is the positive control — it proves the query below can find an icon at all.
+ */
+export async function sitesOnlineWearsNoIcon(): Promise<void> {
+  stubDashboard(1.42);
+  renderPage();
+
+  const sites = tileLabelled("Sites online");
+  expect(await within(sites).findByText("9 / 9")).toBeInTheDocument();
+  expect(iconPathOf(tileLabelled("PUE")), "no icon rendered anywhere — the check is vacuous").not.toBeNull();
+  expect(iconPathOf(sites)).toBeNull();
 }

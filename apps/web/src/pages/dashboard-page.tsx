@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 
 import { fetchLocationKpis } from "../api/locations";
 import { useExecutiveDashboard } from "../hooks/use-executive-dashboard";
+import { kpiRibbonHints } from "../lib/kpi-ribbon";
 import { pueTileProps } from "../lib/pue-tile";
 import {
   distinctOrganizations,
@@ -13,6 +14,7 @@ import {
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 import { KpiTile } from "../components/kpi-tile";
+import { WidgetIconGlyph } from "../components/widget-icon";
 import { LoadTrendChart } from "../components/load-trend-chart";
 import { LocationKpiCard } from "../components/location-kpi-card";
 import { OrgLocationAccordion } from "../components/org-location-accordion";
@@ -75,6 +77,9 @@ export function DashboardPage({ user }: DashboardPageProps) {
    * why.
    */
   const pueProps = pueTileProps(kpiStatus, kpi?.pueEstimate);
+  // `F3.28` task 2.5 — vs-yesterday deltas; see `kpi-ribbon.ts` for why Total
+  // load compares the server's `totalKw` while the tile shows the socket sum.
+  const hints = kpiRibbonHints(kpi);
 
   const trendStatus = trendQuery.isLoading
     ? "loading"
@@ -123,7 +128,8 @@ export function DashboardPage({ user }: DashboardPageProps) {
             status={kpiStatus}
             value={fmtKw(displayTotalKw)}
             unit="kW"
-            hint="Sum of latest kW per asset"
+            hint={hints.totalLoadHint}
+            icon={WidgetIconGlyph("bolt")}
             stale={stale && kpiStatus === "ready"}
           />
           <KpiTile
@@ -139,11 +145,9 @@ export function DashboardPage({ user }: DashboardPageProps) {
             label="Open alarms"
             status={kpiStatus}
             value={kpi ? String(kpi.alarmsOpen) : null}
-            hint={
-              kpi && kpi.alarmsCritical > 0
-                ? `${kpi.alarmsCritical} critical`
-                : "Unacknowledged rows"
-            }
+            hint={hints.openAlarmsHint}
+            note={hints.openAlarmsNote}
+            icon={WidgetIconGlyph("alert")}
             tone={
               kpi && kpi.alarmsCritical > 0
                 ? "critical"
@@ -162,7 +166,13 @@ export function DashboardPage({ user }: DashboardPageProps) {
             the value is at most one 60 s engine tick old. The plan's §5 and §11
             both say 8 s; 8 s is `locationQ` on this page, a different query.
           */}
-          <KpiTile label="PUE" {...pueProps} stale={stale && pueProps.status === "ready"} />
+          <KpiTile
+            label="PUE"
+            {...pueProps}
+            hint={hints.pueDeltaText ?? pueProps.hint}
+            icon={WidgetIconGlyph("gauge")}
+            stale={stale && pueProps.status === "ready"}
+          />
         </div>
 
         <SectionCard
