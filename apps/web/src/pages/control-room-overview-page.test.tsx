@@ -22,6 +22,7 @@ import {
   rendersThePageTitle,
   rendersTheSixKpiLabelsInOrder,
   rackLoadRendersItsOwnDelta,
+  rendersTheFourKeyParameterGaugeTitles,
   ruleWarningsCountsAMatchedThresholdRule,
   ruleWarningsWearsTheAlertIcon,
   sldStatusHasNoDelta,
@@ -209,5 +210,9 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("renders the state legend with Normal, the vocabulary and Offline", async () => {
     await theStateLegendRendersNormalTheVocabularyAndOffline();
+  });
+
+  it("renders the four Key Parameters gauge titles", () => {
+    rendersTheFourKeyParameterGaugeTitles();
   });
 });

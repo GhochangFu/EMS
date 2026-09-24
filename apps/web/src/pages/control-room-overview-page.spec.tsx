@@ -66,6 +66,15 @@ const state = vi.hoisted(() => ({
   priors: {} as Record<string, number | null>,
 }));
 
+/**
+ * `F3.28` task 3.6 — the Key Parameters gauges mount `RadialGaugeWidget`,
+ * which renders a real `echarts-for-react` chart; stubbed here as it is in
+ * `key-parameters.spec.tsx`, since this file does not test gauge internals.
+ */
+vi.mock("echarts-for-react", () => ({
+  default: () => <div data-testid="echarts-stub" />,
+}));
+
 /** Every tracked code resolves to `asset-<code>`, so the rail's ids are knowable. */
 function assetIdFor(code: string): string {
   return `asset-${code}`;
@@ -336,6 +345,7 @@ export const KPI_LABELS = [
 
 export const SECTION_HEADINGS = [
   "Single Line Diagram · Power Flow",
+  "Key Parameters",
   "IT Rack Load",
   "Critical Systems Summary",
   "Energy Snapshot",
@@ -767,5 +777,18 @@ export async function theStateLegendRendersNormalTheVocabularyAndOffline(): Prom
     "Critical",
     "Offline",
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// `F3.28` task 3.6 — the Key Parameters gauges are mounted on the page.
+// ---------------------------------------------------------------------------
+
+/** The four gauge titles all render, from the page's own telemetry slices. */
+export function rendersTheFourKeyParameterGaugeTitles(): void {
+  renderPage();
+  expect(screen.getByText("UPS-1 Load")).toBeInTheDocument();
+  expect(screen.getByText("UPS-2 Load")).toBeInTheDocument();
+  expect(screen.getByText("Battery Health")).toBeInTheDocument();
+  expect(screen.getByText("Main Power Factor")).toBeInTheDocument();
 }
 
