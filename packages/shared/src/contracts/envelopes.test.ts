@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  alarmSummaryResponseAcceptsAZeroCountRow,
+  alarmSummaryResponseRequiresTotal,
   assetListResponseSchemaAndNoOldNameSurvives,
   assetListRowAcceptsAFullyWiredRow,
   assetListRowAcceptsAnUnwiredRow,
@@ -51,6 +53,16 @@ describe("F3.56 — the deliveries envelope carries the event kind", () => {
 
   it("refuses a row with no `event` at all — the field is required", () => {
     deliveryEventIsRequiredOnEveryRow();
+  });
+});
+
+describe("F3.28 — alarmSummaryResponseSchema (ADR 0074 decision 3)", () => {
+  it("accepts a zero-count severity row alongside the total", () => {
+    alarmSummaryResponseAcceptsAZeroCountRow();
+  });
+
+  it("requires total", () => {
+    alarmSummaryResponseRequiresTotal();
   });
 });
 

@@ -39,6 +39,7 @@ import { dashboardSummaryDtoSchema } from "./dashboard-builder";
 import { dashboardTemplateSummaryDtoSchema, stockDashboardTemplateDtoSchema } from "./dashboard-templates";
 import {
   alarmListItemSchema,
+  alarmSeverityCountSchema,
   maintenanceScheduleItemSchema,
   ruleBuilderCatalogAssetSchema,
   ruleExecutionItemSchema,
@@ -234,6 +235,17 @@ export const dashboardDeletedResponseSchema = z.object({ deleted: z.literal(true
 export const alarmsListResponseSchema = z.object({
   items: z.array(alarmListItemSchema),
   nextCursor: z.string().nullable(),
+});
+
+/**
+ * `GET /api/v1/alarms/summary` (`F3.28`, ADR 0074 decision 3 / plan decision
+ * 7) — the active-count-by-severity read behind the alarms rail's summary
+ * tab. `total` is the sum of `items[].count`, carried rather than derived so
+ * a caller does not re-sum on every render.
+ */
+export const alarmSummaryResponseSchema = z.object({
+  items: z.array(alarmSeverityCountSchema),
+  total: z.number().int().nonnegative(),
 });
 
 export const workOrdersListResponseSchema = itemsOf(workOrderListItemSchema);
