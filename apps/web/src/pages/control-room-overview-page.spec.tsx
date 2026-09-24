@@ -722,3 +722,29 @@ export async function theListViewShowsAStaleBreakerOffline(): Promise<void> {
   expect(within(rowFor("Q4 · UPS-1 OUT")).getByText("CLOSED")).toBeInTheDocument();
   expect(within(rowFor("Q5 · UPS-2 OUT")).getByText("OFFLINE")).toBeInTheDocument();
 }
+
+/**
+ * A rule on a breaker key only `/cr-sld` used to read (`frequency_hz`) turns
+ * the List row WARN, as the SLD page's own table does for the same rule.
+ * CR-Q4, with no rule, reading CLOSED is the positive control.
+ */
+export async function theListViewWarnsOnAnSldOnlyPointKey(): Promise<void> {
+  const telemetry = liveTelemetry();
+  telemetry["CR-Q5"] = liveSlice({ frequencyHz: 50.4 });
+  renderPage({
+    telemetry,
+    rules: [
+      thresholdRule({
+        assetId: "asset-cr-q5",
+        assetCode: "CR-Q5",
+        pointKey: "frequency_hz",
+        thresholdValue: 50.2,
+      }),
+    ],
+  });
+  await openListView();
+  const rowFor = (label: string) =>
+    within(sldSection()).getByText(label).closest("tr") as HTMLElement;
+  expect(within(rowFor("Q4 · UPS-1 OUT")).getByText("CLOSED")).toBeInTheDocument();
+  expect(within(rowFor("Q5 · UPS-2 OUT")).getByText("WARN")).toBeInTheDocument();
+}

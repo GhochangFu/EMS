@@ -32,6 +32,7 @@ import {
   theListTabHidesTheDiagramSvg,
   theListTabShowsTwelveBreakerRows,
   theListViewShowsAStaleBreakerOffline,
+  theListViewWarnsOnAnSldOnlyPointKey,
   theOtherThreeTilesWearNoIcon,
   theViewModeDoesNotSurviveARemount,
   thePriorReadAsksForExactlyFiveRefs,
@@ -199,5 +200,9 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("shows a stale breaker as OFFLINE in the List view", async () => {
     await theListViewShowsAStaleBreakerOffline();
+  });
+
+  it("warns in the List view on a point key only /cr-sld read before", async () => {
+    await theListViewWarnsOnAnSldOnlyPointKey();
   });
 });

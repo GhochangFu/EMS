@@ -89,14 +89,22 @@ function compareValue(
 
 function pointValue(slice: SchematicTelemetrySlice, pointKey: string): number | null {
   switch (pointKey) {
+    case "voltage_l1_v":
+      return slice.voltage;
     case "current_a":
       return slice.current;
     case "kw":
       return slice.kw;
+    case "kvar":
+      return slice.kvar;
     case "pf":
       return slice.pf;
     case "breaker_main":
       return slice.breaker;
+    case "frequency_hz":
+      return slice.frequencyHz;
+    case "kwh_today":
+      return slice.kwhToday;
     case "pdu_util_pct":
       return slice.pduUtilPct;
     case "rack_kw":
