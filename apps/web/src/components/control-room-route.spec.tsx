@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -91,7 +91,12 @@ function Elsewhere() {
 
 type Read = AssetListRow[] | "pending" | "rejected";
 
-function renderGuard(path: string, scope: AccessibleScope, read: Read): void {
+function renderGuard(
+  path: string,
+  scope: AccessibleScope | null,
+  read: Read,
+  seed?: AssetListRow[],
+): QueryClient {
   const spy = vi.spyOn(assetsApi, "fetchAssets");
   if (read === "pending") {
     spy.mockReturnValue(new Promise<AssetListRow[]>(() => {}));
@@ -102,6 +107,9 @@ function renderGuard(path: string, scope: AccessibleScope, read: Read): void {
   }
   useAuthStore.setState({ scope });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (seed) {
+    client.setQueryData(["assets"], seed);
+  }
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
@@ -119,6 +127,21 @@ function renderGuard(path: string, scope: AccessibleScope, read: Read): void {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return client;
+}
+
+/**
+ * Waits for the `["assets"]` query to reach `status`, then flushes one macrotask:
+ * TanStack v5 notifies observers on a `setTimeout(0)`, so the query can settle
+ * before the guard re-renders, and an assertion then reads the old DOM.
+ */
+async function settled(client: QueryClient, status: "success" | "error"): Promise<void> {
+  await waitFor(() => {
+    expect(client.getQueryState(["assets"])?.status).toBe(status);
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 /** G1 — positive control: a global caller who reads `CR-*` rows opens the page. */
@@ -166,3 +189,21 @@ export async function admitsTheAreaTheGroupCovers(): Promise<void> {
   renderGuard("/cr-sld", ELECTRICAL_ONLY, ESKOM_ROWS);
   expect(await screen.findByText("CR PAGE")).toBeInTheDocument();
 }
+
+/**
+ * G6 — decides from `data`, never from `status`. A granted caller whose
+ * *background* refetch fails keeps `data` while `status` turns `"error"`
+ * (TanStack v5); the page must stay open. The seeded rows are fresh under the
+ * five-minute stale time, so the mount does not fetch; the invalidation does.
+ */
+export async function keepsTheCallerInWhenABackgroundRefetchFails(): Promise<void> {
+  const client = renderGuard("/cr-hvac", GLOBAL, "rejected", ESKOM_ROWS);
+  expect(await screen.findByText("CR PAGE")).toBeInTheDocument();
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["assets"] });
+  });
+  await settled(client, "error");
+  expect(client.getQueryData(["assets"])).toEqual(ESKOM_ROWS);
+  expect(screen.getByText("CR PAGE")).toBeInTheDocument();
+}
+

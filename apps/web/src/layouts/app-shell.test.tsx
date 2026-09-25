@@ -8,6 +8,7 @@ import {
   hidesTheGroupFromANoneScope,
   hidesTheGroupWhenTheReadFails,
   hidesTheGroupWhilePending,
+  keepsTheGroupWhenABackgroundRefetchFails,
   keepsThePerAreaRule,
   sharesTheAssetsQueryKey,
   showsTheGroupToACallerWhoReadsControlRoomAssets,
@@ -51,5 +52,9 @@ describe("F4.156 Control Room 2D sidebar group", () => {
 
   it("S7 shares the [\"assets\"] query key with the schematic provider", async () => {
     await sharesTheAssetsQueryKey();
+  });
+
+  it("S8 keeps the group when a background refetch fails", async () => {
+    await keepsTheGroupWhenABackgroundRefetchFails();
   });
 });

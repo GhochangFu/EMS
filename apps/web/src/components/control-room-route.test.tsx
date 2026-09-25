@@ -7,6 +7,7 @@ import {
   admitsACallerWhoReadsControlRoomAssets,
   admitsTheAreaTheGroupCovers,
   doesNotRedirectWhilePending,
+  keepsTheCallerInWhenABackgroundRefetchFails,
   keepsThePerAreaRuleOnTop,
   rendersAStatusLineWhilePending,
   sendsACallerWithNoControlRoomAssetHome,
@@ -51,5 +52,9 @@ describe("F4.156 Control Room route gate", () => {
 
   it("G5b admits the area the asset group covers", async () => {
     await admitsTheAreaTheGroupCovers();
+  });
+
+  it("G6 keeps a granted caller in when a background refetch fails", async () => {
+    await keepsTheCallerInWhenABackgroundRefetchFails();
   });
 });

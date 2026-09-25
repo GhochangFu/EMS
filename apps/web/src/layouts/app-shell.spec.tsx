@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -97,7 +97,7 @@ const NONE: AccessibleScope = { kind: "none", locations: [], assetGroups: [], as
 
 type Read = AssetListRow[] | "pending" | "rejected";
 
-function renderShell(scope: AccessibleScope, read: Read): QueryClient {
+function renderShell(scope: AccessibleScope, read: Read, seed?: AssetListRow[]): QueryClient {
   const spy = vi.spyOn(assetsApi, "fetchAssets");
   if (read === "pending") {
     spy.mockReturnValue(new Promise<AssetListRow[]>(() => {}));
@@ -108,6 +108,9 @@ function renderShell(scope: AccessibleScope, read: Read): QueryClient {
   }
   useAuthStore.setState({ scope });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (seed) {
+    client.setQueryData(["assets"], seed);
+  }
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/"]}>
@@ -194,4 +197,26 @@ export async function sharesTheAssetsQueryKey(): Promise<void> {
   const client = renderShell(LOCATION, ESKOM_ROWS);
   await within(sidebar()).findByRole("link", { name: "CR · Main Dashboard" });
   expect(client.getQueryData(["assets"])).toEqual(ESKOM_ROWS);
+}
+
+/**
+ * S8 — decides from `data`, never from `status`. A background refetch that
+ * fails keeps `data` while `status` turns `"error"` (TanStack v5); the group
+ * must stay. The flush after the status wait lets the shell re-render: TanStack
+ * v5 notifies observers on a `setTimeout(0)`.
+ */
+export async function keepsTheGroupWhenABackgroundRefetchFails(): Promise<void> {
+  const client = renderShell(LOCATION, "rejected", ESKOM_ROWS);
+  expect(
+    await within(sidebar()).findByRole("link", { name: "CR · Main Dashboard" }),
+  ).toBeInTheDocument();
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["assets"] });
+  });
+  await settled(client, "error");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(client.getQueryData(["assets"])).toEqual(ESKOM_ROWS);
+  expect(controlRoomLinks()).toHaveLength(7);
 }
