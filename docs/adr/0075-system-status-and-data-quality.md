@@ -3,11 +3,14 @@
 ## Status
 
 Proposed — drafted at the §10 gate on 2026-09-25, before any implementation
-code. Three gate questions were put to the owner one at a time and all three
+code; awaiting the owner's approval of this record. Three gate questions were put to the owner one at a time and all three
 were ruled as recommended; the rulings are under *Gate questions* and carried
-into *Decision*. Ten points were decided without a question and are listed
-under *Ruled here without a question* — the owner confirms or overrules them
-when approving this record.
+into *Decision*. Ten points were first decided without a question and are
+listed under *Ruled here without a question*. The owner then asked for the
+ones that need a ruling to be put as questions too: six follow-up questions
+(Q4–Q9) covered items 2–4 and 7–10, and all six were ruled as recommended on
+2026-09-25. Items 1, 5 and 6 follow from Q1 and from the tenancy rules and
+were not asked.
 
 Resolves the scope question the `F3.30` row left open ("worth deciding what it
 measures before building"). Promotes nothing out of `AGENTS.md` §6 — `F3.30`
@@ -84,6 +87,23 @@ reference does not say which.
 3. **Where do the indicators go?** Options: the bottom status bar, the
    sidebar footer (takes on the IA gate), a dashboard tile. **Ruled as
    recommended: the bottom status bar**, beside `StatusBarClock`.
+4. **Do the `/` Sites online tile and the map's comm status move to the
+   any-point rule too?** Options: both, the location cards only, the cards
+   and `/` only. **Ruled as recommended: both** (*Ruled here* 2–3).
+5. **Which assets form the denominator?** Options: every asset with an RTU,
+   MQTT RTU assets only, assets with a `measured` point. **Ruled as
+   recommended: every asset with an RTU** (*Ruled here* 4).
+6. **How does a database outage show?** Options: the failed request is the
+   check, a scope-free status route that pings the database, a `database`
+   component that always reads `ok`. **Ruled as recommended: the failed
+   request is the check** (*Ruled here* 7).
+7. **Which bands and words?** Options: 95 / 80 with Good / Fair / Poor,
+   90 / 70 with the same words, the number and a colour only. **Ruled as
+   recommended: 95 / 80, Good / Fair / Poor** (*Ruled here* 8).
+8. **What happens to Total kW?** Options: unchanged, fresh assets only.
+   **Ruled as recommended: unchanged** (*Ruled here* 9).
+9. **The pull-request split.** Options: one PR, two serial PRs. **Ruled as
+   recommended: one PR** (*Ruled here* 10).
 
 ## Decision
 
