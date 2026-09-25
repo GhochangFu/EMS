@@ -3,15 +3,21 @@ import { Link } from "react-router-dom";
 
 type LocationKpiCardProps = {
   location: LocationKpiSummary;
+  /**
+   * `F3.66` (plan D4) — where the card links. Defaults to the location
+   * dashboard, which `/` and the accordion keep; the Control Room organization
+   * overview passes `/control-room/site/:id`.
+   */
+  to?: string;
 };
 
-/** Clickable location KPI card for the executive dashboard. */
-export function LocationKpiCard({ location }: LocationKpiCardProps) {
+/** Clickable location KPI card for the executive dashboard and the Control Room. */
+export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
   const hasLiveTelemetry = location.freshAssetCount > 0;
 
   return (
     <Link
-      to={`/locations/${location.id}/dashboard`}
+      to={to ?? `/locations/${location.id}/dashboard`}
       className={`relative z-0 block w-full min-w-0 rounded-lg border bg-white p-3 shadow-sm transition hover:z-10 hover:border-bms-green hover:shadow-md ${
         hasLiveTelemetry ? "border-emerald-300" : "border-gray-200"
       }`}
