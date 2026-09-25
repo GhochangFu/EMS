@@ -431,15 +431,17 @@ export async function anAssetScopedDashboardWithTheAssetAbsentShowsTheId(): Prom
   expect(await screen.findByText(new RegExp(`Scoped to asset ${ASSET_DTO.assetId}\\.`))).toBeInTheDocument();
 }
 
-/** Only an asset-scoped dto issues the assets read. Mutation: drop `enabled: !!dto?.assetId`
- * ⇒ red. */
+/** Only an asset-scoped dto issues the page's assets read (`fetchAssets(ORG_ID)`). Mutation:
+ * drop `enabled: !!dto?.assetId` ⇒ red. Since `F4.156` the shell's Control Room gate issues its
+ * own unscoped `fetchAssets()` on every page, so the assertion is on the page's call with the
+ * dashboard's organization, not on any call. */
 export async function aLocationDashboardDoesNotFetchAssets(): Promise<void> {
   stubLoads({ dto: DTO, groups: [GROUP] });
 
   renderPage(asUser("admin"));
 
   await waitForPrefill("Location");
-  expect(assetsApi.fetchAssets).not.toHaveBeenCalled();
+  expect(assetsApi.fetchAssets).not.toHaveBeenCalledWith(ORG_ID);
 }
 
 /** An unedited asset-scoped dashboard is not dirty — `scopeChanged` is false for the `asset`

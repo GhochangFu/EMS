@@ -186,7 +186,9 @@ export async function viewerSeesAssetsUnderOperations(): Promise<void> {
   expect(link).toHaveAttribute("href", "/asset-browser");
   const sidebar = link.closest("aside") as HTMLElement;
   const operations = within(sidebar).getByText("Operations");
-  const controlRoom = within(sidebar).getByText("Control Room 2D");
+  // `F4.156` — the group renders once the `["assets"]` read holds a `CR-*`
+  // code (WIRED is `CR-HVAC-1`), so it is awaited rather than read at once.
+  const controlRoom = await within(sidebar).findByText("Control Room 2D");
   expect(precedes(operations, link)).toBe(true);
   expect(precedes(link, controlRoom)).toBe(true);
 }

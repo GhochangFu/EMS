@@ -8,6 +8,7 @@ import { canAccessControlRoomPath } from "../lib/control-room-access";
 import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
+import { useControlRoomAccess } from "../hooks/use-control-room-access";
 import trinetraLogoUrl from "../assets/trinetra-logo.jpeg";
 
 const topNav = [
@@ -114,6 +115,9 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   const scope = useAuthStore((state) => state.scope);
   const oidcIdToken = useAuthStore((state) => state.oidcIdToken);
   const clearSession = useAuthStore((state) => state.clearSession);
+  // `F4.156` — the Control Room 2D group shows only to a caller who reads a
+  // `CR-*` asset; it stays hidden while that read is pending or failed.
+  const controlRoom = useControlRoomAccess();
   const locationScopeLabel =
     scope?.kind === "global"
       ? "Global access"
@@ -129,11 +133,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
     if (temporarilyHiddenModulePaths.has(path)) {
       return false;
     }
-    if (scope?.kind !== "asset_group") {
-      return true;
-    }
     if (path.startsWith("/cr-")) {
-      return canAccessControlRoomPath(scope, path);
+      return controlRoom === "granted" && canAccessControlRoomPath(scope, path);
     }
     return true;
   }
@@ -243,34 +244,41 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
               {sidebarCollapsed ? "»" : "«"}
             </button>
           </div>
-          {moduleGroups.map((group) => (
-            <div key={group.title} className="mb-3">
-              {sidebarCollapsed ? (
-                <div className="mx-3 mb-1 border-t border-gray-100" title={group.title} />
-              ) : (
-                <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
-                  {group.title}
-                </div>
-              )}
-              <ul className="space-y-0.5">
-                {group.items.filter((m) => isVisible(m.path)).map((m) => (
-                  <li key={m.path}>
-                    <Link
-                      to={m.path}
-                      title={m.label}
-                      className={`block w-full border-l-2 hover:bg-bms-canvas ${
-                        location.pathname === m.path
-                          ? "border-bms-green bg-bms-canvas/80 font-semibold text-bms-ink"
-                          : "border-transparent text-bms-muted"
-                      } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
-                    >
-                      {sidebarCollapsed ? shortLabel(m.label) : m.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          {moduleGroups.map((group) => {
+            const visible = group.items.filter((m) => isVisible(m.path));
+            // `F4.156` — a group with no visible item hides its heading too.
+            if (visible.length === 0) {
+              return null;
+            }
+            return (
+              <div key={group.title} className="mb-3">
+                {sidebarCollapsed ? (
+                  <div className="mx-3 mb-1 border-t border-gray-100" title={group.title} />
+                ) : (
+                  <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
+                    {group.title}
+                  </div>
+                )}
+                <ul className="space-y-0.5">
+                  {visible.map((m) => (
+                    <li key={m.path}>
+                      <Link
+                        to={m.path}
+                        title={m.label}
+                        className={`block w-full border-l-2 hover:bg-bms-canvas ${
+                          location.pathname === m.path
+                            ? "border-bms-green bg-bms-canvas/80 font-semibold text-bms-ink"
+                            : "border-transparent text-bms-muted"
+                        } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                      >
+                        {sidebarCollapsed ? shortLabel(m.label) : m.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
           {isMasterDataAdmin(user.role) ? (
             <div className="mb-3">
               {sidebarCollapsed ? (
