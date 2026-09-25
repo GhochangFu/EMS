@@ -124,24 +124,6 @@ export const adminAssetPointDtoSchema = z.object({
   ...pointMetadataShape,
 });
 
-/**
- * `F3.39` / ADR 0051 decisions 2 and 3 — the point-key catalog is fleet-wide,
- * so this DTO carries no organization. `organizationId`, `organizationCode` and
- * `organizationName` were removed with the column migration `0057` drops; a
- * schema that kept them would describe a field no row has.
- */
-export const adminPointKeyDtoSchema = z.object({
-  id: z.string(),
-  code: z.string(),
-  name: z.string(),
-  domain: z.string().nullable(),
-  unit: z.string().nullable(),
-  description: z.string().nullable(),
-  active: z.boolean(),
-  createdAt: z.string(),
-  headlineRank: z.number().int().nullable(),
-});
-
 export const adminOrganizationSummaryDtoSchema = z.object({
   id: z.string(),
   code: z.string(),
@@ -189,7 +171,8 @@ export const adminAssetSummaryDtoSchema = z.object({
  * `actorId`/`actorEmail` are nullable: the writer resolves the actor by id or
  * email and stores `null` when neither matches, which is preserved rather than
  * rendered as a fabricated identity. `payload` is the verbatim request body of
- * the audited mutation — see ADR 0021 decision 6 before adding a field to any audited request schema.
+ * the audited mutation — see ADR 0021 decision 6 before adding a field to any
+ * audited request schema.
  */
 export const auditLogEntryDtoSchema = z.object({
   id: z.string(),

@@ -37,6 +37,7 @@ export type * from "./schema-types";
 export * from "./notifications";
 export * from "./onboarding";
 export * from "./operations";
+export * from "./point-keys";
 export * from "./point-metadata";
 export * from "./reports";
 export * from "./seeded-rules";

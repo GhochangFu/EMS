@@ -1,4 +1,4 @@
-import { adminPointKeyDtoSchema } from "./admin";
+import { adminPointKeyDtoSchema } from "./point-keys";
 import { generatedSiteViewDtoSchema } from "./generated-site-view";
 
 /**

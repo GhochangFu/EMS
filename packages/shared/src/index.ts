@@ -40,6 +40,7 @@ import type * as Cv from "./contracts/metric-catalog-values";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
+import type * as PK from "./contracts/point-keys";
 import type * as PM from "./contracts/point-metadata";
 import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
@@ -457,7 +458,7 @@ export type AdminAssetGroupMembersResponse = z.infer<
 export type SetAssetGroupMemberRoleBody = z.infer<
   typeof A.setAssetGroupMemberRoleBodySchema
 >;
-export type AdminPointKeyDto = z.infer<typeof A.adminPointKeyDtoSchema>;
+export type AdminPointKeyDto = z.infer<typeof PK.adminPointKeyDtoSchema>;
 export type AdminOrganizationSummaryDto = z.infer<
   typeof A.adminOrganizationSummaryDtoSchema
 >;
