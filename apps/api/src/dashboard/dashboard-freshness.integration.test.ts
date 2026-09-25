@@ -10,6 +10,7 @@ import {
   assertSitesOnlineUsesAnyPoint,
   assertSitesOnlineWindowIs25s,
   assertTelemetryFreshnessReadsConstant,
+  assertTelemetryFreshnessStaleBeyondWindow,
   assertTotalKwSumsStaleKw,
   inRolledBackTransaction,
 } from "./dashboard-freshness.integration.spec";
@@ -60,4 +61,6 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
   it("kpis.totalKw still sums a stale kw with no site online", run(assertKpisTotalKwUnchanged), 60_000);
 
   it("the asset rows call a 22 s sample live", run(assertTelemetryFreshnessReadsConstant), 60_000);
+
+  it("the asset rows call a 30 s sample stale", run(assertTelemetryFreshnessStaleBeyondWindow), 60_000);
 });

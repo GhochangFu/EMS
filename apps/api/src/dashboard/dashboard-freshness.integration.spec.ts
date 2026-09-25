@@ -270,3 +270,30 @@ export async function assertTelemetryFreshnessReadsConstant(client: pg.PoolClien
     `expected freshness "live" for a sample 22 s old, got ${JSON.stringify(row?.freshness ?? null)}`,
   );
 }
+
+/**
+ * Case 8 — the upper bound: an asset whose newest sample is 30 s old reads
+ * `"stale"`. Case 7 alone catches only a narrower window; this one catches a
+ * wider one. `Date.now()` is pinned for the read, for case 7's reason.
+ */
+export async function assertTelemetryFreshnessStaleBeyondWindow(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const a = await seedAsset(client, site, "A");
+  const judgedAt = Date.now();
+  await insertSampleAt(client, a, "temp_c", 21.5, new Date(judgedAt - 30_000));
+  const clock = vi.spyOn(Date, "now").mockReturnValue(judgedAt);
+  let dto: Awaited<ReturnType<DashboardService["locationDashboard"]>>;
+  try {
+    dto = await service(client).locationDashboard(site.locationId, {
+      locationIds: [site.locationId],
+      assetIds: [a],
+    });
+  } finally {
+    clock.mockRestore();
+  }
+  const row = dto?.assets.items.find((item) => item.id === a);
+  assert(
+    row?.freshness === "stale",
+    `expected freshness "stale" for a sample 30 s old, got ${JSON.stringify(row?.freshness ?? null)}`,
+  );
+}
