@@ -26,9 +26,10 @@ import { DashboardService } from "./dashboard.service";
  * pinned to that instant for the read. Every sample is still inserted as the
  * last step before the read.
  *
- * **Fan-out.** `locationKpis` sums `kw` over `rtus × assets × alarms`, so each
- * fixture location has exactly one RTU and no alarm; a second RTU would
- * double `totalKw` without any change in this row.
+ * **Fan-out.** `locationKpis` joins `rtus × assets × alarms`. Until `F4.158`
+ * it summed `kw` over that product, so a second RTU doubled `totalKw`; it now
+ * sums `kw` per location in `kw_by_location` before the joins. Cases 11 and
+ * 12 pin that; the `F3.30` cases keep one RTU and no alarm.
  */
 
 const RUN_CODE = `F330-FRESH-${randomUUID().slice(0, 8)}`;
@@ -101,8 +102,39 @@ async function seedSite(client: pg.PoolClient): Promise<Site> {
   return { organizationId, locationId, rtuId, domainCode, tag };
 }
 
-/** One asset on the site's RTU, with its own `site_name`. */
-async function seedAsset(client: pg.PoolClient, site: Site, siteName: string): Promise<string> {
+/** A further RTU at the site's location. */
+async function seedRtu(client: pg.PoolClient, site: Site): Promise<string> {
+  const rtu = await client.query<{ id: string }>(
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type)
+     VALUES ($1, $2, $3, $4, 'simulator') RETURNING id`,
+    [site.organizationId, site.locationId, `${site.tag}-RTU-${randomUUID().slice(0, 8)}`, "F4.158 fixture RTU"],
+  );
+  const id = rtu.rows[0]?.id;
+  if (!id) throw new Error("failed to insert the F4.158 fixture RTU");
+  return id;
+}
+
+/** One alarm on `assetId`, open or cleared. */
+async function seedAlarm(client: pg.PoolClient, site: Site, assetId: string, cleared: boolean): Promise<void> {
+  const severity = await client.query<{ code: string }>(
+    "SELECT code FROM bms.alarm_severities ORDER BY code LIMIT 1",
+  );
+  const code = severity.rows[0]?.code;
+  if (!code) throw new Error("bms.alarm_severities is empty — run pnpm db:seed first");
+  await client.query(
+    `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
+     VALUES ($1, $2, $3, 'F4.158 fixture alarm', now(), CASE WHEN $4::boolean THEN now() END)`,
+    [site.organizationId, assetId, code, cleared],
+  );
+}
+
+/** One asset on the site's RTU (or on `rtuId`), with its own `site_name`. */
+async function seedAsset(
+  client: pg.PoolClient,
+  site: Site,
+  siteName: string,
+  rtuId: string = site.rtuId,
+): Promise<string> {
   const asset = await client.query<{ id: string }>(
     `INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain, rtu_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
@@ -113,7 +145,7 @@ async function seedAsset(client: pg.PoolClient, site: Site, siteName: string): P
       `${site.tag} ${siteName}`,
       site.locationId,
       site.domainCode,
-      site.rtuId,
+      rtuId,
     ],
   );
   const id = asset.rows[0]?.id;
@@ -347,4 +379,49 @@ export async function assertOutOfScopeFreshAssetIsNotCounted(client: pg.PoolClie
     got.freshAssetCount === 1 && got.assetCount === 1,
     `expected { freshAssetCount: 1, assetCount: 1 }, got ${JSON.stringify(got)}`,
   );
+}
+
+/**
+ * Case 11 — `F4.158`: `totalKw` is the per-asset sum, however many RTUs and
+ * alarms the location has. Two RTUs, one asset on each at `kw = 21`, and two
+ * alarms (one open) on the first. The product-summing query read 126. Equal
+ * readings on purpose: `SUM(DISTINCT kw)` and `MAX(kw)` both read 21, so this
+ * one assertion also rejects those two wrong fixes. `rtuCount` 2 and
+ * `openAlarms` 1 are the positive control that both joins still ran.
+ */
+export async function assertTotalKwDoesNotFanOutOverRtusAndAlarms(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const secondRtu = await seedRtu(client, site);
+  const x = await seedAsset(client, site, "X");
+  const y = await seedAsset(client, site, "Y", secondRtu);
+  await seedAlarm(client, site, x, false);
+  await seedAlarm(client, site, x, true);
+  await insertSampleBeforeNow(client, x, "kw", 21, 5);
+  await insertSampleBeforeNow(client, y, "kw", 21, 5);
+  const { items } = await service(client).locationKpis({ locationIds: [site.locationId], assetIds: [x, y] });
+  const got = { totalKw: items[0]?.totalKw, rtuCount: items[0]?.rtuCount, openAlarms: items[0]?.openAlarms };
+  assert(
+    got.totalKw === 42 && got.rtuCount === 2 && got.openAlarms === 1,
+    `expected { totalKw: 42, rtuCount: 2, openAlarms: 1 }, got ${JSON.stringify(got)}`,
+  );
+}
+
+/**
+ * Case 12 — `F4.158`: the per-location `kw` sum keeps the caller's asset
+ * scope. An out-of-scope asset at the same location reads `kw = 100`; the
+ * in-scope one reads 42 and is the positive control. Without the `$2`
+ * predicate in `kw_by_location` the card reads 142 and no count shows it.
+ */
+export async function assertTotalKwExcludesOutOfScopeAsset(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const inScope = await seedAsset(client, site, "IN");
+  const outOfScope = await seedAsset(client, site, "OUT");
+  await insertSampleBeforeNow(client, outOfScope, "kw", 100, 5);
+  await insertSampleBeforeNow(client, inScope, "kw", 42, 5);
+  const { items } = await service(client).locationKpis({
+    locationIds: [site.locationId],
+    assetIds: [inScope],
+  });
+  const got = items[0]?.totalKw;
+  assert(got === 42, `expected totalKw 42 (the in-scope asset only), got ${JSON.stringify(got)}`);
 }

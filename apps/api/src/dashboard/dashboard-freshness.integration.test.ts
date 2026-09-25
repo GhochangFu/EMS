@@ -13,6 +13,8 @@ import {
   assertTelemetryFreshnessReadsConstant,
   assertTelemetryFreshnessStaleBeyondWindow,
   assertThreeSamplesDoNotFanOutTotalKw,
+  assertTotalKwDoesNotFanOutOverRtusAndAlarms,
+  assertTotalKwExcludesOutOfScopeAsset,
   assertTotalKwSumsStaleKw,
   inRolledBackTransaction,
 } from "./dashboard-freshness.integration.spec";
@@ -69,4 +71,12 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
   it("three samples of one asset do not fan out totalKw or freshAssetCount", run(assertThreeSamplesDoNotFanOutTotalKw), 60_000);
 
   it("a fresh asset outside assetIds stays out of freshAssetCount", run(assertOutOfScopeFreshAssetIsNotCounted), 60_000);
+
+  it(
+    "F4.158 — totalKw is the per-asset sum across two RTUs and two alarms",
+    run(assertTotalKwDoesNotFanOutOverRtusAndAlarms),
+    60_000,
+  );
+
+  it("F4.158 — totalKw leaves out an asset outside assetIds", run(assertTotalKwExcludesOutOfScopeAsset), 60_000);
 });
