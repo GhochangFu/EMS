@@ -55,6 +55,7 @@ export async function fetchSystemStatusSendsTheBearerToken(): Promise<void> {
     "token-xyz",
     { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "organization_admin" },
     { kind: "location", locations: [], assetGroups: [], assetIds: [] },
+    null,
   );
   try {
     const seen = stubFetch(200, VALID_BODY);
