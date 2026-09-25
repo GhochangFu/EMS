@@ -162,3 +162,38 @@ export async function assertCommStatusCountsNonKwFresh(pool: pg.Pool): Promise<v
     ).toBe("healthy");
   });
 }
+
+/**
+ * `sitesLive`'s comm-status counts only the fresh asset as fresh: a second
+ * in-scope asset whose only sample is 60 s old counts in `assetsTotal` and
+ * not in `assetsFresh` (`F3.30` code review 3). `COUNT(l.asset_id)` is what
+ * tells them apart — `COUNT(a.id)` would read 2 of 2.
+ */
+export async function assertCommStatusLeavesAStaleAssetOut(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const { locationId, organizationId, slug } = await insertFixture(client, run);
+    const db = createDb(client as unknown as pg.Pool);
+    const [freshAssetId, staleAssetId] = await createFixtureAssets(db, 2, "F330MS", {
+      locationId,
+      organizationId,
+    });
+    if (!freshAssetId || !staleAssetId) throw new Error("F3.30: no fixture comm-status assets");
+    // SQL `now()` is frozen for the transaction, so both ages are exact.
+    await client.query(
+      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+       VALUES (now() - make_interval(secs => 60), $1, 'humidity_pct', 40, 'pct'),
+              (now() - make_interval(secs => 5), $2, 'humidity_pct', 42, 'pct')`,
+      [staleAssetId, freshAssetId],
+    );
+    const service = new MapService(client as unknown as pg.Pool);
+
+    const sites = await service.sitesLive({ assetIds: [freshAssetId, staleAssetId] });
+    const site = sites.find((candidate) => candidate.slug === slug);
+    expect(site, "the fixture map location is listed").toBeDefined();
+    expect(
+      { fresh: site?.live.assetsFresh, total: site?.live.assetsTotal },
+      "one fresh asset of two in scope — the 60 s one is not fresh",
+    ).toEqual({ fresh: 1, total: 2 });
+  });
+}

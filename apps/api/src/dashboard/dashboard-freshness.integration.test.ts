@@ -6,11 +6,13 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import {
   assertKpisTotalKwUnchanged,
   assertNonKwSampleCountsAsFresh,
+  assertOutOfScopeFreshAssetIsNotCounted,
   assertRtuRowsCountNonKwFresh,
   assertSitesOnlineUsesAnyPoint,
   assertSitesOnlineWindowIs25s,
   assertTelemetryFreshnessReadsConstant,
   assertTelemetryFreshnessStaleBeyondWindow,
+  assertThreeSamplesDoNotFanOutTotalKw,
   assertTotalKwSumsStaleKw,
   inRolledBackTransaction,
 } from "./dashboard-freshness.integration.spec";
@@ -52,7 +54,7 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
 
   it("locationKpis still sums a stale kw into totalKw and does not count it fresh", run(assertTotalKwSumsStaleKw), 60_000);
 
-  it("locationDashboard's RTU row counts a non-kw fresh asset", run(assertRtuRowsCountNonKwFresh), 60_000);
+  it("locationDashboard's RTU row counts a non-kw fresh asset and not a 60 s one", run(assertRtuRowsCountNonKwFresh), 60_000);
 
   it("kpis.sitesOnline counts a site whose fresh sample is not kw", run(assertSitesOnlineUsesAnyPoint), 60_000);
 
@@ -63,4 +65,8 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
   it("the asset rows call a 22 s sample live", run(assertTelemetryFreshnessReadsConstant), 60_000);
 
   it("the asset rows call a 30 s sample stale", run(assertTelemetryFreshnessStaleBeyondWindow), 60_000);
+
+  it("three samples of one asset do not fan out totalKw or freshAssetCount", run(assertThreeSamplesDoNotFanOutTotalKw), 60_000);
+
+  it("a fresh asset outside assetIds stays out of freshAssetCount", run(assertOutOfScopeFreshAssetIsNotCounted), 60_000);
 });

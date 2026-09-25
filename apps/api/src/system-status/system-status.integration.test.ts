@@ -8,11 +8,14 @@ import type { BmsDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertEmptyScopeRunsNoQuery,
+  assertFreshSimulatorDoesNotMakeFieldDataOk,
   assertNoMqttInScopeIsNotMonitored,
   assertNoRtuIsNotStreaming,
   assertOneFreshOfTwoStreaming,
+  assertOutOfScopeFreshMqttIsNotCounted,
   assertStaleMqttIsDegraded,
   assertStaleQueueDegradesTheVerdict,
+  assertThreeSamplesCountOneFreshAsset,
 } from "./system-status.integration.spec";
 
 /**
@@ -67,5 +70,17 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
 
   it("a stale queue heartbeat degrades the verdict", async () => {
     await assertStaleQueueDegradesTheVerdict(db);
+  }, 60_000);
+
+  it("a fresh simulator asset beside a silent mqtt asset reads field_data degraded at 50 %", async () => {
+    await assertFreshSimulatorDoesNotMakeFieldDataOk(db);
+  }, 60_000);
+
+  it("a fresh mqtt asset outside the scope reaches neither count", async () => {
+    await assertOutOfScopeFreshMqttIsNotCounted(db);
+  }, 60_000);
+
+  it("three samples of one asset inside the window count one fresh asset", async () => {
+    await assertThreeSamplesCountOneFreshAsset(db);
   }, 60_000);
 });

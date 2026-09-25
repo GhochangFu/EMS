@@ -117,11 +117,11 @@ async function buildScene(tx: Tx): Promise<Scene> {
   return { tx, a, b, c };
 }
 
-/** Inserts one `temp_c` sample `ageSeconds` old, relative to the transaction's `now()`. */
-async function addSample(scene: Scene, assetId: string, ageSeconds: number): Promise<void> {
+/** Inserts one sample `ageSeconds` old, relative to the transaction's `now()` — `temp_c` unless a key is given. */
+async function addSample(scene: Scene, assetId: string, ageSeconds: number, pointKey = "temp_c"): Promise<void> {
   await scene.tx.execute(sql`
     INSERT INTO telemetry.point_values (time, asset_id, point_key, value)
-    VALUES (now() - make_interval(secs => ${ageSeconds}), ${assetId}, 'temp_c', 1)
+    VALUES (now() - make_interval(secs => ${ageSeconds}), ${assetId}, ${pointKey}, 1)
   `);
 }
 
@@ -238,6 +238,61 @@ export async function assertStaleQueueDegradesTheVerdict(db: BmsDb): Promise<voi
     assert(
       JSON.stringify(r.components) === expected && r.status === "degraded",
       `expected components ${expected} and status degraded; got ${summary(r)}`,
+    );
+  });
+}
+
+/**
+ * Case 7 — A (mqtt) silent, B (simulator) fresh 5 s: half the fleet is fresh,
+ * but the fresh half is not mqtt, so `field_data` is degraded. Only the
+ * `FILTER (WHERE s.source_type = 'mqtt')` on `mqtt_fresh` keeps B's sample out
+ * of the field-data count (code review 2).
+ */
+export async function assertFreshSimulatorDoesNotMakeFieldDataOk(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    await addSample(scene, scene.b, 5);
+    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a, scene.b, scene.c]);
+    assert(
+      r.dataQuality.percent === 50 && fieldData(r) === "degraded" && r.status === "degraded",
+      `expected 50 %, field_data degraded, status degraded; got ${summary(r)}`,
+    );
+  });
+}
+
+/**
+ * Case 8 — security L1: A (mqtt) fresh 5 s but outside the scope; the scope
+ * is [B], and B's only sample is 60 s old. A must reach neither count: no
+ * mqtt asset is in scope, nothing in scope is fresh, and B alone streams —
+ * the positive control that the scoped read ran at all.
+ */
+export async function assertOutOfScopeFreshMqttIsNotCounted(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    await addSample(scene, scene.a, 5);
+    await addSample(scene, scene.b, 60);
+    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.b]);
+    assert(
+      r.dataQuality.streamingAssets === 1 &&
+        r.dataQuality.freshAssets === 0 &&
+        fieldData(r) === "not_monitored",
+      `expected streaming 1, fresh 0, field_data not_monitored; got ${summary(r)}`,
+    );
+  });
+}
+
+/**
+ * Case 9 — no fan-out: A carries three samples of different point keys
+ * inside the window and still counts as one fresh asset. `live` is
+ * `SELECT DISTINCT asset_id`, so the `LEFT JOIN` yields one row per asset.
+ */
+export async function assertThreeSamplesCountOneFreshAsset(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    await addSample(scene, scene.a, 5, "temp_c");
+    await addSample(scene, scene.a, 4, "humidity_pct");
+    await addSample(scene, scene.a, 3, "kw");
+    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a]);
+    assert(
+      r.dataQuality.freshAssets === 1 && r.dataQuality.streamingAssets === 1,
+      `expected fresh 1 of streaming 1; got ${summary(r)}`,
     );
   });
 }

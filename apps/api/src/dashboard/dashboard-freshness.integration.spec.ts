@@ -181,19 +181,27 @@ export async function assertTotalKwSumsStaleKw(client: pg.PoolClient): Promise<v
   );
 }
 
-/** Case 3 — `locationDashboard`'s RTU row counts a non-`kw` fresh asset. */
+/**
+ * Case 3 — `locationDashboard`'s RTU row counts a non-`kw` fresh asset, and
+ * only that one: a second in-scope asset on the same RTU whose only sample is
+ * 60 s old is counted in `assetCount` and not in `freshAssetCount` — the
+ * stale control the `FILTER (WHERE live.asset_id IS NOT NULL)` answers for
+ * (code review 3).
+ */
 export async function assertRtuRowsCountNonKwFresh(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
   const a = await seedAsset(client, site, "A");
+  const stale = await seedAsset(client, site, "S");
+  await insertSampleBeforeNow(client, stale, "temp_c", 20, 60);
   await insertSampleBeforeNow(client, a, "temp_c", 21.5, 5);
   const dto = await service(client).locationDashboard(site.locationId, {
     locationIds: [site.locationId],
-    assetIds: [a],
+    assetIds: [a, stale],
   });
   const rtu = dto?.rtus.find((r) => r.id === site.rtuId);
   assert(
-    rtu?.freshAssetCount === 1,
-    `expected the fixture RTU's freshAssetCount 1, got ${JSON.stringify(rtu ?? null)}`,
+    rtu?.freshAssetCount === 1 && rtu?.assetCount === 2,
+    `expected the fixture RTU at 1 fresh of 2, got ${JSON.stringify(rtu ?? null)}`,
   );
 }
 
@@ -295,5 +303,48 @@ export async function assertTelemetryFreshnessStaleBeyondWindow(client: pg.PoolC
   assert(
     row?.freshness === "stale",
     `expected freshness "stale" for a sample 30 s old, got ${JSON.stringify(row?.freshness ?? null)}`,
+  );
+}
+
+/**
+ * Case 9 — no fan-out: one asset with `kw = 42` and two more samples of other
+ * keys, all inside the window, still sums to `totalKw` 42 and counts one
+ * fresh asset. `live` is `SELECT DISTINCT asset_id`; without the `DISTINCT`
+ * the `LEFT JOIN live` would triple the asset's row and `SUM(latest.kw)` with
+ * it. The extra samples are not `kw`, so `latest` still picks 42.
+ */
+export async function assertThreeSamplesDoNotFanOutTotalKw(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const a = await seedAsset(client, site, "A");
+  await insertSampleBeforeNow(client, a, "kw", 42, 5);
+  await insertSampleBeforeNow(client, a, "temp_c", 21.5, 4);
+  await insertSampleBeforeNow(client, a, "humidity_pct", 40, 3);
+  const { items } = await service(client).locationKpis({ locationIds: [site.locationId], assetIds: [a] });
+  const got = { totalKw: items[0]?.totalKw, freshAssetCount: items[0]?.freshAssetCount };
+  assert(
+    got.totalKw === 42 && got.freshAssetCount === 1,
+    `expected { totalKw: 42, freshAssetCount: 1 }, got ${JSON.stringify(got)}`,
+  );
+}
+
+/**
+ * Case 10 — security L1: a fresh asset at the same location but outside
+ * `assetIds` stays out of `freshAssetCount`. The in-scope asset is fresh too,
+ * so the count must read exactly 1 — the positive control that the read ran.
+ */
+export async function assertOutOfScopeFreshAssetIsNotCounted(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const inScope = await seedAsset(client, site, "IN");
+  const outOfScope = await seedAsset(client, site, "OUT");
+  await insertSampleBeforeNow(client, outOfScope, "temp_c", 21.5, 5);
+  await insertSampleBeforeNow(client, inScope, "temp_c", 21.5, 5);
+  const { items } = await service(client).locationKpis({
+    locationIds: [site.locationId],
+    assetIds: [inScope],
+  });
+  const got = { freshAssetCount: items[0]?.freshAssetCount, assetCount: items[0]?.assetCount };
+  assert(
+    got.freshAssetCount === 1 && got.assetCount === 1,
+    `expected { freshAssetCount: 1, assetCount: 1 }, got ${JSON.stringify(got)}`,
   );
 }

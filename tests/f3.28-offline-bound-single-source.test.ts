@@ -80,6 +80,13 @@ describe("F3.30 — telemetry-freshness.ts declares the shared window once (ADR 
     expect(cte, "LIVE_ASSETS_CTE_SQL must be declared as a template literal").not.toBeNull();
     expect(cte?.[1] ?? "").toMatch(/\btime > now\(\) - \$\{LIVE_WINDOW_INTERVAL_SQL\}/);
   });
+
+  it("LIVE_ASSETS_CTE_SQL selects DISTINCT asset_id, so joining it cannot fan out a row", () => {
+    const source = readFileSync(FRESHNESS, "utf8");
+    const cte = source.match(/export const LIVE_ASSETS_CTE_SQL\s*=\s*`([^`]*)`/);
+    expect(cte, "LIVE_ASSETS_CTE_SQL must be declared as a template literal").not.toBeNull();
+    expect(cte?.[1] ?? "").toMatch(/\bSELECT DISTINCT asset_id\b/);
+  });
 });
 
 describe("F3.30 — the role-summary service reads the shared constant (ADR 0075 decision 2)", () => {
