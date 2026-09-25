@@ -15,6 +15,7 @@ import {
   nonAdminBuiltinFieldIsDisabled,
   nonAdminSeesTheStoredBuiltinView,
   rejectedPutShowsItsMessage,
+  removedStoredDashboardEntryIsDisabled,
   removedStoredDashboardShowsNoLongerAvailable,
   rescopedStoredDashboardShowsNoLongerAvailable,
   touchedDashboardPickerIsRequired,
@@ -113,5 +114,9 @@ describe("F3.67 locations page — the Control Room view field", () => {
 
   it("W10b a re-scoped stored dashboard stays selected as no longer available (C1)", async () => {
     await rescopedStoredDashboardShowsNoLongerAvailable();
+  }, WAIT_BUDGET_MS);
+
+  it("W10c the no-longer-available entry for a removed stored dashboard is disabled (C1)", async () => {
+    await removedStoredDashboardEntryIsDisabled();
   }, WAIT_BUDGET_MS);
 });

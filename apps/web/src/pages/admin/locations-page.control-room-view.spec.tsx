@@ -487,3 +487,14 @@ export async function rescopedStoredDashboardShowsNoLongerAvailable(): Promise<v
   expect(picker.value).toBe(OTHER_DASHBOARD_ID);
   expect(picker.selectedOptions[0]?.textContent).toBe("(no longer available)");
 }
+
+/** W10c (review C1) — the "(no longer available)" entry for a deleted stored dashboard is
+ * disabled: it states the stored fact, it is not a choice. Mutation: drop its `disabled`. */
+export async function removedStoredDashboardEntryIsDisabled(): Promise<void> {
+  stubApi(setting({ kind: "dashboard", dashboardId: null }));
+  renderPage("admin");
+  await openEditForSite();
+
+  const picker = await storedDashboardPicker();
+  expect(picker.selectedOptions[0]).toBeDisabled();
+}

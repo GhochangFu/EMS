@@ -51,6 +51,7 @@ export function ControlRoomViewField({
       </label>
     );
   }
+  const removedStoredDashboard = !touched && value.dashboardId === null;
   // A stored dashboard the picker does not list (re-scoped away from the site, or moved) stays
   // selected as a disabled option, so the select shows the truth rather than the placeholder.
   const unlistedDashboardId =
@@ -86,8 +87,8 @@ export function ControlRoomViewField({
           >
             {/* An untouched field with no dashboard is a stored dashboard view whose dashboard
                 was deleted (the FK set it NULL): say so, rather than offer a neutral choice. */}
-            <option value="">
-              {!touched && value.dashboardId === null ? "(no longer available)" : "Select a dashboard"}
+            <option value="" disabled={removedStoredDashboard}>
+              {removedStoredDashboard ? "(no longer available)" : "Select a dashboard"}
             </option>
             {unlistedDashboardId !== null ? (
               <option value={unlistedDashboardId} disabled>
