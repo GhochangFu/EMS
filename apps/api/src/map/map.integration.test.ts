@@ -2,7 +2,10 @@ import type pg from "pg";
 
 import { afterAll, beforeAll, describe, it } from "vitest";
 
-import { assertSiteOpenAlarmsFollowClearedAt } from "./map.integration.spec";
+import {
+  assertCommStatusCountsNonKwFresh,
+  assertSiteOpenAlarmsFollowClearedAt,
+} from "./map.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 
 /**
@@ -37,5 +40,9 @@ describe.skipIf(!connectionString)("F3.10 — map site open-alarm counts follow 
 
   it("counts an acknowledged, uncleared alarm for its site and excludes a cleared, unacknowledged one", async () => {
     await assertSiteOpenAlarmsFollowClearedAt(pool);
+  }, 60_000);
+
+  it("counts a non-kw sample as fresh in the comm-status any-point rule (F3.30, ADR 0075 decision 2)", async () => {
+    await assertCommStatusCountsNonKwFresh(pool);
   }, 60_000);
 });

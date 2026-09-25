@@ -47,6 +47,8 @@ function numericExport(file: string, name: string): number {
 const FRESHNESS_SITES: ReadonlyArray<{ readonly file: string; readonly count: number }> = [
   // `locationKpis`, `locationDashboard`'s RTU rows, `kpis.sites_online`.
   { file: "apps/api/src/dashboard/dashboard.service.ts", count: 3 },
+  // `sitesLive`'s comm-status count.
+  { file: "apps/api/src/map/map.service.ts", count: 1 },
 ];
 
 describe("F3.28 — the offline bound has one source (ADR 0074, OQ1)", () => {
