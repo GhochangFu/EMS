@@ -5849,3 +5849,46 @@ a mutation per spec; three reviews; browser on a branch-built container —
 
 **Cascade:** `F3.70` lists `F4.156` and still waits on `F3.66` and `F3.67`.
 No `chore(agents):` sweep is owed (compliance review).
+
+### `F3.30` — System Status and Data Quality indicators (ADR 0075) ✅ 2026-09-25
+
+PR #552, squash `65cb22ed`, one pull request on one ADR and one plan. Gated
+2026-09-25 by [ADR 0075](./adr/0075-system-status-and-data-quality.md) (#548),
+drafted and ruled the same day: nine questions, all ruled as recommended.
+Data Quality measures asset freshness over any point key, not gap coverage
+(no expected interval exists) and not the unmapped ratio (static); System
+Status is the queue and storage health plus an inferred MQTT field-data
+check, with a failed request standing in for the database; both sit in the
+bottom status bar, clear of the open *Domain-first navigation IA* decision.
+
+The row added `GET /api/v1/system/status` and a `SystemStatusIndicator`
+beside the status-bar clock, polled every 30 s, with a 10 s timeout and one
+retry (an owner ruling at review). It also moved the four `kw`-only
+freshness tests — the location cards, their RTU rows, `/` Sites online and
+the map's comm status — onto the ADR 0074 any-point 25 s rule through one
+shared CTE; on dev about half the reporting assets have no `kw` point, so
+the cards' fresh count had been under-counting by that much. Total kW did
+not change.
+
+ADR 0075 Amendment 1 came from the stack check, before merge. The real MQTT
+devices report every 60 s, so under the 25 s window a healthy feed read 4–12
+of 20 fresh and Data Quality would have shown about 20–60 % "Poor". The
+status read now uses its own 150 s reporting window; the cards, `/`, the map
+and the class strip keep 25 s, answering "is this reading live?" where the
+status bar answers "is data arriving?". Errata 1 corrects the dev chunk
+count to 64.
+
+Verified: every unit test-first with a recorded mutation; integration
+suites 96/96 against Postgres; web 1373/1373; both type checks. The local
+full suite never completed — stopped for a rebase onto `F4.156` and then by
+the harness for low memory — so CI was the gate, by owner ruling, green on
+the merged head. Three reviews: compliance clean, one security Low and seven
+code-review items fixed. Stack: the route answers 401/404 correctly on a
+rebuilt container; browser 8/8, including the red outage state with the API
+stopped; after Amendment 1, seven reads over 90 s were identical. No
+migration.
+
+**Cascade:** no row lists `F3.30` in *Depends*. New row from the build:
+`F4.158` — a location card's Total kW is multiplied by the RTU and alarm
+joins (dev: 32,838 kW against a per-asset 273.7 kW). Owed separately: the
+`chore(agents):` sweep for ADR 0075.
