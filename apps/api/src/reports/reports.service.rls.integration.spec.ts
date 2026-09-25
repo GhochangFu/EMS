@@ -29,10 +29,13 @@ const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
  *
  * On a bare tenant pool with no `app.current_organization` GUC, the FORCE policy
  * returns **zero** rows from `bms.assets` for every caller — so the inner join
- * empties `topConsumers`, and `solar_ids` empties, which misattributes all solar
- * generation to grid. The report's telemetry aggregate (`aggregateRelation`) is
- * unpoliced, so `summary.totalKwh` stays non-zero. That asymmetry is the whole
- * client-visible harm the constructor comment claims, and it is what this proves.
+ * empties `topConsumers`, and `solar_ids` empties. Until `F4.159` the kWh total
+ * read the unpoliced telemetry aggregate (`aggregateRelation`) with no
+ * `bms.assets` join, so `summary.totalKwh` stayed non-zero and all solar was
+ * misattributed to grid. Since `F4.159` every energy total joins `bms.assets`
+ * (telemetry of an asset id with no row is not energy), so the whole report
+ * reads zero on that pool. Either way the report is wrong on a tenant pool,
+ * which is the harm the constructor comment claims, and it is what this proves.
  *
  * ## Why this needs a telemetry fixture, and why it refreshes production
  *
@@ -496,16 +499,33 @@ export async function assertNotesRewrite(): Promise<void> {
 }
 
 /**
- * **The divergence.** On a bare tenant pool the `bms.assets` reads go dark under
- * `0047` FORCE, so `topConsumers` is empty and solar is misattributed to grid —
- * while the unpoliced telemetry aggregate keeps `totalKwh` non-zero. That last
- * assertion is not decoration: it rules out "the fixture never landed" and
- * "this pool cannot read the cagg" as the reason `topConsumers` is empty.
+ * **The report goes dark.** On a bare tenant pool the `bms.assets` reads return
+ * nothing under `0047` FORCE, so `topConsumers` is empty, and since `F4.159` the
+ * kWh total and the source totals are zero too: each joins `bms.assets`.
+ *
+ * The first assertion is not decoration: the same pool reads the unpoliced
+ * `point_values_1h` directly and finds the fixture's energy, which rules out
+ * "the fixture never landed" and "this pool cannot read the cagg" as the reason
+ * the report is empty. (Before `F4.159` the report's own `totalKwh` did that job.)
  */
 export async function assertReportGoesDarkOnBareTenant(
   bareTenantPool: pg.Pool,
   fx: EnergyRlsFixture,
 ): Promise<void> {
+  const { rows } = await bareTenantPool.query<{ kw_sum: number }>(
+    `SELECT COALESCE(SUM(sum_value), 0)::float8 AS kw_sum
+       FROM telemetry.point_values_1h
+      WHERE point_key = 'kw' AND asset_id = ANY($1::uuid[])
+        AND bucket >= $2::timestamptz AND bucket <= $3::timestamptz`,
+    [scopedAssetIds(fx), `${fx.query.startDate}T00:00:00.000Z`, `${fx.query.endDate}T23:59:59.999Z`],
+  );
+  const kwSum = Number(rows[0]?.kw_sum ?? 0);
+  assert(
+    kwSum > 0,
+    `bare tenant: the pool must read the fixture's kw from the unpoliced aggregate — otherwise ` +
+      `an empty report proves nothing about RLS. Got ${kwSum}`,
+  );
+
   const svc = new ReportsService(bareTenantPool, NO_TARIFFS);
   const preview = await svc.energyPreview(fx.query, scopedAssetIds(fx));
 
@@ -515,14 +535,14 @@ export async function assertReportGoesDarkOnBareTenant(
       `${preview.topConsumers.length}`,
   );
   assert(
-    preview.summary.totalKwh > 0,
-    `bare tenant: the unpoliced telemetry aggregate must still return totalKwh > 0 — otherwise ` +
-      `the empty topConsumers proves nothing about RLS. Got ${preview.summary.totalKwh}`,
+    preview.summary.totalKwh === 0,
+    `bare tenant: the kWh total joins bms.assets (F4.159), so it must go dark too, got ` +
+      `${preview.summary.totalKwh}`,
   );
   assert(
-    preview.sourceTotals.solarKwh === 0,
-    `bare tenant: solar must be misattributed to grid (solar_ids goes dark), got ` +
-      `solarKwh=${preview.sourceTotals.solarKwh}`,
+    preview.sourceTotals.solarKwh === 0 && preview.sourceTotals.gridKwh === 0,
+    `bare tenant: the source totals join bms.assets (F4.159), so they must go dark too, got ` +
+      `${JSON.stringify(preview.sourceTotals)}`,
   );
 }
 

@@ -6,6 +6,7 @@ import { DashboardService } from "../dashboard/dashboard.service";
 import {
   openIntegrationPool,
   requireIntegrationDb,
+  resolveIntegrationRoleUrl,
 } from "../testing/integration-db-gate";
 import {
   assertBucketsExist,
@@ -163,9 +164,22 @@ describe.skipIf(!connectionString)("F4.1 — telemetry continuous aggregates", (
    * are invisible to every other assertion here.
    */
   it("energySummary matches the equivalent raw query on both branches", async () => {
-    const svc = new DashboardService(pool as pg.Pool, NO_TARIFFS);
-    await assertEnergySummaryMatchesRaw(pool as pg.Pool, (window, assetIds) =>
-      svc.energySummary(window, assetIds),
+    // `F4.159`: the service reads on `bms_fleet`, its production pool. The kWh
+    // total joins `bms.assets`, which FORCE row-level security hides from this
+    // suite's owner connection with no `app.current_organization`, so on the
+    // owner pool the total would read 0. The fixture and the refresh stay on the
+    // owner pool, which owns the aggregates.
+    const fleet = await openIntegrationPool(
+      resolveIntegrationRoleUrl(connectionString as string, "fleet", process.env),
+      "F4.1",
     );
+    try {
+      const svc = new DashboardService(fleet, NO_TARIFFS);
+      await assertEnergySummaryMatchesRaw(pool as pg.Pool, (window, assetIds) =>
+        svc.energySummary(window, assetIds),
+      );
+    } finally {
+      await fleet.end();
+    }
   }, 120_000);
 });

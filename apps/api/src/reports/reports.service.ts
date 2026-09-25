@@ -33,10 +33,10 @@ const energyTemplate: EnergyReportTemplate = {
 @Injectable()
 export class ReportsService {
   // E7.1b: the energy report joins `bms.assets` (FORCE-policied as of 0047) —
-  // `energySourceTotals`'s `solar_ids` and `energyTopConsumers`'s asset join. On
-  // the tenant pool with no GUC those return zero rows for EVERY caller (incl.
-  // the global admin): top-consumers empties and solar generation is
-  // misattributed to grid. The report reads across the caller's `assetIds` scope
+  // `energySourceTotals`'s `solar_ids` and `energyTopConsumers`'s asset join,
+  // and since F4.159 every energy total. On the tenant pool with no GUC those
+  // return zero rows for EVERY caller (incl. the global admin): the whole
+  // report reads zero. The report reads across the caller's `assetIds` scope
   // (threaded as `$3`/`$4`), which is the isolation control (Amendment 2/3), so
   // it runs on fleetDb (BYPASSRLS). Its telemetry aggregates are unpoliced.
   constructor(
