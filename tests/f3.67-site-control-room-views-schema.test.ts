@@ -51,9 +51,10 @@ const columnLine = (migration: string, marker: string): string => {
  * `F3.67` — the static half of `bms.site_control_room_views`'s schema
  * guarantees (migration `0082`, ADR 0076 decisions 3–4; plan U1, T1–T10).
  * `tests/f3.67-site-control-room-views-schema.integration.test.ts` asserts
- * what Postgres enforces; this asserts the migration's text, including what a
- * behavioural probe cannot reach (the `USING` legs, the absent GRANT and
- * index). Assertions inline, no `.spec` sibling (§4.6).
+ * what Postgres enforces (its I9c/I9d read probes reach the `USING` legs);
+ * this asserts the migration's text, including what a behavioural probe
+ * cannot reach (the absent GRANT and index). Assertions inline, no `.spec`
+ * sibling (§4.6).
  */
 describe("F3.67 — bms.site_control_room_views schema (migration 0082)", () => {
   it("is not scanning an empty or misnamed file", () => {
@@ -128,6 +129,15 @@ describe("F3.67 — bms.site_control_room_views schema (migration 0082)", () => 
       );
       expect(half, `${name} dashboards leg must pin the parent's organization`).toContain(
         `d.${OWN_ORG}`,
+      );
+      // The correlation predicates (migration review M1): without them each
+      // EXISTS asks "does the organization own *any* location / dashboard",
+      // which every tenant satisfies.
+      expect(half, `${name} locations leg must correlate to the row's location`).toContain(
+        "l.id = site_control_room_views.location_id",
+      );
+      expect(half, `${name} dashboards leg must correlate to the row's dashboard`).toContain(
+        "d.id = site_control_room_views.dashboard_id",
       );
     }
   });

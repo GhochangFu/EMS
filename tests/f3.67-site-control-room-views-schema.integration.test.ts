@@ -287,6 +287,52 @@ describe.skipIf(!has)("F3.67 — bms.site_control_room_views against a live data
     });
   });
 
+  /** Counts the rows at `location` as `bms_owner` (FORCE-bound) under GUC A. */
+  const countUnderA = async (run: Run, location: string): Promise<unknown> => {
+    await run("SET LOCAL ROLE bms_owner");
+    await setOrg(orgA);
+    const seen = await run(
+      `SELECT count(*)::int AS n FROM bms.site_control_room_views WHERE location_id = $1`,
+      [location],
+    );
+    return seen.rows[0]?.n;
+  };
+
+  // I9c — the USING half's locations leg (migration review M1). The row is
+  // written as `bms_fleet` (BYPASSRLS), which the WITH CHECK half would refuse,
+  // so only USING can hide it on the read.
+  it("I9c under GUC A, hides an organization-A row that sits on an organization-B location", async () => {
+    await inTx(async (run) => {
+      const own = await newLocation(run, orgA, "i9c-own");
+      const foreign = await newLocation(run, orgB, "i9c-foreign");
+      await run("SET LOCAL ROLE bms_fleet");
+      await run(INSERT_VIEW, [own, orgA, "generated", null, null]);
+      await run(INSERT_VIEW, [foreign, orgA, "generated", null, null]);
+
+      // Positive control in the same transaction: the own-organization row is
+      // visible, so the 0 below is the locations leg, not a read that sees nothing.
+      expect(await countUnderA(run, own)).toBe(1);
+      expect(await countUnderA(run, foreign)).toBe(0);
+    });
+  });
+
+  // I9d — the USING half's dashboards leg (migration review M1).
+  it("I9d under GUC A, hides an organization-A row that chose an organization-B dashboard", async () => {
+    await inTx(async (run) => {
+      const own = await newLocation(run, orgA, "i9d-own");
+      const ownDash = await newDashboard(run, orgA, "i9d-own");
+      const loc = await newLocation(run, orgA, "i9d-foreign");
+      const foreignDash = await newDashboard(run, orgB, "i9d-foreign");
+      await run("SET LOCAL ROLE bms_fleet");
+      await run(INSERT_VIEW, [own, orgA, "dashboard", ownDash, null]);
+      await run(INSERT_VIEW, [loc, orgA, "dashboard", foreignDash, null]);
+
+      // Positive control: a row choosing an own-organization dashboard is visible.
+      expect(await countUnderA(run, own)).toBe(1);
+      expect(await countUnderA(run, loc)).toBe(0);
+    });
+  });
+
   // I10
   it("I10 deleting the chosen dashboard keeps the row, kind 'dashboard', dashboard_id NULL", async () => {
     await inTx(async (run) => {
