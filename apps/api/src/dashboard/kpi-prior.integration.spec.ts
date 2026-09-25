@@ -359,3 +359,88 @@ export async function assertLivePueStillReadsAFreshPair(client: pg.PoolClient): 
   const got = await latestPueRatio(client, [s.assetId]);
   assert(got === 2, `the live read must still see a pair 60 s old, got ${JSON.stringify(got)}`);
 }
+
+// ---------------------------------------------------------------------------
+// `F4.159` — `kw` samples whose `asset_id` has no `bms.assets` row. The
+// `telemetry.point_values` table carries no foreign key, so a sample outlives
+// its asset. Both Total kW reads join `bms.assets` after the DISTINCT ON, for
+// every scope, so the scoped cases below gate the join deterministically; a live
+// caller never puts such an id in its scope, and the `null` scope — the global
+// user, where the defect shows — is held by the two delta cases after them.
+// ---------------------------------------------------------------------------
+
+/** The `kw` rows the five F4.159 cases seed: one real asset (A) and one orphan id. */
+async function seedOrphanPair(
+  client: pg.PoolClient,
+  live: Date,
+  prior: Date,
+): Promise<{ a: Seeded; orphan: string }> {
+  const a = await seedAsset(client);
+  const orphan = randomUUID();
+  await insertSample(client, a.assetId, "kw", prior, 3);
+  await insertSample(client, a.assetId, "kw", live, 7);
+  await insertSample(client, orphan, "kw", prior, 500);
+  await insertSample(client, orphan, "kw", live, 1000);
+  return { a, orphan };
+}
+
+/** `kpis([A, orphan]).totalKw` is A's 7. Without the join it is 1007. */
+export async function assertKpisTotalKwIgnoresAnOrphanId(client: pg.PoolClient): Promise<void> {
+  const t0 = new Date();
+  const { a, orphan } = await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
+  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+  const got = await service.kpis([a.assetId, orphan]);
+  assert(got.totalKw === 7, `totalKw must count only the asset that exists (7), got ${got.totalKw}`);
+}
+
+/** `priorTotalKw([A, orphan])` is A's 3. Without the join it is 503. */
+export async function assertPriorTotalKwIgnoresAnOrphanId(client: pg.PoolClient): Promise<void> {
+  const t0 = new Date();
+  const { a, orphan } = await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
+  const got = await priorTotalKw(client, [a.assetId, orphan], priorInstant(t0));
+  assert(got === 3, `the prior total must count only the asset that exists (3), got ${JSON.stringify(got)}`);
+}
+
+/** An orphan id alone has no asset to report on, so the prior is `null` — not its 500. */
+export async function assertPriorTotalKwIsNullForAnOrphanOnlyScope(client: pg.PoolClient): Promise<void> {
+  const t0 = new Date();
+  const { orphan } = await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
+  const got = await priorTotalKw(client, [orphan], priorInstant(t0));
+  assert(got === null, `a scope of only an orphan id must be null, got ${JSON.stringify(got)}`);
+}
+
+/**
+ * The `null` scope reads the whole shared database, which the simulator and
+ * other suites write to, so these two cases assert a **delta** inside one
+ * `REPEATABLE READ` snapshot: read, seed A and the orphan, read again. Other
+ * sessions' commits stay invisible, this transaction's own rows do not. The
+ * isolation level must be the transaction's first statement, before
+ * `seedAsset`. The delta is A's alone; without the join it adds the orphan too.
+ */
+async function repeatableRead(client: pg.PoolClient): Promise<void> {
+  await client.query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+}
+
+/** Global live Total kW rises by A's 7, not by 1007. */
+export async function assertGlobalKpisTotalKwIgnoresAnOrphanId(client: pg.PoolClient): Promise<void> {
+  await repeatableRead(client);
+  const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+  const before = await service.kpis(null);
+  const t0 = new Date();
+  await seedOrphanPair(client, secondsFrom(t0, -5), hoursBefore(t0, 25));
+  const after = await service.kpis(null);
+  const delta = after.totalKw - before.totalKw;
+  assert(Math.abs(delta - 7) < 1e-6, `the global totalKw must rise by A's 7 only, rose by ${delta}`);
+}
+
+/** Global prior Total kW rises by A's 3, not by 503. `null` before counts as 0. */
+export async function assertGlobalPriorTotalKwIgnoresAnOrphanId(client: pg.PoolClient): Promise<void> {
+  await repeatableRead(client);
+  const at = priorInstant(new Date());
+  const before = await priorTotalKw(client, null, at);
+  // Stamped an hour before `at`, so it is the latest sample at or before it.
+  await seedOrphanPair(client, new Date(), hoursBefore(at, 1));
+  const after = await priorTotalKw(client, null, at);
+  const delta = (after ?? 0) - (before ?? 0);
+  assert(Math.abs(delta - 3) < 1e-6, `the global prior total must rise by A's 3 only, rose by ${delta}`);
+}

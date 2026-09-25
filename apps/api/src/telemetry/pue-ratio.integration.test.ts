@@ -10,10 +10,12 @@ import {
   assertFixtureIsVisibleInTheHourlyView,
   assertHalfPairIsExcludedFromBothSums,
   assertLatestOneIncomerIsItsOwnRatio,
+  assertLatestIgnoresAnOrphanPair,
   assertLatestSumsBothIncomers,
   assertNullScopeReadsEveryIncomer,
   assertWindowBoundsExcludeOutsideBuckets,
   assertWindowedEmptyScopeIsNull,
+  assertWindowedIgnoresAnOrphanPair,
   assertWindowedExcludesTheHalfPair,
   assertWindowedSumsBothIncomers,
   assertWindowedUsesTheWeightedMean,
@@ -114,5 +116,13 @@ describe.skipIf(!connectionString)("F2.8 — PUE reader against Postgres", () =>
 
   it("answers null for an empty scope on the windowed read", async () => {
     await assertWindowedEmptyScopeIsNull(pool as pg.Pool, fx);
+  });
+
+  it("leaves a pair with no bms.assets row out of the latest read (F4.159)", async () => {
+    await assertLatestIgnoresAnOrphanPair(pool as pg.Pool, fx);
+  });
+
+  it("leaves a pair with no bms.assets row out of the windowed read (F4.159)", async () => {
+    await assertWindowedIgnoresAnOrphanPair(pool as pg.Pool, fx);
   });
 });

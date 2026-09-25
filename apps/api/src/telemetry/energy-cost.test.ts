@@ -51,7 +51,7 @@ describe("E4.1c — energyCost, the three fail-closed rules", () => {
     assertEqualTariffsInTwoCurrenciesIsNull();
   });
 
-  it("C10 fails closed on orphan telemetry with no currency", () => {
+  it("C10 fails closed on a row with no currency", () => {
     assertOrphanTelemetryIsNull();
   });
 });

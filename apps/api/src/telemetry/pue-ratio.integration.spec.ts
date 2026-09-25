@@ -546,7 +546,9 @@ export async function assertNullScopeReadsEveryIncomer(
      SELECT COUNT(*)::int AS incomers,
             COALESCE(SUM(site.value), 0)::float8 AS site_kw,
             COALESCE(SUM(it.value), 0)::float8 AS it_kw
-     FROM site INNER JOIN it ON it.asset_id = site.asset_id`,
+     FROM site INNER JOIN it ON it.asset_id = site.asset_id
+     -- F4.159: a pair counts only when its asset exists, as in the read under test.
+     INNER JOIN bms.assets a ON a.id = site.asset_id`,
     [PUE_LATEST_MAX_AGE_SECONDS],
   );
   const reference = rows[0];
@@ -679,4 +681,78 @@ export async function assertWindowedEmptyScopeIsNull(pool: pg.Pool, fx: Fixtures
     assetIds: [],
   });
   assert(got === null, `an empty windowed scope must be null, got ${JSON.stringify(got)}`);
+}
+
+// ---------------------------------------------------------------------------
+// `F4.159` — a `site_kw` / `it_kw` pair whose `asset_id` has no `bms.assets`
+// row. `telemetry.point_values` carries no foreign key, so a pair outlives its
+// asset; both reads join `bms.assets` in the pairing step, for every scope.
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs `fn` with an orphan pair — 1000 kW site over 100 kW IT, a ratio of 10 —
+ * in both fixture buckets, inside a transaction that is always rolled back, so
+ * no row outlives the case and nothing needs the reaper (which finds rows by
+ * asset code, and an orphan has none). The windowed read still sees the rows:
+ * the far-future buckets are served from the raw table by the real-time branch,
+ * in this transaction's own snapshot. Each case first proves that.
+ */
+async function withOrphanPair(
+  pool: pg.Pool,
+  fx: Fixtures,
+  fn: (client: pg.PoolClient, orphan: string) => Promise<void>,
+): Promise<void> {
+  const orphan = randomUUID();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const bucket of [fx.earlyBucket, fx.lateBucket]) {
+      for (const [pointKey, value] of [
+        ["site_kw", 1000],
+        ["it_kw", 100],
+      ] as const) {
+        await client.query(
+          `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+           VALUES ($1, $2, $3, $4, 'kW')`,
+          [new Date(bucket.getTime() + 30 * MINUTE_MS).toISOString(), orphan, pointKey, value],
+        );
+      }
+    }
+    await fn(client, orphan);
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+  }
+}
+
+/** Anti-vacuity for the two cases below: the orphan's rows are in the hourly view. */
+async function orphanBucketsInTheHourlyView(client: pg.PoolClient, orphan: string): Promise<number> {
+  const { rows } = await client.query<{ n: number }>(
+    "SELECT COUNT(*)::int AS n FROM telemetry.point_values_1h WHERE asset_id = $1",
+    [orphan],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
+/** `[A, B, orphan]` on the latest read is A and B's 2.67. Without the join it is 1400 / 250 = 5.6. */
+export async function assertLatestIgnoresAnOrphanPair(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  await withOrphanPair(pool, fx, async (client, orphan) => {
+    const got = await latestPueRatio(client, [fx.assetA, fx.assetB, orphan]);
+    assert(got === 2.67, `the orphan pair must not count: expected A and B's 2.67, got ${JSON.stringify(got)}`);
+  });
+}
+
+/** `[A, B, orphan]` on the windowed read is A and B's 3.17. Without the join it is 1475 / 250 = 5.9. */
+export async function assertWindowedIgnoresAnOrphanPair(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  await withOrphanPair(pool, fx, async (client, orphan) => {
+    const buckets = await orphanBucketsInTheHourlyView(client, orphan);
+    assert(buckets === 4, `the orphan pair must be visible in point_values_1h (4 rows), saw ${buckets}`);
+    const got = await windowedPueRatio(client as unknown as pg.Pool, {
+      level: "1h",
+      start: fx.earlyBucket,
+      end: fullWindowEnd(fx),
+      assetIds: [fx.assetA, fx.assetB, orphan],
+    });
+    assert(got === 3.17, `the orphan pair must not count: expected A and B's 3.17, got ${JSON.stringify(got)}`);
+  });
 }

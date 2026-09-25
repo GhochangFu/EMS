@@ -9,11 +9,16 @@ import {
   assertAlarmRaisedAfterAtIsNotCounted,
   assertAlarmRaisedBeforeAndUnclearedIsCounted,
   assertComposedPriorReadsEveryFieldAtAt,
+  assertGlobalKpisTotalKwIgnoresAnOrphanId,
+  assertGlobalPriorTotalKwIgnoresAnOrphanId,
+  assertKpisTotalKwIgnoresAnOrphanId,
   assertKpisPriorAlarmsOpenExcludesTheOutOfScopeAlarm,
   assertKpisPriorAsOfIsExactly24HoursBeforeAsOf,
   assertKpisPriorPueExcludesTheOutOfScopePair,
   assertKpisPriorTotalKwIsTheInScopeAssetsOwn,
   assertLivePueStillReadsAFreshPair,
+  assertPriorTotalKwIgnoresAnOrphanId,
+  assertPriorTotalKwIsNullForAnOrphanOnlyScope,
   assertPriorTotalKwScopedExcludesTheOutOfScopeAsset,
   assertPriorKwIsNullWithNoSampleAtOrBeforeAt,
   assertPriorKwIsTheLatestSampleAtOrBeforeAt,
@@ -104,4 +109,29 @@ describe.skipIf(!connectionString)("F3.28 — DashboardService.kpis() prior: com
   it("reads prior.pueEstimate from the in-scope pair only", run(assertKpisPriorPueExcludesTheOutOfScopePair));
 
   it("priorTotalKw scoped to one asset excludes another", run(assertPriorTotalKwScopedExcludesTheOutOfScopeAsset));
+});
+
+describe.skipIf(!connectionString)("F4.159 — Total kW ignores kw of an asset id with no bms.assets row", () => {
+  let pool: pg.Pool | undefined;
+
+  beforeAll(async () => {
+    pool = await openIntegrationPool(connectionString as string, "F4.159");
+  }, 60_000);
+
+  afterAll(async () => {
+    await pool?.end();
+  }, 60_000);
+
+  const run = (fn: (client: pg.PoolClient) => Promise<void>) => () =>
+    inRolledBackTransaction(pool as pg.Pool, fn);
+
+  it("kpis totalKw leaves out an orphan id in the scope", run(assertKpisTotalKwIgnoresAnOrphanId));
+
+  it("priorTotalKw leaves out an orphan id in the scope", run(assertPriorTotalKwIgnoresAnOrphanId));
+
+  it("priorTotalKw answers null for a scope of only an orphan id", run(assertPriorTotalKwIsNullForAnOrphanOnlyScope));
+
+  it("the global kpis totalKw does not rise by an orphan's kw", run(assertGlobalKpisTotalKwIgnoresAnOrphanId));
+
+  it("the global prior total does not rise by an orphan's kw", run(assertGlobalPriorTotalKwIgnoresAnOrphanId));
 });

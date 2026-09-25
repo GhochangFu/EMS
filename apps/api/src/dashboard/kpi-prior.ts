@@ -9,15 +9,18 @@ import { latestPueRatio } from "../telemetry/pue-ratio";
  * `DashboardService.kpis` reports each figure twice: live, and as it stood at
  * {@link priorInstant} — exactly 24 h before the response's own `asOf`. The two
  * reads here are the prior halves of the live `kw_latest` sum and the live
- * `alarms_open` count, written as separate queries so the live SQL is left
- * exactly as it was and this file carries the SQL (`dashboard.service.ts` sits
- * at AGENTS.md §4.5's 1000-line cap).
+ * `alarms_open` count, written as separate queries so that `F3.28` left the
+ * live SQL as it was and this file carries the SQL (`dashboard.service.ts` sat
+ * at AGENTS.md §4.5's 1000-line cap then). `F4.159` later changed both the live
+ * and the prior `kw` sum the same way — the `totalKw` bullet below.
  *
  * Each read is the live one with its instant moved, and nothing else changed:
  *
  * - **`totalKw`** — the latest `kw` per asset at or before `at`, summed. No
  *   freshness bound, because the live `kw_latest` has none; a bound on one side
- *   only would make the delta compare two different populations.
+ *   only would make the delta compare two different populations. For the same
+ *   reason both sums join `bms.assets` after the `DISTINCT ON` (`F4.159`): a
+ *   `kw` sample whose asset row is gone counts in neither.
  * - **`alarmsOpen`** — alarms that were open at `at`: raised by then and not yet
  *   cleared by then. Scoped through the same `INNER JOIN` on the `$1`-scoped
  *   assets as the live count.
@@ -94,7 +97,9 @@ export async function priorTotalKw(
         AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
       ORDER BY asset_id, time DESC
     )
-    SELECT COUNT(*)::int AS assets, SUM(kw)::float8 AS total_kw FROM kw_prior
+    -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+    SELECT COUNT(*)::int AS assets, SUM(k.kw)::float8 AS total_kw
+    FROM kw_prior k INNER JOIN bms.assets a ON a.id = k.asset_id
     `,
     [assetIds ?? null, at.toISOString()],
   );

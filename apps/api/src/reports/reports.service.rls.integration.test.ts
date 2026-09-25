@@ -31,7 +31,7 @@ const connectionString = requireIntegrationDb({
   label: "energy report RLS proof",
   because:
     "the report joins `bms.assets` (0047 FORCE) to a telemetry continuous aggregate, so whether " +
-    "topConsumers empties and solar is misattributed on a bare tenant pool is engine behaviour a " +
+    "the report reads zero on a bare tenant pool is engine behaviour a " +
     "pure test cannot check.",
   connection: "owner",
 });
@@ -102,7 +102,7 @@ describe.skipIf(!connectionString)(
       await assertPdfResolvesOnFleet(fleetPool, fx);
     });
 
-    it("empties topConsumers and misattributes solar on a bare tenant pool", async () => {
+    it("reads zero, topConsumers and totals alike, on a bare tenant pool", async () => {
       if (!bareTenantPool || !fx) throw new Error("fixture required");
       await assertReportGoesDarkOnBareTenant(bareTenantPool, fx);
     });

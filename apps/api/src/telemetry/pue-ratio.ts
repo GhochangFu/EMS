@@ -41,13 +41,16 @@ import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggrega
  * `pool` is the caller's `FLEET_POOL`. Both `DashboardService` and
  * `ReportsService` inject it (ADR 0043 Amendments 2/3; the reason is written out
  * at `reports.service.ts:31-38`), and the `$1::uuid[]` scope threaded from
- * `AccessControlService.readableAssetIds` **is** the isolation control. That is
- * safe here for a reason worth stating rather than inheriting: neither query
- * below joins a `bms.*` table at all. They read `telemetry.point_values` and
- * `telemetry.point_values_*`, which carry no row-level security (migration
- * `0052`'s own header), so there is no policied surface for the fleet role to
- * bypass — only the scope array decides what is counted. `null` means "every
- * incomer", which is what a global admin's `readableAssetIds` returns.
+ * `AccessControlService.readableAssetIds` **is** the isolation control. Both
+ * queries below read `telemetry.point_values` and `telemetry.point_values_*`,
+ * which carry no row-level security (migration `0052`'s own header), and since
+ * `F4.159` both also join `bms.assets` in the pairing step, so a pair whose
+ * asset row is gone is not counted. `bms.assets` is FORCE-policied (`0047`): on
+ * the fleet role the join is only that existence check, and the scope array
+ * still decides what is counted; on a tenant or owner connection with no
+ * `app.current_organization` the join hides every asset and both reads answer
+ * `null`. So the fleet pool is required, not only safe. `null` scope means
+ * "every incomer", which is what a global admin's `readableAssetIds` returns.
  *
  * ## The freshness bound on the latest read — the owner's ruling of 2026-09-06
  *
@@ -206,11 +209,12 @@ export async function latestPueRatio(
       ORDER BY asset_id, point_key, time DESC
     ),
     paired AS (
-      SELECT asset_id,
+      -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+      SELECT latest.asset_id,
              MAX(value) FILTER (WHERE point_key = 'site_kw') AS site_kw,
              MAX(value) FILTER (WHERE point_key = 'it_kw') AS it_kw
-      FROM latest
-      GROUP BY asset_id
+      FROM latest INNER JOIN bms.assets a ON a.id = latest.asset_id
+      GROUP BY latest.asset_id
       HAVING COUNT(*) = 2
     )
     SELECT COUNT(*)::int AS incomers,
@@ -276,11 +280,12 @@ export async function windowedPueRatio(
       GROUP BY 1, 2
     ),
     paired AS (
-      SELECT asset_id,
+      -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+      SELECT per.asset_id,
              MAX(mean) FILTER (WHERE point_key = 'site_kw') AS site_kw,
              MAX(mean) FILTER (WHERE point_key = 'it_kw') AS it_kw
-      FROM per
-      GROUP BY asset_id
+      FROM per INNER JOIN bms.assets a ON a.id = per.asset_id
+      GROUP BY per.asset_id
       HAVING COUNT(*) = 2
     )
     SELECT COUNT(*)::int AS incomers,

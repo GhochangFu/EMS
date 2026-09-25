@@ -858,3 +858,39 @@ written. This is the record of where the build and its reviews corrected it.
    - M1: the day-resolution limit is now stated in the user-facing prose
      (owner ruling).
    - Nits.
+
+## Amendment 5 (2026-09-25) — telemetry with no asset row is not energy (`F4.159`)
+
+Decision 7 is left as written. Its last sentence, "Telemetry whose `asset_id`
+has no `bms.assets` row ... fails the read closed rather than leaving the cost
+non-null and smaller than the total it is labelled with", is superseded.
+
+1. **Such telemetry is now left out of the cost and of every total it is priced
+   against.** `telemetry.point_values` and its aggregates still carry no foreign
+   key to `bms.assets`. `F4.159` found that a global user's figures summed
+   every `asset_id` that still had a sample, including ids whose asset row was
+   gone (dev database 2026-09-25: two such ids, 41 kW of 2652 kW). The owner
+   ruled that only assets with a `bms.assets` row count, and that the fix
+   covers the whole class: the ribbon Total kW and its prior, the `/` trend,
+   the Energy Centre kWh, peak and source mix, the energy report's total and
+   source totals, and both PUE reads. Each joins `bms.assets` inner in the step
+   that sums.
+2. **`perAssetEnergy` joins `bms.assets` inner again.** `E4.1c` made it LEFT
+   (PR 1 code review, C1) because the totals then counted orphan ids, and an
+   inner join alone left the cost smaller than the total. The invariant is
+   unchanged: a cost is never non-null and smaller than the total it is
+   labelled with. It now holds because the totals and the per-asset read
+   exclude the same ids. The two joins change together or not at all
+   (`energy-cost.ts` says so at the read).
+3. **What a user sees.** Orphan telemetry in scope no longer forces the dash
+   by itself. The scope is priced, on the assets that exist, only when the
+   other rules of decision 7 allow it: one currency, and every asset resolved.
+   On the demo seed the two organizations carry two currencies (migration
+   `0076`), so a global administrator still sees the dash, for that reason and
+   not for the orphan ids. A scoped user is not affected: the scope list holds
+   only existing ids. The fail-closed rule for a row with no currency stays in
+   `energyCost` as a guard; the read no longer produces such a row
+   (`bms.organizations.currency` is `NOT NULL` since migration `0076`).
+4. **Proof.** `energy-cost.integration.spec.ts` D6 and D6′ replace the
+   `E4.1c` D6 (the cost failed closed): with the orphan in scope, the total and
+   the cost equal those without it. Each reddened when its own join was removed.

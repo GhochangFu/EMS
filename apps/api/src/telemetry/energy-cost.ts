@@ -31,8 +31,9 @@ import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggrega
  * - **`currency`** is the one distinct currency of the rows, else `null`. A
  *   global administrator whose scope spans two organizations in two currencies
  *   sees the dash: a sum across currencies is not a number. A row with no
- *   currency (orphan telemetry, above) counts as its own "currency", so one
- *   such row is enough to answer the dash rather than a smaller number.
+ *   currency counts as its own "currency", so one such row is enough to answer
+ *   the dash rather than a smaller number (`PerAssetEnergy.currency` says why
+ *   the read no longer produces one).
  * - **`tariffPerKwh`** is the one distinct resolved tariff when **every** row
  *   resolved, else `null`. Two tariffs in scope (a location override beside
  *   the organization row) still sum — per asset — but there is no single
@@ -54,11 +55,12 @@ export interface PerAssetEnergy {
   readonly assetId: string;
   readonly kwh: number;
   /**
-   * `bms.organizations.currency` of the asset's organization (ISO 4217), or
-   * `null` for telemetry whose `asset_id` has no `bms.assets` row —
-   * `telemetry.point_values` carries no foreign key, and a total that counts
-   * such rows must not be priced (rule 1 below turns the `null` into no
-   * currency, and so no cost).
+   * `bms.organizations.currency` of the asset's organization (ISO 4217).
+   * `null` is kept in the type as the fail-closed input to rule 1 below (no
+   * currency, and so no cost). Since `F4.159` the statement joins `bms.assets`
+   * inner and the column is `NOT NULL` (migration `0076`), so the read itself
+   * no longer produces one: telemetry with no asset row is left out of both
+   * this read and every total it is priced against.
    */
   readonly currency: string | null;
 }
@@ -89,7 +91,7 @@ export function energyCost(
   const currencies = new Set(rows.map((row) => row.currency));
   const currency = currencies.size === 1 ? rows[0]!.currency : null;
   // `Set` size 1 with a `null` member is "one distinct value", which is not a
-  // currency: the orphan-telemetry case, priced by nobody.
+  // currency: a row nobody can price.
 
   let sum = 0;
   const distinctTariffs = new Set<number>();
@@ -142,12 +144,15 @@ interface PerAssetEnergyRow {
  * Energy per asset in the window, with each asset's organization currency —
  * the database half. Reads the continuous aggregate at `level` (ADR 0023) with
  * the same `avgExpr` mean the totals use, and joins `bms.assets` and
- * `bms.organizations` for the currency. **Both joins are LEFT**: the totals
- * this read must agree with join nothing, so an `asset_id` in the aggregate
- * with no `bms.assets` row (no foreign key holds the two together) is still
- * a row here — with `currency: null` — rather than a silent omission that
- * would leave the cost non-null and smaller than the total it is labelled
- * with. The PR 1 code review found the inner join (C1). `pool` is the caller's `FLEET_POOL`,
+ * `bms.organizations` for the currency. **The `bms.assets` join is INNER, and
+ * only because every total this read is priced against joins it too**
+ * (`F4.159`): an `asset_id` in the aggregate with no `bms.assets` row (no
+ * foreign key holds the two together) is left out of the kWh totals in
+ * `energy-centre.ts` and `reports.service.ts` and so out of here. `E4.1c` had
+ * it LEFT, with `currency: null`, while those totals still counted such ids —
+ * an inner join then left the cost non-null and smaller than the total it is
+ * labelled with (PR 1 code review, C1). Never make this join inner without the
+ * totals, or the totals outer without this. `pool` is the caller's `FLEET_POOL`,
  * and the `$1::uuid[]` scope from `AccessControlService.readableAssetIds` is
  * the isolation control (`pue-ratio.ts` §Containment gives the reason in
  * full); `bms.organizations` carries no row-level security (measured at the
@@ -182,7 +187,8 @@ export async function perAssetEnergy(
            (SUM(p.kw) * $2::float8)::float8 AS kwh,
            o.currency
     FROM per p
-    LEFT JOIN bms.assets a ON a.id = p.asset_id
+    -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+    INNER JOIN bms.assets a ON a.id = p.asset_id
     LEFT JOIN bms.organizations o ON o.id = a.organization_id
     GROUP BY p.asset_id, o.currency
     `,
