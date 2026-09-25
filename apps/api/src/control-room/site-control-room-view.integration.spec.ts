@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 import type pg from "pg";
 
@@ -10,7 +11,7 @@ import type { SiteControlRoomViewService } from "./site-control-room-view.servic
 
 /**
  * `F3.67` — `SiteControlRoomViewService` against real, non-owner roles (plan
- * U3, S1–S14). `site-control-room-view.integration.test.ts` owns the pools and
+ * U3, S1–S14; step-5 review S15–S17). `site-control-room-view.integration.test.ts` owns the pools and
  * the cleanup; the assertions live here (ADR 0014, AGENTS.md §4.6).
  *
  * **The service commits** (its write opens `withTenant`), so nothing here can
@@ -47,6 +48,7 @@ export function jwtFor(email: string, role: JwtPayload["role"]): JwtPayload {
 
 export const ADMIN_EMAIL = "admin@bms.local";
 export const PHE_ADMIN_EMAIL = "phe-admin@bms.local";
+export const ASSET_GROUP_ADMIN_EMAIL = "wc-hvac-admin@bms.local";
 
 const admin = (): JwtPayload => jwtFor(ADMIN_EMAIL, "admin");
 const pheAdmin = (): JwtPayload => jwtFor(PHE_ADMIN_EMAIL, "organization_admin");
@@ -335,4 +337,60 @@ export async function assertBuiltinIsAdminOnly(ctx: SiteViewCtx): Promise<void> 
   expect((error as Error).message).toMatch(/global admin/);
   expect((error as Error).message).not.toMatch(/access scope/);
   expect(await storedRows(ctx, site)).toHaveLength(0);
+}
+
+/**
+ * A fresh PHEWB fixture site whose stored view is `builtin`, written by the real
+ * global admin (only it can). `phe-admin` is in scope for it: a PHEWB fixture is
+ * the only site a non-admin seed user can manage, since `wc-admin`'s grant is on
+ * seeded ESKOM locations, never on a per-run fixture.
+ */
+async function builtinSite(ctx: SiteViewCtx, suffix: string): Promise<string> {
+  const site = await newSite(ctx, ctx.phewbId, suffix);
+  await ctx.svc.putSetting(admin(), site, { kind: "builtin", builtinKey: "smoc" });
+  return site;
+}
+
+/** The refusal a non-admin meets on a builtin site, or `null` if the write went through. */
+async function nonAdminReplacesBuiltin(ctx: SiteViewCtx, site: string): Promise<unknown> {
+  // The token CLAIMS `admin`: a check on the claim instead of the database role reddens S15a.
+  const claimsAdmin = jwtFor(PHE_ADMIN_EMAIL, "admin");
+  return ctx.svc
+    .putSetting(claimsAdmin, site, { kind: "generated" })
+    .then(() => null, (err: unknown) => err);
+}
+
+/**
+ * S15a (owner ruling OQ3) — replacing a `builtin` view is the global admin's
+ * alone: `phe-admin`, in scope, writing `generated` over it gets a 403 that
+ * names the REPLACE rule — not OQ1's set-builtin rule, and not the scope guard.
+ */
+export async function assertNonAdminCannotReplaceBuiltin(ctx: SiteViewCtx): Promise<void> {
+  const site = await builtinSite(ctx, "s15a");
+  const error = await nonAdminReplacesBuiltin(ctx, site);
+
+  expect(error).toBeInstanceOf(ForbiddenException);
+  expect((error as ForbiddenException).getStatus()).toBe(403);
+  expect((error as Error).message).toMatch(/global admin may replace a built-in/);
+  expect((error as Error).message).not.toMatch(/may set a built-in/);
+  expect((error as Error).message).not.toMatch(/access scope/);
+}
+
+/** S15b (OQ3) — the refused write leaves the stored row exactly as it was, `updated_at` included. */
+export async function assertRefusedReplaceLeavesTheRow(ctx: SiteViewCtx): Promise<void> {
+  const site = await builtinSite(ctx, "s15b");
+  const before = await storedRows(ctx, site);
+  expect(before.map((row) => row.kind)).toEqual(["builtin"]);
+
+  await nonAdminReplacesBuiltin(ctx, site);
+
+  expect(await storedRows(ctx, site)).toEqual(before);
+}
+
+/** S15c (OQ3) — positive control: the global admin replaces a builtin view. */
+export async function assertAdminCanReplaceBuiltin(ctx: SiteViewCtx): Promise<void> {
+  const site = await builtinSite(ctx, "s15c");
+  const dto = await ctx.svc.putSetting(admin(), site, { kind: "generated" });
+  expect(dto.kind).toBe("generated");
+  expect((await storedRows(ctx, site)).map((row) => row.kind)).toEqual(["generated"]);
 }

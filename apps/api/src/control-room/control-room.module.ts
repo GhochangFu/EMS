@@ -23,7 +23,7 @@ import { SiteViewController } from "./site-view.controller";
  *
  * `SiteControlRoomViewService` is exported (plan D4's explicit choice) rather
  * than re-provided in `AdminModule`: this module owns the write path (`getSetting`/
- * `putSetting`, including the `builtin`-is-admin-only check, OQ1) and the
+ * `putSetting`, including the `builtin`-is-admin-only checks, OQ1 and OQ3) and the
  * resolve read that consumes the same stored row, so `LocationsAdminController`
  * injects the one instance this module already assembles instead of `AdminModule`
  * wiring a second copy of the same constructor.

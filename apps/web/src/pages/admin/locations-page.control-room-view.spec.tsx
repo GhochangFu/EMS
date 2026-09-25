@@ -372,3 +372,37 @@ export async function builtinOptionIsPresentForTheGlobalAdmin(): Promise<void> {
 
   expect(optionValues(viewSelect())).toContain("builtin");
 }
+
+/** W8a (OQ3) — a non-admin editing a `builtin` site sees `builtin`, never "Generated". The
+ * field renders only after the setting read, so its value is data-produced.
+ * Mutation: drop the read-only branch (the select then falls back to its first option). */
+export async function nonAdminSeesTheStoredBuiltinView(): Promise<void> {
+  stubApi(setting({ kind: "builtin", builtinKey: "smoc" }));
+  renderPage("organization_admin");
+  await openEditForSite();
+
+  const select = (await screen.findByLabelText("Control Room view", undefined, FAIL_FAST)) as HTMLSelectElement;
+  expect(select.value).toBe("builtin");
+}
+
+/** W8b (OQ3) — for a non-admin the `builtin` site's field is read-only.
+ * Mutation: drop the read-only branch. */
+export async function nonAdminBuiltinFieldIsDisabled(): Promise<void> {
+  stubApi(setting({ kind: "builtin", builtinKey: "smoc" }));
+  renderPage("organization_admin");
+  await openEditForSite();
+
+  const select = (await screen.findByLabelText("Control Room view", undefined, FAIL_FAST)) as HTMLSelectElement;
+  expect(select).toBeDisabled();
+}
+
+/** W8c (OQ3) — positive control: the global admin's field on the same `builtin` site is
+ * enabled. Mutation: make the field read-only for every role on a `builtin` site. */
+export async function adminBuiltinFieldIsEnabled(): Promise<void> {
+  stubApi(setting({ kind: "builtin", builtinKey: "smoc" }));
+  renderPage("admin");
+  await openEditForSite();
+
+  await waitForStoredKind("builtin");
+  expect(viewSelect()).toBeEnabled();
+}

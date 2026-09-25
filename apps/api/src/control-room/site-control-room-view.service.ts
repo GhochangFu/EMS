@@ -80,9 +80,10 @@ export class SiteControlRoomViewService {
 
   /**
    * Writes the setting (plan D3: `generated` upserts a row, it never deletes
-   * one). `builtin` is the global `admin`'s alone (owner ruling OQ1) — decided
-   * on the **database** role `requireMasterDataUser` resolved, never the JWT
-   * claim.
+   * one). `builtin` is the global `admin`'s alone, both to set (owner ruling
+   * OQ1) and to replace (OQ3: when the stored view is `builtin`, every
+   * non-admin write is refused) — decided on the **database** role
+   * `requireMasterDataUser` resolved, never the JWT claim.
    */
   async putSetting(
     jwt: JwtPayload,
@@ -93,6 +94,9 @@ export class SiteControlRoomViewService {
     await this.assertCanManageLocation(jwt, locationId);
     if (body.kind === "builtin" && user.role !== "admin") {
       throw new ForbiddenException("Only the global admin may set a built-in Control Room view");
+    }
+    if (user.role !== "admin" && (await this.storedKind(locationId)) === "builtin") {
+      throw new ForbiddenException("Only the global admin may replace a built-in Control Room view");
     }
     const location = await this.readLocation(locationId, "Location not found");
 
@@ -181,6 +185,16 @@ export class SiteControlRoomViewService {
     if (!(await this.accessControl.canManageLocation(jwt, locationId))) {
       throw new ForbiddenException("Location is outside your access scope");
     }
+  }
+
+  /** The stored row's `kind`, or `null` when the site has no row (fleet read, keyed by an authorized id). */
+  private async storedKind(locationId: string): Promise<string | null> {
+    const [row] = await this.fleetDb
+      .select({ kind: siteControlRoomViews.kind })
+      .from(siteControlRoomViews)
+      .where(eq(siteControlRoomViews.locationId, locationId))
+      .limit(1);
+    return row?.kind ?? null;
   }
 
   private async readLocation(

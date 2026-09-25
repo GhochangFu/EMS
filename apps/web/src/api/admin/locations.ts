@@ -103,7 +103,8 @@ export async function fetchSiteControlRoomView(id: string): Promise<SiteControlR
 }
 
 /** `PUT /admin/locations/:id/control-room-view`. A `builtin` body from any role but the global
- * `admin` answers 403 (plan OQ1); an ineligible dashboard answers 400. */
+ * `admin` answers 403 (plan OQ1), and so does any body from those roles when the site's stored
+ * view is `builtin` (OQ3); an ineligible dashboard answers 400. */
 export async function putSiteControlRoomView(
   id: string,
   body: PutSiteControlRoomViewPayload,

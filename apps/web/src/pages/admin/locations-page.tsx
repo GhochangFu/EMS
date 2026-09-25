@@ -404,6 +404,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                     value={viewDraft ?? storedView}
                     onChange={setViewDraft}
                     dashboards={eligibleDashboards}
+                    stored={storedView}
                     canSetBuiltin={isGlobalAdmin(user.role)}
                   />
                 ) : (

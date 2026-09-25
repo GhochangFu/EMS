@@ -7,8 +7,11 @@ type ControlRoomViewFieldProps = {
   onChange: (value: SiteViewDraft) => void;
   /** Already filtered to the site's eligible dashboards (`isEligibleSiteViewDashboard`). */
   dashboards: ReadonlyArray<{ id: string; name: string; slug: string }>;
-  /** Plan OQ1 — only the global `admin` may set `builtin`; the option is not rendered for
-   * any other role (the API answers 403 regardless). */
+  /** The site's stored setting as a draft — what the field shows before it is touched. */
+  stored: SiteViewDraft;
+  /** Plan OQ1/OQ3 — only the global `admin` may set `builtin` or replace it. For any other
+   * role the option is not offered, and a site whose stored view is `builtin` renders the
+   * field read-only (the API answers 403 regardless). */
   canSetBuiltin: boolean;
 };
 
@@ -22,8 +25,23 @@ export function ControlRoomViewField({
   value,
   onChange,
   dashboards,
+  stored,
   canSetBuiltin,
 }: ControlRoomViewFieldProps) {
+  if (stored.kind === "builtin" && !canSetBuiltin) {
+    // OQ3: shown as it is, and not changeable — never the first option ("Generated"), which
+    // is what a select with no matching option would display.
+    return (
+      <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
+        Control Room view
+        <select className="mt-1 w-full rounded border px-3 py-2 text-sm" value="builtin" disabled>
+          <option value="builtin" disabled>
+            Built-in (SMOC)
+          </option>
+        </select>
+      </label>
+    );
+  }
   return (
     <>
       <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">

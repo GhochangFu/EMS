@@ -4,12 +4,15 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addModalHasNoControlRoomViewField,
+  adminBuiltinFieldIsEnabled,
   builtinOptionIsAbsentForAnOrganizationAdmin,
   builtinOptionIsPresentForTheGlobalAdmin,
   changedViewIsPutOnceAfterTheUpdate,
   dashboardPickerListsOnlyEligibleDashboards,
   editModalHasTheControlRoomViewField,
   editShowsTheStoredBuiltinView,
+  nonAdminBuiltinFieldIsDisabled,
+  nonAdminSeesTheStoredBuiltinView,
   rejectedPutShowsItsMessage,
   unchangedViewIsNotPut,
   viewChangedBackIsNotPut,
@@ -73,5 +76,17 @@ describe("F3.67 locations page — the Control Room view field", () => {
 
   it("W7b the global admin is offered builtin", async () => {
     await builtinOptionIsPresentForTheGlobalAdmin();
+  }, WAIT_BUDGET_MS);
+
+  it("W8a a non-admin editing a builtin site sees builtin (OQ3)", async () => {
+    await nonAdminSeesTheStoredBuiltinView();
+  }, WAIT_BUDGET_MS);
+
+  it("W8b a non-admin editing a builtin site gets a disabled field (OQ3)", async () => {
+    await nonAdminBuiltinFieldIsDisabled();
+  }, WAIT_BUDGET_MS);
+
+  it("W8c the global admin editing a builtin site gets an enabled field", async () => {
+    await adminBuiltinFieldIsEnabled();
   }, WAIT_BUDGET_MS);
 });

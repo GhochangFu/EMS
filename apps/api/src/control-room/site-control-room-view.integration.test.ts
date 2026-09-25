@@ -12,6 +12,7 @@ import { asRole } from "../testing/role-urls";
 import {
   PHE_ADMIN_EMAIL,
   type SiteViewCtx,
+  assertAdminCanReplaceBuiltin,
   assertBuiltinIsAdminOnly,
   assertDashboardWriteIsAudited,
   assertDashboardWriteLandsUnderTheTenant,
@@ -19,6 +20,7 @@ import {
   assertGeneratedOverBuiltinUpserts,
   assertGroupScopedDashboardIsAccepted,
   assertInScopeResolveAnswers,
+  assertNonAdminCannotReplaceBuiltin,
   assertOperatorIsRefused,
   assertOtherOrganizationDashboardIsRefused,
   assertOtherSiteDashboardIsRefused,
@@ -26,6 +28,7 @@ import {
   assertOutOfScopeResolveIsNotFound,
   assertOutOfScopeWriteIsRefused,
   assertPolicyRefusesMismatchedOrganization,
+  assertRefusedReplaceLeavesTheRow,
   assertRemovedDashboardResolvesGenerated,
   assertRescopedDashboardResolvesOutOfScope,
   assertSecondWriteUpserts,
@@ -34,7 +37,7 @@ import { SiteControlRoomViewService } from "./site-control-room-view.service";
 
 /**
  * `F3.67` — Vitest entry point for `SiteControlRoomViewService` under real RLS
- * (plan U3, S1–S14), on the `locations.rls.integration.test.ts` harness.
+ * (plan U3, S1–S14; step-5 review S15–S17), on the `locations.rls.integration.test.ts` harness.
  * Assertions live in the sibling `.spec` (ADR 0014); this file owns the pools,
  * the stale sweep and the cleanup.
  */
@@ -234,5 +237,17 @@ describe.skipIf(!connectionString)("F3.67 — SiteControlRoomViewService under r
 
   it("S14 only the global admin sets builtin (OQ1), decided on the database role", async () => {
     await assertBuiltinIsAdminOnly(ctx);
+  });
+
+  it("S15a a non-admin replacing a builtin view is refused with the replace rule (OQ3)", async () => {
+    await assertNonAdminCannotReplaceBuiltin(ctx);
+  });
+
+  it("S15b the refused replace leaves the stored row exactly as it was (OQ3)", async () => {
+    await assertRefusedReplaceLeavesTheRow(ctx);
+  });
+
+  it("S15c the global admin replaces a builtin view (OQ3 positive control)", async () => {
+    await assertAdminCanReplaceBuiltin(ctx);
   });
 });

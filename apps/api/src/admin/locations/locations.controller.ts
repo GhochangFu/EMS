@@ -103,7 +103,7 @@ export class LocationsAdminController {
     return this.controlRoomView.getSetting(user, idParamSchema.parse(id));
   }
 
-  /** `F3.67` U4 / ADR 0076 decision 5, OQ1 — `builtin` is the global admin's alone. */
+  /** `F3.67` U4 / ADR 0076 decision 5, OQ1/OQ3 — `builtin` is the global admin's alone, to set and to replace. */
   @Put(":id/control-room-view")
   async putControlRoomView(
     @Param("id") id: string,
