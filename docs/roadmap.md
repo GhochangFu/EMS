@@ -5914,3 +5914,36 @@ for all 16 locations. Schema, worker, ingest and sockets N/A.
 check: `F4.159` (P3) — the `/` Total kW for a global user still sums `kw`
 from asset ids with no asset row (dev: 41.0 kW from two leaked fixture ids).
 Owed separately: the `chore(agents):` sweep.
+
+### `F3.67` — the site Control Room view setting (ADR 0076 decisions 3–6) ✅ 2026-09-25
+
+PR #558, squash `2c3fe9c7`. The first of the five rows ADR 0076 (#549) created
+for a Control Room per organization; `F3.66`, `F3.68`, `F3.69` and `F3.70` all
+read what it adds.
+
+Migration `0082` adds `bms.site_control_room_views`: at most one row per site,
+`kind` and `builtin_key` as CHECKs, a removed dashboard nulled rather than
+cascaded, FORCE RLS with a three-conjunct policy. No row means the generated
+view, so a new organization needs no backfill. One resolve read,
+`GET /api/v1/control-room/sites/:locationId/view`, answers the effective view
+and applies the fail-safe once for every later row: a removed or re-scoped
+dashboard, or an unknown built-in key, answers `generated` with a notice. The
+admin reads and writes it through a "Control Room view" field on the location
+Edit modal. The seed gives `RSMOC-WC` the built-in SMOC view.
+
+The owner ruled three questions: only the global admin sets a built-in view;
+the seed row is insert-if-absent; and, at the step-5 review, only the global
+admin replaces one, with the field read-only for everyone else.
+
+Verified: schema, service, resolver, contract, schema-body, wiring, web and
+seed gates, each it() reddened under a named mutation; four reviews, every
+finding fixed (the migration review's read probes for the policy's USING half
+among them); API 11/11 and browser 11/11 against a scratch database; CI's
+roles → migrate → seed on a fresh schema. The shared dev database takes 0082
+on its next migrate.
+
+**Cascade:** `F3.66` and `F3.68` are now unblocked (they list only `F3.67`);
+`F3.69` and `F3.70` still wait on `F3.66`. New row from the run: `F4.160` —
+web specs that render `AppShell` reach the real system-status read, so a
+running local API turns 14 of them red. Owed separately: the `chore(agents):`
+sweep (AGENTS.md §3 gains `apps/api/src/control-room/`).
