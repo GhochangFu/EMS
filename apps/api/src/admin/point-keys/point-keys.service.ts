@@ -247,6 +247,7 @@ export class PointKeysAdminService {
       description: item.description,
       active: item.active,
       createdAt: item.createdAt.toISOString(),
+      headlineRank: item.headlineRank,
     };
   }
 }

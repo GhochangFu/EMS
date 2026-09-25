@@ -33,6 +33,7 @@ import type * as Db from "./contracts/dashboard-builder";
 import type * as Dt from "./contracts/dashboard-templates";
 import type * as E from "./contracts/envelopes";
 import type * as Esc from "./contracts/escalation";
+import type * as GSV from "./contracts/generated-site-view";
 import type * as He from "./contracts/health";
 import type * as Ms from "./contracts/mapping-sheet";
 import type * as Cv from "./contracts/metric-catalog-values";
@@ -790,6 +791,13 @@ export type SiteControlRoomViewSettingDto = z.infer<
 export type ResolvedSiteControlRoomViewDto = z.infer<
   typeof SC.resolvedSiteControlRoomViewDtoSchema
 >;
+
+// `F3.68` / ADR 0076 decision 7 — the generated site view
+// (`GET /api/v1/control-room/sites/:locationId/generated`).
+export type GeneratedSitePointDto = z.infer<typeof GSV.generatedSitePointSchema>;
+export type GeneratedSiteAssetDto = z.infer<typeof GSV.generatedSiteAssetSchema>;
+export type GeneratedSiteDomainDto = z.infer<typeof GSV.generatedSiteDomainSchema>;
+export type GeneratedSiteViewDto = z.infer<typeof GSV.generatedSiteViewDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules

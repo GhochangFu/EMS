@@ -28,8 +28,9 @@ const LINE_COMMENT = /\/\/.*$/gm;
 const tsOnly = (source: string): string => source.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "");
 
 /**
- * `F3.68` — U1's static gate: migration `0083`, its journal entry, and the
- * Drizzle column (ADR 0076 decision 7; plan U1, T0–T6). T7–T9 belong to
+ * `F3.68` — U1's static gate: migration `0083`, its journal entry, the
+ * Drizzle column, and (T9, added by U2) the generated-site-view contracts'
+ * constant (ADR 0076 decision 7; plan U1, T0–T6, T9). T7 and T8 belong to
  * later units and are not asserted here. Assertions inline, no `.spec`
  * sibling (§4.6).
  */
@@ -95,5 +96,14 @@ describe("F3.68 — bms.point_keys.headline_rank (migration 0083)", () => {
     expect(end, "unterminated pointKeys table declaration").toBeGreaterThan(start);
     const block = schema.slice(start, end);
     expect(block).toContain('headlineRank: smallint("headline_rank")');
+  });
+
+  // T9 (U2)
+  it("declares HEADLINE_POINT_COUNT = 4 and no flattening combinator in generated-site-view.ts", () => {
+    const source = tsOnly(read("packages/shared/src/contracts/generated-site-view.ts"));
+    expect(source).toContain("export const HEADLINE_POINT_COUNT = 4");
+    expect(source).not.toMatch(/\.merge\s*\(/);
+    expect(source).not.toMatch(/\.extend\s*\(/);
+    expect(source).not.toMatch(/z\.intersection\s*\(/);
   });
 });

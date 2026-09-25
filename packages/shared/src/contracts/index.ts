@@ -29,6 +29,7 @@ export * from "./dashboard-builder";
 export * from "./dashboard-templates";
 export * from "./envelopes";
 export * from "./escalation";
+export * from "./generated-site-view";
 export * from "./health";
 export * from "./mapping-sheet";
 export * from "./metric-catalog-values";

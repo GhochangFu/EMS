@@ -139,6 +139,7 @@ export const adminPointKeyDtoSchema = z.object({
   description: z.string().nullable(),
   active: z.boolean(),
   createdAt: z.string(),
+  headlineRank: z.number().int().nullable(),
 });
 
 export const adminOrganizationSummaryDtoSchema = z.object({
@@ -188,8 +189,7 @@ export const adminAssetSummaryDtoSchema = z.object({
  * `actorId`/`actorEmail` are nullable: the writer resolves the actor by id or
  * email and stores `null` when neither matches, which is preserved rather than
  * rendered as a fabricated identity. `payload` is the verbatim request body of
- * the audited mutation — see ADR 0021 decision 6 before adding a field to any
- * audited request schema.
+ * the audited mutation — see ADR 0021 decision 6 before adding a field to any audited request schema.
  */
 export const auditLogEntryDtoSchema = z.object({
   id: z.string(),
