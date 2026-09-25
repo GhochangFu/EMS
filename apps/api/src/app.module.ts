@@ -7,6 +7,7 @@ import { AdminModule } from "./admin/admin.module";
 import { AssetsModule } from "./assets/assets.module";
 import { AuthModule } from "./auth/auth.module";
 import { CalcModule } from "./calc/calc.module";
+import { ControlRoomModule } from "./control-room/control-room.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 import { DashboardBuilderModule } from "./dashboard-builder/dashboard-builder.module";
 import { DatabaseModule } from "./database/database.module";
@@ -41,6 +42,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     TelemetryModule,
     DashboardModule,
     DashboardBuilderModule,
+    ControlRoomModule,
     AlarmKbModule,
     AlarmsModule,
     CalcModule,

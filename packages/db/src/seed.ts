@@ -46,6 +46,7 @@ import {
   seedEskomLocations,
   seedMapLocations,
 } from "./eskom-locations-seed";
+import { seedSiteControlRoomViews } from "./site-control-room-views-seed";
 
 /**
  * The single `pnpm db:seed` entrypoint. It owns the pool and the call order and
@@ -139,6 +140,9 @@ async function main(): Promise<void> {
     // ── ESKOM ─────────────────────────────────────────────────────────────
     await withOrganization(pool, eskomOrgId, async () => {
       await seedEskomLocations(db, mapLocationRows, eskomOrgId);
+      // F3.67 (ADR 0076 decision 6, OQ2): RSMOC-WC must exist first — the
+      // insert-if-absent below throws otherwise.
+      await seedSiteControlRoomViews(db, eskomOrgId);
       await ensureEskomDomainRtus(db, pool);
 
       const eskomCatalog = buildEskomAssetCatalog(controlRoomSiteName, rsmocDemoAssets);

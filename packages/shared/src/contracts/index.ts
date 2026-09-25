@@ -39,6 +39,7 @@ export * from "./operations";
 export * from "./point-metadata";
 export * from "./reports";
 export * from "./seeded-rules";
+export * from "./site-control-room-views";
 export * from "./system-status";
 export * from "./telemetry-entry";
 export * from "./telemetry-import";

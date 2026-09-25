@@ -37,6 +37,7 @@ import {
   createLocationBodySchema,
   updateLocationBodySchema,
 } from "../admin/locations/locations.schema";
+import { putSiteControlRoomViewBodySchema } from "../control-room/site-control-room-view.schema";
 import {
   chatBodySchema,
   createSessionBodySchema,
@@ -252,6 +253,11 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   migrateAssetsBodySchema,
   patchDraftBodySchema,
   putDashboardWidgetsBodySchema,
+  // `F3.67` U4 (ADR 0076 decision 5, plan D4). `.strict()`: `kind` and
+  // `builtinKey` are closed vocabularies with no `z.record` escape, and a PUT
+  // states the whole kind — a stray field silently dropped is exactly the
+  // pair rule going unchecked.
+  putSiteControlRoomViewBodySchema,
   // `E2.4` (ADR 0058 decision 8). `.strict()`: the body names rule ids and
   // nothing else — a `{ all: true }` silently dropped and answered 200 would
   // read as the republish-moves-live-rules outcome decision 1 refuses.

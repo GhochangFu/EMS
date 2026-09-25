@@ -101,6 +101,7 @@ export async function verifyHierarchySeed(
       eskom_water_assets_on_demo_templates: string;
       eskom_water_intake_assets: string;
       eskom_water_group_members: string;
+      eskom_rsmoc_wc_control_room_view: string;
     }>(`
       SELECT
         (SELECT COUNT(*)::text FROM bms.locations l
@@ -203,7 +204,18 @@ export async function verifyHierarchySeed(
           INNER JOIN bms.organizations o ON o.id = ag.organization_id
           INNER JOIN bms.assets a ON a.id = agm.asset_id
           WHERE o.code = 'ESKOM' AND ag.code = 'water'
-            AND a.code = ANY($2::varchar[])) AS eskom_water_group_members
+            AND a.code = ANY($2::varchar[])) AS eskom_water_group_members,
+        -- F3.67 (ADR 0076 decision 6, owner ruling OQ2): the row must exist,
+        -- but the seed does not own its contents once written -- an admin may
+        -- have re-pointed RSMOC-WC at a dashboard or back to 'generated', and
+        -- a re-seed must not revert that. So this counts the row's presence,
+        -- of any kind, not only kind = 'builtin'.
+        --
+        -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
+        (SELECT COUNT(*)::text FROM bms.site_control_room_views scrv
+          INNER JOIN bms.locations l ON l.id = scrv.location_id
+          INNER JOIN bms.organizations o ON o.id = l.organization_id
+          WHERE o.code = 'ESKOM' AND l.code = 'RSMOC-WC') AS eskom_rsmoc_wc_control_room_view
     `, [eskomOrgId, DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES]);
     const row = res.rows[0];
     // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
@@ -253,6 +265,9 @@ export async function verifyHierarchySeed(
     expect("ESKOM water demo assets pinned to their own DEMO-WATER template", row?.eskom_water_assets_on_demo_templates, 5);
     expect("ESKOM water intake assets", row?.eskom_water_intake_assets, 1);
     expect("ESKOM water group members", row?.eskom_water_group_members, 5);
+    // F3.67 — RSMOC-WC always carries exactly one Control Room view row,
+    // whatever kind an administrator has set it to (OQ2).
+    expect("ESKOM RSMOC-WC control room view row", row?.eskom_rsmoc_wc_control_room_view, 1);
     // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
     // the floor is written as its own check.
     if (Number(row?.eskom_energy_tariff_rows) < 1) {

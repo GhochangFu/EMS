@@ -35,6 +35,7 @@ import {
   createLocationBodySchema,
   updateLocationBodySchema,
 } from "../admin/locations/locations.schema";
+import { putSiteControlRoomViewBodySchema } from "../control-room/site-control-room-view.schema";
 import {
   chatBodySchema,
   createSessionBodySchema,
@@ -257,6 +258,11 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   EscalationProfilesController_update: updateEscalationProfileBodySchema,
   LocationsAdminController_create: createLocationBodySchema,
   LocationsAdminController_update: updateLocationBodySchema,
+  // `F3.67` U4 (ADR 0076 decision 5, plan D4). `_getControlRoomView` is absent
+  // — one path parameter, no body, no query, the `EscalationProfilesController_remove`
+  // rule above. `SiteViewController_view` (the resolve read) is absent for the
+  // same reason.
+  LocationsAdminController_putControlRoomView: putSiteControlRoomViewBodySchema,
   MaintenanceController_convert: convertMaintenanceBodySchema,
   MaintenanceController_createSchedule: createMaintenanceScheduleBodySchema,
   MaintenanceController_listSchedules: listMaintenanceQuerySchema,
