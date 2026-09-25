@@ -12,8 +12,13 @@ import {
   assertMixedCurrencyIsNull,
   assertNoTariffIsNullNotZero,
   assertOrganizationTariffPricesTheTotal,
-  assertOrphanTelemetryFailsClosed,
+  assertOrphanTelemetryDoesNotUnpriceTheCost,
+  assertOrphanTelemetryIsNotInTheSourceMix,
+  assertOrphanTelemetryIsNotInTheTotal,
+  assertOrphanTelemetryIsNotInTheTrend,
   assertReportPricesTheTotal,
+  assertReportSourceTotalsIgnoreOrphanTelemetry,
+  assertReportTotalIgnoresOrphanTelemetry,
   cleanup,
   seedCostFixture,
   type CostFixture,
@@ -80,9 +85,24 @@ describe.skipIf(!connectionString)("E4.1c — the tariff is a parameter (ADR 007
       await assertAFutureRowIsNotYetEffective(pool, fx);
     }, 30_000);
 
-    it("D6 fails closed when orphan telemetry is in scope, and prices without it", async () => {
+    it("D6 leaves orphan telemetry out of the kWh total (F4.159)", async () => {
       if (!pool) throw new Error("pool required");
-      await assertOrphanTelemetryFailsClosed(pool, fx);
+      await assertOrphanTelemetryIsNotInTheTotal(pool, fx);
+    }, 30_000);
+
+    it("D6′ prices a scope with orphan telemetry at the cost without it (F4.159)", async () => {
+      if (!pool) throw new Error("pool required");
+      await assertOrphanTelemetryDoesNotUnpriceTheCost(pool, fx);
+    }, 30_000);
+
+    it("D7 leaves orphan telemetry out of the load trend (F4.159)", async () => {
+      if (!pool) throw new Error("pool required");
+      await assertOrphanTelemetryIsNotInTheTrend(pool, fx);
+    }, 30_000);
+
+    it("D8 leaves orphan telemetry out of the source mix (F4.159)", async () => {
+      if (!pool) throw new Error("pool required");
+      await assertOrphanTelemetryIsNotInTheSourceMix(pool, fx);
     }, 30_000);
   });
 
@@ -105,6 +125,16 @@ describe.skipIf(!connectionString)("E4.1c — the tariff is a parameter (ADR 007
     it("R3′ resolves a row that starts inside the range — the instant is the end, not now", async () => {
       if (!pool) throw new Error("pool required");
       await assertARowStartedInsideTheRangeIsInScopeAtTheEnd(pool, fx);
+    }, 30_000);
+
+    it("R5 leaves orphan telemetry out of the report's kWh total (F4.159)", async () => {
+      if (!pool) throw new Error("pool required");
+      await assertReportTotalIgnoresOrphanTelemetry(pool, fx);
+    }, 30_000);
+
+    it("R6 leaves orphan telemetry out of the report's source totals (F4.159)", async () => {
+      if (!pool) throw new Error("pool required");
+      await assertReportSourceTotalsIgnoreOrphanTelemetry(pool, fx);
     }, 30_000);
   });
 });

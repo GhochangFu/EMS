@@ -345,25 +345,65 @@ export async function assertMixedCurrencyIsNull(pool: pg.Pool, fx: CostFixture):
 }
 
 /**
- * D6 — orphan telemetry in scope (an `asset_id` with no `bms.assets` row):
- * the total counts it, so the cost must not be priced without it. Before
- * the LEFT JOIN the per-asset read dropped the row and the cost came back
- * non-null and smaller than `totalKwh × tariff` (PR 1 code review, C1). D1
- * is the positive control: the same tariff row, without the orphan, prices.
+ * D6 — orphan telemetry in scope (an `asset_id` with no `bms.assets` row) is
+ * not energy (`F4.159`). `E4.1c` counted it in the total and so had to leave
+ * the cost `null` (PR 1 code review, C1); now neither read counts it. A live
+ * caller never scopes to such an id, but the join is the same SQL for the
+ * `null` scope, where the defect showed. `without` is the positive control.
  */
-export async function assertOrphanTelemetryFailsClosed(pool: pg.Pool, fx: CostFixture): Promise<void> {
+export async function assertOrphanTelemetryIsNotInTheTotal(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const svc = dashboard(pool);
+  const without = await svc.energySummary("24h", [fx.a1, fx.a2]);
+  const withOrphan = await svc.energySummary("24h", [fx.a1, fx.a2, fx.orphan]);
+  assert(without.totalKwh > 0, `the fixture must produce energy in the window, got ${without.totalKwh}`);
+  assert(
+    withOrphan.totalKwh === without.totalKwh,
+    `the orphan's kW must not add to totalKwh: ${without.totalKwh} without it, ${withOrphan.totalKwh} with it`,
+  );
+}
+
+/** D6′ — the same scope is priced, at the cost without the orphan (C1's LEFT JOIN made it `null`). */
+export async function assertOrphanTelemetryDoesNotUnpriceTheCost(pool: pg.Pool, fx: CostFixture): Promise<void> {
   const rowId = await insertTariff(pool, fx.organizationId, 2.15);
   try {
     const svc = dashboard(pool);
     const without = await svc.energySummary("24h", [fx.a1, fx.a2]);
     const withOrphan = await svc.energySummary("24h", [fx.a1, fx.a2, fx.orphan]);
-    assert(withOrphan.totalKwh > without.totalKwh, "the total counts the orphan's energy — the case is live");
     assert(without.indicativeCost !== null, "positive control: without the orphan the scope prices");
-    assert(withOrphan.indicativeCost === null, `with the orphan the cost must be null, got ${String(withOrphan.indicativeCost)}`);
-    assert(withOrphan.currency === null, `an unpriced row is no currency — got ${String(withOrphan.currency)}`);
+    assert(
+      withOrphan.indicativeCost === without.indicativeCost,
+      `the orphan must not change the cost: ${String(without.indicativeCost)} without it, ${String(withOrphan.indicativeCost)} with it`,
+    );
   } finally {
     await deleteTariff(pool, rowId);
   }
+}
+
+/** D7 — `loadTrend` (the `/` trend) leaves the orphan out of every bucket. */
+export async function assertOrphanTelemetryIsNotInTheTrend(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const svc = dashboard(pool);
+  const without = await svc.loadTrend("3h", [fx.a1, fx.a2]);
+  const withOrphan = await svc.loadTrend("3h", [fx.a1, fx.a2, fx.orphan]);
+  assert(
+    without.points.some((p) => p.totalKw === 30),
+    `the fixture must show a 10 + 20 kW bucket in the trend, got ${JSON.stringify(without.points.slice(0, 3))}`,
+  );
+  assert(
+    JSON.stringify(withOrphan.points) === JSON.stringify(without.points),
+    `the orphan's kW must not add to the trend: first bucket ${JSON.stringify(without.points[0])} without it, ${JSON.stringify(withOrphan.points[0])} with it`,
+  );
+}
+
+/** D8 — `energySourceMix` leaves the orphan out of every bucket's total. */
+export async function assertOrphanTelemetryIsNotInTheSourceMix(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const svc = dashboard(pool);
+  const without = await svc.energySourceMix("24h", [fx.a1, fx.a2]);
+  const withOrphan = await svc.energySourceMix("24h", [fx.a1, fx.a2, fx.orphan]);
+  assert(without.points.length > 0, "the fixture must produce source-mix buckets in the window");
+  assert(
+    JSON.stringify(withOrphan.points) === JSON.stringify(without.points),
+    `the orphan's kW must not add to the source mix: first bucket ${JSON.stringify(without.points[0])} without it, ${JSON.stringify(withOrphan.points[0])} with it`,
+  );
 }
 
 /** D5 — a row effective only after now → `null`: the instant is the window's end, which is now. */
@@ -497,4 +537,30 @@ export async function assertARowStartedInsideTheRangeIsInScopeAtTheEnd(pool: pg.
   } finally {
     await deleteTariffs(pool, rowIds);
   }
+}
+
+/** R5 — `F4.159`: the report's kWh total leaves the orphan out, as D6 does for the dashboard. */
+export async function assertReportTotalIgnoresOrphanTelemetry(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const { startDate, endDate } = rangeOf(fx);
+  const svc = reports(pool);
+  const without = await svc.energyPreview({ startDate, endDate }, [fx.a1, fx.a2]);
+  const withOrphan = await svc.energyPreview({ startDate, endDate }, [fx.a1, fx.a2, fx.orphan]);
+  assert(without.summary.totalKwh > 0, `the fixture must produce energy in the range, got ${without.summary.totalKwh}`);
+  assert(
+    withOrphan.summary.totalKwh === without.summary.totalKwh,
+    `the orphan's kW must not add to the report total: ${without.summary.totalKwh} without it, ${withOrphan.summary.totalKwh} with it`,
+  );
+}
+
+/** R6 — `F4.159`: the report's source totals leave the orphan out. */
+export async function assertReportSourceTotalsIgnoreOrphanTelemetry(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const { startDate, endDate } = rangeOf(fx);
+  const svc = reports(pool);
+  const without = await svc.energyPreview({ startDate, endDate }, [fx.a1, fx.a2]);
+  const withOrphan = await svc.energyPreview({ startDate, endDate }, [fx.a1, fx.a2, fx.orphan]);
+  assert(without.sourceTotals.gridKwh > 0, `the fixture must produce grid energy, got ${without.sourceTotals.gridKwh}`);
+  assert(
+    JSON.stringify(withOrphan.sourceTotals) === JSON.stringify(without.sourceTotals),
+    `the orphan's kW must not add to the source totals: ${JSON.stringify(without.sourceTotals)} without it, ${JSON.stringify(withOrphan.sourceTotals)} with it`,
+  );
 }
