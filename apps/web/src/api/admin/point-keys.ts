@@ -27,6 +27,7 @@ export async function createAdminPointKey(input: {
   domain?: string;
   unit?: string;
   description?: string;
+  headlineRank?: number | null;
 }): Promise<AdminPointKeyDto> {
   return adminFetch("/admin/point-keys", adminPointKeyDtoSchema, {
     method: "POST",
@@ -42,6 +43,9 @@ export async function updateAdminPointKey(
     domain: string;
     unit: string;
     description: string;
+    // `F3.68` — `null` clears the rank; it must reach the wire as `null`,
+    // because `JSON.stringify` drops an `undefined` key.
+    headlineRank: number | null;
   }>,
 ): Promise<AdminPointKeyDto> {
   return adminFetch(`/admin/point-keys/${id}`, adminPointKeyDtoSchema, {

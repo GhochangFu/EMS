@@ -16,6 +16,10 @@ export const createPointKeyBodySchema = z
     domain: z.string().max(64).optional(),
     unit: z.string().max(32).optional(),
     description: z.string().max(2000).optional(),
+    // `F3.68` / ADR 0076 decision 7 — lower shows first on a generated site
+    // card. 1..32767 is `smallint` above migration 0083's CHECK; `null` clears
+    // the rank. On the create body, so the update body inherits it.
+    headlineRank: z.number().int().min(1).max(32767).nullable().optional(),
   })
   .strict();
 

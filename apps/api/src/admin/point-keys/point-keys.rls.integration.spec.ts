@@ -143,6 +143,85 @@ export async function assertOrganizationAdminIsRefusedEveryWrite(
     svc.reactivate(orgAdminJwt, existingId!),
     "an organization_admin must not reinstate a fleet-wide point key",
   ).rejects.toThrow(/global administrator/i);
+
+  // `F3.68` — the rank is a fleet-wide display order, so it rides the same
+  // gate. Not re-decided by the row (plan "Owner rulings"); tested.
+  await expect(
+    svc.update(orgAdminJwt, existingId!, { headlineRank: 1 }),
+    "an organization_admin must not rank a fleet-wide point key",
+  ).rejects.toThrow(/global administrator/i);
+}
+
+/**
+ * `F3.68` / ADR 0076 decision 7 — a global admin sets a rank on create,
+ * changes it, and clears it with `null`. Each value is read back on the
+ * `bms_fleet` observer pool (`ownerPool` — `requireIntegrationDb`'s default
+ * role), so the claim is about the column, not the service's own `mapRow`.
+ * `code` is per-run and chosen by the caller, which deletes it by code in a
+ * `finally` — so a failure half-way still leaves no row behind.
+ */
+export async function assertGlobalAdminSetsAndClearsARank(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  code: string,
+): Promise<void> {
+  const { svc, ownerPool } = ctx;
+  const readRank = async (id: string): Promise<number | null | undefined> =>
+    (
+      await ownerPool.query<{ headline_rank: number | null }>(
+        "SELECT headline_rank FROM bms.point_keys WHERE id = $1",
+        [id],
+      )
+    ).rows[0]?.headline_rank;
+
+  const created = await svc.create(jwt, {
+    code,
+    name: "F3.68 headline rank check",
+    headlineRank: 7,
+  });
+  expect(created.headlineRank, "create must return the rank it was given").toBe(7);
+  expect(await readRank(created.id), "create must write headline_rank").toBe(7);
+
+  const ranked = await svc.update(jwt, created.id, { headlineRank: 3 });
+  expect(ranked.headlineRank).toBe(3);
+  expect(await readRank(created.id), "update must write headline_rank = 3").toBe(3);
+
+  const cleared = await svc.update(jwt, created.id, { headlineRank: null });
+  expect(cleared.headlineRank).toBeNull();
+  expect(
+    await readRank(created.id),
+    "an explicit null must clear headline_rank, not be dropped as undefined",
+  ).toBeNull();
+}
+
+/**
+ * `F3.68` — migration `0083`'s CHECK, proven by the database rather than by
+ * the Zod bound in front of it: a raw `UPDATE … = 0` is refused with
+ * `23514` on `point_keys_headline_rank_check`. SQLSTATE and constraint name,
+ * not the message (the `assertAssetPointsRejectsAnUnlistedKey` precedent).
+ * Rolled back, so no seeded row is changed.
+ */
+export async function assertCheckRefusesAZeroRank(ownerPool: pg.Pool): Promise<void> {
+  const { rows } = await ownerPool.query<{ id: string }>(
+    "SELECT id FROM bms.point_keys WHERE active = true ORDER BY created_at, code LIMIT 1",
+  );
+  const id = rows[0]?.id;
+  assert(Boolean(id), "F3.68: the seeded point key catalog is empty — run pnpm db:seed.");
+
+  const client = await ownerPool.connect();
+  try {
+    await client.query("BEGIN");
+    await expect(
+      client.query("UPDATE bms.point_keys SET headline_rank = 0 WHERE id = $1", [id]),
+      "bms.point_keys accepted headline_rank = 0. Migration 0083's CHECK is missing.",
+    ).rejects.toMatchObject({
+      code: "23514",
+      constraint: "point_keys_headline_rank_check",
+    });
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
+  }
 }
 
 /**

@@ -65,9 +65,9 @@ describe("F3.68 — bms.point_keys.headline_rank (migration 0083)", () => {
     const setRole = migration.indexOf("SET ROLE bms_owner;");
     const addColumn = migration.indexOf("ADD COLUMN");
     const resetRole = migration.indexOf("RESET ROLE;");
-    // Present AND in order: a RESET ROLE moved above the ALTER leaves the
-    // column owned by bms_app (the migrate connection), which containment
-    // alone cannot see.
+    // Present AND in order: a RESET ROLE moved above the ALTER runs the DDL
+    // as bms_app (the migrate connection's superuser) instead of bms_owner,
+    // breaking the 0082 shape — which containment alone cannot see.
     expect(setRole, "SET ROLE bms_owner; is missing").toBeGreaterThanOrEqual(0);
     expect(addColumn, "the ADD COLUMN must come after SET ROLE bms_owner;").toBeGreaterThan(setRole);
     expect(resetRole, "RESET ROLE; must come after the ADD COLUMN").toBeGreaterThan(addColumn);

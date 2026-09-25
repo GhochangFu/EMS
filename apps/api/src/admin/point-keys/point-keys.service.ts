@@ -94,6 +94,7 @@ export class PointKeysAdminService {
           domain: body.domain ?? null,
           unit: body.unit ?? null,
           description: body.description ?? null,
+          headlineRank: body.headlineRank ?? null,
           active: true,
         })
         .returning();
@@ -136,8 +137,9 @@ export class PointKeysAdminService {
       // fields removes the window instead of narrowing it.
       //
       // `mapUpdateSet` drops `undefined` keys and keeps `null` ones, so the
-      // three nullable columns still clear when a caller sends an explicit
-      // `null` — which is what the `!== undefined` ladder above existed for.
+      // nullable columns (and `F3.68`'s `headline_rank`) still clear when a
+      // caller sends an explicit `null` — which is what the
+      // `!== undefined` ladder above existed for.
       //
       // THE EMPTY-BODY CONTRACT IS UNCHANGED, deliberately. `mapUpdateSet`
       // throws on a `SET` with no assignments, so the write is skipped rather
