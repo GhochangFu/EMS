@@ -34,13 +34,14 @@ import {
   assertRemovedDashboardResolvesGenerated,
   assertRescopedDashboardResolvesOutOfScope,
   assertSecondWriteUpserts,
+  assertSiteMovedToAnotherOrganizationIsOutOfScope,
   assertUngrantedPrincipalCannotResolve,
 } from "./site-control-room-view.integration.spec";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
 
 /**
  * `F3.67` — Vitest entry point for `SiteControlRoomViewService` under real RLS
- * (plan U3, S1–S14; step-5 review S15–S17), on the `locations.rls.integration.test.ts` harness.
+ * (plan U3, S1–S14; step-5 review S15–S18), on the `locations.rls.integration.test.ts` harness.
  * Assertions live in the sibling `.spec` (ADR 0014); this file owns the pools,
  * the stale sweep and the cleanup.
  */
@@ -264,5 +265,9 @@ describe.skipIf(!connectionString)("F3.67 — SiteControlRoomViewService under r
 
   it("S17 a principal with no grants resolving an existing site gets the 404", async () => {
     await assertUngrantedPrincipalCannotResolve(ctx);
+  });
+
+  it("S18 a site moved to another organization resolves dashboard_out_of_scope", async () => {
+    await assertSiteMovedToAnotherOrganizationIsOutOfScope(ctx);
   });
 });

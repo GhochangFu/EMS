@@ -11,7 +11,7 @@ import type { SiteControlRoomViewService } from "./site-control-room-view.servic
 
 /**
  * `F3.67` — `SiteControlRoomViewService` against real, non-owner roles (plan
- * U3, S1–S14; step-5 review S15–S17). `site-control-room-view.integration.test.ts` owns the pools and
+ * U3, S1–S14; step-5 review S15–S18). `site-control-room-view.integration.test.ts` owns the pools and
  * the cleanup; the assertions live here (ADR 0014, AGENTS.md §4.6).
  *
  * **The service commits** (its write opens `withTenant`), so nothing here can
@@ -443,4 +443,27 @@ export async function assertUngrantedPrincipalCannotResolve(ctx: SiteViewCtx): P
   await expect(ctx.svc.resolve(viewer, site)).rejects.toThrow(
     /Location not found or outside your access scope/,
   );
+}
+
+/**
+ * S18 (security review L1) — the resolve read takes the site's organization
+ * from `bms.locations`. A site moved to another organization after its view
+ * was chosen: the stored row and the dashboard still agree with each other
+ * (both PHEWB), and only a comparison with the site's CURRENT organization
+ * answers `dashboard_out_of_scope` — the pure P12 shape, end to end.
+ * Mutation: the service hands the resolver the row's organization as the site's.
+ */
+export async function assertSiteMovedToAnotherOrganizationIsOutOfScope(ctx: SiteViewCtx): Promise<void> {
+  const site = await newSite(ctx, ctx.phewbId, "s18");
+  const dash = await newDashboard(ctx, ctx.phewbId, "s18", { locationId: site });
+  await ctx.svc.putSetting(admin(), site, { kind: "dashboard", dashboardId: dash });
+  expect((await ctx.svc.resolve(admin(), site)).kind, "precondition: the view resolves before the move").toBe(
+    "dashboard",
+  );
+
+  await ctx.fleetPool.query(`UPDATE bms.locations SET organization_id = $2 WHERE id = $1`, [site, ctx.eskomId]);
+
+  const after = await ctx.svc.resolve(admin(), site);
+  expect(after.kind).toBe("generated");
+  expect(after.notice).toBe("dashboard_out_of_scope");
 }
