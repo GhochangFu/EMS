@@ -255,9 +255,58 @@ None. No npm package, no migration, no schema change.
   way they already count against the location cards' `fresh` fraction.
 - One more 30 s poll per open tab. The query is bounded to the 25 s window
   and plan-time pruned; the plan measures it against the ~5.4k-chunk dev
-  database before merge.
+  database before merge (see *Errata* 1).
 - `field_data` is an inference. It can read degraded while the ingest host
   runs (all MQTT devices silent) and cannot tell those cases apart until
   `F3.16` gives a heartbeat.
 - `F3.29`'s later IA work may move the indicator into the sidebar; the
   component is standalone so that move is a relocation.
+
+## Errata
+
+### 1. The dev database has 64 chunks, not ~5.4k (2026-09-25)
+
+*Consequences* said the plan would measure the status query "against the
+~5.4k-chunk dev database". `timescaledb_information.chunks` reports **64**
+live chunks on `telemetry.point_values`; ~5.4k is the range of chunk ids
+(`_hyper_1_5348`), not the live count. The measurement stands: warm planning
+plus execution ≈ 3–5 ms (plan, "Found while planning" 5; PR #552).
+
+## Amendment 1 (2026-09-25) — the status read uses a reporting window of 150 s
+
+**Found at step 6, before merge, and ruled by the owner the same day.** The
+real MQTT devices report every **60 s** (measured on the dev stack: median
+gap 60 s, maximum 61 s, 20 assets). Under decision 1's 25 s window a healthy
+60 s device is fresh only about 25/60 of the time, and the feed arrives in
+bursts: sampled every 10 s over three minutes, **4 to 12 of the 20 MQTT
+assets** were fresh at any instant. So on a site where every device reports
+on time, Data Quality would read about 20–60 % "Poor" and jump between polls
+— the opposite of what the number is for. Options put to the owner: a
+separate, wider window for the status read; merge as ruled and raise a row
+for a per-device expected interval; or widen the one shared window
+everywhere. **Ruled as recommended: a separate window for the status read.**
+
+**Decision.**
+
+1. A second module constant, `REPORTING_WINDOW_SECONDS = 150`, sits beside
+   `LIVE_TELEMETRY_MAX_AGE_SECONDS` in
+   `apps/api/src/telemetry/telemetry-freshness.ts`, with its own checked
+   plan-time literal and its own `reporting` CTE text. 150 s is 2.5× the
+   measured 60 s cadence: one missed report still counts, two do not.
+2. `GET /api/v1/system/status` uses it for **both** `dataQuality` and
+   `field_data`, and returns `windowSeconds: 150`. The status bar asks "is
+   data arriving?".
+3. Decision 2 is unchanged: the location cards, `/` Sites online, the map and
+   the F3.28 class strip keep the 25 s window and ask "is this reading live?".
+   The web `FRESH_MS` is unchanged.
+4. *Ruled here* 1 ("the status bar, the class strip and the schematics
+   agree") is superseded for the status bar only. The two numbers now answer
+   different questions, and may differ on the same fleet at the same moment.
+5. The single-source guard pins the status service to the reporting constant
+   and forbids it from reading the live one, so the two windows cannot be
+   swapped silently.
+
+**Consequences.** A device that stops reporting takes up to 150 s to leave the
+Data Quality count, against 25 s on the cards. A per-device expected
+reporting interval — the input gap coverage needed at Q1 — would replace the
+fixed 150 s; it is not raised as a row by this amendment.
