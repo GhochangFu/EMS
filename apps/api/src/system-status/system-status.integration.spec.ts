@@ -149,18 +149,22 @@ export async function assertOneFreshOfTwoStreaming(db: BmsDb): Promise<void> {
       r.dataQuality.streamingAssets === 2 &&
         r.dataQuality.freshAssets === 1 &&
         r.dataQuality.percent === 50 &&
-        r.dataQuality.windowSeconds === 25 &&
+        r.dataQuality.windowSeconds === 150 &&
         fieldData(r) === "ok" &&
         r.status === "operational",
-      `expected streaming 2, fresh 1, 50 %, window 25, field_data ok, operational; got ${summary(r)}`,
+      `expected streaming 2, fresh 1, 50 %, window 150, field_data ok, operational; got ${summary(r)}`,
     );
   });
 }
 
-/** Case 2 — A's only sample is 60 s old: no mqtt asset fresh, so field data is degraded. */
+/**
+ * Case 2 — A's only sample is 200 s old, beyond the 150 s reporting window
+ * (ADR 0075 Amendment 1): no mqtt asset is reporting, so field data is
+ * degraded.
+ */
 export async function assertStaleMqttIsDegraded(db: BmsDb): Promise<void> {
   await withScene(db, async (scene) => {
-    await addSample(scene, scene.a, 60);
+    await addSample(scene, scene.a, 200);
     const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a, scene.b, scene.c]);
     assert(
       r.dataQuality.freshAssets === 0 && fieldData(r) === "degraded" && r.status === "degraded",
@@ -261,14 +265,15 @@ export async function assertFreshSimulatorDoesNotMakeFieldDataOk(db: BmsDb): Pro
 
 /**
  * Case 8 — security L1: A (mqtt) fresh 5 s but outside the scope; the scope
- * is [B], and B's only sample is 60 s old. A must reach neither count: no
+ * is [B], and B's only sample is 200 s old, beyond the 150 s reporting
+ * window. A must reach neither count: no
  * mqtt asset is in scope, nothing in scope is fresh, and B alone streams —
  * the positive control that the scoped read ran at all.
  */
 export async function assertOutOfScopeFreshMqttIsNotCounted(db: BmsDb): Promise<void> {
   await withScene(db, async (scene) => {
     await addSample(scene, scene.a, 5);
-    await addSample(scene, scene.b, 60);
+    await addSample(scene, scene.b, 200);
     const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.b]);
     assert(
       r.dataQuality.streamingAssets === 1 &&
@@ -281,7 +286,7 @@ export async function assertOutOfScopeFreshMqttIsNotCounted(db: BmsDb): Promise<
 
 /**
  * Case 9 — no fan-out: A carries three samples of different point keys
- * inside the window and still counts as one fresh asset. `live` is
+ * inside the window and still counts as one fresh asset. `reporting` is
  * `SELECT DISTINCT asset_id`, so the `LEFT JOIN` yields one row per asset.
  */
 export async function assertThreeSamplesCountOneFreshAsset(db: BmsDb): Promise<void> {
@@ -293,6 +298,27 @@ export async function assertThreeSamplesCountOneFreshAsset(db: BmsDb): Promise<v
     assert(
       r.dataQuality.freshAssets === 1 && r.dataQuality.streamingAssets === 1,
       `expected fresh 1 of streaming 1; got ${summary(r)}`,
+    );
+  });
+}
+
+/**
+ * Case 10 — ADR 0075 Amendment 1: A's only sample is 60 s old, one real MQTT
+ * reporting interval. It is outside the 25 s live window but inside the 150 s
+ * reporting window, so the status read counts A as reporting. The window is
+ * not asserted here: case 1 holds `windowSeconds`, so a mutation of the
+ * constant reddens this case only through the SQL.
+ */
+export async function assertSixtySecondMqttSampleIsReporting(db: BmsDb): Promise<void> {
+  await withScene(db, async (scene) => {
+    await addSample(scene, scene.a, 60);
+    const r = await serviceOver(scene.tx as unknown as BmsDb).read([scene.a, scene.b, scene.c]);
+    assert(
+      r.dataQuality.streamingAssets === 2 &&
+        r.dataQuality.freshAssets === 1 &&
+        fieldData(r) === "ok" &&
+        r.status === "operational",
+      `expected streaming 2, fresh 1, field_data ok, operational; got ${summary(r)}`,
     );
   });
 }

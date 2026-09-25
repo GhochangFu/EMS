@@ -10,8 +10,8 @@ import { withReadScope } from "../database/tenant-read-scope";
 import { QueueHealthService } from "../queue/queue-health.service";
 import { StorageHealthService } from "../storage/storage-health.service";
 import {
-  LIVE_ASSETS_CTE_SQL,
-  LIVE_TELEMETRY_MAX_AGE_SECONDS,
+  REPORTING_ASSETS_CTE_SQL,
+  REPORTING_WINDOW_SECONDS,
 } from "../telemetry/telemetry-freshness";
 import {
   dataQualityPercent,
@@ -52,13 +52,18 @@ const EMPTY_COUNTS: StatusCountsRow = {
  * state.
  *
  * **The query.** `scoped` is every asset in scope with an RTU (the streaming
- * denominator, decision 1 — no `active` filter, plan decision 1); `live` is
- * the shared any-point CTE, {@link LIVE_ASSETS_CTE_SQL}, whose window is the
- * plan-time interval literal built from `LIVE_TELEMETRY_MAX_AGE_SECONDS` —
- * never a restated number and never a bound parameter, which would plan every
- * `point_values` chunk. `tests/f3.28-offline-bound-single-source.test.ts`
- * holds that. The SQL is unaliased so Drizzle's `inArray(assets.id, …)`
- * renders against `bms.assets`.
+ * denominator, decision 1 — no `active` filter, plan decision 1);
+ * `reporting` is the any-point CTE {@link REPORTING_ASSETS_CTE_SQL}, whose
+ * window is the plan-time interval literal built from
+ * `REPORTING_WINDOW_SECONDS` (150 s, ADR 0075 Amendment 1) — never a restated
+ * number and never a bound parameter, which would plan every `point_values`
+ * chunk. The one window drives both `dataQuality` and `field_data`, and is
+ * returned as `windowSeconds`. It is wider than the 25 s live window the
+ * location cards, the map and the class strip use, because the real MQTT
+ * devices report every 60 s: this read asks "is data arriving?", not "is this
+ * reading live?". `tests/f3.28-offline-bound-single-source.test.ts` pins this
+ * file to the reporting CTE and forbids the live one. The SQL is unaliased so
+ * Drizzle's `inArray(assets.id, …)` renders against `bms.assets`.
  *
  * **Scope.** `assetIds` is `readableAssetIds(user)` (`null` = unrestricted),
  * routed through `withReadScope`, and every read inside `fn` uses its `tx`.
@@ -66,7 +71,7 @@ const EMPTY_COUNTS: StatusCountsRow = {
  * scopes `bms.assets` and `bms.rtus`; on the fleet branch (an admin or a
  * multi-organization scope) the `inArray` on `scoped` is the only isolation
  * control. `telemetry.point_values` has no RLS policy on either branch, and
- * `live` reads it fleet-wide, so the `scoped` join is what keeps another
+ * `reporting` reads it fleet-wide, so the `scoped` join is what keeps another
  * tenant's assets out of both counts. An empty scope runs no query (plan
  * decision 7).
  */
@@ -98,14 +103,14 @@ export class SystemStatusService {
               JOIN bms.rtus ON rtus.id = assets.rtu_id
               WHERE ${scopeFilter}
             ),
-            ${sql.raw(LIVE_ASSETS_CTE_SQL)}
+            ${sql.raw(REPORTING_ASSETS_CTE_SQL)}
             SELECT
               COUNT(*)::int AS streaming_assets,
-              COUNT(l.asset_id)::int AS fresh_assets,
+              COUNT(r.asset_id)::int AS fresh_assets,
               COUNT(*) FILTER (WHERE s.source_type = 'mqtt')::int AS mqtt_assets,
-              COUNT(l.asset_id) FILTER (WHERE s.source_type = 'mqtt')::int AS mqtt_fresh
+              COUNT(r.asset_id) FILTER (WHERE s.source_type = 'mqtt')::int AS mqtt_fresh
             FROM scoped s
-            LEFT JOIN live l ON l.asset_id = s.id
+            LEFT JOIN reporting r ON r.asset_id = s.id
           `);
           return result.rows[0] ?? EMPTY_COUNTS;
         },
@@ -133,7 +138,7 @@ export class SystemStatusService {
         percent: dataQualityPercent(fresh, streaming),
         freshAssets: fresh,
         streamingAssets: streaming,
-        windowSeconds: LIVE_TELEMETRY_MAX_AGE_SECONDS,
+        windowSeconds: REPORTING_WINDOW_SECONDS,
       },
       checkedAt: new Date().toISOString(),
     };

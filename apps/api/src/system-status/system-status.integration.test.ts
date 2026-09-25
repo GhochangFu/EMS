@@ -13,6 +13,7 @@ import {
   assertNoRtuIsNotStreaming,
   assertOneFreshOfTwoStreaming,
   assertOutOfScopeFreshMqttIsNotCounted,
+  assertSixtySecondMqttSampleIsReporting,
   assertStaleMqttIsDegraded,
   assertStaleQueueDegradesTheVerdict,
   assertThreeSamplesCountOneFreshAsset,
@@ -52,7 +53,7 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
     await assertOneFreshOfTwoStreaming(db);
   }, 60_000);
 
-  it("a 60 s old mqtt sample reads field_data degraded", async () => {
+  it("a 200 s old mqtt sample, beyond the 150 s reporting window, reads field_data degraded", async () => {
     await assertStaleMqttIsDegraded(db);
   }, 60_000);
 
@@ -82,5 +83,9 @@ describe.skipIf(!connectionString)("F3.30 — GET /system/status read (real data
 
   it("three samples of one asset inside the window count one fresh asset", async () => {
     await assertThreeSamplesCountOneFreshAsset(db);
+  }, 60_000);
+
+  it("a 60 s old mqtt sample is inside the 150 s reporting window and reads field_data ok", async () => {
+    await assertSixtySecondMqttSampleIsReporting(db);
   }, 60_000);
 });
