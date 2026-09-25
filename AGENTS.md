@@ -610,8 +610,14 @@
 > `shouldRetryQuery`), "Data quality N % Good/Fair/Poor" (95 / 80), "—" when
 > nothing streams, and a red "Status unavailable" on a failed request, never
 > a stale "operational". Not a §6 promotion: `F3.30` was a backlog row from
-> the BACKLOG §7 comparison. New row: `F4.158` (a location card's Total kW is
+> the BACKLOG §7 comparison. New row: `F4.158` (a location card's Total kW was
 > multiplied by the RTU and alarm joins, found in flight and not fixed here).
+> **`F4.158` fixed it the same day** (#555, no ADR by owner ruling):
+> `locationKpis` now sums `kw` per location in a `kw_by_location` CTE before
+> the joins, under the same `$2` asset scope as the card's counts, so
+> `totalKw` and `assetCount` describe one asset set. Its stack check raised
+> `F4.159`: the `/` Total kW for a global user still sums `kw` from asset ids
+> with no `bms.assets` row.
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
