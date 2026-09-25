@@ -20,7 +20,9 @@ import { ApiError } from "./api-error";
  *
  * A `defaultOptions.queries.retry` predicate changes **all 45** `useQuery`
  * sites at once, and a sweep found not one per-query `retry:` override — so
- * nothing in this app currently opts out of anything. Meanwhile `adminFetch`
+ * nothing in this app opted out of anything. (Since `F3.30` one query does:
+ * `useSystemStatus` sets `retry: 1`, owner ruling under ADR 0075, so a hung
+ * status read turns the status bar red in about 21 s.) Meanwhile `adminFetch`
  * is only one of about twenty throw sites: `alarms.ts`, `dashboard.ts`,
  * `energy-dashboard.ts`, `locations.ts` and `assets.ts` all throw a plain
  * `Error` with no status attached.
