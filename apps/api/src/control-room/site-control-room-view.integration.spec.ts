@@ -394,3 +394,53 @@ export async function assertAdminCanReplaceBuiltin(ctx: SiteViewCtx): Promise<vo
   expect(dto.kind).toBe("generated");
   expect((await storedRows(ctx, site)).map((row) => row.kind)).toEqual(["generated"]);
 }
+
+/**
+ * The site `wc-hvac-admin@bms.local`'s own asset group sits in, read by email
+ * through its grant — never by position.
+ */
+export async function assetGroupAdminSiteId(ctx: SiteViewCtx): Promise<string> {
+  const { rows } = await ctx.fleetPool.query<{ location_id: string }>(
+    `SELECT DISTINCT ag.location_id
+       FROM bms.asset_groups ag
+       JOIN bms.user_asset_group_access uaga ON uaga.asset_group_id = ag.id
+       JOIN bms.users u ON u.id = uaga.user_id
+      WHERE u.email = $1`,
+    [ASSET_GROUP_ADMIN_EMAIL],
+  );
+  expect(rows, `${ASSET_GROUP_ADMIN_EMAIL}'s groups must sit on one site — run pnpm db:seed`).toHaveLength(1);
+  return rows[0]?.location_id as string;
+}
+
+/** S16a (ADR 0076 Q14) — an `asset_group_admin` resolves the site its group sits on. */
+export async function assertAssetGroupAdminResolvesItsSite(ctx: SiteViewCtx): Promise<void> {
+  const site = await assetGroupAdminSiteId(ctx);
+  const resolved = await ctx.svc.resolve(jwtFor(ASSET_GROUP_ADMIN_EMAIL, "asset_group_admin"), site);
+  expect(resolved.locationId).toBe(site);
+}
+
+/**
+ * S16b — the same `asset_group_admin` resolving another site gets the 404. The
+ * site EXISTS (a per-run ESKOM fixture, the group's own organization): the scope
+ * 404 and a missing row's 404 share one message, so a missing id would stay
+ * green with the scope check gone.
+ */
+export async function assertAssetGroupAdminCannotResolveAnotherSite(ctx: SiteViewCtx): Promise<void> {
+  const other = await newSite(ctx, ctx.eskomId, "s16b");
+  await expect(
+    ctx.svc.resolve(jwtFor(ASSET_GROUP_ADMIN_EMAIL, "asset_group_admin"), other),
+  ).rejects.toThrow(/Location not found or outside your access scope/);
+}
+
+/**
+ * S17 — a principal with no grants (`none` scope: an unprovisioned `viewer`
+ * claim, the S8 shape) resolving an existing site gets the 404.
+ */
+export async function assertUngrantedPrincipalCannotResolve(ctx: SiteViewCtx): Promise<void> {
+  const site = await newSite(ctx, ctx.phewbId, "s17");
+  const viewer = jwtFor(`f367-viewer-${ctx.run}@bms.local`, "viewer");
+  expect((await ctx.svc.resolve(admin(), site)).locationId).toBe(site);
+  await expect(ctx.svc.resolve(viewer, site)).rejects.toThrow(
+    /Location not found or outside your access scope/,
+  );
+}

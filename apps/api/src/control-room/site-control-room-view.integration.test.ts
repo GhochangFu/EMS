@@ -13,6 +13,8 @@ import {
   PHE_ADMIN_EMAIL,
   type SiteViewCtx,
   assertAdminCanReplaceBuiltin,
+  assertAssetGroupAdminCannotResolveAnotherSite,
+  assertAssetGroupAdminResolvesItsSite,
   assertBuiltinIsAdminOnly,
   assertDashboardWriteIsAudited,
   assertDashboardWriteLandsUnderTheTenant,
@@ -32,6 +34,7 @@ import {
   assertRemovedDashboardResolvesGenerated,
   assertRescopedDashboardResolvesOutOfScope,
   assertSecondWriteUpserts,
+  assertUngrantedPrincipalCannotResolve,
 } from "./site-control-room-view.integration.spec";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
 
@@ -249,5 +252,17 @@ describe.skipIf(!connectionString)("F3.67 — SiteControlRoomViewService under r
 
   it("S15c the global admin replaces a builtin view (OQ3 positive control)", async () => {
     await assertAdminCanReplaceBuiltin(ctx);
+  });
+
+  it("S16a an asset_group_admin resolves the site its group sits on", async () => {
+    await assertAssetGroupAdminResolvesItsSite(ctx);
+  });
+
+  it("S16b an asset_group_admin resolving another existing site gets the 404", async () => {
+    await assertAssetGroupAdminCannotResolveAnotherSite(ctx);
+  });
+
+  it("S17 a principal with no grants resolving an existing site gets the 404", async () => {
+    await assertUngrantedPrincipalCannotResolve(ctx);
   });
 });
