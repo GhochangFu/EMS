@@ -207,3 +207,21 @@ export async function keepsTheCallerInWhenABackgroundRefetchFails(): Promise<voi
   expect(screen.getByText("CR PAGE")).toBeInTheDocument();
 }
 
+/**
+ * G7a — a null scope (the session restored, `/me` not yet back) is pending
+ * too: the status line renders once the assets read has settled, so this is
+ * the null-scope branch and not the pending-read one.
+ */
+export async function rendersAStatusLineWhileTheScopeIsNull(): Promise<void> {
+  const client = renderGuard("/cr-hvac", null, ESKOM_ROWS);
+  await settled(client, "success");
+  expect(screen.getByRole("status")).toHaveTextContent(/Checking Control Room access/);
+}
+
+/** G7b — and it does not redirect. The status line is checked first. */
+export async function doesNotRedirectWhileTheScopeIsNull(): Promise<void> {
+  const client = renderGuard("/cr-hvac", null, ESKOM_ROWS);
+  await settled(client, "success");
+  expect(screen.getByRole("status")).toBeInTheDocument();
+  expect(screen.queryByText(/landed on/)).toBeNull();
+}

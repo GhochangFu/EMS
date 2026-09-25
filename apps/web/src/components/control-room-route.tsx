@@ -13,12 +13,15 @@ import { useAuthStore } from "../stores/auth-store";
  * is pending the guard renders a status line rather than redirecting: on a
  * hard reload the persisted session restores before the read resolves, and a
  * redirect then would bounce every legitimate user off a cold `/cr-*` load.
+ * A null `scope` is pending for the same reason: the session restores before
+ * the `/me` read in `app.tsx` fills the scope, and the per-area rule cannot
+ * decide without it.
  */
 export function ControlRoomRoute({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const scope = useAuthStore((s) => s.scope);
   const access = useControlRoomAccess();
-  if (access === "pending") {
+  if (access === "pending" || scope === null) {
     return <p role="status">Checking Control Room access…</p>;
   }
   if (access === "denied" || !canAccessControlRoomPath(scope, pathname)) {

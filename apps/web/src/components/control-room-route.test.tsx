@@ -7,9 +7,11 @@ import {
   admitsACallerWhoReadsControlRoomAssets,
   admitsTheAreaTheGroupCovers,
   doesNotRedirectWhilePending,
+  doesNotRedirectWhileTheScopeIsNull,
   keepsTheCallerInWhenABackgroundRefetchFails,
   keepsThePerAreaRuleOnTop,
   rendersAStatusLineWhilePending,
+  rendersAStatusLineWhileTheScopeIsNull,
   sendsACallerWithNoControlRoomAssetHome,
   treatsAFailedReadAsDenied,
 } from "./control-room-route.spec";
@@ -56,5 +58,13 @@ describe("F4.156 Control Room route gate", () => {
 
   it("G6 keeps a granted caller in when a background refetch fails", async () => {
     await keepsTheCallerInWhenABackgroundRefetchFails();
+  });
+
+  it("G7a renders a status line while the scope is null", async () => {
+    await rendersAStatusLineWhileTheScopeIsNull();
+  });
+
+  it("G7b does not redirect while the scope is null", async () => {
+    await doesNotRedirectWhileTheScopeIsNull();
   });
 });
