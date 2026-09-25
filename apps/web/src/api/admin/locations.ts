@@ -7,6 +7,7 @@ import {
 import type {
   AdminLocationDto,
   AdminLocationSummaryDto,
+  BuiltinSiteViewKey,
   LocationsListResponse,
   MasterDataActiveFilter,
   SiteControlRoomViewSettingDto,
@@ -94,7 +95,7 @@ export async function reactivateAdminLocation(id: string): Promise<AdminLocation
 export type PutSiteControlRoomViewPayload =
   | { kind: "generated" }
   | { kind: "dashboard"; dashboardId: string }
-  | { kind: "builtin"; builtinKey: "smoc" };
+  | { kind: "builtin"; builtinKey: BuiltinSiteViewKey };
 
 /** `GET /admin/locations/:id/control-room-view` — the stored setting, or the no-row default
  * (`kind: "generated"`, every optional field `null`). */

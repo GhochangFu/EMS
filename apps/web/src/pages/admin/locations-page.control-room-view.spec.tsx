@@ -415,9 +415,9 @@ async function storedDashboardPicker(): Promise<HTMLSelectElement> {
 
 /**
  * W9a (review C1) — a site whose stored dashboard was deleted (`dashboardId: null`): the
- * untouched picker is NOT `required`, so a browser submit is not blocked by it. jsdom does not
- * run the browser's interactive validation the way a user meets it, so the attribute is the
- * gate. Mutation: restore the unconditional `required`.
+ * untouched picker is NOT `required`, so a browser submit is not blocked by it. The attribute
+ * is asserted on its own, before any Save, so this reddens whatever a jsdom build does with
+ * submit validation (W9b is the Save itself). Mutation: restore the unconditional `required`.
  */
 export async function untouchedRemovedDashboardPickerIsNotRequired(): Promise<void> {
   stubApi(setting({ kind: "dashboard", dashboardId: null }));
@@ -429,7 +429,8 @@ export async function untouchedRemovedDashboardPickerIsNotRequired(): Promise<vo
 }
 
 /** W9b (review C1) — the same site: changing only the name saves the location once and puts no
- * view. Mutation: put whenever a stored dashboard view has no dashboard. */
+ * view. Mutation: restore the unconditional `required` — this jsdom build runs the form's submit
+ * validation, so the Save then never reaches `updateAdminLocation`. */
 export async function nameOnlyEditOfARemovedDashboardSiteSaves(): Promise<void> {
   stubApi(setting({ kind: "dashboard", dashboardId: null }));
   renderPage("admin");
