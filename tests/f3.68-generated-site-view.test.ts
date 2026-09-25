@@ -137,6 +137,19 @@ describe("F3.68 — bms.point_keys.headline_rank (migration 0083)", () => {
     expect(block).toContain('headlineRank: smallint("headline_rank")');
   });
 
+  // T8 (U4)
+  it("seed.ts calls seedPointKeyHeadlineRanks( after seedPointKeyCatalog( and the PHE pilot seed call", () => {
+    const source = tsOnly(read("packages/db/src/seed.ts"));
+    const pheCall = source.indexOf("seedPheCatalog(");
+    const catalogCall = source.indexOf("seedPointKeyCatalog(");
+    const ranksCall = source.indexOf("seedPointKeyHeadlineRanks(");
+    expect(pheCall, "seedPheCatalog( not found").toBeGreaterThanOrEqual(0);
+    expect(catalogCall, "seedPointKeyCatalog( not found").toBeGreaterThanOrEqual(0);
+    expect(ranksCall, "seedPointKeyHeadlineRanks( not found").toBeGreaterThan(0);
+    expect(ranksCall, "must run after seedPointKeyCatalog(").toBeGreaterThan(catalogCall);
+    expect(ranksCall, "must run after the PHE pilot seed call").toBeGreaterThan(pheCall);
+  });
+
   // T9 (U2)
   it("declares HEADLINE_POINT_COUNT = 4 and no flattening combinator in generated-site-view.ts", () => {
     const source = tsOnly(read("packages/shared/src/contracts/generated-site-view.ts"));

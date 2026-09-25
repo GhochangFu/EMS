@@ -16,6 +16,7 @@ import {
 import { seedAccessControlFixtures } from "./access-fixtures-seed";
 import { seedAssetDomains } from "./asset-domains-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
+import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
 import { pheMapLocationRowsForInsert } from "./phe-map-seed";
 import { seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
@@ -227,6 +228,14 @@ async function main(): Promise<void> {
     // one taken from here nor one it opens itself. `bms.point_keys` lost its
     // policy, its FORCE flag and its `organization_id` in migration `0057`.
     await seedPointKeyCatalog(pool);
+
+    // `F3.68` D8 (ADR 0076 decision 7) — after `seedPointKeyCatalog` AND after
+    // `seedPheCatalog` above, on every path: both insert `bms.point_keys` rows
+    // with `headline_rank` left NULL, and this call would rank a row that did
+    // not exist yet if it ran any earlier. No tenant context, same as the
+    // catalog it follows — `bms.point_keys` is fleet-wide and unpoliced since
+    // `0057`/`0059`.
+    await seedPointKeyHeadlineRanks(pool);
 
     // ── ESKOM, after the point-key catalog it depends on ───────────────────
     await withOrganization(pool, eskomOrgId, async () => {
