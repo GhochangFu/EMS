@@ -68,7 +68,8 @@ type ViewRow = {
   kind: string;
   builtin_key: string | null;
   dashboard_id: string | null;
-  updated_at: Date;
+  /** `::text`, not a `Date`: node-pg's `Date` drops the microseconds, and the restore is exact. */
+  updated_at: string;
   updated_by: string | null;
 };
 
@@ -80,7 +81,7 @@ async function readView(): Promise<ViewRow | undefined> {
   const pool = probePool;
   if (!pool) throw new Error("probe pool not initialised");
   const res = await pool.query<ViewRow>(
-    `SELECT organization_id, kind, builtin_key, dashboard_id, updated_at, updated_by
+    `SELECT organization_id, kind, builtin_key, dashboard_id, updated_at::text AS updated_at, updated_by
        FROM bms.site_control_room_views WHERE location_id = $1`,
     [rsmocWcId],
   );
@@ -132,7 +133,7 @@ async function restoreRow(row: ViewRow | undefined): Promise<void> {
   await asOwner(
     `INSERT INTO bms.site_control_room_views
             (location_id, organization_id, kind, builtin_key, dashboard_id, updated_at, updated_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7)
      ON CONFLICT (location_id) DO UPDATE
         SET organization_id = EXCLUDED.organization_id, kind = EXCLUDED.kind,
             builtin_key = EXCLUDED.builtin_key, dashboard_id = EXCLUDED.dashboard_id,

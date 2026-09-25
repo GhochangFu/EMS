@@ -28,10 +28,11 @@ export async function seedSiteControlRoomViews(db: BmsDb, eskomOrgId: string): P
   // A local variable, not an inline literal. The root `typecheck:tests`
   // script's combined `tsc` call passes its files on the command line, so no
   // tsconfig applies and `tsconfig.base.json`'s `strict: true` is off there.
-  // Without `strictNullChecks`, drizzle's insert type keeps only the NOT NULL
-  // columns (`locationId`, `organizationId`, `kind`) and drops the nullable
-  // ones, so excess-property checking on an inline `.values({...})` literal
-  // rejects `builtinKey`. A variable is not subject to that check — the
+  // Without `strictNullChecks`, drizzle's insert type keeps only the columns an
+  // insert must supply (NOT NULL with no default: `locationId`,
+  // `organizationId`, `kind`) and drops every optional one, so
+  // excess-property checking on an inline `.values({...})` literal rejects
+  // `builtinKey`. A variable is not subject to that check — the
   // `eskom-locations-seed.ts` precedent for the same reason.
   const values = {
     locationId: rsmocWc.id,
