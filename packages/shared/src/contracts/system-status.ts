@@ -50,8 +50,9 @@ export const systemComponentSchema = z.object({
  *
  * `percent` is `null` when `streamingAssets` is `0` — there is no ratio to
  * report, and `0` would claim a real, measured zero rather than "nothing to
- * measure". `windowSeconds` is `LIVE_TELEMETRY_MAX_AGE_SECONDS`, carried so a
- * reader never has to know the constant to explain the figure.
+ * measure". `windowSeconds` is `REPORTING_WINDOW_SECONDS` (150 s, ADR 0075
+ * Amendment 1 — not the cards' 25 s), carried so a reader never has to know
+ * the constant to explain the figure.
  */
 export const systemDataQualitySchema = z.object({
   percent: z.number().min(0).max(100).nullable(),
