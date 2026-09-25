@@ -42,6 +42,7 @@ import type * as Op from "./contracts/operations";
 import type * as PM from "./contracts/point-metadata";
 import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
+import type * as SC from "./contracts/site-control-room-views";
 import type * as Ss from "./contracts/system-status";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
@@ -777,6 +778,18 @@ export type EscalationProfileDeletedResponse = z.infer<
 export type EscalationDefaultsResponse = z.infer<typeof E.escalationDefaultsResponseSchema>;
 // `AlarmLifecycleState` deliberately not here — it is a web derivation (U9),
 // not a response contract.
+
+// `F3.67` / ADR 0076 decisions 3–5 — the site Control Room view setting and
+// the resolved, fail-safe-applied view.
+export type SiteControlRoomViewKind = z.infer<typeof SC.siteControlRoomViewKindSchema>;
+export type BuiltinSiteViewKey = z.infer<typeof SC.builtinSiteViewKeySchema>;
+export type SiteControlRoomViewNotice = z.infer<typeof SC.siteControlRoomViewNoticeSchema>;
+export type SiteControlRoomViewSettingDto = z.infer<
+  typeof SC.siteControlRoomViewSettingDtoSchema
+>;
+export type ResolvedSiteControlRoomViewDto = z.infer<
+  typeof SC.resolvedSiteControlRoomViewDtoSchema
+>;
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules
