@@ -5947,3 +5947,29 @@ on its next migrate.
 web specs that render `AppShell` reach the real system-status read, so a
 running local API turns 14 of them red. Owed separately: the `chore(agents):`
 sweep (AGENTS.md §3 gains `apps/api/src/control-room/`).
+
+### `F4.159` — kW and PUE count only telemetry whose asset exists ✅ 2026-09-26
+
+PR #561, squash `19078686`, raised by the `F4.158` stack check. Telemetry has
+no foreign key to `bms.assets`, so a global user's figures summed every
+`asset_id` that still had a sample, including ids whose asset row was gone:
+on dev the `/` Total kW read 2652.09 against 2611.09 for the assets that
+exist. The owner widened the row from the two reads it named to the whole
+class: ten reads now join `bms.assets` in the step that sums — the ribbon
+Total kW and its prior, the `/` trend, the Energy Centre kWh, peak and source
+mix, the per-asset cost, the energy report's total and source totals, and
+both PUE reads. The Energy Centre reads moved first to
+`apps/api/src/dashboard/energy-centre.ts`, unchanged, taking
+`dashboard.service.ts` from 994 to 688 lines. ADR 0070 Amendment 5 supersedes
+decision 7's rule that orphan telemetry fails the cost closed: the totals and
+the cost now leave out the same ids.
+
+Verified: thirteen integration cases test-first, each red with the value it
+names; each of the ten joins removed alone reddened only its own case; CI
+green. On the rebuilt container the served Total kW equals the psql sum over
+existing assets and the location card sum. HTTP and browser N/A — no
+controller, contract or web change.
+
+**Cascade:** no row lists `F4.159` in *Depends*. Owed separately: the
+`chore(agents):` sweep (AGENTS.md names `dashboard.service.ts` as the home of
+four rollup reads; three are now in `energy-centre.ts`).
