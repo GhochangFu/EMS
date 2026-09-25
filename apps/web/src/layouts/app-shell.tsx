@@ -9,6 +9,7 @@ import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
 import { useControlRoomAccess } from "../hooks/use-control-room-access";
+import { SystemStatusIndicator } from "../components/system-status-indicator";
 import trinetraLogoUrl from "../assets/trinetra-logo.jpeg";
 
 const topNav = [
@@ -339,6 +340,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
         <span className="flex items-center gap-2">
           <span>TRINETRA · telemetry-driven</span>
           <StatusBarClock />
+          <SystemStatusIndicator />
         </span>
         <span className="flex items-center gap-2">
           <span className="font-mono">v0.1</span>
