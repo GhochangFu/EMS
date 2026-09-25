@@ -26,6 +26,7 @@ import { ControlRoomBatteryPage } from "./pages/control-room-battery-page";
 import { ControlRoomHvacPage } from "./pages/control-room-hvac-page";
 import { ControlRoomEnvPage } from "./pages/control-room-env-page";
 import { AdminRoute } from "./components/admin-route";
+import { ControlRoomRoute } from "./components/control-room-route";
 import { DashboardAuthorRoute } from "./components/dashboard-author-route";
 import { AdminHubPage } from "./pages/admin/admin-hub-page";
 import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
@@ -98,7 +99,14 @@ export function App() {
     fetchCurrentUser(accessToken)
       .then((current) => {
         if (!cancelled) {
-          setSession(accessToken, current.user, current.scope);
+          // Keep the stored OIDC id token: logout sends it as
+          // `id_token_hint`, and this re-set must not erase it (F4.156).
+          setSession(
+            accessToken,
+            current.user,
+            current.scope,
+            useAuthStore.getState().oidcIdToken,
+          );
         }
       })
       .catch(() => {
@@ -289,7 +297,9 @@ export function App() {
         path="/cr-overview"
         element={
           accessToken && user ? (
-            <ControlRoomOverviewPage user={user} />
+            <ControlRoomRoute>
+              <ControlRoomOverviewPage user={user} />
+            </ControlRoomRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -299,7 +309,9 @@ export function App() {
         path="/cr-sld"
         element={
           accessToken && user ? (
-            <ControlRoomSldPage user={user} />
+            <ControlRoomRoute>
+              <ControlRoomSldPage user={user} />
+            </ControlRoomRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -309,7 +321,9 @@ export function App() {
         path="/cr-it"
         element={
           accessToken && user ? (
-            <ControlRoomItPage user={user} />
+            <ControlRoomRoute>
+              <ControlRoomItPage user={user} />
+            </ControlRoomRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -319,7 +333,9 @@ export function App() {
         path="/cr-ups"
         element={
           accessToken && user ? (
-            <ControlRoomUpsPage user={user} />
+            <ControlRoomRoute>
+              <ControlRoomUpsPage user={user} />
+            </ControlRoomRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -329,7 +345,9 @@ export function App() {
         path="/cr-battery"
         element={
           accessToken && user ? (
-            <ControlRoomBatteryPage user={user} />
+            <ControlRoomRoute>
+              <ControlRoomBatteryPage user={user} />
+            </ControlRoomRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -339,7 +357,9 @@ export function App() {
         path="/cr-hvac"
         element={
           accessToken && user ? (
-            <ControlRoomHvacPage user={user} />
+            <ControlRoomRoute>
+              <ControlRoomHvacPage user={user} />
+            </ControlRoomRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -707,7 +727,9 @@ export function App() {
         path="/cr-env"
         element={
           accessToken && user ? (
-            <ControlRoomEnvPage user={user} />
+            <ControlRoomRoute>
+              <ControlRoomEnvPage user={user} />
+            </ControlRoomRoute>
           ) : (
             <Navigate to="/login" replace />
           )

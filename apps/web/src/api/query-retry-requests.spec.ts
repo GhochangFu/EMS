@@ -101,6 +101,7 @@ function signIn(): void {
     "token-abc",
     { id: "u1", email: "phe-admin@bms.local", displayName: "PHE Admin", role: "organization_admin" },
     { kind: "location", locations: [], assetGroups: [], assetIds: [] },
+    null,
   );
 }
 

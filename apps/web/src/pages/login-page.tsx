@@ -20,7 +20,8 @@ export function LoginPage() {
     mutationFn: () => loginRequest(email, password),
     onSuccess: async (data) => {
       const current = await fetchCurrentUser(data.accessToken);
-      setSession(data.accessToken, current.user, current.scope);
+      // Local login has no OIDC id token.
+      setSession(data.accessToken, current.user, current.scope, null);
       void navigate(landingRouteForScope(current.scope), { replace: true });
     },
     onError: (err: Error) => {

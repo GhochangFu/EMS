@@ -33,6 +33,7 @@ function signIn(): void {
     TOKEN,
     { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "admin" },
     { kind: "global", locations: [], assetGroups: [], assetIds: [] },
+    null,
   );
 }
 
