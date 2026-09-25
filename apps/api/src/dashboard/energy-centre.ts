@@ -136,7 +136,9 @@ export async function energySummary(
       GROUP BY 1, 2
     ),
     agg AS (
-      SELECT bucket, SUM(kw)::float8 AS total_kw FROM per GROUP BY bucket
+      -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+      SELECT bucket, SUM(kw)::float8 AS total_kw
+      FROM per INNER JOIN bms.assets a ON a.id = per.asset_id GROUP BY bucket
     )
     SELECT
       COALESCE(SUM(total_kw) * $2::float8, 0) AS total_kwh,
@@ -219,7 +221,9 @@ export async function energySourceMix(pool: Pool, windowRaw?: string, assetIds?:
       WHERE code ILIKE 'PV%' AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
     ),
     tot AS (
-      SELECT bucket, SUM(kw)::float8 AS total_kw FROM per GROUP BY bucket
+      -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+      SELECT bucket, SUM(kw)::float8 AS total_kw
+      FROM per INNER JOIN bms.assets a ON a.id = per.asset_id GROUP BY bucket
     ),
     sol AS (
       SELECT p.bucket, SUM(p.kw)::float8 AS solar_kw

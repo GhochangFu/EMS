@@ -495,7 +495,9 @@ export class DashboardService {
         WHERE ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
       )
       SELECT
-        (SELECT COALESCE(SUM(kw), 0) FROM kw_latest)::float8 AS total_kw,
+        -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+        (SELECT COALESCE(SUM(k.kw), 0) FROM kw_latest k
+          INNER JOIN bms.assets a ON a.id = k.asset_id)::float8 AS total_kw,
         (SELECT COUNT(DISTINCT s.site_name)::int FROM live k
           JOIN asset_sites s ON s.id = k.asset_id) AS sites_online,
         (SELECT COUNT(DISTINCT site_name)::int FROM asset_sites) AS sites_total,
@@ -572,7 +574,9 @@ export class DashboardService {
         GROUP BY 1, 2
       ),
       agg AS (
-        SELECT bucket, SUM(kw)::float8 AS total_kw FROM per GROUP BY bucket
+        -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+        SELECT bucket, SUM(kw)::float8 AS total_kw
+        FROM per INNER JOIN bms.assets a ON a.id = per.asset_id GROUP BY bucket
       )
       SELECT bucket, total_kw FROM agg ORDER BY bucket ASC
       `,

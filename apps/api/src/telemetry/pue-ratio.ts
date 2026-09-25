@@ -206,11 +206,12 @@ export async function latestPueRatio(
       ORDER BY asset_id, point_key, time DESC
     ),
     paired AS (
-      SELECT asset_id,
+      -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+      SELECT latest.asset_id,
              MAX(value) FILTER (WHERE point_key = 'site_kw') AS site_kw,
              MAX(value) FILTER (WHERE point_key = 'it_kw') AS it_kw
-      FROM latest
-      GROUP BY asset_id
+      FROM latest INNER JOIN bms.assets a ON a.id = latest.asset_id
+      GROUP BY latest.asset_id
       HAVING COUNT(*) = 2
     )
     SELECT COUNT(*)::int AS incomers,
@@ -276,11 +277,12 @@ export async function windowedPueRatio(
       GROUP BY 1, 2
     ),
     paired AS (
-      SELECT asset_id,
+      -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+      SELECT per.asset_id,
              MAX(mean) FILTER (WHERE point_key = 'site_kw') AS site_kw,
              MAX(mean) FILTER (WHERE point_key = 'it_kw') AS it_kw
-      FROM per
-      GROUP BY asset_id
+      FROM per INNER JOIN bms.assets a ON a.id = per.asset_id
+      GROUP BY per.asset_id
       HAVING COUNT(*) = 2
     )
     SELECT COUNT(*)::int AS incomers,

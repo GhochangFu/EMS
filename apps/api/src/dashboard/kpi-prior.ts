@@ -17,7 +17,9 @@ import { latestPueRatio } from "../telemetry/pue-ratio";
  *
  * - **`totalKw`** — the latest `kw` per asset at or before `at`, summed. No
  *   freshness bound, because the live `kw_latest` has none; a bound on one side
- *   only would make the delta compare two different populations.
+ *   only would make the delta compare two different populations. For the same
+ *   reason both sums join `bms.assets` after the `DISTINCT ON` (`F4.159`): a
+ *   `kw` sample whose asset row is gone counts in neither.
  * - **`alarmsOpen`** — alarms that were open at `at`: raised by then and not yet
  *   cleared by then. Scoped through the same `INNER JOIN` on the `$1`-scoped
  *   assets as the live count.
@@ -94,7 +96,9 @@ export async function priorTotalKw(
         AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
       ORDER BY asset_id, time DESC
     )
-    SELECT COUNT(*)::int AS assets, SUM(kw)::float8 AS total_kw FROM kw_prior
+    -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+    SELECT COUNT(*)::int AS assets, SUM(k.kw)::float8 AS total_kw
+    FROM kw_prior k INNER JOIN bms.assets a ON a.id = k.asset_id
     `,
     [assetIds ?? null, at.toISOString()],
   );

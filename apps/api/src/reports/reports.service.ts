@@ -209,7 +209,9 @@ export class ReportsService {
         GROUP BY 1, 2
       ),
       agg AS (
-        SELECT bucket, SUM(kw)::float8 AS total_kw FROM per GROUP BY bucket
+        -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+        SELECT bucket, SUM(kw)::float8 AS total_kw
+        FROM per INNER JOIN bms.assets a ON a.id = per.asset_id GROUP BY bucket
       )
       SELECT
         COALESCE(SUM(total_kw) * $4::float8, 0)::float8 AS total_kwh,
@@ -286,6 +288,8 @@ export class ReportsService {
         COALESCE(SUM(p.kw) * $4::float8, 0)::float8 AS total_kw,
         COALESCE(SUM(p.kw) FILTER (WHERE s.id IS NOT NULL) * $4::float8, 0)::float8 AS solar_kw
       FROM per p
+      -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
+      INNER JOIN bms.assets a ON a.id = p.asset_id
       LEFT JOIN solar_ids s ON s.id = p.asset_id
       `,
       [range.start, range.end, assetIds ?? null, kwhFactor],
