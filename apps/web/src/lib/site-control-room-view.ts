@@ -58,7 +58,8 @@ export function siteViewDraftChanged(stored: SiteViewDraft, draft: SiteViewDraft
 
 /** A draft as the `PUT` body: exactly one of the three shapes the `.strict()` server schema
  * accepts. A `dashboard` draft with no dashboard chosen throws, and the page's error line
- * shows the message (the select is `required`, so a browser submit does not reach this). */
+ * shows the message (once the user touches the field the picker is `required`, so a browser
+ * submit does not reach this; an untouched field is never `PUT`). */
 export function siteViewPayloadFromDraft(draft: SiteViewDraft): PutSiteControlRoomViewPayload {
   if (draft.kind === "dashboard") {
     if (!draft.dashboardId) {

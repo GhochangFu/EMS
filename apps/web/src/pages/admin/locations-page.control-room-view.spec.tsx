@@ -406,3 +406,83 @@ export async function adminBuiltinFieldIsEnabled(): Promise<void> {
   await waitForStoredKind("builtin");
   expect(viewSelect()).toBeEnabled();
 }
+
+/** The dashboard picker once the stored `dashboard` kind has reached the field. */
+async function storedDashboardPicker(): Promise<HTMLSelectElement> {
+  await waitForStoredKind("dashboard");
+  return (await screen.findByLabelText("Control Room dashboard", undefined, FAIL_FAST)) as HTMLSelectElement;
+}
+
+/**
+ * W9a (review C1) — a site whose stored dashboard was deleted (`dashboardId: null`): the
+ * untouched picker is NOT `required`, so a browser submit is not blocked by it. jsdom does not
+ * run the browser's interactive validation the way a user meets it, so the attribute is the
+ * gate. Mutation: restore the unconditional `required`.
+ */
+export async function untouchedRemovedDashboardPickerIsNotRequired(): Promise<void> {
+  stubApi(setting({ kind: "dashboard", dashboardId: null }));
+  renderPage("admin");
+  await openEditForSite();
+
+  const picker = await storedDashboardPicker();
+  expect(picker).not.toBeRequired();
+}
+
+/** W9b (review C1) — the same site: changing only the name saves the location once and puts no
+ * view. Mutation: put whenever a stored dashboard view has no dashboard. */
+export async function nameOnlyEditOfARemovedDashboardSiteSaves(): Promise<void> {
+  stubApi(setting({ kind: "dashboard", dashboardId: null }));
+  renderPage("admin");
+  await openEditForSite();
+  await storedDashboardPicker();
+
+  const name = screen.getByLabelText("name") as HTMLInputElement;
+  await userEvent.clear(name);
+  await userEvent.type(name, "Renamed site");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    expect(api.updateAdminLocation).toHaveBeenCalledTimes(1);
+  }, FAIL_FAST);
+  expect(vi.mocked(api.updateAdminLocation).mock.calls[0]?.[1]).toMatchObject({ name: "Renamed site" });
+  expect(api.putSiteControlRoomView).not.toHaveBeenCalled();
+}
+
+/** W9c (review C1) — positive control: once the user touches the view field and picks
+ * `dashboard`, the picker IS `required`. Mutation: never `required`. */
+export async function touchedDashboardPickerIsRequired(): Promise<void> {
+  stubApi(setting());
+  renderPage("admin");
+  await openEditForSite();
+  await waitForStoredKind("generated");
+  await userEvent.selectOptions(viewSelect(), "dashboard");
+
+  const picker = (await screen.findByLabelText("Control Room dashboard", undefined, FAIL_FAST)) as HTMLSelectElement;
+  expect(picker).toBeRequired();
+}
+
+/** W10a (review C1) — a stored dashboard that was deleted shows as "(no longer available)", not
+ * as the neutral placeholder. Mutation: drop the stale-dashboard label. */
+export async function removedStoredDashboardShowsNoLongerAvailable(): Promise<void> {
+  stubApi(setting({ kind: "dashboard", dashboardId: null }));
+  renderPage("admin");
+  await openEditForSite();
+
+  const picker = await storedDashboardPicker();
+  expect(picker.selectedOptions[0]?.textContent).toBe("(no longer available)");
+}
+
+/** W10b (review C1) — a stored dashboard that is no longer eligible (re-scoped to another
+ * site) stays selected as a disabled "(no longer available)" option. Waits on an eligible
+ * option first: the ineligible one is absent until the dashboards read answers either way.
+ * Mutation: drop the stale-dashboard option. */
+export async function rescopedStoredDashboardShowsNoLongerAvailable(): Promise<void> {
+  stubApi(setting({ kind: "dashboard", dashboardId: OTHER_DASHBOARD_ID }));
+  renderPage("admin");
+  await openEditForSite();
+
+  const picker = await storedDashboardPicker();
+  await within(picker).findByRole("option", { name: "Group dashboard" }, FAIL_FAST);
+  expect(picker.value).toBe(OTHER_DASHBOARD_ID);
+  expect(picker.selectedOptions[0]?.textContent).toBe("(no longer available)");
+}

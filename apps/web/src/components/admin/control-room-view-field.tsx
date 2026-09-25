@@ -7,6 +7,13 @@ type ControlRoomViewFieldProps = {
   onChange: (value: SiteViewDraft) => void;
   /** Already filtered to the site's eligible dashboards (`isEligibleSiteViewDashboard`). */
   dashboards: ReadonlyArray<{ id: string; name: string; slug: string }>;
+  /** Whether the reads that decide `dashboards` have answered — until then an unlisted stored
+   * dashboard is "loading", not "no longer available". */
+  dashboardsLoaded: boolean;
+  /** Whether the user has changed the field in this Edit session. Review C1: only then is the
+   * dashboard picker `required` — an untouched field over a deleted or re-scoped stored
+   * dashboard must not block a Save that changed only the location. */
+  touched: boolean;
   /** The site's stored setting as a draft — what the field shows before it is touched. */
   stored: SiteViewDraft;
   /** Plan OQ1/OQ3 — only the global `admin` may set `builtin` or replace it. For any other
@@ -25,6 +32,8 @@ export function ControlRoomViewField({
   value,
   onChange,
   dashboards,
+  dashboardsLoaded,
+  touched,
   stored,
   canSetBuiltin,
 }: ControlRoomViewFieldProps) {
@@ -42,6 +51,12 @@ export function ControlRoomViewField({
       </label>
     );
   }
+  // A stored dashboard the picker does not list (re-scoped away from the site, or moved) stays
+  // selected as a disabled option, so the select shows the truth rather than the placeholder.
+  const unlistedDashboardId =
+    value.dashboardId !== null && !dashboards.some((dashboard) => dashboard.id === value.dashboardId)
+      ? value.dashboardId
+      : null;
   return (
     <>
       <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
@@ -64,12 +79,21 @@ export function ControlRoomViewField({
           <select
             className="mt-1 w-full rounded border px-3 py-2 text-sm"
             value={value.dashboardId ?? ""}
-            required
+            required={touched}
             onChange={(event) =>
               onChange({ kind: "dashboard", dashboardId: event.target.value || null })
             }
           >
-            <option value="">Select a dashboard</option>
+            {/* An untouched field with no dashboard is a stored dashboard view whose dashboard
+                was deleted (the FK set it NULL): say so, rather than offer a neutral choice. */}
+            <option value="">
+              {!touched && value.dashboardId === null ? "(no longer available)" : "Select a dashboard"}
+            </option>
+            {unlistedDashboardId !== null ? (
+              <option value={unlistedDashboardId} disabled>
+                {dashboardsLoaded ? "(no longer available)" : "Loading…"}
+              </option>
+            ) : null}
             {dashboards.map((dashboard) => (
               <option key={dashboard.id} value={dashboard.id}>
                 {dashboard.name}

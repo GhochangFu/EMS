@@ -11,10 +11,15 @@ import {
   dashboardPickerListsOnlyEligibleDashboards,
   editModalHasTheControlRoomViewField,
   editShowsTheStoredBuiltinView,
+  nameOnlyEditOfARemovedDashboardSiteSaves,
   nonAdminBuiltinFieldIsDisabled,
   nonAdminSeesTheStoredBuiltinView,
   rejectedPutShowsItsMessage,
+  removedStoredDashboardShowsNoLongerAvailable,
+  rescopedStoredDashboardShowsNoLongerAvailable,
+  touchedDashboardPickerIsRequired,
   unchangedViewIsNotPut,
+  untouchedRemovedDashboardPickerIsNotRequired,
   viewChangedBackIsNotPut,
 } from "./locations-page.control-room-view.spec";
 
@@ -88,5 +93,25 @@ describe("F3.67 locations page — the Control Room view field", () => {
 
   it("W8c the global admin editing a builtin site gets an enabled field", async () => {
     await adminBuiltinFieldIsEnabled();
+  }, WAIT_BUDGET_MS);
+
+  it("W9a an untouched picker over a removed dashboard is not required (C1)", async () => {
+    await untouchedRemovedDashboardPickerIsNotRequired();
+  }, WAIT_BUDGET_MS);
+
+  it("W9b a name-only edit of a site whose dashboard was removed saves, with no put (C1)", async () => {
+    await nameOnlyEditOfARemovedDashboardSiteSaves();
+  }, WAIT_BUDGET_MS);
+
+  it("W9c a touched dashboard picker is required", async () => {
+    await touchedDashboardPickerIsRequired();
+  }, WAIT_BUDGET_MS);
+
+  it("W10a a removed stored dashboard shows as no longer available (C1)", async () => {
+    await removedStoredDashboardShowsNoLongerAvailable();
+  }, WAIT_BUDGET_MS);
+
+  it("W10b a re-scoped stored dashboard stays selected as no longer available (C1)", async () => {
+    await rescopedStoredDashboardShowsNoLongerAvailable();
   }, WAIT_BUDGET_MS);
 });
