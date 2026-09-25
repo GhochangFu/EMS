@@ -9,9 +9,10 @@ import { latestPueRatio } from "../telemetry/pue-ratio";
  * `DashboardService.kpis` reports each figure twice: live, and as it stood at
  * {@link priorInstant} — exactly 24 h before the response's own `asOf`. The two
  * reads here are the prior halves of the live `kw_latest` sum and the live
- * `alarms_open` count, written as separate queries so the live SQL is left
- * exactly as it was and this file carries the SQL (`dashboard.service.ts` sits
- * at AGENTS.md §4.5's 1000-line cap).
+ * `alarms_open` count, written as separate queries so that `F3.28` left the
+ * live SQL as it was and this file carries the SQL (`dashboard.service.ts` sat
+ * at AGENTS.md §4.5's 1000-line cap then). `F4.159` later changed both the live
+ * and the prior `kw` sum the same way — the `totalKw` bullet below.
  *
  * Each read is the live one with its instant moved, and nothing else changed:
  *

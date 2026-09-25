@@ -107,10 +107,12 @@ export function assertEqualTariffsInTwoCurrenciesIsNull(): void {
 }
 
 /**
- * C10 — orphan telemetry (an `asset_id` with no `bms.assets` row) arrives with
- * `currency: null` and a tariff nobody could resolve; the whole read fails
- * closed. Both halves are asserted: with the tariff absent (the real case)
- * and, as the control on rule 1 alone, with a tariff somehow present.
+ * C10 — a row with `currency: null` and a tariff nobody could resolve; the
+ * whole read fails closed. Until `F4.159` the per-asset read produced such a
+ * row for orphan telemetry (an `asset_id` with no `bms.assets` row); it now
+ * leaves those out, and this holds the reducer's own rule. Both halves are
+ * asserted: with the tariff absent and, as the control on rule 1 alone, with a
+ * tariff somehow present.
  */
 export function assertOrphanTelemetryIsNull(): void {
   const absent = energyCost(rows([A1, 100, "ZAR"], ["orphan", 5, null]), tariffs({ [A1]: 2.15 }));

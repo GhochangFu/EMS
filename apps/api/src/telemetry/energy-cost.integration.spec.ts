@@ -345,6 +345,27 @@ export async function assertMixedCurrencyIsNull(pool: pg.Pool, fx: CostFixture):
 }
 
 /**
+ * Anti-vacuity for the `F4.159` cases below. Each asserts "with the orphan
+ * equals without it", which also passes when the read never saw the orphan at
+ * all — a fixture whose orphan rows fell outside the window. So each case
+ * first proves that the orphan's `kw` is in the aggregate level its read uses:
+ * `_1m` for the dashboard windows under 48 h, `_1h` for the report.
+ */
+async function assertOrphanIsInTheAggregate(
+  pool: pg.Pool,
+  fx: CostFixture,
+  view: "telemetry.point_values_1m" | "telemetry.point_values_1h",
+): Promise<void> {
+  const { rows } = await pool.query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM ${view}
+      WHERE asset_id = $1 AND point_key = 'kw' AND bucket >= $2::timestamptz AND bucket < $3::timestamptz`,
+    [fx.orphan, new Date(fx.fromMs - 3_600_000).toISOString(), new Date(fx.toMs).toISOString()],
+  );
+  const n = Number(rows[0]?.n ?? 0);
+  assert(n > 0, `the orphan's kw must be in ${view} over the fixture span, or the case proves nothing — got ${n} rows`);
+}
+
+/**
  * D6 — orphan telemetry in scope (an `asset_id` with no `bms.assets` row) is
  * not energy (`F4.159`). `E4.1c` counted it in the total and so had to leave
  * the cost `null` (PR 1 code review, C1); now neither read counts it. A live
@@ -352,6 +373,7 @@ export async function assertMixedCurrencyIsNull(pool: pg.Pool, fx: CostFixture):
  * `null` scope, where the defect showed. `without` is the positive control.
  */
 export async function assertOrphanTelemetryIsNotInTheTotal(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  await assertOrphanIsInTheAggregate(pool, fx, "telemetry.point_values_1m");
   const svc = dashboard(pool);
   const without = await svc.energySummary("24h", [fx.a1, fx.a2]);
   const withOrphan = await svc.energySummary("24h", [fx.a1, fx.a2, fx.orphan]);
@@ -364,6 +386,7 @@ export async function assertOrphanTelemetryIsNotInTheTotal(pool: pg.Pool, fx: Co
 
 /** D6′ — the same scope is priced, at the cost without the orphan (C1's LEFT JOIN made it `null`). */
 export async function assertOrphanTelemetryDoesNotUnpriceTheCost(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  await assertOrphanIsInTheAggregate(pool, fx, "telemetry.point_values_1m");
   const rowId = await insertTariff(pool, fx.organizationId, 2.15);
   try {
     const svc = dashboard(pool);
@@ -381,6 +404,7 @@ export async function assertOrphanTelemetryDoesNotUnpriceTheCost(pool: pg.Pool, 
 
 /** D7 — `loadTrend` (the `/` trend) leaves the orphan out of every bucket. */
 export async function assertOrphanTelemetryIsNotInTheTrend(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  await assertOrphanIsInTheAggregate(pool, fx, "telemetry.point_values_1m");
   const svc = dashboard(pool);
   const without = await svc.loadTrend("3h", [fx.a1, fx.a2]);
   const withOrphan = await svc.loadTrend("3h", [fx.a1, fx.a2, fx.orphan]);
@@ -396,6 +420,7 @@ export async function assertOrphanTelemetryIsNotInTheTrend(pool: pg.Pool, fx: Co
 
 /** D8 — `energySourceMix` leaves the orphan out of every bucket's total. */
 export async function assertOrphanTelemetryIsNotInTheSourceMix(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  await assertOrphanIsInTheAggregate(pool, fx, "telemetry.point_values_1m");
   const svc = dashboard(pool);
   const without = await svc.energySourceMix("24h", [fx.a1, fx.a2]);
   const withOrphan = await svc.energySourceMix("24h", [fx.a1, fx.a2, fx.orphan]);
@@ -541,6 +566,7 @@ export async function assertARowStartedInsideTheRangeIsInScopeAtTheEnd(pool: pg.
 
 /** R5 — `F4.159`: the report's kWh total leaves the orphan out, as D6 does for the dashboard. */
 export async function assertReportTotalIgnoresOrphanTelemetry(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  await assertOrphanIsInTheAggregate(pool, fx, "telemetry.point_values_1h");
   const { startDate, endDate } = rangeOf(fx);
   const svc = reports(pool);
   const without = await svc.energyPreview({ startDate, endDate }, [fx.a1, fx.a2]);
@@ -554,6 +580,7 @@ export async function assertReportTotalIgnoresOrphanTelemetry(pool: pg.Pool, fx:
 
 /** R6 — `F4.159`: the report's source totals leave the orphan out. */
 export async function assertReportSourceTotalsIgnoreOrphanTelemetry(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  await assertOrphanIsInTheAggregate(pool, fx, "telemetry.point_values_1h");
   const { startDate, endDate } = rangeOf(fx);
   const svc = reports(pool);
   const without = await svc.energyPreview({ startDate, endDate }, [fx.a1, fx.a2]);

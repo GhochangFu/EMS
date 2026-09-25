@@ -19,13 +19,16 @@ const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
  * `E7.1b` — why the energy report must read on the fleet (BYPASSRLS) pool.
  *
  * `ReportsService` moved from `TENANT_POOL` to `FLEET_POOL` (commit `5b314db`,
- * ADR 0043 Amendment 3). The report has two reads that touch `bms.assets`, which
+ * ADR 0043 Amendment 3). Every read of the report touches `bms.assets`, which
  * migration `0047` gave `organization_id` + a `tenant_isolation` policy +
  * `FORCE`:
  *
  * - `energyTopConsumers` — `INNER JOIN bms.assets a ON a.id = v.asset_id`.
  * - `energySourceTotals` — the `solar_ids` CTE, `SELECT id FROM bms.assets WHERE
- *   code ILIKE 'PV%'`.
+ *   code ILIKE 'PV%'`, and since `F4.159` an inner join for the total.
+ * - Since `F4.159`: the kWh total and peak (`energyPreview`), the per-asset
+ *   cost read (`perAssetEnergy`) and the PUE (`windowedPueRatio`), each an
+ *   inner join, so telemetry of an asset id with no row is not counted.
  *
  * On a bare tenant pool with no `app.current_organization` GUC, the FORCE policy
  * returns **zero** rows from `bms.assets` for every caller — so the inner join

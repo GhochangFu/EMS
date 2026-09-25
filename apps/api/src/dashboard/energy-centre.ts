@@ -15,8 +15,10 @@ import { windowedPueRatio } from "../telemetry/pue-ratio";
 /**
  * The Energy Centre reads — `energySummary`, `energySourceMix`,
  * `energyTopConsumers` — and the window parsing they share. Moved out of
- * `dashboard.service.ts` unchanged by `F4.159`, because that file sat at 994
- * of AGENTS.md §4.5's 1000 lines; `DashboardService` keeps one delegating
+ * `dashboard.service.ts` by `F4.159`, because that file sat at 994 of
+ * AGENTS.md §4.5's 1000 lines. The move changed no line; the same row then
+ * joined `bms.assets` in the summary and source-mix totals, so telemetry of
+ * an asset id with no row is not energy. `DashboardService` keeps one delegating
  * method per read, so the controller and every spec still call the service.
  * `pool` is the service's `FLEET_POOL` (ADR 0043), and the `assetIds` scope
  * is the isolation control, as it was in the service.
@@ -68,9 +70,12 @@ export function parseEnergyWindow(raw?: string): {
   };
 }
 
+/** The Energy Centre ribbon: kWh, peak kW, PUE and the indicative cost over a trailing window. */
 export async function energySummary(
   { pool, parameters }: EnergyCentreDeps,
-  windowRaw?: string, assetIds?: string[] | null): Promise<EnergyCentreSummary> {
+  windowRaw?: string,
+  assetIds?: string[] | null,
+): Promise<EnergyCentreSummary> {
   const { intervalSql, useHourlyBuckets, windowLabel, durationHours } =
     parseEnergyWindow(windowRaw);
   if (assetIds && assetIds.length === 0) {
@@ -182,6 +187,7 @@ export async function energySummary(
   };
 }
 
+/** Grid, solar and generator kW per bucket over a trailing window. */
 export async function energySourceMix(pool: Pool, windowRaw?: string, assetIds?: string[] | null): Promise<{
   points: { t: string; gridKw: number; solarKw: number; dgKw: number }[];
 }> {
@@ -259,6 +265,7 @@ export async function energySourceMix(pool: Pool, windowRaw?: string, assetIds?:
   return { points };
 }
 
+/** The assets with the highest mean kW over a trailing window, at most 25. */
 export async function energyTopConsumers(
   pool: Pool,
   windowRaw?: string,

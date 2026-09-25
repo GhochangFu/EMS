@@ -226,7 +226,7 @@ describe("E1.3 in-range counter relations (ADR 0050 Amendment 1)", () => {
 
   it("keeps the health roll-up out of the no-raw-bucketing invariant", () => {
     // `repo-invariants.test.ts` forbids `date_trunc` over raw telemetry in
-    // `dashboard.service.ts` and `reports.service.ts`, because there a time
+    // `dashboard.service.ts`, `energy-centre.ts` and `reports.service.ts`, because there a time
     // bucket over raw is a revert off the ADR 0023 aggregates.
     //
     // The health roll-up is the opposite case. ADR 0023's aggregates store

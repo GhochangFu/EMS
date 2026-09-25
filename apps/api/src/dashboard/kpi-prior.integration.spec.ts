@@ -369,7 +369,7 @@ export async function assertLivePueStillReadsAFreshPair(client: pg.PoolClient): 
 // user, where the defect shows — is held by the two delta cases after them.
 // ---------------------------------------------------------------------------
 
-/** The `kw` rows the four F4.159 cases seed: one real asset (A) and one orphan id. */
+/** The `kw` rows the five F4.159 cases seed: one real asset (A) and one orphan id. */
 async function seedOrphanPair(
   client: pg.PoolClient,
   live: Date,
