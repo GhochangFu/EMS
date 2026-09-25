@@ -21,6 +21,7 @@ import { QueueModule } from "./queue/queue.module";
 import { ReportsModule } from "./reports/reports.module";
 import { RulesModule } from "./rules/rules.module";
 import { StorageModule } from "./storage/storage.module";
+import { SystemStatusModule } from "./system-status/system-status.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
 import { VocabulariesModule } from "./vocabularies/vocabularies.module";
 import { WorkOrdersModule } from "./work-orders/work-orders.module";
@@ -33,6 +34,7 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     QueueModule,
     StorageModule,
     HealthModule,
+    SystemStatusModule,
     AuthModule,
     AdminModule,
     AssetsModule,
