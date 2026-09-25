@@ -22,6 +22,13 @@ const sqlOnly = (source: string): string =>
     .filter((line) => !line.trim().startsWith("--"))
     .join("\n");
 
+/** Strips block and line comments from a TypeScript source, the
+ * `adr-0037-calc-engine-invariants.test.ts` precedent — so a scan for a call
+ * cannot be satisfied by a comment that only names it. */
+const BLOCK_COMMENT = new RegExp(["/", "\\*", "[\\s\\S]*?", "\\*", "/"].join(""), "g");
+const LINE_COMMENT = /\/\/.*$/gm;
+const tsOnly = (source: string): string => source.replace(BLOCK_COMMENT, "").replace(LINE_COMMENT, "");
+
 /** The text of the table's `CREATE POLICY tenant_isolation` statement,
  * terminator included, split at `WITH CHECK` — scoped so a per-table
  * assertion cannot be satisfied by prose elsewhere in the file. */
@@ -180,5 +187,25 @@ describe("F3.67 — bms.site_control_room_views schema (migration 0082)", () => 
     expect(index).toContain('export * from "./site-control-room-views-schema";');
     const schema = read("packages/db/src/schema/site-control-room-views-schema.ts");
     expect(schema).toContain(`bmsSchema.table("${TABLE}"`);
+  });
+
+  // T11 (plan U6). `seedSiteControlRoomViews` needs `RSMOC-WC` to already
+  // exist, so it must run after `seedEskomLocations` — and inside the same
+  // ESKOM `withOrganization` bracket, since the table is FORCE-bound.
+  it("seeds the site control room view after seedEskomLocations, inside the ESKOM bracket", () => {
+    const seed = tsOnly(read("packages/db/src/seed.ts"));
+    const bracketStart = seed.indexOf("withOrganization(pool, eskomOrgId, async () => {");
+    expect(bracketStart, "no ESKOM withOrganization bracket found").toBeGreaterThanOrEqual(0);
+    const bracketEnd = seed.indexOf("});", bracketStart);
+    expect(bracketEnd, "unterminated ESKOM withOrganization bracket").toBeGreaterThan(bracketStart);
+    const bracket = seed.slice(bracketStart, bracketEnd);
+
+    const locationsCall = bracket.indexOf("seedEskomLocations(");
+    const viewsCall = bracket.indexOf("seedSiteControlRoomViews(");
+    expect(locationsCall, "seedEskomLocations( must run inside the ESKOM bracket").toBeGreaterThanOrEqual(0);
+    expect(viewsCall, "seedSiteControlRoomViews( must run inside the ESKOM bracket").toBeGreaterThanOrEqual(0);
+    expect(viewsCall, "seedSiteControlRoomViews( must come after seedEskomLocations(").toBeGreaterThan(
+      locationsCall,
+    );
   });
 });
