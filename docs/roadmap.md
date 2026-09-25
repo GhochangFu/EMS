@@ -5823,3 +5823,29 @@ API 11/11 on local-auth `:4001`; database — offline both directions across a
 way `/`'s was before slice 2 fixed it. `F3.65` and `F4.154`, raised at the
 gate, are unaffected. `F3.28` keeps Wave `—`, per the ADR's own Consequences.
 Owed separately: the `chore(agents):` sweep for ADR 0074.
+
+### `F4.156` — a PHE user no longer sees the Eskom SMOC Control Room ✅ 2026-09-25
+
+PR #550, squash `32f8de32`. Raised the same day from an owner observation:
+`phe-admin` (`organization_admin`, PHEWB) saw the whole *Control Room 2D*
+menu and could open every `/cr-*` page, which are the Eskom SMOC data-centre
+control room bound to 43 `CR-*` assets at `RSMOC-WC`. No data leaked: every
+server read the pages make filters by `readableAssetIds`, re-verified by the
+security review. The owner ruled a control room for each organization as the
+durable answer ([ADR 0076](./adr/0076-control-room-for-each-organization.md),
+#549, rows `F3.66`–`F3.70`, `F4.157`) and this row as the interim gate.
+
+The menu group and a new `ControlRoomRoute` on all seven routes now need at
+least one readable `CR-*` asset in `GET /assets`, fail closed while the read
+is pending, and apply the per-area asset-group rule on the route too. The
+review fixes, each ruled by the owner, went further than the gate: the query
+cache now clears whenever the session ends or the user changes, not only on
+Logout, and `setSession` requires the OIDC id token, so the `/me` re-set can
+no longer erase it.
+
+Verified: web 1342 tests, repo 1125 (64 DB tests skipped), both type checks,
+a mutation per spec; three reviews; browser on a branch-built container —
+`phe-admin` 6/6, `admin` 5/5. Database and API N/A (web-only).
+
+**Cascade:** `F3.70` lists `F4.156` and still waits on `F3.66` and `F3.67`.
+No `chore(agents):` sweep is owed (compliance review).
