@@ -37,16 +37,18 @@ export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPag
     queryFn: fetchLocationKpis,
     refetchInterval: 8000,
   });
+  const items = locationQ.data?.items;
+  const target = items !== undefined ? organizationEntryTarget(items, organizationId) : null;
+
   // The API filters `GET /api/v1/assets` by `readableAssetIds`, so the body is
-  // the caller's readable assets within this organization.
+  // the caller's readable assets within this organization. Sent only once the
+  // target is this organization's overview: an `empty` or `site` target has no
+  // rail to feed.
   const assets = useQuery({
     queryKey: ["assets", "control-room", organizationId],
     queryFn: () => fetchAssets(organizationId),
-    enabled: organizationId !== "",
+    enabled: target?.level === "organization",
   });
-
-  const items = locationQ.data?.items;
-  const target = items !== undefined ? organizationEntryTarget(items, organizationId) : null;
 
   if (target?.level === "site") {
     return <Navigate to={`/control-room/site/${target.locationId}`} replace />;

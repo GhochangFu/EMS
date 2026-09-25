@@ -2,7 +2,9 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  anUnreadableOrganizationSendsNoAssetsRead,
   anUnreadableOrganizationShowsNoOtherSites,
+  aPendingKpiReadShowsOnlyTheLoadingLine,
   anUnreadableOrganizationShowsTheEmptyCard,
   cleanupPage,
   oneOrganizationRendersNoBreadcrumb,
@@ -58,5 +60,13 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("B2 renders no breadcrumb for a one-organization scope", async () => {
     await oneOrganizationRendersNoBreadcrumb();
+  });
+
+  it("B3 shows only the loading line while the KPI read is pending (D1)", async () => {
+    await aPendingKpiReadShowsOnlyTheLoadingLine();
+  });
+
+  it("G6 sends no assets read for an organization outside the list", async () => {
+    await anUnreadableOrganizationSendsNoAssetsRead();
   });
 });

@@ -25,9 +25,12 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-bms-green hover:
  * site view host. The name, the organization and the crumbs come from the KPI
  * list; the body comes from `F3.67`'s resolve read, one per `kind`: the
  * generated interim (D7), the SMOC links filtered by the per-area rule (OQ1),
- * or a link card to the configured dashboard (OQ2). A rejected resolve read —
- * the API answers 404 for a site outside the scope — shows the not-available
- * card and never an interim body (D6). `useControlRoomAccess` is not consulted
+ * or a link card to the configured dashboard (OQ2). A resolve read that
+ * rejects before it ever answered — the API answers 404 for a site outside
+ * the scope — shows the not-available card and never an interim body (D6).
+ * The page decides from the data, not the status: a background refetch that
+ * fails after an answer (a window refocus during an API restart) sets
+ * `isError` with `data` kept, and keeps the body. `useControlRoomAccess` is not consulted
  * (D8): `ControlRoomRoute` still guards each `/cr-*` page.
  */
 export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
@@ -57,7 +60,7 @@ export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
     >
       <div className="mx-auto max-w-[1200px] space-y-4 pb-8">
         {items !== undefined ? (
-          site !== undefined && !siteView.isError ? (
+          site !== undefined && !(siteView.data === undefined && siteView.isError) ? (
             <>
               <ControlRoomBreadcrumb crumbs={controlRoomCrumbs(items, { locationId })} />
               <PageHeader

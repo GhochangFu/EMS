@@ -20,6 +20,29 @@ export function runN1(): void {
   assert(outOfScope !== builtinUnknown, "dashboard_out_of_scope and builtin_unknown must differ");
 }
 
+/**
+ * `N3`–`N5` — each code maps to its own text, not only to a distinct one: N1
+ * stays green when two codes swap strings, these do not. Each phrase appears
+ * in exactly one of the three strings.
+ */
+export function runN3(): void {
+  const text = siteViewNoticeText("dashboard_removed") ?? "";
+  assert(/has been removed/.test(text), `dashboard_removed must say the dashboard was removed — got ${text}`);
+}
+
+export function runN4(): void {
+  const text = siteViewNoticeText("dashboard_out_of_scope") ?? "";
+  assert(
+    /no longer in your access scope/.test(text),
+    `dashboard_out_of_scope must say the dashboard left the access scope — got ${text}`,
+  );
+}
+
+export function runN5(): void {
+  const text = siteViewNoticeText("builtin_unknown") ?? "";
+  assert(/built-in view/.test(text), `builtin_unknown must name the built-in view — got ${text}`);
+}
+
 /** `N2` — a `null` notice maps to `null` (no banner). */
 export function runN2(): void {
   assert(siteViewNoticeText(null) === null, "null must map to null");

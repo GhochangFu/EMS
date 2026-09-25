@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
@@ -333,6 +333,62 @@ export async function aRejectedResolveReadIsNotRetried(): Promise<void> {
 
   expect(await screen.findByText(/not available in your access scope/)).toBeInTheDocument();
   expect(controlRoomApi.fetchResolvedSiteControlRoomView).toHaveBeenCalledTimes(1);
+}
+
+const SITE_VIEW_KEY = ["control-room", "site-view", "a1"] as const;
+
+/**
+ * Renders a1 with a resolve read that answered, then makes the next resolve
+ * call reject and refetches — a window refocus during an API restart. Returns
+ * once the query is in the error state with the second call made, so an
+ * absence assertion after it cannot pass before the refetch has failed.
+ */
+async function renderThenFailARefetch(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  renderAt("a1", queryClient);
+
+  expect(await screen.findByText(/Generated site view/)).toBeInTheDocument();
+  const resolve = vi.mocked(controlRoomApi.fetchResolvedSiteControlRoomView);
+  resolve.mockRejectedValue(new Error("control-room/site-view 503"));
+  await act(async () => {
+    await queryClient.refetchQueries({ queryKey: [...SITE_VIEW_KEY] });
+  });
+  await waitFor(() => {
+    expect(queryClient.getQueryState([...SITE_VIEW_KEY])?.status).toBe("error");
+    expect(resolve).toHaveBeenCalledTimes(2);
+  });
+}
+
+/** V15a — a failed background refetch keeps the body the first read produced. */
+export async function aFailedRefetchKeepsTheBody(): Promise<void> {
+  await renderThenFailARefetch();
+
+  expect(screen.getByText(/Generated site view/)).toBeInTheDocument();
+}
+
+/** V15b — a failed background refetch shows no not-available card (after V15a's positive control). */
+export async function aFailedRefetchShowsNoNotAvailableCard(): Promise<void> {
+  await renderThenFailARefetch();
+
+  expect(screen.getByText(/Generated site view/)).toBeInTheDocument();
+  expect(screen.queryByText(/not available in your access scope/)).toBeNull();
+}
+
+/**
+ * V16 — D1: while the KPI read is pending the page decides nothing — the
+ * loading line shows and the not-available card does not.
+ */
+export async function aPendingKpiReadShowsOnlyTheLoadingLine(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  const kpis = vi
+    .spyOn(locationsApi, "fetchLocationKpis")
+    .mockImplementation(() => new Promise(() => undefined));
+  renderAt("a1");
+
+  await waitFor(() => expect(kpis).toHaveBeenCalled());
+  expect(screen.getByText("Loading Control Room…")).toBeInTheDocument();
+  expect(screen.queryByText(/not available in your access scope/)).toBeNull();
 }
 
 export function cleanupPage(): void {

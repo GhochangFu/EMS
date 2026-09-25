@@ -205,6 +205,38 @@ export async function oneOrganizationRendersNoBreadcrumb(): Promise<void> {
   expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
 }
 
+/**
+ * B3 — D1: while the KPI read is pending the page decides nothing — the
+ * loading line shows and the empty card does not.
+ */
+export async function aPendingKpiReadShowsOnlyTheLoadingLine(): Promise<void> {
+  stubReads(TWO_ORGS);
+  const kpis = vi
+    .spyOn(locationsApi, "fetchLocationKpis")
+    .mockImplementation(() => new Promise(() => undefined));
+  renderAt(ORG_A.id);
+
+  await waitFor(() => expect(kpis).toHaveBeenCalled());
+  expect(screen.getByText("Loading Control Room…")).toBeInTheDocument();
+  expect(screen.queryByText(/No sites for this organization/)).toBeNull();
+}
+
+/**
+ * G6 — an organization id outside the list sends no assets read: the read is
+ * enabled only once the target is the organization level. G4a is the positive
+ * control that the read does run for a readable organization.
+ */
+export async function anUnreadableOrganizationSendsNoAssetsRead(): Promise<void> {
+  const fetchAssets = stubReads([
+    site({ id: "p1", name: "PHE One", organization: ORG_PHE }),
+    site({ id: "p2", name: "PHE Two", organization: ORG_PHE }),
+  ]);
+  renderAt(ORG_ESKOM.id);
+
+  expect(await screen.findByText(/No sites for this organization/)).toBeInTheDocument();
+  expect(fetchAssets).not.toHaveBeenCalled();
+}
+
 export function cleanupPage(): void {
   cleanup();
   vi.restoreAllMocks();

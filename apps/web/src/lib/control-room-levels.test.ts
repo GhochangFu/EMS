@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import { runC1, runC2, runC3, runC4, runL1, runL2, runL3, runL4, runL5, runL6, runL7, runL8 } from "./control-room-levels.spec";
+import { runC1, runC2, runC3, runC4, runC5, runC6, runL1, runL2, runL3, runL4, runL5, runL6, runL7, runL8 } from "./control-room-levels.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
 describe("control-room-levels", () => {
@@ -50,5 +50,13 @@ describe("control-room-levels", () => {
 
   it("C4 — a skipped organization and site level leave one crumb", () => {
     runC4();
+  });
+
+  it("C5 — a one-site organization among several gives the root and the site crumb", () => {
+    runC5();
+  });
+
+  it("C6 — a two-site organization among several gives three crumbs, the organization linked", () => {
+    runC6();
   });
 });

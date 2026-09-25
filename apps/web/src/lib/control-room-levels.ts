@@ -74,10 +74,15 @@ export function organizationEntryTarget(
 
 /**
  * The breadcrumb trail for the level `at` names, omitting a crumb for every
- * level the skip rule bypassed (D2) — a skipped organization level never gets
- * a crumb, and neither does a skipped site level. The last crumb carries no
- * `to`: it names the current page. `AdminBreadcrumb` renders nothing for a
- * one-crumb list.
+ * level the skip rule bypassed (D2). The organization crumb shows only when
+ * that organization's own level is not skipped: there is more than one
+ * organization (so `/control-room` lists them) and that organization holds
+ * more than one site (so its page does not redirect to the site). The site
+ * crumb shows whenever the path above it was not skipped as a whole — only a
+ * scope of one organization with one site lands on the site straight from
+ * `/control-room`. So a one-site organization among several gives
+ * `Control Room / <site>`. The last crumb carries no `to`: it names the current
+ * page. `ControlRoomBreadcrumb` renders nothing for a one-crumb list.
  */
 export function controlRoomCrumbs(
   items: readonly LocationKpiSummary[],
@@ -88,28 +93,24 @@ export function controlRoomCrumbs(
     ? items.find((item) => item.id === at.locationId)
     : undefined;
   const organizationId = site?.organization.id ?? at.organizationId;
+  const organizationSites = organizationId
+    ? items.filter((item) => item.organization.id === organizationId)
+    : [];
+  const organizationsLevelShown = organizationIds.size > 1;
+  const organizationLevelShown = organizationSites.length > 1;
 
   const crumbs: Crumb[] = [{ label: "Control Room", to: "/control-room" }];
 
-  if (organizationId && organizationIds.size > 1) {
-    const organization = items.find(
-      (item) => item.organization.id === organizationId,
-    )?.organization;
-    if (organization) {
-      crumbs.push({
-        label: organization.name,
-        to: `/control-room/org/${organizationId}`,
-      });
-    }
+  if (organizationsLevelShown && organizationLevelShown) {
+    const organization = organizationSites[0].organization;
+    crumbs.push({
+      label: organization.name,
+      to: `/control-room/org/${organization.id}`,
+    });
   }
 
-  if (site) {
-    const siteCount = items.filter(
-      (item) => item.organization.id === site.organization.id,
-    ).length;
-    if (siteCount > 1) {
-      crumbs.push({ label: site.name, to: `/control-room/site/${site.id}` });
-    }
+  if (site && (organizationsLevelShown || organizationLevelShown)) {
+    crumbs.push({ label: site.name, to: `/control-room/site/${site.id}` });
   }
 
   const last = crumbs[crumbs.length - 1];

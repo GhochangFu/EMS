@@ -2,7 +2,10 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aFailedRefetchKeepsTheBody,
+  aFailedRefetchShowsNoNotAvailableCard,
   aNullSlugLinksToNoDashboard,
+  aPendingKpiReadShowsOnlyTheLoadingLine,
   aNullSlugShowsTheGeneratedInterim,
   aRejectedKpiReadShowsNoInterimBody,
   aRejectedKpiReadShowsTheUnavailableCard,
@@ -103,5 +106,17 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V14 calls the resolve client once for a rejected read", async () => {
     await aRejectedResolveReadIsNotRetried();
+  });
+
+  it("V15a keeps the site view body when a background refetch fails", async () => {
+    await aFailedRefetchKeepsTheBody();
+  });
+
+  it("V15b shows no not-available card when a background refetch fails", async () => {
+    await aFailedRefetchShowsNoNotAvailableCard();
+  });
+
+  it("V16 shows only the loading line while the KPI read is pending (D1)", async () => {
+    await aPendingKpiReadShowsOnlyTheLoadingLine();
   });
 });

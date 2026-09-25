@@ -174,3 +174,38 @@ export function runC4(): void {
     `a skipped organization and site level must leave one crumb — got ${JSON.stringify(crumbs)}`,
   );
 }
+
+/** The review fixture: A holds two sites, B holds one. */
+const ONE_SITE_ORG_AMONG_SEVERAL = [
+  site({ id: "a1", name: "A1", organization: ORG_A }),
+  site({ id: "a2", name: "A2", organization: ORG_A }),
+  site({ id: "b1", name: "B1", organization: ORG_B }),
+];
+
+/**
+ * `C5` — two organizations, at the site of the one-site organization B: B's
+ * level is skipped (it redirects to its only site), so B gets no crumb, but
+ * the organizations level was not skipped, so the site crumb stays.
+ */
+export function runC5(): void {
+  const crumbs = controlRoomCrumbs(ONE_SITE_ORG_AMONG_SEVERAL, { locationId: "b1" });
+  const expected = [{ label: "Control Room", to: "/control-room" }, { label: "B1" }];
+  assert(
+    JSON.stringify(crumbs) === JSON.stringify(expected),
+    `a one-site organization among several must give root + site — got ${JSON.stringify(crumbs)}`,
+  );
+}
+
+/** `C6` — the same fixture at a1: root, the linked organization, the site. */
+export function runC6(): void {
+  const crumbs = controlRoomCrumbs(ONE_SITE_ORG_AMONG_SEVERAL, { locationId: "a1" });
+  const expected = [
+    { label: "Control Room", to: "/control-room" },
+    { label: ORG_A.name, to: `/control-room/org/${ORG_A.id}` },
+    { label: "A1" },
+  ];
+  assert(
+    JSON.stringify(crumbs) === JSON.stringify(expected),
+    `a two-site organization among several must give three crumbs — got ${JSON.stringify(crumbs)}`,
+  );
+}

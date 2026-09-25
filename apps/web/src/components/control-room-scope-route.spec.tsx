@@ -94,11 +94,14 @@ export function showsAStatusLineWhileScopeIsPending(): void {
 }
 
 /**
- * G4b — and, chained after G4a's rendered state, does NOT redirect while
- * pending: a `null` scope must not fall into the `<Navigate>` branch.
+ * G4b — and does NOT redirect while pending: a `null` scope must not fall
+ * into the `<Navigate>` branch. The status line is the positive control in
+ * this same flow: without it, a guard that renders nothing at all would pass
+ * the absence assertion.
  */
 export function doesNotRedirectWhileScopeIsPending(): void {
   renderGuard(null);
+  expect(screen.getByRole("status")).toHaveTextContent(/Checking Control Room access/);
   expect(screen.queryByText(/landed on/)).not.toBeInTheDocument();
 }
 
