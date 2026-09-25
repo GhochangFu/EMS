@@ -70,7 +70,7 @@ export class DashboardService {
       ),
       -- F4.158: sum kw per location here, before the joins below. Summed over
       -- rtus x assets x alarms, each asset's kw counted once per RTU at the
-      -- location and once per alarm on the asset. Same asset predicate as the
+      -- location times its alarm rows (or 1). Same asset predicate as the
       -- bms.assets join below, $2 scope included, so total_kw and asset_count
       -- describe one asset set.
       kw_by_location AS (

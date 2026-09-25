@@ -341,9 +341,12 @@ export async function assertTelemetryFreshnessStaleBeyondWindow(client: pg.PoolC
 /**
  * Case 9 — no fan-out: one asset with `kw = 42` and two more samples of other
  * keys, all inside the window, still sums to `totalKw` 42 and counts one
- * fresh asset. `live` is `SELECT DISTINCT asset_id`; without the `DISTINCT`
- * the `LEFT JOIN live` would triple the asset's row and `SUM(latest.kw)` with
- * it. The extra samples are not `kw`, so `latest` still picks 42.
+ * fresh asset. The extra samples are not `kw`, so this case gates the
+ * `point_key = 'kw'` filter in `latest`. Since `F4.158` it no longer gates
+ * the `DISTINCT` in `live`: `totalKw` reads `kw_by_location`, which never
+ * joins `live`, and `freshAssetCount` is `COUNT(DISTINCT …)`.
+ * `tests/f3.28-offline-bound-single-source.test.ts` pins that `DISTINCT` as
+ * text, for `map.service.ts`'s plain `COUNT`.
  */
 export async function assertThreeSamplesDoNotFanOutTotalKw(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
@@ -383,26 +386,30 @@ export async function assertOutOfScopeFreshAssetIsNotCounted(client: pg.PoolClie
 
 /**
  * Case 11 — `F4.158`: `totalKw` is the per-asset sum, however many RTUs and
- * alarms the location has. Two RTUs, one asset on each at `kw = 21`, and two
- * alarms (one open) on the first. The product-summing query read 126. Equal
- * readings on purpose: `SUM(DISTINCT kw)` and `MAX(kw)` both read 21, so this
- * one assertion also rejects those two wrong fixes. `rtuCount` 2 and
- * `openAlarms` 1 are the positive control that both joins still ran.
+ * alarms the location has. Two RTUs; X (RTU 1, two alarms, one open) and Y
+ * (RTU 2) at `kw = 21`, Z (RTU 1, no alarm) at `kw = 10`: expect 52. The
+ * product-summing query reads 146 (each asset once per RTU, times its alarm
+ * rows or 1). X and Y are equal on purpose: `SUM(DISTINCT kw)` reads 31,
+ * `MAX(kw)` 21, and `AVG(kw) × COUNT(DISTINCT a.id)` over the joined rows
+ * 54.75, so this one assertion also rejects those wrong fixes. `rtuCount` 2
+ * and `openAlarms` 1 are the positive control that both joins still ran.
  */
 export async function assertTotalKwDoesNotFanOutOverRtusAndAlarms(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
   const secondRtu = await seedRtu(client, site);
   const x = await seedAsset(client, site, "X");
   const y = await seedAsset(client, site, "Y", secondRtu);
+  const z = await seedAsset(client, site, "Z");
   await seedAlarm(client, site, x, false);
   await seedAlarm(client, site, x, true);
   await insertSampleBeforeNow(client, x, "kw", 21, 5);
   await insertSampleBeforeNow(client, y, "kw", 21, 5);
-  const { items } = await service(client).locationKpis({ locationIds: [site.locationId], assetIds: [x, y] });
+  await insertSampleBeforeNow(client, z, "kw", 10, 5);
+  const { items } = await service(client).locationKpis({ locationIds: [site.locationId], assetIds: [x, y, z] });
   const got = { totalKw: items[0]?.totalKw, rtuCount: items[0]?.rtuCount, openAlarms: items[0]?.openAlarms };
   assert(
-    got.totalKw === 42 && got.rtuCount === 2 && got.openAlarms === 1,
-    `expected { totalKw: 42, rtuCount: 2, openAlarms: 1 }, got ${JSON.stringify(got)}`,
+    got.totalKw === 52 && got.rtuCount === 2 && got.openAlarms === 1,
+    `expected { totalKw: 52, rtuCount: 2, openAlarms: 1 }, got ${JSON.stringify(got)}`,
   );
 }
 
@@ -424,4 +431,23 @@ export async function assertTotalKwExcludesOutOfScopeAsset(client: pg.PoolClient
   });
   const got = items[0]?.totalKw;
   assert(got === 42, `expected totalKw 42 (the in-scope asset only), got ${JSON.stringify(got)}`);
+}
+
+/**
+ * Case 13 — `F4.158`: a global user passes `assetIds: null`, and the card
+ * then sums every asset at the location — 42 + 100. Cases 11 and 12 always
+ * pass `assetIds`, so without this case a `kw_by_location` that lost its
+ * `$2 IS NULL OR` branch would read 0 on every card for every global user
+ * and stay green. The fixture location holds only fixture assets, so fleet
+ * data cannot move the number.
+ */
+export async function assertTotalKwSumsEveryAssetForGlobalScope(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const a = await seedAsset(client, site, "A");
+  const b = await seedAsset(client, site, "B");
+  await insertSampleBeforeNow(client, b, "kw", 100, 5);
+  await insertSampleBeforeNow(client, a, "kw", 42, 5);
+  const { items } = await service(client).locationKpis({ locationIds: [site.locationId], assetIds: null });
+  const got = items[0]?.totalKw;
+  assert(got === 142, `expected totalKw 142 (both assets, global scope), got ${JSON.stringify(got)}`);
 }
