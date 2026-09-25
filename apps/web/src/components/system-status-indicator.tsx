@@ -6,6 +6,18 @@ import {
   type SystemQualityBand,
 } from "../lib/system-status-bands";
 
+const BAND_LABEL: Record<SystemQualityBand, string> = { good: "Good", fair: "Fair", poor: "Poor" };
+
+const BAND_CLASS: Record<SystemQualityBand, string> = {
+  good: "text-bms-green",
+  fair: "text-amber-400",
+  poor: "text-red-400",
+};
+
+function Dot({ className }: { className: string }) {
+  return <span aria-hidden="true" className={`inline-block h-2 w-2 rounded-full ${className}`} />;
+}
+
 /**
  * `F3.30` (ADR 0075 decision 5) — the footer's System Status and Data Quality
  * indicator: a dot, the verdict, then "Data quality 98.6 % Good". Polled by
@@ -19,19 +31,6 @@ import {
  * Loading renders a grey dot and "Checking status…" (plan decision 4) —
  * neither "operational" nor "unavailable".
  */
-
-const BAND_LABEL: Record<SystemQualityBand, string> = { good: "Good", fair: "Fair", poor: "Poor" };
-
-const BAND_CLASS: Record<SystemQualityBand, string> = {
-  good: "text-bms-green",
-  fair: "text-amber-400",
-  poor: "text-red-400",
-};
-
-function Dot({ className }: { className: string }) {
-  return <span aria-hidden="true" className={`inline-block h-2 w-2 rounded-full ${className}`} />;
-}
-
 export function SystemStatusIndicator() {
   const { data, isError } = useSystemStatus();
 
