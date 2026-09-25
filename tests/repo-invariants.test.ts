@@ -83,8 +83,10 @@ describe("repo invariants", () => {
     // both. Legitimate raw reads in these files — latest-value `DISTINCT ON`,
     // `MAX(value) FILTER`, `SUM(latest.kw)` — use neither, and `AVG(total_kw)` over
     // an already-aggregated CTE is untouched because it does not name `value`.
+    // `F4.159` moved three of the dashboard sites into energy-centre.ts.
     const rollupFiles = [
       "apps/api/src/dashboard/dashboard.service.ts",
+      "apps/api/src/dashboard/energy-centre.ts",
       "apps/api/src/reports/reports.service.ts",
     ];
     // Comments discuss both markers on purpose, so strip them before matching.

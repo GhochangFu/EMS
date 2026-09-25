@@ -733,8 +733,14 @@ describe("ADR 0070 part (f) — the env var is read nowhere", () => {
   });
 });
 
-describe("ADR 0070 part (f), structural half — dashboard.service.ts and reports.service.ts read the environment nowhere", () => {
-  const STRUCTURAL_FILES = ["apps/api/src/dashboard/dashboard.service.ts", "apps/api/src/reports/reports.service.ts"];
+describe("ADR 0070 part (f), structural half — the dashboard and reports services read the environment nowhere", () => {
+  // `F4.159` moved `energySummary` (the dashboard cost read) out of
+  // dashboard.service.ts into energy-centre.ts, so the scan follows it there.
+  const STRUCTURAL_FILES = [
+    "apps/api/src/dashboard/dashboard.service.ts",
+    "apps/api/src/dashboard/energy-centre.ts",
+    "apps/api/src/reports/reports.service.ts",
+  ];
 
   function residueDefect(source: string): string | null {
     if (/process\.env/.test(source)) return "the file must not read process.env — the tariff comes from CalcParametersService";
