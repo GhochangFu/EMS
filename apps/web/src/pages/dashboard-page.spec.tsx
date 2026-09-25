@@ -183,6 +183,18 @@ export async function aMeasuredPueTileStillCarriesTheStaleRing(): Promise<void> 
   expect(pue.className).toContain(STALE_RING);
 }
 
+/**
+ * `F3.30` (ADR 0075 decision 2) — the Sites online hint states the freshness
+ * window from `FRESH_MS`, not a hardcoded `~20s`.
+ */
+export async function sitesOnlineHintReadsTheFreshnessWindow(): Promise<void> {
+  stubDashboard(1.42);
+  renderPage();
+
+  const tile = tileLabelled("Sites online");
+  expect(await within(tile).findByText("Sites with fresh telemetry (~25s)")).toBeInTheDocument();
+}
+
 // ---------------------------------------------------------------------------
 // `F3.28` task 2.5 — vs-yesterday deltas, the OQ5 alarm hint, and the icons.
 //
