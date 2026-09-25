@@ -16,6 +16,7 @@ import {
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
 import { latestPueRatio, windowedPueRatio } from "../telemetry/pue-ratio";
+import { LIVE_ASSETS_CTE_SQL, LIVE_TELEMETRY_MAX_AGE_SECONDS } from "../telemetry/telemetry-freshness";
 import { emptyKpiPrior, priorInstant, readKpiPrior, type KpiPrior } from "./kpi-prior";
 
 type LocationDashboardAssetRow = LocationDashboardDto["assets"]["items"][number];
@@ -66,7 +67,8 @@ export class DashboardService {
         FROM telemetry.point_values
         WHERE point_key = 'kw'
         ORDER BY asset_id, time DESC
-      )
+      ),
+      ${LIVE_ASSETS_CTE_SQL}
       SELECT
         l.id,
         l.name,
@@ -77,9 +79,7 @@ export class DashboardService {
         o.name AS org_name,
         COUNT(DISTINCT r.id)::int AS rtu_count,
         COUNT(DISTINCT a.id)::int AS asset_count,
-        COUNT(DISTINCT a.id) FILTER (
-          WHERE latest.kw_time > now() - interval '25 seconds'
-        )::int AS fresh_asset_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE live.asset_id IS NOT NULL)::int AS fresh_asset_count,
         COALESCE(SUM(latest.kw), 0)::float8 AS total_kw,
         -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
         -- An acknowledged alarm is still open; acknowledgement only annotates it.
@@ -102,6 +102,7 @@ export class DashboardService {
         ON a.location_id = l.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
       LEFT JOIN latest ON latest.asset_id = a.id
+      LEFT JOIN live ON live.asset_id = a.id
       LEFT JOIN bms.alarms al ON al.asset_id = a.id
       WHERE l.active = true
         AND ($1::uuid[] IS NULL OR l.id = ANY($1::uuid[]))
@@ -167,12 +168,7 @@ export class DashboardService {
       fresh_asset_count: string;
     }>(
       `
-      WITH latest AS (
-        SELECT DISTINCT ON (asset_id) asset_id, time AS kw_time
-        FROM telemetry.point_values
-        WHERE point_key = 'kw'
-        ORDER BY asset_id, time DESC
-      )
+      WITH ${LIVE_ASSETS_CTE_SQL}
       SELECT
         r.id,
         r.code,
@@ -181,14 +177,12 @@ export class DashboardService {
         r.domain,
         r.ingest_enabled,
         COUNT(DISTINCT a.id)::int AS asset_count,
-        COUNT(DISTINCT a.id) FILTER (
-          WHERE latest.kw_time > now() - interval '25 seconds'
-        )::int AS fresh_asset_count
+        COUNT(DISTINCT a.id) FILTER (WHERE live.asset_id IS NOT NULL)::int AS fresh_asset_count
       FROM bms.rtus r
       LEFT JOIN bms.assets a
         ON a.rtu_id = r.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
-      LEFT JOIN latest ON latest.asset_id = a.id
+      LEFT JOIN live ON live.asset_id = a.id
       WHERE r.location_id = $1
       GROUP BY r.id, r.code, r.display_name, r.source_type, r.domain, r.ingest_enabled
       ORDER BY r.display_name
@@ -483,15 +477,15 @@ export class DashboardService {
         WHERE point_key = 'kw' AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
         ORDER BY asset_id, time DESC
       ),
+      ${LIVE_ASSETS_CTE_SQL},
       asset_sites AS (
         SELECT id, site_name FROM bms.assets
         WHERE ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
       )
       SELECT
         (SELECT COALESCE(SUM(kw), 0) FROM kw_latest)::float8 AS total_kw,
-        (SELECT COUNT(DISTINCT s.site_name)::int FROM kw_latest k
-          JOIN asset_sites s ON s.id = k.asset_id
-          WHERE k.kw_time > now() - interval '20 seconds') AS sites_online,
+        (SELECT COUNT(DISTINCT s.site_name)::int FROM live k
+          JOIN asset_sites s ON s.id = k.asset_id) AS sites_online,
         (SELECT COUNT(DISTINCT site_name)::int FROM asset_sites) AS sites_total,
         -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
         (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE cleared_at IS NULL) AS alarms_open,
@@ -602,7 +596,7 @@ export class DashboardService {
       return "none";
     }
     const ageMs = Date.now() - new Date(latestTelemetryAt).getTime();
-    return ageMs <= 25_000 ? "live" : "stale";
+    return ageMs <= LIVE_TELEMETRY_MAX_AGE_SECONDS * 1000 ? "live" : "stale";
   }
 
   private parseTelemetrySamples(raw: unknown): LocationDashboardTelemetrySample[] {

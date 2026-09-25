@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 
 import { fetchLocationKpis } from "../api/locations";
 import { useExecutiveDashboard } from "../hooks/use-executive-dashboard";
+import { FRESH_MS } from "../lib/schematic-telemetry";
 import { kpiRibbonHints } from "../lib/kpi-ribbon";
 import { pueTileProps } from "../lib/pue-tile";
 import {
@@ -138,7 +139,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
             value={
               kpi ? `${kpi.sitesOnline} / ${kpi.sitesTotal}` : null
             }
-            hint="Sites with fresh telemetry (~20s)"
+            hint={`Sites with fresh telemetry (~${FRESH_MS / 1000}s)`}
             stale={stale && kpiStatus === "ready"}
           />
           <KpiTile

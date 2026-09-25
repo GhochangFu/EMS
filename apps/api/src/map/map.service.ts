@@ -4,6 +4,7 @@ import type { Pool } from "pg";
 import type { MapSiteDto, MapSiteLive } from "@bms/shared";
 
 import { FLEET_POOL } from "../database/database.tokens";
+import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
 
 type LocRow = {
   id: string;
@@ -99,17 +100,12 @@ export class MapService {
       asset_count: string;
       fresh_count: string;
     }>(
-      `WITH latest AS (
-         SELECT DISTINCT ON (asset_id) asset_id, time AS kw_time
-         FROM telemetry.point_values
-         WHERE point_key = 'kw'
-         ORDER BY asset_id, time DESC
-       )
+      `WITH ${LIVE_ASSETS_CTE_SQL}
        SELECT a.location_id,
               COUNT(a.id)::int AS asset_count,
-              COUNT(l.asset_id) FILTER (WHERE l.kw_time > now() - interval '25 seconds')::int AS fresh_count
+              COUNT(l.asset_id)::int AS fresh_count
        FROM bms.assets a
-       LEFT JOIN latest l ON l.asset_id = a.id
+       LEFT JOIN live l ON l.asset_id = a.id
        WHERE a.location_id IS NOT NULL
          AND ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
        GROUP BY a.location_id`,

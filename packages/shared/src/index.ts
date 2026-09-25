@@ -42,6 +42,7 @@ import type * as Op from "./contracts/operations";
 import type * as PM from "./contracts/point-metadata";
 import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
+import type * as Ss from "./contracts/system-status";
 import type * as Te from "./contracts/telemetry-entry";
 import type * as Ti from "./contracts/telemetry-import";
 import { TELEMETRY_POINT_REF_SEP } from "./constants";
@@ -461,6 +462,21 @@ export type AdminOrganizationSummaryDto = z.infer<
 export type AdminLocationSummaryDto = z.infer<typeof A.adminLocationSummaryDtoSchema>;
 export type AdminRtuSummaryDto = z.infer<typeof A.adminRtuSummaryDtoSchema>;
 export type AdminAssetSummaryDto = z.infer<typeof A.adminAssetSummaryDtoSchema>;
+
+// ---------------------------------------------------------------------------
+// System status (`F3.30`, ADR 0075 decisions 3, 4)
+// ---------------------------------------------------------------------------
+
+/** The three components `GET /api/v1/system/status` reports, in fixed order. */
+export type SystemComponentKey = z.infer<typeof Ss.systemComponentKeySchema>;
+/** See `contracts/system-status.ts`'s table for which component reaches which state. */
+export type SystemComponentState = z.infer<typeof Ss.systemComponentStateSchema>;
+/** One component entry — state only, never a depth, bucket name or error text. */
+export type SystemComponent = z.infer<typeof Ss.systemComponentSchema>;
+/** The fresh share of streaming assets in the caller's scope; `percent: null` is "nothing to measure". */
+export type SystemDataQuality = z.infer<typeof Ss.systemDataQualitySchema>;
+/** `GET /api/v1/system/status`. */
+export type SystemStatusResponse = z.infer<typeof Ss.systemStatusResponseSchema>;
 
 // ---------------------------------------------------------------------------
 // Telemetry entry — manual + bulk import (ADR 0018, `F1.8`/`F1.9`)

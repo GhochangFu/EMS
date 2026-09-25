@@ -9,6 +9,15 @@ import { createFixtureAssets, fixtureLocation } from "../testing/integration-fix
 import { MapService } from "./map.service";
 
 /**
+ * `F3.30` (ADR 0075 decision 2) — `sitesLive`'s comm-status counts move to
+ * the any-point rule through the shared `live` CTE, the same as
+ * `dashboard.service.ts` (`F3.30` U2). A second fixture asset (no alarms of
+ * its own) carries a non-`kw` sample; scoping `assetIds` to only that asset
+ * keeps `insertFixture`'s alarmed asset out of both the alarm and comm counts,
+ * so `assetsTotal` and `status` read off this asset alone.
+ */
+
+/**
  * `F3.10` U12 — the map's per-site open-alarm counts follow `cleared_at`, not
  * `acknowledged_at` (ADR 0057 decision 1, owner ruling Q1). Assertions live
  * here; the sibling `.integration.test` owns the pool (ADR 0014).
@@ -41,7 +50,7 @@ async function withRolledBackClient<T>(
   }
 }
 
-type Fixture = { locationId: string; assetId: string; slug: string };
+type Fixture = { locationId: string; organizationId: string; assetId: string; slug: string };
 
 /** The dashboard spec's fixture plus the `map_locations` row that makes the location a map site. */
 async function insertFixture(client: pg.PoolClient, run: string): Promise<Fixture> {
@@ -85,7 +94,7 @@ async function insertFixture(client: pg.PoolClient, run: string): Promise<Fixtur
       `F3.10 cleared, unacknowledged B ${run}`,
     ],
   );
-  return { locationId, assetId, slug };
+  return { locationId, organizationId, assetId, slug };
 }
 
 /** `sitesLive` counts the acknowledged-uncleared alarm for the site and excludes the cleared-unacknowledged ones. */
@@ -111,5 +120,80 @@ export async function assertSiteOpenAlarmsFollowClearedAt(pool: pg.Pool): Promis
       "sitesLive.criticalAlarms: the acknowledged critical alarm counts; 0 means acknowledgement closed it",
     ).toBe(1);
     expect(site?.live.status, "one open critical alarm makes the site critical").toBe("critical");
+  });
+}
+
+/**
+ * `sitesLive`'s comm-status counts a non-`kw` sample as fresh (ADR 0075
+ * decision 2, `F3.30`). Red today: the query's `latest` CTE only reads
+ * `point_key = 'kw'`, so a `humidity_pct` sample counts nowhere and
+ * `assetsFresh` reads 0.
+ */
+export async function assertCommStatusCountsNonKwFresh(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const { locationId, organizationId, slug } = await insertFixture(client, run);
+    const db = createDb(client as unknown as pg.Pool);
+    const [freshAssetId] = await createFixtureAssets(db, 1, "F330MC", { locationId, organizationId });
+    if (!freshAssetId) throw new Error("F3.30: no fixture comm-status asset");
+    // SQL `now()` is frozen for the whole transaction, so this sample's age
+    // relative to sitesLive's own `now()` read is exactly 5 s, not a race.
+    await client.query(
+      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+       VALUES (now() - interval '5 seconds', $1, 'humidity_pct', 42, 'pct')`,
+      [freshAssetId],
+    );
+    const service = new MapService(client as unknown as pg.Pool);
+
+    // Scoped to only the new, alarm-free asset: insertFixture's own asset and
+    // its alarms fall outside `assetIds`, so this site's counts and status
+    // come from the non-kw sample alone.
+    const sites = await service.sitesLive({ assetIds: [freshAssetId] });
+    const site = sites.find((candidate) => candidate.slug === slug);
+    expect(site, "the fixture map location is listed").toBeDefined();
+    expect(
+      site?.live.assetsFresh,
+      "a humidity_pct sample 5 s old must count as fresh under the any-point rule",
+    ).toBe(1);
+    expect(site?.live.assetsTotal, "scoped to the one new fixture asset").toBe(1);
+    expect(
+      site?.live.status,
+      "no alarms in scope and a full freshness ratio makes the site healthy",
+    ).toBe("healthy");
+  });
+}
+
+/**
+ * `sitesLive`'s comm-status counts only the fresh asset as fresh: a second
+ * in-scope asset whose only sample is 60 s old counts in `assetsTotal` and
+ * not in `assetsFresh` (`F3.30` code review 3). `COUNT(l.asset_id)` is what
+ * tells them apart — `COUNT(a.id)` would read 2 of 2.
+ */
+export async function assertCommStatusLeavesAStaleAssetOut(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const { locationId, organizationId, slug } = await insertFixture(client, run);
+    const db = createDb(client as unknown as pg.Pool);
+    const [freshAssetId, staleAssetId] = await createFixtureAssets(db, 2, "F330MS", {
+      locationId,
+      organizationId,
+    });
+    if (!freshAssetId || !staleAssetId) throw new Error("F3.30: no fixture comm-status assets");
+    // SQL `now()` is frozen for the transaction, so both ages are exact.
+    await client.query(
+      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+       VALUES (now() - make_interval(secs => 60), $1, 'humidity_pct', 40, 'pct'),
+              (now() - make_interval(secs => 5), $2, 'humidity_pct', 42, 'pct')`,
+      [staleAssetId, freshAssetId],
+    );
+    const service = new MapService(client as unknown as pg.Pool);
+
+    const sites = await service.sitesLive({ assetIds: [freshAssetId, staleAssetId] });
+    const site = sites.find((candidate) => candidate.slug === slug);
+    expect(site, "the fixture map location is listed").toBeDefined();
+    expect(
+      { fresh: site?.live.assetsFresh, total: site?.live.assetsTotal },
+      "one fresh asset of two in scope — the 60 s one is not fresh",
+    ).toEqual({ fresh: 1, total: 2 });
   });
 }

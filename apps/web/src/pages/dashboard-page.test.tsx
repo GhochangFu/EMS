@@ -13,6 +13,7 @@ import {
   openAlarmsWearsTheAlertIcon,
   openAlarmsWithoutADeltaReadActiveNotYetCleared,
   pueWearsTheGaugeIcon,
+  sitesOnlineHintReadsTheFreshnessWindow,
   sitesOnlineWearsNoIcon,
   theCriticalCountRendersInTheNote,
   theUnacknowledgedRowsLiteralIsGone,
@@ -91,5 +92,16 @@ describe("F3.28 executive ribbon deltas, alarm hint and icons", () => {
 
   it("puts no icon on Sites online", async () => {
     await sitesOnlineWearsNoIcon();
+  });
+});
+
+describe("F3.30 Sites online hint reads the freshness window (ADR 0075 decision 2)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("reads 'Sites with fresh telemetry (~25s)'", async () => {
+    await sitesOnlineHintReadsTheFreshnessWindow();
   });
 });
