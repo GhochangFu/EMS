@@ -37,7 +37,7 @@ const ROWS = [{ code: "CR-Q1" }];
 /** Signs in as A, binds a fresh client, and seeds one cached query. */
 function signedInAsA(): { client: QueryClient; unbind: () => void } {
   useAuthStore.getState().clearSession();
-  useAuthStore.getState().setSession("token-a", USER_A);
+  useAuthStore.getState().setSession("token-a", USER_A, null, null);
   const client = new QueryClient();
   const unbind = bindQueryCacheToSession(useAuthStore, client);
   client.setQueryData(KEY, ROWS);
@@ -63,7 +63,7 @@ export function clearsWhenTheSessionEnds(): void {
 export function clearsWhenTheUserChanges(): void {
   const { client, unbind } = signedInAsA();
   try {
-    useAuthStore.getState().setSession("token-b", USER_B);
+    useAuthStore.getState().setSession("token-b", USER_B, null, null);
     assert(client.getQueryData(KEY) === undefined, "a different user id clears the query cache");
   } finally {
     unbind();
@@ -78,7 +78,7 @@ export function clearsWhenTheUserChanges(): void {
 export function keepsTheCacheWhenMeResetsTheSameSession(): void {
   const { client, unbind } = signedInAsA();
   try {
-    useAuthStore.getState().setSession("token-a", { ...USER_A });
+    useAuthStore.getState().setSession("token-a", { ...USER_A }, null, null);
     assert(client.getQueryData(KEY) === ROWS, "same token, same user id keeps the cache");
     useAuthStore.getState().clearSession();
     assert(client.getQueryData(KEY) === undefined, "positive control: the binding is live");
@@ -95,7 +95,7 @@ export function keepsTheCacheWhenMeResetsTheSameSession(): void {
 export function keepsTheCacheWhenTheTokenIsRenewedForTheSameUser(): void {
   const { client, unbind } = signedInAsA();
   try {
-    useAuthStore.getState().setSession("token-a-renewed", { ...USER_A });
+    useAuthStore.getState().setSession("token-a-renewed", { ...USER_A }, null, null);
     assert(client.getQueryData(KEY) === ROWS, "a renewed token for the same user keeps the cache");
     useAuthStore.getState().clearSession();
     assert(client.getQueryData(KEY) === undefined, "positive control: the binding is live");

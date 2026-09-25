@@ -99,7 +99,14 @@ export function App() {
     fetchCurrentUser(accessToken)
       .then((current) => {
         if (!cancelled) {
-          setSession(accessToken, current.user, current.scope);
+          // Keep the stored OIDC id token: logout sends it as
+          // `id_token_hint`, and this re-set must not erase it (F4.156).
+          setSession(
+            accessToken,
+            current.user,
+            current.scope,
+            useAuthStore.getState().oidcIdToken,
+          );
         }
       })
       .catch(() => {

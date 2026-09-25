@@ -13,6 +13,7 @@ function signIn(): void {
     "token-abc",
     { id: "u1", email: "wc-admin@bms.local", displayName: "WC Admin", role: "location_admin" },
     { kind: "location", locations: [], assetGroups: [], assetIds: [] },
+    null,
   );
 }
 
