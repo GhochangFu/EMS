@@ -16,6 +16,7 @@ import {
   assertDomainsInSortOrder,
   assertEmptyScopeSendsNoQuery,
   assertGlobalAdminReadsAPhewbSite,
+  assertInactiveMappingSampleDoesNotMakeLive,
   assertInactivePointIsAbsent,
   assertLatestIsTheNewerSample,
   assertNoSampleIsNone,
@@ -31,12 +32,13 @@ import {
   assertUnitOverrideWins,
   assertUnknownLocationIsNotFound,
   assertUnrankedOrdersByKey,
+  assertUnregisteredSampleDoesNotMakeLive,
 } from "./generated-site-view.integration.spec";
 import { GeneratedSiteViewService } from "./generated-site-view.service";
 
 /**
  * `F3.68` — Vitest entry point for `GeneratedSiteViewService` against a real
- * database (plan U5, R1–R14). Assertions live in the sibling `.spec` (ADR
+ * database (plan U5, R1–R15). Assertions live in the sibling `.spec` (ADR
  * 0014); this file owns the pools.
  *
  * The `read()` cases run on the fleet pool (production's `FLEET_POOL`, ADR
@@ -100,6 +102,16 @@ describe.skipIf(!connectionString)("F3.68 — GeneratedSiteViewService", () => {
   it("R2 ranks 2,1,NULL,NULL on keys d,c,b,a order c,d,a,b", rolledBack(assertRankThenNullsLast), 60_000);
   it("R3 an equal rank orders by point_key", rolledBack(assertTieOrdersByKey), 60_000);
   it("R4 an asset with no ranked point orders by point_key", rolledBack(assertUnrankedOrdersByKey), 60_000);
+  it(
+    "R15a a fresh sample on an unmapped point does not make the asset live",
+    rolledBack(assertUnregisteredSampleDoesNotMakeLive),
+    60_000,
+  );
+  it(
+    "R15b a fresh sample on an inactive mapping does not make the asset live",
+    rolledBack(assertInactiveMappingSampleDoesNotMakeLive),
+    60_000,
+  );
   it("R5a latest is the newer of two samples", rolledBack(assertLatestIsTheNewerSample), 60_000);
   it("R5b a point with no sample answers latest: null", rolledBack(assertNoSampleIsNullLatest), 60_000);
   it("R6 an inactive asset point is absent, its active sibling present", rolledBack(assertInactivePointIsAbsent), 60_000);

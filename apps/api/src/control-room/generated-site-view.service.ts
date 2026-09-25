@@ -156,6 +156,7 @@ export class GeneratedSiteViewService {
       INNER JOIN bms.asset_points ap ON ap.asset_id = sa.id AND ap.active = true
       LEFT JOIN bms.point_keys pk ON pk.code = ap.point_key
       LEFT JOIN latest lt ON lt.asset_id = ap.asset_id AND lt.point_key = ap.point_key
+      -- NULLS LAST is already ASC's default; it is spelled out so the D1 rule reads whole.
       ORDER BY ap.asset_id, pk.headline_rank ASC NULLS LAST, ap.point_key ASC
       `,
       [ids],

@@ -11,13 +11,13 @@ import { GeneratedSiteViewService } from "./generated-site-view.service";
 import { jwtFor } from "./site-control-room-view.integration.spec";
 
 /**
- * `F3.68` (ADR 0076 decision 7, plan U5, R1–R14) — `GeneratedSiteViewService`
+ * `F3.68` (ADR 0076 decision 7, plan U5, R1–R15) — `GeneratedSiteViewService`
  * against a real database. The sibling `.integration.test.ts` owns the pools;
  * the assertions live here (ADR 0014, AGENTS.md §4.6).
  *
  * **Two harnesses.**
  *
- * - **`read()` cases (R1–R10, R14) run in one transaction and roll it back.**
+ * - **`read()` cases (R1–R10, R14, R15) run in one transaction and roll it back.**
  *   The test file wraps each in `inRolledBackTransaction` (`BEGIN` … `ROLLBACK`
  *   in a `finally`), and the service is constructed over that same client, so
  *   it sees the fixture rows — per-run organization, location, domains, point
@@ -146,12 +146,19 @@ async function seedAssetPoint(
   site: Site,
   assetId: string,
   pointKey: string,
-  opts: { unit?: string | null; active?: boolean } = {},
+  opts: { unit?: string | null; active?: boolean; source?: string } = {},
 ): Promise<void> {
   await client.query(
     `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key, unit, active)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [site.organizationId, assetId, pointKey, `src_${pointKey}`, opts.unit ?? null, opts.active ?? true],
+    [
+      site.organizationId,
+      assetId,
+      pointKey,
+      opts.source ?? `src_${pointKey}`,
+      opts.unit ?? null,
+      opts.active ?? true,
+    ],
   );
 }
 
@@ -225,16 +232,46 @@ export async function assertRankThenNullsLast(client: pg.PoolClient): Promise<vo
   expect(got).toEqual([c, d, a, b]);
 }
 
-/** R3 — an equal rank on zz and aa orders aa first (zz is registered first). */
+/**
+ * R3 — an equal rank on aa, mm and zz orders them by key: only the SQL
+ * `point_key ASC` tiebreak owns this rule (the service never re-sorts).
+ *
+ * **Why the tiebreak survived deletion, and the fixture now.** Without the
+ * tiebreak the ties come out in the order the final sort receives them
+ * (Postgres's sort keeps an already-ordered run), and that order belongs to
+ * the plan, which the planner picks from table statistics. Measured on
+ * `bms_f368` with the mutated statement: the planner joins `latest` with a
+ * **Merge Left Join on `(asset_id, point_key)`**, so it first sorts the
+ * `asset_points` rows by `(asset_id, point_key)` — key order — and the
+ * incremental sort on `headline_rank` then keeps that order. The `DISTINCT ON`
+ * join, not the service, placed the ties correctly. Under another plan
+ * (nested loop over a bitmap heap scan, seen on an earlier run) the ties come
+ * out in heap order and the deletion reddens. Other key-ordered paths: an
+ * index scan on the `(asset_id, point_key)` unique index, and — with the old
+ * fixture's `src_<point_key>` — an index scan on
+ * `asset_points_asset_source_key_idx`.
+ *
+ * So this transaction switches off merge and hash joins and index scans,
+ * which leaves a nested loop with `asset_points` as the outer side, read by
+ * a bitmap heap or seq scan in heap order. The points are inserted mm, zz, aa
+ * (neither key order nor its reverse) with `source_data_key`s that sort zz,
+ * aa, mm. The only thing left that can put aa, mm, zz in key order is the SQL
+ * tiebreak itself, which is the layer that owns the rule.
+ */
 export async function assertTieOrdersByKey(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
   const asset = await seedAsset(client, site);
-  const zz = await seedPointKey(client, site, "zz", { rank: 5 });
   const aa = await seedPointKey(client, site, "aa", { rank: 5 });
-  await seedAssetPoint(client, site, asset, zz);
-  await seedAssetPoint(client, site, asset, aa);
+  const mm = await seedPointKey(client, site, "mm", { rank: 5 });
+  const zz = await seedPointKey(client, site, "zz", { rank: 5 });
+  await seedAssetPoint(client, site, asset, mm, { source: "src_3" });
+  await seedAssetPoint(client, site, asset, zz, { source: "src_1" });
+  await seedAssetPoint(client, site, asset, aa, { source: "src_2" });
+  for (const knob of ["enable_mergejoin", "enable_hashjoin", "enable_indexscan", "enable_indexonlyscan"]) {
+    await client.query(`SET LOCAL ${knob} = off`);
+  }
   const got = assetOf(await readAll(client, site), asset).points.map((p) => p.pointKey);
-  expect(got).toEqual([aa, zz]);
+  expect(got).toEqual([aa, mm, zz]);
 }
 
 /** R4 — an asset with no ranked point lists its points by key. */
@@ -324,6 +361,55 @@ export async function assertNoSampleIsNone(client: pg.PoolClient): Promise<void>
 /** R8d — exactly 25 s is still `live`: the window is inclusive. */
 export async function assertTheBoundaryIsLive(client: pg.PoolClient): Promise<void> {
   expect((await assetWithSampleAged(client, 25)).freshness).toBe("live");
+}
+
+/**
+ * Two assets at one site for R15. Each has the registered active point `k`.
+ * The control has a sample on `k` 5 s old. The subject has a sample on `k`
+ * 60 s old, and a 5 s sample on the point that `unregistered` names:
+ *
+ * - `"catalog-only"`: a catalog key with no `asset_points` row for the asset;
+ * - `"inactive"`: a key mapped to the asset with `active = false`.
+ */
+async function freshSampleOnAPointThatDoesNotCount(
+  client: pg.PoolClient,
+  unregistered: "catalog-only" | "inactive",
+) {
+  const site = await seedSite(client);
+  const control = await seedAsset(client, site);
+  const subject = await seedAsset(client, site);
+  const k = await seedPointKey(client, site, "k");
+  const other = await seedPointKey(client, site, "other");
+  await seedAssetPoint(client, site, control, k);
+  await seedAssetPoint(client, site, subject, k);
+  if (unregistered === "inactive") {
+    await seedAssetPoint(client, site, subject, other, { active: false });
+  }
+  await insertSample(client, control, k, 1, 5);
+  await insertSample(client, subject, k, 1, 60);
+  await insertSample(client, subject, other, 1, 5);
+  const dto = await readAll(client, site);
+  return { control: assetOf(dto, control), subject: assetOf(dto, subject) };
+}
+
+/**
+ * R15a (D3) — a fresh sample on a point the asset has no mapping for does not
+ * make it live. Positive control first: a fresh sample on a registered point does.
+ */
+export async function assertUnregisteredSampleDoesNotMakeLive(client: pg.PoolClient): Promise<void> {
+  const { control, subject } = await freshSampleOnAPointThatDoesNotCount(client, "catalog-only");
+  expect(control.freshness, "positive control: a 5 s sample on a registered point is live").toBe("live");
+  expect(subject.freshness).toBe("stale");
+}
+
+/**
+ * R15b (D3) — a fresh sample on an inactive mapping does not make the asset
+ * live. Positive control first, as R15a.
+ */
+export async function assertInactiveMappingSampleDoesNotMakeLive(client: pg.PoolClient): Promise<void> {
+  const { control, subject } = await freshSampleOnAPointThatDoesNotCount(client, "inactive");
+  expect(control.freshness, "positive control: a 5 s sample on a registered point is live").toBe("live");
+  expect(subject.freshness).toBe("stale");
 }
 
 /** R9a — `assetIds = [a]` answers only `a`, in exactly two statements. */
