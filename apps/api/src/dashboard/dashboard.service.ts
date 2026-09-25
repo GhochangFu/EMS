@@ -14,7 +14,7 @@ import {
 } from "../telemetry/point-aggregates";
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { latestPueRatio } from "../telemetry/pue-ratio";
-import { LIVE_ASSETS_CTE_SQL, LIVE_TELEMETRY_MAX_AGE_SECONDS } from "../telemetry/telemetry-freshness";
+import { LIVE_ASSETS_CTE_SQL, telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 import * as energyCentre from "./energy-centre";
 import { emptyKpiPrior, priorInstant, readKpiPrior, type KpiPrior } from "./kpi-prior";
 
@@ -608,11 +608,9 @@ export class DashboardService {
   private telemetryFreshness(
     latestTelemetryAt: string | null,
   ): "live" | "stale" | "none" {
-    if (!latestTelemetryAt) {
-      return "none";
-    }
-    const ageMs = Date.now() - new Date(latestTelemetryAt).getTime();
-    return ageMs <= LIVE_TELEMETRY_MAX_AGE_SECONDS * 1000 ? "live" : "stale";
+    // `F3.68` (plan D9): the judgement lives in `telemetry-freshness.ts`,
+    // shared with the generated site view; this read judges at `Date.now()`.
+    return telemetryFreshnessAt(latestTelemetryAt, Date.now());
   }
 
   private parseTelemetrySamples(raw: unknown): LocationDashboardTelemetrySample[] {

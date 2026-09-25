@@ -29,10 +29,10 @@ const tsOnly = (source: string): string => source.replace(BLOCK_COMMENT, "").rep
 
 /**
  * `F3.68` — U1's static gate: migration `0083`, its journal entry, the
- * Drizzle column, and (T9, added by U2) the generated-site-view contracts'
- * constant (ADR 0076 decision 7; plan U1, T0–T6, T9). T7 and T8 belong to
- * later units and are not asserted here. Assertions inline, no `.spec`
- * sibling (§4.6).
+ * Drizzle column, (T8, added by U4) the seed order, and (T9, added by U2)
+ * the generated-site-view contracts' constant (ADR 0076 decision 7; plan U1,
+ * T0–T6, T8, T9). T7 (U5) is the next `describe`. Assertions inline, no
+ * `.spec` sibling (§4.6).
  */
 describe("F3.68 — bms.point_keys.headline_rank (migration 0083)", () => {
   // T0
@@ -218,5 +218,33 @@ describe("F3.68 — the onboarding point-key path never writes headline_rank", (
 
   it("the shared draft point-key contract does not name headlineRank", () => {
     expect(sharedDraft()).not.toMatch(RANK);
+  });
+});
+
+/**
+ * T7 (U5) — the generated read builds a site from `bms.asset_points` and the
+ * `bms.point_keys` catalog, never from a template: PHEWB's assets have no
+ * `template_id` (plan Goal), so a template join would drop every one of them.
+ * The two table names are the positive control — the scan reads the real
+ * service, not an empty or moved file. One claim per `it()`.
+ */
+describe("F3.68 — the generated read reads no template (T7)", () => {
+  const SERVICE_REL = "apps/api/src/control-room/generated-site-view.service.ts";
+  const service = (): string => tsOnly(read(SERVICE_REL));
+
+  it("generated-site-view.service.ts reads bms.asset_points (positive control)", () => {
+    expect(service()).toContain("bms.asset_points");
+  });
+
+  it("generated-site-view.service.ts reads bms.point_keys (positive control)", () => {
+    expect(service()).toContain("bms.point_keys");
+  });
+
+  it("generated-site-view.service.ts does not name asset_templates", () => {
+    expect(service()).not.toMatch(/asset_templates/);
+  });
+
+  it("generated-site-view.service.ts does not name template_id", () => {
+    expect(service()).not.toMatch(/template_id|templateId/);
   });
 });

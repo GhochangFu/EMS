@@ -4,6 +4,8 @@ import {
   assertAdminModuleImportsControlRoomModule,
   assertAppModuleImportsControlRoomModule,
   assertControlRoomModuleDeclaresItsMembers,
+  assertGeneratedSiteViewControllerDepsResolveWithinControlRoom,
+  assertGeneratedSiteViewServiceDepsResolveWithinControlRoom,
   assertLocationsAdminControllerDepsResolveThroughAdmin,
   assertScanFindsTheServiceOnLocationsAdminController,
   assertServiceDepsResolveWithinControlRoom,
@@ -16,7 +18,7 @@ import {
  * `AppModule`'s `SiteViewController` route (ADR 0076 decision 5, plan D4).
  */
 describe("F3.67 — ControlRoomModule wiring", () => {
-  it("declares SiteViewController, provides its two services, exports the shared one", () => {
+  it("declares SiteViewController and GeneratedSiteViewController, provides their services, exports the shared one", () => {
     assertControlRoomModuleDeclaresItsMembers();
   });
 
@@ -42,5 +44,13 @@ describe("F3.67 — ControlRoomModule wiring", () => {
 
   it("SiteControlRoomViewService's own dependencies resolve inside ControlRoomModule's scope", () => {
     assertServiceDepsResolveWithinControlRoom();
+  });
+
+  it("F3.68 GeneratedSiteViewController's dependencies resolve inside ControlRoomModule's own scope", () => {
+    assertGeneratedSiteViewControllerDepsResolveWithinControlRoom();
+  });
+
+  it("F3.68 GeneratedSiteViewService's own dependencies resolve inside ControlRoomModule's scope", () => {
+    assertGeneratedSiteViewServiceDepsResolveWithinControlRoom();
   });
 });
