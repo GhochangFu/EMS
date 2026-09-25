@@ -25,8 +25,12 @@ import { ControlRoomUpsPage } from "./pages/control-room-ups-page";
 import { ControlRoomBatteryPage } from "./pages/control-room-battery-page";
 import { ControlRoomHvacPage } from "./pages/control-room-hvac-page";
 import { ControlRoomEnvPage } from "./pages/control-room-env-page";
+import { ControlRoomOrganizationsPage } from "./pages/control-room/organizations-page";
+import { ControlRoomOrganizationPage } from "./pages/control-room/organization-page";
+import { ControlRoomSitePage } from "./pages/control-room/site-page";
 import { AdminRoute } from "./components/admin-route";
 import { ControlRoomRoute } from "./components/control-room-route";
+import { ControlRoomScopeRoute } from "./components/control-room-scope-route";
 import { DashboardAuthorRoute } from "./components/dashboard-author-route";
 import { AdminHubPage } from "./pages/admin/admin-hub-page";
 import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
@@ -288,6 +292,45 @@ export function App() {
         element={
           accessToken && user ? (
             <ReportsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* `F3.66` — the Control Room shell's three levels; `ControlRoomScopeRoute`
+          (D3) is the access guard, not `ControlRoomRoute`, which stays on the
+          `/cr-*` routes below until `F3.70`. */}
+      <Route
+        path="/control-room"
+        element={
+          accessToken && user ? (
+            <ControlRoomScopeRoute>
+              <ControlRoomOrganizationsPage user={user} />
+            </ControlRoomScopeRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/control-room/org/:organizationId"
+        element={
+          accessToken && user ? (
+            <ControlRoomScopeRoute>
+              <ControlRoomOrganizationPage user={user} />
+            </ControlRoomScopeRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/control-room/site/:locationId"
+        element={
+          accessToken && user ? (
+            <ControlRoomScopeRoute>
+              <ControlRoomSitePage user={user} />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )
