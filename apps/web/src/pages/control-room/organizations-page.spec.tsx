@@ -23,8 +23,9 @@ import { ControlRoomOrganizationsPage } from "./organizations-page";
  *
  * The page renders inside `AppShell`, so every case stubs what the shell reads
  * on mount: `fetchSystemStatus` (`F4.160` — an unstubbed read reaches a local
- * API on `:4000`) and `fetchAssets` (the shell's `useControlRoomAccess` until
- * U6). The fixtures here are exported for `organization-page.spec.tsx`.
+ * API on `:4000`). `fetchAssets` is stubbed too: the shell called it until
+ * `F3.66` U6, and the stub keeps any stray read inside the process. The
+ * fixtures here are exported for `organization-page.spec.tsx`.
  *
  * Every link and label query is scoped to its own container: the shell's
  * sidebar holds a link to `/`, so an unscoped "a link to `/`" passes with no
@@ -65,7 +66,7 @@ export const USER: AuthUser = {
   role: "admin",
 } as unknown as AuthUser;
 
-/** The two reads the shell makes on mount, stubbed so no case leaves the process. */
+/** The shell's status read, and `fetchAssets`, stubbed so no case leaves the process. */
 export function stubShell(): void {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([]);

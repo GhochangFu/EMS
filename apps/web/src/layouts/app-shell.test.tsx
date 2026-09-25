@@ -4,14 +4,14 @@ import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "../stores/auth-store";
 import {
-  hidesTheGroupFromACallerWithNoControlRoomAsset,
-  hidesTheGroupFromANoneScope,
-  hidesTheGroupWhenTheReadFails,
-  hidesTheGroupWhilePending,
-  keepsTheGroupWhenABackgroundRefetchFails,
-  keepsThePerAreaRule,
-  sharesTheAssetsQueryKey,
-  showsTheGroupToACallerWhoReadsControlRoomAssets,
+  doesNotReadAssets,
+  dropsTheControlRoom2dGroup,
+  hidesTheEntryFromANoneScope,
+  hidesTheEntryWhileTheScopeIsNull,
+  highlightsTheEntryOnANestedPath,
+  keepsOtherItemsExactMatch,
+  placesTheEntryDirectlyAfterAlarmCentre,
+  showsOneEntryToALocationScope,
 } from "./app-shell.spec";
 
 /**
@@ -19,42 +19,42 @@ import {
  * the jsdom docblock is here because this is the file Vitest collects
  * (ADR 0042 decision 2).
  */
-describe("F4.156 Control Room 2D sidebar group", () => {
+describe("F3.66 Control Room sidebar entry", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
     useAuthStore.setState({ scope: null });
   });
 
-  it("S1 shows the group to a caller who reads Control Room assets", async () => {
-    await showsTheGroupToACallerWhoReadsControlRoomAssets();
+  it("S1 shows one entry, to /control-room, to a location scope", () => {
+    showsOneEntryToALocationScope();
   });
 
-  it("S2 hides the group from a caller with no readable CR-* asset", async () => {
-    await hidesTheGroupFromACallerWithNoControlRoomAsset();
+  it("S2 hides the entry from a none scope", () => {
+    hidesTheEntryFromANoneScope();
   });
 
-  it("S3 hides the group while the read is pending", () => {
-    hidesTheGroupWhilePending();
+  it("S3 hides the entry while the scope is null", () => {
+    hidesTheEntryWhileTheScopeIsNull();
   });
 
-  it("S4 hides the group when the read fails", async () => {
-    await hidesTheGroupWhenTheReadFails();
+  it("S4 drops the Control Room 2D group", () => {
+    dropsTheControlRoom2dGroup();
   });
 
-  it("S5 keeps the per-area asset_group rule", async () => {
-    await keepsThePerAreaRule();
+  it("S5 issues no fetchAssets() from the shell", async () => {
+    await doesNotReadAssets();
   });
 
-  it("S6 hides the group from a none scope", async () => {
-    await hidesTheGroupFromANoneScope();
+  it("S6 highlights the entry on a nested /control-room/* path", () => {
+    highlightsTheEntryOnANestedPath();
   });
 
-  it("S7 shares the [\"assets\"] query key with the schematic provider", async () => {
-    await sharesTheAssetsQueryKey();
+  it("S7 places the entry directly after Alarm Centre", () => {
+    placesTheEntryDirectlyAfterAlarmCentre();
   });
 
-  it("S8 keeps the group when a background refetch fails", async () => {
-    await keepsTheGroupWhenABackgroundRefetchFails();
+  it("S8 keeps every other item exact-match", () => {
+    keepsOtherItemsExactMatch();
   });
 });

@@ -74,10 +74,9 @@ describe("F3.66 — the three /control-room* routes are wrapped in ControlRoomSc
     expect(isScopeWrapped(bare, "/control-room/site/:locationId")).toBe(false);
   });
 
-  // R3 is red at this commit on purpose — `U6` deletes the `/cr-*` group from
-  // `app-shell.tsx` and adds the `/control-room` sidebar entry (plan decision,
-  // ADR 0076 OQ4). Flips to `it` in U6.
-  it.fails("app-shell.tsx drops every /cr-* path literal and adds /control-room", () => {
+  // R3 — `U6` deleted the `/cr-*` group from `app-shell.tsx` and added the
+  // `/control-room` sidebar entry (ADR 0076 decision 1, OQ4).
+  it("app-shell.tsx drops every /cr-* path literal and adds /control-room", () => {
     const shell = readFileSync(appShellPath, "utf8");
     expect(shell).not.toMatch(/path:\s*["'`]\/cr-/);
     expect(shell).toMatch(/path:\s*["'`]\/control-room["'`]/);

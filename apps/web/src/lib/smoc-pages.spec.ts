@@ -8,8 +8,8 @@ function assert(condition: boolean, message: string): void {
 
 /**
  * `P1` — the seven SMOC pages, labels and paths exactly as the shell's
- * *Control Room 2D* group names them today (`F3.66` OQ1): the site page's
- * `builtin` body lists these, and `U6` deletes the shell's copy.
+ * *Control Room 2D* group named them before `F3.66` U6 deleted it (OQ1):
+ * the site page's `builtin` body lists these.
  */
 export function runP1(): void {
   const expected: ReadonlyArray<readonly [string, string]> = [

@@ -29,14 +29,14 @@ import { ControlRoomSitePage } from "./site-page";
  * decision 2).
  *
  * The page renders inside `AppShell`, so every case stubs what the shell reads
- * on mount (`fetchSystemStatus`, `F4.160`; `fetchAssets`, the shell's
- * `useControlRoomAccess` until U6), plus the page's two reads. `fetch` itself
+ * on mount (`fetchSystemStatus`, `F4.160`; `fetchAssets`, which the shell
+ * called until `F3.66` U6 and is stubbed still), plus the page's two reads. `fetch` itself
  * is a spy, and `cleanupPage` fails the case if anything reached it: a
  * throwing `fetch` alone proves nothing, because react-query turns the throw
  * into `isError`.
  *
  * Every link query is scoped to its own container — the shell's sidebar holds
- * `/cr-*` links of its own until U6.
+ * links of its own (a `/control-room` entry since `F3.66` U6).
  */
 
 const GLOBAL: AccessibleScope = { kind: "global", locations: [], assetGroups: [], assetIds: [] };

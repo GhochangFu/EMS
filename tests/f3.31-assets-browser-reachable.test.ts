@@ -62,12 +62,12 @@ describe("F3.31 — the assets browser is reachable and ungated in the web app",
   it("R2 — offers the operator path in the Operations group of the app shell (ADR 0068 Q1)", () => {
     const entry = shell.indexOf(`path: "${ROUTE}"`);
     const operations = shell.indexOf('title: "Operations"');
-    const controlRoom = shell.indexOf('title: "Control Room 2D"');
+    const maintenance = shell.indexOf('title: "Maintenance"');
     expect(entry).toBeGreaterThan(-1);
     expect(operations).toBeGreaterThan(-1);
-    expect(controlRoom).toBeGreaterThan(operations);
+    expect(maintenance).toBeGreaterThan(operations);
     expect(entry).toBeGreaterThan(operations);
-    expect(entry).toBeLessThan(controlRoom);
+    expect(entry).toBeLessThan(maintenance);
   });
 
   it("R3 — the page applies no client-side role predicate (decision 5)", () => {

@@ -25,8 +25,8 @@ import { ORG_A, ORG_B, site, USER } from "./organizations-page.spec";
  * G4b and G5 read.
  *
  * `fetchAssets` answers by its argument: two rows for org A, `[]` for anything
- * else — the shell's `useControlRoomAccess` calls it bare until U6, so the spy
- * sees two callers, and only the argument tells them apart.
+ * else. Since `F3.66` U6 the shell no longer calls it, so the page is its only
+ * caller; the per-argument answer keeps the assertions on the argument anyway.
  */
 
 vi.mock("../../components/control-room/active-alarms-rail", () => ({
