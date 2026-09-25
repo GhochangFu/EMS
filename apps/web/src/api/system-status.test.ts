@@ -1,6 +1,9 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  fetchSystemStatusAbortsAfterTenSeconds,
+  fetchSystemStatusClearsTheSessionOn401,
+  fetchSystemStatusForwardsTheQuerySignal,
   fetchSystemStatusHitsTheStatusPath,
   fetchSystemStatusSendsTheBearerToken,
   fetchSystemStatusThrowsOnNon2xx,
@@ -14,6 +17,7 @@ import {
  */
 describe("F3.30 system status web client — what the footer's fetcher sends", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -32,5 +36,17 @@ describe("F3.30 system status web client — what the footer's fetcher sends", (
 
   it("throws when the body fails the contract", async () => {
     await fetchSystemStatusThrowsOnSchemaMismatch();
+  });
+
+  it("aborts the request 10 s after it starts, and not before", async () => {
+    await fetchSystemStatusAbortsAfterTenSeconds();
+  });
+
+  it("aborts the request when the query signal aborts", async () => {
+    await fetchSystemStatusForwardsTheQuerySignal();
+  });
+
+  it("clears the session on a 401", async () => {
+    await fetchSystemStatusClearsTheSessionOn401();
   });
 });

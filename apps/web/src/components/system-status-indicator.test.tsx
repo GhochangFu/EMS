@@ -4,6 +4,8 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aDegradedFieldDataRendersItsLabel,
+  aHungPollEndsInStatusUnavailable,
+  aHungPollIsRetriedOnce,
   aFailedRefetchReplacesAStaleOperational,
   aNullPercentRendersADashAndNoBand,
   aRejectedReadHidesThePercentage,
@@ -13,6 +15,7 @@ import {
   eightyFiveRendersFair,
   fiftyRendersPoor,
   ninetyEightPointSixRendersGood,
+  theHookPollsEveryThirtySeconds,
   theTitleListsEveryComponent,
 } from "./system-status-indicator.spec";
 
@@ -24,6 +27,8 @@ import {
 describe("F3.30 footer system status indicator", () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -69,5 +74,20 @@ describe("F3.30 footer system status indicator", () => {
 
   it("renders Checking status… while the read is open", async () => {
     await checkingStatusRendersWhileTheReadIsOpen();
+  });
+
+  it("the hook polls: a second read at 30 s, not before", async () => {
+    vi.useFakeTimers();
+    await theHookPollsEveryThirtySeconds();
+  });
+
+  it("a poll the API never answers ends in Status unavailable after the timeout and one retry", async () => {
+    vi.useFakeTimers();
+    await aHungPollEndsInStatusUnavailable();
+  });
+
+  it("a poll the API never answers is retried exactly once", async () => {
+    vi.useFakeTimers();
+    await aHungPollIsRetriedOnce();
   });
 });

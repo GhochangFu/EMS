@@ -82,3 +82,74 @@ export async function fetchSystemStatusThrowsOnSchemaMismatch(): Promise<void> {
   stubFetch(200, { status: "operational" });
   await expect(fetchSystemStatus()).rejects.toThrow();
 }
+
+/**
+ * Replaces `AbortSignal.timeout` with a signal Vitest's fake timers drive.
+ * The native one runs on Node's internal timer, which `vi.useFakeTimers()`
+ * does not reach (probed 2026-09-25: 10 001 ms of fake time left it
+ * unaborted), so without this a 10 s claim would need 10 s of wall clock.
+ * Call after `vi.useFakeTimers()`.
+ */
+export function stubAbortSignalTimeout(): void {
+  vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("signal timed out", "TimeoutError")), ms);
+    return controller.signal;
+  });
+}
+
+/**
+ * The request carries an abort signal that fires at `SYSTEM_STATUS_TIMEOUT_MS`
+ * (10 s) — not before, and not never. A hung API must end the request so the
+ * query can fail and the footer can say so (code review, Correctness 1).
+ */
+export async function fetchSystemStatusAbortsAfterTenSeconds(): Promise<void> {
+  vi.useFakeTimers();
+  stubAbortSignalTimeout();
+  let signal: AbortSignal | null | undefined;
+  vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+    signal = init.signal;
+    return new Promise<Response>(() => undefined);
+  });
+  void fetchSystemStatus();
+  expect(signal, "the request carries no abort signal").toBeInstanceOf(AbortSignal);
+  await vi.advanceTimersByTimeAsync(9_999);
+  expect(signal?.aborted, "the signal fired before 10 s").toBe(false);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(signal?.aborted, "the signal had not fired at 10 s").toBe(true);
+}
+
+/**
+ * The query's own signal still reaches the request: aborting it (TanStack
+ * Query cancelling the read) aborts the request with no timer advanced.
+ */
+export async function fetchSystemStatusForwardsTheQuerySignal(): Promise<void> {
+  let signal: AbortSignal | null | undefined;
+  vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+    signal = init.signal;
+    return new Promise<Response>(() => undefined);
+  });
+  const query = new AbortController();
+  void fetchSystemStatus(query.signal);
+  expect(signal?.aborted, "control: the request signal starts unaborted").toBe(false);
+  query.abort();
+  expect(signal?.aborted, "aborting the query signal did not abort the request").toBe(true);
+}
+
+/** A 401 clears the stale session, as every other read in `api/` does. */
+export async function fetchSystemStatusClearsTheSessionOn401(): Promise<void> {
+  useAuthStore.getState().setSession(
+    "token-401",
+    { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "organization_admin" },
+    { kind: "location", locations: [], assetGroups: [], assetIds: [] },
+    null,
+  );
+  try {
+    expect(useAuthStore.getState().accessToken, "control: the session is set").toBe("token-401");
+    stubFetch(401, { message: "Unauthorized" });
+    await expect(fetchSystemStatus()).rejects.toThrow();
+    expect(useAuthStore.getState().accessToken).toBeNull();
+  } finally {
+    useAuthStore.getState().clearSession();
+  }
+}

@@ -1,10 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import type { SystemStatusResponse } from "@bms/shared";
 
 import * as systemStatusApi from "../api/system-status";
+import { stubAbortSignalTimeout } from "../api/system-status.spec";
+import { SYSTEM_STATUS_REFETCH_MS } from "../hooks/use-system-status";
 import { titleLine } from "../lib/system-status-bands";
 import { SystemStatusIndicator } from "./system-status-indicator";
 
@@ -46,8 +48,13 @@ function withPercent(percent: number | null): SystemStatusResponse {
   return { ...OPERATIONAL, dataQuality: { ...OPERATIONAL.dataQuality, percent } };
 }
 
+/**
+ * `retry: false` here is inert since the hook sets its own `retry: 1` (a query
+ * option beats `defaultOptions`); `retryDelay: 0` is what keeps the error
+ * cases inside `findByText`'s 1 s wait — the hook sets no delay of its own.
+ */
 function renderIndicator(): QueryClient {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } });
   render(
     <QueryClientProvider client={queryClient}>
       <SystemStatusIndicator />
@@ -164,4 +171,86 @@ export async function checkingStatusRendersWhileTheReadIsOpen(): Promise<void> {
   expect(screen.getByText("Checking status…")).toBeInTheDocument();
   resolve(OPERATIONAL);
   await screen.findByText("All systems operational");
+}
+
+/** Advances fake time inside `act`, so React commits what the query settled. */
+async function advance(ms: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+}
+
+/**
+ * Case 8 — the hook polls: one read on mount, a second at
+ * `SYSTEM_STATUS_REFETCH_MS` (30 s) and not before. The spy is this case's
+ * own, so its count is not a lifetime counter (§4.6). Call after
+ * `vi.useFakeTimers()`.
+ */
+export async function theHookPollsEveryThirtySeconds(): Promise<void> {
+  const spy = vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
+  renderIndicator();
+  await advance(0);
+  expect(screen.getByText("All systems operational")).toBeInTheDocument();
+  await advance(SYSTEM_STATUS_REFETCH_MS - 1);
+  expect(spy, "control: one read before the poll period").toHaveBeenCalledTimes(1);
+  await advance(1);
+  expect(spy).toHaveBeenCalledTimes(2);
+}
+
+/**
+ * The hang scene for cases 9 and 10: the real hook over the real client, a
+ * `fetch` that answers the first read and never answers another — it rejects
+ * only when its signal aborts, as a real `fetch` does. The client has **no**
+ * retry overrides, so the hook's own `retry: 1` and TanStack's default
+ * 1 000 ms first retry delay are what run. Returns the per-case call count.
+ * Call after `vi.useFakeTimers()`.
+ */
+async function hangAfterFirstRead(): Promise<() => number> {
+  stubAbortSignalTimeout();
+  let calls = 0;
+  vi.stubGlobal("fetch", (_url: string, init: RequestInit) => {
+    calls += 1;
+    if (calls === 1) {
+      return Promise.resolve({ ok: true, status: 200, json: async () => OPERATIONAL } as Response);
+    }
+    return new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    });
+  });
+  const queryClient = new QueryClient();
+  render(
+    <QueryClientProvider client={queryClient}>
+      <SystemStatusIndicator />
+    </QueryClientProvider>,
+  );
+  await advance(0);
+  expect(screen.getByText("All systems operational")).toBeInTheDocument();
+  // The poll starts the hanging read; then its 10 s timeout, the 1 s retry
+  // delay, and the retry's own 10 s timeout.
+  await advance(SYSTEM_STATUS_REFETCH_MS);
+  await advance(10_000);
+  await advance(1_000);
+  await advance(10_000);
+  // One more millisecond: the settled error reaches the component on a timer
+  // queued after the abort. Measured 2026-09-25 — without it the last render
+  // has not run, with it the case passes; it is not part of the budget.
+  await advance(1);
+  return () => calls;
+}
+
+/**
+ * Case 9 — after a good read, a poll the API never answers ends in
+ * "Status unavailable" once the 10 s timeout and the one retry have run —
+ * not a stale "operational" for as long as the API hangs (code review,
+ * Correctness 1).
+ */
+export async function aHungPollEndsInStatusUnavailable(): Promise<void> {
+  await hangAfterFirstRead();
+  expect(screen.getByText("Status unavailable")).toBeInTheDocument();
+}
+
+/** Case 10 — the hung poll is retried exactly once: the mount read, the poll, one retry. */
+export async function aHungPollIsRetriedOnce(): Promise<void> {
+  const calls = await hangAfterFirstRead();
+  expect(calls()).toBe(3);
 }
