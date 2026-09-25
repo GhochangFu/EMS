@@ -112,8 +112,10 @@ function stubReads(
   }
 }
 
-function renderAt(locationId: string): void {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderAt(
+  locationId: string,
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+): void {
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/control-room/site/${locationId}`]}>
@@ -264,6 +266,73 @@ export async function theHeaderNamesTheSite(): Promise<void> {
   renderAt("a1");
 
   expect(await screen.findByRole("heading", { name: "Alpha One" })).toBeInTheDocument();
+}
+
+/** V11 — a site outside the KPI list shows the D6 card, even when the resolve read answers. */
+export async function aSiteOutsideTheListShowsTheNotAvailableCard(): Promise<void> {
+  stubReads(TWO_ORGS, view("zz"));
+  renderAt("zz");
+
+  const card = sectionOf(await screen.findByText(/not available in your access scope/));
+  expect(within(card).getByRole("link").getAttribute("href")).toBe("/control-room");
+}
+
+function stubRejectedKpiRead(): void {
+  stubReads(TWO_ORGS, view("a1"));
+  vi.spyOn(locationsApi, "fetchLocationKpis").mockRejectedValue(new Error("dashboard 500"));
+}
+
+/** V12a — a rejected KPI read shows the "Control Room unavailable" card. */
+export async function aRejectedKpiReadShowsTheUnavailableCard(): Promise<void> {
+  stubRejectedKpiRead();
+  renderAt("a1");
+
+  expect(await screen.findByText("Control Room unavailable")).toBeInTheDocument();
+}
+
+/** V12b — a rejected KPI read renders no interim body (after V12a's positive control). */
+export async function aRejectedKpiReadShowsNoInterimBody(): Promise<void> {
+  stubRejectedKpiRead();
+  renderAt("a1");
+
+  expect(await screen.findByText("Control Room unavailable")).toBeInTheDocument();
+  expect(screen.queryByText(/Generated site view/)).toBeNull();
+}
+
+const DASHBOARD_WITHOUT_SLUG = view("a1", { kind: "dashboard", dashboardId: "d1", dashboardSlug: null });
+
+/** V13a — `dashboard` with a null slug falls back to the generated interim. */
+export async function aNullSlugShowsTheGeneratedInterim(): Promise<void> {
+  stubReads(TWO_ORGS, DASHBOARD_WITHOUT_SLUG);
+  renderAt("a1");
+
+  expect(await screen.findByText(/Generated site view/)).toBeInTheDocument();
+}
+
+/**
+ * V13b — `dashboard` with a null slug links to no dashboard. It waits on a
+ * body either branch renders, so it does not pass before the body exists.
+ * The prefix keeps the trailing slash: the sidebar links `/dashboards`.
+ */
+export async function aNullSlugLinksToNoDashboard(): Promise<void> {
+  stubReads(TWO_ORGS, DASHBOARD_WITHOUT_SLUG);
+  renderAt("a1");
+
+  await screen.findByText(/Generated site view|This site shows the dashboard/);
+  expect(document.querySelectorAll('a[href^="/dashboards/"]')).toHaveLength(0);
+}
+
+/**
+ * V14 — the resolve query does not retry: a 404 is an answer, not a transient
+ * failure. This client retries twice with no delay, so a query that inherits
+ * the default calls the resolve client three times before the card shows.
+ */
+export async function aRejectedResolveReadIsNotRetried(): Promise<void> {
+  stubReads(TWO_ORGS, "reject");
+  renderAt("a1", new QueryClient({ defaultOptions: { queries: { retry: 2, retryDelay: 0 } } }));
+
+  expect(await screen.findByText(/not available in your access scope/)).toBeInTheDocument();
+  expect(controlRoomApi.fetchResolvedSiteControlRoomView).toHaveBeenCalledTimes(1);
 }
 
 export function cleanupPage(): void {

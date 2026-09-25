@@ -17,8 +17,8 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
  *
  * The API answers 404 for a site outside the caller's readable scope
  * (`site-control-room-view.service.ts`); the throw below carries that status
- * so `U4`'s "not available in your access scope" card can tell it apart from
- * any other failure.
+ * in its message only — `U4` shows the "not available in your access scope"
+ * card for every rejection (plan D6) and does not branch on the status.
  */
 export async function fetchResolvedSiteControlRoomView(
   locationId: string,

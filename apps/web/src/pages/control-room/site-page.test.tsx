@@ -2,8 +2,14 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aNullSlugLinksToNoDashboard,
+  aNullSlugShowsTheGeneratedInterim,
+  aRejectedKpiReadShowsNoInterimBody,
+  aRejectedKpiReadShowsTheUnavailableCard,
   aRejectedReadShowsNoInterimBody,
   aRejectedReadShowsTheNotAvailableCard,
+  aRejectedResolveReadIsNotRetried,
+  aSiteOutsideTheListShowsTheNotAvailableCard,
   builtinFiltersByTheAreaRule,
   builtinListsTheSevenSmocPages,
   builtinUnknownShowsItsBanner,
@@ -73,5 +79,29 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V10 names the site in the header from the KPI list", async () => {
     await theHeaderNamesTheSite();
+  });
+
+  it("V11 shows the not-available card for a site outside the KPI list", async () => {
+    await aSiteOutsideTheListShowsTheNotAvailableCard();
+  });
+
+  it("V12a shows the Control Room unavailable card for a rejected KPI read", async () => {
+    await aRejectedKpiReadShowsTheUnavailableCard();
+  });
+
+  it("V12b shows no interim body for a rejected KPI read", async () => {
+    await aRejectedKpiReadShowsNoInterimBody();
+  });
+
+  it("V13a shows the generated interim for a dashboard view with no slug", async () => {
+    await aNullSlugShowsTheGeneratedInterim();
+  });
+
+  it("V13b links to no dashboard for a dashboard view with no slug", async () => {
+    await aNullSlugLinksToNoDashboard();
+  });
+
+  it("V14 calls the resolve client once for a rejected read", async () => {
+    await aRejectedResolveReadIsNotRetried();
   });
 });
