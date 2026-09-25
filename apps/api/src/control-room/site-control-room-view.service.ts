@@ -157,7 +157,7 @@ export class SiteControlRoomViewService {
     if (!readable) {
       throw new NotFoundException("Location not found or outside your access scope");
     }
-    await this.readLocation(locationId, "Location not found or outside your access scope");
+    const location = await this.readLocation(locationId, "Location not found or outside your access scope");
 
     const [row] = await this.fleetDb
       .select()
@@ -173,7 +173,7 @@ export class SiteControlRoomViewService {
     }
 
     return resolveSiteControlRoomView(
-      locationId,
+      { locationId, organizationId: location.organizationId },
       row ?? null,
       dashboard,
       siteGroupIds,
@@ -241,7 +241,7 @@ export class SiteControlRoomViewService {
   /**
    * One dashboard by id — within `organizationId` when one is given (the write
    * path), or wherever it now sits (the resolve path, whose resolver compares
-   * the organization itself, plan D5). The id is always in the `WHERE`.
+   * it with the site's organization itself, plan D5). The id is always in the `WHERE`.
    */
   private async readDashboard(
     id: string,

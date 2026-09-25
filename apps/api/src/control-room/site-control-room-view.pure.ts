@@ -82,10 +82,12 @@ function generated(
  * - No row, or a `generated` row → `generated`, no notice.
  * - `dashboard` whose dashboard is gone (`dashboard_id` set NULL by the FK, or
  *   the read found nothing) → `generated` + `dashboard_removed`.
- * - `dashboard` whose dashboard now sits in another organization or is no
- *   longer scoped to the site → `generated` + `dashboard_out_of_scope`. Scope is
- *   re-checked here, at read time, because a dashboard can be re-scoped after
- *   it was chosen.
+ * - `dashboard` whose stored row or dashboard is not in the SITE's
+ *   organization (`site.organizationId`, read from `bms.locations` — never
+ *   one taken from the row or the dashboard, which could agree with each other
+ *   and both be wrong), or whose dashboard is no longer scoped to the site →
+ *   `generated` + `dashboard_out_of_scope`. Scope is re-checked here, at read
+ *   time, because a dashboard can be re-scoped after it was chosen.
  * - `builtin` whose key is not in `knownBuiltinKeys` → `generated` +
  *   `builtin_unknown`. The list is a parameter, not read from the contract
  *   here, so a key the database holds and this build does not ship fails safe.
@@ -93,12 +95,13 @@ function generated(
  *   resolver still does not trust it).
  */
 export function resolveSiteControlRoomView(
-  locationId: string,
+  site: { locationId: string; organizationId: string },
   row: SiteViewRow | null,
   dashboard: DashboardScopeRow | null,
   siteGroupIds: ReadonlySet<string>,
   knownBuiltinKeys: readonly BuiltinSiteViewKey[],
 ): ResolvedSiteControlRoomViewDto {
+  const { locationId } = site;
   if (row === null) {
     return generated(locationId, null);
   }
@@ -108,7 +111,8 @@ export function resolveSiteControlRoomView(
       return generated(locationId, "dashboard_removed");
     }
     if (
-      dashboard.organizationId !== row.organizationId ||
+      row.organizationId !== site.organizationId ||
+      dashboard.organizationId !== site.organizationId ||
       !dashboardIsScopedToSite(dashboard, locationId, siteGroupIds)
     ) {
       return generated(locationId, "dashboard_out_of_scope");

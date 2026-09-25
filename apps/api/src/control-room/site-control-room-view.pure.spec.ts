@@ -7,7 +7,7 @@ import {
 } from "./site-control-room-view.pure";
 
 /**
- * `F3.67` — the pure half of the site Control Room view (plan U3, P1–P10). The
+ * `F3.67` — the pure half of the site Control Room view (plan U3, P1–P10; security review L1, P11–P12). The
  * database half is `site-control-room-view.integration.spec.ts`. Assertions
  * live here; `site-control-room-view.pure.test.ts` is the Vitest wrapper
  * (ADR 0014, AGENTS.md §4.6).
@@ -20,6 +20,9 @@ const OTHER_ORG = "44444444-4444-4444-8444-444444444444";
 const DASHBOARD = "55555555-5555-4555-8555-555555555555";
 const SITE_GROUP = "66666666-6666-4666-8666-666666666666";
 const ASSET = "77777777-7777-4777-8777-777777777777";
+
+/** The site as the resolver takes it: its id and its organization. */
+const SITE_AT_ORG = { locationId: SITE, organizationId: ORG } as const;
 
 const NO_GROUPS: ReadonlySet<string> = new Set();
 const KNOWN = ["smoc"] as const;
@@ -46,7 +49,7 @@ function dashboard(scope: Partial<DashboardScopeRow>): DashboardScopeRow {
 
 /** P1 — no row is the generated view, and carries no notice. */
 export function assertNoRowIsGeneratedWithoutNotice(): void {
-  expect(resolveSiteControlRoomView(SITE, null, null, NO_GROUPS, KNOWN)).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, null, null, NO_GROUPS, KNOWN)).toEqual({
     locationId: SITE,
     kind: "generated",
     dashboardId: null,
@@ -59,7 +62,7 @@ export function assertNoRowIsGeneratedWithoutNotice(): void {
 /** P2 — an explicit `generated` row answers the same as no row. */
 export function assertGeneratedRowIsGenerated(): void {
   const row: SiteViewRow = { organizationId: ORG, kind: "generated", dashboardId: null, builtinKey: null };
-  expect(resolveSiteControlRoomView(SITE, row, null, NO_GROUPS, KNOWN)).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, row, null, NO_GROUPS, KNOWN)).toEqual({
     locationId: SITE,
     kind: "generated",
     dashboardId: null,
@@ -72,7 +75,7 @@ export function assertGeneratedRowIsGenerated(): void {
 /** P3 — a dashboard scoped to the site itself is the view, with its slug. */
 export function assertSiteScopedDashboardIsTheView(): void {
   expect(
-    resolveSiteControlRoomView(SITE, dashboardRow, dashboard({ locationId: SITE }), NO_GROUPS, KNOWN),
+    resolveSiteControlRoomView(SITE_AT_ORG, dashboardRow, dashboard({ locationId: SITE }), NO_GROUPS, KNOWN),
   ).toEqual({
     locationId: SITE,
     kind: "dashboard",
@@ -86,7 +89,7 @@ export function assertSiteScopedDashboardIsTheView(): void {
 /** P4 — a dashboard scoped to one of the site's asset groups is the view. */
 export function assertGroupScopedDashboardIsTheView(): void {
   const resolved = resolveSiteControlRoomView(
-    SITE,
+    SITE_AT_ORG,
     dashboardRow,
     dashboard({ assetGroupId: SITE_GROUP }),
     new Set([SITE_GROUP]),
@@ -99,7 +102,7 @@ export function assertGroupScopedDashboardIsTheView(): void {
 /** P5 — the chosen dashboard is gone: the generated view, with `dashboard_removed`. */
 export function assertRemovedDashboardFailsSafe(): void {
   const removed: SiteViewRow = { ...dashboardRow, dashboardId: null };
-  expect(resolveSiteControlRoomView(SITE, removed, null, NO_GROUPS, KNOWN)).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, removed, null, NO_GROUPS, KNOWN)).toEqual({
     locationId: SITE,
     kind: "generated",
     dashboardId: null,
@@ -112,7 +115,7 @@ export function assertRemovedDashboardFailsSafe(): void {
 /** P6 — re-scoped to another site: `dashboard_out_of_scope`, not `dashboard_removed`. */
 export function assertRescopedDashboardIsOutOfScope(): void {
   const resolved = resolveSiteControlRoomView(
-    SITE,
+    SITE_AT_ORG,
     dashboardRow,
     dashboard({ locationId: OTHER_SITE }),
     NO_GROUPS,
@@ -129,7 +132,7 @@ export function assertRescopedDashboardIsOutOfScope(): void {
  */
 export function assertOtherOrganizationDashboardIsOutOfScope(): void {
   const resolved = resolveSiteControlRoomView(
-    SITE,
+    SITE_AT_ORG,
     dashboardRow,
     dashboard({ organizationId: OTHER_ORG, locationId: SITE }),
     NO_GROUPS,
@@ -147,7 +150,7 @@ export function assertOtherOrganizationDashboardIsOutOfScope(): void {
  */
 export function assertAssetScopedDashboardIsOutOfScope(): void {
   const resolved = resolveSiteControlRoomView(
-    SITE,
+    SITE_AT_ORG,
     dashboardRow,
     dashboard({ assetId: ASSET }),
     new Set([SITE_GROUP]),
@@ -161,7 +164,7 @@ const builtinRow: SiteViewRow = { organizationId: ORG, kind: "builtin", dashboar
 
 /** P9 — a known built-in key is the view. */
 export function assertKnownBuiltinIsTheView(): void {
-  expect(resolveSiteControlRoomView(SITE, builtinRow, null, NO_GROUPS, KNOWN)).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, builtinRow, null, NO_GROUPS, KNOWN)).toEqual({
     locationId: SITE,
     kind: "builtin",
     dashboardId: null,
@@ -173,7 +176,7 @@ export function assertKnownBuiltinIsTheView(): void {
 
 /** P10 — a key this build does not ship: the generated view, with `builtin_unknown`. */
 export function assertUnknownBuiltinFailsSafe(): void {
-  expect(resolveSiteControlRoomView(SITE, builtinRow, null, NO_GROUPS, [])).toEqual({
+  expect(resolveSiteControlRoomView(SITE_AT_ORG, builtinRow, null, NO_GROUPS, [])).toEqual({
     locationId: SITE,
     kind: "generated",
     dashboardId: null,
@@ -181,4 +184,39 @@ export function assertUnknownBuiltinFailsSafe(): void {
     builtinKey: null,
     notice: "builtin_unknown",
   });
+}
+
+/**
+ * P11 (security review L1) — a stored row stamped with another organization
+ * than the site's is out of scope, even though the dashboard itself sits in the
+ * site's organization and on the site. Only the row-versus-site comparison can
+ * refuse it.
+ */
+export function assertRowFromAnotherOrganizationIsOutOfScope(): void {
+  const resolved = resolveSiteControlRoomView(
+    SITE_AT_ORG,
+    { ...dashboardRow, organizationId: OTHER_ORG },
+    dashboard({ locationId: SITE }),
+    NO_GROUPS,
+    KNOWN,
+  );
+  expect(resolved.kind).toBe("generated");
+  expect(resolved.notice).toBe("dashboard_out_of_scope");
+}
+
+/**
+ * P12 (security review L1) — the row and the dashboard agree on an
+ * organization, but it is not the site's. A resolver that compares the two with
+ * each other (and never with the site) admits it.
+ */
+export function assertRowAndDashboardFromAnotherOrganizationAreOutOfScope(): void {
+  const resolved = resolveSiteControlRoomView(
+    SITE_AT_ORG,
+    { ...dashboardRow, organizationId: OTHER_ORG },
+    dashboard({ organizationId: OTHER_ORG, locationId: SITE }),
+    NO_GROUPS,
+    KNOWN,
+  );
+  expect(resolved.kind).toBe("generated");
+  expect(resolved.notice).toBe("dashboard_out_of_scope");
 }

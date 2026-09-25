@@ -9,6 +9,8 @@ import {
   assertOtherOrganizationDashboardIsOutOfScope,
   assertRemovedDashboardFailsSafe,
   assertRescopedDashboardIsOutOfScope,
+  assertRowAndDashboardFromAnotherOrganizationAreOutOfScope,
+  assertRowFromAnotherOrganizationIsOutOfScope,
   assertSiteScopedDashboardIsTheView,
   assertUnknownBuiltinFailsSafe,
 } from "./site-control-room-view.pure.spec";
@@ -56,5 +58,13 @@ describe("F3.67 — resolveSiteControlRoomView", () => {
 
   it("P10 an unknown built-in key answers generated with builtin_unknown", () => {
     assertUnknownBuiltinFailsSafe();
+  });
+
+  it("P11 a stored row from another organization than the site's answers dashboard_out_of_scope", () => {
+    assertRowFromAnotherOrganizationIsOutOfScope();
+  });
+
+  it("P12 a row and dashboard that agree on an organization other than the site's answer dashboard_out_of_scope", () => {
+    assertRowAndDashboardFromAnotherOrganizationAreOutOfScope();
   });
 });
