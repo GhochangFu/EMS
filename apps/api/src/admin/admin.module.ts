@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { CalcModule } from "../calc/calc.module";
+import { ControlRoomModule } from "../control-room/control-room.module";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointCalcOverrideController } from "./asset-points/asset-point-calc-override.controller";
@@ -63,7 +64,14 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
   // would refuse (ADR 0055 decision 8) rather than storing a formula that can
   // never compute — and since the PR 2 review `AssetTemplateMigrationService`
   // is a third author, refusing the same pair before it repoints an asset.
-  imports: [VocabulariesModule, CalcModule],
+  //
+  // `F3.67` U4 (ADR 0076 decision 5, plan D4) — `ControlRoomModule` is
+  // imported for `SiteControlRoomViewService`, which `LocationsAdminController`
+  // injects for its `GET`/`PUT :id/control-room-view` handlers. Plan D4 has
+  // `ControlRoomModule` own and export the service rather than `AdminModule`
+  // re-providing its own copy, so this import is what makes the injected
+  // parameter resolvable.
+  imports: [VocabulariesModule, CalcModule, ControlRoomModule],
   controllers: [
     OrganizationsAdminController,
     LocationsAdminController,

@@ -15,7 +15,6 @@ import {
   type BuiltinSiteViewKey,
   type JwtPayload,
   type ResolvedSiteControlRoomViewDto,
-  type SiteControlRoomViewKind,
   type SiteControlRoomViewSettingDto,
 } from "@bms/shared";
 
@@ -28,18 +27,7 @@ import {
   dashboardIsScopedToSite,
   resolveSiteControlRoomView,
 } from "./site-control-room-view.pure";
-
-/**
- * The `PUT` body the service accepts. A plain `type` (not an `interface`, so it
- * assigns to the audit `payload`), declared here because the request schema is
- * plan unit U4's file: U4's `putSiteControlRoomViewBodySchema` owns the pair
- * rules and its `z.infer` must stay assignable to this.
- */
-export type PutSiteControlRoomViewBody = {
-  kind: SiteControlRoomViewKind;
-  dashboardId?: string | null;
-  builtinKey?: BuiltinSiteViewKey | null;
-};
+import type { PutSiteControlRoomViewBody } from "./site-control-room-view.schema";
 
 type SettingRow = typeof siteControlRoomViews.$inferSelect;
 

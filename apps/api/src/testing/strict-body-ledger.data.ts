@@ -360,6 +360,12 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "putDashboardWidgetsBodySchema/widgets[]|4": STRICT(DASHBOARD_WIDGET_ARM),
   "putDashboardWidgetsBodySchema/widgets[]|4/config": STRICT(DASHBOARD_WIDGET_WRITE_CONFIG),
   // `E2.4` (ADR 0058 decision 8) — the body names rule ids and nothing else.
+  // `F3.67` U4 (ADR 0076 decision 5, plan D4). `kind` and `builtinKey` are
+  // vocabularies with no `z.record` escape hatch, and `dashboardId` is a
+  // single id — an unknown key here has nowhere legitimate to land, and
+  // silently dropping one from a PUT that "states the whole kind" would read
+  // as accepted while the pair rule it was meant to satisfy went unchecked.
+  putSiteControlRoomViewBodySchema: STRICT(CALLER_ERROR),
   reapplySeededRulesBodySchema: STRICT(CALLER_ERROR),
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),
   "reorderWorkOrdersBodySchema/items[]": STRICT(CALLER_ERROR),
