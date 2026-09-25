@@ -2,8 +2,9 @@
 
 ## Status
 
-Proposed — drafted at the §10 gate on 2026-09-25, before any implementation
-code; awaiting the owner's approval of this record. Three gate questions were put to the owner one at a time and all three
+Accepted — drafted at the §10 gate on 2026-09-25, before any implementation
+code. The owner approved this record and its merge on 2026-09-25 (PR #548).
+Three gate questions were put to the owner one at a time and all three
 were ruled as recommended; the rulings are under *Gate questions* and carried
 into *Decision*. Ten points were first decided without a question and are
 listed under *Ruled here without a question*. The owner then asked for the
