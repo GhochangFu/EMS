@@ -618,6 +618,20 @@
 > `totalKw` and `assetCount` describe one asset set. Its stack check raised
 > `F4.159`: the `/` Total kW for a global user still sums `kw` from asset ids
 > with no `bms.assets` row.
+> And **a Control Room for each organization** (**ADR 0076**, gated and
+> merged 2026-09-25 under #549 — sixteen questions ruled one at a time; rows
+> `F3.66`–`F3.70`, `F4.157`). The interim gate **`F4.156`** (#550) hides the
+> *Control Room 2D* group and wraps the seven `/cr-*` routes in
+> `ControlRoomRoute` unless the caller can read a `CR-*` asset, clears the
+> query cache on any session change (`bindQueryCacheToSession` in
+> `main.tsx`), and makes `setSession` require the OIDC id token. **`F3.67`**
+> (#558, squash `2c3fe9c7`) adds `bms.site_control_room_views` (migration
+> `0082`; no row = the generated view), `apps/api/src/control-room/` and the
+> one resolve read every later row consumes, `GET
+> /api/v1/control-room/sites/:locationId/view`, with a fail-safe to
+> `generated` plus a notice; only the global `admin` may set or replace a
+> `builtin` view (owner rulings OQ1, OQ3). New row: `F4.160` (web specs that
+> render `AppShell` reach the real system-status read).
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
@@ -992,6 +1006,13 @@ bms/
 │   │                            ADR 0071) and the report-files service,
 │   │                            controller and schemas — the saved-report
 │   │                            history. See §2 *Reports*.
+│   │                            src/control-room/ is the ADR 0076 Control
+│   │                            Room seam (F3.67): SiteControlRoomViewService
+│   │                            (the site view setting and its audited write),
+│   │                            the pure fail-safe resolver, and GET
+│   │                            control-room/sites/:locationId/view — the read
+│   │                            F3.66 and F3.68–F3.70 consume. The admin GET/
+│   │                            PUT lives on LocationsAdminController.
 │   │                            src/worker.ts is the SECOND ENTRYPOINT of this
 │   │                            package (dist/worker.js, compose service
 │   │                            `worker`, :4100) — a second root that starts
