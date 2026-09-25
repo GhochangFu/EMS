@@ -5,8 +5,10 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 import type { AdminLocationDto } from "@bms/shared";
 
+import * as groupsApi from "../../api/admin/asset-groups";
 import * as api from "../../api/admin/locations";
 import * as orgApi from "../../api/admin/organizations";
+import * as dashboardsApi from "../../api/dashboards";
 import type { AuthUser } from "../../stores/auth-store";
 import { LocationsAdminPage } from "./locations-page";
 
@@ -94,6 +96,19 @@ function stubApi(): void {
   vi.spyOn(api, "createAdminLocation").mockResolvedValue(LOCATIONS.items[0]!);
   vi.spyOn(api, "updateAdminLocation").mockResolvedValue(LOCATIONS.items[0]!);
   vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue(ORGANIZATIONS as never);
+  // `F3.67` — the Edit modal reads the Control Room view setting and its eligible dashboards.
+  // Stubbed so W4 opening Edit reaches no network; the field has its own spec.
+  vi.spyOn(api, "fetchSiteControlRoomView").mockResolvedValue({
+    locationId: LOCATIONS.items[0]!.id,
+    organizationId: ORG_ID,
+    kind: "generated",
+    dashboardId: null,
+    builtinKey: null,
+    updatedAt: null,
+    updatedBy: null,
+  });
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({ items: [] });
+  vi.spyOn(groupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [] });
 }
 
 async function openCreateForm(): Promise<void> {
