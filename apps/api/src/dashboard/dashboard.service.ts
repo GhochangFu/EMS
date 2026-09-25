@@ -68,6 +68,18 @@ export class DashboardService {
         WHERE point_key = 'kw'
         ORDER BY asset_id, time DESC
       ),
+      -- F4.158: sum kw per location here, before the joins below. Summed over
+      -- rtus x assets x alarms, each asset's kw counted once per RTU at the
+      -- location times its alarm rows (or 1). Same asset predicate as the
+      -- bms.assets join below, $2 scope included, so total_kw and asset_count
+      -- describe one asset set.
+      kw_by_location AS (
+        SELECT a.location_id, SUM(latest.kw) AS total_kw
+        FROM bms.assets a
+        INNER JOIN latest ON latest.asset_id = a.id
+        WHERE ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
+        GROUP BY a.location_id
+      ),
       ${LIVE_ASSETS_CTE_SQL}
       SELECT
         l.id,
@@ -80,7 +92,8 @@ export class DashboardService {
         COUNT(DISTINCT r.id)::int AS rtu_count,
         COUNT(DISTINCT a.id)::int AS asset_count,
         COUNT(DISTINCT a.id) FILTER (WHERE live.asset_id IS NOT NULL)::int AS fresh_asset_count,
-        COALESCE(SUM(latest.kw), 0)::float8 AS total_kw,
+        -- One kw_by_location row per location, so MAX is that row's sum.
+        COALESCE(MAX(kl.total_kw), 0)::float8 AS total_kw,
         -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
         -- An acknowledged alarm is still open; acknowledgement only annotates it.
         COUNT(DISTINCT al.id) FILTER (WHERE al.cleared_at IS NULL)::int AS open_alarms,
@@ -101,7 +114,7 @@ export class DashboardService {
       LEFT JOIN bms.assets a
         ON a.location_id = l.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
-      LEFT JOIN latest ON latest.asset_id = a.id
+      LEFT JOIN kw_by_location kl ON kl.location_id = l.id
       LEFT JOIN live ON live.asset_id = a.id
       LEFT JOIN bms.alarms al ON al.asset_id = a.id
       WHERE l.active = true

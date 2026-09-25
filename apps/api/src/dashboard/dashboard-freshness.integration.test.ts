@@ -13,6 +13,9 @@ import {
   assertTelemetryFreshnessReadsConstant,
   assertTelemetryFreshnessStaleBeyondWindow,
   assertThreeSamplesDoNotFanOutTotalKw,
+  assertTotalKwDoesNotFanOutOverRtusAndAlarms,
+  assertTotalKwExcludesOutOfScopeAsset,
+  assertTotalKwSumsEveryAssetForGlobalScope,
   assertTotalKwSumsStaleKw,
   inRolledBackTransaction,
 } from "./dashboard-freshness.integration.spec";
@@ -32,7 +35,7 @@ const connectionString = requireIntegrationDb({
   item: "F3.30",
   label: "dashboard freshness counts",
   because:
-    "the any-point `live` CTE, its 25 s window and the unchanged `total_kw` sum are all SQL, " +
+    "the any-point `live` CTE, its 25 s window and the per-location `total_kw` sum (F4.158) are all SQL, " +
     "so a green run without a database asserts nothing about any of them.",
 });
 
@@ -69,4 +72,14 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
   it("three samples of one asset do not fan out totalKw or freshAssetCount", run(assertThreeSamplesDoNotFanOutTotalKw), 60_000);
 
   it("a fresh asset outside assetIds stays out of freshAssetCount", run(assertOutOfScopeFreshAssetIsNotCounted), 60_000);
+
+  it(
+    "F4.158 — totalKw is the per-asset sum across two RTUs and two alarms",
+    run(assertTotalKwDoesNotFanOutOverRtusAndAlarms),
+    60_000,
+  );
+
+  it("F4.158 — totalKw leaves out an asset outside assetIds", run(assertTotalKwExcludesOutOfScopeAsset), 60_000);
+
+  it("F4.158 — totalKw sums every asset at the location for a global user", run(assertTotalKwSumsEveryAssetForGlobalScope), 60_000);
 });
