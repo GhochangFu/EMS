@@ -8,7 +8,6 @@ import { AccessControlModule } from "../auth/access-control.module";
 import { DatabaseModule } from "../database/database.module";
 import { AdminModule } from "../admin/admin.module";
 import { LocationsAdminController } from "../admin/locations/locations.controller";
-import { LocationsAdminService } from "../admin/locations/locations.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AppModule } from "../app.module";
 import { repoRoot } from "../testing/repo-root";
