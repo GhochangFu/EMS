@@ -882,10 +882,13 @@ non-null and smaller than the total it is labelled with", is superseded.
    labelled with. It now holds because the totals and the per-asset read
    exclude the same ids. The two joins change together or not at all
    (`energy-cost.ts` says so at the read).
-3. **What a user sees.** A global administrator whose scope holds orphan
-   telemetry used to see no cost (the dash); the scope is now priced, on the
-   assets that exist. A scoped user is not affected: the scope list holds only
-   existing ids. The fail-closed rule for a row with no currency stays in
+3. **What a user sees.** Orphan telemetry in scope no longer forces the dash
+   by itself. The scope is priced, on the assets that exist, only when the
+   other rules of decision 7 allow it: one currency, and every asset resolved.
+   On the demo seed the two organizations carry two currencies (migration
+   `0076`), so a global administrator still sees the dash, for that reason and
+   not for the orphan ids. A scoped user is not affected: the scope list holds
+   only existing ids. The fail-closed rule for a row with no currency stays in
    `energyCost` as a guard; the read no longer produces such a row
    (`bms.organizations.currency` is `NOT NULL` since migration `0076`).
 4. **Proof.** `energy-cost.integration.spec.ts` D6 and D6′ replace the
