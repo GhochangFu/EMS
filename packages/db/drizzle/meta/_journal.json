@@ -568,6 +568,13 @@
       "when": 1790163679446,
       "tag": "0081_dashboard_widget_sources_water_balance_key",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790320280708,
+      "tag": "0082_site_control_room_views",
+      "breakpoints": true
     }
   ]
 }
