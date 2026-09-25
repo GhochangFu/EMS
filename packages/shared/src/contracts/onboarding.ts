@@ -81,8 +81,9 @@ export const onboardingAutoOpenReasonSchema = z.enum([
  *   comes from the sibling route writing the *same column*:
  *   `apps/api/src/admin/point-keys/point-keys.schema.ts` bounds
  *   `createPointKeyBodySchema.description` at 2000, and that schema's other
- *   four fields (128 / 255 / 64 / 32) are exactly this one's. The onboarding
- *   copy was the drifted one.
+ *   four string fields (128 / 255 / 64 / 32) are exactly this one's; its
+ *   `headlineRank` (F3.68) has no onboarding counterpart by design. The
+ *   onboarding copy was the drifted one.
  * - **`assets.domain` = 64.** The number is real but it is not this record's to
  *   own: that field is `assetDomainCodeSchema` (`operations.ts`), shared with
  *   four other vocabularies, and `tests/f3.40-asset-role-write-path.test.ts`

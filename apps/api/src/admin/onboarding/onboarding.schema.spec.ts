@@ -501,8 +501,9 @@ export function runDraftStringBoundTests(): void {
   }
 
   // Where 2000 comes from: the sibling route that writes the same column. Its
-  // other four fields are byte-for-byte this schema's, which is what makes it a
-  // derivation and not a number someone picked.
+  // other four string fields are byte-for-byte this schema's, which is what
+  // makes it a derivation and not a number someone picked. (Its `headlineRank`,
+  // F3.68, has no onboarding counterpart by design.)
   const siblingDescription = asZodString(createPointKeyBodySchema.shape.description);
   assert(
     siblingDescription !== null && siblingDescription.maxLength === bounds["pointKeys.description"],
