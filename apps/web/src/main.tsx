@@ -5,7 +5,9 @@ import { BrowserRouter } from "react-router-dom";
 
 import { App } from "./app";
 import "./index.css";
+import { bindQueryCacheToSession } from "./lib/query-cache-session";
 import { shouldRetryQuery } from "./lib/query-retry";
+import { useAuthStore } from "./stores/auth-store";
 
 /**
  * `F4.63` — a refused request must not be retried.
@@ -23,6 +25,15 @@ import { shouldRetryQuery } from "./lib/query-retry";
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: shouldRetryQuery } },
 });
+
+/**
+ * `F4.156` — the cache belongs to one session: cleared when the session ends
+ * or the user changes, whichever exit ended it (logout, a 401, JWT expiry, a
+ * failed `/me`). Bound here at module level, not in an effect, so StrictMode
+ * cannot subscribe twice. The rule and its spec are in
+ * `lib/query-cache-session.ts`.
+ */
+bindQueryCacheToSession(useAuthStore, queryClient);
 
 const root = document.getElementById("root");
 if (!root) {
