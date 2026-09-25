@@ -2,11 +2,11 @@
 
 ## Status
 
-Proposed — drafted on 2026-09-25 from an owner observation, before any
-implementation code. Seven scope questions and nine design questions were put
+Accepted — drafted on 2026-09-25 from an owner observation, before any
+implementation code. Eight scope questions and eight design questions were put
 to the owner one at a time; all were ruled, and each ruling is recorded under
-*Gate questions*. The owner has not yet reviewed this written record; it
-becomes **Accepted** on that review and on the merge of this PR.
+*Gate questions*. The owner reviewed and approved this written record on
+2026-09-25.
 
 Creates rows `F3.66`–`F3.70` and `F4.157` (the last with its own ADR, see
 decision 12). Promotes nothing out of `AGENTS.md` §6. Retires the interim gate
