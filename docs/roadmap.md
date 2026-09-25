@@ -5892,3 +5892,25 @@ migration.
 `F4.158` — a location card's Total kW is multiplied by the RTU and alarm
 joins (dev: 32,838 kW against a per-asset 273.7 kW). Owed separately: the
 `chore(agents):` sweep for ADR 0075.
+
+### `F4.158` — a location card's Total kW is the per-asset sum ✅ 2026-09-25
+
+PR #555, squash `4aa3042e`, raised by the `F3.30` build. `locationKpis`
+summed each asset's latest `kw` over the location's RTU and alarm joins, so
+a card counted it once per RTU times the asset's alarm rows: on dev CSMOC
+Gauteng read 35,441.5 kW against a per-asset 294.0, and every two-RTU site
+read exactly double. The sum now runs per location in a `kw_by_location` CTE
+before the joins, under the same asset scope as the card's counts. The
+location page and the organization header take the fix with it. No ADR and a
+short plan, both by owner ruling.
+
+Verified: three integration cases test-first, six mutations each red on its
+own case — including the two wrong fixes `SUM(DISTINCT)` and `MAX`, and the
+global-scope branch the code review found untested; 292/292 on the related
+suites; CI green. As the global admin the API matches the per-asset psql sum
+for all 16 locations. Schema, worker, ingest and sockets N/A.
+
+**Cascade:** no row lists `F4.158` in *Depends*. New row from the stack
+check: `F4.159` (P3) — the `/` Total kW for a global user still sums `kw`
+from asset ids with no asset row (dev: 41.0 kW from two leaked fixture ids).
+Owed separately: the `chore(agents):` sweep.
