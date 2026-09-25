@@ -9,6 +9,7 @@ import { seedSiteControlRoomViews } from "../packages/db/src/site-control-room-v
 import {
   openIntegrationPool,
   requireIntegrationDb,
+  resolveIntegrationRoleUrl,
 } from "../apps/api/src/testing/integration-db-gate.js";
 
 /**
@@ -20,23 +21,31 @@ import {
  * `pnpm db:seed` pass on a fresh database only ever exercises the
  * insert-if-absent branch; a re-seed after the row already carries an admin's
  * own choice is the branch owner ruling OQ2 is about, and it is reachable only
- * by seeding twice against a real, RLS-bound `bms.site_control_room_views`.
+ * by seeding twice against a real `bms.site_control_room_views`.
+ *
+ * **Two pools, two roles.** The seed runs on a `max: 1` pool as `bms_owner` —
+ * the role `pnpm db:seed` uses, bound by `FORCE ROW LEVEL SECURITY` — so the
+ * seed's insert meets migration `0082`'s `WITH CHECK` half under the ESKOM
+ * tenant GUC, exactly as a real seed does (`beforeAll` asserts the role). Reads
+ * run on a `bms_fleet` probe pool, which sees the row whatever the GUC.
  *
  * `RSMOC-WC` is the one real, shared, seeded location this touches — not a
  * `F367-%` per-run fixture, because the row under test is the seed's own row,
- * not something this suite creates. Every case restores it to `builtin`/`smoc`
- * afterward, the same discipline `F1.7` uses for `ingest_enabled`, so a
- * developer database and the neighbouring `site-control-room-view.integration.*`
- * suite (which only ever reads `RSMOC-WC`, never writes it) are left as found.
+ * not something this suite creates. **The suite leaves the row as it found
+ * it**: `beforeAll` captures every column (or the row's absence), `afterAll`
+ * puts that back, and test 1, which deletes the row, restores its own capture
+ * in a `finally`. The neighbouring `site-control-room-view.integration.*`
+ * suite only ever reads `RSMOC-WC`, never writes it.
  */
 
-const connectionString = requireIntegrationDb({
+const ownerUrl = requireIntegrationDb({
   item: "F3.67 U6",
   label: "seed ownership of the RSMOC-WC control room view",
   because:
     "whether a second pnpm db:seed reverts an admin's own choice of kind is a database " +
     "behaviour across two seed passes under real row-level security, so a green run " +
     "without one asserts nothing.",
+  connection: "owner",
 });
 
 function assert(condition: boolean, message: string): void {
@@ -53,33 +62,48 @@ let seedDb: ReturnType<typeof createDb> | undefined;
 let eskomOrgId = "";
 let rsmocWcId = "";
 
-type ViewRow = { kind: string; builtin_key: string | null; dashboard_id: string | null };
+/** Every column but the key, so a restore puts back exactly what was there. */
+type ViewRow = {
+  organization_id: string;
+  kind: string;
+  builtin_key: string | null;
+  dashboard_id: string | null;
+  updated_at: Date;
+  updated_by: string | null;
+};
 
-/** Reads the row as `bms_owner` under the ESKOM tenant GUC — the same lens the seed itself uses. */
+/** What the suite found in `beforeAll` — `undefined` when RSMOC-WC had no row. */
+let found: ViewRow | undefined;
+
+/** Reads the row as `bms_fleet`: under FORCE an owner read depends on the GUC, the fleet read does not. */
 async function readView(): Promise<ViewRow | undefined> {
+  const pool = probePool;
+  if (!pool) throw new Error("probe pool not initialised");
+  const res = await pool.query<ViewRow>(
+    `SELECT organization_id, kind, builtin_key, dashboard_id, updated_at, updated_by
+       FROM bms.site_control_room_views WHERE location_id = $1`,
+    [rsmocWcId],
+  );
+  return res.rows[0];
+}
+
+/** Runs one statement on the seed pool as `bms_owner` under the ESKOM tenant GUC. */
+async function asOwner(sql: string, params: unknown[]): Promise<void> {
   const pool = seedPool;
   if (!pool) throw new Error("seed pool not initialised");
-  return withOrganization(pool, eskomOrgId, async () => {
-    const res = await pool.query<ViewRow>(
-      `SELECT kind, builtin_key, dashboard_id FROM bms.site_control_room_views WHERE location_id = $1`,
-      [rsmocWcId],
-    );
-    return res.rows[0];
+  await withOrganization(pool, eskomOrgId, async () => {
+    await pool.query(sql, params);
   });
 }
 
 /** What the API's `putSetting` does for a `generated` write: overwrite every kind-decided column. */
 async function adminSetsGenerated(): Promise<void> {
-  const pool = seedPool;
-  if (!pool) throw new Error("seed pool not initialised");
-  await withOrganization(pool, eskomOrgId, async () => {
-    await pool.query(
-      `UPDATE bms.site_control_room_views
-         SET kind = 'generated', builtin_key = NULL, dashboard_id = NULL, updated_at = now()
-       WHERE location_id = $1`,
-      [rsmocWcId],
-    );
-  });
+  await asOwner(
+    `UPDATE bms.site_control_room_views
+        SET kind = 'generated', builtin_key = NULL, dashboard_id = NULL, updated_at = now()
+      WHERE location_id = $1`,
+    [rsmocWcId],
+  );
 }
 
 async function reseedView(): Promise<void> {
@@ -89,29 +113,60 @@ async function reseedView(): Promise<void> {
   await withOrganization(pool, eskomOrgId, () => seedSiteControlRoomViews(db, eskomOrgId));
 }
 
-/** Restores the row to what a fresh `pnpm db:seed` leaves: `builtin`/`smoc`. */
-async function restoreBuiltin(): Promise<void> {
-  const pool = seedPool;
-  if (!pool) throw new Error("seed pool not initialised");
-  await withOrganization(pool, eskomOrgId, async () => {
-    await pool.query(
-      `UPDATE bms.site_control_room_views
-         SET kind = 'builtin', builtin_key = 'smoc', dashboard_id = NULL, updated_at = now()
-       WHERE location_id = $1`,
-      [rsmocWcId],
-    );
-  });
+/** Sets the row to what a fresh `pnpm db:seed` leaves, `builtin`/`smoc` — tests 2 and 3 start there. */
+async function forceBuiltin(): Promise<void> {
+  await asOwner(
+    `UPDATE bms.site_control_room_views
+        SET kind = 'builtin', builtin_key = 'smoc', dashboard_id = NULL, updated_at = now()
+      WHERE location_id = $1`,
+    [rsmocWcId],
+  );
 }
 
-describe.skipIf(!connectionString)("F3.67 U6 — seedSiteControlRoomViews ownership across two passes", () => {
+/** Puts back a captured row, every column; a capture of "no row" deletes the row. */
+async function restoreRow(row: ViewRow | undefined): Promise<void> {
+  if (!row) {
+    await asOwner(`DELETE FROM bms.site_control_room_views WHERE location_id = $1`, [rsmocWcId]);
+    return;
+  }
+  await asOwner(
+    `INSERT INTO bms.site_control_room_views
+            (location_id, organization_id, kind, builtin_key, dashboard_id, updated_at, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (location_id) DO UPDATE
+        SET organization_id = EXCLUDED.organization_id, kind = EXCLUDED.kind,
+            builtin_key = EXCLUDED.builtin_key, dashboard_id = EXCLUDED.dashboard_id,
+            updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by`,
+    [
+      rsmocWcId,
+      row.organization_id,
+      row.kind,
+      row.builtin_key,
+      row.dashboard_id,
+      row.updated_at,
+      row.updated_by,
+    ],
+  );
+}
+
+describe.skipIf(!ownerUrl)("F3.67 U6 — seedSiteControlRoomViews ownership across two passes", () => {
   beforeAll(async () => {
-    const url = connectionString as string;
-    // A plain fleet pool to resolve ids — the seed's own `max: 1` pool is
-    // reserved for statements that must land inside `withOrganization`'s
-    // transaction (`seed-tenant.ts`'s load-bearing constraint).
-    probePool = await openIntegrationPool(url, "F3.67 U6");
+    const url = ownerUrl as string;
+    // A plain fleet pool to resolve ids and read the row — the seed's own
+    // `max: 1` pool is reserved for statements that must land inside
+    // `withOrganization`'s transaction (`seed-tenant.ts`'s load-bearing constraint).
+    probePool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(url, "fleet", process.env),
+      "F3.67 U6",
+    );
     seedPool = createSeedPool(url);
     seedDb = createDb(seedPool);
+
+    const role = await seedPool.query<{ current_user: string }>("SELECT current_user");
+    assert(
+      role.rows[0]?.current_user === "bms_owner",
+      `the seed pool must run as bms_owner (the pnpm db:seed role), got '${role.rows[0]?.current_user}'`,
+    );
 
     eskomOrgId = await getOrganizationId(probePool, "ESKOM");
 
@@ -121,29 +176,39 @@ describe.skipIf(!connectionString)("F3.67 U6 — seedSiteControlRoomViews owners
     if (!rsmoc.rows[0]) throw new Error("F3.67 U6: RSMOC-WC is not seeded — run pnpm db:seed.");
     rsmocWcId = rsmoc.rows[0].id;
 
-    // Known starting state, so the suite is not at the mercy of what an
-    // earlier run left behind — the same F1.7 lesson (clear the stamp first).
-    // `reseedView` first: on a scratch database that has never run U6's seed
-    // call, no row exists yet and `restoreBuiltin`'s UPDATE would match zero.
+    found = await readView();
+
+    // Known starting state for tests 2 and 3 — the F1.7 lesson (clear the
+    // stamp first). `reseedView` first: on a scratch database that has never
+    // run U6's seed call, no row exists yet and the UPDATE would match zero.
     await reseedView();
-    await restoreBuiltin();
+    await forceBuiltin();
   }, 120_000);
 
   afterAll(async () => {
-    await restoreBuiltin();
+    if (seedPool && rsmocWcId) {
+      await restoreRow(found);
+    }
     await seedPool?.end();
     await probePool?.end();
   }, 120_000);
 
-  it("inserts builtin/smoc for RSMOC-WC when no row's contents have been touched", async () => {
-    // The row already exists (restored in beforeAll); a re-seed over an
-    // untouched row must still read builtin/smoc, or the insert-if-absent
-    // behaviour itself is broken.
-    await reseedView();
-    const row = await readView();
-    assert(row !== undefined, "expected a bms.site_control_room_views row for RSMOC-WC");
-    assert(row?.kind === "builtin", `expected kind 'builtin', got '${row?.kind}'`);
-    assert(row?.builtin_key === "smoc", `expected builtin_key 'smoc', got '${row?.builtin_key}'`);
+  it("inserts builtin/smoc for RSMOC-WC when the row is absent", async () => {
+    const captured = await readView();
+    try {
+      await asOwner(`DELETE FROM bms.site_control_room_views WHERE location_id = $1`, [rsmocWcId]);
+      assert((await readView()) === undefined, "the fixture delete must have removed the row");
+
+      await reseedView();
+
+      // Read back what the SEED wrote: the row did not exist before it ran.
+      const row = await readView();
+      assert(row !== undefined, "expected the seed to insert a bms.site_control_room_views row for RSMOC-WC");
+      assert(row?.kind === "builtin", `expected kind 'builtin', got '${row?.kind}'`);
+      assert(row?.builtin_key === "smoc", `expected builtin_key 'smoc', got '${row?.builtin_key}'`);
+    } finally {
+      await restoreRow(captured);
+    }
   }, 120_000);
 
   it("does not revert an admin's own choice of kind on a re-seed (owner ruling OQ2)", async () => {
