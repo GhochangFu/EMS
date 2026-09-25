@@ -44,7 +44,10 @@ function numericExport(file: string, name: string): number {
  * added by the unit that moves each file (TDD per unit, plan §"Gates that
  * apply to every unit").
  */
-const FRESHNESS_SITES: ReadonlyArray<{ readonly file: string; readonly count: number }> = [];
+const FRESHNESS_SITES: ReadonlyArray<{ readonly file: string; readonly count: number }> = [
+  // `locationKpis`, `locationDashboard`'s RTU rows, `kpis.sites_online`.
+  { file: "apps/api/src/dashboard/dashboard.service.ts", count: 3 },
+];
 
 describe("F3.28 — the offline bound has one source (ADR 0074, OQ1)", () => {
   it("LIVE_TELEMETRY_MAX_AGE_SECONDS × 1000 equals the web FRESH_MS", () => {
