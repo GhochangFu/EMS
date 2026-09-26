@@ -313,6 +313,41 @@ export async function assertCrossTenantSlugReadIs404(
 }
 
 /**
+ * `F3.69` U4 — the positive control the suite lacked: a `location_admin` actually reads a
+ * dashboard scoped to ITS OWN location by slug. `readableOrganizationIds` resolves
+ * `location_admin` through the single `"location"` source (`readScopeSourcesForRole`), which is
+ * a single organization, so `getBySlug` takes the tenant branch — the same branch
+ * `assertCrossTenantSlugReadIs404` (above) proves refuses a FOREIGN organization's slug for the
+ * SAME actor shape. That is A1's negative pair: same actor, same branch, opposite organization.
+ *
+ * **This is not the `organizationIdFilter` mutation's proof.** `F3.69`'s plan asks A2 to drop
+ * `organizationIdFilter` in `getBySlug`. On the tenant branch (a single-organization actor, this
+ * one included) `withOrganizationReadScope` passes `organizationIdFilter = null`, so removing
+ * the `if (organizationIdFilter)` guard changes nothing here or in
+ * `assertCrossTenantSlugReadIs404` — RLS is the only isolation control on that branch, not the
+ * filter. That mutation only has a leg to stand on on the FLEET branch (a multi-organization
+ * actor, `bms_fleet` under `BYPASSRLS`), and `assertFleetBranchExcludesAForeignOrganization`'s
+ * final `getBySlug` assertion already exercises exactly that — measured by applying the
+ * mutation: `finding 1 (HIGH) — a two-organization caller's fleet-branch read excludes a third
+ * organization` turned red (a dashboard resolved instead of a 404), while this suite's other 16
+ * cases, including `assertCrossTenantSlugReadIs404`, stayed green. No A2 is added here — it
+ * would duplicate that existing case.
+ */
+export async function assertLocationReaderMayReadItsSitesDashboardBySlug(
+  service: DashboardsService,
+  eskomLocationAdmin: JwtPayload,
+  slug: string,
+  eskomOrgId: string,
+  expectedLocationId: string,
+): Promise<void> {
+  const dto = await service.getBySlug(eskomLocationAdmin, slug, eskomOrgId);
+  expect(
+    dto.locationId,
+    "a location_admin reading its own site's dashboard by slug must get that site's DTO back",
+  ).toBe(expectedLocationId);
+}
+
+/**
  * Cross-tenant write, id-addressed: an ESKOM `admin` targeting a PHEWB dashboard's id through
  * `update()` gets the SAME 404 a nonexistent id would — `rules.service.ts:753-757`'s
  * cross-tenant-existence-oracle precedent. `fetchRowForWrite` runs on `fleetDb` (BYPASSRLS) and

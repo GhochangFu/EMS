@@ -33,6 +33,7 @@ import {
   assertForeignOrgIdUpdateIs404SameAsNonexistent,
   assertLocationAdminCannotRehomeOrganizationWideDashboard,
   assertLocationAdminMayStillUpdateItsOwnLocationDashboard,
+  assertLocationReaderMayReadItsSitesDashboardBySlug,
   assertListFiltersByAssetIdWithinScope,
   assertListReportsTheAssetCode,
   assertPutWidgetsDtoReflectsTheWrite,
@@ -66,6 +67,7 @@ const MULTI_ORG_EMAIL = `f31b-multiorg-${RUN}@integration.invalid`;
 const SCOPE_CONFLICT_SLUG = `f31b-conflict-${RUN}`;
 const ORG_WIDE_REHOME_SLUG = `f31d-orgwide-rehome-${RUN}`;
 const OWN_LOCATION_SLUG = `f31d-own-location-${RUN}`;
+const SITE_READ_SLUG = `f369-site-read-${RUN}`;
 const ASSET_SCOPE_SLUG = `f32-asset-scope-${RUN}`;
 const ASSET_CONFLICT_SLUG = `f32-asset-conflict-${RUN}`;
 const ASSET_CODE_SLUG = `f32-asset-code-${RUN}`;
@@ -521,6 +523,30 @@ describe.skipIf(!connectionString)(
         eskomLocationAdmin,
         ownLocationDashboard.id,
         "F3.1d own-location proof (renamed)",
+      );
+    }, 60_000);
+
+    it("F3.69 U4 A1 — a location_admin reads its own site's dashboard by slug", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      const siteDashboard = await service.create(globalAdmin, {
+        organizationId: eskomOrgId,
+        slug: SITE_READ_SLUG,
+        name: "F3.69 U4 site-read proof",
+        locationId: eskomLocationAdminLocationId,
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(siteDashboard.id);
+
+      const eskomLocationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+      await assertLocationReaderMayReadItsSitesDashboardBySlug(
+        service,
+        eskomLocationAdmin,
+        SITE_READ_SLUG,
+        eskomOrgId,
+        eskomLocationAdminLocationId,
       );
     }, 60_000);
 
