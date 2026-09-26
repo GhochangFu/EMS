@@ -201,6 +201,14 @@ export function parsePayload(raw: string): {
   return Number.isFinite(at.getTime()) ? { devId, values, at } : { devId, values };
 }
 
+/** Bound keys one payload yielded no reading for, each list in binding order (`F4.58`). */
+export type AbsentReadings = {
+  /** Carried as `null`, `""`, or a value that will not coerce to a finite number. */
+  readonly empty: readonly string[];
+  /** Not carried at all (`undefined`). */
+  readonly missing: readonly string[];
+};
+
 /**
  * Builds the samples one payload yields.
  *
@@ -213,19 +221,35 @@ export function parsePayload(raw: string): {
  * The value guards are the legacy ones verbatim: empty string, null and
  * undefined are absent readings rather than zeroes, and a value that will not
  * coerce to a finite number is not a reading at all.
+ *
+ * **Absent, but no longer silent (`F4.58`).** Every bound key that yields no
+ * sample is classified into `absent`, in binding order: `missing` when the
+ * payload never carried the key (`undefined` — typically a wrong mapping), and
+ * `empty` when it carried `null`, `""` or a value that will not coerce to a
+ * finite number (typically a dead meter). ADR 0016 §5 rule 7 says drop *and
+ * count*, and rule 9 forbids swallowing silently; the bare `continue` here did
+ * both. `handleMessage` reports the classification through `context.logger`.
  */
 export function samplesFromPayload(
   parsed: { devId: string; values: Record<string, unknown>; at?: Date },
   sourceKeys: readonly string[],
-): SourceSample[] {
+): { samples: SourceSample[]; absent: AbsentReadings } {
   const samples: SourceSample[] = [];
+  const empty: string[] = [];
+  const missing: string[] = [];
   for (const sourceKey of sourceKeys) {
     const raw = parsed.values[sourceKey];
-    if (raw === undefined || raw === null || raw === "") {
+    if (raw === undefined) {
+      missing.push(sourceKey);
+      continue;
+    }
+    if (raw === null || raw === "") {
+      empty.push(sourceKey);
       continue;
     }
     const value = Number(raw);
     if (!Number.isFinite(value)) {
+      empty.push(sourceKey);
       continue;
     }
     samples.push(
@@ -234,7 +258,7 @@ export function samplesFromPayload(
         : { sourceKey, value, deviceKey: parsed.devId, at: parsed.at },
     );
   }
-  return samples;
+  return { samples, absent: { empty, missing } };
 }
 
 /**
@@ -253,8 +277,11 @@ export function createMqttAdapter(
   /** Set by `disconnect()`. Guards rule 8: never emit after disconnect. */
   let closed = false;
 
-  /** `devId → sourceKeys`, so a message is routed without rescanning bindings. */
-  const sourceKeysByDevice = new Map<string, readonly string[]>();
+  /**
+   * `devId → { rtuCode, sourceKeys }`, so a message is routed without rescanning
+   * bindings. `rtuCode` is carried for the `readings absent` line (`F4.58`).
+   */
+  const bindingByDevice = new Map<string, { rtuCode: string; sourceKeys: readonly string[] }>();
   /**
    * `topic → the devIds bound to it`, so a payload may only speak for the topic
    * it arrived on (`F1.7`).
@@ -303,8 +330,8 @@ export function createMqttAdapter(
       return;
     }
 
-    const sourceKeys = sourceKeysByDevice.get(parsed.devId);
-    if (sourceKeys === undefined) {
+    const binding = bindingByDevice.get(parsed.devId);
+    if (binding === undefined) {
       // A device publishing on a subscribed topic that this host has no binding
       // for. Ordinary on a shared topic; not an error.
       return;
@@ -322,7 +349,23 @@ export function createMqttAdapter(
       return;
     }
 
-    const samples = samplesFromPayload(parsed, sourceKeys);
+    const { samples, absent } = samplesFromPayload(parsed, binding.sourceKeys);
+    // F4.58 (ADR 0016 §5 rules 7 and 9): a bound key that yields no reading is
+    // reported, not dropped silently. After the topic guard, so the line only
+    // ever speaks for a station the payload was entitled to speak for; before
+    // the early return, so an all-absent message is reported too. One line per
+    // message, stateless and timer-free (rule 4). Ids and counts only — never a
+    // value (AGENTS.md §9.6).
+    if (absent.empty.length > 0 || absent.missing.length > 0) {
+      context?.logger.warn("readings absent", {
+        rtuCode: binding.rtuCode,
+        deviceKey: parsed.devId,
+        empty: absent.empty.length,
+        missing: absent.missing.length,
+        ...(absent.empty.length === 0 ? {} : { firstEmpty: absent.empty[0] }),
+        ...(absent.missing.length === 0 ? {} : { firstMissing: absent.missing[0] }),
+      });
+    }
     if (samples.length === 0) {
       return;
     }
@@ -336,10 +379,13 @@ export function createMqttAdapter(
     async connect(ctx) {
       context = ctx;
       closed = false;
-      sourceKeysByDevice.clear();
+      bindingByDevice.clear();
       deviceKeysByTopic.clear();
       for (const binding of ctx.bindings) {
-        sourceKeysByDevice.set(binding.deviceKey, binding.sourceKeys);
+        bindingByDevice.set(binding.deviceKey, {
+          rtuCode: binding.rtuCode,
+          sourceKeys: binding.sourceKeys,
+        });
         const bound = deviceKeysByTopic.get(binding.device.topic);
         if (bound === undefined) {
           deviceKeysByTopic.set(binding.device.topic, new Set([binding.deviceKey]));
