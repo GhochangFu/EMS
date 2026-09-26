@@ -35,6 +35,7 @@ import {
   assertLocationAdminCannotRehomeOrganizationWideDashboard,
   assertLocationAdminMayStillUpdateItsOwnLocationDashboard,
   assertLocationReaderMayReadItsSitesDashboardBySlug,
+  assertMixedGrantViewerReadsItsSitesDashboardBySlug,
   assertListFiltersByAssetIdWithinScope,
   assertListReportsTheAssetCode,
   assertPutWidgetsDtoReflectsTheWrite,
@@ -85,6 +86,11 @@ const N1_PHEWB_SLUG = `f369-n1-phewb-${RUN}`;
 const N2_LEAK_ORG_CODE = `F369-N2-LEAK-${RUN}`;
 const N2_LEAK_SLUG = `f369-n2-leak-${RUN}`;
 const N2_MULTI_ORG_EMAIL = `f369-n2-multiorg-${RUN}@integration.invalid`;
+/** `F4.161` U4 — the mixed-grant viewer's site-scoped ESKOM dashboard. */
+const F4161_SITE_READ_SLUG = `f4161-site-read-${RUN}`;
+/** `F4.161` U4 — a fresh organization with NO location at all (fleet pool). */
+const F4161_EMPTY_ORG_CODE = `F4161-EMPTY-${RUN}`;
+const F4161_VIEWER_EMAIL = `f4161-viewer-${RUN}@integration.invalid`;
 
 describe.skipIf(!connectionString)(
   "F3.1b — DashboardsService pool routing, audit stamping, cross-tenant read/write",
@@ -115,6 +121,9 @@ describe.skipIf(!connectionString)(
     /** `F3.69` step-5 security review N2 — a second, independent leak-org/multi-org-user pair. */
     let n2LeakOrgIdForCleanup: string | undefined;
     let n2MultiOrgUserIdForCleanup: string | undefined;
+    /** `F4.161` U4 — the mixed-grant viewer's own fixture user and empty organization. */
+    let f4161ViewerIdForCleanup: string | undefined;
+    let f4161OrgIdForCleanup: string | undefined;
     /** Set only when the seed supplied no PHEWB asset group and this suite made one. */
     let createdAssetGroupIdForCleanup: string | undefined;
 
@@ -293,6 +302,18 @@ describe.skipIf(!connectionString)(
       }
       if (n2LeakOrgIdForCleanup) {
         await ownerPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [n2LeakOrgIdForCleanup]);
+      }
+      if (f4161ViewerIdForCleanup) {
+        await superuserPool.query(`DELETE FROM bms.user_organization_access WHERE user_id = $1`, [
+          f4161ViewerIdForCleanup,
+        ]);
+        await superuserPool.query(`DELETE FROM bms.user_location_access WHERE user_id = $1`, [
+          f4161ViewerIdForCleanup,
+        ]);
+        await superuserPool.query(`DELETE FROM bms.users WHERE id = $1`, [f4161ViewerIdForCleanup]);
+      }
+      if (f4161OrgIdForCleanup) {
+        await ownerPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [f4161OrgIdForCleanup]);
       }
       await Promise.all(
         [ownerPool, superuserPool, tenantPool, authPool].filter(Boolean).map((p) => p.end()),
@@ -565,6 +586,64 @@ describe.skipIf(!connectionString)(
         service,
         eskomLocationAdmin,
         SITE_READ_SLUG,
+        eskomOrgId,
+        eskomLocationAdminLocationId,
+      );
+    }, 60_000);
+
+    it("F4.161 U4 — a mixed-grant viewer (org grant reaches no active site; location grant does) reads its site's dashboard by slug", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      const siteDashboard = await service.create(globalAdmin, {
+        organizationId: eskomOrgId,
+        slug: F4161_SITE_READ_SLUG,
+        name: "F4.161 U4 mixed-grant site-read proof",
+        locationId: eskomLocationAdminLocationId,
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(siteDashboard.id);
+
+      // A fresh organization with NO location at all — the viewer's organization grant on it
+      // reaches no active site, so pre-F4.161 readableOrganizationIds stopped here.
+      const emptyOrg = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, $2, 'ZAR') RETURNING id`,
+        [F4161_EMPTY_ORG_CODE, "F4.161 U4 organization with no active site"],
+      );
+      const f4161OrgId = emptyOrg.rows[0]?.id;
+      if (!f4161OrgId) {
+        throw new Error("F4.161 U4: fixture organization did not insert");
+      }
+      f4161OrgIdForCleanup = f4161OrgId;
+
+      const viewer = await superuserPool.query<{ id: string }>(
+        `INSERT INTO bms.users (email, password_hash, display_name, role)
+         VALUES ($1, 'x', 'F4.161 U4 mixed-grant viewer', 'viewer') RETURNING id`,
+        [F4161_VIEWER_EMAIL],
+      );
+      const f4161ViewerId = viewer.rows[0]?.id;
+      if (!f4161ViewerId) {
+        throw new Error("F4.161 U4: fixture viewer did not insert");
+      }
+      f4161ViewerIdForCleanup = f4161ViewerId;
+
+      await superuserPool.query(
+        `INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2)`,
+        [f4161ViewerId, f4161OrgId],
+      );
+      // The location grant sits in a DIFFERENT organization (ESKOM) — the second source a
+      // viewer's read scope walks, and the one that actually reaches an active site.
+      await superuserPool.query(
+        `INSERT INTO bms.user_location_access (user_id, location_id) VALUES ($1, $2)`,
+        [f4161ViewerId, eskomLocationAdminLocationId],
+      );
+
+      const viewerJwt = jwtFor(F4161_VIEWER_EMAIL, "viewer");
+      await assertMixedGrantViewerReadsItsSitesDashboardBySlug(
+        service,
+        viewerJwt,
+        F4161_SITE_READ_SLUG,
         eskomOrgId,
         eskomLocationAdminLocationId,
       );
