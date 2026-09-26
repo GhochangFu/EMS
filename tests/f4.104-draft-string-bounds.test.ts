@@ -18,6 +18,8 @@ const CHAT_REL = "apps/api/src/admin/onboarding/onboarding-chat.service.ts";
 const RECORD = "ONBOARDING_DRAFT_STRING_MAX";
 /** `assets.domain` is bounded by a vocabulary schema, not by a `.max()`. */
 const DOMAIN_SCHEMA = "assetDomainCodeSchema";
+/** `location.type` likewise (`F4.157`, ADR 0077 decision 5). */
+const LOCATION_TYPE_SCHEMA = "locationTypeCodeSchema";
 
 /** The five sub-schemas of a draft, under the name each copy gives them. */
 const SECTIONS = [
@@ -41,12 +43,16 @@ const SECTIONS = [
  * *its own* key — `assets.name: .max(ONBOARDING_DRAFT_STRING_MAX["assets.code"])`
  * is a 64-character asset name, it typechecks, and only this comparison sees it.
  *
- * `assets.domain` is the one field whose bound arrives through an imported
+ * `assets.domain` was the first field whose bound arrives through an imported
  * schema instead (`operations.ts`, shared with four other vocabularies and
  * pinned by source text in `tests/f3.40-asset-role-write-path.test.ts`), so it
  * is expected to read `assetDomainCodeSchema` in both copies and **not** an
  * inlined `.max()`. Its number still lives in the record, where
  * `contracts/onboarding.spec.ts` pins the two to each other.
+ *
+ * `location.type` has the same shape since `F4.157`: both copies read
+ * `locationTypeCodeSchema` (`contracts/location-types.ts`), and its number is
+ * the record's `"location.type"` key.
  */
 const EXPECTED_BOUNDS: Readonly<Record<string, string>> = {
   "location.code": "location.code",
@@ -54,6 +60,7 @@ const EXPECTED_BOUNDS: Readonly<Record<string, string>> = {
   "location.name": "location.name",
   "location.province": "location.province",
   "location.capital": "location.capital",
+  "location.type": LOCATION_TYPE_SCHEMA,
   "rtus.code": "rtus.code",
   "rtus.displayName": "rtus.displayName",
   "rtus.domain": "rtus.domain",
@@ -100,7 +107,10 @@ const STRING_FIELD =
 
 const RECORD_MAX = new RegExp(`\\.\\s*max\\(\\s*${RECORD}\\s*\\[\\s*"([^"]+)"\\s*\\]\\s*\\)`);
 
-const VOCABULARY_FIELD = new RegExp(`\\b(\\w+)\\s*:\\s*${DOMAIN_SCHEMA}\\b`, "g");
+const VOCABULARY_FIELD = new RegExp(
+  `\\b(\\w+)\\s*:\\s*(${DOMAIN_SCHEMA}|${LOCATION_TYPE_SCHEMA})\\b`,
+  "g",
+);
 
 /**
  * The body of one `export const <name> = z.object({ … })`, taken as the text
@@ -158,7 +168,7 @@ function boundsIn(source: string, pick: (s: (typeof SECTIONS)[number]) => string
       record(`${section.section}.${match[1] as string}`, max === null ? null : (max[1] as string));
     }
     for (const match of body.matchAll(VOCABULARY_FIELD)) {
-      record(`${section.section}.${match[1] as string}`, DOMAIN_SCHEMA);
+      record(`${section.section}.${match[1] as string}`, match[2] as string);
     }
   }
 
@@ -207,7 +217,7 @@ const asObject = (found: Map<string, string | null>): Record<string, string | nu
  * A **sibling** of `tests/f4.103-draft-count-caps.test.ts` and not an extension
  * of it. That file matches `field: z.array(...).max(NAME)` at the top level of
  * one object; these bounds are per-field, inside five nested object literals,
- * some chained, one supplied by an imported schema. Merging the two would make
+ * some chained, two supplied by an imported schema. Merging the two would make
  * the non-vacuity count ambiguous — "found 21 of 24" would not say which three.
  *
  * ## The honest limits of these scans
@@ -216,7 +226,8 @@ const asObject = (found: Map<string, string | null>): Record<string, string | nu
  *
  * - **a bound applied somewhere else** — a `.superRefine` on the object, or a
  *   schema constant declared elsewhere and referenced here. `assets.domain` is
- *   exactly that case and is written out above rather than read;
+ *   exactly that case, as is `location.type`, and both are written out above
+ *   rather than read;
  * - **a record key that holds the wrong number.** Nothing here compares two
  *   values across two packages by reading text. `contracts/onboarding.spec.ts`
  *   and `onboarding.schema.spec.ts` parse real fixtures at the bound and at
@@ -348,10 +359,11 @@ describe("F4.104 — both copies of the draft schema bound the same strings, and
       );
     }
 
-    // `assets.domain` is in the record but read by neither copy: the field is
-    // `assetDomainCodeSchema` in both, and the key exists so the coverage walk
-    // above is complete and `contracts/onboarding.spec.ts` can pin the number
-    // to that schema's own `maxLength`.
+    // `assets.domain` and `location.type` are in the record but read by neither
+    // copy: the fields are `assetDomainCodeSchema` and `locationTypeCodeSchema`
+    // in both, and the keys exist so the coverage walk above is complete and
+    // `contracts/onboarding.spec.ts` can pin each number to its schema's own
+    // `maxLength`.
     expect(
       [...keys].sort(),
       "every declared key is read by both copies, and every field reads a declared key",
@@ -446,7 +458,10 @@ function executableBodyOf(source: string, name: string): string {
  * nor the same expression in an unrelated method can hold this green.
  */
 const BOUNDED_ELSEWHERE: Readonly<Record<string, Readonly<Record<string, string>>>> = {
-  LOCATION: {},
+  LOCATION: {
+    // F4.157: the folded cell must equal an active `bms.location_types` code.
+    type: "activeLocationTypeCodes.includes(type)",
+  },
   RTUS: {
     topic: "topic.length > MAX_RTU_TOPIC_CHARS",
     protocol: "onboardingProtocolSchema.safeParse(",
@@ -457,7 +472,6 @@ const BOUNDED_ELSEWHERE: Readonly<Record<string, Readonly<Record<string, string>
 /** Columns no guard reads, each with the reason no cell text survives them. */
 const EXEMPT_COLUMNS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   LOCATION: {
-    type: "compared against two literals and otherwise replaced",
     latitude: "Number.parseFloat, guarded by Number.isFinite",
     longitude: "Number.parseFloat, guarded by Number.isFinite",
   },
@@ -567,7 +581,7 @@ describe("F4.104 — every parsed workbook column is bounded or written down as 
     }
   });
 
-  it("keeps the checks the two `bounded elsewhere` columns depend on, as code and not as prose", () => {
+  it("keeps the checks the `bounded elsewhere` columns depend on, as code and not as prose", () => {
     const source = read(EXCEL_REL);
     for (const [section, columns] of Object.entries(BOUNDED_ELSEWHERE)) {
       const body = executableBodyOf(source, BOUNDED_ELSEWHERE_METHOD[section] as string);
