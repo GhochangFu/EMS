@@ -18,6 +18,7 @@ function site(opts: {
   return locationKpiSummarySchema.parse({
     id: opts.id,
     name: opts.name,
+    code: `SITE-${opts.id}`,
     type: "smoc_campus",
     province: null,
     organization: opts.organization,

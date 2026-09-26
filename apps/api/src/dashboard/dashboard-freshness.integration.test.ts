@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertKpisTotalKwUnchanged,
+  assertLocationKpiCodeIsLocationsCode,
   assertNonKwSampleCountsAsFresh,
   assertOutOfScopeFreshAssetIsNotCounted,
   assertRtuRowsCountNonKwFresh,
@@ -82,4 +83,6 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
   it("F4.158 — totalKw leaves out an asset outside assetIds", run(assertTotalKwExcludesOutOfScopeAsset), 60_000);
 
   it("F4.158 — totalKw sums every asset at the location for a global user", run(assertTotalKwSumsEveryAssetForGlobalScope), 60_000);
+
+  it("F3.70 — the location KPI row's code is bms.locations.code", run(assertLocationKpiCodeIsLocationsCode), 60_000);
 });

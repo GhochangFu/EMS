@@ -74,6 +74,7 @@ function assetRow(id: string, code: string, name: string) {
 const LOCATION: LocationDashboardDto = locationDashboardDtoSchema.parse({
   id: LOCATION_ID,
   name: "Western Cape Campus",
+  code: "RSMOC-WC",
   type: "smoc_campus",
   province: "Western Cape",
   organization: { id: "org-1", code: "ESKOM", name: "Ion Exchange" },
