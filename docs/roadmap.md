@@ -6023,3 +6023,61 @@ decision 7).
 **Cascade:** no row lists `F4.159` in *Depends*. Owed separately: the
 `chore(agents):` sweep (AGENTS.md names `dashboard.service.ts` as the home of
 four rollup reads; three are now in `energy-centre.ts`).
+
+### `F3.68` — the generated site view (ADR 0076 decision 7) ✅ 2026-09-26
+
+PR #569, squash `e669ba54`; plan `docs/plans/f3.68-generated-site-view.md`.
+ADR 0076 decision 7, plus Amendment 1 (stale values shown dimmed, departing
+from ADR 0027 decision 3 for this view only) and Amendment 2 (migration
+`0084`, the 7-day window).
+
+Migration `0083` adds `bms.point_keys.headline_rank smallint NULL` (CHECK >
+0; lower ranks first, ties broken by `point_key`, not a unique column).
+Migration `0084` adds a BEFORE INSERT trigger that refuses a non-null
+`headline_rank` from `bms_tenant` — a column grant would have broken
+onboarding, because Drizzle names every column on insert. The seed
+`seedPointKeyHeadlineRanks` fills only NULL ranks, after the last catalog
+writer: `on_off` → 10, `kw` → 20, `kwh_total` → 30, `pf` → 40, `frequency_hz`
+→ 50.
+
+`GET /api/v1/control-room/sites/:locationId/generated` reuses `F3.67`'s
+readable rule and 404, adds the asset-group scope, and reads the latest
+value with two statements per point, each bounded to a literal 7-day window
+— the unbounded form took 70 s for `RSMOC-WC` on the dev database; the
+bounded form takes about 73 ms end to end. `headlineRank` is now editable on
+the point-key admin API (global admin only) and on `/admin/point-keys`.
+`GeneratedSiteView` renders KPI tiles, one panel per asset domain, and one
+card per asset — Live / Stale / None, the first four points by rank, then
+"All points" inline, live values over `/ws/telemetry` with each sample
+clamped once, stale values dimmed — wired into `F3.66`'s site page.
+`adminPointKeyDtoSchema` moved to `contracts/point-keys.ts`, keeping
+`admin.ts` under the 1000-line cap.
+
+The owner ruled OQ1–OQ4 (lower ranks first; "All points" inline, not paged;
+the seed fills NULL ranks only; ties by `point_key`), stale values shown
+dimmed rather than hidden, the `0083` guard accepted without `conrelid`,
+`0084` built as a trigger rather than a revoked grant, and the 7-day window.
+
+Verified: unit and jsdom specs under named mutations (two dead gates
+repaired — R3's tie rule needed a forced query plan, and the per-row dimming
+check needed a live neighbour); integration on a scratch database `bms_f368`
+and a cold start (558 API tests in the touched suites); code, security,
+migration (`0083` twice, `0084`) and compliance reviews, every finding
+fixed; the shared database migrated to `0084` and seeded — exactly eight
+ranked codes, a `bms_tenant` ranked insert refused, an unranked insert
+allowed, rank `0` refused by the CHECK; the stack rebuilt `--no-cache`;
+browser as `admin`, 8/8 — Lotapata shows 2 panels and 8 cards matching the
+API, point order checked on every asset, a 16-point card collapses to its
+first 4, `RSMOC-WC` keeps its SMOC links, `RSMOC-EC` renders, and the rank
+round trip 50→45→50 holds on `/admin/point-keys`. The live overlay was not
+observed changing on the running stack (a static power factor sample), so
+the jsdom W5 gate is the only proof of the clamp. CI's first run failed two
+tests — an ADR 0045 text scan read a docblock, and R13 raced a parallel
+suite's asset insert — both fixed in `880eb4a9`, then green.
+
+**Cascade:** no row lists `F3.68` in *Depends*. `F3.69` and `F3.70` were
+already fully unblocked by `F3.66`'s closure and are unaffected by this row.
+Open after this run: `F4.160` (three web spec files, unchanged by this row);
+a possible follow-up row for `/locations/:id`'s unbounded `latest_points`
+read, raised but not opened — the owner decides whether it is in scope.
+Owed separately: the `chore(agents):` sweep.
