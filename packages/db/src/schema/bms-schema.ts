@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgSchema,
+  smallint,
   text,
   timestamp,
   uuid,
@@ -437,6 +438,9 @@ export const pointKeys = bmsSchema.table("point_keys", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // F3.68 / ADR 0076 decision 7 (migration 0083) — lower shows first on a
+  // generated site card; NULL = unranked. Not unique; ties by code (plan D1).
+  headlineRank: smallint("headline_rank"),
 });
 
 /**

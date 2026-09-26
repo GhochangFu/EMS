@@ -6,12 +6,15 @@ import { expect } from "vitest";
 
 import { AccessControlModule } from "../auth/access-control.module";
 import { DatabaseModule } from "../database/database.module";
+import { FLEET_POOL } from "../database/database.tokens";
 import { AdminModule } from "../admin/admin.module";
 import { LocationsAdminController } from "../admin/locations/locations.controller";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AppModule } from "../app.module";
 import { repoRoot } from "../testing/repo-root";
 import { ControlRoomModule } from "./control-room.module";
+import { GeneratedSiteViewController } from "./generated-site-view.controller";
+import { GeneratedSiteViewService } from "./generated-site-view.service";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
 import { SiteViewController } from "./site-view.controller";
 
@@ -128,10 +131,12 @@ function adminResolvableTokens(): { byIdentity: Set<Token>; byName: Set<string> 
 
 export function assertControlRoomModuleDeclaresItsMembers(): void {
   expect(moduleList(ControlRoomModule, "controllers")).toEqual(
-    expect.arrayContaining([SiteViewController]),
+    expect.arrayContaining([SiteViewController, GeneratedSiteViewController]),
   );
   const providers = moduleList(ControlRoomModule, "providers").map(tokenOf);
-  expect(providers).toEqual(expect.arrayContaining([SiteControlRoomViewService, MasterDataAuditService]));
+  expect(providers).toEqual(
+    expect.arrayContaining([SiteControlRoomViewService, MasterDataAuditService, GeneratedSiteViewService]),
+  );
   expect(moduleList(ControlRoomModule, "exports").map(tokenOf)).toContain(SiteControlRoomViewService);
 }
 
@@ -171,6 +176,41 @@ export function assertServiceDepsResolveWithinControlRoom(): void {
   expect(missingTokens.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
   const classes = classTypedParams("apps/api/src/control-room", "site-control-room-view.service.ts", "SiteControlRoomViewService");
   expect(classes).toEqual(expect.arrayContaining(["AccessControlService", "MasterDataAuditService"]));
+  const missingClasses = classes.filter((cls) => !byName.has(cls));
+  expect(missingClasses, "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/** `F3.68` U5 — the generated read's controller injects only its service, resolvable in this module. */
+export function assertGeneratedSiteViewControllerDepsResolveWithinControlRoom(): void {
+  const { byName } = controlRoomResolvableTokens();
+  const classes = classTypedParams(
+    "apps/api/src/control-room",
+    "generated-site-view.controller.ts",
+    "GeneratedSiteViewController",
+  );
+  expect(classes).toEqual(["GeneratedSiteViewService"]);
+  expect(classes.every((cls) => byName.has(cls)), `GeneratedSiteViewController deps: ${classes.join(", ")}`).toBe(
+    true,
+  );
+}
+
+/**
+ * `F3.68` U5 — `GeneratedSiteViewService` injects `FLEET_POOL` (exported by
+ * the global `DatabaseModule`) and `AccessControlService`. The positive
+ * control is that the scan finds both by name, so an empty scan cannot pass.
+ */
+export function assertGeneratedSiteViewServiceDepsResolveWithinControlRoom(): void {
+  const { byIdentity, byName } = controlRoomResolvableTokens();
+  const tokens = injectedTokens(GeneratedSiteViewService).map((d) => d.param);
+  expect(tokens).toEqual([FLEET_POOL]);
+  const missingTokens = tokens.filter((t) => !byIdentity.has(t));
+  expect(missingTokens.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const classes = classTypedParams(
+    "apps/api/src/control-room",
+    "generated-site-view.service.ts",
+    "GeneratedSiteViewService",
+  );
+  expect(classes).toEqual(["AccessControlService"]);
   const missingClasses = classes.filter((cls) => !byName.has(cls));
   expect(missingClasses, "classes Nest would fail to resolve at boot").toEqual([]);
 }

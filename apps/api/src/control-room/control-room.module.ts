@@ -3,6 +3,8 @@ import { Module } from "@nestjs/common";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AuthModule } from "../auth/auth.module";
 import { DatabaseModule } from "../database/database.module";
+import { GeneratedSiteViewController } from "./generated-site-view.controller";
+import { GeneratedSiteViewService } from "./generated-site-view.service";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
 import { SiteViewController } from "./site-view.controller";
 
@@ -30,8 +32,11 @@ import { SiteViewController } from "./site-view.controller";
  */
 @Module({
   imports: [DatabaseModule, AuthModule],
-  controllers: [SiteViewController],
-  providers: [SiteControlRoomViewService, MasterDataAuditService],
+  // `F3.68` (ADR 0076 decision 7): the generated read sits beside the resolve
+  // read that selects it. `GeneratedSiteViewService` is not exported — only
+  // its own controller injects it.
+  controllers: [SiteViewController, GeneratedSiteViewController],
+  providers: [SiteControlRoomViewService, MasterDataAuditService, GeneratedSiteViewService],
   exports: [SiteControlRoomViewService],
 })
 export class ControlRoomModule {}

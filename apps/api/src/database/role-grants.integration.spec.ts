@@ -284,6 +284,115 @@ export async function assertTenantIsRefusedAPointKeyEditAtRuntime(pool: pg.Pool)
 }
 
 /**
+ * `F3.68` / migration `0084` — the INSERT `bms_tenant` keeps may not carry a
+ * `headline_rank`. The rank orders every organization's generated site card, so
+ * it is fleet-wide master data; a trigger refuses it rather than a column grant,
+ * because Drizzle's `.insert()` names every column (`headline_rank` as `DEFAULT`)
+ * and a column grant would refuse onboarding's whole insert.
+ *
+ * The statement below is the shape Drizzle sends for
+ * `OnboardingCommitService`'s point-key insert: every column named, `DEFAULT`
+ * for the unset ones. Each case uses its own code, so a unique violation can
+ * never stand in for the result.
+ */
+function drizzleShapedPointKeyInsert(code: string, rank: "default" | number): string {
+  if (!/^[a-z0-9-]+$/.test(code)) throw new Error(`F3.68: unexpected probe code ${code}`);
+  const rankSql = rank === "default" ? "default" : String(Math.trunc(rank));
+  return (
+    `insert into "bms"."point_keys" ` +
+    `("id", "code", "name", "domain", "unit", "description", "active", "created_at", "headline_rank") ` +
+    `values (default, '${code}', 'F3.68 rank probe', null, null, null, true, default, ${rankSql})`
+  );
+}
+
+/** Asserts `promise` is the 0084 trigger's refusal — code and message both. */
+async function expectRankRefusal(promise: Promise<unknown>, because: string): Promise<void> {
+  // 42501 alone is not enough: a revoked INSERT is also 42501 ("permission
+  // denied for table point_keys"). The message names the column only when the
+  // trigger fired.
+  await expect(promise, because).rejects.toMatchObject({
+    code: "42501",
+    message: expect.stringMatching(/may not set bms\.point_keys\.headline_rank/),
+  });
+}
+
+/** Positive control: a tenant insert naming `headline_rank` as DEFAULT still lands. */
+export async function assertTenantCanInsertAnUnrankedPointKey(pool: pg.Pool): Promise<void> {
+  await asRole(pool, "bms_tenant", async (client) => {
+    const res = await client.query(drizzleShapedPointKeyInsert("f3-68-tenant-unranked", "default"));
+    expect(res.rowCount, "the Drizzle-shaped unranked insert must land for bms_tenant").toBe(1);
+  });
+}
+
+export async function assertTenantIsRefusedARankedPointKey(pool: pg.Pool): Promise<void> {
+  await asRole(pool, "bms_tenant", async (client) => {
+    // Positive control first, in the same transaction: the role can insert
+    // into the table at all, so the refusal below is about the rank.
+    await client.query(drizzleShapedPointKeyInsert("f3-68-tenant-control", "default"));
+
+    // Nothing may follow this: the refusal aborts the transaction.
+    await expectRankRefusal(
+      client.query(drizzleShapedPointKeyInsert("f3-68-tenant-ranked", 5)),
+      "bms_tenant inserted a point key with headline_rank = 5. Migration 0084's trigger did not bite.",
+    );
+  });
+}
+
+export async function assertFleetCanInsertARankedPointKey(pool: pg.Pool): Promise<void> {
+  await asRole(pool, "bms_fleet", async (client) => {
+    const res = await client.query(drizzleShapedPointKeyInsert("f3-68-fleet-ranked", 5));
+    expect(res.rowCount, "bms_fleet (the admin API pool) must still insert a ranked point key").toBe(1);
+  });
+}
+
+/**
+ * The migrator's role. Run on the pool's own superuser connection, rolled
+ * back. Not the seed: `packages/db/src/seed.ts` connects as `DATABASE_URL`,
+ * which is `bms_owner` in CI, and it sets ranks with an `UPDATE`, which this
+ * `BEFORE INSERT` trigger never sees. `pnpm db:migrate` is what runs as this
+ * connection's role (the gate's `connection: "superuser"`), inside the migration's own
+ * `SET ROLE bms_owner` / `RESET ROLE` bracket — this case proves the bracket's
+ * outer role, not the seed.
+ */
+export async function assertSuperuserCanInsertARankedPointKey(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const { rows } = await client.query<{ u: string; s: boolean }>(
+      "select current_user as u, (select rolsuper from pg_roles where rolname = current_user) as s",
+    );
+    // The claim is about a superuser; a pool that connected as something else
+    // would make this case prove nothing.
+    expect(rows[0]?.s, `the pool connected as ${rows[0]?.u}, not a superuser`).toBe(true);
+    const res = await client.query(drizzleShapedPointKeyInsert("f3-68-super-ranked", 5));
+    expect(res.rowCount, "the superuser (the migrator) must still insert a ranked point key").toBe(1);
+  } finally {
+    await client.query("rollback").catch(() => undefined);
+    client.release();
+  }
+}
+
+/**
+ * `bms_owner` — the table owner and what `DATABASE_URL` names since ADR 0045
+ * — is unaffected by the trigger's `current_user = 'bms_tenant'` check
+ * (0084:33), so its own INSERT still lands a rank. Proved with the suite's
+ * `asRole` helper (`SET LOCAL ROLE bms_owner`, rolled back) rather than a
+ * second pool connection, matching every other role case in this file.
+ */
+export async function assertOwnerCanInsertARankedPointKey(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("set local role bms_owner");
+    const res = await client.query(drizzleShapedPointKeyInsert("f3-68-owner-ranked", 5));
+    expect(res.rowCount, "bms_owner must still insert a ranked point key").toBe(1);
+  } finally {
+    await client.query("rollback").catch(() => undefined);
+    client.release();
+  }
+}
+
+/**
  * `GRANT ... ON ALL TABLES IN SCHEMA telemetry` names the hypertable parent and
  * the continuous-aggregate views. Chunks live in `_timescaledb_internal` and the
  * aggregates read a materialisation hypertable, neither of which the grant

@@ -11,9 +11,11 @@ import { asRole } from "../../testing/role-urls";
 import { PointKeysAdminService } from "./point-keys.service";
 import {
   assertAssetPointsRejectsAnUnlistedKey,
+  assertCheckRefusesAZeroRank,
   assertCreateAuditRowIsOrgLess,
   assertEveryOrganizationSeesEveryCode,
   assertGlobalAdminLifecycle,
+  assertGlobalAdminSetsAndClearsARank,
   assertOrganizationAdminIsRefusedEveryWrite,
 } from "./point-keys.rls.integration.spec";
 
@@ -120,5 +122,23 @@ describe.skipIf(!connectionString)("F3.39 — the point key catalog is fleet-wid
 
   it("refuses an asset_points row whose point_key is in no vocabulary", async () => {
     await assertAssetPointsRejectsAnUnlistedKey(ownerPool);
+  });
+
+  it("lets a global admin set a headline rank on create, change it, and clear it", async () => {
+    // F3.68 — a per-run code, deleted by code whatever the assertion did.
+    const code = `f3-68-rank-${Date.now()}`;
+    try {
+      await assertGlobalAdminSetsAndClearsARank({ svc, ownerPool }, adminJwt, code);
+    } finally {
+      await ownerPool.query(
+        "DELETE FROM bms.audit_log WHERE entity_id IN (SELECT id FROM bms.point_keys WHERE code = $1)",
+        [code],
+      );
+      await ownerPool.query("DELETE FROM bms.point_keys WHERE code = $1", [code]);
+    }
+  });
+
+  it("refuses headline_rank = 0 in the database (0083's CHECK)", async () => {
+    await assertCheckRefusesAZeroRank(ownerPool);
   });
 });

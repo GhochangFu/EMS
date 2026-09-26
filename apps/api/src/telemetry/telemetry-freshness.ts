@@ -91,3 +91,23 @@ export const REPORTING_WINDOW_INTERVAL_SQL = `interval '${REPORTING_WINDOW_SECON
  * this CTE and forbids the live one.
  */
 export const REPORTING_ASSETS_CTE_SQL = `reporting AS (SELECT DISTINCT asset_id FROM telemetry.point_values WHERE time > now() - ${REPORTING_WINDOW_INTERVAL_SQL})`;
+
+/**
+ * `F3.68` (ADR 0076 decision 7, plan D9) — the JS-side judgement of one
+ * asset's newest sample against the live window: `none` with no sample,
+ * `live` while the sample is at most {@link LIVE_TELEMETRY_MAX_AGE_SECONDS}
+ * old (inclusive), `stale` after. `nowMs` is the caller's clock, so a caller
+ * that reads under a transaction can judge against that transaction's
+ * `now()`. `DashboardService`'s asset rows and the generated site view both
+ * read it, so the two cannot drift.
+ */
+export function telemetryFreshnessAt(
+  latestIso: string | null,
+  nowMs: number,
+): "live" | "stale" | "none" {
+  if (!latestIso) {
+    return "none";
+  }
+  const ageMs = nowMs - new Date(latestIso).getTime();
+  return ageMs <= LIVE_TELEMETRY_MAX_AGE_SECONDS * 1000 ? "live" : "stale";
+}

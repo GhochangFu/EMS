@@ -575,6 +575,20 @@
       "when": 1790320280708,
       "tag": "0082_site_control_room_views",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790355237346,
+      "tag": "0083_point_keys_headline_rank",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790389795196,
+      "tag": "0084_point_keys_tenant_rank_guard",
+      "breakpoints": true
     }
   ]
 }

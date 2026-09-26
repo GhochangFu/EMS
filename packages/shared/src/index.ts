@@ -33,12 +33,14 @@ import type * as Db from "./contracts/dashboard-builder";
 import type * as Dt from "./contracts/dashboard-templates";
 import type * as E from "./contracts/envelopes";
 import type * as Esc from "./contracts/escalation";
+import type * as GSV from "./contracts/generated-site-view";
 import type * as He from "./contracts/health";
 import type * as Ms from "./contracts/mapping-sheet";
 import type * as Cv from "./contracts/metric-catalog-values";
 import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
+import type * as PK from "./contracts/point-keys";
 import type * as PM from "./contracts/point-metadata";
 import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
@@ -456,7 +458,7 @@ export type AdminAssetGroupMembersResponse = z.infer<
 export type SetAssetGroupMemberRoleBody = z.infer<
   typeof A.setAssetGroupMemberRoleBodySchema
 >;
-export type AdminPointKeyDto = z.infer<typeof A.adminPointKeyDtoSchema>;
+export type AdminPointKeyDto = z.infer<typeof PK.adminPointKeyDtoSchema>;
 export type AdminOrganizationSummaryDto = z.infer<
   typeof A.adminOrganizationSummaryDtoSchema
 >;
@@ -790,6 +792,13 @@ export type SiteControlRoomViewSettingDto = z.infer<
 export type ResolvedSiteControlRoomViewDto = z.infer<
   typeof SC.resolvedSiteControlRoomViewDtoSchema
 >;
+
+// `F3.68` / ADR 0076 decision 7 — the generated site view
+// (`GET /api/v1/control-room/sites/:locationId/generated`).
+export type GeneratedSitePointDto = z.infer<typeof GSV.generatedSitePointSchema>;
+export type GeneratedSiteAssetDto = z.infer<typeof GSV.generatedSiteAssetSchema>;
+export type GeneratedSiteDomainDto = z.infer<typeof GSV.generatedSiteDomainSchema>;
+export type GeneratedSiteViewDto = z.infer<typeof GSV.generatedSiteViewDtoSchema>;
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules

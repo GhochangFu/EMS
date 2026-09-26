@@ -23,7 +23,6 @@ import {
   adminAssetTemplateSummaryDtoSchema,
   adminLocationDtoSchema,
   adminOrganizationDtoSchema,
-  adminPointKeyDtoSchema,
   adminRtuDtoSchema,
   assetPointCalcConfigDtoSchema,
   calcParameterDtoSchema,
@@ -65,6 +64,7 @@ import {
   notificationTestResultSchema,
 } from "./notifications";
 import { escalationDefaultDtoSchema, escalationProfileDtoSchema } from "./escalation";
+import { adminPointKeyDtoSchema } from "./point-keys";
 
 /** `{ items: T[] }` — the shape every master-data list route returns. */
 const itemsOf = <S extends z.ZodTypeAny>(item: S) => z.object({ items: z.array(item) });

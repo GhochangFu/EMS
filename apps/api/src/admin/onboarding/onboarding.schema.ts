@@ -111,8 +111,10 @@ export const draftPointKeySchema = z
     // F4.104: the one draft string field no producer bounded. Its column,
     // `bms.point_keys.description`, is `text` and supplies nothing, so the
     // number is derived from the sibling route writing the same column —
-    // `createPointKeyBodySchema.description`, whose other four fields are
-    // exactly the four above. This is the row's one caller-visible change:
+    // `createPointKeyBodySchema.description`, whose other four string fields
+    // are exactly the four above (its fifth, `headlineRank` from F3.68, is
+    // deliberately absent here: onboarding never ranks a point key). This is
+    // the row's one caller-visible change:
     // `PATCH :id/draft` answered 200 at any length and now answers 400 past it.
     description: z.string().max(ONBOARDING_DRAFT_STRING_MAX["pointKeys.description"]).optional(),
   });

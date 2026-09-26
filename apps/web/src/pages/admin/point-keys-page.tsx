@@ -20,6 +20,24 @@ import type { AuthUser } from "../../stores/auth-store";
 
 type PointKeysAdminPageProps = { user: AuthUser };
 
+/** `smallint`'s ceiling — the API body's `.max()` (`point-keys.schema.ts`). */
+const HEADLINE_RANK_MAX = 32767;
+const HEADLINE_RANK_ERROR = `Headline rank must be a whole number from 1 to ${HEADLINE_RANK_MAX}.`;
+
+/**
+ * `F3.68` / ADR 0076 decision 7 — the modal's rank text to the body value.
+ * Empty means unranked, so it is `null` (sent explicitly: `JSON.stringify`
+ * drops `undefined`, and the rank would never clear). Anything that is not a
+ * whole number in range is refused here, before a request is made.
+ */
+function parseHeadlineRank(text: string): number | null | "invalid" {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  if (!/^\d+$/.test(trimmed)) return "invalid";
+  const rank = Number(trimmed);
+  return rank >= 1 && rank <= HEADLINE_RANK_MAX ? rank : "invalid";
+}
+
 /**
  * Admin screen for the fleet-wide point key catalog.
  *
@@ -45,6 +63,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
     domain: "",
     unit: "",
     description: "",
+    headlineRank: "",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -66,13 +85,14 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
   }, [listQ.data?.items, search]);
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (headlineRank: number | null) => {
       if (editing) {
         return updateAdminPointKey(editing.id, {
           name: form.name,
           domain: form.domain || undefined,
           unit: form.unit || undefined,
           description: form.description || undefined,
+          headlineRank,
         });
       }
       return createAdminPointKey({
@@ -81,6 +101,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
         domain: form.domain || undefined,
         unit: form.unit || undefined,
         description: form.description || undefined,
+        headlineRank,
       });
     },
     onSuccess: async () => {
@@ -108,6 +129,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
       domain: "",
       unit: "",
       description: "",
+      headlineRank: "",
     });
     setError(null);
     setModalOpen(true);
@@ -148,6 +170,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
               <th className="px-2 py-2">Name</th>
               <th className="px-2 py-2">Domain</th>
               <th className="px-2 py-2">Unit</th>
+              <th className="px-2 py-2">Headline rank</th>
               <th className="px-2 py-2">Status</th>
               <th className="px-2 py-2">Actions</th>
             </tr>
@@ -159,6 +182,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                 <td className="px-2 py-2">{item.name}</td>
                 <td className="px-2 py-2">{item.domain ?? "—"}</td>
                 <td className="px-2 py-2">{item.unit ?? "—"}</td>
+                <td className="px-2 py-2">{item.headlineRank ?? "—"}</td>
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}
@@ -179,7 +203,10 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                             domain: item.domain ?? "",
                             unit: item.unit ?? "",
                             description: item.description ?? "",
+                            headlineRank:
+                              item.headlineRank === null ? "" : String(item.headlineRank),
                           });
+                          setError(null);
                           setModalOpen(true);
                         }}
                       >
@@ -209,7 +236,12 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
             className="w-full max-w-lg rounded-lg border bg-white p-4"
             onSubmit={(event: FormEvent) => {
               event.preventDefault();
-              saveMutation.mutate();
+              const headlineRank = parseHeadlineRank(form.headlineRank);
+              if (headlineRank === "invalid") {
+                setError(HEADLINE_RANK_ERROR);
+                return;
+              }
+              saveMutation.mutate(headlineRank);
             }}
           >
             <h2 className="font-condensed text-lg font-bold">
@@ -251,6 +283,27 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                   onChange={(event) => setForm({ ...form, unit: event.target.value })}
                 />
               </label>
+              <div className="sm:col-span-2">
+                <label
+                  htmlFor="point-key-headline-rank"
+                  className="block text-xs font-semibold text-bms-muted"
+                >
+                  Headline rank
+                </label>
+                <input
+                  id="point-key-headline-rank"
+                  type="text"
+                  inputMode="numeric"
+                  aria-describedby="point-key-headline-rank-hint"
+                  className="mt-1 w-full rounded border px-3 py-2 text-sm"
+                  value={form.headlineRank}
+                  onChange={(event) => setForm({ ...form, headlineRank: event.target.value })}
+                />
+                <p id="point-key-headline-rank-hint" className="mt-1 text-xs text-bms-muted">
+                  Lower shows first on a generated site card. Leave empty to unrank; a seeded code gets its default
+                  rank again on the next seed.
+                </p>
+              </div>
               <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
                 Description
                 <textarea

@@ -5,6 +5,7 @@ import { Link, useParams } from "react-router-dom";
 import { fetchResolvedSiteControlRoomView } from "../../api/control-room";
 import { fetchLocationKpis } from "../../api/locations";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
+import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
@@ -154,16 +155,7 @@ function SiteViewBody({ view, site, scope }: SiteViewBodyProps) {
           </Link>
         </SectionCard>
       ) : (
-        // D7 seam with `F3.68`: whichever PR merges second replaces this
-        // interim with `<GeneratedSiteView locationId={site.id} />`.
-        <SectionCard title="Generated site view" bodyClassName="p-4">
-          <p className="text-sm text-bms-muted">
-            The generated site view arrives with F3.68. Until then, open the site dashboard.
-          </p>
-          <Link to={`/locations/${site.id}/dashboard`} className={linkClass}>
-            Open the site dashboard
-          </Link>
-        </SectionCard>
+        <GeneratedSiteView locationId={site.id} />
       )}
     </>
   );
