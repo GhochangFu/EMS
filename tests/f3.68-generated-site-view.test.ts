@@ -287,3 +287,115 @@ describe("F3.68 — the generated read's latest lookup is bounded by a literal w
     expect(service()).not.toMatch(/DISTINCT ON/);
   });
 });
+
+/**
+ * `F3.68` — migration `0084` (security review L1, owner ruling 2026-09-26): a
+ * BEFORE INSERT trigger refuses a non-null `headline_rank` from `bms_tenant`.
+ * A trigger, not a column grant: Drizzle's `.insert()` names `headline_rank` as
+ * `DEFAULT`, and a column grant would refuse onboarding's whole insert. The
+ * runtime claims live in `apps/api/src/database/role-grants.integration.spec.ts`;
+ * this is the static half. Comment lines are stripped before every scan, so the
+ * header's prose cannot satisfy a case. One claim per `it()`.
+ */
+describe("F3.68 — bms_tenant may not set headline_rank (migration 0084)", () => {
+  const GUARD_REL = "packages/db/drizzle/0084_point_keys_tenant_rank_guard.sql";
+  const GUARD_TAG = "0084_point_keys_tenant_rank_guard";
+  const guard = (): string => sqlOnly(read(GUARD_REL));
+
+  /** The function body between its two dollar quotes. */
+  const functionBody = (): string => {
+    const src = guard();
+    const start = src.indexOf("CREATE OR REPLACE FUNCTION bms.point_keys_refuse_tenant_headline_rank()");
+    expect(start, "the CREATE OR REPLACE FUNCTION is missing").toBeGreaterThanOrEqual(0);
+    const open = src.indexOf("$$", start);
+    const close = src.indexOf("$$", open + 2);
+    expect(close, "the function body is not closed").toBeGreaterThan(open);
+    return src.slice(open + 2, close);
+  };
+
+  it("is not scanning an empty or misnamed file", () => {
+    expect(existsSync(join(repoRoot, GUARD_REL)), `${GUARD_REL} must exist`).toBe(true);
+    expect(guard().length).toBeGreaterThan(400);
+  });
+
+  it("registers migration 0084 in the journal, after 0083 and before now", () => {
+    const journal = JSON.parse(read("packages/db/drizzle/meta/_journal.json")) as {
+      entries: Array<Record<string, unknown>>;
+    };
+    const entry = journal.entries.find((e) => e.tag === GUARD_TAG);
+    expect(entry, "migration 0084 must have a journal entry, or drizzle never runs it").toBeDefined();
+    expect(entry?.idx).toBe(84);
+    // 0083's `when` — the F4.94 class.
+    expect(entry?.when as number).toBeGreaterThan(1790355237346);
+    expect(entry?.when as number).toBeLessThan(Date.now());
+  });
+
+  it("the function names the tenant by current_user = 'bms_tenant'", () => {
+    expect(functionBody()).toMatch(/current_user\s*=\s*'bms_tenant'/);
+  });
+
+  it("the function refuses only a non-null rank (headline_rank IS NOT NULL)", () => {
+    expect(functionBody()).toMatch(/NEW\.headline_rank\s+IS\s+NOT\s+NULL/i);
+  });
+
+  it("the function raises SQLSTATE 42501 (insufficient_privilege)", () => {
+    expect(functionBody()).toMatch(/ERRCODE\s*=\s*'42501'/);
+  });
+
+  it("the function is SECURITY INVOKER — under DEFINER current_user is the owner", () => {
+    const src = guard();
+    expect(src).toMatch(/\bSECURITY\s+INVOKER\b/);
+  });
+
+  it("declares no SECURITY DEFINER statement outside the DO assertion", () => {
+    const beforeDo = guard().split("DO $$")[0] ?? "";
+    expect(beforeDo).not.toMatch(/\bSECURITY\s+DEFINER\b/i);
+  });
+
+  it("pins the function's search_path", () => {
+    expect(guard()).toMatch(/SET\s+search_path\s*=\s*pg_catalog,\s*pg_temp/);
+  });
+
+  it("the trigger is BEFORE INSERT ... FOR EACH ROW on bms.point_keys", () => {
+    expect(guard()).toMatch(
+      /CREATE TRIGGER point_keys_refuse_tenant_headline_rank\s+BEFORE INSERT ON bms\.point_keys\s+FOR EACH ROW\s+EXECUTE FUNCTION bms\.point_keys_refuse_tenant_headline_rank\(\)/,
+    );
+  });
+
+  it("drops the trigger if it exists before creating it (idempotent)", () => {
+    const src = guard();
+    const drop = src.indexOf("DROP TRIGGER IF EXISTS point_keys_refuse_tenant_headline_rank ON bms.point_keys;");
+    expect(drop, "the DROP TRIGGER IF EXISTS is missing").toBeGreaterThanOrEqual(0);
+    expect(src.indexOf("CREATE TRIGGER"), "CREATE TRIGGER must follow the DROP").toBeGreaterThan(drop);
+  });
+
+  it("brackets the function and trigger in SET ROLE bms_owner / RESET ROLE", () => {
+    const src = guard();
+    const setRole = src.indexOf("SET ROLE bms_owner;");
+    const createFn = src.indexOf("CREATE OR REPLACE FUNCTION");
+    const createTrigger = src.indexOf("CREATE TRIGGER");
+    const resetRole = src.indexOf("RESET ROLE;");
+    expect(setRole, "SET ROLE bms_owner; is missing").toBeGreaterThanOrEqual(0);
+    expect(createFn).toBeGreaterThan(setRole);
+    expect(resetRole, "RESET ROLE; must follow CREATE TRIGGER").toBeGreaterThan(createTrigger);
+  });
+
+  it("asserts in a DO block that the trigger exists and is enabled", () => {
+    const src = guard();
+    const doAt = src.lastIndexOf("DO $$");
+    expect(doAt, "the DO assertion block is missing").toBeGreaterThan(src.indexOf("RESET ROLE;"));
+    const block = src.slice(doAt);
+    expect(block).toContain("FROM pg_trigger");
+    expect(block).toContain("t.tgenabled = 'O'");
+    expect(block).toContain("RAISE EXCEPTION");
+  });
+
+  it("asserts in the DO block that the function is not SECURITY DEFINER", () => {
+    const block = guard().slice(guard().lastIndexOf("DO $$"));
+    expect(block).toMatch(/p\.prosecdef/);
+  });
+
+  it("issues no GRANT or REVOKE — the grants stay as 0059 left them", () => {
+    expect(guard()).not.toMatch(/^\s*(GRANT|REVOKE)\b/im);
+  });
+});

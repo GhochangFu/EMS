@@ -5,6 +5,10 @@ import {
   assertAuthCanReadPasswordHash,
   assertAuthCanUpdateOnlyLastLogin,
   assertAuthReachesOnlyIdentityTables,
+  assertFleetCanInsertARankedPointKey,
+  assertSuperuserCanInsertARankedPointKey,
+  assertTenantCanInsertAnUnrankedPointKey,
+  assertTenantIsRefusedARankedPointKey,
   assertFleetCannotReadPasswordHash,
   assertFleetIsDeniedPasswordHashAtRuntime,
   assertNoRoleCanInsertOrDeleteUsers,
@@ -104,6 +108,26 @@ describe.skipIf(!connectionString)("F4.16 — role grant matrix", () => {
 
     it("refuses bms_tenant an update and a delete of bms.point_keys", async () => {
       await assertTenantIsRefusedAPointKeyEditAtRuntime(pool as pg.Pool);
+    });
+  });
+
+  // `F3.68` / migration 0084 — one claim per `it()`, so each mutation reddens
+  // the case that owns it.
+  describe("a headline_rank on bms.point_keys is refused to bms_tenant only (0084)", () => {
+    it("lets bms_tenant insert a Drizzle-shaped point key with headline_rank as DEFAULT", async () => {
+      await assertTenantCanInsertAnUnrankedPointKey(pool as pg.Pool);
+    });
+
+    it("refuses bms_tenant a point key with headline_rank = 5, SQLSTATE 42501", async () => {
+      await assertTenantIsRefusedARankedPointKey(pool as pg.Pool);
+    });
+
+    it("lets bms_fleet insert a point key with headline_rank = 5", async () => {
+      await assertFleetCanInsertARankedPointKey(pool as pg.Pool);
+    });
+
+    it("lets the superuser (the seed) insert a point key with headline_rank = 5", async () => {
+      await assertSuperuserCanInsertARankedPointKey(pool as pg.Pool);
     });
   });
 
