@@ -367,19 +367,19 @@ export async function aNullSlugShowsTheGeneratedInterim(): Promise<void> {
 }
 
 /**
- * V13b — `dashboard` with a null slug links to no dashboard. It waits on a
- * body either branch renders, so it does not pass before the body exists.
- * The prefix keeps the trailing slash: the sidebar links `/dashboards`.
+ * V13b — `dashboard` with a null slug mounts no dashboard view and links to
+ * no dashboard. It waits on the generated body (V13a is its positive control),
+ * so it does not pass before the body exists. The mocked `SiteDashboardView`
+ * renders no link, so the mount check is what reddens when the null-slug
+ * guard is dropped. The prefix keeps the trailing slash: the sidebar links
+ * `/dashboards`.
  */
 export async function aNullSlugLinksToNoDashboard(): Promise<void> {
   stubReads(TWO_ORGS, DASHBOARD_WITHOUT_SLUG);
   renderAt("a1");
 
-  await waitFor(() => {
-    expect(
-      screen.queryByTestId("site-dashboard-view") ?? screen.queryByTestId("generated-site-view"),
-    ).not.toBeNull();
-  });
+  await screen.findByTestId("generated-site-view");
+  expect(screen.queryByTestId("site-dashboard-view")).toBeNull();
   expect(document.querySelectorAll('a[href^="/dashboards/"]')).toHaveLength(0);
 }
 
