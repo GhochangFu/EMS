@@ -878,7 +878,8 @@ Process (`AGENTS.md` §10).
 - **Still owed:** the AGENTS.md §6 sweep in its own `chore(agents):` PR
   (§9.10), and of the seven rows this item raised — `F1.15`, `F4.57`–`F4.62` —
   six remain: `F4.57` closed, and `F4.58` (the absent-reading counters) still
-  overlaps `F3.16`.
+  overlaps `F3.16`. *(2026-09-26: `F4.58` closed too — PR #580; it took the
+  log line and the per-point health half, and left alarms to `F3.16`.)*
 
 ### Ingest adapter framework (F1.1) — strangler migration complete
 - **Status:** ADR 0016 §6 **commits 2 and 3 landed** (PR #13, then PR #19 on
@@ -6212,3 +6213,29 @@ is `rsmoc`, agreed with `F4.157` (ADR 0077). CI green on the first run.
 **Cascade:** no row lists `F4.161` in *Depends*. No `chore(agents):` sweep
 owed (the compliance review found no AGENTS.md sentence that states the old
 rule).
+
+### `F4.58` — absent readings get a signal ✅ 2026-09-26
+
+PR #580, squash `500471e1`; plan `docs/plans/f4.58-absent-reading-signal.md`.
+No ADR (owner ruling Q0: the adapter reports through `context.logger`, the
+channel ADR 0016 §5 rule 9 names; the frozen adapter types are unchanged).
+
+The MQTT adapter dropped an absent reading before a `SourceSample` existed,
+so a dead field meter and a wrong mapping looked the same and nothing logged
+either. Now the adapter logs one `readings absent` line per message per
+affected station — `empty` (published but unreadable: the register did not
+answer) or `missing` (not in the payload: the mapping names a key the device
+never sends), with the first key of each. The host keeps last-seen per bound
+point, and the ingest health body gains `dark=<n>` and one `dark rtu=… key=…`
+line per point silent past `INGEST_STALE_AFTER_MS` on a live RTU — capped at
+50, same boot grace as `stale`, and the verdict stays `ok`. Every identifier
+in that body is now percent-encoded outside a safe set (security review L1,
+fixed in the PR by owner ruling).
+
+Verified on the live PHE feed: Bhutnirghat II, enabled on a scratch database
+only, logged `empty:1, firstEmpty:"s12_r01"` and read `dark=1` for `s12_r01`
+after the 300 s window; the five enabled RTUs on the stack read `dark=0`.
+Alarms and `prom-client` stay with `F3.16`.
+
+**Cascade:** no row lists `F4.58` in *Depends*. Owed separately: the
+`chore(agents):` sweep (AGENTS.md:937).
