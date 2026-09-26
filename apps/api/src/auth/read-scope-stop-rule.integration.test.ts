@@ -14,7 +14,9 @@ import type { ReadScopeSource } from "./access-scope";
 import {
   assertProbeMatchesScopeFromSource,
   assertReadableOrganizationIds,
+  assertScopeAssetGroupIdsAreExactly,
   assertScopeFailsClosedToNone,
+  assertScopeFallsThroughToAssetGroupKind,
   assertScopeFallsThroughToLocationGrant,
 } from "./read-scope-stop-rule.integration.spec";
 
@@ -70,10 +72,15 @@ describe.skipIf(!connectionString)("F4.161 — one read-scope source selection",
   let locInactiveId = "";
   let groupInactiveId = "";
 
-  const actors: Record<"vA" | "vB" | "vC" | "oP" | "oa" | "la" | "ga", Actor> = {
+  const actors: Record<"vA" | "vB" | "vC" | "vD" | "vE" | "oP" | "oa" | "la" | "ga", Actor> = {
     vA: { email: emailFor("va"), role: "viewer", id: "" },
     vB: { email: emailFor("vb"), role: "viewer", id: "" },
     vC: { email: emailFor("vc"), role: "viewer", id: "" },
+    // C2 (code review, owner ruled "keep []"): V_D/V_E each hold exactly one
+    // grant, on a source that reaches no active site — S11/S12 pin `[]`, not
+    // "no grant at all", against M1's old loop.
+    vD: { email: emailFor("vd"), role: "viewer", id: "" },
+    vE: { email: emailFor("ve"), role: "viewer", id: "" },
     oP: { email: emailFor("op"), role: "operator", id: "" },
     oa: { email: emailFor("oa"), role: "organization_admin", id: "" },
     la: { email: emailFor("la"), role: "location_admin", id: "" },
@@ -143,7 +150,7 @@ describe.skipIf(!connectionString)("F4.161 — one read-scope source selection",
     orgEmptyId = org.rows[0]!.id;
     const loc = await fleetPool.query<{ id: string }>(
       `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, active)
-       VALUES ($1, $2, $3, $4, 'site', 0, 0, false) RETURNING id`,
+       VALUES ($1, $2, $3, $4, 'rsmoc', 0, 0, false) RETURNING id`,
       [orgEmptyId, `F4161-INACTIVE-${RUN}`, `f4161-inactive-${RUN}`, "F4.161 fixture inactive site"],
     );
     locInactiveId = loc.rows[0]!.id;
@@ -192,10 +199,43 @@ describe.skipIf(!connectionString)("F4.161 — one read-scope source selection",
     await grantLocation(actors.vB.id, locInactiveId);
     await grantGroup(actors.vB.id, hvacGroupId);
     await grantGroup(actors.vC.id, groupInactiveId);
+    await grantOrg(actors.vD.id, orgEmptyId);
+    await grantLocation(actors.vE.id, locInactiveId);
     await grantOrg(actors.oP.id, phewbId);
     await grantOrg(actors.oa.id, orgEmptyId);
     await grantLocation(actors.la.id, locInactiveId);
     await grantGroup(actors.ga.id, groupInactiveId);
+
+    // A3 (code review F1): a positive control on each single-grant fixture, so
+    // S3/S11/S12's `[]` cannot be passing for "the actor holds no grant at
+    // all" instead of "the actor's one grant reaches no active site".
+    const oneGroupGrant = await superPool.query<{ asset_group_id: string }>(
+      "SELECT asset_group_id FROM bms.user_asset_group_access WHERE user_id = $1",
+      [actors.vC.id],
+    );
+    if (oneGroupGrant.rows.length !== 1 || oneGroupGrant.rows[0]?.asset_group_id !== groupInactiveId) {
+      throw new Error(
+        "F4.161 A3: V_C must hold exactly one user_asset_group_access row, pointing to GROUP_INACTIVE.",
+      );
+    }
+    const oneOrgGrant = await superPool.query<{ organization_id: string }>(
+      "SELECT organization_id FROM bms.user_organization_access WHERE user_id = $1",
+      [actors.vD.id],
+    );
+    if (oneOrgGrant.rows.length !== 1 || oneOrgGrant.rows[0]?.organization_id !== orgEmptyId) {
+      throw new Error(
+        "F4.161 A3: V_D must hold exactly one user_organization_access row, pointing to ORG_EMPTY.",
+      );
+    }
+    const oneLocationGrant = await superPool.query<{ location_id: string }>(
+      "SELECT location_id FROM bms.user_location_access WHERE user_id = $1",
+      [actors.vE.id],
+    );
+    if (oneLocationGrant.rows.length !== 1 || oneLocationGrant.rows[0]?.location_id !== locInactiveId) {
+      throw new Error(
+        "F4.161 A3: V_E must hold exactly one user_location_access row, pointing to LOC_INACTIVE.",
+      );
+    }
   });
 
   afterAll(async () => {
@@ -265,6 +305,25 @@ describe.skipIf(!connectionString)("F4.161 — one read-scope source selection",
 
   it("S9: currentUser for the inactive-group viewer fails closed to none", async () => {
     await assertScopeFailsClosedToNone(svc, jwt(actors.vC));
+  });
+
+  it("S10a: currentUser for the inactive-site-plus-group viewer is an asset_group scope", async () => {
+    await assertScopeFallsThroughToAssetGroupKind(svc, jwt(actors.vB));
+  });
+
+  it("S10b: that asset_group scope's ids are exactly the granted HVAC group", async () => {
+    await assertScopeAssetGroupIdsAreExactly(svc, jwt(actors.vB), hvacGroupId);
+  });
+
+  // --- security review Low 2 / code review C2: [] means "reaches no active
+  // site", not "holds no grant" (owner ruling 6) ------------------------------
+
+  it("S11: a viewer with only an org grant on ORG_EMPTY reads no organization", async () => {
+    await assertReadableOrganizationIds(svc, jwt(actors.vD), []);
+  });
+
+  it("S12: a viewer with only a location grant on LOC_INACTIVE reads no organization", async () => {
+    await assertReadableOrganizationIds(svc, jwt(actors.vE), []);
   });
 
   // --- the probe equals scopeFromSource's "has a location or asset" ----------

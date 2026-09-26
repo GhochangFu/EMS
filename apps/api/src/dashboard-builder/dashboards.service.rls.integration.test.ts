@@ -277,6 +277,28 @@ describe.skipIf(!connectionString)(
     }, 60_000);
 
     afterAll(async () => {
+      // F4.161 security review Low 1: this cleanup must not be skipped when an
+      // earlier delete in this afterAll throws — it runs first, inside its own
+      // try/catch, and any error is recorded and thrown only after the pools
+      // close (the `attempt` pattern of read-scope-stop-rule.integration.test.ts).
+      const f4161Errors: unknown[] = [];
+      try {
+        if (f4161ViewerIdForCleanup) {
+          await superuserPool.query(`DELETE FROM bms.user_organization_access WHERE user_id = $1`, [
+            f4161ViewerIdForCleanup,
+          ]);
+          await superuserPool.query(`DELETE FROM bms.user_location_access WHERE user_id = $1`, [
+            f4161ViewerIdForCleanup,
+          ]);
+          await superuserPool.query(`DELETE FROM bms.users WHERE id = $1`, [f4161ViewerIdForCleanup]);
+        }
+        if (f4161OrgIdForCleanup) {
+          await ownerPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [f4161OrgIdForCleanup]);
+        }
+      } catch (err) {
+        f4161Errors.push(err);
+      }
+
       if (dashboardIds.length > 0) {
         await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [dashboardIds]);
         await ownerPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [dashboardIds]);
@@ -303,21 +325,12 @@ describe.skipIf(!connectionString)(
       if (n2LeakOrgIdForCleanup) {
         await ownerPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [n2LeakOrgIdForCleanup]);
       }
-      if (f4161ViewerIdForCleanup) {
-        await superuserPool.query(`DELETE FROM bms.user_organization_access WHERE user_id = $1`, [
-          f4161ViewerIdForCleanup,
-        ]);
-        await superuserPool.query(`DELETE FROM bms.user_location_access WHERE user_id = $1`, [
-          f4161ViewerIdForCleanup,
-        ]);
-        await superuserPool.query(`DELETE FROM bms.users WHERE id = $1`, [f4161ViewerIdForCleanup]);
-      }
-      if (f4161OrgIdForCleanup) {
-        await ownerPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [f4161OrgIdForCleanup]);
-      }
       await Promise.all(
         [ownerPool, superuserPool, tenantPool, authPool].filter(Boolean).map((p) => p.end()),
       );
+      if (f4161Errors.length > 0) {
+        throw new AggregateError(f4161Errors, `F4.161 U4 cleanup: ${f4161Errors.length} delete(s) failed`);
+      }
     }, 60_000);
 
     it("routes create() onto the tenant pool only, and stamps the audit row correctly", async () => {

@@ -63,6 +63,29 @@ export async function assertScopeFailsClosedToNone(
 }
 
 /**
+ * S10a: an inactive location grant beside an active asset-group grant falls
+ * through to the asset-group source — `currentUser` reports `kind:
+ * "asset_group"`, not the inactive location's `"location"`.
+ */
+export async function assertScopeFallsThroughToAssetGroupKind(
+  svc: AccessControlService,
+  jwt: JwtPayload,
+): Promise<void> {
+  const { scope } = await svc.currentUser(jwt);
+  expect(scope.kind).toBe("asset_group");
+}
+
+/** S10b: the asset-group scope's ids are exactly the granted group, not the fallback location's. */
+export async function assertScopeAssetGroupIdsAreExactly(
+  svc: AccessControlService,
+  jwt: JwtPayload,
+  assetGroupId: string,
+): Promise<void> {
+  const { scope } = await svc.currentUser(jwt);
+  expect(scope.assetGroups.map((group) => group.id)).toEqual([assetGroupId]);
+}
+
+/**
  * E1–E9: the `LIMIT 1` probe answers exactly what `scopeFromSource` would —
  * the source yields iff its scope has a location or an asset.
  */
