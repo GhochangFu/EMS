@@ -78,11 +78,15 @@ async function nameOnlyTurn(): Promise<ChatTurnResult> {
   return ruleBasedTurn("Lotapata", {}, "location");
 }
 
-/** The draft the chat holds after {@link nameOnlyTurn}, as `mergeDraft` stores it. */
+/**
+ * The draft the chat holds after {@link nameOnlyTurn}: its patch stored through
+ * the real `mergeDraft`, as `OnboardingService.chat` stores it, and the phase
+ * the turn reported.
+ */
 async function draftAwaitingType(): Promise<{ draft: OnboardingDraft; phase: OnboardingPhase }> {
   const first = await nameOnlyTurn();
   return {
-    draft: { location: first.draftPatch.location } as OnboardingDraft,
+    draft: serviceWith(FOUR).mergeDraft({}, first.draftPatch) as OnboardingDraft,
     phase: first.currentPhase,
   };
 }
@@ -246,15 +250,19 @@ function replyWithLocationType(type: string): string {
   });
 }
 
-/** One turn through the OpenAI branch with `reply` as the model's answer. */
-async function openAiTurn(captured: OpenAiCapture, reply: string): Promise<ChatTurnResult> {
+/** One turn through the OpenAI branch with `reply` as the model's answer, against the stored `draft`. */
+async function openAiTurn(
+  captured: OpenAiCapture,
+  reply: string,
+  draft: OnboardingDraft = {},
+): Promise<ChatTurnResult> {
   captured.requests.length = 0;
   const savedReply = captured.reply;
   const savedKey = process.env.OPENAI_API_KEY;
   captured.reply = reply;
   process.env.OPENAI_API_KEY = "not-a-real-key";
   try {
-    const turn = await serviceWith(FOUR).handleTurn("Tell me about the site", {}, "location", "Ion Exchange");
+    const turn = await serviceWith(FOUR).handleTurn("Tell me about the site", draft, "location", "Ion Exchange");
     // The catch around the OpenAI branch turns a broken mock into a green
     // rule-based answer, so every case first proves the model was asked.
     assert(captured.requests.length === 1, "the OpenAI branch must have run");
@@ -297,4 +305,117 @@ export async function assertOpenAiPromptListsTheActiveCodes(captured: OpenAiCapt
   for (const row of FOUR) {
     assert(system.includes(row.code), `the system prompt names ${row.code}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// F4.157 review — a stored type. Each case starts from a stored draft, takes
+// the first phase from `inferPhase` as `PATCH :id/draft` does, and stores each
+// turn through the real `mergeDraft`, never through a hand-built draft.
+// ---------------------------------------------------------------------------
+
+/** A workbook with a blank name cell and a blank code cell, and a type. */
+const TYPED_BLANK = {
+  location: { name: "", slug: "", code: "", type: "pump_station", latitude: 22.3, longitude: 87.3 },
+} as OnboardingDraft;
+
+/** A named, typed location whose code and slug a `PATCH :id/draft` cleared. */
+const TYPED_NAMED_NO_CODE = {
+  location: { name: "Lotapata", slug: "", code: "", type: "smoc_campus", latitude: 22.3, longitude: 87.3 },
+} as OnboardingDraft;
+
+/** One rule-based turn from `stored`, and the draft `mergeDraft` stores after it. */
+async function storedTurn(
+  message: string,
+  stored: OnboardingDraft,
+  phase: OnboardingPhase = new OnboardingValidateService().inferPhase(stored),
+): Promise<{ turn: ChatTurnResult; draft: OnboardingDraft }> {
+  const turn = await ruleBasedTurn(message, stored, phase);
+  return { turn, draft: serviceWith(FOUR).mergeDraft(stored, turn.draftPatch) as OnboardingDraft };
+}
+
+/** R1 — a name typed for a location whose type is stored is not asked "Which type…?". */
+export async function assertStoredTypeIsNotAskedFor(): Promise<void> {
+  const { turn } = await storedTurn("Lotapata", TYPED_BLANK);
+  assert(
+    turn.assistantMessage === "Got it — location **Lotapata**. Which communication protocol will RTU 1 use?",
+    `a stored type is not asked for again, got "${turn.assistantMessage}"`,
+  );
+}
+
+/** R2 — the type-word turn that follows never renames the location to "Pump station". */
+export async function assertStoredTypeKeepsTheNameThroughTwoTurns(): Promise<void> {
+  const first = await storedTurn("Lotapata", TYPED_BLANK);
+  const second = await storedTurn("Pump station", first.draft, first.turn.currentPhase);
+  assert(
+    second.draft.location?.name === "Lotapata",
+    `the name typed in turn 1 survives turn 2, got ${JSON.stringify(second.draft.location?.name)}`,
+  );
+}
+
+/** R3 — the turn does not report a missing type the stored draft holds. */
+export async function assertStoredTypeReportsNoMissingType(): Promise<void> {
+  const { turn } = await storedTurn("Lotapata", TYPED_BLANK);
+  assert(Array.isArray(turn.validationErrors), "the turn reports its validation");
+  const missing = (turn.validationErrors ?? []).filter((e) => e.message === "Location type is required");
+  assert(missing.length === 0, `a stored type is not reported missing, got ${JSON.stringify(missing)}`);
+}
+
+/**
+ * R4 — a type reply to a named, typed location never renames it. The stored
+ * location has a name and a type, and the message names a type: it is a type
+ * reply, whether or not the stored draft already holds one.
+ */
+export async function assertTypeReplyToATypedLocationKeepsTheName(): Promise<void> {
+  const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
+  assert(
+    draft.location?.name === "Lotapata",
+    `a type reply never renames the location, got ${JSON.stringify(draft.location?.name)}`,
+  );
+}
+
+/** R4 — the same reply sets the type it names. */
+export async function assertTypeReplyToATypedLocationSetsTheType(): Promise<void> {
+  const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
+  assert(
+    draft.location?.type === "pump_station",
+    `the reply sets the type it names, got ${JSON.stringify(draft.location?.type)}`,
+  );
+}
+
+/**
+ * R4 — a kept location's empty code and slug are derived from its name. A
+ * stored `""` spread over the derived value would leave the phase on
+ * `location`, and the next message ("MQTT") would be read as a new name.
+ */
+export async function assertTypeReplyFillsAnEmptyStoredCode(): Promise<void> {
+  const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
+  assert(
+    draft.location?.code === "LOTAPATA" && draft.location.slug === "lotapata",
+    `an empty stored code and slug are derived, got ${JSON.stringify(draft.location)}`,
+  );
+}
+
+/**
+ * R5 — the OpenAI branch: a model patch whose location loses its type (here an
+ * inactive one, dropped) does not report a missing type the stored draft
+ * holds. The turn validates the draft `mergeDraft` will store, where the
+ * stored type survives.
+ */
+export async function assertOpenAiPatchWithoutTypeKeepsTheStoredType(
+  captured: OpenAiCapture,
+): Promise<void> {
+  const stored = {
+    location: {
+      name: "Lotapata",
+      slug: "lotapata",
+      code: "LOTAPATA",
+      type: "pump_station",
+      latitude: 22.3,
+      longitude: 87.3,
+    },
+  } as OnboardingDraft;
+  const turn = await openAiTurn(captured, replyWithLocationType("space_port"), stored);
+  assert(Array.isArray(turn.validationErrors), "the turn reports its validation");
+  const missing = (turn.validationErrors ?? []).filter((e) => e.message === "Location type is required");
+  assert(missing.length === 0, `the stored type survives the patch, got ${JSON.stringify(missing)}`);
 }

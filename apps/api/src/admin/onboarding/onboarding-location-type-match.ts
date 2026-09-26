@@ -11,7 +11,7 @@
  * Kept out of `onboarding-chat.service.ts` because that file sits at AGENTS.md
  * §4.5's 1,000-line ceiling.
  */
-import type { LocationTypeDto } from "@bms/shared";
+import type { LocationTypeDto, OnboardingDraft } from "@bms/shared";
 
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
@@ -79,4 +79,34 @@ export function withoutInactiveLocationType(
   const location = { ...patch.location };
   delete location.type;
   return { ...patch, location };
+}
+
+type DraftLocation = NonNullable<OnboardingDraft["location"]>;
+
+/**
+ * What one rule-based location turn keeps and which type it resolves.
+ *
+ * - `type` is the type the message names, **else the stored one**. The patch
+ *   carries it, so a turn that renames a typed location does not drop its type,
+ *   and the chat asks "Which type…?" only when this is absent. It is never
+ *   defaulted.
+ * - `kept` is the stored location when the message must not rename it: the
+ *   stored location has a name and either no type yet (the message answers
+ *   "Which type…?") or the message names a type (it is a type reply). A type
+ *   reply is never read as a new name, whether or not a type is stored.
+ *
+ * `F4.157` review: this was keyed on the stored location lacking a type alone,
+ * and the patch carried a type only when this message matched one. A stored
+ * `{ name: "", type: "pump_station" }` then asked for a type it held, and the
+ * answer "Pump station" renamed the location to "Pump station".
+ */
+export function resolveLocationTurn(
+  message: string,
+  stored: DraftLocation | undefined,
+  types: readonly LocationTypeDto[],
+): { type?: string; kept?: DraftLocation } {
+  const matched = matchLocationType(message, types);
+  const type = matched ?? stored?.type;
+  const kept = stored?.name && (!stored.type || matched) ? stored : undefined;
+  return { type, kept };
 }

@@ -27,6 +27,7 @@ import {
   cutToBound,
   cutToBoundWithHashSuffix,
 } from "./onboarding-draft-caps";
+import { mergeDraftPatch } from "./onboarding-draft-merge";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import * as locationTypes from "./onboarding-location-type-match";
 // F4.107: the draft goes into the prompt through this, not through
@@ -384,7 +385,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
           "assets",
           ["confirm assets", "View draft"],
           message,
-          { ...draft, ...patch },
+          draft,
         );
       }
     }
@@ -401,12 +402,11 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
     }
 
     if (phase === "location" || !draft.location?.name) {
-      // F4.157 / ADR 0077 decision 7: the type is matched, never defaulted. A
-      // named location with no type (`awaiting`) is answering "Which type…?", so
-      // it is spread last below and this message never renames it.
+      // F4.157 / ADR 0077 decision 7: the type is matched or kept, never
+      // defaulted, and a type reply never renames the location (`kept` is
+      // spread over the derived fields below). See `resolveLocationTurn`.
       const types = await this.vocabularies.listLocationTypes();
-      const typeCode = locationTypes.matchLocationType(message, types);
-      const awaiting = draft.location?.name && !draft.location.type ? draft.location : undefined;
+      const { type, kept } = locationTypes.resolveLocationTurn(message, draft.location, types);
       // F4.104 — **this branch is the draft's default producer, not a
       // fallback.** `.env.example` ships `OPENAI_API_KEY=` empty, so
       // `handleTurn` reaches here on every turn of an ordinary deployment. And
@@ -476,8 +476,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       // non-`[A-Z0-9]` unit, surrogate halves included, to a separator — but
       // both go through it anyway, so reordering the two steps cannot
       // reintroduce the split.
-      const name =
-        awaiting?.name ?? cutToBound(message.trim(), ONBOARDING_DRAFT_STRING_MAX["location.name"]);
+      const name = kept?.name ?? cutToBound(message.trim(), ONBOARDING_DRAFT_STRING_MAX["location.name"]);
       const slug = cutToBoundWithHashSuffix(
         name
           .toLowerCase()
@@ -490,21 +489,23 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         name.toUpperCase().replace(/[^A-Z0-9]+/g, "_"),
         ONBOARDING_DRAFT_STRING_MAX["location.code"],
       );
+      // A kept location's non-empty slug and code win; an empty one (a blank
+      // workbook cell, a `PATCH` that cleared it) is derived from the name.
       patch.location = {
         name,
-        slug: slug || "location",
-        code: code || "LOC",
         latitude: draft.location?.latitude ?? -25.7,
         longitude: draft.location?.longitude ?? 28.2,
         province: draft.location?.province,
         capital: draft.location?.capital,
-        ...awaiting,
-        ...(typeCode ? { type: typeCode } : {}),
+        ...kept,
+        slug: kept?.slug || slug || "location",
+        code: kept?.code || code || "LOC",
+        ...(type ? { type } : {}),
       };
-      if (!typeCode) {
+      if (!type) {
         const ask = locationTypes.locationTypeQuestion(name);
         const labels = types.map((row) => row.label);
-        return this.finalizeTurn(ask, patch, "location", labels, message, { ...draft, ...patch });
+        return this.finalizeTurn(ask, patch, "location", labels, message, draft);
       }
       return this.finalizeTurn(
         `Got it — location **${name}**. Which communication protocol will RTU 1 use?`,
@@ -512,7 +513,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         "rtu",
         ["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"],
         message,
-        { ...draft, ...patch },
+        draft,
       );
     }
 
@@ -540,7 +541,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         "point_keys",
         ["Add point key kw", "View draft", "Add another RTU"],
         message,
-        { ...draft, rtus: patch.rtus },
+        draft,
       );
     }
 
@@ -555,7 +556,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         "assets",
         ["One asset", "View draft"],
         message,
-        { ...draft, ...patch },
+        draft,
       );
     }
 
@@ -615,7 +616,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         "mappings",
         ["auto map", "View draft"],
         message,
-        { ...draft, ...patch },
+        draft,
       );
     }
 
@@ -629,7 +630,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         "review",
         ["create it", "View draft", "Validate"],
         message,
-        { ...draft, ...patch },
+        draft,
       );
     }
 
@@ -649,9 +650,12 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
     currentPhase: OnboardingPhase,
     suggestedReplies: string[] | undefined,
     _userMessage: string,
-    mergedDraft: OnboardingDraft,
+    draft: OnboardingDraft,
   ): ChatTurnResult {
-    const validation = this.validateService.validate(mergedDraft);
+    // F4.157 review: the draft `mergeDraft` will store, merged by the same
+    // helper — never a shallow `{ ...draft, ...patch }`, which drops the stored
+    // location fields a location patch does not carry.
+    const validation = this.validateService.validate(mergeDraftPatch(draft, draftPatch));
     const phase = validation.suggestedPhase ?? currentPhase;
     let autoOpenPreview = false;
     let autoOpenReason: OnboardingAutoOpenReason | undefined;
@@ -753,18 +757,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       typeof current === "object" && current !== null
         ? (cloneJson(current) as OnboardingDraft & { _secrets?: Record<string, string> })
         : {};
-    const merged: OnboardingDraft = {
-      ...base,
-      ...patch,
-      location: patch.location ? { ...base.location, ...patch.location } : base.location,
-      rtus: patch.rtus ?? base.rtus,
-      pointKeys: patch.pointKeys ?? base.pointKeys,
-      assets: patch.assets ?? base.assets,
-      assetPoints: patch.assetPoints ?? base.assetPoints,
-      onboardingMeta: patch.onboardingMeta
-        ? { ...base.onboardingMeta, ...patch.onboardingMeta }
-        : base.onboardingMeta,
-    };
+    const merged = mergeDraftPatch(base, patch);
 
     let stored: OnboardingDraft & { _secrets?: Record<string, EncryptedBlob> } =
       merged as OnboardingDraft & { _secrets?: Record<string, EncryptedBlob> };

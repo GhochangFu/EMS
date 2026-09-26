@@ -27,13 +27,20 @@ import {
   assertNameWithoutTypeAsksForTheType,
   assertOpenAiPatchKeepsAnActiveType,
   assertOpenAiPatchLosesAnInactiveType,
+  assertOpenAiPatchWithoutTypeKeepsTheStoredType,
   assertOpenAiPromptListsTheActiveCodes,
+  assertStoredTypeIsNotAskedFor,
+  assertStoredTypeKeepsTheNameThroughTwoTurns,
+  assertStoredTypeReportsNoMissingType,
   assertTypeQuestionPatchesNoType,
   assertTypeQuestionSuggestsTheActiveLabels,
   assertTypeReplyAsksTheRtuQuestion,
+  assertTypeReplyFillsAnEmptyStoredCode,
   assertTypeReplyKeepsTheStoredIdentifiers,
   assertTypeReplyMatchesALabel,
   assertTypeReplySetsTheType,
+  assertTypeReplyToATypedLocationKeepsTheName,
+  assertTypeReplyToATypedLocationSetsTheType,
   assertTypeWordMatchesWholeWords,
   assertUnmatchedReplyAsksAgain,
 } from "./onboarding-chat-location-type.spec";
@@ -85,7 +92,37 @@ describe("OnboardingChatService.handleTurn — the location type (F4.157), rule-
   });
 });
 
+describe("OnboardingChatService.handleTurn — a stored location type (F4.157 review), through mergeDraft", () => {
+  it("does not ask for a type the stored draft holds", async () => {
+    await assertStoredTypeIsNotAskedFor();
+  });
+
+  it("keeps the name typed in turn 1 through a type-word turn 2", async () => {
+    await assertStoredTypeKeepsTheNameThroughTwoTurns();
+  });
+
+  it("does not report a stored type as missing", async () => {
+    await assertStoredTypeReportsNoMissingType();
+  });
+
+  it("never renames a named, typed location from a type reply", async () => {
+    await assertTypeReplyToATypedLocationKeepsTheName();
+  });
+
+  it("sets the type a reply names on a typed location", async () => {
+    await assertTypeReplyToATypedLocationSetsTheType();
+  });
+
+  it("derives a kept location's empty code and slug from its name", async () => {
+    await assertTypeReplyFillsAnEmptyStoredCode();
+  });
+});
+
 describe("OnboardingChatService.handleTurn — the location type (F4.157), OpenAI", () => {
+  it("does not report a stored type as missing when the model's patch carries none", async () => {
+    await assertOpenAiPatchWithoutTypeKeepsTheStoredType(captured);
+  });
+
   it("drops a location.type that is not an active code from the model's patch", async () => {
     await assertOpenAiPatchLosesAnInactiveType(captured);
   });
