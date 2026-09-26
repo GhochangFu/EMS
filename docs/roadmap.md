@@ -6125,3 +6125,60 @@ generated view. The fixture was removed. CI green on the first run.
 **Cascade:** no row lists `F3.69` in *Depends*. `F3.70` merges second and
 resolves the `SiteViewBody` seam. Raised: `F4.161` (P3). Owed separately:
 the `chore(agents):` sweep, if it finds a mention of the interim card.
+
+### `F3.70` — the built-in SMOC site view (ADR 0076 decision 9) ✅ 2026-09-26
+
+PR #574, squash `852cc1b1`; plan `docs/plans/f3.70-smoc-site-view.md`.
+ADR 0076 decision 9.
+
+For `RSMOC-WC` in `ESKOM` only, the seven SMOC pages are now tabs at
+`/control-room/site/:locationId/{overview,sld,ups,battery,hvac,env,it}`,
+hosted by the site page behind one shared `SchematicTelemetryProvider`. The
+seven `/cr-*` routes redirect to the matching tab through
+`SmocLegacyRedirect`, which decides from data; a caller who cannot read the
+site lands on `/control-room` instead. Access is "can read the site" — the
+resolve read's 404, the KPI list, and `ControlRoomScopeRoute` all apply
+unchanged. The per-area asset-group rule filters the tabs; a disallowed tab
+shows "Outside your asset-group scope" and does not mount its content. An
+unknown tab, or a tab URL on a site that is not the SMOC site, redirects to
+the bare site path. `code` was added to the location KPI row (`GET
+/dashboard/locations` and the `/locations/:id` KPI half). `F3.69` (#572)
+merged first; `F3.70` resolved `SiteViewBody` so that both its dashboard
+branch and this row's builtin branch stand together.
+
+This row also removes the `F4.156` interim gate — `ControlRoomRoute`,
+`useControlRoomAccess`, `canAccessControlRoomPath`, `hasAnyControlRoomAsset`,
+and its route test all go, removed by F3.70 (#574). The seven SMOC page
+contents moved to `apps/web/src/components/control-room/smoc/`, and
+`pnpm --filter web smoke:cr` — broken since `F3.66` merged on main — was
+repaired.
+
+The owner ruled OQ1 (the site page hosts the content), OQ2 (the scoped-out
+card), OQ3 (`code` on the KPI row), OQ4 (no access goes to `/control-room`),
+OQ5 (a stale or unknown tab URL goes to the bare site path) and OQ6 (move
+the files). Review C1 and security L1 both turned on the same fact: the
+SMOC site is `code = RSMOC-WC` AND `organization.code = ESKOM` (`isSmocSite`),
+so the SMOC tabs mount only there — any other `builtin` site renders the
+generated view instead. The smoke-script fix was ruled in scope for this row.
+
+Verified: named mutations per unit; four review false greens closed; after
+the rebase, `web` 1596 passed and 7 failed (only the two `F4.160` files under
+`pages/admin/`), `repo` 1228 passed, and `typecheck`, `typecheck:tests` and
+`smoke:cr` were all green. The overview spec no longer renders `AppShell`,
+so `F4.160` now names two web spec files, not three. The `code` field was
+proved on both KPI reads by integration cases on a scratch database. Code,
+security and compliance reviews all ran, findings fixed; the stack was
+rebuilt `--no-cache` (bundle `index-B4rfERB_`). Browser: `phe-admin` 6/6 —
+`RSMOC-WC` is absent from the site list, `RSMOC-WC` itself and its `/hvac`
+URL both answer "not available", and `/cr-overview` / `/cr-hvac` land on the
+PHEWB overview; `admin` 8/8 — seven tabs, a live HVAC value, `/cr-hvac` and
+`/cr-overview` land on their matching tabs, a hard reload keeps the tab, and
+`/foo` redirects to the site in 210 ms; `wc-hvac-admin` — two tabs only,
+`/sld` and `/cr-sld` show the scoped-out card with no schematic, `/hvac`
+renders. CI green on the first run.
+
+**Cascade:** ADR 0076's rows `F3.66`–`F3.70` are now all `✅`. Open after
+this run: `F4.157` (the location-type lookup table, still needs its own
+ADR), `F4.160` (now two web spec files instead of three), and `F4.161`
+(P3, in build by another session). No row lists `F3.70` in *Depends*. Owed
+separately: the `chore(agents):` sweep.
