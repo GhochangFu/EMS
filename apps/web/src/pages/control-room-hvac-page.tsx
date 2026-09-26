@@ -196,7 +196,7 @@ function unitBoxClass(status: HvacStatus): string {
   return "fill-white stroke-bms-green";
 }
 
-function ControlRoomHvacContent() {
+export function ControlRoomHvacContent() {
   const rulesQuery = useQuery({
     queryKey: ["rules", "cr-hvac"],
     queryFn: fetchRules,

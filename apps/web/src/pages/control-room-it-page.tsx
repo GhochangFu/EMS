@@ -163,7 +163,7 @@ function mergeStatus(states: RuleMatchState[]): RuleMatchState {
   );
 }
 
-function ControlRoomItContent() {
+export function ControlRoomItContent() {
   const rulesQuery = useQuery({
     queryKey: ["rules"],
     queryFn: fetchRules,

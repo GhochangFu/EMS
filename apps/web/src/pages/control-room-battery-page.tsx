@@ -225,7 +225,7 @@ function cellClass(status: BatteryStatus): string {
   return "border-bms-green/20 bg-bms-green/10 text-bms-green";
 }
 
-function ControlRoomBatteryContent() {
+export function ControlRoomBatteryContent() {
   const rulesQuery = useQuery({
     queryKey: ["rules", "cr-battery"],
     queryFn: fetchRules,

@@ -225,7 +225,7 @@ function markerFill(status: EnvStatus): string {
   return "#22c55e";
 }
 
-function ControlRoomEnvContent() {
+export function ControlRoomEnvContent() {
   const rulesQuery = useQuery({
     queryKey: ["rules", "cr-env"],
     queryFn: fetchRules,

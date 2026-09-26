@@ -133,7 +133,7 @@ function deriveBreakerRuleState(
     : { status: "normal", matchedRule: null, stale: false };
 }
 
-function ControlRoomSldContent() {
+export function ControlRoomSldContent() {
   const rulesQuery = useQuery({
     queryKey: ["rules"],
     queryFn: fetchRules,

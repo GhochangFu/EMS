@@ -232,7 +232,7 @@ function capacityKw(loadPct: number | null, capacityKva: number): number | null 
   return loadPct == null ? null : (loadPct / 100) * capacityKva * 0.9;
 }
 
-function ControlRoomUpsContent() {
+export function ControlRoomUpsContent() {
   const [tab, setTab] = useState<UpsTab>("CR-UPS-1");
   const rulesQuery = useQuery({
     queryKey: ["rules", "cr-ups"],

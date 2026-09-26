@@ -1,8 +1,23 @@
 import { Link } from "react-router-dom";
 
+import { smocTabPath, type SmocTabKey } from "../../lib/smoc-pages";
+
+/**
+ * `F3.70` U3 — the link to one SMOC tab on this site. The `locationId` is
+ * empty only while the content is still served at `/cr-overview`, which has
+ * no `:locationId`; the old `/cr-*` path keeps the link working there.
+ * Dead from U5a, when every `/cr-*` route redirects; U5b removes the branch.
+ */
+function tabPath(locationId: string, tab: SmocTabKey): string {
+  return locationId ? smocTabPath(locationId, tab) : `/cr-${tab}`;
+}
+
 export function QuickDrilldown({
+  locationId,
   access,
 }: {
+  /** `F3.70` U3 — the site whose SMOC tabs the six links target. */
+  locationId: string;
   access: {
     electrical: boolean;
     it: boolean;
@@ -17,12 +32,12 @@ export function QuickDrilldown({
         Quick Drilldown
       </h2>
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
-        <DrilldownItem enabled={access.electrical} to="/cr-sld" label="Electrical SLD" />
-        <DrilldownItem enabled={access.it} to="/cr-it" label="IT & Racks" />
-        <DrilldownItem enabled={access.upsBattery} to="/cr-ups" label="UPS Monitoring" />
-        <DrilldownItem enabled={access.upsBattery} to="/cr-battery" label="Battery Bank" />
-        <DrilldownItem enabled={access.hvac} to="/cr-hvac" label="HVAC System" />
-        <DrilldownItem enabled={access.environment} to="/cr-env" label="Environment" />
+        <DrilldownItem enabled={access.electrical} to={tabPath(locationId, "sld")} label="Electrical SLD" />
+        <DrilldownItem enabled={access.it} to={tabPath(locationId, "it")} label="IT & Racks" />
+        <DrilldownItem enabled={access.upsBattery} to={tabPath(locationId, "ups")} label="UPS Monitoring" />
+        <DrilldownItem enabled={access.upsBattery} to={tabPath(locationId, "battery")} label="Battery Bank" />
+        <DrilldownItem enabled={access.hvac} to={tabPath(locationId, "hvac")} label="HVAC System" />
+        <DrilldownItem enabled={access.environment} to={tabPath(locationId, "env")} label="Environment" />
         {["Security", "Trends"].map((label) => (
           <span key={label} className="cursor-not-allowed rounded border border-gray-200 p-3 text-bms-muted">
             {label} · deferred
