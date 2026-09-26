@@ -465,3 +465,20 @@ export async function assertLocationKpiCodeIsLocationsCode(client: pg.PoolClient
     `expected code ${site.tag}-LOC, got ${JSON.stringify(got)}`,
   );
 }
+
+/**
+ * Case 15 — `F3.70`: `locationDashboard` (the `/locations/:id` read) carries
+ * the same `code` through its `...card` spread, not a copy from the name.
+ */
+export async function assertLocationDashboardCodeIsLocationsCode(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const dto = await service(client).locationDashboard(site.locationId, {
+    locationIds: [site.locationId],
+    assetIds: null,
+  });
+  const got = dto?.code;
+  assert(
+    got === `${site.tag}-LOC`,
+    `expected locationDashboard code ${site.tag}-LOC, got ${JSON.stringify(got)}`,
+  );
+}
