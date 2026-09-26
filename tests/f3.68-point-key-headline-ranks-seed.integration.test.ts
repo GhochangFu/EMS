@@ -24,17 +24,23 @@ import {
  *    against a real `UPDATE … WHERE headline_rank IS NULL`, not reasoned
  *    about. The adjacent positive control is a fresh matching code in the
  *    SAME call, so "nothing changed" cannot pass by the call being a no-op.
- * 3. **I3** — the `_` in `%\_on` is a literal underscore, escaped, not the
- *    `LIKE` single-character wildcard. Only Postgres's own `LIKE` semantics
- *    can prove that; a string-contains check on the SQL text cannot.
+ * 3. **I3** — the `_` in `%\_on` and in `breaker\_%` is a literal underscore,
+ *    escaped, not the `LIKE` single-character wildcard. Only Postgres's own
+ *    `LIKE` semantics can prove that; a string-contains check on the SQL text
+ *    cannot.
  *
  * Connection `"owner"`: `pnpm db:seed` itself runs as `bms_owner`
  * (`seed-tenant.ts`), and `bms.point_keys` carries no policy or FORCE flag to
  * differ under fleet (`0057`/`0059`), so `owner` matches the real seed path
  * exactly.
  *
- * Per-run fixture codes only — `f368-<run>-*` — never a catalog code, and
- * every fixture code this suite inserts is deleted in `afterAll`.
+ * **Nothing this suite writes survives it.** I1 only reads. I2 and I3 each
+ * run on one client inside `BEGIN` … `ROLLBACK` (`inRolledBackTransaction`):
+ * the fixture inserts, the seed's `UPDATE` (handed that same client) and the
+ * read-back all happen in the one transaction, and the `ROLLBACK` in a
+ * `finally` undoes them — including any row the seed's `UPDATE` reaches
+ * beyond the fixtures, so a mutated pattern cannot leave ranks behind on a
+ * shared database. Fixture codes are per-run, never a catalog code.
  */
 
 const ownerUrl = requireIntegrationDb({
@@ -47,15 +53,39 @@ const ownerUrl = requireIntegrationDb({
 });
 
 type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
+/** One client inside a transaction, or the pool: what the seed and the helpers need. */
+type IntegrationClient = Parameters<typeof seedPointKeyHeadlineRanks>[0];
 
 const runId = Math.random().toString(16).slice(2, 10);
 /** Matches `%\_on` — the on/off pattern — by construction (OQ3, I2). */
 const codeAlreadyRanked = `f368-${runId}-x_on`;
 /** Matches the same pattern, but starts NULL — the positive control (I2). */
 const codeFreshMatch = `f368-${runId}-y_on`;
-/** Ends in "on" with no underscore before it — must match NOTHING (I3). */
+/** Ends in "on" with no underscore before it — must match NOTHING (I3a). */
 const codeNoUnderscore = `f368-${runId}-xon`;
-const fixtureCodes = [codeAlreadyRanked, codeFreshMatch, codeNoUnderscore];
+/**
+ * Starts with `breaker` and a character that is not `_` — must match NOTHING
+ * (I3b). It must START with `breaker`: `breaker\_%` is anchored at the start,
+ * so a `f368-…-breakerxmain` code would miss the escaped pattern and every
+ * mutation of it alike, and prove nothing about the escape.
+ */
+const codeBreakerNoUnderscore = `breakerx${runId}`;
+/** Starts with `breaker_` — the positive control for I3b: it gets rank 10. */
+const codeBreakerUnderscore = `breaker_f368${runId}`;
+
+async function rankOf(client: IntegrationClient, code: string): Promise<number | null | undefined> {
+  const { rows } = await client.query<{ headline_rank: number | null }>(
+    `SELECT headline_rank FROM bms.point_keys WHERE code = $1`,
+    [code],
+  );
+  return rows[0]?.headline_rank;
+}
+
+async function insertUnranked(client: IntegrationClient, code: string): Promise<void> {
+  await client.query(`INSERT INTO bms.point_keys (code, name, headline_rank) VALUES ($1, 'F3.68 fixture', NULL)`, [
+    code,
+  ]);
+}
 
 describe.skipIf(!ownerUrl)("F3.68 U4 — seedPointKeyHeadlineRanks", () => {
   let pool: IntegrationPool | undefined;
@@ -65,11 +95,21 @@ describe.skipIf(!ownerUrl)("F3.68 U4 — seedPointKeyHeadlineRanks", () => {
   }, 60_000);
 
   afterAll(async () => {
-    if (pool) {
-      await pool.query(`DELETE FROM bms.point_keys WHERE code = ANY($1)`, [fixtureCodes]);
-    }
     await pool?.end();
   }, 60_000);
+
+  /** Runs `fn` on one client inside `BEGIN` … `ROLLBACK`; nothing commits. */
+  async function inRolledBackTransaction(fn: (client: IntegrationClient) => Promise<void>): Promise<void> {
+    if (!pool) throw new Error("pool not initialised");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await fn(client);
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+  }
 
   // I1
   it("holds the four catalogued on/off codes at rank 10 after pnpm db:seed", async () => {
@@ -109,46 +149,57 @@ describe.skipIf(!ownerUrl)("F3.68 U4 — seedPointKeyHeadlineRanks", () => {
 
   // I2 (OQ3)
   it("never overwrites a rank already set, and ranks a fresh matching code in the same call", async () => {
-    if (!pool) throw new Error("pool not initialised");
-    await pool.query(
-      `INSERT INTO bms.point_keys (code, name, headline_rank) VALUES ($1, 'F3.68 fixture', 7), ($2, 'F3.68 fixture', NULL)`,
-      [codeAlreadyRanked, codeFreshMatch],
-    );
+    await inRolledBackTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO bms.point_keys (code, name, headline_rank) VALUES ($1, 'F3.68 fixture', 7), ($2, 'F3.68 fixture', NULL)`,
+        [codeAlreadyRanked, codeFreshMatch],
+      );
 
-    await seedPointKeyHeadlineRanks(pool);
+      await seedPointKeyHeadlineRanks(client);
 
-    const { rows } = await pool.query<{ code: string; headline_rank: number | null }>(
-      `SELECT code, headline_rank FROM bms.point_keys WHERE code = ANY($1) ORDER BY code`,
-      [[codeAlreadyRanked, codeFreshMatch]],
-    );
-    const byCode = new Map(rows.map((r) => [r.code, r.headline_rank]));
-    expect(
-      byCode.get(codeAlreadyRanked),
-      `${codeAlreadyRanked} already held rank 7 — a re-seed must not revert it (OQ3)`,
-    ).toBe(7);
-    expect(
-      byCode.get(codeFreshMatch),
-      `${codeFreshMatch} started NULL and matches %_on — it must be ranked 10 (positive control)`,
-    ).toBe(10);
+      expect(
+        await rankOf(client, codeFreshMatch),
+        `${codeFreshMatch} started NULL and matches %_on — it must be ranked 10 (positive control)`,
+      ).toBe(10);
+      expect(
+        await rankOf(client, codeAlreadyRanked),
+        `${codeAlreadyRanked} already held rank 7 — a re-seed must not revert it (OQ3)`,
+      ).toBe(7);
+    });
   });
 
-  // I3
-  it("does not rank a code ending in 'on' with no underscore before it — proves the LIKE escape", async () => {
-    if (!pool) throw new Error("pool not initialised");
-    await pool.query(
-      `INSERT INTO bms.point_keys (code, name, headline_rank) VALUES ($1, 'F3.68 fixture', NULL)`,
-      [codeNoUnderscore],
-    );
+  // I3a
+  it("does not rank a code ending in 'on' with no underscore before it — proves the %\\_on escape", async () => {
+    await inRolledBackTransaction(async (client) => {
+      await insertUnranked(client, codeFreshMatch);
+      await insertUnranked(client, codeNoUnderscore);
 
-    await seedPointKeyHeadlineRanks(pool);
+      await seedPointKeyHeadlineRanks(client);
 
-    const { rows } = await pool.query<{ headline_rank: number | null }>(
-      `SELECT headline_rank FROM bms.point_keys WHERE code = $1`,
-      [codeNoUnderscore],
-    );
-    expect(
-      rows[0]?.headline_rank,
-      `${codeNoUnderscore} must stay unranked — an unescaped %_on would wrongly match it`,
-    ).toBeNull();
+      expect(await rankOf(client, codeFreshMatch), "positive control: a %_on code in the same call is ranked").toBe(10);
+      expect(
+        await rankOf(client, codeNoUnderscore),
+        `${codeNoUnderscore} must stay unranked — an unescaped %_on would wrongly match it`,
+      ).toBeNull();
+    });
+  });
+
+  // I3b
+  it("does not rank a code starting 'breaker' with no underscore after it — proves the breaker\\_% escape", async () => {
+    await inRolledBackTransaction(async (client) => {
+      await insertUnranked(client, codeBreakerUnderscore);
+      await insertUnranked(client, codeBreakerNoUnderscore);
+
+      await seedPointKeyHeadlineRanks(client);
+
+      expect(
+        await rankOf(client, codeBreakerUnderscore),
+        "positive control: a breaker_ code in the same call is ranked",
+      ).toBe(10);
+      expect(
+        await rankOf(client, codeBreakerNoUnderscore),
+        `${codeBreakerNoUnderscore} must stay unranked — breaker_% or breaker% would wrongly match it`,
+      ).toBeNull();
+    });
   });
 });

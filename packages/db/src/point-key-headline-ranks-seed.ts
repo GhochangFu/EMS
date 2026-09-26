@@ -66,10 +66,13 @@ export const HEADLINE_RANK_SEED: readonly HeadlineRankSeedEntry[] = [
  * from it either. Doing this as a migration would silently re-decide OQ3's
  * "fills only NULL" promise as "always wins once".
  *
+ * @param pool anything with `pg`'s `query` — the seed's pool, or one client
+ * inside a transaction (the integration suite runs it in `BEGIN` … `ROLLBACK`
+ * so it leaves nothing behind).
  * @returns the number of rows the statement changed (0 on a fully-seeded,
  * fully-admin-owned catalog).
  */
-export async function seedPointKeyHeadlineRanks(pool: pg.Pool): Promise<number> {
+export async function seedPointKeyHeadlineRanks(pool: Pick<pg.Pool, "query">): Promise<number> {
   const params: Array<string | number> = [];
   const whenClauses: string[] = [];
   const predicates: string[] = [];
