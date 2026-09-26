@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aLocationAdminStillSeesTheEditLink,
+  aWidgetRendersViaTheLiveCanvas,
   assetGroupAdminSeesTheEditLink,
 } from "./dashboard-viewer-page.spec";
 
@@ -24,5 +25,9 @@ describe("F3.1d dashboard viewer page", () => {
 
   it("still shows a location_admin the Edit dashboard link", async () => {
     await aLocationAdminStillSeesTheEditLink();
+  });
+
+  it("DV1 renders a widget via DashboardLiveCanvas", async () => {
+    await aWidgetRendersViaTheLiveCanvas();
   });
 });

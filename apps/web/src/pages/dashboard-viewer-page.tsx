@@ -1,23 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
-import type { DashboardWidgetDto } from "@bms/shared";
-
 import { fetchDashboard } from "../api/dashboards";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { canAuthorDashboards } from "../lib/admin-access";
-import { useDashboardTelemetry } from "../hooks/use-dashboard-telemetry";
 import { AppShell } from "../layouts/app-shell";
 import { PageHeader } from "../components/page-header";
-import { DashboardCanvas, type CanvasTile } from "../components/dashboards/dashboard-canvas";
-import { DashboardWidgetLive } from "../components/dashboards/dashboard-widget-live";
+import { DashboardLiveCanvas } from "../components/dashboards/dashboard-live-canvas";
 import type { AuthUser } from "../stores/auth-store";
 
 type DashboardViewerPageProps = {
   user: AuthUser;
 };
-
-type WidgetTile = CanvasTile & { widget: DashboardWidgetDto };
 
 /**
  * `F3.1d` Unit 6 — the read-only dashboard detail.
@@ -47,22 +41,6 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
     enabled: slug !== "",
   });
 
-  const { latestByRef, historyByRef, aggregateByKey, catalog } = useDashboardTelemetry(dashboardQ.data);
-  // Read fresh on every render, so the periodic re-render `useDashboardTelemetry`'s own
-  // `staleTick` drives (review finding, HIGH) actually advances the clock `widgetDataFor` ages
-  // readings against — without this the tick would fire but every widget would keep comparing
-  // against the timestamp of whatever render last touched a socket message.
-  const now = Date.now();
-
-  const tiles: WidgetTile[] = (dashboardQ.data?.widgets ?? []).map((widget) => ({
-    key: widget.id,
-    gridX: widget.gridX,
-    gridY: widget.gridY,
-    gridW: widget.gridW,
-    gridH: widget.gridH,
-    widget,
-  }));
-
   return (
     <AppShell user={user} kpiRibbon={<span className="text-bms-ink">{dashboardQ.data?.name ?? "Dashboard"}</span>}>
       <div className="mx-auto max-w-[1400px] space-y-4 pb-8">
@@ -89,27 +67,7 @@ export function DashboardViewerPage({ user }: DashboardViewerPageProps) {
           </p>
         ) : null}
 
-        {dashboardQ.data && tiles.length === 0 ? (
-          <p className="rounded border border-dashed border-gray-300 p-4 text-xs text-bms-muted">
-            This dashboard has no widgets yet.
-          </p>
-        ) : null}
-
-        {tiles.length > 0 ? (
-          <DashboardCanvas
-            tiles={tiles}
-            renderTile={(tile) => (
-              <DashboardWidgetLive
-                widget={tile.widget}
-                latestByRef={latestByRef}
-                historyByRef={historyByRef}
-                aggregateByKey={aggregateByKey}
-                catalog={catalog}
-                now={now}
-              />
-            )}
-          />
-        ) : null}
+        {dashboardQ.data ? <DashboardLiveCanvas dashboard={dashboardQ.data} /> : null}
       </div>
     </AppShell>
   );

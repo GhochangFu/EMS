@@ -6,6 +6,7 @@ import { fetchResolvedSiteControlRoomView } from "../../api/control-room";
 import { fetchLocationKpis } from "../../api/locations";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
+import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
@@ -26,7 +27,8 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-bms-green hover:
  * site view host. The name, the organization and the crumbs come from the KPI
  * list; the body comes from `F3.67`'s resolve read, one per `kind`: the
  * generated interim (D7), the SMOC links filtered by the per-area rule (OQ1),
- * or a link card to the configured dashboard (OQ2). A resolve read that
+ * or the configured dashboard rendered inline (`SiteDashboardView`, `F3.69`).
+ * A resolve read that
  * rejects before it ever answered — the API answers 404 for a site outside
  * the scope — shows the not-available card and never an interim body (D6).
  * The page decides from the data, not the status: a background refetch that
@@ -140,20 +142,7 @@ function SiteViewBody({ view, site, scope }: SiteViewBodyProps) {
           </ul>
         </SectionCard>
       ) : view.kind === "dashboard" && view.dashboardSlug !== null ? (
-        // The resolve DTO carries the slug, not the dashboard's name; the
-        // dashboard belongs to the site's organization (the admin write checks
-        // it), so the KPI row supplies the organization id. `F3.69` replaces this.
-        <SectionCard title="Site dashboard" bodyClassName="p-4">
-          <p className="text-sm text-bms-muted">
-            This site shows the dashboard {view.dashboardSlug}.
-          </p>
-          <Link
-            to={`/dashboards/${encodeURIComponent(view.dashboardSlug)}?organizationId=${encodeURIComponent(site.organization.id)}`}
-            className={linkClass}
-          >
-            Open the dashboard
-          </Link>
-        </SectionCard>
+        <SiteDashboardView slug={view.dashboardSlug} organizationId={site.organization.id} />
       ) : (
         <GeneratedSiteView locationId={site.id} />
       )}

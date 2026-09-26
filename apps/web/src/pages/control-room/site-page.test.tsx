@@ -17,9 +17,11 @@ import {
   builtinListsTheSevenSmocPages,
   builtinUnknownShowsItsBanner,
   cleanupPage,
-  dashboardLinksToTheDashboard,
   dashboardOutOfScopeShowsItsBanner,
   dashboardRemovedShowsItsBanner,
+  dashboardRendersSiteDashboardView,
+  dashboardShowsNoInterimCard,
+  dashboardShowsNoNoticeBanner,
   generatedRendersTheComponentWithLocationId,
   noNoticeRendersNoBanner,
   theBreadcrumbNamesEveryLevel,
@@ -64,8 +66,16 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
     await builtinFiltersByTheAreaRule();
   });
 
-  it("V7 links the dashboard kind to /dashboards/<slug>?organizationId=<org>", async () => {
-    await dashboardLinksToTheDashboard();
+  it("V7 hosts SiteDashboardView with the slug and the site's organization id", async () => {
+    await dashboardRendersSiteDashboardView();
+  });
+
+  it("V7b shows no interim card and no real dashboards link", async () => {
+    await dashboardShowsNoInterimCard();
+  });
+
+  it("V7c shows no notice banner for a dashboard view", async () => {
+    await dashboardShowsNoNoticeBanner();
   });
 
   it("V8a shows the not-available card for a rejected resolve read", async () => {
