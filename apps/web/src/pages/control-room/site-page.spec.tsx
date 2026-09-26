@@ -564,13 +564,18 @@ export async function aTabOnAGeneratedSiteMountsNoBodyAtTheTabUrl(): Promise<voi
   expect(mounts.generated).toEqual(["/control-room/site/a1"]);
 }
 
-/** V19a — a rejected resolve read with a tab segment shows the not-available card (D6). */
+/**
+ * V19a — a rejected resolve read with a tab segment shows the not-available
+ * card (D6), at the tab URL: D5 decides from `data`, so a rejected read that
+ * never answered redirects nowhere.
+ */
 export async function aRejectedReadWithATabShowsTheNotAvailableCard(): Promise<void> {
   stubReads(TWO_ORGS, "reject");
   renderAt("a1", undefined, "sld");
 
   const card = sectionOf(await screen.findByText(/not available in your access scope/));
   expect(within(card).getByRole("link").getAttribute("href")).toBe("/control-room");
+  expect(pathname()).toBe("/control-room/site/a1/sld");
 }
 
 /** V19b — a rejected resolve read with a tab segment mounts no SMOC view (after V19a's positive control). */
@@ -580,6 +585,7 @@ export async function aRejectedReadWithATabMountsNoSmocView(): Promise<void> {
 
   expect(await screen.findByText(/not available in your access scope/)).toBeInTheDocument();
   expect(screen.queryByTestId("smoc-site-view")).toBeNull();
+  expect(pathname()).toBe("/control-room/site/a1/sld");
 }
 
 /**
@@ -623,6 +629,28 @@ export async function aTabOnANonSmocBuiltinSiteRedirectsToTheBarePath(): Promise
 
   expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
   expect(pathname()).toBe("/control-room/site/p9");
+}
+
+/**
+ * V22 — D5 waits for both reads: with the KPI read pending and a `generated`
+ * resolve read already answered, a tab URL is not redirected yet. It waits
+ * for the resolve query to succeed, then for the render that follows, so the
+ * pathname check cannot pass before the data exists.
+ */
+export async function aPendingKpiReadDoesNotRedirectATab(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  vi.spyOn(locationsApi, "fetchLocationKpis").mockImplementation(() => new Promise(() => undefined));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  renderAt("a1", queryClient, "sld");
+
+  await waitFor(() => {
+    expect(queryClient.getQueryState([...SITE_VIEW_KEY])?.status).toBe("success");
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(screen.getByText("Loading Control Room…")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/a1/sld");
 }
 
 export function cleanupPage(): void {

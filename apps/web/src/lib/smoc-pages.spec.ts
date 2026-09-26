@@ -80,19 +80,40 @@ export function runP5(): void {
   assert(smocTabFromParam("sld") === "sld", "a known tab param must resolve to itself");
 }
 
-/** `P6` — an HVAC-only asset-group scope allows only overview and hvac. */
-export function runP6(): void {
+/** `P6a` — an HVAC-only asset-group scope allows exactly two tabs. */
+export function runP6a(): void {
   const keys = allowedSmocTabs(HVAC_ONLY).map((tab) => tab.key);
   assert(keys.length === 2, `HVAC_ONLY must allow exactly 2 tabs, got ${keys.length}`);
+}
+
+/** `P6b` — an HVAC-only scope allows overview. */
+export function runP6b(): void {
+  const keys = allowedSmocTabs(HVAC_ONLY).map((tab) => tab.key);
   assert(keys.includes("overview"), "HVAC_ONLY must allow overview");
+}
+
+/** `P6c` — an HVAC-only scope allows hvac. */
+export function runP6c(): void {
+  const keys = allowedSmocTabs(HVAC_ONLY).map((tab) => tab.key);
   assert(keys.includes("hvac"), "HVAC_ONLY must allow hvac");
 }
 
-/** `P7` — an electrical-only scope allows ups and battery (the electrical fallback), not hvac. */
-export function runP7(): void {
+/** `P7a` — an electrical-only scope allows ups (the electrical fallback). */
+export function runP7a(): void {
   const keys = allowedSmocTabs(ELECTRICAL_ONLY).map((tab) => tab.key);
   assert(keys.includes("ups"), "ELECTRICAL_ONLY must allow ups");
+}
+
+/** `P7b` — an electrical-only scope allows battery (the electrical fallback). */
+export function runP7b(): void {
+  const keys = allowedSmocTabs(ELECTRICAL_ONLY).map((tab) => tab.key);
   assert(keys.includes("battery"), "ELECTRICAL_ONLY must allow battery");
+}
+
+/** `P7c` — an electrical-only scope does not allow hvac (after a positive control on the same list). */
+export function runP7c(): void {
+  const keys = allowedSmocTabs(ELECTRICAL_ONLY).map((tab) => tab.key);
+  assert(keys.includes("ups"), "positive control: ELECTRICAL_ONLY must allow ups");
   assert(!keys.includes("hvac"), "ELECTRICAL_ONLY must not allow hvac");
 }
 

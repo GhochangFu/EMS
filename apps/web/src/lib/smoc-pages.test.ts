@@ -6,8 +6,12 @@ import {
   runP3,
   runP4,
   runP5,
-  runP6,
-  runP7,
+  runP6a,
+  runP6b,
+  runP6c,
+  runP7a,
+  runP7b,
+  runP7c,
   runP8,
   runP9,
   runP9b,
@@ -36,12 +40,28 @@ describe("smoc-pages", () => {
     runP5();
   });
 
-  it("P6 — HVAC_ONLY allows overview and hvac", () => {
-    runP6();
+  it("P6a — HVAC_ONLY allows exactly two tabs", () => {
+    runP6a();
   });
 
-  it("P7 — ELECTRICAL_ONLY allows ups and battery, not hvac", () => {
-    runP7();
+  it("P6b — HVAC_ONLY allows overview", () => {
+    runP6b();
+  });
+
+  it("P6c — HVAC_ONLY allows hvac", () => {
+    runP6c();
+  });
+
+  it("P7a — ELECTRICAL_ONLY allows ups", () => {
+    runP7a();
+  });
+
+  it("P7b — ELECTRICAL_ONLY allows battery", () => {
+    runP7b();
+  });
+
+  it("P7c — ELECTRICAL_ONLY does not allow hvac", () => {
+    runP7c();
   });
 
   it("P8 — GLOBAL allows all seven tabs", () => {

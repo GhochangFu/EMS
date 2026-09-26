@@ -1,5 +1,5 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
@@ -24,6 +24,8 @@ import { SmocSiteView } from "./smoc-site-view";
  */
 const state = vi.hoisted(() => ({
   providers: [] as Array<{ assetCodes: readonly string[]; pointKeys: readonly string[] | undefined }>,
+  /** Provider mounts, not renders: a rerender pushes `providers` again, a remount bumps this. */
+  providerMounts: 0,
 }));
 
 vi.mock("../live-svg/schematic-telemetry-context", () => ({
@@ -37,6 +39,9 @@ vi.mock("../live-svg/schematic-telemetry-context", () => ({
     children: ReactNode;
   }) => {
     state.providers.push({ assetCodes, pointKeys });
+    useEffect(() => {
+      state.providerMounts += 1;
+    }, []);
     return <div data-testid="telemetry-provider">{children}</div>;
   },
 }));
@@ -189,11 +194,39 @@ export function aDisallowedTabMountsNoProvider(): void {
   expect(state.providers).toEqual([]);
 }
 
+function renderThenSwitchTab(from: SmocTabKey, to: SmocTabKey): void {
+  fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
+  vi.stubGlobal("fetch", fetchSpy);
+  const { rerender } = render(
+    <MemoryRouter initialEntries={[smocTabPath(LOCATION_ID, from)]}>
+      <SmocSiteView locationId={LOCATION_ID} tab={from} scope={GLOBAL} />
+    </MemoryRouter>,
+  );
+  rerender(
+    <MemoryRouter initialEntries={[smocTabPath(LOCATION_ID, from)]}>
+      <SmocSiteView locationId={LOCATION_ID} tab={to} scope={GLOBAL} />
+    </MemoryRouter>,
+  );
+}
+
+/**
+ * T8 — one provider serves every tab (OQ1, D1): switching from `hvac` to
+ * `ups` shows the `ups` content under the provider that mounted first,
+ * never a second provider (a remount would drop the telemetry state).
+ */
+export function oneProviderServesEveryTab(): void {
+  renderThenSwitchTab("hvac", "ups");
+
+  expect(within(screen.getByTestId("telemetry-provider")).getByTestId("tab-ups")).toBeInTheDocument();
+  expect(state.providerMounts).toBe(1);
+}
+
 export function cleanupView(): void {
   cleanup();
   const networkCalls = fetchSpy?.mock.calls.map((call) => String(call[0])) ?? [];
   fetchSpy = null;
   state.providers.length = 0;
+  state.providerMounts = 0;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   expect(networkCalls, "a read reached the network").toEqual([]);

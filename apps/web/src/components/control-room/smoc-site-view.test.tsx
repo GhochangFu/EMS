@@ -9,6 +9,7 @@ import {
   anHvacOnlyScopeShowsTwoTabs,
   cleanupView,
   noOtherContentMounts,
+  oneProviderServesEveryTab,
   theActiveTabIsTheOnlyCurrentLink,
   theChosenContentMounts,
   theProviderTakesTheCrConstants,
@@ -63,5 +64,9 @@ describe("F3.70 U4 SmocSiteView", () => {
 
   it("T7b mounts no provider for a tab outside the per-area rule", () => {
     aDisallowedTabMountsNoProvider();
+  });
+
+  it("T8 keeps one provider mounted when the tab switches from hvac to ups", () => {
+    oneProviderServesEveryTab();
   });
 });

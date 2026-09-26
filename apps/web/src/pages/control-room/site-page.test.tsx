@@ -5,6 +5,7 @@ import {
   aFailedRefetchKeepsTheBody,
   aFailedRefetchShowsNoNotAvailableCard,
   aNullSlugLinksToNoDashboard,
+  aPendingKpiReadDoesNotRedirectATab,
   aPendingKpiReadShowsOnlyTheLoadingLine,
   aNullSlugShowsTheGeneratedInterim,
   aRejectedKpiReadShowsNoInterimBody,
@@ -156,7 +157,7 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
     await aTabOnAGeneratedSiteMountsNoBodyAtTheTabUrl();
   });
 
-  it("V19a shows the not-available card for a rejected resolve read at a tab URL", async () => {
+  it("V19a shows the not-available card at the tab URL for a rejected resolve read", async () => {
     await aRejectedReadWithATabShowsTheNotAvailableCard();
   });
 
@@ -178,5 +179,9 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V21c redirects a tab segment on a non-SMOC builtin site to the bare site path", async () => {
     await aTabOnANonSmocBuiltinSiteRedirectsToTheBarePath();
+  });
+
+  it("V22 does not redirect a tab URL while the KPI read is pending", async () => {
+    await aPendingKpiReadDoesNotRedirectATab();
   });
 });
