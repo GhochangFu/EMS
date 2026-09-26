@@ -17,12 +17,12 @@ import {
  * narrower privilege, everything rolled back so nothing here commits — except
  * I5, which is a seeded-state read with no rollback needed.
  *
- * **I5 is expected RED on a database whose `pnpm db:seed` ran the old
- * `phe-pilot-seed.ts`/`phe-map-seed.ts`** (plan U1 note): the seed's UPDATE
- * branch re-writes `bms.locations.type` back to `rsmoc` on every run, after
- * the migration already moved it to `pump_station`. U2 changes the two seed
- * files to write `pump_station`, which closes this. Do not weaken this case to
- * make it pass early — it is the re-seed gate the plan calls it.
+ * **I5 is the re-seed gate.** The PHE seed's UPDATE branch re-writes
+ * `bms.locations.type` on every run, so a seed that still wrote `rsmoc` would
+ * move the rows back after the migration. I5 reads only the rows the PHE seed
+ * owns (`meta ? 'phe'`), not every PHEWB location: other suites create
+ * PHEWB fixture locations of other valid types while this file runs against the
+ * same database, and those rows are not the seed's claim.
  */
 const connectionString = process.env.DATABASE_URL;
 
@@ -177,14 +177,14 @@ describe.skipIf(!has)("F4.157 — bms.location_types against a live database", (
     });
   });
 
-  // I5 — see the module docblock: expected RED until U2 changes the seeds.
-  it("I5 every PHEWB location and its map pins carry type/kind pump_station", async () => {
+  // I5 — see the module docblock.
+  it("I5 every seeded PHE location and its map pin carry type/kind pump_station", async () => {
     await inTx(async (run) => {
       await run("SET LOCAL ROLE bms_fleet");
       const locationRows = await run(
         `SELECT l.type FROM bms.locations l
            JOIN bms.organizations o ON o.id = l.organization_id
-          WHERE o.code = 'PHEWB'`,
+          WHERE o.code = 'PHEWB' AND l.meta ? 'phe'`,
       );
       expect(locationRows.rows.length, "no PHEWB locations found — run pnpm db:seed").toBeGreaterThan(0);
       expect(new Set(locationRows.rows.map((r) => r.type))).toEqual(new Set(["pump_station"]));
@@ -193,7 +193,7 @@ describe.skipIf(!has)("F4.157 — bms.location_types against a live database", (
         `SELECT ml.kind FROM bms.map_locations ml
            JOIN bms.locations l ON l.slug = ml.slug
            JOIN bms.organizations o ON o.id = l.organization_id
-          WHERE o.code = 'PHEWB'`,
+          WHERE o.code = 'PHEWB' AND l.meta ? 'phe'`,
       );
       expect(mapRows.rows.length, "no PHEWB map pins found — run pnpm db:seed").toBeGreaterThan(0);
       expect(new Set(mapRows.rows.map((r) => r.kind))).toEqual(new Set(["pump_station"]));
