@@ -114,7 +114,10 @@ on that, both worth knowing before an incident:
 ## Health endpoint
 
 Plain text, on `INGEST_HOST_HEALTH_PORT`. No metrics library — `prom-client`
-is deferred to `F3.16` (ADR 0016 Amendment 4 decision 11).
+is deferred to `F3.16` (ADR 0016 Amendment 4 decision 11). Identifiers
+(`rtuCode`, `endpointKey`, `sourceKey`, a skip's `rtu=` and `detail=`) outside
+the safe set `A-Za-z0-9._-:/` are percent-encoded as UTF-8 bytes, `%` included,
+so every record stays one line.
 
 ```
 ingest-host degraded endpoints=1 rtus=3 stale=1 dark=1 skipped=0 notify=on uptime=39s

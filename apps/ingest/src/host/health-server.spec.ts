@@ -728,3 +728,166 @@ export function runDarkPointTests(): void {
     );
   }
 }
+
+// ---- identifiers are percent-encoded outside a safe set (L1) ---------------
+//
+// The F4.58 security review (finding L1): `source_data_key` and `rtu_code` are
+// validated only for length, so an admin or an imported onboarding sheet could
+// store `x\ningest-host ok …` and forge a header, `stale` or `dark` line in a
+// line-oriented body. Each block below is one claim, with its own `it()`.
+
+/** The body split into records — the trailing newline is not a record. */
+function records(body: string): readonly string[] {
+  return body.slice(0, -1).split("\n");
+}
+
+/** One dark point on a live RTU, with the given key — never published. */
+function darkSnapshot(sourceKey: string): HealthSnapshot {
+  return snapshot({
+    endpoints: [endpoint({ devices: [device("RTU-9", { points: [point(sourceKey)] })] })],
+  });
+}
+
+/** (a) A dark key with `\r`, `\n`, a space, `=` and `%` stays one record. */
+export function runDarkKeyEscapeTests(): void {
+  const forged = "a b=c%\r\ndark rtu=FORGED";
+  const body = renderHealth(darkSnapshot(forged), NOW);
+  const darkLines = records(body).filter((l) => l.startsWith("dark rtu="));
+  assert(darkLines.length === 1, `exactly one dark record renders:\n${body}`);
+  assert(
+    darkLines[0] ===
+      "dark rtu=RTU-9 endpoint=phe.thinkiot.co.in:8883 key=a%20b%3Dc%25%0D%0Adark%20rtu%3DFORGED lastSample=never",
+    `the key is percent-encoded in place:\n${body}`,
+  );
+  assert(
+    records(body).length === records(renderHealth(darkSnapshot("plain"), NOW)).length,
+    `the forged key adds no record over a plain one:\n${body}`,
+  );
+  assert(!body.includes("\ndark rtu=FORGED"), `the forged text never starts a record:\n${body}`);
+}
+
+/** The RTU code on a `dark` record — a live RTU, so it is not `stale` — is encoded too. */
+export function runDarkRtuEscapeTests(): void {
+  const body = renderHealth(
+    snapshot({ endpoints: [endpoint({ devices: [device("D\nstale rtu=X", { points: [point("p")] })] })] }),
+    NOW,
+  );
+  assert(
+    records(body).includes("dark rtu=D%0Astale%20rtu%3DX endpoint=phe.thinkiot.co.in:8883 key=p lastSample=never"),
+    `the dark record's RTU code is percent-encoded in place:\n${body}`,
+  );
+  assert(!body.includes("\nstale rtu=X"), `the forged text never starts a record:\n${body}`);
+}
+
+/** (b) A stale RTU code with a newline stays one record, and forges no header. */
+export function runStaleRtuEscapeTests(): void {
+  const staleSnapshot = (rtuCode: string): HealthSnapshot =>
+    snapshot({ endpoints: [endpoint({ devices: [device(rtuCode, { lastSampleAt: undefined })] })] });
+  const body = renderHealth(staleSnapshot("R\ningest-host ok endpoints=9"), NOW);
+  const staleLines = records(body).filter((l) => l.startsWith("stale rtu="));
+  assert(staleLines.length === 1, `exactly one stale record renders:\n${body}`);
+  assert(
+    staleLines[0] === "stale rtu=R%0Aingest-host%20ok%20endpoints%3D9 endpoint=phe.thinkiot.co.in:8883 lastSample=never",
+    `the RTU code is percent-encoded in place:\n${body}`,
+  );
+  assert(
+    records(body).length === records(renderHealth(staleSnapshot("R"), NOW)).length,
+    `the forged code adds no record over a plain one:\n${body}`,
+  );
+  const headers = records(body).filter((l) => l.startsWith("ingest-host "));
+  assert(
+    headers.length === 1 && body.startsWith("ingest-host degraded "),
+    `the one header is the real, degraded one:\n${body}`,
+  );
+}
+
+/** (c) Ordinary identifiers — IMEIs, pilot keys, broker hosts — render byte-identical. */
+export function runPlainIdentifierTests(): void {
+  const body = renderHealth(
+    snapshot({
+      endpoints: [
+        endpoint({
+          devices: [
+            device("861736076128245", {
+              points: [point("s12_r01"), point("E71B/OB/RAW"), point("computed:KWH"), point("TX01_KW-2")],
+            }),
+          ],
+        }),
+      ],
+    }),
+    NOW,
+  );
+  for (const key of ["s12_r01", "E71B/OB/RAW", "computed:KWH", "TX01_KW-2"]) {
+    assert(
+      records(body).includes(
+        `dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=${key} lastSample=never`,
+      ),
+      `${key} renders unescaped:\n${body}`,
+    );
+  }
+  assert(hasToken(body, "rtus=861736076128245"), `the IMEI renders unescaped in rtus=:\n${body}`);
+}
+
+/** A `|` inside one RTU code cannot forge a second `rtus=` member. */
+export function runRtusMemberEscapeTests(): void {
+  const body = renderHealth(snapshot({ endpoints: [endpoint({ devices: [device("A|B"), device("C")] })] }), NOW);
+  assert(hasToken(body, "rtus=A%7CB|C"), `each member is encoded before the join:\n${body}`);
+  assert(!body.includes("rtus=A|B|C"), `the code does not read as two members:\n${body}`);
+}
+
+/** The endpoint key — DB `host:port` — is encoded on every line that prints it. */
+export function runEndpointKeyEscapeTests(): void {
+  const body = renderHealth(
+    snapshot({
+      endpoints: [
+        endpoint({
+          endpointKey: "h\nost:1",
+          devices: [device("RTU-1", { lastSampleAt: undefined }), device("RTU-2", { points: [point("p")] })],
+        }),
+      ],
+    }),
+    NOW,
+  );
+  assert(hasToken(body, "key=h%0Aost:1"), `the endpoint line encodes its key:\n${body}`);
+  assert(body.includes("stale rtu=RTU-1 endpoint=h%0Aost:1 "), `the stale line encodes the key:\n${body}`);
+  assert(body.includes("dark rtu=RTU-2 endpoint=h%0Aost:1 "), `the dark line encodes the key:\n${body}`);
+}
+
+/** A skipped RTU's code is encoded; the `(no rtu_code)` literal is not. */
+export function runSkippedRtuEscapeTests(): void {
+  const body = renderHealth(
+    snapshot({
+      skipped: [
+        { rtuId: "u1", rtuCode: "S\nstale rtu=X", reason: "no-mqtt-owned-points" },
+        { rtuId: "u2", rtuCode: null, reason: "missing-rtu-code" },
+      ],
+    }),
+    NOW,
+  );
+  assert(
+    records(body).includes("skipped rtu=S%0Astale%20rtu%3DX reason=no-mqtt-owned-points"),
+    `the skipped code is percent-encoded in place:\n${body}`,
+  );
+  assert(
+    records(body).includes("skipped rtu=(no rtu_code) reason=missing-rtu-code"),
+    `the fallback literal renders as written:\n${body}`,
+  );
+}
+
+/** A skip's `detail` — the raw `config_protocol` on `unsupported-protocol` — is encoded. */
+export function runSkippedDetailEscapeTests(): void {
+  const body = renderHealth(
+    snapshot({
+      skipped: [{ rtuId: "u1", rtuCode: "RTU-7", reason: "unsupported-protocol", detail: "x\ningest-host ok" }],
+    }),
+    NOW,
+  );
+  assert(
+    records(body).includes("skipped rtu=RTU-7 reason=unsupported-protocol detail=x%0Aingest-host%20ok"),
+    `the detail is percent-encoded in place:\n${body}`,
+  );
+  assert(
+    records(body).filter((l) => l.startsWith("ingest-host ")).length === 1,
+    `the detail forges no header:\n${body}`,
+  );
+}

@@ -41,6 +41,31 @@ type DarkPoint = {
  * an operator counting from the header must never be undercounting. */
 export const MAX_DARK_LINES = 50;
 
+/** Characters an identifier may print as-is: every real IMEI, `rtu_code`,
+ * `source_data_key` (`s12_r01`, `E71B/OB/RAW`, `computed:KWH`) and broker
+ * `host:port` in the seeds and `docs/ingest-host.md` fits inside it. */
+const UNSAFE_IDENTIFIER_CHAR = /[^A-Za-z0-9._:/-]/gu;
+const utf8 = new TextEncoder();
+
+/**
+ * One DB- or config-sourced identifier as a single, unambiguous body token.
+ *
+ * The F4.58 security review (finding L1): `source_data_key` and `rtu_code` are
+ * validated only for length, so a stored `x\ningest-host ok …` would forge a
+ * header, `stale` or `dark` record in this line-oriented body. Every character
+ * outside the safe set — `%` itself included — is percent-encoded as its UTF-8
+ * bytes, so the value stays on one line and in one field, and ordinary
+ * identifiers render byte-identical (AGENTS.md §4.3: "Never trust input", and
+ * "input" is not only HTTP — a stored row read back is input too). `TextEncoder`, not
+ * `encodeURIComponent`: that leaves `!'()*~` bare and throws on a lone
+ * surrogate, which would turn a bad key into a 500.
+ */
+export function token(value: string): string {
+  return value.replace(UNSAFE_IDENTIFIER_CHAR, (char) =>
+    Array.from(utf8.encode(char), (byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`).join(""),
+  );
+}
+
 /**
  * Milliseconds a point or device has been silent, floored at `startedAt` —
  * the one clock `stale` and `dark` both read, so their two verdicts and their
@@ -196,9 +221,11 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
 
   for (const endpoint of snapshot.endpoints) {
     lines.push(
-      `endpoint protocol=${endpoint.protocol} key=${endpoint.endpointKey} ` +
+      `endpoint protocol=${endpoint.protocol} key=${token(endpoint.endpointKey)} ` +
         `state=${endpoint.state} writePath=${endpoint.writePath} ` +
-        `rtus=${endpoint.devices.map((d) => d.rtuCode).join("|")} ` +
+        // Each member is encoded before the join, so a `|` in one code cannot
+        // read as two members.
+        `rtus=${endpoint.devices.map((d) => token(d.rtuCode)).join("|")} ` +
         `restarts=${endpoint.restarts} pollFailures=${endpoint.consecutivePollFailures} ` +
         `queue=${endpoint.queueDepth} dropped=${endpoint.droppedSamples} ` +
         `written=${endpoint.samplesWritten} writeFailures=${endpoint.writeFailures} ` +
@@ -216,7 +243,7 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
     // and a duration that contradicts the verdict beside it is worse than none.
     const staleSilentSeconds = silentForSeconds(device.lastSampleAt, snapshot.startedAt, now);
     lines.push(
-      `stale rtu=${device.rtuCode} endpoint=${device.endpointKey} ` +
+      `stale rtu=${token(device.rtuCode)} endpoint=${token(device.endpointKey)} ` +
         `lastSample=${device.lastSampleAt?.toISOString() ?? "never"}` +
         (staleSilentSeconds === undefined ? "" : ` silentFor=${staleSilentSeconds}s`),
     );
@@ -229,7 +256,7 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   for (const point of dark.slice(0, MAX_DARK_LINES)) {
     const silentSeconds = silentForSeconds(point.lastSampleAt, snapshot.startedAt, now);
     lines.push(
-      `dark rtu=${point.rtuCode} endpoint=${point.endpointKey} key=${point.sourceKey} ` +
+      `dark rtu=${token(point.rtuCode)} endpoint=${token(point.endpointKey)} key=${token(point.sourceKey)} ` +
         `lastSample=${point.lastSampleAt?.toISOString() ?? "never"}` +
         (silentSeconds === undefined ? "" : ` silentFor=${silentSeconds}s`),
     );
@@ -241,10 +268,15 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   // Skipped RTUs are reported, not hidden. A gateway that silently never
   // appears is the failure mode ADR 0016 §3 asks to be logged once per RTU —
   // this is where an operator sees it without reading the log.
+  //
+  // `reason` is a code literal and the `(no rtu_code)` fallback is ours, so
+  // neither is encoded. `detail` is: `unsupported-protocol` carries the raw
+  // `config_protocol` that just failed validation, and other reasons carry
+  // stored JSON key names or the endpoint key.
   for (const skip of snapshot.skipped) {
     lines.push(
-      `skipped rtu=${skip.rtuCode ?? "(no rtu_code)"} reason=${skip.reason}` +
-        (skip.detail === undefined ? "" : ` detail=${skip.detail}`),
+      `skipped rtu=${skip.rtuCode === null ? "(no rtu_code)" : token(skip.rtuCode)} reason=${skip.reason}` +
+        (skip.detail === undefined ? "" : ` detail=${token(skip.detail)}`),
     );
   }
 
