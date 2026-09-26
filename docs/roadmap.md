@@ -6081,3 +6081,47 @@ Open after this run: `F4.160` (three web spec files, unchanged by this row);
 a possible follow-up row for `/locations/:id`'s unbounded `latest_points`
 read, raised but not opened — the owner decides whether it is in scope.
 Owed separately: the `chore(agents):` sweep.
+
+### `F3.69` — the dashboard site view (ADR 0076 decision 8) ✅ 2026-09-26
+
+PR #572, squash `f433ad25`; plan `docs/plans/f3.69-dashboard-site-view.md`.
+ADR 0076 decision 8.
+
+A site whose Control Room view is `dashboard` now renders that dashboard
+inline on `/control-room/site/:locationId`, under the site page's own
+breadcrumb, header and notice banner, in place of `F3.66`'s interim link
+card. `DashboardLiveCanvas` holds the dashboard viewer's live canvas (the
+telemetry hook, the tiles, the empty state, `DashboardCanvas` +
+`DashboardWidgetLive`), so the viewer and the site view share one wiring;
+`/dashboards/:slug` is unchanged. `SiteDashboardView` reads the dashboard
+with the viewer's query key and the site's organization id — the resolver
+already proved the dashboard belongs to that organization — and decides from
+the data, so a failed background refetch keeps the canvas. No API route, no
+contract change, no migration, no seed.
+
+The owner ruled OQ1 (one `Open in Dashboards` link, no Edit link) and OQ2 (a
+failed read with no data shows an inline alert with `Try again`, which
+invalidates the site page's resolve read and refetches the dashboard; the
+fail-safe rule stays in the API). The step-5 security review found that
+`readableOrganizationIds` and `scopeForUser` stop on different conditions,
+so one mixed-grant `viewer`/`operator` reads the site but gets a 404 on the
+dashboard read — closed, no leak; the owner ruled it a separate row,
+`F4.161`.
+
+Verified: jsdom specs under named mutations — a separate spec binds
+`Try again` to the page's real resolve key, S7c proves no other key is
+invalidated, and V13b was repaired (its `??` wait let a dropped null-slug
+guard stay green); the API positive control (a location-scoped user reads its
+site's dashboard by slug) and N1/N2 (a foreign `organizationId` answers 404
+on the tenant and fleet branches), 20/20 on the dev database; code, security
+and compliance reviews, every finding fixed or ruled. The stack's `web` was
+rebuilt from the branch (the first build missed the compose OIDC build args
+and showed the local login form); as `phe-admin`, a temporary Lotapata
+dashboard rendered inline with two tiles matching the API, a tile value
+changed live (1.46 → 1.47), a hard reload kept the path, and after the
+dashboard's deletion the page showed the `dashboard_removed` notice and the
+generated view. The fixture was removed. CI green on the first run.
+
+**Cascade:** no row lists `F3.69` in *Depends*. `F3.70` merges second and
+resolves the `SiteViewBody` seam. Raised: `F4.161` (P3). Owed separately:
+the `chore(agents):` sweep, if it finds a mention of the interim card.
