@@ -93,7 +93,7 @@ async function seedSite(client: pg.PoolClient): Promise<Site> {
   if (!organizationId) throw new Error("failed to insert the F3.68 fixture organization");
   const loc = await client.query<{ id: string }>(
     `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, active)
-     VALUES ($1, $2, $3, $4, 'site', 0, 0, true) RETURNING id`,
+     VALUES ($1, $2, $3, $4, 'rsmoc', 0, 0, true) RETURNING id`,
     [organizationId, `${tag}-LOC`, tag.toLowerCase(), "F3.68 generated-view fixture site"],
   );
   const locationId = loc.rows[0]?.id;

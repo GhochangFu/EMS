@@ -126,4 +126,19 @@ describe("F4.157 — bms.location_types schema (migration 0085)", () => {
       "references(() => locationTypes.code)",
     );
   });
+
+  // T8
+  it("the two PHE seeds write pump_station exactly once each", () => {
+    const mapSeed = read("packages/db/src/phe-map-seed.ts");
+    const pilotSeed = read("packages/db/src/phe-pilot-seed.ts");
+
+    const mapMatches = mapSeed.match(/kind: "pump_station" as const/g) ?? [];
+    const pilotMatches = pilotSeed.match(/type: "pump_station" as const/g) ?? [];
+
+    expect(mapMatches.length, "phe-map-seed.ts must write kind: \"pump_station\" as const exactly once").toBe(1);
+    expect(
+      pilotMatches.length,
+      "phe-pilot-seed.ts must write type: \"pump_station\" as const exactly once",
+    ).toBe(1);
+  });
 });

@@ -82,7 +82,7 @@ export async function seedAsset(client: pg.PoolClient): Promise<Seeded> {
   if (!organizationId) throw new Error("failed to insert the F3.28 fixture organization");
   const loc = await client.query<{ id: string }>(
     `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
-     VALUES ($1, $2, $3, $4, 'site', 0, 0) RETURNING id`,
+     VALUES ($1, $2, $3, $4, 'rsmoc', 0, 0) RETURNING id`,
     [organizationId, `${tag}-LOC`, `f328-kpi-${tag.toLowerCase()}`, "F3.28 KPI prior fixture site"],
   );
   const locationId = loc.rows[0]?.id;
