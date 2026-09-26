@@ -20,33 +20,7 @@ import { STALE_TICK_MS } from "../lib/schematic-telemetry";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore } from "../stores/auth-store";
 
-/**
- * `F3.68` U6 — the generated site view's one `/ws/telemetry` connection, the
- * `use-dashboard-telemetry` recipe applied to a site's registered points.
- *
- * - **One socket per `locationId` and token.** The tracked `(asset, point)`
- *   set is read through a ref, so a refetch of the view re-targets the filter
- *   without reopening the connection. The gateway already filters every socket
- *   by `readableAssetIds`, so no scope logic lives here.
- * - **Only registered points count** (D3): a reading for an asset the view does
- *   not hold, or for a key the asset has not registered, changes neither a row
- *   nor the asset's status — the server's `freshness` is judged the same way.
- * - **Seeded from the DTO at read time.** A point shows the newer of its seeded
- *   and its live sample (`overlayReading`); an asset's last-seen instant is the
- *   later of `latestTelemetryAt` and its newest tracked reading.
- * - **Every time is clamped once, when it arrives, and stored clamped**
- *   (`F4.37`): a socket reading at its receipt, the generated read's samples
- *   at the query's `dataUpdatedAt` (`clampSeeded`, which keeps the first clamp
- *   of a sample a refetch re-supplies unchanged). Nothing is clamped at
- *   render, so producer skew can neither mark a fresh asset stale nor keep a
- *   silent one live.
- * - **One `STALE_TICK_MS` interval**, created once with an empty dependency
- *   array, and nothing returns before it. It only forces a re-render; `nowMs`
- *   is `Date.now()` read at render. Keeping `nowMs` in state and advancing it
- *   only on the tick would put a reading that has just arrived *after* `nowMs`,
- *   and `isStale` reads a future sample as stale.
- */
-
+/** What `useSiteLiveReadings` hands each asset card. */
 export type SiteLiveReadings = {
   /** `Date.now()` at this render — the instant every status is judged at. */
   readonly nowMs: number;
@@ -75,6 +49,32 @@ function trackedRefs(view: GeneratedSiteViewDto | undefined): Set<string> {
   return refs;
 }
 
+/**
+ * `F3.68` U6 — the generated site view's one `/ws/telemetry` connection, the
+ * `use-dashboard-telemetry` recipe applied to a site's registered points.
+ *
+ * - **One socket per `locationId` and token.** The tracked `(asset, point)`
+ *   set is read through a ref, so a refetch of the view re-targets the filter
+ *   without reopening the connection. The gateway already filters every socket
+ *   by `readableAssetIds`, so no scope logic lives here.
+ * - **Only registered points count** (D3): a reading for an asset the view does
+ *   not hold, or for a key the asset has not registered, changes neither a row
+ *   nor the asset's status — the server's `freshness` is judged the same way.
+ * - **Seeded from the DTO at read time.** A point shows the newer of its seeded
+ *   and its live sample (`overlayReading`); an asset's last-seen instant is the
+ *   later of `latestTelemetryAt` and its newest tracked reading.
+ * - **Every time is clamped once, when it arrives, and stored clamped**
+ *   (`F4.37`): a socket reading at its receipt, the generated read's samples
+ *   at the query's `dataUpdatedAt` (`clampSeeded`, which keeps the first clamp
+ *   of a sample a refetch re-supplies unchanged). Nothing is clamped at
+ *   render, so producer skew can neither mark a fresh asset stale nor keep a
+ *   silent one live.
+ * - **One `STALE_TICK_MS` interval**, created once with an empty dependency
+ *   array, and nothing returns before it. It only forces a re-render; `nowMs`
+ *   is `Date.now()` read at render. Keeping `nowMs` in state and advancing it
+ *   only on the tick would put a reading that has just arrived *after* `nowMs`,
+ *   and `isStale` reads a future sample as stale.
+ */
 export function useSiteLiveReadings(
   locationId: string,
   view: GeneratedSiteViewDto | undefined,

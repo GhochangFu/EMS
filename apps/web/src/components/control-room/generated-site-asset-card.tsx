@@ -13,6 +13,13 @@ import {
 import { isStale } from "../../lib/schematic-telemetry";
 import { StatusPill } from "../status-pill";
 
+const STATUS_LABEL: Record<AssetStatus, string> = { live: "Live", stale: "Stale", none: "None" };
+const STATUS_TONE: Record<AssetStatus, "ok" | "warning" | "offline"> = {
+  live: "ok",
+  stale: "warning",
+  none: "offline",
+};
+
 /**
  * `F3.68` U6 — one asset of a generated site view: its code, name, live status
  * and its first `HEADLINE_POINT_COUNT` points, with "All points" expanding the
@@ -26,14 +33,6 @@ import { StatusPill } from "../status-pill";
  * all (`latest === null`) already prints the shared dash and carries no value
  * to dim.
  */
-
-const STATUS_LABEL: Record<AssetStatus, string> = { live: "Live", stale: "Stale", none: "None" };
-const STATUS_TONE: Record<AssetStatus, "ok" | "warning" | "offline"> = {
-  live: "ok",
-  stale: "warning",
-  none: "offline",
-};
-
 export function GeneratedSiteAssetCard({
   asset,
   readings,
