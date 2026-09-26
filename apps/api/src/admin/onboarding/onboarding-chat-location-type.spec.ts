@@ -311,6 +311,11 @@ export async function assertOpenAiPromptListsTheActiveCodes(captured: OpenAiCapt
 // F4.157 review — a stored type. Each case starts from a stored draft, takes
 // the first phase from `inferPhase` as `PATCH :id/draft` does, and stores each
 // turn through the real `mergeDraft`, never through a hand-built draft.
+//
+// Owner ruling, 2026-09-27: the message is the location name, as before F4.157,
+// in every location-phase turn except while the chat waits for a type (a stored
+// non-empty name and no active stored type). A stored type counts only when it
+// is an active code.
 // ---------------------------------------------------------------------------
 
 /** A workbook with a blank name cell and a blank code cell, and a type. */
@@ -321,6 +326,23 @@ const TYPED_BLANK = {
 /** A named, typed location whose code and slug a `PATCH :id/draft` cleared. */
 const TYPED_NAMED_NO_CODE = {
   location: { name: "Lotapata", slug: "", code: "", type: "smoc_campus", latitude: 22.3, longitude: 87.3 },
+} as OnboardingDraft;
+
+/** A named location with no type and a blank code and slug: the chat waits for a type. */
+const AWAITING_NO_CODE = {
+  location: { name: "Lotapata", slug: "", code: "", latitude: 22.3, longitude: 87.3 },
+} as OnboardingDraft;
+
+/** A named location whose stored type is not an active code. */
+const NAMED_INACTIVE_TYPE = {
+  location: {
+    name: "Lotapata",
+    slug: "lotapata",
+    code: "LOTAPATA",
+    type: "space_port",
+    latitude: 22.3,
+    longitude: 87.3,
+  },
 } as OnboardingDraft;
 
 /** One rule-based turn from `stored`, and the draft `mergeDraft` stores after it. */
@@ -361,24 +383,45 @@ export async function assertStoredTypeReportsNoMissingType(): Promise<void> {
 }
 
 /**
- * R4 — a type reply to a named, typed location never renames it. The stored
- * location has a name and a type, and the message names a type: it is a type
- * reply, whether or not the stored draft already holds one.
+ * R4 — a named, typed location is not waiting for a type, so the message is its
+ * new name, as before F4.157 (the owner's example, "Berhampur Pump Station").
  */
-export async function assertTypeReplyToATypedLocationKeepsTheName(): Promise<void> {
-  const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
+export async function assertNameMessageRenamesATypedLocation(): Promise<void> {
+  const { draft } = await storedTurn("Berhampur Pump Station", TYPED_NAMED_NO_CODE);
   assert(
-    draft.location?.name === "Lotapata",
-    `a type reply never renames the location, got ${JSON.stringify(draft.location?.name)}`,
+    draft.location?.name === "Berhampur Pump Station",
+    `the message is the new name, got ${JSON.stringify(draft.location?.name)}`,
   );
 }
 
-/** R4 — the same reply sets the type it names. */
-export async function assertTypeReplyToATypedLocationSetsTheType(): Promise<void> {
-  const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
+/** R4 — the same message sets the type it names over the stored one. */
+export async function assertNameMessageSetsTheTypeItNames(): Promise<void> {
+  const { draft } = await storedTurn("Berhampur Pump Station", TYPED_NAMED_NO_CODE);
   assert(
     draft.location?.type === "pump_station",
-    `the reply sets the type it names, got ${JSON.stringify(draft.location?.type)}`,
+    `the type the message names wins, got ${JSON.stringify(draft.location?.type)}`,
+  );
+}
+
+/** R4 — the same message's code is derived from the new name. */
+export async function assertNameMessageDerivesTheCode(): Promise<void> {
+  const { draft } = await storedTurn("Berhampur Pump Station", TYPED_NAMED_NO_CODE);
+  assert(
+    draft.location?.code === "BERHAMPUR_PUMP_STATION",
+    `the code is derived from the new name, got ${JSON.stringify(draft.location?.code)}`,
+  );
+}
+
+/**
+ * R4 — while the chat waits for a type, the reply keeps the stored name, read
+ * back from the draft `mergeDraft` stores.
+ */
+export async function assertAwaitingTypeReplyKeepsTheStoredName(): Promise<void> {
+  const { draft, phase } = await draftAwaitingType();
+  const second = await storedTurn("Pump station", draft, phase);
+  assert(
+    second.draft.location?.name === "Lotapata",
+    `a type answer never renames the location, got ${JSON.stringify(second.draft.location?.name)}`,
   );
 }
 
@@ -388,7 +431,7 @@ export async function assertTypeReplyToATypedLocationSetsTheType(): Promise<void
  * next message ("MQTT") would be read as a new name.
  */
 export async function assertTypeReplyFillsAnEmptyStoredCode(): Promise<void> {
-  const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
+  const { draft } = await storedTurn("Pump station", AWAITING_NO_CODE);
   assert(
     draft.location?.code === "LOTAPATA",
     `an empty stored code is derived, got ${JSON.stringify(draft.location?.code)}`,
@@ -397,7 +440,7 @@ export async function assertTypeReplyFillsAnEmptyStoredCode(): Promise<void> {
 
 /** R4 — the same for an empty stored slug. */
 export async function assertTypeReplyFillsAnEmptyStoredSlug(): Promise<void> {
-  const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
+  const { draft } = await storedTurn("Pump station", AWAITING_NO_CODE);
   assert(
     draft.location?.slug === "lotapata",
     `an empty stored slug is derived, got ${JSON.stringify(draft.location?.slug)}`,
@@ -405,26 +448,59 @@ export async function assertTypeReplyFillsAnEmptyStoredSlug(): Promise<void> {
 }
 
 /**
- * R5 — the OpenAI branch: a model patch whose location loses its type (here an
- * inactive one, dropped) does not report a missing type the stored draft
- * holds. The turn validates the draft `mergeDraft` will store, where the
- * stored type survives.
+ * R6 — a stored type that is not an active code does not pass silently: the
+ * chat is waiting for a type, so it asks about the stored name.
  */
-export async function assertOpenAiPatchWithoutTypeKeepsTheStoredType(
-  captured: OpenAiCapture,
-): Promise<void> {
+export async function assertStoredInactiveTypeIsAskedFor(): Promise<void> {
+  const { turn } = await storedTurn("not sure", NAMED_INACTIVE_TYPE, "location");
+  assert(
+    turn.assistantMessage === "Which type of location is **Lotapata**?",
+    `an inactive stored type is asked for again, got "${turn.assistantMessage}"`,
+  );
+}
+
+/**
+ * R6 — the same turn's patch carries no type: the inactive code is not copied
+ * back into it. The stored name is the positive control.
+ */
+export async function assertStoredInactiveTypeIsNotPatched(): Promise<void> {
+  const { turn } = await storedTurn("not sure", NAMED_INACTIVE_TYPE, "location");
+  const location = turn.draftPatch.location;
+  assert(location?.name === "Lotapata", `the patch keeps the stored name, got ${JSON.stringify(location)}`);
+  assert(
+    location !== undefined && !("type" in location),
+    `the patch must carry no type, got ${JSON.stringify(location?.type)}`,
+  );
+}
+
+/**
+ * R5 — the OpenAI branch validates the draft `mergeDraft` will store. The
+ * stored draft has an active type and `code: ""`; the model's patch supplies
+ * the code and no type, so only the merged draft is complete and the phase
+ * moves to `rtu`. Validating a shallow `{ ...draft, ...patch }` (the type is
+ * lost) or the pre-turn draft (the code is empty) leaves it on `location`. The
+ * reply's own `currentPhase` is `location`, so `rtu` can come only from
+ * validation.
+ */
+export async function assertOpenAiTurnValidatesTheMergedDraft(captured: OpenAiCapture): Promise<void> {
   const stored = {
     location: {
       name: "Lotapata",
       slug: "lotapata",
-      code: "LOTAPATA",
+      code: "",
       type: "pump_station",
       latitude: 22.3,
       longitude: 87.3,
     },
   } as OnboardingDraft;
-  const turn = await openAiTurn(captured, replyWithLocationType("space_port"), stored);
-  assert(Array.isArray(turn.validationErrors), "the turn reports its validation");
-  const missing = (turn.validationErrors ?? []).filter((e) => e.message === "Location type is required");
-  assert(missing.length === 0, `the stored type survives the patch, got ${JSON.stringify(missing)}`);
+  const reply = JSON.stringify({
+    assistantMessage: "I've set the code.",
+    draftPatch: {
+      location: { name: "Lotapata", slug: "lotapata", code: "LOTAPATA", latitude: 22.3, longitude: 87.3 },
+    },
+    currentPhase: "location",
+  });
+  const turn = await openAiTurn(captured, reply, stored);
+  assert(turn.draftPatch.location?.code === "LOTAPATA", "the model's patch passed the parse");
+  assert(turn.currentPhase === "rtu", `the merged draft is complete, got ${turn.currentPhase}`);
 }

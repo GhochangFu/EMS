@@ -402,9 +402,9 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
     }
 
     if (phase === "location" || !draft.location?.name) {
-      // F4.157 / ADR 0077 decision 7: the type is matched or kept, never
-      // defaulted, and a type reply never renames the location (`kept` is
-      // spread over the derived fields below). See `resolveLocationTurn`.
+      // F4.157 / ADR 0077 decision 7: the type is matched or the stored active
+      // one, never defaulted. The message is the name unless the chat waits for
+      // a type; `kept` is then spread over the derived fields. See `resolveLocationTurn`.
       const types = await this.vocabularies.listLocationTypes();
       const { type, kept } = locationTypes.resolveLocationTurn(message, draft.location, types);
       // F4.104 — **this branch is the draft's default producer, not a

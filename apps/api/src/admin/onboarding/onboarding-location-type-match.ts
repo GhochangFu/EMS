@@ -86,27 +86,40 @@ type DraftLocation = NonNullable<OnboardingDraft["location"]>;
 /**
  * What one rule-based location turn keeps and which type it resolves.
  *
- * - `type` is the type the message names, **else the stored one**. The patch
- *   carries it, so a turn that renames a typed location does not drop its type,
- *   and the chat asks "Which type…?" only when this is absent. It is never
- *   defaulted.
- * - `kept` is the stored location when the message must not rename it: the
- *   stored location has a name and either no type yet (the message answers
- *   "Which type…?") or the message names a type (it is a type reply). A type
- *   reply is never read as a new name, whether or not a type is stored.
+ * Owner ruling, 2026-09-27: the message is the location name exactly as before
+ * `F4.157` (name, slug and code derived from it) in every location-phase turn
+ * **except while the chat waits for a type**.
+ *
+ * - A stored type counts only when it is an active code in `types`. An inactive
+ *   or unknown one is treated as absent, as the OpenAI branch drops one
+ *   (`withoutInactiveLocationType`), so it is asked for again, never passed.
+ * - `type` is the type the message names, else the stored active one. The patch
+ *   carries it, and the chat asks "Which type…?" only when it is absent. It is
+ *   never defaulted.
+ * - `kept` is the stored location only while the chat waits for a type: the
+ *   stored location has a non-empty name and no active type. The message is
+ *   then a type answer, never a new name. `kept` never carries `type`, so an
+ *   inactive stored code is not copied back into the patch.
  *
  * `F4.157` review: this was keyed on the stored location lacking a type alone,
  * and the patch carried a type only when this message matched one. A stored
  * `{ name: "", type: "pump_station" }` then asked for a type it held, and the
- * answer "Pump station" renamed the location to "Pump station".
+ * answer "Pump station" renamed the location to "Pump station". A first fix
+ * also kept a named, typed location whenever the message named a type; the
+ * ruling reverted that, so "Berhampur Pump Station" renames it.
  */
 export function resolveLocationTurn(
   message: string,
   stored: DraftLocation | undefined,
   types: readonly LocationTypeDto[],
-): { type?: string; kept?: DraftLocation } {
+): { type?: string; kept?: Omit<DraftLocation, "type"> } {
   const matched = matchLocationType(message, types);
-  const type = matched ?? stored?.type;
-  const kept = stored?.name && (!stored.type || matched) ? stored : undefined;
-  return { type, kept };
+  const storedActive = types.some((t) => t.code === stored?.type) ? stored?.type : undefined;
+  const type = matched ?? storedActive;
+  if (!stored?.name || storedActive) {
+    return { type };
+  }
+  const kept: Partial<DraftLocation> = { ...stored };
+  delete kept.type;
+  return { type, kept: kept as Omit<DraftLocation, "type"> };
 }

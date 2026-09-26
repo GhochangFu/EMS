@@ -22,13 +22,19 @@ vi.mock("openai", () => ({
 }));
 
 import {
+  assertAwaitingTypeReplyKeepsTheStoredName,
+  assertNameMessageDerivesTheCode,
+  assertNameMessageRenamesATypedLocation,
+  assertNameMessageSetsTheTypeItNames,
   assertNameWithLabelSetsTheTypeInOneTurn,
   assertNameWithTypeSetsTheTypeInOneTurn,
   assertNameWithoutTypeAsksForTheType,
   assertOpenAiPatchKeepsAnActiveType,
   assertOpenAiPatchLosesAnInactiveType,
-  assertOpenAiPatchWithoutTypeKeepsTheStoredType,
+  assertOpenAiTurnValidatesTheMergedDraft,
   assertOpenAiPromptListsTheActiveCodes,
+  assertStoredInactiveTypeIsAskedFor,
+  assertStoredInactiveTypeIsNotPatched,
   assertStoredTypeIsNotAskedFor,
   assertStoredTypeKeepsTheNameThroughTwoTurns,
   assertStoredTypeReportsNoMissingType,
@@ -40,8 +46,6 @@ import {
   assertTypeReplyKeepsTheStoredIdentifiers,
   assertTypeReplyMatchesALabel,
   assertTypeReplySetsTheType,
-  assertTypeReplyToATypedLocationKeepsTheName,
-  assertTypeReplyToATypedLocationSetsTheType,
   assertTypeWordMatchesWholeWords,
   assertUnmatchedReplyAsksAgain,
 } from "./onboarding-chat-location-type.spec";
@@ -106,12 +110,20 @@ describe("OnboardingChatService.handleTurn — a stored location type (F4.157 re
     await assertStoredTypeReportsNoMissingType();
   });
 
-  it("never renames a named, typed location from a type reply", async () => {
-    await assertTypeReplyToATypedLocationKeepsTheName();
+  it("renames a named, typed location to the message, as before F4.157", async () => {
+    await assertNameMessageRenamesATypedLocation();
   });
 
-  it("sets the type a reply names on a typed location", async () => {
-    await assertTypeReplyToATypedLocationSetsTheType();
+  it("sets the type the renaming message names", async () => {
+    await assertNameMessageSetsTheTypeItNames();
+  });
+
+  it("derives the renamed location's code from the message", async () => {
+    await assertNameMessageDerivesTheCode();
+  });
+
+  it("keeps the stored name while it waits for a type", async () => {
+    await assertAwaitingTypeReplyKeepsTheStoredName();
   });
 
   it("derives a kept location's empty code from its name", async () => {
@@ -121,11 +133,19 @@ describe("OnboardingChatService.handleTurn — a stored location type (F4.157 re
   it("derives a kept location's empty slug from its name", async () => {
     await assertTypeReplyFillsAnEmptyStoredSlug();
   });
+
+  it("asks again for a stored type that is not active", async () => {
+    await assertStoredInactiveTypeIsAskedFor();
+  });
+
+  it("does not copy a stored inactive type into the patch", async () => {
+    await assertStoredInactiveTypeIsNotPatched();
+  });
 });
 
 describe("OnboardingChatService.handleTurn — the location type (F4.157), OpenAI", () => {
-  it("does not report a stored type as missing when the model's patch carries none", async () => {
-    await assertOpenAiPatchWithoutTypeKeepsTheStoredType(captured);
+  it("validates the merged draft, so a patch that completes it moves the phase on", async () => {
+    await assertOpenAiTurnValidatesTheMergedDraft(captured);
   });
 
   it("drops a location.type that is not an active code from the model's patch", async () => {
