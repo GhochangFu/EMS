@@ -572,6 +572,53 @@ export async function futureSocketRowGoesDimmed(): Promise<void> {
   expect(valueCellOf("PCC-01", "Energy").className).toContain("opacity-50");
 }
 
+/**
+ * One asset with a point sampled 5 s ago ("Fresh") and one sampled 60 s ago
+ * ("Old"): the asset itself is Live (its newest sample is 5 s old), so only a
+ * per-row judgement can dim "Old" and leave "Fresh" alone. A single-point
+ * asset (W10) cannot tell a row's own staleness from the asset's.
+ */
+function mixedAgeView(): GeneratedSiteViewDto {
+  return {
+    locationId: LOCATION_ID,
+    asOf: new Date().toISOString(),
+    domains: [
+      {
+        code: "electrical",
+        label: "Electrical",
+        assets: [
+          {
+            id: ROW_ASSET_ID,
+            code: "ROW-01",
+            name: "Row asset",
+            domain: "electrical",
+            latestTelemetryAt: isoAgo(5_000),
+            freshness: "live",
+            points: [point("fresh", "Fresh", 51, 5_000), point("old", "Old", 52, 60_000)],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** W13a — on a Live asset, the 60 s row is dimmed (the pill reads Live: the control). */
+export async function oldRowOnALiveAssetIsDimmed(): Promise<void> {
+  renderView({ view: mixedAgeView() });
+  await screen.findByText("ROW-01");
+  expect(pillOf("ROW-01"), "control: the asset is Live").toBe("Live");
+  expect(valueCellOf("ROW-01", "Old").className).toContain("opacity-50");
+}
+
+/** W13b — on the same asset, the 5 s row is not dimmed (its value is present: the control). */
+export async function freshRowOnTheSameAssetIsNotDimmed(): Promise<void> {
+  renderView({ view: mixedAgeView() });
+  await screen.findByText("ROW-01");
+  const cell = valueCellOf("ROW-01", "Fresh");
+  expect(cell.textContent, "control: the value is present").toContain("51");
+  expect(cell.className).not.toContain("opacity-50");
+}
+
 /** W11 — the generated site view refetches every 30 s (a new asset or rank must appear). */
 export async function generatedReadRefetchesEvery30s(): Promise<void> {
   vi.useFakeTimers({ now: Date.parse("2026-09-26T10:00:00.000Z") });

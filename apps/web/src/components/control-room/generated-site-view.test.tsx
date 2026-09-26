@@ -8,6 +8,7 @@ import {
   domainHeadingsInDtoOrder,
   domainPanelsCountTheirAssets,
   fewerPointsCollapsesTheCard,
+  freshRowOnTheSameAssetIsNotDimmed,
   fullScopeHidesTheLine,
   futureSeededRowGoesDimmed,
   futureSeededSampleGoesStale,
@@ -22,6 +23,7 @@ import {
   noDomainsSaysSo,
   noSampleReadsNone,
   nullLatestPrintsTheDash,
+  oldRowOnALiveAssetIsDimmed,
   oneSocketWithTheToken,
   partialScopeShowsTheLine,
   pendingReadSaysLoading,
@@ -157,5 +159,13 @@ describe("F3.68 GeneratedSiteView", () => {
 
   it("W12e dims a future-dated socket reading's row 25 s after it arrived", async () => {
     await futureSocketRowGoesDimmed();
+  });
+
+  it("W13a dims a 60 s row on a Live asset", async () => {
+    await oldRowOnALiveAssetIsDimmed();
+  });
+
+  it("W13b leaves the same asset's 5 s row undimmed", async () => {
+    await freshRowOnTheSameAssetIsNotDimmed();
   });
 });
