@@ -254,7 +254,7 @@ describe("F3.68 — the generated read reads no template (T7)", () => {
  * a per-registered-point `LATERAL … LIMIT 1` bounded by a 7-day window, and
  * the window is a **literal in the SQL text**, spelled once in
  * `GENERATED_LATEST_WINDOW_SQL`. A bound `now() - $n` on the hypertable plans
- * every chunk (measured 574–1228 ms planning), and the unbounded
+ * every chunk (an unbounded `LATERAL` planned in 574–1228 ms), and the unbounded
  * `DISTINCT ON` it replaces sorted the whole site (69.7 s on the dev DB).
  * Comments are stripped first, so a docblock that spells the old shape
  * cannot satisfy or trip a case. One claim per `it()`.
