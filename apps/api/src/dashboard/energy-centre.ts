@@ -16,12 +16,15 @@ import { windowedPueRatio } from "../telemetry/pue-ratio";
  * The Energy Centre reads — `energySummary`, `energySourceMix`,
  * `energyTopConsumers` — and the window parsing they share. Moved out of
  * `dashboard.service.ts` by `F4.159`, because that file sat at 994 of
- * AGENTS.md §4.5's 1000 lines. The move changed no line; the same row then
- * joined `bms.assets` in the summary and source-mix totals, so telemetry of
+ * AGENTS.md §4.5's 1000 lines. The move changed no SQL: only the `this.`
+ * references became parameters and the methods became functions. The same row
+ * then joined `bms.assets` in the summary and source-mix totals, so telemetry of
  * an asset id with no row is not energy. `DashboardService` keeps one delegating
  * method per read, so the controller and every spec still call the service.
  * `pool` is the service's `FLEET_POOL` (ADR 0043), and the `assetIds` scope
- * is the isolation control, as it was in the service.
+ * is the isolation control, as it was in the service. The scope is a required
+ * argument here (`null` means every asset), so a caller cannot reach the whole
+ * fleet by leaving it out; the service delegates keep their optional one.
  */
 
 /** What `energySummary` needs from the service: its pool and its tariff resolver (`E4.1c`). */
@@ -73,8 +76,8 @@ export function parseEnergyWindow(raw?: string): {
 /** The Energy Centre ribbon: kWh, peak kW, PUE and the indicative cost over a trailing window. */
 export async function energySummary(
   { pool, parameters }: EnergyCentreDeps,
-  windowRaw?: string,
-  assetIds?: string[] | null,
+  windowRaw: string | undefined,
+  assetIds: string[] | null,
 ): Promise<EnergyCentreSummary> {
   const { intervalSql, useHourlyBuckets, windowLabel, durationHours } =
     parseEnergyWindow(windowRaw);
@@ -188,7 +191,11 @@ export async function energySummary(
 }
 
 /** Grid, solar and generator kW per bucket over a trailing window. */
-export async function energySourceMix(pool: Pool, windowRaw?: string, assetIds?: string[] | null): Promise<{
+export async function energySourceMix(
+  pool: Pool,
+  windowRaw: string | undefined,
+  assetIds: string[] | null,
+): Promise<{
   points: { t: string; gridKw: number; solarKw: number; dgKw: number }[];
 }> {
   const { intervalSql, useHourlyBuckets, durationHours } =
@@ -268,9 +275,9 @@ export async function energySourceMix(pool: Pool, windowRaw?: string, assetIds?:
 /** The assets with the highest mean kW over a trailing window, at most 25. */
 export async function energyTopConsumers(
   pool: Pool,
-  windowRaw?: string,
-  limit = 10,
-  assetIds?: string[] | null,
+  windowRaw: string | undefined,
+  limit: number,
+  assetIds: string[] | null,
 ): Promise<{
   consumers: {
     assetId: string;

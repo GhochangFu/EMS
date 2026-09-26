@@ -5961,14 +5961,18 @@ mix, the per-asset cost, the energy report's total and source totals, and
 both PUE reads. The Energy Centre reads moved first to
 `apps/api/src/dashboard/energy-centre.ts`, unchanged, taking
 `dashboard.service.ts` from 994 to 688 lines. ADR 0070 Amendment 5 supersedes
-decision 7's rule that orphan telemetry fails the cost closed: the totals and
+Amendment 2 item 1's rule that orphan telemetry fails the cost closed: the totals and
 the cost now leave out the same ids.
 
 Verified: thirteen integration cases test-first, each red with the value it
 names; each of the ten joins removed alone reddened only its own case; CI
 green. On the rebuilt container the served Total kW equals the psql sum over
-existing assets and the location card sum. HTTP and browser N/A — no
-controller, contract or web change.
+existing assets and the location card sum. HTTP N/A — no controller or
+contract change. The browser was wrongly called N/A: while ticks arrive the
+Total kW tile shows the socket's batch sum, which still counted orphan
+readings. The post-merge review found it; a follow-up PR filters them at the
+socket gateway, and corrects the ADR citation above (first written as
+decision 7).
 
 **Cascade:** no row lists `F4.159` in *Depends*. Owed separately: the
 `chore(agents):` sweep (AGENTS.md names `dashboard.service.ts` as the home of

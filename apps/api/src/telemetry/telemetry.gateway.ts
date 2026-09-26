@@ -11,6 +11,7 @@ import { Namespace, Socket } from "socket.io";
 import { AccessControlService } from "../auth/access-control.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { MetricsService } from "../observability/metrics.service";
+import { ExistingAssetIds } from "./existing-asset-ids";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
 
 @WebSocketGateway({
@@ -31,6 +32,7 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
     private readonly metrics: MetricsService,
     private readonly jwtAuth: JwtAuthGuard,
     private readonly accessControl: AccessControlService,
+    private readonly existingAssets: ExistingAssetIds,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
@@ -49,12 +51,15 @@ export class TelemetryGateway implements OnGatewayInit, OnGatewayConnection {
 
   afterInit(): void {
     this.hub.on("readings", (readings: TelemetryReading[]) => {
+      // F4.159: a reading whose asset row is gone reaches no socket
+      // (`existing-asset-ids.ts`). Filtered once, before the per-client scope.
+      const known = this.existingAssets.filter(readings);
       for (const client of this.server.sockets.values()) {
         const assetIds = client.data.assetIds as string[] | null | undefined;
         const visibleReadings =
           assetIds === null
-            ? readings
-            : readings.filter((reading) => assetIds?.includes(reading.assetId));
+            ? known
+            : known.filter((reading) => assetIds?.includes(reading.assetId));
         if (visibleReadings.length > 0) {
           client.emit("telemetry", { readings: visibleReadings });
         }

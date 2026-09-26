@@ -543,9 +543,13 @@ export async function assertReportGoesDarkOnBareTenant(
       `${preview.summary.totalKwh}`,
   );
   assert(
-    preview.sourceTotals.solarKwh === 0 && preview.sourceTotals.gridKwh === 0,
-    `bare tenant: the source totals join bms.assets (F4.159), so they must go dark too, got ` +
-      `${JSON.stringify(preview.sourceTotals)}`,
+    preview.sourceTotals.gridKwh === 0,
+    `bare tenant: the source total joins bms.assets (F4.159), so grid must go dark too, got ` +
+      `gridKwh=${preview.sourceTotals.gridKwh}`,
+  );
+  assert(
+    preview.sourceTotals.solarKwh === 0,
+    `bare tenant: solar_ids goes dark under FORCE with no GUC, got solarKwh=${preview.sourceTotals.solarKwh}`,
   );
 }
 
@@ -574,6 +578,16 @@ export async function assertReportResolvesWithOrgGuc(
     preview.sourceTotals.solarKwh > 0,
     `tenant + org GUC: solar must be attributed again once the GUC is set, got ` +
       `solarKwh=${preview.sourceTotals.solarKwh}`,
+  );
+  // F4.159: the totals join bms.assets too, so the GUC must bring them back —
+  // this is what ties the bare-pool zeros to the missing GUC.
+  assert(
+    preview.summary.totalKwh > 0,
+    `tenant + org GUC: the kWh total must return once the GUC is set, got ${preview.summary.totalKwh}`,
+  );
+  assert(
+    preview.sourceTotals.gridKwh > 0,
+    `tenant + org GUC: grid must return once the GUC is set, got gridKwh=${preview.sourceTotals.gridKwh}`,
   );
 }
 

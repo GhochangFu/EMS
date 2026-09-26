@@ -9,6 +9,7 @@ import { TelemetryImportService } from "../admin/telemetry-import/telemetry-impo
 import { AssetImagesService } from "../assets/asset-images.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
+import { DashboardService } from "../dashboard/dashboard.service";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
@@ -28,7 +29,8 @@ import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "./database.tokens";
  * slot**. Assertions live here; the sibling `.test` is the Vitest entry point
  * (ADR 0014). Two kinds of service depend on it:
  *
- *  - the unconditional fleet reads (calc cache, energy report, telemetry-import
+ *  - the unconditional fleet reads (calc cache, energy report, the dashboard
+ *    since `F4.159` joined `bms.assets` into every kW and PUE sum, telemetry-import
  *    asset resolution, `locations` master data — a decision-2 surface, ADR 0043 —
  *    and `E8.4`'s credential rotation walk, ADR 0062 decision 6, whose every
  *    integration proof runs on an explicit transaction so this is its only gate);
@@ -87,6 +89,9 @@ function injectedToken(target: unknown, index: number): unknown {
 export function assertUnconditionalFleetReadSlots(): void {
   expect(injectedToken(CalcDefinitionsService, 0)).toBe(FLEET_DRIZZLE);
   expect(injectedToken(ReportsService, 0)).toBe(FLEET_POOL);
+  // F4.159: every kW and PUE sum joins bms.assets (FORCE RLS), so on any other
+  // pool the dashboard reads zero with no error.
+  expect(injectedToken(DashboardService, 0)).toBe(FLEET_POOL);
   expect(injectedToken(TelemetryImportService, 0)).toBe(FLEET_DRIZZLE);
   expect(injectedToken(LocationsAdminService, 0)).toBe(FLEET_DRIZZLE);
   expect(injectedToken(LocationsAdminService, 1)).toBe(TENANT_DRIZZLE);
