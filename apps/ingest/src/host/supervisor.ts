@@ -118,6 +118,28 @@ export type DeviceHealth = {
   readonly deviceKey: string;
   /** Absent means this RTU has produced nothing since the host started. */
   readonly lastSampleAt?: Date;
+  /**
+   * Every bound `sourceKey` of this RTU, in binding order (`F4.58`).
+   *
+   * Required, not optional: an optional field at this seam is invisible to tsc
+   * and to every fake, so a producer that forgot it would read as "no points"
+   * rather than failing to compile.
+   */
+  readonly points: readonly PointHealth[];
+};
+
+/**
+ * One bound point's own liveness (`F4.58`).
+ *
+ * An RTU's `lastSampleAt` cannot answer "is this point alive": a station that
+ * publishes five of its twenty-one bound keys refreshes it every minute while
+ * sixteen points stay dark for ever. Keyed on `sourceKey` because that is what
+ * `SourceSample` carries.
+ */
+export type PointHealth = {
+  readonly sourceKey: string;
+  /** Absent means this point has produced nothing live since the host started. */
+  readonly lastSampleAt?: Date;
 };
 
 /** Operator-facing state for one endpoint — what `F3.16` consumes. */
@@ -306,6 +328,18 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   );
   /** `deviceKey → the last time this RTU produced anything` (`F1.7`). */
   const lastSampleByDeviceKey = new Map<string, Date>();
+  /**
+   * `deviceKey → its bound sourceKeys`, and `deviceKey → sourceKey → last seen`
+   * (`F4.58`). Both are seeded from the plan and never grow past it, so memory
+   * is bounded by the plan's point count: a sample for an unbound key is not
+   * recorded, for the same reason an unbound `deviceKey` is not.
+   */
+  const boundKeysByDevice = new Map(
+    plan.bindings.map((binding) => [binding.deviceKey, new Set(binding.sourceKeys)] as const),
+  );
+  const lastSampleByPoint = new Map(
+    plan.bindings.map((binding) => [binding.deviceKey, new Map<string, Date>()] as const),
+  );
   /** The endpoint's only binding, if it has exactly one — see `accept()`. */
   const soleDeviceKey = plan.bindings.length === 1 ? plan.bindings[0]?.deviceKey : undefined;
 
@@ -341,6 +375,13 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       // normaliser drops that sample too rather than guessing.
       if (deviceKey !== undefined && rtuCodeByDeviceKey.has(deviceKey)) {
         lastSampleByDeviceKey.set(deviceKey, now);
+        // Only the point this sample is for, and only if it is bound. This is
+        // the one stamp site: the replay loop hands its segments straight to
+        // `writeSamples` and never reaches here, so an hour-old reading
+        // written late does not make a dark point read as live.
+        if (boundKeysByDevice.get(deviceKey)?.has(sample.sourceKey) === true) {
+          lastSampleByPoint.get(deviceKey)?.set(sample.sourceKey, now);
+        }
       }
     }
   }
@@ -857,10 +898,17 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // from health is indistinguishable from one that is fine.
         devices: plan.bindings.map((binding) => {
           const seen = lastSampleByDeviceKey.get(binding.deviceKey);
+          const pointSeen = lastSampleByPoint.get(binding.deviceKey);
           return {
             rtuCode: binding.rtuCode,
             deviceKey: binding.deviceKey,
             ...(seen === undefined ? {} : { lastSampleAt: seen }),
+            // From the plan again, in binding order, so a point that has never
+            // published is listed rather than missing.
+            points: binding.sourceKeys.map((sourceKey) => {
+              const at = pointSeen?.get(sourceKey);
+              return at === undefined ? { sourceKey } : { sourceKey, lastSampleAt: at };
+            }),
           };
         }),
         restarts,

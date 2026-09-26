@@ -16,7 +16,7 @@ const FRESH = new Date("2026-08-05T12:05:00.000Z");
 const STALE_AFTER_MS = 300_000;
 
 function device(rtuCode: string, overrides: Partial<DeviceHealth> = {}): DeviceHealth {
-  return { rtuCode, deviceKey: rtuCode, lastSampleAt: FRESH, ...overrides };
+  return { rtuCode, deviceKey: rtuCode, lastSampleAt: FRESH, points: [], ...overrides };
 }
 
 function endpoint(overrides: Partial<SupervisorHealth> = {}): SupervisorHealth {
