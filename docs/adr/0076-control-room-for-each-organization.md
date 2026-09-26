@@ -213,3 +213,29 @@ Design, 2026-09-25:
 Owner ruling on a stale point's value in the generated site view: shown,
 dimmed, rather than blanked. This departs from ADR 0027 decision 3 for this
 view only; every other page keeps decision 3 as written.
+
+## Amendment 2 (2026-09-26, F3.68)
+
+1. **A third schema change: `bms_tenant` may not set `headline_rank`.**
+   Decision 7's column lives on the fleet-wide `bms.point_keys`, and ADR 0051
+   Amendment 1 decision 1 leaves `bms_tenant` a table-level `INSERT` there so
+   onboarding can extend the catalog. That `INSERT` covered the new column, so
+   an organization's onboarding path could have set a fleet-wide display rank.
+   Migration `0084` adds `bms.point_keys_refuse_tenant_headline_rank()` and its
+   `BEFORE INSERT` trigger, which raise `42501` when `current_user` is
+   `bms_tenant` and `NEW.headline_rank` is not null. Every other writer (the
+   admin API on the fleet pool, the seed, the migrator) is unchanged.
+2. **A trigger, not a column grant** (owner ruling). A column-level `INSERT`
+   grant that leaves out `headline_rank` refuses the whole onboarding insert:
+   Drizzle names every column, the unset ones as `DEFAULT`, and Postgres checks
+   the privilege of every named column. A column grant would also need a new
+   grant for every later column on this table.
+3. **Known limit.** The guard names one role. A future login role that inherits
+   `bms_tenant` would pass it; today every environment logs in as `bms_tenant`
+   itself and no role is a member of it. A deployment that changes that needs a
+   follow-up migration.
+
+The generated read's latest-value lookup is bounded to a literal 7-day window
+(owner ruling, the same day): a point with no sample in 7 days shows "—". The
+unbounded form sorted the whole site history on every request (70 s for
+`RSMOC-WC` on the dev database).
