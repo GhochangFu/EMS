@@ -2,6 +2,7 @@ import {
   adminLocationDtoSchema,
   adminLocationSummaryDtoSchema,
   locationsListResponseSchema,
+  locationTypesListResponseSchema,
   siteControlRoomViewSettingDtoSchema,
 } from "@bms/shared/contracts";
 import type {
@@ -9,6 +10,7 @@ import type {
   AdminLocationSummaryDto,
   BuiltinSiteViewKey,
   LocationsListResponse,
+  LocationTypesListResponse,
   MasterDataActiveFilter,
   SiteControlRoomViewSettingDto,
 } from "@bms/shared";
@@ -16,6 +18,11 @@ import type {
 import { adminFetch } from "./client";
 
 export type { LocationsListResponse };
+
+/** `GET /admin/location-types` (`F4.157`, D9) — the active vocabulary rows for the Type select. */
+export async function fetchAdminLocationTypes(): Promise<LocationTypesListResponse> {
+  return adminFetch("/admin/location-types", locationTypesListResponseSchema);
+}
 
 
 export async function fetchAdminLocations(
@@ -40,7 +47,7 @@ export async function createAdminLocation(input: {
   code: string;
   slug: string;
   name: string;
-  type: AdminLocationDto["type"];
+  type: string;
   province?: string | null;
   capital?: string | null;
   /** E4.1b: IANA zone name; the server validates it against pg_timezone_names. */
@@ -62,7 +69,7 @@ export async function updateAdminLocation(
     code: string;
     slug: string;
     name: string;
-    type: AdminLocationDto["type"];
+    type: string;
     province: string | null;
     capital: string | null;
     timezone: string | null;

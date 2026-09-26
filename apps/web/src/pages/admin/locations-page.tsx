@@ -10,6 +10,7 @@ import {
   createAdminLocation,
   deactivateAdminLocation,
   fetchAdminLocations,
+  fetchAdminLocationTypes,
   fetchSiteControlRoomView,
   putSiteControlRoomView,
   reactivateAdminLocation,
@@ -43,7 +44,7 @@ const emptyForm = {
   code: "",
   slug: "",
   name: "",
-  type: "rsmoc" as AdminLocationDto["type"],
+  type: "",
   province: "",
   capital: "",
   timezone: "",
@@ -95,6 +96,18 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
     queryFn: () => fetchAdminLocations(activeFilter, orgFilter || undefined),
   });
 
+  // `F4.157` (D9) — the Type select's vocabulary; the admin write paths refuse a code that is
+  // not one of these active rows.
+  const typesQ = useQuery({
+    queryKey: ["admin", "location-types"],
+    queryFn: fetchAdminLocationTypes,
+  });
+  const types = typesQ.data?.items ?? [];
+  /** The one resolved value: `form.type` once the admin has picked, otherwise the list's first
+   * code — feeds both the `<select value>` and the create/update payload, so the two never
+   * disagree about what an untouched form submits. */
+  const resolvedType = form.type || types[0]?.code || "";
+
   // `F3.67` / ADR 0076 decision 3 — the Control Room view field, Edit modal only. The
   // setting's key sits under `["admin", "locations"]`, so the save's invalidation refreshes it.
   const viewEnabled = modalOpen && editing !== null;
@@ -145,7 +158,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
         code: form.code,
         slug: form.slug,
         name: form.name,
-        type: form.type,
+        type: resolvedType,
         province: form.province || null,
         capital: form.capital || null,
         timezone: form.timezone || null,
@@ -347,14 +360,15 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                 Type
                 <select
                   className="mt-1 w-full rounded border px-3 py-2 text-sm"
-                  value={form.type}
-                  onChange={(event) =>
-                    setForm({ ...form, type: event.target.value as AdminLocationDto["type"] })
-                  }
+                  value={resolvedType}
+                  disabled={types.length === 0}
+                  onChange={(event) => setForm({ ...form, type: event.target.value })}
                 >
-                  <option value="rsmoc">rsmoc</option>
-                  <option value="csmoc">csmoc</option>
-                  <option value="smoc_campus">smoc_campus</option>
+                  {types.map((locationType) => (
+                    <option key={locationType.code} value={locationType.code}>
+                      {locationType.label}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="block text-xs font-semibold text-bms-muted">

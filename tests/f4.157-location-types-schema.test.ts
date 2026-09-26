@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -124,6 +124,60 @@ describe("F4.157 — bms.location_types schema (migration 0085)", () => {
     const typeLine = locationsTable.slice(typeStart, typeEnd);
     expect(typeLine, "the type column must reference locationTypes.code").toContain(
       "references(() => locationTypes.code)",
+    );
+  });
+
+  // T7
+  it("no file that reads the location-type vocabulary keeps the closed three-code list literal", () => {
+    const LIST_LITERAL = /"smoc_campus"\s*,\s*"rsmoc"/;
+    /** A docblock line (`location-types.spec.ts:5`) spells the retired enum in prose, on one
+     * line — `sqlOnly`'s trick (`tests/f4.157-location-types-schema.test.ts` T1-T6) applied to
+     * `//`/`*` comment lines rather than SQL `--` ones, so a comment naming the gate does not
+     * itself trip it (the memory lesson "a comment naming a gate bundles claims"). */
+    const codeOnly = (source: string): string =>
+      source
+        .split("\n")
+        .filter((line) => {
+          const trimmed = line.trim();
+          return !(trimmed.startsWith("*") || trimmed.startsWith("//"));
+        })
+        .join("\n");
+
+    const CLEANED_FILES = [
+      "apps/api/src/admin/locations/locations.schema.ts",
+      "apps/api/src/admin/onboarding/onboarding.schema.ts",
+      "apps/api/src/dashboard/dashboard.service.ts",
+      "apps/api/src/map/map.service.ts",
+      "apps/web/src/components/world-map.tsx",
+      "apps/web/src/pages/admin/locations-page.tsx",
+    ];
+    for (const rel of CLEANED_FILES) {
+      expect(
+        codeOnly(read(rel)),
+        `${rel} must not keep the closed three-code list literal`,
+      ).not.toMatch(LIST_LITERAL);
+    }
+
+    // packages/shared/src/contracts/*.ts — every contract file, not just the ones the plan
+    // named, since a stray fixture literal elsewhere would slip the gate otherwise.
+    const contractsDir = join(repoRoot, "packages/shared/src/contracts");
+    for (const name of readdirSync(contractsDir)) {
+      if (!name.endsWith(".ts")) continue;
+      const rel = `packages/shared/src/contracts/${name}`;
+      expect(
+        codeOnly(read(rel)),
+        `${rel} must not keep the closed three-code list literal`,
+      ).not.toMatch(LIST_LITERAL);
+    }
+
+    // Positive control: the seed's filter is unaffected (D2's seed still lists the three legacy
+    // Eskom kinds) — the regex genuinely matches something, and this file was left alone on
+    // purpose (§Measured facts).
+    expect(read("packages/db/src/eskom-locations-seed.ts")).toMatch(LIST_LITERAL);
+
+    // No stray hardcoded <option value="rsmoc"> either.
+    expect(read("apps/web/src/pages/admin/locations-page.tsx")).not.toContain(
+      '<option value="rsmoc">',
     );
   });
 
