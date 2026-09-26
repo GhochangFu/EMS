@@ -117,9 +117,10 @@ Plain text, on `INGEST_HOST_HEALTH_PORT`. No metrics library — `prom-client`
 is deferred to `F3.16` (ADR 0016 Amendment 4 decision 11).
 
 ```
-ingest-host degraded endpoints=1 rtus=3 stale=1 skipped=0 notify=on uptime=39s
+ingest-host degraded endpoints=1 rtus=3 stale=1 dark=1 skipped=0 notify=on uptime=39s
 endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=connected writePath=ok rtus=861736076104923|861736076128245|861736076133666 restarts=1 pollFailures=0 queue=0 dropped=0 written=812 writeFailures=0 buffered=0 bufferDropped=0 replayed=0 lastSample=2026-08-22T09:41:07.000Z
 stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
+dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=s12_r01 lastSample=never
 ```
 
 - One `endpoint` line per supervised connection. `rtus=` enumerates the devices
@@ -132,6 +133,28 @@ stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
   broker is fine, the station is not, and restarting the connection would not
   fix it. `silentFor=` is omitted for an RTU that has never published at all:
   that is a mapping error rather than a silence.
+- **One `dark rtu=` line per bound point that has gone quiet on an RTU that is
+  not itself stale** (`F4.58`). Format: `dark rtu=<rtuCode> endpoint=<endpointKey>
+  key=<sourceKey> lastSample=<iso|never>[ silentFor=<n>s]` — one line per
+  `(rtuCode, sourceKey)`, following the `stale rtu=` lines. `stale` already says
+  the whole device stopped talking, so a point on a stale RTU is **neither
+  listed nor counted** here — repeating every one of that RTU's bound keys as
+  `dark` too would say the same fact under two names and drown the case this
+  line exists for: a station still talking, just not about everything it is
+  mapped to. Same clock as `stale`: silence is measured from
+  `max(lastSampleAt, startedAt)`, strictly greater than
+  `INGEST_STALE_AFTER_MS` — the same window and the same boot grace, so a point
+  that has never published is not falsely dark before the host has been up
+  long enough to have heard it, and one publishing exactly on the boundary does
+  not flap. At most `MAX_DARK_LINES` (50) lines render; beyond that a trailer
+  `dark omitted=<k>` names the rest — the header's `dark=<n>` is always the
+  true total, never capped, so an operator counting from the header is never
+  undercounting. **`dark>0` does not change the `ok`/`degraded` verdict.**
+  Unlike `stale`, a dark point is a station demonstrably still connected and
+  still publishing something — the alarm for "this whole RTU went quiet" is
+  `stale`, and folding a partial gap into the same verdict would degrade the
+  host on the ordinary case of one dead sensor on an otherwise healthy RTU,
+  which is `F3.16`'s alarm surface to own, not this endpoint's boolean.
 - **The device list is fixed at start-up. Enabling or disabling an RTU needs a
   host restart.** The reload loop refreshes point mappings only; a supervisor's
   bindings are never replaced (see *Reloads* below). A newly enabled RTU is
@@ -169,6 +192,28 @@ stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
 
 Logs are JSON lines on stdout. Credential values never appear in them — the
 adapter conformance suite asserts it with a seeded sentinel.
+
+**The `readings absent` log line — why a dark point went dark** (`F4.58`,
+`apps/ingest/src/adapters/mqtt.ts`). The health endpoint's `dark` line can only
+say *which* bound point stopped producing a reading — the host never sees the
+payload, only the samples the adapter chose to emit. The distinction between a
+dead sensor and a wrong mapping lives here instead: the MQTT adapter emits one
+`warn("readings absent", { rtuCode, deviceKey, empty, missing, firstEmpty?,
+firstMissing? })` per message, for every affected station, whenever at least
+one bound key yields no sample.
+
+- `empty` is the count of bound keys the payload carried as `null`, `""`, or a
+  value that will not coerce to a finite number — the register answered with
+  nothing usable. This is a field fault: the meter or sensor behind that key is
+  not reporting.
+- `missing` is the count of bound keys **not present in the payload at all**
+  (`undefined`). This is a mapping fault: `source_data_key` names a key this
+  device never publishes.
+- `firstEmpty` / `firstMissing` name the first key of each kind, in binding
+  order, and are omitted when their count is 0.
+- Ids and counts only — never a value (AGENTS.md §9.6). One line per message
+  per affected station, stateless and timer-free: a message with every bound
+  key present logs nothing.
 
 ## The disk buffer
 
@@ -543,3 +588,27 @@ decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
 `rtu_connection_configs.config` — an RTU whose stored config carries the key is
 refused with `tls-downgrade-refused` rather than served. The environment
 variable is the only way to lower TLS verification, matching `index.js`.
+
+- **The health endpoint cannot tell an empty reading from a missing one**
+  (`F4.58`). `dark rtu=… key=…` says a bound point stopped producing a
+  reading; it cannot say whether the register answered empty (`null`, `""`,
+  non-numeric — a field fault) or was never in the payload at all (a mapping
+  fault) — the host that renders health never sees the payload, only the
+  samples the adapter emitted. That distinction lives only in the adapter's
+  `readings absent` log line (`empty=` / `missing=`, above).
+- **A point mapped after boot is not tracked until the host restarts**
+  (`F4.58`). `pointsByDevice` is built once, from `plan.bindings` at
+  `createSupervisor` construction — the same restart boundary the *reload
+  refreshes point mappings only* limit above already names for the point
+  index. A `source_data_key` added to an already-running RTU has no liveness
+  entry, so it neither appears in `dark` nor moves the `dark=` count, however
+  long it stays silent, until the next restart rebuilds the bindings.
+- **A push adapter that emits only on change would read every unchanged point
+  as dark.** ThinkIoT is not that adapter: it republishes every mapped key on
+  every cycle whether or not the value moved, so `dark` genuinely means "this
+  register stopped answering," not "this reading has not changed lately." A
+  future adapter that only pushes deltas — the OPC-UA adapter `F1.4` is
+  expected to add — would make a perfectly healthy, unchanging point look dark
+  after one `INGEST_STALE_AFTER_MS` window, and that adapter's design has to
+  reckon with it: either publish a periodic keep-alive sample per bound point,
+  or `dark` on that protocol needs a different signal than last-sample-time.
