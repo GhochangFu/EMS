@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
-import { runDeviceStalenessTests, runHealthRenderTests } from "./health-server.spec.js";
+import {
+  runDarkPointTests,
+  runDeviceStalenessTests,
+  runHealthRenderTests,
+} from "./health-server.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("health endpoint", () => {
@@ -10,5 +14,9 @@ describe("health endpoint", () => {
 
   it("names a silent RTU on a connected endpoint", () => {
     runDeviceStalenessTests();
+  });
+
+  it("names a dark point on an RTU that is otherwise still talking", () => {
+    runDarkPointTests();
   });
 });

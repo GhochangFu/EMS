@@ -1,5 +1,5 @@
-import { renderHealth, type HealthSnapshot } from "./health-server.js";
-import type { DeviceHealth, SupervisorHealth } from "./supervisor.js";
+import { MAX_DARK_LINES, renderHealth, type HealthSnapshot } from "./health-server.js";
+import type { DeviceHealth, PointHealth, SupervisorHealth } from "./supervisor.js";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -17,6 +17,11 @@ const STALE_AFTER_MS = 300_000;
 
 function device(rtuCode: string, overrides: Partial<DeviceHealth> = {}): DeviceHealth {
   return { rtuCode, deviceKey: rtuCode, lastSampleAt: FRESH, points: [], ...overrides };
+}
+
+/** A bound point, in binding order — mirrors `device()`'s shape. */
+function point(sourceKey: string, lastSampleAt?: Date): PointHealth {
+  return { sourceKey, ...(lastSampleAt === undefined ? {} : { lastSampleAt }) };
 }
 
 function endpoint(overrides: Partial<SupervisorHealth> = {}): SupervisorHealth {
@@ -526,6 +531,169 @@ export function runDeviceStalenessTests(): void {
     assert(
       !body.includes(SENTINEL),
       `only deliberately rendered fields may reach the body:\n${body}`,
+    );
+  }
+}
+
+/**
+ * Per-point liveness on the health body (`F4.58`).
+ *
+ * `stale` answers "did this RTU stop talking"; `dark` answers the question a
+ * silent-but-connected RTU cannot: "of what it still sends, what has it
+ * stopped sending". Same clock, same window, same boot grace as `stale` — Q3
+ * ruled `dark>0` does not itself degrade the verdict.
+ */
+export function runDarkPointTests(): void {
+  // ---- one dark point of two is named, the live one is not -----------------
+
+  {
+    const pressLastSample = new Date(NOW.getTime() - 301_000);
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [
+              device("RTU-1", { points: [point("flow", FRESH), point("press", pressLastSample)] }),
+            ],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(body.includes("dark=1"), `the header must count the one dark point:\n${body}`);
+    assert(
+      body.includes(
+        `dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=press ` +
+          `lastSample=${pressLastSample.toISOString()} silentFor=301s`,
+      ),
+      `the dark point must be named with its own duration:\n${body}`,
+    );
+    assert(!body.includes("key=flow"), `the point still publishing must not be listed dark:\n${body}`);
+  }
+
+  // ---- a point that has never published renders `never` --------------------
+
+  {
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points: [point("flow")] })] })] }),
+      NOW,
+    );
+    assert(body.includes("dark=1"), `a never-seen point still counts as dark:\n${body}`);
+    assert(
+      body.includes("dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=flow lastSample=never\n"),
+      `a point with no sample renders \`never\`, with no duration to append:\n${body}`,
+    );
+  }
+
+  // ---- exactly on the boundary is not dark ----------------------------------
+
+  {
+    const boundary = new Date(NOW.getTime() - STALE_AFTER_MS);
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [device("RTU-1", { points: [point("flow", FRESH), point("press", boundary)] })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(body.includes("dark=0"), `publishing exactly at the boundary is not yet dark:\n${body}`);
+    assert(!body.includes("dark rtu="), `no dark line renders at the boundary:\n${body}`);
+  }
+
+  // ---- boot grace: a never-seen point is not dark before the window elapses -
+
+  {
+    const justStarted = new Date(STARTED_AT.getTime() + STALE_AFTER_MS - 1_000);
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points: [point("flow")] })] })] }),
+      justStarted,
+    );
+    assert(
+      body.includes("dark=0"),
+      `a point cannot be dark before the host has been up long enough to hear it:\n${body}`,
+    );
+    assert(body.startsWith("ingest-host ok "), `a cold start is not degraded by its points:\n${body}`);
+  }
+
+  // ---- a point on a stale device is not also reported dark ------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [
+              device("RTU-1", { lastSampleAt: undefined, points: [point("flow"), point("press")] }),
+            ],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(body.includes("stale=1"), `the silent RTU is still reported stale:\n${body}`);
+    assert(body.includes("dark=0"), `its points are not double-counted as dark:\n${body}`);
+    assert(!body.includes("dark rtu="), `no dark line renders for a stale RTU's points:\n${body}`);
+  }
+
+  // ---- dark>0 does not itself degrade the verdict (Q3) -----------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({ devices: [device("RTU-1", { points: [point("press", new Date(NOW.getTime() - 301_000))] })] }),
+        ],
+      }),
+      NOW,
+    );
+    assert(body.includes("dark=1"), `this case must actually have a dark point:\n${body}`);
+    assert(body.startsWith("ingest-host ok "), `dark>0 alone keeps the verdict ok:\n${body}`);
+  }
+
+  // ---- the cap: at most MAX_DARK_LINES lines, the rest summarised -----------
+
+  {
+    const total = MAX_DARK_LINES + 1;
+    const points: PointHealth[] = [];
+    for (let i = 0; i < total; i += 1) {
+      points.push(point(`p${i}`, new Date(NOW.getTime() - 301_000)));
+    }
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points })] })] }),
+      NOW,
+    );
+    const darkLineCount = body.split("\n").filter((line) => line.startsWith("dark rtu=")).length;
+    assert(darkLineCount === MAX_DARK_LINES, `at most ${MAX_DARK_LINES} dark lines render, got ${darkLineCount}:\n${body}`);
+    assert(body.includes("dark omitted=1"), `the rest are summarised by one trailer:\n${body}`);
+    assert(body.includes(`dark=${total}`), `the header keeps the true total, uncapped:\n${body}`);
+  }
+
+  // ---- the count spans endpoints ---------------------------------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [device("RTU-1", { points: [point("flow", new Date(NOW.getTime() - 301_000))] })],
+          }),
+          endpoint({
+            protocol: "modbus_tcp",
+            endpointKey: "10.0.0.5:502",
+            devices: [device("RTU-9", { points: [point("temp", new Date(NOW.getTime() - 301_000))] })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(body.includes("dark=2"), `the header sums dark points host-wide:\n${body}`);
+    assert(
+      body.includes("dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=flow") &&
+        body.includes("dark rtu=RTU-9 endpoint=10.0.0.5:502 key=temp"),
+      `each dark point names the endpoint it sits on:\n${body}`,
     );
   }
 }
