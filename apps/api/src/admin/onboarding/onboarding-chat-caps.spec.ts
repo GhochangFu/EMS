@@ -176,6 +176,7 @@ function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: 
     new CredentialCryptoService(),
     {} as never,
     {} as never,
+    {} as never,
   );
   const service = new OnboardingService(
     db,
@@ -183,6 +184,7 @@ function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: 
     accessControl,
     chatService,
     new OnboardingValidateService(),
+    {} as never,
     {} as never,
     {} as never,
     {} as never,

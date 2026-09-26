@@ -16,6 +16,12 @@ function assert(condition: boolean, message: string): void {
 }
 
 /**
+ * The four seeded `bms.location_types` codes (`F4.157`), passed where
+ * `OnboardingService.uploadExcel` passes the live vocabulary.
+ */
+const LOCATION_TYPE_CODES = ["smoc_campus", "rsmoc", "csmoc", "pump_station"] as const;
+
+/**
  * `F4.105` — `quoteCell` bounds how long each echoed cell is; nothing bounded
  * **how many** cells the post-upload summary echoes. Enumerated rather than
  * counted, because `F4.102`'s lasting lesson is that a bare number is a claim
@@ -805,7 +811,7 @@ export function assertAssetsBranchStaysUnderItsCeiling(): void {
 export function assertShippedTemplateElidesNothing(): void {
   const service = chatService();
   const excel = new OnboardingExcelService();
-  const parsed = excel.parseUpload(excel.buildTemplateBuffer("Berhampur"));
+  const parsed = excel.parseUpload(excel.buildTemplateBuffer("Berhampur"), LOCATION_TYPE_CODES);
   assert(
     parsed.rtus.length === 2 && parsed.assets.length === 3,
     `the shipped template is 2 RTUs and 3 assets, got ${parsed.rtus.length} and ${parsed.assets.length}`,

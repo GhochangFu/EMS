@@ -21,6 +21,7 @@ function buildChatService(): OnboardingChatService {
     new CredentialCryptoService(),
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 

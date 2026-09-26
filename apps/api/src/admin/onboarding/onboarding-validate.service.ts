@@ -64,6 +64,12 @@ export class OnboardingValidateService {
           errors.push({ path: `location.${issue.path.join(".")}`, message: issue.message });
         }
       }
+      // F4.157 / ADR 0077 decision 7 (owner ruling OQ2): `type` is optional in
+      // the draft so the chat can store the name in one turn and ask for the
+      // type in the next. It is not optional at commit.
+      if (!d.location.type) {
+        errors.push({ path: "location.type", message: "Location type is required" });
+      }
     }
 
     const rtuCount = d.rtus?.length ?? 0;
@@ -155,7 +161,8 @@ export class OnboardingValidateService {
     if (!d.location?.name) {
       return "location";
     }
-    if (!d.location.code || d.location.latitude === undefined) {
+    // F4.157: a location with no type stays here, so the chat asks for it.
+    if (!d.location.code || !d.location.type || d.location.latitude === undefined) {
       return "location";
     }
     if (!d.rtus || d.rtus.length === 0 || !d.rtus.every((r) => r.protocol && r.code)) {
