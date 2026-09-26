@@ -5948,6 +5948,52 @@ web specs that render `AppShell` reach the real system-status read, so a
 running local API turns 14 of them red. Owed separately: the `chore(agents):`
 sweep (AGENTS.md §3 gains `apps/api/src/control-room/`).
 
+### `F3.66` — the Control Room shell (ADR 0076 decisions 1–2) ✅ 2026-09-26
+
+PR #565, squash `884bc0ce`; plan `docs/plans/f3.66-control-room-shell.md`.
+
+One "Control Room" sidebar entry, in the Operations group after Alarm Centre
+and visible for every scope but `none`, replaces the *Control Room 2D* group.
+It opens onto three levels: `/control-room` lists organization cards
+(`N sites · M online · K alarms`); `/control-room/org/:organizationId` lists
+site cards plus an `ActiveAlarmsRail`; `/control-room/site/:locationId` reads
+`F3.67`'s resolve endpoint, shows its fail-safe notice, and renders a body per
+`kind` — the generated kind gets an interim card until `F3.68` wires up the
+real view, the built-in kind gets the seven `/cr-*` links filtered by the
+per-area rule, the dashboard kind gets a link card. A level with one item is
+skipped, and the breadcrumb reflects the skip (`lib/control-room-levels.ts`).
+The three routes run under a new `ControlRoomScopeRoute`; the existing
+`/cr-*` routes keep `F4.156`'s `ControlRoomRoute` unchanged.
+
+The step-5 review raised one more question the owner ruled the same day
+(OQ5): `GET /alarms` and `GET /alarms/summary` now take an optional
+`organizationId`, intersected with `readableAssetIds` and never widened by
+it, so the rail sends one organization id instead of up to 200 asset ids —
+clear of the `assetIdsQueryField` cap. OQ1–OQ5 in all were ruled at the plan
+and step-5 gates.
+
+Verified: `typecheck` and `typecheck:tests`; the alarms integration suite
+175/175 on a scratch database; `code-reviewer`, `security-reviewer` (run
+twice), and `agents-compliance-reviewer`, every finding fixed; the stack
+rebuilt `--no-cache` from the branch; the browser half via
+`browser-verifier`, logins typed by the owner — `phe-admin` 8/8 (the entry
+level is skipped straight to PHEWB's 6 sites, the rail sends
+`organizationId`, ESKOM reads "No sites for this organization", RSMOC-WC
+reads "not available in your access scope", Lotapata shows the interim card,
+`/cr-overview` redirects to `/`) and `admin` 8/8 (two organization cards,
+PHEWB 6 and ESKOM 10 active sites — the 11th, `ESK-DECOMM-01`, is inactive;
+breadcrumbs correct; the seven SMOC links present; `/cr-hvac` renders; a hard
+reload keeps the path; the nested highlight holds). CI re-run green after
+rebasing onto `F4.159`'s post-merge fix (#564).
+
+**Cascade:** `F3.68` still waits on `F3.67` alone (already `✅`), so it stays
+unblocked and unrelated to this row. `F3.69` (`Depends: F3.66, F3.67`) and
+`F3.70` (`Depends: F3.66, F3.67, F4.156`) each have every other dependency
+`✅` already, so both are now fully unblocked. `F4.160` stays open, narrowed — the `F3.66` step-5 run stubbed the shell's own
+`app-shell` spec, so the row now names three web spec files reaching the
+network, not four: `control-room-overview-page`, `dashboard-builder-edit-page`,
+`dashboard-builder-page`. Owed separately: the `chore(agents):` sweep.
+
 ### `F4.159` — kW and PUE count only telemetry whose asset exists ✅ 2026-09-26
 
 PR #561, squash `19078686`, raised by the `F4.158` stack check. Telemetry has
