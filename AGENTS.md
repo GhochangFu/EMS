@@ -623,10 +623,18 @@
 > the step that sums — the ribbon Total kW and its prior, the `/` trend, the
 > Energy Centre, the energy report, `perAssetEnergy` and both PUE reads.
 > `perAssetEnergy` turns inner only together with the totals it is priced
-> against; ADR 0070 Amendment 5 supersedes decision 7's rule that orphan
-> telemetry fails the cost closed. These reads now need the fleet pool:
-> under FORCE row-level security a tenant or owner connection with no GUC
-> sees no asset, so every figure reads zero.
+> against; ADR 0070 Amendment 5 supersedes the last sentence of Amendment 2
+> item 1, the rule that orphan telemetry fails the cost closed. These reads
+> now need the fleet pool, and `fleet-read-wiring.spec.ts` pins
+> `DashboardService` to it: under FORCE row-level security a tenant or owner
+> connection with no GUC sees no asset, so every kW figure reads zero and both
+> PUE reads answer `null`. The post-merge follow-up (#564) closed the live
+> half: while ticks arrive the `/` Total kW tile shows the socket's batch
+> sum, and `TelemetryGateway` now drops readings of an asset id with no row
+> before any socket gets them (`apps/api/src/telemetry/existing-asset-ids.ts`
+> — a cached id set, reloaded on an unknown id at most every 5 s and every
+> 60 s, fail-open while no set has loaded). The alarm engine and calc
+> streaming still receive every reading.
 > And **a Control Room for each organization** (**ADR 0076**, gated and
 > merged 2026-09-25 under #549 — sixteen questions ruled one at a time; rows
 > `F3.66`–`F3.70`, `F4.157`). The interim gate **`F4.156`** (#550) hides the
