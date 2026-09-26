@@ -386,8 +386,14 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // the one stamp site: the replay loop hands its segments straight to
         // `writeSamples` and never reaches here, so an hour-old reading
         // written late does not make a dark point read as live.
-        // The bound is structural: an unbound key has no index, and there is
-        // no `Map.set` here, so nothing can add an entry (why no test gates it).
+        // Two separate claims. "No unbound key adds an entry" is structural, and
+        // doubly unobservable: nothing here calls `index.set` or `seen.push` to
+        // grow the map, and even if it somehow grew, `health()` never iterates
+        // this map's own keys — it walks `binding.sourceKeys` by position, so an
+        // extra entry could not surface. No test can gate it. "This guard stamps
+        // no bound slot for an unbound key" is not structural, and IS gated:
+        // `supervisor.spec.ts` block 3 reddens if `i` falls back to a bound slot
+        // (e.g. `?? 0` on a miss).
         const points = pointsByDevice.get(deviceKey);
         const i = points?.index.get(sample.sourceKey);
         if (points !== undefined && i !== undefined) {

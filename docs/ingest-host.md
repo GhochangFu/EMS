@@ -603,6 +603,17 @@ variable is the only way to lower TLS verification, matching `index.js`.
   index. A `source_data_key` added to an already-running RTU has no liveness
   entry, so it neither appears in `dark` nor moves the `dark=` count, however
   long it stays silent, until the next restart rebuilds the bindings.
+- **A `source_data_key` unmapped after boot has the reverse gap, and is not
+  silent.** The MQTT adapter's own `bindingByDevice.sourceKeys` is built once,
+  in `connect()`, from the plan's bindings at that time; a reload never calls
+  `connect()` again, so the key stays in the adapter's bound set. The RTU is
+  still emitting it, so the adapter still routes the sample through and it
+  still reaches `accept()`, which stamps `pointsByDevice` from the same
+  original bindings — so the point never reads `dark`. What actually changes on
+  reload is `pointIndexes`, the write-side lookup `main.ts` refreshes each
+  cycle: `resolveSamples` no longer finds the key there, counts it in
+  `unmappedSourceKey`, and the row is discarded rather than written — logged on
+  the `samples discarded` line, not silent.
 - **A push adapter that emits only on change would read every unchanged point
   as dark.** ThinkIoT is not that adapter: it republishes every mapped key on
   every cycle whether or not the value moved, so `dark` genuinely means "this

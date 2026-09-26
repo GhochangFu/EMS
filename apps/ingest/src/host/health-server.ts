@@ -61,10 +61,7 @@ function silentForSeconds(
   if (lastSampleAt === undefined) {
     return undefined;
   }
-  return Math.max(
-    0,
-    Math.round((now.getTime() - Math.max(lastSampleAt.getTime(), startedAt.getTime())) / 1000),
-  );
+  return Math.max(0, Math.round(silentSinceMs(lastSampleAt, startedAt, now) / 1000));
 }
 
 /**

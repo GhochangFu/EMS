@@ -7,6 +7,11 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
+/** Exact-token match: `dark=1` must not match inside `dark=10`–`dark=19`. */
+function hasToken(body: string, token: string): boolean {
+  return new RegExp(`(?:^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`).test(body);
+}
+
 const STARTED_AT = new Date("2026-08-05T12:00:00.000Z");
 const NOW = new Date("2026-08-05T12:05:30.000Z");
 /** 30 s before `NOW` — inside any sane staleness window. */
@@ -560,7 +565,7 @@ export function runDarkPointTests(): void {
       }),
       NOW,
     );
-    assert(body.includes("dark=1"), `the header must count the one dark point:\n${body}`);
+    assert(hasToken(body, "dark=1"), `the header must count the one dark point:\n${body}`);
     assert(
       body.includes(
         `dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=press ` +
@@ -578,7 +583,7 @@ export function runDarkPointTests(): void {
       snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points: [point("flow")] })] })] }),
       NOW,
     );
-    assert(body.includes("dark=1"), `a never-seen point still counts as dark:\n${body}`);
+    assert(hasToken(body, "dark=1"), `a never-seen point still counts as dark:\n${body}`);
     assert(
       body.includes("dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=flow lastSample=never\n"),
       `a point with no sample renders \`never\`, with no duration to append:\n${body}`,
@@ -599,7 +604,7 @@ export function runDarkPointTests(): void {
       }),
       NOW,
     );
-    assert(body.includes("dark=0"), `publishing exactly at the boundary is not yet dark:\n${body}`);
+    assert(hasToken(body, "dark=0"), `publishing exactly at the boundary is not yet dark:\n${body}`);
     assert(!body.includes("dark rtu="), `no dark line renders at the boundary:\n${body}`);
   }
 
@@ -612,7 +617,7 @@ export function runDarkPointTests(): void {
       justStarted,
     );
     assert(
-      body.includes("dark=0"),
+      hasToken(body, "dark=0"),
       `a point cannot be dark before the host has been up long enough to hear it:\n${body}`,
     );
     assert(body.startsWith("ingest-host ok "), `a cold start is not degraded by its points:\n${body}`);
@@ -633,8 +638,8 @@ export function runDarkPointTests(): void {
       }),
       NOW,
     );
-    assert(body.includes("stale=1"), `the silent RTU is still reported stale:\n${body}`);
-    assert(body.includes("dark=0"), `its points are not double-counted as dark:\n${body}`);
+    assert(hasToken(body, "stale=1"), `the silent RTU is still reported stale:\n${body}`);
+    assert(hasToken(body, "dark=0"), `its points are not double-counted as dark:\n${body}`);
     assert(!body.includes("dark rtu="), `no dark line renders for a stale RTU's points:\n${body}`);
   }
 
@@ -649,7 +654,7 @@ export function runDarkPointTests(): void {
       }),
       NOW,
     );
-    assert(body.includes("dark=1"), `this case must actually have a dark point:\n${body}`);
+    assert(hasToken(body, "dark=1"), `this case must actually have a dark point:\n${body}`);
     assert(body.startsWith("ingest-host ok "), `dark>0 alone keeps the verdict ok:\n${body}`);
   }
 
@@ -667,8 +672,34 @@ export function runDarkPointTests(): void {
     );
     const darkLineCount = body.split("\n").filter((line) => line.startsWith("dark rtu=")).length;
     assert(darkLineCount === MAX_DARK_LINES, `at most ${MAX_DARK_LINES} dark lines render, got ${darkLineCount}:\n${body}`);
-    assert(body.includes("dark omitted=1"), `the rest are summarised by one trailer:\n${body}`);
-    assert(body.includes(`dark=${total}`), `the header keeps the true total, uncapped:\n${body}`);
+    assert(hasToken(body, "dark omitted=1"), `the rest are summarised by one trailer:\n${body}`);
+    assert(hasToken(body, `dark=${total}`), `the header keeps the true total, uncapped:\n${body}`);
+  }
+
+  // ---- exactly MAX_DARK_LINES dark points: no trailer, all render -----------
+
+  {
+    const points: PointHealth[] = [];
+    for (let i = 0; i < MAX_DARK_LINES; i += 1) {
+      points.push(point(`p${i}`, new Date(NOW.getTime() - 301_000)));
+    }
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points })] })] }),
+      NOW,
+    );
+    assert(
+      hasToken(body, `dark=${MAX_DARK_LINES}`),
+      `the header must count exactly ${MAX_DARK_LINES}:\n${body}`,
+    );
+    const darkLineCount = body.split("\n").filter((line) => line.startsWith("dark rtu=")).length;
+    assert(
+      darkLineCount === MAX_DARK_LINES,
+      `exactly ${MAX_DARK_LINES} dark points must all render, got ${darkLineCount}:\n${body}`,
+    );
+    assert(
+      !body.includes("dark omitted"),
+      `the boundary case must not add a trailer — that is only for strictly more than the cap:\n${body}`,
+    );
   }
 
   // ---- the count spans endpoints ---------------------------------------------
@@ -689,7 +720,7 @@ export function runDarkPointTests(): void {
       }),
       NOW,
     );
-    assert(body.includes("dark=2"), `the header sums dark points host-wide:\n${body}`);
+    assert(hasToken(body, "dark=2"), `the header sums dark points host-wide:\n${body}`);
     assert(
       body.includes("dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=flow") &&
         body.includes("dark rtu=RTU-9 endpoint=10.0.0.5:502 key=temp"),

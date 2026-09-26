@@ -925,10 +925,10 @@ function pointsOf(supervisor: { health(): { devices: readonly DeviceHealth[] } }
 }
 
 /**
- * `F4.58` (b): last-seen per bound point. The fake clock's `now` is constant, so
- * a "not stamped" claim reads an absent `lastSampleAt` on a fresh supervisor,
- * beside a positive guard that the sample reached `accept()`. Block 3 documents
- * behaviour only: the bound is structural in `supervisor.ts`, it cannot redden.
+ * `F4.58` (b): last-seen per bound point. A "not stamped" claim reads an absent
+ * `lastSampleAt`, beside a positive guard the sample reached `accept()`. Block 3
+ * gates "stamps no bound slot" for an unbound key; "adds no entry" is
+ * structural in `supervisor.ts` and cannot redden.
  */
 export async function runPointLivenessTests(): Promise<void> {
   {
