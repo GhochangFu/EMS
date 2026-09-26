@@ -6,6 +6,7 @@ import {
   assertAuthCanUpdateOnlyLastLogin,
   assertAuthReachesOnlyIdentityTables,
   assertFleetCanInsertARankedPointKey,
+  assertOwnerCanInsertARankedPointKey,
   assertSuperuserCanInsertARankedPointKey,
   assertTenantCanInsertAnUnrankedPointKey,
   assertTenantIsRefusedARankedPointKey,
@@ -126,8 +127,12 @@ describe.skipIf(!connectionString)("F4.16 — role grant matrix", () => {
       await assertFleetCanInsertARankedPointKey(pool as pg.Pool);
     });
 
-    it("lets the superuser (the seed) insert a point key with headline_rank = 5", async () => {
+    it("lets the superuser (the migrator) insert a point key with headline_rank = 5", async () => {
       await assertSuperuserCanInsertARankedPointKey(pool as pg.Pool);
+    });
+
+    it("lets bms_owner insert a point key with headline_rank = 5", async () => {
+      await assertOwnerCanInsertARankedPointKey(pool as pg.Pool);
     });
   });
 

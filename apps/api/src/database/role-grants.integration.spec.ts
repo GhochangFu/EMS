@@ -345,7 +345,15 @@ export async function assertFleetCanInsertARankedPointKey(pool: pg.Pool): Promis
   });
 }
 
-/** The seed's role. Run on the pool's own superuser connection, rolled back. */
+/**
+ * The migrator's role. Run on the pool's own superuser connection, rolled
+ * back. Not the seed: `packages/db/src/seed.ts` connects as `DATABASE_URL`,
+ * which is `bms_owner` in CI, and it sets ranks with an `UPDATE`, which this
+ * `BEFORE INSERT` trigger never sees. `pnpm db:migrate` is what runs as this
+ * connection's role (`DATABASE_URL_SUPERUSER`), inside the migration's own
+ * `SET ROLE bms_owner` / `RESET ROLE` bracket — this case proves the bracket's
+ * outer role, not the seed.
+ */
 export async function assertSuperuserCanInsertARankedPointKey(pool: pg.Pool): Promise<void> {
   const client = await pool.connect();
   try {
@@ -357,7 +365,27 @@ export async function assertSuperuserCanInsertARankedPointKey(pool: pg.Pool): Pr
     // would make this case prove nothing.
     expect(rows[0]?.s, `the pool connected as ${rows[0]?.u}, not a superuser`).toBe(true);
     const res = await client.query(drizzleShapedPointKeyInsert("f3-68-super-ranked", 5));
-    expect(res.rowCount, "the superuser (the seed) must still insert a ranked point key").toBe(1);
+    expect(res.rowCount, "the superuser (the migrator) must still insert a ranked point key").toBe(1);
+  } finally {
+    await client.query("rollback").catch(() => undefined);
+    client.release();
+  }
+}
+
+/**
+ * `bms_owner` — the table owner and what `DATABASE_URL` names since ADR 0045
+ * — is unaffected by the trigger's `current_user = 'bms_tenant'` check
+ * (0084:33), so its own INSERT still lands a rank. Proved with the suite's
+ * `asRole` helper (`SET LOCAL ROLE bms_owner`, rolled back) rather than a
+ * second pool connection, matching every other role case in this file.
+ */
+export async function assertOwnerCanInsertARankedPointKey(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("set local role bms_owner");
+    const res = await client.query(drizzleShapedPointKeyInsert("f3-68-owner-ranked", 5));
+    expect(res.rowCount, "bms_owner must still insert a ranked point key").toBe(1);
   } finally {
     await client.query("rollback").catch(() => undefined);
     client.release();
