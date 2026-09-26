@@ -432,9 +432,9 @@ export async function anAssetScopedDashboardWithTheAssetAbsentShowsTheId(): Prom
 }
 
 /** Only an asset-scoped dto issues the page's assets read (`fetchAssets(ORG_ID)`). Mutation:
- * drop `enabled: !!dto?.assetId` ⇒ red. Since `F4.156` the shell's Control Room gate issues its
- * own unscoped `fetchAssets()` on every page, so the assertion is on the page's call with the
- * dashboard's organization, not on any call. */
+ * drop `enabled: !!dto?.assetId` ⇒ red. The assertion is on the page's call with the
+ * dashboard's organization, not on any call: from `F4.156` until `F3.66` U6 the shell issued
+ * its own unscoped `fetchAssets()` on every page, and the narrow claim holds either way. */
 export async function aLocationDashboardDoesNotFetchAssets(): Promise<void> {
   stubLoads({ dto: DTO, groups: [GROUP] });
 

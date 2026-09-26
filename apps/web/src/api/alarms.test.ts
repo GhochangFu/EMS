@@ -7,6 +7,13 @@ import {
   activeAlarmsSendsStateActive,
   alarmSummaryHitsTheSummaryPath,
   alarmSummarySendsOneAssetIdsPerIdInOrder,
+  activeAlarmsForAnOrganizationSendsItsId,
+  activeAlarmsForAnOrganizationSendsNoAssetIds,
+  activeAlarmsForAnOrganizationSendsStateActive,
+  activeAlarmsForIdsSendsNoOrganizationId,
+  alarmSummaryForAnOrganizationSendsItsId,
+  alarmSummaryForAnOrganizationSendsNoAssetIds,
+  alarmSummaryForIdsSendsNoOrganizationId,
 } from "./alarms.spec";
 
 /**
@@ -42,5 +49,40 @@ describe("F3.28 alarms web client — what the rail's fetchers send", () => {
 
   it("sends one assetIds per id, in order, on the summary read", async () => {
     await alarmSummarySendsOneAssetIdsPerIdInOrder();
+  });
+});
+
+describe("F3.66 alarms web client — the organization scope", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("sends organizationId on the active read for an organization", async () => {
+    await activeAlarmsForAnOrganizationSendsItsId();
+  });
+
+  it("sends no assetIds on the active read for an organization", async () => {
+    await activeAlarmsForAnOrganizationSendsNoAssetIds();
+  });
+
+  it("sends state=active on the active read for an organization", async () => {
+    await activeAlarmsForAnOrganizationSendsStateActive();
+  });
+
+  it("sends no organizationId on the id-scoped active read", async () => {
+    await activeAlarmsForIdsSendsNoOrganizationId();
+  });
+
+  it("sends organizationId on the summary read for an organization", async () => {
+    await alarmSummaryForAnOrganizationSendsItsId();
+  });
+
+  it("sends no assetIds on the summary read for an organization", async () => {
+    await alarmSummaryForAnOrganizationSendsNoAssetIds();
+  });
+
+  it("sends no organizationId on the id-scoped summary read", async () => {
+    await alarmSummaryForIdsSendsNoOrganizationId();
   });
 });

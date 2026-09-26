@@ -93,9 +93,18 @@ type Setup = {
   ids?: string[];
   items?: AlarmListItem[];
   assetsStatus?: "pending" | "success" | "error";
+  /** `F3.66`: render the organization-scoped rail instead of the id-scoped one. */
+  organizationId?: string;
 };
 
-function renderRail({ ids = IDS, items = [alarm(1)], assetsStatus = "success" }: Setup = {}): void {
+const ORG = "44444444-4444-4444-8444-444444444444";
+
+function renderRail({
+  ids = IDS,
+  items = [alarm(1)],
+  assetsStatus = "success",
+  organizationId,
+}: Setup = {}): void {
   mocks.handlers.clear();
   mocks.fetchActiveAlarms.mockImplementation(
     (): Promise<AlarmsListResponse> => Promise.resolve({ items, nextCursor: null }),
@@ -116,7 +125,11 @@ function renderRail({ ids = IDS, items = [alarm(1)], assetsStatus = "success" }:
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <ActiveAlarmsRail assetIds={ids} assetsStatus={assetsStatus} />
+        {organizationId !== undefined ? (
+          <ActiveAlarmsRail organizationId={organizationId} />
+        ) : (
+          <ActiveAlarmsRail assetIds={ids} assetsStatus={assetsStatus} />
+        )}
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -264,4 +277,36 @@ export async function pausedSummaryTabSaysLoadingNotNone(): Promise<void> {
 export function viewAllLinksToTheAlarmsPage(): void {
   renderRail();
   expect(screen.getByRole("link", { name: "View All" })).toHaveAttribute("href", "/alarms");
+}
+
+/*
+ * `F3.66` (step-5 fix) — the organization-scoped rail. It asks by
+ * `organizationId`, never by ids; the id-scoped items above are the F3.28
+ * path's unchanged control.
+ */
+
+/** Given an organization, the active list is fetched for exactly `{ organizationId }` — no ids. */
+export async function fetchesTheActiveListForTheOrganization(): Promise<void> {
+  renderRail({ organizationId: ORG });
+  await waitFor(() => expect(mocks.fetchActiveAlarms).toHaveBeenCalledWith({ organizationId: ORG }));
+}
+
+/** Given an organization, the summary is fetched for exactly `{ organizationId }` — no ids. */
+export async function fetchesTheSummaryForTheOrganization(): Promise<void> {
+  renderRail({ organizationId: ORG });
+  await waitFor(() => expect(mocks.fetchAlarmSummary).toHaveBeenCalledWith({ organizationId: ORG }));
+}
+
+/** Given an organization and no ids, the rail renders its rows — never "No assets in scope". */
+export async function theOrganizationRailRendersItsRows(): Promise<void> {
+  renderRail({ organizationId: ORG });
+  expect(await screen.findByText("Alarm message 1")).toBeInTheDocument();
+}
+
+/** A `/ws/alarms` event refetches the organization's active list too. */
+export async function socketEventRefetchesTheOrganizationsActiveList(): Promise<void> {
+  renderRail({ organizationId: ORG });
+  await waitFor(() => expect(mocks.fetchActiveAlarms).toHaveBeenCalledTimes(1));
+  fireAlarmEvent();
+  await waitFor(() => expect(mocks.fetchActiveAlarms).toHaveBeenCalledTimes(2));
 }

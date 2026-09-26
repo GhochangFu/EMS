@@ -29,6 +29,11 @@ import {
   assertAlarmListReturnsBothOrgsForTwoOrgActor,
   assertAlarmListScopedByAssetIds,
   assertSingleOrgListRunsOnTenantTransaction,
+  assertAdminListForAnOrganizationIdListsOnlyThatOrganization,
+  assertAdminSummaryForAnOrganizationIdCountsOnlyThatOrganization,
+  assertAssetGroupUserListForItsOrganizationIdStaysInItsGroup,
+  assertBoundedUserListForAForeignOrganizationIdIsEmpty,
+  assertBoundedUserSummaryForAForeignOrganizationIdCountsNothing,
   type AlarmsRlsFixtures,
 } from "./alarms.service.rls.integration.spec";
 
@@ -102,8 +107,10 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
     }
     const orgAId = orgA.rows[0].id;
 
+    // F3.66: ESKOM when it is seeded, so the organizationId proofs read as
+    // "a PHE user asks for ESKOM"; any other org still proves the same claims.
     const orgB = await fleetPool.query<{ id: string }>(
-      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+      "SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY (code = 'ESKOM') DESC, id LIMIT 1",
       [orgAId],
     );
     if (!orgB.rows[0]) {
@@ -258,6 +265,7 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
       inScopeAlarmId: inScope.alarmId,
       foreignAssetId: foreign.assetId,
       foreignAlarmId: foreign.alarmId,
+      foreignOrganizationId: orgBId,
       actorUserId,
       pairAssetId: pair.assetId,
       ackedUnclearedAlarmId: pair.ackedId,
@@ -350,5 +358,26 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
 
   it("F3.28 summary for a requested foreign asset counts nothing", async () => {
     await assertSummaryForRequestedForeignAssetCountsNothing(ctx);
+  });
+
+  // F3.66 (step-5 fix) — organizationId narrows, intersected with the readable set.
+  it("F3.66 a bounded user asking for another organization lists nothing", async () => {
+    await assertBoundedUserListForAForeignOrganizationIdIsEmpty(ctx);
+  });
+
+  it("F3.66 a global admin asking for an organization lists only that organization's alarms", async () => {
+    await assertAdminListForAnOrganizationIdListsOnlyThatOrganization(ctx);
+  });
+
+  it("F3.66 an asset-group user asking for its own organization lists only its group's alarms", async () => {
+    await assertAssetGroupUserListForItsOrganizationIdStaysInItsGroup(ctx);
+  });
+
+  it("F3.66 a bounded user's summary for another organization counts nothing", async () => {
+    await assertBoundedUserSummaryForAForeignOrganizationIdCountsNothing(ctx);
+  });
+
+  it("F3.66 a global admin's summary for an organization counts only that organization", async () => {
+    await assertAdminSummaryForAnOrganizationIdCountsOnlyThatOrganization(ctx);
   });
 });

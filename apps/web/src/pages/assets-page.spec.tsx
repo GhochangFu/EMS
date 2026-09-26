@@ -186,11 +186,12 @@ export async function viewerSeesAssetsUnderOperations(): Promise<void> {
   expect(link).toHaveAttribute("href", "/asset-browser");
   const sidebar = link.closest("aside") as HTMLElement;
   const operations = within(sidebar).getByText("Operations");
-  // `F4.156` — the group renders once the `["assets"]` read holds a `CR-*`
-  // code (WIRED is `CR-HVAC-1`), so it is awaited rather than read at once.
-  const controlRoom = await within(sidebar).findByText("Control Room 2D");
+  // `F3.66` U6 — *Maintenance* is the group after *Operations* now. It is
+  // also the label of that group's first item (`/work-orders`), so the query
+  // selects the heading `<div>`, never the link.
+  const maintenance = within(sidebar).getByText("Maintenance", { selector: "div" });
   expect(precedes(operations, link)).toBe(true);
-  expect(precedes(link, controlRoom)).toBe(true);
+  expect(precedes(link, maintenance)).toBe(true);
 }
 
 export async function adminSeesBothAssetsLinks(): Promise<void> {

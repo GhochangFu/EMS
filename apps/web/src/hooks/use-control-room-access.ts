@@ -7,15 +7,17 @@ import { hasAnyControlRoomAsset } from "../lib/control-room-access";
 export type ControlRoomAccess = "pending" | "granted" | "denied";
 
 /**
- * `F4.156` (OQ2) — the shell and the route guard observe `["assets"]` with a
- * five-minute stale time, so a sidebar render or a route change does not
- * refetch the list. Per observer: the schematic provider's own `["assets"]`
- * observer keeps the default `staleTime: 0`.
+ * `F4.156` (OQ2) — the route guard (`ControlRoomRoute`, on the `/cr-*`
+ * routes) observes `["assets"]` with a five-minute stale time, so a route
+ * change does not refetch the list. Per observer: the schematic provider's own
+ * `["assets"]` observer keeps the default `staleTime: 0`. Since `F3.66` U6
+ * the shell no longer observes it: the sidebar's one *Control Room* entry is
+ * gated on the scope alone, and the guard is this hook's only caller.
  */
 export const CONTROL_ROOM_ACCESS_STALE_MS = 5 * 60_000;
 
 /**
- * `F4.156` — may the caller see the Eskom Control Room 2D?
+ * `F4.156` — may the caller open the Eskom Control Room 2D pages (`/cr-*`)?
  *
  * Reads the same `["assets"]` query the schematic provider issues (the API's
  * already-filtered `GET /api/v1/assets` body) and grants when it holds at

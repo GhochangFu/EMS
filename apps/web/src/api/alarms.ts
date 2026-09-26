@@ -33,19 +33,35 @@ export async function fetchAlarmsPage(
 }
 
 /**
+ * What the alarms rail reads about: the given asset ids (`F3.28`), or one
+ * organization (`F3.66` step-5 fix). The organization form sends a single
+ * `organizationId` and no `assetIds`, so the request does not grow with the
+ * organization's asset count — the API caps `assetIds` at 200. Either way the
+ * API intersects with the caller's readable assets, so it only narrows.
+ */
+export type AlarmScope = readonly string[] | { readonly organizationId: string };
+
+function appendScope(params: URLSearchParams, scope: AlarmScope): void {
+  if ("organizationId" in scope) {
+    params.set("organizationId", scope.organizationId);
+    return;
+  }
+  for (const id of scope) {
+    params.append("assetIds", id);
+  }
+}
+
+/**
  * The alarms rail's rows on `/cr-overview` (`F3.28`, ADR 0074 decision 4):
- * active alarms (`cleared_at IS NULL`) on the given assets, newest first.
- * `assetIds` is one repeated parameter per id; the API intersects it with the
- * caller's readable assets, so it can only narrow the read.
+ * active alarms (`cleared_at IS NULL`) in the given {@link AlarmScope}, newest
+ * first. An id list is one repeated `assetIds` parameter per id.
  */
 export async function fetchActiveAlarms(
-  assetIds: readonly string[],
+  scope: AlarmScope,
   limit = 8,
 ): Promise<AlarmsListResponse> {
   const params = new URLSearchParams({ state: "active", limit: String(limit) });
-  for (const id of assetIds) {
-    params.append("assetIds", id);
-  }
+  appendScope(params, scope);
   const res = await fetch(`${base}/api/v1/alarms?${params}`, withAuth());
   if (!res.ok) {
     clearSessionOnAuthFailure(res);
@@ -58,13 +74,9 @@ export async function fetchActiveAlarms(
  * `GET /api/v1/alarms/summary` — active-alarm counts per severity, every
  * active severity present (`count: 0` allowed), in ascending rank.
  */
-export async function fetchAlarmSummary(
-  assetIds: readonly string[],
-): Promise<AlarmSummaryResponse> {
+export async function fetchAlarmSummary(scope: AlarmScope): Promise<AlarmSummaryResponse> {
   const params = new URLSearchParams();
-  for (const id of assetIds) {
-    params.append("assetIds", id);
-  }
+  appendScope(params, scope);
   const res = await fetch(`${base}/api/v1/alarms/summary?${params}`, withAuth());
   if (!res.ok) {
     clearSessionOnAuthFailure(res);

@@ -24,6 +24,12 @@ const appPath = join(repoRoot, "apps/web/src/app.tsx");
  *
  * Comments stripped before matching (`tests/f3.63-dashboard-author-route.test.ts`'s
  * `withoutComments`), so prose naming the guard cannot satisfy the check.
+ *
+ * `unwrappedPageUses` matches only the seven SMOC `ControlRoom…Page` names
+ * (`F3.66` D5): the three new `/control-room*` pages
+ * (`ControlRoomOrganizationsPage`, `ControlRoomOrganizationPage`,
+ * `ControlRoomSitePage`) are guarded by `ControlRoomScopeRoute`, not
+ * `ControlRoomRoute`, and `F3.70` retires this file.
  */
 function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
@@ -108,7 +114,9 @@ function unwrappedPageUses(source: string): string[] {
   const covered = controlRoomRouteSites(source).flatMap((site) =>
     site.wrapped !== null && isWrapped(source, site) ? [site.wrapped] : [],
   );
-  return Array.from(source.matchAll(/<(ControlRoom\w*Page)\b/g))
+  return Array.from(
+    source.matchAll(/<(ControlRoom(?:Overview|Sld|It|Ups|Battery|Hvac|Env)Page)\b/g),
+  )
     .filter((use) => !covered.some((range) => use.index >= range.start && use.index < range.end))
     .map((use) => use[1]);
 }

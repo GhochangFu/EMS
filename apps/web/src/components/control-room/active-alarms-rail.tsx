@@ -39,6 +39,31 @@ function RailNote({ text }: { text: string }) {
 }
 
 /**
+ * The rail reads one of two scopes. `assetIds` is the `F3.28` pages' scope.
+ * `organizationId` (`F3.66` step-5 fix) is the Control Room organization
+ * page's: the API narrows by organization, intersected with the caller's
+ * readable assets, so the page no longer sends every asset id against the
+ * API's 200-id cap.
+ */
+export type ActiveAlarmsRailProps =
+  | {
+      assetIds: readonly string[];
+      /**
+       * The state of the page's asset read, which resolves `assetIds`. With no ids
+       * the two reads are disabled, and a disabled query answers nothing — so
+       * without this the rail would say "No active alarms" on every cold load,
+       * before it has asked, and "Loading alarms…" forever after a failed read.
+       */
+      assetsStatus?: AssetsStatus;
+      organizationId?: undefined;
+    }
+  | {
+      organizationId: string;
+      assetIds?: undefined;
+      assetsStatus?: undefined;
+    };
+
+/**
  * The `/cr-overview` alarms rail (`F3.28`, ADR 0074 decision 4). It replaced
  * `ActiveRulesPanel`, which re-derived warnings from rules in the browser;
  * this reads the alarms the server raised, for the page's own assets, and
@@ -53,21 +78,12 @@ function RailNote({ text }: { text: string }) {
  * which is `isPending && isFetching`: a paused read (offline) is pending but
  * not fetching, and would otherwise fall through to "No active alarms".
  */
-export function ActiveAlarmsRail({
-  assetIds,
-  assetsStatus = "success",
-}: {
-  assetIds: readonly string[];
-  /**
-   * The state of the page's asset read, which resolves `assetIds`. With no ids
-   * the two reads are disabled, and a disabled query answers nothing — so
-   * without this the rail would say "No active alarms" on every cold load,
-   * before it has asked, and "Loading alarms…" forever after a failed read.
-   */
-  assetsStatus?: AssetsStatus;
-}) {
+export function ActiveAlarmsRail(props: ActiveAlarmsRailProps) {
+  const { assetsStatus = "success" } = props;
   const [tab, setTab] = useState<RailTab>("active");
-  const { active, summary } = useActiveAlarms(assetIds);
+  const { active, summary } = useActiveAlarms(
+    props.organizationId !== undefined ? { organizationId: props.organizationId } : props.assetIds,
+  );
   const vocabQ = useQuery({
     queryKey: vocabulariesQueryKey,
     queryFn: fetchVocabularies,
@@ -76,8 +92,10 @@ export function ActiveAlarmsRail({
   const severities = vocabQ.data?.alarmSeverities ?? [];
   const rows = (active.data?.items ?? []).slice(0, RAIL_ROWS);
   const counts = [...(summary.data?.items ?? [])].reverse();
-  // With no ids nothing is fetched: say why, never "No active alarms".
-  const noIdsNote = assetIds.length > 0 ? null : NO_IDS_NOTE[assetsStatus];
+  // With no ids nothing is fetched: say why, never "No active alarms". The
+  // organization scope needs no ids, so it never shows this note.
+  const noIdsNote =
+    props.organizationId !== undefined || props.assetIds.length > 0 ? null : NO_IDS_NOTE[assetsStatus];
 
   return (
     <section aria-label="Alarms" className="rounded border border-gray-200 bg-white p-4">

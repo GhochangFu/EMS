@@ -4,11 +4,9 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { isOidcEnabled, startOidcLogout } from "../api/oidc";
 import { isGlobalAdmin, isMasterDataAdmin, canWritePointKeys } from "../lib/admin-access";
-import { canAccessControlRoomPath } from "../lib/control-room-access";
 import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { StatusBarClock } from "../components/status-bar-clock";
-import { useControlRoomAccess } from "../hooks/use-control-room-access";
 import { SystemStatusIndicator } from "../components/system-status-indicator";
 import trinetraLogoUrl from "../assets/trinetra-logo.jpeg";
 
@@ -24,6 +22,10 @@ const moduleGroups = [
     items: [
       { label: "Dashboard", path: "/" },
       { label: "Alarm Centre", path: "/alarms" },
+      // `F3.66` (ADR 0076 decision 1, OQ4) — one entry replaces the seven-item
+      // *Control Room 2D* group. `nested`: it highlights for every
+      // level under `/control-room/` too (plan D9); every other item is exact-match.
+      { label: "Control Room", path: "/control-room", nested: true },
       { label: "Alarm Philosophy", path: "/alarm-kb" },
       { label: "Dashboards", path: "/dashboards" },
       // `E4.2` / ADR 0072 decision 1 — the reference sidebar carries
@@ -35,18 +37,6 @@ const moduleGroups = [
       { label: "Electrical SLD", path: "/sld" },
       { label: "HVAC · CRAC", path: "/crac" },
       { label: "Energy Analytics", path: "/energy" },
-    ],
-  },
-  {
-    title: "Control Room 2D",
-    items: [
-      { label: "CR · Main Dashboard", path: "/cr-overview" },
-      { label: "CR · Electrical SLD", path: "/cr-sld" },
-      { label: "CR · UPS Monitoring", path: "/cr-ups" },
-      { label: "CR · Battery Bank", path: "/cr-battery" },
-      { label: "CR · HVAC System", path: "/cr-hvac" },
-      { label: "CR · Environment", path: "/cr-env" },
-      { label: "CR · IT & Rack Load", path: "/cr-it" },
     ],
   },
   {
@@ -116,9 +106,6 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   const scope = useAuthStore((state) => state.scope);
   const oidcIdToken = useAuthStore((state) => state.oidcIdToken);
   const clearSession = useAuthStore((state) => state.clearSession);
-  // `F4.156` — the Control Room 2D group shows only to a caller who reads a
-  // `CR-*` asset; it stays hidden while that read is pending or failed.
-  const controlRoom = useControlRoomAccess();
   const locationScopeLabel =
     scope?.kind === "global"
       ? "Global access"
@@ -134,8 +121,10 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
     if (temporarilyHiddenModulePaths.has(path)) {
       return false;
     }
-    if (path.startsWith("/cr-")) {
-      return controlRoom === "granted" && canAccessControlRoomPath(scope, path);
+    // `F3.66` — every scope but `none` sees the entry; a `null` scope (still
+    // loading) does not. The API is the access control on every level.
+    if (path === "/control-room") {
+      return scope !== null && scope.kind !== "none";
     }
     return true;
   }
@@ -267,7 +256,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                         to={m.path}
                         title={m.label}
                         className={`block w-full border-l-2 hover:bg-bms-canvas ${
-                          location.pathname === m.path
+                          location.pathname === m.path ||
+                          ("nested" in m && m.nested && location.pathname.startsWith(`${m.path}/`))
                             ? "border-bms-green bg-bms-canvas/80 font-semibold text-bms-ink"
                             : "border-transparent text-bms-muted"
                         } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}

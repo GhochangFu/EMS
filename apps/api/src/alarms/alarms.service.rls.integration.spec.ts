@@ -68,6 +68,8 @@ export type AlarmsRlsFixtures = {
   foreignAssetId: string;
   /** An alarm on `foreignAssetId`. */
   foreignAlarmId: string;
+  /** Org B — ESKOM when it is seeded (`F3.66`): the `organizationId` a PHE user must not read. */
+  foreignOrganizationId: string;
   /** The acting user's `bms.users.id` — `acknowledged_by` must resolve to it. */
   actorUserId: string;
   /**
@@ -427,4 +429,116 @@ export async function assertSummaryForRequestedForeignAssetCountsNothing(
     summary.items.map((i) => i.code),
     "positive control: every active severity is still listed, at 0",
   ).toEqual(await activeSeverityCodes(ctx));
+}
+
+/* -------------------------------------------------------------------------- */
+/* F3.66 (step-5 fix) — organizationId on GET /alarms and /alarms/summary      */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Through the real controller over the real service; only `readableAssetIds`
+ * is stubbed, so each user role is modelled as its readable set: the PHE
+ * organization user reads org A's fixture assets, the global admin reads
+ * `null` (unrestricted), and the asset-group user reads one org-A asset.
+ */
+
+/** Org ids of the given alarms, read on `bms_fleet` through the asset (not `alarms.organization_id`). */
+async function assetOrganizationsOf(ctx: AlarmsRlsFixtures, alarmIds: string[]): Promise<string[]> {
+  const { rows } = await ctx.ownerPool.query<{ organization_id: string }>(
+    `SELECT DISTINCT a.organization_id
+       FROM bms.alarms al JOIN bms.assets a ON a.id = al.asset_id
+      WHERE al.id = ANY($1::uuid[])`,
+    [alarmIds],
+  );
+  return rows.map((r) => r.organization_id);
+}
+
+/**
+ * A PHE user (bounded to org A) with `organizationId=<org B>` lists nothing.
+ * Positive control first: the same user with its own org id lists its alarm.
+ * `toEqual([])`, not "lacks org B's alarm": on the tenant path a dropped org
+ * predicate would list org A's own rows, which only an exact-empty check sees.
+ */
+export async function assertBoundedUserListForAForeignOrganizationIdIsEmpty(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const readable = [ctx.inScopeAssetId, ctx.pairAssetId];
+  const own = await listIds(ctx, readable, { organizationId: ctx.organizationId });
+  expect(own, "positive control: the user's own organization lists its own alarm").toContain(
+    ctx.inScopeAlarmId,
+  );
+  const foreign = await listIds(ctx, readable, { organizationId: ctx.foreignOrganizationId });
+  expect(foreign, "another organization's id lists nothing for a bounded user").toEqual([]);
+}
+
+/**
+ * A global admin (`readable = null`, the fleet path — where the org predicate
+ * is the only isolation) with `organizationId=<org B>` lists org B's alarms
+ * and only those: every returned alarm's asset is in org B.
+ */
+export async function assertAdminListForAnOrganizationIdListsOnlyThatOrganization(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const ids = await listIds(ctx, null, { organizationId: ctx.foreignOrganizationId });
+  expect(ids, "positive control: the admin lists org B's fixture alarm").toContain(ctx.foreignAlarmId);
+  expect(
+    await assetOrganizationsOf(ctx, ids),
+    "every alarm the admin lists for org B is on an org-B asset",
+  ).toEqual([ctx.foreignOrganizationId]);
+}
+
+/**
+ * An asset-group user (bounded to one org-A asset) with its own
+ * `organizationId` lists only that asset's alarm — the org id never widens it
+ * to the rest of the organization.
+ */
+export async function assertAssetGroupUserListForItsOrganizationIdStaysInItsGroup(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const ids = await listIds(ctx, [ctx.inScopeAssetId], { organizationId: ctx.organizationId });
+  expect(ids, "positive control: the group's own alarm is listed").toContain(ctx.inScopeAlarmId);
+  expect(ids, "an org-A alarm outside the group is not listed").not.toContain(ctx.ackedUnclearedAlarmId);
+}
+
+/**
+ * The summary for a PHE user (bounded to the pair asset) with
+ * `organizationId=<org B>` counts nothing. Positive control first: its own
+ * org id counts the one active alarm.
+ */
+export async function assertBoundedUserSummaryForAForeignOrganizationIdCountsNothing(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const controller = controllerFor(ctx, [ctx.pairAssetId]);
+  const own = await controller.summary(ACTOR_PAYLOAD, { organizationId: ctx.organizationId });
+  expect(own.total, "positive control: the user's own organization counts its active alarm").toBe(1);
+  const foreign = await controller.summary(ACTOR_PAYLOAD, {
+    organizationId: ctx.foreignOrganizationId,
+  });
+  expect(foreign.total, "another organization's id counts nothing for a bounded user").toBe(0);
+}
+
+/**
+ * The summary for a global admin with `organizationId=<org B>` counts only
+ * org B's active alarms. The read names the two fixture assets (one per org),
+ * so another suite's alarms on the shared database cannot move the count; the
+ * ids span two orgs, so it stays on the fleet path, where the org predicate is
+ * the only thing that excludes org A's active pair alarm.
+ */
+export async function assertAdminSummaryForAnOrganizationIdCountsOnlyThatOrganization(
+  ctx: AlarmsRlsFixtures,
+): Promise<void> {
+  const { rows } = await ctx.ownerPool.query<{ n: number }>(
+    `SELECT count(*)::int AS n
+       FROM bms.alarms al
+       JOIN bms.alarm_severities s ON s.code = al.severity AND s.active = true
+      WHERE al.asset_id = $1 AND al.cleared_at IS NULL`,
+    [ctx.foreignAssetId],
+  );
+  const expected = rows[0]?.n ?? -1;
+  expect(expected, "precondition: org B's fixture asset holds an active alarm").toBeGreaterThanOrEqual(1);
+  const summary = await controllerFor(ctx, null).summary(ACTOR_PAYLOAD, {
+    assetIds: [ctx.pairAssetId, ctx.foreignAssetId],
+    organizationId: ctx.foreignOrganizationId,
+  });
+  expect(summary.total, "the admin's org-B summary counts exactly org B's active alarms").toBe(expected);
 }

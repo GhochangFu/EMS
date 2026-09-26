@@ -83,3 +83,61 @@ export async function alarmSummarySendsOneAssetIdsPerIdInOrder(): Promise<void> 
   await fetchAlarmSummary(IDS);
   expect(seen().searchParams.getAll("assetIds")).toEqual(IDS);
 }
+
+/*
+ * `F3.66` (step-5 fix) — the organization scope: one `organizationId` and no
+ * `assetIds`, so the request no longer grows with the organization's asset
+ * count against the API's 200-id cap. The two consumer specs mock this module,
+ * so these URL reads are the only proof of what goes on the wire.
+ */
+
+const ORG = "44444444-4444-4444-8444-444444444444";
+
+/** The active read for an organization sends its `organizationId`. */
+export async function activeAlarmsForAnOrganizationSendsItsId(): Promise<void> {
+  const seen = captureUrl(EMPTY_LIST);
+  await fetchActiveAlarms({ organizationId: ORG });
+  expect(seen().searchParams.getAll("organizationId")).toEqual([ORG]);
+}
+
+/** The active read for an organization sends no `assetIds`. */
+export async function activeAlarmsForAnOrganizationSendsNoAssetIds(): Promise<void> {
+  const seen = captureUrl(EMPTY_LIST);
+  await fetchActiveAlarms({ organizationId: ORG });
+  expect(seen().searchParams.getAll("assetIds")).toEqual([]);
+}
+
+/** The active read for an organization still asks for `state=active`. */
+export async function activeAlarmsForAnOrganizationSendsStateActive(): Promise<void> {
+  const seen = captureUrl(EMPTY_LIST);
+  await fetchActiveAlarms({ organizationId: ORG });
+  expect(seen().searchParams.get("state")).toBe("active");
+}
+
+/** The id-scoped active read sends no `organizationId` — the F3.28 path is unchanged. */
+export async function activeAlarmsForIdsSendsNoOrganizationId(): Promise<void> {
+  const seen = captureUrl(EMPTY_LIST);
+  await fetchActiveAlarms(IDS);
+  expect(seen().searchParams.has("organizationId")).toBe(false);
+}
+
+/** The summary read for an organization sends its `organizationId`. */
+export async function alarmSummaryForAnOrganizationSendsItsId(): Promise<void> {
+  const seen = captureUrl(EMPTY_SUMMARY);
+  await fetchAlarmSummary({ organizationId: ORG });
+  expect(seen().searchParams.getAll("organizationId")).toEqual([ORG]);
+}
+
+/** The summary read for an organization sends no `assetIds`. */
+export async function alarmSummaryForAnOrganizationSendsNoAssetIds(): Promise<void> {
+  const seen = captureUrl(EMPTY_SUMMARY);
+  await fetchAlarmSummary({ organizationId: ORG });
+  expect(seen().searchParams.getAll("assetIds")).toEqual([]);
+}
+
+/** The id-scoped summary read sends no `organizationId` — the F3.28 path is unchanged. */
+export async function alarmSummaryForIdsSendsNoOrganizationId(): Promise<void> {
+  const seen = captureUrl(EMPTY_SUMMARY);
+  await fetchAlarmSummary(IDS);
+  expect(seen().searchParams.has("organizationId")).toBe(false);
+}
