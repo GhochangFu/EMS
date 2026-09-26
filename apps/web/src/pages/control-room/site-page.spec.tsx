@@ -21,6 +21,18 @@ import { ORG_A, ORG_B, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
 
 /**
+ * `F3.68` U7 — the site page hosts `GeneratedSiteView` for the `generated`
+ * kind (D7 wired). The component owns its own reads and its own KPI tiles,
+ * so this suite mocks it: it asserts the page passes the right `locationId`
+ * and hosts it beside the notice banner, not what the component renders.
+ */
+vi.mock("../../components/control-room/generated-site-view", () => ({
+  GeneratedSiteView: ({ locationId }: { locationId: string }) => (
+    <div data-testid="generated-site-view" data-location-id={locationId} />
+  ),
+}));
+
+/**
  * `F3.66` U4 — `/control-room/site/:locationId`, the site view host (ADR 0076
  * decisions 2 and 5), rows V1a–V10 of the plan's U4 table.
  *
@@ -138,13 +150,13 @@ async function smocHrefs(): Promise<string[]> {
   return Array.from(list.querySelectorAll('a[href^="/cr-"]')).map((a) => a.getAttribute("href") ?? "");
 }
 
-/** V1a — `generated`: the interim card, linking to the site dashboard (D7). */
-export async function generatedShowsTheInterimCard(): Promise<void> {
+/** V1a — `generated`: hosts `GeneratedSiteView` with the page's `locationId` (D7 wired). */
+export async function generatedRendersTheComponentWithLocationId(): Promise<void> {
   stubReads(TWO_ORGS, view("a1"));
   renderAt("a1");
 
-  const card = sectionOf(await screen.findByText(/Generated site view/));
-  expect(within(card).getByRole("link").getAttribute("href")).toBe("/locations/a1/dashboard");
+  const mount = await screen.findByTestId("generated-site-view");
+  expect(mount.getAttribute("data-location-id")).toBe("a1");
 }
 
 /** V1b — no notice, no banner (after V1a's positive control). */
@@ -152,11 +164,11 @@ export async function noNoticeRendersNoBanner(): Promise<void> {
   stubReads(TWO_ORGS, view("a1"));
   renderAt("a1");
 
-  expect(await screen.findByText(/Generated site view/)).toBeInTheDocument();
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
   expect(screen.queryByTestId("site-view-notice")).toBeNull();
 }
 
-/** V2 — `dashboard_removed`: the banner carries its text. */
+/** V2 — `dashboard_removed`: the banner carries its text, and the component still renders. */
 export async function dashboardRemovedShowsItsBanner(): Promise<void> {
   stubReads(TWO_ORGS, generatedWith("dashboard_removed"));
   renderAt("a1");
@@ -164,6 +176,7 @@ export async function dashboardRemovedShowsItsBanner(): Promise<void> {
   const banner = await screen.findByTestId("site-view-notice");
   expect(banner.getAttribute("role")).toBe("status");
   expect(banner.textContent).toBe(siteViewNoticeText("dashboard_removed"));
+  expect(screen.getByTestId("generated-site-view")).toBeInTheDocument();
 }
 
 /** V3 — `dashboard_out_of_scope`: its own text, not V2's. */
@@ -241,7 +254,7 @@ export async function aRejectedReadShowsNoInterimBody(): Promise<void> {
   renderAt("a1");
 
   expect(await screen.findByText(/not available in your access scope/)).toBeInTheDocument();
-  expect(screen.queryByText(/Generated site view/)).toBeNull();
+  expect(screen.queryByTestId("generated-site-view")).toBeNull();
 }
 
 /** V9 — the crumbs: `Control Room` and the organization as links, the site as text. */
@@ -296,17 +309,17 @@ export async function aRejectedKpiReadShowsNoInterimBody(): Promise<void> {
   renderAt("a1");
 
   expect(await screen.findByText("Control Room unavailable")).toBeInTheDocument();
-  expect(screen.queryByText(/Generated site view/)).toBeNull();
+  expect(screen.queryByTestId("generated-site-view")).toBeNull();
 }
 
 const DASHBOARD_WITHOUT_SLUG = view("a1", { kind: "dashboard", dashboardId: "d1", dashboardSlug: null });
 
-/** V13a — `dashboard` with a null slug falls back to the generated interim. */
+/** V13a — `dashboard` with a null slug falls back to the generated interim (now the component). */
 export async function aNullSlugShowsTheGeneratedInterim(): Promise<void> {
   stubReads(TWO_ORGS, DASHBOARD_WITHOUT_SLUG);
   renderAt("a1");
 
-  expect(await screen.findByText(/Generated site view/)).toBeInTheDocument();
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
 }
 
 /**
@@ -318,7 +331,11 @@ export async function aNullSlugLinksToNoDashboard(): Promise<void> {
   stubReads(TWO_ORGS, DASHBOARD_WITHOUT_SLUG);
   renderAt("a1");
 
-  await screen.findByText(/Generated site view|This site shows the dashboard/);
+  await waitFor(() => {
+    expect(
+      screen.queryByText(/This site shows the dashboard/) ?? screen.queryByTestId("generated-site-view"),
+    ).not.toBeNull();
+  });
   expect(document.querySelectorAll('a[href^="/dashboards/"]')).toHaveLength(0);
 }
 
@@ -348,7 +365,7 @@ async function renderThenFailARefetch(): Promise<void> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   renderAt("a1", queryClient);
 
-  expect(await screen.findByText(/Generated site view/)).toBeInTheDocument();
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
   const resolve = vi.mocked(controlRoomApi.fetchResolvedSiteControlRoomView);
   resolve.mockRejectedValue(new Error("control-room/site-view 503"));
   await act(async () => {
@@ -364,14 +381,14 @@ async function renderThenFailARefetch(): Promise<void> {
 export async function aFailedRefetchKeepsTheBody(): Promise<void> {
   await renderThenFailARefetch();
 
-  expect(screen.getByText(/Generated site view/)).toBeInTheDocument();
+  expect(screen.getByTestId("generated-site-view")).toBeInTheDocument();
 }
 
 /** V15b — a failed background refetch shows no not-available card (after V15a's positive control). */
 export async function aFailedRefetchShowsNoNotAvailableCard(): Promise<void> {
   await renderThenFailARefetch();
 
-  expect(screen.getByText(/Generated site view/)).toBeInTheDocument();
+  expect(screen.getByTestId("generated-site-view")).toBeInTheDocument();
   expect(screen.queryByText(/not available in your access scope/)).toBeNull();
 }
 

@@ -20,7 +20,7 @@ import {
   dashboardLinksToTheDashboard,
   dashboardOutOfScopeShowsItsBanner,
   dashboardRemovedShowsItsBanner,
-  generatedShowsTheInterimCard,
+  generatedRendersTheComponentWithLocationId,
   noNoticeRendersNoBanner,
   theBreadcrumbNamesEveryLevel,
   theHeaderNamesTheSite,
@@ -36,8 +36,8 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
     cleanupPage();
   });
 
-  it("V1a renders the generated interim card with a link to the site dashboard", async () => {
-    await generatedShowsTheInterimCard();
+  it("V1a hosts GeneratedSiteView with the page's locationId", async () => {
+    await generatedRendersTheComponentWithLocationId();
   });
 
   it("V1b renders no notice banner when the notice is null", async () => {
