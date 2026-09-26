@@ -48,6 +48,7 @@ export class DashboardService {
     const rows = await this.pool.query<{
       id: string;
       name: string;
+      code: string;
       type: "smoc_campus" | "rsmoc" | "csmoc";
       province: string | null;
       org_id: string;
@@ -83,6 +84,7 @@ export class DashboardService {
       SELECT
         l.id,
         l.name,
+        l.code,
         l.type,
         l.province,
         o.id AS org_id,
@@ -118,7 +120,7 @@ export class DashboardService {
       LEFT JOIN bms.alarms al ON al.asset_id = a.id
       WHERE l.active = true
         AND ($1::uuid[] IS NULL OR l.id = ANY($1::uuid[]))
-      GROUP BY l.id, l.name, l.type, l.province, o.id, o.code, o.name
+      GROUP BY l.id, l.name, l.code, l.type, l.province, o.id, o.code, o.name
       ORDER BY l.name
       `,
       [opts?.locationIds ?? null, opts?.assetIds ?? null],
@@ -127,6 +129,7 @@ export class DashboardService {
       items: rows.rows.map((row) => ({
         id: row.id,
         name: row.name,
+        code: row.code,
         type: row.type,
         province: row.province,
         organization: {

@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type {
@@ -19,11 +19,11 @@ import { encodePointRef } from "@bms/shared";
 import {
   CR_BREAKERS,
   CR_TRACKED_ASSET_CODES,
-} from "../components/live-svg/control-room-bindings";
-import { emptySlice, type SchematicTelemetrySlice } from "../lib/schematic-telemetry";
-import { WIDGET_ICON_PATH } from "../lib/widget-catalog";
-import { useAuthStore, type AuthUser } from "../stores/auth-store";
-import { ControlRoomOverviewPage } from "./control-room-overview-page";
+} from "../../../components/live-svg/control-room-bindings";
+import { emptySlice, type SchematicTelemetrySlice } from "../../../lib/schematic-telemetry";
+import { WIDGET_ICON_PATH } from "../../../lib/widget-catalog";
+import { useAuthStore } from "../../../stores/auth-store";
+import { ControlRoomOverviewContent } from "./overview";
 
 /**
  * `F3.28` Task 1.1 — a characterization spec for `/cr-overview`.
@@ -41,6 +41,10 @@ import { ControlRoomOverviewPage } from "./control-room-overview-page";
  * provider's own tests own them. `useSchematicTelemetryByCode(code)` returns a
  * slice from `state.telemetry`, and the clock is pinned with fake `Date` only,
  * so `isStale` compares against `NOW` while React Query's timers stay real.
+ *
+ * **`F3.70` U3.** The spec renders `ControlRoomOverviewContent` alone, under
+ * the site route `/control-room/site/:locationId/:tab?` it is hosted by from
+ * `F3.70` on — no `AppShell`, so no shell read reaches the network (F4.160).
  */
 
 const NOW = Date.parse("2026-09-24T10:00:00.000Z");
@@ -97,7 +101,7 @@ vi.mock("socket.io-client", () => ({
   }),
 }));
 
-vi.mock("../api/rules", () => ({
+vi.mock("../../../api/rules", () => ({
   fetchRules: () => Promise.resolve({ items: state.rules }),
 }));
 
@@ -106,7 +110,7 @@ vi.mock("../api/rules", () => ({
  * vocabulary. All three are replaced so no test here dials the network; the
  * rail's own spec owns their behaviour.
  */
-vi.mock("../api/alarms", () => ({
+vi.mock("../../../api/alarms", () => ({
   fetchActiveAlarms: state.fetchActiveAlarms,
   fetchAlarmSummary: state.fetchAlarmSummary,
 }));
@@ -116,8 +120,8 @@ vi.mock("../api/alarms", () => ({
  * `fetchPointValuesAt` is replaced; the item echoes the ref as sent, which is
  * what `GET /telemetry/points/at-instant` does (`telemetry.controller.ts`).
  */
-vi.mock("../api/telemetry", async (importActual) => ({
-  ...(await importActual<typeof import("../api/telemetry")>()),
+vi.mock("../../../api/telemetry", async (importActual) => ({
+  ...(await importActual<typeof import("../../../api/telemetry")>()),
   fetchPointValuesAt: state.fetchPointValuesAt,
 }));
 
@@ -125,12 +129,12 @@ vi.mock("../api/telemetry", async (importActual) => ({
  * `F3.28` task 3.3 — the class strip's read. Only `fetchAssetRoleSummary` is
  * replaced; the strip's own spec owns its text rules.
  */
-vi.mock("../api/assets", async (importActual) => ({
-  ...(await importActual<typeof import("../api/assets")>()),
+vi.mock("../../../api/assets", async (importActual) => ({
+  ...(await importActual<typeof import("../../../api/assets")>()),
   fetchAssetRoleSummary: state.fetchAssetRoleSummary,
 }));
 
-vi.mock("../api/vocabularies", () => ({
+vi.mock("../../../api/vocabularies", () => ({
   vocabulariesQueryKey: ["vocabularies"],
   fetchVocabularies: () =>
     Promise.resolve({
@@ -144,10 +148,10 @@ vi.mock("../api/vocabularies", () => ({
     }),
 }));
 
-vi.mock("../components/live-svg/schematic-telemetry-context", async () => {
+vi.mock("../../../components/live-svg/schematic-telemetry-context", async () => {
   const { emptySlice: empty } = await vi.importActual<
-    typeof import("../lib/schematic-telemetry")
-  >("../lib/schematic-telemetry");
+    typeof import("../../../lib/schematic-telemetry")
+  >("../../../lib/schematic-telemetry");
   const sliceFor = (code: string | undefined) =>
     (code ? (state.telemetry[code] as SchematicTelemetrySlice | undefined) : undefined) ??
     empty();
@@ -170,13 +174,6 @@ vi.mock("../components/live-svg/schematic-telemetry-context", async () => {
     }),
   };
 });
-
-const user: AuthUser = {
-  id: "u1",
-  email: "admin@bms.local",
-  displayName: "Admin",
-  role: "admin",
-} as unknown as AuthUser;
 
 const GLOBAL_SCOPE: AccessibleScope = {
   kind: "global",
@@ -311,6 +308,9 @@ type Setup = {
   priors?: Record<string, number | null>;
 };
 
+/** The site id the harness routes to (`F3.70` U3). */
+export const SITE_ID = "rsmoc";
+
 function renderPage({
   telemetry = liveTelemetry(),
   rules = [],
@@ -348,8 +348,10 @@ function renderPage({
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <ControlRoomOverviewPage user={user} />
+      <MemoryRouter initialEntries={[`/control-room/site/${SITE_ID}/overview`]}>
+        <Routes>
+          <Route path="/control-room/site/:locationId/:tab?" element={<ControlRoomOverviewContent />} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -943,4 +945,31 @@ export async function theClassStripQueriesThePageAssetIds(): Promise<void> {
       CR_TRACKED_ASSET_CODES.map(assetIdFor),
     ),
   );
+}
+
+/** `F3.70` U3 — a link by name inside Quick Drilldown ("HVAC System" is also a module card). */
+function drilldownLink(name: string): HTMLElement {
+  const section = screen.getByRole("heading", { name: "Quick Drilldown" }).parentElement as HTMLElement;
+  return within(section).getByRole("link", { name });
+}
+
+/** `F3.70` U3 Q1 — "Open Full SLD" targets the site's `sld` tab, not `/cr-sld`. */
+export function q1OpenFullSldTargetsTheSldTab(): void {
+  renderPage();
+  const link = screen.getByRole("link", { name: "Open Full SLD" });
+  expect(link).toHaveAttribute("href", `/control-room/site/${SITE_ID}/sld`);
+}
+
+/** `F3.70` U3 Q2 — Quick Drilldown's "HVAC System" targets the site's `hvac` tab. */
+export function q2QuickDrilldownHvacTargetsTheHvacTab(): void {
+  renderPage();
+  expect(drilldownLink("HVAC System")).toHaveAttribute("href", `/control-room/site/${SITE_ID}/hvac`);
+}
+
+/** `F3.70` U3 Q3 — no link targets `/cr-*`; "Open Full SLD" is the positive control. */
+export function q3NoLinkTargetsALegacyPath(): void {
+  renderPage();
+  expect(screen.getByRole("link", { name: "Open Full SLD" })).toBeInTheDocument();
+  const legacy = Array.from(document.body.querySelectorAll('a[href^="/cr-"]'), (a) => a.getAttribute("href"));
+  expect(legacy).toEqual([]);
 }

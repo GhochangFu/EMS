@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
-import { useAuthStore } from "../stores/auth-store";
+import { useAuthStore } from "../../../stores/auth-store";
 import {
   aMissingPriorAmongLiveInputsGivesNoDelta,
   aNullPriorKeepsTheTotalCrLoadHint,
@@ -49,7 +49,10 @@ import {
   totalCrLoadRendersARiseAgainstALowerPrior,
   totalCrLoadSumsTheMainBusAndBothRacks,
   totalCrLoadWearsTheBoltIcon,
-} from "./control-room-overview-page.spec";
+  q1OpenFullSldTargetsTheSldTab,
+  q2QuickDrilldownHvacTargetsTheHvacTab,
+  q3NoLinkTargetsALegacyPath,
+} from "./overview.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
@@ -248,5 +251,17 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("the class strip says loading while the context's assets are pending", () => {
     theClassStripSaysLoadingWhileTheAssetsArePending();
+  });
+
+  it("F3.70 Q1: Open Full SLD targets the site's sld tab", () => {
+    q1OpenFullSldTargetsTheSldTab();
+  });
+
+  it("F3.70 Q2: Quick Drilldown HVAC System targets the site's hvac tab", () => {
+    q2QuickDrilldownHvacTargetsTheHvacTab();
+  });
+
+  it("F3.70 Q3: no link targets a /cr-* path under the site route", () => {
+    q3NoLinkTargetsALegacyPath();
   });
 });

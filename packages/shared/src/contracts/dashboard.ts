@@ -38,6 +38,7 @@ export const rtuSummarySchema = z.object({
 export const locationKpiSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
+  code: z.string(),
   type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
   province: z.string().nullable(),
   organization: organizationRefSchema,

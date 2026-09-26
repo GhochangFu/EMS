@@ -2,32 +2,23 @@ import type { ReactNode } from "react";
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchRules } from "../api/rules";
-import { KpiTile } from "../components/kpi-tile";
-import {
-  CR_POINT_KEYS,
-  CR_TRACKED_ASSET_CODES,
-} from "../components/live-svg/control-room-bindings";
+import { fetchRules } from "../../../api/rules";
+import { KpiTile } from "../../../components/kpi-tile";
 import {
   type SchematicTelemetrySlice,
-  SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
-} from "../components/live-svg/schematic-telemetry-context";
-import { DisabledCommandButton } from "../components/disabled-command-button";
-import { PageHeader } from "../components/page-header";
-import { StaticTspan, StaticValue } from "../components/static-value";
-import { AppShell } from "../layouts/app-shell";
+} from "../../../components/live-svg/schematic-telemetry-context";
+import { DisabledCommandButton } from "../../../components/disabled-command-button";
+import { PageHeader } from "../../../components/page-header";
+import { StaticTspan, StaticValue } from "../../../components/static-value";
 import {
   freshValue,
   isHvacRunning,
   isStale,
   STALE_VALUE,
-} from "../lib/schematic-telemetry";
-import type { AuthUser } from "../stores/auth-store";
+} from "../../../lib/schematic-telemetry";
 
-type ControlRoomHvacPageProps = {
-  user: AuthUser;
-};
+/** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 
 type HvacStatus = "normal" | "warning" | "critical" | "offline";
 
@@ -196,7 +187,7 @@ function unitBoxClass(status: HvacStatus): string {
   return "fill-white stroke-bms-green";
 }
 
-function ControlRoomHvacContent() {
+export function ControlRoomHvacContent() {
   const rulesQuery = useQuery({
     queryKey: ["rules", "cr-hvac"],
     queryFn: fetchRules,
@@ -480,21 +471,5 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
       <span className="text-bms-muted">{label}</span>
       <span className="font-mono font-semibold text-bms-ink">{value}</span>
     </div>
-  );
-}
-
-export function ControlRoomHvacPage({ user }: ControlRoomHvacPageProps) {
-  return (
-    <AppShell
-      user={user}
-      kpiRibbon={<span className="text-bms-ink">IBMS Control Room · HVAC System</span>}
-    >
-      <SchematicTelemetryProvider
-        assetCodes={CR_TRACKED_ASSET_CODES}
-        pointKeys={CR_POINT_KEYS}
-      >
-        <ControlRoomHvacContent />
-      </SchematicTelemetryProvider>
-    </AppShell>
   );
 }

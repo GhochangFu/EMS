@@ -10,9 +10,10 @@ import { useAuthStore } from "../stores/auth-store";
  * `fetchAssets`/`fetchLocationKpis` intersect with the caller's readable
  * set); this guard only keeps a `none` scope off the shell entirely, and
  * holds the screen while the scope is still loading rather than bouncing a
- * legitimate caller off a cold load — the same reasoning as
- * `ControlRoomRoute` (`F4.156`), without that guard's per-area
- * `canAccessControlRoomPath` check, which does not apply to these routes.
+ * legitimate caller off a cold load. The `F4.156` interim route guard and its
+ * per-area check are removed as of `F3.70` U5b; the per-area rule now lives
+ * only on the SMOC tabs (`canAccessControlRoomArea`), which does not apply
+ * to these routes.
  */
 export function ControlRoomScopeRoute({ children }: { children: ReactNode }) {
   const scope = useAuthStore((s) => s.scope);

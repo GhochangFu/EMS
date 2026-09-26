@@ -2,61 +2,128 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
+/**
+ * `pnpm --filter web smoke:cr` — a cheap static smoke of the Control Room
+ * extension: every file below must still hold its needles (and none of its
+ * forbidden ones). It proves the pieces are wired, not that they behave; the
+ * specs and `tests/f3.70-smoc-site-view.test.ts` own the behaviour.
+ *
+ * Since `F3.70` (ADR 0076 decision 9) the seven SMOC pages are tabs of the
+ * site page: their contents live in `src/components/control-room/smoc/`,
+ * `SmocSiteView` hosts them under one telemetry provider, `lib/smoc-pages.ts`
+ * holds the tab table, and the seven `/cr-*` routes in `app.tsx` redirect
+ * into the tabs through `SmocLegacyRedirect`.
+ *
+ * The `AGENTS.md` and `docs/roadmap.md` needles pin prose; a `chore(agents):`
+ * sweep that rewords it must update them here.
+ */
+
 const here = dirname(fileURLToPath(import.meta.url));
 const webRoot = resolve(here, "..");
+
+/** The seven tabs: key, `SMOC_TABS` label and area, content component. */
+const TABS = [
+  { key: "overview", label: "Main Dashboard", area: "overview", content: "ControlRoomOverviewContent" },
+  { key: "sld", label: "Electrical SLD", area: "electrical", content: "ControlRoomSldContent" },
+  { key: "ups", label: "UPS Monitoring", area: "upsBattery", content: "ControlRoomUpsContent" },
+  { key: "battery", label: "Battery Bank", area: "upsBattery", content: "ControlRoomBatteryContent" },
+  { key: "hvac", label: "HVAC System", area: "hvac", content: "ControlRoomHvacContent" },
+  { key: "env", label: "Environment", area: "environment", content: "ControlRoomEnvContent" },
+  { key: "it", label: "IT & Rack Load", area: "it", content: "ControlRoomItContent" },
+];
+
+/** The page names and files the `F3.70` move deleted. */
+const DEAD_PAGES = ["Overview", "Sld", "It", "Ups", "Battery", "Hvac", "Env"];
+const DEAD_PAGE_FILES = ["overview", "sld", "it", "ups", "battery", "hvac", "env"];
+
+const SMOC_DIR = "src/components/control-room/smoc";
 
 const checks = [
   {
     file: "src/app.tsx",
     expected: [
-      'import { ControlRoomUpsPage } from "./pages/control-room-ups-page";',
-      'import { ControlRoomBatteryPage } from "./pages/control-room-battery-page";',
-      'import { ControlRoomHvacPage } from "./pages/control-room-hvac-page";',
-      'import { ControlRoomEnvPage } from "./pages/control-room-env-page";',
-      'path="/cr-ups"',
-      'path="/cr-battery"',
-      'path="/cr-hvac"',
-      'path="/cr-env"',
-      "<ControlRoomUpsPage user={user} />",
-      "<ControlRoomBatteryPage user={user} />",
-      "<ControlRoomHvacPage user={user} />",
-      "<ControlRoomEnvPage user={user} />",
+      'import { SmocLegacyRedirect } from "./components/smoc-legacy-redirect";',
+      'path="/control-room/site/:locationId/:tab?"',
+      "<ControlRoomSitePage user={user} />",
+      ...TABS.flatMap((tab) => [`path="/cr-${tab.key}"`, `<SmocLegacyRedirect tab="${tab.key}" />`]),
+    ],
+    forbidden: [
+      "<ControlRoomRoute",
+      ...DEAD_PAGES.map((name) => `ControlRoom${name}Page`),
+      ...DEAD_PAGE_FILES.map((name) => `./pages/control-room-${name}-page`),
     ],
   },
   {
     file: "src/layouts/app-shell.tsx",
+    expected: ['{ label: "Control Room", path: "/control-room", nested: true }'],
+    forbidden: ['label: "CR ·', 'path: "/cr-'],
+  },
+  {
+    file: "src/lib/smoc-pages.ts",
     expected: [
-      '{ label: "CR · UPS Monitoring", path: "/cr-ups" }',
-      '{ label: "CR · Battery Bank", path: "/cr-battery" }',
-      '{ label: "CR · HVAC System", path: "/cr-hvac" }',
-      '{ label: "CR · Environment", path: "/cr-env" }',
+      ...TABS.map((tab) => `{ key: "${tab.key}", label: "${tab.label}", area: "${tab.area}" }`),
+      'export const DEFAULT_SMOC_TAB: SmocTabKey = "overview";',
+      'export const SMOC_SITE_CODE = "RSMOC-WC";',
+      'export const SMOC_ORG_CODE = "ESKOM";',
+      "export function isSmocSite",
+      "export function findSmocSite",
+      "export function smocTabPath",
     ],
   },
   {
-    file: "src/pages/control-room-overview-page.tsx",
+    file: "src/components/control-room/smoc-site-view.tsx",
     expected: [
-      'to="/cr-ups"',
-      "UPS Monitoring",
-      'to="/cr-battery"',
-      "Battery Bank",
-      'to="/cr-hvac"',
-      "HVAC System",
-      'to="/cr-env"',
-      "Environment",
+      ...TABS.map((tab) => `${tab.key}: <${tab.content} />,`),
+      'data-testid="smoc-tabs"',
+      "allowedSmocTabs(scope)",
+      "<SchematicTelemetryProvider assetCodes={CR_TRACKED_ASSET_CODES} pointKeys={CR_POINT_KEYS}>",
+      "Outside your asset-group scope",
+    ],
+  },
+  {
+    file: "src/pages/control-room/site-page.tsx",
+    expected: ["<SmocSiteView", "isSmocSite(site)", "smocTabFromParam(tabParam)"],
+  },
+  {
+    file: "src/components/smoc-legacy-redirect.tsx",
+    expected: ["findSmocSite(", "smocTabPath("],
+  },
+  {
+    file: `${SMOC_DIR}/overview.tsx`,
+    expected: [
+      "export function ControlRoomOverviewContent",
+      ...TABS.filter((tab) => tab.key !== "overview").map((tab) => `smocTabPath(locationId, "${tab.key}")`),
       "Critical Systems Summary",
       "Environment Snapshot",
       "ModuleSummaryCard",
-      "SLD, IT, UPS, Battery, HVAC, and Environment",
+      "CR Electrical SLD · UPS · Battery · HVAC · Environment",
       "UPS Monitoring",
       "Battery Bank",
       "HVAC System",
     ],
+    forbidden: ['to="/cr-', "import { AppShell }"],
   },
   {
-    file: "src/pages/control-room-ups-page.tsx",
+    file: "src/components/control-room/quick-drilldown.tsx",
+    expected: TABS.filter((tab) => tab.key !== "overview").map(
+      (tab) => `smocTabPath(locationId, "${tab.key}")`,
+    ),
+    forbidden: ['to="/cr-'],
+  },
+  {
+    file: `${SMOC_DIR}/sld.tsx`,
+    expected: ["export function ControlRoomSldContent"],
+    forbidden: ["import { AppShell }"],
+  },
+  {
+    file: `${SMOC_DIR}/it.tsx`,
+    expected: ["export function ControlRoomItContent"],
+    forbidden: ["import { AppShell }"],
+  },
+  {
+    file: `${SMOC_DIR}/ups.tsx`,
     expected: [
-      "export function ControlRoomUpsPage",
-      "SchematicTelemetryProvider",
+      "export function ControlRoomUpsContent",
       "fetchRules",
       "CR-UPS-1",
       "CR-UPS-2",
@@ -68,6 +135,7 @@ const checks = [
       "function UpsBlockDiagram",
       "rule-driven",
     ],
+    forbidden: ["import { AppShell }"],
   },
   {
     file: "../../AGENTS.md",
@@ -91,10 +159,9 @@ const checks = [
     ],
   },
   {
-    file: "src/pages/control-room-battery-page.tsx",
+    file: `${SMOC_DIR}/battery.tsx`,
     expected: [
-      "export function ControlRoomBatteryPage",
-      "SchematicTelemetryProvider",
+      "export function ControlRoomBatteryContent",
       "fetchRules",
       "CR-BATT-1",
       "CR-BATT-2",
@@ -107,6 +174,7 @@ const checks = [
       "Adjust temperature and backup thresholds from the Rule Engine page",
     ],
     forbidden: [
+      "import { AppShell }",
       "(slice.batteryTempC ?? 0) >= 30",
       "(slice.backupMin ?? 99) < 20",
       "voltage > 13.55",
@@ -171,10 +239,9 @@ const checks = [
     ],
   },
   {
-    file: "src/pages/control-room-hvac-page.tsx",
+    file: `${SMOC_DIR}/hvac.tsx`,
     expected: [
-      "export function ControlRoomHvacPage",
-      "SchematicTelemetryProvider",
+      "export function ControlRoomHvacContent",
       "fetchRules",
       "CR-HVAC-1",
       "CR-HVAC-2",
@@ -185,16 +252,24 @@ const checks = [
       "Run-Hour Balance",
       "rule-driven",
     ],
+    forbidden: ["import { AppShell }"],
+  },
+  {
+    // The point keys moved out of `index.ts` into `constants.ts`, which the
+    // barrel re-exports (the next check). The declaration line is the needle:
+    // the bare name also appears in docblock prose elsewhere in the package.
+    file: "../../packages/shared/src/constants.ts",
+    expected: [
+      "export const CONTROL_ROOM_ENVIRONMENT_POINT_KEYS = [",
+      '"temperature_c"',
+      '"humidity_pct"',
+      '"leak_state"',
+      '"smoke_state"',
+    ],
   },
   {
     file: "../../packages/shared/src/index.ts",
-    expected: [
-      "CONTROL_ROOM_ENVIRONMENT_POINT_KEYS",
-      "temperature_c",
-      "humidity_pct",
-      "leak_state",
-      "smoke_state",
-    ],
+    expected: ['export * from "./constants";'],
   },
   {
     file: "../../apps/sim/src/index.js",
@@ -206,18 +281,18 @@ const checks = [
     ],
   },
   {
-    file: "../../apps/api/src/rules/rules.service.ts",
+    // The rule-point vocabulary moved out of `rules.service.ts` into its own module.
+    file: "../../apps/api/src/rules/rule-points.ts",
     expected: [
       "CONTROL_ROOM_ENVIRONMENT_POINT_KEYS",
       'domain === "environment"',
-      "code.startsWith(\"CR-ENV\")",
+      'code.startsWith("CR-ENV")',
     ],
   },
   {
-    file: "src/pages/control-room-env-page.tsx",
+    file: `${SMOC_DIR}/env.tsx`,
     expected: [
-      "export function ControlRoomEnvPage",
-      "SchematicTelemetryProvider",
+      "export function ControlRoomEnvContent",
       "fetchRules",
       "CR-ENV-OP-CONSOLE",
       "CR-LEAK-01",
@@ -230,6 +305,7 @@ const checks = [
       "Smoke Detection",
       "rule-driven",
     ],
+    forbidden: ["import { AppShell }"],
   },
 ];
 
@@ -237,11 +313,17 @@ let failed = false;
 
 for (const check of checks) {
   const path = resolve(webRoot, check.file);
-  const content = await readFile(path, "utf8");
+  let content;
+  try {
+    content = await readFile(path, "utf8");
+  } catch (error) {
+    failed = true;
+    console.error(`FAIL ${check.file}`);
+    console.error(`  unreadable: ${error instanceof Error ? error.message : String(error)}`);
+    continue;
+  }
   const missing = check.expected.filter((needle) => !content.includes(needle));
-  const forbidden = "forbidden" in check
-    ? check.forbidden.filter((needle) => content.includes(needle))
-    : [];
+  const forbidden = (check.forbidden ?? []).filter((needle) => content.includes(needle));
   if (missing.length > 0 || forbidden.length > 0) {
     failed = true;
     console.error(`FAIL ${check.file}`);

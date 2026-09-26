@@ -10,11 +10,12 @@ const appShellPath = join(repoRoot, "apps/web/src/layouts/app-shell.tsx");
 
 /**
  * `F3.66` U5 — the three `/control-room*` routes are wrapped in
- * `ControlRoomScopeRoute` (D3), the same shape `F4.156` enforces for the
- * `/cr-*` routes. A second sweep drives from the pages: every use of the
- * three scope pages sits inside one of those wrapped routes, and every other
- * `<ControlRoom…Page` use is one of the seven SMOC pages F4.156 owns — so a
- * new `ControlRoom…Page` name fails here until a gate claims it.
+ * `ControlRoomScopeRoute` (D3). A second sweep drives from the pages: every
+ * use of the three scope pages sits inside one of those wrapped routes, and
+ * since `F3.70` U5a (the seven SMOC pages left `app.tsx`) any other
+ * `<ControlRoom…Page` use is a violation — so a new `ControlRoom…Page` name
+ * fails here until a gate claims it. `tests/f3.70-smoc-site-view.test.ts`
+ * owns the seven `/cr-*` redirect routes.
  */
 function withoutComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
@@ -25,10 +26,10 @@ const app = withoutComments(readFileSync(appPath, "utf8"));
 const CONTROL_ROOM_PATHS = [
   "/control-room",
   "/control-room/org/:organizationId",
-  "/control-room/site/:locationId",
+  "/control-room/site/:locationId/:tab?",
 ] as const;
 
-/** Quote-agnostic, mirroring `tests/f4.156-control-room-route-gate.test.ts`. */
+/** Quote-agnostic: `path="…"`, `path='…'`, `path={"…"}`, `` path={`…`} ``. */
 function pathRegExp(path: string): RegExp {
   const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`path=\\{?\\s*["'\`]${escaped}["'\`]`, "g");
@@ -53,9 +54,8 @@ function componentTags(fragment: string): string[] {
  * The absolute range between `<ControlRoomScopeRoute>` and its close in the
  * route's block, when the route's element is wrapped: the pair holds a
  * component, and outside it the block holds nothing but the `<Route` opener
- * and the logged-out `<Navigate>` (the `bareTags` rule of
- * `tests/f4.156-control-room-route-gate.test.ts`). A page beside the pair, not
- * inside it, leaves a bare tag and reads as unwrapped.
+ * and the logged-out `<Navigate>`. A page beside the pair, not inside it,
+ * leaves a bare tag and reads as unwrapped.
  */
 function scopeWrappedRange(
   source: string,
@@ -95,17 +95,6 @@ const SCOPE_PAGES = [
   "ControlRoomSitePage",
 ] as const;
 
-/** The seven SMOC pages; `tests/f4.156-control-room-route-gate.test.ts` owns their wrapping. */
-const SMOC_PAGES = [
-  "ControlRoomOverviewPage",
-  "ControlRoomSldPage",
-  "ControlRoomItPage",
-  "ControlRoomUpsPage",
-  "ControlRoomBatteryPage",
-  "ControlRoomHvacPage",
-  "ControlRoomEnvPage",
-] as const;
-
 /** Every `<ControlRoom…Page` use in the source, with its name and offset. */
 function controlRoomPageUses(source: string): { readonly name: string; readonly at: number }[] {
   return Array.from(source.matchAll(/<(ControlRoom\w*Page)\b/g), (use) => ({
@@ -117,7 +106,7 @@ function controlRoomPageUses(source: string): { readonly name: string; readonly 
 /**
  * Every `<ControlRoom…Page` use that fails the page-side sweep: a use of one of
  * the three scope pages outside a wrapped `/control-room*` route, or a use of
- * any name that is neither a scope page nor a SMOC page. A new
+ * any other name — the seven SMOC pages included, since `F3.70` U5a. A new
  * `ControlRoom…Page` therefore fails closed until a gate claims it.
  */
 function pageSweepViolations(source: string): string[] {
@@ -127,9 +116,6 @@ function pageSweepViolations(source: string): string[] {
   });
   return controlRoomPageUses(source)
     .filter(({ name, at }) => {
-      if ((SMOC_PAGES as readonly string[]).includes(name)) {
-        return false;
-      }
       if ((SCOPE_PAGES as readonly string[]).includes(name)) {
         return !covered.some((range) => at >= range.start && at < range.end);
       }
@@ -154,7 +140,7 @@ describe("F3.66 — the three /control-room* routes are wrapped in ControlRoomSc
       "$1",
     );
     expect(bare).not.toBe(app);
-    expect(isScopeWrapped(bare, "/control-room/site/:locationId")).toBe(false);
+    expect(isScopeWrapped(bare, CONTROL_ROOM_PATHS[2])).toBe(false);
   });
 
   // The pair holds a component of its own, so only the bare-tag rule (the page
@@ -165,7 +151,7 @@ describe("F3.66 — the three /control-room* routes are wrapped in ControlRoomSc
       (_match, page: string) => `<><ControlRoomScopeRoute><Spinner /></ControlRoomScopeRoute>${page}</>`,
     );
     expect(beside).not.toBe(app);
-    expect(isScopeWrapped(beside, "/control-room/site/:locationId")).toBe(false);
+    expect(isScopeWrapped(beside, CONTROL_ROOM_PATHS[2])).toBe(false);
   });
 
   /** The sweep must not pass on an empty enumeration: it finds each scope page once. */
@@ -176,7 +162,7 @@ describe("F3.66 — the three /control-room* routes are wrapped in ControlRoomSc
     expect([...names].sort()).toEqual([...SCOPE_PAGES].sort());
   });
 
-  it("page sweep — every ControlRoom…Page use is a wrapped scope page or a SMOC page", () => {
+  it("page sweep — every ControlRoom…Page use is a wrapped scope page", () => {
     expect(pageSweepViolations(app)).toEqual([]);
   });
 
@@ -185,6 +171,14 @@ describe("F3.66 — the three /control-room* routes are wrapped in ControlRoomSc
     const withCopy = app.replace("</Routes>", () => `${extra}\n</Routes>`);
     expect(withCopy).not.toBe(app);
     expect(pageSweepViolations(withCopy)).toEqual(["ControlRoomSitePage"]);
+  });
+
+  it("positive control — a SMOC page back on a /cr-* route is caught", () => {
+    const extra = `<Route path="/cr-hvac" element={<ControlRoomHvacPage user={user} />} />`;
+    const withHvac = app.replace("</Routes>", () => `${extra}
+</Routes>`);
+    expect(withHvac).not.toBe(app);
+    expect(pageSweepViolations(withHvac)).toEqual(["ControlRoomHvacPage"]);
   });
 
   it("positive control — a new ControlRoomFooPage is caught even inside the guard", () => {

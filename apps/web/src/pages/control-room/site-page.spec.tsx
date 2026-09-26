@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
 import type {
@@ -25,10 +26,42 @@ import { ControlRoomSitePage } from "./site-page";
  * kind (D7 wired). The component owns its own reads and its own KPI tiles,
  * so this suite mocks it: it asserts the page passes the right `locationId`
  * and hosts it beside the notice banner, not what the component renders.
+ * `F3.70` U4: the mock records the pathname it mounted at (V18b).
  */
+const mounts = vi.hoisted(() => ({ generated: [] as string[] }));
+
 vi.mock("../../components/control-room/generated-site-view", () => ({
-  GeneratedSiteView: ({ locationId }: { locationId: string }) => (
-    <div data-testid="generated-site-view" data-location-id={locationId} />
+  GeneratedSiteView: ({ locationId }: { locationId: string }) => {
+    const { pathname } = useLocation();
+    useEffect(() => {
+      mounts.generated.push(pathname);
+    }, []);
+    return <div data-testid="generated-site-view" data-location-id={locationId} />;
+  },
+}));
+
+/**
+ * `F3.70` U4 — the `builtin` branch hosts `SmocSiteView`, which owns the tab
+ * strip, the per-area rule and the seven contents (its own suite, T1–T7).
+ * This suite asserts the page passes the right `locationId`, `tab` and
+ * `scope`, not what the view renders.
+ */
+vi.mock("../../components/control-room/smoc-site-view", () => ({
+  SmocSiteView: ({
+    locationId,
+    tab,
+    scope,
+  }: {
+    locationId: string;
+    tab: string;
+    scope: AccessibleScope | null;
+  }) => (
+    <div
+      data-testid="smoc-site-view"
+      data-tab={tab}
+      data-location-id={locationId}
+      data-scope-kind={scope?.kind ?? "none"}
+    />
   ),
 }));
 
@@ -46,7 +79,8 @@ vi.mock("../../components/control-room/site-dashboard-view", () => ({
 
 /**
  * `F3.66` U4 — `/control-room/site/:locationId`, the site view host (ADR 0076
- * decisions 2 and 5), rows V1a–V10 of the plan's U4 table.
+ * decisions 2 and 5), rows V1a–V16 of the plan's U4 table; `F3.70` U4
+ * rewrote V5/V6 for the `:tab?` param and added V17–V20 (OQ5, D5).
  *
  * Assertions live here; `site-page.test.tsx` is the Vitest entry point and
  * carries the `@vitest-environment jsdom` docblock (ADR 0014, ADR 0042
@@ -136,30 +170,48 @@ function stubReads(
   }
 }
 
+/** Any path the site route does not match. */
+function Landed() {
+  const { pathname } = useLocation();
+  return <p>landed on {pathname}</p>;
+}
+
+/**
+ * The router's pathname, rendered outside `<Routes>`: the bare site path
+ * matches the site route itself, so only this probe observes a D5 redirect.
+ */
+function PathnameProbe() {
+  const { pathname } = useLocation();
+  return <p data-testid="pathname">{pathname}</p>;
+}
+
 function renderAt(
   locationId: string,
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  tab?: string,
 ): void {
+  const path = `/control-room/site/${locationId}${tab === undefined ? "" : `/${tab}`}`;
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/control-room/site/${locationId}`]}>
+      <MemoryRouter initialEntries={[path]}>
+        <PathnameProbe />
         <Routes>
-          <Route path="/control-room/site/:locationId" element={<ControlRoomSitePage user={USER} />} />
+          <Route path="/control-room/site/:locationId/:tab?" element={<ControlRoomSitePage user={USER} />} />
+          <Route path="*" element={<Landed />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
+function pathname(): string {
+  return screen.getByTestId("pathname").textContent ?? "";
+}
+
 function sectionOf(element: HTMLElement): HTMLElement {
   const section = element.closest("section");
   expect(section, "the text is not inside a SectionCard").not.toBeNull();
   return section as HTMLElement;
-}
-
-async function smocHrefs(): Promise<string[]> {
-  const list = await screen.findByTestId("smoc-pages");
-  return Array.from(list.querySelectorAll('a[href^="/cr-"]')).map((a) => a.getAttribute("href") ?? "");
 }
 
 /** V1a — `generated`: hosts `GeneratedSiteView` with the page's `locationId` (D7 wired). */
@@ -210,27 +262,57 @@ export async function builtinUnknownShowsItsBanner(): Promise<void> {
   expect(banner.textContent).toBe(siteViewNoticeText("builtin_unknown"));
 }
 
-/** V5 — `builtin/smoc` for a global scope: all seven `/cr-*` links (OQ1). */
-export async function builtinListsTheSevenSmocPages(): Promise<void> {
-  stubReads(TWO_ORGS, view("a1", { kind: "builtin", builtinKey: "smoc" }));
-  renderAt("a1");
+/**
+ * The SMOC site is `RSMOC-WC` in `ESKOM` (`isSmocSite`). The fixture spells
+ * both codes as literals so a mutated constant cannot carry the fixture along.
+ */
+const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 
-  expect(await smocHrefs()).toHaveLength(7);
-  const list = screen.getByTestId("smoc-pages");
-  expect(within(list).getByRole("link", { name: "CR · Main Dashboard" }).getAttribute("href")).toBe(
-    "/cr-overview",
-  );
+const SMOC_SITES: LocationKpiSummary[] = [
+  ...TWO_ORGS,
+  site({ id: "s1", name: "SMOC Campus", code: "RSMOC-WC", organization: ORG_ESKOM }),
+];
+
+const SMOC_VIEW = view("s1", { kind: "builtin", builtinKey: "smoc" });
+
+/**
+ * `F3.70` security review L1 — a site with the same code in another
+ * organization: a `builtin/smoc` resolve there must not mount the SMOC tabs.
+ */
+const PHE_RSMOC_SITES: LocationKpiSummary[] = [
+  site({ id: "p9", name: "PHE Namesake", code: "RSMOC-WC", organization: ORG_PHE }),
+];
+
+const PHE_BUILTIN_VIEW = view("p9", { kind: "builtin", builtinKey: "smoc" });
+
+/** V5 — `builtin/smoc` at the bare path: `SmocSiteView` for this site, on the overview tab (OQ1, OQ2). */
+export async function builtinHostsSmocSiteViewOnTheOverview(): Promise<void> {
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  renderAt("s1");
+
+  const mount = await screen.findByTestId("smoc-site-view");
+  expect([mount.getAttribute("data-location-id"), mount.getAttribute("data-tab")]).toEqual([
+    "s1",
+    "overview",
+  ]);
 }
 
-/** V6 — `builtin/smoc` for an HVAC-only scope: the per-area rule filters the links. */
-export async function builtinFiltersByTheAreaRule(): Promise<void> {
-  stubReads(TWO_ORGS, view("a1", { kind: "builtin", builtinKey: "smoc" }), HVAC_ONLY);
-  renderAt("a1");
+/** V6a — `builtin/smoc` with a tab segment: `SmocSiteView` gets that tab (D2). */
+export async function builtinPassesTheTabParam(): Promise<void> {
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  renderAt("s1", undefined, "hvac");
 
-  const hrefs = await smocHrefs();
-  expect(hrefs).toContain("/cr-overview");
-  expect(hrefs).toContain("/cr-hvac");
-  expect(hrefs).not.toContain("/cr-sld");
+  const mount = await screen.findByTestId("smoc-site-view");
+  expect(mount.getAttribute("data-tab")).toBe("hvac");
+}
+
+/** V6b — `SmocSiteView` gets the caller's scope, so its per-area rule reads it (D3). */
+export async function builtinPassesTheScope(): Promise<void> {
+  stubReads(SMOC_SITES, SMOC_VIEW, HVAC_ONLY);
+  renderAt("s1");
+
+  const mount = await screen.findByTestId("smoc-site-view");
+  expect(mount.getAttribute("data-scope-kind")).toBe("asset_group");
 }
 
 /** V7 — `dashboard`: hosts `SiteDashboardView` with the slug and the site's organization id (D4). */
@@ -452,8 +534,128 @@ export async function aPendingKpiReadShowsOnlyTheLoadingLine(): Promise<void> {
   expect(screen.queryByText(/not available in your access scope/)).toBeNull();
 }
 
+/** V17 — an unknown tab on a `builtin` site redirects to the bare site path (OQ5, D5). */
+export async function anUnknownTabRedirectsToTheBarePath(): Promise<void> {
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  renderAt("s1", undefined, "bogus");
+
+  expect(await screen.findByTestId("smoc-site-view")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/s1");
+}
+
+/** V18a — a tab segment on a `generated` site redirects to the bare site path (OQ5, D5). */
+export async function aTabOnAGeneratedSiteRedirectsToTheBarePath(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  renderAt("a1", undefined, "sld");
+
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/a1");
+}
+
+/**
+ * V18b — the redirect is decided in the page, before the body (D5): the
+ * generated body never mounts at the tab URL, only at the bare path.
+ */
+export async function aTabOnAGeneratedSiteMountsNoBodyAtTheTabUrl(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  renderAt("a1", undefined, "sld");
+
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
+  expect(mounts.generated).toEqual(["/control-room/site/a1"]);
+}
+
+/**
+ * V19a — a rejected resolve read with a tab segment shows the not-available
+ * card (D6), at the tab URL: D5 decides from `data`, so a rejected read that
+ * never answered redirects nowhere.
+ */
+export async function aRejectedReadWithATabShowsTheNotAvailableCard(): Promise<void> {
+  stubReads(TWO_ORGS, "reject");
+  renderAt("a1", undefined, "sld");
+
+  const card = sectionOf(await screen.findByText(/not available in your access scope/));
+  expect(within(card).getByRole("link").getAttribute("href")).toBe("/control-room");
+  expect(pathname()).toBe("/control-room/site/a1/sld");
+}
+
+/** V19b — a rejected resolve read with a tab segment mounts no SMOC view (after V19a's positive control). */
+export async function aRejectedReadWithATabMountsNoSmocView(): Promise<void> {
+  stubReads(TWO_ORGS, "reject");
+  renderAt("a1", undefined, "sld");
+
+  expect(await screen.findByText(/not available in your access scope/)).toBeInTheDocument();
+  expect(screen.queryByTestId("smoc-site-view")).toBeNull();
+  expect(pathname()).toBe("/control-room/site/a1/sld");
+}
+
+/**
+ * V20 — D5: while the resolve read is pending, not even an unknown tab is
+ * redirected — the loading line shows and the tab URL stays.
+ */
+export async function aPendingResolveReadDoesNotRedirect(): Promise<void> {
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  const resolve = vi
+    .spyOn(controlRoomApi, "fetchResolvedSiteControlRoomView")
+    .mockImplementation(() => new Promise(() => undefined));
+  renderAt("s1", undefined, "bogus");
+
+  await waitFor(() => expect(resolve).toHaveBeenCalled());
+  expect(await screen.findByText("Loading the site view…")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/s1/bogus");
+}
+
+/** V21a — `builtin/smoc` on a non-SMOC site (RSMOC-WC in PHEWB): the generated view mounts (L1). */
+export async function aBuiltinOnANonSmocSiteHostsTheGeneratedView(): Promise<void> {
+  stubReads(PHE_RSMOC_SITES, PHE_BUILTIN_VIEW);
+  renderAt("p9");
+
+  const mount = await screen.findByTestId("generated-site-view");
+  expect(mount.getAttribute("data-location-id")).toBe("p9");
+}
+
+/** V21b — `builtin/smoc` on a non-SMOC site mounts no SMOC view (after V21a's positive control). */
+export async function aBuiltinOnANonSmocSiteMountsNoSmocView(): Promise<void> {
+  stubReads(PHE_RSMOC_SITES, PHE_BUILTIN_VIEW);
+  renderAt("p9");
+
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
+  expect(screen.queryByTestId("smoc-site-view")).toBeNull();
+}
+
+/** V21c — a tab segment on a non-SMOC `builtin` site redirects to the bare site path (L1, D5). */
+export async function aTabOnANonSmocBuiltinSiteRedirectsToTheBarePath(): Promise<void> {
+  stubReads(PHE_RSMOC_SITES, PHE_BUILTIN_VIEW);
+  renderAt("p9", undefined, "sld");
+
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/p9");
+}
+
+/**
+ * V22 — D5 waits for both reads: with the KPI read pending and a `generated`
+ * resolve read already answered, a tab URL is not redirected yet. It waits
+ * for the resolve query to succeed, then for the render that follows, so the
+ * pathname check cannot pass before the data exists.
+ */
+export async function aPendingKpiReadDoesNotRedirectATab(): Promise<void> {
+  stubReads(TWO_ORGS, view("a1"));
+  vi.spyOn(locationsApi, "fetchLocationKpis").mockImplementation(() => new Promise(() => undefined));
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  renderAt("a1", queryClient, "sld");
+
+  await waitFor(() => {
+    expect(queryClient.getQueryState([...SITE_VIEW_KEY])?.status).toBe("success");
+  });
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(screen.getByText("Loading Control Room…")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/a1/sld");
+}
+
 export function cleanupPage(): void {
   cleanup();
+  mounts.generated.length = 0;
   const networkCalls = fetchSpy?.mock.calls.map((call) => String(call[0])) ?? [];
   fetchSpy = null;
   vi.restoreAllMocks();

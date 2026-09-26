@@ -451,3 +451,34 @@ export async function assertTotalKwSumsEveryAssetForGlobalScope(client: pg.PoolC
   const got = items[0]?.totalKw;
   assert(got === 142, `expected totalKw 142 (both assets, global scope), got ${JSON.stringify(got)}`);
 }
+
+/**
+ * Case 14 — `F3.70` (ADR 0076 decision 9, D7): the location KPI row's `code`
+ * is `bms.locations.code`, the fixture's `${tag}-LOC`, not its name.
+ */
+export async function assertLocationKpiCodeIsLocationsCode(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const { items } = await service(client).locationKpis({ locationIds: [site.locationId], assetIds: null });
+  const got = items[0]?.code;
+  assert(
+    got === `${site.tag}-LOC`,
+    `expected code ${site.tag}-LOC, got ${JSON.stringify(got)}`,
+  );
+}
+
+/**
+ * Case 15 — `F3.70`: `locationDashboard` (the `/locations/:id` read) carries
+ * the same `code` through its `...card` spread, not a copy from the name.
+ */
+export async function assertLocationDashboardCodeIsLocationsCode(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const dto = await service(client).locationDashboard(site.locationId, {
+    locationIds: [site.locationId],
+    assetIds: null,
+  });
+  const got = dto?.code;
+  assert(
+    got === `${site.tag}-LOC`,
+    `expected locationDashboard code ${site.tag}-LOC, got ${JSON.stringify(got)}`,
+  );
+}

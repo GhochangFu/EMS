@@ -1,22 +1,27 @@
 import { describe, it } from "vitest";
 
 import {
-  runFalseForUndefinedOrEmptyTests,
-  runFalseWhenNoRowCodeIsTrackedTests,
-  runTrueWhenOneRowCodeIsTrackedTests,
+  runA1LocationScopeGrantsEveryAreaTests,
+  runA2ElectricalOnlyGrantsUpsBatteryNotHvacTests,
+  runA3NoneScopeDeniesOverviewTests,
+  runA4NullScopeGrantsOverviewDeniesHvacTests,
 } from "./control-room-access.spec";
 
 /** Vitest entry point — see `apps/api/src/admin/admin.schema.test.ts` (ADR 0014). */
-describe("hasAnyControlRoomAsset (F4.156)", () => {
-  it("L1 is true when one row code is tracked", () => {
-    runTrueWhenOneRowCodeIsTrackedTests();
+describe("canAccessControlRoomArea (U5b)", () => {
+  it("A1 a location scope grants every area", () => {
+    runA1LocationScopeGrantsEveryAreaTests();
   });
 
-  it("L2 is false when no row code is tracked", () => {
-    runFalseWhenNoRowCodeIsTrackedTests();
+  it("A2 an electrical-only asset_group scope grants upsBattery but not hvac", () => {
+    runA2ElectricalOnlyGrantsUpsBatteryNotHvacTests();
   });
 
-  it("L3 is false for an undefined or empty list", () => {
-    runFalseForUndefinedOrEmptyTests();
+  it("A3 a none scope denies overview", () => {
+    runA3NoneScopeDeniesOverviewTests();
+  });
+
+  it("A4 a null scope grants overview but denies hvac", () => {
+    runA4NullScopeGrantsOverviewDeniesHvacTests();
   });
 });

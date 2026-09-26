@@ -20,6 +20,7 @@ import { LocationKpiCard } from "./location-kpi-card";
 const LOCATION = locationKpiSummarySchema.parse({
   id: "loc-1",
   name: "Western Cape Campus",
+  code: "SITE-loc-1",
   type: "smoc_campus",
   province: "Western Cape",
   organization: { id: "org-1", code: "ESKOM", name: "Eskom" },

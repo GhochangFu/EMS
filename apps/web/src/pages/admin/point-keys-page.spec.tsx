@@ -17,9 +17,10 @@ import { PointKeysAdminPage } from "./point-keys-page";
  * Vitest entry point and carries the `@vitest-environment jsdom` docblock.
  *
  * **The page renders `AppShell`**, through `MasterDataLayout` — the plan's
- * "no `AppShell`" note was wrong. `AppShell` polls `fetchSystemStatus` and
- * `useControlRoomAccess` reads `fetchAssets`, so both are stubbed: an
- * unstubbed fetch reaches the real API on :4000 (the `F4.160` lesson).
+ * "no `AppShell`" note was wrong. `AppShell` polls `fetchSystemStatus`, so it
+ * is stubbed: an unstubbed fetch reaches the real API on :4000 (the `F4.160`
+ * lesson). `fetchAssets` is also stubbed, kept from the F4.156 interim gate
+ * (removed as of `F3.70` U5b) in case another render path still reaches it.
  */
 
 const admin: AuthUser = {

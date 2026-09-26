@@ -1,35 +1,30 @@
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
 
-import { fetchRules } from "../api/rules";
-import { ActiveAlarmsRail } from "../components/control-room/active-alarms-rail";
-import { AssetClassStrip } from "../components/control-room/asset-class-strip";
-import { BreakerTable } from "../components/control-room/breaker-table";
-import { CapabilityFooter } from "../components/control-room/capability-footer";
-import { QuickDrilldown } from "../components/control-room/quick-drilldown";
-import { ScopedActionLink } from "../components/control-room/scoped-action-link";
-import { StateLegend } from "../components/control-room/state-legend";
-import { KeyParameters } from "../components/control-room/key-parameters";
-import { KpiTile } from "../components/kpi-tile";
-import {
-  CR_BREAKERS,
-  CR_POINT_KEYS,
-  CR_TRACKED_ASSET_CODES,
-} from "../components/live-svg/control-room-bindings";
+import { fetchRules } from "../../../api/rules";
+import { ActiveAlarmsRail } from "../../../components/control-room/active-alarms-rail";
+import { AssetClassStrip } from "../../../components/control-room/asset-class-strip";
+import { BreakerTable } from "../../../components/control-room/breaker-table";
+import { CapabilityFooter } from "../../../components/control-room/capability-footer";
+import { QuickDrilldown } from "../../../components/control-room/quick-drilldown";
+import { ScopedActionLink } from "../../../components/control-room/scoped-action-link";
+import { StateLegend } from "../../../components/control-room/state-legend";
+import { KeyParameters } from "../../../components/control-room/key-parameters";
+import { KpiTile } from "../../../components/kpi-tile";
+import { CR_BREAKERS, CR_TRACKED_ASSET_CODES } from "../../../components/live-svg/control-room-bindings";
 import {
   type SchematicTelemetrySlice,
-  SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
   useSchematicTelemetryContext,
-} from "../components/live-svg/schematic-telemetry-context";
-import { PageHeader } from "../components/page-header";
-import { StaticTspan } from "../components/static-value";
-import { StatusPill } from "../components/status-pill";
-import { WidgetIconGlyph } from "../components/widget-icon";
-import { usePriorPointValues } from "../hooks/use-prior-point-values";
-import { AppShell } from "../layouts/app-shell";
-import { breakerTableRow } from "../lib/breaker-table-rows";
+} from "../../../components/live-svg/schematic-telemetry-context";
+import { PageHeader } from "../../../components/page-header";
+import { StaticTspan } from "../../../components/static-value";
+import { StatusPill } from "../../../components/status-pill";
+import { WidgetIconGlyph } from "../../../components/widget-icon";
+import { usePriorPointValues } from "../../../hooks/use-prior-point-values";
+import { breakerTableRow } from "../../../lib/breaker-table-rows";
 import {
   avgOf,
   crPriorRefs,
@@ -39,14 +34,13 @@ import {
   type TileInput,
   tileDeltaText,
   tileHint,
-} from "../lib/control-room-tiles";
-import { freshValue, isStale } from "../lib/schematic-telemetry";
-import { canAccessControlRoomArea } from "../lib/control-room-access";
-import { useAuthStore, type AuthUser } from "../stores/auth-store";
+} from "../../../lib/control-room-tiles";
+import { freshValue, isStale } from "../../../lib/schematic-telemetry";
+import { canAccessControlRoomArea } from "../../../lib/control-room-access";
+import { smocTabPath } from "../../../lib/smoc-pages";
+import { useAuthStore } from "../../../stores/auth-store";
 
-type ControlRoomOverviewPageProps = {
-  user: AuthUser;
-};
+/** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 
 function n(value: number | null, digits = 1): string {
   return value == null || Number.isNaN(value) ? "—" : value.toFixed(digits);
@@ -249,7 +243,8 @@ function viewTabClass(selected: boolean): string {
   return `rounded border px-3 py-1.5 text-xs font-semibold ${selected ? "border-bms-green bg-emerald-50 text-emerald-900" : "border-gray-200 bg-white text-bms-ink"}`;
 }
 
-function ControlRoomOverviewContent() {
+export function ControlRoomOverviewContent() {
+  const { locationId = "" } = useParams();
   const [viewMode, setViewMode] = useState<SldViewMode>("diagram");
   const scope = useAuthStore((state) => state.scope);
   const canElectrical = canAccessControlRoomArea(scope, "electrical");
@@ -483,7 +478,7 @@ function ControlRoomOverviewContent() {
                   </button>
                 ))}
               </div>
-              <ScopedActionLink enabled={canElectrical} to="/cr-sld" label="Open Full SLD" />
+              <ScopedActionLink enabled={canElectrical} to={smocTabPath(locationId, "sld")} label="Open Full SLD" />
             </div>
           </div>
           {!canElectrical ? (
@@ -501,14 +496,14 @@ function ControlRoomOverviewContent() {
       <KeyParameters ups1={ups1} ups2={ups2} batt1={batt1} batt2={batt2} main={main} nowMs={nowMs} access={{ upsBattery: canUpsBattery, electrical: canElectrical }} />
 
       <div className="grid gap-4 lg:grid-cols-4">
-        <ModuleSummaryCard enabled={canUpsBattery} title="UPS Monitoring" to="/cr-ups" status={upsStatus} primary={`${n(worstBackup, 0)} min`} secondary={`${n(freshValue(ups1.loadPct, isStale(ups1.lastSeenMs, nowMs)), 0)}% / ${n(freshValue(ups2.loadPct, isStale(ups2.lastSeenMs, nowMs)), 0)}% load`} />
-        <ModuleSummaryCard enabled={canUpsBattery} title="Battery Bank" to="/cr-battery" status={batteryStatus} primary={`${n(batteryHealth, 0)}% health`} secondary={`${n(freshValue(batt1.batteryTempC, isStale(batt1.lastSeenMs, nowMs)), 1)} C / ${n(freshValue(batt2.batteryTempC, isStale(batt2.lastSeenMs, nowMs)), 1)} C`} />
-        <ModuleSummaryCard enabled={canHvac} title="HVAC System" to="/cr-hvac" status={hvacStatus} primary={`${n(avgReturnAir, 1)} C return`} secondary={`${n(freshValue(hvac1.coolingKw, isStale(hvac1.lastSeenMs, nowMs)), 1)} + ${n(freshValue(hvac2.coolingKw, isStale(hvac2.lastSeenMs, nowMs)), 1)} kW cooling`} />
-        <ModuleSummaryCard enabled={canEnvironment} title="Environment" to="/cr-env" status={environmentStatus} primary={`${n(avgRoomTemp, 1)} C avg`} secondary={`${environmentStates.filter((item) => item.state.matchedRule).length} active env rules`} />
+        <ModuleSummaryCard enabled={canUpsBattery} title="UPS Monitoring" to={smocTabPath(locationId, "ups")} status={upsStatus} primary={`${n(worstBackup, 0)} min`} secondary={`${n(freshValue(ups1.loadPct, isStale(ups1.lastSeenMs, nowMs)), 0)}% / ${n(freshValue(ups2.loadPct, isStale(ups2.lastSeenMs, nowMs)), 0)}% load`} />
+        <ModuleSummaryCard enabled={canUpsBattery} title="Battery Bank" to={smocTabPath(locationId, "battery")} status={batteryStatus} primary={`${n(batteryHealth, 0)}% health`} secondary={`${n(freshValue(batt1.batteryTempC, isStale(batt1.lastSeenMs, nowMs)), 1)} C / ${n(freshValue(batt2.batteryTempC, isStale(batt2.lastSeenMs, nowMs)), 1)} C`} />
+        <ModuleSummaryCard enabled={canHvac} title="HVAC System" to={smocTabPath(locationId, "hvac")} status={hvacStatus} primary={`${n(avgReturnAir, 1)} C return`} secondary={`${n(freshValue(hvac1.coolingKw, isStale(hvac1.lastSeenMs, nowMs)), 1)} + ${n(freshValue(hvac2.coolingKw, isStale(hvac2.lastSeenMs, nowMs)), 1)} kW cooling`} />
+        <ModuleSummaryCard enabled={canEnvironment} title="Environment" to={smocTabPath(locationId, "env")} status={environmentStatus} primary={`${n(avgRoomTemp, 1)} C avg`} secondary={`${environmentStates.filter((item) => item.state.matchedRule).length} active env rules`} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <ItRackLoadSummary enabled={canIt} rules={rules} />
+        <ItRackLoadSummary enabled={canIt} rules={rules} locationId={locationId} />
         <CriticalSystemsSummary
           access={{ upsBattery: canUpsBattery, hvac: canHvac, environment: canEnvironment }}
           upsStatus={upsStatus}
@@ -521,6 +516,7 @@ function ControlRoomOverviewContent() {
 
       <div className="grid gap-4 lg:grid-cols-3">
         <EnvironmentSnapshot
+          locationId={locationId}
           enabled={canEnvironment}
           avgTemp={avgRoomTemp}
           envStatus={environmentStatus}
@@ -528,6 +524,7 @@ function ControlRoomOverviewContent() {
           smokeCount={environmentStates.filter((item) => item.code.startsWith("CR-SMOKE") && item.state.status === "critical").length}
         />
         <QuickDrilldown
+          locationId={locationId}
           access={{
             electrical: canElectrical,
             it: canIt,
@@ -732,12 +729,14 @@ function StatusRow({
 }
 
 function EnvironmentSnapshot({
+  locationId,
   enabled,
   avgTemp,
   envStatus,
   wetCount,
   smokeCount,
 }: {
+  locationId: string;
   enabled: boolean;
   avgTemp: number | null;
   envStatus: RuleState;
@@ -750,7 +749,7 @@ function EnvironmentSnapshot({
         <h2 className="font-condensed text-lg font-bold text-bms-ink">
           Environment Snapshot
         </h2>
-        <ScopedActionLink enabled={enabled} to="/cr-env" label="Detail" />
+        <ScopedActionLink enabled={enabled} to={smocTabPath(locationId, "env")} label="Detail" />
       </div>
       <div className="mt-3 space-y-2 text-sm">
         <Row label="Avg room temp" value={enabled ? `${n(avgTemp, 1)} C` : "—"} />
@@ -770,9 +769,11 @@ function EnvironmentSnapshot({
 function ItRackLoadSummary({
   enabled,
   rules,
+  locationId,
 }: {
   enabled: boolean;
   rules: RuleListItem[];
+  locationId: string;
 }) {
   const net = useCr("CR-NET-RACK");
   const vw = useCr("CR-VW-SRV-RACK");
@@ -794,7 +795,7 @@ function ItRackLoadSummary({
         <h2 className="font-condensed text-lg font-bold text-bms-ink">
           IT Rack Load
         </h2>
-        <ScopedActionLink enabled={enabled} to="/cr-it" label="Detail" />
+        <ScopedActionLink enabled={enabled} to={smocTabPath(locationId, "it")} label="Detail" />
       </div>
       {enabled ? (
         <div className="mt-4 space-y-4">
@@ -896,21 +897,5 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-bms-muted">{label}</span>
       <span className="font-mono font-semibold text-bms-ink">{value}</span>
     </div>
-  );
-}
-
-export function ControlRoomOverviewPage({ user }: ControlRoomOverviewPageProps) {
-  return (
-    <AppShell
-      user={user}
-      kpiRibbon={<span className="text-bms-ink">IBMS Control Room · Main Dashboard</span>}
-    >
-      <SchematicTelemetryProvider
-        assetCodes={CR_TRACKED_ASSET_CODES}
-        pointKeys={CR_POINT_KEYS}
-      >
-        <ControlRoomOverviewContent />
-      </SchematicTelemetryProvider>
-    </AppShell>
   );
 }

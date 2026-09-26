@@ -1,7 +1,5 @@
 import type { AccessibleScope } from "@bms/shared";
 
-import type { AssetRow } from "../api/assets";
-
 export type ControlRoomArea =
   | "overview"
   | "electrical"
@@ -9,16 +7,6 @@ export type ControlRoomArea =
   | "upsBattery"
   | "hvac"
   | "environment";
-
-const routeArea = new Map<string, ControlRoomArea>([
-  ["/cr-overview", "overview"],
-  ["/cr-sld", "electrical"],
-  ["/cr-it", "it"],
-  ["/cr-ups", "upsBattery"],
-  ["/cr-battery", "upsBattery"],
-  ["/cr-hvac", "hvac"],
-  ["/cr-env", "environment"],
-]);
 
 /** Returns true when the current user scope can open the Control Room area. */
 export function canAccessControlRoomArea(
@@ -47,27 +35,4 @@ export function canAccessControlRoomArea(
     case "environment":
       return groupCodes.has("environment");
   }
-}
-
-/** Returns true when the current user scope can open the Control Room route. */
-export function canAccessControlRoomPath(
-  scope: AccessibleScope | null,
-  path: string,
-): boolean {
-  const area = routeArea.get(path);
-  return area ? canAccessControlRoomArea(scope, area) : true;
-}
-
-/**
- * `F4.156` — true when the caller's readable asset list holds at least one
- * tracked code. The list is the API's already-filtered `GET /api/v1/assets`
- * body, so "can read one `CR-*` row" is "may see the Control Room". An
- * undefined or empty list denies.
- */
-export function hasAnyControlRoomAsset(
-  assets: readonly Pick<AssetRow, "code">[] | undefined,
-  assetCodes: readonly string[],
-): boolean {
-  const tracked = new Set(assetCodes);
-  return assets?.some((asset) => tracked.has(asset.code)) ?? false;
 }

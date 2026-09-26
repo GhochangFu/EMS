@@ -114,6 +114,7 @@ describe("checkResponse", () => {
     const dashboard = {
       id: "l1",
       name: "Campus",
+      code: "SITE-l1",
       type: "smoc_campus",
       province: null,
       organization: { id: "o1", code: "IONX", name: "Ion Exchange" },

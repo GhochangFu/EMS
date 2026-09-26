@@ -39,6 +39,7 @@ export function site(opts: {
   id: string;
   name: string;
   organization: { id: string; code: string; name: string };
+  code?: string;
   assetCount?: number;
   freshAssetCount?: number;
   openAlarms?: number;
@@ -46,6 +47,7 @@ export function site(opts: {
   return locationKpiSummarySchema.parse({
     id: opts.id,
     name: opts.name,
+    code: opts.code ?? `SITE-${opts.id}`,
     type: "smoc_campus",
     province: null,
     organization: opts.organization,

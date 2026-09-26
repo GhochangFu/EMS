@@ -2,32 +2,23 @@ import { useState, type ReactNode } from "react";
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchRules } from "../api/rules";
-import { KpiTile } from "../components/kpi-tile";
-import {
-  CR_POINT_KEYS,
-  CR_TRACKED_ASSET_CODES,
-} from "../components/live-svg/control-room-bindings";
+import { fetchRules } from "../../../api/rules";
+import { KpiTile } from "../../../components/kpi-tile";
 import {
   type SchematicTelemetrySlice,
-  SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
-} from "../components/live-svg/schematic-telemetry-context";
-import { DisabledCommandButton } from "../components/disabled-command-button";
-import { PageHeader } from "../components/page-header";
-import { StaticTspan, StaticValue } from "../components/static-value";
-import { AppShell } from "../layouts/app-shell";
+} from "../../../components/live-svg/schematic-telemetry-context";
+import { DisabledCommandButton } from "../../../components/disabled-command-button";
+import { PageHeader } from "../../../components/page-header";
+import { StaticTspan, StaticValue } from "../../../components/static-value";
 import {
   freshValue,
   ownElse,
   isStale,
   STALE_VALUE,
-} from "../lib/schematic-telemetry";
-import type { AuthUser } from "../stores/auth-store";
+} from "../../../lib/schematic-telemetry";
 
-type ControlRoomUpsPageProps = {
-  user: AuthUser;
-};
+/** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 
 type UpsTab = "CR-UPS-1" | "CR-UPS-2" | "combined";
 type UpsStatus = "normal" | "warning" | "critical" | "offline";
@@ -232,7 +223,7 @@ function capacityKw(loadPct: number | null, capacityKva: number): number | null 
   return loadPct == null ? null : (loadPct / 100) * capacityKva * 0.9;
 }
 
-function ControlRoomUpsContent() {
+export function ControlRoomUpsContent() {
   const [tab, setTab] = useState<UpsTab>("CR-UPS-1");
   const rulesQuery = useQuery({
     queryKey: ["rules", "cr-ups"],
@@ -601,21 +592,5 @@ function Row({ label, value }: { label: string; value: ReactNode }) {
       <span className="text-bms-muted">{label}</span>
       <span className="font-mono font-semibold text-bms-ink">{value}</span>
     </div>
-  );
-}
-
-export function ControlRoomUpsPage({ user }: ControlRoomUpsPageProps) {
-  return (
-    <AppShell
-      user={user}
-      kpiRibbon={<span className="text-bms-ink">IBMS Control Room · UPS Monitoring</span>}
-    >
-      <SchematicTelemetryProvider
-        assetCodes={CR_TRACKED_ASSET_CODES}
-        pointKeys={CR_POINT_KEYS}
-      >
-        <ControlRoomUpsContent />
-      </SchematicTelemetryProvider>
-    </AppShell>
   );
 }

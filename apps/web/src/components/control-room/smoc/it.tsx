@@ -1,26 +1,17 @@
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchRules } from "../api/rules";
-import {
-  CR_POINT_KEYS,
-  CR_SERVERS,
-  CR_TRACKED_ASSET_CODES,
-} from "../components/live-svg/control-room-bindings";
+import { fetchRules } from "../../../api/rules";
+import { CR_SERVERS } from "../../../components/live-svg/control-room-bindings";
 import {
   type SchematicTelemetrySlice,
-  SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
-} from "../components/live-svg/schematic-telemetry-context";
-import { PageHeader } from "../components/page-header";
-import { StatusPill } from "../components/status-pill";
-import { AppShell } from "../layouts/app-shell";
-import { freshValue, isStale } from "../lib/schematic-telemetry";
-import type { AuthUser } from "../stores/auth-store";
+} from "../../../components/live-svg/schematic-telemetry-context";
+import { PageHeader } from "../../../components/page-header";
+import { StatusPill } from "../../../components/status-pill";
+import { freshValue, isStale } from "../../../lib/schematic-telemetry";
 
-type ControlRoomItPageProps = {
-  user: AuthUser;
-};
+/** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 
 function n(value: number | null, digits = 1): string {
   return value == null || Number.isNaN(value) ? "—" : value.toFixed(digits);
@@ -163,7 +154,7 @@ function mergeStatus(states: RuleMatchState[]): RuleMatchState {
   );
 }
 
-function ControlRoomItContent() {
+export function ControlRoomItContent() {
   const rulesQuery = useQuery({
     queryKey: ["rules"],
     queryFn: fetchRules,
@@ -587,21 +578,5 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-bms-muted">{label}</span>
       <span className="font-mono font-semibold text-bms-ink">{value}</span>
     </div>
-  );
-}
-
-export function ControlRoomItPage({ user }: ControlRoomItPageProps) {
-  return (
-    <AppShell
-      user={user}
-      kpiRibbon={<span className="text-bms-ink">IBMS Control Room · IT & Rack Load</span>}
-    >
-      <SchematicTelemetryProvider
-        assetCodes={CR_TRACKED_ASSET_CODES}
-        pointKeys={CR_POINT_KEYS}
-      >
-        <ControlRoomItContent />
-      </SchematicTelemetryProvider>
-    </AppShell>
   );
 }
