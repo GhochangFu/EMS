@@ -12,9 +12,16 @@ import {
   aRejectedReadShowsNoInterimBody,
   aRejectedReadShowsTheNotAvailableCard,
   aRejectedResolveReadIsNotRetried,
+  aPendingResolveReadDoesNotRedirect,
+  aRejectedReadWithATabMountsNoSmocView,
+  aRejectedReadWithATabShowsTheNotAvailableCard,
   aSiteOutsideTheListShowsTheNotAvailableCard,
-  builtinFiltersByTheAreaRule,
-  builtinListsTheSevenSmocPages,
+  aTabOnAGeneratedSiteMountsNoBodyAtTheTabUrl,
+  aTabOnAGeneratedSiteRedirectsToTheBarePath,
+  anUnknownTabRedirectsToTheBarePath,
+  builtinHostsSmocSiteViewOnTheOverview,
+  builtinPassesTheScope,
+  builtinPassesTheTabParam,
   builtinUnknownShowsItsBanner,
   cleanupPage,
   dashboardOutOfScopeShowsItsBanner,
@@ -58,12 +65,16 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
     await builtinUnknownShowsItsBanner();
   });
 
-  it("V5 lists the seven SMOC pages for a global scope", async () => {
-    await builtinListsTheSevenSmocPages();
+  it("V5 hosts SmocSiteView for the site on the overview tab at the bare path", async () => {
+    await builtinHostsSmocSiteViewOnTheOverview();
   });
 
-  it("V6 filters the SMOC pages by the per-area rule", async () => {
-    await builtinFiltersByTheAreaRule();
+  it("V6a passes the tab segment to SmocSiteView", async () => {
+    await builtinPassesTheTabParam();
+  });
+
+  it("V6b passes the caller's scope to SmocSiteView", async () => {
+    await builtinPassesTheScope();
   });
 
   it("V7 hosts SiteDashboardView with the slug and the site's organization id", async () => {
@@ -128,5 +139,29 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V16 shows only the loading line while the KPI read is pending (D1)", async () => {
     await aPendingKpiReadShowsOnlyTheLoadingLine();
+  });
+
+  it("V17 redirects an unknown tab on a builtin site to the bare site path", async () => {
+    await anUnknownTabRedirectsToTheBarePath();
+  });
+
+  it("V18a redirects a tab segment on a generated site to the bare site path", async () => {
+    await aTabOnAGeneratedSiteRedirectsToTheBarePath();
+  });
+
+  it("V18b mounts no generated body at the tab URL", async () => {
+    await aTabOnAGeneratedSiteMountsNoBodyAtTheTabUrl();
+  });
+
+  it("V19a shows the not-available card for a rejected resolve read at a tab URL", async () => {
+    await aRejectedReadWithATabShowsTheNotAvailableCard();
+  });
+
+  it("V19b mounts no SMOC view for a rejected resolve read at a tab URL", async () => {
+    await aRejectedReadWithATabMountsNoSmocView();
+  });
+
+  it("V20 does not redirect while the resolve read is pending", async () => {
+    await aPendingResolveReadDoesNotRedirect();
   });
 });

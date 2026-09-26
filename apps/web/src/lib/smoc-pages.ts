@@ -58,13 +58,3 @@ export function findSmocSite<T extends { readonly id: string; readonly code: str
 ): T | undefined {
   return items.find((item) => item.code === SMOC_SITE_CODE);
 }
-
-/**
- * @deprecated `F3.70` U1 — replaced by `SMOC_TABS`. Kept only so
- * `pages/control-room/site-page.tsx` keeps building until U4 rewrites it to
- * `SmocSiteView`; U4 removes this export.
- */
-export const SMOC_PAGES = SMOC_TABS.map((tab) => ({
-  label: `CR · ${tab.label}`,
-  path: `/cr-${tab.key}`,
-})) as ReadonlyArray<{ readonly label: string; readonly path: string }>;

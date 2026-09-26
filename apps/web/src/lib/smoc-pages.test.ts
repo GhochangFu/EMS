@@ -2,7 +2,6 @@ import { describe, it } from "vitest";
 
 import {
   runP1,
-  runP10,
   runP2,
   runP3,
   runP4,
@@ -49,9 +48,5 @@ describe("smoc-pages", () => {
 
   it("P9 — findSmocSite picks the RSMOC-WC row, not the first", () => {
     runP9();
-  });
-
-  it("P10 — the deprecated SMOC_PAGES still equals today's seven label/path pairs", () => {
-    runP10();
   });
 });

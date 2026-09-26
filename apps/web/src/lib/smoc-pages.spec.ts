@@ -4,7 +4,6 @@ import {
   allowedSmocTabs,
   DEFAULT_SMOC_TAB,
   findSmocSite,
-  SMOC_PAGES,
   smocTabFromParam,
   smocTabPath,
   SMOC_SITE_CODE,
@@ -112,27 +111,4 @@ export function runP9(): void {
   ];
   const found = findSmocSite(items);
   assert(found?.id === "loc-2", `findSmocSite must pick the RSMOC-WC row, got ${found?.id}`);
-}
-
-/**
- * `P10` — the deprecated `SMOC_PAGES` still equals today's seven label/path
- * pairs (the `CR ·` prefix, the `/cr-*` paths), so `site-page.tsx` keeps
- * building and rendering correctly until `U4` removes this export.
- */
-export function runP10(): void {
-  const expected: ReadonlyArray<readonly [string, string]> = [
-    ["CR · Main Dashboard", "/cr-overview"],
-    ["CR · Electrical SLD", "/cr-sld"],
-    ["CR · UPS Monitoring", "/cr-ups"],
-    ["CR · Battery Bank", "/cr-battery"],
-    ["CR · HVAC System", "/cr-hvac"],
-    ["CR · Environment", "/cr-env"],
-    ["CR · IT & Rack Load", "/cr-it"],
-  ];
-  assert(SMOC_PAGES.length === expected.length, `expected 7 pages, got ${SMOC_PAGES.length}`);
-  expected.forEach(([label, path], index) => {
-    const page = SMOC_PAGES[index];
-    assert(page?.label === label, `page ${index}: expected label ${label}, got ${page?.label}`);
-    assert(page?.path === path, `page ${index}: expected path ${path}, got ${page?.path}`);
-  });
 }
