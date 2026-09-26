@@ -12,7 +12,12 @@ import {
 import type { BmsDb } from "@bms/db";
 import type { AccessibleScope, UserRole } from "@bms/shared";
 
-import { noAccessScope, type ReadScopeSource } from "./access-scope";
+import {
+  noAccessScope,
+  readScopeSourcesForRole,
+  selectReadScopeSource,
+  type ReadScopeSource,
+} from "./access-scope";
 
 /**
  * The read-scope query branches of `AccessControlService`, moved here whole
@@ -29,6 +34,19 @@ import { noAccessScope, type ReadScopeSource } from "./access-scope";
  * context exists — and each is filtered by the actor's own `userId` or by ids
  * derived from that user's own grant rows, never a caller-supplied one. The
  * `WHERE` filter is the isolation control (ADR 0043 Amendment 2/3).
+ *
+ * `F4.161` adds the source-selection probe beside them.
+ * `readScopeSourceYields` answers "does this grant source reach at least one
+ * active location" with one `LIMIT 1` query, and `selectReadScopeSourceFor`
+ * feeds it to `selectReadScopeSource` — the one walk both
+ * `AccessControlService.scopeForUser` and `readableOrganizationIds` resolve
+ * from. The probe is the same predicate as `scopeFromSource`'s "the scope has
+ * a location or an asset" because every grant source derives its assets only
+ * from active locations: `organization` and `location` read assets by the
+ * active location ids they resolved, and `asset_group` keeps only groups whose
+ * location is active before it reads their members. So `assetIds` is never
+ * non-empty while `locations` is empty, and "has a location" is the whole
+ * test. The probe never loads asset ids, which is what keeps it cheap.
  */
 
 /** The part of the resolved `bms.users` row that scope resolution reads. */
@@ -45,8 +63,9 @@ export async function directOrganizationIds(fleetDb: BmsDb, userId: string): Pro
 }
 
 /**
- * Resolves one grant source into a scope. See `AccessControlService.scopeForUser`
- * for the precedence walk that calls this.
+ * Resolves one grant source into a scope. `selectReadScopeSourceFor` picks the
+ * source (`F4.161`); `AccessControlService.scopeForUser` then calls this once
+ * on the picked source.
  */
 export async function scopeFromSource(
   fleetDb: BmsDb,
@@ -246,4 +265,75 @@ export async function scopeFromSource(
   }
 
   return noAccessScope();
+}
+
+/**
+ * Whether `source` reaches at least one active location for this user
+ * (`F4.161`). One `LIMIT 1` query per probed source; see the file docblock for
+ * why this equals `scopeFromSource`'s "the scope has a location or an asset".
+ */
+export async function readScopeSourceYields(
+  fleetDb: BmsDb,
+  user: ScopeUser,
+  source: ReadScopeSource,
+): Promise<boolean> {
+  if (source === "global") {
+    // Unreachable: `global` is only ever `admin`'s sole source, and
+    // `selectReadScopeSource` never probes a sole source. `true` states that
+    // the walk would pick it.
+    return true;
+  }
+
+  if (source === "organization") {
+    // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
+    const rows = await fleetDb
+      .select({ id: locations.id })
+      .from(userOrganizationAccess)
+      .innerJoin(locations, eq(userOrganizationAccess.organizationId, locations.organizationId))
+      .where(and(eq(userOrganizationAccess.userId, user.id), eq(locations.active, true)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  if (source === "location") {
+    // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
+    const rows = await fleetDb
+      .select({ id: locations.id })
+      .from(userLocationAccess)
+      .innerJoin(locations, eq(userLocationAccess.locationId, locations.id))
+      .where(and(eq(userLocationAccess.userId, user.id), eq(locations.active, true)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  if (source === "asset_group") {
+    // fleetDb: pre-tenant grant walk keyed by the actor's own userId (Amendment 2/3).
+    // A group yields through its location alone — an empty group under an
+    // active location yields, as it does in `scopeFromSource` — so
+    // `asset_group_members` is never read here.
+    const rows = await fleetDb
+      .select({ id: locations.id })
+      .from(userAssetGroupAccess)
+      .innerJoin(assetGroups, eq(userAssetGroupAccess.assetGroupId, assetGroups.id))
+      .innerJoin(locations, eq(assetGroups.locationId, locations.id))
+      .where(and(eq(userAssetGroupAccess.userId, user.id), eq(locations.active, true)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  return false;
+}
+
+/**
+ * The grant source this user's read scope resolves from (`F4.161`): the one
+ * selection both `AccessControlService.scopeForUser` and
+ * `readableOrganizationIds` use, so the two cannot disagree on the source.
+ */
+export function selectReadScopeSourceFor(
+  fleetDb: BmsDb,
+  user: ScopeUser,
+): Promise<ReadScopeSource> {
+  return selectReadScopeSource(readScopeSourcesForRole(user.role), (source) =>
+    readScopeSourceYields(fleetDb, user, source),
+  );
 }
