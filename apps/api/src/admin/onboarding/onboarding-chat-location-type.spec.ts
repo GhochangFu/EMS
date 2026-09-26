@@ -383,15 +383,24 @@ export async function assertTypeReplyToATypedLocationSetsTheType(): Promise<void
 }
 
 /**
- * R4 — a kept location's empty code and slug are derived from its name. A
- * stored `""` spread over the derived value would leave the phase on
- * `location`, and the next message ("MQTT") would be read as a new name.
+ * R4 — a kept location's empty code is derived from its name. A stored `""`
+ * spread over the derived value would leave the phase on `location`, and the
+ * next message ("MQTT") would be read as a new name.
  */
 export async function assertTypeReplyFillsAnEmptyStoredCode(): Promise<void> {
   const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
   assert(
-    draft.location?.code === "LOTAPATA" && draft.location.slug === "lotapata",
-    `an empty stored code and slug are derived, got ${JSON.stringify(draft.location)}`,
+    draft.location?.code === "LOTAPATA",
+    `an empty stored code is derived, got ${JSON.stringify(draft.location?.code)}`,
+  );
+}
+
+/** R4 — the same for an empty stored slug. */
+export async function assertTypeReplyFillsAnEmptyStoredSlug(): Promise<void> {
+  const { draft } = await storedTurn("Pump station", TYPED_NAMED_NO_CODE);
+  assert(
+    draft.location?.slug === "lotapata",
+    `an empty stored slug is derived, got ${JSON.stringify(draft.location?.slug)}`,
   );
 }
 

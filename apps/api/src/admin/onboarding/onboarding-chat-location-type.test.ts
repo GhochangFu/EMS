@@ -36,6 +36,7 @@ import {
   assertTypeQuestionSuggestsTheActiveLabels,
   assertTypeReplyAsksTheRtuQuestion,
   assertTypeReplyFillsAnEmptyStoredCode,
+  assertTypeReplyFillsAnEmptyStoredSlug,
   assertTypeReplyKeepsTheStoredIdentifiers,
   assertTypeReplyMatchesALabel,
   assertTypeReplySetsTheType,
@@ -113,8 +114,12 @@ describe("OnboardingChatService.handleTurn — a stored location type (F4.157 re
     await assertTypeReplyToATypedLocationSetsTheType();
   });
 
-  it("derives a kept location's empty code and slug from its name", async () => {
+  it("derives a kept location's empty code from its name", async () => {
     await assertTypeReplyFillsAnEmptyStoredCode();
+  });
+
+  it("derives a kept location's empty slug from its name", async () => {
+    await assertTypeReplyFillsAnEmptyStoredSlug();
   });
 });
 
