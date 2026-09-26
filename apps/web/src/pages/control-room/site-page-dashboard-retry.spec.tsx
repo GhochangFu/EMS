@@ -148,7 +148,7 @@ export async function tryAgainCallsTheResolveReadTwice(): Promise<void> {
  * notice banner and the generated view.
  */
 export async function tryAgainShowsTheFailSafeOnRemoval(): Promise<void> {
-  const { resolve } = stubReads(DASHBOARD_VIEW, GENERATED_REMOVED);
+  stubReads(DASHBOARD_VIEW, GENERATED_REMOVED);
   renderPage();
 
   await screen.findByRole("alert");
@@ -159,7 +159,6 @@ export async function tryAgainShowsTheFailSafeOnRemoval(): Promise<void> {
     siteViewNoticeText("dashboard_removed"),
     true,
   ]);
-  expect(resolve).toHaveBeenCalledTimes(2);
 }
 
 /** Unmounts, restores the spies and fails the case if any read reached the network. */

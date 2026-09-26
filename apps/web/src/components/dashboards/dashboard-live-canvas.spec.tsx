@@ -110,11 +110,14 @@ function renderCanvas(dto: DashboardDto): ReturnType<typeof render> {
   );
 }
 
+/** Unmounts, restores the stubbed `fetch` and auth state, and fails the case if any read
+ * reached the network. */
 export function cleanupCanvas(): void {
   cleanup();
   const networkCalls = fetchSpy?.mock.calls.map((call) => String(call[0])) ?? [];
   fetchSpy = null;
   useAuthStore.setState({ accessToken: null });
+  vi.unstubAllGlobals();
   expect(networkCalls, "a read reached the network").toEqual([]);
 }
 
