@@ -16,8 +16,9 @@ import { windowedPueRatio } from "../telemetry/pue-ratio";
  * The Energy Centre reads — `energySummary`, `energySourceMix`,
  * `energyTopConsumers` — and the window parsing they share. Moved out of
  * `dashboard.service.ts` by `F4.159`, because that file sat at 994 of
- * AGENTS.md §4.5's 1000 lines. The move changed no SQL (only `this.` references became parameters and the methods became functions); the same row then
- * joined `bms.assets` in the summary and source-mix totals, so telemetry of
+ * AGENTS.md §4.5's 1000 lines. The move changed no SQL: only the `this.`
+ * references became parameters and the methods became functions. The same row
+ * then joined `bms.assets` in the summary and source-mix totals, so telemetry of
  * an asset id with no row is not energy. `DashboardService` keeps one delegating
  * method per read, so the controller and every spec still call the service.
  * `pool` is the service's `FLEET_POOL` (ADR 0043), and the `assetIds` scope

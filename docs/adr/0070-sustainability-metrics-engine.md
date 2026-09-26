@@ -547,7 +547,8 @@ left as written.
    is not a tariff — an authorised aggregation, named here so it is not read
    as a leak). Telemetry whose `asset_id` has no `bms.assets` row (no foreign
    key holds the two) fails the read closed rather than leaving the cost
-   non-null and smaller than the total it is labelled with.
+   non-null and smaller than the total it is labelled with. (This sentence is
+   superseded by Amendment 5, `F4.159`.)
 2. **The demo seed enters a value for `energy_tariff_per_kwh`** (Q1) —
    `2.15` for the `ESKOM` organization at organization scope, insert-if-absent
    so an administrator's edit or ended row survives the next boot, and never
@@ -861,9 +862,11 @@ written. This is the record of where the build and its reviews corrected it.
 
 ## Amendment 5 (2026-09-25) — telemetry with no asset row is not energy (`F4.159`)
 
-Decision 7 is left as written. Its last sentence, "Telemetry whose `asset_id`
-has no `bms.assets` row ... fails the read closed rather than leaving the cost
-non-null and smaller than the total it is labelled with", is superseded.
+Decision 7 and Amendment 2 are left as written. The last sentence of
+Amendment 2 item 1, "Telemetry whose `asset_id` has no `bms.assets` row ...
+fails the read closed rather than leaving the cost non-null and smaller than the
+total it is labelled with", is superseded. (Corrected after the post-merge
+review: this paragraph first cited decision 7, which holds no such sentence.)
 
 1. **Such telemetry is now left out of the cost and of every total it is priced
    against.** `telemetry.point_values` and its aggregates still carry no foreign
