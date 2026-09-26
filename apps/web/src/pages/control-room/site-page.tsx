@@ -6,6 +6,7 @@ import { fetchResolvedSiteControlRoomView } from "../../api/control-room";
 import { fetchLocationKpis } from "../../api/locations";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
+import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
@@ -140,20 +141,7 @@ function SiteViewBody({ view, site, scope }: SiteViewBodyProps) {
           </ul>
         </SectionCard>
       ) : view.kind === "dashboard" && view.dashboardSlug !== null ? (
-        // The resolve DTO carries the slug, not the dashboard's name; the
-        // dashboard belongs to the site's organization (the admin write checks
-        // it), so the KPI row supplies the organization id. `F3.69` replaces this.
-        <SectionCard title="Site dashboard" bodyClassName="p-4">
-          <p className="text-sm text-bms-muted">
-            This site shows the dashboard {view.dashboardSlug}.
-          </p>
-          <Link
-            to={`/dashboards/${encodeURIComponent(view.dashboardSlug)}?organizationId=${encodeURIComponent(site.organization.id)}`}
-            className={linkClass}
-          >
-            Open the dashboard
-          </Link>
-        </SectionCard>
+        <SiteDashboardView slug={view.dashboardSlug} organizationId={site.organization.id} />
       ) : (
         <GeneratedSiteView locationId={site.id} />
       )}

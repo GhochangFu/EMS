@@ -33,6 +33,18 @@ vi.mock("../../components/control-room/generated-site-view", () => ({
 }));
 
 /**
+ * `F3.69` U3 — `SiteDashboardView` hosts the `dashboard` kind (plan decision
+ * D4). The component owns its own read, its own states and the `Open in
+ * Dashboards` link (`F3.69` U2 proves those); this suite asserts only which
+ * slug and organization id the page hands it.
+ */
+vi.mock("../../components/control-room/site-dashboard-view", () => ({
+  SiteDashboardView: ({ slug, organizationId }: { slug: string; organizationId: string }) => (
+    <div data-testid="site-dashboard-view" data-slug={slug} data-organization-id={organizationId} />
+  ),
+}));
+
+/**
  * `F3.66` U4 — `/control-room/site/:locationId`, the site view host (ADR 0076
  * decisions 2 and 5), rows V1a–V10 of the plan's U4 table.
  *
@@ -221,8 +233,8 @@ export async function builtinFiltersByTheAreaRule(): Promise<void> {
   expect(hrefs).not.toContain("/cr-sld");
 }
 
-/** V7 — `dashboard`: a card linking to the dashboard in the site's organization (OQ2). */
-export async function dashboardLinksToTheDashboard(): Promise<void> {
+/** V7 — `dashboard`: hosts `SiteDashboardView` with the slug and the site's organization id (D4). */
+export async function dashboardRendersSiteDashboardView(): Promise<void> {
   stubReads(
     PHE_SITES,
     view("p1", {
@@ -233,10 +245,42 @@ export async function dashboardLinksToTheDashboard(): Promise<void> {
   );
   renderAt("p1");
 
-  const card = sectionOf(await screen.findByText(/This site shows the dashboard/));
-  expect(within(card).getByRole("link").getAttribute("href")).toBe(
-    `/dashboards/phe-lotapata?organizationId=${ORG_PHE.id}`,
+  const mount = await screen.findByTestId("site-dashboard-view");
+  expect(mount.getAttribute("data-slug")).toBe("phe-lotapata");
+  expect(mount.getAttribute("data-organization-id")).toBe(ORG_PHE.id);
+}
+
+/** V7b — after V7: no interim text, and no real `/dashboards/` link outside the mock. */
+export async function dashboardShowsNoInterimCard(): Promise<void> {
+  stubReads(
+    PHE_SITES,
+    view("p1", {
+      kind: "dashboard",
+      dashboardId: "d1",
+      dashboardSlug: "phe-lotapata",
+    }),
   );
+  renderAt("p1");
+
+  await screen.findByTestId("site-dashboard-view");
+  expect(screen.queryByText(/This site shows the dashboard/)).toBeNull();
+  expect(document.querySelectorAll('a[href^="/dashboards/"]')).toHaveLength(0);
+}
+
+/** V7c — a `dashboard` view renders no notice banner (positive control: V7's testid present). */
+export async function dashboardShowsNoNoticeBanner(): Promise<void> {
+  stubReads(
+    PHE_SITES,
+    view("p1", {
+      kind: "dashboard",
+      dashboardId: "d1",
+      dashboardSlug: "phe-lotapata",
+    }),
+  );
+  renderAt("p1");
+
+  expect(await screen.findByTestId("site-dashboard-view")).toBeInTheDocument();
+  expect(screen.queryByTestId("site-view-notice")).toBeNull();
 }
 
 /** V8a — a rejected resolve read: the not-available card, linking to `/control-room` (D6). */
@@ -333,7 +377,7 @@ export async function aNullSlugLinksToNoDashboard(): Promise<void> {
 
   await waitFor(() => {
     expect(
-      screen.queryByText(/This site shows the dashboard/) ?? screen.queryByTestId("generated-site-view"),
+      screen.queryByTestId("site-dashboard-view") ?? screen.queryByTestId("generated-site-view"),
     ).not.toBeNull();
   });
   expect(document.querySelectorAll('a[href^="/dashboards/"]')).toHaveLength(0);
