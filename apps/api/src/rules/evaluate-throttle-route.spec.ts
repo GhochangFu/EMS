@@ -12,8 +12,8 @@ import { RulesController } from "./rules.controller";
  * The ordering is the point, not decoration. A refused press costs
  * `resolveDbUser` twice and **at most one** grant walk — a global admin walks
  * zero, because `readableOrganizationIds` returns from its `role === "admin"`
- * branch before the loop over read scope sources. It must not cost the caller's
- * full asset-scope resolution, the 289 inserts, the 289 updates, or the
+ * branch before the source-selection walk (`selectReadScopeSourceFor`). It must
+ * not cost the caller's full asset-scope resolution, the 289 inserts, the 289 updates, or the
  * cross-org alarm raises and notification dispatches inside the sweep. And it
  * must not displace the 403: a viewer gets *Forbidden*, never *Too Many
  * Requests*, which is why this is an injectable the handler calls rather than a

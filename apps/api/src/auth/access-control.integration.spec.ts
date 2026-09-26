@@ -601,11 +601,10 @@ export async function assertUnprovisionedTokenBehaviour(
 }
 
 /**
- * `operator`/`viewer` walk four sources and must land on `none` with no grants.
- *
- * `access-scope.spec.ts` proves the *list* is four long. Only a database proves
- * the walk actually terminates fail-closed instead of returning the first
- * source's empty-but-permissive scope.
+ * `operator`/`viewer` with no grants land on `none` — at most three probes
+ * (`organization`, `location`, `asset_group`), all `false`, then an unprobed
+ * fall-through to the fourth, `none`. `access-scope.spec.ts` proves the *list*
+ * is four long; only a database proves the walk terminates fail-closed.
  */
 export async function assertUngrantedRolesFailClosed(
   svc: AccessControlService,

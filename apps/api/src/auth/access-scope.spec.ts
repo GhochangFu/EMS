@@ -4,12 +4,34 @@ import {
   isMasterDataRole,
   noAccessScope,
   readScopeSourcesForRole,
+  selectReadScopeSource,
+  type ReadScopeSource,
 } from "./access-scope";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+/**
+ * A recording `yields` probe for `selectReadScopeSource`: `yieldsTrueFor`
+ * decides the answer, `calls` records exactly which sources were asked, in
+ * order — the count and order are the point of P4/P5/P2 below, not just the
+ * return value.
+ */
+function makeYieldsSpy(yieldsTrueFor: (source: ReadScopeSource) => boolean): {
+  yields: (source: ReadScopeSource) => Promise<boolean>;
+  calls: ReadScopeSource[];
+} {
+  const calls: ReadScopeSource[] = [];
+  return {
+    calls,
+    yields: async (source: ReadScopeSource): Promise<boolean> => {
+      calls.push(source);
+      return yieldsTrueFor(source);
+    },
+  };
 }
 
 const grantSources = ["organization", "location", "asset_group"] as const;
@@ -112,5 +134,83 @@ export function runAccessScopeTests(): void {
   assert(
     noAccessScope().assetIds !== empty.assetIds,
     "no-access scope must not share arrays between requests",
+  );
+}
+
+/**
+ * `F4.161` U1 — `selectReadScopeSource` is the one source-selection walk
+ * `scopeForUser` and `readableOrganizationIds` both resolve from. One claim
+ * per exported function (P1–P6 of the plan's U1 table).
+ */
+
+/** P1 — the first source that yields wins, not the last. */
+export async function assertFirstYieldingSourceWins(): Promise<void> {
+  const spy = makeYieldsSpy((source) => source === "location");
+  const result = await selectReadScopeSource(
+    ["organization", "location", "asset_group", "none"],
+    spy.yields,
+  );
+  assert(result === "location", `expected "location", got ${result}`);
+}
+
+/** P2 — no source yields → "none", and the spy never saw "none" (unprobed). */
+export async function assertNoYieldFallsBackToNoneUnprobed(): Promise<void> {
+  const spy = makeYieldsSpy(() => false);
+  const result = await selectReadScopeSource(
+    ["organization", "location", "asset_group", "none"],
+    spy.yields,
+  );
+  assert(result === "none", `expected "none", got ${result}`);
+  assert(
+    !spy.calls.includes("none"),
+    `the last source must never be probed, saw calls: ${spy.calls.join(",")}`,
+  );
+}
+
+/** P3 — on no yield the walk falls back to the last source, not the first. */
+export async function assertNoYieldFallsBackToLastNotFirst(): Promise<void> {
+  const spy = makeYieldsSpy(() => false);
+  const result = await selectReadScopeSource(
+    ["organization", "location", "asset_group"],
+    spy.yields,
+  );
+  assert(
+    result === "asset_group",
+    `expected the last source "asset_group", got ${result}`,
+  );
+}
+
+/** P4 — a single-source list yields it with zero probes. */
+export async function assertSingleSourceListCostsZeroProbes(): Promise<void> {
+  const spy = makeYieldsSpy(() => true);
+  const result = await selectReadScopeSource(["organization"], spy.yields);
+  assert(result === "organization", `expected "organization", got ${result}`);
+  assert(
+    spy.calls.length === 0,
+    `a single-source list must never call yields, saw ${spy.calls.length} calls`,
+  );
+}
+
+/** P5 — the walk stops at the first source that yields. */
+export async function assertWalkStopsAtFirstYield(): Promise<void> {
+  const spy = makeYieldsSpy((source) => source === "organization");
+  await selectReadScopeSource(
+    ["organization", "location", "asset_group"],
+    spy.yields,
+  );
+  assert(
+    spy.calls.length === 1 && spy.calls[0] === "organization",
+    `expected exactly one call to "organization", saw: ${spy.calls.join(",")}`,
+  );
+}
+
+/** P6 — an empty source list resolves to "none" with no calls at all. */
+export async function assertEmptySourceListResolvesToNone(): Promise<void> {
+  const spy = makeYieldsSpy(() => true);
+  const result = await selectReadScopeSource([], spy.yields);
+  assert(result === "none", `expected "none", got ${result}`);
+  assert(
+    spy.calls.length === 0,
+    `an empty source list must never call yields, saw ${spy.calls.length} calls`,
   );
 }

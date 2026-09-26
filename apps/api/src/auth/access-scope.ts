@@ -27,11 +27,45 @@ export function noAccessScope(): AccessibleScope {
 }
 
 /**
+ * The one source-selection walk `scopeForUser` and `readableOrganizationIds`
+ * both resolve from (`F4.161`). Walks `sources` in order and returns the
+ * first for which `await yields(source)` is `true`.
+ *
+ * If none yields, the walk returns the **last** source in the list, without
+ * ever calling `yields` on it: today's `scopeForUser` rule is that a role
+ * whose sources end in `none` fails closed, and any other role is left with
+ * whatever its last-listed source yields — the last source is picked, not
+ * probed. A single-source list is therefore that one source with zero calls
+ * to `yields`, which is what keeps every single-source role (`admin`,
+ * `organization_admin`, `location_admin`, `asset_group_admin`) at today's
+ * query cost. An empty list resolves to `"none"` with no calls at all.
+ *
+ * Probes run sequentially — `await` each one in turn, never `Promise.all` —
+ * because the walk must stop calling `yields` the moment a source is picked.
+ */
+export async function selectReadScopeSource(
+  sources: readonly ReadScopeSource[],
+  yields: (source: ReadScopeSource) => Promise<boolean>,
+): Promise<ReadScopeSource> {
+  if (sources.length === 0) {
+    return "none";
+  }
+  for (let index = 0; index < sources.length - 1; index += 1) {
+    const source = sources[index];
+    if (await yields(source)) {
+      return source;
+    }
+  }
+  return sources[sources.length - 1];
+}
+
+/**
  * Grant sources a role's read scope is resolved from, in precedence order.
  *
- * The first source that yields any location or asset wins; if none does the
- * caller falls back to the last entry, so a role whose list ends in `none`
- * fails closed rather than exposing an empty-but-permissive scope kind.
+ * `selectReadScopeSource` is the walk that picks among these: the first
+ * source that yields any location or asset wins; if none does, the caller
+ * falls back to the last entry, so a role whose list ends in `none` fails
+ * closed rather than exposing an empty-but-permissive scope kind.
  *
  * `operator` reads whatever its explicit organization/location/asset-group
  * grants allow. Without any grant row it resolves to `none` — access is never

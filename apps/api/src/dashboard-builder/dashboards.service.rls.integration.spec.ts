@@ -371,6 +371,34 @@ export async function assertLocationReaderMayReadItsSitesDashboardBySlug(
 }
 
 /**
+ * `F4.161` U4 — the `F3.69` end-to-end claim: a `viewer` whose organization grant reaches no
+ * active site (a fresh organization with no location at all) and whose location grant sits in a
+ * DIFFERENT organization (ESKOM) still reads that site's dashboard by slug.
+ *
+ * Before `F4.161`, `readableOrganizationIds` stopped at the first grant SOURCE with any row at
+ * all — here, the `organization` source, which resolves to the fresh empty organization's own
+ * id and nothing in ESKOM — so this viewer's read of an ESKOM site dashboard 404'd even though
+ * `scopeForUser` (and so `currentUser`) already reported the ESKOM location scope, the same one
+ * {@link assertLocationReaderMayReadItsSitesDashboardBySlug} proves a `location_admin` gets. This
+ * is the mixed-grant case the fix exists for: a two-source role (`viewer`) whose first source
+ * yields no active site, and whose read must fall through to the second source that does.
+ */
+export async function assertMixedGrantViewerReadsItsSitesDashboardBySlug(
+  service: DashboardsService,
+  viewerJwt: JwtPayload,
+  slug: string,
+  eskomOrgId: string,
+  expectedLocationId: string,
+): Promise<void> {
+  const dto = await service.getBySlug(viewerJwt, slug, eskomOrgId);
+  expect(
+    dto.locationId,
+    "a viewer whose org grant reaches no active site must still read its site's dashboard by " +
+      "slug, through the location grant readableOrganizationIds now falls through to",
+  ).toBe(expectedLocationId);
+}
+
+/**
  * Cross-tenant write, id-addressed: an ESKOM `admin` targeting a PHEWB dashboard's id through
  * `update()` gets the SAME 404 a nonexistent id would — `rules.service.ts:753-757`'s
  * cross-tenant-existence-oracle precedent. `fetchRowForWrite` runs on `fleetDb` (BYPASSRLS) and

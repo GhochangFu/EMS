@@ -168,10 +168,10 @@ export class RulesController {
    * 4. Only then the caller's asset scope and the sweep itself. A refused press
    *    costs two `resolveDbUser` calls and **at most one** grant walk — a
    *    global admin walks zero, because `readableOrganizationIds` returns
-   *    `null` from its `role === "admin"` branch before the loop over read
-   *    scope sources. It costs neither the full scope resolution, the 289
-   *    inserts, the 289 updates, nor the cross-org alarm raises and
-   *    notification dispatches inside the sweep.
+   *    `null` from its `role === "admin"` branch before the source-selection
+   *    walk (`selectReadScopeSourceFor`). It costs neither the full scope
+   *    resolution, the 289 inserts, the 289 updates, nor the cross-org alarm
+   *    raises and notification dispatches inside the sweep.
    *
    * `Retry-After` is set but deliberately **not** in `main.ts`'s
    * `exposedHeaders`: the SPA is a different origin and would read `null` from
