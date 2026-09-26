@@ -218,10 +218,11 @@ export async function assertPolicyRefusesMismatchedOrg(
  *
  * Every fixture code here is in the `F4157-LT-` family, which the test file's
  * stale sweep reaps; each case registers its row on creation and deletes it
- * in a `finally`. Each row is created as `pump_station`: the caller is
- * `phe-admin`, so it lands in PHEWB, and
- * `tests/f4.157-location-types-schema.integration.test.ts` I5 reads every
- * PHEWB location as `pump_station` on the same shared database.
+ * in a `finally`. Each row is created as `pump_station`, and the caller is
+ * `phe-admin`, so it lands in PHEWB. Since `92cdf14c`,
+ * `tests/f4.157-location-types-schema.integration.test.ts` I5 reads only the
+ * PHE seed's own rows (`meta ? 'phe'`), which these are not, so I5 does not
+ * constrain the type these rows carry.
  */
 function f4157Code(tag: string): string {
   return `F4157-LT-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
@@ -363,12 +364,17 @@ export async function assertListLocationTypesRefusesANonMasterDataUser(
 
 /**
  * L4 — `listLocationTypes` returns `{ items }`, the four seeded types in
- * order. Also L3's positive control: a master-data user is served.
+ * order among them. Also L3's positive control: a master-data user is served.
+ *
+ * Filtered to the seeded four: ADR 0077's extension path is one INSERT, and a
+ * fifth type must not redden a gate about the first four. An empty `items`
+ * still fails, because the filtered list is then empty too.
  */
 export async function assertListLocationTypesReturnsTheFour(
   svc: LocationsAdminService,
   jwt: JwtPayload,
 ): Promise<void> {
+  const seeded = ["smoc_campus", "rsmoc", "csmoc", "pump_station"];
   const { items } = await svc.listLocationTypes(jwt);
-  expect(items.map((row) => row.code)).toEqual(["smoc_campus", "rsmoc", "csmoc", "pump_station"]);
+  expect(items.map((row) => row.code).filter((code) => seeded.includes(code))).toEqual(seeded);
 }

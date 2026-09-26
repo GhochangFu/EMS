@@ -128,21 +128,21 @@ describe("F4.157 — bms.location_types schema (migration 0085)", () => {
   });
 
   // T7
-  it("no file that reads the location-type vocabulary keeps the closed three-code list literal", () => {
-    const LIST_LITERAL = /"smoc_campus"\s*,\s*"rsmoc"/;
-    /** A docblock line (`location-types.spec.ts:5`) spells the retired enum in prose, on one
-     * line — `sqlOnly`'s trick (`tests/f4.157-location-types-schema.test.ts` T1-T6) applied to
-     * `//`/`*` comment lines rather than SQL `--` ones, so a comment naming the gate does not
-     * itself trip it (the memory lesson "a comment naming a gate bundles claims"). */
-    const codeOnly = (source: string): string =>
-      source
-        .split("\n")
-        .filter((line) => {
-          const trimmed = line.trim();
-          return !(trimmed.startsWith("*") || trimmed.startsWith("//"));
-        })
-        .join("\n");
+  const LIST_LITERAL = /"smoc_campus"\s*,\s*"rsmoc"/;
+  /** A docblock line (`location-types.spec.ts:5`) spells the retired enum in prose, on one
+   * line — `sqlOnly`'s trick (`tests/f4.157-location-types-schema.test.ts` T1-T6) applied to
+   * `//`/`*` comment lines rather than SQL `--` ones, so a comment naming the gate does not
+   * itself trip it (the memory lesson "a comment naming a gate bundles claims"). */
+  const codeOnly = (source: string): string =>
+    source
+      .split("\n")
+      .filter((line) => {
+        const trimmed = line.trim();
+        return !(trimmed.startsWith("*") || trimmed.startsWith("//"));
+      })
+      .join("\n");
 
+  it("no file that reads the location-type vocabulary keeps the closed three-code list literal", () => {
     const CLEANED_FILES = [
       "apps/api/src/admin/locations/locations.schema.ts",
       "apps/api/src/admin/onboarding/onboarding.schema.ts",
@@ -170,15 +170,49 @@ describe("F4.157 — bms.location_types schema (migration 0085)", () => {
       ).not.toMatch(LIST_LITERAL);
     }
 
-    // Positive control: the seed's filter is unaffected (D2's seed still lists the three legacy
-    // Eskom kinds) — the regex genuinely matches something, and this file was left alone on
-    // purpose (§Measured facts).
-    expect(read("packages/db/src/eskom-locations-seed.ts")).toMatch(LIST_LITERAL);
-
     // No stray hardcoded <option value="rsmoc"> either.
     expect(read("apps/web/src/pages/admin/locations-page.tsx")).not.toContain(
       '<option value="rsmoc">',
     );
+  });
+
+  it("T7 positive control: the list-literal pattern matches the seed that keeps it", () => {
+    // The seed's filter is unaffected (D2's seed still lists the three legacy Eskom kinds) —
+    // the regex genuinely matches something, and this file was left alone on purpose
+    // (§Measured facts).
+    expect(read("packages/db/src/eskom-locations-seed.ts")).toMatch(LIST_LITERAL);
+  });
+
+  /** The map's two ends read `kind` and `kindLabel` from the vocabulary; neither may branch on
+   * a seeded code again. Comments go first — block and line — so prose naming a code passes. */
+  const MAP_FILES = ["apps/web/src/components/world-map.tsx", "apps/api/src/map/map.service.ts"];
+  const CODE_COMPARISON =
+    /[!=]==?\s*["'`](?:rsmoc|csmoc|smoc_campus)["'`]|["'`](?:rsmoc|csmoc|smoc_campus)["'`]\s*[!=]==?/;
+  const withoutComments = (source: string): string =>
+    source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .map((line) => line.replace(/(^|[^:])\/\/.*$/, "$1"))
+      .join("\n");
+
+  it("T7 the map's two ends compare no location type against a seeded code", () => {
+    for (const rel of MAP_FILES) {
+      expect(withoutComments(read(rel)), `${rel} must not branch on a seeded code`).not.toMatch(
+        CODE_COMPARISON,
+      );
+    }
+  });
+
+  it("T7 positive control: the comparison scan reads each map file's code", () => {
+    for (const rel of MAP_FILES) {
+      expect(withoutComments(read(rel)), `${rel} must be read, with its code kept`).toContain(
+        "kindLabel",
+      );
+    }
+  });
+
+  it("T7 positive control: the comparison pattern matches a comparison", () => {
+    expect(withoutComments('if (loc.kind === "rsmoc") {')).toMatch(CODE_COMPARISON);
   });
 
   // T8

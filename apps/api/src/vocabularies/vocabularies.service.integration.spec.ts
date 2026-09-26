@@ -339,6 +339,19 @@ export async function assertWaterBalanceRoleRejectsInactiveCode(db: BmsDb): Prom
 const SEEDED_LOCATION_TYPES = ["smoc_campus", "rsmoc", "csmoc", "pump_station"] as const;
 
 /**
+ * `codes` with only the seeded four and `extra` kept, in the order given.
+ *
+ * ADR 0077's extension path is one INSERT, so a fifth type is data, not a
+ * code change. These cases assert the seeded four and their own test row, and
+ * filter out whatever else a live database holds; the order of what is kept is
+ * still the order the read returned.
+ */
+function seededAnd(codes: readonly string[], ...extra: string[]): string[] {
+  const kept = new Set<string>([...SEEDED_LOCATION_TYPES, ...extra]);
+  return codes.filter((code) => kept.has(code));
+}
+
+/**
  * V2 — `listLocationTypes()` is ordered by `sortOrder`, then `code`.
  *
  * The seeded four are inserted in their sort order, so heap order already
@@ -353,7 +366,10 @@ export async function assertListLocationTypesIsOrdered(db: BmsDb): Promise<void>
       .values({ code: "f4157_test_first", label: "F4.157 First", sortOrder: 5 });
 
     const service = new VocabulariesService(tx);
-    const codes = (await service.listLocationTypes()).map((row) => row.code);
+    const codes = seededAnd(
+      (await service.listLocationTypes()).map((row) => row.code),
+      "f4157_test_first",
+    );
 
     assert(
       JSON.stringify(codes) === JSON.stringify(["f4157_test_first", ...SEEDED_LOCATION_TYPES]),
@@ -372,7 +388,10 @@ export async function assertListLocationTypesIsActiveOnly(db: BmsDb): Promise<vo
       .values({ code: "f4157_test_retired", label: "F4.157 Retired", sortOrder: 5, active: false });
 
     const service = new VocabulariesService(tx);
-    const codes = (await service.listLocationTypes()).map((row) => row.code);
+    const codes = seededAnd(
+      (await service.listLocationTypes()).map((row) => row.code),
+      "f4157_test_retired",
+    );
 
     assert(
       JSON.stringify(codes) === JSON.stringify([...SEEDED_LOCATION_TYPES]),
@@ -413,8 +432,10 @@ export async function assertLocationTypeRefusalListsLocationTypeCodes(db: BmsDb)
   } catch (err) {
     message = err instanceof Error ? err.message : String(err);
   }
+  // The list closes the message; the seeded four appear in it, in order.
+  const listed = /Expected one of: (.*)\.$/.exec(message)?.[1]?.split(", ") ?? [];
   assert(
-    message.endsWith(`Expected one of: ${SEEDED_LOCATION_TYPES.join(", ")}.`),
+    JSON.stringify(seededAnd(listed)) === JSON.stringify([...SEEDED_LOCATION_TYPES]),
     `expected the refusal to list the four location type codes in order, got: ${message}`,
   );
   assert(

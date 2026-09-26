@@ -35,6 +35,13 @@ requireIntegrationDb({
 });
 
 const RUN = randomUUID().slice(0, 8);
+
+/**
+ * The four rows migration `0085` seeds. ADR 0077's extension path is one
+ * INSERT, so each case asserts these four and never the table's row count: a
+ * fifth type must not redden a gate about the first four.
+ */
+const SEEDED = ["smoc_campus", "rsmoc", "csmoc", "pump_station"];
 const has = connectionString !== undefined && connectionString !== "";
 
 type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
@@ -96,10 +103,12 @@ describe.skipIf(!has)("F4.157 — bms.location_types against a live database", (
   };
 
   // I1
-  it("I1 the four rows exist, active, ordered 10/20/30/40 by sort_order", async () => {
+  it("I1 the four seeded rows exist, active, ordered 10/20/30/40 by sort_order", async () => {
     await inTx(async (run) => {
       const rows = await run(
-        `SELECT code, label, sort_order, active FROM bms.location_types ORDER BY sort_order`,
+        `SELECT code, label, sort_order, active FROM bms.location_types
+          WHERE code = ANY($1::text[]) ORDER BY sort_order`,
+        [SEEDED],
       );
       expect(rows.rows.map((r) => [r.code, r.sort_order, r.active])).toEqual([
         ["smoc_campus", 10, true],
@@ -128,11 +137,11 @@ describe.skipIf(!has)("F4.157 — bms.location_types against a live database", (
   });
 
   // I3
-  it("I3 as bms_tenant, SELECT succeeds and returns four rows", async () => {
+  it("I3 as bms_tenant, SELECT succeeds and returns the four seeded rows", async () => {
     await inTx(async (run) => {
       await run("SET LOCAL ROLE bms_tenant");
       const rows = await run(`SELECT code FROM bms.location_types`);
-      expect(rows.rows.length).toBe(4);
+      expect(rows.rows.map((r) => r.code)).toEqual(expect.arrayContaining(SEEDED));
     });
   });
 
@@ -173,7 +182,7 @@ describe.skipIf(!has)("F4.157 — bms.location_types against a live database", (
     await inTx(async (run) => {
       await run("SET LOCAL ROLE bms_fleet");
       const rows = await run(`SELECT code FROM bms.location_types`);
-      expect(rows.rows.length).toBe(4);
+      expect(rows.rows.map((r) => r.code)).toEqual(expect.arrayContaining(SEEDED));
     });
   });
 

@@ -250,9 +250,10 @@ export async function untouchedCreatePostsTheFirstListedType(): Promise<void> {
 }
 
 /** P3 (`F4.157` D9) — editing a fixture row whose `type` is `"csmoc"`, while the list puts
- * `pump_station` first, shows "CSMOC" selected. Mutation: `value={form.type}` without the
- * resolve, which would leave the select on the empty string and fall to the browser default
- * (the first option, "Pump station") rather than the row's own type. */
+ * `pump_station` first, shows "CSMOC" selected. Mutation: reverse the resolve's precedence to
+ * `types[0]?.code || form.type`, which shows the list's first type ("Pump station") instead of
+ * the row's own. `value={form.type}` without the resolve is not this case's mutation: an edited
+ * row's `form.type` is already its own type, so that mutation leaves P3 green. */
 export async function editingShowsTheRowsOwnTypeSelected(): Promise<void> {
   const csmocRow = location({
     id: "33333333-3333-3333-3333-333333333331",
