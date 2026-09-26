@@ -65,6 +65,15 @@ export class AlarmsController {
    * (`intersectReadable`) — an id outside it is dropped, and an empty
    * intersection reaches the service as `[]`, which `withReadScope` answers
    * with an empty page, never with every row.
+   *
+   * `F3.66` (step-5 fix): an optional `organizationId` narrows the read to
+   * alarms on assets of that organization. It is ANDed onto the intersected
+   * readable scope in the service, never used in place of it — so an
+   * organization outside the caller's scope yields an empty result, not a 403
+   * and not that organization's alarms. **This widens nothing only if the
+   * intersection holds**: `assetIds` below must stay
+   * `intersectReadable(readableAssetIds(user), …)` whether or not
+   * `organizationId` is present.
    */
   @Get()
   async list(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
@@ -74,6 +83,7 @@ export class AlarmsController {
       limit: dto.limit ?? 20,
       state: dto.state,
       assetIds: intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
+      organizationId: dto.organizationId,
     });
   }
 
@@ -82,12 +92,22 @@ export class AlarmsController {
    * severity, for the same optional `assetIds` as `list`, intersected the
    * same way. Declared before every `:id` route so `summary` is never read as
    * an alarm id.
+   *
+   * `F3.66` (step-5 fix): an optional `organizationId` narrows the read to
+   * alarms on assets of that organization. It is ANDed onto the intersected
+   * readable scope in the service, never used in place of it — so an
+   * organization outside the caller's scope yields an empty result, not a 403
+   * and not that organization's alarms. **This widens nothing only if the
+   * intersection holds**: `assetIds` below must stay
+   * `intersectReadable(readableAssetIds(user), …)` whether or not
+   * `organizationId` is present.
    */
   @Get("summary")
   async summary(@CurrentUser() user: JwtPayload, @Query() query: Record<string, unknown>) {
     const dto = parseQuery(alarmSummaryQuerySchema, query);
     return this.alarms.activeCountsBySeverity(
       intersectReadable(await this.accessControl.readableAssetIds(user), dto.assetIds),
+      dto.organizationId,
     );
   }
 

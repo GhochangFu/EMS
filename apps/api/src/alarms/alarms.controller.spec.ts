@@ -37,14 +37,19 @@ type ListCall = Parameters<AlarmsService["list"]>[0];
 function harness(readable: string[] | null) {
   const listCalls: ListCall[] = [];
   const summaryCalls: (string[] | null | undefined)[] = [];
+  const summaryOrgs: (string | undefined)[] = [];
   let scopeReads = 0;
   const service = {
     list: async (opts: ListCall) => {
       listCalls.push(opts);
       return { items: [], nextCursor: null };
     },
-    activeCountsBySeverity: async (assetIds: string[] | null | undefined) => {
+    activeCountsBySeverity: async (
+      assetIds: string[] | null | undefined,
+      organizationId?: string,
+    ) => {
       summaryCalls.push(assetIds);
+      summaryOrgs.push(organizationId);
       return { items: [], total: 0 };
     },
   } as unknown as AlarmsService;
@@ -60,7 +65,7 @@ function harness(readable: string[] | null) {
     {} as unknown as AlarmDetailsService,
     {} as unknown as AlarmEnrichmentService,
   );
-  return { controller, listCalls, summaryCalls, scopeReads: () => scopeReads };
+  return { controller, listCalls, summaryCalls, summaryOrgs, scopeReads: () => scopeReads };
 }
 
 /** `GET /alarms/summary`: a requested id outside the readable set is dropped, as on the list. */
@@ -185,4 +190,76 @@ export async function assertAMalformedListQueryRunsNothing(): Promise<void> {
   await listRejection(h, { assetIds: "not-a-uuid" });
   assert(h.scopeReads() === 0, "readableAssetIds ran on a malformed query");
   assert(h.listCalls.length === 0, "the service ran on a malformed query");
+}
+
+/*
+ * `F3.66` (step-5 fix) — `organizationId` narrows both reads and never widens
+ * them: the readable set still reaches the service beside it.
+ */
+
+const ORG = "44444444-4444-4444-8444-444444444444";
+
+/** `GET /alarms?organizationId=`: the service gets the organization id. */
+export async function assertListPassesTheOrganizationIdThrough(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.list(USER, { organizationId: ORG });
+  const passed = h.listCalls[0]?.organizationId;
+  assert(passed === ORG, `the list got organizationId ${String(passed)}, not ${ORG}`);
+}
+
+/** `GET /alarms?organizationId=`: the readable set still reaches the service — never dropped. */
+export async function assertListOrganizationIdKeepsTheReadableScope(): Promise<void> {
+  const h = harness([READABLE_A, READABLE_B]);
+  await h.controller.list(USER, { organizationId: ORG });
+  const passed = h.listCalls[0]?.assetIds;
+  assert(
+    JSON.stringify(passed) === JSON.stringify([READABLE_A, READABLE_B]),
+    `the list got assetIds ${JSON.stringify(passed)}, not the readable set`,
+  );
+}
+
+/** `GET /alarms?organizationId=not-a-uuid` is a 400. */
+export async function assertListNonUuidOrganizationIdIsABadRequest(): Promise<void> {
+  const h = harness([READABLE_A]);
+  const thrown = await listRejection(h, { organizationId: "not-a-uuid" });
+  assert(thrown instanceof BadRequestException, `organizationId=not-a-uuid threw ${String(thrown)}, not a 400`);
+}
+
+/** `GET /alarms` with no `organizationId` passes none — today's read. */
+export async function assertListAbsentOrganizationIdPassesNone(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.list(USER, {});
+  const passed = h.listCalls[0]?.organizationId;
+  assert(passed === undefined, `an absent organizationId reached the list as ${String(passed)}`);
+}
+
+/** `GET /alarms/summary?organizationId=`: the summary gets the organization id. */
+export async function assertSummaryPassesTheOrganizationIdThrough(): Promise<void> {
+  const h = harness([READABLE_A]);
+  await h.controller.summary(USER, { organizationId: ORG });
+  const passed = h.summaryOrgs[0];
+  assert(passed === ORG, `the summary got organizationId ${String(passed)}, not ${ORG}`);
+}
+
+/** `GET /alarms/summary?organizationId=`: the readable set still reaches the summary. */
+export async function assertSummaryOrganizationIdKeepsTheReadableScope(): Promise<void> {
+  const h = harness([READABLE_A, READABLE_B]);
+  await h.controller.summary(USER, { organizationId: ORG });
+  const passed = h.summaryCalls[0];
+  assert(
+    JSON.stringify(passed) === JSON.stringify([READABLE_A, READABLE_B]),
+    `the summary got assetIds ${JSON.stringify(passed)}, not the readable set`,
+  );
+}
+
+/** `GET /alarms/summary?organizationId=not-a-uuid` is a 400. */
+export async function assertSummaryNonUuidOrganizationIdIsABadRequest(): Promise<void> {
+  const h = harness([READABLE_A]);
+  let thrown: unknown;
+  try {
+    await h.controller.summary(USER, { organizationId: "not-a-uuid" });
+  } catch (err) {
+    thrown = err;
+  }
+  assert(thrown instanceof BadRequestException, `organizationId=not-a-uuid threw ${String(thrown)}, not a 400`);
 }

@@ -7,6 +7,12 @@ import {
   assertAssetIdsIsCappedAtTheSharedMaximum,
   assertEmptyLimitIsAbsent,
   assertInfiniteLimitParsesForTheServiceClamp,
+  assertListAbsentOrganizationIdIsUndefined,
+  assertListOrganizationIdAloneParses,
+  assertListOrganizationIdBesideAssetIdsParses,
+  assertListOrganizationIdMustBeAUuid,
+  assertSummaryOrganizationIdAloneParses,
+  assertSummaryOrganizationIdMustBeAUuid,
   assertNegativeLimitParsesForTheServiceClamp,
   assertNonNumericLimitIsRefused,
   assertOverCapFractionalLimitParses,
@@ -80,5 +86,31 @@ describe("F3.28 — alarmSummaryQuerySchema", () => {
 
   it("refuses an unknown key", () => {
     assertSummaryQueryRefusesAnUnknownKey();
+  });
+});
+
+describe("F3.66 — organizationId on the alarm list and summary queries", () => {
+  it("refuses a non-uuid organizationId on the list", () => {
+    assertListOrganizationIdMustBeAUuid();
+  });
+
+  it("parses organizationId alone on the list", () => {
+    assertListOrganizationIdAloneParses();
+  });
+
+  it("parses organizationId beside assetIds on the list", () => {
+    assertListOrganizationIdBesideAssetIdsParses();
+  });
+
+  it("leaves an absent organizationId undefined on the list", () => {
+    assertListAbsentOrganizationIdIsUndefined();
+  });
+
+  it("refuses a non-uuid organizationId on the summary", () => {
+    assertSummaryOrganizationIdMustBeAUuid();
+  });
+
+  it("parses organizationId alone on the summary", () => {
+    assertSummaryOrganizationIdAloneParses();
   });
 });

@@ -9,6 +9,10 @@ import {
   failedAssetReadDoesNotSayLoading,
   failedAssetReadSaysUnavailable,
   fetchesTheActiveListForTheGivenIds,
+  fetchesTheActiveListForTheOrganization,
+  fetchesTheSummaryForTheOrganization,
+  socketEventRefetchesTheOrganizationsActiveList,
+  theOrganizationRailRendersItsRows,
   pausedActiveTabSaysLoadingNotNone,
   pausedSummaryTabSaysLoadingNotNone,
   pillToneComesFromTheVocabulary,
@@ -101,5 +105,21 @@ describe("F3.28 active alarms rail", () => {
 
   it("links View All to /alarms", () => {
     viewAllLinksToTheAlarmsPage();
+  });
+
+  it("F3.66 fetches the active list for the organization, with no ids", async () => {
+    await fetchesTheActiveListForTheOrganization();
+  });
+
+  it("F3.66 fetches the summary for the organization, with no ids", async () => {
+    await fetchesTheSummaryForTheOrganization();
+  });
+
+  it("F3.66 renders the organization's rows, not the no-ids note", async () => {
+    await theOrganizationRailRendersItsRows();
+  });
+
+  it("F3.66 refetches the organization's active list on a socket event", async () => {
+    await socketEventRefetchesTheOrganizationsActiveList();
   });
 });

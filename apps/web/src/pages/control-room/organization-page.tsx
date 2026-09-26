@@ -2,7 +2,6 @@ import type { LocationKpiSummary } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "react-router-dom";
 
-import { fetchAssets } from "../../api/assets";
 import { fetchLocationKpis } from "../../api/locations";
 import { ActiveAlarmsRail } from "../../components/control-room/active-alarms-rail";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
@@ -26,9 +25,14 @@ type ControlRoomOrganizationPageProps = {
  * `F3.66` (ADR 0076 decision 2) — `/control-room/org/:organizationId`, the
  * organization overview: a card per readable site of that organization (the
  * `/` card, re-linked to the site level, plan D4) and `ActiveAlarmsRail` over
- * the organization's readable assets. An organization with one readable site
- * skips to it; an id outside the KPI list shows the empty card and no other
- * organization's sites. Nothing is decided while the read is pending (D1).
+ * the organization's readable assets. The rail reads by `organizationId`
+ * (step-5 fix): the API narrows to that organization's assets, intersected
+ * with the caller's readable set, so the page sends no asset ids and makes no
+ * asset read. An id list is capped at 200 by the API, which left an
+ * organization with more readable assets on "Alarms unavailable" for good.
+ * An organization with one readable site skips to it; an id outside the KPI
+ * list shows the empty card and no other organization's sites. Nothing is
+ * decided while the read is pending (D1).
  */
 export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPageProps) {
   const { organizationId = "" } = useParams();
@@ -39,16 +43,6 @@ export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPag
   });
   const items = locationQ.data?.items;
   const target = items !== undefined ? organizationEntryTarget(items, organizationId) : null;
-
-  // The API filters `GET /api/v1/assets` by `readableAssetIds`, so the body is
-  // the caller's readable assets within this organization. Sent only once the
-  // target is this organization's overview: an `empty` or `site` target has no
-  // rail to feed.
-  const assets = useQuery({
-    queryKey: ["assets", "control-room", organizationId],
-    queryFn: () => fetchAssets(organizationId),
-    enabled: target?.level === "organization",
-  });
 
   if (target?.level === "site") {
     return <Navigate to={`/control-room/site/${target.locationId}`} replace />;
@@ -74,12 +68,7 @@ export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPag
               </Link>
             </SectionCard>
           ) : (
-            <OrganizationOverview
-              items={items}
-              organizationId={organizationId}
-              assetIds={assets.data?.map((asset) => asset.id) ?? []}
-              assetsStatus={assets.status}
-            />
+            <OrganizationOverview items={items} organizationId={organizationId} />
           )
         ) : locationQ.isError ? (
           <SectionCard title="Control Room unavailable" bodyClassName="p-4">
@@ -98,11 +87,9 @@ export function ControlRoomOrganizationPage({ user }: ControlRoomOrganizationPag
 type OrganizationOverviewProps = {
   items: readonly LocationKpiSummary[];
   organizationId: string;
-  assetIds: readonly string[];
-  assetsStatus: "pending" | "success" | "error";
 };
 
-function OrganizationOverview({ items, organizationId, assetIds, assetsStatus }: OrganizationOverviewProps) {
+function OrganizationOverview({ items, organizationId }: OrganizationOverviewProps) {
   // Sorted by name, as `/` sorts a section (`groupByOrganization`).
   const sites = groupByOrganization(
     items.filter((item) => item.organization.id === organizationId),
@@ -127,7 +114,7 @@ function OrganizationOverview({ items, organizationId, assetIds, assetsStatus }:
             />
           ))}
         </div>
-        <ActiveAlarmsRail assetIds={assetIds} assetsStatus={assetsStatus} />
+        <ActiveAlarmsRail organizationId={organizationId} />
       </div>
     </>
   );

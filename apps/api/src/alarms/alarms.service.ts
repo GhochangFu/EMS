@@ -90,12 +90,18 @@ export class AlarmsService {
    * read, unchanged. `assetIds` is the caller's already-narrowed scope — the
    * controller intersects a requested filter with `readableAssetIds` before it
    * reaches here, so this method never sees an id the caller cannot read.
+   *
+   * `F3.66` (step-5 fix): `organizationId` keeps only alarms whose asset
+   * belongs to that organization (`assets.organization_id`, NOT NULL since
+   * 0047 — not `alarms.organization_id`). It is ANDed onto `assetIds`, never
+   * a replacement for it, so it can only narrow the caller's scope.
    */
   async list(opts: {
     cursor?: string;
     limit: number;
     assetIds?: string[] | null;
     state?: "all" | "active";
+    organizationId?: string;
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
     // Truncated after the clamp (plan decision 4): the schema lets a fractional
     // `limit` through, as the old `Number(limitRaw)` did, and SQL's `LIMIT`
@@ -105,6 +111,8 @@ export class AlarmsService {
     const filters = [
       ...(opts.assetIds ? [inArray(alarms.assetId, opts.assetIds)] : []),
       ...(opts.state === "active" ? [activeAlarmFilter] : []),
+      // The list inner-joins `assets`, so the organization is the joined row's.
+      ...(opts.organizationId ? [eq(assets.organizationId, opts.organizationId)] : []),
     ];
 
     return withReadScope(
@@ -174,9 +182,14 @@ export class AlarmsService {
    * spanning organizations) the `inArray` in the `ON` clause is the only
    * isolation control. An empty scope — `[]`, or ids that resolve to no
    * asset — never reads `bms.alarms`: it returns every active severity at 0.
+   *
+   * `F3.66` (step-5 fix): `organizationId` adds a second `ON` predicate —
+   * the alarm's asset is one of that organization's assets — ANDed onto the
+   * scope predicate, so it only narrows.
    */
   async activeCountsBySeverity(
     assetIds: string[] | null | undefined,
+    organizationId?: string,
   ): Promise<AlarmSummaryResponse> {
     const severityColumns = {
       code: alarmSeverities.code,
@@ -207,6 +220,17 @@ export class AlarmsService {
               eq(alarms.severity, alarmSeverities.code),
               activeAlarmFilter,
               ...(assetIds ? [inArray(alarms.assetId, assetIds)] : []),
+              ...(organizationId
+                ? [
+                    inArray(
+                      alarms.assetId,
+                      tx
+                        .select({ id: assets.id })
+                        .from(assets)
+                        .where(eq(assets.organizationId, organizationId)),
+                    ),
+                  ]
+                : []),
             ),
           )
           .where(eq(alarmSeverities.active, true))

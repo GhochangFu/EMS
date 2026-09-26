@@ -135,3 +135,61 @@ export function assertNonNumericLimitIsRefused(): void {
   const result = alarmListQuerySchema.safeParse({ limit: "abc" });
   assert(result.success === false, "limit=abc must be refused");
 }
+
+/*
+ * `F3.66` (step-5 fix) — `organizationId` on both reads, so the organization
+ * rail no longer sends every readable asset id against the 200-id cap.
+ */
+
+/** `organizationId` on the list must be a uuid — anything else is a 400. */
+export function assertListOrganizationIdMustBeAUuid(): void {
+  const result = alarmListQuerySchema.safeParse({ organizationId: "not-a-uuid" });
+  assert(result.success === false, "organizationId=not-a-uuid must be refused on the list");
+}
+
+/** `organizationId` alone parses on the list, and reaches the dto. */
+export function assertListOrganizationIdAloneParses(): void {
+  const id = randomUUID();
+  const result = alarmListQuerySchema.safeParse({ organizationId: id });
+  assert(
+    result.success && result.data.organizationId === id,
+    `organizationId alone must parse: ${JSON.stringify(result.success ? result.data : result.error.issues)}`,
+  );
+}
+
+/** `organizationId` and `assetIds` together parse on the list — both apply. */
+export function assertListOrganizationIdBesideAssetIdsParses(): void {
+  const result = alarmListQuerySchema.safeParse({
+    organizationId: randomUUID(),
+    assetIds: [randomUUID()],
+  });
+  assert(
+    result.success === true,
+    `organizationId beside assetIds must parse: ${JSON.stringify(result.success ? undefined : result.error.issues)}`,
+  );
+}
+
+/** An absent `organizationId` stays absent on the list — today's read. */
+export function assertListAbsentOrganizationIdIsUndefined(): void {
+  const result = alarmListQuerySchema.safeParse({});
+  assert(
+    result.success && result.data.organizationId === undefined,
+    "an absent organizationId must parse as undefined",
+  );
+}
+
+/** `organizationId` on the summary must be a uuid — anything else is a 400. */
+export function assertSummaryOrganizationIdMustBeAUuid(): void {
+  const result = alarmSummaryQuerySchema.safeParse({ organizationId: "not-a-uuid" });
+  assert(result.success === false, "organizationId=not-a-uuid must be refused on the summary");
+}
+
+/** `organizationId` alone parses on the summary, and reaches the dto. */
+export function assertSummaryOrganizationIdAloneParses(): void {
+  const id = randomUUID();
+  const result = alarmSummaryQuerySchema.safeParse({ organizationId: id });
+  assert(
+    result.success && result.data.organizationId === id,
+    `organizationId alone must parse on the summary: ${JSON.stringify(result.success ? result.data : result.error.issues)}`,
+  );
+}

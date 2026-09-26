@@ -21,45 +21,42 @@ import { ORG_A, ORG_B, site, USER } from "./organizations-page.spec";
  * decision 2).
  *
  * `ActiveAlarmsRail` is mocked: the real one opens `/ws/alarms`. The stand-in
- * exposes the two props the page passes as data attributes, which is all
- * G4b and G5 read.
+ * exposes the props the page passes as data attributes (an absent prop is an
+ * absent attribute), which is all G4a and G4b read.
  *
- * `fetchAssets` answers by its argument: two rows for org A, `[]` for anything
- * else. Since `F3.66` U6 the shell no longer calls it, so the page is its only
- * caller; the per-argument answer keeps the assertions on the argument anyway.
+ * Step-5 fix: the rail reads by `organizationId`, so the page makes no asset
+ * read. G5 spies on `fetchAssets` only to prove it is never called. The global
+ * `fetch` rejects, so an unstubbed read cannot reach the network.
  */
 
 vi.mock("../../components/control-room/active-alarms-rail", () => ({
   ActiveAlarmsRail: ({
     assetIds,
+    organizationId,
     assetsStatus,
   }: {
-    assetIds: readonly string[];
+    assetIds?: readonly string[];
+    organizationId?: string;
     assetsStatus?: string;
   }) => (
-    <div data-testid="alarms-rail" data-asset-ids={assetIds.join(",")} data-status={assetsStatus} />
+    <div
+      data-testid="alarms-rail"
+      data-organization-id={organizationId}
+      data-asset-ids={assetIds?.join(",")}
+      data-status={assetsStatus}
+    />
   ),
 }));
-
-const ORG_A_ASSETS = [
-  { id: "asset-1", code: "X-1" },
-  { id: "asset-2", code: "X-2" },
-] as unknown as assetsApi.AssetRow[];
 
 const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
 const ORG_PHE = { id: "org-phe", code: "PHEWB", name: "PHE West Bengal" };
 
-type AssetsAnswer = "resolve" | "pending";
-
-function stubReads(items: LocationKpiSummary[], assets: AssetsAnswer = "resolve") {
+function stubReads(items: LocationKpiSummary[]): void {
+  vi.stubGlobal("fetch", () =>
+    Promise.reject(new Error("organization-page spec: an unstubbed read reached fetch")),
+  );
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(locationsApi, "fetchLocationKpis").mockResolvedValue({ items });
-  return vi.spyOn(assetsApi, "fetchAssets").mockImplementation((organizationId?: string) => {
-    if (organizationId !== ORG_A.id) {
-      return Promise.resolve([]);
-    }
-    return assets === "pending" ? new Promise(() => undefined) : Promise.resolve(ORG_A_ASSETS);
-  });
 }
 
 function LandedOnSite() {
@@ -156,32 +153,44 @@ export async function anUnreadableOrganizationShowsNoOtherSites(): Promise<void>
   expect(screen.queryByText("PHE One")).toBeNull();
 }
 
-/** G4a — the rail's assets come from `fetchAssets(organizationId)`. */
-export async function theAssetsReadIsNarrowedToTheOrganization(): Promise<void> {
-  const fetchAssets = stubReads(TWO_ORGS);
+/** G4a — the rail reads by the route's organization id. */
+export async function theRailReadsByTheOrganizationId(): Promise<void> {
+  stubReads(TWO_ORGS);
   renderAt(ORG_A.id);
 
   await siteGrid();
-  await waitFor(() => expect(fetchAssets).toHaveBeenCalledWith(ORG_A.id));
+  expect(screen.getByTestId("alarms-rail").dataset.organizationId).toBe(ORG_A.id);
 }
 
-/** G4b — the rail receives the organization's asset ids. */
-export async function theRailReceivesTheOrganizationsAssetIds(): Promise<void> {
+/**
+ * G4b — the rail is sent no asset ids, so the request does not grow with the
+ * organization's asset count. The organization id is the adjacent positive
+ * control: the rail rendered with its scope.
+ */
+export async function theRailIsSentNoAssetIds(): Promise<void> {
   stubReads(TWO_ORGS);
   renderAt(ORG_A.id);
 
   await siteGrid();
   const rail = screen.getByTestId("alarms-rail");
-  await waitFor(() => expect(rail.dataset.assetIds).toBe("asset-1,asset-2"));
+  expect(rail.dataset.organizationId, "positive control: the rail has its scope").toBe(ORG_A.id);
+  expect(rail.hasAttribute("data-asset-ids"), "the rail must be sent no asset ids").toBe(false);
 }
 
-/** G5 — while the assets read is pending, the rail is told so. */
-export async function theRailIsToldTheAssetsArePending(): Promise<void> {
-  stubReads(TWO_ORGS, "pending");
+/**
+ * G5 — the page makes no asset read: the rail no longer needs one. The rail's
+ * organization id is the positive control that the overview rendered.
+ */
+export async function thePageMakesNoAssetsRead(): Promise<void> {
+  stubReads(TWO_ORGS);
+  const fetchAssets = vi
+    .spyOn(assetsApi, "fetchAssets")
+    .mockRejectedValue(new Error("the organization page must make no asset read"));
   renderAt(ORG_A.id);
 
   await siteGrid();
-  expect(screen.getByTestId("alarms-rail").dataset.status).toBe("pending");
+  expect(screen.getByTestId("alarms-rail").dataset.organizationId).toBe(ORG_A.id);
+  expect(fetchAssets).not.toHaveBeenCalled();
 }
 
 /** B1 — two organizations: `Control Room` links to the root, the org is the current crumb. */
@@ -222,22 +231,23 @@ export async function aPendingKpiReadShowsOnlyTheLoadingLine(): Promise<void> {
 }
 
 /**
- * G6 — an organization id outside the list sends no assets read: the read is
- * enabled only once the target is the organization level. G4a is the positive
- * control that the read does run for a readable organization.
+ * G6 — an organization id outside the list renders no rail, so no alarm read
+ * goes out for that organization. The empty card (G3a) is the control that the
+ * page decided; G4a is the control that a readable organization gets its rail.
  */
-export async function anUnreadableOrganizationSendsNoAssetsRead(): Promise<void> {
-  const fetchAssets = stubReads([
+export async function anUnreadableOrganizationRendersNoRail(): Promise<void> {
+  stubReads([
     site({ id: "p1", name: "PHE One", organization: ORG_PHE }),
     site({ id: "p2", name: "PHE Two", organization: ORG_PHE }),
   ]);
   renderAt(ORG_ESKOM.id);
 
   expect(await screen.findByText(/No sites for this organization/)).toBeInTheDocument();
-  expect(fetchAssets).not.toHaveBeenCalled();
+  expect(screen.queryByTestId("alarms-rail")).toBeNull();
 }
 
 export function cleanupPage(): void {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 }

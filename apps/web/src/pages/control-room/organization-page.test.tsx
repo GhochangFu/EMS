@@ -2,7 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
-  anUnreadableOrganizationSendsNoAssetsRead,
+  anUnreadableOrganizationRendersNoRail,
   anUnreadableOrganizationShowsNoOtherSites,
   aPendingKpiReadShowsOnlyTheLoadingLine,
   anUnreadableOrganizationShowsTheEmptyCard,
@@ -10,10 +10,10 @@ import {
   oneOrganizationRendersNoBreadcrumb,
   oneSiteSkipsToTheSite,
   siteCardsLinkToTheSiteLevel,
-  theAssetsReadIsNarrowedToTheOrganization,
   theBreadcrumbNamesTheRootAndTheOrganization,
-  theRailIsToldTheAssetsArePending,
-  theRailReceivesTheOrganizationsAssetIds,
+  thePageMakesNoAssetsRead,
+  theRailIsSentNoAssetIds,
+  theRailReadsByTheOrganizationId,
 } from "./organization-page.spec";
 
 /**
@@ -42,16 +42,16 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
     await anUnreadableOrganizationShowsNoOtherSites();
   });
 
-  it("G4a narrows the assets read to the organization", async () => {
-    await theAssetsReadIsNarrowedToTheOrganization();
+  it("G4a gives the rail the route's organization id", async () => {
+    await theRailReadsByTheOrganizationId();
   });
 
-  it("G4b passes the organization's asset ids to the rail", async () => {
-    await theRailReceivesTheOrganizationsAssetIds();
+  it("G4b sends the rail no asset ids", async () => {
+    await theRailIsSentNoAssetIds();
   });
 
-  it("G5 tells the rail the assets read is pending", async () => {
-    await theRailIsToldTheAssetsArePending();
+  it("G5 makes no asset read", async () => {
+    await thePageMakesNoAssetsRead();
   });
 
   it("B1 names Control Room as a link and the organization as the current crumb", async () => {
@@ -66,7 +66,7 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
     await aPendingKpiReadShowsOnlyTheLoadingLine();
   });
 
-  it("G6 sends no assets read for an organization outside the list", async () => {
-    await anUnreadableOrganizationSendsNoAssetsRead();
+  it("G6 renders no alarms rail for an organization outside the list", async () => {
+    await anUnreadableOrganizationRendersNoRail();
   });
 });

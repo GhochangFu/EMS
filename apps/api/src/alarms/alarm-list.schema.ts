@@ -3,6 +3,16 @@ import { z } from "zod";
 import { assetIdsQueryField } from "../auth/asset-scope.schema";
 
 /**
+ * `F3.66` (step-5 fix) — an optional organization to narrow either read to:
+ * alarms on assets of that organization. It is one uuid, so the request size
+ * no longer grows with the organization's asset count (`assetIds` is capped at
+ * `MAX_SCOPE_ASSET_IDS`). Like `assetIds` it only ever **narrows**: the
+ * controller still intersects with `readableAssetIds`, and the service ANDs
+ * the organization predicate onto that scope.
+ */
+export const organizationIdQueryField = z.string().uuid().optional();
+
+/**
  * `GET /api/v1/alarms` (`F3.28`, ADR 0074, plan decisions 1 and 4).
  *
  * `state` defaults to `"all"` — today's behaviour, unchanged for a caller who
@@ -29,6 +39,7 @@ export const alarmListQuerySchema = z
     ),
     state: z.enum(["all", "active"]).default("all"),
     assetIds: assetIdsQueryField,
+    organizationId: organizationIdQueryField,
   })
   .strict();
 
@@ -43,6 +54,7 @@ export type AlarmListQuery = z.infer<typeof alarmListQuerySchema>;
 export const alarmSummaryQuerySchema = z
   .object({
     assetIds: assetIdsQueryField,
+    organizationId: organizationIdQueryField,
   })
   .strict();
 

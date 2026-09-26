@@ -13,6 +13,13 @@ import {
   assertARequestedForeignAssetNeverWidensTheList,
   assertLimitIsCoercedAndPassedThrough,
   assertStateActiveIsPassedThrough,
+  assertListAbsentOrganizationIdPassesNone,
+  assertListNonUuidOrganizationIdIsABadRequest,
+  assertListOrganizationIdKeepsTheReadableScope,
+  assertListPassesTheOrganizationIdThrough,
+  assertSummaryNonUuidOrganizationIdIsABadRequest,
+  assertSummaryOrganizationIdKeepsTheReadableScope,
+  assertSummaryPassesTheOrganizationIdThrough,
 } from "./alarms.controller.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -65,5 +72,35 @@ describe("alarms.controller — GET /alarms/summary query wiring (F3.28)", () =>
 
   it("answers a summary query with an unknown key with 400", async () => {
     await assertAMalformedSummaryQueryIsABadRequest();
+  });
+});
+
+describe("alarms.controller — organizationId on GET /alarms and /alarms/summary (F3.66)", () => {
+  it("passes organizationId through to the list", async () => {
+    await assertListPassesTheOrganizationIdThrough();
+  });
+
+  it("keeps the readable set beside organizationId on the list", async () => {
+    await assertListOrganizationIdKeepsTheReadableScope();
+  });
+
+  it("answers a non-uuid organizationId on the list with 400", async () => {
+    await assertListNonUuidOrganizationIdIsABadRequest();
+  });
+
+  it("passes no organizationId to the list when none is sent", async () => {
+    await assertListAbsentOrganizationIdPassesNone();
+  });
+
+  it("passes organizationId through to the summary", async () => {
+    await assertSummaryPassesTheOrganizationIdThrough();
+  });
+
+  it("keeps the readable set beside organizationId on the summary", async () => {
+    await assertSummaryOrganizationIdKeepsTheReadableScope();
+  });
+
+  it("answers a non-uuid organizationId on the summary with 400", async () => {
+    await assertSummaryNonUuidOrganizationIdIsABadRequest();
   });
 });
