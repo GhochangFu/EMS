@@ -207,3 +207,9 @@ Design, 2026-09-25:
   L550–L575, the Phase 5 history near L616–L671, and the §2 *Operations* row).
   Those lines and the status line need the new routes, as a separate PR
   (§9.10).
+
+## Amendment 1 (2026-09-26, F3.68)
+
+Owner ruling on a stale point's value in the generated site view: shown,
+dimmed, rather than blanked. This departs from ADR 0027 decision 3 for this
+view only; every other page keeps decision 3 as written.

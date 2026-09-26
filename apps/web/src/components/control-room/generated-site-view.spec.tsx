@@ -58,13 +58,14 @@ function point(
   pointKey: string,
   name: string | null,
   value: number | null,
+  ageMs = 5_000,
 ): GeneratedSitePointDto {
   return {
     pointKey,
     name,
     unit: "kW",
     headlineRank: null,
-    latest: value === null ? null : { value, time: isoAgo(5_000) },
+    latest: value === null ? null : { value, time: isoAgo(ageMs) },
   };
 }
 
@@ -412,4 +413,61 @@ export async function pendingReadSaysLoading(): Promise<void> {
   await screen.findByText("123.4");
   expect(screen.getByText("Loading the site view…")).toBeInTheDocument();
   expect(screen.queryByText("No assets in your access scope at this site.")).toBeNull();
+}
+
+const ROW_ASSET_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+function rowAsset(ageMs: number): GeneratedSiteAssetDto {
+  return {
+    id: ROW_ASSET_ID,
+    code: "ROW-01",
+    name: "Row asset",
+    domain: "electrical",
+    latestTelemetryAt: isoAgo(ageMs),
+    freshness: ageMs > 25_000 ? "stale" : "live",
+    points: [point("kw", "Load", 42, ageMs)],
+  };
+}
+
+function rowView(ageMs: number): GeneratedSiteViewDto {
+  return {
+    locationId: LOCATION_ID,
+    asOf: new Date().toISOString(),
+    domains: [{ code: "electrical", label: "Electrical", assets: [rowAsset(ageMs)] }],
+  };
+}
+
+function valueCell(code: string): HTMLElement {
+  return within(card(code)).getByTestId("point-value");
+}
+
+/**
+ * W10a — a point row whose own reading is stale (ADR 0076 Amendment 1, owner
+ * ruling 2026-09-26) still shows its value, dimmed.
+ */
+export async function staleRowShowsValueDimmed(): Promise<void> {
+  renderView({ view: rowView(60_000) });
+  await screen.findByText("ROW-01");
+  const cell = valueCell("ROW-01");
+  expect(cell.textContent).toContain("42");
+  expect(cell.className).toContain("opacity-50");
+}
+
+/** W10b — a live row's value carries no dimmed class; positive control first. */
+export async function liveRowShowsValueUndimmed(): Promise<void> {
+  renderView({ view: rowView(5_000) });
+  await screen.findByText("ROW-01");
+  const cell = valueCell("ROW-01");
+  expect(cell.textContent, "control: the value is present").toContain("42");
+  expect(cell.className).not.toContain("opacity-50");
+}
+
+/** W11 — the generated site view refetches every 30 s (a new asset or rank must appear). */
+export async function generatedReadRefetchesEvery30s(): Promise<void> {
+  vi.useFakeTimers({ now: Date.parse("2026-09-26T10:00:00.000Z") });
+  renderView();
+  await advance(0);
+  expect(mocks.fetchGeneratedSiteView, "control: fetched once on mount").toHaveBeenCalledTimes(1);
+  await advance(30_000);
+  expect(mocks.fetchGeneratedSiteView).toHaveBeenCalledTimes(2);
 }

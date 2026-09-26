@@ -9,8 +9,10 @@ import {
   domainPanelsCountTheirAssets,
   fewerPointsCollapsesTheCard,
   fullScopeHidesTheLine,
+  generatedReadRefetchesEvery30s,
   kpiReadErrorLine,
   kpiTilesReadTheLocationDashboard,
+  liveRowShowsValueUndimmed,
   liveTurnsStaleOnTheTick,
   noDomainsSaysSo,
   noSampleReadsNone,
@@ -18,6 +20,7 @@ import {
   oneSocketWithTheToken,
   partialScopeShowsTheLine,
   pendingReadSaysLoading,
+  staleRowShowsValueDimmed,
   trackedReadingChangesItsRow,
   unknownAssetReadingChangesNothing,
   unmountDisconnects,
@@ -117,5 +120,17 @@ describe("F3.68 GeneratedSiteView", () => {
 
   it("says loading, not empty, while the read is pending", async () => {
     await pendingReadSaysLoading();
+  });
+
+  it("W10a shows a stale row's value, dimmed", async () => {
+    await staleRowShowsValueDimmed();
+  });
+
+  it("W10b shows a live row's value with no dimmed class", async () => {
+    await liveRowShowsValueUndimmed();
+  });
+
+  it("W11 refetches the generated site view every 30 s", async () => {
+    await generatedReadRefetchesEvery30s();
   });
 });

@@ -18,7 +18,8 @@ import { GeneratedSiteAssetCard } from "./generated-site-asset-card";
  *   refetched every 8 s like the location page (D5); the tile labels, hints
  *   and the value formats are that page's.
  * - **One panel per domain**, in the order the server sends them, one card
- *   per asset in scope (D4, D6).
+ *   per asset in scope (D4, D6). The generated read itself refetches every
+ *   30 s, so a new asset or a changed rank appears without a remount.
  * - **The live overlay** is `useSiteLiveReadings`: one socket, the shared
  *   staleness gate, one tick (D3).
  *
@@ -36,6 +37,7 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
     queryKey: ["control-room", "generated-site-view", locationId],
     queryFn: () => fetchGeneratedSiteView(locationId),
     enabled: !!locationId,
+    refetchInterval: 30000,
   });
   const readings = useSiteLiveReadings(locationId, viewQuery.data);
 

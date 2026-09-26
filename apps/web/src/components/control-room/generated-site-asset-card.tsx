@@ -10,6 +10,7 @@ import {
   headlinePoints,
   type AssetStatus,
 } from "../../lib/generated-site-view";
+import { isStale, readingTimestampMs } from "../../lib/schematic-telemetry";
 import { StatusPill } from "../status-pill";
 
 /**
@@ -17,6 +18,13 @@ import { StatusPill } from "../status-pill";
  * and its first `HEADLINE_POINT_COUNT` points, with "All points" expanding the
  * card inline and "Fewer points" collapsing it (OQ2). The pill labels and
  * tones are the location page's freshness tones (AGENTS.md §5).
+ *
+ * **Owner ruling (2026-09-26, ADR 0076 Amendment 1).** ADR 0027 decision 3
+ * blanks a stale value; this view keeps it, dimmed, with the pill reading
+ * Stale — each row judges its own `latest.time` with the shared `isStale`
+ * gate, independent of the asset-level status pill. A row with no sample at
+ * all (`latest === null`) already prints the shared dash and carries no value
+ * to dim.
  */
 
 const STATUS_LABEL: Record<AssetStatus, string> = { live: "Live", stale: "Stale", none: "None" };
@@ -59,12 +67,18 @@ export function GeneratedSiteAssetCard({
           <tbody>
             {shown.map((point) => {
               const latest = readings.pointLatest(asset.id, point);
+              const rowStale =
+                latest !== null &&
+                isStale(readingTimestampMs(latest.time, readings.nowMs), readings.nowMs);
               return (
                 <tr key={point.pointKey} className="border-t border-gray-100">
                   <th scope="row" className="py-1 pr-2 text-left font-normal text-bms-muted">
                     {point.name ?? point.pointKey}
                   </th>
-                  <td className="py-1 text-right font-semibold tabular-nums text-bms-ink">
+                  <td
+                    data-testid="point-value"
+                    className={`py-1 text-right font-semibold tabular-nums text-bms-ink${rowStale ? " opacity-50" : ""}`}
+                  >
                     {formatPointValue(latest?.value ?? null)}
                   </td>
                   <td className="py-1 pl-1 text-left text-[11px] text-bms-muted">
