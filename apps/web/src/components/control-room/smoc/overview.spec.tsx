@@ -101,7 +101,7 @@ vi.mock("socket.io-client", () => ({
   }),
 }));
 
-vi.mock("../api/rules", () => ({
+vi.mock("../../../api/rules", () => ({
   fetchRules: () => Promise.resolve({ items: state.rules }),
 }));
 
@@ -110,7 +110,7 @@ vi.mock("../api/rules", () => ({
  * vocabulary. All three are replaced so no test here dials the network; the
  * rail's own spec owns their behaviour.
  */
-vi.mock("../api/alarms", () => ({
+vi.mock("../../../api/alarms", () => ({
   fetchActiveAlarms: state.fetchActiveAlarms,
   fetchAlarmSummary: state.fetchAlarmSummary,
 }));
@@ -120,8 +120,8 @@ vi.mock("../api/alarms", () => ({
  * `fetchPointValuesAt` is replaced; the item echoes the ref as sent, which is
  * what `GET /telemetry/points/at-instant` does (`telemetry.controller.ts`).
  */
-vi.mock("../api/telemetry", async (importActual) => ({
-  ...(await importActual<typeof import("../api/telemetry")>()),
+vi.mock("../../../api/telemetry", async (importActual) => ({
+  ...(await importActual<typeof import("../../../api/telemetry")>()),
   fetchPointValuesAt: state.fetchPointValuesAt,
 }));
 
@@ -129,12 +129,12 @@ vi.mock("../api/telemetry", async (importActual) => ({
  * `F3.28` task 3.3 — the class strip's read. Only `fetchAssetRoleSummary` is
  * replaced; the strip's own spec owns its text rules.
  */
-vi.mock("../api/assets", async (importActual) => ({
-  ...(await importActual<typeof import("../api/assets")>()),
+vi.mock("../../../api/assets", async (importActual) => ({
+  ...(await importActual<typeof import("../../../api/assets")>()),
   fetchAssetRoleSummary: state.fetchAssetRoleSummary,
 }));
 
-vi.mock("../api/vocabularies", () => ({
+vi.mock("../../../api/vocabularies", () => ({
   vocabulariesQueryKey: ["vocabularies"],
   fetchVocabularies: () =>
     Promise.resolve({
@@ -148,10 +148,10 @@ vi.mock("../api/vocabularies", () => ({
     }),
 }));
 
-vi.mock("../components/live-svg/schematic-telemetry-context", async () => {
+vi.mock("../../../components/live-svg/schematic-telemetry-context", async () => {
   const { emptySlice: empty } = await vi.importActual<
-    typeof import("../lib/schematic-telemetry")
-  >("../lib/schematic-telemetry");
+    typeof import("../../../lib/schematic-telemetry")
+  >("../../../lib/schematic-telemetry");
   const sliceFor = (code: string | undefined) =>
     (code ? (state.telemetry[code] as SchematicTelemetrySlice | undefined) : undefined) ??
     empty();
