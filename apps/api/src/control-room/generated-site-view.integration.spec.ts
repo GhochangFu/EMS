@@ -24,7 +24,13 @@ import { jwtFor } from "./site-control-room-view.integration.spec";
  *   keys, assets, points and samples — and nobody else does. Nothing commits.
  * - **`forUser()` cases (R11–R13) read seeded rows only** — `RSMOC-WC`, a
  *   seeded PHEWB site, the seeded users — and write nothing, so there is
- *   nothing to clean up.
+ *   nothing to clean up. They do **not** own those sites: CI runs integration
+ *   files in parallel on one database, and other suites commit fixture assets
+ *   at the same seeded sites (`asset-groups.service.integration.test.ts`'s
+ *   `f337-foreign-*` lands on the first PHEWB site by `created_at, code`, which
+ *   is the one picked here; `work-orders.service.rls.integration.test.ts`
+ *   can land there too). So no case compares the service's answer with a
+ *   whole-site read taken at another instant — see `expectReadBetween`.
  *
  * **One clock.** SQL `now()` is frozen at `BEGIN`. Every sample is stamped
  * `now() - make_interval(secs => N)`, and `read()` is handed that same
@@ -552,7 +558,28 @@ async function hvacMemberIds(ctx: ForUserCtx): Promise<string[]> {
   return rows.map((r) => r.id);
 }
 
-const sorted = (ids: string[]): string[] => [...ids].sort();
+/**
+ * The service's answer against a set read just before it and again just after.
+ *
+ * Another suite may commit or delete a fixture asset at the same seeded site
+ * between any two reads, so neither read is "the" site. What still holds:
+ *
+ * - every id in **both** reads existed for the whole window, so the service
+ *   must return it (`must` — the seeded assets, plus any long-lived fixture);
+ * - every id the service returns was in the set at the instant it read, so it
+ *   is in **at least one** of the two reads (`may`). An asset of another site,
+ *   or outside the grant, is in neither.
+ */
+function expectReadBetween(returned: string[], before: string[], after: string[], label: string): void {
+  const afterSet = new Set(after);
+  const must = before.filter((id) => afterSet.has(id));
+  const may = new Set([...before, ...after]);
+  expect(must.length, `${label}: the set must hold ids stable across the read for the check to mean anything`)
+    .toBeGreaterThan(0);
+  expect(returned.filter((id) => !may.has(id)), `${label}: returned ids outside the set`).toEqual([]);
+  const got = new Set(returned);
+  expect(must.filter((id) => !got.has(id)), `${label}: stable ids the service left out`).toEqual([]);
+}
 
 /**
  * R11 — `phe-admin` reads a PHEWB site whole (positive control, run first),
@@ -560,20 +587,20 @@ const sorted = (ids: string[]): string[] => [...ids].sort();
  */
 export async function assertOrganizationAdminIsBoundToItsOrganization(ctx: ForUserCtx): Promise<void> {
   const pheAdmin = jwtFor("phe-admin@bms.local", "organization_admin");
-  const expected = await siteAssetIds(ctx, ctx.pheSiteId);
-  expect(expected.length, "the PHEWB site must hold assets for the control to mean anything").toBeGreaterThan(0);
+  const before = await siteAssetIds(ctx, ctx.pheSiteId);
   const own = await ctx.svc.forUser(pheAdmin, ctx.pheSiteId);
-  expect(sorted(assetIdsOf(own)), "positive control: every asset at the PHEWB site").toEqual(expected);
+  const after = await siteAssetIds(ctx, ctx.pheSiteId);
+  expectReadBetween(assetIdsOf(own), before, after, "positive control: every asset at the PHEWB site");
 
   await expect(ctx.svc.forUser(pheAdmin, ctx.rsmocWcId)).rejects.toThrow(new NotFoundException(NOT_FOUND));
 }
 
 /** R12a — `wc-hvac-admin` on `RSMOC-WC` gets at least one asset, and exactly its group members. */
 export async function assertAssetGroupAdminGetsItsMembers(ctx: ForUserCtx): Promise<void> {
-  const members = await hvacMemberIds(ctx);
-  expect(members.length, "wc-hvac-admin must be granted at least one RSMOC-WC asset").toBeGreaterThan(0);
+  const before = await hvacMemberIds(ctx);
   const dto = await ctx.svc.forUser(jwtFor("wc-hvac-admin@bms.local", "asset_group_admin"), ctx.rsmocWcId);
-  expect(sorted(assetIdsOf(dto))).toEqual(members);
+  const after = await hvacMemberIds(ctx);
+  expectReadBetween(assetIdsOf(dto), before, after, "wc-hvac-admin's granted RSMOC-WC assets");
 }
 
 /** R12b — an RSMOC-WC asset outside every granted group (positive control: it exists) is absent. */
@@ -587,10 +614,9 @@ export async function assertAssetGroupAdminMissesANonMember(ctx: ForUserCtx): Pr
 
 /** R13 — the global `admin` reads a PHEWB site, every asset. */
 export async function assertGlobalAdminReadsAPhewbSite(ctx: ForUserCtx): Promise<void> {
-  const expected = await siteAssetIds(ctx, ctx.pheSiteId);
+  const before = await siteAssetIds(ctx, ctx.pheSiteId);
   const dto = await ctx.svc.forUser(jwtFor("admin@bms.local", "admin"), ctx.pheSiteId);
-  expect({ locationId: dto.locationId, ids: sorted(assetIdsOf(dto)) }).toEqual({
-    locationId: ctx.pheSiteId,
-    ids: expected,
-  });
+  const after = await siteAssetIds(ctx, ctx.pheSiteId);
+  expect(dto.locationId).toBe(ctx.pheSiteId);
+  expectReadBetween(assetIdsOf(dto), before, after, "every asset at the PHEWB site");
 }

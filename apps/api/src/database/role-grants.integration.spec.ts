@@ -350,7 +350,7 @@ export async function assertFleetCanInsertARankedPointKey(pool: pg.Pool): Promis
  * back. Not the seed: `packages/db/src/seed.ts` connects as `DATABASE_URL`,
  * which is `bms_owner` in CI, and it sets ranks with an `UPDATE`, which this
  * `BEFORE INSERT` trigger never sees. `pnpm db:migrate` is what runs as this
- * connection's role (`DATABASE_URL_SUPERUSER`), inside the migration's own
+ * connection's role (the gate's `connection: "superuser"`), inside the migration's own
  * `SET ROLE bms_owner` / `RESET ROLE` bracket — this case proves the bracket's
  * outer role, not the seed.
  */
