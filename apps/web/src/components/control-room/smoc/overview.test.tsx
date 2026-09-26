@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
-import { useAuthStore } from "../stores/auth-store";
+import { useAuthStore } from "../../../stores/auth-store";
 import {
   aMissingPriorAmongLiveInputsGivesNoDelta,
   aNullPriorKeepsTheTotalCrLoadHint,
@@ -52,7 +52,7 @@ import {
   q1OpenFullSldTargetsTheSldTab,
   q2QuickDrilldownHvacTargetsTheHvacTab,
   q3NoLinkTargetsALegacyPath,
-} from "./control-room-overview-page.spec";
+} from "./overview.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and

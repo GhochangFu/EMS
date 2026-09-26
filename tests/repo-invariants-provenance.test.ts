@@ -37,7 +37,7 @@ describe("value provenance", () => {
     // asserts. The rest pins specific values, because "is this number real?" is
     // not decidable from source.
     const pages = ["overview", "sld", "ups", "battery", "it", "hvac", "env"].map(
-      (name) => [name, `apps/web/src/pages/control-room-${name}-page.tsx`] as const,
+      (name) => [name, `apps/web/src/components/control-room/smoc/${name}.tsx`] as const,
     );
     const sources = new Map(
       pages.map(([name, rel]) => [
@@ -76,7 +76,7 @@ describe("value provenance", () => {
         const firstArg = src.slice(i + "freshValue(".length, end);
         if (/[A-Za-z_$][\w$]*\s*[+\-]\s*\d/.test(firstArg)) {
           offenders.push(
-            `control-room-${name}-page.tsx offsets a measurement inside freshValue: ` +
+            `smoc/${name}.tsx offsets a measurement inside freshValue: ` +
               `${firstArg.trim()} — that labels one instrument's reading as another's`,
           );
         }
@@ -92,7 +92,7 @@ describe("value provenance", () => {
         // with no exceptions is one nobody has to adjudicate at review time.
         if (firstArg.includes("??")) {
           offenders.push(
-            `control-room-${name}-page.tsx resolves a fallback inside freshValue: ` +
+            `smoc/${name}.tsx resolves a fallback inside freshValue: ` +
               `${firstArg.trim()} — use ownElse so each candidate is judged by its own asset's clock`,
           );
         }
@@ -136,7 +136,7 @@ describe("value provenance", () => {
         );
         if (open < 0 || close > open) {
           offenders.push(
-            `control-room-${name}-page.tsx renders "${literal}" outside a provenance marker — ` +
+            `smoc/${name}.tsx renders "${literal}" outside a provenance marker — ` +
               "static data must be visibly distinct from a live reading (ADR 0028 decision 3)",
           );
         }
@@ -155,7 +155,7 @@ describe("value provenance", () => {
     const gridAt = batt.indexOf("string.cells.map(");
     if (gridAt < 0) {
       offenders.push(
-        "control-room-battery-page.tsx no longer renders a recognisable cell grid — " +
+        "smoc/battery.tsx no longer renders a recognisable cell grid — " +
           "if it was removed, drop this check with it",
       );
     } else {
@@ -163,7 +163,7 @@ describe("value provenance", () => {
       const body = batt.slice(fnAt < 0 ? 0 : fnAt, gridAt);
       if (!/<StaticValue\s+kind="simulated"/.test(body)) {
         offenders.push(
-          "control-room-battery-page.tsx renders the per-cell grid without marking it simulated — " +
+          "smoc/battery.tsx renders the per-cell grid without marking it simulated — " +
             "no RTU profile carries per-cell points, so all 32 voltages come from one string reading",
         );
       }
@@ -193,7 +193,7 @@ describe("value provenance", () => {
         /freshValue\s*\(/.test(element) || /\b\w*[sS]tale\b/.test(element) || /\bunitWord\b/.test(element);
       if (gated && !/\boffline=/.test(element)) {
         offenders.push(
-          "control-room-sld-page.tsx renders a gated value in an SldBox without passing `offline` — " +
+          "smoc/sld.tsx renders a gated value in an SldBox without passing `offline` — " +
             "the box stays green while its value blanks, so an em-dash is the only sign it is dead",
         );
       }
@@ -216,14 +216,14 @@ describe("value provenance", () => {
       const close = before.lastIndexOf("</StaticValue>");
       if (open < 0 || close > open) {
         offenders.push(
-          "control-room-battery-page.tsx renders a bank temperature outside a provenance marker — " +
+          "smoc/battery.tsx renders a bank temperature outside a provenance marker — " +
             "there are no per-bank sensors; it is an average of cells synthesized from one string reading",
         );
       }
       const call = batt.slice(i, batt.indexOf(")", batt.indexOf(")", i) + 1) + 1);
       if (!/freshValue\s*\(/.test(batt.slice(Math.max(0, i - 60), i + call.length))) {
         offenders.push(
-          "control-room-battery-page.tsx renders a bank temperature without gating it on the string's clock",
+          "smoc/battery.tsx renders a bank temperature without gating it on the string's clock",
         );
       }
     }
@@ -248,7 +248,7 @@ describe("value provenance", () => {
     for (const [name, pattern, what] of removed) {
       if (pattern.test(sources.get(name) ?? "")) {
         offenders.push(
-          `control-room-${name}-page.tsx reintroduces ${what} (removed by F4.39, ADR 0028)`,
+          `smoc/${name}.tsx reintroduces ${what} (removed by F4.39, ADR 0028)`,
         );
       }
     }

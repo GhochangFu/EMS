@@ -1,26 +1,26 @@
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchRules } from "../api/rules";
+import { fetchRules } from "../../../api/rules";
 import {
   BreakerTable,
   type BreakerVisualStatus,
-} from "../components/control-room/breaker-table";
-import { CR_BREAKERS } from "../components/live-svg/control-room-bindings";
+} from "../../../components/control-room/breaker-table";
+import { CR_BREAKERS } from "../../../components/live-svg/control-room-bindings";
 import {
   type SchematicTelemetrySlice,
   useSchematicTelemetryByCode,
-} from "../components/live-svg/schematic-telemetry-context";
-import { PageHeader } from "../components/page-header";
-import { StaticTspan } from "../components/static-value";
-import { StatusPill } from "../components/status-pill";
-import { type BreakerRowState, breakerTableRow } from "../lib/breaker-table-rows";
+} from "../../../components/live-svg/schematic-telemetry-context";
+import { PageHeader } from "../../../components/page-header";
+import { StaticTspan } from "../../../components/static-value";
+import { StatusPill } from "../../../components/status-pill";
+import { type BreakerRowState, breakerTableRow } from "../../../lib/breaker-table-rows";
 import {
   freshValue,
   isHvacRunning,
   isStale,
   STALE_VALUE,
-} from "../lib/schematic-telemetry";
+} from "../../../lib/schematic-telemetry";
 
 /** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 

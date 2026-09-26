@@ -3,28 +3,28 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
-import { fetchRules } from "../api/rules";
-import { ActiveAlarmsRail } from "../components/control-room/active-alarms-rail";
-import { AssetClassStrip } from "../components/control-room/asset-class-strip";
-import { BreakerTable } from "../components/control-room/breaker-table";
-import { CapabilityFooter } from "../components/control-room/capability-footer";
-import { QuickDrilldown } from "../components/control-room/quick-drilldown";
-import { ScopedActionLink } from "../components/control-room/scoped-action-link";
-import { StateLegend } from "../components/control-room/state-legend";
-import { KeyParameters } from "../components/control-room/key-parameters";
-import { KpiTile } from "../components/kpi-tile";
-import { CR_BREAKERS, CR_TRACKED_ASSET_CODES } from "../components/live-svg/control-room-bindings";
+import { fetchRules } from "../../../api/rules";
+import { ActiveAlarmsRail } from "../../../components/control-room/active-alarms-rail";
+import { AssetClassStrip } from "../../../components/control-room/asset-class-strip";
+import { BreakerTable } from "../../../components/control-room/breaker-table";
+import { CapabilityFooter } from "../../../components/control-room/capability-footer";
+import { QuickDrilldown } from "../../../components/control-room/quick-drilldown";
+import { ScopedActionLink } from "../../../components/control-room/scoped-action-link";
+import { StateLegend } from "../../../components/control-room/state-legend";
+import { KeyParameters } from "../../../components/control-room/key-parameters";
+import { KpiTile } from "../../../components/kpi-tile";
+import { CR_BREAKERS, CR_TRACKED_ASSET_CODES } from "../../../components/live-svg/control-room-bindings";
 import {
   type SchematicTelemetrySlice,
   useSchematicTelemetryByCode,
   useSchematicTelemetryContext,
-} from "../components/live-svg/schematic-telemetry-context";
-import { PageHeader } from "../components/page-header";
-import { StaticTspan } from "../components/static-value";
-import { StatusPill } from "../components/status-pill";
-import { WidgetIconGlyph } from "../components/widget-icon";
-import { usePriorPointValues } from "../hooks/use-prior-point-values";
-import { breakerTableRow } from "../lib/breaker-table-rows";
+} from "../../../components/live-svg/schematic-telemetry-context";
+import { PageHeader } from "../../../components/page-header";
+import { StaticTspan } from "../../../components/static-value";
+import { StatusPill } from "../../../components/status-pill";
+import { WidgetIconGlyph } from "../../../components/widget-icon";
+import { usePriorPointValues } from "../../../hooks/use-prior-point-values";
+import { breakerTableRow } from "../../../lib/breaker-table-rows";
 import {
   avgOf,
   crPriorRefs,
@@ -34,11 +34,11 @@ import {
   type TileInput,
   tileDeltaText,
   tileHint,
-} from "../lib/control-room-tiles";
-import { freshValue, isStale } from "../lib/schematic-telemetry";
-import { canAccessControlRoomArea } from "../lib/control-room-access";
-import { smocTabPath } from "../lib/smoc-pages";
-import { useAuthStore } from "../stores/auth-store";
+} from "../../../lib/control-room-tiles";
+import { freshValue, isStale } from "../../../lib/schematic-telemetry";
+import { canAccessControlRoomArea } from "../../../lib/control-room-access";
+import { smocTabPath } from "../../../lib/smoc-pages";
+import { useAuthStore } from "../../../stores/auth-store";
 
 /** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 

@@ -1,15 +1,15 @@
 import type { AutomationRuleOperator, RuleListItem } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchRules } from "../api/rules";
-import { CR_SERVERS } from "../components/live-svg/control-room-bindings";
+import { fetchRules } from "../../../api/rules";
+import { CR_SERVERS } from "../../../components/live-svg/control-room-bindings";
 import {
   type SchematicTelemetrySlice,
   useSchematicTelemetryByCode,
-} from "../components/live-svg/schematic-telemetry-context";
-import { PageHeader } from "../components/page-header";
-import { StatusPill } from "../components/status-pill";
-import { freshValue, isStale } from "../lib/schematic-telemetry";
+} from "../../../components/live-svg/schematic-telemetry-context";
+import { PageHeader } from "../../../components/page-header";
+import { StatusPill } from "../../../components/status-pill";
+import { freshValue, isStale } from "../../../lib/schematic-telemetry";
 
 /** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 

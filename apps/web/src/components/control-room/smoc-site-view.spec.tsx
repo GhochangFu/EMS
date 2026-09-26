@@ -41,25 +41,25 @@ vi.mock("../live-svg/schematic-telemetry-context", () => ({
   },
 }));
 
-vi.mock("../../pages/control-room-overview-page", () => ({
+vi.mock("./smoc/overview", () => ({
   ControlRoomOverviewContent: () => <div data-testid="tab-overview" />,
 }));
-vi.mock("../../pages/control-room-sld-page", () => ({
+vi.mock("./smoc/sld", () => ({
   ControlRoomSldContent: () => <div data-testid="tab-sld" />,
 }));
-vi.mock("../../pages/control-room-ups-page", () => ({
+vi.mock("./smoc/ups", () => ({
   ControlRoomUpsContent: () => <div data-testid="tab-ups" />,
 }));
-vi.mock("../../pages/control-room-battery-page", () => ({
+vi.mock("./smoc/battery", () => ({
   ControlRoomBatteryContent: () => <div data-testid="tab-battery" />,
 }));
-vi.mock("../../pages/control-room-hvac-page", () => ({
+vi.mock("./smoc/hvac", () => ({
   ControlRoomHvacContent: () => <div data-testid="tab-hvac" />,
 }));
-vi.mock("../../pages/control-room-env-page", () => ({
+vi.mock("./smoc/env", () => ({
   ControlRoomEnvContent: () => <div data-testid="tab-env" />,
 }));
-vi.mock("../../pages/control-room-it-page", () => ({
+vi.mock("./smoc/it", () => ({
   ControlRoomItContent: () => <div data-testid="tab-it" />,
 }));
 

@@ -718,7 +718,7 @@ describe("repo invariants", () => {
       "it",
       "hvac",
       "env",
-    ].map((name) => `apps/web/src/pages/control-room-${name}-page.tsx`);
+    ].map((name) => `apps/web/src/components/control-room/smoc/${name}.tsx`);
 
     const offenders: string[] = [];
     for (const rel of pages) {
@@ -753,7 +753,7 @@ describe("repo invariants", () => {
           `${rel} derives status without calling isStale (a call elsewhere in the file does not count)`,
         );
       }
-      if (!/from "\.\.\/lib\/schematic-telemetry"/.test(src)) {
+      if (!/from "(?:\.\.\/)+lib\/schematic-telemetry"/.test(src)) {
         offenders.push(`${rel} does not import the shared gate`);
       }
       if (/\bFRESH_MS\s*=/.test(src)) {

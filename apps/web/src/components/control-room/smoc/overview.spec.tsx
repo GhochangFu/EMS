@@ -19,11 +19,11 @@ import { encodePointRef } from "@bms/shared";
 import {
   CR_BREAKERS,
   CR_TRACKED_ASSET_CODES,
-} from "../components/live-svg/control-room-bindings";
-import { emptySlice, type SchematicTelemetrySlice } from "../lib/schematic-telemetry";
-import { WIDGET_ICON_PATH } from "../lib/widget-catalog";
-import { useAuthStore } from "../stores/auth-store";
-import { ControlRoomOverviewContent } from "./control-room-overview-page";
+} from "../../../components/live-svg/control-room-bindings";
+import { emptySlice, type SchematicTelemetrySlice } from "../../../lib/schematic-telemetry";
+import { WIDGET_ICON_PATH } from "../../../lib/widget-catalog";
+import { useAuthStore } from "../../../stores/auth-store";
+import { ControlRoomOverviewContent } from "./overview";
 
 /**
  * `F3.28` Task 1.1 — a characterization spec for `/cr-overview`.

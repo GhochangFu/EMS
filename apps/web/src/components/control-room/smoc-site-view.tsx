@@ -1,13 +1,13 @@
 import type { AccessibleScope } from "@bms/shared";
 import { Link } from "react-router-dom";
 
-import { ControlRoomBatteryContent } from "../../pages/control-room-battery-page";
-import { ControlRoomEnvContent } from "../../pages/control-room-env-page";
-import { ControlRoomHvacContent } from "../../pages/control-room-hvac-page";
-import { ControlRoomItContent } from "../../pages/control-room-it-page";
-import { ControlRoomOverviewContent } from "../../pages/control-room-overview-page";
-import { ControlRoomSldContent } from "../../pages/control-room-sld-page";
-import { ControlRoomUpsContent } from "../../pages/control-room-ups-page";
+import { ControlRoomBatteryContent } from "./smoc/battery";
+import { ControlRoomEnvContent } from "./smoc/env";
+import { ControlRoomHvacContent } from "./smoc/hvac";
+import { ControlRoomItContent } from "./smoc/it";
+import { ControlRoomOverviewContent } from "./smoc/overview";
+import { ControlRoomSldContent } from "./smoc/sld";
+import { ControlRoomUpsContent } from "./smoc/ups";
 import { allowedSmocTabs, smocTabPath, type SmocTabKey } from "../../lib/smoc-pages";
 import { CR_POINT_KEYS, CR_TRACKED_ASSET_CODES } from "../live-svg/control-room-bindings";
 import { SchematicTelemetryProvider } from "../live-svg/schematic-telemetry-context";
