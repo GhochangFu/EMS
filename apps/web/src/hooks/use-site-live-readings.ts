@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
 import {
@@ -8,8 +8,15 @@ import {
   type TelemetryReading,
 } from "@bms/shared";
 
-import { overlayReading, type PointLatest } from "../lib/generated-site-view";
-import { readingTimestampMs, STALE_TICK_MS } from "../lib/schematic-telemetry";
+import {
+  clampSample,
+  clampSeeded,
+  NO_SEEDED_CLAMPS,
+  overlayReading,
+  type ClampedLatest,
+  type SeededClamps,
+} from "../lib/generated-site-view";
+import { STALE_TICK_MS } from "../lib/schematic-telemetry";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore } from "../stores/auth-store";
 
@@ -27,8 +34,12 @@ import { useAuthStore } from "../stores/auth-store";
  * - **Seeded from the DTO at read time.** A point shows the newer of its seeded
  *   and its live sample (`overlayReading`); an asset's last-seen instant is the
  *   later of `latestTelemetryAt` and its newest tracked reading.
- * - **Every timestamp is clamped when it is stored** (`readingTimestampMs`), so
- *   producer skew cannot mark a fresh asset stale (`F4.37`).
+ * - **Every time is clamped once, when it arrives, and stored clamped**
+ *   (`F4.37`): a socket reading at its receipt, the generated read's samples
+ *   at the query's `dataUpdatedAt` (`clampSeeded`, which keeps the first clamp
+ *   of a sample a refetch re-supplies unchanged). Nothing is clamped at
+ *   render, so producer skew can neither mark a fresh asset stale nor keep a
+ *   silent one live.
  * - **One `STALE_TICK_MS` interval**, created once with an empty dependency
  *   array, and nothing returns before it. It only forces a re-render; `nowMs`
  *   is `Date.now()` read at render. Keeping `nowMs` in state and advancing it
@@ -39,14 +50,14 @@ import { useAuthStore } from "../stores/auth-store";
 export type SiteLiveReadings = {
   /** `Date.now()` at this render — the instant every status is judged at. */
   readonly nowMs: number;
-  /** A point's newest sample, seeded or live. */
-  pointLatest(assetId: string, point: { pointKey: string; latest: PointLatest | null }): PointLatest | null;
+  /** A point's newest sample, seeded or live, with its clamped time. */
+  pointLatest(assetId: string, point: { pointKey: string }): ClampedLatest | null;
   /** An asset's newest registered-point sample, clamped; `null` when it has none. */
   assetLastSeenMs(asset: GeneratedSiteAssetDto): number | null;
 };
 
 type LiveState = {
-  readonly points: ReadonlyMap<string, PointLatest>;
+  readonly points: ReadonlyMap<string, ClampedLatest>;
   readonly lastSeen: ReadonlyMap<string, number>;
 };
 
@@ -67,11 +78,19 @@ function trackedRefs(view: GeneratedSiteViewDto | undefined): Set<string> {
 export function useSiteLiveReadings(
   locationId: string,
   view: GeneratedSiteViewDto | undefined,
+  dataUpdatedAt: number,
 ): SiteLiveReadings {
   const accessToken = useAuthStore((s) => s.accessToken);
   const [live, setLive] = useState<LiveState>(EMPTY);
   const tracked = useRef<Set<string>>(new Set());
   tracked.current = trackedRefs(view);
+
+  const previousSeeded = useRef<SeededClamps>(NO_SEEDED_CLAMPS);
+  const seeded = useMemo(() => {
+    const next = clampSeeded(view, dataUpdatedAt, previousSeeded.current);
+    previousSeeded.current = next;
+    return next;
+  }, [view, dataUpdatedAt]);
 
   const [, setStaleTick] = useState(0);
   useEffect(() => {
@@ -101,16 +120,13 @@ export function useSiteLiveReadings(
         const points = new Map(prev.points);
         const lastSeen = new Map(prev.lastSeen);
         for (const r of mine) {
-          const t = readingTimestampMs(r.time, arrivedAt);
-          if (t === null) {
+          const sample = clampSample({ value: r.value, time: r.time }, arrivedAt);
+          if (sample === null) {
             continue;
           }
           const ref = encodePointRef(r.assetId, r.pointKey);
-          const next = overlayReading(points.get(ref) ?? null, { value: r.value, time: r.time });
-          if (next !== null) {
-            points.set(ref, next);
-          }
-          lastSeen.set(r.assetId, Math.max(lastSeen.get(r.assetId) ?? t, t));
+          points.set(ref, overlayReading(points.get(ref) ?? null, sample) ?? sample);
+          lastSeen.set(r.assetId, Math.max(lastSeen.get(r.assetId) ?? sample.atMs, sample.atMs));
         }
         return { points, lastSeen };
       });
@@ -123,16 +139,17 @@ export function useSiteLiveReadings(
   const nowMs = Date.now();
   return {
     nowMs,
-    pointLatest: (assetId, point) =>
-      overlayReading(point.latest, live.points.get(encodePointRef(assetId, point.pointKey))),
+    pointLatest: (assetId, point) => {
+      const ref = encodePointRef(assetId, point.pointKey);
+      return overlayReading(seeded.points.get(ref) ?? null, live.points.get(ref));
+    },
     assetLastSeenMs: (asset) => {
-      const seeded =
-        asset.latestTelemetryAt === null ? null : readingTimestampMs(asset.latestTelemetryAt, nowMs);
+      const fromSeed = seeded.assets.get(asset.id)?.atMs ?? null;
       const fromSocket = live.lastSeen.get(asset.id) ?? null;
-      if (seeded === null) {
+      if (fromSeed === null) {
         return fromSocket;
       }
-      return fromSocket === null ? seeded : Math.max(seeded, fromSocket);
+      return fromSocket === null ? fromSeed : Math.max(fromSeed, fromSocket);
     },
   };
 }

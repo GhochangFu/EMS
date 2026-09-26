@@ -1,6 +1,13 @@
 import { describe, it } from "vitest";
 
 import {
+  clampedTimeDecidesTheNewer,
+  futureSampleClampsToArrival,
+  newSampleClampsAtTheNewArrival,
+  pastSampleKeepsItsTime,
+  seededAssetClampsAtArrival,
+  seededPointClampsAtArrival,
+  unchangedSampleKeepsItsFirstClamp,
   expandedShowsEveryPoint,
   headlineSliceKeepsServerOrder,
   newerReadingReplaces,
@@ -39,6 +46,34 @@ describe("F3.68 generated site view — pure helpers", () => {
 
   it("L2d ignores a reading it cannot date", () => {
     undatableReadingIsIgnored();
+  });
+
+  it("L2e decides the newer by clamped time", () => {
+    clampedTimeDecidesTheNewer();
+  });
+
+  it("L5a clamps a future sample to its arrival", () => {
+    futureSampleClampsToArrival();
+  });
+
+  it("L5b keeps a past sample's time", () => {
+    pastSampleKeepsItsTime();
+  });
+
+  it("L5c clamps a seeded point sample at the read's arrival", () => {
+    seededPointClampsAtArrival();
+  });
+
+  it("L5d clamps a seeded asset instant at the read's arrival", () => {
+    seededAssetClampsAtArrival();
+  });
+
+  it("L5e keeps the first clamp of a sample a refetch re-supplies", () => {
+    unchangedSampleKeepsItsFirstClamp();
+  });
+
+  it("L5f clamps a new sample at the refetch's arrival", () => {
+    newSampleClampsAtTheNewArrival();
   });
 
   it("L3a reads none with no sample", () => {

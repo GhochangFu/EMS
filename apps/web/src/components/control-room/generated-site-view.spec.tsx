@@ -462,6 +462,116 @@ export async function liveRowShowsValueUndimmed(): Promise<void> {
   expect(cell.className).not.toContain("opacity-50");
 }
 
+// ------------------------------------------------ W12 — future-dated samples
+//
+// A producer whose clock runs ahead stamps its samples in the future. The
+// F4.37 clamp caps a sample's time at the instant it ARRIVED (the generated
+// read's `dataUpdatedAt`, or the socket message's receipt), once. A clamp
+// taken at render instead caps it at "now" on every render, so a silent
+// device reads Live forever. Each case starts the fake clock at T0, the read
+// resolves at T0, and the device then says nothing: the first render past
+// T0 + 25 s (the 30 s tick) must read Stale / dimmed. The 30 s tick is also
+// when the generated read refetches the same payload, which must not re-clamp
+// the same sample to the refetch instant (W12c).
+
+const T0 = Date.parse("2026-09-26T10:00:00.000Z");
+
+/** The `AHU-01` view with its `latestTelemetryAt` and every sample `aheadMs` in the future. */
+function futureAhuView(aheadMs: number): GeneratedSiteViewDto {
+  const time = new Date(Date.now() + aheadMs).toISOString();
+  const asset = ahu(0);
+  return {
+    locationId: LOCATION_ID,
+    asOf: new Date().toISOString(),
+    domains: [
+      {
+        code: "hvac",
+        label: "HVAC",
+        assets: [
+          {
+            ...asset,
+            latestTelemetryAt: time,
+            points: asset.points.map((p) => ({ ...p, latest: p.latest === null ? null : { ...p.latest, time } })),
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** The `PCC-01` view only: no seeded sample at all, so every sample it shows came from the socket. */
+function pccOnlyView(): GeneratedSiteViewDto {
+  return {
+    locationId: LOCATION_ID,
+    asOf: new Date().toISOString(),
+    domains: [{ code: "electrical", label: "Electrical", assets: [pcc()] }],
+  };
+}
+
+function valueCellOf(code: string, name: string): HTMLElement {
+  const row = rowsOf(code).find((r) => within(r).queryByRole("rowheader", { name }) !== null);
+  if (!row) throw new Error(`${code} has no row named ${name}`);
+  return within(row).getByTestId("point-value");
+}
+
+async function renderFutureSeed(): Promise<void> {
+  vi.useFakeTimers({ now: T0 });
+  // The KPI read hangs, so only the tick and the 30 s refetch re-render the view.
+  renderView({ view: futureAhuView(60_000), dashboard: "hang" });
+  await advance(0);
+}
+
+async function renderFutureSocketReading(): Promise<void> {
+  vi.useFakeTimers({ now: T0 });
+  renderView({ view: pccOnlyView(), dashboard: "hang" });
+  await advance(0);
+  emit([{ assetId: PCC_ID, pointKey: "kwh_total", value: 42, unit: "kWh", time: new Date(T0 + 120_000).toISOString() }]);
+}
+
+/** W12a — a future-dated seeded sample: Live at 20 s, Stale by the 30 s tick. */
+export async function futureSeededSampleGoesStale(): Promise<void> {
+  await renderFutureSeed();
+  await advance(20_000);
+  expect(pillOf("AHU-01"), "control: live 20 s after the read arrived").toBe("Live");
+  await advance(10_000);
+  expect(pillOf("AHU-01")).toBe("Stale");
+}
+
+/** W12b — the same sample's row is dimmed by the 30 s tick; undimmed at 20 s. */
+export async function futureSeededRowGoesDimmed(): Promise<void> {
+  await renderFutureSeed();
+  await advance(20_000);
+  expect(valueCellOf("AHU-01", "Load").className, "control: undimmed at 20 s").not.toContain("opacity-50");
+  await advance(10_000);
+  expect(valueCellOf("AHU-01", "Load").className).toContain("opacity-50");
+}
+
+/** W12c — two refetches of the same payload (30 s, 60 s) do not revive it: still Stale at 65 s. */
+export async function identicalRefetchDoesNotRevive(): Promise<void> {
+  await renderFutureSeed();
+  await advance(65_000);
+  expect(mocks.fetchGeneratedSiteView, "control: the read refetched twice").toHaveBeenCalledTimes(3);
+  expect(pillOf("AHU-01")).toBe("Stale");
+}
+
+/** W12d — a future-dated socket reading: Live at 20 s, Stale by the 30 s tick. */
+export async function futureSocketReadingGoesStale(): Promise<void> {
+  await renderFutureSocketReading();
+  await advance(20_000);
+  expect(pillOf("PCC-01"), "control: live 20 s after the reading arrived").toBe("Live");
+  await advance(10_000);
+  expect(pillOf("PCC-01")).toBe("Stale");
+}
+
+/** W12e — that reading's row is dimmed by the 30 s tick; undimmed at 20 s. */
+export async function futureSocketRowGoesDimmed(): Promise<void> {
+  await renderFutureSocketReading();
+  await advance(20_000);
+  expect(valueCellOf("PCC-01", "Energy").className, "control: undimmed at 20 s").not.toContain("opacity-50");
+  await advance(10_000);
+  expect(valueCellOf("PCC-01", "Energy").className).toContain("opacity-50");
+}
+
 /** W11 — the generated site view refetches every 30 s (a new asset or rank must appear). */
 export async function generatedReadRefetchesEvery30s(): Promise<void> {
   vi.useFakeTimers({ now: Date.parse("2026-09-26T10:00:00.000Z") });

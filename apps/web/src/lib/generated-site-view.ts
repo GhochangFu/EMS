@@ -1,7 +1,7 @@
 import { HEADLINE_POINT_COUNT } from "@bms/shared/contracts";
-import type { GeneratedSitePointDto } from "@bms/shared";
+import { encodePointRef, type GeneratedSitePointDto, type GeneratedSiteViewDto } from "@bms/shared";
 
-import { isStale, STALE_VALUE } from "./schematic-telemetry";
+import { isStale, readingTimestampMs, STALE_VALUE } from "./schematic-telemetry";
 
 /**
  * `F3.68` U6 — the pure half of `GeneratedSiteView` (ADR 0076 decision 7).
@@ -31,27 +31,95 @@ export function headlinePoints(
 }
 
 /**
- * The newer of a point's seeded sample and a live one. A live sample only
- * replaces the seed when it is strictly newer, so a window-focus refetch that
- * re-supplies a newer seed is never overwritten by an older socket reading,
- * and a reading that cannot be dated is no evidence at all.
+ * A sample with its time clamped once, when it arrived (`F4.37`): `atMs` is
+ * `min(time, receivedAtMs)`. Every freshness judgement and every newer-than
+ * comparison reads `atMs`, never `time`.
+ */
+export type ClampedLatest = PointLatest & { readonly atMs: number };
+
+/**
+ * Clamps a sample at the instant it arrived — the generated read's
+ * `dataUpdatedAt`, or a socket message's receipt. A producer whose clock runs
+ * ahead can then not keep a silent device fresh: clamped at render instead,
+ * a future sample would read "now" on every render, forever. A sample that
+ * cannot be dated is no evidence at all: `null`.
+ */
+export function clampSample(sample: PointLatest, receivedAtMs: number): ClampedLatest | null {
+  const atMs = readingTimestampMs(sample.time, receivedAtMs);
+  return atMs === null ? null : { ...sample, atMs };
+}
+
+/**
+ * The newer of a point's seeded sample and a live one, by clamped time. A live
+ * sample only replaces the seed when it is strictly newer, so a window-focus
+ * refetch that re-supplies a newer seed is never overwritten by an older
+ * socket reading, and a future-dated seed (clamped to its arrival) does not
+ * block every later reading.
  */
 export function overlayReading(
-  seeded: PointLatest | null,
-  live: PointLatest | undefined,
-): PointLatest | null {
+  seeded: ClampedLatest | null,
+  live: ClampedLatest | undefined,
+): ClampedLatest | null {
   if (live === undefined) {
-    return seeded;
-  }
-  const liveMs = Date.parse(live.time);
-  if (Number.isNaN(liveMs)) {
     return seeded;
   }
   if (seeded === null) {
     return live;
   }
-  const seededMs = Date.parse(seeded.time);
-  return Number.isNaN(seededMs) || liveMs > seededMs ? live : seeded;
+  return live.atMs > seeded.atMs ? live : seeded;
+}
+
+/** The generated read's samples, clamped: by `encodePointRef`, and each asset's `latestTelemetryAt` by asset id. */
+export type SeededClamps = {
+  readonly points: ReadonlyMap<string, ClampedLatest>;
+  readonly assets: ReadonlyMap<string, { readonly time: string; readonly atMs: number }>;
+};
+
+export const NO_SEEDED_CLAMPS: SeededClamps = { points: new Map(), assets: new Map() };
+
+/**
+ * Clamps every sample of a generated read at `receivedAtMs`, the query's
+ * `dataUpdatedAt`. **A sample seen before keeps its first clamp**: the 30 s
+ * refetch re-supplies an unchanged sample, and re-clamping it at each refetch
+ * would revive a silent, future-dated device for 25 s of every 30. A sample
+ * is "the same" when its raw `time` is.
+ */
+export function clampSeeded(
+  view: GeneratedSiteViewDto | undefined,
+  receivedAtMs: number,
+  previous: SeededClamps,
+): SeededClamps {
+  const points = new Map<string, ClampedLatest>();
+  const assets = new Map<string, { readonly time: string; readonly atMs: number }>();
+  for (const domain of view?.domains ?? []) {
+    for (const asset of domain.assets) {
+      if (asset.latestTelemetryAt !== null) {
+        const before = previous.assets.get(asset.id);
+        const atMs =
+          before !== undefined && before.time === asset.latestTelemetryAt
+            ? before.atMs
+            : readingTimestampMs(asset.latestTelemetryAt, receivedAtMs);
+        if (atMs !== null) {
+          assets.set(asset.id, { time: asset.latestTelemetryAt, atMs });
+        }
+      }
+      for (const point of asset.points) {
+        if (point.latest === null) {
+          continue;
+        }
+        const ref = encodePointRef(asset.id, point.pointKey);
+        const before = previous.points.get(ref);
+        const clamped =
+          before !== undefined && before.time === point.latest.time
+            ? { ...point.latest, atMs: before.atMs }
+            : clampSample(point.latest, receivedAtMs);
+        if (clamped !== null) {
+          points.set(ref, clamped);
+        }
+      }
+    }
+  }
+  return { points, assets };
 }
 
 /**

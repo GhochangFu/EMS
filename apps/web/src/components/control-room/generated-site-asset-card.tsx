@@ -10,7 +10,7 @@ import {
   headlinePoints,
   type AssetStatus,
 } from "../../lib/generated-site-view";
-import { isStale, readingTimestampMs } from "../../lib/schematic-telemetry";
+import { isStale } from "../../lib/schematic-telemetry";
 import { StatusPill } from "../status-pill";
 
 /**
@@ -67,9 +67,7 @@ export function GeneratedSiteAssetCard({
           <tbody>
             {shown.map((point) => {
               const latest = readings.pointLatest(asset.id, point);
-              const rowStale =
-                latest !== null &&
-                isStale(readingTimestampMs(latest.time, readings.nowMs), readings.nowMs);
+              const rowStale = latest !== null && isStale(latest.atMs, readings.nowMs);
               return (
                 <tr key={point.pointKey} className="border-t border-gray-100">
                   <th scope="row" className="py-1 pr-2 text-left font-normal text-bms-muted">

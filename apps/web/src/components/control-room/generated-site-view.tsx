@@ -39,7 +39,7 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
     enabled: !!locationId,
     refetchInterval: 30000,
   });
-  const readings = useSiteLiveReadings(locationId, viewQuery.data);
+  const readings = useSiteLiveReadings(locationId, viewQuery.data, viewQuery.dataUpdatedAt);
 
   const location = kpiQuery.data;
   const kpiStatus: KpiTileStatus = kpiQuery.isLoading ? "loading" : kpiQuery.isError ? "error" : "ready";

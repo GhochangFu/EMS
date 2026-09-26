@@ -9,7 +9,12 @@ import {
   domainPanelsCountTheirAssets,
   fewerPointsCollapsesTheCard,
   fullScopeHidesTheLine,
+  futureSeededRowGoesDimmed,
+  futureSeededSampleGoesStale,
+  futureSocketReadingGoesStale,
+  futureSocketRowGoesDimmed,
   generatedReadRefetchesEvery30s,
+  identicalRefetchDoesNotRevive,
   kpiReadErrorLine,
   kpiTilesReadTheLocationDashboard,
   liveRowShowsValueUndimmed,
@@ -132,5 +137,25 @@ describe("F3.68 GeneratedSiteView", () => {
 
   it("W11 refetches the generated site view every 30 s", async () => {
     await generatedReadRefetchesEvery30s();
+  });
+
+  it("W12a turns a future-dated seeded sample Stale 25 s after the read arrived", async () => {
+    await futureSeededSampleGoesStale();
+  });
+
+  it("W12b dims a future-dated seeded sample's row 25 s after the read arrived", async () => {
+    await futureSeededRowGoesDimmed();
+  });
+
+  it("W12c keeps it Stale across refetches of the same payload", async () => {
+    await identicalRefetchDoesNotRevive();
+  });
+
+  it("W12d turns a future-dated socket reading Stale 25 s after it arrived", async () => {
+    await futureSocketReadingGoesStale();
+  });
+
+  it("W12e dims a future-dated socket reading's row 25 s after it arrived", async () => {
+    await futureSocketRowGoesDimmed();
   });
 });
