@@ -23,11 +23,14 @@ import {
  * The read-scope query branches of `AccessControlService`, moved here whole
  * from `access-control.service.ts` under AGENTS.md §4.5 (the service stood at
  * 960 lines against the 1000-line cap when `F3.5a` needed to add ADR 0071
- * decision 6). A pure move: every body below is byte-identical to the method
- * it replaced apart from the signature, indentation, `this.fleetDb` →
- * `fleetDb` and `this.directOrganizationIds(…)` → `directOrganizationIds(fleetDb, …)`;
- * the service keeps a one-line delegate for
- * `directOrganizationIds` so its callers did not change.
+ * decision 6). A pure move for `directOrganizationIds` and `scopeFromSource`:
+ * each body is byte-identical to the method it replaced apart from the
+ * signature, indentation, `this.fleetDb` → `fleetDb` and
+ * `this.directOrganizationIds(…)` → `directOrganizationIds(fleetDb, …)`; the
+ * service keeps a one-line delegate for `directOrganizationIds` so its
+ * callers did not change. `F4.161` then added the probe and the selector
+ * below them — `readScopeSourceYields` and `selectReadScopeSourceFor` are new
+ * code, not moved code.
  *
  * Every read here runs on `fleetDb` (`bms_fleet`, `BYPASSRLS`) for the reason
  * the service's file docblock gives — scope resolution runs before any tenant

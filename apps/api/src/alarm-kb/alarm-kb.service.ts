@@ -28,8 +28,9 @@ export class AlarmKbService {
   /**
    * `organizationIds === null` means an unrestricted admin, matching
    * `AccessControlService.readableOrganizationIds`. An empty array is a caller
-   * with no organization at all, which returns nothing rather than everything —
-   * the failure direction has to be closed, not open.
+   * whose grants reach no active site (the `none` fallback of `F4.161`'s
+   * source walk), which returns nothing rather than everything — the failure
+   * direction has to be closed, not open.
    */
   async list(organizationIds: string[] | null): Promise<AlarmKbResponse> {
     // `null` — and ONLY `null` — is the unrestricted-admin scope. A truthiness
