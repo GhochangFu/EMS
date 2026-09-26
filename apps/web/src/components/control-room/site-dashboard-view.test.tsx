@@ -14,6 +14,7 @@ import {
   rejectedReadShowsTheApiMessage,
   resolvedReadRendersTheCanvas,
   titleIsTheDashboardName,
+  tryAgainInvalidatesOnlyTheResolveRead,
   tryAgainInvalidatesTheResolveRead,
   tryAgainRereadsTheDashboard,
 } from "./site-dashboard-view.spec";
@@ -66,6 +67,10 @@ describe("F3.69 SiteDashboardView", () => {
 
   it("S7b invalidates the site page's resolve read on Try again", async () => {
     await tryAgainInvalidatesTheResolveRead();
+  });
+
+  it("S7c invalidates only the resolve read, not a wider or unrelated key", async () => {
+    await tryAgainInvalidatesOnlyTheResolveRead();
   });
 
   it("S8 shows no Edit dashboard link", async () => {

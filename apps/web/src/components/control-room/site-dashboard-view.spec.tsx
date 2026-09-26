@@ -199,6 +199,35 @@ export async function tryAgainInvalidatesTheResolveRead(): Promise<void> {
   await waitFor(() => expect(queryClient.getQueryState([...RESOLVE_KEY])?.isInvalidated).toBe(true));
 }
 
+/** Two unrelated cache entries S7c seeds alongside the resolve read, to prove the
+ * invalidation is scoped to that read's own prefix and nothing wider. */
+const GENERATED_SITE_VIEW_KEY = ["control-room", "generated-site-view", LOCATION_ID] as const;
+const DASHBOARD_LOCATIONS_KEY = ["dashboard", "locations"] as const;
+
+/**
+ * S7c — `Try again` invalidates ONLY the resolve read, not every
+ * `["control-room", ...]` entry and not an unrelated `["dashboard", ...]`
+ * one. S7b (above) is the positive control: without it, an
+ * `invalidateQueries()` with no key, or one scoped to the bare `["control-room"]`
+ * prefix, would ALSO satisfy S7b's own assertion — this is the negative half
+ * that catches both.
+ */
+export async function tryAgainInvalidatesOnlyTheResolveRead(): Promise<void> {
+  stubRead("reject", "pending");
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData([...RESOLVE_KEY], RESOLVED);
+  queryClient.setQueryData([...GENERATED_SITE_VIEW_KEY], { headline: [] });
+  queryClient.setQueryData([...DASHBOARD_LOCATIONS_KEY], []);
+  renderView(queryClient);
+
+  const button = await screen.findByRole("button", { name: "Try again" });
+  fireEvent.click(button);
+
+  await waitFor(() => expect(queryClient.getQueryState([...RESOLVE_KEY])?.isInvalidated).toBe(true));
+  expect(queryClient.getQueryState([...GENERATED_SITE_VIEW_KEY])?.isInvalidated).toBe(false);
+  expect(queryClient.getQueryState([...DASHBOARD_LOCATIONS_KEY])?.isInvalidated).toBe(false);
+}
+
 const DASHBOARD_KEY = ["dashboards", "detail", SLUG, ORG_PHE.id] as const;
 
 /**
