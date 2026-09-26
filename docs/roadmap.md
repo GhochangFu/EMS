@@ -6182,3 +6182,33 @@ this run: `F4.157` (the location-type lookup table, still needs its own
 ADR), `F4.160` (now two web spec files instead of three), and `F4.161`
 (P3, in build by another session). No row lists `F3.70` in *Depends*. Owed
 separately: the `chore(agents):` sweep.
+
+### `F4.161` — one source-selection walk for `readableOrganizationIds` and `scopeForUser` ✅ 2026-09-26
+
+PR #578, squash `1dcb2751`; plan `docs/plans/f4.161-read-scope-stop-rule.md`.
+No ADR (owner ruling: a bug fix).
+
+`readableOrganizationIds` stopped at the first grant source with any
+organization; `scopeForUser` stopped at the first source that reached an
+active location or asset. A mixed-grant `viewer`/`operator` could therefore
+open a Control Room site whose dashboard then answered 404. Now one walk
+decides the source for both: `selectReadScopeSource` returns the first
+source whose `LIMIT 1` probe (`readScopeSourceYields`) reaches an active
+location, else the last source unprobed, and both methods resolve from that
+pick. Single-source roles keep today's result and cost.
+
+The owner ruled six points: no ADR; mirror `scopeForUser` exactly; keep the
+per-source organization derivation (OQ1); the probe over a full mirror
+(OQ2); the API check on a local-auth `:4001` API with a fixture viewer; and
+an operator/viewer whose only grants reach no active site gets `[]`.
+
+Verified: 22 real-database cases (red on main S1–S3, S11, S12), the pure walk
+P1–P6, the `F3.69` dashboard-by-slug case, named mutations each reddening
+their target, six neighbour suites, and the `:4001` check in both
+directions (200 → 404 after the site grant's removal). Code, security and
+compliance reviews, every finding fixed or ruled. The fixture location type
+is `rsmoc`, agreed with `F4.157` (ADR 0077). CI green on the first run.
+
+**Cascade:** no row lists `F4.161` in *Depends*. No `chore(agents):` sweep
+owed (the compliance review found no AGENTS.md sentence that states the old
+rule).
