@@ -67,6 +67,27 @@ export const users = bmsSchema.table("users", {
     .defaultNow(),
 });
 
+/**
+ * The location-type vocabulary (ADR 0077, migration 0085) — data, not an
+ * enum, on the ADR 0031 A1 test: a sector-specific type (a water-treatment
+ * plant for `E5.1`) is an `INSERT` a domain pack ships, not a migration plus a
+ * deploy. `bms.notification_channel_kinds` (`0038`) and `bms.point_keys` are
+ * the precedents.
+ *
+ * Global — no `organizationId`, no RLS, the class `0047` left alone.
+ * `bms_tenant` holds SELECT only (`0085` revokes its write privileges, as
+ * `0059` did for `bms.point_keys`): the list is fleet-wide master data.
+ * Retire a value with `active = false`, never `DELETE` — `locations.type`
+ * references it, and a delete a location still references must fail loudly.
+ */
+export const locationTypes = bmsSchema.table("location_types", {
+  code: varchar("code", { length: 32 }).primaryKey(),
+  label: varchar("label", { length: 128 }).notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const locations = bmsSchema.table("locations", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id")
@@ -75,7 +96,11 @@ export const locations = bmsSchema.table("locations", {
   code: varchar("code", { length: 64 }).notNull(),
   slug: varchar("slug", { length: 64 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
-  type: varchar("type", { length: 32 }).notNull(),
+  // ADR 0077 / migration 0085: a foreign key to bms.location_types(code). The
+  // column stays varchar(32), unchanged shape — only the reference is new.
+  type: varchar("type", { length: 32 })
+    .notNull()
+    .references(() => locationTypes.code),
   province: varchar("province", { length: 64 }),
   capital: varchar("capital", { length: 128 }),
   latitude: doublePrecision("latitude").notNull(),
