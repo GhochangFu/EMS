@@ -28,6 +28,67 @@ type StaleDevice = {
   readonly lastSampleAt?: Date;
 };
 
+/** One bound point that has gone quiet on an otherwise-live RTU (`F4.58`). */
+type DarkPoint = {
+  readonly rtuCode: string;
+  readonly endpointKey: string;
+  readonly sourceKey: string;
+  readonly lastSampleAt?: Date;
+};
+
+/** At most this many `dark rtu=` lines render; the rest are summarised by
+ * `dark omitted=<k>`. The header's `dark=` stays the true total either way —
+ * an operator counting from the header must never be undercounting. */
+export const MAX_DARK_LINES = 50;
+
+/** Characters an identifier may print as-is: every real IMEI, `rtu_code`,
+ * `source_data_key` (`s12_r01`, `E71B/OB/RAW`, `computed:KWH`) and broker
+ * `host:port` in the seeds and `docs/ingest-host.md` fits inside it. */
+const UNSAFE_IDENTIFIER_CHAR = /[^A-Za-z0-9._:/-]/gu;
+const utf8 = new TextEncoder();
+
+/**
+ * One DB- or config-sourced identifier as a single, unambiguous body token.
+ *
+ * The F4.58 security review (finding L1): `source_data_key` and `rtu_code` are
+ * validated only for length, so a stored `x\ningest-host ok …` would forge a
+ * header, `stale` or `dark` record in this line-oriented body. Every character
+ * outside the safe set — `%` itself included — is percent-encoded as its UTF-8
+ * bytes, so the value stays on one line and in one field, and ordinary
+ * identifiers render byte-identical (AGENTS.md §4.3: "Never trust input", and
+ * "input" is not only HTTP — a stored row read back is input too). `TextEncoder`, not
+ * `encodeURIComponent`: that leaves `!'()*~` bare and throws on a lone
+ * surrogate, which would turn a bad key into a 500.
+ */
+export function token(value: string): string {
+  return value.replace(UNSAFE_IDENTIFIER_CHAR, (char) =>
+    Array.from(utf8.encode(char), (byte) => `%${byte.toString(16).toUpperCase().padStart(2, "0")}`).join(""),
+  );
+}
+
+/**
+ * Milliseconds a point or device has been silent, floored at `startedAt` —
+ * the one clock `stale` and `dark` both read, so their two verdicts and their
+ * two `silentFor=` durations can never disagree with each other.
+ */
+function silentSinceMs(lastSampleAt: Date | undefined, startedAt: Date, now: Date): number {
+  const since = Math.max(lastSampleAt?.getTime() ?? 0, startedAt.getTime());
+  return now.getTime() - since;
+}
+
+/** The `silentFor=<n>s` an operator reads, or `undefined` when there is
+ * nothing to measure from — same floor as `silentSinceMs`. */
+function silentForSeconds(
+  lastSampleAt: Date | undefined,
+  startedAt: Date,
+  now: Date,
+): number | undefined {
+  if (lastSampleAt === undefined) {
+    return undefined;
+  }
+  return Math.max(0, Math.round(silentSinceMs(lastSampleAt, startedAt, now) / 1000));
+}
+
 /**
  * Which bound RTUs have gone quiet (`F1.7`).
  *
@@ -49,11 +110,7 @@ function staleDevices(snapshot: HealthSnapshot, now: Date): readonly StaleDevice
     for (const device of endpoint.devices) {
       // The last moment we could plausibly have heard from this RTU: its own
       // sample, or the host coming up, whichever is later.
-      const since = Math.max(
-        device.lastSampleAt?.getTime() ?? 0,
-        snapshot.startedAt.getTime(),
-      );
-      const silentForMs = now.getTime() - since;
+      const silentForMs = silentSinceMs(device.lastSampleAt, snapshot.startedAt, now);
       if (silentForMs > snapshot.staleAfterMs) {
         stale.push({
           rtuCode: device.rtuCode,
@@ -67,6 +124,49 @@ function staleDevices(snapshot: HealthSnapshot, now: Date): readonly StaleDevice
 }
 
 /**
+ * Which bound points have gone quiet on an RTU that is not itself stale
+ * (`F4.58`).
+ *
+ * **A point on a stale RTU is neither listed nor counted here.** The `stale
+ * rtu=` line already says the whole device stopped talking; repeating every
+ * one of its bound keys as `dark` too would say the same fact twice under two
+ * names, and would drown the case this line exists for — a station that is
+ * genuinely still talking, just not about everything it is mapped to.
+ *
+ * Same clock as `stale`: `max(lastSampleAt, startedAt)`, strictly greater
+ * than the threshold, so a point publishing exactly on the boundary does not
+ * flap, and a point that has never once published is not falsely dark before
+ * the host has been up long enough to have heard it.
+ */
+function darkPoints(
+  snapshot: HealthSnapshot,
+  now: Date,
+  stale: readonly StaleDevice[],
+): readonly DarkPoint[] {
+  const staleDeviceIds = new Set(stale.map((s) => `${s.endpointKey}\u0000${s.rtuCode}`));
+  const dark: DarkPoint[] = [];
+  for (const endpoint of snapshot.endpoints) {
+    for (const device of endpoint.devices) {
+      if (staleDeviceIds.has(`${endpoint.endpointKey}\u0000${device.rtuCode}`)) {
+        continue;
+      }
+      for (const point of device.points) {
+        const silentForMs = silentSinceMs(point.lastSampleAt, snapshot.startedAt, now);
+        if (silentForMs > snapshot.staleAfterMs) {
+          dark.push({
+            rtuCode: device.rtuCode,
+            endpointKey: endpoint.endpointKey,
+            sourceKey: point.sourceKey,
+            ...(point.lastSampleAt === undefined ? {} : { lastSampleAt: point.lastSampleAt }),
+          });
+        }
+      }
+    }
+  }
+  return dark;
+}
+
+/**
  * Renders the plain-text body. Pure, so the output is assertable — including
  * the assertion that no credential can appear in it.
  */
@@ -75,6 +175,7 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
   const devices = snapshot.endpoints.reduce((n, e) => n + e.devices.length, 0);
   const unhealthy = snapshot.endpoints.filter((e) => e.state !== "connected");
   const stale = staleDevices(snapshot, now);
+  const dark = darkPoints(snapshot, now, stale);
   const buffered = snapshot.endpoints.reduce((n, e) => n + e.buffered, 0);
   // `buffered` cannot see the worst case: a batch that fails to write *and*
   // fails to spill leaves the gauge at 0 with the samples destroyed. `losing`
@@ -94,7 +195,7 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
         ? "ok"
         : "degraded"
     } ` +
-      `endpoints=${snapshot.endpoints.length} rtus=${devices} stale=${stale.length} ` +
+      `endpoints=${snapshot.endpoints.length} rtus=${devices} stale=${stale.length} dark=${dark.length} ` +
       // `notify=on` is a literal since ADR 0016 §6 commit 4 deleted the switch.
       // Kept for continuity — an operator or check matching on the token still
       // finds it — but it reports *intent*, not delivery, and would print `on`
@@ -120,9 +221,11 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
 
   for (const endpoint of snapshot.endpoints) {
     lines.push(
-      `endpoint protocol=${endpoint.protocol} key=${endpoint.endpointKey} ` +
+      `endpoint protocol=${endpoint.protocol} key=${token(endpoint.endpointKey)} ` +
         `state=${endpoint.state} writePath=${endpoint.writePath} ` +
-        `rtus=${endpoint.devices.map((d) => d.rtuCode).join("|")} ` +
+        // Each member is encoded before the join, so a `|` in one code cannot
+        // read as two members.
+        `rtus=${endpoint.devices.map((d) => token(d.rtuCode)).join("|")} ` +
         `restarts=${endpoint.restarts} pollFailures=${endpoint.consecutivePollFailures} ` +
         `queue=${endpoint.queueDepth} dropped=${endpoint.droppedSamples} ` +
         `written=${endpoint.samplesWritten} writeFailures=${endpoint.writeFailures} ` +
@@ -138,31 +241,42 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
     // The same clock the stale decision used — `max(lastSampleAt, startedAt)`.
     // Deriving this one from `lastSampleAt` alone would let the two disagree,
     // and a duration that contradicts the verdict beside it is worse than none.
-    const silentForSeconds =
-      device.lastSampleAt === undefined
-        ? undefined
-        : Math.max(
-            0,
-            Math.round(
-              (now.getTime() -
-                Math.max(device.lastSampleAt.getTime(), snapshot.startedAt.getTime())) /
-                1000,
-            ),
-          );
+    const staleSilentSeconds = silentForSeconds(device.lastSampleAt, snapshot.startedAt, now);
     lines.push(
-      `stale rtu=${device.rtuCode} endpoint=${device.endpointKey} ` +
+      `stale rtu=${token(device.rtuCode)} endpoint=${token(device.endpointKey)} ` +
         `lastSample=${device.lastSampleAt?.toISOString() ?? "never"}` +
-        (silentForSeconds === undefined ? "" : ` silentFor=${silentForSeconds}s`),
+        (staleSilentSeconds === undefined ? "" : ` silentFor=${staleSilentSeconds}s`),
     );
+  }
+
+  // One line per dark point, capped at `MAX_DARK_LINES` — an RTU with all 21
+  // bound keys dark must not push a genuinely broken host's health body past
+  // any reasonable size. The header's `dark=` above already carries the true
+  // total, so the cap costs nothing but detail past the first 50.
+  for (const point of dark.slice(0, MAX_DARK_LINES)) {
+    const silentSeconds = silentForSeconds(point.lastSampleAt, snapshot.startedAt, now);
+    lines.push(
+      `dark rtu=${token(point.rtuCode)} endpoint=${token(point.endpointKey)} key=${token(point.sourceKey)} ` +
+        `lastSample=${point.lastSampleAt?.toISOString() ?? "never"}` +
+        (silentSeconds === undefined ? "" : ` silentFor=${silentSeconds}s`),
+    );
+  }
+  if (dark.length > MAX_DARK_LINES) {
+    lines.push(`dark omitted=${dark.length - MAX_DARK_LINES}`);
   }
 
   // Skipped RTUs are reported, not hidden. A gateway that silently never
   // appears is the failure mode ADR 0016 §3 asks to be logged once per RTU —
   // this is where an operator sees it without reading the log.
+  //
+  // `reason` is a code literal and the `(no rtu_code)` fallback is ours, so
+  // neither is encoded. `detail` is: `unsupported-protocol` carries the raw
+  // `config_protocol` that just failed validation, and other reasons carry
+  // stored JSON key names or the endpoint key.
   for (const skip of snapshot.skipped) {
     lines.push(
-      `skipped rtu=${skip.rtuCode ?? "(no rtu_code)"} reason=${skip.reason}` +
-        (skip.detail === undefined ? "" : ` detail=${skip.detail}`),
+      `skipped rtu=${skip.rtuCode === null ? "(no rtu_code)" : token(skip.rtuCode)} reason=${skip.reason}` +
+        (skip.detail === undefined ? "" : ` detail=${token(skip.detail)}`),
     );
   }
 

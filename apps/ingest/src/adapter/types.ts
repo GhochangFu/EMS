@@ -29,7 +29,7 @@ import type {
  * ADR 0016 §2 and §5, which are contract terms and not guidelines.
  */
 
-/** Minimal logger the host binds to `{ rtuCode, protocol }`. Adapters must use only this. */
+/** Minimal logger the host binds to `{ endpointKey, protocol }`. Adapters must use only this. */
 export type AdapterLogger = {
   info(message: string, fields?: Record<string, unknown>): void;
   warn(message: string, fields?: Record<string, unknown>): void;

@@ -118,6 +118,28 @@ export type DeviceHealth = {
   readonly deviceKey: string;
   /** Absent means this RTU has produced nothing since the host started. */
   readonly lastSampleAt?: Date;
+  /**
+   * Every bound `sourceKey` of this RTU, in binding order (`F4.58`).
+   *
+   * Required, not optional: an optional field at this seam is invisible to tsc
+   * and to every fake, so a producer that forgot it would read as "no points"
+   * rather than failing to compile.
+   */
+  readonly points: readonly PointHealth[];
+};
+
+/**
+ * One bound point's own liveness (`F4.58`).
+ *
+ * An RTU's `lastSampleAt` cannot answer "is this point alive": a station that
+ * publishes five of its twenty-one bound keys refreshes it every minute while
+ * sixteen points stay dark for ever. Keyed on `sourceKey` because that is what
+ * `SourceSample` carries.
+ */
+export type PointHealth = {
+  readonly sourceKey: string;
+  /** Absent means this point has produced nothing live since the host started. */
+  readonly lastSampleAt?: Date;
 };
 
 /** Operator-facing state for one endpoint — what `F3.16` consumes. */
@@ -306,6 +328,25 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   );
   /** `deviceKey → the last time this RTU produced anything` (`F1.7`). */
   const lastSampleByDeviceKey = new Map<string, Date>();
+  /**
+   * `deviceKey → { sourceKey → position, last seen per position }` (`F4.58`),
+   * built once from the plan. `seen` is a fixed-length array the length of
+   * `binding.sourceKeys` (deduplicated in `bindings.ts`), so memory is bounded
+   * by the plan's point count and a sample for an unbound key is not recorded,
+   * for the same reason an unbound `deviceKey` is not.
+   */
+  const pointsByDevice = new Map(
+    plan.bindings.map(
+      (binding) =>
+        [
+          binding.deviceKey,
+          {
+            index: new Map(binding.sourceKeys.map((sourceKey, i) => [sourceKey, i] as const)),
+            seen: new Array<Date | undefined>(binding.sourceKeys.length).fill(undefined),
+          },
+        ] as const,
+    ),
+  );
   /** The endpoint's only binding, if it has exactly one — see `accept()`. */
   const soleDeviceKey = plan.bindings.length === 1 ? plan.bindings[0]?.deviceKey : undefined;
 
@@ -341,6 +382,23 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       // normaliser drops that sample too rather than guessing.
       if (deviceKey !== undefined && rtuCodeByDeviceKey.has(deviceKey)) {
         lastSampleByDeviceKey.set(deviceKey, now);
+        // Only the point this sample is for, and only if it is bound. This is
+        // the one stamp site: the replay loop hands its segments straight to
+        // `writeSamples` and never reaches here, so an hour-old reading
+        // written late does not make a dark point read as live.
+        // Two separate claims. "No unbound key adds an entry" is structural, and
+        // doubly unobservable: nothing here calls `index.set` or `seen.push` to
+        // grow the map, and even if it somehow grew, `health()` never iterates
+        // this map's own keys — it walks `binding.sourceKeys` by position, so an
+        // extra entry could not surface. No test can gate it. "This guard stamps
+        // no bound slot for an unbound key" is not structural, and IS gated:
+        // `supervisor.spec.ts` block 3 reddens if `i` falls back to a bound slot
+        // (e.g. `?? 0` on a miss).
+        const points = pointsByDevice.get(deviceKey);
+        const i = points?.index.get(sample.sourceKey);
+        if (points !== undefined && i !== undefined) {
+          points.seen[i] = now;
+        }
       }
     }
   }
@@ -857,10 +915,17 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // from health is indistinguishable from one that is fine.
         devices: plan.bindings.map((binding) => {
           const seen = lastSampleByDeviceKey.get(binding.deviceKey);
+          const pointSeen = pointsByDevice.get(binding.deviceKey)?.seen;
           return {
             rtuCode: binding.rtuCode,
             deviceKey: binding.deviceKey,
             ...(seen === undefined ? {} : { lastSampleAt: seen }),
+            // From the plan again, in binding order, so a point that has never
+            // published is listed rather than missing.
+            points: binding.sourceKeys.map((sourceKey, i) => {
+              const at = pointSeen?.[i];
+              return at === undefined ? { sourceKey } : { sourceKey, lastSampleAt: at };
+            }),
           };
         }),
         restarts,

@@ -10,7 +10,7 @@ import type {
 import type { EndpointPlan } from "./bindings.js";
 import type { DiskBufferHandle } from "./disk-buffer.js";
 import type { ReceivedSample } from "./received-sample.js";
-import { createSupervisor, type Scheduler } from "./supervisor.js";
+import { createSupervisor, type DeviceHealth, type Scheduler } from "./supervisor.js";
 
 /**
  * The harness below is exported for `supervisor-buffer.spec.ts`, which runs the
@@ -198,8 +198,8 @@ export function makePlan(): EndpointPlan {
     config: { host: "phe.thinkiot.co.in", port: 8883 },
     credentials: { username: "u", password: "p" },
     bindings: [
-      { rtuId: "id-1", rtuCode: "RTU-1", deviceKey: "RTU-1", device: {}, sourceKeys: ["flow"] },
-      { rtuId: "id-2", rtuCode: "RTU-2", deviceKey: "RTU-2", device: {}, sourceKeys: ["flow"] },
+      { rtuId: "id-1", rtuCode: "RTU-1", deviceKey: "RTU-1", device: {}, sourceKeys: ["flow", "press"] },
+      { rtuId: "id-2", rtuCode: "RTU-2", deviceKey: "RTU-2", device: {}, sourceKeys: ["flow", "press"] },
     ],
     pointIndex: new Map(),
   };
@@ -210,7 +210,7 @@ export function makeSoleDevicePlan(): EndpointPlan {
   return {
     ...makePlan(),
     bindings: [
-      { rtuId: "id-1", rtuCode: "RTU-1", deviceKey: "RTU-1", device: {}, sourceKeys: ["flow"] },
+      { rtuId: "id-1", rtuCode: "RTU-1", deviceKey: "RTU-1", device: {}, sourceKeys: ["flow", "press"] },
     ],
   };
 }
@@ -899,6 +899,89 @@ export async function runSupervisorTests(): Promise<void> {
       `start() must not open a second connection, got ${scripted.contexts.length}`,
     );
     await stopSupervisor(supervisor, fake);
+    await stopSupervisor(supervisor, fake);
+  }
+}
+
+/** A connected push supervisor on `plan` — the `F4.58` blocks' only setup. */
+async function connectedPush(plan: EndpointPlan, buffer = makeMemoryBuffer()) {
+  const scripted = makeScriptedAdapter("push");
+  const fake = makeFakeScheduler();
+  const supervisor = createSupervisor({
+    factory: makeFactory([scripted]), plan, logger: silentLogger, buffer,
+    scheduler: fake.scheduler, random: () => 0.5, writeSamples: async () => undefined,
+  });
+  supervisor.start();
+  await nextTick();
+  scripted.finishConnect();
+  await nextTick();
+  return { scripted, fake, supervisor };
+}
+
+/** One RTU's points as `key` or `key@seen` — `@` only when `lastSampleAt` is set. */
+function pointsOf(supervisor: { health(): { devices: readonly DeviceHealth[] } }, rtuCode: string): string {
+  const points = supervisor.health().devices.find((d) => d.rtuCode === rtuCode)?.points ?? [];
+  return points.map((p) => ("lastSampleAt" in p ? `${p.sourceKey}@seen` : p.sourceKey)).join(",");
+}
+
+/**
+ * `F4.58` (b): last-seen per bound point. A "not stamped" claim reads an absent
+ * `lastSampleAt`, beside a positive guard the sample reached `accept()`. Block 3
+ * gates "stamps no bound slot" for an unbound key; "adds no entry" is
+ * structural in `supervisor.ts` and cannot redden.
+ */
+export async function runPointLivenessTests(): Promise<void> {
+  {
+    const { fake, supervisor } = await connectedPush(makePlan());
+    const shape = JSON.stringify(supervisor.health().devices[0]?.points);
+    assert(shape === '[{"sourceKey":"flow"},{"sourceKey":"press"}]', `block 1: every bound point appears before any sample, got ${shape}`);
+    await stopSupervisor(supervisor, fake);
+  }
+  {
+    const { scripted, fake, supervisor } = await connectedPush(makePlan());
+    scripted.emit([{ sourceKey: "flow", value: 1, deviceKey: "RTU-1" }]);
+    await fake.flush();
+    const seen = `${pointsOf(supervisor, "RTU-1")}|${pointsOf(supervisor, "RTU-2")}`;
+    assert(seen === "flow@seen,press|flow,press", `block 2: only RTU-1.flow is stamped, got ${seen}`);
+    await stopSupervisor(supervisor, fake);
+  }
+  {
+    const { scripted, fake, supervisor } = await connectedPush(makePlan());
+    scripted.emit([{ sourceKey: "unbound", value: 1, deviceKey: "RTU-1" }]);
+    await fake.flush();
+    assert(supervisor.health().lastSampleAt !== undefined, "block 3: the unbound sample reached accept()");
+    const seen = pointsOf(supervisor, "RTU-1");
+    assert(seen === "flow,press", `block 3: an unbound sourceKey adds no point and stamps none, got ${seen}`);
+    await stopSupervisor(supervisor, fake);
+  }
+  {
+    const { scripted, fake, supervisor } = await connectedPush(makeSoleDevicePlan());
+    scripted.emit([{ sourceKey: "flow", value: 1 }]);
+    await fake.flush();
+    const seen = pointsOf(supervisor, "RTU-1");
+    assert(seen === "flow@seen,press", `block 4: no deviceKey on a sole-device endpoint stamps its binding, got ${seen}`);
+    await stopSupervisor(supervisor, fake);
+  }
+  {
+    const { scripted, fake, supervisor } = await connectedPush(makePlan());
+    scripted.emit([{ sourceKey: "flow", value: 1 }]);
+    await fake.flush();
+    assert(supervisor.health().lastSampleAt !== undefined, "block 5: the ambiguous sample reached accept()");
+    const seen = `${pointsOf(supervisor, "RTU-1")}|${pointsOf(supervisor, "RTU-2")}`;
+    assert(seen === "flow,press|flow,press", `block 5: no deviceKey on a multi-device endpoint stamps nothing, got ${seen}`);
+    await stopSupervisor(supervisor, fake);
+  }
+  {
+    // A replayed sample is an old reading written late, not a point seen now.
+    // `replayLoop` hands the segment to `writeSamples` and never calls `accept()`.
+    const buffer = makeMemoryBuffer();
+    const at = new Date("2026-08-05T11:00:00.000Z");
+    buffer.appended.push([{ sample: { sourceKey: "flow", value: 1, deviceKey: "RTU-1" }, receivedAt: at }]);
+    const { fake, supervisor } = await connectedPush(makePlan(), buffer);
+    for (let round = 0; round < 5 && supervisor.health().replayed === 0; round += 1) await fake.flush();
+    assert(supervisor.health().replayed === 1, `block 6: the buffered sample was replayed, got ${supervisor.health().replayed}`);
+    const seen = pointsOf(supervisor, "RTU-1");
+    assert(seen === "flow,press", `block 6: a replayed sample stamps no point, got ${seen}`);
     await stopSupervisor(supervisor, fake);
   }
 }

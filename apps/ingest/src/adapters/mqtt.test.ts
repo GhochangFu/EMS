@@ -5,6 +5,7 @@ import { lookupAdapter } from "../adapter/registry.js";
 import { mqttAdapterFactory } from "./mqtt.js";
 import {
   mqttContractFixtures,
+  runAbsentReadingTests,
   runMqttAdapterTests,
   runTopicAttributionTests,
 } from "./mqtt.spec.js";
@@ -35,5 +36,9 @@ describe("mqtt adapter", () => {
 
   it("refuses a payload claiming a device not bound to its topic", async () => {
     await runTopicAttributionTests();
+  });
+
+  it("reports bound keys published empty or never published (F4.58)", async () => {
+    await runAbsentReadingTests();
   });
 });

@@ -1,10 +1,15 @@
-import { renderHealth, type HealthSnapshot } from "./health-server.js";
-import type { DeviceHealth, SupervisorHealth } from "./supervisor.js";
+import { MAX_DARK_LINES, renderHealth, type HealthSnapshot } from "./health-server.js";
+import type { DeviceHealth, PointHealth, SupervisorHealth } from "./supervisor.js";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+/** Exact-token match: `dark=1` must not match inside `dark=10`–`dark=19`. */
+function hasToken(body: string, token: string): boolean {
+  return new RegExp(`(?:^|\\s)${token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\s|$)`).test(body);
 }
 
 const STARTED_AT = new Date("2026-08-05T12:00:00.000Z");
@@ -16,7 +21,12 @@ const FRESH = new Date("2026-08-05T12:05:00.000Z");
 const STALE_AFTER_MS = 300_000;
 
 function device(rtuCode: string, overrides: Partial<DeviceHealth> = {}): DeviceHealth {
-  return { rtuCode, deviceKey: rtuCode, lastSampleAt: FRESH, ...overrides };
+  return { rtuCode, deviceKey: rtuCode, lastSampleAt: FRESH, points: [], ...overrides };
+}
+
+/** A bound point, in binding order — mirrors `device()`'s shape. */
+function point(sourceKey: string, lastSampleAt?: Date): PointHealth {
+  return { sourceKey, ...(lastSampleAt === undefined ? {} : { lastSampleAt }) };
 }
 
 function endpoint(overrides: Partial<SupervisorHealth> = {}): SupervisorHealth {
@@ -528,4 +538,356 @@ export function runDeviceStalenessTests(): void {
       `only deliberately rendered fields may reach the body:\n${body}`,
     );
   }
+}
+
+/**
+ * Per-point liveness on the health body (`F4.58`).
+ *
+ * `stale` answers "did this RTU stop talking"; `dark` answers the question a
+ * silent-but-connected RTU cannot: "of what it still sends, what has it
+ * stopped sending". Same clock, same window, same boot grace as `stale` — Q3
+ * ruled `dark>0` does not itself degrade the verdict.
+ */
+export function runDarkPointTests(): void {
+  // ---- one dark point of two is named, the live one is not -----------------
+
+  {
+    const pressLastSample = new Date(NOW.getTime() - 301_000);
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [
+              device("RTU-1", { points: [point("flow", FRESH), point("press", pressLastSample)] }),
+            ],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(hasToken(body, "dark=1"), `the header must count the one dark point:\n${body}`);
+    assert(
+      body.includes(
+        `dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=press ` +
+          `lastSample=${pressLastSample.toISOString()} silentFor=301s`,
+      ),
+      `the dark point must be named with its own duration:\n${body}`,
+    );
+    assert(!body.includes("key=flow"), `the point still publishing must not be listed dark:\n${body}`);
+  }
+
+  // ---- a point that has never published renders `never` --------------------
+
+  {
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points: [point("flow")] })] })] }),
+      NOW,
+    );
+    assert(hasToken(body, "dark=1"), `a never-seen point still counts as dark:\n${body}`);
+    assert(
+      body.includes("dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=flow lastSample=never\n"),
+      `a point with no sample renders \`never\`, with no duration to append:\n${body}`,
+    );
+  }
+
+  // ---- exactly on the boundary is not dark ----------------------------------
+
+  {
+    const boundary = new Date(NOW.getTime() - STALE_AFTER_MS);
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [device("RTU-1", { points: [point("flow", FRESH), point("press", boundary)] })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(hasToken(body, "dark=0"), `publishing exactly at the boundary is not yet dark:\n${body}`);
+    assert(!body.includes("dark rtu="), `no dark line renders at the boundary:\n${body}`);
+  }
+
+  // ---- boot grace: a never-seen point is not dark before the window elapses -
+
+  {
+    const justStarted = new Date(STARTED_AT.getTime() + STALE_AFTER_MS - 1_000);
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points: [point("flow")] })] })] }),
+      justStarted,
+    );
+    assert(
+      hasToken(body, "dark=0"),
+      `a point cannot be dark before the host has been up long enough to hear it:\n${body}`,
+    );
+    assert(body.startsWith("ingest-host ok "), `a cold start is not degraded by its points:\n${body}`);
+  }
+
+  // ---- a point on a stale device is not also reported dark ------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [
+              device("RTU-1", { lastSampleAt: undefined, points: [point("flow"), point("press")] }),
+            ],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(hasToken(body, "stale=1"), `the silent RTU is still reported stale:\n${body}`);
+    assert(hasToken(body, "dark=0"), `its points are not double-counted as dark:\n${body}`);
+    assert(!body.includes("dark rtu="), `no dark line renders for a stale RTU's points:\n${body}`);
+  }
+
+  // ---- dark>0 does not itself degrade the verdict (Q3) -----------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({ devices: [device("RTU-1", { points: [point("press", new Date(NOW.getTime() - 301_000))] })] }),
+        ],
+      }),
+      NOW,
+    );
+    assert(hasToken(body, "dark=1"), `this case must actually have a dark point:\n${body}`);
+    assert(body.startsWith("ingest-host ok "), `dark>0 alone keeps the verdict ok:\n${body}`);
+  }
+
+  // ---- the cap: at most MAX_DARK_LINES lines, the rest summarised -----------
+
+  {
+    const total = MAX_DARK_LINES + 1;
+    const points: PointHealth[] = [];
+    for (let i = 0; i < total; i += 1) {
+      points.push(point(`p${i}`, new Date(NOW.getTime() - 301_000)));
+    }
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points })] })] }),
+      NOW,
+    );
+    const darkLineCount = body.split("\n").filter((line) => line.startsWith("dark rtu=")).length;
+    assert(darkLineCount === MAX_DARK_LINES, `at most ${MAX_DARK_LINES} dark lines render, got ${darkLineCount}:\n${body}`);
+    assert(hasToken(body, "dark omitted=1"), `the rest are summarised by one trailer:\n${body}`);
+    assert(hasToken(body, `dark=${total}`), `the header keeps the true total, uncapped:\n${body}`);
+  }
+
+  // ---- exactly MAX_DARK_LINES dark points: no trailer, all render -----------
+
+  {
+    const points: PointHealth[] = [];
+    for (let i = 0; i < MAX_DARK_LINES; i += 1) {
+      points.push(point(`p${i}`, new Date(NOW.getTime() - 301_000)));
+    }
+    const body = renderHealth(
+      snapshot({ endpoints: [endpoint({ devices: [device("RTU-1", { points })] })] }),
+      NOW,
+    );
+    assert(
+      hasToken(body, `dark=${MAX_DARK_LINES}`),
+      `the header must count exactly ${MAX_DARK_LINES}:\n${body}`,
+    );
+    const darkLineCount = body.split("\n").filter((line) => line.startsWith("dark rtu=")).length;
+    assert(
+      darkLineCount === MAX_DARK_LINES,
+      `exactly ${MAX_DARK_LINES} dark points must all render, got ${darkLineCount}:\n${body}`,
+    );
+    assert(
+      !body.includes("dark omitted"),
+      `the boundary case must not add a trailer — that is only for strictly more than the cap:\n${body}`,
+    );
+  }
+
+  // ---- the count spans endpoints ---------------------------------------------
+
+  {
+    const body = renderHealth(
+      snapshot({
+        endpoints: [
+          endpoint({
+            devices: [device("RTU-1", { points: [point("flow", new Date(NOW.getTime() - 301_000))] })],
+          }),
+          endpoint({
+            protocol: "modbus_tcp",
+            endpointKey: "10.0.0.5:502",
+            devices: [device("RTU-9", { points: [point("temp", new Date(NOW.getTime() - 301_000))] })],
+          }),
+        ],
+      }),
+      NOW,
+    );
+    assert(hasToken(body, "dark=2"), `the header sums dark points host-wide:\n${body}`);
+    assert(
+      body.includes("dark rtu=RTU-1 endpoint=phe.thinkiot.co.in:8883 key=flow") &&
+        body.includes("dark rtu=RTU-9 endpoint=10.0.0.5:502 key=temp"),
+      `each dark point names the endpoint it sits on:\n${body}`,
+    );
+  }
+}
+
+// ---- identifiers are percent-encoded outside a safe set (L1) ---------------
+//
+// The F4.58 security review (finding L1): `source_data_key` and `rtu_code` are
+// validated only for length, so an admin or an imported onboarding sheet could
+// store `x\ningest-host ok …` and forge a header, `stale` or `dark` line in a
+// line-oriented body. Each block below is one claim, with its own `it()`.
+
+/** The body split into records — the trailing newline is not a record. */
+function records(body: string): readonly string[] {
+  return body.slice(0, -1).split("\n");
+}
+
+/** One dark point on a live RTU, with the given key — never published. */
+function darkSnapshot(sourceKey: string): HealthSnapshot {
+  return snapshot({
+    endpoints: [endpoint({ devices: [device("RTU-9", { points: [point(sourceKey)] })] })],
+  });
+}
+
+/** (a) A dark key with `\r`, `\n`, a space, `=` and `%` stays one record. */
+export function runDarkKeyEscapeTests(): void {
+  const forged = "a b=c%\r\ndark rtu=FORGED";
+  const body = renderHealth(darkSnapshot(forged), NOW);
+  const darkLines = records(body).filter((l) => l.startsWith("dark rtu="));
+  assert(darkLines.length === 1, `exactly one dark record renders:\n${body}`);
+  assert(
+    darkLines[0] ===
+      "dark rtu=RTU-9 endpoint=phe.thinkiot.co.in:8883 key=a%20b%3Dc%25%0D%0Adark%20rtu%3DFORGED lastSample=never",
+    `the key is percent-encoded in place:\n${body}`,
+  );
+  assert(
+    records(body).length === records(renderHealth(darkSnapshot("plain"), NOW)).length,
+    `the forged key adds no record over a plain one:\n${body}`,
+  );
+  assert(!body.includes("\ndark rtu=FORGED"), `the forged text never starts a record:\n${body}`);
+}
+
+/** The RTU code on a `dark` record — a live RTU, so it is not `stale` — is encoded too. */
+export function runDarkRtuEscapeTests(): void {
+  const body = renderHealth(
+    snapshot({ endpoints: [endpoint({ devices: [device("D\nstale rtu=X", { points: [point("p")] })] })] }),
+    NOW,
+  );
+  assert(
+    records(body).includes("dark rtu=D%0Astale%20rtu%3DX endpoint=phe.thinkiot.co.in:8883 key=p lastSample=never"),
+    `the dark record's RTU code is percent-encoded in place:\n${body}`,
+  );
+  assert(!body.includes("\nstale rtu=X"), `the forged text never starts a record:\n${body}`);
+}
+
+/** (b) A stale RTU code with a newline stays one record, and forges no header. */
+export function runStaleRtuEscapeTests(): void {
+  const staleSnapshot = (rtuCode: string): HealthSnapshot =>
+    snapshot({ endpoints: [endpoint({ devices: [device(rtuCode, { lastSampleAt: undefined })] })] });
+  const body = renderHealth(staleSnapshot("R\ningest-host ok endpoints=9"), NOW);
+  const staleLines = records(body).filter((l) => l.startsWith("stale rtu="));
+  assert(staleLines.length === 1, `exactly one stale record renders:\n${body}`);
+  assert(
+    staleLines[0] === "stale rtu=R%0Aingest-host%20ok%20endpoints%3D9 endpoint=phe.thinkiot.co.in:8883 lastSample=never",
+    `the RTU code is percent-encoded in place:\n${body}`,
+  );
+  assert(
+    records(body).length === records(renderHealth(staleSnapshot("R"), NOW)).length,
+    `the forged code adds no record over a plain one:\n${body}`,
+  );
+  const headers = records(body).filter((l) => l.startsWith("ingest-host "));
+  assert(
+    headers.length === 1 && body.startsWith("ingest-host degraded "),
+    `the one header is the real, degraded one:\n${body}`,
+  );
+}
+
+/** (c) Ordinary identifiers — IMEIs, pilot keys, broker hosts — render byte-identical. */
+export function runPlainIdentifierTests(): void {
+  const body = renderHealth(
+    snapshot({
+      endpoints: [
+        endpoint({
+          devices: [
+            device("861736076128245", {
+              points: [point("s12_r01"), point("E71B/OB/RAW"), point("computed:KWH"), point("TX01_KW-2")],
+            }),
+          ],
+        }),
+      ],
+    }),
+    NOW,
+  );
+  for (const key of ["s12_r01", "E71B/OB/RAW", "computed:KWH", "TX01_KW-2"]) {
+    assert(
+      records(body).includes(
+        `dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=${key} lastSample=never`,
+      ),
+      `${key} renders unescaped:\n${body}`,
+    );
+  }
+  assert(hasToken(body, "rtus=861736076128245"), `the IMEI renders unescaped in rtus=:\n${body}`);
+}
+
+/** A `|` inside one RTU code cannot forge a second `rtus=` member. */
+export function runRtusMemberEscapeTests(): void {
+  const body = renderHealth(snapshot({ endpoints: [endpoint({ devices: [device("A|B"), device("C")] })] }), NOW);
+  assert(hasToken(body, "rtus=A%7CB|C"), `each member is encoded before the join:\n${body}`);
+  assert(!body.includes("rtus=A|B|C"), `the code does not read as two members:\n${body}`);
+}
+
+/** The endpoint key — DB `host:port` — is encoded on every line that prints it. */
+export function runEndpointKeyEscapeTests(): void {
+  const body = renderHealth(
+    snapshot({
+      endpoints: [
+        endpoint({
+          endpointKey: "h\nost:1",
+          devices: [device("RTU-1", { lastSampleAt: undefined }), device("RTU-2", { points: [point("p")] })],
+        }),
+      ],
+    }),
+    NOW,
+  );
+  assert(hasToken(body, "key=h%0Aost:1"), `the endpoint line encodes its key:\n${body}`);
+  assert(body.includes("stale rtu=RTU-1 endpoint=h%0Aost:1 "), `the stale line encodes the key:\n${body}`);
+  assert(body.includes("dark rtu=RTU-2 endpoint=h%0Aost:1 "), `the dark line encodes the key:\n${body}`);
+}
+
+/** A skipped RTU's code is encoded; the `(no rtu_code)` literal is not. */
+export function runSkippedRtuEscapeTests(): void {
+  const body = renderHealth(
+    snapshot({
+      skipped: [
+        { rtuId: "u1", rtuCode: "S\nstale rtu=X", reason: "no-mqtt-owned-points" },
+        { rtuId: "u2", rtuCode: null, reason: "missing-rtu-code" },
+      ],
+    }),
+    NOW,
+  );
+  assert(
+    records(body).includes("skipped rtu=S%0Astale%20rtu%3DX reason=no-mqtt-owned-points"),
+    `the skipped code is percent-encoded in place:\n${body}`,
+  );
+  assert(
+    records(body).includes("skipped rtu=(no rtu_code) reason=missing-rtu-code"),
+    `the fallback literal renders as written:\n${body}`,
+  );
+}
+
+/** A skip's `detail` — the raw `config_protocol` on `unsupported-protocol` — is encoded. */
+export function runSkippedDetailEscapeTests(): void {
+  const body = renderHealth(
+    snapshot({
+      skipped: [{ rtuId: "u1", rtuCode: "RTU-7", reason: "unsupported-protocol", detail: "x\ningest-host ok" }],
+    }),
+    NOW,
+  );
+  assert(
+    records(body).includes("skipped rtu=RTU-7 reason=unsupported-protocol detail=x%0Aingest-host%20ok"),
+    `the detail is percent-encoded in place:\n${body}`,
+  );
+  assert(
+    records(body).filter((l) => l.startsWith("ingest-host ")).length === 1,
+    `the detail forges no header:\n${body}`,
+  );
 }

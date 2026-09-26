@@ -1,5 +1,6 @@
 import type { SourceSample } from "@bms/shared/ingest";
 
+import type { AdapterContext } from "../adapter/types.js";
 import type {
   AdapterContractFixtures,
   AdapterUnderTest,
@@ -181,7 +182,7 @@ export async function runMqttAdapterTests(): Promise<void> {
     );
     assert(parsed.values.rssi === "29", "a reading published beside `values` is reachable");
     assert(parsed.values.s09_r01 === "10.81", "nested readings still arrive");
-    const samples = samplesFromPayload(parsed, ["rssi", "s09_r01"]);
+    const { samples } = samplesFromPayload(parsed, ["rssi", "s09_r01"]);
     assert(samples.length === 2, "both layers reach samplesFromPayload");
     assert(
       samples.find((s) => s.sourceKey === "rssi")?.value === 29,
@@ -202,7 +203,7 @@ export async function runMqttAdapterTests(): Promise<void> {
     assert(parsed.values.ts === undefined, "`ts` is the sample time, never a reading");
     assert(parsed.values.dev_id === undefined, "`dev_id` routes the sample, never a reading");
     assert(
-      samplesFromPayload(parsed, ["ts", "dev_id"]).length === 0,
+      samplesFromPayload(parsed, ["ts", "dev_id"]).samples.length === 0,
       "no envelope field can be mapped into telemetry",
     );
     // The exclusion must not cost the timestamp itself.
@@ -222,7 +223,7 @@ export async function runMqttAdapterTests(): Promise<void> {
   // ---- value guards, verbatim from index.js -------------------------------
 
   {
-    const samples = samplesFromPayload(
+    const { samples } = samplesFromPayload(
       {
         devId: "RTU-1",
         values: { flow: 1.5, empty: "", nul: null, undef: undefined, text: "abc", zero: 0, numeric: "7.25" },
@@ -245,7 +246,7 @@ export async function runMqttAdapterTests(): Promise<void> {
   {
     // Scoped to the binding's sourceKeys: the row count matches index.js, which
     // iterates the mapping rather than the payload.
-    const samples = samplesFromPayload(
+    const { samples } = samplesFromPayload(
       { devId: "RTU-1", values: { flow: 1, unmapped: 2 } },
       ["flow"],
     );
@@ -635,6 +636,233 @@ export async function runTopicAttributionTests(): Promise<void> {
     assert(
       warnings.length === before,
       "a device bound nowhere is ordinary on a shared topic and must not warn",
+    );
+
+    await adapter.disconnect();
+  }
+
+  // ---- F4.58 block 7: a refused payload reports no absent readings --------
+
+  {
+    // The absent-reading line speaks for a station, so it may only follow the
+    // topic guard. A payload refused for attribution carries an absent bound key
+    // (`values: {}` against `["flow"]`) so that a warn placed above the guard
+    // would have something to report.
+    const { broker, adapter, warnings } = await connectWithWarnings([
+      { rtuId: "id-a", rtuCode: "RTU-A", deviceKey: "RTU-A", device: { topic: "a/b/A" }, sourceKeys: ["flow"] },
+      { rtuId: "id-b", rtuCode: "RTU-B", deviceKey: "RTU-B", device: { topic: "a/b/B" }, sourceKeys: ["flow"] },
+    ]);
+    await adapter.subscribe(() => undefined);
+
+    broker.fireMessage("a/b/A", JSON.stringify({ dev_id: "RTU-B", values: {} }));
+    assert(
+      warnings.some((w) => w.message === "mqtt payload rejected: device is not bound to this topic"),
+      `block 7: the attribution refusal must still be logged, got ${JSON.stringify(warnings)}`,
+    );
+    assert(
+      !warnings.some((w) => w.message === "readings absent"),
+      `block 7: a payload refused for its topic must not log "readings absent", got ${JSON.stringify(warnings)}`,
+    );
+
+    await adapter.disconnect();
+  }
+}
+
+type CapturedWarning = { message: string; fields: Record<string, unknown> };
+
+/** A connected adapter on a fake broker whose `warn` lines are captured. */
+async function connectWithWarnings(
+  bindings: AdapterContext<MqttConfig, MqttDevice>["bindings"],
+): Promise<{
+  broker: FakeBroker;
+  adapter: ReturnType<typeof createMqttAdapter>;
+  warnings: CapturedWarning[];
+}> {
+  const broker = makeFakeBroker();
+  const adapter = createMqttAdapter(broker.transport);
+  const warnings: CapturedWarning[] = [];
+  const connecting = adapter.connect({
+    protocol: "mqtt",
+    endpointKey: "phe.thinkiot.co.in:8883",
+    config: { host: "phe.thinkiot.co.in", port: 8883, rejectUnauthorized: true },
+    credentials: {},
+    bindings,
+    logger: {
+      info: () => undefined,
+      warn: (message, fields) => warnings.push({ message, fields: fields ?? {} }),
+      error: () => undefined,
+    },
+    signal: new AbortController().signal,
+  });
+  broker.fireConnect();
+  await connecting;
+  return { broker, adapter, warnings };
+}
+
+function absentLines(warnings: readonly CapturedWarning[]): CapturedWarning[] {
+  return warnings.filter((w) => w.message === "readings absent");
+}
+
+/**
+ * F4.58 (a): a bound key that yields no reading is reported, not dropped
+ * silently (ADR 0016 §5 rules 7 and 9).
+ *
+ * Mirrors the F1.7 fleet probe: Salkumarhat I/II bind 21 keys and publish 16 of
+ * them as `""` (`docs/f1.7-fleet-probe.md`). One line per message per station,
+ * counts plus the first key of each kind; ids and counts only, never a value.
+ */
+export async function runAbsentReadingTests(): Promise<void> {
+  // ---- block 1: the classification ----------------------------------------
+
+  {
+    const { samples, absent } = samplesFromPayload(
+      { devId: "RTU-1", values: { flow: 1.5, empty: "", nul: null, text: "abc", zero: 0 } },
+      ["flow", "empty", "nul", "text", "zero", "absent"],
+    );
+    assert(
+      JSON.stringify(samples.map((s) => s.sourceKey)) === JSON.stringify(["flow", "zero"]),
+      `block 1: only flow and zero are readings, got ${JSON.stringify(samples)}`,
+    );
+    assert(
+      JSON.stringify(absent.missing) === JSON.stringify(["absent"]),
+      `block 1: a key the payload never carried is missing, got ${JSON.stringify(absent)}`,
+    );
+    assert(
+      JSON.stringify(absent.empty) === JSON.stringify(["empty", "nul", "text"]),
+      `block 1: "", null and a non-numeric value are empty, got ${JSON.stringify(absent)}`,
+    );
+  }
+
+  // ---- block 2: undefined is missing --------------------------------------
+
+  {
+    const { absent } = samplesFromPayload(
+      { devId: "RTU-1", values: { undef: undefined } },
+      ["undef"],
+    );
+    assert(
+      JSON.stringify(absent) === JSON.stringify({ empty: [], missing: ["undef"] }),
+      `block 2: an undefined value classifies as missing, got ${JSON.stringify(absent)}`,
+    );
+  }
+
+  // ---- block 3: binding order, not payload order --------------------------
+
+  {
+    const { absent } = samplesFromPayload(
+      { devId: "RTU-1", values: { b: "", a: null, d: "x", c: 1 } },
+      ["d", "e", "a", "c", "f", "b"],
+    );
+    assert(
+      JSON.stringify(absent) === JSON.stringify({ empty: ["d", "a", "b"], missing: ["e", "f"] }),
+      `block 3: absent keys follow the binding's sourceKeys order, got ${JSON.stringify(absent)}`,
+    );
+  }
+
+  // ---- block 4: the Salkumarhat shape -------------------------------------
+
+  {
+    const keys = Array.from({ length: 21 }, (_, i) => `s${String(i + 1).padStart(2, "0")}_r01`);
+    const values: Record<string, unknown> = {};
+    keys.forEach((key, i) => {
+      values[key] = i < 16 ? "" : String(i);
+    });
+    const { broker, adapter, warnings } = await connectWithWarnings([
+      { rtuId: "id-s", rtuCode: "PHE-SALK-1", deviceKey: "861736076100001", device: { topic: "t/s" }, sourceKeys: keys },
+    ]);
+    const received: SourceSample[] = [];
+    await adapter.subscribe((samples) => received.push(...samples));
+
+    broker.fireMessage("t/s", JSON.stringify({ dev_id: "861736076100001", values }));
+    const lines = absentLines(warnings);
+    assert(lines.length === 1, `block 4: one "readings absent" line per message, got ${JSON.stringify(warnings)}`);
+    const expected = {
+      rtuCode: "PHE-SALK-1",
+      deviceKey: "861736076100001",
+      empty: 16,
+      missing: 0,
+      firstEmpty: "s01_r01",
+    };
+    assert(
+      JSON.stringify(lines[0].fields) === JSON.stringify(expected),
+      `block 4: the line carries rtuCode, deviceKey, counts and firstEmpty, got ${JSON.stringify(lines[0].fields)}`,
+    );
+    assert(!("firstMissing" in lines[0].fields), "block 4: firstMissing is omitted when missing is 0");
+    assert(received.length === 5, `block 4: the 5 present readings still reach the sink, got ${received.length}`);
+
+    await adapter.disconnect();
+  }
+
+  // ---- block 5: nothing absent, nothing logged ----------------------------
+
+  {
+    const { broker, adapter, warnings } = await connectWithWarnings([
+      { rtuId: "id-1", rtuCode: "RTU-1", deviceKey: "RTU-1", device: { topic: "t/1" }, sourceKeys: ["flow", "press"] },
+    ]);
+    const received: SourceSample[] = [];
+    await adapter.subscribe((samples) => received.push(...samples));
+
+    broker.fireMessage("t/1", JSON.stringify({ dev_id: "RTU-1", values: { flow: 1, press: 0 } }));
+    assert(received.length === 2, `block 5: both readings are delivered, got ${received.length}`);
+    assert(
+      absentLines(warnings).length === 0,
+      `block 5: every bound key present must log no "readings absent" line, got ${JSON.stringify(warnings)}`,
+    );
+
+    await adapter.disconnect();
+  }
+
+  // ---- block 6: everything absent -----------------------------------------
+
+  {
+    const { broker, adapter, warnings } = await connectWithWarnings([
+      { rtuId: "id-1", rtuCode: "RTU-1", deviceKey: "RTU-1", device: { topic: "t/1" }, sourceKeys: ["flow", "press"] },
+    ]);
+    const received: SourceSample[] = [];
+    await adapter.subscribe((samples) => received.push(...samples));
+
+    broker.fireMessage("t/1", JSON.stringify({ dev_id: "RTU-1", values: { flow: "" } }));
+    const lines = absentLines(warnings);
+    assert(
+      lines.length === 1 &&
+        lines[0].fields.empty === 1 &&
+        lines[0].fields.missing === 1 &&
+        lines[0].fields.firstEmpty === "flow" &&
+        lines[0].fields.firstMissing === "press",
+      `block 6: an all-absent message still logs its line, got ${JSON.stringify(warnings)}`,
+    );
+    assert(received.length === 0, `block 6: nothing is emitted, got ${received.length}`);
+    assert(
+      adapter.health().lastSampleAt === undefined,
+      "block 6: an all-absent message must not refresh lastSampleAt",
+    );
+
+    await adapter.disconnect();
+  }
+
+  // ---- block 8: ids and counts only, never a value (§9.6) -----------------
+
+  {
+    const { broker, adapter, warnings } = await connectWithWarnings([
+      { rtuId: "id-1", rtuCode: "RTU-1", deviceKey: "RTU-1", device: { topic: "t/1" }, sourceKeys: ["flow", "label", "gone"] },
+    ]);
+    await adapter.subscribe(() => undefined);
+
+    broker.fireMessage(
+      "t/1",
+      JSON.stringify({ dev_id: "RTU-1", values: { flow: 4242.125, label: "SENTINEL-VALUE" } }),
+    );
+    const lines = absentLines(warnings);
+    assert(lines.length === 1, `block 8: the line is logged, got ${JSON.stringify(warnings)}`);
+    const serialised = JSON.stringify(lines[0]);
+    assert(
+      !serialised.includes("SENTINEL-VALUE") && !serialised.includes("4242"),
+      `block 8: the line must never carry a reading value (AGENTS.md §9.6), got ${serialised}`,
+    );
+    assert(
+      JSON.stringify(Object.keys(lines[0].fields).sort()) ===
+        JSON.stringify(["deviceKey", "empty", "firstEmpty", "firstMissing", "missing", "rtuCode"]),
+      `block 8: the line carries ids and counts only, got ${serialised}`,
     );
 
     await adapter.disconnect();
