@@ -18,19 +18,12 @@ import { WorkOrdersPage } from "./pages/work-orders-page";
 import { MaintenanceSchedulesPage } from "./pages/maintenance-schedules-page";
 import { RulesPage } from "./pages/rules-page";
 import { ReportsPage } from "./pages/reports-page";
-import { ControlRoomOverviewPage } from "./pages/control-room-overview-page";
-import { ControlRoomSldPage } from "./pages/control-room-sld-page";
-import { ControlRoomItPage } from "./pages/control-room-it-page";
-import { ControlRoomUpsPage } from "./pages/control-room-ups-page";
-import { ControlRoomBatteryPage } from "./pages/control-room-battery-page";
-import { ControlRoomHvacPage } from "./pages/control-room-hvac-page";
-import { ControlRoomEnvPage } from "./pages/control-room-env-page";
 import { ControlRoomOrganizationsPage } from "./pages/control-room/organizations-page";
 import { ControlRoomOrganizationPage } from "./pages/control-room/organization-page";
 import { ControlRoomSitePage } from "./pages/control-room/site-page";
 import { AdminRoute } from "./components/admin-route";
-import { ControlRoomRoute } from "./components/control-room-route";
 import { ControlRoomScopeRoute } from "./components/control-room-scope-route";
+import { SmocLegacyRedirect } from "./components/smoc-legacy-redirect";
 import { DashboardAuthorRoute } from "./components/dashboard-author-route";
 import { AdminHubPage } from "./pages/admin/admin-hub-page";
 import { AssetPointsAdminPage } from "./pages/admin/asset-points-page";
@@ -298,8 +291,11 @@ export function App() {
         }
       />
       {/* `F3.66` — the Control Room shell's three levels; `ControlRoomScopeRoute`
-          (D3) is the access guard, not `ControlRoomRoute`, which stays on the
-          `/cr-*` routes below until `F3.70`. */}
+          (D3) is the access guard. `F3.70` — the site route takes an optional
+          `:tab` segment (the seven SMOC tabs, D2), and the seven legacy
+          `/cr-*` routes redirect into it through `SmocLegacyRedirect` (D6),
+          behind the same guard. `tests/f3.70-smoc-site-view.test.ts` keeps
+          that shape. */}
       <Route
         path="/control-room"
         element={
@@ -325,7 +321,7 @@ export function App() {
         }
       />
       <Route
-        path="/control-room/site/:locationId"
+        path="/control-room/site/:locationId/:tab?"
         element={
           accessToken && user ? (
             <ControlRoomScopeRoute>
@@ -340,9 +336,9 @@ export function App() {
         path="/cr-overview"
         element={
           accessToken && user ? (
-            <ControlRoomRoute>
-              <ControlRoomOverviewPage user={user} />
-            </ControlRoomRoute>
+            <ControlRoomScopeRoute>
+              <SmocLegacyRedirect tab="overview" />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -352,9 +348,9 @@ export function App() {
         path="/cr-sld"
         element={
           accessToken && user ? (
-            <ControlRoomRoute>
-              <ControlRoomSldPage user={user} />
-            </ControlRoomRoute>
+            <ControlRoomScopeRoute>
+              <SmocLegacyRedirect tab="sld" />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -364,9 +360,9 @@ export function App() {
         path="/cr-it"
         element={
           accessToken && user ? (
-            <ControlRoomRoute>
-              <ControlRoomItPage user={user} />
-            </ControlRoomRoute>
+            <ControlRoomScopeRoute>
+              <SmocLegacyRedirect tab="it" />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -376,9 +372,9 @@ export function App() {
         path="/cr-ups"
         element={
           accessToken && user ? (
-            <ControlRoomRoute>
-              <ControlRoomUpsPage user={user} />
-            </ControlRoomRoute>
+            <ControlRoomScopeRoute>
+              <SmocLegacyRedirect tab="ups" />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -388,9 +384,9 @@ export function App() {
         path="/cr-battery"
         element={
           accessToken && user ? (
-            <ControlRoomRoute>
-              <ControlRoomBatteryPage user={user} />
-            </ControlRoomRoute>
+            <ControlRoomScopeRoute>
+              <SmocLegacyRedirect tab="battery" />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -400,9 +396,9 @@ export function App() {
         path="/cr-hvac"
         element={
           accessToken && user ? (
-            <ControlRoomRoute>
-              <ControlRoomHvacPage user={user} />
-            </ControlRoomRoute>
+            <ControlRoomScopeRoute>
+              <SmocLegacyRedirect tab="hvac" />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )
@@ -770,9 +766,9 @@ export function App() {
         path="/cr-env"
         element={
           accessToken && user ? (
-            <ControlRoomRoute>
-              <ControlRoomEnvPage user={user} />
-            </ControlRoomRoute>
+            <ControlRoomScopeRoute>
+              <SmocLegacyRedirect tab="env" />
+            </ControlRoomScopeRoute>
           ) : (
             <Navigate to="/login" replace />
           )
