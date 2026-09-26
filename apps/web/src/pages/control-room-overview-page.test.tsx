@@ -52,8 +52,6 @@ import {
   q1OpenFullSldTargetsTheSldTab,
   q2QuickDrilldownHvacTargetsTheHvacTab,
   q3NoLinkTargetsALegacyPath,
-  legacyEntryOpenFullSldKeepsTheLegacyPath,
-  legacyEntryQuickDrilldownKeepsTheLegacyPath,
 } from "./control-room-overview-page.spec";
 
 /**
@@ -265,13 +263,5 @@ describe("F3.28 characterization of /cr-overview", () => {
 
   it("F3.70 Q3: no link targets a /cr-* path under the site route", () => {
     q3NoLinkTargetsALegacyPath();
-  });
-
-  it("F3.70 interim: at /cr-overview Open Full SLD keeps /cr-sld", () => {
-    legacyEntryOpenFullSldKeepsTheLegacyPath();
-  });
-
-  it("F3.70 interim: at /cr-overview Quick Drilldown HVAC System keeps /cr-hvac", () => {
-    legacyEntryQuickDrilldownKeepsTheLegacyPath();
   });
 });

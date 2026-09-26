@@ -45,8 +45,6 @@ import { ControlRoomOverviewContent } from "./control-room-overview-page";
  * **`F3.70` U3.** The spec renders `ControlRoomOverviewContent` alone, under
  * the site route `/control-room/site/:locationId/:tab?` it is hosted by from
  * `F3.70` on — no `AppShell`, so no shell read reaches the network (F4.160).
- * The `legacy` entry renders it at `/cr-overview`, where the router has no
- * `locationId`, for the interim fallback that lives until U5a.
  */
 
 const NOW = Date.parse("2026-09-24T10:00:00.000Z");
@@ -308,8 +306,6 @@ type Setup = {
   assetsStatus?: "pending" | "success" | "error";
   /** Prior values by encoded point ref (`F3.28` task 2.7); none by default. */
   priors?: Record<string, number | null>;
-  /** `F3.70` U3 — `site` (default) or `legacy` (`/cr-overview`, no `locationId`). */
-  entry?: "site" | "legacy";
 };
 
 /** The site id the harness routes to (`F3.70` U3). */
@@ -321,7 +317,6 @@ function renderPage({
   scope = GLOBAL_SCOPE,
   assetsStatus = "success",
   priors = {},
-  entry = "site",
 }: Setup = {}): void {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(NOW);
@@ -353,12 +348,9 @@ function renderPage({
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter
-        initialEntries={[entry === "site" ? `/control-room/site/${SITE_ID}/overview` : "/cr-overview"]}
-      >
+      <MemoryRouter initialEntries={[`/control-room/site/${SITE_ID}/overview`]}>
         <Routes>
           <Route path="/control-room/site/:locationId/:tab?" element={<ControlRoomOverviewContent />} />
-          <Route path="/cr-overview" element={<ControlRoomOverviewContent />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -980,19 +972,4 @@ export function q3NoLinkTargetsALegacyPath(): void {
   expect(screen.getByRole("link", { name: "Open Full SLD" })).toBeInTheDocument();
   const legacy = Array.from(document.body.querySelectorAll('a[href^="/cr-"]'), (a) => a.getAttribute("href"));
   expect(legacy).toEqual([]);
-}
-
-/**
- * `F3.70` U3 interim — at `/cr-overview` the router has no `locationId`, so
- * the links keep `/cr-*` rather than `/control-room/site//…`. Dead from U5a;
- * U5b removes these two cases with the fallback.
- */
-export function legacyEntryOpenFullSldKeepsTheLegacyPath(): void {
-  renderPage({ entry: "legacy" });
-  expect(screen.getByRole("link", { name: "Open Full SLD" })).toHaveAttribute("href", "/cr-sld");
-}
-
-export function legacyEntryQuickDrilldownKeepsTheLegacyPath(): void {
-  renderPage({ entry: "legacy" });
-  expect(drilldownLink("HVAC System")).toHaveAttribute("href", "/cr-hvac");
 }

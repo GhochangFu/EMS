@@ -6,20 +6,14 @@ import {
   BreakerTable,
   type BreakerVisualStatus,
 } from "../components/control-room/breaker-table";
-import {
-  CR_BREAKERS,
-  CR_POINT_KEYS,
-  CR_TRACKED_ASSET_CODES,
-} from "../components/live-svg/control-room-bindings";
+import { CR_BREAKERS } from "../components/live-svg/control-room-bindings";
 import {
   type SchematicTelemetrySlice,
-  SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
 import { PageHeader } from "../components/page-header";
 import { StaticTspan } from "../components/static-value";
 import { StatusPill } from "../components/status-pill";
-import { AppShell } from "../layouts/app-shell";
 import { type BreakerRowState, breakerTableRow } from "../lib/breaker-table-rows";
 import {
   freshValue,
@@ -27,11 +21,8 @@ import {
   isStale,
   STALE_VALUE,
 } from "../lib/schematic-telemetry";
-import type { AuthUser } from "../stores/auth-store";
 
-type ControlRoomSldPageProps = {
-  user: AuthUser;
-};
+/** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 
 function n(value: number | null, digits = 1): string {
   return value == null || Number.isNaN(value) ? "—" : value.toFixed(digits);
@@ -522,21 +513,5 @@ function SldBreakerTable({ rules }: { rules: RuleListItem[] }) {
       </div>
       <BreakerTable rows={rows} />
     </section>
-  );
-}
-
-export function ControlRoomSldPage({ user }: ControlRoomSldPageProps) {
-  return (
-    <AppShell
-      user={user}
-      kpiRibbon={<span className="text-bms-ink">IBMS Control Room · Electrical SLD</span>}
-    >
-      <SchematicTelemetryProvider
-        assetCodes={CR_TRACKED_ASSET_CODES}
-        pointKeys={CR_POINT_KEYS}
-      >
-        <ControlRoomSldContent />
-      </SchematicTelemetryProvider>
-    </AppShell>
   );
 }

@@ -4,27 +4,18 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchRules } from "../api/rules";
 import { KpiTile } from "../components/kpi-tile";
 import {
-  CR_POINT_KEYS,
-  CR_TRACKED_ASSET_CODES,
-} from "../components/live-svg/control-room-bindings";
-import {
   type SchematicTelemetrySlice,
-  SchematicTelemetryProvider,
   useSchematicTelemetryByCode,
 } from "../components/live-svg/schematic-telemetry-context";
 import { DisabledCommandButton } from "../components/disabled-command-button";
 import { PageHeader } from "../components/page-header";
-import { AppShell } from "../layouts/app-shell";
 import {
   freshValue,
   isStale,
   STALE_VALUE,
 } from "../lib/schematic-telemetry";
-import type { AuthUser } from "../stores/auth-store";
 
-type ControlRoomEnvPageProps = {
-  user: AuthUser;
-};
+/** `F3.70` — this file exports the tab content `SmocSiteView` hosts since the SMOC site view. */
 
 type EnvStatus = "normal" | "warning" | "critical" | "offline";
 
@@ -550,21 +541,5 @@ function FloorPlan({
         );
       })}
     </svg>
-  );
-}
-
-export function ControlRoomEnvPage({ user }: ControlRoomEnvPageProps) {
-  return (
-    <AppShell
-      user={user}
-      kpiRibbon={<span className="text-bms-ink">IBMS Control Room · Environment</span>}
-    >
-      <SchematicTelemetryProvider
-        assetCodes={CR_TRACKED_ASSET_CODES}
-        pointKeys={CR_POINT_KEYS}
-      >
-        <ControlRoomEnvContent />
-      </SchematicTelemetryProvider>
-    </AppShell>
   );
 }

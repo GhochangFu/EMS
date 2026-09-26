@@ -33,8 +33,9 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-bms-green hover:
  * the scope — shows the not-available card and never an interim body (D6).
  * The page decides from the data, not the status: a background refetch that
  * fails after an answer (a window refocus during an API restart) sets
- * `isError` with `data` kept, and keeps the body. `useControlRoomAccess` is not consulted
- * (D8): `ControlRoomRoute` still guards each `/cr-*` page.
+ * `isError` with `data` kept, and keeps the body. The `F4.156` interim route
+ * guard is removed as of `F3.70` U5b; the seven `/cr-*` routes now redirect
+ * through `SmocLegacyRedirect`.
  *
  * `F3.70` D5 (OQ5): the optional `:tab` segment names a SMOC tab. Once both
  * reads have data, a tab segment on a site whose view is not `builtin`, or

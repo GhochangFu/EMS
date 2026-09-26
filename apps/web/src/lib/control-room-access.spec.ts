@@ -1,4 +1,6 @@
-import { hasAnyControlRoomAsset } from "./control-room-access";
+import type { AccessibleScope } from "@bms/shared";
+
+import { canAccessControlRoomArea } from "./control-room-access";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -6,31 +8,73 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-const TRACKED = ["CR-Q1", "CR-HVAC-1"] as const;
+const LOCATION_SCOPE: AccessibleScope = {
+  kind: "location",
+  locations: [],
+  assetGroups: [],
+  assetIds: [],
+};
+const ELECTRICAL_ONLY_SCOPE: AccessibleScope = {
+  kind: "asset_group",
+  locations: [],
+  assetGroups: [
+    { id: "ag-1", locationId: "loc-1", code: "electrical", name: "Electrical", organizationId: "org-1" },
+  ],
+  assetIds: [],
+};
+const NONE_SCOPE: AccessibleScope = {
+  kind: "none",
+  locations: [],
+  assetGroups: [],
+  assetIds: [],
+};
+
+/** U5b A1 — a non-`asset_group` scope (`location`) grants every area. */
+export function runA1LocationScopeGrantsEveryAreaTests(): void {
+  assert(
+    canAccessControlRoomArea(LOCATION_SCOPE, "overview") === true,
+    "location scope grants overview",
+  );
+  assert(
+    canAccessControlRoomArea(LOCATION_SCOPE, "hvac") === true,
+    "location scope grants hvac",
+  );
+}
 
 /**
- * `F4.156` L1 — one tracked row among untracked ones is enough. The predicate
- * asks "can the caller read *any* Control Room asset", not "all of them": a
- * scoped Eskom user reads a subset of the 43 `CR-*` rows and must still see
- * the group.
+ * U5b A2 — an `asset_group` scope holding only `electrical` grants
+ * `upsBattery` (electrical covers the UPS/battery area) but not `hvac`.
  */
-export function runTrueWhenOneRowCodeIsTrackedTests(): void {
+export function runA2ElectricalOnlyGrantsUpsBatteryNotHvacTests(): void {
   assert(
-    hasAnyControlRoomAsset([{ code: "FEED-PUMP-2" }, { code: "CR-Q1" }], TRACKED) === true,
-    "one tracked code among untracked rows grants the Control Room",
+    canAccessControlRoomArea(ELECTRICAL_ONLY_SCOPE, "upsBattery") === true,
+    "electrical-only scope grants upsBattery",
+  );
+  assert(
+    canAccessControlRoomArea(ELECTRICAL_ONLY_SCOPE, "hvac") === false,
+    "electrical-only scope denies hvac",
   );
 }
 
-/** `F4.156` L2 — the defect: a PHE caller reads only PHE rows. */
-export function runFalseWhenNoRowCodeIsTrackedTests(): void {
+/** U5b A3 — a `none` scope denies even `overview`. */
+export function runA3NoneScopeDeniesOverviewTests(): void {
   assert(
-    hasAnyControlRoomAsset([{ code: "FEED-PUMP-2" }], TRACKED) === false,
-    "no tracked code denies the Control Room",
+    canAccessControlRoomArea(NONE_SCOPE, "overview") === false,
+    "none scope denies overview",
   );
 }
 
-/** `F4.156` L3 — no data is not access: an unresolved or empty read denies. */
-export function runFalseForUndefinedOrEmptyTests(): void {
-  assert(hasAnyControlRoomAsset(undefined, TRACKED) === false, "undefined rows deny");
-  assert(hasAnyControlRoomAsset([], TRACKED) === false, "empty rows deny");
+/**
+ * U5b A4 — a `null` scope (still loading) grants `overview` (not yet known to
+ * be `none`) but denies every gated area.
+ */
+export function runA4NullScopeGrantsOverviewDeniesHvacTests(): void {
+  assert(
+    canAccessControlRoomArea(null, "overview") === true,
+    "null scope grants overview",
+  );
+  assert(
+    canAccessControlRoomArea(null, "hvac") === false,
+    "null scope denies hvac",
+  );
 }

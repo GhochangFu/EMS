@@ -21,10 +21,10 @@ import { AppShell } from "./app-shell";
  *
  * The entry sits in *Operations* directly after *Alarm Centre* and shows to
  * every scope that is not `none`; a `null` scope (still loading) shows no
- * entry. The shell no longer observes `["assets"]` — `ControlRoomRoute`
- * alone does, on the `/cr-*` routes — so the shell issues no `fetchAssets()`.
- * The entry highlights for `/control-room` and every `/control-room/*` path;
- * every other item keeps its exact-match highlight.
+ * entry. The shell issues no `fetchAssets()` — the F4.156 interim gate that
+ * once observed `["assets"]` on the `/cr-*` routes is removed as of `F3.70`
+ * U5b. The entry highlights for `/control-room` and every `/control-room/*`
+ * path; every other item keeps its exact-match highlight.
  *
  * Every case stubs `fetchSystemStatus` (`F4.160` — an unstubbed read reaches a
  * local API on `:4000`) and spies `fetchAssets` (S5 asserts it is not called).
