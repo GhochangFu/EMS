@@ -34,8 +34,12 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  * the site page's resolve read: a dashboard deleted between the two reads
  * then flips the page to the generated view with the API's
  * `dashboard_removed` notice. The fail-safe rule stays in the API; this view
- * never falls back to the generated view itself, and never renders the canvas
- * while the read is in error.
+ * never falls back to the generated view itself.
+ *
+ * **It decides from the data, not the status** — as `site-page.tsx` does. A
+ * background refetch that fails after an answer (a window refocus during an
+ * API restart) sets `isError` with `data` kept, and the canvas stays; the
+ * alert shows only when no answer ever arrived.
  *
  * **No Edit link (owner ruling OQ1 (a)).** `Open in Dashboards` goes to the
  * viewer, which holds the Edit link behind `canAuthorDashboards`.
@@ -64,7 +68,9 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
         </Link>
       }
     >
-      {dashboardQ.isError ? (
+      {dashboardQ.data !== undefined ? (
+        <DashboardLiveCanvas dashboard={dashboardQ.data} />
+      ) : dashboardQ.isError ? (
         <div role="alert" className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-800">
           <p>{apiErrorMessage(dashboardQ.error)}</p>
           <button
@@ -75,8 +81,6 @@ export function SiteDashboardView({ slug, organizationId }: SiteDashboardViewPro
             Try again
           </button>
         </div>
-      ) : dashboardQ.data !== undefined ? (
-        <DashboardLiveCanvas dashboard={dashboardQ.data} />
       ) : (
         <p role="status" className="text-sm text-bms-muted">
           Loading dashboard…

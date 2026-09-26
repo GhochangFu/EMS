@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
@@ -197,6 +197,41 @@ export async function tryAgainInvalidatesTheResolveRead(): Promise<void> {
   fireEvent.click(button);
 
   await waitFor(() => expect(queryClient.getQueryState([...RESOLVE_KEY])?.isInvalidated).toBe(true));
+}
+
+const DASHBOARD_KEY = ["dashboards", "detail", SLUG, ORG_PHE.id] as const;
+
+/**
+ * A good first answer, then a background refetch that rejects — a window
+ * refocus during an API restart. Returns once the rejected call has been made
+ * and the refetch has settled, so an assertion after it cannot pass before
+ * the failure landed.
+ */
+async function renderThenFailARefetch(): Promise<void> {
+  const read = stubRead(DTO, "reject");
+  const queryClient = renderView();
+
+  await screen.findByTestId("dashboard-live-canvas");
+  await act(async () => {
+    await queryClient.refetchQueries({ queryKey: [...DASHBOARD_KEY] });
+  });
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(queryClient.getQueryState([...DASHBOARD_KEY])?.status).toBe("error"));
+}
+
+/** S9a — a failed background refetch keeps the canvas the first answer produced (data-first). */
+export async function aFailedRefetchKeepsTheCanvas(): Promise<void> {
+  await renderThenFailARefetch();
+
+  expect(screen.getByTestId("dashboard-live-canvas").getAttribute("data-dashboard-id")).toBe("dash-1");
+}
+
+/** S9b — a failed background refetch shows no alert (after S9a's canvas). */
+export async function aFailedRefetchShowsNoAlert(): Promise<void> {
+  await renderThenFailARefetch();
+
+  expect(screen.getByTestId("dashboard-live-canvas")).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).toBeNull();
 }
 
 /** S8 — no Edit link on the site view (OQ1 (a)); `Open in Dashboards` is the positive control. */

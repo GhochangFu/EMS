@@ -2,6 +2,8 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aFailedRefetchKeepsTheCanvas,
+  aFailedRefetchShowsNoAlert,
   cleanupView,
   linkOpensTheViewer,
   noEditLink,
@@ -68,5 +70,13 @@ describe("F3.69 SiteDashboardView", () => {
 
   it("S8 shows no Edit dashboard link", async () => {
     await noEditLink();
+  });
+
+  it("S9a keeps the canvas when a background refetch fails", async () => {
+    await aFailedRefetchKeepsTheCanvas();
+  });
+
+  it("S9b shows no alert when a background refetch fails", async () => {
+    await aFailedRefetchShowsNoAlert();
   });
 });
