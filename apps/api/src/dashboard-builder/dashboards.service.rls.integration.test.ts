@@ -30,6 +30,7 @@ import {
   assertCrossOrgLocationScopeRefusedByRls,
   assertCrossTenantSlugReadIs404,
   assertFleetBranchExcludesAForeignOrganization,
+  assertFleetBranchExcludesAnExplicitForeignOrganizationId,
   assertForeignOrgIdUpdateIs404SameAsNonexistent,
   assertLocationAdminCannotRehomeOrganizationWideDashboard,
   assertLocationAdminMayStillUpdateItsOwnLocationDashboard,
@@ -37,6 +38,7 @@ import {
   assertListFiltersByAssetIdWithinScope,
   assertListReportsTheAssetCode,
   assertPutWidgetsDtoReflectsTheWrite,
+  assertTenantBranchIgnoresAnExplicitForeignOrganizationId,
   assertUnauthorizedUpdateWithScopeConflictIs404,
 } from "./dashboards.service.rls.integration.spec";
 
@@ -77,6 +79,12 @@ const XORG_ASSET_SLUG = `f32-xorg-asset-${RUN}`;
 const F331_A_SLUG = `f331-a-${RUN}`;
 const F331_B_SLUG = `f331-b-${RUN}`;
 const F331_PHEWB_SLUG = `f331-phewb-${RUN}`;
+/** `F3.69` step-5 security review, Low 2, N1 — the tenant-branch negative pair. */
+const N1_PHEWB_SLUG = `f369-n1-phewb-${RUN}`;
+/** `F3.69` step-5 security review, Low 2, N2 — the fleet-branch negative pair. */
+const N2_LEAK_ORG_CODE = `F369-N2-LEAK-${RUN}`;
+const N2_LEAK_SLUG = `f369-n2-leak-${RUN}`;
+const N2_MULTI_ORG_EMAIL = `f369-n2-multiorg-${RUN}@integration.invalid`;
 
 describe.skipIf(!connectionString)(
   "F3.1b — DashboardsService pool routing, audit stamping, cross-tenant read/write",
@@ -104,6 +112,9 @@ describe.skipIf(!connectionString)(
     let phewbAssetId: string;
     let leakOrgIdForCleanup: string | undefined;
     let multiOrgUserIdForCleanup: string | undefined;
+    /** `F3.69` step-5 security review N2 — a second, independent leak-org/multi-org-user pair. */
+    let n2LeakOrgIdForCleanup: string | undefined;
+    let n2MultiOrgUserIdForCleanup: string | undefined;
     /** Set only when the seed supplied no PHEWB asset group and this suite made one. */
     let createdAssetGroupIdForCleanup: string | undefined;
 
@@ -273,6 +284,15 @@ describe.skipIf(!connectionString)(
       }
       if (leakOrgIdForCleanup) {
         await ownerPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [leakOrgIdForCleanup]);
+      }
+      if (n2MultiOrgUserIdForCleanup) {
+        await superuserPool.query(`DELETE FROM bms.user_organization_access WHERE user_id = $1`, [
+          n2MultiOrgUserIdForCleanup,
+        ]);
+        await superuserPool.query(`DELETE FROM bms.users WHERE id = $1`, [n2MultiOrgUserIdForCleanup]);
+      }
+      if (n2LeakOrgIdForCleanup) {
+        await ownerPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [n2LeakOrgIdForCleanup]);
       }
       await Promise.all(
         [ownerPool, superuserPool, tenantPool, authPool].filter(Boolean).map((p) => p.end()),
@@ -547,6 +567,83 @@ describe.skipIf(!connectionString)(
         SITE_READ_SLUG,
         eskomOrgId,
         eskomLocationAdminLocationId,
+      );
+    }, 60_000);
+
+    it("F3.69 step-5 security Low 2, N1 — the tenant branch ignores an explicit foreign organizationId", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      const phewbDashboard = await service.create(globalAdmin, {
+        organizationId: phewbOrgId,
+        slug: N1_PHEWB_SLUG,
+        name: "F3.69 N1 tenant-branch negative-pair proof",
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(phewbDashboard.id);
+
+      // wc-admin@bms.local is ESKOM's location_admin — a single-organization actor, which is
+      // what routes getBySlug onto the TENANT branch (withTenant), the same branch
+      // `SiteDashboardView` (D3) always exercises by always passing `organizationId`.
+      const eskomLocationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+      await assertTenantBranchIgnoresAnExplicitForeignOrganizationId(
+        service,
+        eskomLocationAdmin,
+        N1_PHEWB_SLUG,
+        phewbOrgId,
+      );
+    }, 60_000);
+
+    it("F3.69 step-5 security Low 2, N2 — the fleet branch excludes an explicit foreign organizationId", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const globalAdmin = jwtFor(SEEDED.globalAdmin, "admin");
+
+      // A THIRD organization, unrelated to the two-org actor's grants below — the same shape as
+      // `assertFleetBranchExcludesAForeignOrganization`'s own fixture, built independently here
+      // so this it() owns its own actor and dashboard rather than reaching into that test's
+      // closure.
+      const n2LeakOrg = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, 'F3.69 N2 fleet-leak proof org', 'ZAR') RETURNING id`,
+        [N2_LEAK_ORG_CODE],
+      );
+      const n2LeakOrgId = n2LeakOrg.rows[0]?.id;
+      if (!n2LeakOrgId) {
+        throw new Error("F3.69 N2: leak-proof organization did not insert");
+      }
+      n2LeakOrgIdForCleanup = n2LeakOrgId;
+
+      const n2LeakDashboard = await service.create(globalAdmin, {
+        organizationId: n2LeakOrgId,
+        slug: N2_LEAK_SLUG,
+        name: "F3.69 N2 fleet-leak proof dashboard",
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(n2LeakDashboard.id);
+
+      const n2MultiOrgUser = await superuserPool.query<{ id: string }>(
+        `INSERT INTO bms.users (email, password_hash, display_name, role)
+         VALUES ($1, 'x', 'F3.69 N2 multi-org proof', 'organization_admin')
+         RETURNING id`,
+        [N2_MULTI_ORG_EMAIL],
+      );
+      const n2MultiOrgUserId = n2MultiOrgUser.rows[0]?.id;
+      if (!n2MultiOrgUserId) {
+        throw new Error("F3.69 N2: multi-org proof user did not insert");
+      }
+      n2MultiOrgUserIdForCleanup = n2MultiOrgUserId;
+      await superuserPool.query(
+        `INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2), ($1, $3)`,
+        [n2MultiOrgUserId, eskomOrgId, phewbOrgId],
+      );
+
+      const twoOrgActor = jwtFor(N2_MULTI_ORG_EMAIL, "organization_admin");
+      await assertFleetBranchExcludesAnExplicitForeignOrganizationId(
+        service,
+        twoOrgActor,
+        { slug: N2_LEAK_SLUG },
+        n2LeakOrgId,
       );
     }, 60_000);
 

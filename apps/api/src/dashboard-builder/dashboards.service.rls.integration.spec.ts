@@ -313,6 +313,29 @@ export async function assertCrossTenantSlugReadIs404(
 }
 
 /**
+ * `F3.69` step-5 security review, Low 2, N1 — the negative pair with the request shape the web
+ * actually sends: `SiteDashboardView` (D3) always passes `organizationId`, so
+ * `assertCrossTenantSlugReadIs404` above (no third argument) never exercises the caller-supplied
+ * `organizationId` at all. This calls `getBySlug` with the SAME single-organization (tenant
+ * branch) actor as that test, but passes the FOREIGN organization's own id as the explicit third
+ * argument — proving the tenant branch's `withTenant(tenantDb, <actor's own org>, ...)` (never
+ * the passed `organizationId`) is what scopes the read, so the extra `eq(organizationId, …)`
+ * condition in `getBySlug` can only narrow a read, never widen it onto another organization's
+ * GUC. Still 404: RLS never resolves the PHEWB row under the ESKOM GUC, whatever the caller
+ * claims `organizationId` is.
+ */
+export async function assertTenantBranchIgnoresAnExplicitForeignOrganizationId(
+  service: DashboardsService,
+  eskomScopedActor: JwtPayload,
+  phewbSlug: string,
+  phewbOrgId: string,
+): Promise<void> {
+  await expect(service.getBySlug(eskomScopedActor, phewbSlug, phewbOrgId)).rejects.toMatchObject({
+    status: 404,
+  });
+}
+
+/**
  * `F3.69` U4 — the positive control the suite lacked: a `location_admin` actually reads a
  * dashboard scoped to ITS OWN location by slug. `readableOrganizationIds` resolves
  * `location_admin` through the single `"location"` source (`readScopeSourcesForRole`), which is
@@ -507,6 +530,30 @@ export async function assertFleetBranchExcludesAForeignOrganization(
   }
 
   await expect(service.getBySlug(twoOrgActor, foreignOrgDashboard.slug)).rejects.toMatchObject({
+    status: 404,
+  });
+}
+
+/**
+ * `F3.69` step-5 security review, Low 2, N2 — the fleet-branch half of the same negative pair as
+ * N1, above. Same two-organization actor and same foreign dashboard as
+ * {@link assertFleetBranchExcludesAForeignOrganization}, but this time the FOREIGN organization's
+ * own id is passed as `getBySlug`'s explicit third argument — the shape `SiteDashboardView`
+ * sends. On the fleet branch `bms_fleet` holds `BYPASSRLS`, so `organizationIdFilter`'s
+ * `inArray(dashboards.organizationId, [own two orgs])` is the ONLY isolation control; a caller
+ * that could pass its own `organizationId` argument to reach past that filter would leak the
+ * third organization's row through the very argument the filter exists to make irrelevant.
+ * Still 404: the filter conjoins with, and never yields to, the caller-supplied id.
+ */
+export async function assertFleetBranchExcludesAnExplicitForeignOrganizationId(
+  service: DashboardsService,
+  twoOrgActor: JwtPayload,
+  foreignOrgDashboard: { readonly slug: string },
+  foreignOrgId: string,
+): Promise<void> {
+  await expect(
+    service.getBySlug(twoOrgActor, foreignOrgDashboard.slug, foreignOrgId),
+  ).rejects.toMatchObject({
     status: 404,
   });
 }
