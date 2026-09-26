@@ -2,7 +2,10 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
-import { pressingImagesOnARowMountsThatAssetsGallery } from "./location-dashboard-page.spec";
+import {
+  pressingImagesOnARowMountsThatAssetsGallery,
+  theHeaderChipShowsTheTypeLabel,
+} from "./location-dashboard-page.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
@@ -17,5 +20,9 @@ describe("F3.4 location dashboard reader gallery (Q-1 option A)", () => {
 
   it("mounts the gallery for the asset whose Images toggle was pressed", async () => {
     await pressingImagesOnARowMountsThatAssetsGallery();
+  });
+
+  it("K5 shows the typeLabel text in the header chip, not the raw type code", async () => {
+    await theHeaderChipShowsTheTypeLabel();
   });
 });

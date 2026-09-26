@@ -41,6 +41,7 @@ export const locationKpiSummarySchema = z.object({
   name: z.string(),
   code: z.string(),
   type: locationTypeCodeSchema,
+  typeLabel: z.string(),
   province: z.string().nullable(),
   organization: organizationRefSchema,
   rtuCount: z.number(),

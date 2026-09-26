@@ -49,6 +49,7 @@ export function site(opts: {
     name: opts.name,
     code: opts.code ?? `SITE-${opts.id}`,
     type: "smoc_campus",
+    typeLabel: "SMOC campus",
     province: null,
     organization: opts.organization,
     rtuCount: 0,

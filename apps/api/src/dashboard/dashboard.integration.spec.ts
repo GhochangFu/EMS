@@ -138,3 +138,21 @@ export async function assertOpenAlarmCountsFollowClearedAt(pool: pg.Pool): Promi
     ).toBe(1);
   });
 }
+
+/**
+ * `F4.157` U8 (OQ4) — `locationKpis` joins `bms.location_types` and reports
+ * the lookup's label, not the raw code, for the fixture's `csmoc` location.
+ */
+export async function assertLocationKpiTypeLabelJoinsTheLookup(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const { locationId, assetId } = await insertFixture(client, run);
+    const service = new DashboardService(client as unknown as pg.Pool, NO_TARIFFS);
+
+    const { items } = await service.locationKpis({ locationIds: [locationId], assetIds: [assetId] });
+    expect(
+      items[0]?.typeLabel,
+      "locationKpis.typeLabel: the csmoc location's KPI row carries the location_types label",
+    ).toBe("CSMOC");
+  });
+}

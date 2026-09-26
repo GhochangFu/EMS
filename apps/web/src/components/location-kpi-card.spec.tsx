@@ -22,6 +22,7 @@ const LOCATION = locationKpiSummarySchema.parse({
   name: "Western Cape Campus",
   code: "SITE-loc-1",
   type: "smoc_campus",
+  typeLabel: "SMOC campus",
   province: "Western Cape",
   organization: { id: "org-1", code: "ESKOM", name: "Eskom" },
   rtuCount: 1,
@@ -55,6 +56,28 @@ export function toReplacesTheLinkTarget(): void {
     </MemoryRouter>,
   );
   expect(cardLink().getAttribute("href")).toBe("/control-room/site/loc-1");
+}
+
+/** K4 (F4.157 U8) — with no province, the card falls back to typeLabel, not the raw code. */
+export function fallsBackToTheTypeLabelNotTheRawCode(): void {
+  const location = locationKpiSummarySchema.parse({
+    ...LOCATION,
+    id: "loc-2",
+    name: "Lotapata",
+    province: null,
+    type: "pump_station",
+    typeLabel: "Pump station",
+  });
+  render(
+    <MemoryRouter>
+      <LocationKpiCard location={location} />
+    </MemoryRouter>,
+  );
+  const subtitle = screen.getByText("Lotapata").parentElement?.querySelector(
+    ".text-xs.uppercase",
+  ) as HTMLElement;
+  expect(subtitle.textContent).toContain("Pump station");
+  expect(subtitle.textContent).not.toContain("pump_station");
 }
 
 export function cleanupCard(): void {

@@ -17,6 +17,7 @@ const ROW_WITHOUT_CODE = {
   id: "loc-1",
   name: "Western Cape Campus",
   type: "smoc_campus",
+  typeLabel: "SMOC campus",
   province: "Western Cape",
   organization: { id: "org-1", code: "ESKOM", name: "Eskom" },
   rtuCount: 1,
@@ -41,6 +42,24 @@ export function runRowWithCodeParsesTest(): void {
     result.success === true,
     `a location KPI row with code: "RSMOC-WC" — expected success, got a refusal: ${
       result.success ? "" : JSON.stringify(result.error.issues)
+    }`,
+  );
+}
+
+/**
+ * `F4.157` U8 (OQ4) — the location KPI row gains `typeLabel`, the joined
+ * `bms.location_types.label`. The mutation is `.optional()` on the field.
+ */
+export function runLocationKpiSummaryRequiresTypeLabelTest(): void {
+  const { typeLabel: _typeLabel, ...withoutTypeLabel } = { ...ROW_WITHOUT_CODE, code: "RSMOC-WC" };
+  const refused = locationKpiSummarySchema.safeParse(withoutTypeLabel);
+  assert(refused.success === false, "a location KPI row without typeLabel — expected a refusal, got success");
+
+  const accepted = locationKpiSummarySchema.safeParse({ ...ROW_WITHOUT_CODE, code: "RSMOC-WC" });
+  assert(
+    accepted.success === true,
+    `the same row with typeLabel — expected success, got a refusal: ${
+      accepted.success ? "" : JSON.stringify(accepted.error.issues)
     }`,
   );
 }

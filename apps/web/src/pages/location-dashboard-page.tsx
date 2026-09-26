@@ -179,7 +179,7 @@ export function LocationDashboardPage({ user }: LocationDashboardPageProps) {
               {location.organization.code}
             </span>
             <span className="rounded bg-gray-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-bms-muted">
-              {location.type}
+              {location.typeLabel}
             </span>
           </div>
         ) : null}

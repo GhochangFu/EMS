@@ -28,7 +28,7 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
             {location.name}
           </div>
           <div className="text-xs uppercase tracking-wide text-bms-muted">
-            {location.organization.code} · {location.province ?? location.type} ·{" "}
+            {location.organization.code} · {location.province ?? location.typeLabel} ·{" "}
             {location.scopeLabel === "partial" ? "partial scope" : "full scope"}
           </div>
         </div>

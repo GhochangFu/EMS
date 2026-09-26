@@ -44,6 +44,7 @@ function site(opts: {
     name: `Site ${opts.code}`,
     code: opts.code,
     type: "smoc_campus",
+    typeLabel: "SMOC campus",
     province: null,
     organization: opts.organization,
     rtuCount: 0,

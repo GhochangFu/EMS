@@ -76,6 +76,7 @@ const LOCATION: LocationDashboardDto = locationDashboardDtoSchema.parse({
   name: "Western Cape Campus",
   code: "RSMOC-WC",
   type: "smoc_campus",
+  typeLabel: "SMOC campus",
   province: "Western Cape",
   organization: { id: "org-1", code: "ESKOM", name: "Ion Exchange" },
   rtuCount: 0,
@@ -147,4 +148,15 @@ export async function pressingImagesOnARowMountsThatAssetsGallery(): Promise<voi
     expect(list.mock.calls.length - before).toBe(1);
   });
   expect(list).toHaveBeenCalledWith(SECOND_ASSET_ID);
+}
+
+/** K5 (F4.157 U8) — the header chip shows the typeLabel text, not the raw code. */
+export async function theHeaderChipShowsTheTypeLabel(): Promise<void> {
+  stubApi();
+
+  renderPage();
+
+  await screen.findByText("Western Cape Campus");
+  expect(screen.getByText("SMOC campus")).toBeInTheDocument();
+  expect(screen.queryByText("smoc_campus")).not.toBeInTheDocument();
 }
