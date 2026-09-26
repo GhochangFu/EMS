@@ -329,16 +329,23 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   /** `deviceKey → the last time this RTU produced anything` (`F1.7`). */
   const lastSampleByDeviceKey = new Map<string, Date>();
   /**
-   * `deviceKey → its bound sourceKeys`, and `deviceKey → sourceKey → last seen`
-   * (`F4.58`). Both are seeded from the plan and never grow past it, so memory
-   * is bounded by the plan's point count: a sample for an unbound key is not
-   * recorded, for the same reason an unbound `deviceKey` is not.
+   * `deviceKey → { sourceKey → position, last seen per position }` (`F4.58`),
+   * built once from the plan. `seen` is a fixed-length array the length of
+   * `binding.sourceKeys` (deduplicated in `bindings.ts`), so memory is bounded
+   * by the plan's point count and a sample for an unbound key is not recorded,
+   * for the same reason an unbound `deviceKey` is not.
    */
-  const boundKeysByDevice = new Map(
-    plan.bindings.map((binding) => [binding.deviceKey, new Set(binding.sourceKeys)] as const),
-  );
-  const lastSampleByPoint = new Map(
-    plan.bindings.map((binding) => [binding.deviceKey, new Map<string, Date>()] as const),
+  const pointsByDevice = new Map(
+    plan.bindings.map(
+      (binding) =>
+        [
+          binding.deviceKey,
+          {
+            index: new Map(binding.sourceKeys.map((sourceKey, i) => [sourceKey, i] as const)),
+            seen: new Array<Date | undefined>(binding.sourceKeys.length).fill(undefined),
+          },
+        ] as const,
+    ),
   );
   /** The endpoint's only binding, if it has exactly one — see `accept()`. */
   const soleDeviceKey = plan.bindings.length === 1 ? plan.bindings[0]?.deviceKey : undefined;
@@ -379,8 +386,12 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // the one stamp site: the replay loop hands its segments straight to
         // `writeSamples` and never reaches here, so an hour-old reading
         // written late does not make a dark point read as live.
-        if (boundKeysByDevice.get(deviceKey)?.has(sample.sourceKey) === true) {
-          lastSampleByPoint.get(deviceKey)?.set(sample.sourceKey, now);
+        // The bound is structural: an unbound key has no index, and there is
+        // no `Map.set` here, so nothing can add an entry (why no test gates it).
+        const points = pointsByDevice.get(deviceKey);
+        const i = points?.index.get(sample.sourceKey);
+        if (points !== undefined && i !== undefined) {
+          points.seen[i] = now;
         }
       }
     }
@@ -898,15 +909,15 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         // from health is indistinguishable from one that is fine.
         devices: plan.bindings.map((binding) => {
           const seen = lastSampleByDeviceKey.get(binding.deviceKey);
-          const pointSeen = lastSampleByPoint.get(binding.deviceKey);
+          const pointSeen = pointsByDevice.get(binding.deviceKey)?.seen;
           return {
             rtuCode: binding.rtuCode,
             deviceKey: binding.deviceKey,
             ...(seen === undefined ? {} : { lastSampleAt: seen }),
             // From the plan again, in binding order, so a point that has never
             // published is listed rather than missing.
-            points: binding.sourceKeys.map((sourceKey) => {
-              const at = pointSeen?.get(sourceKey);
+            points: binding.sourceKeys.map((sourceKey, i) => {
+              const at = pointSeen?.[i];
               return at === undefined ? { sourceKey } : { sourceKey, lastSampleAt: at };
             }),
           };
