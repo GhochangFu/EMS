@@ -31,6 +31,7 @@ export * from "./envelopes";
 export * from "./escalation";
 export * from "./generated-site-view";
 export * from "./health";
+export * from "./location-types";
 export * from "./mapping-sheet";
 export * from "./metric-catalog-values";
 export type * from "./schema-types";

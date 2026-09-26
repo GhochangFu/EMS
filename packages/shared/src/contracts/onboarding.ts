@@ -11,6 +11,7 @@
  */
 import { z } from "zod";
 
+import { locationTypeCodeSchema } from "./location-types";
 import { assetDomainCodeSchema } from "./operations";
 
 /** Onboarding wizard phase tracked by the AI bot. */
@@ -136,6 +137,12 @@ export const ONBOARDING_DRAFT_STRING_MAX = {
   "location.name": 255,
   "location.province": 64,
   "location.capital": 128,
+  // F4.157 — `type` is `locationTypeCodeSchema` (`.min(1).max(32)`), the one
+  // draft string field besides `assets.domain` that carries a floor as well as
+  // a ceiling: an *absent* type is the legitimately-partial state ADR 0011
+  // reserves (the field is `.optional()`), but a *present* one that is the
+  // empty string is not a location type at all.
+  "location.type": 32,
   "rtus.code": 64,
   "rtus.displayName": 255,
   "rtus.domain": 64,
@@ -161,7 +168,11 @@ export const onboardingDraftLocationSchema = z.object({
   code: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.code"]),
   slug: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.slug"]),
   name: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.name"]),
-  type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
+  // D4 (owner ruling OQ2): the draft can hold a location the operator has not
+  // yet told the wizard a type for; `OnboardingValidateService` adds a
+  // `location.type` cross-field error so `readyToCommit` stays false until it
+  // is set, and the commit refuses an unknown code before the transaction opens.
+  type: locationTypeCodeSchema.optional(),
   latitude: z.number(),
   longitude: z.number(),
   province: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.province"]).optional(),

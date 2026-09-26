@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertApiDraftLocationParsesWithoutType,
   assertDraftDepthFixturesSitExactlyAtTheBound,
   assertOnboardingDraftSchemaCoversTheModelProducer,
   assertPatchDraftBodyAcceptsADraftAtTheBound,
@@ -60,5 +61,11 @@ describe("onboarding.schema — the draft's nesting depth (F4.115)", () => {
 
   it("still parses the shape the shipped producers actually write", () => {
     assertTheShippedProducerShapesStillParse();
+  });
+});
+
+describe("onboarding.schema — draftLocationSchema.type is optional (F4.157, ADR 0077 D4)", () => {
+  it("C6 — parses a draft location without type", () => {
+    assertApiDraftLocationParsesWithoutType();
   });
 });

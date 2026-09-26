@@ -44,6 +44,13 @@ function locationKindLabel(site: MapSiteDto): string {
       return "CSMOC";
     case "eskom_station":
       return "Station";
+    // F4.157 (U3 compile fix only — no behaviour change): `MapSiteDto["kind"]`
+    // widened from a four-value enum to a bounded string (D1), so the switch
+    // needs a default to stay total. The API still only ever sends one of the
+    // four cases above; U5 deletes this whole function in favour of the API's
+    // own `kindLabel` (D8).
+    default:
+      return site.kind;
   }
 }
 

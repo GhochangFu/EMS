@@ -1,4 +1,4 @@
-import { locationKpiSummarySchema } from "./dashboard";
+import { locationKpiSummarySchema, mapSiteDtoSchema } from "./dashboard";
 
 /**
  * `F3.70` (ADR 0076 decision 9, D7) — `code` on the location KPI row, so the
@@ -41,6 +41,51 @@ export function runRowWithCodeParsesTest(): void {
     result.success === true,
     `a location KPI row with code: "RSMOC-WC" — expected success, got a refusal: ${
       result.success ? "" : JSON.stringify(result.error.issues)
+    }`,
+  );
+}
+
+const MAP_SITE_WITHOUT_KIND_LABEL = {
+  id: "site-1",
+  canonicalLocationId: null,
+  slug: "lotapata",
+  name: "Lotapata",
+  kind: "pump_station",
+  siteName: "Lotapata",
+  organization: null,
+  latitude: 24.1,
+  longitude: 88.4,
+  capacityMw: null,
+  stationType: null,
+  stationCategory: null,
+  province: null,
+  stationOperatingStatus: null,
+  live: {
+    status: "unknown",
+    openAlarms: 0,
+    criticalAlarms: 0,
+    assetsTotal: 0,
+    assetsFresh: 0,
+  },
+};
+
+/**
+ * `F4.157` (ADR 0077 D8) — the map DTO gains `kindLabel`, the joined
+ * `bms.location_types.label` (or the API's own label for a map-only kind like
+ * `eskom_station`). C3's mutation is `.optional()` on the field.
+ */
+export function runMapSiteDtoRequiresKindLabelTest(): void {
+  const withoutLabel = mapSiteDtoSchema.safeParse(MAP_SITE_WITHOUT_KIND_LABEL);
+  assert(withoutLabel.success === false, "a map site without kindLabel — expected a refusal, got success");
+
+  const withLabel = mapSiteDtoSchema.safeParse({
+    ...MAP_SITE_WITHOUT_KIND_LABEL,
+    kindLabel: "Pump station",
+  });
+  assert(
+    withLabel.success === true,
+    `the same site with kindLabel: "Pump station" — expected success, got a refusal: ${
+      withLabel.success ? "" : JSON.stringify(withLabel.error.issues)
     }`,
   );
 }

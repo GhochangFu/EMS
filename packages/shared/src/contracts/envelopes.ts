@@ -64,6 +64,7 @@ import {
   notificationTestResultSchema,
 } from "./notifications";
 import { escalationDefaultDtoSchema, escalationProfileDtoSchema } from "./escalation";
+import { locationTypeDtoSchema } from "./location-types";
 import { adminPointKeyDtoSchema } from "./point-keys";
 
 /** `{ items: T[] }` — the shape every master-data list route returns. */
@@ -73,6 +74,8 @@ const itemsOf = <S extends z.ZodTypeAny>(item: S) => z.object({ items: z.array(i
 export const organizationsListResponseSchema = itemsOf(adminOrganizationDtoSchema);
 export const locationsListResponseSchema = itemsOf(adminLocationDtoSchema);
 export const rtusListResponseSchema = itemsOf(adminRtuDtoSchema);
+/** `GET /admin/location-types` (`F4.157`, D3) — the active vocabulary rows. */
+export const locationTypesListResponseSchema = itemsOf(locationTypeDtoSchema);
 export const assetsListResponseSchema = itemsOf(adminAssetDtoSchema);
 export const assetPointsListResponseSchema = itemsOf(adminAssetPointDtoSchema);
 export const pointKeysListResponseSchema = itemsOf(adminPointKeyDtoSchema);

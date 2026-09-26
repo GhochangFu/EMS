@@ -20,6 +20,7 @@ import {
   // their single declaration; `onboarding.schema.spec.ts` pins each one against
   // the `@bms/db` column it came from, which `packages/shared` cannot do.
   ONBOARDING_DRAFT_STRING_MAX,
+  locationTypeCodeSchema,
 } from "@bms/shared";
 import { z } from "zod";
 
@@ -61,7 +62,9 @@ export const draftLocationSchema = z
       .max(ONBOARDING_DRAFT_STRING_MAX["location.slug"])
       .regex(/^[a-z0-9-]+$/),
     name: z.string().min(2).max(ONBOARDING_DRAFT_STRING_MAX["location.name"]),
-    type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
+    // F4.157 / D4 (OQ2): optional between turns, same as the shared copy in
+    // `packages/shared/src/contracts/onboarding.ts` — see that file's comment.
+    type: locationTypeCodeSchema.optional(),
     latitude: z.number().min(-90).max(90),
     longitude: z.number().min(-180).max(180),
     province: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.province"]).optional(),

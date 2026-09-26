@@ -12,6 +12,7 @@ import { z } from "zod";
 import { CALC_DIALECTS, CALC_TRIGGERS } from "../calc-dsl";
 import { instantiatedDashboardDtoSchema } from "./asset-dashboards";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
+import { locationTypeCodeSchema } from "./location-types";
 import { assetRoleCodeSchema } from "./operations";
 import { pointMetadataFieldsSchema, pointMetadataShape } from "./point-metadata";
 import { pointSourceKindSchema } from "./telemetry-entry";
@@ -36,7 +37,7 @@ export const adminLocationDtoSchema = z.object({
   code: z.string(),
   slug: z.string(),
   name: z.string(),
-  type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
+  type: locationTypeCodeSchema,
   province: z.string().nullable(),
   capital: z.string().nullable(),
   timezone: z.string().nullable(),

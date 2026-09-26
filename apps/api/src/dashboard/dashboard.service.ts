@@ -49,7 +49,9 @@ export class DashboardService {
       id: string;
       name: string;
       code: string;
-      type: "smoc_campus" | "rsmoc" | "csmoc";
+      // F4.157 (D1): the type is no longer a closed set at the row-shape
+      // level — `bms.location_types` is the vocabulary now.
+      type: string;
       province: string | null;
       org_id: string;
       org_code: string;

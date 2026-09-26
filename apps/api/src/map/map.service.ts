@@ -139,7 +139,11 @@ export class MapService {
         canonicalLocationId: loc.canonical_location_id,
         slug: loc.slug,
         name: loc.name,
-        kind: loc.kind as MapSiteDto["kind"],
+        kind: loc.kind,
+        // F4.157 (D8, U5 wires the real join): the label the map returns is
+        // still the map pin's kind until the location-type join lands. U5
+        // replaces this with `lt.label`/`location_type_label`.
+        kindLabel: loc.kind,
         siteName: loc.site_name,
         organization,
         latitude: Number(loc.latitude),

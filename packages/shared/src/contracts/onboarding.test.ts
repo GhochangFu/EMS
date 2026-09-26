@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertDraftArrayCapsAreEnforced,
+  assertDraftLocationParsesWithoutType,
   assertDraftStringBoundsAreDeclaredOnce,
   assertDraftStringBoundsAreEnforced,
   assertSessionDtoCarriesTheCaps,
@@ -30,5 +31,11 @@ describe("F4.104 — the onboarding draft bounds the length of every string fiel
 
   it("carries the bound into the session DTO the client parses", () => {
     assertSessionDtoCarriesTheStringBounds();
+  });
+});
+
+describe("F4.157 — onboardingDraftLocationSchema.type becomes optional (ADR 0077 D4, OQ2)", () => {
+  it("C4 — parses a draft location without type", () => {
+    assertDraftLocationParsesWithoutType();
   });
 });

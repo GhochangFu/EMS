@@ -236,7 +236,13 @@ export class OnboardingCommitService {
           code: loc.code,
           slug: loc.slug,
           name: loc.name,
-          type: loc.type,
+          // F4.157 (D4): `location.type` is optional in the draft schema
+          // between turns. A type-level non-null rather than a `?? ""`
+          // default — U4/U6 add the `readyToCommit` cross-field error and the
+          // `vocabularies.assertLocationType` refusal that make this true at
+          // runtime; until then this line's behaviour is unchanged from
+          // before the schema widened.
+          type: loc.type!,
           province: loc.province ?? null,
           capital: loc.capital ?? null,
           latitude: loc.latitude,

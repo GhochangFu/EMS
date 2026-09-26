@@ -260,12 +260,14 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
 ];
 
 /**
- * 5 + 6 + 5 + 4 + 4. The non-vacuity anchor: every key-set comparison below is
- * satisfied by two empty sets, so a walk that silently stops finding fields
- * would make this whole function green having read nothing. Repair the walk,
- * not the number.
+ * 6 + 6 + 5 + 4 + 4 (`location` gained `type` — `F4.157`, D1: `locationTypeCodeSchema`
+ * is a `ZodString` under the `.optional()` this copy wraps it in, same as every
+ * other optional string field the walk already counts). The non-vacuity
+ * anchor: every key-set comparison below is satisfied by two empty sets, so a
+ * walk that silently stops finding fields would make this whole function green
+ * having read nothing. Repair the walk, not the number.
  */
-const DRAFT_STRING_FIELD_COUNT = 24;
+const DRAFT_STRING_FIELD_COUNT = 25;
 
 /**
  * The minimum each string field of **this** copy carries, and it is written out
@@ -286,6 +288,8 @@ const EXPECTED_MIN_LENGTH: Readonly<Record<string, number | null>> = {
   "location.name": 2,
   "location.province": null,
   "location.capital": null,
+  // `locationTypeCodeSchema` (`F4.157`, D1) — `.min(1)`, kept, same as `assets.domain`.
+  "location.type": 1,
   "rtus.code": 2,
   "rtus.displayName": 2,
   "rtus.domain": null,
@@ -328,6 +332,7 @@ const DRAFT_COLUMNS: Readonly<Record<string, { readonly columnType: string }>> =
   "location.name": locations.name,
   "location.province": locations.province,
   "location.capital": locations.capital,
+  "location.type": locations.type,
   "rtus.code": rtus.code,
   "rtus.displayName": rtus.displayName,
   "rtus.domain": rtus.domain,
@@ -837,5 +842,26 @@ export function assertTheShippedProducerShapesStillParse(): void {
   assert(
     patchDraftBodySchema.safeParse({ draft }).success,
     "and the same draft must pass the PATCH :id/draft wrapper",
+  );
+}
+
+/**
+ * C6 (`F4.157`, ADR 0077 D4, OQ2) — this file's own copy of the draft location
+ * schema, on the same terms as `packages/shared`'s: `type` is optional between
+ * turns. Mutation: remove `.optional()`.
+ */
+export function assertApiDraftLocationParsesWithoutType(): void {
+  const parsed = draftLocationSchema.safeParse({
+    code: "DEMO_LOC",
+    slug: "demo-loc",
+    name: "Demo Location",
+    latitude: -25.7,
+    longitude: 28.2,
+  });
+  assert(
+    parsed.success,
+    `a draft location without type must parse, got: ${
+      parsed.success ? "" : JSON.stringify(parsed.error.issues)
+    }`,
   );
 }

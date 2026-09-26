@@ -374,7 +374,7 @@ export class LocationsAdminService {
       code: loc.code,
       slug: loc.slug,
       name: loc.name,
-      type: loc.type as AdminLocationDto["type"],
+      type: loc.type,
       province: loc.province,
       capital: loc.capital,
       timezone: loc.timezone,
