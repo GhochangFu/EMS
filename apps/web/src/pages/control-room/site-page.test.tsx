@@ -19,6 +19,9 @@ import {
   aTabOnAGeneratedSiteMountsNoBodyAtTheTabUrl,
   aTabOnAGeneratedSiteRedirectsToTheBarePath,
   anUnknownTabRedirectsToTheBarePath,
+  aBuiltinOnANonSmocSiteHostsTheGeneratedView,
+  aBuiltinOnANonSmocSiteMountsNoSmocView,
+  aTabOnANonSmocBuiltinSiteRedirectsToTheBarePath,
   builtinHostsSmocSiteViewOnTheOverview,
   builtinPassesTheScope,
   builtinPassesTheTabParam,
@@ -163,5 +166,17 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V20 does not redirect while the resolve read is pending", async () => {
     await aPendingResolveReadDoesNotRedirect();
+  });
+
+  it("V21a hosts the generated view for a builtin resolve on a non-SMOC site", async () => {
+    await aBuiltinOnANonSmocSiteHostsTheGeneratedView();
+  });
+
+  it("V21b mounts no SMOC view for a builtin resolve on a non-SMOC site", async () => {
+    await aBuiltinOnANonSmocSiteMountsNoSmocView();
+  });
+
+  it("V21c redirects a tab segment on a non-SMOC builtin site to the bare site path", async () => {
+    await aTabOnANonSmocBuiltinSiteRedirectsToTheBarePath();
   });
 });

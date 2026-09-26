@@ -4,9 +4,9 @@ import {
   allowedSmocTabs,
   DEFAULT_SMOC_TAB,
   findSmocSite,
+  isSmocSite,
   smocTabFromParam,
   smocTabPath,
-  SMOC_SITE_CODE,
   SMOC_TABS,
 } from "./smoc-pages";
 
@@ -102,13 +102,45 @@ export function runP8(): void {
   assert(keys.length === 7, `GLOBAL must allow all 7 tabs, got ${keys.length}`);
 }
 
+/**
+ * The fixtures spell the codes as literals, never through `SMOC_SITE_CODE` or
+ * `SMOC_ORG_CODE`: a fixture built from a constant follows a mutated constant.
+ */
+const ESKOM = { code: "ESKOM" };
+const PHEWB = { code: "PHEWB" };
+
 /** `P9` — `findSmocSite` picks the `RSMOC-WC` row wherever it sits in the list, not the first. */
 export function runP9(): void {
   const items = [
-    { id: "loc-1", code: "OTHER-SITE" },
-    { id: "loc-2", code: SMOC_SITE_CODE },
-    { id: "loc-3", code: "ANOTHER" },
+    { id: "loc-1", code: "OTHER-SITE", organization: ESKOM },
+    { id: "loc-2", code: "RSMOC-WC", organization: ESKOM },
+    { id: "loc-3", code: "ANOTHER", organization: ESKOM },
   ];
   const found = findSmocSite(items);
   assert(found?.id === "loc-2", `findSmocSite must pick the RSMOC-WC row, got ${found?.id}`);
+}
+
+/**
+ * `P9b` — a location code is unique only per organization (migration 0016):
+ * an `RSMOC-WC` row of another organization placed first is not the SMOC site.
+ */
+export function runP9b(): void {
+  const items = [
+    { id: "loc-phe", code: "RSMOC-WC", organization: PHEWB },
+    { id: "loc-eskom", code: "RSMOC-WC", organization: ESKOM },
+  ];
+  const found = findSmocSite(items);
+  assert(found?.id === "loc-eskom", `findSmocSite must pick the ESKOM RSMOC-WC row, got ${found?.id}`);
+}
+
+/** `P9c` — `isSmocSite` is false for `RSMOC-WC` in another organization. */
+export function runP9c(): void {
+  assert(
+    isSmocSite({ code: "RSMOC-WC", organization: ESKOM }),
+    "positive control: RSMOC-WC in ESKOM must be the SMOC site",
+  );
+  assert(
+    !isSmocSite({ code: "RSMOC-WC", organization: PHEWB }),
+    "RSMOC-WC in PHEWB must not be the SMOC site",
+  );
 }

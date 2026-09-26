@@ -10,6 +10,8 @@ import {
   runP7,
   runP8,
   runP9,
+  runP9b,
+  runP9c,
 } from "./smoc-pages.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -48,5 +50,13 @@ describe("smoc-pages", () => {
 
   it("P9 — findSmocSite picks the RSMOC-WC row, not the first", () => {
     runP9();
+  });
+
+  it("P9b — findSmocSite skips an RSMOC-WC row of another organization", () => {
+    runP9b();
+  });
+
+  it("P9c — isSmocSite is false for RSMOC-WC in PHEWB", () => {
+    runP9c();
   });
 });

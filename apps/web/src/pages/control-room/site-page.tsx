@@ -13,7 +13,7 @@ import { SectionCard } from "../../components/section-card";
 import { AppShell } from "../../layouts/app-shell";
 import { controlRoomCrumbs } from "../../lib/control-room-levels";
 import { siteViewNoticeText } from "../../lib/site-view-notice";
-import { DEFAULT_SMOC_TAB, smocTabFromParam, type SmocTabKey } from "../../lib/smoc-pages";
+import { DEFAULT_SMOC_TAB, isSmocSite, smocTabFromParam, type SmocTabKey } from "../../lib/smoc-pages";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 
 type ControlRoomSitePageProps = {
@@ -38,10 +38,17 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-bms-green hover:
  * through `SmocLegacyRedirect`.
  *
  * `F3.70` D5 (OQ5): the optional `:tab` segment names a SMOC tab. Once both
- * reads have data, a tab segment on a site whose view is not `builtin`, or
- * a tab that is not one of the seven, redirects to the bare site path, which
- * renders the site's current view. The decision is made here, before the
- * body, so no body ever renders at the tab URL.
+ * reads have data, a tab segment on a site that does not show the SMOC tabs,
+ * or a tab that is not one of the seven, redirects to the bare site path,
+ * which renders the site's current view. The decision is made here, before
+ * the body, so no body ever renders at the tab URL.
+ *
+ * The SMOC tabs show only for a `builtin` view on the SMOC site itself —
+ * `RSMOC-WC` in `ESKOM` (`isSmocSite`; security review L1). A `builtin`
+ * view on any other site renders the generated view, as `generated` does,
+ * and its tab URLs redirect like a non-`builtin` site's. A site outside the
+ * KPI list does not show the tabs either; its tab URL redirects to the bare
+ * path, which shows the not-available card.
  */
 export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
   const { locationId = "", tab: tabParam } = useParams();
@@ -64,11 +71,13 @@ export function ControlRoomSitePage({ user }: ControlRoomSitePageProps) {
   const items = locationQ.data?.items;
   const site = items?.find((item) => item.id === locationId);
 
+  const showsSmocTabs = siteView.data?.kind === "builtin" && site !== undefined && isSmocSite(site);
+
   if (
     items !== undefined &&
     siteView.data !== undefined &&
     tabParam !== undefined &&
-    (siteView.data.kind !== "builtin" || tab === null)
+    (!showsSmocTabs || tab === null)
   ) {
     return <Navigate to={`/control-room/site/${encodeURIComponent(locationId)}`} replace />;
   }
@@ -148,7 +157,8 @@ function SiteViewBody({ view, site, scope, tab }: SiteViewBodyProps) {
           {notice}
         </div>
       ) : null}
-      {view.kind === "builtin" ? (
+      {view.kind === "builtin" && isSmocSite(site) ? (
+        // Any other site with a `builtin` view falls through to the generated view (L1).
         <SmocSiteView locationId={site.id} tab={tab} scope={scope} />
       ) : view.kind === "dashboard" && view.dashboardSlug !== null ? (
         <SiteDashboardView slug={view.dashboardSlug} organizationId={site.organization.id} />

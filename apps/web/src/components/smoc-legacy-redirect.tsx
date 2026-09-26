@@ -6,7 +6,7 @@ import { findSmocSite, smocTabPath, type SmocTabKey } from "../lib/smoc-pages";
 
 /**
  * `F3.70` (D6, D7, OQ3, OQ4) — the element behind each of the seven legacy
- * `/cr-*` routes. It finds `RSMOC-WC` by `code` in the caller's readable KPI
+ * `/cr-*` routes. It finds `RSMOC-WC` in `ESKOM` (`findSmocSite`) in the caller's readable KPI
  * list (the same `["dashboard", "locations"]` read the Control Room levels
  * use) and sends the caller to that site's `tab`. A list without it, or a
  * failed read, sends the caller to `/control-room`, which level-skips into

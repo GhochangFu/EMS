@@ -262,24 +262,45 @@ export async function builtinUnknownShowsItsBanner(): Promise<void> {
   expect(banner.textContent).toBe(siteViewNoticeText("builtin_unknown"));
 }
 
-const SMOC_VIEW = view("a1", { kind: "builtin", builtinKey: "smoc" });
+/**
+ * The SMOC site is `RSMOC-WC` in `ESKOM` (`isSmocSite`). The fixture spells
+ * both codes as literals so a mutated constant cannot carry the fixture along.
+ */
+const ORG_ESKOM = { id: "org-eskom", code: "ESKOM", name: "Eskom" };
+
+const SMOC_SITES: LocationKpiSummary[] = [
+  ...TWO_ORGS,
+  site({ id: "s1", name: "SMOC Campus", code: "RSMOC-WC", organization: ORG_ESKOM }),
+];
+
+const SMOC_VIEW = view("s1", { kind: "builtin", builtinKey: "smoc" });
+
+/**
+ * `F3.70` security review L1 — a site with the same code in another
+ * organization: a `builtin/smoc` resolve there must not mount the SMOC tabs.
+ */
+const PHE_RSMOC_SITES: LocationKpiSummary[] = [
+  site({ id: "p9", name: "PHE Namesake", code: "RSMOC-WC", organization: ORG_PHE }),
+];
+
+const PHE_BUILTIN_VIEW = view("p9", { kind: "builtin", builtinKey: "smoc" });
 
 /** V5 — `builtin/smoc` at the bare path: `SmocSiteView` for this site, on the overview tab (OQ1, OQ2). */
 export async function builtinHostsSmocSiteViewOnTheOverview(): Promise<void> {
-  stubReads(TWO_ORGS, SMOC_VIEW);
-  renderAt("a1");
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  renderAt("s1");
 
   const mount = await screen.findByTestId("smoc-site-view");
   expect([mount.getAttribute("data-location-id"), mount.getAttribute("data-tab")]).toEqual([
-    "a1",
+    "s1",
     "overview",
   ]);
 }
 
 /** V6a — `builtin/smoc` with a tab segment: `SmocSiteView` gets that tab (D2). */
 export async function builtinPassesTheTabParam(): Promise<void> {
-  stubReads(TWO_ORGS, SMOC_VIEW);
-  renderAt("a1", undefined, "hvac");
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  renderAt("s1", undefined, "hvac");
 
   const mount = await screen.findByTestId("smoc-site-view");
   expect(mount.getAttribute("data-tab")).toBe("hvac");
@@ -287,8 +308,8 @@ export async function builtinPassesTheTabParam(): Promise<void> {
 
 /** V6b — `SmocSiteView` gets the caller's scope, so its per-area rule reads it (D3). */
 export async function builtinPassesTheScope(): Promise<void> {
-  stubReads(TWO_ORGS, SMOC_VIEW, HVAC_ONLY);
-  renderAt("a1");
+  stubReads(SMOC_SITES, SMOC_VIEW, HVAC_ONLY);
+  renderAt("s1");
 
   const mount = await screen.findByTestId("smoc-site-view");
   expect(mount.getAttribute("data-scope-kind")).toBe("asset_group");
@@ -515,11 +536,11 @@ export async function aPendingKpiReadShowsOnlyTheLoadingLine(): Promise<void> {
 
 /** V17 — an unknown tab on a `builtin` site redirects to the bare site path (OQ5, D5). */
 export async function anUnknownTabRedirectsToTheBarePath(): Promise<void> {
-  stubReads(TWO_ORGS, SMOC_VIEW);
-  renderAt("a1", undefined, "bogus");
+  stubReads(SMOC_SITES, SMOC_VIEW);
+  renderAt("s1", undefined, "bogus");
 
   expect(await screen.findByTestId("smoc-site-view")).toBeInTheDocument();
-  expect(pathname()).toBe("/control-room/site/a1");
+  expect(pathname()).toBe("/control-room/site/s1");
 }
 
 /** V18a — a tab segment on a `generated` site redirects to the bare site path (OQ5, D5). */
@@ -566,15 +587,42 @@ export async function aRejectedReadWithATabMountsNoSmocView(): Promise<void> {
  * redirected — the loading line shows and the tab URL stays.
  */
 export async function aPendingResolveReadDoesNotRedirect(): Promise<void> {
-  stubReads(TWO_ORGS, SMOC_VIEW);
+  stubReads(SMOC_SITES, SMOC_VIEW);
   const resolve = vi
     .spyOn(controlRoomApi, "fetchResolvedSiteControlRoomView")
     .mockImplementation(() => new Promise(() => undefined));
-  renderAt("a1", undefined, "bogus");
+  renderAt("s1", undefined, "bogus");
 
   await waitFor(() => expect(resolve).toHaveBeenCalled());
   expect(await screen.findByText("Loading the site view…")).toBeInTheDocument();
-  expect(pathname()).toBe("/control-room/site/a1/bogus");
+  expect(pathname()).toBe("/control-room/site/s1/bogus");
+}
+
+/** V21a — `builtin/smoc` on a non-SMOC site (RSMOC-WC in PHEWB): the generated view mounts (L1). */
+export async function aBuiltinOnANonSmocSiteHostsTheGeneratedView(): Promise<void> {
+  stubReads(PHE_RSMOC_SITES, PHE_BUILTIN_VIEW);
+  renderAt("p9");
+
+  const mount = await screen.findByTestId("generated-site-view");
+  expect(mount.getAttribute("data-location-id")).toBe("p9");
+}
+
+/** V21b — `builtin/smoc` on a non-SMOC site mounts no SMOC view (after V21a's positive control). */
+export async function aBuiltinOnANonSmocSiteMountsNoSmocView(): Promise<void> {
+  stubReads(PHE_RSMOC_SITES, PHE_BUILTIN_VIEW);
+  renderAt("p9");
+
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
+  expect(screen.queryByTestId("smoc-site-view")).toBeNull();
+}
+
+/** V21c — a tab segment on a non-SMOC `builtin` site redirects to the bare site path (L1, D5). */
+export async function aTabOnANonSmocBuiltinSiteRedirectsToTheBarePath(): Promise<void> {
+  stubReads(PHE_RSMOC_SITES, PHE_BUILTIN_VIEW);
+  renderAt("p9", undefined, "sld");
+
+  expect(await screen.findByTestId("generated-site-view")).toBeInTheDocument();
+  expect(pathname()).toBe("/control-room/site/p9");
 }
 
 export function cleanupPage(): void {

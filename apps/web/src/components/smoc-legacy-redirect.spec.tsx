@@ -17,7 +17,7 @@ import { SmocLegacyRedirect } from "./smoc-legacy-redirect";
  * point and carries the `@vitest-environment jsdom` docblock (ADR 0014,
  * ADR 0042 decision 2).
  *
- * The component finds `RSMOC-WC` by `code` in the caller's readable KPI list
+ * The component finds `RSMOC-WC` in `ESKOM` in the caller's readable KPI list
  * and sends the caller to that site's tab; a list without it, or a failed
  * read, sends the caller to `/control-room`. It decides from `data`, never
  * from `status`. `ControlRoomScopeRoute` is not in this harness: its own spec

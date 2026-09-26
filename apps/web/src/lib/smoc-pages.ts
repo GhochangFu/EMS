@@ -30,8 +30,20 @@ export const SMOC_TABS: readonly SmocTab[] = [
 /** The tab a bare `/control-room/site/:locationId` URL renders (D2, OQ2). */
 export const DEFAULT_SMOC_TAB: SmocTabKey = "overview";
 
-/** The one site whose resolved view is `builtin/smoc` (OQ3, D7). */
+/**
+ * The one site whose resolved view is `builtin/smoc` (OQ3, D7) is `RSMOC-WC`
+ * in the organization `ESKOM`: a location code is unique only per
+ * organization (migration 0016), so the code alone does not name the site.
+ */
 export const SMOC_SITE_CODE = "RSMOC-WC";
+
+/** The organization that owns `SMOC_SITE_CODE` (see above). */
+export const SMOC_ORG_CODE = "ESKOM";
+
+/** True only for the SMOC site: code `RSMOC-WC` AND organization code `ESKOM`. */
+export function isSmocSite(row: { readonly code: string; readonly organization: { readonly code: string } }): boolean {
+  return row.code === SMOC_SITE_CODE && row.organization.code === SMOC_ORG_CODE;
+}
 
 /** The URL for one SMOC tab on one site, encoded for the router path segment. */
 export function smocTabPath(locationId: string, tab: SmocTabKey): string {
@@ -52,9 +64,9 @@ export function allowedSmocTabs(scope: AccessibleScope | null): readonly SmocTab
   return SMOC_TABS.filter((tab) => canAccessControlRoomArea(scope, tab.area));
 }
 
-/** Finds the `RSMOC-WC` row among readable sites (OQ3, D7), never assumes it is first. */
-export function findSmocSite<T extends { readonly id: string; readonly code: string }>(
-  items: readonly T[],
-): T | undefined {
-  return items.find((item) => item.code === SMOC_SITE_CODE);
+/** Finds the SMOC site (`isSmocSite`) among readable sites (OQ3, D7), never assumes it is first. */
+export function findSmocSite<
+  T extends { readonly id: string; readonly code: string; readonly organization: { readonly code: string } },
+>(items: readonly T[]): T | undefined {
+  return items.find(isSmocSite);
 }
