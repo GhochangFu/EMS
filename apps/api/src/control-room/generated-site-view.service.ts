@@ -15,6 +15,25 @@ import { telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 
 const NOT_FOUND = "Location not found or outside your access scope";
 
+/**
+ * How far back statement (2) looks for a point's latest sample (owner ruling,
+ * 2026-09-26): a registered point silent for more than 7 days answers
+ * `latest: null` and its card row prints "—"; an asset whose every point is
+ * that silent reads `none`.
+ *
+ * **A literal in the SQL text, never a bound parameter.** `point_values` is a
+ * hypertable, and chunk exclusion at plan time needs a constant bound: with
+ * `now() - $n` the planner keeps every chunk (the "a bound interval plans
+ * every chunk" rule, `tests/f3.28-offline-bound-single-source.test.ts`).
+ * Measured on the dev DB for `RSMOC-WC` (43 assets, 7.4 M rows): this bound
+ * plans in 31–41 ms and runs in ~13 ms; the unbounded `DISTINCT ON` it
+ * replaces ran 69.7 s (an external merge sort of 411 MB), and an unbounded
+ * `LATERAL` planned in 574–1228 ms. It is interpolated from this constant
+ * only (T10 in `tests/f3.68-generated-site-view.test.ts`), so the window is
+ * stated once.
+ */
+export const GENERATED_LATEST_WINDOW_SQL = "interval '7 days'";
+
 /** Statement (1)'s row: the location, and one of its in-scope assets (or none). */
 interface AssetRow {
   asset_id: string | null;
@@ -59,13 +78,15 @@ interface PointRow {
  * 2. The active `bms.asset_points` of exactly the asset ids statement (1)
  *    returned — the scope predicate is spelled once, in (1) — left-joined to
  *    the `bms.point_keys` catalog (name, rank, fallback unit) and to each
- *    point's newest sample (`DISTINCT ON (asset_id, point_key)`, the
- *    `locationDashboard.latest_points` shape), ordered by the one rule of plan
- *    D1: `headline_rank ASC NULLS LAST, point_key ASC`.
+ *    registered point's newest sample within {@link GENERATED_LATEST_WINDOW_SQL}
+ *    (a `LEFT JOIN LATERAL … ORDER BY time DESC LIMIT 1` per point), ordered
+ *    by the one rule of plan D1: `headline_rank ASC NULLS LAST, point_key ASC`.
  *
- * No time predicate on `point_values` (`latest` is "the newest ever", not
- * "the newest within a window"), no `assets.active` filter (parity with the
- * KPI header), nothing read from a template: PHEWB's assets have none.
+ * **A point silent for more than 7 days shows "—"** (`latest: null`): the
+ * lookup is bounded so the read never sorts a site's whole history (the
+ * owner's 2026-09-26 ruling on the step-5 blocker). No `assets.active` filter
+ * (parity with the KPI header), nothing read from a template: PHEWB's assets
+ * have none.
  *
  * **Freshness (plan D3).** An asset's `latestTelemetryAt` is the newest
  * sample among its registered active points, judged by
@@ -133,16 +154,6 @@ export class GeneratedSiteViewService {
       `
       WITH scoped_assets AS (
         SELECT unnest($1::uuid[]) AS id
-      ),
-      latest AS (
-        SELECT DISTINCT ON (pv.asset_id, pv.point_key)
-          pv.asset_id,
-          pv.point_key,
-          pv.value,
-          pv.time
-        FROM telemetry.point_values pv
-        INNER JOIN scoped_assets sa ON sa.id = pv.asset_id
-        ORDER BY pv.asset_id, pv.point_key, pv.time DESC
       )
       SELECT
         ap.asset_id,
@@ -155,7 +166,15 @@ export class GeneratedSiteViewService {
       FROM scoped_assets sa
       INNER JOIN bms.asset_points ap ON ap.asset_id = sa.id AND ap.active = true
       LEFT JOIN bms.point_keys pk ON pk.code = ap.point_key
-      LEFT JOIN latest lt ON lt.asset_id = ap.asset_id AND lt.point_key = ap.point_key
+      LEFT JOIN LATERAL (
+        SELECT pv.value, pv.time
+        FROM telemetry.point_values pv
+        WHERE pv.asset_id = ap.asset_id
+          AND pv.point_key = ap.point_key
+          AND pv.time > now() - ${GENERATED_LATEST_WINDOW_SQL}
+        ORDER BY pv.time DESC
+        LIMIT 1
+      ) lt ON true
       -- NULLS LAST is already ASC's default; it is spelled out so the D1 rule reads whole.
       ORDER BY ap.asset_id, pk.headline_rank ASC NULLS LAST, ap.point_key ASC
       `,

@@ -248,3 +248,42 @@ describe("F3.68 — the generated read reads no template (T7)", () => {
     expect(service()).not.toMatch(/template_id|templateId/);
   });
 });
+
+/**
+ * T10 (step-5 blocker, owner ruling 2026-09-26) — the latest-value lookup is
+ * a per-registered-point `LATERAL … LIMIT 1` bounded by a 7-day window, and
+ * the window is a **literal in the SQL text**, spelled once in
+ * `GENERATED_LATEST_WINDOW_SQL`. A bound `now() - $n` on the hypertable plans
+ * every chunk (measured 574–1228 ms planning), and the unbounded
+ * `DISTINCT ON` it replaces sorted the whole site (69.7 s on the dev DB).
+ * Comments are stripped first, so a docblock that spells the old shape
+ * cannot satisfy or trip a case. One claim per `it()`.
+ */
+describe("F3.68 — the generated read's latest lookup is bounded by a literal window (T10)", () => {
+  const SERVICE_REL = "apps/api/src/control-room/generated-site-view.service.ts";
+  const service = (): string => tsOnly(read(SERVICE_REL));
+
+  it("declares GENERATED_LATEST_WINDOW_SQL as the literal interval '7 days'", () => {
+    expect(service()).toMatch(/export const GENERATED_LATEST_WINDOW_SQL\s*=\s*"interval '7 days'"\s*;/);
+  });
+
+  it("interpolates GENERATED_LATEST_WINDOW_SQL into a now() comparison exactly once", () => {
+    expect(service().match(/pv\.time > now\(\) - \$\{GENERATED_LATEST_WINDOW_SQL\}/g) ?? []).toHaveLength(1);
+  });
+
+  it("spells no interval literal outside the constant", () => {
+    expect(service().match(/interval\s+'/g) ?? []).toHaveLength(1);
+  });
+
+  it("binds no interval parameter against now()", () => {
+    expect(service()).not.toMatch(/now\(\)\s*-\s*\$\d/);
+  });
+
+  it("reads the latest sample with a LATERAL lookup (positive control)", () => {
+    expect(service()).toMatch(/LEFT JOIN LATERAL \(/);
+  });
+
+  it("no longer sorts the site with DISTINCT ON", () => {
+    expect(service()).not.toMatch(/DISTINCT ON/);
+  });
+});

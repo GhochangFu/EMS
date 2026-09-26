@@ -14,6 +14,7 @@ import {
   assertAssetIdsNarrowTheRead,
   assertCatalogUnitFillsNull,
   assertDomainsInSortOrder,
+  assertEightDayOldSampleIsNullLatest,
   assertEmptyScopeSendsNoQuery,
   assertGlobalAdminReadsAPhewbSite,
   assertInactiveMappingSampleDoesNotMakeLive,
@@ -21,8 +22,10 @@ import {
   assertLatestIsTheNewerSample,
   assertNoSampleIsNone,
   assertNoSampleIsNullLatest,
+  assertOnlyEightDayOldSampleIsNone,
   assertOrganizationAdminIsBoundToItsOrganization,
   assertRankThenNullsLast,
+  assertSixDayOldSampleIsPresent,
   assertTemplatelessAssetsAreAnswered,
   assertTheBoundaryIsLive,
   assertThirtySecondsIsStale,
@@ -38,7 +41,7 @@ import { GeneratedSiteViewService } from "./generated-site-view.service";
 
 /**
  * `F3.68` — Vitest entry point for `GeneratedSiteViewService` against a real
- * database (plan U5, R1–R15). Assertions live in the sibling `.spec` (ADR
+ * database (plan U5, R1–R16). Assertions live in the sibling `.spec` (ADR
  * 0014); this file owns the pools.
  *
  * The `read()` cases run on the fleet pool (production's `FLEET_POOL`, ADR
@@ -50,7 +53,7 @@ const connectionString = requireIntegrationDb({
   item: "F3.68",
   label: "the generated site view read",
   because:
-    "the point order (rank, NULLS LAST, key), the DISTINCT ON latest value, the active-point filter, " +
+    "the point order (rank, NULLS LAST, key), the 7-day-bounded LATERAL latest value, the active-point filter, " +
     "the unit COALESCE and the asset-id scope predicate are all SQL, so a green run without a " +
     "database asserts nothing about any of them.",
 });
@@ -110,6 +113,17 @@ describe.skipIf(!connectionString)("F3.68 — GeneratedSiteViewService", () => {
   it(
     "R15b a fresh sample on an inactive mapping does not make the asset live",
     rolledBack(assertInactiveMappingSampleDoesNotMakeLive),
+    60_000,
+  );
+  it(
+    "R16a a point whose only sample is 8 days old answers latest: null",
+    rolledBack(assertEightDayOldSampleIsNullLatest),
+    60_000,
+  );
+  it("R16b a point sampled 6 days ago answers its latest value", rolledBack(assertSixDayOldSampleIsPresent), 60_000);
+  it(
+    "R16c an asset whose only sample is 8 days old reads none",
+    rolledBack(assertOnlyEightDayOldSampleIsNone),
     60_000,
   );
   it("R5a latest is the newer of two samples", rolledBack(assertLatestIsTheNewerSample), 60_000);

@@ -11,13 +11,13 @@ import { GeneratedSiteViewService } from "./generated-site-view.service";
 import { jwtFor } from "./site-control-room-view.integration.spec";
 
 /**
- * `F3.68` (ADR 0076 decision 7, plan U5, R1–R15) — `GeneratedSiteViewService`
+ * `F3.68` (ADR 0076 decision 7, plan U5, R1–R16) — `GeneratedSiteViewService`
  * against a real database. The sibling `.integration.test.ts` owns the pools;
  * the assertions live here (ADR 0014, AGENTS.md §4.6).
  *
  * **Two harnesses.**
  *
- * - **`read()` cases (R1–R10, R14, R15) run in one transaction and roll it back.**
+ * - **`read()` cases (R1–R10, R14–R16) run in one transaction and roll it back.**
  *   The test file wraps each in `inRolledBackTransaction` (`BEGIN` … `ROLLBACK`
  *   in a `finally`), and the service is constructed over that same client, so
  *   it sees the fixture rows — per-run organization, location, domains, point
@@ -240,20 +240,21 @@ export async function assertRankThenNullsLast(client: pg.PoolClient): Promise<vo
  * tiebreak the ties come out in the order the final sort receives them
  * (Postgres's sort keeps an already-ordered run), and that order belongs to
  * the plan, which the planner picks from table statistics. Measured on
- * `bms_f368` with the mutated statement: the planner joins `latest` with a
- * **Merge Left Join on `(asset_id, point_key)`**, so it first sorts the
- * `asset_points` rows by `(asset_id, point_key)` — key order — and the
- * incremental sort on `headline_rank` then keeps that order. The `DISTINCT ON`
- * join, not the service, placed the ties correctly. Under another plan
- * (nested loop over a bitmap heap scan, seen on an earlier run) the ties come
- * out in heap order and the deletion reddens. Other key-ordered paths: an
- * index scan on the `(asset_id, point_key)` unique index, and — with the old
- * fixture's `src_<point_key>` — an index scan on
+ * `bms_f368` with the mutated statement, when statement (2) still joined a
+ * `DISTINCT ON` `latest` CTE: the planner chose a **Merge Left Join on
+ * `(asset_id, point_key)`**, so it first sorted the `asset_points` rows into
+ * key order and the incremental sort on `headline_rank` kept it — the join,
+ * not the service, placed the ties correctly. The per-point `LATERAL` lookup
+ * that replaced the CTE (step-5 blocker) has no merge key, but key-ordered
+ * paths remain: an index scan on the `(asset_id, point_key)` unique index,
+ * and — with the old fixture's `src_<point_key>` — an index scan on
  * `asset_points_asset_source_key_idx`.
  *
  * So this transaction switches off merge and hash joins and index scans,
  * which leaves a nested loop with `asset_points` as the outer side, read by
- * a bitmap heap or seq scan in heap order. The points are inserted mm, zz, aa
+ * a bitmap heap or seq scan in heap order (re-measured after the `LATERAL`
+ * change: deleting the tiebreak still reddens this case, and R4). The points
+ * are inserted mm, zz, aa
  * (neither key order nor its reverse) with `source_data_key`s that sort zz,
  * aa, mm. The only thing left that can put aa, mm, zz in key order is the SQL
  * tiebreak itself, which is the layer that owns the rule.
@@ -410,6 +411,52 @@ export async function assertInactiveMappingSampleDoesNotMakeLive(client: pg.Pool
   const { control, subject } = await freshSampleOnAPointThatDoesNotCount(client, "inactive");
   expect(control.freshness, "positive control: a 5 s sample on a registered point is live").toBe("live");
   expect(subject.freshness).toBe("stale");
+}
+
+const DAY_SECONDS = 24 * 60 * 60;
+
+/**
+ * One asset with two registered points: `recent` sampled 6 days ago, `old`
+ * sampled 8 days ago — either side of the 7-day `GENERATED_LATEST_WINDOW_SQL`
+ * bound on the latest-value lookup (the owner's 2026-09-26 ruling).
+ */
+async function assetWithSixAndEightDaySamples(client: pg.PoolClient) {
+  const site = await seedSite(client);
+  const asset = await seedAsset(client, site);
+  const recent = await seedPointKey(client, site, "recent");
+  const old = await seedPointKey(client, site, "old");
+  await seedAssetPoint(client, site, asset, recent);
+  await seedAssetPoint(client, site, asset, old);
+  await insertSample(client, asset, recent, 6, 6 * DAY_SECONDS);
+  await insertSample(client, asset, old, 8, 8 * DAY_SECONDS);
+  const points = assetOf(await readAll(client, site), asset).points;
+  return { recent: points.find((p) => p.pointKey === recent), old: points.find((p) => p.pointKey === old) };
+}
+
+/**
+ * R16a — a registered point whose only sample is 8 days old answers
+ * `latest: null`: the lookup reads the last 7 days only. The point itself is
+ * still listed (the control: the bound drops the value, not the row).
+ */
+export async function assertEightDayOldSampleIsNullLatest(client: pg.PoolClient): Promise<void> {
+  const { old } = await assetWithSixAndEightDaySamples(client);
+  expect(old, "control: the 8-day-old point is still listed").toBeDefined();
+  expect(old?.latest).toBeNull();
+}
+
+/** R16b — a sample 6 days old is inside the window and answers as `latest`. */
+export async function assertSixDayOldSampleIsPresent(client: pg.PoolClient): Promise<void> {
+  const { recent } = await assetWithSixAndEightDaySamples(client);
+  expect(recent?.latest?.value).toBe(6);
+}
+
+/**
+ * R16c — an asset whose only point was last sampled 8 days ago reads `none`
+ * with a null `latestTelemetryAt`, as if it had never reported.
+ */
+export async function assertOnlyEightDayOldSampleIsNone(client: pg.PoolClient): Promise<void> {
+  const asset = await assetWithSampleAged(client, 8 * DAY_SECONDS);
+  expect([asset.freshness, asset.latestTelemetryAt]).toEqual(["none", null]);
 }
 
 /** R9a — `assetIds = [a]` answers only `a`, in exactly two statements. */
