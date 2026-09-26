@@ -651,15 +651,15 @@ export class DashboardService {
   // §4.5: this file sat at 994 of 1000 lines). One delegate per read, so the
   // controller and the specs still call the service.
   energySummary(windowRaw?: string, assetIds?: string[] | null): Promise<EnergyCentreSummary> {
-    return energyCentre.energySummary({ pool: this.pool, parameters: this.parameters }, windowRaw, assetIds);
+    return energyCentre.energySummary({ pool: this.pool, parameters: this.parameters }, windowRaw, assetIds ?? null);
   }
 
   energySourceMix(windowRaw?: string, assetIds?: string[] | null) {
-    return energyCentre.energySourceMix(this.pool, windowRaw, assetIds);
+    return energyCentre.energySourceMix(this.pool, windowRaw, assetIds ?? null);
   }
 
   energyTopConsumers(windowRaw?: string, limit = 10, assetIds?: string[] | null) {
-    return energyCentre.energyTopConsumers(this.pool, windowRaw, limit, assetIds);
+    return energyCentre.energyTopConsumers(this.pool, windowRaw, limit, assetIds ?? null);
   }
 
   private parseWindowInterval(raw: string): {

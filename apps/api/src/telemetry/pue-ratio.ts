@@ -40,7 +40,7 @@ import { aggregateRelation, avgExpr, type AggregateLevel } from "./point-aggrega
  *
  * `pool` is the caller's `FLEET_POOL`. Both `DashboardService` and
  * `ReportsService` inject it (ADR 0043 Amendments 2/3; the reason is written out
- * at `reports.service.ts:31-38`), and the `$1::uuid[]` scope threaded from
+ * in the `ReportsService` constructor comment), and the `$1::uuid[]` scope threaded from
  * `AccessControlService.readableAssetIds` **is** the isolation control. Both
  * queries below read `telemetry.point_values` and `telemetry.point_values_*`,
  * which carry no row-level security (migration `0052`'s own header), and since
