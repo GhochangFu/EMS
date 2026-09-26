@@ -746,7 +746,9 @@ export class AccessControlService {
    * `writableOrganizationIds` does for the sources they share. Before `F4.161` it ran its own
    * walk that stopped at the first source with any grant row, so a `viewer`/`operator` whose
    * organization grant reached no active site read that organization while its scope came from
-   * a later source. Grants that reach no active site anywhere pick `none` and give `[]`.
+   * a later source. For `operator`/`viewer`, grants that reach no active site anywhere pick
+   * `none` and give `[]`; a single-source role (`organization_admin`, `location_admin`,
+   * `asset_group_admin`) is never probed and keeps its organization regardless.
    */
   async readableOrganizationIds(jwt: JwtPayload): Promise<string[] | null> {
     const user = await this.resolveDbUser(jwt);
@@ -873,7 +875,10 @@ export class AccessControlService {
    * last source is used unprobed, so read-only roles without such grants fail
    * closed on `kind: "none"`. The result equals the old walk's, which stopped at
    * the first `scopeFromSource` with any location or asset: every source derives
-   * its assets from active locations only.
+   * its assets from active locations only. That equivalence holds absent a
+   * concurrent write to `locations.active` or to the grant rows between the
+   * probe and the fetch; such a race fails closed — the picked source's own
+   * scope comes back empty of the kind it was probed for, never someone else's.
    */
   private async scopeForUser(user: DbUser): Promise<AccessibleScope> {
     return scopeFromSource(this.fleetDb, user, await selectReadScopeSourceFor(this.fleetDb, user));

@@ -28,9 +28,8 @@ import {
  * signature, indentation, `this.fleetDb` → `fleetDb` and
  * `this.directOrganizationIds(…)` → `directOrganizationIds(fleetDb, …)`; the
  * service keeps a one-line delegate for `directOrganizationIds` so its
- * callers did not change. `F4.161` then added the probe and the selector
- * below them — `readScopeSourceYields` and `selectReadScopeSourceFor` are new
- * code, not moved code.
+ * callers did not change. `readScopeSourceYields` and `selectReadScopeSourceFor`
+ * below them are new code, not moved code (see `F4.161` below).
  *
  * Every read here runs on `fleetDb` (`bms_fleet`, `BYPASSRLS`) for the reason
  * the service's file docblock gives — scope resolution runs before any tenant

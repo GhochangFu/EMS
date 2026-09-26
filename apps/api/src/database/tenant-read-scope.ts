@@ -101,8 +101,9 @@ export async function withReadScope<T>(
  * scoped caller whose grants currently resolve to zero assets).
  *
  * Takes the already-resolved organization id set (`null` = unrestricted admin, `[]` = no
- * grants, one or many otherwise) rather than performing its own resolution — there is no
- * fleetDb round trip to make here, unlike the asset-derived case above.
+ * organization on the picked source — no grant row, or, for `operator`/`viewer`, grants that
+ * reach no active site (`F4.161`) — one or many otherwise) rather than performing its own
+ * resolution — there is no fleetDb round trip to make here, unlike the asset-derived case above.
  */
 export type OrganizationReadScopeResolution =
   | { kind: "empty" }

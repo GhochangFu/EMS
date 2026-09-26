@@ -261,10 +261,11 @@ export async function assertKbResolvesAnInactiveSkillLabel(db: BmsDb): Promise<v
 }
 
 /**
- * A caller with no organization at all gets nothing, not everything. The
- * failure direction has to be closed — `readableOrganizationIds` returns `null`
- * for an unrestricted admin and `[]` for a user with no grant, and confusing
- * the two is how a scope check becomes a leak.
+ * A caller with no organization on its picked source gets nothing, not
+ * everything. The failure direction has to be closed — `readableOrganizationIds`
+ * returns `null` for an unrestricted admin and `[]` for a user with no grant row,
+ * or, for `operator`/`viewer`, grants that reach no active site (`F4.161`) —
+ * and confusing the two is how a scope check becomes a leak.
  */
 export async function assertKbReturnsNothingForAnEmptyScope(db: BmsDb): Promise<void> {
   await withRollback(db, async (tx) => {
