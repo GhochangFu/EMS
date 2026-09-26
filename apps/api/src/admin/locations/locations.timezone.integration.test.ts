@@ -8,6 +8,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { LocationsAdminService } from "./locations.service";
 import {
   createAcceptsEtcUtc,
@@ -116,6 +117,7 @@ describe.skipIf(!connectionString)("E4.1b — locations.timezone on the admin wr
       createDb(tenantPool),
       new AccessControlService(createDb(authPool), createDb(fleetPool)),
       new MasterDataAuditService(createDb(tenantPool), createDb(fleetPool)),
+      new VocabulariesService(createDb(tenantPool)),
     );
     ctx = {
       svc,

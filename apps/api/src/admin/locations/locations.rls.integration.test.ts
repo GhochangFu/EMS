@@ -8,11 +8,19 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { LocationsAdminService } from "./locations.service";
 import {
+  assertARefusedCreateWritesNoRow,
+  assertARefusedUpdateLeavesTheTypeUnchanged,
+  assertCreateAcceptsALiveType,
+  assertCreateRefusesAnUnknownTypeWithA400,
   assertDeactivateGuardSeesActiveAssetsUnderRls,
+  assertListLocationTypesRefusesANonMasterDataUser,
+  assertListLocationTypesReturnsTheFour,
   assertPolicyRefusesMismatchedOrg,
   assertRefusesOutOfScopeOrganization,
+  assertUpdateRefusesAnUnknownTypeWithA400,
   assertWriteLifecycleSurvivesRealRls,
 } from "./locations.rls.integration.spec";
 
@@ -31,10 +39,12 @@ const connectionString = requireIntegrationDb({
 });
 
 const ORGANIZATION_ADMIN_EMAIL = "phe-admin@bms.local";
+/** `asset_group_admin` in `bms.users` — refused by `requireMasterDataUser`. */
+const ASSET_GROUP_ADMIN_EMAIL = "wc-hvac-admin@bms.local";
 const SYNTHETIC_SUB = "00000000-0000-4000-8000-000000000001";
 
 /** Every location code family this suite commits, for the stale sweep below. */
-const LOCATION_FAMILIES = ["F4.16-RLS-%", "E71B-LOC-GUARD-%"];
+const LOCATION_FAMILIES = ["F4.16-RLS-%", "E71B-LOC-GUARD-%", "F4157-LT-%"];
 const GUARD_ASSET_FAMILY = "E71B-AS-GUARD-%";
 
 /**
@@ -158,6 +168,7 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
       createDb(tenantPool),
       new AccessControlService(createDb(authPool), createDb(fleetPool)),
       new MasterDataAuditService(createDb(tenantPool), createDb(fleetPool)),
+      new VocabulariesService(createDb(tenantPool)),
     );
   });
 
@@ -210,5 +221,40 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
       { svc, tenantPool, ownerPool, organizationId },
       jwt,
     );
+  });
+
+  const register = (created: string) => {
+    createdIds.push(created);
+  };
+
+  it("F4.157 L1 — create refuses an unknown location type with a 400", async () => {
+    await assertCreateRefusesAnUnknownTypeWithA400({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
+  });
+
+  it("F4.157 L1 — a refused create writes no row", async () => {
+    await assertARefusedCreateWritesNoRow({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
+  });
+
+  it("F4.157 L1 control — create accepts a live location type", async () => {
+    await assertCreateAcceptsALiveType({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
+  });
+
+  it("F4.157 L2 — update refuses an unknown location type with a 400", async () => {
+    await assertUpdateRefusesAnUnknownTypeWithA400({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
+  });
+
+  it("F4.157 L2 — a refused update leaves the stored type unchanged", async () => {
+    await assertARefusedUpdateLeavesTheTypeUnchanged({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
+  });
+
+  it("F4.157 L3 — listLocationTypes refuses a non-master-data user with a 403", async () => {
+    await assertListLocationTypesRefusesANonMasterDataUser(svc, {
+      ...jwtFor(ASSET_GROUP_ADMIN_EMAIL),
+      role: "asset_group_admin",
+    });
+  });
+
+  it("F4.157 L4 — listLocationTypes returns the four active types in order", async () => {
+    await assertListLocationTypesReturnsTheFour(svc, jwt);
   });
 });

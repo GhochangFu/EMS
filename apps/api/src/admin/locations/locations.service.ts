@@ -10,11 +10,17 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { assets, locations, organizations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AdminLocationDto, AdminLocationSummaryDto, JwtPayload } from "@bms/shared";
+import type {
+  AdminLocationDto,
+  AdminLocationSummaryDto,
+  JwtPayload,
+  LocationTypesListResponse,
+} from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type { CreateLocationBody, UpdateLocationBody } from "./locations.schema";
 
@@ -39,7 +45,19 @@ export class LocationsAdminService {
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // `F4.157` (ADR 0077) — last, so the two pool slots
+    // `fleet-read-wiring.spec.ts` pins stay at 0 and 1.
+    private readonly vocabularies: VocabulariesService,
   ) {}
+
+  /**
+   * `F4.157` (ADR 0077, plan D3) — the active location types for the admin
+   * form's Type select, behind the same gate as `list`.
+   */
+  async listLocationTypes(jwt: JwtPayload): Promise<LocationTypesListResponse> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    return { items: await this.vocabularies.listLocationTypes() };
+  }
 
   /** Lists locations scoped to the caller. */
   async list(
@@ -120,6 +138,10 @@ export class LocationsAdminService {
     if (typeof body.timezone === "string") {
       await this.assertKnownTimezone(body.timezone);
     }
+    // `F4.157` (ADR 0077) — the request schema checks shape only; this names
+    // the live codes in a 400 rather than letting `locations_type_fk` answer
+    // a 500 (plan D11).
+    await this.vocabularies.assertLocationType(body.type);
 
     const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [row] = await tx
@@ -180,6 +202,11 @@ export class LocationsAdminService {
     }
     if (typeof body.timezone === "string") {
       await this.assertKnownTimezone(body.timezone);
+    }
+    // `F4.157` — only a type the patch names is checked: an existing row keeps
+    // the type it has, even one retired since it was written.
+    if (body.type !== undefined) {
+      await this.vocabularies.assertLocationType(body.type);
     }
 
     await withTenant(this.tenantDb, existing.organizationId, async (tx) => {

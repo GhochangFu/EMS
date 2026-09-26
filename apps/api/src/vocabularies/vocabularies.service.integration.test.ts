@@ -12,7 +12,13 @@ import {
   assertAssetRoleRejectsUnknownCode,
   assertListReturnsAlarmSkillsOrdered,
   assertListReturnsAssetRolesOrdered,
+  assertListLocationTypesIsActiveOnly,
+  assertListLocationTypesIsOrdered,
   assertListReturnsWaterBalanceRolesOrdered,
+  assertLocationTypeAcceptsALiveCode,
+  assertLocationTypeRefusalListsLocationTypeCodes,
+  assertLocationTypeRejectsInactiveCode,
+  assertLocationTypeRejectsUnknownCode,
   assertWaterBalanceRoleRejectsInactiveCode,
   assertWaterBalanceRoleRejectsUnknownCode,
 } from "./vocabularies.service.integration.spec";
@@ -150,6 +156,64 @@ describe.skipIf(!waterBalanceRoleConnectionString)(
 
     it("rejects a retired water balance role code", async () => {
       await assertWaterBalanceRoleRejectsInactiveCode(db);
+    });
+  },
+);
+
+/**
+ * `F4.157` (ADR 0077) — the eighth vocabulary. Its own guard and its own
+ * pool, for the reason the `F3.37` block above gives.
+ */
+const locationTypeConnectionString = requireIntegrationDb({
+  item: "F4.157",
+  label: "VocabulariesService location type tests",
+  because:
+    "a green run here would assert that listLocationTypes() serves bms.location_types " +
+    "ordered and active-only, and that assertLocationType turns an unknown or retired " +
+    "code into a 400 rather than letting locations_type_fk surface as a 500 — while " +
+    "nothing checked any of it against a real database. Fix the pipeline, do not relax " +
+    "this guard.",
+});
+
+describe.skipIf(!locationTypeConnectionString)(
+  "F4.157 — VocabulariesService location types against a real database",
+  () => {
+    let pool: pg.Pool;
+    let db: BmsDb;
+
+    beforeAll(async () => {
+      pool = await openIntegrationPool(locationTypeConnectionString as string, "F4.157");
+      db = createDb(pool);
+    });
+
+    afterAll(async () => {
+      if (pool) {
+        await pool.end();
+      }
+    });
+
+    it("V2 — lists location types ordered by sortOrder, then code", async () => {
+      await assertListLocationTypesIsOrdered(db);
+    });
+
+    it("V2 — lists active location types only", async () => {
+      await assertListLocationTypesIsActiveOnly(db);
+    });
+
+    it("V3 — refuses a location type code with no matching row with a 400", async () => {
+      await assertLocationTypeRejectsUnknownCode(db);
+    });
+
+    it("V3 — the refusal lists the location type codes, not another vocabulary's", async () => {
+      await assertLocationTypeRefusalListsLocationTypeCodes(db);
+    });
+
+    it("V4 — refuses a retired location type code", async () => {
+      await assertLocationTypeRejectsInactiveCode(db);
+    });
+
+    it("V4 control — accepts a live location type code", async () => {
+      await assertLocationTypeAcceptsALiveCode(db);
     });
   },
 );

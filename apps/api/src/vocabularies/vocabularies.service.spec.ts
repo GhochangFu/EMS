@@ -140,3 +140,32 @@ export async function assertUnknownCodeEchoIsBounded(): Promise<void> {
     `expected the stripped code to be echoed whole, got: ${injected}`,
   );
 }
+
+/**
+ * `F4.157` V1 (ADR 0077) — `assertLocationType` refuses a code that names no
+ * row with a `BadRequestException`, and the message lists the live codes.
+ *
+ * The stub answers `[]` for the row read and the two fixture codes for the
+ * live-code read, so what this pins is the wiring: the eighth vocabulary
+ * reaches `unknownCodeMessage` under its own field name. That the list comes
+ * from `bms.location_types` and not from another table is a property of the
+ * query, asserted against real rows in the integration spec (V3).
+ */
+export async function assertLocationTypeRefusesAnUnknownCode(): Promise<void> {
+  const service = new VocabulariesService(stubDb());
+  let refused: unknown = null;
+  try {
+    await service.assertLocationType("nope");
+  } catch (err) {
+    refused = err;
+  }
+  assert(
+    refused instanceof BadRequestException,
+    `assertLocationType must refuse an unknown code with a BadRequestException, got ${String(refused)}`,
+  );
+  const message = refused instanceof Error ? refused.message : "";
+  assert(
+    message === 'location type "nope" is not a live value. Expected one of: electrical, hvac.',
+    `expected the refusal to name the field and list the live codes, got: ${message}`,
+  );
+}

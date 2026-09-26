@@ -209,6 +209,16 @@ export class OnboardingCommitService {
       await this.vocabularies.assertAssetDomain(domain);
     }
 
+    // `F4.157` (ADR 0077, plan D4) — the location's type must be a live
+    // `bms.location_types` code before the transaction opens, for the reason
+    // the domain loop above gives. `type` is optional in the draft between
+    // turns, and `validate` refuses a draft without one; `?? ""` fails closed
+    // if that ever stops holding — `""` names no row, so it is refused here
+    // with the code list, never written. A `23503` from `locations_type_fk`
+    // stays a 500 (plan D11): this check is what keeps it unreachable.
+    const locationType = draft.location?.type ?? "";
+    await this.vocabularies.assertLocationType(locationType);
+
     // `F4.109` — the six inserts below carry **no** `onConflict`, by owner
     // ruling 1: a duplicate is refused, never merged into an existing row. What
     // changes here is only the answer. Before this, `23505` reached Nest's
@@ -236,13 +246,8 @@ export class OnboardingCommitService {
           code: loc.code,
           slug: loc.slug,
           name: loc.name,
-          // F4.157 (D4): `location.type` is optional in the draft schema
-          // between turns. A type-level non-null rather than a `?? ""`
-          // default — U4/U6 add the `readyToCommit` cross-field error and the
-          // `vocabularies.assertLocationType` refusal that make this true at
-          // runtime; until then this line's behaviour is unchanged from
-          // before the schema widened.
-          type: loc.type!,
+          // Asserted live before the transaction opened (above).
+          type: locationType,
           province: loc.province ?? null,
           capital: loc.capital ?? null,
           latitude: loc.latitude,

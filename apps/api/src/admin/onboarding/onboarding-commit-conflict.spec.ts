@@ -200,7 +200,11 @@ function serviceFailingTheLocationInsert(err: unknown): OnboardingCommitService 
     }),
   } as never;
 
-  const vocabularies = { assertAssetDomain: () => Promise.resolve() } as never;
+  const vocabularies = {
+    assertAssetDomain: () => Promise.resolve(),
+    // `F4.157` — the draft's `rsmoc` is a live code; the case is the insert.
+    assertLocationType: () => Promise.resolve(),
+  } as never;
 
   return new OnboardingCommitService(
     fleetDb,

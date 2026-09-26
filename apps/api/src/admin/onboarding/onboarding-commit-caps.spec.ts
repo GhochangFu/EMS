@@ -100,6 +100,9 @@ function buildService(opts: {
       }
       return Promise.resolve();
     },
+    // `F4.157` — accepts every type: no case here is about the location, and
+    // each one throws before the transaction opens.
+    assertLocationType: () => Promise.resolve(),
   } as never;
 
   let validateCalls = 0;

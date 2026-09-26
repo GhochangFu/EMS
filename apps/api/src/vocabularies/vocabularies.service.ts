@@ -5,6 +5,7 @@ import {
   assetDomains,
   assetRoles,
   dashboardSections,
+  locationTypes,
   ruleCategories,
   waterBalanceRoles,
 } from "@bms/db";
@@ -17,6 +18,7 @@ import type {
   AssetDomainDto,
   AssetRoleDto,
   DashboardSectionDto,
+  LocationTypeDto,
   RuleCategoryDto,
   VocabulariesResponse,
   WaterBalanceRoleDto,
@@ -26,12 +28,13 @@ import { MAX_ECHOED_CELL_CHARS } from "../admin/spreadsheet-guard";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 
 /**
- * Seven open vocabularies — rule concerns and plant domains (ADR 0031
+ * Eight open vocabularies — rule concerns and plant domains (ADR 0031
  * Amendment 1), alarm severity (ADR 0032), alarm skill (ADR 0034), the
  * asset role a group membership plays (ADR 0049 decision 5, `F3.37`), the
  * dashboard section a template belongs to (ADR 0049 Amendment 2 decision 5,
- * `F3.36`), and an asset's place in a site's water balance (ADR 0073
- * decision 1, `E4.3`).
+ * `F3.36`), an asset's place in a site's water balance (ADR 0073
+ * decision 1, `E4.3`), and a location's type (ADR 0077, `F4.157`). The
+ * eighth is served by its own read, `listLocationTypes()`, not by `list()`.
  *
  * **Why this service exists at all.** Both vocabularies used to be `z.enum`s, so
  * a bad value was rejected by the request schema with a clear 400 naming the
@@ -180,6 +183,22 @@ export class VocabulariesService {
   }
 
   /**
+   * `F4.157` (ADR 0077) — the active location types, ordered by `sort_order`
+   * then `code`, for the admin locations form (`GET /admin/location-types`).
+   *
+   * Not part of `list()`: that response is read by every authenticated user
+   * and feeds the rule, asset and dashboard pickers; the location type is a
+   * master-data field, read behind `requireMasterDataUser`.
+   */
+  async listLocationTypes(): Promise<LocationTypeDto[]> {
+    return this.db
+      .select({ code: locationTypes.code, label: locationTypes.label })
+      .from(locationTypes)
+      .where(eq(locationTypes.active, true))
+      .orderBy(asc(locationTypes.sortOrder), asc(locationTypes.code));
+  }
+
+  /**
    * Rejects a plant domain that is not a live vocabulary row.
    *
    * Checks `active` too, not merely existence: offering a retired domain on a
@@ -293,6 +312,28 @@ export class VocabulariesService {
   }
 
   /**
+   * Rejects a location type that is not a live vocabulary row (ADR 0077,
+   * `F4.157`). Same shape as `assertWaterBalanceRole` — without this an
+   * unknown code would travel to Postgres and return as `locations_type_fk`,
+   * a 500 where the `z.enum` it replaced gave a 400.
+   *
+   * `locationTypeCodeSchema` is a `z.string()` and not a `z.enum` on purpose,
+   * so the request schema checks shape only and this is the whole boundary —
+   * for `LocationsAdminService.create`/`update` and for the onboarding commit.
+   */
+  async assertLocationType(code: string): Promise<void> {
+    const [row] = await this.db
+      .select({ active: locationTypes.active })
+      .from(locationTypes)
+      .where(eq(locationTypes.code, code))
+      .limit(1);
+
+    if (!row || !row.active) {
+      throw new BadRequestException(await this.unknownCodeMessage("location type", code));
+    }
+  }
+
+  /**
    * Names the valid values back to the caller.
    *
    * The enum did this for free — a Zod `invalid_enum_value` lists its options —
@@ -300,7 +341,14 @@ export class VocabulariesService {
    * import sheet. Costs one extra query on the failure path only.
    */
   private async unknownCodeMessage(
-    field: "domain" | "category" | "severity" | "skill" | "role" | "water balance role",
+    field:
+      | "domain"
+      | "category"
+      | "severity"
+      | "skill"
+      | "role"
+      | "water balance role"
+      | "location type",
     code: string,
   ): Promise<string> {
     // A lookup rather than the nested ternary this was until `F3.37`. Four
@@ -348,6 +396,12 @@ export class VocabulariesService {
           .from(waterBalanceRoles)
           .where(eq(waterBalanceRoles.active, true))
           .orderBy(asc(waterBalanceRoles.sortOrder)),
+      "location type": () =>
+        this.db
+          .select({ code: locationTypes.code })
+          .from(locationTypes)
+          .where(eq(locationTypes.active, true))
+          .orderBy(asc(locationTypes.sortOrder), asc(locationTypes.code)),
     };
 
     const available = await liveCodes[field]();
@@ -402,6 +456,15 @@ export class VocabulariesService {
     //   `automation_rules.category` / `.severity` being `varchar(64)`
     //   (`packages/db/src/schema/alarms-schema.ts:196`, `:212`) — the same 64,
     //   arrived at by a mechanism no schema participates in.
+    //
+    // `F4.157` adds three call sites that this census predates, and all three
+    // arrive bounded at 32, not 64: `locations.service.ts` `create` and
+    // `update` through the request body schema (the first route), and
+    // `onboarding-commit.service.ts` `commit` through the stored draft
+    // re-parsed by `OnboardingValidateService.validate` (the second route).
+    // The bound is `locationTypeCodeSchema`'s `.max(32)`
+    // (`packages/shared/src/contracts/location-types.ts`), the width of
+    // `bms.locations.type`.
     //
     // What actually holds all four is that the five vocabulary code schemas in
     // `packages/shared/src/contracts/operations.ts` are each
