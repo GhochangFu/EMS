@@ -109,6 +109,23 @@ async function openEdit(code: string): Promise<HTMLInputElement> {
   return (await screen.findByLabelText("Headline rank")) as HTMLInputElement;
 }
 
+/**
+ * W6 (step-5 finding Q1) — the rank field's hint does not promise that
+ * clearing is permanent: `seedPointKeyHeadlineRanks` refills a NULL rank on a
+ * seeded code at the next `pnpm db:seed` (OQ3 protects a set rank, not a
+ * cleared one). Read through the field's `aria-describedby`, so the hint is
+ * the one the field names.
+ */
+export async function rankHintSaysASeededCodeIsReRanked(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  const field = await openEdit(RANKED.code);
+  const hintId = field.getAttribute("aria-describedby") ?? "";
+  expect(document.getElementById(hintId)?.textContent).toBe(
+    "Lower shows first on a generated site card. Leave empty to unrank; a seeded code gets its default rank again on the next seed.",
+  );
+}
+
 /** W1 — the column shows `3` for a ranked key. */
 export async function columnShowsTheRank(): Promise<void> {
   stubApi();

@@ -8,6 +8,7 @@ import {
   columnShowsADashForNoRank,
   columnShowsTheRank,
   organizationAdminSeesNoEdit,
+  rankHintSaysASeededCodeIsReRanked,
   typingTwoSendsTwo,
 } from "./point-keys-page.spec";
 
@@ -44,5 +45,9 @@ describe("F3.68 point keys page — headline rank", () => {
 
   it("W5 an organization_admin sees the rows and no Edit button", async () => {
     await organizationAdminSeesNoEdit();
+  });
+
+  it("W6 the rank hint says a seeded code is re-ranked on the next seed", async () => {
+    await rankHintSaysASeededCodeIsReRanked();
   });
 });

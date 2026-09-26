@@ -300,7 +300,8 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                   onChange={(event) => setForm({ ...form, headlineRank: event.target.value })}
                 />
                 <p id="point-key-headline-rank-hint" className="mt-1 text-xs text-bms-muted">
-                  Lower shows first on a generated site card. Leave empty to unrank.
+                  Lower shows first on a generated site card. Leave empty to unrank; a seeded code gets its default
+                  rank again on the next seed.
                 </p>
               </div>
               <label className="block text-xs font-semibold text-bms-muted sm:col-span-2">
