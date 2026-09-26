@@ -19,13 +19,12 @@ import type {
 } from "@bms/shared";
 
 import { AUTH_DRIZZLE, FLEET_DRIZZLE } from "../database/database.tokens";
+import { type ReadScopeSource, isMasterDataRole } from "./access-scope";
 import {
-  noAccessScope,
-  type ReadScopeSource,
-  isMasterDataRole,
-  readScopeSourcesForRole,
-} from "./access-scope";
-import { directOrganizationIds, scopeFromSource } from "./access-scope-sources";
+  directOrganizationIds,
+  scopeFromSource,
+  selectReadScopeSourceFor,
+} from "./access-scope-sources";
 import {
   canPerformOperationsWrite,
   operationsWriteDenialReason,
@@ -738,22 +737,26 @@ export class AccessControlService {
    * (`F3.1b`, found in review):** `bms.dashboards` has no asset column at all — its only
    * tenant key is `organization_id` — and `AccessibleScope.locations[]` carries no
    * `organizationId` either, so neither can supply the caller-side filter
-   * `withOrganizationReadScope`'s fleet branch needs. This mirrors `scopeForUser`'s
-   * precedence walk but resolves organizations instead of locations/assets, reusing the same
-   * private helpers `writableOrganizationIds` does for the sources they share.
+   * `withOrganizationReadScope`'s fleet branch needs.
+   *
+   * **The source is `scopeForUser`'s, by construction (`F4.161`).** Both methods call
+   * `selectReadScopeSourceFor` — the one walk that picks the first grant source reaching an
+   * active location, else the role's last source — and this one resolves that source's
+   * organizations instead of its locations/assets, reusing the same private helpers
+   * `writableOrganizationIds` does for the sources they share. Before `F4.161` it ran its own
+   * walk that stopped at the first source with any grant row, so a `viewer`/`operator` whose
+   * organization grant reached no active site read that organization while its scope came from
+   * a later source. Grants that reach no active site anywhere pick `none` and give `[]`.
    */
   async readableOrganizationIds(jwt: JwtPayload): Promise<string[] | null> {
     const user = await this.resolveDbUser(jwt);
     if (user.role === "admin") {
       return null;
     }
-    for (const source of readScopeSourcesForRole(user.role)) {
-      const ids = await this.organizationIdsFromReadScopeSource(user.id, source);
-      if (ids.length > 0) {
-        return ids;
-      }
-    }
-    return [];
+    return this.organizationIdsFromReadScopeSource(
+      user.id,
+      await selectReadScopeSourceFor(this.fleetDb, user),
+    );
   }
 
   /** The organization-only analogue of `scopeFromSource`'s location/asset resolution, for the
@@ -863,19 +866,16 @@ export class AccessControlService {
   }
 
   /**
-   * Resolves the read scope for a user by walking the grant sources their role
-   * allows, in precedence order. The first source that yields any location or
-   * asset wins; if none does, the last source's (empty) scope is returned so
-   * read-only roles without grants fail closed on `kind: "none"`.
+   * Resolves the read scope for a user from the one grant source
+   * `selectReadScopeSourceFor` picks (`F4.161`) — the same selection
+   * `readableOrganizationIds` resolves from. The first source, in the role's
+   * precedence order, that reaches an active location wins; if none does, the
+   * last source is used unprobed, so read-only roles without such grants fail
+   * closed on `kind: "none"`. The result equals the old walk's, which stopped at
+   * the first `scopeFromSource` with any location or asset: every source derives
+   * its assets from active locations only.
    */
   private async scopeForUser(user: DbUser): Promise<AccessibleScope> {
-    let scope: AccessibleScope = noAccessScope();
-    for (const source of readScopeSourcesForRole(user.role)) {
-      scope = await scopeFromSource(this.fleetDb, user, source);
-      if (scope.assetIds.length > 0 || scope.locations.length > 0) {
-        break;
-      }
-    }
-    return scope;
+    return scopeFromSource(this.fleetDb, user, await selectReadScopeSourceFor(this.fleetDb, user));
   }
 }
