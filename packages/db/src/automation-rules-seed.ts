@@ -531,25 +531,25 @@ const LADDER_HASH_WIDTH = 8;
  * The unbounded template is `ESKOM_${assetCode, - to _}_${suffix}` —
  * `7 + n + s` characters for an `n`-character asset code and an
  * `s`-character suffix. It is returned unchanged whenever that fits (`<=
- * RULE_CODE_MAX`); a 42+ character asset code otherwise abends `pnpm
- * db:seed` with Postgres `22001 value too long`.
+ * RULE_CODE_MAX`), so every code seeded before `F4.129` keeps its bytes; a
+ * 42+ character asset code otherwise aborts `pnpm db:seed` with Postgres
+ * `22001 value too long`.
  *
- * On overflow the result is `ESKOM_<cut>_<hash>_<suffix>`: `<cut>` is the
- * folded asset code sliced to `k = 48 - s` characters and `<hash>` is the
- * first `LADDER_HASH_WIDTH` (8) hex digits of `sha256` of the FULL RAW
- * asset code, uppercased — `16 + k + s` characters, which is exactly 64.
+ * On overflow the result is `ESKOM_<cut>_<hash>_<suffix>`: `<hash>` is the
+ * first `LADDER_HASH_WIDTH` (8) hex digits of `sha256` of the full raw asset
+ * code, uppercased, and `<cut>` is the folded asset code sliced to what the
+ * other parts leave — `48 - s` characters, so the result is exactly 64.
  *
  * Three choices, each load-bearing:
  *
- * - **The hash is of the raw asset code, before the `-` → `_` fold**, so two
- *   asset codes that agree on every character up to the cut (and would
- *   therefore produce an identical `<cut>`) still diverge in `<hash>`,
- *   because the divergent tail is still part of what gets hashed. Hashing
- *   the (already-truncated) `<cut>` instead would not see that tail at all.
- * - **`<hash>` is uppercased.** `upsertRuleByCode` matches an existing row by
- *   `code.trim().toUpperCase() === code` — a lowercase hash segment would
- *   never match itself on a re-seed, and `pnpm db:seed` would insert a
- *   second row with the same condition tuple on every boot.
+ * - **The hash is of the full, raw asset code.** Full, because two long codes
+ *   that agree up to the cut produce the same `<cut>` and differ only in the
+ *   tail the cut dropped. Raw (before the `-` → `_` fold), because `A-B…` and
+ *   `A_B…` fold to the same `<cut>` and are still two assets.
+ * - **`<hash>` is uppercase**, the case of every code this file seeds. A
+ *   re-seed does not depend on it: the condition-tuple guard in
+ *   `seedEskomLadderRules` skips an already-seeded rule before
+ *   `upsertRuleByCode` compares any code.
  * - **`slice()` is exact**, not an approximation. Migration
  *   `0070_catalog_code_charset.sql` constrains `bms.assets.code` to
  *   `^[A-Za-z0-9_-]+$` — pure ASCII — so every asset code this reads is one
@@ -567,7 +567,9 @@ export function ladderRuleCode(assetCode: string, suffix: string): string {
     .digest("hex")
     .toUpperCase()
     .slice(0, LADDER_HASH_WIDTH);
-  const cutWidth = RULE_CODE_MAX - 16 - suffix.length;
+  // `ESKOM_` + `_` around the cut, then the hash, `_`, and the suffix.
+  const cutWidth =
+    RULE_CODE_MAX - "ESKOM__".length - LADDER_HASH_WIDTH - "_".length - suffix.length;
   const cut = folded.slice(0, cutWidth);
   return `ESKOM_${cut}_${hash}_${suffix}`;
 }

@@ -159,8 +159,11 @@ describe.skipIf(!ownerUrl)(
 
         // Run 2 — the module's own docblock: `pnpm db:seed` calls this
         // function a second time on its own, once every ESKOM electrical
-        // asset exists (`seed.ts`). M3 reddens here: without the
-        // condition-tuple skip, this pass would double-count.
+        // asset exists (`seed.ts`). The condition-tuple skip is what makes
+        // this a no-op. With that skip removed (M3) the suite reddened
+        // earlier, in run 1, with `automation_rules_org_code_idx` on an
+        // already-seeded ESKOM asset; these two assertions are the check
+        // for the fixture asset itself.
         await seedEskomLadderRules(db, eskomOrgId);
         const secondPass = await readCodes();
         expect(secondPass.length, "run 2 must leave exactly five rows for the fixture asset").toBe(5);
