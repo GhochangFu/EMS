@@ -197,7 +197,48 @@ export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<v
   }
 }
 
-/** Resolves simulator RTU id for an Eskom asset by site name and domain. */
+/**
+ * Resolves the simulator RTU of one ESKOM location for an asset domain, or
+ * `null` when the domain has no simulator RTU or the location has none.
+ *
+ * Keyed on the location's id and the code {@link ensureEskomDomainRtus}
+ * writes there ({@link simRtuCode}), which `rtus_location_code_unique` makes
+ * unique, so the answer does not depend on row order. A second location with
+ * the same name (an admin may create one) cannot capture the asset.
+ */
+export async function resolveEskomSimRtuIdForLocation(
+  pool: pg.Pool,
+  locationId: string,
+  locationCode: string,
+  assetDomain: string,
+): Promise<string | null> {
+  const suffix = DOMAIN_RTU_SUFFIX[rtuDomainForAssetDomain(assetDomain)];
+  if (!suffix) {
+    return null;
+  }
+  const res = await pool.query<{ id: string }>(
+    `
+    SELECT r.id
+    FROM bms.rtus r
+    WHERE r.location_id = $1
+      AND r.code = $2
+      AND r.source_type = 'simulator'
+    `,
+    [locationId, simRtuCode(locationCode, suffix)],
+  );
+  return res.rows[0]?.id ?? null;
+}
+
+/**
+ * Resolves simulator RTU id for an Eskom asset by site name and domain.
+ *
+ * `seedEskomAssets` only, which has a catalog `site_name` and no location
+ * yet. A name is not unique — an admin may create a second location with a
+ * seeded location's name — so the oldest location of that name wins, and the
+ * order is stated rather than left to the plan: `ORDER BY l.created_at, l.id`.
+ * {@link assignEskomAssetRtus} resolves by location id instead
+ * ({@link resolveEskomSimRtuIdForLocation}).
+ */
 export async function resolveEskomSimRtuId(
   pool: pg.Pool,
   siteName: string,
@@ -218,6 +259,7 @@ export async function resolveEskomSimRtuId(
       AND o.code = 'ESKOM'
       AND r.domain = $2
       AND r.source_type = 'simulator'
+    ORDER BY l.created_at, l.id, r.created_at, r.id
     LIMIT 1
     `,
     [siteName, domain],
@@ -230,10 +272,14 @@ export async function resolveEskomSimRtuId(
 }
 
 /**
- * Wires every non-manual, non-`PHE-` ESKOM asset whose domain has a simulator
- * RTU at its `site_name` to that RTU, on every boot (an asset of a domain
- * with no `DOMAIN_RTU_SUFFIX` entry, such as `mechanical` or `facility`, or
- * one whose `site_name` matches no ESKOM location, is skipped silently). The
+ * Wires every non-manual, non-`PHE-` ESKOM asset whose own location carries
+ * its `site_name` to that location's simulator RTU for its domain, on every
+ * boot (an asset of a domain with no `DOMAIN_RTU_SUFFIX` entry, such as
+ * `mechanical` or `facility`, or one whose location's name is not its
+ * `site_name`, is skipped silently). The RTU is resolved by the location's id
+ * and the seed's own RTU code ({@link resolveEskomSimRtuIdForLocation}), never
+ * by name, so an admin location that shares a seeded location's name cannot
+ * capture the seeded assets. The
  * function overwrites an existing `rtu_id` and sets `meta.telemetrySource` to
  * `simulator`. A `water` asset is wired only
  * when its code starts with `WTR-` (owner ruling R3); any other water asset
@@ -244,14 +290,20 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
     id: string;
     site_name: string;
     domain: string;
-    location_id: string | null;
+    location_id: string;
+    location_code: string;
   }>(`
-    SELECT a.id, a.site_name, a.domain, a.location_id
+    SELECT a.id, a.site_name, a.domain, a.location_id, l.code AS location_code
     FROM bms.assets a
     INNER JOIN bms.locations l ON l.id = a.location_id
     INNER JOIN bms.organizations o ON o.id = l.organization_id
     WHERE o.code = 'ESKOM'
       AND a.code NOT LIKE 'PHE-%'
+      -- Owner ruling 8 (2026-09-28): an asset is wired only when its own
+      -- location carries its site_name, the set the name resolver wired
+      -- before. The RTU is then resolved by that location's id, so a second
+      -- location with the same name cannot capture the asset.
+      AND l.name = a.site_name
       -- ADR 0018 made a gateway-less asset legal, and F4.10 seeds one to prove
       -- the scope queries do not join through bms.rtus. Without this exemption
       -- the second db:seed would wire it and the fixture would silently stop
@@ -264,8 +316,11 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
   `);
 
   for (const row of rows.rows) {
-    const rtuId = await resolveEskomSimRtuId(pool, row.site_name, row.domain).catch(
-      () => null,
+    const rtuId = await resolveEskomSimRtuIdForLocation(
+      pool,
+      row.location_id,
+      row.location_code,
+      row.domain,
     );
     if (!rtuId) {
       continue;

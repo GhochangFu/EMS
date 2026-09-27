@@ -7,12 +7,25 @@ import type pg from "pg";
  * exported functions exactly as before.
  */
 
-/** Points every asset at the location whose name matches its site name. */
+/**
+ * Points every asset at the location whose name matches its site name.
+ *
+ * A location name is not unique — an admin may create a second location with
+ * a seeded location's name — so only the OLDEST location of each name is a
+ * candidate (`DISTINCT ON (name) … ORDER BY name, created_at, id`). Joined to
+ * every location of a name instead, the UPDATE matched the newer one for an
+ * asset already at the older (`location_id <> l.id` holds only for it) and
+ * moved every seeded asset of that site to the admin's location.
+ */
 export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
   await pool.query(`
     UPDATE bms.assets AS a
     SET location_id = l.id
-    FROM bms.locations AS l
+    FROM (
+      SELECT DISTINCT ON (name) id, name
+      FROM bms.locations
+      ORDER BY name, created_at, id
+    ) AS l
     WHERE a.site_name = l.name
       AND (a.location_id IS NULL OR a.location_id <> l.id)
   `);

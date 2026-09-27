@@ -3,8 +3,10 @@ import { createRequire } from "node:module";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import type * as AssetGroupsSeed from "../packages/db/dist/asset-groups-seed.js";
 import type * as AutomationRulesSeed from "../packages/db/dist/automation-rules-seed.js";
 import type * as DbClient from "../packages/db/dist/client.js";
+import type * as EskomAssetsSeed from "../packages/db/dist/eskom-assets-seed.js";
 import type * as HierarchySeed from "../packages/db/dist/hierarchy-seed.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
 import type * as VerifyHierarchyExpected from "../packages/db/dist/verify-hierarchy-expected.js";
@@ -30,7 +32,13 @@ const { readEskomChecks, readGlobalChecks, readPhewbChecks, UNCOVERED_ELECTRICAL
 const { hierarchyExpectations } = require_(
   "../packages/db/dist/verify-hierarchy-expected.js",
 ) as typeof VerifyHierarchyExpected;
-const { ensureEskomDomainRtus } = require_("../packages/db/dist/hierarchy-seed.js") as typeof HierarchySeed;
+const { assignEskomAssetRtus, ensureEskomDomainRtus } = require_(
+  "../packages/db/dist/hierarchy-seed.js",
+) as typeof HierarchySeed;
+const { eskomSeedAssetCatalog, seedEskomAssets } = require_(
+  "../packages/db/dist/eskom-assets-seed.js",
+) as typeof EskomAssetsSeed;
+const { backfillAssetLocations } = require_("../packages/db/dist/asset-groups-seed.js") as typeof AssetGroupsSeed;
 const { createDb } = require_("../packages/db/dist/client.js") as typeof DbClient;
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
 
@@ -579,5 +587,173 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     });
     assertSeeded(before);
     expect(after, "a catalogued TS point must fail the check").toBe(before.actual + 1);
+  }, 60_000);
+
+  // ── The simulator RTU is resolved by the asset's location ────────────────
+
+  /** An asset's wiring, as `assignEskomAssetRtus` writes it. */
+  type Wiring = { code: string; location_id: string; rtu_id: string | null; telemetry_source: string | null };
+
+  /**
+   * `BEGIN` … `ROLLBACK` in ESKOM's context, with the ESKOM locations and
+   * assets locked so another suite's delete waits for this ROLLBACK: the
+   * seeders under test walk every ESKOM location and asset.
+   */
+  async function inEskomSeedTransaction(body: (pool: SeedPool, db: SeedDb) => Promise<void>): Promise<void> {
+    if (!seedPool || !seedDb) throw new Error("pool not initialised");
+    const pool = seedPool;
+    const db = seedDb;
+    await pool.query("BEGIN");
+    try {
+      await pool.query("select set_config('app.current_organization', $1, true)", [eskomOrgId]);
+      await pool.query(
+        `SELECT l.id FROM bms.locations l
+           JOIN bms.organizations o ON o.id = l.organization_id
+          WHERE o.code = 'ESKOM'
+          FOR KEY SHARE OF l`,
+      );
+      await pool.query(
+        `SELECT a.id FROM bms.assets a
+           JOIN bms.organizations o ON o.id = a.organization_id
+          WHERE o.code = 'ESKOM'
+          FOR KEY SHARE OF a`,
+      );
+      await body(pool, db);
+    } finally {
+      await pool.query("ROLLBACK");
+    }
+  }
+
+  /**
+   * L2: a second ESKOM location named `RSMOC Western Cape`, with its five
+   * simulator RTUs. `createdAt` backdates it, so an order by
+   * `created_at` puts it FIRST — the order that makes a name resolver pick it.
+   */
+  async function insertSecondWesternCape(pool: SeedPool, db: SeedDb, createdAt: string | null): Promise<string> {
+    const id = await insertOne(
+      pool,
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, created_at)
+       VALUES ($1, $2, $3, 'RSMOC Western Cape', 'rsmoc', 0, 0, COALESCE($4::timestamptz, now()))
+       RETURNING id`,
+      [eskomOrgId, `F4169-${RUN_ID}-L2`, `f4169-${runId}-l2`, createdAt],
+      "second RSMOC Western Cape location",
+    );
+    await ensureEskomDomainRtus(db, pool);
+    const rtus = await pool.query(`SELECT id FROM bms.rtus WHERE location_id = $1`, [id]);
+    assert(rtus.rowCount === 5, `L2 must carry five simulator RTUs, got ${rtus.rowCount}`);
+    return id;
+  }
+
+  /** The wiring of the assets whose `site_name` is `siteName`, by code. */
+  async function wiringOf(pool: SeedPool, siteName: string): Promise<Wiring[]> {
+    const { rows } = await pool.query<Wiring>(
+      `SELECT code, location_id, rtu_id, meta->>'telemetrySource' AS telemetry_source
+         FROM bms.assets WHERE site_name = $1 ORDER BY code`,
+      [siteName],
+    );
+    return rows;
+  }
+
+  it("R1: a second location named RSMOC Western Cape does not capture any RSMOC-WC asset's RTU", async () => {
+    await inEskomSeedTransaction(async (pool, db) => {
+      await insertSecondWesternCape(pool, db, "2000-01-01T00:00:00Z");
+      const before = await wiringOf(pool, "RSMOC Western Cape");
+      assert(before.length > 0, "RSMOC-WC must carry seeded assets");
+      assert(
+        before.every((row) => row.location_id === rsmocWcId && row.rtu_id !== null),
+        "every RSMOC Western Cape asset must start wired at RSMOC-WC",
+      );
+      await assignEskomAssetRtus(pool);
+      // Mutation: resolving by name again (resolveEskomSimRtuId) picks the
+      // backdated L2's RTUs, and every rtu_id here changes.
+      expect(await wiringOf(pool, "RSMOC Western Cape"), "every RSMOC-WC asset must keep its RTU").toEqual(before);
+    });
+  }, 60_000);
+
+  it("R2: the non-WTR- water asset, a hand-read asset and ESK-MANUAL-01 keep their rtu_id", async () => {
+    await inEskomSeedTransaction(async (pool) => {
+      const csmoc = await pool.query<{ id: string }>(
+        `SELECT id FROM bms.locations WHERE organization_id = $1 AND code = 'CSMOC-GP'`,
+        [eskomOrgId],
+      );
+      const csmocId = csmoc.rows[0]?.id;
+      assert(!!csmocId, "CSMOC-GP must be seeded");
+      const waterCode = `F4169-${RUN_ID}-WATER`;
+      await pool.query(
+        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain, meta)
+         VALUES ($1, $2, $3, 'F4.169 fixture water meter', 'CSMOC Gauteng', 'water', '{"telemetrySource":"mqtt"}'::jsonb)`,
+        [eskomOrgId, csmocId, waterCode],
+      );
+      // ESK-MANUAL-01's site_name is not its location's name, so the name
+      // predicate alone keeps it out of the driving set. This hand-read asset
+      // sits at RSMOC-WC under that location's own name, so only the manual
+      // exemption keeps it unwired.
+      const manualCode = `F4169-${RUN_ID}-MANUAL`;
+      await pool.query(
+        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain, meta)
+         VALUES ($1, $2, $3, 'F4.169 fixture hand-read meter', 'RSMOC Western Cape', 'electrical',
+                 '{"sourceKind":"manual"}'::jsonb)`,
+        [eskomOrgId, rsmocWcId, manualCode],
+      );
+      const read = async () =>
+        (
+          await pool.query<{ code: string; rtu_id: string | null; telemetry_source: string | null }>(
+            `SELECT code, rtu_id, meta->>'telemetrySource' AS telemetry_source
+               FROM bms.assets WHERE code = ANY($1::varchar[]) ORDER BY code`,
+            [[waterCode, manualCode, "ESK-MANUAL-01"]],
+          )
+        ).rows;
+      const before = await read();
+      assert(before.length === 3, "the two fixtures and ESK-MANUAL-01 must all exist");
+      await assignEskomAssetRtus(pool);
+      // Mutations: dropping the WTR- filter wires the water fixture; dropping
+      // the manual exemption wires the hand-read fixture.
+      expect(await read(), "no one of the three may be wired to a simulator RTU").toEqual(before);
+    });
+  }, 60_000);
+
+  it("R3: an asset whose location is not its site_name keeps its rtu_id and telemetrySource", async () => {
+    await inEskomSeedTransaction(async (pool) => {
+      const code = `F4169-${RUN_ID}-NOSITE`;
+      await pool.query(
+        `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain, meta)
+         VALUES ($1, $2, $3, 'F4.169 fixture off-site asset', 'Not a site', 'electrical', '{"telemetrySource":"mqtt"}'::jsonb)`,
+        [eskomOrgId, rsmocWcId, code],
+      );
+      await assignEskomAssetRtus(pool);
+      const after = await pool.query<{ rtu_id: string | null; telemetry_source: string | null }>(
+        `SELECT rtu_id, meta->>'telemetrySource' AS telemetry_source FROM bms.assets WHERE code = $1`,
+        [code],
+      );
+      // Mutation: dropping `l.name = a.site_name` wires it to RSMOC-WC's
+      // ELEC simulator RTU and flips it to simulator.
+      expect(after.rows, "the asset must stay unwired and keep its telemetry source").toEqual([
+        { rtu_id: null, telemetry_source: "mqtt" },
+      ]);
+    });
+  }, 60_000);
+
+  it("R4: seedEskomAssets with a newer same-name location keeps every catalog asset at the canonical location", async () => {
+    await inEskomSeedTransaction(async (pool, db) => {
+      await insertSecondWesternCape(pool, db, null);
+      await seedEskomAssets(db, pool, eskomSeedAssetCatalog(), eskomOrgId);
+      const moved = (await wiringOf(pool, "RSMOC Western Cape")).filter((row) => row.location_id !== rsmocWcId);
+      // Mutation: `ORDER BY l.created_at DESC` in resolveEskomSimRtuId picks
+      // the newer L2 and moves every RSMOC-WC catalog asset there.
+      expect(moved.map((row) => row.code), "no RSMOC Western Cape asset may move off RSMOC-WC").toEqual([]);
+    });
+  }, 60_000);
+
+  it("R5: backfillAssetLocations with a newer same-name location keeps every asset at the canonical location", async () => {
+    await inEskomSeedTransaction(async (pool, db) => {
+      await insertSecondWesternCape(pool, db, null);
+      const before = await wiringOf(pool, "RSMOC Western Cape");
+      assert(before.length > 0, "RSMOC-WC must carry seeded assets");
+      await backfillAssetLocations(pool);
+      const moved = (await wiringOf(pool, "RSMOC Western Cape")).filter((row) => row.location_id !== rsmocWcId);
+      // Mutation: joining every location of the name (no DISTINCT ON
+      // subquery) matches L2 for each asset already at RSMOC-WC and moves it.
+      expect(moved.map((row) => row.code), "no RSMOC Western Cape asset may move off RSMOC-WC").toEqual([]);
+    });
   }, 60_000);
 });

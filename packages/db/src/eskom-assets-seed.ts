@@ -362,6 +362,9 @@ export async function seedEskomAssets(
 ): Promise<SeededAsset[]> {
   const assetRows: SeededAsset[] = [];
   for (const a of catalog) {
+    // By site name, because a catalog entry has no location yet; the oldest
+    // location of that name wins (`resolveEskomSimRtuId`'s ORDER BY), so an
+    // admin location that shares a seeded name does not take the asset.
     const rtuId = await resolveEskomSimRtuId(pool, a.siteName, a.domain);
     // ADR 0018: assets.location_id is NOT NULL from migration 0023 onward, so
     // it must be supplied at insert time. This seed used to leave it null and
