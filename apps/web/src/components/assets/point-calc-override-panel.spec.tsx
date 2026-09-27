@@ -83,20 +83,28 @@ function config(
 
 type HarnessProps = {
   config: AssetPointCalcConfigDto;
-  busy?: boolean;
+  saving?: boolean;
+  clearing?: boolean;
   onSave?: () => void;
   /** The draft the page would seed from `draftFromConfig`; `EMPTY_DRAFT` unless a case needs a submittable one. */
   initialDraft?: OverrideDraft;
 };
 
 /** The page's wiring: the draft lives above the panel and flows back down. */
-function Harness({ config: dto, busy = false, onSave = () => undefined, initialDraft = EMPTY_DRAFT }: HarnessProps) {
+function Harness({
+  config: dto,
+  saving = false,
+  clearing = false,
+  onSave = () => undefined,
+  initialDraft = EMPTY_DRAFT,
+}: HarnessProps) {
   const [draft, setDraft] = useState<OverrideDraft>(initialDraft);
   return (
     <PointCalcOverridePanel
       config={dto}
       draft={draft}
-      busy={busy}
+      saving={saving}
+      clearing={clearing}
       onDraftChange={setDraft}
       onSave={onSave}
       onClear={() => undefined}
@@ -207,7 +215,7 @@ export async function busyDisablesEveryControl(): Promise<void> {
   const stored = config(V2, null, { calcIntervalSeconds: 120 });
   const submittable: OverrideDraft = { ...EMPTY_DRAFT, calcIntervalSeconds: "180" };
 
-  const { container, unmount } = render(<Harness config={stored} initialDraft={submittable} busy />);
+  const { container, unmount } = render(<Harness config={stored} initialDraft={submittable} saving />);
 
   const controls = container.querySelectorAll("input, select, textarea, button");
   expect(controls).toHaveLength(8);
@@ -218,4 +226,41 @@ export async function busyDisablesEveryControl(): Promise<void> {
   expect(grammar()).toBeEnabled();
   expect(saveButton()).toBeEnabled();
   expect(screen.getByRole("button", { name: "Clear override" })).toBeEnabled();
+}
+
+/**
+ * `F4.168` U4, B4 — `saving` swaps Save override's own name and `aria-busy`,
+ * and Clear override stays disabled (by the shared `busy`) but is not itself
+ * busy: it carries `aria-busy="false"` and keeps its idle name.
+ */
+export async function savingShowsPendingLabelAndAriaBusyOnSaveOnly(): Promise<void> {
+  const stored = config(V2, null, { calcIntervalSeconds: 120 });
+  const submittable: OverrideDraft = { ...EMPTY_DRAFT, calcIntervalSeconds: "180" };
+
+  render(<Harness config={stored} initialDraft={submittable} saving />);
+
+  const savingButton = screen.getByRole("button", { name: "Saving override…" });
+  expect(savingButton).toHaveAttribute("aria-busy", "true");
+
+  const clearButton = screen.getByRole("button", { name: "Clear override" });
+  expect(clearButton).toBeDisabled();
+  expect(clearButton).toHaveAttribute("aria-busy", "false");
+}
+
+/**
+ * `F4.168` U4, B4 mirror — `clearing` swaps Clear override's own name and
+ * `aria-busy`, and Save override stays disabled but not busy.
+ */
+export async function clearingShowsPendingLabelAndAriaBusyOnClearOnly(): Promise<void> {
+  const stored = config(V2, null, { calcIntervalSeconds: 120 });
+  const submittable: OverrideDraft = { ...EMPTY_DRAFT, calcIntervalSeconds: "180" };
+
+  render(<Harness config={stored} initialDraft={submittable} clearing />);
+
+  const clearingButton = screen.getByRole("button", { name: "Clearing override…" });
+  expect(clearingButton).toHaveAttribute("aria-busy", "true");
+
+  const saveOverrideButton = screen.getByRole("button", { name: "Save override" });
+  expect(saveOverrideButton).toBeDisabled();
+  expect(saveOverrideButton).toHaveAttribute("aria-busy", "false");
 }

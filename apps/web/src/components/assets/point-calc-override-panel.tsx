@@ -45,7 +45,8 @@ import {
 type Props = {
   config: AssetPointCalcConfigDto;
   draft: OverrideDraft;
-  busy: boolean;
+  saving: boolean;
+  clearing: boolean;
   onDraftChange: (next: OverrideDraft) => void;
   onSave: () => void;
   onClear: () => void;
@@ -63,12 +64,16 @@ const ORIGIN_LABEL: Record<ColumnOrigin, string> = {
 export function PointCalcOverridePanel({
   config,
   draft,
-  busy,
+  saving,
+  clearing,
   onDraftChange,
   onSave,
   onClear,
   onCancel,
 }: Props) {
+  // F4.168 OQ-3: the fields share one flag; Save and Clear each announce their
+  // own so a screen reader knows which action is running.
+  const busy = saving || clearing;
   const rows = calcFieldRows(config);
   const problems = draftProblems(draft, config);
   const set = (patch: Partial<OverrideDraft>) => onDraftChange({ ...draft, ...patch });
@@ -254,20 +259,22 @@ export function PointCalcOverridePanel({
         <button
           type="button"
           disabled={busy || !canSubmit(draft, config)}
+          aria-busy={saving}
           onClick={onSave}
           className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
         >
-          Save override
+          {saving ? "Saving override…" : "Save override"}
         </button>
         <button
           type="button"
           // Disabled with nothing overridden: the API returns 404, and an error
           // that says nothing went wrong is the worst kind.
           disabled={busy || !canClear(config)}
+          aria-busy={clearing}
           onClick={onClear}
           className="rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
         >
-          Clear override
+          {clearing ? "Clearing override…" : "Clear override"}
         </button>
         <button
           type="button"

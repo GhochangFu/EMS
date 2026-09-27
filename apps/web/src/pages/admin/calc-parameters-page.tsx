@@ -585,8 +585,9 @@ function CalcParameterForm({
             type="submit"
             className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
             disabled={pending || (!locked && !scopeReady)}
+            aria-busy={pending}
           >
-            Save
+            {pending ? "Saving…" : "Save"}
           </button>
         </div>
       </form>

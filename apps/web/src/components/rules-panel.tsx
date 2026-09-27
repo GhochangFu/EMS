@@ -271,6 +271,9 @@ export function RulesPanel() {
                   rule={rule}
                   pending={toggleM.isPending}
                   lifecyclePending={duplicateM.isPending || archiveM.isPending}
+                  toggling={toggleM.isPending && toggleM.variables?.id === rule.id}
+                  duplicating={duplicateM.isPending && duplicateM.variables?.id === rule.id}
+                  archiving={archiveM.isPending && archiveM.variables?.id === rule.id}
                   ruleCategories={ruleCategories}
                   assetDomains={assetDomains}
                   onEdit={() => setSelectedRule(rule)}
@@ -350,6 +353,9 @@ function RuleCard({
   rule,
   pending,
   lifecyclePending,
+  toggling,
+  duplicating,
+  archiving,
   ruleCategories,
   assetDomains,
   onEdit,
@@ -360,6 +366,9 @@ function RuleCard({
   rule: RuleListItem;
   pending: boolean;
   lifecyclePending: boolean;
+  toggling: boolean;
+  duplicating: boolean;
+  archiving: boolean;
   ruleCategories: readonly RuleCategoryDto[] | undefined;
   assetDomains: readonly AssetDomainDto[] | undefined;
   onEdit: () => void;
@@ -369,6 +378,12 @@ function RuleCard({
 }) {
   const canToggle = rule.lifecycleStatus === "published";
   const canArchive = rule.lifecycleStatus !== "archived";
+  // F4.168: `toggling`/`duplicating`/`archiving` each imply the panel-wide
+  // flag they narrow, so the `|| …` below changes no button's disabled state
+  // — it only gives the gate a token to find beside the name it names.
+  const toggleBusy = pending || toggling;
+  const duplicateBusy = lifecyclePending || duplicating;
+  const archiveBusy = lifecyclePending || archiving;
   /**
    * `F3.7` — the picker is mounted only while it is open, and that is the
    * point of the state rather than a nicety. `RuleChannelsEditor` issues one
@@ -382,9 +397,11 @@ function RuleCard({
         className={`mt-1 h-5 w-10 rounded-full p-0.5 transition ${
           rule.enabled ? "bg-bms-green" : "bg-gray-300"
         }`}
-        disabled={pending || !canToggle}
+        disabled={toggleBusy || !canToggle}
         onClick={onToggle}
         title={rule.enabled ? "Disable rule" : "Enable rule"}
+        aria-label={toggling ? "Updating rule…" : rule.enabled ? "Disable rule" : "Enable rule"}
+        aria-busy={toggling}
       >
         <span
           className={`block h-4 w-4 rounded-full bg-white transition ${
@@ -456,17 +473,19 @@ function RuleCard({
           </button>
           <button
             className="rounded border border-gray-300 px-2 py-1 text-[11px] font-semibold text-bms-muted disabled:opacity-50"
-            disabled={lifecyclePending}
+            disabled={duplicateBusy}
+            aria-busy={duplicating}
             onClick={onDuplicate}
           >
-            Duplicate
+            {duplicating ? "Duplicating…" : "Duplicate"}
           </button>
           <button
             className="rounded border border-red-200 px-2 py-1 text-[11px] font-semibold text-red-700 disabled:opacity-50"
-            disabled={lifecyclePending || !canArchive}
+            disabled={archiveBusy || !canArchive}
+            aria-busy={archiving}
             onClick={onArchive}
           >
-            Archive
+            {archiving ? "Archiving…" : "Archive"}
           </button>
         </div>
         {channelsOpen ? <RuleChannelsEditor ruleId={rule.id} action={rule.action} /> : null}

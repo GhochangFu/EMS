@@ -4,7 +4,9 @@ import { cleanup } from "@testing-library/react";
 
 import {
   busyDisablesEveryControl,
+  clearingShowsPendingLabelAndAriaBusyOnClearOnly,
   grammarShowsInheritAndChoosingV2DisablesStreaming,
+  savingShowsPendingLabelAndAriaBusyOnSaveOnly,
   saveIsDisabledWhileAProblemIsListed,
   theCoverageLineIsTheTemplatesAndReadOnly,
 } from "./point-calc-override-panel.spec";
@@ -34,5 +36,13 @@ describe("F2.22 override panel — Grammar, the v2 trigger rule, the template's 
 
   it("disables every control, new and old, while a request is in flight", async () => {
     await busyDisablesEveryControl();
+  });
+
+  it("F4.168: saving swaps Save override's own name and aria-busy; Clear override stays idle", async () => {
+    await savingShowsPendingLabelAndAriaBusyOnSaveOnly();
+  });
+
+  it("F4.168: clearing swaps Clear override's own name and aria-busy; Save override stays idle", async () => {
+    await clearingShowsPendingLabelAndAriaBusyOnClearOnly();
   });
 });
