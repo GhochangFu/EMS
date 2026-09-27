@@ -226,10 +226,11 @@ const REFRESH_MARGIN_MS: Readonly<Record<(typeof LEVELS)[number]["view"], number
  * exists to stop an unbounded run destroying archived aggregate history does
  * not apply to a range that was never unbounded.
  *
- * **`to` defaults to `now()` but is capped at it, never exceeds it** — a
- * batch's own `to` (typically its latest written row) is normally far
- * earlier than `now()`, so the cap is what actually governs. Capping matters
- * because `refreshLevel`'s own docstring already records what an
+ * **`to` defaults to `now()` but is capped at it, never exceeds it.** The cap
+ * governs whenever `to + margin` passes the clock — every recent write at the
+ * coarser levels, and any row stamped ahead of the clock (see the `F4.166`
+ * paragraph below). Capping matters because `refreshLevel`'s own docstring
+ * already records what an
  * unclamped-into-the-future watermark does: it parks the watermark ahead of
  * the present, and the real-time branch — ADR 0023 decision 4 — covers
  * nothing for the whole gap behind it.
@@ -265,6 +266,22 @@ const REFRESH_MARGIN_MS: Readonly<Record<(typeof LEVELS)[number]["view"], number
  * materialises every backfilled bucket again — this is the one property in
  * this file an integration assertion, not a type, stands between and a
  * green build.
+ *
+ * **`F4.166` — a level whose widened window holds no complete bucket is
+ * skipped.** The margin guarantees two buckets only while `from` is not
+ * ahead of the clock. A row stamped ahead of it moves `from - margin` forward
+ * while the cap holds `to` at `now`: a row 60 s ahead widens at `_1m` to
+ * `[now - 60 s, now]`, which inscribes to nothing, and TimescaleDB raised
+ * `22023 refresh window too small` — on every full CI run, from
+ * `calc-write`'s second value, and caught by both callers as a warning. A row
+ * further ahead inverts the window outright. `TelemetryWriteService` accepts
+ * rows up to `FUTURE_SKEW_MS` (60 s) ahead, so production reaches this too.
+ * An empty level has nothing to refresh: the row's own bucket is not complete
+ * yet, and the scheduled policy materialises it later. The check is
+ * {@link inscribedWindowIsEmpty} on the same two instants passed to the
+ * `CALL`, so it sees exactly the window TimescaleDB sees — `to` is explicit
+ * here, never the server's `now()`. It is per level: an empty `_1m` window says
+ * nothing about `_5m`'s, so a `break` would drop refreshes that have work.
  */
 export async function refreshAggregatesFrom(
   client: pg.Pool | pg.Client | pg.PoolClient,
@@ -272,11 +289,14 @@ export async function refreshAggregatesFrom(
   to: Date = new Date(),
 ): Promise<void> {
   await withRollupRole(client, async (target) => {
-    for (const { view } of LEVELS) {
+    for (const { view, bucketWidthMs } of LEVELS) {
       const margin = REFRESH_MARGIN_MS[view];
-      const widenedFrom = new Date(from.getTime() - margin);
-      const widenedTo = new Date(Math.min(to.getTime() + margin, Date.now()));
-      await refreshLevel(target, view, widenedFrom, widenedTo, REQUEST_PATH_RETRY);
+      const widenedFrom = from.getTime() - margin;
+      const widenedTo = Math.min(to.getTime() + margin, Date.now());
+      if (inscribedWindowIsEmpty(widenedFrom, widenedTo, bucketWidthMs)) {
+        continue;
+      }
+      await refreshLevel(target, view, new Date(widenedFrom), new Date(widenedTo), REQUEST_PATH_RETRY);
     }
   });
 }
@@ -441,8 +461,8 @@ function sourceName(source: LevelSource): string {
  * still lands on Timescale's own boundaries only because that origin is
  * 10,959 whole days after 1970-01-01 — a whole number of every width in
  * `LEVELS` (1 min, 5 min, 1 h, 1 d), so both grids coincide. This formula,
- * and the `continue` in `main` that relies on one level's skip leaving the
- * next level unaffected, hold only while:
+ * and the `continue` in `main` and in `refreshAggregatesFrom` that relies on
+ * one level's skip leaving the next level unaffected, hold only while:
  *
  *   1. each level's width divides the next one's (1 min | 5 min | 1 h | 1 d);
  *   2. every level shares that one default origin (no `origin =>` argument);
@@ -454,9 +474,12 @@ function sourceName(source: LevelSource): string {
  * different formula here.
  *
  * Pure and exported for `refresh-aggregates.spec.ts`: no client, no clock
- * read — the caller supplies `nowMs`. `main` reads it from the SERVER once per
+ * read — the caller supplies `nowMs`, which is the window's END, whatever
+ * produced it. It has two callers. `main` reads it from the SERVER once per
  * level (`SELECT now()`), because the `CALL` that follows ends at the server's
- * `now()`, not at this process's clock.
+ * `now()`, not at this process's clock. `refreshAggregatesFrom` (`F4.166`)
+ * passes its widened `to`, the same instant it then passes to the `CALL`, so
+ * no clock is involved in the comparison at all.
  */
 export function inscribedWindowIsEmpty(
   fromMs: number,
