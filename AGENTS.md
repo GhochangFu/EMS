@@ -2606,6 +2606,18 @@ that sprint. The current shell also includes a collapsible left module
 sidebar; keep scoped visibility and active-state behaviour consistent with
 `AppShell` when adding new navigation items.
 
+A **locked entry the user must still be able to reach** (`F4.164`, the top-nav
+Settings entry for a non-administrator) is the one exception to
+`DisabledCommandButton`: that component sets native `disabled`, so it takes no
+focus and a screen reader never announces why. Render such an entry as a
+`button` with `aria-disabled="true"`, its reason in an `sr-only` sibling
+referenced by `aria-describedby`, and text at 3:1 or better on its ground.
+A collapsed sidebar link is named `"<label> (<code>)"` so its accessible name
+contains the code it shows (WCAG 2.5.3); a new item whose code collides takes
+an entry in `COLLAPSED_LABEL_OVERRIDES`, which `collapsedRailEntries()` gates.
+A button that swaps its label while pending carries `aria-busy` on the same
+flag; `tests/f4.164-pending-buttons-aria-busy.test.ts` enforces it.
+
 **The canvas-colour question is resolved** (**ADR 0074**, `F3.28`,
 2026-09-24): the light canvas above stays the default, and it is not open for
 reconsideration inside a feature row. A user-selectable dark theme is wanted
