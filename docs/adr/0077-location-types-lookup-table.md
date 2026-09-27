@@ -10,6 +10,10 @@ written record on 2026-09-26.
 Implements row `F4.157`, which [ADR 0076](./0076-control-room-for-each-organization.md)
 decision 12 created with its own ADR. Promotes nothing out of `AGENTS.md` §6.
 
+**Amendment 1** (`F4.162`, 2026-09-27) widens decision 8: a global
+administrator creates, renames and deactivates the types. Drafted before any
+implementation code. The owner reviewed and approved it on 2026-09-27.
+
 ## Context
 
 **The observation (ADR 0076, Q16).** All six `PHEWB` locations — Lotapata,
@@ -172,3 +176,88 @@ The ruling on question 3 stands. After the data move, the three-literal test
 would have dropped live health from the PHE pins, because `pump_station` is
 not one of the three literals. The pins now show the type label next to the
 organization code ("Pump station · PHEWB").
+
+## Amendment 1 — a global administrator manages the types (`F4.162`, 2026-09-27)
+
+Gate question 6 deferred a page to create, rename and deactivate location
+types to its own row; the `F4.157` closure raised it as `F4.162`. Gate question
+1 already allowed for it ("or, later, a global administrator"). Seven scope
+questions were put to the owner one at a time on 2026-09-27; all seven were
+ruled, each for the recommended option.
+
+### Gate questions
+
+1. **The record.** **Ruled: this amendment**, not a new ADR and not the row
+   alone. Decision 8 (a read endpoint only) is the decision it widens.
+2. **Who writes.** **Ruled: the global `admin` role only.** Reads keep
+   `requireMasterDataUser`; the writes gate on `isGlobalAdmin`, as the point-key
+   catalog does (ADR 0051, `PointKeysAdminService.requireGlobalAdmin`). An
+   `org_admin` cannot change a list every organization uses. Rejected: any
+   master-data user.
+3. **What changes.** **Ruled: `label`, `sort_order` and `active`.** `code` is
+   fixed once created — it is the primary key, and `locations_type_fk` has no
+   `ON UPDATE CASCADE`. "Rename" means the label. Rejected: an editable code
+   (a migration for the cascade, and a type change on rows in every
+   organization).
+4. **Retiring a type.** **Ruled: deactivate and reactivate, always allowed; no
+   hard delete.** A location that uses a retired type keeps it; a new or
+   changed location cannot pick it (decision 5 already refuses an inactive
+   code). Rejected: refusing to deactivate a type in use; a hard delete of an
+   unused type.
+5. **Editing a location whose type is retired (`F4.157` known limit 1).**
+   **Ruled: the form shows it and sends only a change.** The admin locations
+   Type list shows the current type as "Label (retired)", and the PATCH carries
+   `type` only when the user changed it. The API already checks only a type the
+   patch names (`LocationsAdminService.update`), so it does not change.
+   Rejected: forcing a new type on every such edit; an API that accepts an
+   unchanged retired type.
+6. **A draft location with an unknown or retired type (`F4.157` known limit
+   2).** **Ruled: both checks.** The draft PATCH refuses a `location.type` that
+   is not an active code, with a 400 that names the valid codes; and the chat
+   treats a stored inactive type as missing and asks for the type again before
+   it moves past the location. The PATCH check alone misses a type retired
+   after it was stored. The commit stays the backstop. Rejected: either check
+   alone.
+7. **Who sees the page.** **Ruled: the global administrator, with fleet-wide
+   usage counts.** The page and its full list — active and retired, each with
+   the number of locations that use it — are for the global `admin` only,
+   because a fleet-wide count tells an `org_admin` how many sites other
+   organizations have. `GET /api/v1/admin/location-types` (decision 8) stays
+   as it is, active rows only, for every master-data user and the dropdowns.
+   Rejected: a read-only page for every master-data user without counts; counts
+   scoped to the caller.
+
+### Decision
+
+1. **Admin endpoints**, global `admin` only, on the fleet pool as
+   `PointKeysAdminService` writes (`bms_fleet` keeps its DML on the table —
+   owner ruling on the `F4.157` security review L1):
+   - a full list, active and retired, ordered by `sort_order` then `code`, each
+     row with its fleet-wide location count;
+   - create (`code`, `label`, optional `sort_order`); a duplicate code is a
+     409;
+   - update of `label` and `sort_order`; a body that names `code` is refused;
+   - deactivate and reactivate.
+
+   Each write runs in a transaction with an org-less `master.location_type.*`
+   audit row (`organizationId: null`, `fleetDb` as the executor — ADR 0043
+   Amendment 5), as the point-key writes do. The routes, the code format rule
+   and the Zod contracts (ADR 0030) are the plan's.
+2. **A global-admin page** lists the types and creates, renames, reorders,
+   deactivates and reactivates them. A non-global administrator does not see
+   it.
+3. **The admin locations form** shows a retired current type as "Label
+   (retired)" and omits `type` from the PATCH when it is unchanged (gate
+   question 5).
+4. **Onboarding** — the draft PATCH refuses an inactive or unknown
+   `location.type`, and the chat asks for the type again when the stored one is
+   not active (gate question 6).
+5. **No migration.** The table, its grants and the foreign key are `0085`'s.
+
+### Consequences
+
+- A location type is added, renamed or retired from the page, without a
+  migration or a deploy.
+- A retired type stays on the locations that use it until someone changes
+  them; the page shows how many there are.
+- Every open item `F4.157` recorded against this row is closed by it.
