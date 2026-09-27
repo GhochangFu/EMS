@@ -510,8 +510,9 @@ export class RtusAdminService {
    *
    * 500, deliberately, as in `parse-stored-contract.ts` (ADR 0060 ruling 2): the
    * caller did nothing wrong and no API path can correct the stored row, so no
-   * 4xx is true. Nest's base filter does not log an `HttpException`, hence the
-   * one log line; it names the RTU only (§9.6) — both org ids are one query away.
+   * 4xx is true. Nest's base filter does not log an `HttpException`, and the
+   * pino-http request line records only the status and URL, hence this log
+   * line; it names the RTU only (§9.6) — both org ids are one query away.
    *
    * Called after `canManageLocation`, so a caller without the grant keeps its
    * 403 and `resolveLocationOrg`'s precondition holds. It replaces

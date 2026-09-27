@@ -83,11 +83,16 @@ describe.skipIf(!connectionString)("F4.138 — a drifted RTU is refused under re
       );
     }
 
+    // Oldest first, and `created_at` as the leading key: another suite commits
+    // a temporary organization with an active location (`health-rollup`,
+    // `pue-ratio`), and a random uuid sorting first would stamp it on this
+    // suite's drifted RTU — then its teardown fails on the foreign key. The
+    // oldest location outside the caller's organization is a seeded row.
     const foreign = await fixturePool.query<{ organization_id: string; location_id: string }>(
       `SELECT l.organization_id, l.id AS location_id
          FROM bms.locations l
         WHERE l.organization_id <> $1 AND l.active = true
-        ORDER BY l.organization_id, l.created_at, l.code
+        ORDER BY l.created_at, l.code
         LIMIT 1`,
       [own.rows[0].organization_id],
     );
