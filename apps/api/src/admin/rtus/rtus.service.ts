@@ -385,7 +385,7 @@ export class RtusAdminService {
       // the body does not mention it. That is **not** a self-collision: Postgres
       // recognises the old tuple as the row's own prior version, so an update
       // that writes a row's existing `rtu_code` back is not a duplicate.
-      // `rtus.rtu-code-conflict.integration.spec.ts` fences that, because a
+      // `rtus.unique-conflict.integration.spec.ts` fences that, because a
       // pre-check written here instead — `SELECT … WHERE rtu_code = $1` without
       // excluding this row — would refuse every edit of an ingest-bound RTU.
       throw translateRtuUniqueConflict(err);
