@@ -1527,3 +1527,53 @@ That `''` remains writable at all is the open tension recorded as `F4.143`.
 `mqtt_topic` is NULL, which the partial index on that column does not constrain
 at all. This amendment is what stops two Modbus gateways sharing one
 `deviceKey`, which is the case `F1.7`'s review raised and could not reach.
+
+## Amendment 8 — who can reach the health endpoint (`F4.61`, 2026-09-28)
+
+**Status:** Accepted, ruled 2026-09-28 by the owner at `F4.61`'s step-2 gate.
+No ADR was required — no dependency (§9.4) and no scope promotion (§10) — and
+the owner chose an amendment on the precedent of ADR 0063 Amendment 2 (Redis on
+loopback) and ADR 0066 decision 8 (MinIO on loopback): a network boundary that
+a security review raised is recorded in the ADR that owns the service.
+
+**What this ADR said, and what it did not.** The component table (line 40) puts
+the health endpoint on an inline `http.createServer` owned by the host, and
+§Dependencies (line 755) says the plain-text body is extended with per-RTU
+state. Neither names a path, a method, or who may ask. Since `F1.7` the body
+names every enabled RTU, when each last reported and which are silent — for
+remote unattended water stations a targeting signal, served without
+authentication. `F1.7`'s security review found two open doors: the compose
+publication `127.0.0.1:9102:9102` closes the host side, but every sibling
+container on the default bridge could `GET http://ingest:9102/`; and the handler
+answered any method on any path with no `Host` check, so a browser on the
+operator's workstation was a DNS-rebinding path to a loopback-only service.
+
+**Decision 1 — the handler answers one request shape.** Checked in this order,
+so the rebinding defence fires first whatever else is wrong:
+
+| Check | Accepted | Refusal |
+|---|---|---|
+| `Host` | `localhost`, `127.0.0.1` or `[::1]`, each with an optional `:port`, case-insensitive, anchored at both ends; a missing `Host` is refused | `421`, body `refused: host` |
+| method | `GET` | `405`, `Allow: GET`, body `refused: method` |
+| path | exactly `/` or `/health`; a query string or a trailing slash is refused | `404`, body `refused: path` |
+
+A refusal body is one fixed `text/plain` line. It never carries the roster,
+never echoes the value it refused, and never starts with `ingest-host`, so a
+liveness check that matches that prefix cannot pass on a refusal. `/health` is
+accepted beside `/` because ADR 0075 (fact 5) already calls the endpoint
+`/health`; the documented operator command `curl 127.0.0.1:9102` keeps working.
+
+**Decision 2 — the ingest container shares a network with `postgres` only.**
+`docker-compose.yml` declares a user-defined bridge `ingest`. The `ingest`
+service joins it and nothing else; `postgres` joins it and `default`; every
+other service stays on `default` alone. The host publication stays
+`127.0.0.1:9102:9102`. The network is **not** `internal: true`: the host dials
+the PHE broker on the internet. `tests/f4.61-ingest-network-isolation.test.ts`
+holds the shape, because CI never runs `docker compose`.
+
+**What this does not change.** The body format, `renderHealth`, and the `500`
+path are untouched. No authentication is added, and there is still no compose
+`healthcheck:` on ingest — nothing `depends_on` it. A healthcheck added later
+must call `http://127.0.0.1:9102/` from inside the container, which sends a
+loopback `Host`. Segmenting the other services from each other is not decided
+here.
