@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { and, eq } from "drizzle-orm";
 
 import type { BmsDb } from "./client";
@@ -440,9 +442,9 @@ async function seedCrEnvironmentRules(
 
 /**
  * The five ESKOM demo alarm-ladder checks, as `bms.automation_rules` rows —
- * same code convention (`ESKOM_<asset code, - to _>_<suffix>`), condition
- * tuples and severities as
- * `packages/db/drizzle/0033_eskom_simulator_threshold_rules.sql`.
+ * same code convention (`ESKOM_<asset code, - to _>_<suffix>`, bounded to 64
+ * characters by {@link ladderRuleCode} since `F4.129`), condition tuples and
+ * severities as `packages/db/drizzle/0033_eskom_simulator_threshold_rules.sql`.
  *
  * Migration review (F3.6): migration `0033`'s own INSERTs join
  * `bms.assets`/`locations`/`organizations` to find ESKOM's electrical
@@ -453,8 +455,12 @@ async function seedCrEnvironmentRules(
  * truth for the same five rules: a no-op (via `upsertRuleByCode`, matched
  * by code) on a database where `0033` already seeded them, and the only
  * path that creates them on a fresh one.
+ *
+ * Exported since `F4.129` so `automation-rules-seed.spec.ts` iterates the
+ * five real suffixes rather than restating them. `packages/db/src/index.ts`
+ * does not re-export this module, so no public surface changes.
  */
-const ESKOM_LADDER_RULES = [
+export const ESKOM_LADDER_RULES = [
   {
     suffix: "VOLTAGE_CRITICAL",
     nameSuffix: "L1 voltage critical",
@@ -512,6 +518,60 @@ const ESKOM_LADDER_RULES = [
   },
 ] as const;
 
+/** `bms.automation_rules.code` is `varchar(64)` (`schema/alarms-schema.ts`). */
+const RULE_CODE_MAX = 64;
+
+/** The hex digits kept from the asset code's SHA-256, on overflow. */
+const LADDER_HASH_WIDTH = 8;
+
+/**
+ * `F4.129` — the code for one ESKOM ladder rule, bounded to
+ * `RULE_CODE_MAX` (64) characters whatever the asset code's length.
+ *
+ * The unbounded template is `ESKOM_${assetCode, - to _}_${suffix}` —
+ * `7 + n + s` characters for an `n`-character asset code and an
+ * `s`-character suffix. It is returned unchanged whenever that fits (`<=
+ * RULE_CODE_MAX`); a 42+ character asset code otherwise abends `pnpm
+ * db:seed` with Postgres `22001 value too long`.
+ *
+ * On overflow the result is `ESKOM_<cut>_<hash>_<suffix>`: `<cut>` is the
+ * folded asset code sliced to `k = 48 - s` characters and `<hash>` is the
+ * first `LADDER_HASH_WIDTH` (8) hex digits of `sha256` of the FULL RAW
+ * asset code, uppercased — `16 + k + s` characters, which is exactly 64.
+ *
+ * Three choices, each load-bearing:
+ *
+ * - **The hash is of the raw asset code, before the `-` → `_` fold**, so two
+ *   asset codes that agree on every character up to the cut (and would
+ *   therefore produce an identical `<cut>`) still diverge in `<hash>`,
+ *   because the divergent tail is still part of what gets hashed. Hashing
+ *   the (already-truncated) `<cut>` instead would not see that tail at all.
+ * - **`<hash>` is uppercased.** `upsertRuleByCode` matches an existing row by
+ *   `code.trim().toUpperCase() === code` — a lowercase hash segment would
+ *   never match itself on a re-seed, and `pnpm db:seed` would insert a
+ *   second row with the same condition tuple on every boot.
+ * - **`slice()` is exact**, not an approximation. Migration
+ *   `0070_catalog_code_charset.sql` constrains `bms.assets.code` to
+ *   `^[A-Za-z0-9_-]+$` — pure ASCII — so every asset code this reads is one
+ *   UTF-16 code unit per character and `String.prototype.slice` never splits
+ *   a surrogate pair (the `F4.104` lesson does not apply here).
+ */
+export function ladderRuleCode(assetCode: string, suffix: string): string {
+  const folded = assetCode.replaceAll("-", "_");
+  const raw = `ESKOM_${folded}_${suffix}`;
+  if (raw.length <= RULE_CODE_MAX) {
+    return raw;
+  }
+  const hash = createHash("sha256")
+    .update(assetCode)
+    .digest("hex")
+    .toUpperCase()
+    .slice(0, LADDER_HASH_WIDTH);
+  const cutWidth = RULE_CODE_MAX - 16 - suffix.length;
+  const cut = folded.slice(0, cutWidth);
+  return `ESKOM_${cut}_${hash}_${suffix}`;
+}
+
 /** A rule's condition, as the tuple `0033`'s own `NOT EXISTS` guards key on. */
 function conditionKey(
   assetId: string,
@@ -553,6 +613,11 @@ function conditionKey(
  * created by `seedAccessControlFixtures`, which `seed.ts` runs AFTER
  * `seedAutomationRules`. `seed.ts` therefore calls this function a second
  * time, on its own, once every ESKOM electrical asset actually exists.
+ *
+ * `F4.129`: the code passed to `upsertRuleByCode` runs through
+ * {@link ladderRuleCode} rather than the raw template, so an asset code of
+ * 42+ characters no longer aborts `pnpm db:seed` with `22001 value too
+ * long`. See that function's docblock for the bound and the hash-suffix cut.
  */
 export async function seedEskomLadderRules(
   db: BmsDb,
@@ -601,7 +666,7 @@ export async function seedEskomLadderRules(
       await upsertRuleByCode(
         db,
         organizationId,
-        `ESKOM_${asset.code.replaceAll("-", "_")}_${rule.suffix}`,
+        ladderRuleCode(asset.code, rule.suffix),
         {
           name: `${asset.name} ${rule.nameSuffix}`,
           description: rule.description,
