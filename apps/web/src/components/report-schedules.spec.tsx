@@ -58,6 +58,7 @@ export const WESTERN_CAPE: AdminLocationDto = {
   slug: "western-cape",
   name: "Western Cape",
   type: "rsmoc",
+  typeLabel: "RSMOC",
   province: "Western Cape",
   capital: "Cape Town",
   timezone: "Africa/Johannesburg",

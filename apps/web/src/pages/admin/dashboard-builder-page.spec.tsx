@@ -51,6 +51,7 @@ const LOCATION = {
   slug: "kolkata-works",
   name: "Kolkata Works",
   type: "smoc_campus" as const,
+  typeLabel: "SMOC campus",
   province: null,
   capital: null,
   timezone: null,

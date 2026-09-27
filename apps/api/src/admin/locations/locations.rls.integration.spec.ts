@@ -363,6 +363,24 @@ export async function assertListLocationTypesRefusesANonMasterDataUser(
 }
 
 /**
+ * L5 — `list` returns `typeLabel: "RSMOC"` for a fixture location of type
+ * `rsmoc` (F4.162, ADR 0077 Amendment 1, plan D3). `mapRow`'s LEFT JOIN
+ * carries the seeded label rather than the bare code. Mutation: replace
+ * `typeLabel: row.typeLabel ?? loc.type` with `typeLabel: loc.type` in
+ * `LocationsAdminService.mapRow`.
+ */
+export async function assertListCarriesTheRsmocTypeLabel(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  register: (id: string) => void,
+): Promise<void> {
+  const created = await createF4157Location(ctx, jwt, f4157Code("RSMOC-LABEL"), "rsmoc", register);
+  const { items } = await ctx.svc.list(jwt, ctx.organizationId);
+  const listed = items.find((item) => item.id === created.id);
+  expect(listed?.typeLabel, "list must carry the joined label for a live rsmoc row").toBe("RSMOC");
+}
+
+/**
  * L4 — `listLocationTypes` returns `{ items }`, the four seeded types in
  * order among them. Also L3's positive control: a master-data user is served.
  *

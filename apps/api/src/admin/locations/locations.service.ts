@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
-import { assets, locations, organizations, rtus } from "@bms/db";
+import { assets, locationTypes, locations, organizations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AdminLocationDto,
@@ -88,9 +88,11 @@ export class LocationsAdminService {
         location: locations,
         organizationCode: organizations.code,
         organizationName: organizations.name,
+        typeLabel: locationTypes.label,
       })
       .from(locations)
       .innerJoin(organizations, eq(locations.organizationId, organizations.id))
+      .leftJoin(locationTypes, eq(locations.type, locationTypes.code))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(asc(locations.name));
 
@@ -376,9 +378,11 @@ export class LocationsAdminService {
         location: locations,
         organizationCode: organizations.code,
         organizationName: organizations.name,
+        typeLabel: locationTypes.label,
       })
       .from(locations)
       .innerJoin(organizations, eq(locations.organizationId, organizations.id))
+      .leftJoin(locationTypes, eq(locations.type, locationTypes.code))
       .where(eq(locations.id, id))
       .limit(1);
     if (!row) {
@@ -391,6 +395,9 @@ export class LocationsAdminService {
     location: typeof locations.$inferSelect;
     organizationCode: string;
     organizationName: string;
+    // A LEFT JOIN types this nullable even though the FK makes the null arm
+    // unreachable in practice (F4.162, ADR 0077 Amendment 1, plan D3).
+    typeLabel: string | null;
   }): AdminLocationDto {
     const loc = row.location;
     return {
@@ -402,6 +409,7 @@ export class LocationsAdminService {
       slug: loc.slug,
       name: loc.name,
       type: loc.type,
+      typeLabel: row.typeLabel ?? loc.type,
       province: loc.province,
       capital: loc.capital,
       timezone: loc.timezone,

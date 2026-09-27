@@ -59,6 +59,7 @@ function location(overrides: Partial<AdminLocationDto>): AdminLocationDto {
     slug: "e41b-spec",
     name: "Spec location",
     type: "rsmoc",
+    typeLabel: "RSMOC",
     province: null,
     capital: null,
     timezone: null,
