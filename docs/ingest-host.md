@@ -119,6 +119,27 @@ is deferred to `F3.16` (ADR 0016 Amendment 4 decision 11). Identifiers
 the safe set `A-Za-z0-9._-:/` are percent-encoded as UTF-8 bytes, `%` included,
 so every record stays one line.
 
+**Reachability (`F4.61`, ADR 0016 Amendment 8).** The body names every enabled
+RTU and when each last reported, without authentication, so who may ask is
+narrowed at two boundaries. The handler (`refuseHealthRequest` in
+`apps/ingest/src/host/health-server.ts`) answers `GET /` and `GET /health`
+only, exactly — a query string or a trailing slash is another path — and only
+for a loopback `Host`: `localhost`, `127.0.0.1` or `[::1]`, each with an
+optional `:port`, case-insensitive; a missing `Host` is refused. It checks the
+`Host` first, so a page rebound to `127.0.0.1` in an operator's browser is
+refused whatever else it sends. A refusal is `421` (host), `405` with
+`Allow: GET` (method) or `404` (path), each with a fixed one-line body
+(`refused: host`, `refused: method`, `refused: path`) that never carries the
+roster, never echoes what it refused, and never starts with `ingest-host` — a
+check matching that prefix cannot pass on a refusal. In compose, the `ingest`
+service sits on its own network `ingest`, shared with `postgres` only, so no
+other container can resolve it; the host publication stays
+`127.0.0.1:9102:9102` (the compose change lands in the same PR, held by
+`tests/f4.61-ingest-network-isolation.test.ts`). `curl 127.0.0.1:9102` keeps
+working. A compose `healthcheck:` added later must call
+`http://127.0.0.1:9102/` from inside the container — `http://ingest:9102/`
+sends a foreign `Host` and gets `421`.
+
 ```
 ingest-host degraded endpoints=1 rtus=3 stale=1 dark=1 skipped=0 notify=on uptime=39s
 endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=connected writePath=ok rtus=861736076104923|861736076128245|861736076133666 restarts=1 pollFailures=0 queue=0 dropped=0 written=812 writeFailures=0 buffered=0 bufferDropped=0 replayed=0 lastSample=2026-08-22T09:41:07.000Z
