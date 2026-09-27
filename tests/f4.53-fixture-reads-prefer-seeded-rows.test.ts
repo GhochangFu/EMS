@@ -94,13 +94,16 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  *     `WHERE organization_id = (SELECT … WHERE email = $1) LIMIT 1`.
  *   - `PREFERS_OLDEST` accepts any `created_at` within reach of the `ORDER BY`,
  *     including another alias's: an `ORDER BY o.code, l.created_at` join orders
- *     its organizations by code and still passes.
- *   - The scan walks `apps` and `packages` spec files and the top-level
- *     `tests/*.integration.test.ts` suites. Helpers are outside it:
- *     `apps/api/src/testing/*.ts` and `tests/support/`. `fixtureLocation` in
- *     `apps/api/src/testing/integration-fixtures.ts` is one — a builder read of
- *     `bms.locations` ordered by `id` under a docblock that says no test writes
- *     that table, which `F4.71` found untrue.
+ *     its organizations by code and still passes. It rejects `created_at DESC`
+ *     (and the builder's `desc(x.createdAt)`), which resolves the NEWEST row.
+ *   - The scan walks `apps`, `packages` and `tests` spec files and
+ *     `*.integration.test.ts` suites, plus the shared fixture helpers in
+ *     `apps/api/src/testing/*.ts`. `fixtureLocation` in
+ *     `apps/api/src/testing/integration-fixtures.ts` is why: it was a builder
+ *     read of `bms.locations` ordered by `id` under a docblock that said no test
+ *     writes that table, which `F4.71` found untrue; it now orders by
+ *     `createdAt, code`, and this scan holds it there. `tests/support/` is
+ *     still outside the scan.
  */
 describe("F4.53 — positional fixture reads resolve the oldest row", () => {
   /** The five tables suites resolve parents and actors from. */
@@ -125,8 +128,14 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
    * does elsewhere.
    */
   const NAMED_READ = /\b(?:code|id|email)\s*(?:=|\bIN\s*\(|=\s*ANY)/i;
-  /** The fix: the oldest row, which is always a seeded one. */
-  const PREFERS_OLDEST = /\bORDER\s+BY\b[\s\S]{0,120}?\bcreated_at\b/i;
+  /**
+   * The fix: the oldest row, which is always a seeded one. The first
+   * `created_at` after `ORDER BY` must not be `DESC` — that resolves the
+   * NEWEST row, which is exactly the transient fixture this rule keeps out.
+   */
+  const PREFERS_OLDEST = /\bORDER\s+BY\b(?:(?!\bcreated_at\b)[\s\S]){0,120}\bcreated_at\b(?!\s+DESC\b)/i;
+  /** The builder spelling of the same mistake: `desc(x.createdAt)`. */
+  const BUILDER_NEWEST_FIRST = /\bdesc\s*\(\s*(?:\w+\.)*createdAt\b/;
   /**
    * A probe that projects a constant resolves no row identity, so there is
    * nothing for a concurrent suite to pull away — `select 1 from bms.locations
@@ -186,6 +195,9 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
    */
   const CHAIN_WINDOW = 400;
 
+  /** The shared integration-fixture helpers, scanned beside the suites that call them. */
+  const FIXTURE_HELPERS = /^apps\/api\/src\/testing\/[^/]+\.ts$/;
+
   /** One SQL text that reads a fixture table positionally and not from the oldest row. */
   function offends(sql: string): boolean {
     return (
@@ -229,7 +241,9 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
       if (!/\.limit\s*\(/.test(chain)) continue;
       // A named read is out of scope here for the same reason it is there.
       if (/\bwhere\s*\(/.test(chain) && /\beq\s*\(/.test(chain)) continue;
-      if (/\.orderBy\s*\(/.test(chain) && /\bcreatedAt\b/.test(chain)) continue;
+      if (/\.orderBy\s*\(/.test(chain) && /\bcreatedAt\b/.test(chain) && !BUILDER_NEWEST_FIRST.test(chain)) {
+        continue;
+      }
       chains.push(chain.replace(/\s+/g, " ").trim());
     }
     return [...literals, ...chains];
@@ -240,8 +254,10 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
     let scanned = 0;
     for (const root of ["apps", "packages", "tests"]) {
       for (const file of walk(join(repoRoot, root))) {
-        if (!/(\.spec|\.integration\.test)\.tsx?$/.test(file)) continue;
         const rel = relative(repoRoot, file).replace(/\\/g, "/");
+        // The shared fixture helpers are read too: `fixtureLocation` resolves
+        // the location every fixture asset hangs off, and it is not a spec.
+        if (!/(\.spec|\.integration\.test)\.tsx?$/.test(file) && !FIXTURE_HELPERS.test(rel)) continue;
         // An exempt file is still scanned. Only the named queries are skipped,
         // so a new offending read in that same file still fails this rule.
         scanned += 1;
@@ -369,6 +385,20 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
           ".orderBy(asc(organizations.createdAt), asc(organizations.code)).limit(1);",
       ),
     ).toEqual([]);
+
+    // `created_at DESC` resolves the NEWEST row — a transient fixture, not a
+    // seeded one — so it is not the fix, in either spelling.
+    expect(
+      offendingReads(
+        'await pool.query("SELECT id FROM bms.locations WHERE active = true ORDER BY created_at DESC LIMIT 1");',
+      ),
+    ).toHaveLength(1);
+    expect(
+      offendingReads(
+        "const [l] = await db.select({ id: locations.id }).from(locations)" +
+          ".orderBy(desc(locations.createdAt), asc(locations.code)).limit(1);",
+      ),
+    ).toHaveLength(1);
 
     // A different table is not this rule's business — `bms.work_orders` has no
     // seeded fixture row to prefer.
