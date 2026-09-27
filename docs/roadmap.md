@@ -5220,7 +5220,7 @@ row now records `assetsMoved`, the count only.
 
 **Still open:** `F4.137` (no constraint makes `assets.rtu_id` respect the
 organization) and `F4.138` (the gate reads the location's organization while
-the write uses the RTU's). `F4.139` and `F4.140` closed 2026-09-16 (PR #461,
+the write uses the RTU's; closed 2026-09-27, PR #607). `F4.139` and `F4.140` closed 2026-09-16 (PR #461,
 next section).
 
 ### `F4.139` + `F4.140` — one `telemetrySource` predicate, four writers ✅ 2026-09-16
@@ -6447,3 +6447,63 @@ reviews; the code review's three gate holes were fixed test-first.
 **Cascade:** no row lists `F4.164` in *Depends*. New row `F4.168` (the
 buttons that go disabled while pending with a static label). A
 `chore(agents):` §5 note on the focusable locked entry follows separately.
+
+### `F4.167` — the rtus RLS suite removes the audit rows its lifecycle writes ✅ 2026-09-27
+
+PR #603, squash `615f5016`; plan `docs/plans/f4.167-rtus-rls-audit-cleanup.md`.
+No ADR (test-only).
+
+`rtus.service.rls.integration` now deletes the four `master.rtu.*` audit rows
+each run writes, and records the RTU id straight after `create` so a failed
+later step no longer leaks the RTU. Two new cases hold it: the lifecycle wrote
+exactly four audit rows, and after removal none remain. The dev database's
+1,560 orphan rows from this suite were deleted once by owner ruling; 76
+`F4.59` build-day rows remain.
+
+Verified: five mutations reddened their named case, one failure-path claim is
+held by a database count; CI green on the first run. Three reviews, one nit
+fixed.
+
+**Cascade:** no row lists `F4.167` in *Depends*. A note on `F4.15`: its
+append-only storage must account for the suites that delete their own audit
+rows. No `chore(agents):` change owed.
+
+### `F4.129` — a long asset code or name no longer stops `db:seed` ✅ 2026-09-27
+
+PR #605, squash `31156916`; plan `docs/plans/f4.129-ladder-rule-code-bound.md`.
+No ADR (owner ruling: the hash-suffix cut).
+
+The ESKOM ladder seed wrote each rule's code and name from the asset's code and
+name with no bound, into `varchar(64)` and `varchar(255)`. One long asset code
+(42+ characters) or name (236+) made every later `compose up` fail with
+`22001`. `ladderRuleCode` leaves a code that fits unchanged and hash-suffixes a
+cut one to exactly 64; `ladderRuleName` cuts the asset name by code point. The
+name half came from review, and the owner ruled it into the same PR.
+
+Verified: 14 unit cases and an integration case with a 60-character code and a
+250-character name; five mutations reddened their targets. On the stack,
+`main`'s seed failed on such an asset and the branch seed passed with every
+existing code unchanged. CI green on the first run. Four reviews and a
+re-review, no open High or Medium.
+
+**Cascade:** no row lists `F4.129` in *Depends*. New rows `F4.169` (a
+lowercase asset code with an edited ladder threshold stops `db:seed` with
+`23505`) and `F4.170` (the same unbounded pattern in `hierarchy-seed.ts`). No
+`chore(agents):` sentence is owed: AGENTS.md does not describe this seed.
+
+### `F4.138` — RTU writes refuse an organization that disagrees with the location's ✅ 2026-09-27
+
+PR #607, squash `83455f89`; plan `docs/plans/f4.138-rtus-tenant-agreement.md`.
+No ADR.
+
+`update`, `deactivate` and `reactivate` authorized through the location's
+organization but wrote under the RTU's own `organization_id`. A shared guard,
+called after the grant check, now refuses a mismatch with a 500 before the
+tenant transaction opens (ADR 0060 ruling 2). Drift is latent: 0 rows differ.
+
+Verified: unit and integration pairs, the drift made as `bms_fleet` under the
+real roles; nine mutations reddened their planned cases. CI green on the first
+run. Three reviews, one fixture finding fixed.
+
+**Cascade:** no row lists `F4.138` in *Depends*. No `chore(agents):` change
+owed.
