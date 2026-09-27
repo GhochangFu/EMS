@@ -16,33 +16,38 @@ export default defineConfig({
      * `F4.71` — a ceiling on concurrent workers, because the integration suites share one
      * Postgres and nothing bounded them.
      *
-     * **The evidence this is set on, rather than a preference.** `F3.35` added five test files
-     * and `main` went from green to failing four runs in five. The failing test *rotated* —
-     * `dashboards.service.rls.integration` on CI three times, `aggregate-retention.integration`
-     * locally, `reports.service.rls.integration` and `rules.service.rls.integration` earlier the
-     * same day — which is the signature of contention rather than of a defect in any one file.
-     * It reproduces on the FULL suite and not on `--project api` alone (127 of 127), so the
-     * collision is across projects: `apps/api` holds 53 `*.integration.test.ts` files, the
-     * `repo` project holds more, and every one of them talks to the same database.
+     * **The evidence this was set on.** `F3.35` added five test files and `main` went from green
+     * to failing four runs in five. The failing test *rotated* — `dashboards.service.rls.integration`
+     * on CI three times, `aggregate-retention.integration` locally, `reports.service.rls.integration`
+     * and `rules.service.rls.integration` earlier the same day — the signature of contention rather
+     * than of a defect in any one file.
      *
-     * **What the failures were, and why a worker cap is the lever.** The sharpest one is a
-     * `WITH CHECK` refusal (SQLSTATE 42501) on `bms.dashboards`, raised because the asset group
-     * the row referenced was not visible at insert time. That is a *data* race between suites,
-     * not a timeout — a second suite's transaction is what makes a committed parent disappear
-     * from a concurrent reader's view. Fewer concurrent writers is the smallest change that
-     * addresses it without rewriting fixture ownership across dozens of files.
+     * **What the failures turned out to be (`F4.71`, closed 2026-09-27).** Not "too many workers"
+     * as such, but fixtures that shared rows with their siblings, which more workers exposed more
+     * often: positional reads of `bms.organizations` and `bms.locations` that adopted another
+     * suite's transient row (the `F4.53` rule now covers both, and scans `tests/` and the fixture
+     * helpers); a per-organization report cap counted while three sibling files wrote the same
+     * organization (the cap rows now run in their own organization); manual continuous-aggregate
+     * refreshes with no `55P03` retry (`retryOnConcurrentRefresh`, `F4.149`). The sharpest
+     * signature, the `42501` on `bms.dashboards`, predates `F3.41`'s seeded PHEWB groups and could
+     * not be reproduced after it; its fixture now creates its own group anyway. Of the 348 `main`
+     * runs between this cap and that closure, 19 failed and none was a row-named `*.rls` suite.
      *
-     * **This is a mitigation and the row stays open.** `F4.71` asks for the real measurement —
-     * whether the failure rate moves with parallelism, and which suites actually collide — and
-     * this cap is what keeps `main` green while that work happens. Do not close `F4.71` on the
-     * strength of this line, and do not raise the number without re-running the suite enough
-     * times to mean something: a single green run is not evidence, and neither is a single red.
+     * **The number stays 2 — measured, with its limit stated.** On 2026-09-27, after those fixes,
+     * the DB-integration subset (163 files) ran five times at 2 and five at 4, alternating, on a
+     * scratch database with the CI environment: no run failed on a shared-row race, and a row-count
+     * snapshot before and after every run never moved. Every red run was a test over the default
+     * 5 s on a loaded machine — one of five runs at 2, two of five at 4 (one with three files). The
+     * rule the owner set was "4 only if all five runs at 4 and a full run at 4 are green", so the
+     * number stays 2. Ten local runs cannot tell a 2% flake rate from zero; the `main` CI record
+     * after the merge is the evidence for the rate, and a green local run is a smoke check only.
      *
-     * **The number is 2, and 4 was the first answer and a wrong one.** Vitest's default is
+     * **2, and 4 was the first answer and a wrong one.** Vitest's default is
      * `availableParallelism() - 1`, so on the 2-to-4 vCPU `ubuntu-latest` runner the effective
      * default is already 1 to 3 — a cap of 4 would have RAISED concurrency on CI while lowering
      * it on an 8-core development machine, which is precisely backwards for the environment that
-     * was failing. 2 is below the default on both, so it binds where it has to.
+     * was failing. 2 is below the default on both, so it binds where it has to. Do not raise it
+     * without re-running the measurement above (`docs/plans/f4.71-shared-db-flakes.md`, U7).
      */
     maxWorkers: 2,
     projects: [
@@ -106,7 +111,8 @@ export default defineConfig({
       //
       // `packages/db/src/refresh-aggregates.ts` is NOT in the denominator:
       // `include` covers `apps/*`, not `packages/db`. It is exercised by CI
-      // running `pnpm db:refresh-aggregates`, not by a test.
+      // running `pnpm db:refresh-aggregates`, not by a test. (Since `F4.71` its
+      // pure `inscribedWindowIsEmpty` has a spec, outside this denominator.)
       //
       // Measured 2026-08-10 at E8.3 HEAD with ADR 0022 Amendment 6 — the
       // contested-code fix, substring key matching, the prototype-key guards,
