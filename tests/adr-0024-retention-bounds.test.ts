@@ -147,9 +147,15 @@ describe("ADR 0024 — compression and retention bounds", () => {
    * calling `refreshLevel`, not after — checking after means the `CALL` has
    * already raised. Scoped to the LOOP BODY (`for (const { view, source,
    * bucketWidthMs } of LEVELS) { … }`), not the whole file: `refreshLevel` is
-   * also the name of the exported function's own declaration and its
-   * definition further down the file, and a whole-file `indexOf` would find
-   * one of those instead of the call site inside the loop.
+   * DEFINED above `main()`, and `refreshAggregatesFrom` — also above `main()` —
+   * calls it too, so a whole-file `indexOf` would find the definition or that
+   * other call instead of the call site inside this loop.
+   *
+   * Order alone is not the invariant. A negated guard (`!inscribed…`) or one
+   * with its first two arguments swapped still sits before `refreshLevel(`, so
+   * the guard's text is matched exactly, argument ORDER included, and the span
+   * from the guard to `refreshLevel(` must `continue` and must not `return` —
+   * a `return` there would stop every coarser level, not skip this one.
    *
    * `executableText` strips comments first — the guard's own docblock above
    * the `if` names both `inscribedWindowIsEmpty` and `refreshLevel` in prose,
@@ -221,6 +227,94 @@ describe("ADR 0024 — compression and retention bounds", () => {
       "inscribedWindowIsEmpty must be checked BEFORE refreshLevel is called in the level loop, " +
         "not after — checking after means the CALL already raised 22023",
     ).toBeLessThan(refreshAt);
+
+    // The exact guard: not negated, arguments in (from, now, width) order, and
+    // `now` the server clock `main()` reads right before it.
+    const exactGuard =
+      /if\s*\(\s*inscribedWindowIsEmpty\(\s*from\.getTime\(\)\s*,\s*serverNowMs\s*,\s*bucketWidthMs\s*\)\s*\)/.exec(
+        loopBody,
+      );
+    expect(
+      exactGuard,
+      "the guard must read exactly `if (inscribedWindowIsEmpty(from.getTime(), serverNowMs, " +
+        "bucketWidthMs))` — a negation or a swapped argument inverts or breaks the skip",
+    ).not.toBeNull();
+    const span = loopBody.slice((exactGuard?.index ?? 0) + (exactGuard?.[0].length ?? 0), refreshAt);
+    expect(
+      span,
+      "the guarded branch must `continue;` to the next level before refreshLevel( is reached",
+    ).toMatch(/\bcontinue\s*;/);
+    expect(
+      span,
+      "the guarded branch must not `return` — an empty window at one level is local, and a " +
+        "return would skip every coarser level too",
+    ).not.toMatch(/\breturn\b/);
+  });
+
+  /**
+   * `F4.71` L3 — the guard's widths are a second copy of `0027`'s bucket
+   * intervals. `inscribedWindowIsEmpty` is exact only if `LEVELS[].bucketWidthMs`
+   * equals each aggregate's `time_bucket(INTERVAL '…')`, so this reads both and
+   * compares them. Only `0027` may define the aggregates: a later migration
+   * that re-created a view with a new interval would make `0027` the wrong
+   * source, so the second half asserts no later migration calls `time_bucket(`
+   * or creates a materialized view at all.
+   */
+  it("keeps LEVELS' bucket widths equal to 0027's time_bucket intervals", () => {
+    const stripSql = (sql: string): string => sql.replace(/--.*$/gm, "");
+    const migration = stripSql(read("packages/db/drizzle/0027_continuous_aggregates.sql"));
+
+    const unitMs: Record<string, number> = { minute: 60_000, hour: 3_600_000, day: 86_400_000 };
+    const fromSql = new Map<string, number>();
+    for (const m of migration.matchAll(
+      /CREATE\s+MATERIALIZED\s+VIEW\s+IF\s+NOT\s+EXISTS\s+telemetry\.(point_values_\w+)[\s\S]*?time_bucket\(\s*INTERVAL\s+'(\d+)\s+(minute|hour|day)s?'/gi,
+    )) {
+      const unit = unitMs[m[3]!.toLowerCase()];
+      if (unit === undefined) throw new Error(`0027: unparsed interval unit in ${m[0]}`);
+      fromSql.set(m[1]!, Number(m[2]) * unit);
+    }
+    expect(
+      [...fromSql.keys()].sort(),
+      "0027 must define exactly the four aggregates with a minute/hour/day time_bucket interval",
+    ).toEqual(["point_values_1d", "point_values_1h", "point_values_1m", "point_values_5m"]);
+
+    const script = executableText(read("packages/db/src/refresh-aggregates.ts"));
+    const levelsStart = script.indexOf("export const LEVELS = [");
+    const levelsEnd = script.indexOf("] as const", levelsStart);
+    if (levelsStart === -1 || levelsEnd === -1) {
+      throw new Error("refresh-aggregates.ts: `export const LEVELS = [ … ] as const` was not found");
+    }
+    const fromTs = new Map<string, number>();
+    for (const m of script
+      .slice(levelsStart, levelsEnd)
+      .matchAll(/view:\s*"telemetry\.(point_values_\w+)"[\s\S]*?bucketWidthMs:\s*([\d_*\s]+?)\s*[,}]/g)) {
+      const width = m[2]!
+        .split("*")
+        .map((factor) => Number(factor.replace(/_/g, "").trim()))
+        .reduce((a, b) => a * b, 1);
+      if (!Number.isFinite(width)) throw new Error(`LEVELS: unparsed bucketWidthMs in ${m[0]}`);
+      fromTs.set(m[1]!, width);
+    }
+    expect([...fromTs.keys()].sort(), "LEVELS must list the same four aggregates").toEqual(
+      [...fromSql.keys()].sort(),
+    );
+    for (const [view, width] of fromSql) {
+      expect(
+        fromTs.get(view),
+        `LEVELS' bucketWidthMs for ${view} must equal 0027's time_bucket interval (${width} ms) — ` +
+          "inscribedWindowIsEmpty rounds on this width, so a drift skips or refreshes the wrong window",
+      ).toBe(width);
+    }
+
+    const drizzleDir = join(repoRoot, "packages/db/drizzle");
+    const redefining = readdirSync(drizzleDir)
+      .filter((f) => f.endsWith(".sql") && f !== "0027_continuous_aggregates.sql")
+      .filter((f) => /time_bucket\s*\(|CREATE\s+MATERIALIZED\s+VIEW/i.test(stripSql(read(`packages/db/drizzle/${f}`))));
+    expect(
+      redefining,
+      "a migration after 0027 calls time_bucket( or creates a materialized view — read the widths " +
+        "from it too, or this comparison checks a superseded definition",
+    ).toEqual([]);
   });
 
   it("retains each fine aggregate strictly longer than raw", () => {
