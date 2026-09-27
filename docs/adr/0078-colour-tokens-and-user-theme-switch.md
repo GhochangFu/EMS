@@ -2,13 +2,13 @@
 
 ## Status
 
-Proposed — drafted on 2026-09-28, before any implementation code. Nine gate
+Accepted — drafted on 2026-09-28, before any implementation code. Nine gate
 questions were put to the owner one at a time; all nine were ruled as
 recommended, and each ruling is recorded under *Gate questions*. **Q2 was
 asked twice**: the first asking named the Nexus document as the client's,
 which it is not, and the owner ruled again on the corrected facts. **Q9 was
-added after the first draft**, which had assumed an answer to it. This
-record waits for the owner's review of the written text.
+added after the first draft**, which had assumed an answer to it. The owner
+reviewed and approved this written record on 2026-09-28.
 
 Implements row `F3.65`, which [ADR 0074](./0074-domain-dashboard-parity.md)
 decision 1 (Q1, Q1b) created with its own ADR. Promotes nothing out of
