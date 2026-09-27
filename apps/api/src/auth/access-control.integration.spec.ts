@@ -844,10 +844,10 @@ export async function assertCanManageDashboard(
   /** Set only when the seed supplied no foreign asset group and this function made one. */
   let createdForeignGroupId: string | undefined;
   if (!foreignGroupId) {
-    // **A fresh `pnpm db:seed` gives the second organization locations but no asset groups.**
-    // This threw "run pnpm db:seed" until CI proved the advice wrong: a developer database
-    // accumulates them from the pilot seed and from other suites' fixtures, so the requirement
-    // held on every machine and failed on the only database that is actually clean. Without
+    // **Before `F3.41` (62484480) a fresh seed gave the second organization no asset groups**;
+    // `seedAssetGroups` now gives PHEWB twelve, so on a full seed this branch no longer runs.
+    // It threw "run pnpm db:seed" until CI proved the advice wrong, and stays for a partial
+    // seed (`F4.71`). Without
     // this the refusal below has nothing foreign to be refused, which is the assertion the
     // whole block exists for.
     const foreignLocation = await pool.query<{ id: string; organization_id: string }>(
