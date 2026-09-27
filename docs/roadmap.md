@@ -6467,3 +6467,26 @@ fixed.
 **Cascade:** no row lists `F4.167` in *Depends*. A note on `F4.15`: its
 append-only storage must account for the suites that delete their own audit
 rows. No `chore(agents):` change owed.
+
+### `F4.129` — a long asset code or name no longer stops `db:seed` ✅ 2026-09-27
+
+PR #605, squash `31156916`; plan `docs/plans/f4.129-ladder-rule-code-bound.md`.
+No ADR (owner ruling: the hash-suffix cut).
+
+The ESKOM ladder seed wrote each rule's code and name from the asset's code and
+name with no bound, into `varchar(64)` and `varchar(255)`. One long asset code
+(42+ characters) or name (236+) made every later `compose up` fail with
+`22001`. `ladderRuleCode` leaves a code that fits unchanged and hash-suffixes a
+cut one to exactly 64; `ladderRuleName` cuts the asset name by code point. The
+name half came from review, and the owner ruled it into the same PR.
+
+Verified: 14 unit cases and an integration case with a 60-character code and a
+250-character name; five mutations reddened their targets. On the stack,
+`main`'s seed failed on such an asset and the branch seed passed with every
+existing code unchanged. CI green on the first run. Four reviews and a
+re-review, no open High or Medium.
+
+**Cascade:** no row lists `F4.129` in *Depends*. New rows `F4.169` (a
+lowercase asset code with an edited ladder threshold stops `db:seed` with
+`23505`) and `F4.170` (the same unbounded pattern in `hierarchy-seed.ts`). No
+`chore(agents):` sentence is owed: AGENTS.md does not describe this seed.
