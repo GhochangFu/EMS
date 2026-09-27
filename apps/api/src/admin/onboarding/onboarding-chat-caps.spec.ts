@@ -176,7 +176,9 @@ function buildService(opts: { session: ReturnType<typeof sessionRow>; results?: 
     new CredentialCryptoService(),
     {} as never,
     {} as never,
-    {} as never,
+    // F4.162 (plan D9): `handleTurn` reads the active location types on every
+    // turn. `smoc_campus` is the fixture location's type, so it stays set.
+    { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
   );
   const service = new OnboardingService(
     db,

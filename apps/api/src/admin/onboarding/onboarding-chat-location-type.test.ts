@@ -48,6 +48,15 @@ import {
   assertTypeReplySetsTheType,
   assertTypeWordMatchesWholeWords,
   assertUnmatchedReplyAsksAgain,
+  assertRetiredTypeAnswerAsksTheRtuQuestion,
+  assertRetiredTypeAnswerMovesToTheRtuPhase,
+  assertRetiredTypeAnswerSetsTheType,
+  assertRetiredTypeIsAskedForAtTheRtuPhase,
+  assertRetiredTypeQuestionSuggestsTheActiveLabels,
+  assertRetiredTypeTurnAddsNoRtu,
+  assertRetiredTypeTurnIsNotReadyToCommit,
+  assertRetiredTypeTurnReportsTheLocationPhase,
+  assertRetiredTypeTurnReportsTheTypeError,
 } from "./onboarding-chat-location-type.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -158,5 +167,43 @@ describe("OnboardingChatService.handleTurn — the location type (F4.157), OpenA
 
   it("names the active codes in the system prompt", async () => {
     await assertOpenAiPromptListsTheActiveCodes(captured);
+  });
+});
+
+describe("OnboardingChatService.handleTurn — a stored type retired after it was stored (F4.162)", () => {
+  it("asks for the type again at the rtu phase", async () => {
+    await assertRetiredTypeIsAskedForAtTheRtuPhase();
+  });
+
+  it("suggests the active labels as replies", async () => {
+    await assertRetiredTypeQuestionSuggestsTheActiveLabels();
+  });
+
+  it("reports the location phase", async () => {
+    await assertRetiredTypeTurnReportsTheLocationPhase();
+  });
+
+  it("adds no RTU", async () => {
+    await assertRetiredTypeTurnAddsNoRtu();
+  });
+
+  it("sets the type from the next reply", async () => {
+    await assertRetiredTypeAnswerSetsTheType();
+  });
+
+  it("asks the RTU question once the type is set", async () => {
+    await assertRetiredTypeAnswerAsksTheRtuQuestion();
+  });
+
+  it("moves to the rtu phase once the type is set", async () => {
+    await assertRetiredTypeAnswerMovesToTheRtuPhase();
+  });
+
+  it("reports the error at location.type", async () => {
+    await assertRetiredTypeTurnReportsTheTypeError();
+  });
+
+  it("keeps a complete draft whose type is not active from being ready to commit", async () => {
+    await assertRetiredTypeTurnIsNotReadyToCommit();
   });
 });

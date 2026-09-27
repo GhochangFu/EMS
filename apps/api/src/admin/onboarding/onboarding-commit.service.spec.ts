@@ -84,6 +84,9 @@ function buildService(draft: OnboardingDraft, opts: { liveTypes: readonly string
 
   const vocabularies = {
     assertAssetDomain: () => Promise.resolve(),
+    // F4.162 (plan D9): the commit reads the active codes for `validate`, which
+    // is stubbed here, so the list is not read; no event is recorded for it.
+    listLocationTypes: () => Promise.resolve([]),
     assertLocationType: (code: string) => {
       events.push(`assertLocationType:${code}`);
       return opts.liveTypes.includes(code)

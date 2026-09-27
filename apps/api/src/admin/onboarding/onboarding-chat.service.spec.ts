@@ -422,8 +422,8 @@ const FOUR = [
  * on every path below: `crypto` only inside `mergeDraft`, and `catalogService`
  * and `protocolService` only when an `organizationId` is passed.
  *
- * The fifth is the vocabulary the location branch reads (`F4.157`): a fake
- * answering the four seeded `bms.location_types` rows.
+ * The fifth is the vocabulary `handleTurn` reads once per turn (`F4.157`,
+ * `F4.162`): a fake answering the four seeded `bms.location_types` rows.
  */
 function ruleBasedChatService(): OnboardingChatService {
   return new OnboardingChatService(

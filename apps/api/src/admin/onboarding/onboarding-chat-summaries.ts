@@ -44,8 +44,10 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
   // and deliberately not fixed here (owner ruling 4).
   //
   // **The two predicates diverge, and the cap turned that from untidy into an
-  // elision — so this list is sorted, not filtered.** `mqttIncomplete`, which
-  // the prose above counts, is strictly narrower than this one: it also
+  // elision — so this list is sorted, not filtered.** `mqttIncomplete` — a
+  // local of `excelImportFollowUp` in `onboarding-chat.service.ts`, the list
+  // that function's "MQTT setup still required" sentence counts — is
+  // strictly narrower than this one: it also
   // requires a missing credential or an unusable topic. Before the cap every
   // enabled MQTT RTU printed, so the ones the prose meant were always among
   // them. A leading-25 cut alone does not keep that promise — measured here:
@@ -55,7 +57,8 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
   // message**.
   //
   // Sorting the incomplete ones to the front repairs exactly what the cap
-  // broke. Filtering to `mqttIncomplete` would also change *which* RTUs the
+  // broke. Filtering to `excelImportFollowUp`'s `mqttIncomplete` would also
+  // change *which* RTUs the
   // template contains, and that divergence is pre-existing and deliberate
   // (owner ruling 4 leaves the template's contents and its instruction text
   // alone). A reorder is safe **here and only here**: nothing in the block
@@ -65,7 +68,8 @@ export function mqttSetupTemplate(draft: OnboardingDraft): string {
   // incomplete ones.
   //
   // **The tail still counts omissions from this list, never from
-  // `mqttIncomplete`.** The prose can honestly say "still required for 100
+  // `excelImportFollowUp`'s `mqttIncomplete`.** Its sentence can honestly
+  // say "still required for 100
   // RTU(s)" over 25 blocks; a tail derived from the prose's number would be
   // wrong.
   const setupOrder = [...mqttRtus].sort(

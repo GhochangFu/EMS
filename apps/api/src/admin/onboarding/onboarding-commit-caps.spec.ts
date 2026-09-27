@@ -26,6 +26,9 @@ const JWT: JwtPayload = {
 /** The plant-domain codes the stubbed vocabulary treats as live rows. */
 const LIVE_DOMAINS = ["electrical", "hvac"];
 
+/** The four seeded active location-type codes, which the validator takes (`F4.162`, plan D9). */
+const CODES: readonly string[] = ["smoc_campus", "rsmoc", "csmoc", "pump_station"];
+
 function assetAt(index: number, domain = "electrical"): NonNullable<OnboardingDraft["assets"]>[number] {
   return {
     rtuIndex: 0,
@@ -103,6 +106,8 @@ function buildService(opts: {
     // `F4.157` — accepts every type: no case here is about the location, and
     // each one throws before the transaction opens.
     assertLocationType: () => Promise.resolve(),
+    // `F4.162` — the codes `validate` takes; `validate` is stubbed here.
+    listLocationTypes: () => Promise.resolve([]),
   } as never;
 
   let validateCalls = 0;
@@ -188,10 +193,10 @@ export async function assertOverCapDraftIsRefusedBeforeValidate(): Promise<void>
   const validateService = new OnboardingValidateService();
   const atCap: OnboardingDraft = { assets: times(MAX_ONBOARDING_ASSETS, (index) => assetAt(index)) };
   assert(
-    validateService.validate(atCap).errors.filter((error) => error.path === "assets").length === 0,
+    validateService.validate(atCap, CODES).errors.filter((error) => error.path === "assets").length === 0,
     "a draft at the asset cap raises no array-level issue — the cap is a ceiling, not a target",
   );
-  const realVerdict = validateService.validate(overCapDraft());
+  const realVerdict = validateService.validate(overCapDraft(), CODES);
   assert(
     realVerdict.errors.some((error) => error.path === "assets"),
     `the real validate service reports the over-cap array, got ${JSON.stringify(realVerdict.errors)}`,

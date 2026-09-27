@@ -281,3 +281,86 @@ describe("F4.162 the F4.157 read at admin/location-types does not change", () =>
     expect(controller).toContain("@Patch(");
   });
 });
+
+// ---------------------------------------------------------------------------
+// F4.162 plan U3b (D9) — `PATCH /admin/onboarding/sessions/:id/draft` refuses a
+// `location.type` that is not an active code. `patchDraft` reads the database
+// in `loadSession`, so it has no unit seam; the helper's behaviour is
+// `onboarding-location-type-match.spec.ts` (M2–M4), and this block pins that
+// `patchDraft` calls it, after the session gate.
+// ---------------------------------------------------------------------------
+
+const ONBOARDING_SERVICE_REL = "apps/api/src/admin/onboarding/onboarding.service.ts";
+
+/** Every comment removed, block and line (the `tests/f4.104` `withoutComments` shape). */
+function withoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|\s)\/\/[^\n]*/g, "$1");
+}
+
+/**
+ * The executable body of `async <name>(`, comments removed, cut at the next
+ * class member (the `tests/f4.104` `executableBodyOf` shape, with `async` added
+ * to the member pattern: every public method here is `async`, so without it the
+ * body would run on to the next `private` member and borrow later methods' calls).
+ */
+function executableBodyOf(source: string, name: string): string {
+  const stripped = withoutComments(source);
+  const start = stripped.search(new RegExp(`\\basync ${name}\\s*\\(`));
+  if (start < 0) {
+    throw new Error(`could not find \`async ${name}(\`; a rename must be reflected here`);
+  }
+  const rest = stripped.slice(start + `async ${name}`.length);
+  const end = rest.search(/\n {2}(?:private|protected|public|async)\b/);
+  const body = end < 0 ? rest : rest.slice(0, end);
+  if (body.trim().length === 0) {
+    throw new Error(`\`async ${name}(\` parsed to an empty body`);
+  }
+  return body;
+}
+
+/** The claim: the body calls the assert, and calls it after `loadSession(`. */
+function callsTheAssertAfterLoadSession(body: string): boolean {
+  const load = body.indexOf("loadSession(");
+  const check = body.indexOf("assertPatchLocationTypeIsActive(");
+  return load >= 0 && check > load;
+}
+
+const onboardingService = read(ONBOARDING_SERVICE_REL);
+const PATCH_CALL = "await assertPatchLocationTypeIsActive(draft, this.vocabularies);";
+
+describe("F4.162 patchDraft refuses a location type that is not active", () => {
+  it("calls assertPatchLocationTypeIsActive after loadSession", () => {
+    expect(callsTheAssertAfterLoadSession(executableBodyOf(onboardingService, "patchDraft"))).toBe(true);
+  });
+
+  it("positive control: a copy with the call deleted fails the check", () => {
+    expect(onboardingService).toContain(PATCH_CALL);
+    const mutated = onboardingService.split(PATCH_CALL).join("");
+    expect(callsTheAssertAfterLoadSession(executableBodyOf(mutated, "patchDraft"))).toBe(false);
+  });
+
+  it("positive control: a copy with the call only in a comment fails the check", () => {
+    const mutated = onboardingService.split(PATCH_CALL).join(`// ${PATCH_CALL}`);
+    expect(callsTheAssertAfterLoadSession(executableBodyOf(mutated, "patchDraft"))).toBe(false);
+  });
+
+  it("positive control: a copy with the call above loadSession fails the check", () => {
+    const load = "const session = await this.loadSession(jwt, sessionId);";
+    const body = executableBodyOf(onboardingService, "patchDraft");
+    expect(body).toContain(load);
+    const mutated = onboardingService
+      .split(PATCH_CALL)
+      .join("")
+      .split(load)
+      .join(`${PATCH_CALL}\n    ${load}`);
+    const mutatedBody = executableBodyOf(mutated, "patchDraft");
+    expect(mutatedBody).toContain("assertPatchLocationTypeIsActive(");
+    expect(callsTheAssertAfterLoadSession(mutatedBody)).toBe(false);
+  });
+
+  it("positive control: the body ends at the next member, so validate's calls are not borrowed", () => {
+    const body = executableBodyOf(onboardingService, "patchDraft");
+    expect(body).not.toContain("async validate(");
+    expect(body).not.toContain("async uploadExcel(");
+  });
+});

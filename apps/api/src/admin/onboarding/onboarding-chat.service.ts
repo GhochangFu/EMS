@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 // moduleResolution "node" and ignores the exports map (ADR 0030 Amendment 2).
 import { ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type {
+  LocationTypeDto,
   OnboardingAutoOpenReason,
   OnboardingChatMessage,
   OnboardingDraft,
@@ -245,6 +246,10 @@ export class OnboardingChatService {
     orgName: string,
     organizationId?: string,
   ): Promise<ChatTurnResult> {
+    // F4.162 (plan D9): the active types, read once per turn. Every branch and
+    // `finalizeTurn` use this one list, so the reply, the phase and the
+    // validation errors agree about which stored type counts as set.
+    const types = await this.vocabularies.listLocationTypes();
     const lower = message.toLowerCase().trim();
     if (
       organizationId &&
@@ -262,18 +267,19 @@ export class OnboardingChatService {
         ["MQTT", "Modbus TCP", "View draft"],
         message,
         draft,
+        types,
       );
     }
 
     const apiKey = process.env.OPENAI_API_KEY;
     if (apiKey) {
       try {
-        return await this.handleOpenAiTurn(message, draft, phase, orgName, apiKey);
+        return await this.handleOpenAiTurn(message, draft, phase, orgName, apiKey, types);
       } catch {
         // fall through to rule-based
       }
     }
-    return await this.handleRuleBasedTurn(message, draft, phase, orgName, organizationId);
+    return await this.handleRuleBasedTurn(message, draft, phase, orgName, types, organizationId);
   }
 
   private async handleOpenAiTurn(
@@ -282,11 +288,12 @@ export class OnboardingChatService {
     phase: OnboardingPhase,
     orgName: string,
     apiKey: string,
+    types: readonly LocationTypeDto[],
   ): Promise<ChatTurnResult> {
     const { default: OpenAI } = await import("openai");
     const client = new OpenAI({ apiKey });
     const model = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
-    const typeCodes = (await this.vocabularies.listLocationTypes()).map((row) => row.code);
+    const typeCodes = types.map((row) => row.code);
 
     const system = `You are a TRINETRA BMS onboarding assistant for organization ${orgName}.
 Current phase: ${phase}. Return JSON with keys: assistantMessage, draftPatch (partial), currentPhase, suggestedReplies (optional string array).
@@ -342,6 +349,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       parsed.suggestedReplies,
       message,
       draft,
+      types,
     );
   }
 
@@ -350,6 +358,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
     draft: OnboardingDraft,
     phase: OnboardingPhase,
     orgName: string,
+    types: readonly LocationTypeDto[],
     organizationId?: string,
   ): Promise<ChatTurnResult> {
     const lower = message.toLowerCase().trim();
@@ -369,6 +378,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
           ["confirm assets", "View draft"],
           message,
           draft,
+          types,
         );
       }
     }
@@ -381,14 +391,16 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         ["View draft", "Validate"],
         message,
         draft,
+        types,
       );
     }
 
-    if (phase === "location" || !draft.location?.name) {
+    // F4.162 (plan D9): a stored type that is not active counts as missing, so a
+    // type retired after it was stored is asked for again before the RTU step.
+    if (phase === "location" || !locationTypes.hasActiveLocationType(draft.location, types)) {
       // F4.157 / ADR 0077 decision 7: the type is matched or the stored active
       // one, never defaulted. The message is the name unless the chat waits for
       // a type; `kept` is then spread over the derived fields. See `resolveLocationTurn`.
-      const types = await this.vocabularies.listLocationTypes();
       const { type, kept } = locationTypes.resolveLocationTurn(message, draft.location, types);
       // F4.104 — **this branch is the draft's default producer, not a
       // fallback.** `.env.example` ships `OPENAI_API_KEY=` empty, so
@@ -488,7 +500,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       if (!type) {
         const ask = locationTypes.locationTypeQuestion(name);
         const labels = types.map((row) => row.label);
-        return this.finalizeTurn(ask, patch, "location", labels, message, draft);
+        return this.finalizeTurn(ask, patch, "location", labels, message, draft, types);
       }
       return this.finalizeTurn(
         `Got it — location **${name}**. Which communication protocol will RTU 1 use?`,
@@ -497,6 +509,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         ["MQTT", "Modbus", "BACnet", "OPC-UA", "SNMP", "REST", "Simulator"],
         message,
         draft,
+        types,
       );
     }
 
@@ -525,6 +538,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         ["Add point key kw", "View draft", "Add another RTU"],
         message,
         draft,
+        types,
       );
     }
 
@@ -540,6 +554,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         ["One asset", "View draft"],
         message,
         draft,
+        types,
       );
     }
 
@@ -600,6 +615,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         ["auto map", "View draft"],
         message,
         draft,
+        types,
       );
     }
 
@@ -614,6 +630,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
         ["create it", "View draft", "Validate"],
         message,
         draft,
+        types,
       );
     }
 
@@ -624,6 +641,7 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
       ["create it", "View draft"],
       message,
       draft,
+      types,
     );
   }
 
@@ -634,11 +652,16 @@ Draft context (redacted): ${serialiseDraftForPrompt(draft)}`;
     suggestedReplies: string[] | undefined,
     _userMessage: string,
     draft: OnboardingDraft,
+    types: readonly LocationTypeDto[],
   ): ChatTurnResult {
     // F4.157 review: the draft `mergeDraft` will store, merged by the same
     // helper — never a shallow `{ ...draft, ...patch }`, which drops the stored
-    // location fields a location patch does not carry.
-    const validation = this.validateService.validate(mergeDraftPatch(draft, draftPatch));
+    // location fields a location patch does not carry. F4.162: validated
+    // against the turn's active codes, so an inactive stored type is reported.
+    const validation = this.validateService.validate(
+      mergeDraftPatch(draft, draftPatch),
+      types.map((t) => t.code),
+    );
     const phase = validation.suggestedPhase ?? currentPhase;
     let autoOpenPreview = false;
     let autoOpenReason: OnboardingAutoOpenReason | undefined;
