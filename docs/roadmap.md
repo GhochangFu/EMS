@@ -5220,7 +5220,7 @@ row now records `assetsMoved`, the count only.
 
 **Still open:** `F4.137` (no constraint makes `assets.rtu_id` respect the
 organization) and `F4.138` (the gate reads the location's organization while
-the write uses the RTU's). `F4.139` and `F4.140` closed 2026-09-16 (PR #461,
+the write uses the RTU's; closed 2026-09-27, PR #607). `F4.139` and `F4.140` closed 2026-09-16 (PR #461,
 next section).
 
 ### `F4.139` + `F4.140` — one `telemetrySource` predicate, four writers ✅ 2026-09-16
@@ -6490,3 +6490,20 @@ re-review, no open High or Medium.
 lowercase asset code with an edited ladder threshold stops `db:seed` with
 `23505`) and `F4.170` (the same unbounded pattern in `hierarchy-seed.ts`). No
 `chore(agents):` sentence is owed: AGENTS.md does not describe this seed.
+
+### `F4.138` — RTU writes refuse an organization that disagrees with the location's ✅ 2026-09-27
+
+PR #607, squash `83455f89`; plan `docs/plans/f4.138-rtus-tenant-agreement.md`.
+No ADR.
+
+`update`, `deactivate` and `reactivate` authorized through the location's
+organization but wrote under the RTU's own `organization_id`. A shared guard,
+called after the grant check, now refuses a mismatch with a 500 before the
+tenant transaction opens (ADR 0060 ruling 2). Drift is latent: 0 rows differ.
+
+Verified: unit and integration pairs, the drift made as `bms_fleet` under the
+real roles; nine mutations reddened their planned cases. CI green on the first
+run. Three reviews, one fixture finding fixed.
+
+**Cascade:** no row lists `F4.138` in *Depends*. No `chore(agents):` change
+owed.
