@@ -265,7 +265,6 @@ const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
   { file: "components/widgets/tank-level-widget.tsx", palette: 1, hex: 1, func: 0 },
   { file: "components/widgets/widget-frame.tsx", palette: 8, hex: 0, func: 0 },
   { file: "components/world-map.tsx", palette: 12, hex: 7, func: 0 },
-  { file: "layouts/app-shell.tsx", palette: 55, hex: 0, func: 0 },
   { file: "lib/value-provenance.ts", palette: 3, hex: 0, func: 0 },
   { file: "lib/vocabulary.ts", palette: 15, hex: 0, func: 0 },
   { file: "lib/widget-catalog.ts", palette: 0, hex: 4, func: 0 },
