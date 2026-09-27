@@ -375,9 +375,17 @@ export async function assertListCarriesTheRsmocTypeLabel(
   register: (id: string) => void,
 ): Promise<void> {
   const created = await createF4157Location(ctx, jwt, f4157Code("RSMOC-LABEL"), "rsmoc", register);
-  const { items } = await ctx.svc.list(jwt, ctx.organizationId);
-  const listed = items.find((item) => item.id === created.id);
-  expect(listed?.typeLabel, "list must carry the joined label for a live rsmoc row").toBe("RSMOC");
+  try {
+    const { items } = await ctx.svc.list(jwt, ctx.organizationId);
+    const listed = items.find((item) => item.id === created.id);
+    expect(listed?.typeLabel, "list must carry the joined label for a live rsmoc row").toBe("RSMOC");
+  } finally {
+    // Deleted here, not deferred to `afterAll` — an active PHEWB row left
+    // window-long is what turned `access-control-rls.integration.test.ts`'s
+    // global-admin active-location count 17 instead of 16 for the lifecycle
+    // fixture above; this fixture is the same shape, so it gets the same fix.
+    await ctx.ownerPool.query("DELETE FROM bms.locations WHERE id = $1", [created.id]);
+  }
 }
 
 /**
