@@ -639,6 +639,14 @@ function conditionKey(
 }
 
 /**
+ * One asset {@link seedEskomLadderRules} skipped at least one ladder rule for,
+ * because a different rule already held the code (guard 3). `seed.ts` hands
+ * the list to `verifyHierarchySeed`, which exempts exactly these assets from
+ * its uncovered-asset check and logs each one it exempts.
+ */
+export type LadderCollisionSkip = { readonly assetId: string; readonly assetCode: string };
+
+/**
  * Seeds the ESKOM ladder onto every electrical asset, skipping any of the
  * five rules wherever that asset already carries a rule with the same
  * `(asset_id, point_key, operator, threshold_value)` condition — matching
@@ -717,7 +725,7 @@ export async function seedEskomLadderRules(
   db: BmsDb,
   organizationId: string,
   log: (line: string) => void = (line) => console.error(line),
-): Promise<void> {
+): Promise<LadderCollisionSkip[]> {
   const electricalAssets = await db
     .select({ id: assets.id, code: assets.code, name: assets.name })
     .from(assets)
@@ -725,7 +733,7 @@ export async function seedEskomLadderRules(
     .innerJoin(organizations, eq(organizations.id, locations.organizationId))
     .where(and(eq(organizations.code, "ESKOM"), eq(assets.domain, "electrical")));
   if (electricalAssets.length === 0) {
-    return;
+    return [];
   }
 
   const existingRows = await db
@@ -778,6 +786,9 @@ export async function seedEskomLadderRules(
     }
   }
 
+  // One entry per asset that lost at least one rule to guard 3, keyed on the
+  // asset id, so an asset that loses all five is listed once.
+  const collisionSkips = new Map<string, LadderCollisionSkip>();
   for (const asset of electricalAssets) {
     for (const rule of ESKOM_LADDER_RULES) {
       if (existingConditions.has(conditionKey(asset.id, rule.pointKey, rule.operator, rule.thresholdValue))) {
@@ -794,6 +805,7 @@ export async function seedEskomLadderRules(
             `rule ${holder.id} on asset ${holder.assetCode ?? "<none>"} (${holder.assetId ?? "<none>"}) ` +
             `already holds that code`,
         );
+        collisionSkips.set(asset.id, { assetId: asset.id, assetCode: asset.code });
         continue;
       }
       const [inserted] = await db
@@ -821,6 +833,7 @@ export async function seedEskomLadderRules(
       codesHeld.set(code, { id: inserted.id, assetId: asset.id, assetCode: asset.code });
     }
   }
+  return [...collisionSkips.values()];
 }
 
 /**

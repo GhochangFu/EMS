@@ -1,6 +1,7 @@
 import pg from "pg";
 
 import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
+import type { LadderCollisionSkip } from "./automation-rules-seed";
 import { getOrganizationId } from "./hierarchy-seed";
 import { withOrganization } from "./seed-tenant";
 import { DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES } from "./water-plant-demo-seed";
@@ -43,13 +44,14 @@ const MIGRATION_0029_ASSET_DOMAINS = 5;
 export async function verifyHierarchySeed(
   pool: pg.Pool,
   organizationIds?: { eskomOrgId: string; phewbOrgId: string },
+  options?: EskomCheckOptions,
 ): Promise<void> {
   const eskomOrgId = organizationIds?.eskomOrgId ?? (await getOrganizationId(pool, "ESKOM"));
   const phewbOrgId = organizationIds?.phewbOrgId ?? (await getOrganizationId(pool, "PHEWB"));
 
   const checks: HierarchyCheck[] = [...(await readGlobalChecks(pool))];
   await withOrganization(pool, eskomOrgId, async () => {
-    checks.push(...(await readEskomChecks(pool, eskomOrgId)));
+    checks.push(...(await readEskomChecks(pool, eskomOrgId, options)));
   });
   await withOrganization(pool, phewbOrgId, async () => {
     checks.push(...(await readPhewbChecks(pool, phewbOrgId)));
@@ -149,19 +151,68 @@ export async function readGlobalChecks(pool: pg.Pool): Promise<HierarchyCheck[]>
   return checks;
 }
 
+/** The label of the check that counts ESKOM electrical assets with no ladder rule. */
+export const UNCOVERED_ELECTRICAL_LABEL = "ESKOM electrical assets with no simulator_threshold rule";
+
+export type EskomCheckOptions = {
+  /**
+   * The assets `seedEskomLadderRules` skipped a rule for on a code collision
+   * in this seed run. The uncovered-asset check exempts exactly these, by id,
+   * and logs each one it exempts. Empty by default, so a caller that passes
+   * nothing — the `verify:hierarchy` CLI — fails closed on every uncovered
+   * asset.
+   */
+  readonly ladderCollisionSkips?: readonly LadderCollisionSkip[];
+  /** Where each exemption line goes; `console.error` by default. */
+  readonly log?: (line: string) => void;
+};
+
 /**
  * Pass 2 — the ESKOM checks. The caller holds ESKOM's tenant context
  * (`app.current_organization`); this function opens no transaction.
  */
-export async function readEskomChecks(pool: pg.Pool, eskomOrgId: string): Promise<HierarchyCheck[]> {
+export async function readEskomChecks(
+  pool: pg.Pool,
+  eskomOrgId: string,
+  options: EskomCheckOptions = {},
+): Promise<HierarchyCheck[]> {
+  const { ladderCollisionSkips = [], log = (line: string) => console.error(line) } = options;
   const checks: HierarchyCheck[] = [];
   const expect = (label: string, actual: string | undefined, wanted: number): void => {
     checks.push(exactCheck(label, actual, wanted));
   };
   // ── Pass 2: ESKOM ─────────────────────────────────────────────────────────
+  // Zero uncovered assets, not a nonzero total: a total alone cannot tell
+  // "every asset got its five rules" from "most did, one silently didn't"
+  // (migration review, PR #100 -- the gap ESK-MANUAL-01 itself exposed). Read
+  // as rows, not a count, so the assets `seedEskomLadderRules` reported as
+  // collision skips can be exempted by id, and each exemption logged.
+  const uncovered = await pool.query<{ id: string; code: string }>(`
+    SELECT a.id, a.code FROM bms.assets a
+      INNER JOIN bms.locations l ON l.id = a.location_id
+      INNER JOIN bms.organizations o ON o.id = l.organization_id
+      WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
+        AND NOT EXISTS (
+          SELECT 1 FROM bms.automation_rules r
+          WHERE r.asset_id = a.id AND r.source = 'simulator_threshold'
+        )
+      ORDER BY a.code, a.id
+  `);
+  const skippedIds = new Set(ladderCollisionSkips.map((skip) => skip.assetId));
+  let uncoveredCount = 0;
+  for (const asset of uncovered.rows) {
+    if (skippedIds.has(asset.id)) {
+      log(
+        `verifyHierarchySeed: exempted ${asset.code} (${asset.id}) from "${UNCOVERED_ELECTRICAL_LABEL}": ` +
+          "seedEskomLadderRules skipped its ladder rules because another rule holds the code",
+      );
+      continue;
+    }
+    uncoveredCount += 1;
+  }
+
   const res = await pool.query<{
     eskom_locs: string;
-    eskom_uncovered_electrical_assets: string;
     orphan_assets: string;
     loc_mismatch: string;
     eskom_incomers_on_pue_template: string;
@@ -178,17 +229,6 @@ export async function readEskomChecks(pool: pg.Pool, eskomOrgId: string): Promis
       (SELECT COUNT(*)::text FROM bms.locations l
         INNER JOIN bms.organizations o ON o.id = l.organization_id
         WHERE o.code = 'ESKOM') AS eskom_locs,
-      -- Zero uncovered assets, not a nonzero total: a total alone cannot tell
-      -- "every asset got its five rules" from "most did, one silently didn't"
-      -- (migration review, PR #100 -- the gap ESK-MANUAL-01 itself exposed).
-      (SELECT COUNT(*)::text FROM bms.assets a
-        INNER JOIN bms.locations l ON l.id = a.location_id
-        INNER JOIN bms.organizations o ON o.id = l.organization_id
-        WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
-          AND NOT EXISTS (
-            SELECT 1 FROM bms.automation_rules r
-            WHERE r.asset_id = a.id AND r.source = 'simulator_threshold'
-          )) AS eskom_uncovered_electrical_assets,
       -- Whole-fleet invariants, ESKOM's half (the PHEWB pass has the other).
       -- ADR 0018: a null rtu_id is legal — an asset need not be wired. The
       -- axis that must never be null is the spatial one, because every scoped
@@ -303,11 +343,7 @@ export async function readEskomChecks(pool: pg.Pool, eskomOrgId: string): Promis
   // missing a migration-only feature. A nonzero-total check alone would not
   // have caught `ESK-MANUAL-01` being silently skipped — a total can stay
   // nonzero while one asset quietly loses all five of its rules.
-  expect(
-    "ESKOM electrical assets with no simulator_threshold rule",
-    row?.eskom_uncovered_electrical_assets,
-    0,
-  );
+  checks.push({ label: UNCOVERED_ELECTRICAL_LABEL, actual: uncoveredCount, wanted: 0, kind: "exact" });
   // `F2.8`. Fixed seed cardinalities read off the ESKOM catalog
   // (`eskom-assets-seed.ts`, a repository file) — NOT lifetime counters.
   // Nine incomers: one `*-CR-UTILITY*` asset per RSMOC site, each carrying

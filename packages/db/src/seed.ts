@@ -21,7 +21,11 @@ import { pheMapLocationRowsForInsert } from "./phe-map-seed";
 import { seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
 import { backfillAssetLocations, seedAssetGroups } from "./asset-groups-seed";
-import { seedAutomationRules, seedEskomLadderRules } from "./automation-rules-seed";
+import {
+  type LadderCollisionSkip,
+  seedAutomationRules,
+  seedEskomLadderRules,
+} from "./automation-rules-seed";
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import { seedAssetTemplateHealth } from "./asset-template-health-seed";
 import { seedPueDemo, seedPueDemoRackKwPoints } from "./pue-demo-seed";
@@ -116,6 +120,9 @@ async function main(): Promise<void> {
     ...mapLocationRowsForInsert(),
     ...pheMapLocationRowsForInsert(),
   ];
+  // Written by `seedEskomLadderRules` in the second ESKOM bracket, read by the
+  // verifier after every bracket has closed.
+  let ladderCollisionSkips: LadderCollisionSkip[] = [];
   const rsmocDemoAssets = mapLocationRows.flatMap((row) =>
     row.kind === "rsmoc" && row.siteName && row.province
       ? demoAssetsForRsmoc(row.siteName, row.province)
@@ -243,7 +250,7 @@ async function main(): Promise<void> {
       // After access fixtures, not inside seedAutomationRules: this needs every
       // ESKOM electrical asset to exist, including ESK-MANUAL-01, which the
       // call just above this one creates.
-      await seedEskomLadderRules(db, eskomOrgId);
+      ladderCollisionSkips = await seedEskomLadderRules(db, eskomOrgId);
       // `F4.69` — last inside this bracket, because it derives from the rules
       // every call above it writes. A catalog row for each published threshold
       // rule's point is what makes a tag scoreable (`E1.3`) and pickable
@@ -304,7 +311,9 @@ async function main(): Promise<void> {
     // ── Post-tenant ───────────────────────────────────────────────────────
     await enforceHierarchyNotNull(pool);
     const { verifyHierarchySeed } = await import("./verify-hierarchy-seed.js");
-    await verifyHierarchySeed(pool, { eskomOrgId, phewbOrgId });
+    // The ladder seed's collision skips, so the verifier exempts exactly those
+    // assets from its uncovered-asset check and logs each one.
+    await verifyHierarchySeed(pool, { eskomOrgId, phewbOrgId }, { ladderCollisionSkips });
   } finally {
     await pool.end();
     await superuserPool.end();

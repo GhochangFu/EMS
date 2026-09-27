@@ -66,6 +66,8 @@ type IntegrationPool = Awaited<ReturnType<typeof openIntegrationPool>>;
 type SeedPool = ReturnType<typeof createSeedPool>;
 type SeedDb = ReturnType<typeof createDb>;
 
+type LadderCollisionSkip = AutomationRulesSeed.LadderCollisionSkip;
+
 /** One stored rule, as the assertions below read it. */
 type RuleRow = { id: string; code: string; threshold_value: number | null };
 
@@ -120,8 +122,8 @@ describe.skipIf(!ownerUrl)(
       db: SeedDb;
       insertAsset: (code: string) => Promise<string>;
       readRules: (assetId: string) => Promise<RuleRow[]>;
-      /** Runs the ladder seed, collecting its warnings into `lines`. */
-      seed: () => Promise<void>;
+      /** Runs the ladder seed, collecting its warnings into `lines`; returns its collision skips. */
+      seed: () => Promise<LadderCollisionSkip[]>;
       /** The warnings so far that name this run's fixtures. */
       runLines: () => string[];
     };
@@ -320,7 +322,7 @@ describe.skipIf(!ownerUrl)(
 
         // Mutation: without the pre-read code check the victim's INSERT
         // throws 23505 here, and the transaction is aborted.
-        await tx.seed();
+        const skips = await tx.seed();
 
         const attackerRows = await tx.readRules(attackerId);
         const victimRows = await tx.readRules(victimId);
@@ -342,6 +344,14 @@ describe.skipIf(!ownerUrl)(
         expect(line, "the warning must name the holder asset").toContain(`${attackerCode} (${attackerId})`);
         expect(line, "the warning must name the held code").toContain(heldCode);
         expect(line, "the warning must name the holder's rule id").toContain(holder?.id ?? "<no holder>");
+
+        // The seed walks every ESKOM electrical asset, so the list is filtered
+        // to this run's fixtures before the exact compare. Mutation: not
+        // recording the skip leaves the list empty.
+        expect(
+          skips.filter((skip) => skip.assetCode.toLowerCase().includes(runId)),
+          "the seed must return exactly one collision skip, naming the victim",
+        ).toEqual([{ assetId: victimId, assetCode: victimCode }]);
       });
     }, 60_000);
 
