@@ -80,19 +80,26 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  *
  *   - `POSITIONAL` needs a `LIMIT`. A read that orders with no `LIMIT` and then
  *     takes `rows[0]` in JS is positional and invisible — that was the
- *     `energy-cost` read, the row's own defect, until it was rewritten to carry
- *     `LIMIT 1` so this rule could see it.
- *   - `NAMED_READ` tests the whole literal, so any `id =` or `code =` anywhere in
- *     it hides a positional read in the same literal: the `=` inside
- *     `ORDER BY (code = 'ESKOM') DESC` in `alarms.service.rls.integration.test.ts`,
- *     and a `(SELECT id FROM bms.assets … ORDER BY code LIMIT 1)` subquery beside
- *     a `WHERE id = $2` one in an `INSERT … COALESCE(…)`.
+ *     `energy-cost` read, the row's own defect, and the five `tests/` schema
+ *     suites that took `rows[0]` and `rows[1]` of `bms.organizations ORDER BY
+ *     code`, until each was rewritten to carry its `LIMIT` so this rule could
+ *     see it. Reverting such a read to its old, `LIMIT`-less text still passes.
+ *   - `NAMED_READ` tests one `SELECT` at a time (`selectSegments`), so an `id =`
+ *     in one subquery no longer hides a positional read in its neighbour — the
+ *     `INSERT … COALESCE(…)` in four notification suites was that shape. It
+ *     still hides one inside the *same* `SELECT`: the `=` in
+ *     `ORDER BY (code = 'ESKOM') DESC` (`alarms.service.rls.integration.test.ts`),
+ *     or an outer read whose `LIMIT` falls after a named subquery, as in
+ *     `WHERE organization_id = (SELECT … WHERE email = $1) LIMIT 1`.
  *   - `PREFERS_OLDEST` accepts any `created_at` within reach of the `ORDER BY`,
  *     including another alias's: an `ORDER BY o.code, l.created_at` join orders
  *     its organizations by code and still passes.
- *   - The scan walks only `apps` and `packages` spec files, so the top-level
- *     `tests/` suites and helpers such as `apps/api/src/testing/*.ts` are
- *     outside it.
+ *   - The scan walks `apps` and `packages` spec files and the top-level
+ *     `tests/*.integration.test.ts` suites. Helpers are outside it:
+ *     `apps/api/src/testing/*.ts` and `tests/support/`. `fixtureLocation` in
+ *     `apps/api/src/testing/integration-fixtures.ts` is one — a builder read of
+ *     `bms.locations` ordered by `id` under a docblock that says no test writes
+ *     that table, which `F4.71` found untrue.
  */
 describe("F4.53 — positional fixture reads resolve the oldest row", () => {
   /** The five tables suites resolve parents and actors from. */
@@ -154,10 +161,6 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
           match: "id <> ALL($1)",
           why: "the ungranted-location probe: refusal is asserted for any id, so which row it draws cannot change the verdict",
         },
-        {
-          match: "from bms.organizations where id <> $1 limit 1",
-          why: "the three foreign-organization reads in the canManageDashboard proof (orgBId, locForeignOrgId, groupForeignOrgId): each id only feeds a refusal, or admin's unconditional true, and nothing is written under it, so any organization proves the same verdict",
-        },
       ],
     ],
     [
@@ -182,16 +185,37 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
    */
   const CHAIN_WINDOW = 400;
 
+  /** One SQL text that reads a fixture table positionally and not from the oldest row. */
+  function offends(sql: string): boolean {
+    return (
+      FIXTURE_TABLE.test(sql) &&
+      POSITIONAL.test(sql) &&
+      !NAMED_READ.test(sql) &&
+      !PROJECTS_A_CONSTANT.test(sql) &&
+      !PREFERS_OLDEST.test(sql)
+    );
+  }
+
+  /**
+   * A literal cut at every `SELECT`, each piece running to the next one.
+   *
+   * `NAMED_READ` tests the whole literal, so an `id =` in one subquery hid a
+   * positional read in its neighbour: the `INSERT … COALESCE((SELECT asset_id …
+   * WHERE id = $2), (SELECT id FROM bms.assets … ORDER BY code LIMIT 1))` that
+   * four notification suites carried (`F4.71`). Judged per piece as well, that
+   * second subquery stands on its own. This only ever *adds* offenders — a
+   * literal is still judged whole first — so it cannot hide a read the whole-
+   * literal test would have reported.
+   */
+  function selectSegments(literal: string): string[] {
+    return literal.split(/(?=\bSELECT\b)/i).filter((piece) => /^\s*SELECT\b/i.test(piece));
+  }
+
   /** Every positional fixture read in `source` that does not prefer the oldest row. */
   function offendingReads(source: string): string[] {
     const src = withoutComments(source);
     const literals = stringLiterals(src).filter(
-      (literal) =>
-        FIXTURE_TABLE.test(literal) &&
-        POSITIONAL.test(literal) &&
-        !NAMED_READ.test(literal) &&
-        !PROJECTS_A_CONSTANT.test(literal) &&
-        !PREFERS_OLDEST.test(literal),
+      (literal) => offends(literal) || selectSegments(literal).some(offends),
     );
 
     const chains: string[] = [];
@@ -213,7 +237,7 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
   function scan(): { scanned: number; offenders: string[] } {
     const offenders: string[] = [];
     let scanned = 0;
-    for (const root of ["apps", "packages"]) {
+    for (const root of ["apps", "packages", "tests"]) {
       for (const file of walk(join(repoRoot, root))) {
         if (!/(\.spec|\.integration\.test)\.tsx?$/.test(file)) continue;
         const rel = relative(repoRoot, file).replace(/\\/g, "/");
@@ -407,6 +431,40 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
           "const other = await db.select().from(locations).orderBy(asc(locations.createdAt));",
       ),
     ).toHaveLength(1);
+  });
+
+  it("a named subquery does not hide a positional one beside it", () => {
+    // `F4.71`: the notification suites' fixture alarm. The first subquery names
+    // its row (`id = $2`), and judged as one literal that hid the second.
+    const coalesce = (order: string): string =>
+      "await pool.query(`INSERT INTO bms.alarms (organization_id, asset_id, severity, message)\n" +
+      "  VALUES ($1, COALESCE(\n" +
+      "    (SELECT asset_id FROM bms.automation_rules WHERE id = $2),\n" +
+      `    (SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY ${order} LIMIT 1)\n` +
+      "  ), 'warning', $3) RETURNING id`, [org, rule, msg]);";
+    expect(offendingReads(coalesce("code"))).toHaveLength(1);
+    // The fix.
+    expect(offendingReads(coalesce("created_at, code"))).toEqual([]);
+
+    // The same shape in an `UPDATE`, as `f2.23-catalog-code-charset` had it.
+    expect(
+      offendingReads(
+        "await c.query(`UPDATE bms.assets SET code = $1 WHERE id = (SELECT id FROM bms.assets LIMIT 1)`, [x]);",
+      ),
+    ).toHaveLength(1);
+
+    // A read bound to one id is still named, whole or cut.
+    expect(
+      offendingReads("await pool.query(`SELECT id FROM bms.assets WHERE id = $1 LIMIT 1`, [a]);"),
+    ).toEqual([]);
+    // A named read with an existence probe: the probe projects a constant, so
+    // its piece is not a read of any row.
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT id FROM bms.assets a WHERE a.code = $1\n" +
+          "  AND EXISTS (SELECT 1 FROM bms.locations l WHERE l.id = a.location_id LIMIT 1) LIMIT 1`, [c]);",
+      ),
+    ).toEqual([]);
   });
 
   it("the exemption list only gets shorter, and every exemption names a query", () => {

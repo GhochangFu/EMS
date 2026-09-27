@@ -34,9 +34,13 @@ import {
  *  - `F4.67` / `F4.68`: this suite **never reads `bms.assets`**, positionally or by pattern. It
  *    creates its own asset and point. Having no such read is stronger than having a careful
  *    one.
- *  - `F4.53`: no unordered `LIMIT`. `bms.organizations` is read `ORDER BY code`, the one
- *    documented-safe read — `apps/api/src/testing/integration-fixtures.ts:70-77` records that
- *    nothing under `apps/**`, `packages/**` or `tests/**` writes that table from a test.
+ *  - `F4.53`: every positional read of a seeded table resolves the oldest row. This file once
+ *    read `bms.organizations` `ORDER BY code` and called it documented-safe, on the strength of
+ *    `apps/api/src/testing/integration-fixtures.ts` recording that no test writes that table.
+ *    That stopped being true (`F4.71`): suites commit `E13HR-…`, `F330-FRESH-…` and
+ *    `F4161-EMPTY-…` organizations, and every one of them sorts before `PHEWB`. The reads are
+ *    now `ORDER BY created_at, code` — the seed writes ESKOM and PHEWB in one statement, so
+ *    `code` breaks their tie and a younger transient organization can never win.
  *  - `F4.65`: every code and slug carries a per-run `randomUUID()` suffix, so two instances of
  *    this file cannot collide even if the rollback were to fail.
  *  - `F4.66`: no assertion on a count over a whole table. Every assertion is over rows this
@@ -102,8 +106,8 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
     );
     client = (await pool.connect()) as unknown as IntegrationClient;
     const orgs = await client.query<{ id: string }>(
-      // ORDER BY code, never a bare LIMIT — F4.53.
-      `SELECT id FROM bms.organizations ORDER BY code`,
+      // The two oldest (the seeded ESKOM and PHEWB), never the first by code — F4.53/F4.71.
+      `SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 2`,
     );
     if (orgs.rows.length < 2) {
       throw new Error(
@@ -166,7 +170,7 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
 
     // Its OWN asset and point, never a read of bms.assets — F4.67/F4.68.
     const loc = await run(
-      `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`,
+      `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
       [orgA],
     );
     const locationId = loc.rows[0]?.id as string;
@@ -242,7 +246,7 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
   it("permits one scope axis and refuses two", async () => {
     await inTx(async (run) => {
       const loc = await run(
-        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`,
+        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
         [orgA],
       );
       const group = await run(

@@ -137,7 +137,7 @@ describe.skipIf(!connectionString)("F3.10 alarm lifecycle schema (migration 0066
     // A seeded asset, not a fixture one (`F4.53`): the alarm rows below need
     // an asset to hang off, and the seed's own assets are the stable choice.
     const asset = await pool.query<{ id: string }>(
-      `SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY id LIMIT 1`,
+      `SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
       [organizationId],
     );
     const assetRow = asset.rows[0];

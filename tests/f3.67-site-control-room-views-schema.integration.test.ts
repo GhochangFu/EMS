@@ -64,7 +64,10 @@ describe.skipIf(!has)("F3.67 — bms.site_control_room_views against a live data
       "F3.67",
     );
     client = (await pool.connect()) as unknown as IntegrationClient;
-    const orgs = await client.query(`SELECT id FROM bms.organizations ORDER BY code`);
+    // The two oldest (the seeded ESKOM and PHEWB), never the first by code — F4.53/F4.71.
+    const orgs = await client.query(
+      `SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 2`,
+    );
     if (orgs.rows.length < 2) {
       throw new Error(
         "F3.67: needs two bms.organizations rows to prove tenant isolation — run pnpm db:seed.",
@@ -72,7 +75,7 @@ describe.skipIf(!has)("F3.67 — bms.site_control_room_views against a live data
     }
     orgA = orgs.rows[0]?.id as string;
     orgB = orgs.rows[1]?.id as string;
-    const type = await client.query(`SELECT type FROM bms.locations ORDER BY code LIMIT 1`);
+    const type = await client.query(`SELECT type FROM bms.locations ORDER BY created_at, code LIMIT 1`);
     locationType = type.rows[0]?.type as string;
     if (!locationType) throw new Error("F3.67: needs a seeded location — run pnpm db:seed.");
   });

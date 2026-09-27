@@ -53,7 +53,8 @@ describe.skipIf(!has)("F3.2 — asset default dashboards against a live database
     );
     client = (await pool.connect()) as unknown as IntegrationClient;
     const orgs = await client.query<{ id: string }>(
-      `SELECT id FROM bms.organizations ORDER BY code`,
+      // The two oldest (the seeded ESKOM and PHEWB), never the first by code — F4.53/F4.71.
+      `SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 2`,
     );
     if (orgs.rows.length < 2) {
       throw new Error(
@@ -91,9 +92,10 @@ describe.skipIf(!has)("F3.2 — asset default dashboards against a live database
     org: string,
     codeSuffix: string,
   ): Promise<string> => {
-    const loc = await run(`SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`, [
-      org,
-    ]);
+    const loc = await run(
+      `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
+      [org],
+    );
     const locationId = loc.rows[0]?.id as string;
     if (!locationId) {
       throw new Error(`F3.2: org ${org} needs a seeded location — run pnpm db:seed.`);
@@ -174,9 +176,10 @@ describe.skipIf(!has)("F3.2 — asset default dashboards against a live database
   it("permits an asset scope alone and refuses it paired with location or asset group", async () => {
     await inTx(async (run) => {
       const assetId = await seedAsset(run, orgA, `I1-${RUN}`);
-      const loc = await run(`SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`, [
-        orgA,
-      ]);
+      const loc = await run(
+        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
+        [orgA],
+      );
       const group = await run(`SELECT id FROM bms.asset_groups WHERE organization_id = $1 ORDER BY code`, [
         orgA,
       ]);

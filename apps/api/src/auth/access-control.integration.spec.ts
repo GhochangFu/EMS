@@ -790,7 +790,7 @@ export async function assertCanManageDashboard(
     throw new Error(`F3.1b: ${SEEDED.organizationAdmin} has no organization grant`);
   }
   const foreignOrg = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1`,
     [orgAId],
   );
   const orgBId = foreignOrg.rows[0]?.id;
@@ -815,7 +815,7 @@ export async function assertCanManageDashboard(
   // seeded organizations it can coincide with locOrgId itself, which silently turns finding
   // 4's regression test into a no-op assertion about the location_admin's own organization).
   const locForeignOrg = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1`,
     [locOrgId],
   );
   const locForeignOrgId = locForeignOrg.rows[0]?.id;
@@ -871,7 +871,7 @@ export async function assertCanManageDashboard(
     throw new Error("F3.1b: could not read or create a foreign asset group");
   }
   const groupForeignOrg = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1`,
     [groupOrgId],
   );
   const groupForeignOrgId = groupForeignOrg.rows[0]?.id;

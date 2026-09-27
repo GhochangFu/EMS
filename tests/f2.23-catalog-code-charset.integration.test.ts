@@ -107,7 +107,8 @@ describe.skipIf(!connectionString)("F2.23 catalog code charset (migration 0070)"
       await client.query("SAVEPOINT before_bad_asset");
       const badAsset = await refusal(() =>
         client.query(
-          `UPDATE bms.assets SET code = 'f2-23.bad' WHERE id = (SELECT id FROM bms.assets LIMIT 1)`,
+          `UPDATE bms.assets SET code = 'f2-23.bad'
+            WHERE id = (SELECT id FROM bms.assets ORDER BY created_at, code LIMIT 1)`,
         ),
       );
       expect(badAsset.code).toBe("23514");
@@ -124,9 +125,12 @@ describe.skipIf(!connectionString)("F2.23 catalog code charset (migration 0070)"
       await client.query("SAVEPOINT before_ok_asset");
       // `rowCount`, not just "it did not throw": on an empty `bms.assets` the
       // subquery yields no id, the UPDATE affects nothing and succeeds, and
-      // the control would pass having exercised no constraint at all.
+      // the control would pass having exercised no constraint at all. The
+      // oldest asset (`F4.53`): an unordered pick can land on another suite's
+      // transient asset, lock it until this rollback, or lose it mid-statement.
       const okAsset = await client.query(
-        `UPDATE bms.assets SET code = $1 WHERE id = (SELECT id FROM bms.assets LIMIT 1)`,
+        `UPDATE bms.assets SET code = $1
+          WHERE id = (SELECT id FROM bms.assets ORDER BY created_at, code LIMIT 1)`,
         [okCode],
       );
       expect(okAsset.rowCount, "the positive control must update exactly one asset row").toBe(1);

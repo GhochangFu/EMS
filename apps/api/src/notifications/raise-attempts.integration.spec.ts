@@ -265,7 +265,7 @@ async function insertFixtureAlarm(pool: Pool, ruleId: string, organizationId: st
        $1,
        COALESCE(
          (SELECT asset_id FROM bms.automation_rules WHERE id = $2),
-         (SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY code LIMIT 1)
+         (SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1)
        ),
        'warning',
        $3
