@@ -70,10 +70,11 @@ export function assertReSeedingIsIdempotentAndNeverOverwrites(): void {
  * The insert is bounded to one organization, and the row it writes carries that
  * organization rather than one derived from the joined asset.
  *
- * Not a style point. `verify-hierarchy-seed.ts` asserts `PHE asset_points` is
- * exactly 252, so a single PHE rule reached by an unbounded statement turns the
- * hierarchy verify red — and it would do so in the seed step that runs after
- * this one, where the cause is furthest from the effect.
+ * Not a style point. Until `F4.170` the hierarchy verify asserted `PHE
+ * asset_points` exactly, so an unbounded statement turned it red one step later.
+ * Since `F4.170` it checks only that the catalog's points are present (an admin
+ * may add points), so an extra point no longer reddens it: this text gate is
+ * now the only guard against a statement that reaches another organization.
  */
 export function assertTheInsertCannotReachAnotherOrganization(): void {
   expect(RULED_POINT_CATALOG_SQL).toContain("r.organization_id = $1");
