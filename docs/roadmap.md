@@ -5725,7 +5725,7 @@ Verified on the compose database: the sparse suite passed 11/11 and the E4.1b
 suite 18/18. The branch image was deployed to `bms-api-1` and booted cleanly.
 The live refusal on the stack is N/A by gate (owner ruling): no stack asset
 carries a window-`sum` point. Browser N/A by gate. A `55P03` retry for
-`materializeCompleteBuckets` is the new row `F4.149`. Unblocks nothing.
+`materializeCompleteBuckets` is the new row `F4.149` (closed by `F4.71`). Unblocks nothing.
 
 ### `E4.3` — water balance and wastewater recovery (ADR 0073) ✅ 2026-09-24
 
@@ -6311,3 +6311,30 @@ move over 20 s of refetches. CI green on the first run.
 
 **Cascade:** no row lists `F4.163` in *Depends*. No `chore(agents):` sweep
 owed (AGENTS.md does not name the basemap).
+
+### `F4.71` — every live shared-database test flake fixed, then measured ✅ 2026-09-27
+
+PR #590, squash `2c95ced6`; plan `docs/plans/f4.71-shared-db-flakes.md`.
+No ADR (owner ruling: test-only plus one CLI guard). Closes `F4.149`.
+
+The row asked to measure three `*.rls` suites. CI history said otherwise:
+since the `maxWorkers: 2` cap, 19 of 348 `main` runs failed and none was a
+row-named suite. The owner broadened the row to fix every flake still live.
+Positional fixture reads of `bms.organizations` and `bms.locations` now
+prefer the oldest (seeded) row, and the `F4.53` rule covers them, `tests/`
+and the fixture helpers. The report cap rows run in their own organization.
+Manual aggregate refreshes retry `55P03`. The backfill CLI skips a level
+whose window holds no complete bucket, which removes the chunk-boundary
+`22023`.
+
+Measured on a scratch database with the CI environment: five runs at 2 and
+five at 4 workers, no shared-row race, no leaked row; every red run was a
+local 5 s load timeout. `maxWorkers` stays 2. The owner-ruled gate
+(`--testTimeout=30000`) passed except the 7 known `F4.160` web tests; CI
+was green on the first run. Four reviews, no High, every finding fixed.
+
+**Cascade:** no row lists `F4.71` or `F4.149` in *Depends*. New rows:
+`F4.165` (the CI-only web flake on the dashboard-builder edit page) and
+`F4.166` (`refreshAggregatesFrom` can still raise `22023`). One
+`chore(agents):` sentence owed: AGENTS.md §4.4's backfill bullet does not
+say the CLI now skips a level with no complete bucket.

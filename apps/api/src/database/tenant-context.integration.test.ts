@@ -49,7 +49,7 @@ describe.skipIf(!connectionString)("F4.16 — tenant context", () => {
       "F4.16",
     );
     const { rows } = await ownerPool.query<{ id: string }>(
-      "select id from bms.organizations order by code limit 2",
+      "select id from bms.organizations order by created_at, code limit 2",
     );
     organizationIds = rows.map((r) => r.id);
     if (organizationIds.length < 2) {

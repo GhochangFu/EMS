@@ -53,7 +53,8 @@ describe.skipIf(!has)("F3.2 — asset default dashboards against a live database
     );
     client = (await pool.connect()) as unknown as IntegrationClient;
     const orgs = await client.query<{ id: string }>(
-      `SELECT id FROM bms.organizations ORDER BY code`,
+      // The two oldest (the seeded ESKOM and PHEWB), never the first by code — F4.53/F4.71.
+      `SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 2`,
     );
     if (orgs.rows.length < 2) {
       throw new Error(
@@ -91,9 +92,10 @@ describe.skipIf(!has)("F3.2 — asset default dashboards against a live database
     org: string,
     codeSuffix: string,
   ): Promise<string> => {
-    const loc = await run(`SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`, [
-      org,
-    ]);
+    const loc = await run(
+      `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
+      [org],
+    );
     const locationId = loc.rows[0]?.id as string;
     if (!locationId) {
       throw new Error(`F3.2: org ${org} needs a seeded location — run pnpm db:seed.`);
@@ -174,15 +176,21 @@ describe.skipIf(!has)("F3.2 — asset default dashboards against a live database
   it("permits an asset scope alone and refuses it paired with location or asset group", async () => {
     await inTx(async (run) => {
       const assetId = await seedAsset(run, orgA, `I1-${RUN}`);
-      const loc = await run(`SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`, [
-        orgA,
-      ]);
-      const group = await run(`SELECT id FROM bms.asset_groups WHERE organization_id = $1 ORDER BY code`, [
-        orgA,
-      ]);
+      const loc = await run(
+        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
+        [orgA],
+      );
       const locationId = loc.rows[0]?.id;
+      // `F4.71` U6 — the group is this transaction's own, discarded by the ROLLBACK, rather than
+      // `ORDER BY code` over committed rows, which adopts another suite's fixture group whenever
+      // its code sorts first.
+      const group = await run(
+        `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+         VALUES ($1, $2, $3, 'F3.2 scope group') RETURNING id`,
+        [orgA, locationId, `F32-GRP-${RUN}`],
+      );
       const groupId = group.rows[0]?.id;
-      expect(groupId, "F3.2: needs an asset group in the first organization — run pnpm db:seed").toBeDefined();
+      expect(groupId, "F3.2: could not create this transaction's asset group in the first organization").toBeDefined();
 
       // Positive control first — I1 must prove asset_id alone is accepted before it proves
       // the pairwise refusals, or a check that refused everything would look correct here.

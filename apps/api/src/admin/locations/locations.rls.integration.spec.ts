@@ -97,7 +97,7 @@ export async function assertRefusesOutOfScopeOrganization(
 ): Promise<void> {
   const { svc, ownerPool, organizationId } = ctx;
   const { rows } = await ownerPool.query<{ id: string }>(
-    "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+    "SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1",
     [organizationId],
   );
   if (!rows[0]) {

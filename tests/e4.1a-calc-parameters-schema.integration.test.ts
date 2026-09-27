@@ -84,7 +84,10 @@ describe.skipIf(!has)("E4.1a — calc parameters against a live database", () =>
       "E4.1a",
     );
     client = (await pool.connect()) as unknown as IntegrationClient;
-    const orgs = await client.query<{ id: string }>(`SELECT id FROM bms.organizations ORDER BY code`);
+    // The two oldest (the seeded ESKOM and PHEWB), never the first by code — F4.53/F4.71.
+    const orgs = await client.query<{ id: string }>(
+      `SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 2`,
+    );
     if (orgs.rows.length < 2) {
       throw new Error(
         "E4.1a: needs two bms.organizations rows to prove tenant isolation — run pnpm db:seed.",
@@ -121,7 +124,10 @@ describe.skipIf(!has)("E4.1a — calc parameters against a live database", () =>
   };
 
   const seedAsset = async (run: Run, org: string, codeSuffix: string): Promise<string> => {
-    const loc = await run(`SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`, [org]);
+    const loc = await run(
+      `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
+      [org],
+    );
     const locationId = loc.rows[0]?.id as string;
     if (!locationId) {
       throw new Error(`E4.1a: org ${org} needs a seeded location — run pnpm db:seed.`);

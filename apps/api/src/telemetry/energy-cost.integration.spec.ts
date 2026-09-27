@@ -103,7 +103,7 @@ async function nonDemoOrganization(
     [ENERGY_TARIFF_KEY],
   );
   const { rows: orgs } = await pool.query<{ id: string; currency: string }>(
-    `SELECT id, currency FROM bms.organizations WHERE id <> ALL($1::uuid[]) ORDER BY code`,
+    `SELECT id, currency FROM bms.organizations WHERE id <> ALL($1::uuid[]) ORDER BY created_at, code LIMIT 1`,
     [demo.map((row) => row.id)],
   );
   const org = orgs[0];
@@ -124,7 +124,7 @@ export async function seedCostFixture(pool: pg.Pool): Promise<CostFixture> {
        FROM bms.organizations o
        JOIN bms.locations l ON l.organization_id = o.id AND l.active = true
       WHERE o.id <> $1
-      ORDER BY o.code, l.created_at, l.code LIMIT 1`,
+      ORDER BY o.created_at, o.code, l.created_at, l.code LIMIT 1`,
     [organizationId],
   );
   const demo = demoRows[0];

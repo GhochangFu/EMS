@@ -124,7 +124,7 @@ describe.skipIf(!connectionString)(
     /** `F4.161` U4 — the mixed-grant viewer's own fixture user and empty organization. */
     let f4161ViewerIdForCleanup: string | undefined;
     let f4161OrgIdForCleanup: string | undefined;
-    /** Set only when the seed supplied no PHEWB asset group and this suite made one. */
+    /** `F4.71` U6 — this run's own PHEWB asset group, created in `beforeAll` and always deleted. */
     let createdAssetGroupIdForCleanup: string | undefined;
 
     beforeAll(async () => {
@@ -172,29 +172,25 @@ describe.skipIf(!connectionString)(
         throw new Error("F3.1b: PHEWB has no location — run pnpm db:seed");
       }
 
-      const phewbAssetGroup = await ownerPool.query<{ id: string }>(
-        `SELECT id FROM bms.asset_groups WHERE organization_id = $1 ORDER BY created_at, id LIMIT 1`,
-        [phewbOrgId],
+      // `F4.71` U6 — this run creates its own PHEWB asset group and never adopts one by position.
+      // Dashboards reference the group (the scope-conflict dashboard below), and spec `:500`'s
+      // refused write needs it to exist so its error names RLS rather than the FK, so the row
+      // must exist from here to `afterAll`. "Oldest wins" (`F4.53`) holds only while the oldest
+      // row is a seeded one. The seed's PHEWB groups are derived per (domain, location) from the
+      // PHE catalog's assets by `seedAssetGroups`; where the seed wrote none, the oldest row is
+      // whichever sibling suite committed its fixture group first, and that suite deletes it
+      // again mid-run (`42501` on the WITH CHECK, or `23503`). A per-run row cannot be another
+      // suite's, cannot be deleted by one, and does not depend on what the seed wrote.
+      const createdGroup = await ownerPool.query<{ id: string }>(
+        `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [phewbOrgId, phewbLocationId, `F31B-GRP-${RUN}`, "F3.1b fixture group"],
       );
-      phewbAssetGroupId = phewbAssetGroup.rows[0]?.id ?? "";
+      phewbAssetGroupId = createdGroup.rows[0]?.id ?? "";
       if (!phewbAssetGroupId) {
-        // **A fresh `pnpm db:seed` gives PHEWB locations but no asset groups.** This threw
-        // `run pnpm db:seed` until CI proved the advice wrong: a developer database
-        // accumulates PHEWB groups from the pilot seed and from other suites' fixtures, so the
-        // requirement held locally and failed on the only database that is actually clean.
-        // A seeded row is still preferred (`F4.53`) — this is the fallback when the seed has
-        // none, not a replacement for reading one.
-        const created = await ownerPool.query<{ id: string }>(
-          `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [phewbOrgId, phewbLocationId, `f31b-fixture-${Date.now()}`, "F3.1b fixture group"],
-        );
-        phewbAssetGroupId = created.rows[0]?.id ?? "";
-        createdAssetGroupIdForCleanup = phewbAssetGroupId;
+        throw new Error("F3.1b: could not create this run's PHEWB asset group");
       }
-      if (!phewbAssetGroupId) {
-        throw new Error("F3.1b: could not read or create a PHEWB asset group");
-      }
+      createdAssetGroupIdForCleanup = phewbAssetGroupId;
 
       // Finding 7 (review): ESKOM has exactly one seeded asset_points row while other suites
       // create and delete transient ESKOM points in the same parallel run — an unordered
@@ -303,7 +299,11 @@ describe.skipIf(!connectionString)(
         await ownerPool.query(`DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])`, [dashboardIds]);
         await ownerPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [dashboardIds]);
       }
+      // After the dashboards: `dashboards_asset_group_id_fkey` is NO ACTION, so the group can go
+      // only once every dashboard that references it is gone — including one a regression created
+      // outside `dashboardIds`, which would otherwise fail this delete with 23503 and skip the rest.
       if (createdAssetGroupIdForCleanup) {
+        await ownerPool.query(`DELETE FROM bms.dashboards WHERE asset_group_id = $1`, [createdAssetGroupIdForCleanup]);
         await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [createdAssetGroupIdForCleanup]);
       }
       if (multiOrgUserIdForCleanup) {

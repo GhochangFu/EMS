@@ -37,7 +37,9 @@ import {
  * **Isolation.** Everything happens inside one transaction that is rolled back, so no row is
  * ever visible to another connection. The four recorded traps are settled the same way
  * `F3.1a`'s file settles them: this suite never reads `bms.assets` (it needs no point at all);
- * `bms.organizations` is read `ORDER BY code`, the one documented-safe unordered read; every
+ * `bms.organizations` is read `ORDER BY created_at, code` — once `ORDER BY code` and called
+ * documented-safe, until `F4.71` found committed fixture organizations that sort before
+ * `PHEWB`, so the oldest two (the seeded ESKOM and PHEWB) are the only safe pair; every
  * slug carries a per-run `randomUUID()` suffix; and no assertion counts over a whole table.
  *
  * **The pool is the superuser URL**, because the suite has to change role to prove the
@@ -106,8 +108,8 @@ describe.skipIf(!has)("F3.35 Stage C — bms.dashboard_widget_sources against a 
     // first refusal this suite is built to provoke. `F3.1a`'s docblock records the symptom.
     client = (await pool.connect()) as unknown as IntegrationClient;
     const orgs = await client.query<{ id: string }>(
-      // ORDER BY code, never a bare LIMIT — F4.53.
-      `SELECT id FROM bms.organizations ORDER BY code`,
+      // The two oldest (the seeded ESKOM and PHEWB), never the first by code — F4.53/F4.71.
+      `SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 2`,
     );
     if (orgs.rows.length < 2) {
       throw new Error(

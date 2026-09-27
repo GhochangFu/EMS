@@ -52,12 +52,13 @@ describe.skipIf(!connectionString)("E7.1b — withReadScope routes by resolved o
     );
 
     // Two distinct organizations that each own at least one active location — one
-    // asset hangs on each. The DISTINCT-org resolution is what the router keys on.
+    // asset hangs on each. The per-org resolution is what the router keys on.
     const orgs = await fleetPool.query<{ id: string }>(
-      `SELECT DISTINCT o.id
+      `SELECT o.id
          FROM bms.organizations o
          JOIN bms.locations l ON l.organization_id = o.id AND l.active = true
-        ORDER BY o.id
+        GROUP BY o.id
+        ORDER BY o.created_at, o.code
         LIMIT 2`,
     );
     if (orgs.rows.length < 2) {
