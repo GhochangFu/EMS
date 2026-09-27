@@ -1751,7 +1751,10 @@ Do not add top-level folders without updating this section.
   reads `_1h`. `pnpm db:refresh-aggregates` derives a per-level floor for exactly
   this reason. A single floor taken from raw and applied to all four is correct
   only for `_1m` and silently destroys `_1h`/`_1d` whenever raw's retention runs
-  ahead of `_1m`'s.
+  ahead of `_1m`'s. Since `F4.71` the CLI also **skips** a level whose window
+  `[floor, server now()]` holds no complete bucket (`inscribedWindowIsEmpty`) —
+  Timescale refuses such a window with `22023` — and never widens `from` to make
+  one fit; that is the archive-deleting direction the floor exists to prevent.
 
 ### 4.5 Style hygiene
 - File names: `kebab-case` for files, `PascalCase` for React components.
