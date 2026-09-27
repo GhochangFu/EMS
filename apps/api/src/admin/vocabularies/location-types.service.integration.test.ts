@@ -29,7 +29,7 @@ import {
   assertI7ReactivateRestoresTheType,
   assertI8aAnUnusedTypeCountsZero,
   assertI8bOneLocationCountsOne,
-  assertI9TheSeededFourInSortOrderWithTrueCounts,
+  assertI9TheSeededFourInSortOrder,
   type Ctx,
   removeFixtures,
 } from "./location-types.service.integration.spec";
@@ -95,7 +95,6 @@ describe.skipIf(!connectionString)(
         ),
         vocabularies: new VocabulariesService(tenantDb),
         superPool,
-        fleetPool,
       };
       await removeFixtures(superPool);
     });
@@ -150,8 +149,8 @@ describe.skipIf(!connectionString)(
       await assertI8bOneLocationCountsOne(ctx);
     });
 
-    it("I9 the seeded four are in sort_order order with the fleet count", async () => {
-      await assertI9TheSeededFourInSortOrderWithTrueCounts(ctx);
+    it("I9 the seeded four are in sort_order order", async () => {
+      await assertI9TheSeededFourInSortOrder(ctx);
     });
 
     it("I10 a location_admin is refused list", async () => {

@@ -40,8 +40,6 @@ export type Ctx = {
   vocabularies: VocabulariesService;
   /** Superuser: fixture `bms.locations` rows (FORCE RLS), the audit read, the sweep. */
   superPool: pg.Pool;
-  /** `bms_fleet`: the independent count I9 compares against. */
-  fleetPool: pg.Pool;
 };
 
 /**
@@ -258,25 +256,21 @@ export async function assertI8bOneLocationCountsOne(ctx: Ctx): Promise<void> {
 }
 
 /**
- * I9 — the seeded four appear in `sort_order` order, each with the count
- * `bms_fleet` reads directly. Alphabetical order (`csmoc`, `pump_station`,
- * `rsmoc`, `smoc_campus`) differs from `sort_order`, so `orderBy(code)` reddens
- * the first claim.
+ * I9 — the seeded four appear in `sort_order` order. Alphabetical order
+ * (`csmoc`, `pump_station`, `rsmoc`, `smoc_campus`) differs from `sort_order`,
+ * so `orderBy(code)` reddens it.
+ *
+ * The seeded rows' counts are deliberately not compared with a second read:
+ * other suites insert and delete `rsmoc` fixture locations on the same
+ * database, so two reads of a shared count race (the `F4.71` flake class).
+ * I8a/I8b prove the count on a type only this suite uses.
  */
-export async function assertI9TheSeededFourInSortOrderWithTrueCounts(ctx: Ctx): Promise<void> {
+export async function assertI9TheSeededFourInSortOrder(ctx: Ctx): Promise<void> {
   const { items } = await ctx.svc.list(globalAdminJwt);
   const seeded = items.filter((item) =>
     (SEEDED_CODES as readonly string[]).includes(item.code),
   );
   expect(seeded.map((item) => item.code)).toEqual([...SEEDED_CODES]);
-
-  for (const row of seeded) {
-    const { rows } = await ctx.fleetPool.query<{ n: number }>(
-      `SELECT count(*)::int AS n FROM bms.locations WHERE type = $1`,
-      [row.code],
-    );
-    expect(row.locationCount, `locationCount for ${row.code}`).toBe(rows[0]!.n);
-  }
 }
 
 /**
