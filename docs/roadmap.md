@@ -6528,3 +6528,20 @@ fixed or listed as not covered.
 
 **Cascade:** no row lists `F4.168` in *Depends*. A `chore(agents):` §5 update
 for the wider rule follows separately.
+
+### `F4.171` — the `F4.53` rule demands `created_at` as the leading `ORDER BY` key ✅ 2026-09-28
+
+PR #610, squash `9f03a237`. Raised from the `F4.138` code review and built in
+the same PR. No ADR.
+
+The rule accepted `created_at` anywhere near the `ORDER BY`, so a fixture read
+that sorted by a random uuid first passed it. `rtus.telemetry-source` had one:
+it could adopt another suite's temporary organization and break that suite's
+teardown. Every `LIMIT` now needs its own `ORDER BY` led by `created_at`, not
+`DESC`; the one read is corrected.
+
+Verified: eight mutations reddened their targets; review found two old-rule
+false greens, both fixed. CI green on the first run.
+
+**Cascade:** no row lists `F4.171` in *Depends*. No `chore(agents):` change
+owed.
