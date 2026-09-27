@@ -173,7 +173,8 @@ describe.skipIf(!connectionString)(
       }
 
       // `F4.71` U6 — this run creates its own PHEWB asset group and never adopts one by position.
-      // The group is written into (spec `:500`, and the scope-conflict dashboard below), so the row
+      // Dashboards reference the group (the scope-conflict dashboard below), and spec `:500`'s
+      // refused write needs it to exist so its error names RLS rather than the FK, so the row
       // must exist from here to `afterAll`. "Oldest wins" (`F4.53`) holds only while the oldest
       // row is a seeded one. The seed's PHEWB groups are derived per (domain, location) from the
       // PHE catalog's assets by `seedAssetGroups`; where the seed wrote none, the oldest row is
