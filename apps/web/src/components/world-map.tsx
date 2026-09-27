@@ -1,15 +1,33 @@
 import type { MapSiteDto } from "@bms/shared";
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
+import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaflet";
 
 import "leaflet/dist/leaflet.css";
 
-import { isOperationalSite } from "../lib/map-site";
+import { isOperationalSite, MAP_TILE, siteBounds } from "../lib/map-site";
 
-const TILE = {
-  url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CARTO',
-};
+/**
+ * `F4.163` — opens the map on the caller's own sites, once. The sites query
+ * refetches every few seconds, so fitting on every change would undo the
+ * user's pan and zoom; the first non-empty list decides and later ones do not.
+ */
+function FitToSites({ sites }: { sites: MapSiteDto[] }) {
+  const map = useMap();
+  const fitted = useRef(false);
+  useEffect(() => {
+    if (fitted.current) {
+      return;
+    }
+    const bounds = siteBounds(sites);
+    if (bounds === null) {
+      return;
+    }
+    fitted.current = true;
+    map.fitBounds(bounds, { padding: [32, 32], maxZoom: 10 });
+  }, [map, sites]);
+  return null;
+}
 
 function markerColor(site: MapSiteDto): string {
   switch (site.live.status) {
@@ -40,7 +58,8 @@ export function WorldMap({ sites }: WorldMapProps) {
       className="z-0 h-[min(70vh,560px)] w-full rounded-lg border border-gray-800 shadow-inner"
       scrollWheelZoom
     >
-      <TileLayer attribution={TILE.attribution} url={TILE.url} />
+      <TileLayer attribution={MAP_TILE.attribution} url={MAP_TILE.url} maxZoom={MAP_TILE.maxZoom} />
+      <FitToSites sites={sites} />
       {sites.map((s) => (
         <CircleMarker
           key={s.id}
