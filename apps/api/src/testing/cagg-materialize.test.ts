@@ -2,9 +2,11 @@ import { describe, it } from "vitest";
 
 import {
   aNon55P03ErrorIsRethrownAtOnce,
+  materializeCompleteBucketsUsesTheDefaultBudget,
   raises55P03OnceThenTheSecondCallSucceeds,
   resetRoleRunsAfterAThrow,
   retryOnConcurrentRefreshRetriesOnlyThatCode,
+  retryOnConcurrentRefreshUsesTheDefaultBudget,
   theBudgetIsExhaustedAndTheLastErrorIsThrown,
   theDefaultBudgetIsFiveAttemptsThreeSeconds,
 } from "./cagg-materialize.spec";
@@ -37,5 +39,13 @@ describe("F4.149 — materializeCompleteBuckets retries a concurrent refresh", (
 
   it("retryOnConcurrentRefresh retries only a 55P03 conflict", async () => {
     await retryOnConcurrentRefreshRetriesOnlyThatCode();
+  });
+
+  it("retryOnConcurrentRefresh uses the default budget when retry is omitted", async () => {
+    await retryOnConcurrentRefreshUsesTheDefaultBudget();
+  });
+
+  it("materializeCompleteBuckets uses the default budget when retry is omitted", async () => {
+    await materializeCompleteBucketsUsesTheDefaultBudget();
   });
 });

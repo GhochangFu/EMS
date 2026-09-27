@@ -35,7 +35,7 @@ import type pg from "pg";
  * `maxWorkers: 2` — a single `CALL` with no retry then fails outright with
  * `55P03` ("due to a concurrent refresh"). `retryOnConcurrentRefresh` copies
  * (not shares — `refreshLevel` is not exported from `@bms/db`) the retry
- * precedent at `packages/db/src/refresh-aggregates.ts:143-178`. It cannot go
+ * precedent in `packages/db/src/refresh-aggregates.ts`'s `refreshLevel`. It cannot go
  * false-green: it only swallows the exact `55P03` SQLSTATE and always
  * re-throws every other code, including the exhausted-budget case, so a real
  * failure still fails the suite. It cannot deadlock: every caller here walks
@@ -58,7 +58,7 @@ const CONCURRENT_REFRESH = "55P03";
 export const FIXTURE_REFRESH_RETRY = { attempts: 5, delayMs: 3_000 } as const;
 
 /** Runs `work`, retrying only SQLSTATE `55P03` (a concurrent refresh) — the
- *  `refreshLevel` loop in `packages/db/src/refresh-aggregates.ts:143-178`. */
+ *  `refreshLevel` loop in `packages/db/src/refresh-aggregates.ts`. */
 export async function retryOnConcurrentRefresh<T>(
   work: () => Promise<T>,
   retry: { attempts: number; delayMs: number } = FIXTURE_REFRESH_RETRY,

@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { vi } from "vitest";
 
 import { FIXTURE_REFRESH_RETRY, materializeCompleteBuckets, retryOnConcurrentRefresh } from "./cagg-materialize";
 
@@ -177,4 +178,91 @@ export async function retryOnConcurrentRefreshRetriesOnlyThatCode(): Promise<voi
 
   assert(result === "ok", "retryOnConcurrentRefresh must return the work's resolved value");
   assert(calls === 2, `expected work to run twice, got ${calls}`);
+}
+
+/**
+ * Settles `promise` into a value, so a rejection is observed as data rather
+ * than as an unhandled rejection while fake timers hold it pending.
+ */
+function settle<T>(promise: Promise<T>): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+  return promise.then(
+    (value) => ({ ok: true as const, value }),
+    (error: unknown) => ({ ok: false as const, error }),
+  );
+}
+
+/**
+ * 7. `retryOnConcurrentRefreshUsesTheDefaultBudget` — every case above passes
+ * `retry` explicitly, so the DEFAULT parameter itself was ungated: changing
+ * `retry = FIXTURE_REFRESH_RETRY` to `{ attempts: 1, delayMs: 0 }` stayed
+ * green. This call omits `retry`, throws `55P03` once, and proves the retry
+ * waits the default 3000 ms — not sooner, and not never.
+ */
+export async function retryOnConcurrentRefreshUsesTheDefaultBudget(): Promise<void> {
+  vi.useFakeTimers();
+  try {
+    let calls = 0;
+    const settled = settle(
+      retryOnConcurrentRefresh(async () => {
+        calls += 1;
+        if (calls === 1) {
+          throw concurrentRefreshError();
+        }
+        return "ok";
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(2_999);
+    assert(calls === 1, `expected no retry before the default 3000 ms delay, got ${calls} calls at 2999 ms`);
+    await vi.advanceTimersByTimeAsync(1);
+    assert(calls === 2, `expected the default budget to retry once at 3000 ms, got ${calls} calls`);
+
+    const outcome = await settled;
+    assert(outcome.ok, "the retried call must resolve under the default budget");
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+/**
+ * 8. `materializeCompleteBucketsUsesTheDefaultBudget` — the same gate for the
+ * wrapper's own default, which it passes down to `retryOnConcurrentRefresh`
+ * explicitly, so the case above cannot reach it.
+ */
+export async function materializeCompleteBucketsUsesTheDefaultBudget(): Promise<void> {
+  vi.useFakeTimers();
+  try {
+    let callCount = 0;
+    const client = makeFakeClient(async (sql: unknown) => {
+      if (typeof sql === "string" && sql.startsWith("CALL")) {
+        callCount += 1;
+        if (callCount === 1) {
+          throw concurrentRefreshError();
+        }
+      }
+      return { rows: [] };
+    });
+
+    const settled = settle(materializeCompleteBuckets(fakePool(client), 0, 4 * 86_400_000, 5 * 86_400_000));
+
+    await vi.advanceTimersByTimeAsync(2_999);
+    assert(
+      callStatements(client).length === 1,
+      `expected no retry before the default 3000 ms delay, got ${callStatements(client).length} CALLs at 2999 ms`,
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    assert(
+      callStatements(client).length >= 2,
+      `expected the default budget to retry the 1m CALL at 3000 ms, got ${callStatements(client).length} CALLs`,
+    );
+
+    const outcome = await settled;
+    assert(outcome.ok, "materializeCompleteBuckets must resolve under the default budget");
+    assert(
+      callStatements(client).length === 5,
+      `expected 5 CALL statements (1m retried once + 4 levels), got ${callStatements(client).length}`,
+    );
+  } finally {
+    vi.useRealTimers();
+  }
 }
