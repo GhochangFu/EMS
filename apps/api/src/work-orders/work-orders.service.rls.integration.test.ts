@@ -210,7 +210,7 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
     // active location — creating one here would trip db:seed's PHEWB count (the
     // seed-breaker the sweepStaleRuns comment describes).
     const orgB = await ownerPool.query<{ id: string }>(
-      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+      "SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1",
       [organizationId],
     );
     if (!orgB.rows[0]) {

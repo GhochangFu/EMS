@@ -110,7 +110,7 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
     // F3.66: ESKOM when it is seeded, so the organizationId proofs read as
     // "a PHE user asks for ESKOM"; any other org still proves the same claims.
     const orgB = await fleetPool.query<{ id: string }>(
-      "SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY (code = 'ESKOM') DESC, id LIMIT 1",
+      "SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY (code = 'ESKOM') DESC, created_at, code LIMIT 1",
       [orgAId],
     );
     if (!orgB.rows[0]) {

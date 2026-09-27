@@ -83,7 +83,7 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
     adminUserId = admin.rows[0].id;
 
     const anyOrg = await ownerPool.query<{ id: string }>(
-      "SELECT id FROM bms.organizations LIMIT 1",
+      "SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 1",
     );
     if (!anyOrg.rows[0]) {
       throw new Error("E7.1b: need at least one organization to prove tenant invisibility.");
@@ -121,7 +121,7 @@ describe.skipIf(!connectionString)("E7.1b — bms.users Amendment 4 policies und
     const homeOrgId = scoped.rows[0].organization_id;
 
     const other = await ownerPool.query<{ id: string }>(
-      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+      "SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1",
       [homeOrgId],
     );
     if (!other.rows[0]) {

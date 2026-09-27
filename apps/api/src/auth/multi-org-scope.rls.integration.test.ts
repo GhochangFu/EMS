@@ -98,7 +98,7 @@ describe.skipIf(!connectionString)("E7.1b — multi-org actor scope under real R
     orgBId = orgB.rows[0].id;
 
     const orgA = await ownerPool.query<{ id: string }>(
-      "SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1",
+      "SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1",
       [orgBId],
     );
     if (!orgA.rows[0]) {

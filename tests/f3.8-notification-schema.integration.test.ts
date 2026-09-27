@@ -91,7 +91,7 @@ describe.skipIf(!connectionString)("F3.8 notification schema", () => {
     // dispatch, have no rule to derive one from.
     pool = await openIntegrationPool(connectionString as string, "F3.8");
     await removeTestRows();
-    const org = await pool.query<{ id: string }>(`SELECT id FROM bms.organizations LIMIT 1`);
+    const org = await pool.query<{ id: string }>(`SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 1`);
     const orgRow = org.rows[0];
     if (orgRow === undefined) throw new Error("F3.8: no bms.organizations row — run pnpm db:seed.");
     organizationId = orgRow.id;

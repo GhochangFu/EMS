@@ -11,8 +11,9 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  * `tests/integration-fixture-isolation.test.ts` already carries `F4.67` and
  * `F4.68` for `bms.assets`, and says in its own text that `F4.53` — the
  * unordered `LIMIT` — is "a different mechanism" it does not yet enforce. This
- * file is that rule, and it covers all four tables the mechanism has been seen
- * on: `bms.assets`, `bms.locations`, `bms.point_keys` and `bms.users`.
+ * file is that rule, and it covers all five tables the mechanism has been seen
+ * on: `bms.assets`, `bms.locations`, `bms.organizations`, `bms.point_keys` and
+ * `bms.users`.
  *
  * **Why a new file rather than a rule added to that one**: it is 836 lines
  * against the AGENTS.md §4.5 cap of 1000, and `tests/integration-fixture-sharing.test.ts`
@@ -61,19 +62,50 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  * sibling rules carry. A read that resolves the row by name is out of scope by
  * design: naming a row is the *other* fix for this mechanism, and
  * `integration-fixture-sharing.test.ts` owns the collisions that naming creates.
+ *
+ * **The fifth table, `bms.organizations` (`F4.71`).** `energy-cost.integration.spec.ts`
+ * took the first organization `ORDER BY code` that had no tariff row, and every
+ * committed fixture organization in the tree (`E13HR-…`, `F330-FRESH-…`,
+ * `F4161-EMPTY-…`) sorts before `PHEWB` — so the suite adopted a transient
+ * organization with no active locations and failed its own precondition.
+ * `rules.service.rls.integration.test.ts` read `WHERE id <> $1 LIMIT 1` with no
+ * order at all and then planted an asset and a rule under whatever came back.
+ * "Oldest wins" needs a seeded row to win, and here it has one only because of
+ * the tiebreaker: the seed writes `ESKOM` and `PHEWB` in one statement, so their
+ * `created_at` ties and `code` is what makes the read deterministic. A transient
+ * organization is always younger than both, so `ORDER BY created_at, code` can
+ * only resolve a seeded one.
+ *
+ * **Blind spots the `F4.71` sweep met, each fixed by hand where it hid a read:**
+ *
+ *   - `POSITIONAL` needs a `LIMIT`. A read that orders with no `LIMIT` and then
+ *     takes `rows[0]` in JS is positional and invisible — that was the
+ *     `energy-cost` read, the row's own defect, until it was rewritten to carry
+ *     `LIMIT 1` so this rule could see it.
+ *   - `NAMED_READ` tests the whole literal, so any `id =` or `code =` anywhere in
+ *     it hides a positional read in the same literal: the `=` inside
+ *     `ORDER BY (code = 'ESKOM') DESC` in `alarms.service.rls.integration.test.ts`,
+ *     and a `(SELECT id FROM bms.assets … ORDER BY code LIMIT 1)` subquery beside
+ *     a `WHERE id = $2` one in an `INSERT … COALESCE(…)`.
+ *   - `PREFERS_OLDEST` accepts any `created_at` within reach of the `ORDER BY`,
+ *     including another alias's: an `ORDER BY o.code, l.created_at` join orders
+ *     its organizations by code and still passes.
+ *   - The scan walks only `apps` and `packages` spec files, so the top-level
+ *     `tests/` suites and helpers such as `apps/api/src/testing/*.ts` are
+ *     outside it.
  */
 describe("F4.53 — positional fixture reads resolve the oldest row", () => {
-  /** The four tables suites resolve parents and actors from. */
-  const FIXTURE_TABLE = /\bFROM\s+bms\.(assets|locations|point_keys|users)\b/i;
+  /** The five tables suites resolve parents and actors from. */
+  const FIXTURE_TABLE = /\bFROM\s+bms\.(assets|locations|organizations|point_keys|users)\b/i;
   /**
-   * The same four tables in Drizzle's builder spelling.
+   * The same five tables in Drizzle's builder spelling.
    *
    * A string-literal scan cannot see `.from(users).orderBy(asc(users.id)).limit(1)`
    * at all, and `F4.53` quotes exactly that form. The `7543253` review refused to
    * close the row over it for that reason: without this half, a suite written in
    * builder form passes every rule in the tree.
    */
-  const BUILDER_READ = /\.from\(\s*(assets|locations|pointKeys|users)\s*\)/g;
+  const BUILDER_READ = /\.from\(\s*(assets|locations|organizations|pointKeys|users)\s*\)/g;
   /** `LIMIT` is the positional tell, exactly as the `F4.68` rule uses it. */
   const POSITIONAL = /\bLIMIT\b/i;
   /**
@@ -121,6 +153,10 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
         {
           match: "id <> ALL($1)",
           why: "the ungranted-location probe: refusal is asserted for any id, so which row it draws cannot change the verdict",
+        },
+        {
+          match: "from bms.organizations where id <> $1 limit 1",
+          why: "the three foreign-organization reads in the canManageDashboard proof (orgBId, locForeignOrgId, groupForeignOrgId): each id only feeds a refusal, or admin's unconditional true, and nothing is written under it, so any organization proves the same verdict",
         },
       ],
     ],
@@ -271,6 +307,41 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
       offendingReads(
         "// SELECT id FROM bms.locations WHERE organization_id = $1 AND active = true LIMIT 1\n" +
           "const x = 1;",
+      ),
+    ).toEqual([]);
+
+    // `F4.71`: the `rules.service.rls` read — no order at all, and a rule and
+    // an asset are then written under whatever organization it returns.
+    expect(
+      offendingReads(
+        'await pool.query("SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1", [orgA]);',
+      ),
+    ).toHaveLength(1);
+    // The `energy-cost` read once it carries a `LIMIT`: ordered, but by `code`,
+    // which every committed fixture organization (`E…`, `F…`) wins.
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT id, currency FROM bms.organizations WHERE id <> ALL($1::uuid[]) ORDER BY code LIMIT 1`, [ids]);",
+      ),
+    ).toHaveLength(1);
+    // The fix: `created_at` first, `code` to break the ESKOM/PHEWB tie.
+    expect(
+      offendingReads(
+        'await pool.query("SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1", [orgA]);',
+      ),
+    ).toEqual([]);
+    // A seeded organization named by code is out of scope, as it is for assets.
+    expect(
+      offendingReads("await pool.query(`SELECT id FROM bms.organizations WHERE code = 'ESKOM' LIMIT 1`);"),
+    ).toEqual([]);
+    // The builder spelling of the same table.
+    expect(
+      offendingReads("const [o] = await db.select({ id: organizations.id }).from(organizations).limit(1);"),
+    ).toHaveLength(1);
+    expect(
+      offendingReads(
+        "const [o] = await db.select({ id: organizations.id }).from(organizations)" +
+          ".orderBy(asc(organizations.createdAt), asc(organizations.code)).limit(1);",
       ),
     ).toEqual([]);
 
