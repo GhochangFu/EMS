@@ -260,7 +260,8 @@ export function scanButtons(src: string): { pending: PendingButton[]; unparsed: 
   const { segments, unparsed } = buttonSegments(src);
   const pending: PendingButton[] = [];
   for (const s of segments) {
-    const ids = pendingIdentifiers(s.children);
+    // `F4.168`: an `aria-label` that swaps (`importM.isPending ? "Importing …" : …`) is a label too.
+    const ids = pendingIdentifiers(s.children + "\n" + (attributeExpression(s.tag, "aria-label") ?? ""));
     if (ids.length === 0) continue;
     pending.push({ line: s.line, ids, ariaBusy: attributeExpression(s.tag, "aria-busy") });
   }
@@ -290,6 +291,295 @@ export function pendingButtonsMissingAriaBusy(src: string, file = "<source>"): s
           ? `${file}:${b.line} label pends on ${missing.join(", ")} but the <button> has no aria-busy`
           : `${file}:${b.line} label pends on ${missing.join(", ")} but aria-busy={${busy.trim()}} does not name it`,
     });
+  }
+  return findings.sort((a, b) => a.line - b.line).map((f) => f.text);
+}
+
+/* ------------------------------------------------------------------------------------------
+ * `F4.168` — a `<button>` disabled on a pending flag changes its name and carries `aria-busy`.
+ * ---------------------------------------------------------------------------------------- */
+
+/**
+ * `X.isPending` / `X.isFetching…` in a `disabled` (or name, or `aria-busy`) expression. Not
+ * `isLoading` or `isError` (`F4.168` D1): a query that loads is not an action the user started.
+ */
+export const DISABLED_MEMBER = /(?<![\w$])((?:[A-Za-z_$][\w$]*\??\.)+)(isPending|isFetching\w*)\b/g;
+
+/**
+ * A bare identifier with no same-file `const` definition that still counts as a pending flag: a
+ * prop or a `useState` flag. `busy` / `pending`, a `…Pending` / `…Busy` name, and the `-ing`
+ * props and state this tree passes (`deleting`) or `F4.168` U4 introduces (`saving`, `clearing`,
+ * `toggling`, `duplicating`, `archiving`). A name outside it escapes the gate.
+ */
+export const PENDING_VOCAB =
+  /^(?:busy|pending|deleting|saving|clearing|toggling|duplicating|archiving|[a-z][\w$]*(?:Pending|Busy))$/;
+
+/**
+ * Index of the first character in `stop` at bracket depth 0 from `from`, or of a closer that
+ * would take the depth below 0, or `src.length`. Skips strings, template literals (with
+ * `${…}`), comments and regex literals, so a `;` inside a `useMemo(() => { …; })` arrow body
+ * or a `"a;b"` string does not end the expression.
+ */
+export function expressionEnd(src: string, from: number, stop: string): number {
+  let depth = 0;
+  let i = from;
+  while (i < src.length) {
+    const c = src[i];
+    if (depth === 0 && stop.includes(c)) return i;
+    if (c === "/" && src[i + 1] === "/") {
+      const nl = src.indexOf("\n", i);
+      i = nl === -1 ? src.length : nl + 1;
+      continue;
+    }
+    if (c === "/" && src[i + 1] === "*") {
+      const close = src.indexOf("*/", i + 2);
+      i = close === -1 ? src.length : close + 2;
+      continue;
+    }
+    if (c === "/") {
+      const regexEnd = regexLiteralEnd(src, i);
+      if (regexEnd !== -1) {
+        i = regexEnd;
+        continue;
+      }
+    }
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c && src[j] !== "\n") j += src[j] === "\\" ? 2 : 1;
+      i = j + 1;
+      continue;
+    }
+    if (c === "`") {
+      let j = i + 1;
+      while (j < src.length && src[j] !== "`") {
+        if (src[j] === "\\") j += 2;
+        else if (src[j] === "$" && src[j + 1] === "{") j = expressionEnd(src, j + 2, "}") + 1;
+        else j++;
+      }
+      i = j + 1;
+      continue;
+    }
+    if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") {
+      if (depth === 0) return i;
+      depth--;
+    }
+    i++;
+  }
+  return src.length;
+}
+
+/**
+ * Blanks the text of string literals and template-literal quasis (keeping `${…}` code), so a
+ * word in a label (`"Deleting…"`) is never read as an identifier.
+ */
+export function blankStrings(code: string): string {
+  let out = "";
+  let i = 0;
+  while (i < code.length) {
+    const c = code[i];
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < code.length && code[j] !== c && code[j] !== "\n") j += code[j] === "\\" ? 2 : 1;
+      out += c + " ".repeat(Math.max(0, Math.min(j, code.length) - i - 1)) + (j < code.length ? code[j] : "");
+      i = j + 1;
+      continue;
+    }
+    if (c === "`") {
+      out += c;
+      let j = i + 1;
+      while (j < code.length && code[j] !== "`") {
+        if (code[j] === "\\") {
+          out += "  ";
+          j += 2;
+        } else if (code[j] === "$" && code[j + 1] === "{") {
+          const end = expressionEnd(code, j + 2, "}");
+          out += "${" + blankStrings(code.slice(j + 2, end)) + "}";
+          j = end + 1;
+        } else {
+          out += code[j] === "\n" ? "\n" : " ";
+          j++;
+        }
+      }
+      if (j < code.length) out += "`";
+      i = j + 1;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/** The code inside each top-level `{…}` of JSX children; the JSX text between them is dropped. */
+export function jsxExpressions(children: string): string[] {
+  const out: string[] = [];
+  let i = children.indexOf("{");
+  while (i !== -1) {
+    const end = expressionEnd(children, i + 1, "}");
+    out.push(children.slice(i + 1, end));
+    i = children.indexOf("{", end + 1);
+  }
+  return out;
+}
+
+/**
+ * Every same-file `const|let|var NAME = …` initialiser in `src` (comments blanked), cut by
+ * {@link expressionEnd} at the `;` at bracket depth 0. Destructuring (`const [pending, …]`) is
+ * not a definition; such a name is a leaf, counted only through {@link PENDING_VOCAB}.
+ */
+export function definitionOf(name: string, src: string): string[] {
+  const escaped = name.replace(/\$/g, "\\$");
+  const def = new RegExp("(?<![\\w$.])(?:const|let|var)\\s+" + escaped + "(?![\\w$])\\s*(?::[^=;]*)?=(?![=>])", "g");
+  const out: string[] = [];
+  for (const m of src.matchAll(def)) {
+    const from = m.index + m[0].length;
+    out.push(src.slice(from, expressionEnd(src, from, ";")));
+  }
+  return out;
+}
+
+const MAX_DEFINITION_DEPTH = 5;
+const BARE_IDENTIFIER = /(?<![\w$.])[A-Za-z_$][\w$]*(?![\w$])(?!\s*\??\.)(?!\s*\()/g;
+
+function negatedAt(text: string, index: number): boolean {
+  return text.slice(0, index).trimEnd().endsWith("!");
+}
+
+/**
+ * The pending leaf tokens `code` reads, resolved through `src`: `X.isPending` members, bare
+ * identifiers expanded recursively through {@link definitionOf} (so `!canSubmit` reaches
+ * `createM.isPending` through `canSubmit` → `busy`), and bare identifiers with no definition
+ * that {@link PENDING_VOCAB} names. `unnegated` drops a top-level token under a leading `!`
+ * (for `aria-busy`); inside a definition negation does not matter.
+ */
+export function expandTokens(
+  code: string,
+  src: string,
+  unnegated = false,
+  depth = 0,
+  seen: ReadonlySet<string> = new Set(),
+): Set<string> {
+  const text = blankStrings(foldOptional(code));
+  const tokens = new Set<string>();
+  for (const m of text.matchAll(DISABLED_MEMBER)) {
+    if (unnegated && negatedAt(text, m.index)) continue;
+    tokens.add(m[1] + m[2]);
+  }
+  for (const m of text.matchAll(BARE_IDENTIFIER)) {
+    const name = m[0];
+    if (seen.has(name) || (unnegated && negatedAt(text, m.index))) continue;
+    const defs = definitionOf(name, src);
+    if (defs.length === 0) {
+      if (PENDING_VOCAB.test(name)) tokens.add(name);
+      continue;
+    }
+    if (depth >= MAX_DEFINITION_DEPTH) continue;
+    const inner = new Set(seen).add(name);
+    const resolved = new Set<string>();
+    for (const d of defs) for (const t of expandTokens(d, src, false, depth + 1, inner)) resolved.add(t);
+    // `const deleting = deletingIds.includes(row.id)` resolves to no token, but its name is a flag.
+    if (resolved.size === 0 && PENDING_VOCAB.test(name)) resolved.add(name);
+    for (const t of resolved) tokens.add(t);
+  }
+  return tokens;
+}
+
+/** {@link expandTokens} of `code` against the comment-blanked `src`, sorted. */
+export function pendingTokensOf(code: string, src: string, unnegated = false): string[] {
+  return [...expandTokens(code, blankComments(src), unnegated)].sort();
+}
+
+/** True when the opening tag has attribute `name` in any form. */
+function hasAttribute(tag: string, name: string): boolean {
+  return new RegExp("(?<![\\w-])" + name.replace(/-/g, "\\-") + "(?![\\w-])").test(tag);
+}
+
+/** The string value of `name="…"` / `name='…'` / `name={"…"}`, or null. */
+function attributeString(tag: string, name: string): string | null {
+  const m = new RegExp(
+    "(?<![\\w-])" + name.replace(/-/g, "\\-") + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|\\{\\s*[\"'`]([^\"'`]*)[\"'`]\\s*\\})",
+  ).exec(tag);
+  return m ? (m[1] ?? m[2] ?? m[3] ?? "") : null;
+}
+
+/**
+ * The pending tokens a button's accessible name reads (`F4.168` D2): the `aria-label` when the
+ * tag has one (a string `aria-label="…"` is static), else the children.
+ */
+function nameTokens(tag: string, children: string, src: string): { source: string; tokens: Set<string> } {
+  if (hasAttribute(tag, "aria-label")) {
+    const expr = attributeExpression(tag, "aria-label") ?? "";
+    return { source: "aria-label", tokens: labelTokens([expr], expr, src) };
+  }
+  return { source: "children", tokens: labelTokens(jsxExpressions(children), children, src) };
+}
+
+function labelTokens(code: string[], raw: string, src: string): Set<string> {
+  const text = blankComments(src);
+  const tokens = new Set<string>();
+  for (const c of code) for (const t of expandTokens(c, text)) tokens.add(t);
+  for (const id of pendingIdentifiers(raw)) for (const t of expandTokens(id, text)) tokens.add(t);
+  return tokens;
+}
+
+export type DisabledPendingButton = { line: number; disabled: string[] };
+
+/** Every `<button>` in `src` whose `disabled={…}` expression reads a pending token. */
+export function disabledPendingButtons(src: string): DisabledPendingButton[] {
+  const out: DisabledPendingButton[] = [];
+  for (const s of buttonSegments(src).segments) {
+    const expr = attributeExpression(s.tag, "disabled");
+    const disabled = expr === null ? [] : pendingTokensOf(expr, src);
+    if (disabled.length > 0) out.push({ line: s.line, disabled });
+  }
+  return out;
+}
+
+/**
+ * One finding per `<button>` that breaks the `F4.168` rule, and one per `<button` the scanner
+ * could not parse. For a button whose `disabled` reads pending tokens `D`:
+ *  - with `data-pending-bystander="<flag>"`: the flag must resolve into `D`, and the tag must
+ *    carry no `aria-busy` (`F4.168` D3);
+ *  - else the name (`aria-label` if present, else the children) must pend on a token in `D`,
+ *    and `aria-busy` must name that token, not negated.
+ * A bystander marker on a button whose `disabled` does not pend is a finding too.
+ */
+export function disabledPendingButtonFindings(src: string, file = "<source>"): string[] {
+  const text = blankComments(src);
+  const { segments, unparsed } = buttonSegments(src);
+  const findings = unparsed.map((line) => ({ line, text: `${file}:${line} scanner could not parse the <button> tag` }));
+  const add = (line: number, msg: string) => findings.push({ line, text: `${file}:${line} ${msg}` });
+  for (const s of segments) {
+    const expr = attributeExpression(s.tag, "disabled");
+    const d = expr === null ? [] : pendingTokensOf(expr, src);
+    const marker = attributeString(s.tag, "data-pending-bystander");
+    if (marker !== null || hasAttribute(s.tag, "data-pending-bystander")) {
+      if (d.length === 0) {
+        add(s.line, `data-pending-bystander on a <button> whose disabled does not pend`);
+      } else if (!pendingTokensOf(marker ?? "", src).some((t) => d.includes(t))) {
+        add(s.line, `data-pending-bystander="${marker ?? ""}" names no pending flag of disabled (${d.join(", ")})`);
+      } else if (hasAttribute(s.tag, "aria-busy")) {
+        add(s.line, `bystander of ${d.join(", ")} carries aria-busy; a bystander is not busy`);
+      }
+      continue;
+    }
+    if (d.length === 0) continue;
+    const name = nameTokens(s.tag, s.children, text);
+    const hit = d.filter((t) => name.tokens.has(t));
+    if (hit.length === 0) {
+      add(s.line, `disabled pends on ${d.join(", ")} but the name (${name.source}) does not change on it`);
+      continue;
+    }
+    const busy = attributeExpression(s.tag, "aria-busy");
+    if (busy === null) {
+      add(s.line, `name pends on ${hit.join(", ")} but the <button> has no aria-busy`);
+      continue;
+    }
+    const b = pendingTokensOf(busy, src, true);
+    if (!hit.some((t) => b.includes(t))) {
+      add(s.line, `name pends on ${hit.join(", ")} but aria-busy={${busy.trim()}} does not name it un-negated`);
+    }
   }
   return findings.sort((a, b) => a.line - b.line).map((f) => f.text);
 }
