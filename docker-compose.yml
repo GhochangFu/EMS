@@ -47,6 +47,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    # ADR 0016 Amendment 8, Decision 2 (`F4.61`). Naming any network drops the
+    # implicit `default`, so it is listed explicitly here — every other
+    # service stays on `default` alone and would lose the database otherwise.
+    # `ingest` is for the ingest host, the only service the health endpoint
+    # (loopback-only, unauthenticated, names every enabled RTU) shares a
+    # network with.
+    networks:
+      - default
+      - ingest
 
   redis:
     profiles: ["core", "pilot", "phe", "realtime-smoke"]
@@ -554,9 +563,12 @@ services:
       # Loopback only. The health body is plain text with no authentication,
       # and since `F1.7` it names every enabled RTU, when each last reported
       # and which are silent — remote unattended water stations, and a
-      # targeting signal rather than a status page. Nothing machine-reads it
-      # off-host: the service has no `healthcheck:`, no API or web caller
-      # scrapes it, and `infra/observability/` does not know this port. Every
+      # targeting signal rather than a status page. Two boundaries hold it
+      # off (ADR 0016 Amendment 8, `F4.61`): this publication is loopback on
+      # the host, and the `networks:` below keeps the container off
+      # `default`, so no other service but `postgres` shares a network with
+      # it — the handler also answers `GET /` and `/health` only, for a
+      # loopback `Host` (`apps/ingest/src/host/health-server.ts`). Every
       # operator workflow in `docs/ingest-host.md` runs on the host itself.
       - "127.0.0.1:9102:9102"
     # `apps/ingest/Dockerfile` sets no `USER`, so the image runs as root and
@@ -566,6 +578,13 @@ services:
     # again), not a regression to patch around.
     volumes:
       - bms-ingest-buffer:/var/lib/bms-ingest
+    # ADR 0016 Amendment 8, Decision 2 (`F4.61`). The ingest host reaches only
+    # `postgres:5432` in-cluster plus the external PHE broker; nothing else
+    # reaches ingest. Joining `ingest` alone (not `default`) is what makes
+    # `GET http://ingest:9102/` unreachable from every container but `postgres`.
+    # `tests/f4.61-ingest-network-isolation.test.ts` holds this statically.
+    networks:
+      - ingest
     depends_on:
       postgres:
         condition: service_healthy
@@ -654,3 +673,13 @@ volumes:
   bms-loki-data:
   bms-grafana-data:
   bms-ingest-buffer:
+
+# ADR 0016 Amendment 8, Decision 2 (`F4.61`). `ingest` (profiles `ingest`,
+# `pilot`, `phe`) is the unauthenticated RTU roster's only network: it joins
+# `ingest` and nothing else, `postgres` joins it besides `default`, and every
+# other service stays on `default` alone, so no other service shares a
+# network with `ingest`. Not `internal: true` — the host still dials the PHE
+# broker on the internet. `tests/f4.61-ingest-network-isolation.test.ts`
+# holds this shape statically, since CI never runs `docker compose`.
+networks:
+  ingest: {}
