@@ -6384,3 +6384,23 @@ ran. CI green on the first run of the merged tree.
 **Cascade:** no row lists `F4.162` in *Depends*. Owed separately: the
 `chore(agents):` sweep (§3 entries for the new files, §4.4's "no write route
 yet", the §6 status text and the §10.1 record for Amendment 1).
+
+### `F4.166` — the request-path aggregate refresh skips a level with no complete bucket ✅ 2026-09-27
+
+PR #596, squash `f20b2284`. No ADR (owner ruling).
+
+A row stamped ahead of the clock gave `refreshAggregatesFrom` a `_1m`
+window with no complete minute, and TimescaleDB raised `22023`. The
+`calc-write` suite's `now + 60 s` value hit it on every full CI run; the
+callers logged a warning, so nothing failed. Manual telemetry entry accepts
+rows up to 60 s ahead, so production reached it too. Each level now checks
+`inscribedWindowIsEmpty` on the instants it passes to the `CALL` and
+skips an empty one; an invalid date throws before `SET ROLE`.
+
+Verified: unit cases per level and an integration case that was red on
+`main`; five mutations reddened their targets. CI green on the first run,
+and its log holds no `refresh window too small`. Four reviews, no High or
+Medium.
+
+**Cascade:** no row lists `F4.166` in *Depends*. No `chore(agents):`
+sentence is owed: AGENTS.md does not describe this helper.
