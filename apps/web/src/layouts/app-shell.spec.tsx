@@ -230,15 +230,17 @@ export function drawsTheLockedSettingsAtThreeToOne(): void {
 }
 
 /**
- * `F4.164` U3 — the collapsed rail. Every sidebar link carries
- * `aria-label={label}`, so a collapsed link announces its full title rather
- * than its letters; and `COLLAPSED_LABEL_OVERRIDES` makes the letters unique.
+ * `F4.164` U3 — the collapsed rail. A collapsed sidebar link carries
+ * `aria-label="<label> (<code>)"`, so it announces its full title and its
+ * accessible name still contains the visible code (WCAG 2.5.3 Label in Name);
+ * an expanded link has no `aria-label` and takes its name from the label it
+ * shows. `COLLAPSED_LABEL_OVERRIDES` makes the codes unique.
  *
  * L1–L3 gate the data: `collapsedRailEntries()` is every item of both lists,
  * the temporarily hidden ones included, so a collision that only shows once an
  * item is un-hidden or once a role sees the admin group is still caught.
  *
- * L4–L6 need one render only, `admin` with a `GLOBAL` scope. Every visibility
+ * L4–L6 and L8 need one render only, `admin` with a `GLOBAL` scope. Every visibility
  * rule in `AppShell` only removes items (the hidden paths, `none`/`null` scope
  * for Control Room, the admin group for a non-admin, `catalogOnly` and
  * `globalOnly` for a lesser admin), and `admin` with `GLOBAL` passes all of
@@ -283,22 +285,22 @@ export function keysEveryOverrideByARealPath(): void {
   expect(dead).toEqual([]);
 }
 
-/** L4 — collapsed, every sidebar link's `aria-label` equals its title. */
-export function labelsEveryCollapsedLinkWithItsTitle(): void {
+/** L4 — collapsed, every sidebar link's `aria-label` is "<title> (<visible code>)". */
+export function labelsEveryCollapsedLinkWithItsTitleAndCode(): void {
   renderCollapsedShell();
   const links = sidebarLinks();
   expect(links.length).toBeGreaterThan(0);
   expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(
-    links.map((link) => link.getAttribute("title")),
+    links.map((link) => `${link.getAttribute("title") ?? ""} (${link.textContent ?? ""})`),
   );
 }
 
-/** L5 — collapsed, "Dashboard" and "Dashboards" each name exactly one link. */
+/** L5 — collapsed, "Dashboard (D)" and "Dashboards (DS)" each name exactly one link. */
 export function namesDashboardAndDashboardsApartWhenCollapsed(): void {
   renderCollapsedShell();
   expect({
-    Dashboard: within(sidebar()).queryAllByRole("link", { name: "Dashboard" }).length,
-    Dashboards: within(sidebar()).queryAllByRole("link", { name: "Dashboards" }).length,
+    Dashboard: within(sidebar()).queryAllByRole("link", { name: "Dashboard (D)" }).length,
+    Dashboards: within(sidebar()).queryAllByRole("link", { name: "Dashboards (DS)" }).length,
   }).toEqual({ Dashboard: 1, Dashboards: 1 });
 }
 
@@ -314,7 +316,9 @@ export function showsUniqueCodesWhenCollapsed(): void {
 /** L6b — collapsed, "Dashboards" reads "DS". */
 export function showsDsForDashboardsWhenCollapsed(): void {
   renderCollapsedShell();
-  expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toHaveTextContent(/^DS$/);
+  expect(within(sidebar()).getByRole("link", { name: "Dashboards (DS)" })).toHaveTextContent(
+    /^DS$/,
+  );
 }
 
 /** L7 — expanded, "Dashboards" reads its full label. */
@@ -322,5 +326,34 @@ export function showsTheFullLabelWhenExpanded(): void {
   renderShell(GLOBAL, "/", "admin");
   expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toHaveTextContent(
     /^Dashboards$/,
+  );
+}
+
+/**
+ * L8 — collapsed, every link's accessible name contains its visible text (WCAG
+ * 2.5.3). The name is the one Testing Library computes, read through the
+ * `name` callback, so it is the name a query by role would match on.
+ */
+export function keepsTheVisibleCodeInEveryCollapsedName(): void {
+  renderCollapsedShell();
+  const names = new Map<HTMLElement, string>();
+  within(sidebar()).getAllByRole("link", {
+    name: (name, element) => {
+      names.set(element as HTMLElement, name);
+      return true;
+    },
+  });
+  const missing = [...names.entries()]
+    .filter(([link, name]) => !name.includes(link.textContent ?? " "))
+    .map(([link, name]) => `"${name}" lacks "${link.textContent ?? ""}"`);
+  expect(names.size).toBeGreaterThan(0);
+  expect(missing).toEqual([]);
+}
+
+/** L9 — expanded, the "Dashboards" link's accessible name is exactly "Dashboards". */
+export function namesTheExpandedLinkByItsLabel(): void {
+  renderShell(GLOBAL, "/", "admin");
+  expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toHaveAccessibleName(
+    "Dashboards",
   );
 }

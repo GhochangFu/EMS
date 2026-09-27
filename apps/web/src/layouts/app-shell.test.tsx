@@ -16,9 +16,11 @@ import {
   highlightsTheEntryOnANestedPath,
   keepsOtherItemsExactMatch,
   keysEveryOverrideByARealPath,
-  labelsEveryCollapsedLinkWithItsTitle,
+  keepsTheVisibleCodeInEveryCollapsedName,
+  labelsEveryCollapsedLinkWithItsTitleAndCode,
   letsTheLockedSettingsTakeFocus,
   locksSettingsAsAnAriaDisabledButton,
+  namesTheExpandedLinkByItsLabel,
   namesDashboardAndDashboardsApartWhenCollapsed,
   placesTheEntryDirectlyAfterAlarmCentre,
   readsTheFullItemList,
@@ -117,11 +119,11 @@ describe("F4.164 collapsed rail", () => {
     keysEveryOverrideByARealPath();
   });
 
-  it("L4 labels every collapsed link with its title", () => {
-    labelsEveryCollapsedLinkWithItsTitle();
+  it("L4 labels every collapsed link with its title and its visible code", () => {
+    labelsEveryCollapsedLinkWithItsTitleAndCode();
   });
 
-  it("L5 names Dashboard and Dashboards apart when collapsed", () => {
+  it("L5 names Dashboard (D) and Dashboards (DS) apart when collapsed", () => {
     namesDashboardAndDashboardsApartWhenCollapsed();
   });
 
@@ -135,5 +137,13 @@ describe("F4.164 collapsed rail", () => {
 
   it("L7 shows the full label when expanded", () => {
     showsTheFullLabelWhenExpanded();
+  });
+
+  it("L8 keeps the visible code in every collapsed link's accessible name (WCAG 2.5.3)", () => {
+    keepsTheVisibleCodeInEveryCollapsedName();
+  });
+
+  it("L9 names the expanded Dashboards link exactly Dashboards", () => {
+    namesTheExpandedLinkByItsLabel();
   });
 });

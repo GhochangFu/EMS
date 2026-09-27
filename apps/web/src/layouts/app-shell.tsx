@@ -311,7 +311,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                       <Link
                         to={m.path}
                         title={m.label}
-                        aria-label={m.label}
+                        // F4.164 — WCAG 2.5.3: a collapsed name carries the visible code; expanded, the label is the name.
+                        aria-label={sidebarCollapsed ? `${m.label} (${collapsedLabel(m)})` : undefined}
                         className={`block w-full border-l-2 hover:bg-bms-canvas ${
                           location.pathname === m.path ||
                           ("nested" in m && m.nested && location.pathname.startsWith(`${m.path}/`))
@@ -352,7 +353,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                       <Link
                         to={item.path}
                         title={item.label}
-                        aria-label={item.label}
+                        aria-label={sidebarCollapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
                         className={`block w-full border-l-2 hover:bg-bms-canvas ${
                           location.pathname === item.path ||
                           (item.path !== "/admin" && location.pathname.startsWith(`${item.path}`))
