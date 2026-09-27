@@ -145,7 +145,7 @@ describe.skipIf(!connectionString)(
       await assertI8aAnUnusedTypeCountsZero(ctx);
     });
 
-    it("I8b one location of the type counts 1", async () => {
+    it("I8b one inactive location of the type counts 1 (OQ4)", async () => {
       await assertI8bOneLocationCountsOne(ctx);
     });
 

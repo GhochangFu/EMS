@@ -229,10 +229,17 @@ export async function assertI8aAnUnusedTypeCountsZero(ctx: Ctx): Promise<void> {
 }
 
 /**
- * I8b — one `bms.locations` row of the type counts 1. Inserted under ESKOM on
- * the superuser pool (FORCE RLS) and deleted at once in `finally`: a fixture
- * location left under ESKOM for the file's duration is visible to every
- * concurrent suite that reads the organization's sites.
+ * I8b — owner ruling OQ4: the count includes every `bms.locations` row of the
+ * type, inactive ones included. The fixture location is `active = false`, so
+ * a join that counted only active locations reddens this case.
+ *
+ * Inactive for a second reason: `apps/api/src/auth/access-control-rls.integration.test.ts`
+ * counts ESKOM's ACTIVE locations, and an active fixture here raced that count
+ * (17 vs 16) whenever the two files ran together.
+ *
+ * Inserted under ESKOM on the superuser pool (FORCE RLS) and deleted at once
+ * in `finally`: a fixture location left under ESKOM for the file's duration is
+ * visible to every concurrent suite that reads the organization's sites.
  */
 export async function assertI8bOneLocationCountsOne(ctx: Ctx): Promise<void> {
   const code = fixtureCode("i8b");
@@ -245,8 +252,8 @@ export async function assertI8bOneLocationCountsOne(ctx: Ctx): Promise<void> {
 
   try {
     await ctx.superPool.query(
-      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
-       VALUES ($1, $2, $2, 'F4.162 I8b fixture', $2, 0, 0)`,
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, active)
+       VALUES ($1, $2, $2, 'F4.162 I8b fixture', $2, 0, 0, false)`,
       [org.rows[0]!.id, code],
     );
     expect((await listed(ctx, code))?.locationCount).toBe(1);
