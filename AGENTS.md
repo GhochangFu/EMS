@@ -733,10 +733,45 @@
 > and `tests/f3.70-smoc-site-view.test.ts` replaces
 > `tests/f4.156-control-room-route-gate.test.ts`. `pnpm --filter web
 > smoke:cr`, red on `main` since `F3.66`, reads the tab layout. ADR 0076's
-> rows `F3.66`–`F3.70` are all merged and closed. Next: `F4.157` needs its own ADR;
-> `F4.160` is open (of the three spec files the row names, two remain,
+> rows `F3.66`–`F3.70` are all merged and closed.
+> **`F4.157`** (#583, [ADR 0077](docs/adr/0077-location-types-lookup-table.md);
+> six gate questions ruled one at a time, owner approved 2026-09-26) makes the
+> location type a lookup table (decision 1): `bms.location_types` (`code`,
+> `label`, `sort_order`, `active`, `created_at`) is global — no
+> `organization_id`, no RLS — created as `bms_owner` so `bms_tenant` inherits
+> `SELECT`, and migration `0085` revokes its write the `0059` way. Four seeded
+> rows (`smoc_campus`, `rsmoc`, `csmoc`, `pump_station`); the same migration
+> moves the six PHEWB locations and their map pins to `pump_station` (decision
+> 4), reading as the superuser because it reads a policied table before the FK
+> on `bms.locations.type` (decision 3) validates. Every
+> `z.enum(["smoc_campus", "rsmoc", "csmoc"])` for a location type widens to a
+> bounded string in the new `packages/shared/src/contracts/location-types.ts`
+> (`locationTypeCodeSchema`, `locationTypeDtoSchema`), reused by `admin.ts`,
+> `auth.ts`, `dashboard.ts` and `onboarding.ts`; `mapSiteDtoSchema.kind` widens
+> the same way and gains `kindLabel`. `VocabulariesService` gains the eighth
+> open vocabulary — `listLocationTypes` and `assertLocationType` — and the
+> admin locations service and the onboarding commit path refuse a code that is
+> not an active row. `GET /api/v1/admin/location-types`
+> (`LocationTypesAdminController` — its own controller because
+> `admin/locations/:id` would swallow the path — `JwtAuthGuard` plus
+> `requireMasterDataUser`) feeds the admin locations page's type dropdown,
+> replacing the three hardcoded `<option>`s. **The map** (decision 6): a pin
+> that joins a location takes `kind` from `bms.locations.type` and `kindLabel`
+> from the lookup's label; "carries live health" becomes "joins a location"
+> (`canonical_location_id IS NOT NULL`) in both `map.service.ts` and
+> `world-map.tsx`, so a PHE pin keeps live health after the move to
+> `pump_station` — it now shows "Pump station · PHEWB", never "RSMOC" (ADR
+> 0077's own dated correction: the pins never showed "RSMOC" even before this
+> row; the popup reads the organization code first). **Onboarding rejects an
+> unknown type with no default** (decision 7, gate question 5): an empty or
+> unrecognised Excel type cell is a row error naming the valid codes, and the
+> rule-based chat asks for the type — offering the active labels as suggested
+> replies — rather than guessing `smoc_campus`. Deferred, by gate question 6: a
+> global-admin page to create, rename or deactivate a type, raised as `F4.162`
+> (#584). ADR 0077 is merged and closed.
+> Next: `F4.160` is open (of the three spec files the row names, two remain,
 > `dashboard-builder-page` and `dashboard-builder-edit-page`, because `F3.70`
-> took the overview spec off `AppShell`); `F4.161` is open.
+> took the overview spec off `AppShell`); `F4.161` is closed (#578).
 > General
 > site-wide AI copilot, EMQX, and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
@@ -1064,13 +1099,14 @@ bms/
 │   │                            src/admin/asset-templates/ holds ADR 0015's
 │   │                            lifecycle + instantiation services, and
 │   │                            ADR 0019's content contract.
-│   │                            src/vocabularies/ serves SEVEN open
+│   │                            src/vocabularies/ serves EIGHT open
 │   │                            vocabularies — rule concerns and plant
 │   │                            domains (ADR 0031 A1), alarm severities
 │   │                            (ADR 0032), alarm skills (ADR 0034), asset
-│   │                            roles and dashboard sections (ADR 0049), and
-│   │                            water balance roles (ADR 0073) — and enforces
-│   │                            all but dashboard sections (six assert*). Its
+│   │                            roles and dashboard sections (ADR 0049),
+│   │                            water balance roles (ADR 0073), and location
+│   │                            types (ADR 0077, F4.157) — and enforces all
+│   │                            but dashboard sections (seven assert*). Its
 │   │                            service is not a convenience:
 │   │                            with the value set in a table rather than a
 │   │                            z.enum, it is the only thing keeping an unknown
@@ -1182,7 +1218,7 @@ bms/
 │   │                            ADR 0076 generated read (F3.68, with
 │   │                            HEADLINE_POINT_COUNT = 4); F3.68 moved
 │   │                            adminPointKeyDtoSchema to contracts/point-keys.ts
-│   │                            to keep admin.ts under the §4.5 cap (982 lines).
+│   │                            to keep admin.ts under the §4.5 cap (983 lines).
 │   │                            src/calc-dsl/ holds the bms-calc-v1 tokenizer,
 │   │                            recursive-descent parser, AST types and
 │   │                            validateFormula() (ADR 0036), plus since ADR 0037
@@ -1415,7 +1451,12 @@ Do not add top-level folders without updating this section.
   `alarm_severities`, `alarm_skills`, and — since ADR 0049 — `asset_roles` and
   `dashboard_sections`, and — since **ADR 0051** decision 2, `F3.39` —
   `point_keys`, and — since **ADR 0073**, `E4.3` — `water_balance_roles`,
-  which only its migration writes — no admin route) or the stated `telemetry.*` exception (decision 9).
+  which only its migration writes — no admin route, and — since **ADR 0077**
+  decision 1, `F4.157` — `location_types`, revoked to `SELECT` only for
+  `bms_tenant` (migration `0085`, the `0059` pattern) and read through
+  `GET /api/v1/admin/location-types`, with no write route yet (ADR 0077 gate
+  question 6 deferred create/rename/deactivate to a new backlog row)) or the
+  stated `telemetry.*` exception (decision 9).
   **The ruling is not only about a NEW table.** `bms.point_keys` was tenant
   data for the whole of its life until migration `0057` dropped its
   `organization_id`, its unique index, its policy and its FORCE flag together —
