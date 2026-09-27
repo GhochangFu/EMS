@@ -19,6 +19,7 @@ export async function fetchLocationTypeCatalog(): Promise<AdminLocationTypesList
   return adminFetch("/admin/vocabularies/location-types", adminLocationTypesListResponseSchema);
 }
 
+/** Adds an active type. `code` is lower snake_case; a repeated code is a 409. */
 export async function createLocationType(input: {
   code: string;
   label: string;
@@ -47,6 +48,7 @@ export async function updateLocationType(
   );
 }
 
+/** Retires a type: every Type dropdown stops offering it; its locations keep it. */
 export async function deactivateLocationType(code: string): Promise<AdminLocationTypeDto> {
   return adminFetch(
     `/admin/vocabularies/location-types/${encodeURIComponent(code)}/deactivate`,
@@ -55,6 +57,7 @@ export async function deactivateLocationType(code: string): Promise<AdminLocatio
   );
 }
 
+/** Restores a retired type to every Type dropdown. */
 export async function reactivateLocationType(code: string): Promise<AdminLocationTypeDto> {
   return adminFetch(
     `/admin/vocabularies/location-types/${encodeURIComponent(code)}/reactivate`,
