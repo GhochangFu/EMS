@@ -6,6 +6,7 @@ import type {
   OnboardingPhase,
 } from "@bms/shared";
 
+import { echoedItems, moreTail } from "../spreadsheet-guard";
 import {
   draftAssetPointSchema,
   draftAssetSchema,
@@ -25,8 +26,17 @@ export type ValidateResult = {
 /** Validates onboarding draft business rules. */
 @Injectable()
 export class OnboardingValidateService {
-  /** Runs schema and cross-field validation on a draft. */
-  validate(draft: unknown): ValidateResult {
+  /**
+   * Runs schema and cross-field validation on a draft.
+   *
+   * `F4.162` (ADR 0077 Amendment 1, plan D9, owner ruling OQ3):
+   * `activeLocationTypeCodes` is the active `bms.location_types` codes, read by
+   * the caller. Required, with no default: an optional parameter is invisible
+   * at an adapter, and `tsc` then names every caller. A stored type that is not
+   * in it counts as missing, so a type retired after it was stored is reported
+   * here, and `readyToCommit` agrees with the commit's 400.
+   */
+  validate(draft: unknown, activeLocationTypeCodes: readonly string[]): ValidateResult {
     const errors: OnboardingFieldError[] = [];
     const parsed = onboardingDraftSchema.safeParse(draft);
     if (!parsed.success) {
@@ -40,13 +50,13 @@ export class OnboardingValidateService {
         valid: false,
         errors,
         readyToCommit: false,
-        suggestedPhase: this.inferPhase(draft),
+        suggestedPhase: this.inferPhase(draft, activeLocationTypeCodes),
       };
     }
 
     const d = parsed.data as OnboardingDraft;
-    this.validateCrossField(d, errors);
-    const phase = this.inferPhase(d);
+    this.validateCrossField(d, errors, activeLocationTypeCodes);
+    const phase = this.inferPhase(d, activeLocationTypeCodes);
     const readyToCommit = errors.length === 0 && phase === "review";
     return {
       valid: errors.length === 0,
@@ -56,7 +66,11 @@ export class OnboardingValidateService {
     };
   }
 
-  private validateCrossField(d: OnboardingDraft, errors: OnboardingFieldError[]): void {
+  private validateCrossField(
+    d: OnboardingDraft,
+    errors: OnboardingFieldError[],
+    activeLocationTypeCodes: readonly string[],
+  ): void {
     if (d.location) {
       const loc = draftLocationSchema.safeParse(d.location);
       if (!loc.success) {
@@ -69,6 +83,14 @@ export class OnboardingValidateService {
       // type in the next. It is not optional at commit.
       if (!d.location.type) {
         errors.push({ path: "location.type", message: "Location type is required" });
+      } else if (!activeLocationTypeCodes.includes(d.location.type)) {
+        // F4.162 (D9): the stored value is operator text and is not echoed; the
+        // codes are what the operator can pick from. The list is capped (the
+        // F4.105 echo bound): the vocabulary is admin-managed and can grow.
+        errors.push({
+          path: "location.type",
+          message: inactiveLocationTypeMessage(activeLocationTypeCodes),
+        });
       }
     }
 
@@ -154,15 +176,25 @@ export class OnboardingValidateService {
     }
   }
 
-  /** Infers the current onboarding phase from draft completeness. */
-  inferPhase(draft: unknown): OnboardingPhase {
+  /**
+   * Infers the current onboarding phase from draft completeness.
+   *
+   * `F4.162` (D9): a type that is not in `activeLocationTypeCodes` keeps the
+   * phase at `location`, as a missing one does, so the chat asks for it again.
+   */
+  inferPhase(draft: unknown, activeLocationTypeCodes: readonly string[]): OnboardingPhase {
     const d =
       typeof draft === "object" && draft !== null ? (draft as OnboardingDraft) : {};
     if (!d.location?.name) {
       return "location";
     }
     // F4.157: a location with no type stays here, so the chat asks for it.
-    if (!d.location.code || !d.location.type || d.location.latitude === undefined) {
+    if (
+      !d.location.code ||
+      !d.location.type ||
+      !activeLocationTypeCodes.includes(d.location.type) ||
+      d.location.latitude === undefined
+    ) {
       return "location";
     }
     if (!d.rtus || d.rtus.length === 0 || !d.rtus.every((r) => r.protocol && r.code)) {
@@ -195,4 +227,18 @@ export class OnboardingValidateService {
     const topic = String(rtu.config?.topic ?? rtu.config?.mqttTopic ?? "").trim();
     return !topic || topic === "-";
   }
+}
+
+/**
+ * `F4.162` (D9) — the `location.type` message for a type that is not active.
+ * Names at most {@link echoedItems}' cap of active codes, then a count; with no
+ * active code at all it says so, rather than ending on "use one of: ".
+ */
+function inactiveLocationTypeMessage(activeLocationTypeCodes: readonly string[]): string {
+  if (activeLocationTypeCodes.length === 0) {
+    return "Location type is not an active code; no location type is active";
+  }
+  const { shown, omitted } = echoedItems(activeLocationTypeCodes);
+  const list = [...shown, moreTail(omitted)].filter(Boolean).join(", ");
+  return `Location type is not an active code; use one of: ${list}`;
 }

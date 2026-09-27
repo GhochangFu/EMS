@@ -166,7 +166,11 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
         longitude: Number(form.longitude),
       };
       if (editing) {
-        const { organizationId: _org, ...updatePayload } = payload;
+        const { organizationId: _org, type: _type, ...rest } = payload;
+        // D8 (F4.162) — send `type` only when the administrator changed it; an untouched
+        // retired current type must not be re-posted, since it is not among the active codes.
+        const updatePayload =
+          resolvedType === editing.type ? rest : { ...rest, type: resolvedType };
         const updated = await updateAdminLocation(editing.id, updatePayload);
         if (storedView && viewDraft && siteViewDraftChanged(storedView, viewDraft)) {
           await putSiteControlRoomView(editing.id, siteViewPayloadFromDraft(viewDraft));
@@ -364,6 +368,13 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   disabled={types.length === 0}
                   onChange={(event) => setForm({ ...form, type: event.target.value })}
                 >
+                  {/* Only once the list has loaded: while it is pending or failed, `types` is
+                      empty and every row's own type would read as "(retired)". */}
+                  {typesQ.isSuccess &&
+                  editing &&
+                  !types.some((locationType) => locationType.code === editing.type) ? (
+                    <option value={editing.type}>{editing.typeLabel} (retired)</option>
+                  ) : null}
                   {types.map((locationType) => (
                     <option key={locationType.code} value={locationType.code}>
                       {locationType.label}

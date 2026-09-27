@@ -115,7 +115,7 @@ export function onboardingSheetRangeProblem(range: XLSX.Range): string | null {
  * **Why the sheet is refused rather than the cell cut** (owner ruling). Every
  * other sheet-supplied string this importer echoes is bounded at the *message*
  * with `quoteCell`, which leaves the data whole. `topic` cannot be: it is
- * printed unquoted by `OnboardingChatService.mqttSetupTemplate` for the operator
+ * printed unquoted by `mqttSetupTemplate` for the operator
  * to edit and paste back, so a quote character would end up inside the stored
  * topic (the paste-back parser is `/topic[:\s]+(\S+)/i`). Truncating instead is
  * worse than refusing — a shortened topic subscribes to a topic nobody asked

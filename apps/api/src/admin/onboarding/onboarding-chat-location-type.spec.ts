@@ -15,6 +15,7 @@
 import type { LocationTypeDto, OnboardingDraft, OnboardingPhase } from "@bms/shared";
 
 import { OnboardingChatService } from "./onboarding-chat.service";
+import * as locationTypes from "./onboarding-location-type-match";
 import type { ChatTurnResult } from "./onboarding-chat.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -31,6 +32,9 @@ const FOUR: readonly LocationTypeDto[] = [
   { code: "csmoc", label: "CSMOC" },
   { code: "pump_station", label: "Pump station" },
 ];
+
+/** The four codes, as the validator takes them (`F4.162`, plan D9). */
+const CODES: readonly string[] = FOUR.map((row) => row.code);
 
 /**
  * The four plus one row whose label is **not** its code with spaces.
@@ -349,7 +353,7 @@ const NAMED_INACTIVE_TYPE = {
 async function storedTurn(
   message: string,
   stored: OnboardingDraft,
-  phase: OnboardingPhase = new OnboardingValidateService().inferPhase(stored),
+  phase: OnboardingPhase = new OnboardingValidateService().inferPhase(stored, CODES),
 ): Promise<{ turn: ChatTurnResult; draft: OnboardingDraft }> {
   const turn = await ruleBasedTurn(message, stored, phase);
   return { turn, draft: serviceWith(FOUR).mergeDraft(stored, turn.draftPatch) as OnboardingDraft };
@@ -503,4 +507,124 @@ export async function assertOpenAiTurnValidatesTheMergedDraft(captured: OpenAiCa
   const turn = await openAiTurn(captured, reply, stored);
   assert(turn.draftPatch.location?.code === "LOTAPATA", "the model's patch passed the parse");
   assert(turn.currentPhase === "rtu", `the merged draft is complete, got ${turn.currentPhase}`);
+}
+
+// ---------------------------------------------------------------------------
+// F4.162 (ADR 0077 Amendment 1, plan D9, owner ruling OQ3) — a type retired
+// after it was stored. The stored phase is whatever `inferPhase` said at the
+// last write, and before the type was retired that was `rtu` or later, so these
+// cases pass `rtu` explicitly. The chat must treat the type as missing and ask
+// for it again before the RTU step.
+// ---------------------------------------------------------------------------
+
+/** H5's turn: `NAMED_INACTIVE_TYPE` stored at phase `rtu`, and the operator types the name. */
+async function retiredTypeTurn(): Promise<{ turn: ChatTurnResult; draft: OnboardingDraft }> {
+  return storedTurn("Lotapata", NAMED_INACTIVE_TYPE, "rtu");
+}
+
+/** H5 — the chat asks for the type again instead of taking the RTU step. */
+export async function assertRetiredTypeIsAskedForAtTheRtuPhase(): Promise<void> {
+  const { turn } = await retiredTypeTurn();
+  assert(
+    turn.assistantMessage === locationTypes.locationTypeQuestion("Lotapata"),
+    `a retired stored type is asked for again, got "${turn.assistantMessage}"`,
+  );
+}
+
+/** H5 — the suggested replies are the four active labels. */
+export async function assertRetiredTypeQuestionSuggestsTheActiveLabels(): Promise<void> {
+  const { turn } = await retiredTypeTurn();
+  assert(
+    JSON.stringify(turn.suggestedReplies) === JSON.stringify(FOUR.map((row) => row.label)),
+    `the suggested replies are the four labels, got ${JSON.stringify(turn.suggestedReplies)}`,
+  );
+}
+
+/** H5 — the turn reports the location phase. `inferPhase` holds this claim (N4). */
+export async function assertRetiredTypeTurnReportsTheLocationPhase(): Promise<void> {
+  const { turn } = await retiredTypeTurn();
+  assert(turn.currentPhase === "location", `the phase goes back to location, got ${turn.currentPhase}`);
+}
+
+/** H5 — no RTU is appended. The patch's location is the positive control. */
+export async function assertRetiredTypeTurnAddsNoRtu(): Promise<void> {
+  const { turn } = await retiredTypeTurn();
+  assert(
+    turn.draftPatch.location?.name === "Lotapata",
+    `the turn wrote the location, got ${JSON.stringify(turn.draftPatch.location)}`,
+  );
+  assert(turn.draftPatch.rtus === undefined, `no RTU is added, got ${JSON.stringify(turn.draftPatch.rtus)}`);
+}
+
+/** H6's turn: the reply "Pump station" to H5's question, from the draft `mergeDraft` stored. */
+async function retiredTypeAnswerTurn(): Promise<ChatTurnResult> {
+  const first = await retiredTypeTurn();
+  const { turn } = await storedTurn("Pump station", first.draft, first.turn.currentPhase);
+  return turn;
+}
+
+/** H6 — the reply sets the active type. */
+export async function assertRetiredTypeAnswerSetsTheType(): Promise<void> {
+  const turn = await retiredTypeAnswerTurn();
+  assert(
+    turn.draftPatch.location?.type === "pump_station",
+    `the reply sets the type, got ${JSON.stringify(turn.draftPatch.location?.type)}`,
+  );
+}
+
+/** H6 — the reply is answered with the RTU question. */
+export async function assertRetiredTypeAnswerAsksTheRtuQuestion(): Promise<void> {
+  const turn = await retiredTypeAnswerTurn();
+  assert(
+    turn.assistantMessage === "Got it — location **Lotapata**. Which communication protocol will RTU 1 use?",
+    `the chat asks the RTU question, got "${turn.assistantMessage}"`,
+  );
+}
+
+/** H6 — the turn reports the `rtu` phase: `finalizeTurn` validated with the active codes. */
+export async function assertRetiredTypeAnswerMovesToTheRtuPhase(): Promise<void> {
+  const turn = await retiredTypeAnswerTurn();
+  assert(turn.currentPhase === "rtu", `the phase moves to rtu, got ${turn.currentPhase}`);
+}
+
+/** H7 — H5's turn reports the error at `location.type`, so the wizard shows it. */
+export async function assertRetiredTypeTurnReportsTheTypeError(): Promise<void> {
+  const { turn } = await retiredTypeTurn();
+  const paths = (turn.validationErrors ?? []).map((error) => error.path);
+  assert(paths.includes("location.type"), `the turn reports location.type, got ${JSON.stringify(paths)}`);
+}
+
+/**
+ * A draft complete in every section whose stored type is not active. H5's
+ * draft has no RTU, so its `readyToCommit` is false for other reasons; this
+ * one is false only because of the type.
+ */
+const COMPLETE_INACTIVE_TYPE = {
+  location: { ...NAMED_INACTIVE_TYPE.location },
+  rtus: [
+    {
+      code: "RTU-1",
+      displayName: "RTU 1",
+      protocol: "modbus_tcp",
+      config: { host: "10.0.0.1", port: 502 },
+      credentialsSet: false,
+      ingestEnabled: false,
+    },
+  ],
+  pointKeys: [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }],
+  assets: [
+    { code: "LOTAPATA-ASSET-1", name: "Asset 1", siteName: "Lotapata", rtuIndex: 0, domain: "electrical" },
+  ],
+  assetPoints: [{ assetIndex: 0, pointKey: "kw", sourceDataKey: "s01" }],
+} as OnboardingDraft;
+
+/**
+ * H7 — a turn on a complete draft whose type is not active is not ready to
+ * commit, so the wizard's Commit button agrees with the commit's 400. Two
+ * guards hold this claim: the `location.type` error (N3) and the location
+ * phase (N4); only both removed redden it.
+ */
+export async function assertRetiredTypeTurnIsNotReadyToCommit(): Promise<void> {
+  const { turn } = await storedTurn("Lotapata", COMPLETE_INACTIVE_TYPE, "review");
+  assert(turn.readyToCommit === false, "a draft whose type is not active is never ready to commit");
 }

@@ -32,6 +32,9 @@ const REFUSED = ["feeder.a", "pump 1", "ST.-MARY'S-WORKS-ASSET-1", "{kw}", "é"]
 /** ADR 0065 decision 7's fixture shapes plus its own two examples. */
 const ACCEPTED = ["TX_01", "kwh_total", "CALCWRITE_A", "FIXTURE-x-0f3a-01"] as const;
 
+/** The four seeded active location-type codes, which the validator takes (`F4.162`, plan D9). */
+const CODES: readonly string[] = ["smoc_campus", "rsmoc", "csmoc", "pump_station"];
+
 /** Any UUID the `.uuid()` check admits; nothing here reaches a database. */
 const LOCATION_ID = "00000000-0000-4000-8000-000000000000";
 
@@ -150,7 +153,7 @@ export function assertValidateNamesTheField(): void {
     assets: [
       { rtuIndex: 0, code: "ST.-MARY'S-WORKS-ASSET-1", name: "Probe asset", siteName: "Probe site", domain: "electrical" },
     ],
-  });
+  }, CODES);
 
   const names = (path: string): boolean =>
     result.errors.some((error) => error.path === path && error.message === CATALOG_CODE_MESSAGE);

@@ -75,6 +75,7 @@ function location(overrides: Partial<AdminLocationDto>): AdminLocationDto {
     slug: "f367-rsmoc",
     name: "RSMOC-like site",
     type: "rsmoc",
+    typeLabel: "RSMOC",
     province: null,
     capital: null,
     timezone: null,

@@ -159,6 +159,7 @@ const validLocation = {
   slug: "lotapata",
   name: "Lotapata",
   type: "pump_station",
+  typeLabel: "Pump station",
   province: null,
   capital: null,
   timezone: null,
@@ -177,6 +178,18 @@ const validLocation = {
  */
 export function runAdminLocationDtoAcceptsPumpStationTest(): void {
   expectAccepts(adminLocationDtoSchema, validLocation, "an admin location row with type: pump_station");
+}
+
+/**
+ * `F4.162` C10 (ADR 0077 Amendment 1, OQ2, plan D3) — `typeLabel` is
+ * required: a row missing it must be refused, not silently accepted with a
+ * `typeLabel: undefined`. Mutation: make the field `.optional()`.
+ */
+export function runAdminLocationDtoRequiresTypeLabelTest(): void {
+  expectAccepts(adminLocationDtoSchema, validLocation, "a full row carrying typeLabel");
+
+  const { typeLabel: _typeLabel, ...withoutTypeLabel } = validLocation;
+  expectRejects(adminLocationDtoSchema, withoutTypeLabel, "a row missing typeLabel");
 }
 
 /**

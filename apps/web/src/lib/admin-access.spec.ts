@@ -6,6 +6,7 @@ import {
   canWriteCalcParameters,
   canWriteOrganizationScopedCalcParameter,
   canCreateOrganizationWideDashboard,
+  canManageLocationTypes,
   canManageNotificationChannels,
   masterDataTabs,
   visibleMasterDataTabs,
@@ -99,6 +100,8 @@ export function runAssetTemplateTabTests(): void {
         "/admin/asset-points",
         "/admin/manual-readings",
         "/admin/point-keys",
+        // `F4.162` (plan D7) — the first `globalAdminOnly` tab.
+        "/admin/location-types",
         // `E4.1a` (ADR 0070 decision 2) — ungated, like Asset Groups: the
         // organization scope is hidden inside the form by
         // `canWriteOrganizationScopedCalcParameter`, not by the tab.
@@ -133,8 +136,9 @@ export function runAssetTemplateTabTests(): void {
     // `notificationAdmin` tab, so 13 -> 14 for the two roles that hold that
     // gate and `location_admin` stays at 10.
     // `E4.1a` added Calc Parameters the same ungated way: 10 -> 11 and
-    // 14 -> 15.
-    const expected = role === "location_admin" ? 11 : 15;
+    // 14 -> 15. `F4.162` added Location Types as `globalAdminOnly`, so
+    // `admin` alone goes 15 -> 16.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 16 : 15;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -200,9 +204,9 @@ export function runNotificationTabTests(): void {
     assert(!paths.includes(ESCALATION), `${role} must not see the Escalation tab`);
   }
 
-  // These three are the only `notificationAdmin` tabs, and no tab is left on
-  // the old `globalAdminOnly` gate — if one is added later it must be a
-  // deliberate choice between the two flags, not an inheritance from here.
+  // These three are the only `notificationAdmin` tabs. No tab kept the old
+  // `globalAdminOnly` gate; `F4.162`'s Location Types is the first to take it,
+  // as a deliberate choice (`runLocationTypesTab*` below).
   const gated = masterDataTabs
     .filter((tab) => "notificationAdmin" in tab && tab.notificationAdmin)
     .map((tab) => tab.path);
@@ -321,4 +325,33 @@ export function runCalcParameterPredicateTests(): void {
   for (const role of ["asset_group_admin", "operator", "viewer"] as const) {
     assert(!canWriteOrganizationScopedCalcParameter(role), `${role} is not offered the organization scope`);
   }
+}
+
+const LOCATION_TYPES = "/admin/location-types";
+
+/**
+ * `F4.162` A1 (ADR 0077 Amendment 1, plan D7) — `canManageLocationTypes` is
+ * the global `admin` alone, as `LocationTypesVocabularyAdminService` is.
+ */
+export function runCanManageLocationTypesTests(): void {
+  assert(canManageLocationTypes("admin"), "admin manages the location types");
+  for (const role of ["organization_admin", "location_admin", "asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canManageLocationTypes(role), `${role} does not manage the location types`);
+  }
+}
+
+/** `F4.162` A2a — the global `admin` sees the Location Types tab. */
+export function runLocationTypesTabShownToAdminTest(): void {
+  const paths = visibleMasterDataTabs("admin").map((tab) => tab.path);
+  assert(paths.includes(LOCATION_TYPES), "admin must see the Location Types tab");
+}
+
+/**
+ * `F4.162` A2b — an `organization_admin` does not. The Point Keys tab is the
+ * positive control: it is visible to this role, so the list is not empty.
+ */
+export function runLocationTypesTabHiddenFromOrganizationAdminTest(): void {
+  const paths = visibleMasterDataTabs("organization_admin").map((tab) => tab.path);
+  assert(paths.includes("/admin/point-keys"), "organization_admin sees the Point Keys tab (control)");
+  assert(!paths.includes(LOCATION_TYPES), "organization_admin must not see the Location Types tab");
 }

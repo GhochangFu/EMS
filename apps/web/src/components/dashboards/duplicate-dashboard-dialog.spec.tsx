@@ -63,6 +63,7 @@ const LOCATIONS = [
     slug: "site-1",
     name: "Site 1",
     type: "smoc_campus" as const,
+    typeLabel: "SMOC campus",
     province: null,
     capital: null,
     timezone: null,

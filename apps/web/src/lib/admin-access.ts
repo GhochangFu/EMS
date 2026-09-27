@@ -185,6 +185,21 @@ export function canWriteOrganizationScopedCalcParameter(role: UserRole): boolean
   return role === "admin" || role === "organization_admin";
 }
 
+/**
+ * Whether the role may read and write the location-type vocabulary,
+ * `bms.location_types` (`F4.162`, ADR 0077 Amendment 1, plan D7).
+ *
+ * Mirrors `LocationTypesVocabularyAdminService`, which refuses every route to
+ * a caller that is not the global `admin` — the read too, because the catalog
+ * carries a fleet-wide `locationCount`. **Deliberately its own predicate**
+ * although its body equals `isGlobalAdmin` today (the
+ * `canManageNotificationChannels` rule): the page reads it to fail closed, and
+ * a future change to either must not silently move the other.
+ */
+export function canManageLocationTypes(role: UserRole): boolean {
+  return role === "admin";
+}
+
 /** Default admin landing route for a role. */
 export function defaultAdminRoute(role: UserRole): string {
   if (role === "admin" || role === "organization_admin") {
@@ -225,6 +240,11 @@ export const masterDataTabs = [
   { label: "Asset Points", path: "/admin/asset-points" },
   { label: "Manual Entry", path: "/admin/manual-readings" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
+  // `F4.162` (ADR 0077 Amendment 1, plan D7). The first `globalAdminOnly` tab:
+  // every route behind the page refuses a caller that is not the global
+  // `admin`, the read included, so a tab shown to anyone else would lead only
+  // to the page's status line.
+  { label: "Location Types", path: "/admin/location-types", globalAdminOnly: true },
   // `E4.1a` (ADR 0070 decision 2). Ungated, like Asset Groups above: the API
   // gates a write by the row's scope, so a `location_admin` writes location
   // and asset scope for its own location and is refused the rest by the
