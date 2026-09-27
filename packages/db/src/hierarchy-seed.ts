@@ -1,10 +1,12 @@
+import { createHash } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import type pg from "pg";
 
 import type { BmsDb } from "./client";
 import { locations } from "./schema/bms-schema";
 
-const DOMAIN_RTU_SUFFIX: Record<string, string> = {
+export const DOMAIN_RTU_SUFFIX: Record<string, string> = {
   electrical: "ELEC",
   hvac: "HVAC",
   it: "IT",
@@ -22,6 +24,85 @@ const DOMAIN_RTU_SUFFIX: Record<string, string> = {
   // Assets of the other domains are wired as before.
   water: "WATER",
 };
+
+/** `bms.rtus.code` is `varchar(64)` (`schema/bms-schema.ts`). */
+const RTU_CODE_MAX = 64;
+
+/** The hex digits kept from the location code's SHA-256, on overflow. */
+const SIM_RTU_HASH_WIDTH = 8;
+
+/** `bms.rtus.display_name` is `varchar(255)` (`schema/bms-schema.ts`). */
+const RTU_DISPLAY_NAME_MAX = 255;
+
+/**
+ * `F4.170` — the code for one ESKOM simulator RTU, bounded to `RTU_CODE_MAX`
+ * (64) characters whatever the location code's length.
+ *
+ * The unbounded template is `SIM-RTU-${locationCode}-${suffix}` —
+ * `8 + n + 1 + s` characters. The admin location schema accepts a 64-character
+ * code, so a location code of 51+ characters (with `WATER`) otherwise aborts
+ * `pnpm db:seed` with Postgres `22001 value too long`. The template is returned
+ * unchanged whenever it fits, so every code seeded before `F4.170` keeps its
+ * bytes and `ON CONFLICT (location_id, code)` still finds its row.
+ *
+ * On overflow the result is `SIM-RTU-<cut>-<hash>-<suffix>`: `<hash>` is the
+ * first `SIM_RTU_HASH_WIDTH` (8) hex digits of `sha256` of the full raw
+ * location code, uppercased, and `<cut>` is the location code cut to what the
+ * other parts leave — `46 - s` code points, so the result is exactly 64.
+ *
+ * The same shape as `ladderRuleCode` (`automation-rules-seed.ts`, `F4.129`),
+ * duplicated here on purpose rather than shared (owner ruling, 2026-09-27),
+ * with three differences:
+ *
+ * - **No fold.** The location code goes into the template as it is.
+ * - **The fit check and the cut count code points** (`Array.from`), not UTF-16
+ *   code units. `bms.locations.code` has no charset CHECK (migration `0070`
+ *   constrains only `assets.code` and `point_keys.code`), Postgres counts a
+ *   `varchar` length in characters, and a code-unit `slice()` can split a
+ *   surrogate pair (the `F4.104` lesson). A code-unit fit check would also cut
+ *   a fitting astral code and move its stored identity.
+ * - **Uppercase hex is for symmetry** with `ladderRuleCode` only; no compare
+ *   here depends on the case.
+ *
+ * The hash is of the full code because two long codes that agree up to the
+ * cut differ only in the tail the cut dropped.
+ */
+export function simRtuCode(locationCode: string, suffix: string): string {
+  const raw = `SIM-RTU-${locationCode}-${suffix}`;
+  if (Array.from(raw).length <= RTU_CODE_MAX) {
+    return raw;
+  }
+  const hash = createHash("sha256")
+    .update(locationCode)
+    .digest("hex")
+    .toUpperCase()
+    .slice(0, SIM_RTU_HASH_WIDTH);
+  // `SIM-RTU-` + `-` around the cut, then the hash, `-`, and the suffix.
+  const cutWidth =
+    RTU_CODE_MAX - "SIM-RTU--".length - SIM_RTU_HASH_WIDTH - "-".length - Array.from(suffix).length;
+  const cut = Array.from(locationCode).slice(0, cutWidth).join("");
+  return `SIM-RTU-${cut}-${hash}-${suffix}`;
+}
+
+/**
+ * `F4.170` — the display name for one ESKOM simulator RTU,
+ * `${locationName} ${DOMAIN} Simulator`, bounded to `RTU_DISPLAY_NAME_MAX`
+ * (255) characters. `bms.locations.name` is `varchar(255)` as well, so without
+ * the bound a location name of 234+ characters (with `ENVIRONMENT`) aborts
+ * `pnpm db:seed` with `22001`, the same failure as the code.
+ *
+ * The location name is cut, never the ` <DOMAIN> Simulator` tail, and the
+ * whole name is returned unchanged whenever it fits. No hash: display names
+ * are not unique. The fit check and the cut count code points, for the reason
+ * `simRtuCode` gives.
+ */
+export function simRtuDisplayName(locationName: string, domain: string): string {
+  const tail = ` ${domain.toUpperCase()} Simulator`;
+  const budget = RTU_DISPLAY_NAME_MAX - Array.from(tail).length;
+  const characters = Array.from(locationName);
+  const head = characters.length <= budget ? locationName : characters.slice(0, budget).join("");
+  return `${head}${tail}`;
+}
 
 /** Maps asset domain to simulator RTU domain column. */
 export function rtuDomainForAssetDomain(domain: string): string {
@@ -64,7 +145,16 @@ export async function ensureOrganizations(pool: pg.Pool): Promise<void> {
   `);
 }
 
-/** Creates simulator RTUs per domain for each Eskom canonical location. */
+/**
+ * Creates simulator RTUs per domain for each Eskom canonical location.
+ *
+ * `F4.170`: the code and display name come from {@link simRtuCode} and
+ * {@link simRtuDisplayName}, which return the pre-`F4.170` values unchanged
+ * whenever they fit `varchar(64)` / `varchar(255)`. A location created through
+ * the admin API with a long code or name therefore no longer aborts
+ * `pnpm db:seed` with `22001`, and every seeded RTU keeps its code, so the
+ * `ON CONFLICT (location_id, code)` upsert still updates it in place.
+ */
 export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<void> {
   const eskomOrgId = await getOrganizationId(pool, "ESKOM");
   const locRows = await db
@@ -78,8 +168,8 @@ export async function ensureEskomDomainRtus(db: BmsDb, pool: pg.Pool): Promise<v
 
   for (const loc of locRows) {
     for (const [domain, suffix] of Object.entries(DOMAIN_RTU_SUFFIX)) {
-      const code = `SIM-RTU-${loc.code}-${suffix}`;
-      const displayName = `${loc.name} ${domain.toUpperCase()} Simulator`;
+      const code = simRtuCode(loc.code, suffix);
+      const displayName = simRtuDisplayName(loc.name, domain);
       await pool.query(
         `
         INSERT INTO bms.rtus (
