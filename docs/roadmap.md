@@ -6338,3 +6338,49 @@ was green on the first run. Four reviews, no High, every finding fixed.
 `F4.166` (`refreshAggregatesFrom` can still raise `22023`). One
 `chore(agents):` sentence owed: AGENTS.md §4.4's backfill bullet does not
 say the CLI now skips a level with no complete bucket.
+
+### `F4.162` — a global administrator manages the location types (ADR 0077 Amendment 1) ✅ 2026-09-27
+
+PR #593, squash `c528dfea`; plan `docs/plans/f4.162-location-types-admin.md`.
+ADR 0077 Amendment 1 (#588).
+
+`/api/v1/admin/vocabularies/location-types` lists every type with its
+fleet-wide location count (inactive locations included), creates one (lower
+snake_case code; a duplicate is a 409), renames or reorders one (a body that
+names `code` is a 400), and deactivates or reactivates one. Every handler
+gates on the global `admin` before any read; writes run on the fleet pool in
+a transaction with an org-less `master.location_type.*` audit row. The
+existing active-only `GET /api/v1/admin/location-types` is unchanged. A new
+page, `/admin/location-types`, is shown to the global administrator only;
+for any other role it renders a status line and issues no query. The admin
+location row gains `typeLabel`, so the edit form shows a retired type as
+"Label (retired)" and sends `type` only when it changed. Onboarding: the
+draft PATCH refuses a type that is not active, the validator reports an
+inactive stored type (the phase stays `location`, `readyToCommit` is false),
+and the rule-based chat asks for the type again instead of moving to the RTU
+step. No migration. `onboarding-chat.service.ts` (991 lines) first moved its
+MQTT template and assets summary, byte for byte, to
+`onboarding-chat-summaries.ts`.
+
+The owner ruled seven ADR gate questions and four plan questions, each for
+the recommended option. The code review found that I8b's active fixture
+location could race another suite's active-location count and that nothing
+gated the inactive-locations count; the fixture is now inactive and gates
+it. Security L1 (two roles untested on the counting route) and L2 (an
+uncapped code list in the validator message) were fixed. Recorded as known
+limits: the OpenAI chat branch does not force the type question again, and a
+reactivation between the chat's question and the answer renames the
+location.
+
+Verified: a named mutation per new test, the DB cases run on a cold-started
+scratch database; a full suite there (6652 passed; the failures were the
+`F4.160` web set and load timeouts that pass alone), repeated on the tree
+merged with `main` after a `package.json` conflict with `F4.71`; the stack
+rebuilt `--no-cache` (the API maps the five new routes; bundle
+`index-DmeGK8Yz`); API and browser as `admin` 21/21 and as `phe-admin` 9/9,
+the check's data removed afterwards. Code, security and compliance reviews
+ran. CI green on the first run of the merged tree.
+
+**Cascade:** no row lists `F4.162` in *Depends*. Owed separately: the
+`chore(agents):` sweep (§3 entries for the new files, §4.4's "no write route
+yet", the §6 status text and the §10.1 record for Amendment 1).
