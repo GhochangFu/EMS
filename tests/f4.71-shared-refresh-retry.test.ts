@@ -11,7 +11,7 @@ import { repoRoot, walk, withoutComments } from "./support/source-scan";
  * `apps/api/src/testing/cagg-materialize.ts`'s `retryOnConcurrentRefresh`.
  *
  * `refreshAggregatesFrom` already retries `55P03` once, internally, with
- * `REQUEST_PATH_RETRY` (`packages/db/src/refresh-aggregates.ts:125`, 2 attempts,
+ * `REQUEST_PATH_RETRY` (in `packages/db/src/refresh-aggregates.ts`, 2 attempts,
  * 1 s). That budget is sized for a live API request racing the scheduled
  * continuous-aggregate policies — one caller, one contention window. A fixture
  * calling the same function is a second, independent contender: three
@@ -31,20 +31,28 @@ import { repoRoot, walk, withoutComments } from "./support/source-scan";
  * why that file does not need the wrapper (rule 2).
  *
  * **Scan scope, and what is deliberately outside it.** Both rules walk
- * `apps/**` filtered to `.integration.{spec,test}.ts` — the same root `F4.53`
- * uses. `packages/db/src/refresh-aggregates.ts` (the function's own home,
+ * `apps/**` and `tests/**` filtered to `.integration.{spec,test}.ts` — `F4.53`
+ * walks `tests` too. That filter is also why this file does not flag itself:
+ * its `theAnalysisKillsTheMutation` strings quote `refreshAggregatesFrom(`
+ * unwrapped, but its name is not an integration suite's.
+ * `packages/db/src/refresh-aggregates.ts` (the function's own home),
  * `cagg-materialize.ts` (already wrapped by U1) and the production write
  * services are not suites and are out of scope by construction, not by
- * exemption. `tests/**` is unscanned by the same argument `f4.53` gives for its
- * own scan: this file's own `theAnalysisKillsTheMutation` mutation strings
- * quote `refreshAggregatesFrom(` unwrapped, and scanning `tests/` would flag
- * this file against itself. As of this commit no `tests/*.integration.*` file
- * calls either `refreshAggregatesFrom` or `CALL refresh_continuous_aggregate` —
- * confirmed by grep, not merely assumed.
+ * exemption.
+ *
+ * **Aliases.** An aliased import (`import { refreshAggregatesFrom as refresh }`)
+ * would hide every call from the `refreshAggregatesFrom(` pattern, so rule 1
+ * reports the alias itself as an offender rather than chasing the new name. A
+ * namespace call (`db.refreshAggregatesFrom(`) still matches. A rebinding by
+ * assignment (`const refresh = refreshAggregatesFrom;`) or a computed member
+ * (`db["refreshAggregatesFrom"](`) remains unseen — the same fail-open `F4.53`
+ * records for a query assembled by concatenation.
  */
 describe("F4.71 — the shared-aggregate refresh retries at the fixture layer", () => {
-  /** `apps/**` integration suites; the `.spec`/`.test` split `F4.53` also scans. */
+  /** Integration suites; the `.spec`/`.test` split `F4.53` also scans. */
   const INTEGRATION_SUITE = /\.integration\.(spec|test)\.tsx?$/;
+  /** `apps/**` and the top-level `tests/*.integration.test.ts` suites. */
+  const SCAN_ROOTS = ["apps", "tests"] as const;
 
   /**
    * How far back from a `refreshAggregatesFrom(` occurrence the scan looks for
@@ -79,6 +87,10 @@ describe("F4.71 — the shared-aggregate refresh retries at the fixture layer", 
         offenders.push(snippet);
       }
     }
+    // An aliased import renames every call out of reach of the pattern above.
+    for (const alias of src.matchAll(/\brefreshAggregatesFrom\s+as\s+\w+/g)) {
+      offenders.push(`aliased import: ${alias[0]}`);
+    }
     return { sites, offenders };
   }
 
@@ -90,7 +102,7 @@ describe("F4.71 — the shared-aggregate refresh retries at the fixture layer", 
   it("everyRefreshAggregatesFromInAnIntegrationSuiteIsWrappedInRetryOnConcurrentRefresh", () => {
     const offenders: string[] = [];
     let totalSites = 0;
-    for (const file of walk(join(repoRoot, "apps"))) {
+    for (const file of SCAN_ROOTS.flatMap((root) => walk(join(repoRoot, root)))) {
       if (!INTEGRATION_SUITE.test(file)) continue;
       const source = readFileSync(file, "utf8");
       const rel = relative(repoRoot, file).replace(/\\/g, "/");
@@ -107,7 +119,7 @@ describe("F4.71 — the shared-aggregate refresh retries at the fixture layer", 
     // pattern reddens this floor rather than silently emptying both lists.
     expect(
       totalSites,
-      "no refreshAggregatesFrom( call sites were found under apps/**/*.integration.* — " +
+      "no refreshAggregatesFrom( call sites were found under apps/** or tests/** *.integration.* — " +
         "the walk or the pattern is broken, and the empty offender list below " +
         "would prove nothing",
     ).toBeGreaterThanOrEqual(1);
@@ -146,7 +158,7 @@ describe("F4.71 — the shared-aggregate refresh retries at the fixture layer", 
     const unlisted: string[] = [];
     let scanned = 0;
 
-    for (const file of walk(join(repoRoot, "apps"))) {
+    for (const file of SCAN_ROOTS.flatMap((root) => walk(join(repoRoot, root)))) {
       if (!INTEGRATION_SUITE.test(file)) continue;
       scanned += 1;
       const rel = relative(repoRoot, file).replace(/\\/g, "/");
@@ -157,7 +169,7 @@ describe("F4.71 — the shared-aggregate refresh retries at the fixture layer", 
       }
     }
 
-    expect(scanned, "no apps/**/*.integration.* files were scanned").toBeGreaterThan(20);
+    expect(scanned, "no apps/** or tests/** *.integration.* files were scanned").toBeGreaterThan(20);
     expect(
       unlisted,
       `these files issue CALL refresh_continuous_aggregate directly with no allowlist entry ` +
@@ -188,5 +200,12 @@ describe("F4.71 — the shared-aggregate refresh retries at the fixture layer", 
     expect(
       offendingCalls("// await refreshAggregatesFrom(pool, a, b);\nconst x = 1;"),
     ).toHaveLength(0);
+
+    // An aliased import hides the call from the pattern, so the alias offends.
+    expect(
+      offendingCalls(
+        'import { refreshAggregatesFrom as refresh } from "@bms/db";\nawait refresh(pool, a, b);',
+      ),
+    ).toHaveLength(1);
   });
 });
