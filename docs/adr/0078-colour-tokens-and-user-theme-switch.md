@@ -2,10 +2,13 @@
 
 ## Status
 
-Proposed — drafted on 2026-09-28, before any implementation code. Eight gate
-questions were put to the owner one at a time; all eight were ruled as
-recommended, and each ruling is recorded under *Gate questions*. This record
-waits for the owner's review of the written text.
+Proposed — drafted on 2026-09-28, before any implementation code. Nine gate
+questions were put to the owner one at a time; all nine were ruled as
+recommended, and each ruling is recorded under *Gate questions*. **Q2 was
+asked twice**: the first asking named the Nexus document as the client's,
+which it is not, and the owner ruled again on the corrected facts. **Q9 was
+added after the first draft**, which had assumed an answer to it. This
+record waits for the owner's review of the written text.
 
 Implements row `F3.65`, which [ADR 0074](./0074-domain-dashboard-parity.md)
 decision 1 (Q1, Q1b) created with its own ADR. Promotes nothing out of
@@ -29,6 +32,10 @@ ADR: the colour-token layer, the dark palette, and where the choice is stored.
   uses of 154 distinct classes**. By palette: `bms` 1,339 · `gray` 745 ·
   `red` 406 · `white` 281 · `amber` 169 · `sky` 37 · `emerald` 35 ·
   `slate` 25 · `black` 23 · others 23.
+- Those classes use **76 distinct shades** (104 counting the opacity
+  modifier). **28** shades have 10 or more uses and carry most of the
+  3,080; about **48** have fewer than 10. The top five are `bms-muted` 723,
+  `gray-200` 387, `bms-ink` 321, `white` 281 and `bms-green` 271.
 - **117** of those uses carry an opacity modifier (`text-white/70`,
   `bg-bms-green/10`). A CSS-variable colour keeps `/NN` working only when the
   variable holds bare RGB channels (`0 166 81`), not a hex value.
@@ -38,6 +45,12 @@ ADR: the colour-token layer, the dark palette, and where the choice is stored.
   `world-map.tsx` 7, and the chart components. **Nine** files use ECharts,
   which takes colours from a JS option object and ignores CSS classes.
   `components/live-svg/crac-styles.css` and `sld-styles.css` hold no hex.
+- **No colour is stored as data.** A radial gauge band stores a `tone`
+  (`gaugeThresholdSchema` in `packages/shared/src/contracts/dashboard-builder.ts`:
+  `ok` · `info` · `warning` · `critical`), and code maps the tone to a hex
+  value (`WIDGET_TONE_COLOR` in `apps/web/src/lib/widget-catalog.ts`). No
+  contract and no `packages/db` table holds a colour, so every colour the app
+  paints is code and can follow the theme.
 - Tailwind is **3.4.17**, so `darkMode: ["selector", …]` (3.4.1+) and
   `rgb(var(--x) / <alpha-value>)` (3.3+) are both available. No new
   dependency is needed.
@@ -50,9 +63,19 @@ ADR: the colour-token layer, the dark palette, and where the choice is stored.
 - **At least three** spec files assert a colour class (`toHaveClass` or a `className`
   match on a palette class). Each one changes when its class is renamed.
 
-**The two palette sources.** The client's reference
-`docs/ion-exchange-nexus-dashboard-2026-08-29.html` defines a
-`:root[data-theme="dark"]` block of ten values:
+**The palette sources — and whose they are.** The client's own dark picture
+is the SOW reference images (pp. 9–10, `docs/BACKLOG.md` §7): a dark canvas
+with neon accents, held only as images, with no measured colour values.
+`docs/ux/ion-exchange-reference-alignment.md` §4.5 records the conflict with
+both mockups, which are light-canvas.
+
+`docs/ion-exchange-nexus-dashboard-2026-08-29.html` is **not** the client's.
+It is our own workshop document for Ion Exchange — ADR 0048 calls it a
+client mock *"drawn in the platform's own shell"*, and its stylesheet says its
+tokens are *"drawn from the product's own Tailwind theme"*. Its
+`:root[data-theme="dark"]` block styles the document page (the masthead, the
+legend, the sheets), not the dashboard mock inside it, whose `--a-*` tokens
+have light values only. It holds ten values:
 
 | Role (Nexus name) | Light | Dark |
 |---|---|---|
@@ -61,11 +84,11 @@ ADR: the colour-token layer, the dark palette, and where the choice is stored.
 | `ink` / `ink-2` / `ink-3` | `#1A2230` / `#4A5464` / `#7A8494` | `#E8ECF1` / `#A7B2C0` / `#78849A` |
 | `accent` / `accent-ink` / `accent-wash` | `#00A651` / `#007C3C` / `#E6F5EC` | `#3DCD58` / `#3DCD58` / `#14301F` |
 
-The block covers the neutrals and the accent. It has **no** dark value for
-the status colours (`--h-crit`, `--h-poor`, `--h-fair`, `--h-good` carry one
-value each) or for the header. The TRINETRA design-system artifact holds 86
-dark values, but it lives outside the repository, the client has not seen
-it, and several of its dark values equal the light ones.
+The block covers the neutrals and the accent, and keeps the TRINETRA green.
+It has **no** dark value for the status colours (`--h-crit`, `--h-poor`,
+`--h-fair`, `--h-good` carry one value each) or for the header. The TRINETRA
+design-system artifact holds 86 dark values, but it lives outside the
+repository and several of its dark values equal the light ones.
 
 **Measured contrast of the Nexus dark block (WCAG 2.x relative luminance).**
 
@@ -85,18 +108,19 @@ theme unchanged.
 
 ## Gate questions
 
-Asked one at a time on 2026-09-28. All eight were ruled as recommended.
+Asked one at a time on 2026-09-28. All nine were ruled as recommended.
 
 | # | Question | Ruling |
 |---|---|---|
 | Q1 | How does the app get a dark theme? | **Semantic tokens** — role names backed by CSS variables holding RGB channels, redefined under `[data-theme="dark"]`. Not a `dark:` twin per class; not re-pointing `white`/`gray-*`/`bms-*` themselves. |
-| Q2 | Which source is the authority for the dark palette? | **The Nexus dark block, measured.** Where a pair fails AA, this ADR (or its amendment) records the adjusted value and the reason. |
+| Q2 | Which source is the authority for the dark palette? | **The Nexus dark block, measured** — ruled twice. The first asking described the file as the client's; the second stated that it is our workshop document and that the client's only dark reference is the SOW images, with no measured values. The ruling held. Where a pair fails AA, this ADR (or its amendment) records the adjusted value and the reason. |
 | Q3 | Where is the choice stored? | **Per browser**, in `localStorage`. No column, no route. |
 | Q4 | Is there a "System" choice? | **No — Light and Dark only.** A user who never chooses sees light. |
 | Q5 | Do charts and schematics follow the theme? | **Yes, all of them** — ECharts re-renders from the token values; the schematics move their hex to the same variables. |
 | Q6 | What happens to the status colours? | **Same hue, tuned lightness** — each status keeps its hue; the dark value moves only as far as AA on the dark canvas needs. |
 | Q7 | How is the rule kept? | **A source-scan gate** in `tests/`, a ratchet during the migration and zero at the end. |
 | Q8 | How is the row split, and when is the switch visible? | **Three serial children; the switch appears in the last one.** Users never see a half-dark app. |
+| Q9 | How are the 76 shades mapped to roles? | **About 30 roles; rare shades merge.** Frequent shades keep their exact light value; a rare shade maps to its nearest role, so a few light pixels shift. Not one role per shade (~76, close to the declined Q1 option), and not a hard merge to ~15 (a light redesign). |
 
 ## Decision
 
@@ -106,20 +130,30 @@ Asked one at a time on 2026-09-28. All eight were ruled as recommended.
    under `:root[data-theme="dark"]`. `tailwind.config.js` maps each role to
    `rgb(var(--<role>) / <alpha-value>)`, so opacity modifiers keep working. A
    call site names a role (`bg-surface`, `text-ink-muted`, `border-line`),
-   never a hue. The role list — neutrals, accent, header chrome, focus, and a
-   foreground/background pair for each status — is fixed in the `F3.65a`
-   plan and shown to the owner at that plan's gate. `dark:` variants are not
+   never a hue. The role list — about 30 roles (Q9): neutrals, accent, header
+   chrome, focus, and a foreground/background pair for each status — is
+   fixed in the `F3.65a` plan and shown to the owner at that plan's gate. `dark:` variants are not
    the mechanism: where a surface needs a different treatment in dark, it
    gets a role, not a `dark:` class.
 
-2. **The light theme renders as today.** Every light role value is the value
-   the call site uses now, so the migration changes class names and not
-   pixels in light. A light pair that fails AA today (for example white on
-   `bms-green`, 3.19:1) is recorded in the contrast test's exact allowlist
-   with its reason; `F3.65` does not restyle the light theme.
+2. **The light theme keeps its frequent shades exactly; rare shades merge
+   (Q9).** Each of the 76 shades maps to one role. A role's light value is
+   the exact value of the frequent shade it replaces, so most call sites
+   change their class name and not their pixels. A rare shade maps to its
+   nearest role, and its call sites shift slightly. The `F3.65a` plan lists
+   every merged shade with its colour difference to the role, for the
+   owner's review at that plan's gate. A **mapping-table test** holds the
+   rule: every old class maps to a role, and a role's light value equals
+   Tailwind's resolved value for each shade the table marks as exact. A
+   light pair that fails AA today (for example white on `bms-green`,
+   3.19:1) is recorded in the contrast test's exact allowlist with its
+   reason; `F3.65` does not otherwise restyle the light theme.
 
-3. **The dark palette is the Nexus dark block, measured (Q2).** The ten
-   values in *Context* are the dark values of their roles. A role the block
+3. **The dark palette is the Nexus dark block, measured (Q2).** The block is
+   our own workshop document's, not the client's; it is the authority
+   because it keeps the TRINETRA neutrals and green and is in the
+   repository. The ten values in *Context* are the dark values of their
+   roles. A role the block
    does not cover (status, header, focus) gets a dark value derived under
    decision 6. Two Nexus values fail and are adjusted in the `F3.65a` plan:
    `ink-3` on `sheet` (4.25:1, body text needs 4.5:1) and the status colours
@@ -142,6 +176,9 @@ Asked one at a time on 2026-09-28. All eight were ruled as recommended.
    chart re-renders when the theme changes. The schematic SVGs (CRAC, SLD,
    the SMOC views, the world map) and `formula-editor.tsx` move their hex
    literals to the same CSS variables. No light panel sits on a dark page.
+   `WIDGET_TONE_COLOR` maps a stored `tone` to a role, not to a hex value;
+   the stored dashboard content does not change, because it holds tones and
+   no colours.
 
 6. **Status colours keep their hue and tune their lightness (Q6).** Critical,
    warning, OK, info, stale and offline each keep one hue in both themes; the
@@ -186,10 +223,11 @@ added, so §9.4 is not engaged.
   `bg-white` or a `#1A2230` added after `F3.65c`. The vocabulary becomes a
   review surface: a new role needs a light value, a dark value and a
   contrast pair.
-- The migration renames about 3,080 class uses in 137 files. Light pixels do
-  not change (decision 2), so the jsdom specs change only where they assert
-  a class (three files today); the browser check in each child compares the
-  light render before and after.
+- The migration renames about 3,080 class uses in 137 files. Light pixels
+  change only where a rare shade merges (decision 2), and the mapping-table
+  test holds the rest by construction, so no child needs a before-and-after
+  screenshot comparison. The jsdom specs change only where they assert a
+  class (at least three files today).
 - Rows that share `app-shell.tsx` — `F3.29` (shell chrome) and `F3.33` (the
   IONSiTE NEXUS rebrand) — should not run beside `F3.65a` or `F3.65c`.
 - **Out of scope:** the PDF and Excel reports and the notification emails
