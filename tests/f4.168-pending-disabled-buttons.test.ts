@@ -34,8 +34,24 @@ import {
  *    `disabled` does not pend is a finding;
  *  - a `<button` the scanner cannot delimit is a finding.
  *
- * `isLoading` / `isError` are not pending tokens. The full list of what is not covered lands with
- * the `F4.168` U6 docblock.
+ * **Decisions.**
+ *  - **D1** `isLoading` / `isError` are not pending tokens.
+ *  - **D2** the accessible name is the `aria-label` when present. A string `aria-label` over
+ *    swapping children is therefore a static name: the gate found a 34th site of that shape
+ *    (`dashboard-template-detail-page.tsx`, "Confirm instantiate") that the plan's count missed.
+ *  - **D3** a bystander is declared, not inferred.
+ *  - **D4** per-row buttons key the pending name on `m.variables`; `disabled` stays shared.
+ *
+ * **NOT covered — these shapes escape the scan today:**
+ *  - a prop-shaped swapped identifier: with `busy = saving || clearing`, a label on the sibling
+ *    prop passes, because both are in `D` (H9b pins the gap);
+ *  - a flag whose name is outside `PENDING_VOCAB` and has no same-file definition that resolves
+ *    to a pending token: its button is out of scope;
+ *  - `isLoading` / `isError` (D1): a button disabled only on them is out of scope;
+ *  - a pending button that is a component (`<Button>`) rather than a literal `<button>`;
+ *  - a label computed into a variable before the `<button>`: the children read the variable,
+ *    and the name counts only if that variable resolves through a same-file `const` to a token
+ *    in `D`.
  *
  * Lives in `tests/` because `apps/web`'s tsconfig carries no node types; `typecheck:tests` lists
  * it by hand. The scanner lives in `tests/support/pending-button-scan.ts`, shared with `F4.164`.

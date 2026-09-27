@@ -22,8 +22,9 @@ import { pendingButtons, pendingButtonsMissingAriaBusy, webSourceFiles } from ".
  * children, where the check cannot see it. It also cuts at the `>` of a Tailwind
  * `className="[&>svg]:…"`.
  *
- * **What counts as a pending flag** (collected from the children only):
- *  - any `X.isPending` or `X.isFetchingNextPage` anywhere in the children, where `X` is an
+ * **What counts as a pending flag** (collected from the children and, since `F4.168`, from the
+ * `aria-label={…}` expression — a swapping `aria-label` is a label too):
+ *  - any `X.isPending` or `X.isFetchingNextPage` anywhere in those, where `X` is an
  *    identifier or a dotted chain (`props.saveM.isPending`), and `?.` counts as `.`
  *    (`saveM?.isPending`). The surrounding condition does not matter:
  *    `importM.isPending && importM.variables === entry.code ? …` is caught;
@@ -209,7 +210,7 @@ describe("F4.164: a pending label-swap <button> carries aria-busy", () => {
     expect(findings, `pending buttons without a matching aria-busy:\n${findings.join("\n")}`).toEqual([]);
   });
 
-  it("G6 the scan found at least 47 pending-button segments (a broken walk would pass G5 vacuously)", () => {
-    expect(scanTree().segments).toBeGreaterThanOrEqual(47);
+  it("G6 the scan found at least 69 pending-button segments (a broken walk would pass G5 vacuously)", () => {
+    expect(scanTree().segments).toBeGreaterThanOrEqual(69);
   });
 });
