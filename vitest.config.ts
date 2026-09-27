@@ -110,9 +110,11 @@ export default defineConfig({
       // the real method instead of reconstructing its query.
       //
       // `packages/db/src/refresh-aggregates.ts` is NOT in the denominator:
-      // `include` covers `apps/*`, not `packages/db`. It is exercised by CI
-      // running `pnpm db:refresh-aggregates`, not by a test. (Since `F4.71` its
-      // pure `inscribedWindowIsEmpty` has a spec, outside this denominator.)
+      // `include` covers `apps/*`, not `packages/db`. `main()` is exercised by
+      // CI running `pnpm db:refresh-aggregates`, not by a test. (Since `F4.71`
+      // its pure `inscribedWindowIsEmpty` has a spec, and since `F4.166`
+      // `refreshAggregatesFrom` has a spec and an integration case — all
+      // outside this denominator.)
       //
       // Measured 2026-08-10 at E8.3 HEAD with ADR 0022 Amendment 6 — the
       // contested-code fix, substring key matching, the prototype-key guards,
