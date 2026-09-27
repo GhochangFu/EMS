@@ -78,10 +78,22 @@ function loadCliEnv(): void {
  * covers two levels precisely because one level could not have caught it.
  */
 export const LEVELS = [
-  { view: "telemetry.point_values_1m", source: { raw: "point_values" } },
-  { view: "telemetry.point_values_5m", source: { aggregate: "point_values_1m" } },
-  { view: "telemetry.point_values_1h", source: { aggregate: "point_values_5m" } },
-  { view: "telemetry.point_values_1d", source: { aggregate: "point_values_1h" } },
+  { view: "telemetry.point_values_1m", source: { raw: "point_values" }, bucketWidthMs: 60_000 },
+  {
+    view: "telemetry.point_values_5m",
+    source: { aggregate: "point_values_1m" },
+    bucketWidthMs: 5 * 60_000,
+  },
+  {
+    view: "telemetry.point_values_1h",
+    source: { aggregate: "point_values_5m" },
+    bucketWidthMs: 60 * 60_000,
+  },
+  {
+    view: "telemetry.point_values_1d",
+    source: { aggregate: "point_values_1h" },
+    bucketWidthMs: 24 * 60 * 60_000,
+  },
 ] as const;
 
 type LevelSource = (typeof LEVELS)[number]["source"];
@@ -400,6 +412,48 @@ function sourceName(source: LevelSource): string {
   return "raw" in source ? `telemetry.${source.raw}` : `telemetry.${source.aggregate}`;
 }
 
+/**
+ * `F4.71` (CI signature `22023 refresh window too small`) — true when the
+ * window `[fromMs, nowMs)` holds no COMPLETE bucket of width `bucketWidthMs`,
+ * i.e. calling `refresh_continuous_aggregate` over it would raise that error.
+ *
+ * TimescaleDB inscribes the refresh window in whole buckets before it acts:
+ * `window_start` rounds UP to the next bucket boundary (`ceil`), `window_end`
+ * rounds DOWN to the previous one (`floor`) — the same rounding
+ * `refreshAggregatesFrom`'s docblock explains for its own margin. The window
+ * is empty exactly when the rounded end has not advanced past the rounded
+ * start: `floor(now, w) <= ceil(from, w)`.
+ *
+ * **Not `now - from < w`.** A window can span MORE than one bucket-width and
+ * still be empty if it is misaligned with the bucket grid: `from` at 00:30,
+ * `now` 24h10m later lands at the NEXT day's 00:40 — `floor(now, w)` is that
+ * next day's 00:00, `ceil(from, w)` is the SAME next day's 00:00 (rounding
+ * 00:30 up to the coming boundary), so the inscribed window is still empty
+ * even though the raw span (24h10m) exceeds the bucket width (24h). The
+ * plain subtraction would say "wide enough" and be wrong. See
+ * `refresh-aggregates.spec.ts` for the case this reddens.
+ *
+ * Every bucket in `0027_continuous_aggregates.sql` is `time_bucket(INTERVAL
+ * '…', col)` with no timezone or origin argument, so buckets align on plain
+ * multiples of their width counted from the Unix epoch — the `Math.floor` /
+ * `Math.ceil` arithmetic below matches Timescale's own rounding exactly. A
+ * bucket definition that added an origin or timezone argument would need a
+ * different formula here.
+ *
+ * Pure and exported for `refresh-aggregates.spec.ts`: no client, no clock
+ * read — the caller supplies `nowMs` (measured once per level in `main`, from
+ * the same `Date.now()` the rest of the loop already uses).
+ */
+export function inscribedWindowIsEmpty(
+  fromMs: number,
+  nowMs: number,
+  bucketWidthMs: number,
+): boolean {
+  const windowStart = Math.ceil(fromMs / bucketWidthMs) * bucketWidthMs;
+  const windowEnd = Math.floor(nowMs / bucketWidthMs) * bucketWidthMs;
+  return windowEnd <= windowStart;
+}
+
 async function main(): Promise<void> {
   loadCliEnv();
   const databaseUrl = process.env.DATABASE_URL;
@@ -451,7 +505,7 @@ async function main(): Promise<void> {
 
     // Each level is bounded by ITS OWN source's floor and recomputed in order, so
     // a level refreshed here is already whole before the next one reads it.
-    for (const { view, source } of LEVELS) {
+    for (const { view, source, bucketWidthMs } of LEVELS) {
       const started = Date.now();
       const from = await sourceFloor(client, source);
 
@@ -487,6 +541,35 @@ async function main(): Promise<void> {
             "which is in the future; refusing to refresh over an inverted window",
         );
         return;
+      }
+
+      // `F4.71` (CI signature `22023 refresh window too small`, recurring): the
+      // window `[from, now())` can be non-empty in wall-clock terms and still
+      // hold NO COMPLETE BUCKET at this level's own width — the CI run that
+      // executes within ~2 minutes after an hour boundary on a day `_1h`'s
+      // materialization hypertable opened a new chunk. Calling `refreshLevel`
+      // over such a window raises `22023` outright.
+      //
+      // Skipping THIS level only, not the levels above it: `inscribedWindowIsEmpty`
+      // being true means only that today's CALL would materialise nothing new at
+      // THIS level — it says nothing about whether the source is empty. The level
+      // above reads this level's MATERIALIZATION HYPERTABLE (`sourceFloor`'s own
+      // chunk-catalog query), which already holds whatever this level's PRIOR
+      // successful refreshes produced; skipping today's no-op refresh does not
+      // change that catalog, so the level above's own floor and its own
+      // `inscribedWindowIsEmpty` check are unaffected and must run independently.
+      // Contrast the `from === null` branch above, which `return`s rather than
+      // `continue`s: an empty SOURCE really does propagate upward (a refresh
+      // over it would delete rows at every level still to come), while an empty
+      // WINDOW at one level is a local, transient condition tied to where `now()`
+      // sits inside that level's own bucket grid.
+      if (inscribedWindowIsEmpty(from.getTime(), Date.now(), bucketWidthMs)) {
+        report(
+          `[F4.71] ${view}: the window [${from.toISOString()}, now()) holds no complete ` +
+            "bucket at this level's width; skipping this level (refreshing it would raise " +
+            '"22023: refresh window too small")',
+        );
+        continue;
       }
 
       // Bounded BELOW at the source's oldest chunk and **capped at `now()`** —

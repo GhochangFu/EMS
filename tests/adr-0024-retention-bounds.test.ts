@@ -43,9 +43,14 @@ function executableText(source: string): string {
  * ADR 0024 (`F4.2`) — static guards on compression and retention.
  *
  * Here rather than beside the code for the reason `adr-0018-source-axis.test.ts`
- * gives: `packages/db` is not a Vitest project, so a `.spec`/`.test` pair there
- * would satisfy the orphan invariant while nothing ran it. Per §4.6's carve-out,
- * files in `tests/` hold their assertions inline.
+ * gives: at the time this file was written `packages/db` had no Vitest project
+ * (that changed for `F4.16`'s `roles.spec.ts`/`roles.test.ts`, and `F4.71`'s
+ * `refresh-aggregates.spec.ts`/`.test.ts` now covers `inscribedWindowIsEmpty`
+ * there directly). This file stays, because the invariant below is about the
+ * SHAPE of `main()`'s loop, not about any one pure function inside it, and
+ * moving it would need a database-free way to assert call ORDER across the
+ * whole loop body — which `packages/db/src/refresh-aggregates.spec.ts` does not
+ * attempt. Per §4.6's carve-out, files in `tests/` hold their assertions inline.
  *
  * **These exist because CI cannot catch the regression any other way.** The
  * behavioural proof is `apps/api/src/telemetry/aggregate-retention.integration.*`,
@@ -134,6 +139,88 @@ describe("ADR 0024 — compression and retention bounds", () => {
       script,
       "aggregate sources must join continuous_aggregates to reach their materialization hypertable",
     ).toMatch(/materialization_hypertable_name/);
+  });
+
+  /**
+   * `F4.71` — the CI signature `22023 refresh window too small`. `main()`'s
+   * level loop must check {@link inscribedWindowIsEmpty} and `continue` BEFORE
+   * calling `refreshLevel`, not after — checking after means the `CALL` has
+   * already raised. Scoped to the LOOP BODY (`for (const { view, source,
+   * bucketWidthMs } of LEVELS) { … }`), not the whole file: `refreshLevel` is
+   * also the name of the exported function's own declaration and its
+   * definition further down the file, and a whole-file `indexOf` would find
+   * one of those instead of the call site inside the loop.
+   *
+   * `executableText` strips comments first — the guard's own docblock above
+   * the `if` names both `inscribedWindowIsEmpty` and `refreshLevel` in prose,
+   * and an unstripped scan would keep passing after the guard call itself was
+   * deleted, reading the comment as the call (`F3.35`'s "a text scan reads
+   * docblock prose too").
+   */
+  it("checks inscribedWindowIsEmpty before calling refreshLevel in the level loop", () => {
+    const text = executableText(read("packages/db/src/refresh-aggregates.ts"));
+
+    const loopStart = text.indexOf("for (const { view, source, bucketWidthMs } of LEVELS)");
+    if (loopStart === -1) {
+      throw new Error(
+        "main()'s level loop signature was not found verbatim — this scan cannot locate the " +
+          "loop body it is meant to check",
+      );
+    }
+    // From `of LEVELS)`, not from `loopStart` itself — the destructure
+    // `{ view, source, bucketWidthMs }` has its OWN opening brace right after
+    // `loopStart`, and a bare `indexOf("{", loopStart)` finds that one instead
+    // of the loop body's.
+    const ofLevels = text.indexOf("of LEVELS)", loopStart);
+    const braceOpen = text.indexOf("{", ofLevels);
+    if (ofLevels === -1 || braceOpen === -1) {
+      throw new Error("the level loop's opening brace was not found");
+    }
+    // Depth-counts `{`/`}`, but SKIPS characters inside a backtick template —
+    // the loop body's own `report()` calls interpolate `${view}` and friends,
+    // and those braces are not block braces. Without this the naive count goes
+    // out of balance against the loop's own SQL/report template literals and
+    // this scan finds the wrong closing brace (or none).
+    let depth = 0;
+    let inTemplate = false;
+    let braceClose = -1;
+    for (let i = braceOpen; i < text.length; i += 1) {
+      const char = text[i];
+      if (char === "`") {
+        inTemplate = !inTemplate;
+        continue;
+      }
+      if (inTemplate) continue;
+      if (char === "{") depth += 1;
+      else if (char === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          braceClose = i;
+          break;
+        }
+      }
+    }
+    if (braceClose === -1) {
+      throw new Error("the level loop's closing brace was not found (unbalanced braces)");
+    }
+    const loopBody = text.slice(braceOpen, braceClose);
+
+    const guardAt = loopBody.indexOf("inscribedWindowIsEmpty(");
+    const refreshAt = loopBody.indexOf("refreshLevel(");
+
+    expect(
+      guardAt,
+      "the level loop must call inscribedWindowIsEmpty( — this loop body no longer does",
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      refreshAt,
+      "the level loop must call refreshLevel( — this loop body no longer does",
+    ).toBeGreaterThanOrEqual(0);
+    expect(
+      guardAt,
+      "inscribedWindowIsEmpty must be checked BEFORE refreshLevel is called in the level loop, " +
+        "not after — checking after means the CALL already raised 22023",
+    ).toBeLessThan(refreshAt);
   });
 
   it("retains each fine aggregate strictly longer than raw", () => {
