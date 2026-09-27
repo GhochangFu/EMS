@@ -214,6 +214,36 @@ export async function twoDeletesInFlightKeepBothButtonsPending(): Promise<void> 
   expect(within(first).getByRole("button", { name: "Deleting…" })).toBeDisabled();
 }
 
+/** F4.164 U4: a pending Delete carries `aria-busy="true"`. */
+export async function aPendingDeleteHasAriaBusyTrue(): Promise<void> {
+  vi.spyOn(reportsApi, "fetchReportFiles").mockResolvedValue([FIRST, SECOND]);
+  vi.spyOn(reportsApi, "deleteReportFile").mockReturnValue(new Promise<void>(() => {}));
+
+  renderHistory();
+
+  const first = await rowFor(FIRST.filename);
+  await userEvent.click(within(first).getByRole("button", { name: "Delete" }));
+
+  const busy = await within(first).findByRole("button", { name: "Deleting…" });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+}
+
+/** F4.164 U4: another row's idle Delete carries `aria-busy="false"`. */
+export async function anIdleDeleteHasAriaBusyFalse(): Promise<void> {
+  vi.spyOn(reportsApi, "fetchReportFiles").mockResolvedValue([FIRST, SECOND]);
+  vi.spyOn(reportsApi, "deleteReportFile").mockReturnValue(new Promise<void>(() => {}));
+
+  renderHistory();
+
+  const first = await rowFor(FIRST.filename);
+  const second = await rowFor(SECOND.filename);
+  await userEvent.click(within(first).getByRole("button", { name: "Delete" }));
+  await within(first).findByRole("button", { name: "Deleting…" });
+
+  const idle = within(second).getByRole("button", { name: "Delete" });
+  expect(idle).toHaveAttribute("aria-busy", "false");
+}
+
 /**
  * Releasing the first delete alone returns only the first row's button — the
  * positive control for the row above: a list that stayed "Deleting…" for ever

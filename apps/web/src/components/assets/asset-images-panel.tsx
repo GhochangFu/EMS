@@ -205,6 +205,7 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
               type="submit"
               className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
               disabled={blockedReason !== null || uploadMutation.isPending}
+              aria-busy={uploadMutation.isPending}
             >
               {uploadMutation.isPending ? "Uploading…" : "Upload"}
             </button>

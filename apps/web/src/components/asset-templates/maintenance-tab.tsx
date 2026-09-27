@@ -383,6 +383,7 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
           <button
             type="button"
             disabled={blocked || !changed || saveM.isPending}
+            aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
             className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
           >

@@ -126,6 +126,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
             type="button"
             className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
             disabled={!file || previewMutation.isPending}
+            aria-busy={previewMutation.isPending}
             onClick={() => previewMutation.mutate()}
           >
             {previewMutation.isPending ? "Checking…" : "Preview"}
@@ -168,6 +169,7 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
             type="button"
             className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
             disabled={preview.acceptedCount === 0 || commitMutation.isPending || commitResult !== null}
+            aria-busy={commitMutation.isPending}
             onClick={() => commitMutation.mutate()}
           >
             {commitResult ? "Committed" : commitMutation.isPending ? "Committing…" : "Commit"}

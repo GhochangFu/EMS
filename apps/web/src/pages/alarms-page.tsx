@@ -444,6 +444,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
             className="text-sm font-medium text-bms-green hover:underline"
             onClick={() => void listQ.fetchNextPage()}
             disabled={listQ.isFetchingNextPage}
+            aria-busy={listQ.isFetchingNextPage}
           >
             {listQ.isFetchingNextPage ? "Loading…" : "Load more"}
           </button>
@@ -494,6 +495,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                 <button
                   type="submit"
                   disabled={ackM.isPending || reason.trim().length < 3}
+                  aria-busy={ackM.isPending}
                   className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {ackM.isPending ? "Saving…" : "Confirm ack"}

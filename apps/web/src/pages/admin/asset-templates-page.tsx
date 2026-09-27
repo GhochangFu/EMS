@@ -481,7 +481,9 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
               guard red by design. */}
           <StockCatalogAccordion
             groups={stockGroups}
-            renderEntry={(entry) => (
+            renderEntry={(entry) => {
+              const importingThis = importM.isPending && importM.variables === entry.code;
+              return (
               <li className="flex flex-wrap items-center justify-between gap-2 py-2">
                 <div>
                   <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
@@ -515,19 +517,19 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     type="button"
                     aria-label={`Import ${entry.name}`}
                     disabled={importOrgId === "" || importM.isPending}
+                    aria-busy={importingThis}
                     onClick={() => {
                       setImportError(null);
                       importM.mutate(entry.code);
                     }}
                     className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
                   >
-                    {importM.isPending && importM.variables === entry.code
-                      ? "Importing…"
-                      : "Import"}
+                    {importingThis ? "Importing…" : "Import"}
                   </button>
                 </div>
               </li>
-            )}
+              );
+            }}
           />
 
         </SectionCard>
@@ -653,6 +655,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
               <button
                 type="submit"
                 disabled={createM.isPending}
+                aria-busy={createM.isPending}
                 className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
               >
                 {createM.isPending ? "Creating…" : "Create draft"}

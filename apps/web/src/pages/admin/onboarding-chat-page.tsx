@@ -454,6 +454,7 @@ export function OnboardingChatPage({ user }: OnboardingChatPageProps) {
                                     credentialsMutation.isPending ||
                                     (!credUsername && !credPassword)
                                   }
+                                  aria-busy={credentialsMutation.isPending}
                                   className="w-full rounded bg-bms-green px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
                                 >
                                   {credentialsMutation.isPending ? "Encrypting…" : "Save encrypted"}

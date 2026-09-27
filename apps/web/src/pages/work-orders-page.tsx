@@ -833,6 +833,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                     title.trim().length < 3 ||
                     assetsQ.isLoading
                   }
+                  aria-busy={createM.isPending}
                   className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {createM.isPending ? "Creating…" : "Create"}
@@ -900,6 +901,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 <button
                   type="submit"
                   disabled={statusM.isPending}
+                  aria-busy={statusM.isPending}
                   className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {statusM.isPending ? "Saving…" : "Save status"}
@@ -957,6 +959,7 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                 <button
                   type="submit"
                   disabled={closeM.isPending || closeReason.trim().length < 3}
+                  aria-busy={closeM.isPending}
                   className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   {closeM.isPending ? "Closing…" : "Close work order"}

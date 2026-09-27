@@ -461,6 +461,7 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
           <button
             type="button"
             disabled={problems.length > 0 || !changed || saveM.isPending}
+            aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
             className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
           >

@@ -207,6 +207,7 @@ export function DetailsTab({ template, editable, onSaved, onDirtyChange }: Detai
           <button
             type="submit"
             disabled={blocked || !patch || saveM.isPending}
+            aria-busy={saveM.isPending}
             className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
           >
             {saveM.isPending ? "Saving…" : "Save details"}

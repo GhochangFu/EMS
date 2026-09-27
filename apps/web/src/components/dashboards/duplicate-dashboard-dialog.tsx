@@ -248,6 +248,7 @@ export function DuplicateDashboardDialog({
             <button
               type="button"
               disabled={blocked}
+              aria-busy={duplicateM.isPending}
               onClick={() => duplicateM.mutate()}
               className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
             >

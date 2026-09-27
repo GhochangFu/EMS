@@ -419,6 +419,30 @@ export async function twoDeletesInFlightKeepBothButtonsPending(): Promise<void> 
   expect(within(first).getByRole("button", { name: "Deleting…" })).toBeDisabled();
 }
 
+/** F4.164 U4: a pending Delete carries `aria-busy="true"`. */
+export async function aPendingDeleteHasAriaBusyTrue(): Promise<void> {
+  renderSchedules("admin", [FIRST, SECOND]);
+  vi.spyOn(reportsApi, "deleteReportSchedule").mockReturnValue(new Promise<void>(() => {}));
+  const first = await rowFor(FIRST.name);
+  await userEvent.click(within(first).getByRole("button", { name: "Delete" }));
+
+  const busy = await within(first).findByRole("button", { name: "Deleting…" });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+}
+
+/** F4.164 U4: another row's idle Delete carries `aria-busy="false"`. */
+export async function anIdleDeleteHasAriaBusyFalse(): Promise<void> {
+  renderSchedules("admin", [FIRST, SECOND]);
+  vi.spyOn(reportsApi, "deleteReportSchedule").mockReturnValue(new Promise<void>(() => {}));
+  const first = await rowFor(FIRST.name);
+  const second = await rowFor(SECOND.name);
+  await userEvent.click(within(first).getByRole("button", { name: "Delete" }));
+  await within(first).findByRole("button", { name: "Deleting…" });
+
+  const idle = within(second).getByRole("button", { name: "Delete" });
+  expect(idle).toHaveAttribute("aria-busy", "false");
+}
+
 /** While a row's delete is open, that row's Edit is disabled too; the other row's Edit stays enabled. */
 export async function aDeleteInFlightDisablesThatRowsEdit(): Promise<void> {
   renderSchedules("admin", [FIRST, SECOND]);
