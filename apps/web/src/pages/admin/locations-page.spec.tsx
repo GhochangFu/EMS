@@ -287,6 +287,104 @@ export async function editingShowsTheRowsOwnTypeSelected(): Promise<void> {
   expect(select.selectedOptions[0]?.textContent).toBe("CSMOC");
 }
 
+/** D8 (`F4.162`) fixture — a location whose stored type is retired: not among the four active
+ * codes the stubbed list returns. */
+function retiredTypeRow(): AdminLocationDto {
+  return location({
+    id: "44444444-4444-4444-4444-444444444444",
+    code: "E41B-RETIRED",
+    slug: "e41b-retired",
+    name: "Retired-type station",
+    type: "old_type",
+    typeLabel: "Old type",
+  });
+}
+
+function stubApiWithRetiredRow(row: AdminLocationDto): void {
+  vi.spyOn(api, "fetchAdminLocations").mockResolvedValue({ items: [row, ...LOCATIONS.items] });
+  vi.spyOn(api, "fetchAdminLocationTypes").mockResolvedValue(LOCATION_TYPES);
+  vi.spyOn(api, "createAdminLocation").mockResolvedValue(LOCATIONS.items[0]!);
+  vi.spyOn(api, "updateAdminLocation").mockResolvedValue(LOCATIONS.items[0]!);
+  vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue(ORGANIZATIONS as never);
+  vi.spyOn(api, "fetchSiteControlRoomView").mockResolvedValue({
+    locationId: row.id,
+    organizationId: ORG_ID,
+    kind: "generated",
+    dashboardId: null,
+    builtinKey: null,
+    updatedAt: null,
+    updatedBy: null,
+  });
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({ items: [] });
+  vi.spyOn(groupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [] });
+}
+
+async function openEditOnRetiredRow(): Promise<AdminLocationDto> {
+  const row = retiredTypeRow();
+  stubApiWithRetiredRow(row);
+  renderPage();
+  const tr = (await screen.findByText("Retired-type station")).closest("tr")!;
+  await userEvent.click(within(tr).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("heading", { name: "Edit location" });
+  return row;
+}
+
+/** P5 (`F4.162` D8) — editing a fixture row with a retired type shows it selected, labelled
+ * "(retired)". Mutation: drop the extra option. */
+export async function editingARetiredTypeShowsItSelectedAsRetired(): Promise<void> {
+  await openEditOnRetiredRow();
+
+  const select = (await screen.findByLabelText("Type")) as HTMLSelectElement;
+  expect(select.value).toBe("old_type");
+  expect(select.selectedOptions[0]?.textContent).toBe("Old type (retired)");
+}
+
+/** P6 (`F4.162` D8) — saving that edit untouched sends a PATCH body with no `type` key.
+ * Mutation: always send `type`. */
+export async function savingARetiredTypeUntouchedOmitsType(): Promise<void> {
+  await openEditOnRetiredRow();
+
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    expect(api.updateAdminLocation).toHaveBeenCalledTimes(1);
+  });
+  const payload = vi.mocked(api.updateAdminLocation).mock.calls[0]![1];
+  expect(payload).not.toHaveProperty("type");
+}
+
+/** P7 (`F4.162` D8) — picking an active type then saving sends that `type`. Mutation: never
+ * send `type` on an edit. */
+export async function pickingANewTypeThenSavingSendsIt(): Promise<void> {
+  await openEditOnRetiredRow();
+
+  await userEvent.selectOptions(screen.getByLabelText("Type"), "pump_station");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    expect(api.updateAdminLocation).toHaveBeenCalledTimes(1);
+  });
+  const payload = vi.mocked(api.updateAdminLocation).mock.calls[0]![1];
+  expect(payload).toHaveProperty("type", "pump_station");
+}
+
+/** P8 (`F4.162` D8) — a create still sends `type`, unaffected by the edit-path omission.
+ * Mutation: apply the omission to creates too. */
+export async function createStillSendsType(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+  await fillRequired();
+
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
+  });
+  const payload = vi.mocked(api.createAdminLocation).mock.calls[0]![0];
+  expect(payload).toHaveProperty("type", LOCATION_TYPES.items[0]!.code);
+}
+
 /** P4 (`F4.157` D9) — every API call in this render goes through the stubbed module; the
  * fetch spy sees zero calls. Mutation: an unstubbed producer would reach `:4000`.
  *
