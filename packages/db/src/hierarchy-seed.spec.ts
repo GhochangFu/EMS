@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { expect } from "vitest";
 
-import { DOMAIN_RTU_SUFFIX, simRtuCode, simRtuDisplayName } from "./hierarchy-seed";
+import { DOMAIN_RTU_SUFFIX, SEED_ORGANIZATION_CODES, simRtuCode, simRtuDisplayName } from "./hierarchy-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
@@ -190,4 +192,43 @@ export function assertTheTailKeepsTheUppercasedDomain(): void {
   const name = simRtuDisplayName(N255, "it");
   expect(name.endsWith(" IT Simulator"), `the name must end " IT Simulator": ...${name.slice(-20)}`).toBe(true);
   expect(codePoints(name)).toBe(255);
+}
+
+/** Where `hierarchy-seed.ts` might be: the package root or the repository root. */
+const HIERARCHY_SEED_CANDIDATES = ["src/hierarchy-seed.ts", "packages/db/src/hierarchy-seed.ts"];
+
+/**
+ * The organization codes the `ensureOrganizations` statement writes, read off
+ * its literal VALUES rows (`('CODE', …)`). Fails, naming what is missing, when
+ * the function or its statement cannot be found.
+ */
+function ensureOrganizationsLiteralCodes(): string[] {
+  const path = HIERARCHY_SEED_CANDIDATES.map((c) => resolve(process.cwd(), c)).find((p) => existsSync(p));
+  if (path === undefined) {
+    throw new Error(`hierarchy-seed.ts not found from ${process.cwd()}; tried ${HIERARCHY_SEED_CANDIDATES.join(", ")}`);
+  }
+  const source = readFileSync(path, "utf8");
+  const start = source.indexOf("export async function ensureOrganizations(");
+  if (start < 0) throw new Error("ensureOrganizations is missing from hierarchy-seed.ts");
+  const open = source.indexOf("`", start);
+  const close = open < 0 ? -1 : source.indexOf("`", open + 1);
+  if (close < 0) throw new Error("ensureOrganizations has no SQL template");
+  const sql = source.slice(open + 1, close);
+  const values = sql.slice(sql.indexOf("VALUES"), sql.indexOf("ON CONFLICT"));
+  return [...values.matchAll(/\(\s*'([^']+)'/g)].map((match) => match[1] as string);
+}
+
+/**
+ * `F4.169`/`F4.170` addendum — the boot gate counts the codes in
+ * `SEED_ORGANIZATION_CODES` present, and `ensureOrganizations` keeps its own
+ * literal rows (`tests/e4.1c-organization-currency-schema.test.ts` reads
+ * them). This holds the two equal, so a third seed organization added to the
+ * statement alone, or to the list alone, fails here.
+ */
+export function assertTheSeedOrganizationListMatchesTheInsert(): void {
+  const codes = ensureOrganizationsLiteralCodes();
+  expect(codes.length, "the ensureOrganizations VALUES rows must be read").toBeGreaterThan(0);
+  expect(codes, "SEED_ORGANIZATION_CODES must equal the codes ensureOrganizations inserts").toEqual([
+    ...SEED_ORGANIZATION_CODES,
+  ]);
 }

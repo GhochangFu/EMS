@@ -12,7 +12,14 @@ import {
   assertOnlyElectricalAssetsTakeARole,
   assertTheGatewayTakesNoRole,
   assertTheRulingMapsEveryPheDevice,
+  assertTheSeedRolesNoPheEnvironmentDevice,
 } from "./asset-groups-seed.spec";
+
+describe("F4.169/F4.170 addendum — ruling 10: the seed roles no PHE environment device", () => {
+  it("gives none of the twelve PHE environment gateways a role", () => {
+    assertTheSeedRolesNoPheEnvironmentDevice();
+  });
+});
 
 describe("F3.41 — demoRoleForAsset carries the owner's meter/pump ruling", () => {
   it("maps PHE WB's 48 devices to 12 meters, 24 pumps and 12 unroled gateways", () => {

@@ -229,3 +229,29 @@ export function assertTheWaterGroupIsNamedWater(): void {
 export function assertAWaterAssetTakesNoTrainRole(): void {
   expect(demoRoleForAsset("WTR-WTP-01", "water")).toBeNull();
 }
+
+/**
+ * `F4.169`/`F4.170` addendum, owner ruling 10 (2026-09-28): the boot gate no
+ * longer counts PHE environment members carrying a role, because an
+ * administrator may set one through the role picker and that must not stop
+ * the next boot. What the count held — the seed gives none of the twelve
+ * `PHE-AIRSP1051M-*` gateways a role — is held here instead, through the real
+ * catalog and the real functions.
+ *
+ * The count of environment devices is asserted first, so a catalog or a
+ * `deviceDomain` that stopped producing them cannot pass by vacuum.
+ */
+export function assertTheSeedRolesNoPheEnvironmentDevice(): void {
+  const catalog = loadPheCatalog();
+  const environment = new Set<string>();
+  for (const row of catalog.rows) {
+    if (deviceDomain(row.DeviceCode, row.ModelDeviceCode) === "environment") {
+      environment.add(assetCode(row.DeviceCode));
+    }
+  }
+  expect(environment.size, "the PHE catalog must hold its twelve environment gateways").toBe(12);
+  expect(
+    [...environment].filter((code) => demoRoleForAsset(code, "environment") !== null),
+    "the seed must give no PHE environment device a role",
+  ).toEqual([]);
+}

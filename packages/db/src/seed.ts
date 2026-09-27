@@ -41,11 +41,7 @@ import {
   seedPheOrganizationAdmin,
   seedScopedDemoUsers,
 } from "./demo-users-seed";
-import {
-  buildEskomAssetCatalog,
-  demoAssetsForRsmoc,
-  seedEskomAssets,
-} from "./eskom-assets-seed";
+import { eskomSeedAssetCatalog, seedEskomAssets } from "./eskom-assets-seed";
 import {
   renameLegacyCapeTownMapLocation,
   seedEskomLocations,
@@ -115,7 +111,6 @@ async function main(): Promise<void> {
     connectionString: resolveSeedSuperuserUrl(databaseUrl, process.env),
   });
   const identityDb = createDb(superuserPool);
-  const controlRoomSiteName = "RSMOC Western Cape";
   const mapLocationRows = [
     ...mapLocationRowsForInsert(),
     ...pheMapLocationRowsForInsert(),
@@ -123,11 +118,6 @@ async function main(): Promise<void> {
   // Written by `seedEskomLadderRules` in the second ESKOM bracket, read by the
   // verifier after every bracket has closed.
   let ladderCollisionSkips: LadderCollisionSkip[] = [];
-  const rsmocDemoAssets = mapLocationRows.flatMap((row) =>
-    row.kind === "rsmoc" && row.siteName && row.province
-      ? demoAssetsForRsmoc(row.siteName, row.province)
-      : [],
-  );
 
   try {
     // ── Pre-tenant ────────────────────────────────────────────────────────
@@ -153,7 +143,7 @@ async function main(): Promise<void> {
       await seedSiteControlRoomViews(db, eskomOrgId);
       await ensureEskomDomainRtus(db, pool);
 
-      const eskomCatalog = buildEskomAssetCatalog(controlRoomSiteName, rsmocDemoAssets);
+      const eskomCatalog = eskomSeedAssetCatalog(mapLocationRows);
       const assetRows = await seedEskomAssets(db, pool, eskomCatalog, eskomOrgId);
 
       await seedDemoAlarms(db, assetRows, adminId, eskomOrgId);

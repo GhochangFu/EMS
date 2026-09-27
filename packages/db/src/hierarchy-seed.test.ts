@@ -14,9 +14,16 @@ import {
   assertTheHashIsOfTheFullCode,
   assertTheNameCutNeverSplitsASurrogatePair,
   assertTheOverflowCodeShape,
+  assertTheSeedOrganizationListMatchesTheInsert,
   assertTheTailKeepsTheUppercasedDomain,
   assertTwoLongCodesWithACommonPrefixDiffer,
 } from "./hierarchy-seed.spec";
+
+describe("F4.169/F4.170 addendum — SEED_ORGANIZATION_CODES is what ensureOrganizations writes", () => {
+  it("equals the codes of the statement's literal rows", () => {
+    assertTheSeedOrganizationListMatchesTheInsert();
+  });
+});
 
 describe("F4.170 — simRtuCode bounds the ESKOM simulator RTU code to 64", () => {
   it("leaves a seeded location's code unchanged", () => {

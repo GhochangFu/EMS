@@ -129,6 +129,14 @@ export async function getOrganizationId(
 }
 
 /**
+ * The organization codes {@link ensureOrganizations} writes. The statement
+ * keeps its own literal rows (`tests/e4.1c-organization-currency-schema.test.ts`
+ * reads them); `hierarchy-seed.spec.ts` holds that literal's codes equal to
+ * this list, and the boot gate counts these codes rather than every row.
+ */
+export const SEED_ORGANIZATION_CODES: readonly string[] = ["ESKOM", "PHEWB"];
+
+/**
  * Ensures ESKOM and PHEWB organization rows exist.
  *
  * E4.1c / ADR 0070 decision 7: the SEED owns `currency` — migration `0076`
@@ -333,6 +341,13 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
 }
 
 /**
+ * The slug of a legacy PHE location that held one RTU (`phe-<station>-i` or
+ * `-ii`). {@link cleanupLegacyPheRtuLocations} deletes these, and the boot
+ * gate counts the ones left, which must be zero.
+ */
+export const LEGACY_PHE_RTU_LOCATION_SLUG_PATTERN = "^phe-.+-(i|ii)$";
+
+/**
  * Removes legacy PHE locations that used one RTU per location slug.
  *
  * **Must run inside a PHEWB tenant context** (`seed.ts` supplies one). All five
@@ -343,33 +358,34 @@ export async function enforceHierarchyNotNull(pool: pg.Pool): Promise<void> {
  * in the seed where a missing tenant context fails silently rather than loudly.
  */
 export async function cleanupLegacyPheRtuLocations(pool: pg.Pool): Promise<void> {
+  const pattern = [LEGACY_PHE_RTU_LOCATION_SLUG_PATTERN];
   await pool.query(`
     DELETE FROM bms.user_location_access ula
     USING bms.locations l
     WHERE ula.location_id = l.id
-      AND l.slug ~ '^phe-.+-(i|ii)$'
-  `);
+      AND l.slug ~ $1
+  `, pattern);
   await pool.query(`
     DELETE FROM bms.asset_group_members agm
     USING bms.asset_groups ag, bms.locations l
     WHERE agm.asset_group_id = ag.id
       AND ag.location_id = l.id
-      AND l.slug ~ '^phe-.+-(i|ii)$'
-  `);
+      AND l.slug ~ $1
+  `, pattern);
   await pool.query(`
     DELETE FROM bms.asset_groups ag
     USING bms.locations l
     WHERE ag.location_id = l.id
-      AND l.slug ~ '^phe-.+-(i|ii)$'
-  `);
+      AND l.slug ~ $1
+  `, pattern);
   await pool.query(`
     DELETE FROM bms.rtus r
     USING bms.locations l
     WHERE r.location_id = l.id
-      AND l.slug ~ '^phe-.+-(i|ii)$'
-  `);
+      AND l.slug ~ $1
+  `, pattern);
   await pool.query(`
     DELETE FROM bms.locations
-    WHERE slug ~ '^phe-.+-(i|ii)$'
-  `);
+    WHERE slug ~ $1
+  `, pattern);
 }

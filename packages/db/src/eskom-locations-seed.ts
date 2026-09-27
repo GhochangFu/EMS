@@ -79,23 +79,40 @@ export async function seedMapLocations(
   }
 }
 
+/**
+ * The map rows `seedEskomLocations` turns into canonical ESKOM `bms.locations`
+ * rows: the campus and centre kinds, less any row the PHE map marks as
+ * PHEWB's. Exported so `verify-hierarchy-expected.ts` derives the canonical
+ * location codes from the same filter the seed runs.
+ */
+export function eskomCanonicalLocationRows(
+  mapLocationRows: readonly MapLocationSeedRow[],
+): MapLocationSeedRow[] {
+  return mapLocationRows.filter((item) => {
+    if (!["smoc_campus", "rsmoc", "csmoc"].includes(item.kind)) {
+      return false;
+    }
+    const isPhe =
+      typeof item.meta === "object" &&
+      item.meta !== null &&
+      "organizationCode" in item.meta &&
+      item.meta.organizationCode === "PHEWB";
+    return !isPhe;
+  });
+}
+
+/** The `bms.locations.code` `seedEskomLocations` writes for one canonical row. */
+export function eskomLocationCode(row: MapLocationSeedRow): string {
+  return `${row.kind.replace("_campus", "").toUpperCase()}-${locationCode(row.slug, row.province)}`;
+}
+
 /** Upserts the canonical `bms.locations` rows for Eskom campuses and centres. */
 export async function seedEskomLocations(
   db: BmsDb,
   mapLocationRows: readonly MapLocationSeedRow[],
   eskomOrgId: string,
 ): Promise<void> {
-  for (const row of mapLocationRows.filter((item) =>
-    ["smoc_campus", "rsmoc", "csmoc"].includes(item.kind),
-  )) {
-    const isPhe =
-      typeof row.meta === "object" &&
-      row.meta !== null &&
-      "organizationCode" in row.meta &&
-      row.meta.organizationCode === "PHEWB";
-    if (isPhe) {
-      continue;
-    }
+  for (const row of eskomCanonicalLocationRows(mapLocationRows)) {
     const capital =
       typeof row.meta === "object" &&
       row.meta !== null &&
@@ -103,10 +120,7 @@ export async function seedEskomLocations(
       typeof row.meta.capital === "string"
         ? row.meta.capital
         : null;
-    const code = `${row.kind.replace("_campus", "").toUpperCase()}-${locationCode(
-      row.slug,
-      row.province,
-    )}`;
+    const code = eskomLocationCode(row);
     const existingLocation = await db
       .select({ id: locations.id })
       .from(locations)

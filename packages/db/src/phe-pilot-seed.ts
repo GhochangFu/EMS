@@ -103,6 +103,70 @@ export function assetCode(deviceCode: string): string {
   return `PHE-${deviceCode}`;
 }
 
+/** The `bms.locations.code` a PHE station takes. */
+export function pheLocationCode(stationCode: string): string {
+  return `PHE-${stationCode}`;
+}
+
+/** The `bms.rtus.code` a PHE edge RTU takes. */
+export function pheRtuCode(rtuCode: string): string {
+  return `RTU-${rtuCode}`;
+}
+
+/** One `(asset code, point key)` pair. */
+export type PheAssetPoint = { readonly assetCode: string; readonly pointKey: string };
+
+/** What {@link seedPheCatalog} writes for a catalog, as the boot gate counts it. */
+export type PhePilotExpectedRows = {
+  /** One `bms.locations.code` per station. */
+  readonly locationCodes: readonly string[];
+  /** One `bms.rtus.external_rtu_id` per edge RTU (the seed's conflict key). */
+  readonly externalRtuIds: readonly number[];
+  /** One `bms.assets.code` per device. */
+  readonly assetCodes: readonly string[];
+  /** The `(asset, point)` pairs the seed catalogues: every sensor but `TS`. */
+  readonly points: readonly PheAssetPoint[];
+  /** The `TS` pairs the seed deletes rather than catalogues. */
+  readonly tsPoints: readonly PheAssetPoint[];
+  /** The devices whose domain is `electrical`. */
+  readonly electricalAssetCodes: readonly string[];
+};
+
+/**
+ * The rows {@link seedPheCatalog} writes for `catalog`, derived with the same
+ * functions it calls: one location per station, one RTU per edge RTU, one
+ * asset per device, one point per `(asset, point key)` pair except `TS`.
+ * Pure; `verify-hierarchy-expected.ts` hands it to the boot gate, which counts
+ * these rows present rather than counting every PHEWB row.
+ */
+export function phePilotExpectedRows(catalog: PheCatalogFile): PhePilotExpectedRows {
+  const locationCodes = new Set<string>();
+  const externalRtuIds = new Set<number>();
+  const domains = new Map<string, string>();
+  const points = new Map<string, PheAssetPoint>();
+  const tsPoints = new Map<string, PheAssetPoint>();
+  for (const row of catalog.rows) {
+    locationCodes.add(pheLocationCode(row.StationCode));
+    externalRtuIds.add(row.EdgeRTUId);
+    const code = assetCode(row.DeviceCode);
+    // The seed takes a device's domain from its first catalog row.
+    if (!domains.has(code)) {
+      domains.set(code, deviceDomain(row.DeviceCode, row.ModelDeviceCode));
+    }
+    const pointKey = bmsPointKeyForSensor(row.SensorCode, row.DataKey);
+    const target = row.SensorCode === "TS" ? tsPoints : points;
+    target.set(`${code}\u0000${pointKey}`, { assetCode: code, pointKey });
+  }
+  return {
+    locationCodes: [...locationCodes],
+    externalRtuIds: [...externalRtuIds],
+    assetCodes: [...domains.keys()],
+    points: [...points.values()],
+    tsPoints: [...tsPoints.values()],
+    electricalAssetCodes: [...domains].filter(([, domain]) => domain === "electrical").map(([code]) => code),
+  };
+}
+
 function unitLabel(unitCode: string | null): string | null {
   if (!unitCode || unitCode === "NA") {
     return null;
@@ -168,7 +232,7 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
     }
 
     const slug = stationSlug(head.StationName);
-    const locationCode = `PHE-${head.StationCode}`;
+    const locationCode = pheLocationCode(head.StationCode);
 
     const existingLocation = await db
       .select({ id: locations.id })
@@ -279,7 +343,7 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
     // `meta.telemetrySource`, or on neither. Split them and ingest and
     // `apps/sim` write the same points.
     const sourceType = ingestEnabled ? "mqtt" : "catalog";
-    const rtuCode = `RTU-${head.RTUCode}`;
+    const rtuCode = pheRtuCode(head.RTUCode);
 
     // `meta` is merged rather than replaced on conflict. It is a shared bag —
     // the admin RTU API accepts arbitrary keys — so `meta = EXCLUDED.meta`

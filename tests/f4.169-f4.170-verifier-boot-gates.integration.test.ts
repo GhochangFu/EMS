@@ -5,7 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type * as AutomationRulesSeed from "../packages/db/dist/automation-rules-seed.js";
 import type * as DbClient from "../packages/db/dist/client.js";
+import type * as HierarchySeed from "../packages/db/dist/hierarchy-seed.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
+import type * as VerifyHierarchyExpected from "../packages/db/dist/verify-hierarchy-expected.js";
 import type * as VerifyHierarchySeed from "../packages/db/dist/verify-hierarchy-seed.js";
 import {
   openIntegrationPool,
@@ -22,9 +24,13 @@ const require_ = createRequire(import.meta.url);
 const { seedEskomLadderRules } = require_(
   "../packages/db/dist/automation-rules-seed.js",
 ) as typeof AutomationRulesSeed;
-const { readEskomChecks, UNCOVERED_ELECTRICAL_LABEL } = require_(
+const { readEskomChecks, readGlobalChecks, readPhewbChecks, UNCOVERED_ELECTRICAL_LABEL } = require_(
   "../packages/db/dist/verify-hierarchy-seed.js",
 ) as typeof VerifyHierarchySeed;
+const { hierarchyExpectations } = require_(
+  "../packages/db/dist/verify-hierarchy-expected.js",
+) as typeof VerifyHierarchyExpected;
+const { ensureEskomDomainRtus } = require_("../packages/db/dist/hierarchy-seed.js") as typeof HierarchySeed;
 const { createDb } = require_("../packages/db/dist/client.js") as typeof DbClient;
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
 
@@ -92,6 +98,9 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
   let seedDb: SeedDb | undefined;
   let eskomOrgId = "";
   let rsmocWcId = "";
+  let phewbOrgId = "";
+  /** One seeded PHE station, the host of the PHEWB fixtures. */
+  let pheStationId = "";
 
   beforeAll(async () => {
     const url = ownerUrl as string;
@@ -110,6 +119,29 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     );
     rsmocWcId = location.rows[0]?.id ?? "";
     assert(rsmocWcId !== "", "RSMOC-WC is not seeded — run pnpm db:seed.");
+
+    const phewb = await probePool.query<{ id: string }>(`SELECT id FROM bms.organizations WHERE code = 'PHEWB'`);
+    phewbOrgId = phewb.rows[0]?.id ?? "";
+    assert(phewbOrgId !== "", "the PHEWB organization is not seeded — run pnpm db:seed.");
+
+    // The station hosting one catalog PHE asset, read in PHEWB's context. By
+    // the asset, not by the derived location code, so a wrong location-code
+    // derivation fails its own case (V5) rather than this setup.
+    const hostedCode = hierarchyExpectations().phe.assetCodes[0] ?? "";
+    const client = await probePool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("select set_config('app.current_organization', $1, true)", [phewbOrgId]);
+      const station = await client.query<{ location_id: string }>(
+        `SELECT location_id FROM bms.assets WHERE code = $1`,
+        [hostedCode],
+      );
+      pheStationId = station.rows[0]?.location_id ?? "";
+    } finally {
+      await client.query("ROLLBACK");
+      client.release();
+    }
+    assert(pheStationId !== "", `PHE asset ${hostedCode} is not seeded — run pnpm db:seed.`);
   }, 60_000);
 
   afterAll(async () => {
@@ -252,5 +284,300 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       // non-empty reads the baseline here.
       expect(actualOf(checks, UNCOVERED_ELECTRICAL_LABEL), "C must count; only B is exempt").toBe(baseline + 1);
     });
+  }, 60_000);
+
+  // ── Every count is a claim an admin write cannot move ──────────────────────
+
+  type Pass = "global" | "eskom" | "phewb";
+
+  /** One check before and after a fixture, read in one rolled-back transaction. */
+  type Around = { before: HierarchyCheck; after: number };
+
+  /**
+   * Reads `label` from `pass`, runs `fixture`, reads it again — all inside one
+   * `BEGIN` … `ROLLBACK` in the pass's tenant context (ESKOM for the global
+   * pass, which needs none). The `ROLLBACK` is in a `finally`.
+   */
+  async function around(pass: Pass, label: string, fixture: (pool: SeedPool) => Promise<void>): Promise<Around> {
+    if (!seedPool) throw new Error("pool not initialised");
+    const pool = seedPool;
+    const read = async (): Promise<HierarchyCheck> => {
+      const checks =
+        pass === "global"
+          ? await readGlobalChecks(pool)
+          : pass === "eskom"
+            ? await readEskomChecks(pool, eskomOrgId, { log: () => undefined })
+            : await readPhewbChecks(pool, phewbOrgId);
+      const found = checks.filter((check) => check.label === label);
+      assert(found.length === 1, `expected one ${pass} check labelled "${label}", found ${found.length}`);
+      return found[0] as HierarchyCheck;
+    };
+    await pool.query("BEGIN");
+    try {
+      await pool.query("select set_config('app.current_organization', $1, true)", [
+        pass === "phewb" ? phewbOrgId : eskomOrgId,
+      ]);
+      const before = await read();
+      await fixture(pool);
+      const after = await read();
+      return { before, after: after.actual };
+    } finally {
+      await pool.query("ROLLBACK");
+    }
+  }
+
+  /** The seeded database meets the check before the fixture: not a vacuous baseline. */
+  function assertSeeded(before: HierarchyCheck): void {
+    expect(before.actual, `the seeded database must meet "${before.label}" before the fixture`).toBe(before.wanted);
+  }
+
+  async function insertOne(pool: SeedPool, sql: string, values: unknown[], what: string): Promise<string> {
+    const inserted = await pool.query<{ id: string }>(sql, values);
+    const id = inserted.rows[0]?.id;
+    assert(!!id, `the ${what} insert must return an id`);
+    return id as string;
+  }
+
+  /** An asset of `domain` at `locationId`, stamped with `organizationId`. */
+  function insertAsset(
+    pool: SeedPool,
+    organizationId: string,
+    locationId: string,
+    code: string,
+    domain: string,
+    templateId: string | null = null,
+  ): Promise<string> {
+    return insertOne(
+      pool,
+      `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain, template_id)
+       VALUES ($1, $2, $3, $4, 'F4.169 fixture', $5, $6)
+       RETURNING id`,
+      [organizationId, locationId, code, `F4.169 fixture ${code}`, domain, templateId],
+      `asset ${code}`,
+    );
+  }
+
+  /** A hand-read point, so it needs no RTU (ADR 0018). */
+  async function insertManualPoint(pool: SeedPool, organizationId: string, assetId: string, pointKey: string): Promise<void> {
+    await pool.query(
+      `INSERT INTO bms.asset_points (asset_id, point_key, source_data_key, rtu_id, source_kind, active, organization_id)
+       VALUES ($1, $2, $3, NULL, 'manual', true, $4)`,
+      [assetId, pointKey, `F4169_${pointKey.toUpperCase()}`, organizationId],
+    );
+  }
+
+  /** Membership of the `groupCode` group at `locationId`, with `role`. */
+  async function joinGroup(
+    pool: SeedPool,
+    locationId: string,
+    groupCode: string,
+    assetId: string,
+    role: string | null,
+  ): Promise<void> {
+    const group = await pool.query<{ id: string }>(
+      `SELECT id FROM bms.asset_groups WHERE location_id = $1 AND code = $2`,
+      [locationId, groupCode],
+    );
+    const groupId = group.rows[0]?.id;
+    assert(!!groupId, `the ${groupCode} group at the fixture location must be seeded`);
+    await pool.query(`INSERT INTO bms.asset_group_members (asset_group_id, asset_id, role) VALUES ($1, $2, $3)`, [
+      groupId,
+      assetId,
+      role,
+    ]);
+  }
+
+  it("V1: an ESKOM location with a 64-code-point code, after ensureEskomDomainRtus, leaves the ESKOM location check unmoved", async () => {
+    const { before, after } = await around("eskom", "ESKOM seed locations present", async (pool) => {
+      // ensureEskomDomainRtus upserts an RTU at every ESKOM location; lock
+      // them so another suite's delete waits for this ROLLBACK.
+      await pool.query(
+        `SELECT l.id FROM bms.locations l
+           JOIN bms.organizations o ON o.id = l.organization_id
+          WHERE o.code = 'ESKOM'
+          FOR KEY SHARE OF l`,
+      );
+      const code = `F4170-${runId}-` + "Z".repeat(49);
+      assert(Array.from(code).length === 64, "the fixture code must be 64 code points");
+      await insertOne(
+        pool,
+        `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+         VALUES ($1, $2, $3, 'F4.169 fixture location', 'rsmoc', 0, 0)
+         RETURNING id`,
+        [eskomOrgId, code, `f4169-${runId}-v1`],
+        "ESKOM location",
+      );
+      await ensureEskomDomainRtus(seedDb as SeedDb, pool);
+    });
+    assertSeeded(before);
+    // Mutation: the count back on every ESKOM location reads +1.
+    expect(after, "an admin location must not move the ESKOM location check").toBe(before.actual);
+  }, 60_000);
+
+  it("P1: the decommissioned fixture location made active moves its zero check (+1)", async () => {
+    const { before, after } = await around("eskom", "ESKOM decommissioned fixture location active", async (pool) => {
+      const updated = await pool.query(
+        `UPDATE bms.locations SET active = true WHERE organization_id = $1 AND code = 'ESK-DECOMM-01'`,
+        [eskomOrgId],
+      );
+      assert(updated.rowCount === 1, "ESK-DECOMM-01 must be seeded");
+    });
+    assertSeeded(before);
+    expect(after, "an active ESK-DECOMM-01 must fail the check").toBe(before.actual + 1);
+  }, 60_000);
+
+  it("V8: an admin IT asset in IT_LOAD leaves the IT_LOAD check unmoved", async () => {
+    const { before, after } = await around("eskom", "ESKOM catalog IT assets in IT_LOAD", async (pool) => {
+      const assetId = await insertAsset(pool, eskomOrgId, rsmocWcId, `F4169-${RUN_ID}-IT`, "it");
+      await insertManualPoint(pool, eskomOrgId, assetId, "rack_kw");
+      await joinGroup(pool, rsmocWcId, "IT_LOAD", assetId, null);
+    });
+    assertSeeded(before);
+    // Mutation: the count back on every IT_LOAD member reads +1.
+    expect(after, "an admin IT asset must not move the IT_LOAD check").toBe(before.actual);
+  }, 60_000);
+
+  it("V8: an admin IT asset with a rack_kw row leaves the rack_kw check unmoved", async () => {
+    const { before, after } = await around("eskom", "ESKOM catalog IT assets with a rack_kw catalog row", async (pool) => {
+      const assetId = await insertAsset(pool, eskomOrgId, rsmocWcId, `F4169-${RUN_ID}-IT`, "it");
+      await insertManualPoint(pool, eskomOrgId, assetId, "rack_kw");
+      await joinGroup(pool, rsmocWcId, "IT_LOAD", assetId, null);
+    });
+    assertSeeded(before);
+    // Mutation: the count back on every ESKOM IT rack_kw row reads +1.
+    expect(after, "an admin IT asset must not move the rack_kw check").toBe(before.actual);
+  }, 60_000);
+
+  it("V9: an admin organization leaves the organization check unmoved", async () => {
+    const { before, after } = await around("global", "seed organizations present", async (pool) => {
+      await insertOne(
+        pool,
+        `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, 'F4.169 fixture organization', 'ZAR')
+         RETURNING id`,
+        [`F4169-${RUN_ID}`],
+        "organization",
+      );
+    });
+    assertSeeded(before);
+    // Mutation: the count back on every organization reads +1.
+    expect(after, "an admin organization must not move the organization check").toBe(before.actual);
+  }, 60_000);
+
+  it("V10: an admin asset pinned to the incomer template leaves the incomer check unmoved", async () => {
+    const { before, after } = await around(
+      "eskom",
+      "ESKOM catalog incomers pinned to BASELINE-ELECTRICAL-INCOMER",
+      async (pool) => {
+        const template = await pool.query<{ id: string }>(
+          `SELECT id FROM bms.asset_templates WHERE organization_id = $1 AND code = 'BASELINE-ELECTRICAL-INCOMER'`,
+          [eskomOrgId],
+        );
+        const templateId = template.rows[0]?.id;
+        assert(!!templateId, "BASELINE-ELECTRICAL-INCOMER must be seeded");
+        await insertAsset(pool, eskomOrgId, rsmocWcId, `F4169-${RUN_ID}-INC`, "electrical", templateId as string);
+      },
+    );
+    assertSeeded(before);
+    // Mutation: the count back on every pinned ESKOM asset reads +1.
+    expect(after, "an admin asset on the incomer template must not move the incomer check").toBe(before.actual);
+  }, 60_000);
+
+  it("V5: an admin PHEWB location leaves the PHEWB location check unmoved", async () => {
+    const { before, after } = await around("phewb", "PHEWB catalog locations present", async (pool) => {
+      await insertOne(
+        pool,
+        `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+         VALUES ($1, $2, $3, 'F4.169 fixture PHE location', 'pump_station', 0, 0)
+         RETURNING id`,
+        [phewbOrgId, `F4169-${RUN_ID}-PHE`, `f4169-${runId}-phe`],
+        "PHEWB location",
+      );
+    });
+    assertSeeded(before);
+    // Mutation: the count back on every PHEWB location reads +1.
+    expect(after, "an admin PHEWB location must not move the location check").toBe(before.actual);
+  }, 60_000);
+
+  it("P2: a legacy per-RTU PHEWB location moves its zero check (+1)", async () => {
+    const { before, after } = await around("phewb", "PHEWB legacy per-RTU locations", async (pool) => {
+      await insertOne(
+        pool,
+        `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
+         VALUES ($1, $2, $3, 'F4.169 fixture legacy location', 'pump_station', 0, 0)
+         RETURNING id`,
+        [phewbOrgId, `F4169-${RUN_ID}-LEG`, `phe-f4169${runId}-ii`],
+        "legacy PHEWB location",
+      );
+    });
+    assertSeeded(before);
+    expect(after, "a surviving legacy per-RTU location must fail the check").toBe(before.actual + 1);
+  }, 60_000);
+
+  it("V6: an admin PHEWB RTU leaves the PHEWB RTU check unmoved", async () => {
+    const { before, after } = await around("phewb", "PHEWB catalog RTUs present", async (pool) => {
+      await insertOne(
+        pool,
+        `INSERT INTO bms.rtus (location_id, code, display_name, organization_id)
+         VALUES ($1, $2, 'F4.169 fixture RTU', $3)
+         RETURNING id`,
+        [pheStationId, `F4169-${RUN_ID}-RTU`, phewbOrgId],
+        "PHEWB RTU",
+      );
+    });
+    assertSeeded(before);
+    // Mutation: the count back on every PHEWB RTU reads +1.
+    expect(after, "an admin PHEWB RTU must not move the RTU check").toBe(before.actual);
+  }, 60_000);
+
+  /** A `PHE-` electrical asset with a point and an electrical membership with a role. */
+  async function adminPheAsset(pool: SeedPool): Promise<void> {
+    const assetId = await insertAsset(pool, phewbOrgId, pheStationId, `PHE-F4169-${RUN_ID}`, "electrical");
+    await insertManualPoint(pool, phewbOrgId, assetId, "kw");
+    await joinGroup(pool, pheStationId, "electrical", assetId, "meter");
+  }
+
+  it("V7: an admin PHE- electrical asset leaves the PHE asset check unmoved", async () => {
+    const { before, after } = await around("phewb", "PHE catalog assets present", adminPheAsset);
+    assertSeeded(before);
+    // Mutation: the count back on every PHE- asset reads +1.
+    expect(after, "an admin PHE- asset must not move the asset check").toBe(before.actual);
+  }, 60_000);
+
+  it("V7: an admin PHE- asset's point leaves the PHE point check unmoved", async () => {
+    const { before, after } = await around("phewb", "PHE catalog asset_points present", adminPheAsset);
+    assertSeeded(before);
+    // Mutation: the count back on every PHE- asset's points reads +1.
+    expect(after, "an admin PHE- point must not move the point check").toBe(before.actual);
+  }, 60_000);
+
+  it("V7: an admin PHE- asset's electrical membership leaves the member check unmoved", async () => {
+    const { before, after } = await around("phewb", "PHE catalog electrical group members", adminPheAsset);
+    assertSeeded(before);
+    // Mutation: the count back on every PHE- electrical member reads +1.
+    expect(after, "an admin PHE- member must not move the member check").toBe(before.actual);
+  }, 60_000);
+
+  it("V7: an admin PHE- asset's roled membership leaves the roled check unmoved", async () => {
+    const { before, after } = await around("phewb", "PHE catalog electrical members carrying a role", adminPheAsset);
+    assertSeeded(before);
+    // Mutation: the count back on every roled PHE- electrical member reads +1.
+    expect(after, "an admin PHE- roled member must not move the roled check").toBe(before.actual);
+  }, 60_000);
+
+  it("P3: a catalogued TS point moves its zero check (+1)", async () => {
+    const tsPoint = hierarchyExpectations().phe.tsPoints[0];
+    assert(!!tsPoint, "the PHE catalog must carry a TS sensor");
+    const { before, after } = await around("phewb", "PHE TS asset_points", async (pool) => {
+      await pool.query(
+        `INSERT INTO bms.point_keys (code, name) VALUES ($1, 'F4.169 fixture TS key') ON CONFLICT (code) DO NOTHING`,
+        [tsPoint?.pointKey],
+      );
+      const asset = await pool.query<{ id: string }>(`SELECT id FROM bms.assets WHERE code = $1`, [tsPoint?.assetCode]);
+      const assetId = asset.rows[0]?.id;
+      assert(!!assetId, `${tsPoint?.assetCode} must be seeded`);
+      await insertManualPoint(pool, phewbOrgId, assetId as string, tsPoint?.pointKey as string);
+    });
+    assertSeeded(before);
+    expect(after, "a catalogued TS point must fail the check").toBe(before.actual + 1);
   }, 60_000);
 });
