@@ -552,8 +552,9 @@ const LADDER_HASH_WIDTH = 8;
  *   condition-tuple guard in `seedEskomLadderRules` skips an already-seeded
  *   rule first — but it does once an operator edits a seeded rule's
  *   threshold. The cut keeps the asset code's own case, so a lowercase asset
- *   code still misses the compare; that gap predates `F4.129` and is recorded
- *   at its closure.
+ *   code misses the compare too, the INSERT repeats the stored code, and
+ *   `pnpm db:seed` aborts with `23505` on `automation_rules_org_code_idx`.
+ *   That gap predates `F4.129`; this function does not close it.
  * - **`slice()` is exact**, not an approximation. Migration
  *   `0070_catalog_code_charset.sql` constrains `bms.assets.code` to
  *   `^[A-Za-z0-9_-]+$` — pure ASCII — so every asset code this reads is one

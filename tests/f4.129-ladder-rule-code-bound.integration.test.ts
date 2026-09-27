@@ -156,16 +156,19 @@ describe.skipIf(!ownerUrl)(
         await pool.query("select set_config('app.current_organization', $1, true)", [eskomOrgId]);
 
         // The seed inserts rules for every ESKOM electrical asset it reads,
-        // including other suites' live fixtures. Lock them first: a suite
-        // that deletes its asset between the seed's read and its insert
-        // would otherwise fail this test with 23503. That suite's delete now
-        // waits for the ROLLBACK below instead.
-        await pool.query(
+        // including other suites' live fixtures. Lock the ones that exist
+        // now: a suite that deletes one of them between the seed's read and
+        // its insert would otherwise fail this test with 23503, and its
+        // delete now waits for the ROLLBACK below instead. An asset another
+        // suite commits after this lock is not covered; that window is one
+        // statement wide.
+        const locked = await pool.query(
           `SELECT a.id FROM bms.assets a
              JOIN bms.organizations o ON o.id = a.organization_id
             WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
             FOR KEY SHARE OF a`,
         );
+        assert((locked.rowCount ?? 0) > 0, "the lock must take the seeded ESKOM electrical assets");
 
         const inserted = await pool.query<{ id: string }>(
           `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)

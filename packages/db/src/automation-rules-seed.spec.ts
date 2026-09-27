@@ -153,8 +153,9 @@ export function assertAShortNameIsUnchanged(): void {
 
 /**
  * The boundary: a 235-character asset name plus `" "` and the 19-character
- * suffix is exactly 255, and must come back unchanged. Mutation: `<=` written
- * `<` in the helper cuts one character too many and reddens this.
+ * suffix is exactly 255, and must come back unchanged. Mutation: a budget one
+ * too small reddens this. (`<=` written `<` does not: at the boundary the cut
+ * keeps every character, so that mutant returns the same string.)
  */
 export function assertANameOnTheBoundaryIsUnchanged(): void {
   const assetName = "N".repeat(235);
