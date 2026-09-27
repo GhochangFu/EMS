@@ -239,6 +239,7 @@ export function RulesPanel() {
               <button
                 className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
                 disabled={evaluateM.isPending || activeCount === 0}
+                aria-busy={evaluateM.isPending}
                 onClick={() => evaluateM.mutate()}
               >
                 {evaluateM.isPending ? "Evaluating..." : "Evaluate now"}

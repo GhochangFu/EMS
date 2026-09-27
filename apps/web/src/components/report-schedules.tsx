@@ -331,6 +331,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
                           type="button"
                           className="text-xs text-bms-muted disabled:cursor-not-allowed"
                           disabled={deleting}
+                          aria-busy={deleting}
                           onClick={() => deleteM.mutate(row)}
                         >
                           {deleting ? "Deleting…" : "Delete"}
@@ -510,6 +511,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
             type="button"
             className="rounded bg-bms-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
             disabled={blockedReason !== null}
+            aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
           >
             {saveM.isPending ? "Saving…" : "Save schedule"}

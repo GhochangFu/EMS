@@ -73,6 +73,27 @@ const adminModuleGroup = {
 
 const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
 
+/**
+ * `F4.164` (OQ-1) — the collapsed-rail code for an item whose `shortLabel`
+ * collides with another item's, keyed by the item's path. The rule: on a
+ * collision the later item in rail order (Operations, Maintenance,
+ * Automation, then Administration) takes the override, and the earlier item
+ * keeps its derived letters. `collapsedRailEntries()` is the uniqueness gate.
+ */
+export const COLLAPSED_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  "/dashboards": "DS",
+  "/admin/rtus": "RTU",
+  "/admin/assets": "AS",
+  "/admin/asset-points": "PT",
+};
+
+/**
+ * `F4.164` (OQ-4) — why the top-nav Settings entry is locked. The button's
+ * accessible description and its `title` both carry it.
+ */
+export const SETTINGS_LOCKED_REASON =
+  "Administration requires an admin, organization_admin or location_admin role";
+
 function shortLabel(label: string): string {
   return label
     .replace(/^CR · /, "")
@@ -81,6 +102,30 @@ function shortLabel(label: string): string {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+function collapsedLabel(item: { readonly label: string; readonly path: string }): string {
+  return COLLAPSED_LABEL_OVERRIDES[item.path] ?? shortLabel(item.label);
+}
+
+export type CollapsedRailEntry = {
+  readonly path: string;
+  readonly label: string;
+  readonly code: string;
+};
+
+/** Every rail item of both lists, hidden ones included, with the code the collapsed rail shows. */
+export function collapsedRailEntries(): CollapsedRailEntry[] {
+  type RailItem = { readonly label: string; readonly path: string };
+  const items: readonly RailItem[] = [
+    ...moduleGroups.flatMap((group): readonly RailItem[] => group.items),
+    ...adminModuleGroup.items,
+  ];
+  return items.map((item) => ({
+    path: item.path,
+    label: item.label,
+    code: collapsedLabel(item),
+  }));
 }
 
 type AppShellProps = {
@@ -205,12 +250,23 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
             Settings
           </Link>
         ) : (
-          <span
-            className="ml-1 cursor-not-allowed rounded px-3 py-1.5 text-white/50"
-            title="Administration requires admin or location_admin role"
-          >
-            Settings
-          </span>
+          <>
+            {/* F4.164 D2 — not `DisabledCommandButton`: it sets native `disabled` (not focusable),
+                has no slot for the reason, and its palette is for light surfaces. */}
+            <button
+              type="button"
+              aria-disabled="true"
+              aria-describedby="settings-locked-reason"
+              title={SETTINGS_LOCKED_REASON}
+              onClick={(e) => e.preventDefault()}
+              className="ml-1 cursor-not-allowed rounded px-3 py-1.5 text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+            >
+              Settings
+            </button>
+            <span id="settings-locked-reason" className="sr-only">
+              {SETTINGS_LOCKED_REASON}
+            </span>
+          </>
         )}
       </nav>
 
@@ -257,6 +313,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                       <Link
                         to={m.path}
                         title={m.label}
+                        // F4.164 — WCAG 2.5.3: a collapsed name carries the visible code; expanded, the label is the name.
+                        aria-label={sidebarCollapsed ? `${m.label} (${collapsedLabel(m)})` : undefined}
                         className={`block w-full border-l-2 hover:bg-bms-canvas ${
                           location.pathname === m.path ||
                           ("nested" in m && m.nested && location.pathname.startsWith(`${m.path}/`))
@@ -264,7 +322,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                             : "border-transparent text-bms-muted"
                         } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
-                        {sidebarCollapsed ? shortLabel(m.label) : m.label}
+                        {sidebarCollapsed ? collapsedLabel(m) : m.label}
                       </Link>
                     </li>
                   ))}
@@ -297,6 +355,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                       <Link
                         to={item.path}
                         title={item.label}
+                        aria-label={sidebarCollapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
                         className={`block w-full border-l-2 hover:bg-bms-canvas ${
                           location.pathname === item.path ||
                           (item.path !== "/admin" && location.pathname.startsWith(`${item.path}`))
@@ -304,7 +363,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                             : "border-transparent text-bms-muted"
                         } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
-                        {sidebarCollapsed ? shortLabel(item.label) : item.label}
+                        {sidebarCollapsed ? collapsedLabel(item) : item.label}
                       </Link>
                     </li>
                   ))}

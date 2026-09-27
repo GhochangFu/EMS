@@ -3,6 +3,8 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aPendingCommitHasAriaBusyTrue,
+  anIdleCommitHasAriaBusyFalse,
   aPreviewDoesNotSurviveALocationChange,
   commitFollowsAPreviewOfTheSameFile,
   everyProblemNamesItsCellAndItsReason,
@@ -34,5 +36,13 @@ describe("F2.7 mapping-sheet panel (ADR 0056 decisions 6 and 7)", () => {
 
   it("drops a preview taken against another location, so Commit cannot write it here", async () => {
     await aPreviewDoesNotSurviveALocationChange();
+  });
+
+  it("a pending Commit (\"Writing…\") carries aria-busy=\"true\"", async () => {
+    await aPendingCommitHasAriaBusyTrue();
+  });
+
+  it("the idle Commit button carries aria-busy=\"false\"", async () => {
+    await anIdleCommitHasAriaBusyFalse();
   });
 });

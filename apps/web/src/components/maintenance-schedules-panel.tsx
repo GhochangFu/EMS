@@ -658,6 +658,7 @@ export function MaintenanceSchedulesPanel({
                   type="submit"
                   className="rounded bg-bms-green px-4 py-2 text-sm font-semibold text-white hover:bg-bms-green-dark disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={createM.isPending || filteredAssetOptions.length === 0}
+                  aria-busy={createM.isPending}
                 >
                   {createM.isPending ? "Creating..." : "Create schedule"}
                 </button>

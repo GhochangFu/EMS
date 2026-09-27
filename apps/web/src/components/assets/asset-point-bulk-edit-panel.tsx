@@ -189,6 +189,7 @@ export function AssetPointBulkEditPanel({ ids, onApplied, onCancel }: AssetPoint
         type="button"
         className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
         disabled={problems.length > 0 || overTheCap || ids.length === 0 || applyMutation.isPending}
+        aria-busy={applyMutation.isPending}
         onClick={() => applyMutation.mutate()}
       >
         {applyMutation.isPending

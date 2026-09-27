@@ -72,10 +72,11 @@ export function DashboardPage({ user }: DashboardPageProps) {
    * `F2.8` — computed once, because the tile's `stale` prop has to be decided
    * against **this** status and not against `kpiStatus`. `pueTileProps` turns a
    * settled query that returned `null` into `"empty"`, and `KpiTile` draws its
-   * amber stale ring for any truthy `stale` while drawing the explanatory
-   * "Stale ·" line only for `"ready"` — so `stale && kpiStatus === "ready"`
+   * amber stale ring for any truthy `stale` — so `stale && kpiStatus === "ready"`
    * ringed an unconfigured estate's `—` in an alarm colour with nothing to say
-   * why.
+   * why. `F4.164` U1 made the caption follow the same truthy `stale` the ring
+   * does, so the caller still decides whether a non-ready tile is stale, but no
+   * longer needs to gate the caption separately from the ring.
    */
   const pueProps = pueTileProps(kpiStatus, kpi?.pueEstimate);
   // `F3.28` task 2.5 — vs-yesterday deltas; see `kpi-ribbon.ts` for why Total

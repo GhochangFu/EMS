@@ -58,7 +58,9 @@ export function KpiTile({
       {status === "loading" ? (
         <div className="mt-3 h-9 w-24 animate-pulse rounded bg-gray-100" />
       ) : status === "error" ? (
-        <p className="mt-3 text-sm text-red-600">Could not load</p>
+        <p role="alert" className="mt-3 text-sm text-red-600">
+          Could not load
+        </p>
       ) : status === "empty" ? (
         <p className="mt-3 font-condensed text-2xl font-bold text-bms-muted">—</p>
       ) : (
@@ -75,7 +77,7 @@ export function KpiTile({
       {note ? (
         <p className="mt-1 text-[11px] font-medium text-amber-700">{note}</p>
       ) : null}
-      {stale && status === "ready" ? (
+      {stale ? (
         <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-amber-700">
           Stale · no telemetry ~10s
         </p>

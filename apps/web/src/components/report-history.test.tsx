@@ -4,6 +4,8 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   a503RendersTheApiSentence,
+  aPendingDeleteHasAriaBusyTrue,
+  anIdleDeleteHasAriaBusyFalse,
   aRefusedDownloadRendersTheApiSentence,
   aScheduledFileRendersScheduledAndPending,
   anEmptyListRendersTheEmptySentence,
@@ -57,6 +59,14 @@ describe("F3.5a report history list", () => {
 
   it("releasing one delete frees only that row's button", async () => {
     await releasingOneDeleteFreesOnlyThatRowsButton();
+  });
+
+  it("a pending Delete carries aria-busy=\"true\"", async () => {
+    await aPendingDeleteHasAriaBusyTrue();
+  });
+
+  it("another row's idle Delete carries aria-busy=\"false\"", async () => {
+    await anIdleDeleteHasAriaBusyFalse();
   });
 
   it("an ApiError 503 renders the API's sentence", async () => {

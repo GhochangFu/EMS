@@ -196,6 +196,7 @@ export function DashboardTemplateStockViewPage({ user }: DashboardTemplateStockV
                   type="button"
                   aria-label={`Import ${entry.name}`}
                   disabled={importOrgId === "" || importM.isPending}
+                  aria-busy={importM.isPending}
                   onClick={() => {
                     setImportError(null);
                     // The **resolved entry's** code, never `code` from the URL.

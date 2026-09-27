@@ -131,6 +131,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
           type="button"
           className="rounded border border-gray-200 px-3 py-2 text-xs font-semibold text-bms-ink disabled:opacity-50"
           disabled={!locationId || downloadMutation.isPending}
+          aria-busy={downloadMutation.isPending}
           onClick={() => downloadMutation.mutate()}
         >
           {downloadMutation.isPending ? "Preparing…" : "Download mapping sheet"}
@@ -150,6 +151,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
           type="button"
           className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
           disabled={!locationId || !file || previewMutation.isPending}
+          aria-busy={previewMutation.isPending}
           onClick={() => previewMutation.mutate()}
         >
           {previewMutation.isPending ? "Checking…" : "Preview"}
@@ -158,6 +160,7 @@ export function MappingSheetPanel({ locationId }: MappingSheetPanelProps) {
           type="button"
           className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
           disabled={!canCommit}
+          aria-busy={commitMutation.isPending}
           onClick={() => commitMutation.mutate()}
         >
           {commitMutation.isPending ? "Writing…" : "Commit"}

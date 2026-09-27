@@ -252,6 +252,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
               <button
                 type="button"
                 disabled={saveM.isPending}
+                aria-busy={saveM.isPending}
                 onClick={() => saveM.mutate()}
                 className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
               >
@@ -539,6 +540,7 @@ function InstantiateDialog({
               // apart.
               aria-label="Confirm instantiate"
               disabled={!canSubmit || instantiateM.isPending}
+              aria-busy={instantiateM.isPending}
               onClick={() => {
                 setError(null);
                 instantiateM.mutate();

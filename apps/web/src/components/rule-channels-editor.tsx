@@ -187,6 +187,7 @@ export function RuleChannelsEditor({
             <button
               className="rounded bg-bms-green px-2 py-1 text-[11px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
               disabled={cannotSave}
+              aria-busy={saveM.isPending}
               onClick={() => saveM.mutate([...channelIds, ...hidden])}
             >
               {saveM.isPending ? "Saving..." : "Save"}

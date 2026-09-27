@@ -490,6 +490,7 @@ export function RuleBuilderPanel({
           <button
             className="rounded border border-gray-300 px-3 py-2 text-xs font-semibold text-bms-muted disabled:opacity-50"
             disabled={!canSubmit}
+            aria-busy={previewM.isPending}
             onClick={() => previewM.mutate({ ...payload, id: form.id })}
           >
             {previewM.isPending ? "Previewing..." : "Preview latest data"}
@@ -511,6 +512,7 @@ export function RuleBuilderPanel({
           <button
             className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
             disabled={!form.id || !canSubmit}
+            aria-busy={publishM.isPending}
             onClick={() => form.id && publishM.mutate({ id: form.id })}
           >
             {publishM.isPending ? "Publishing..." : "Publish and enable"}

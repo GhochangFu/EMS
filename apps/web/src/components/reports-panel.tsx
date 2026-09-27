@@ -198,6 +198,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
           <button
             className="mt-4 w-full rounded bg-bms-green px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
             disabled={xlsxM.isPending || previewQ.isError || !preview}
+            aria-busy={xlsxM.isPending}
             onClick={() => xlsxM.mutate()}
           >
             {xlsxM.isPending ? "Preparing XLSX..." : "Export XLSX"}
@@ -208,6 +209,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
           <button
             className="mt-2 w-full rounded border border-bms-green px-3 py-2 text-sm font-semibold text-bms-green disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
             disabled={csvM.isPending || previewQ.isError || !preview}
+            aria-busy={csvM.isPending}
             onClick={() => csvM.mutate()}
           >
             {csvM.isPending ? "Preparing CSV..." : "Export CSV"}
@@ -218,6 +220,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
           <button
             className="mt-2 w-full rounded border border-bms-green px-3 py-2 text-sm font-semibold text-bms-green disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400"
             disabled={pdfM.isPending || previewQ.isError || !preview}
+            aria-busy={pdfM.isPending}
             onClick={() => pdfM.mutate()}
           >
             {pdfM.isPending ? "Preparing PDF..." : "Export PDF"}
@@ -391,6 +394,7 @@ function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryP
         type="button"
         className="mt-3 w-full rounded bg-bms-ink px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
         disabled={blockedReason !== null}
+        aria-busy={saveM.isPending}
         onClick={() => saveM.mutate()}
       >
         {saveM.isPending ? "Saving…" : "Save to history"}

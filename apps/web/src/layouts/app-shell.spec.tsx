@@ -9,7 +9,12 @@ import * as assetsApi from "../api/assets";
 import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
-import { AppShell } from "./app-shell";
+import {
+  AppShell,
+  COLLAPSED_LABEL_OVERRIDES,
+  SETTINGS_LOCKED_REASON,
+  collapsedRailEntries,
+} from "./app-shell";
 
 /**
  * `F3.66` U6 (ADR 0076 decision 1, OQ4, plan D9) — one sidebar entry,
@@ -158,6 +163,199 @@ export function keepsOtherItemsExactMatch(): void {
   renderShell(GLOBAL, "/dashboards/plant-overview");
   const dashboards = within(sidebar()).getByRole("link", { name: "Dashboards" });
   expect(dashboards.classList.contains("border-transparent")).toBe(true);
+}
+
+/**
+ * `F4.164` U2 — the locked top-nav Settings entry. For a role that is not a
+ * master-data administrator it is a focusable `button` with
+ * `aria-disabled="true"`, an accessible description holding
+ * `SETTINGS_LOCKED_REASON`, and `text-white/70` (3.43:1 on `bms-green-dark`).
+ * Every case reads inside the top navigation, where the entry lives.
+ */
+function topNav(): HTMLElement {
+  return screen.getByRole("navigation");
+}
+
+function lockedSettings(): HTMLElement {
+  return within(topNav()).getByRole("button", { name: "Settings" });
+}
+
+/** S9 — an `operator` gets a button named exactly "Settings", `aria-disabled="true"`. */
+export function locksSettingsAsAnAriaDisabledButton(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(lockedSettings()).toHaveAttribute("aria-disabled", "true");
+}
+
+/**
+ * S10 — the description is carried by `aria-describedby`, resolved by id. A
+ * `toHaveAccessibleDescription` check alone would pass on the `title`
+ * fallback with the idref dropped.
+ */
+export function describesTheLockedSettingsReason(): void {
+  renderShell(GLOBAL, "/", "operator");
+  const id = lockedSettings().getAttribute("aria-describedby") ?? "";
+  expect(document.getElementById(id)?.textContent).toBe(SETTINGS_LOCKED_REASON);
+}
+
+/** S11 — the button takes keyboard focus; a natively `disabled` one would not. */
+export function letsTheLockedSettingsTakeFocus(): void {
+  renderShell(GLOBAL, "/", "operator");
+  const button = lockedSettings();
+  act(() => {
+    button.focus();
+  });
+  expect(button).toHaveFocus();
+}
+
+/** S12 — an `operator` gets no Settings link; the button is the positive control. */
+export function givesAnOperatorNoSettingsLink(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(lockedSettings()).toBeInTheDocument();
+  expect(within(topNav()).queryByRole("link", { name: "Settings" })).toBeNull();
+}
+
+/** S13 — an `organization_admin` gets the `/admin` link and no locked button. */
+export function givesAnOrganizationAdminTheSettingsLink(): void {
+  renderShell(LOCATION, "/", "organization_admin");
+  expect(within(topNav()).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin");
+  expect(within(topNav()).queryByRole("button", { name: "Settings" })).toBeNull();
+}
+
+/** S14 — the text is `text-white/70` (3.43:1), not the 2.48:1 `text-white/50`. */
+export function drawsTheLockedSettingsAtThreeToOne(): void {
+  renderShell(GLOBAL, "/", "operator");
+  const classes = lockedSettings().classList;
+  expect(classes.contains("text-white/70")).toBe(true);
+  expect(classes.contains("text-white/50")).toBe(false);
+}
+
+/**
+ * `F4.164` U3 — the collapsed rail. A collapsed sidebar link carries
+ * `aria-label="<label> (<code>)"`, so it announces its full title and its
+ * accessible name still contains the visible code (WCAG 2.5.3 Label in Name);
+ * an expanded link has no `aria-label` and takes its name from the label it
+ * shows. `COLLAPSED_LABEL_OVERRIDES` makes the codes unique.
+ *
+ * L1–L3 gate the data: `collapsedRailEntries()` is every item of both lists,
+ * the temporarily hidden ones included, so a collision that only shows once an
+ * item is un-hidden or once a role sees the admin group is still caught.
+ *
+ * L4–L6 and L8 need one render only, `admin` with a `GLOBAL` scope. Every visibility
+ * rule in `AppShell` only removes items (the hidden paths, `none`/`null` scope
+ * for Control Room, the admin group for a non-admin, `catalogOnly` and
+ * `globalOnly` for a lesser admin), and `admin` with `GLOBAL` passes all of
+ * them, so that render shows the maximal set. Uniqueness of a set holds for
+ * every subset of it, and an attribute present on every link of the maximal
+ * set is present on every link of each role's subset.
+ */
+function renderCollapsedShell(): void {
+  window.localStorage.setItem("bms-sidebar-collapsed", "true");
+  renderShell(GLOBAL, "/", "admin");
+}
+
+function sidebarLinks(): HTMLElement[] {
+  return within(sidebar()).getAllByRole("link");
+}
+
+function duplicateCodes(entries: { code: string; label: string; path: string }[]): string[] {
+  const byCode = new Map<string, string[]>();
+  for (const entry of entries) {
+    byCode.set(entry.code, [...(byCode.get(entry.code) ?? []), `${entry.label} (${entry.path})`]);
+  }
+  return [...byCode.entries()]
+    .filter(([, owners]) => owners.length > 1)
+    .map(([code, owners]) => `${code}: ${owners.join(" / ")}`);
+}
+
+/** L1 — no two rail items share a collapsed code; the message names each collision. */
+export function givesEveryRailItemAUniqueCode(): void {
+  const duplicates = duplicateCodes(collapsedRailEntries());
+  expect(duplicates, `duplicate collapsed codes:\n${duplicates.join("\n")}`).toEqual([]);
+}
+
+/** L2 — the gate reads the full list: 23 items today, hidden ones included. */
+export function readsTheFullItemList(): void {
+  expect(collapsedRailEntries().length).toBeGreaterThanOrEqual(23);
+}
+
+/** L3 — every override key is the path of some rail item (a renamed key is dead). */
+export function keysEveryOverrideByARealPath(): void {
+  const paths = new Set(collapsedRailEntries().map((entry) => entry.path));
+  const dead = Object.keys(COLLAPSED_LABEL_OVERRIDES).filter((key) => !paths.has(key));
+  expect(dead).toEqual([]);
+}
+
+/** L4 — collapsed, every sidebar link's `aria-label` is "<title> (<visible code>)". */
+export function labelsEveryCollapsedLinkWithItsTitleAndCode(): void {
+  renderCollapsedShell();
+  const links = sidebarLinks();
+  expect(links.length).toBeGreaterThan(0);
+  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(
+    links.map((link) => `${link.getAttribute("title") ?? ""} (${link.textContent ?? ""})`),
+  );
+}
+
+/** L5 — collapsed, "Dashboard (D)" and "Dashboards (DS)" each name exactly one link. */
+export function namesDashboardAndDashboardsApartWhenCollapsed(): void {
+  renderCollapsedShell();
+  expect({
+    Dashboard: within(sidebar()).queryAllByRole("link", { name: "Dashboard (D)" }).length,
+    Dashboards: within(sidebar()).queryAllByRole("link", { name: "Dashboards (DS)" }).length,
+  }).toEqual({ Dashboard: 1, Dashboards: 1 });
+}
+
+/** L6a — collapsed, the visible codes are unique. */
+export function showsUniqueCodesWhenCollapsed(): void {
+  renderCollapsedShell();
+  const codes = sidebarLinks().map((link) => link.textContent ?? "");
+  const repeated = codes.filter((code, index) => codes.indexOf(code) !== index);
+  expect(codes.length).toBeGreaterThan(0);
+  expect(repeated).toEqual([]);
+}
+
+/** L6b — collapsed, "Dashboards" reads "DS". */
+export function showsDsForDashboardsWhenCollapsed(): void {
+  renderCollapsedShell();
+  expect(within(sidebar()).getByRole("link", { name: "Dashboards (DS)" })).toHaveTextContent(
+    /^DS$/,
+  );
+}
+
+/** L7 — expanded, "Dashboards" reads its full label. */
+export function showsTheFullLabelWhenExpanded(): void {
+  renderShell(GLOBAL, "/", "admin");
+  expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toHaveTextContent(
+    /^Dashboards$/,
+  );
+}
+
+/**
+ * L8 — collapsed, every link's accessible name contains its visible text (WCAG
+ * 2.5.3). The name is the one Testing Library computes, read through the
+ * `name` callback, so it is the name a query by role would match on.
+ */
+export function keepsTheVisibleCodeInEveryCollapsedName(): void {
+  renderCollapsedShell();
+  const names = new Map<HTMLElement, string>();
+  within(sidebar()).getAllByRole("link", {
+    name: (name, element) => {
+      names.set(element as HTMLElement, name);
+      return true;
+    },
+  });
+  const missing = [...names.entries()]
+    .filter(([link, name]) => !name.includes(link.textContent ?? " "))
+    .map(([link, name]) => `"${name}" lacks "${link.textContent ?? ""}"`);
+  expect(names.size).toBeGreaterThan(0);
+  expect(missing).toEqual([]);
+}
+
+/** L9 — expanded, the "Dashboards" link's accessible name is exactly "Dashboards". */
+export function namesTheExpandedLinkByItsLabel(): void {
+  renderShell(GLOBAL, "/", "admin");
+  expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toHaveAccessibleName(
+    "Dashboards",
+  );
 }
 
 /**

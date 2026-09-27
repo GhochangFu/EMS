@@ -165,6 +165,34 @@ export async function commitFollowsAPreviewOfTheSameFile(): Promise<void> {
   expect(commit).not.toHaveBeenCalled();
 }
 
+/** F4.164 U4: a pending Commit ("Writing…") carries `aria-busy="true"`. */
+export async function aPendingCommitHasAriaBusyTrue(): Promise<void> {
+  vi.spyOn(assetPointsApi, "previewMappingSheet").mockResolvedValue(PREVIEW);
+  vi.spyOn(assetPointsApi, "commitMappingSheet").mockReturnValue(new Promise(() => {}));
+  renderPanel(LOCATION_ID);
+
+  await chooseFile(sheetFile("mappings.csv"));
+  await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+  await waitFor(() => expect(commitButton()).toBeEnabled());
+
+  await userEvent.click(commitButton());
+
+  const busy = await screen.findByRole("button", { name: "Writing…" });
+  expect(busy).toHaveAttribute("aria-busy", "true");
+}
+
+/** F4.164 U4: the idle Commit button carries `aria-busy="false"`. */
+export async function anIdleCommitHasAriaBusyFalse(): Promise<void> {
+  vi.spyOn(assetPointsApi, "previewMappingSheet").mockResolvedValue(PREVIEW);
+  renderPanel(LOCATION_ID);
+
+  await chooseFile(sheetFile("mappings.csv"));
+  await userEvent.click(screen.getByRole("button", { name: "Preview" }));
+  await waitFor(() => expect(commitButton()).toBeEnabled());
+
+  expect(commitButton()).toHaveAttribute("aria-busy", "false");
+}
+
 /**
  * Case 3 — with no location chosen there is nothing to export and nothing to
  * import into: the sheet is a location document (ADR 0056 decision 6), and the

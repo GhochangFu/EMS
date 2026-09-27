@@ -133,10 +133,11 @@ export async function anUnconfiguredEstateShowsTheDashAndTheReason(): Promise<vo
 
 /**
  * How `KpiTile` marks a tile stale: an amber ring on the card's own element.
- * `ring-2` is the discriminating class — the tile also renders a
- * "Stale · no telemetry ~10s" line, but only for `status === "ready"`, so on
- * the empty tile the ring is the *only* thing a reader would see and the only
- * thing an assertion can catch.
+ * `ring-2` is the discriminating class. Since `F4.164` U1 the tile's
+ * "Stale · no telemetry ~10s" line follows the same truthy `stale` the ring
+ * does, but this suite still reads the ring rather than the caption text,
+ * because it is the ring — not the caption — that this page's own
+ * `stale && kpiStatus === "ready"` decision controls.
  */
 const STALE_RING = "ring-2";
 
@@ -147,8 +148,9 @@ const STALE_RING = "ring-2";
  * status `pueTileProps` may have turned into `empty`. A stale estate with no
  * incomer configured therefore drew the amber ring around `—  Not configured …`
  * — an alarm colour on a tile that has nothing to be stale about, with no text
- * to explain it, because `KpiTile` gates the "Stale" line on `ready`. The page
- * now computes the props once and reads the ring off the tile's real status.
+ * to explain it, because `KpiTile` gated the "Stale" line on `ready` at the
+ * time (`F4.164` U1 removed that gate). The page now computes the props once
+ * and reads the ring off the tile's real status.
  *
  * The "Total load" tile is asserted in the same render as the anti-vacuity
  * half: it proves the `stale` flag reached the page at all, so a green run

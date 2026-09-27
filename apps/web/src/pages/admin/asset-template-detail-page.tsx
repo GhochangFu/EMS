@@ -411,6 +411,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
               <button
                 type="button"
                 disabled={busy || defaultDashboardsM.isPending}
+                aria-busy={defaultDashboardsM.isPending}
                 onClick={() => {
                   setActionError(null);
                   defaultDashboardsM.mutate();
@@ -834,6 +835,7 @@ function InstantiateDialog({
             disabled={
               !targetChosen || named === 0 || missing.length > 0 || instantiateM.isPending
             }
+            aria-busy={instantiateM.isPending}
             onClick={() => {
               setError(null);
               instantiateM.mutate();

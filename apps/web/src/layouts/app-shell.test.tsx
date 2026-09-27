@@ -4,30 +4,51 @@ import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "../stores/auth-store";
 import {
+  describesTheLockedSettingsReason,
   doesNotReadAssets,
+  drawsTheLockedSettingsAtThreeToOne,
   dropsTheControlRoom2dGroup,
+  givesAnOperatorNoSettingsLink,
+  givesAnOrganizationAdminTheSettingsLink,
+  givesEveryRailItemAUniqueCode,
   hidesTheEntryFromANoneScope,
   hidesLocationTypesFromAnOrganizationAdmin,
   hidesTheEntryWhileTheScopeIsNull,
   highlightsTheEntryOnANestedPath,
   keepsOtherItemsExactMatch,
+  keysEveryOverrideByARealPath,
+  keepsTheVisibleCodeInEveryCollapsedName,
+  labelsEveryCollapsedLinkWithItsTitleAndCode,
+  letsTheLockedSettingsTakeFocus,
+  locksSettingsAsAnAriaDisabledButton,
+  namesTheExpandedLinkByItsLabel,
+  namesDashboardAndDashboardsApartWhenCollapsed,
   placesTheEntryDirectlyAfterAlarmCentre,
+  readsTheFullItemList,
+  showsDsForDashboardsWhenCollapsed,
   showsLocationTypesToTheGlobalAdmin,
   showsOneEntryToALocationScope,
+  showsTheFullLabelWhenExpanded,
+  showsUniqueCodesWhenCollapsed,
 } from "./app-shell.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
  * the jsdom docblock is here because this is the file Vitest collects
  * (ADR 0042 decision 2).
+ *
+ * The cleanup is file-level so every `describe` gets it. It also removes the
+ * `bms-sidebar-collapsed` key: `AppShell` reads it at mount, so a collapsed
+ * case would otherwise leak its rail into every later render.
  */
-describe("F3.66 Control Room sidebar entry", () => {
-  afterEach(() => {
-    cleanup();
-    vi.restoreAllMocks();
-    useAuthStore.setState({ scope: null });
-  });
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  useAuthStore.setState({ scope: null });
+  window.localStorage.removeItem("bms-sidebar-collapsed");
+});
 
+describe("F3.66 Control Room sidebar entry", () => {
   it("S1 shows one entry, to /control-room, to a location scope", () => {
     showsOneEntryToALocationScope();
   });
@@ -66,5 +87,73 @@ describe("F3.66 Control Room sidebar entry", () => {
 
   it("S10 shows one Location Types entry to the global admin (F4.162)", () => {
     showsLocationTypesToTheGlobalAdmin();
+  });
+});
+
+describe("F4.164 locked Settings entry", () => {
+  it("S9 is a button named Settings with aria-disabled=true", () => {
+    locksSettingsAsAnAriaDisabledButton();
+  });
+
+  it("S10 is described by the locked reason through aria-describedby", () => {
+    describesTheLockedSettingsReason();
+  });
+
+  it("S11 takes keyboard focus", () => {
+    letsTheLockedSettingsTakeFocus();
+  });
+
+  it("S12 gives an operator no Settings link", () => {
+    givesAnOperatorNoSettingsLink();
+  });
+
+  it("S13 gives an organization_admin the /admin link and no locked button", () => {
+    givesAnOrganizationAdminTheSettingsLink();
+  });
+
+  it("S14 draws the locked entry in text-white/70", () => {
+    drawsTheLockedSettingsAtThreeToOne();
+  });
+});
+
+describe("F4.164 collapsed rail", () => {
+  it("L1 gives every rail item a unique collapsed code", () => {
+    givesEveryRailItemAUniqueCode();
+  });
+
+  it("L2 reads the full item list, hidden items included", () => {
+    readsTheFullItemList();
+  });
+
+  it("L3 keys every override by the path of a rail item", () => {
+    keysEveryOverrideByARealPath();
+  });
+
+  it("L4 labels every collapsed link with its title and its visible code", () => {
+    labelsEveryCollapsedLinkWithItsTitleAndCode();
+  });
+
+  it("L5 names Dashboard (D) and Dashboards (DS) apart when collapsed", () => {
+    namesDashboardAndDashboardsApartWhenCollapsed();
+  });
+
+  it("L6a shows unique codes when collapsed", () => {
+    showsUniqueCodesWhenCollapsed();
+  });
+
+  it("L6b shows DS for Dashboards when collapsed", () => {
+    showsDsForDashboardsWhenCollapsed();
+  });
+
+  it("L7 shows the full label when expanded", () => {
+    showsTheFullLabelWhenExpanded();
+  });
+
+  it("L8 keeps the visible code in every collapsed link's accessible name (WCAG 2.5.3)", () => {
+    keepsTheVisibleCodeInEveryCollapsedName();
+  });
+
+  it("L9 names the expanded Dashboards link exactly Dashboards", () => {
+    namesTheExpandedLinkByItsLabel();
   });
 });

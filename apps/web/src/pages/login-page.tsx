@@ -188,6 +188,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={mutation.isPending}
+              aria-busy={mutation.isPending}
               className="w-full rounded bg-bms-green py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-bms-green-dark disabled:opacity-60"
             >
               {mutation.isPending ? "Signing in..." : "Sign in securely"}

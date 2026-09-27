@@ -272,6 +272,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
           <button
             type="button"
             disabled={blocked || saveM.isPending}
+            aria-busy={saveM.isPending}
             onClick={() => saveM.mutate()}
             className="rounded bg-bms-green px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
           >

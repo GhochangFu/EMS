@@ -96,6 +96,7 @@ function AssetImageCell({
           type="button"
           className="text-left text-xs font-semibold text-bms-muted"
           disabled={deleting}
+          aria-busy={deleting}
           onClick={() => onDelete(image)}
         >
           {deleting ? "Deleting…" : "Delete"}

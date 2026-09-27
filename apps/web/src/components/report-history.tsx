@@ -134,6 +134,7 @@ export function ReportHistory(): JSX.Element {
                           type="button"
                           className="text-xs text-bms-muted disabled:cursor-not-allowed"
                           disabled={deleting}
+                          aria-busy={deleting}
                           onClick={() => deleteMutation.mutate(file)}
                         >
                           {deleting ? "Deleting…" : "Delete"}
