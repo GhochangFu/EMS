@@ -66,7 +66,8 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  * **The fifth table, `bms.organizations` (`F4.71`).** `energy-cost.integration.spec.ts`
  * took the first organization `ORDER BY code` that had no tariff row, and every
  * committed fixture organization in the tree (`E13HR-…`, `F330-FRESH-…`,
- * `F4161-EMPTY-…`) sorts before `PHEWB` — so the suite adopted a transient
+ * `F4161-EMPTY-…`, and since `F4.71` U4 the report cap row's `F35A-CAP-…`)
+ * sorts before `PHEWB` — so the suite adopted a transient
  * organization with no active locations and failed its own precondition.
  * `rules.service.rls.integration.test.ts` read `WHERE id <> $1 LIMIT 1` with no
  * order at all and then planted an asset and a rule under whatever came back.
