@@ -837,7 +837,7 @@ export async function assertCanManageDashboard(
     throw new Error(`F3.1b: ${SEEDED.assetGroupAdmin} has no asset-group grant`);
   }
   const foreignGroup = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.asset_groups WHERE id <> $1 AND organization_id <> $2 LIMIT 1`,
+    `SELECT id FROM bms.asset_groups WHERE id <> $1 AND organization_id <> $2 ORDER BY created_at, id LIMIT 1`,
     [groupId, groupOrgId],
   );
   let foreignGroupId = foreignGroup.rows[0]?.id;
@@ -912,7 +912,7 @@ export async function assertCanManageDashboard(
   // line, and nothing pinned it before this case: the positive control is the assertion just
   // above (same actor, same location, location arm → true).
   const ownLocationGroup = await pool.query<{ id: string }>(
-    `SELECT ag.id FROM bms.asset_groups ag WHERE ag.location_id = $1 LIMIT 1`,
+    `SELECT ag.id FROM bms.asset_groups ag WHERE ag.location_id = $1 ORDER BY ag.created_at, ag.id LIMIT 1`,
     [locId],
   );
   const ownLocationGroupId = ownLocationGroup.rows[0]?.id;
