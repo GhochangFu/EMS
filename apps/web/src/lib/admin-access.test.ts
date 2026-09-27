@@ -4,9 +4,12 @@ import {
   runAdminAccessTests,
   runAssetGroupScopePredicateTests,
   runAssetTemplateTabTests,
+  runCanManageLocationTypesTests,
   runDashboardAuthoringPredicateTests,
   runCalcParameterPredicateTests,
   runLocationScopePredicateTests,
+  runLocationTypesTabHiddenFromOrganizationAdminTest,
+  runLocationTypesTabShownToAdminTest,
   runNotificationTabTests,
 } from "./admin-access.spec";
 
@@ -38,5 +41,17 @@ describe("admin-access", () => {
 
   it("gates calc parameter writes by role, and the organization scope by the two global roles (E4.1a)", () => {
     runCalcParameterPredicateTests();
+  });
+
+  it("A1 canManageLocationTypes is the global admin alone (F4.162)", () => {
+    runCanManageLocationTypesTests();
+  });
+
+  it("A2a shows the Location Types tab to admin (F4.162)", () => {
+    runLocationTypesTabShownToAdminTest();
+  });
+
+  it("A2b hides the Location Types tab from organization_admin (F4.162)", () => {
+    runLocationTypesTabHiddenFromOrganizationAdminTest();
   });
 });

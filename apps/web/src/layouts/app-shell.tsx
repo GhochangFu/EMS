@@ -66,6 +66,8 @@ const adminModuleGroup = {
     { label: "Asset Points", path: "/admin/asset-points", globalOnly: false },
     { label: "Asset Groups", path: "/admin/asset-groups" },
     { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true },
+    // `F4.162` (plan D7) — global `admin` only, as the page and its API are.
+    { label: "Location Types", path: "/admin/location-types", globalOnly: true },
   ],
 } as const;
 

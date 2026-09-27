@@ -7,10 +7,12 @@ import {
   doesNotReadAssets,
   dropsTheControlRoom2dGroup,
   hidesTheEntryFromANoneScope,
+  hidesLocationTypesFromAnOrganizationAdmin,
   hidesTheEntryWhileTheScopeIsNull,
   highlightsTheEntryOnANestedPath,
   keepsOtherItemsExactMatch,
   placesTheEntryDirectlyAfterAlarmCentre,
+  showsLocationTypesToTheGlobalAdmin,
   showsOneEntryToALocationScope,
 } from "./app-shell.spec";
 
@@ -56,5 +58,13 @@ describe("F3.66 Control Room sidebar entry", () => {
 
   it("S8 keeps every other item exact-match", () => {
     keepsOtherItemsExactMatch();
+  });
+
+  it("S9 hides the Location Types entry from an organization_admin (F4.162)", () => {
+    hidesLocationTypesFromAnOrganizationAdmin();
+  });
+
+  it("S10 shows one Location Types entry to the global admin (F4.162)", () => {
+    showsLocationTypesToTheGlobalAdmin();
   });
 });
