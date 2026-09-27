@@ -6283,3 +6283,31 @@ the chat fix. CI green on the first run.
 global-admin page for location types, with the two known limits it must
 close). Owed separately: the `chore(agents):` sweep (eight open
 vocabularies, the `admin.ts` line count, §3 entries for the new files).
+
+### `F4.163` — the map uses OpenStreetMap tiles and opens on the caller's sites ✅ 2026-09-27
+
+PR #586, squash `b02c9449`. No ADR, no plan file (a one-change row raised
+and ruled by the owner).
+
+The CARTO `dark_all` basemap that `/map` loaded now answers every tile with
+an "API key required" image. The owner ruled the standard OpenStreetMap tile
+layer instead, with its required attribution, and no CARTO or other keyed
+provider. `MAP_TILE` in `apps/web/src/lib/map-site.ts` is the one place to
+point at a self-hosted tile server if production traffic outgrows
+OpenStreetMap's light-use tile policy. The map also opened at a fixed South
+Africa view; it now fits once to the pins that join a location (else every
+pin), so a PHEWB user opens on West Bengal, and the 8 s refetch does not undo
+the user's pan and zoom. The `/map` caption no longer names CARTO. The light
+map departs from the dark map in the mockups by the owner's choice.
+
+Verified: five new cases (`map-site.spec.ts` T1, T2, B1–B3), each reddened by
+its named mutation only; `typecheck`, `typecheck:tests`, `repo` 1242 passed.
+Web rebuilt `--no-cache` (bundle `index-D9BvMR18`, before the caption edit).
+Browser as `phe-admin`: 24/24 tiles from `tile.openstreetmap.org` with status
+200 and none from CARTO, the OpenStreetMap attribution, the six PHEWB markers
+all in view on first load, a normal map in the screenshot. The pan-then-refetch
+check could not be driven by the browser tool (not checked); a marker did not
+move over 20 s of refetches. CI green on the first run.
+
+**Cascade:** no row lists `F4.163` in *Depends*. No `chore(agents):` sweep
+owed (AGENTS.md does not name the basemap).
