@@ -6239,3 +6239,47 @@ Alarms and `prom-client` stay with `F3.16`.
 
 **Cascade:** no row lists `F4.58` in *Depends*. Owed separately: the
 `chore(agents):` sweep (AGENTS.md:937).
+
+### `F4.157` — the location type becomes a lookup table (ADR 0077) ✅ 2026-09-27
+
+PR #583, squash `e9e4a63a`; plan `docs/plans/f4.157-location-types.md`.
+ADR 0077 (#577).
+
+Migration `0085` adds the global vocabulary `bms.location_types` —
+`smoc_campus`, `rsmoc`, `csmoc` and `pump_station`, no RLS, `bms_tenant`
+SELECT only — moves the six PHEWB locations and their map pins to
+`pump_station`, and then adds `locations_type_fk`. The PHE seeds write
+`pump_station`, so a cold start agrees with a migrated database. One
+`locationTypeCodeSchema` replaces every three-value enum in the contracts.
+`GET /api/v1/admin/location-types` serves the active rows to master-data
+users, and the admin location writes and the onboarding commit refuse an
+unknown or inactive type with a 400 that lists the codes. The map takes each
+pin's type and label from its location (`kindLabel`), and a pin carries live
+health when it joins a location, so the PHE pins keep their health. The
+location KPI row gains `typeLabel`, which the location header and the KPI
+card show. Excel onboarding refuses an empty or unknown type without echoing
+the cell; the chat asks for the type with the active labels and never
+defaults. The admin locations page fills its Type list from the API.
+
+The owner ruled six ADR gate questions and seven plan questions; OQ4 (the
+KPI `typeLabel`) was taken into scope against the recommendation. The code
+review found that a type reply could rename a draft location in the chat;
+the fix shares one draft merge between storing and validating a turn, and
+the owner then ruled that the chat keeps a stored location only while it
+waits for a type. Security L1 (`bms_fleet` keeps DML on the table) was ruled
+kept, matching `bms.point_keys`. ADR 0077 got a dated correction: the PHE
+pins had shown the organization code, not "RSMOC".
+
+Verified: a named mutation per new test; a full suite on a scratch database
+(6502 passed, 7 failed — only the two `F4.160` files); a cold start and a
+second seed on an empty database; `0085` applied to the dev `bms` database
+(hash equal to the file, rows moved, FK present, tenant writes refused); the
+stack rebuilt `--no-cache` (the API boot maps the new controller; bundle
+`index-DsEvAS0Q`); browser as `admin` 9/9 and as `phe-admin` 6/6. Code,
+security, migration and compliance reviews ran, with a focused re-review of
+the chat fix. CI green on the first run.
+
+**Cascade:** no row lists `F4.157` in *Depends*. New row: `F4.162` (a
+global-admin page for location types, with the two known limits it must
+close). Owed separately: the `chore(agents):` sweep (eight open
+vocabularies, the `admin.ts` line count, §3 entries for the new files).
