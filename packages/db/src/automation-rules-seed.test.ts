@@ -1,13 +1,18 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAHyphenAndAnUnderscoreDiffer,
+  assertALongNameIsCutToTheBound,
+  assertANameOnTheBoundaryIsUnchanged,
   assertAnOverflowFillsTheBoundExactly,
   assertAShortCodeIsUnchanged,
+  assertAShortNameIsUnchanged,
   assertEverySuffixStaysInsideTheBound,
   assertOneBelowTheBoundaryFitsUnchanged,
   assertTheBoundaryFitsUnchanged,
   assertTheCutIsDeterministic,
   assertTheHashIsOfTheFullCode,
+  assertTheNameCutNeverSplitsASurrogatePair,
   assertTheOverflowShape,
   assertTwoLongCodesWithACommonPrefixDiffer,
 } from "./automation-rules-seed.spec";
@@ -45,7 +50,29 @@ describe("F4.129 — ladderRuleCode bounds the ESKOM ladder rule code to 64", ()
     assertEverySuffixStaysInsideTheBound();
   });
 
-  it("hashes the full raw asset code, not the cut", () => {
+  it("keeps two long codes that differ only by - against _ distinct", () => {
+    assertAHyphenAndAnUnderscoreDiffer();
+  });
+
+  it("hashes the full asset code, not the cut", () => {
     assertTheHashIsOfTheFullCode();
+  });
+});
+
+describe("F4.129 — ladderRuleName bounds the ESKOM ladder rule name to 255", () => {
+  it("leaves a short name unchanged", () => {
+    assertAShortNameIsUnchanged();
+  });
+
+  it("leaves a name sitting exactly on the 255-character boundary unchanged", () => {
+    assertANameOnTheBoundaryIsUnchanged();
+  });
+
+  it("cuts a 255-character asset name so the rule name is 255 and keeps the suffix", () => {
+    assertALongNameIsCutToTheBound();
+  });
+
+  it("cuts by code point, never inside a surrogate pair", () => {
+    assertTheNameCutNeverSplitsASurrogatePair();
   });
 });
