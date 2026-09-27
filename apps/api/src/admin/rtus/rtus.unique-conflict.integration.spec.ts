@@ -74,14 +74,18 @@ function tag(): string {
  * An `external_rtu_id` unique to this process and this call, **negative** and
  * int4-safe.
  *
- * The column is `integer`, so a `Date.now()`-derived value would overflow it.
- * The seed's ids are all positive, so a negative value cannot collide with a
- * seeded row; the pid spreads concurrent processes apart, and the sequence
- * separates calls within one. The largest magnitude is
- * `1 + 199_999 * 10_000 + 9_999 < 2^31`.
+ * The column is `integer`, so a raw `Date.now()` would overflow it. The seed's
+ * ids are all positive, so a negative value cannot collide with a seeded row.
+ * The pid spreads concurrent processes apart and the sequence separates calls
+ * within one. The pid alone is not unique across runs — Windows recycles pids —
+ * so a leaked row from a crashed earlier run could collide at fixture time; the
+ * run's start second, drawn once, moves each run to a different block. The
+ * largest magnitude is `1 + 213_999 * 10_000 + 9_999 < 2^31`.
  */
+const externalIdBase = (process.pid + Math.floor(Date.now() / 1000)) % 214_000;
+
 function nextExternalId(): number {
-  return -(1 + (process.pid % 200_000) * 10_000 + (externalIdSeq++ % 10_000));
+  return -(1 + externalIdBase * 10_000 + (externalIdSeq++ % 10_000));
 }
 
 type RtuFixtureFields = {
@@ -177,12 +181,28 @@ async function countRowsHoldingExternalId(
   return res.rows[0]?.n ?? 0;
 }
 
-/** The error a call refused with, or a failure if it did not refuse at all. */
-async function rejectionOf(run: Promise<unknown>): Promise<unknown> {
+/**
+ * The error a call refused with, or a failure if it did not refuse at all.
+ *
+ * A `create` that resolves has committed a row the suite never asked for. Its
+ * id is recorded before the failure is thrown, so `afterAll` deletes it with
+ * the rest: without that, the regression this cell exists to catch would also
+ * leave a row with a non-null `external_rtu_id` or `mqtt_topic` on the shared
+ * database. An `update` resolves to a row already in `createdRtuIds`.
+ */
+async function rejectionOf(
+  ctx: RtuUniqueConflictCtx,
+  run: Promise<unknown>,
+): Promise<unknown> {
+  let resolved: unknown;
   try {
-    await run;
+    resolved = await run;
   } catch (error) {
     return error;
+  }
+  const id = (resolved as { id?: unknown } | null)?.id;
+  if (typeof id === "string" && !ctx.createdRtuIds.includes(id)) {
+    ctx.createdRtuIds.push(id);
   }
   throw new Error("F4.60: the call resolved where a refusal was expected");
 }
@@ -209,6 +229,7 @@ export async function assertCreateRefusesATakenRtuCode(
 
   const code = tag();
   const error = await rejectionOf(
+    ctx,
     ctx.svc.create(jwt, {
       locationId: ctx.locationId,
       code,
@@ -252,6 +273,7 @@ export async function assertUpdateRefusesATakenRtuCode(
 
   const renamed = `F4.60 renamed ${tag()}`;
   const error = await rejectionOf(
+    ctx,
     ctx.svc.update(jwt, target.id, { rtuCode: taken, displayName: renamed }),
   );
 
@@ -341,6 +363,7 @@ export async function assertCreateRefusesATakenExternalRtuId(
 
   const code = tag();
   const error = await rejectionOf(
+    ctx,
     ctx.svc.create(jwt, {
       locationId: ctx.locationId,
       code,
@@ -374,6 +397,7 @@ export async function assertUpdateRefusesATakenExternalRtuId(
   const target = await createRtu(ctx, jwt, { externalRtuId: mine });
 
   const error = await rejectionOf(
+    ctx,
     ctx.svc.update(jwt, target.id, {
       externalRtuId: taken,
       displayName: `F4.60 renamed ${tag()}`,
@@ -399,6 +423,7 @@ export async function assertCreateRefusesATakenMqttTopic(
 
   const code = tag();
   const error = await rejectionOf(
+    ctx,
     ctx.svc.create(jwt, {
       locationId: ctx.locationId,
       code,
@@ -423,6 +448,7 @@ export async function assertUpdateRefusesATakenMqttTopic(
   const target = await createRtu(ctx, jwt, { mqttTopic: mine });
 
   const error = await rejectionOf(
+    ctx,
     ctx.svc.update(jwt, target.id, {
       mqttTopic: taken,
       displayName: `F4.60 renamed ${tag()}`,
@@ -451,6 +477,7 @@ export async function assertCreateRefusesATakenCodeAtTheSameLocation(
   const taken = await createRtu(ctx, jwt);
 
   const error = await rejectionOf(
+    ctx,
     ctx.svc.create(jwt, {
       locationId: ctx.locationId,
       code: taken.code,
@@ -476,6 +503,7 @@ export async function assertUpdateRefusesATakenCodeAtTheSameLocation(
   const target = await createRtu(ctx, jwt);
 
   const error = await rejectionOf(
+    ctx,
     ctx.svc.update(jwt, target.id, {
       code: taken.code,
       displayName: `F4.60 renamed ${tag()}`,
