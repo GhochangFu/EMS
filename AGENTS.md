@@ -2615,8 +2615,16 @@ referenced by `aria-describedby`, and text at 3:1 or better on its ground.
 A collapsed sidebar link is named `"<label> (<code>)"` so its accessible name
 contains the code it shows (WCAG 2.5.3); a new item whose code collides takes
 an entry in `COLLAPSED_LABEL_OVERRIDES`, which `collapsedRailEntries()` gates.
-A button that swaps its label while pending carries `aria-busy` on the same
-flag; `tests/f4.164-pending-buttons-aria-busy.test.ts` enforces it.
+A button that is disabled while its own action pends changes its accessible
+name while it pends ("Save" → "Saving…"; the `aria-label` when the button has
+one) and carries `aria-busy` on that flag. A per-row button keys the pending
+name on the mutation's `variables`, so only the running row changes. A button
+disabled only because a sibling action pends keeps its name and is declared
+with `data-pending-bystander="<flag>"`; the allowed markers are an exact list in
+the gate. `tests/f4.164-pending-buttons-aria-busy.test.ts` (keyed on the label)
+and `tests/f4.168-pending-disabled-buttons.test.ts` (keyed on `disabled`) enforce
+it, sharing `tests/support/pending-button-scan.ts`; the `F4.168` gate docblock
+lists what they do not cover.
 
 **The canvas-colour question is resolved** (**ADR 0074**, `F3.28`,
 2026-09-24): the light canvas above stays the default, and it is not open for
