@@ -100,6 +100,11 @@ export async function assertNoFixtureRowsRemain(
   ownerPool: pg.Pool,
   ids: readonly string[],
 ): Promise<void> {
+  // An empty list counts nothing and would pass, for example when this case
+  // runs alone under `-t`.
+  if (ids.length === 0) {
+    throw new Error("F4.167: no RTU ids recorded — the lifecycle did not run.");
+  }
   const { rows } = await ownerPool.query<{ audit: number; rtus: number }>(
     `SELECT (SELECT count(*)::int FROM bms.audit_log WHERE entity_id = ANY($1)) AS audit,
             (SELECT count(*)::int FROM bms.rtus WHERE id = ANY($1)) AS rtus`,
