@@ -249,18 +249,23 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
         `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
         [orgA],
       );
-      const group = await run(
-        `SELECT id FROM bms.asset_groups WHERE organization_id = $1 ORDER BY code`,
-        [orgA],
-      );
       const locationId = loc.rows[0]?.id;
+      // `F4.71` U6 — the group is this transaction's own, created here and discarded by the
+      // ROLLBACK. It used to be `ORDER BY code` over committed rows, which adopts another suite's
+      // committed fixture group whenever its code sorts first, and that suite deletes it before
+      // the `area` insert below references it (`23503`).
+      const group = await run(
+        `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+         VALUES ($1, $2, $3, 'F3.1a scope group') RETURNING id`,
+        [orgA, locationId, `F31A-GRP-${RUN}`],
+      );
       const groupId = group.rows[0]?.id;
       // Asserted, not branched on. The both-axes-set case below is the ONLY exercise of
       // dashboards_scope_check, and behind an `if` it would stop running — silently, still
-      // green — the day the seed stopped creating a group for the first organization.
+      // green — the day this insert stopped returning a row.
       expect(
         groupId,
-        "F3.1a: needs an asset group in the first organization — run pnpm db:seed",
+        "F3.1a: could not create this transaction's asset group in the first organization",
       ).toBeDefined();
 
       // Organization-wide: both NULL.

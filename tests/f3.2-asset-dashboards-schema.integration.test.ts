@@ -180,12 +180,17 @@ describe.skipIf(!has)("F3.2 — asset default dashboards against a live database
         `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
         [orgA],
       );
-      const group = await run(`SELECT id FROM bms.asset_groups WHERE organization_id = $1 ORDER BY code`, [
-        orgA,
-      ]);
       const locationId = loc.rows[0]?.id;
+      // `F4.71` U6 — the group is this transaction's own, discarded by the ROLLBACK, rather than
+      // `ORDER BY code` over committed rows, which adopts another suite's fixture group whenever
+      // its code sorts first.
+      const group = await run(
+        `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+         VALUES ($1, $2, $3, 'F3.2 scope group') RETURNING id`,
+        [orgA, locationId, `F32-GRP-${RUN}`],
+      );
       const groupId = group.rows[0]?.id;
-      expect(groupId, "F3.2: needs an asset group in the first organization — run pnpm db:seed").toBeDefined();
+      expect(groupId, "F3.2: could not create this transaction's asset group in the first organization").toBeDefined();
 
       // Positive control first — I1 must prove asset_id alone is accepted before it proves
       // the pairwise refusals, or a check that refused everything would look correct here.
