@@ -3,6 +3,8 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -19,6 +21,10 @@ import { resolveTelemetrySource } from "../telemetry-source";
 import { translateRtuUniqueConflict } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 
+/** `F4.138` — the 500 a write answers when the RTU's org and its location's disagree. */
+export const RTU_ORG_MISMATCH_MESSAGE =
+  "RTU organization does not match its location's organization";
+
 /**
  * `F4.16` / `E7.1b` / ADR 0043 — `rtus` gains `organization_id` + a
  * `tenant_isolation` policy + `FORCE` in migration `0047`.
@@ -26,14 +32,19 @@ import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
  * Reads run on `fleetDb`, trusting the `writableLocationIds`/`canManageLocation`
  * scope filter this service already applies (Amendment 2/3) — the same "bypass,
  * then trust an already-computed grant" shape `AccessControlService` uses. Writes
- * run inside `withTenant(tenantDb, organizationId, …)`; the org is the RTU's
- * location's org, resolved before the write. An RTU never relocates (its
- * `location_id` is not updatable), so — unlike `assets` — there is no cross-org
- * move to guard against. The `deactivate` active-asset count reads `assets`
- * (policied in `0047`) inside that same GUC.
+ * run inside `withTenant(tenantDb, organizationId, …)`. On `create` the org is
+ * the location's, resolved before the write. On `update`, `deactivate` and
+ * `reactivate` it is the RTU's own column, **checked against** the location's
+ * org before the write (`resolveAgreedOrg`, `F4.138`). An RTU never relocates
+ * (its `location_id` is not updatable), so — unlike `assets` — there is no
+ * cross-org move to guard against; what is guarded is drift between the two
+ * columns, which is refused rather than repaired. The `deactivate` active-asset
+ * count reads `assets` (policied in `0047`) inside that same GUC.
  */
 @Injectable()
 export class RtusAdminService {
+  private readonly logger = new Logger(RtusAdminService.name);
+
   constructor(
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
@@ -234,8 +245,7 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    const organizationId =
-      existing.organizationId ?? (await this.resolveLocationOrg(existing.locationId));
+    const organizationId = await this.resolveAgreedOrg(existing);
     const nextIngestEnabled = body.ingestEnabled ?? existing.ingestEnabled;
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       await tx
@@ -409,8 +419,7 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    const organizationId =
-      existing.organizationId ?? (await this.resolveLocationOrg(existing.locationId));
+    const organizationId = await this.resolveAgreedOrg(existing);
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       // The RTU's assets share its org, so the active-asset guard reads `assets`
       // (policied in 0047) inside the same tenant GUC.
@@ -453,8 +462,7 @@ export class RtusAdminService {
       throw new ForbiddenException("RTU is outside your access scope");
     }
 
-    const organizationId =
-      existing.organizationId ?? (await this.resolveLocationOrg(existing.locationId));
+    const organizationId = await this.resolveAgreedOrg(existing);
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       await tx.update(rtus).set({ active: true }).where(eq(rtus.id, id));
       await this.audit.write(
@@ -487,6 +495,41 @@ export class RtusAdminService {
       throw new NotFoundException("Location not found");
     }
     return row.organizationId;
+  }
+
+  /**
+   * `F4.138` — the org a write on an existing RTU runs under, refused when the
+   * RTU's own column disagrees with its location's org.
+   *
+   * `canManageLocation` derives the grant from the **location**, while
+   * `withTenant` sets the GUC from the RTU's column. If the two ever drift, an
+   * admin of the location's org would pass the gate and write under another
+   * org's GUC — and `update` would re-stamp the drifted column. Drift is not
+   * repaired here: a write under the location's org would match 0 rows under
+   * the `0047` policy (`USING organization_id = GUC`) and answer 200.
+   *
+   * 500, deliberately, as in `parse-stored-contract.ts` (ADR 0060 ruling 2): the
+   * caller did nothing wrong and no API path can correct the stored row, so no
+   * 4xx is true. Nest's base filter does not log an `HttpException`, and the
+   * pino-http request line records only the status and URL, hence this log
+   * line; it names the RTU only (§9.6) — both org ids are one query away.
+   *
+   * Called after `canManageLocation`, so a caller without the grant keeps its
+   * 403 and `resolveLocationOrg`'s precondition holds. It replaces
+   * `existing.organizationId ?? resolveLocationOrg(...)`, whose fallback never
+   * ran: `rtus.organization_id` is `NOT NULL`.
+   */
+  private async resolveAgreedOrg(
+    existing: Pick<typeof rtus.$inferSelect, "id" | "locationId" | "organizationId">,
+  ): Promise<string> {
+    const locationOrgId = await this.resolveLocationOrg(existing.locationId);
+    if (locationOrgId !== existing.organizationId) {
+      this.logger.error(
+        `RTU ${existing.id}: organization_id does not match its location's; write refused`,
+      );
+      throw new InternalServerErrorException(RTU_ORG_MISMATCH_MESSAGE);
+    }
+    return existing.organizationId;
   }
 
   private async fetchRow(id: string): Promise<AdminRtuDto> {

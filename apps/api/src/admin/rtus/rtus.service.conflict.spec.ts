@@ -47,10 +47,11 @@ function pgError(code: string, constraint: string): DriverError {
 /**
  * An `RtusAdminService` whose write, on either path, rejects with `err`.
  *
- * One `fleetDb` select chain serves both reads that precede a write:
- * `resolveLocationOrg` on `create` (it reads `organizationId`) and the
- * `existing` row on `update` (which carries a non-null `organizationId`, so
- * `update` does not resolve again). `withTenant` calls `tenantDb.transaction`
+ * One `fleetDb` select chain serves every read that precedes a write:
+ * `resolveLocationOrg` on `create` (it reads `organizationId`), and on `update`
+ * the `existing` row and then the location's org (`F4.138` compares the two).
+ * The chain answers both of `update`'s reads with the same row, so the two
+ * orgs agree and the write goes ahead. `withTenant` calls `tenantDb.transaction`
  * and then `tx.execute` for the GUC before the body runs.
  */
 function serviceFailingTheRtuWrite(err: unknown): RtusAdminService {
