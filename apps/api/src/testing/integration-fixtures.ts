@@ -79,12 +79,12 @@ export interface FixtureLocation {
  * docblock describes for `bms.assets`, one level up.
  *
  * **The fix is "oldest wins", the `F4.53` rule's invariant, not merely
- * "ordered".** `packages/db`'s seed writes every location in one statement
- * (`hierarchy-seed.ts`), so a seeded row's `created_at` predates any fixture
- * suite's insert in the same run — ordering by `created_at` alone can only ever
- * resolve a seeded row. `code` breaks the tie *within* that one seed statement,
- * where every row's `created_at` is identical; without it the choice would
- * still depend on random uuid order among ties. No concurrent suite deletes a
+ * "ordered".** `packages/db`'s seed writes the locations in a few batch
+ * statements (a fresh seed shows three distinct `created_at` values across 17
+ * rows), and every one of them predates any fixture suite's insert, so ordering
+ * by `created_at` can only ever resolve a seeded row. `code` breaks the tie
+ * *within* a batch, where every row's `created_at` is identical; without it the
+ * choice would still depend on random uuid order among ties. No concurrent suite deletes a
  * seeded row, so once a seeded row is what this resolves to, the race is
  * closed the same way `F4.53` closes it for `bms.organizations`.
  *
