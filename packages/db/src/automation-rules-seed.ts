@@ -731,7 +731,10 @@ export async function seedEskomLadderRules(
     .from(assets)
     .innerJoin(locations, eq(locations.id, assets.locationId))
     .innerJoin(organizations, eq(organizations.id, locations.organizationId))
-    .where(and(eq(organizations.code, "ESKOM"), eq(assets.domain, "electrical")));
+    .where(and(eq(organizations.code, "ESKOM"), eq(assets.domain, "electrical")))
+    // A stated order, so which of two colliding assets takes a held code
+    // (guard 3) does not depend on the plan.
+    .orderBy(assets.createdAt, assets.code);
   if (electricalAssets.length === 0) {
     return [];
   }

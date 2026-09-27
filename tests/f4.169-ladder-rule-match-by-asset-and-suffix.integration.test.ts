@@ -218,7 +218,8 @@ describe.skipIf(!ownerUrl)(
         const newCode = `F4169-${RUN_ID}-NEW`;
         const assetId = await tx.insertAsset(oldCode);
         await tx.seed();
-        await tx.pool.query(`UPDATE bms.assets SET code = $1 WHERE id = $2`, [newCode, assetId]);
+        const renamed = await tx.pool.query(`UPDATE bms.assets SET code = $1 WHERE id = $2`, [newCode, assetId]);
+        expect(renamed.rowCount, "the rename must update the fixture asset").toBe(1);
         await tx.pool.query(
           `UPDATE bms.automation_rules SET threshold_value = 230
             WHERE asset_id = $1 AND code LIKE '%\\_VOLTAGE\\_WARN'`,
@@ -276,10 +277,11 @@ describe.skipIf(!ownerUrl)(
         await tx.pool.query(`UPDATE bms.automation_rules SET threshold_value = 0.7 WHERE id = $1`, [
           pfLow?.id,
         ]);
-        await tx.pool.query(`DELETE FROM bms.automation_rules WHERE asset_id = $1 AND id <> $2`, [
+        const deleted = await tx.pool.query(`DELETE FROM bms.automation_rules WHERE asset_id = $1 AND id <> $2`, [
           assetId,
           pfLow?.id,
         ]);
+        expect(deleted.rowCount, "the fixture must delete the other four ladder rules").toBe(4);
 
         await tx.seed();
 
@@ -384,6 +386,61 @@ describe.skipIf(!ownerUrl)(
         ).toEqual(
           [ownCode, ...expectedCodes(assetCode).filter((code) => !code.endsWith("_DEMAND_HIGH"))].sort(),
         );
+      });
+    }, 60_000);
+
+    it("I8: an operator rule whose code ends _PF_LOW does not stand in for the ladder's PF_LOW", async () => {
+      await inRolledBackTransaction(async (tx) => {
+        const assetCode = `f4169-${runId}-op`;
+        const assetId = await tx.insertAsset(assetCode);
+        // Default `source` (`operator_rule`), a `_PF_LOW` tail, and a condition
+        // no ladder rule carries, so neither the condition-tuple guard nor a
+        // held code applies: only the `source` term of guard 2 tells it apart.
+        const operatorCode = `F4169_${RUN_ID}_PF_LOW`;
+        await tx.pool.query(
+          `INSERT INTO bms.automation_rules
+             (organization_id, code, name, rule_type, asset_id, point_key, operator, threshold_value)
+           VALUES ($1, $2, 'F4.169 fixture operator rule', 'threshold', $3, 'kw', '>', 987654)`,
+          [eskomOrgId, operatorCode, assetId],
+        );
+
+        await tx.seed();
+
+        // Mutation: dropping `source = 'simulator_threshold'` from guard 2
+        // reads the operator rule as the seeded PF_LOW and skips it (5 rows).
+        const rows = await tx.readRules(assetId);
+        expect(rows.map((row) => row.code), "the operator rule plus all five ladder rules").toEqual(
+          [operatorCode, ...expectedCodes(assetCode)].sort(),
+        );
+      });
+    }, 60_000);
+
+    it("I9: a victim and its attacker seeded in one run: no 23505, one warning, nine codes, one skip", async () => {
+      await inRolledBackTransaction(async (tx) => {
+        // The I5 pair, but both inserted before a single seed. Which of the
+        // two takes the held code depends on the seed's order, so nothing
+        // below names the loser.
+        const victimCode = `F4169-${runId}-pair-` + "p".repeat(40);
+        assert(victimCode.length === 60, `victim code must be 60 characters, got ${victimCode.length}`);
+        const victimHash = createHash("sha256").update(victimCode).digest("hex").toUpperCase().slice(0, 8);
+        const attackerCode = `${victimCode.replaceAll("-", "_").slice(0, 42)}_${victimHash}`;
+        expect(ladderRuleCode(attackerCode, "PF_LOW"), "the fixture must make the two codes equal").toBe(
+          ladderRuleCode(victimCode, "PF_LOW"),
+        );
+        const victimId = await tx.insertAsset(victimCode);
+        const attackerId = await tx.insertAsset(attackerCode);
+
+        // Mutation: not adding an INSERTed code to the held set lets the
+        // second asset INSERT the same code, and this throws 23505.
+        const skips = await tx.seed();
+
+        const rows = [...(await tx.readRules(victimId)), ...(await tx.readRules(attackerId))];
+        expect(new Set(rows.map((row) => row.code)).size, "the pair must hold nine distinct codes").toBe(9);
+        expect(tx.runLines(), "exactly one warning must name this run's fixtures").toHaveLength(1);
+        expect(
+          skips.filter((skip) => skip.assetCode.toLowerCase().includes(runId)),
+          "the seed must return exactly one collision skip for the pair",
+        ).toHaveLength(1);
       });
     }, 60_000);
 
