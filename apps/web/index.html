@@ -13,6 +13,27 @@
   </head>
   <body class="antialiased">
     <div id="root"></div>
+    <!--
+      F3.65a — reads the stored theme choice and sets `data-theme` before first paint, so
+      `index.css`'s `:root[data-theme="dark"]` block applies before React mounts (ADR 0078
+      decision 6 / plan D6). No `prefers-color-scheme`: the theme is an explicit switch, not the
+      OS preference — there is no visible switch in this row (`F3.65c` adds one). `nginx.conf`
+      sets no Content-Security-Policy today; if one is added, this inline script needs its own
+      CSP hash (or `'unsafe-inline'` for this script only), or it silently stops running and the
+      page falls back to the light theme regardless of the stored choice.
+    -->
+    <script>
+      (function () {
+        var theme = "light";
+        try {
+          var stored = window.localStorage.getItem("bms.theme");
+          if (stored === "dark") theme = "dark";
+        } catch (e) {
+          theme = "light";
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
