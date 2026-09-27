@@ -323,6 +323,7 @@ export function ReportSchedules({ user }: ReportSchedulesProps): JSX.Element {
                           type="button"
                           className="text-xs font-semibold text-bms-green disabled:cursor-not-allowed disabled:text-gray-400"
                           disabled={deleting}
+                          data-pending-bystander="deleting"
                           onClick={() => startEdit(row)}
                         >
                           Edit

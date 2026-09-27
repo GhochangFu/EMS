@@ -279,6 +279,7 @@ export function PointCalcOverridePanel({
         <button
           type="button"
           disabled={busy}
+          data-pending-bystander="busy"
           onClick={onCancel}
           className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted disabled:opacity-60"
         >

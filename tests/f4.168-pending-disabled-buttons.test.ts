@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { repoRoot } from "./support/source-scan";
 import {
+  buttonSegments,
   disabledPendingButtonFindings,
   disabledPendingButtons,
   webSourceFiles,
@@ -40,16 +41,18 @@ import {
  * it by hand. The scanner lives in `tests/support/pending-button-scan.ts`, shared with `F4.164`.
  */
 
-function scanTree(): { findings: string[]; buttons: number } {
+function scanTree(): { findings: string[]; buttons: number; bystanders: number } {
   const findings: string[] = [];
   let buttons = 0;
+  let bystanders = 0;
   for (const full of webSourceFiles()) {
     const src = readFileSync(full, "utf8");
     const rel = relative(repoRoot, full).split("\\").join("/");
     buttons += disabledPendingButtons(src).length;
     findings.push(...disabledPendingButtonFindings(src, rel));
+    bystanders += buttonSegments(src).segments.filter((s) => /data-pending-bystander/.test(s.tag)).length;
   }
-  return { findings, buttons };
+  return { findings, buttons, bystanders };
 }
 
 /**
@@ -271,5 +274,9 @@ describe("F4.168: a <button> disabled while pending changes its name and carries
 
   it("H16 the scan found at least 77 buttons disabled while pending (a broken walk would pass H15 vacuously)", () => {
     expect(scanTree().buttons).toBeGreaterThanOrEqual(77);
+  });
+
+  it("H17 (U5) the real tree carries at least two data-pending-bystander markers", () => {
+    expect(scanTree().bystanders).toBeGreaterThanOrEqual(2);
   });
 });

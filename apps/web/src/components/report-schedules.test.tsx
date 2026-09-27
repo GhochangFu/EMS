@@ -4,6 +4,7 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aDeleteInFlightDisablesThatRowsEdit,
+  aDeleteInFlightEditCarriesNoAriaBusy,
   aLocationAdminCreateBodyHasNoOrganizationIdKey,
   aPendingDeleteHasAriaBusyTrue,
   anIdleDeleteHasAriaBusyFalse,
@@ -119,6 +120,10 @@ describe("F3.5b report schedules section", () => {
 
   it("a delete in flight disables that row's Edit and not the other's", async () => {
     await aDeleteInFlightDisablesThatRowsEdit();
+  });
+
+  it("F4.168: a delete in flight leaves that row's Edit with no aria-busy", async () => {
+    await aDeleteInFlightEditCarriesNoAriaBusy();
   });
 
   it("a pending Delete carries aria-busy=\"true\"", async () => {

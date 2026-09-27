@@ -457,6 +457,25 @@ export async function aDeleteInFlightDisablesThatRowsEdit(): Promise<void> {
   expect(within(second).getByRole("button", { name: "Edit" })).toBeEnabled();
 }
 
+/**
+ * `F4.168` U5, B8 — Edit is a declared bystander of the row's own delete: it stays
+ * disabled and named "Edit", and carries no `aria-busy` (it is not itself busy).
+ */
+export async function aDeleteInFlightEditCarriesNoAriaBusy(): Promise<void> {
+  renderSchedules("admin", [FIRST, SECOND]);
+  vi.spyOn(reportsApi, "deleteReportSchedule").mockReturnValue(new Promise<void>(() => {}));
+  const first = await rowFor(FIRST.name);
+
+  await userEvent.click(within(first).getByRole("button", { name: "Delete" }));
+
+  const edit = await waitFor(() => {
+    const button = within(first).getByRole("button", { name: "Edit" });
+    expect(button).toBeDisabled();
+    return button;
+  });
+  expect(edit).not.toHaveAttribute("aria-busy");
+}
+
 /** A refused create renders the API's own sentence verbatim. */
 export async function aRefusedCreateRendersTheApiSentence(): Promise<void> {
   vi.spyOn(reportsApi, "createReportSchedule").mockRejectedValue(
