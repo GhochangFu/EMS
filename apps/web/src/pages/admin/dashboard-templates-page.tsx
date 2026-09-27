@@ -262,7 +262,9 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
           </p>
         ) : null}
         <ul className="divide-y divide-gray-100">
-          {stockRows.map((entry) => (
+          {stockRows.map((entry) => {
+            const importingThis = importM.isPending && importM.variables === entry.code;
+            return (
             <li key={entry.code} className="flex flex-wrap items-center justify-between gap-2 py-2">
               <div>
                 <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
@@ -281,20 +283,22 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
                 {mayAuthor ? (
                   <button
                     type="button"
-                    aria-label={`Import ${entry.name}`}
+                    aria-label={importingThis ? `Importing ${entry.name}…` : `Import ${entry.name}`}
                     disabled={importOrgId === "" || importM.isPending}
+                    aria-busy={importingThis}
                     onClick={() => {
                       setImportError(null);
                       importM.mutate(entry.code);
                     }}
                     className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
                   >
-                    Import
+                    {importingThis ? "Importing…" : "Import"}
                   </button>
                 ) : null}
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </SectionCard>
 

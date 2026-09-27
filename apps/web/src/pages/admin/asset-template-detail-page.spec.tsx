@@ -433,3 +433,25 @@ export async function aRunningBackfillDisablesTheLifecycleActions(): Promise<voi
   release?.();
   await screen.findByText("Created dashboards for 1 asset · 1 already had one");
 }
+
+/**
+ * `F4.168` B6 — the actions map shares `busy`, but each action's own name is
+ * keyed on its own mutation: Archive becomes "Archiving…" while `archiveM` is
+ * pending, and a sibling action disabled by the same `busy` keeps its name.
+ */
+export async function archiveAnnouncesArchivingSiblingsKeepTheirNames(): Promise<void> {
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()),
+    archiveAdminAssetTemplate: () => new Promise(() => {}),
+  });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+
+  const pending = await screen.findByRole("button", { name: "Archiving…" });
+  expect(pending).toHaveAttribute("aria-busy", "true");
+
+  const instantiate = screen.getByRole("button", { name: "Instantiate" });
+  expect(instantiate).toHaveAttribute("aria-busy", "false");
+  expect(instantiate).toBeDisabled();
+}

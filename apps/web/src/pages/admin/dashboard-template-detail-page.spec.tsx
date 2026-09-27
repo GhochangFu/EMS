@@ -389,3 +389,27 @@ export async function aTypedNameLeavesTheInstantiateButtonDisabled(): Promise<vo
     "the positive control — the same form with a valid slug submits",
   ).toBeEnabled();
 }
+
+/**
+ * `F4.168` B3 — the shared `busy` flag disables every lifecycle action, but
+ * each one's own name is keyed on its own mutation: Publish becomes
+ * "Publishing…" while `publishM` is pending, and Delete draft — disabled by
+ * the same `busy` — keeps its name and reports `aria-busy="false"`, because
+ * `deleteM` itself is not pending.
+ */
+export async function publishAnnouncesPublishingDeleteDraftKeepsItsName(): Promise<void> {
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()),
+    publishAdminDashboardTemplate: () => new Promise(() => {}),
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
+
+  const pending = await screen.findByRole("button", { name: "Publishing…" });
+  expect(pending).toHaveAttribute("aria-busy", "true");
+
+  const deleteButton = screen.getByRole("button", { name: "Delete draft" });
+  expect(deleteButton).toHaveAttribute("aria-busy", "false");
+  expect(deleteButton).toBeDisabled();
+}

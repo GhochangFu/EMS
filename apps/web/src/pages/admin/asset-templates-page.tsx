@@ -515,7 +515,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                   </Link>
                   <button
                     type="button"
-                    aria-label={`Import ${entry.name}`}
+                    aria-label={importingThis ? `Importing ${entry.name}…` : `Import ${entry.name}`}
                     disabled={importOrgId === "" || importM.isPending}
                     aria-busy={importingThis}
                     onClick={() => {

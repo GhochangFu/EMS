@@ -6,6 +6,7 @@ import {
   editPrefillsTheCurrencyAndSendsIt,
   formHasACurrencyInputWithADatalist,
   listRendersTheCurrencyColumn,
+  saveAnnouncesSavingWhilePendingAndSaveAtIdle,
   typedCurrencyIsUppercasedAndSubmitted,
 } from "./organizations-page.spec";
 
@@ -36,5 +37,9 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("O4 editing a row prefills the Currency input and the update sends it", async () => {
     await editPrefillsTheCurrencyAndSendsIt();
+  });
+
+  it("B1 Save announces Saving… and aria-busy while pending, Save at idle", async () => {
+    await saveAnnouncesSavingWhilePendingAndSaveAtIdle();
   });
 });

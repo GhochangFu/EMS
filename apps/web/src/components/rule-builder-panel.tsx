@@ -498,6 +498,7 @@ export function RuleBuilderPanel({
           <button
             className="rounded bg-gray-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
             disabled={!canSubmit}
+            aria-busy={createM.isPending || updateM.isPending}
             onClick={() =>
               form.id
                 ? updateM.mutate({
@@ -507,7 +508,11 @@ export function RuleBuilderPanel({
                 : createM.mutate(payload)
             }
           >
-            {form.id ? "Save changes" : "Save draft"}
+            {createM.isPending || updateM.isPending
+              ? "Saving…"
+              : form.id
+                ? "Save changes"
+                : "Save draft"}
           </button>
           <button
             className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"

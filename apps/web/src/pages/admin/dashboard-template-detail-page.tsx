@@ -263,40 +263,50 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
               <button
                 type="button"
                 disabled={busy}
+                aria-busy={publishM.isPending}
                 onClick={() => publishM.mutate()}
                 className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
               >
-                Publish
+                {publishM.isPending ? "Publishing…" : "Publish"}
               </button>
             ) : null}
             {canArchive ? (
               <button
                 type="button"
                 disabled={busy}
+                aria-busy={archiveM.isPending}
                 onClick={() => archiveM.mutate()}
                 className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
               >
-                Archive
+                {archiveM.isPending ? "Archiving…" : "Archive"}
               </button>
             ) : null}
             {canOpenDraft ? (
               <button
                 type="button"
                 disabled={busy}
+                aria-busy={draftM.isPending}
                 onClick={() => draftM.mutate()}
                 className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
               >
-                {template.status === "archived" ? "Revive as a new draft" : "Edit this version"}
+                {draftM.isPending
+                  ? template.status === "archived"
+                    ? "Reviving…"
+                    : "Creating draft…"
+                  : template.status === "archived"
+                    ? "Revive as a new draft"
+                    : "Edit this version"}
               </button>
             ) : null}
             {canDelete ? (
               <button
                 type="button"
                 disabled={busy}
+                aria-busy={deleteM.isPending}
                 onClick={() => deleteM.mutate()}
                 className="rounded border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 disabled:opacity-60"
               >
-                Delete draft
+                {deleteM.isPending ? "Deleting draft…" : "Delete draft"}
               </button>
             ) : null}
             {canRunInstantiate ? (
@@ -538,7 +548,7 @@ function InstantiateDialog({
               // Distinct from the page header's own "Instantiate" button that
               // opens this dialog — `getByRole` cannot otherwise tell the two
               // apart.
-              aria-label="Confirm instantiate"
+              aria-label={instantiateM.isPending ? "Instantiating…" : "Confirm instantiate"}
               disabled={!canSubmit || instantiateM.isPending}
               aria-busy={instantiateM.isPending}
               onClick={() => {

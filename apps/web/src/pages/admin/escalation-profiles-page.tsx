@@ -401,9 +401,10 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
               type="button"
               className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:bg-gray-300"
               disabled={defaultsMutation.isPending || defaultsQ.isLoading}
+              aria-busy={defaultsMutation.isPending}
               onClick={() => defaultsMutation.mutate()}
             >
-              Save severity map
+              {defaultsMutation.isPending ? "Saving severity map…" : "Save severity map"}
             </button>
           </>
         )}
@@ -570,8 +571,9 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
               type="submit"
               className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:bg-gray-300"
               disabled={cannotSave}
+              aria-busy={saveMutation.isPending}
             >
-              {editing ? "Save changes" : "Add profile"}
+              {saveMutation.isPending ? "Saving…" : editing ? "Save changes" : "Add profile"}
             </button>
             {editing ? (
               <button

@@ -454,3 +454,39 @@ export async function deleteAsksBeforeSending(): Promise<void> {
     ),
   );
 }
+
+/**
+ * `F4.168` B2 — per-row: the deleting row is named "Deleting…" and carries
+ * `aria-busy="true"`; the other two rows' Delete buttons keep their name and
+ * `aria-busy="false"`, keyed on `deleteMutation.variables?.id === row.id`.
+ */
+export async function deletingRowAnnouncesDeletingSiblingsKeepTheirName(): Promise<void> {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  let release: (() => void) | undefined;
+  stubApi({
+    deleteAdminCalcParameter: () =>
+      new Promise((resolve) => {
+        release = () => resolve(undefined);
+      }),
+  });
+  renderPage(admin);
+
+  const table = await screen.findByRole("table");
+  await within(table).findByText("Asset · SPEC-TRF-01");
+  const deleteButtons = within(table).getAllByRole("button", { name: "Delete" });
+  expect(deleteButtons).toHaveLength(3);
+
+  await userEvent.click(deleteButtons[1] as HTMLElement);
+
+  const pending = await within(table).findByRole("button", { name: "Deleting…" });
+  expect(pending).toHaveAttribute("aria-busy", "true");
+
+  const siblings = within(table).getAllByRole("button", { name: "Delete" });
+  expect(siblings).toHaveLength(2);
+  for (const sibling of siblings) {
+    expect(sibling).toHaveAttribute("aria-busy", "false");
+  }
+
+  release?.();
+  confirm.mockRestore();
+}

@@ -183,8 +183,9 @@ export function ManualReadingsPage({ user }: ManualReadingsPageProps) {
               type="submit"
               className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
               disabled={submitMutation.isPending}
+              aria-busy={submitMutation.isPending}
             >
-              Submit reading
+              {submitMutation.isPending ? "Submitting…" : "Submit reading"}
             </button>
           </div>
         </form>

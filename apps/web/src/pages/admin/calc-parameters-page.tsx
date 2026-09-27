@@ -313,6 +313,8 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
           <tbody>
             {rows.map((row) => {
               const key = keyByCode.get(row.key);
+              const deletingThis =
+                deleteMutation.isPending && deleteMutation.variables?.id === row.id;
               return (
                 <tr key={row.id} className="border-b border-gray-100">
                   <td className="px-2 py-2">
@@ -342,9 +344,10 @@ export function CalcParametersAdminPage({ user }: CalcParametersAdminPageProps) 
                           type="button"
                           className="text-xs font-semibold text-red-700"
                           disabled={deleteMutation.isPending}
+                          aria-busy={deletingThis}
                           onClick={() => remove(row)}
                         >
-                          Delete
+                          {deletingThis ? "Deleting…" : "Delete"}
                         </button>
                       </div>
                     ) : (

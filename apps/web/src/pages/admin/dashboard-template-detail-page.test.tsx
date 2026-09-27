@@ -12,6 +12,7 @@ import {
   refusedDeleteStaysOnThePage,
   aTypedNameLeavesTheInstantiateButtonDisabled,
   organizationWideOptionSendsANullAssetGroup,
+  publishAnnouncesPublishingDeleteDraftKeepsItsName,
   resolutionReportNamesAPartialWidget,
   roleFreeTemplateOffersTheOrganizationWideOption,
 } from "./dashboard-template-detail-page.spec";
@@ -69,5 +70,9 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("refuses to submit a typed name as a slug (PR 2 sweep)", async () => {
     await aTypedNameLeavesTheInstantiateButtonDisabled();
+  });
+
+  it("B3 Publish announces Publishing…; Delete draft keeps its name", async () => {
+    await publishAnnouncesPublishingDeleteDraftKeepsItsName();
   });
 });

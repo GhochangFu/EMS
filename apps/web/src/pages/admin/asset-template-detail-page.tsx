@@ -126,6 +126,21 @@ function actionLabel(action: TemplateLifecycleAction, status: string): string {
   return action === "publish" ? "Publish" : action === "archive" ? "Archive" : "Instantiate";
 }
 
+/**
+ * `F4.168` — what each action's button says while its own mutation runs.
+ * `instantiate` never pends here: `runners.instantiate` only opens the
+ * dialog, and the dialog's own button (`instantiateM`) carries its own label.
+ */
+function pendingActionLabel(action: TemplateLifecycleAction, status: string): string {
+  if (action === "createDraft") {
+    return status === "archived" ? "Reviving…" : "Creating draft…";
+  }
+  if (action === "delete") {
+    return "Deleting draft…";
+  }
+  return action === "publish" ? "Publishing…" : action === "archive" ? "Archiving…" : "Instantiate";
+}
+
 /** Admin screen for one asset template version. */
 export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) {
   const { templateId } = useParams();
@@ -298,6 +313,15 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
     instantiate: () => setInstantiateOpen(true),
   };
 
+  /** `F4.168` — keyed per action, so a sibling disabled by the shared `busy` keeps its own name. */
+  const actionPending: Record<TemplateLifecycleAction, boolean> = {
+    publish: publishM.isPending,
+    archive: archiveM.isPending,
+    createDraft: draftM.isPending,
+    delete: deleteM.isPending,
+    instantiate: false,
+  };
+
   // These buttons sit **above** the tabs, and on a draft — the only status
   // where the tabs are editable — Publish and Delete are exactly the two
   // offered. Neither used to consult `tabDirty`, so Publish shipped the stored
@@ -428,6 +452,7 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                 key={action}
                 type="button"
                 disabled={busy}
+                aria-busy={actionPending[action]}
                 onClick={() => runAction(action)}
                 className={`rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-60 ${
                   action === "delete"
@@ -435,7 +460,9 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
                     : "bg-bms-green text-white"
                 }`}
               >
-                {actionLabel(action, template.status)}
+                {actionPending[action]
+                  ? pendingActionLabel(action, template.status)
+                  : actionLabel(action, template.status)}
               </button>
             ))}
           </div>

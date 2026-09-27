@@ -257,6 +257,8 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
           <tbody>
             {channels.map((channel) => {
               const testRefusal = sendTestRefusal(channel);
+              const testingThis =
+                testMutation.isPending && testMutation.variables?.id === channel.id;
               return (
               <tr key={channel.id} className="border-b border-gray-100">
                 <td className="px-2 py-2 font-mono">{channel.code}</td>
@@ -292,13 +294,14 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                       type="button"
                       className="text-xs font-semibold text-bms-green disabled:text-bms-muted"
                       disabled={testMutation.isPending || testRefusal !== null}
+                      aria-busy={testingThis}
                       // The reason travels with the disabled control. A button
                       // that is greyed out and says nothing is the same dead
                       // end as one that fails silently.
                       title={testRefusal ?? undefined}
                       onClick={() => testMutation.mutate(channel)}
                     >
-                      Send test
+                      {testingThis ? "Sending test…" : "Send test"}
                     </button>
                     <button
                       type="button"
@@ -456,8 +459,9 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               type="submit"
               className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:bg-gray-300"
               disabled={cannotSave}
+              aria-busy={saveMutation.isPending}
             >
-              {editing ? "Save changes" : "Add channel"}
+              {saveMutation.isPending ? "Saving…" : editing ? "Save changes" : "Add channel"}
             </button>
             {editing ? (
               <button

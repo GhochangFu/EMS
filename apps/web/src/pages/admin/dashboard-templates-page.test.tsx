@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   aFailedStockFetchDoesNotCountZeroDefaults,
   importCallsTheApiWithTheChosenOrganization,
+  importingAnnouncesImportingThisEntry,
   rendersTemplatesAndStockCatalog,
   sectionFilterComesFromTheVocabularyFetch,
   stockRowLinksToTheViewer,
@@ -39,5 +40,9 @@ describe("F3.36 dashboard templates list page", () => {
 
   it("does not count zero defaults when the stock fetch fails", async () => {
     await aFailedStockFetchDoesNotCountZeroDefaults();
+  });
+
+  it("B5 importing announces Importing {name}… as the aria-label, old name absent", async () => {
+    await importingAnnouncesImportingThisEntry();
   });
 });

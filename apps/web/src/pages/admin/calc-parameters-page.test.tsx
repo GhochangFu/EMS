@@ -11,6 +11,7 @@ import { cleanup } from "@testing-library/react";
 import {
   adminHasTheOrganizationRadio,
   deleteAsksBeforeSending,
+  deletingRowAnnouncesDeletingSiblingsKeepTheirName,
   editDisablesKeyAndScope,
   keySelectOffersExactlyTheFetchedKeys,
   locationAdminDefaultsToLocationScope,
@@ -67,5 +68,9 @@ describe("E4.1a calc parameters page", () => {
 
   it("delete asks with confirm() before sending", async () => {
     await deleteAsksBeforeSending();
+  });
+
+  it("B2 the deleting row announces Deleting…; sibling rows keep their name", async () => {
+    await deletingRowAnnouncesDeletingSiblingsKeepTheirName();
   });
 });

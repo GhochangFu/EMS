@@ -348,7 +348,12 @@ export function MaintenanceSchedulesPanel({
         </p>
       ) : (
         <section className="grid gap-3 xl:grid-cols-3">
-          {items.map((item) => (
+          {items.map((item) => {
+            const deactivatingThis =
+              updateM.isPending && updateM.variables?.id === item.id;
+            const generatingThis =
+              convertM.isPending && convertM.variables?.id === item.id;
+            return (
             <article
               key={item.id}
               className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm"
@@ -407,6 +412,7 @@ export function MaintenanceSchedulesPanel({
                   type="button"
                   className="rounded border border-gray-300 px-3 py-1.5 text-xs font-semibold text-bms-ink hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={updateM.isPending}
+                  aria-busy={deactivatingThis}
                   onClick={() =>
                     updateM.mutate({
                       id: item.id,
@@ -415,12 +421,13 @@ export function MaintenanceSchedulesPanel({
                     })
                   }
                 >
-                  Deactivate
+                  {deactivatingThis ? "Deactivating…" : "Deactivate"}
                 </button>
                 <button
                   type="button"
                   className="rounded bg-bms-green px-3 py-1.5 text-xs font-semibold text-white hover:bg-bms-green-dark disabled:cursor-not-allowed disabled:opacity-50"
                   disabled={Boolean(item.activeWorkOrderId) || convertM.isPending}
+                  aria-busy={generatingThis}
                   onClick={() =>
                     convertM.mutate({
                       id: item.id,
@@ -428,11 +435,16 @@ export function MaintenanceSchedulesPanel({
                     })
                   }
                 >
-                  {item.activeWorkOrderId ? "WO already open" : "Generate WO"}
+                  {generatingThis
+                    ? "Generating WO…"
+                    : item.activeWorkOrderId
+                      ? "WO already open"
+                      : "Generate WO"}
                 </button>
               </div>
             </article>
-          ))}
+            );
+          })}
         </section>
       )}
 

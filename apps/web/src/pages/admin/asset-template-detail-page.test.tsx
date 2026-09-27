@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aRunningBackfillDisablesTheLifecycleActions,
+  archiveAnnouncesArchivingSiblingsKeepTheirNames,
   aTruncatedViewNamesItsOmittedCount,
   draftDoesNotOfferCreateDefaultDashboards,
   locationAdminIsNotOfferedCreateDefaultDashboards,
@@ -59,5 +60,9 @@ describe("F3.2 asset template detail page", () => {
 
   it("keeps the instantiate dialog open on success, with the summary and Close", async () => {
     await theInstantiateDialogStaysOpenAndShowsTheSummary();
+  });
+
+  it("B6 Archive announces Archiving…; siblings keep their names", async () => {
+    await archiveAnnouncesArchivingSiblingsKeepTheirNames();
   });
 });

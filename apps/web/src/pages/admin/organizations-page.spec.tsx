@@ -154,3 +154,27 @@ export async function editPrefillsTheCurrencyAndSendsIt(): Promise<void> {
   expect(id).toBe("22222222-2222-2222-2222-222222222222");
   expect(payload).toEqual({ name: "Rupee organization", currency: "USD" });
 }
+
+/**
+ * `F4.168` B1 — Save announces "Saving…" and carries `aria-busy` while
+ * `saveMutation` is pending, and is named "Save" with `aria-busy="false"` at
+ * idle. Held pending rather than resolved, per the F4.164 precedent.
+ */
+export async function saveAnnouncesSavingWhilePendingAndSaveAtIdle(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "createAdminOrganization").mockReturnValue(new Promise(() => {}));
+  renderPage();
+  await openCreateForm();
+
+  const idle = screen.getByRole("button", { name: "Save" });
+  expect(idle).toHaveAttribute("aria-busy", "false");
+
+  await userEvent.type(screen.getByLabelText("Code"), "e41c-new");
+  await userEvent.type(screen.getByLabelText("Name"), "New organization");
+  await userEvent.type(screen.getByLabelText("Currency (ISO 4217)"), "inr");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  const pending = await screen.findByRole("button", { name: "Saving…" });
+  expect(pending).toHaveAttribute("aria-busy", "true");
+  expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+}

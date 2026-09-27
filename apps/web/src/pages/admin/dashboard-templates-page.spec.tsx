@@ -181,3 +181,26 @@ export async function importCallsTheApiWithTheChosenOrganization(): Promise<void
     );
   });
 }
+
+/**
+ * `F4.168` B5 — importing a stock entry announces "Importing {name}…" as the
+ * button's `aria-label` (its accessible name), and the old "Import {name}"
+ * name is absent while the mutation is pending, keyed per-entry on
+ * `importM.variables === entry.code`.
+ */
+export async function importingAnnouncesImportingThisEntry(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "importAdminStockDashboardTemplate").mockReturnValue(new Promise(() => {}));
+  renderPage();
+
+  const importButton = await screen.findByRole("button", { name: "Import Electrical (stock)" });
+  const orgSelect = screen.getByRole("combobox", { name: "Import into organization" });
+  await userEvent.selectOptions(orgSelect, "org-1");
+  await userEvent.click(importButton);
+
+  const pending = await screen.findByRole("button", { name: "Importing Electrical (stock)…" });
+  expect(pending).toHaveAttribute("aria-busy", "true");
+  expect(
+    screen.queryByRole("button", { name: "Import Electrical (stock)" }),
+  ).not.toBeInTheDocument();
+}

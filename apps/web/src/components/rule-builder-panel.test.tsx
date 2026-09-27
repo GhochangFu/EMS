@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   hidesTheFieldForATimeWindowRule,
   refusesANonNumericClearHold,
+  saveDraftAnnouncesSavingWhilePending,
   sendsNullForABlankClearHold,
   sendsTheParsedIntegerForANonBlankClearHold,
   showsAStoredValueWhenOpeningARule,
@@ -45,5 +46,9 @@ describe("F3.10 rule builder clear-hold field", () => {
 
   it("hides the field for a time-window rule", async () => {
     await hidesTheFieldForATimeWindowRule();
+  });
+
+  it("B7 Save draft announces Saving… while createM is pending", async () => {
+    await saveDraftAnnouncesSavingWhilePending();
   });
 });
