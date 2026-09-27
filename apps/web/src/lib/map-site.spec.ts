@@ -1,6 +1,6 @@
 import type { MapSiteDto } from "@bms/shared";
 
-import { isOperationalSite } from "./map-site";
+import { isOperationalSite, MAP_TILE, siteBounds } from "./map-site";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -58,4 +58,54 @@ export function runOperationalSiteUnjoinedRsmocTest(): void {
     isOperationalSite(unjoined) === false,
     "a pin with no canonicalLocationId is not operational, whatever its kind",
   );
+}
+
+/**
+ * `F4.163` T1 — the base map is the standard OpenStreetMap tile layer. The
+ * CARTO basemap answered every tile with an "API key required" image.
+ */
+export function runMapTileIsOpenStreetMapTest(): void {
+  const host = new URL(MAP_TILE.url.replace(/\{[a-z]\}/g, "0")).host;
+  assert(host === "tile.openstreetmap.org", `the tile host must be tile.openstreetmap.org, got ${host}`);
+}
+
+/** `F4.163` T2 — the tile layer carries the attribution the OpenStreetMap tile policy requires. */
+export function runMapTileAttributionTest(): void {
+  assert(
+    MAP_TILE.attribution.includes("OpenStreetMap</a> contributors") &&
+      MAP_TILE.attribution.includes("https://www.openstreetmap.org/copyright"),
+    `the attribution must credit OpenStreetMap contributors with the copyright link, got ${MAP_TILE.attribution}`,
+  );
+}
+
+/**
+ * `F4.163` B1 — the map opens on the organization's own sites: when any pin
+ * joins a location, only those pins decide the box, so a far unjoined station
+ * pin does not stretch it.
+ */
+export function runSiteBoundsPrefersJoinedSitesTest(): void {
+  const bounds = siteBounds([
+    site({ canonicalLocationId: "00000000-0000-0000-0000-0000000000a1", latitude: 26.1, longitude: 89.2 }),
+    site({ canonicalLocationId: "00000000-0000-0000-0000-0000000000a2", latitude: 26.9, longitude: 89.9 }),
+    site({ canonicalLocationId: null, latitude: -29, longitude: 24.5 }),
+  ]);
+  assert(
+    JSON.stringify(bounds) === JSON.stringify([[26.1, 89.2], [26.9, 89.9]]),
+    `expected the box of the two joined sites, got ${JSON.stringify(bounds)}`,
+  );
+}
+
+/** `F4.163` B2 — with no joined pin, every pin decides the box. */
+export function runSiteBoundsFallsBackToAllSitesTest(): void {
+  const bounds = siteBounds([site({ latitude: -30, longitude: 20 }), site({ latitude: -25, longitude: 31 })]);
+  assert(
+    JSON.stringify(bounds) === JSON.stringify([[-30, 20], [-25, 31]]),
+    `expected the box of every pin, got ${JSON.stringify(bounds)}`,
+  );
+}
+
+/** `F4.163` B3 — no pins, no box: the map keeps its default view. */
+export function runSiteBoundsEmptyIsNullTest(): void {
+  const bounds = siteBounds([]);
+  assert(bounds === null, `expected null for no sites, got ${JSON.stringify(bounds)}`);
 }

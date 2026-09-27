@@ -54,7 +54,7 @@ export function MapPage({ user }: MapPageProps) {
       user={user}
       kpiRibbon={
         <span className="text-bms-ink">
-          World map · CARTO dark basemap · live operational location status
+          World map · OpenStreetMap · live operational location status
         </span>
       }
     >
