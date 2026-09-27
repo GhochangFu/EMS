@@ -433,16 +433,30 @@ function sourceName(source: LevelSource): string {
  * plain subtraction would say "wide enough" and be wrong. See
  * `refresh-aggregates.spec.ts` for the case this reddens.
  *
- * Every bucket in `0027_continuous_aggregates.sql` is `time_bucket(INTERVAL
- * '…', col)` with no timezone or origin argument, so buckets align on plain
- * multiples of their width counted from the Unix epoch — the `Math.floor` /
- * `Math.ceil` arithmetic below matches Timescale's own rounding exactly. A
- * bucket definition that added an origin or timezone argument would need a
+ * **Why epoch arithmetic is exact, and the conditions it rests on.** Every
+ * bucket in `0027_continuous_aggregates.sql` is `time_bucket(INTERVAL '…',
+ * col)` with no timezone or origin argument. TimescaleDB's default origin for
+ * such a bucket on `timestamptz` is **2000-01-03 00:00 UTC**, not the Unix
+ * epoch. The `Math.floor` / `Math.ceil` below counts from the epoch, and it
+ * still lands on Timescale's own boundaries only because that origin is
+ * 10,959 whole days after 1970-01-01 — a whole number of every width in
+ * `LEVELS` (1 min, 5 min, 1 h, 1 d), so both grids coincide. This formula,
+ * and the `continue` in `main` that relies on one level's skip leaving the
+ * next level unaffected, hold only while:
+ *
+ *   1. each level's width divides the next one's (1 min | 5 min | 1 h | 1 d);
+ *   2. every level shares that one default origin (no `origin =>` argument);
+ *   3. no bucket carries a timezone argument or a month-based interval, both
+ *      of which make the width variable and break the fixed-grid arithmetic.
+ *
+ * `tests/adr-0024-retention-bounds.test.ts` pins the four widths to `0027`'s
+ * `time_bucket` literals. A definition that broke any condition above needs a
  * different formula here.
  *
  * Pure and exported for `refresh-aggregates.spec.ts`: no client, no clock
- * read — the caller supplies `nowMs` (measured once per level in `main`, from
- * the same `Date.now()` the rest of the loop already uses).
+ * read — the caller supplies `nowMs`. `main` reads it from the SERVER once per
+ * level (`SELECT now()`), because the `CALL` that follows ends at the server's
+ * `now()`, not at this process's clock.
  */
 export function inscribedWindowIsEmpty(
   fromMs: number,
@@ -562,8 +576,25 @@ async function main(): Promise<void> {
       // `continue`s: an empty SOURCE really does propagate upward (a refresh
       // over it would delete rows at every level still to come), while an empty
       // WINDOW at one level is a local, transient condition tied to where `now()`
-      // sits inside that level's own bucket grid.
-      if (inscribedWindowIsEmpty(from.getTime(), Date.now(), bucketWidthMs)) {
+      // sits inside that level's own bucket grid. That independence holds only
+      // under the three conditions `inscribedWindowIsEmpty`'s docblock lists
+      // (nested widths, one shared origin, no timezone/month interval).
+      //
+      // `now` is the SERVER's clock, read on this client right before the guard,
+      // because the `CALL` below ends at the server's `now()` (`to` stays null).
+      // A client clock running ahead would call the window non-empty when the
+      // server's is empty — the exact 22023 this guard exists to prevent. The
+      // server's `now()` at CALL time is at least the value read here, so the
+      // window the CALL sees is as wide as the one judged here, or wider: a
+      // level judged non-empty can never become empty by the time it runs.
+      const { rows: clock } = await client.query<{ now: Date }>("SELECT now() AS now");
+      const serverNowMs = clock[0]?.now instanceof Date ? clock[0].now.getTime() : Number.NaN;
+      if (!Number.isFinite(serverNowMs)) {
+        // Fail closed: a NaN makes every comparison in the guard false, which
+        // would read as "not empty" and refresh anyway.
+        throw new Error(`[F4.71] ${view}: SELECT now() did not return a timestamp`);
+      }
+      if (inscribedWindowIsEmpty(from.getTime(), serverNowMs, bucketWidthMs)) {
         report(
           `[F4.71] ${view}: the window [${from.toISOString()}, now()) holds no complete ` +
             "bucket at this level's width; skipping this level (refreshing it would raise " +
