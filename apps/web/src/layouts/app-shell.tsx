@@ -72,6 +72,20 @@ const adminModuleGroup = {
 const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
 
 /**
+ * `F4.164` (OQ-1) — the collapsed-rail code for an item whose `shortLabel`
+ * collides with another item's, keyed by the item's path. The rule: on a
+ * collision the later item in rail order (Operations, Maintenance,
+ * Automation, then Administration) takes the override, and the earlier item
+ * keeps its derived letters. `collapsedRailEntries()` is the uniqueness gate.
+ */
+export const COLLAPSED_LABEL_OVERRIDES: Readonly<Record<string, string>> = {
+  "/dashboards": "DS",
+  "/admin/rtus": "RTU",
+  "/admin/assets": "AS",
+  "/admin/asset-points": "PT",
+};
+
+/**
  * `F4.164` (OQ-4) — why the top-nav Settings entry is locked. The button's
  * accessible description and its `title` both carry it.
  */
@@ -86,6 +100,31 @@ function shortLabel(label: string): string {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? "")
     .join("");
+}
+
+function collapsedLabel(item: { readonly label: string; readonly path: string }): string {
+  return COLLAPSED_LABEL_OVERRIDES[item.path] ?? shortLabel(item.label);
+}
+
+export type CollapsedRailEntry = {
+  readonly path: string;
+  readonly label: string;
+  readonly code: string;
+  readonly overridden: boolean;
+};
+
+export function collapsedRailEntries(): CollapsedRailEntry[] {
+  type RailItem = { readonly label: string; readonly path: string };
+  const items: readonly RailItem[] = [
+    ...moduleGroups.flatMap((group): readonly RailItem[] => group.items),
+    ...adminModuleGroup.items,
+  ];
+  return items.map((item) => ({
+    path: item.path,
+    label: item.label,
+    code: collapsedLabel(item),
+    overridden: COLLAPSED_LABEL_OVERRIDES[item.path] !== undefined,
+  }));
 }
 
 type AppShellProps = {
@@ -273,6 +312,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                       <Link
                         to={m.path}
                         title={m.label}
+                        aria-label={m.label}
                         className={`block w-full border-l-2 hover:bg-bms-canvas ${
                           location.pathname === m.path ||
                           ("nested" in m && m.nested && location.pathname.startsWith(`${m.path}/`))
@@ -280,7 +320,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                             : "border-transparent text-bms-muted"
                         } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
-                        {sidebarCollapsed ? shortLabel(m.label) : m.label}
+                        {sidebarCollapsed ? collapsedLabel(m) : m.label}
                       </Link>
                     </li>
                   ))}
@@ -313,6 +353,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                       <Link
                         to={item.path}
                         title={item.label}
+                        aria-label={item.label}
                         className={`block w-full border-l-2 hover:bg-bms-canvas ${
                           location.pathname === item.path ||
                           (item.path !== "/admin" && location.pathname.startsWith(`${item.path}`))
@@ -320,7 +361,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                             : "border-transparent text-bms-muted"
                         } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
-                        {sidebarCollapsed ? shortLabel(item.label) : item.label}
+                        {sidebarCollapsed ? collapsedLabel(item) : item.label}
                       </Link>
                     </li>
                   ))}

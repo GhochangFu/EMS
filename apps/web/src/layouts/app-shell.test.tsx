@@ -10,14 +10,22 @@ import {
   dropsTheControlRoom2dGroup,
   givesAnOperatorNoSettingsLink,
   givesAnOrganizationAdminTheSettingsLink,
+  givesEveryRailItemAUniqueCode,
   hidesTheEntryFromANoneScope,
   hidesTheEntryWhileTheScopeIsNull,
   highlightsTheEntryOnANestedPath,
   keepsOtherItemsExactMatch,
+  keysEveryOverrideByARealPath,
+  labelsEveryCollapsedLinkWithItsTitle,
   letsTheLockedSettingsTakeFocus,
   locksSettingsAsAnAriaDisabledButton,
+  namesDashboardAndDashboardsApartWhenCollapsed,
   placesTheEntryDirectlyAfterAlarmCentre,
+  readsTheFullItemList,
+  showsDsForDashboardsWhenCollapsed,
   showsOneEntryToALocationScope,
+  showsTheFullLabelWhenExpanded,
+  showsUniqueCodesWhenCollapsed,
 } from "./app-shell.spec";
 
 /**
@@ -93,5 +101,39 @@ describe("F4.164 locked Settings entry", () => {
 
   it("S14 draws the locked entry in text-white/70", () => {
     drawsTheLockedSettingsAtThreeToOne();
+  });
+});
+
+describe("F4.164 collapsed rail", () => {
+  it("L1 gives every rail item a unique collapsed code", () => {
+    givesEveryRailItemAUniqueCode();
+  });
+
+  it("L2 reads the full item list, hidden items included", () => {
+    readsTheFullItemList();
+  });
+
+  it("L3 keys every override by the path of a rail item", () => {
+    keysEveryOverrideByARealPath();
+  });
+
+  it("L4 labels every collapsed link with its title", () => {
+    labelsEveryCollapsedLinkWithItsTitle();
+  });
+
+  it("L5 names Dashboard and Dashboards apart when collapsed", () => {
+    namesDashboardAndDashboardsApartWhenCollapsed();
+  });
+
+  it("L6a shows unique codes when collapsed", () => {
+    showsUniqueCodesWhenCollapsed();
+  });
+
+  it("L6b shows DS for Dashboards when collapsed", () => {
+    showsDsForDashboardsWhenCollapsed();
+  });
+
+  it("L7 shows the full label when expanded", () => {
+    showsTheFullLabelWhenExpanded();
   });
 });

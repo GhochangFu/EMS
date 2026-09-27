@@ -9,7 +9,12 @@ import * as assetsApi from "../api/assets";
 import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
-import { AppShell, SETTINGS_LOCKED_REASON } from "./app-shell";
+import {
+  AppShell,
+  COLLAPSED_LABEL_OVERRIDES,
+  SETTINGS_LOCKED_REASON,
+  collapsedRailEntries,
+} from "./app-shell";
 
 /**
  * `F3.66` U6 (ADR 0076 decision 1, OQ4, plan D9) — one sidebar entry,
@@ -222,4 +227,100 @@ export function drawsTheLockedSettingsAtThreeToOne(): void {
   const classes = lockedSettings().classList;
   expect(classes.contains("text-white/70")).toBe(true);
   expect(classes.contains("text-white/50")).toBe(false);
+}
+
+/**
+ * `F4.164` U3 — the collapsed rail. Every sidebar link carries
+ * `aria-label={label}`, so a collapsed link announces its full title rather
+ * than its letters; and `COLLAPSED_LABEL_OVERRIDES` makes the letters unique.
+ *
+ * L1–L3 gate the data: `collapsedRailEntries()` is every item of both lists,
+ * the temporarily hidden ones included, so a collision that only shows once an
+ * item is un-hidden or once a role sees the admin group is still caught.
+ *
+ * L4–L6 need one render only, `admin` with a `GLOBAL` scope. Every visibility
+ * rule in `AppShell` only removes items (the hidden paths, `none`/`null` scope
+ * for Control Room, the admin group for a non-admin, `catalogOnly` and
+ * `globalOnly` for a lesser admin), and `admin` with `GLOBAL` passes all of
+ * them, so that render shows the maximal set. Uniqueness of a set holds for
+ * every subset of it, and an attribute present on every link of the maximal
+ * set is present on every link of each role's subset.
+ */
+function renderCollapsedShell(): void {
+  window.localStorage.setItem("bms-sidebar-collapsed", "true");
+  renderShell(GLOBAL, "/", "admin");
+}
+
+function sidebarLinks(): HTMLElement[] {
+  return within(sidebar()).getAllByRole("link");
+}
+
+function duplicateCodes(entries: { code: string; label: string; path: string }[]): string[] {
+  const byCode = new Map<string, string[]>();
+  for (const entry of entries) {
+    byCode.set(entry.code, [...(byCode.get(entry.code) ?? []), `${entry.label} (${entry.path})`]);
+  }
+  return [...byCode.entries()]
+    .filter(([, owners]) => owners.length > 1)
+    .map(([code, owners]) => `${code}: ${owners.join(" / ")}`);
+}
+
+/** L1 — no two rail items share a collapsed code; the message names each collision. */
+export function givesEveryRailItemAUniqueCode(): void {
+  const duplicates = duplicateCodes(collapsedRailEntries());
+  expect(duplicates, `duplicate collapsed codes:\n${duplicates.join("\n")}`).toEqual([]);
+}
+
+/** L2 — the gate reads the full list: 23 items today, hidden ones included. */
+export function readsTheFullItemList(): void {
+  expect(collapsedRailEntries().length).toBeGreaterThanOrEqual(23);
+}
+
+/** L3 — every override key is the path of some rail item (a renamed key is dead). */
+export function keysEveryOverrideByARealPath(): void {
+  const paths = new Set(collapsedRailEntries().map((entry) => entry.path));
+  const dead = Object.keys(COLLAPSED_LABEL_OVERRIDES).filter((key) => !paths.has(key));
+  expect(dead).toEqual([]);
+}
+
+/** L4 — collapsed, every sidebar link's `aria-label` equals its title. */
+export function labelsEveryCollapsedLinkWithItsTitle(): void {
+  renderCollapsedShell();
+  const links = sidebarLinks();
+  expect(links.length).toBeGreaterThan(0);
+  expect(links.map((link) => link.getAttribute("aria-label"))).toEqual(
+    links.map((link) => link.getAttribute("title")),
+  );
+}
+
+/** L5 — collapsed, "Dashboard" and "Dashboards" each name exactly one link. */
+export function namesDashboardAndDashboardsApartWhenCollapsed(): void {
+  renderCollapsedShell();
+  expect({
+    Dashboard: within(sidebar()).queryAllByRole("link", { name: "Dashboard" }).length,
+    Dashboards: within(sidebar()).queryAllByRole("link", { name: "Dashboards" }).length,
+  }).toEqual({ Dashboard: 1, Dashboards: 1 });
+}
+
+/** L6a — collapsed, the visible codes are unique. */
+export function showsUniqueCodesWhenCollapsed(): void {
+  renderCollapsedShell();
+  const codes = sidebarLinks().map((link) => link.textContent ?? "");
+  const repeated = codes.filter((code, index) => codes.indexOf(code) !== index);
+  expect(codes.length).toBeGreaterThan(0);
+  expect(repeated).toEqual([]);
+}
+
+/** L6b — collapsed, "Dashboards" reads "DS". */
+export function showsDsForDashboardsWhenCollapsed(): void {
+  renderCollapsedShell();
+  expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toHaveTextContent(/^DS$/);
+}
+
+/** L7 — expanded, "Dashboards" reads its full label. */
+export function showsTheFullLabelWhenExpanded(): void {
+  renderShell(GLOBAL, "/", "admin");
+  expect(within(sidebar()).getByRole("link", { name: "Dashboards" })).toHaveTextContent(
+    /^Dashboards$/,
+  );
 }
