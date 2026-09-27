@@ -11,6 +11,7 @@ import {
   formHasATimezoneInputWithADatalist,
   listRendersDashForANullTimezone,
   noSpecCallReachesTheNetwork,
+  pendingTypesShowNoRetiredOption,
   pickingANewTypeThenSavingSendsIt,
   savingARetiredTypeUntouchedOmitsType,
   typedTimezoneIsSubmitted,
@@ -81,5 +82,9 @@ describe("E4.1b locations page — the Timezone field", () => {
 
   it("P8 a create still sends type", async () => {
     await createStillSendsType();
+  });
+
+  it("P9 a pending types request shows no retired option", async () => {
+    await pendingTypesShowNoRetiredOption();
   });
 });

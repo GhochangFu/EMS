@@ -407,3 +407,22 @@ export async function noSpecCallReachesTheNetwork(): Promise<void> {
   expect(fetchSpy).not.toHaveBeenCalled();
   vi.unstubAllGlobals();
 }
+
+/** P9 (`F4.162` D8, review LOW) — while the types request is pending, editing an `rsmoc` row
+ * offers no "(retired)" option: an empty list is not proof that the row's type is retired.
+ * Mutation: drop `typesQ.isSuccess` from the extra option's condition. */
+export async function pendingTypesShowNoRetiredOption(): Promise<void> {
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
+  stubApi();
+  vi.mocked(api.fetchAdminLocationTypes).mockReturnValue(new Promise(() => {}));
+  renderPage();
+  const tr = (await screen.findByText("Johannesburg station")).closest("tr")!;
+  await userEvent.click(within(tr).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("heading", { name: "Edit location" });
+
+  const select = (await screen.findByLabelText("Type")) as HTMLSelectElement;
+  // The positive half: the request was made and is still pending, and the select is rendered.
+  expect(api.fetchAdminLocationTypes).toHaveBeenCalled();
+  const options = Array.from(select.options).map((option) => option.textContent ?? "");
+  expect(options.filter((text) => text.includes("(retired)"))).toEqual([]);
+}

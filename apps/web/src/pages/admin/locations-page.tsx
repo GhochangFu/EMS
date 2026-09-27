@@ -368,7 +368,11 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                   disabled={types.length === 0}
                   onChange={(event) => setForm({ ...form, type: event.target.value })}
                 >
-                  {editing && !types.some((locationType) => locationType.code === editing.type) ? (
+                  {/* Only once the list has loaded: while it is pending or failed, `types` is
+                      empty and every row's own type would read as "(retired)". */}
+                  {typesQ.isSuccess &&
+                  editing &&
+                  !types.some((locationType) => locationType.code === editing.type) ? (
                     <option value={editing.type}>{editing.typeLabel} (retired)</option>
                   ) : null}
                   {types.map((locationType) => (
