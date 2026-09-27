@@ -484,50 +484,50 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
             renderEntry={(entry) => {
               const importingThis = importM.isPending && importM.variables === entry.code;
               return (
-              <li className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <div>
-                  <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
-                  {/* `F2.21` — the label, for the same reason the Templates
-                      header uses it, and because this row would otherwise be
-                      the ONE place left printing a bare code. The browser pass
-                      caught it: the accordion heading directly above already
-                      read "Electrical" while the row under it read
-                      `· electrical ·`. Fixing the Templates side alone is what
-                      made the two cards disagree, so it belongs to this row. */}
-                  <div className="text-[11px] text-bms-muted">
-                    {entry.code} · {labelFor(vocabQ.data?.assetDomains, entry.domain)} · stock v
-                    {entry.stockVersion}
+                <li className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <div>
+                    <div className="text-sm font-semibold text-bms-ink">{entry.name}</div>
+                    {/* `F2.21` — the label, for the same reason the Templates
+                        header uses it, and because this row would otherwise be
+                        the ONE place left printing a bare code. The browser pass
+                        caught it: the accordion heading directly above already
+                        read "Electrical" while the row under it read
+                        `· electrical ·`. Fixing the Templates side alone is what
+                        made the two cards disagree, so it belongs to this row. */}
+                    <div className="text-[11px] text-bms-muted">
+                      {entry.code} · {labelFor(vocabQ.data?.assetDomains, entry.domain)} · stock v
+                      {entry.stockVersion}
+                    </div>
+                    <div className="text-[11px] text-bms-muted">
+                      {entry.assetType} · {entry.points.length} point{entry.points.length === 1 ? "" : "s"}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-bms-muted">
-                    {entry.assetType} · {entry.points.length} point{entry.points.length === 1 ? "" : "s"}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* `F2.14` — the card is a summary, so the whole entry is
+                        read on its own route. Before Import, because reading
+                        comes before taking. */}
+                    <Link
+                      to={`/admin/asset-templates/stock/${entry.code}`}
+                      aria-label={`View ${entry.name}`}
+                      className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
+                    >
+                      View
+                    </Link>
+                    <button
+                      type="button"
+                      aria-label={importingThis ? `Importing ${entry.name}…` : `Import ${entry.name}`}
+                      disabled={importOrgId === "" || importM.isPending}
+                      aria-busy={importingThis}
+                      onClick={() => {
+                        setImportError(null);
+                        importM.mutate(entry.code);
+                      }}
+                      className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
+                    >
+                      {importingThis ? "Importing…" : "Import"}
+                    </button>
                   </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* `F2.14` — the card is a summary, so the whole entry is
-                      read on its own route. Before Import, because reading
-                      comes before taking. */}
-                  <Link
-                    to={`/admin/asset-templates/stock/${entry.code}`}
-                    aria-label={`View ${entry.name}`}
-                    className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-muted"
-                  >
-                    View
-                  </Link>
-                  <button
-                    type="button"
-                    aria-label={importingThis ? `Importing ${entry.name}…` : `Import ${entry.name}`}
-                    disabled={importOrgId === "" || importM.isPending}
-                    aria-busy={importingThis}
-                    onClick={() => {
-                      setImportError(null);
-                      importM.mutate(entry.code);
-                    }}
-                    className="rounded border border-gray-200 px-3 py-1.5 text-xs font-semibold text-bms-ink disabled:opacity-60"
-                  >
-                    {importingThis ? "Importing…" : "Import"}
-                  </button>
-                </div>
-              </li>
+                </li>
               );
             }}
           />
