@@ -71,6 +71,13 @@ const adminModuleGroup = {
 
 const temporarilyHiddenModulePaths = new Set(["/sld", "/crac"]);
 
+/**
+ * `F4.164` (OQ-4) — why the top-nav Settings entry is locked. The button's
+ * accessible description and its `title` both carry it.
+ */
+export const SETTINGS_LOCKED_REASON =
+  "Administration requires an admin, organization_admin or location_admin role";
+
 function shortLabel(label: string): string {
   return label
     .replace(/^CR · /, "")
@@ -203,12 +210,23 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
             Settings
           </Link>
         ) : (
-          <span
-            className="ml-1 cursor-not-allowed rounded px-3 py-1.5 text-white/50"
-            title="Administration requires admin or location_admin role"
-          >
-            Settings
-          </span>
+          <>
+            {/* F4.164 D2 — not `DisabledCommandButton`: it sets native `disabled` (not focusable),
+                has no slot for the reason, and its palette is for light surfaces. */}
+            <button
+              type="button"
+              aria-disabled="true"
+              aria-describedby="settings-locked-reason"
+              title={SETTINGS_LOCKED_REASON}
+              onClick={(e) => e.preventDefault()}
+              className="ml-1 cursor-not-allowed rounded px-3 py-1.5 text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+            >
+              Settings
+            </button>
+            <span id="settings-locked-reason" className="sr-only">
+              {SETTINGS_LOCKED_REASON}
+            </span>
+          </>
         )}
       </nav>
 

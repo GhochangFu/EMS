@@ -9,7 +9,7 @@ import * as assetsApi from "../api/assets";
 import * as systemStatusApi from "../api/system-status";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
-import { AppShell } from "./app-shell";
+import { AppShell, SETTINGS_LOCKED_REASON } from "./app-shell";
 
 /**
  * `F3.66` U6 (ADR 0076 decision 1, OQ4, plan D9) — one sidebar entry,
@@ -60,7 +60,11 @@ const LOCATION: AccessibleScope = {
 
 const NONE: AccessibleScope = { kind: "none", locations: [], assetGroups: [], assetIds: [] };
 
-function renderShell(scope: AccessibleScope | null, path = "/"): void {
+function renderShell(
+  scope: AccessibleScope | null,
+  path = "/",
+  role: UserRole = "organization_admin",
+): void {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([]);
   useAuthStore.setState({ scope });
@@ -68,7 +72,7 @@ function renderShell(scope: AccessibleScope | null, path = "/"): void {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
-        <AppShell user={asUser("organization_admin")} kpiRibbon={<span />}>
+        <AppShell user={asUser(role)} kpiRibbon={<span />}>
           body
         </AppShell>
       </MemoryRouter>
@@ -154,4 +158,68 @@ export function keepsOtherItemsExactMatch(): void {
   renderShell(GLOBAL, "/dashboards/plant-overview");
   const dashboards = within(sidebar()).getByRole("link", { name: "Dashboards" });
   expect(dashboards.classList.contains("border-transparent")).toBe(true);
+}
+
+/**
+ * `F4.164` U2 — the locked top-nav Settings entry. For a role that is not a
+ * master-data administrator it is a focusable `button` with
+ * `aria-disabled="true"`, an accessible description holding
+ * `SETTINGS_LOCKED_REASON`, and `text-white/70` (3.43:1 on `bms-green-dark`).
+ * Every case reads inside the top navigation, where the entry lives.
+ */
+function topNav(): HTMLElement {
+  return screen.getByRole("navigation");
+}
+
+function lockedSettings(): HTMLElement {
+  return within(topNav()).getByRole("button", { name: "Settings" });
+}
+
+/** S9 — an `operator` gets a button named exactly "Settings", `aria-disabled="true"`. */
+export function locksSettingsAsAnAriaDisabledButton(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(lockedSettings()).toHaveAttribute("aria-disabled", "true");
+}
+
+/**
+ * S10 — the description is carried by `aria-describedby`, resolved by id. A
+ * `toHaveAccessibleDescription` check alone would pass on the `title`
+ * fallback with the idref dropped.
+ */
+export function describesTheLockedSettingsReason(): void {
+  renderShell(GLOBAL, "/", "operator");
+  const id = lockedSettings().getAttribute("aria-describedby") ?? "";
+  expect(document.getElementById(id)?.textContent).toBe(SETTINGS_LOCKED_REASON);
+}
+
+/** S11 — the button takes keyboard focus; a natively `disabled` one would not. */
+export function letsTheLockedSettingsTakeFocus(): void {
+  renderShell(GLOBAL, "/", "operator");
+  const button = lockedSettings();
+  act(() => {
+    button.focus();
+  });
+  expect(button).toHaveFocus();
+}
+
+/** S12 — an `operator` gets no Settings link; the button is the positive control. */
+export function givesAnOperatorNoSettingsLink(): void {
+  renderShell(GLOBAL, "/", "operator");
+  expect(lockedSettings()).toBeInTheDocument();
+  expect(within(topNav()).queryByRole("link", { name: "Settings" })).toBeNull();
+}
+
+/** S13 — an `organization_admin` gets the `/admin` link and no locked button. */
+export function givesAnOrganizationAdminTheSettingsLink(): void {
+  renderShell(LOCATION, "/", "organization_admin");
+  expect(within(topNav()).getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/admin");
+  expect(within(topNav()).queryByRole("button", { name: "Settings" })).toBeNull();
+}
+
+/** S14 — the text is `text-white/70` (3.43:1), not the 2.48:1 `text-white/50`. */
+export function drawsTheLockedSettingsAtThreeToOne(): void {
+  renderShell(GLOBAL, "/", "operator");
+  const classes = lockedSettings().classList;
+  expect(classes.contains("text-white/70")).toBe(true);
+  expect(classes.contains("text-white/50")).toBe(false);
 }
