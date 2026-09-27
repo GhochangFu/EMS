@@ -67,14 +67,26 @@ export interface FixtureLocation {
 /**
  * The location every fixture asset hangs off, and its organization.
  *
- * This *is* a read of committed seed data, and that is safe here in a way the
- * `bms.assets` read was not: nothing under `apps/**`, `packages/**` or `tests/**`
- * writes `bms.locations` or `bms.organizations` from a test. The only writers are
- * `packages/db`'s seeds and the runtime services `LocationsService`,
- * `OrganizationsService` and `OnboardingCommitService` — and no spec constructs
- * any of the three. Checked, not assumed. So no concurrent suite can delete the
- * row between this read and the write that references it, and `ORDER BY id`
- * makes the choice deterministic across runs on the same seed.
+ * **`F4.71` — the claim above this line used to be false.** It read "nothing
+ * under `apps/**`, `packages/**` or `tests/**` writes `bms.locations`", which
+ * was checked once and stopped being true: many committed-fixture suites
+ * (`work-orders.service.rls.integration.test.ts`, and the `F…`/`E…`-prefixed
+ * organization suites among others) insert a transient location in `beforeAll`
+ * and delete it by their own prefix in `afterAll`. `ORDER BY id` is a random
+ * uuid order over every row including those transient ones, so a concurrent
+ * sibling's fixture location could win `LIMIT 1`, get adopted here, and then be
+ * deleted out from under the caller — the same mechanism `createFixtureAssets`'s
+ * docblock describes for `bms.assets`, one level up.
+ *
+ * **The fix is "oldest wins", the `F4.53` rule's invariant, not merely
+ * "ordered".** `packages/db`'s seed writes every location in one statement
+ * (`hierarchy-seed.ts`), so a seeded row's `created_at` predates any fixture
+ * suite's insert in the same run — ordering by `created_at` alone can only ever
+ * resolve a seeded row. `code` breaks the tie *within* that one seed statement,
+ * where every row's `created_at` is identical; without it the choice would
+ * still depend on random uuid order among ties. No concurrent suite deletes a
+ * seeded row, so once a seeded row is what this resolves to, the race is
+ * closed the same way `F4.53` closes it for `bms.organizations`.
  *
  * Callers that assert on the organization (`GET .../details` returns the
  * alarm's own asset's `organizationId`) get it from here rather than joining
@@ -84,7 +96,7 @@ export async function fixtureLocation(db: BmsDb): Promise<FixtureLocation> {
   const [row] = await db
     .select({ id: locations.id, organizationId: locations.organizationId })
     .from(locations)
-    .orderBy(asc(locations.id))
+    .orderBy(asc(locations.createdAt), asc(locations.code))
     .limit(1);
   if (!row) {
     throw new Error("no seeded location available — run pnpm db:seed first");
