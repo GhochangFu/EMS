@@ -12,6 +12,9 @@ import {
   refusedDeleteStaysOnThePage,
   aTypedNameLeavesTheInstantiateButtonDisabled,
   organizationWideOptionSendsANullAssetGroup,
+  deleteDraftIsDisabledWhilePublishPends,
+  deleteDraftKeepsItsNameWhilePublishPends,
+  publishAnnouncesPublishing,
   resolutionReportNamesAPartialWidget,
   roleFreeTemplateOffersTheOrganizationWideOption,
 } from "./dashboard-template-detail-page.spec";
@@ -69,5 +72,17 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("refuses to submit a typed name as a slug (PR 2 sweep)", async () => {
     await aTypedNameLeavesTheInstantiateButtonDisabled();
+  });
+
+  it("B3 Publish announces Publishing… with aria-busy", async () => {
+    await publishAnnouncesPublishing();
+  });
+
+  it("B3 Delete draft keeps its name and is not busy while Publish pends", async () => {
+    await deleteDraftKeepsItsNameWhilePublishPends();
+  });
+
+  it("B3 Delete draft stays disabled while Publish pends", async () => {
+    await deleteDraftIsDisabledWhilePublishPends();
   });
 });

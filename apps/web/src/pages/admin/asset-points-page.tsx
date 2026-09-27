@@ -242,8 +242,6 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     onError: (cause: Error) => setOverrideError(apiErrorMessage(cause)),
   });
 
-  const overrideBusy = setOverrideM.isPending || clearOverrideM.isPending;
-
   const catalogQ = useQuery({
     // `F3.39`: one fleet-wide catalog, so no organization in the key and no
     // organization to wait for before fetching it.
@@ -547,7 +545,8 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 key={config.pointKey}
                 config={config}
                 draft={draft}
-                busy={overrideBusy}
+                saving={setOverrideM.isPending}
+                clearing={clearOverrideM.isPending}
                 onDraftChange={setDraft}
                 onSave={() => setOverrideM.mutate(config.pointKey)}
                 onClear={() => clearOverrideM.mutate(config.pointKey)}

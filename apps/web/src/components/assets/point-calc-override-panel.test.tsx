@@ -4,7 +4,13 @@ import { cleanup } from "@testing-library/react";
 
 import {
   busyDisablesEveryControl,
+  clearingDisablesSaveOverride,
+  clearingLeavesSaveOverrideNamedAndNotBusy,
+  clearingNamesClearOverrideClearingAndBusy,
   grammarShowsInheritAndChoosingV2DisablesStreaming,
+  savingDisablesClearOverride,
+  savingLeavesClearOverrideNamedAndNotBusy,
+  savingNamesSaveOverrideSavingAndBusy,
   saveIsDisabledWhileAProblemIsListed,
   theCoverageLineIsTheTemplatesAndReadOnly,
 } from "./point-calc-override-panel.spec";
@@ -34,5 +40,29 @@ describe("F2.22 override panel — Grammar, the v2 trigger rule, the template's 
 
   it("disables every control, new and old, while a request is in flight", async () => {
     await busyDisablesEveryControl();
+  });
+
+  it("F4.168: saving names Save override Saving override… with aria-busy", async () => {
+    await savingNamesSaveOverrideSavingAndBusy();
+  });
+
+  it("F4.168: while saving, Clear override keeps its name and is not busy", async () => {
+    await savingLeavesClearOverrideNamedAndNotBusy();
+  });
+
+  it("F4.168: while saving, Clear override is disabled", async () => {
+    await savingDisablesClearOverride();
+  });
+
+  it("F4.168: clearing names Clear override Clearing override… with aria-busy", async () => {
+    await clearingNamesClearOverrideClearingAndBusy();
+  });
+
+  it("F4.168: while clearing, Save override keeps its name and is not busy", async () => {
+    await clearingLeavesSaveOverrideNamedAndNotBusy();
+  });
+
+  it("F4.168: while clearing, Save override is disabled", async () => {
+    await clearingDisablesSaveOverride();
   });
 });

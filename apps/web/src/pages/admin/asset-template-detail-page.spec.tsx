@@ -433,3 +433,51 @@ export async function aRunningBackfillDisablesTheLifecycleActions(): Promise<voi
   release?.();
   await screen.findByText("Created dashboards for 1 asset · 1 already had one");
 }
+
+/**
+ * `F4.168` B6 arrange — a published template; Archive is clicked and
+ * `archiveM` held pending. Resolves with the button once "Archiving…" shows.
+ */
+async function archiveHeldPending(): Promise<HTMLElement> {
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()),
+    archiveAdminAssetTemplate: () => new Promise(() => {}),
+  });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+  return screen.findByRole("button", { name: "Archiving…" });
+}
+
+/**
+ * `F4.168` B6 — the actions map shares `busy`, but each action's own name is
+ * keyed on its own mutation: Archive becomes "Archiving…", with
+ * `aria-busy="true"`, while `archiveM` is pending.
+ */
+export async function archiveAnnouncesArchiving(): Promise<void> {
+  const pending = await archiveHeldPending();
+  expect(pending).toHaveAttribute("aria-busy", "true");
+}
+
+/**
+ * `F4.168` B6 — "Edit this version", a sibling that CAN pend (on `draftM`),
+ * keeps its name and is not busy while Archive pends. A label keyed on the
+ * shared `busy` would rename it "Creating draft…".
+ */
+export async function editThisVersionKeepsItsNameWhileArchivePends(): Promise<void> {
+  await archiveHeldPending();
+  const edit = screen.getByRole("button", { name: "Edit this version" });
+  expect(edit).toHaveAttribute("aria-busy", "false");
+}
+
+/** `F4.168` B6 — Instantiate, which never pends, is not busy while Archive pends. */
+export async function instantiateIsNotBusyWhileArchivePends(): Promise<void> {
+  await archiveHeldPending();
+  expect(screen.getByRole("button", { name: "Instantiate" })).toHaveAttribute("aria-busy", "false");
+}
+
+/** `F4.168` B6 — the shared `busy` still disables Instantiate while Archive pends. */
+export async function instantiateIsDisabledWhileArchivePends(): Promise<void> {
+  await archiveHeldPending();
+  expect(screen.getByRole("button", { name: "Instantiate" })).toBeDisabled();
+}

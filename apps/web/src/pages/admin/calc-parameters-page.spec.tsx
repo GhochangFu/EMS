@@ -454,3 +454,60 @@ export async function deleteAsksBeforeSending(): Promise<void> {
     ),
   );
 }
+
+/**
+ * `F4.168` B2 arrange — three rows; the second row's Delete is confirmed and
+ * its mutation held pending. Returns the table and a `done` that releases the
+ * request and restores `confirm`.
+ */
+async function deleteSecondRowHeldPending(): Promise<{ table: HTMLElement; done: () => void }> {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  let release: (() => void) | undefined;
+  stubApi({
+    deleteAdminCalcParameter: () =>
+      new Promise((resolve) => {
+        release = () => resolve(undefined);
+      }),
+  });
+  renderPage(admin);
+
+  const table = await screen.findByRole("table");
+  await within(table).findByText("Asset · SPEC-TRF-01");
+  const deleteButtons = within(table).getAllByRole("button", { name: "Delete" });
+  await userEvent.click(deleteButtons[1] as HTMLElement);
+  await within(table).findByRole("button", { name: "Deleting…" });
+  return {
+    table,
+    done: () => {
+      release?.();
+      confirm.mockRestore();
+    },
+  };
+}
+
+/** `F4.168` B2 — per-row: the deleting row is named "Deleting…" with `aria-busy="true"`. */
+export async function deletingRowAnnouncesDeleting(): Promise<void> {
+  const { table, done } = await deleteSecondRowHeldPending();
+  expect(within(table).getByRole("button", { name: "Deleting…" })).toHaveAttribute("aria-busy", "true");
+  done();
+}
+
+/**
+ * `F4.168` B2, D4 — the other two rows keep the name "Delete", keyed on
+ * `deleteMutation.variables?.id === row.id`.
+ */
+export async function siblingRowsKeepTheirDeleteName(): Promise<void> {
+  const { table, done } = await deleteSecondRowHeldPending();
+  expect(within(table).getAllByRole("button", { name: "Delete" })).toHaveLength(2);
+  done();
+}
+
+/** `F4.168` B2 — the other two rows' Delete buttons are not busy. */
+export async function siblingRowsAreNotBusy(): Promise<void> {
+  const { table, done } = await deleteSecondRowHeldPending();
+  const busy = within(table)
+    .getAllByRole("button", { name: "Delete" })
+    .map((b) => b.getAttribute("aria-busy"));
+  expect(busy).toEqual(["false", "false"]);
+  done();
+}

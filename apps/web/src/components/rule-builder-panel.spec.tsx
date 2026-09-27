@@ -184,3 +184,20 @@ async function fillMinimalThresholdForm(): Promise<void> {
   await userEvent.selectOptions(screen.getByDisplayValue("Select point"), "supply_temp_c");
   await userEvent.type(screen.getByPlaceholderText("3"), "10");
 }
+
+/**
+ * `F4.168` B7 — the negated derived `disabled={!canSubmit}` still names the
+ * button on `createM`/`updateM.isPending`: "Saving…" while a create is
+ * pending, with `aria-busy="true"`.
+ */
+export async function saveDraftAnnouncesSavingWhilePending(): Promise<void> {
+  stubApi();
+  vi.spyOn(rulesApi, "createRuleDraft").mockReturnValue(new Promise(() => {}));
+  renderPanel();
+
+  await fillMinimalThresholdForm();
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+
+  const pending = await screen.findByRole("button", { name: "Saving…" });
+  expect(pending).toHaveAttribute("aria-busy", "true");
+}

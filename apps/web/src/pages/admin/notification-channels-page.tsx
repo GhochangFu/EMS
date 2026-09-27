@@ -257,62 +257,65 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
           <tbody>
             {channels.map((channel) => {
               const testRefusal = sendTestRefusal(channel);
+              const testingThis =
+                testMutation.isPending && testMutation.variables?.id === channel.id;
               return (
-              <tr key={channel.id} className="border-b border-gray-100">
-                <td className="px-2 py-2 font-mono">{channel.code}</td>
-                <td className="px-2 py-2">{channel.name}</td>
-                <td className="px-2 py-2">
-                  {organizationLabel(channel.organizationId, organizations)}
-                </td>
-                <td className="px-2 py-2">{channel.kind}</td>
-                <td className="px-2 py-2 max-w-[22rem] truncate">
-                  {targetFromConfig(channel) || "—"}
-                </td>
-                <td className="px-2 py-2">{channel.hasSecret ? "Set" : "—"}</td>
-                <td className="px-2 py-2">
-                  <StatusPill
-                    label={channel.enabled ? "Enabled" : "Disabled"}
-                    tone={channel.enabled ? "ok" : "offline"}
-                  />
-                </td>
-                <td className="px-2 py-2">
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-bms-green"
-                      onClick={() => {
-                        setEditing(channel);
-                        setForm(formFromChannel(channel));
-                        setError(null);
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-bms-green disabled:text-bms-muted"
-                      disabled={testMutation.isPending || testRefusal !== null}
-                      // The reason travels with the disabled control. A button
-                      // that is greyed out and says nothing is the same dead
-                      // end as one that fails silently.
-                      title={testRefusal ?? undefined}
-                      onClick={() => testMutation.mutate(channel)}
-                    >
-                      Send test
-                    </button>
-                    <button
-                      type="button"
-                      className="text-xs font-semibold text-red-700"
-                      onClick={() => deleteMutation.mutate(channel.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  {testRefusal ? (
-                    <p className="mt-1 max-w-[22rem] text-xs text-bms-muted">{testRefusal}</p>
-                  ) : null}
-                </td>
-              </tr>
+                <tr key={channel.id} className="border-b border-gray-100">
+                  <td className="px-2 py-2 font-mono">{channel.code}</td>
+                  <td className="px-2 py-2">{channel.name}</td>
+                  <td className="px-2 py-2">
+                    {organizationLabel(channel.organizationId, organizations)}
+                  </td>
+                  <td className="px-2 py-2">{channel.kind}</td>
+                  <td className="px-2 py-2 max-w-[22rem] truncate">
+                    {targetFromConfig(channel) || "—"}
+                  </td>
+                  <td className="px-2 py-2">{channel.hasSecret ? "Set" : "—"}</td>
+                  <td className="px-2 py-2">
+                    <StatusPill
+                      label={channel.enabled ? "Enabled" : "Disabled"}
+                      tone={channel.enabled ? "ok" : "offline"}
+                    />
+                  </td>
+                  <td className="px-2 py-2">
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-bms-green"
+                        onClick={() => {
+                          setEditing(channel);
+                          setForm(formFromChannel(channel));
+                          setError(null);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-bms-green disabled:text-bms-muted"
+                        disabled={testMutation.isPending || testRefusal !== null}
+                        aria-busy={testingThis}
+                        // The reason travels with the disabled control. A button
+                        // that is greyed out and says nothing is the same dead
+                        // end as one that fails silently.
+                        title={testRefusal ?? undefined}
+                        onClick={() => testMutation.mutate(channel)}
+                      >
+                        {testingThis ? "Sending test…" : "Send test"}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-red-700"
+                        onClick={() => deleteMutation.mutate(channel.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                    {testRefusal ? (
+                      <p className="mt-1 max-w-[22rem] text-xs text-bms-muted">{testRefusal}</p>
+                    ) : null}
+                  </td>
+                </tr>
               );
             })}
             {!channelsQ.isLoading && channels.length === 0 ? (
@@ -456,8 +459,9 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
               type="submit"
               className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white disabled:bg-gray-300"
               disabled={cannotSave}
+              aria-busy={saveMutation.isPending}
             >
-              {editing ? "Save changes" : "Add channel"}
+              {saveMutation.isPending ? "Saving…" : editing ? "Save changes" : "Add channel"}
             </button>
             {editing ? (
               <button

@@ -285,8 +285,9 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                 type="submit"
                 className="rounded bg-bms-green px-3 py-2 text-xs font-semibold text-white"
                 disabled={saveMutation.isPending}
+                aria-busy={saveMutation.isPending}
               >
-                Save
+                {saveMutation.isPending ? "Saving…" : "Save"}
               </button>
             </div>
           </form>
