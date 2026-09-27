@@ -3,10 +3,13 @@ import { describe, it } from "vitest";
 import {
   assertInactiveLocationTypeIsAnErrorNamingTheCodes,
   assertInactiveLocationTypeIsNotReadyToCommit,
+  assertInactiveLocationTypeMessageCarriesTheMoreTail,
+  assertInactiveLocationTypeMessageNamesAtMostTheCap,
   assertInactiveLocationTypeKeepsTheLocationPhase,
   assertInactiveLocationTypeMessageDoesNotEchoTheValue,
   assertMissingLocationTypeIsAnError,
   assertMissingLocationTypeKeepsTheLocationPhase,
+  assertNoActiveTypeMessageSaysNoneIsActive,
   assertTypedLocationIsReadyToCommit,
   assertTypedLocationLeavesTheLocationPhase,
 } from "./onboarding-validate.service.spec";
@@ -45,5 +48,17 @@ describe("OnboardingValidateService — a location type that is not active (F4.1
 
   it("keeps the location phase", () => {
     assertInactiveLocationTypeKeepsTheLocationPhase();
+  });
+
+  it("names at most MAX_ECHOED_ITEMS active codes", () => {
+    assertInactiveLocationTypeMessageNamesAtMostTheCap();
+  });
+
+  it("closes a cut list with the more tail", () => {
+    assertInactiveLocationTypeMessageCarriesTheMoreTail();
+  });
+
+  it("says no location type is active when the list is empty", () => {
+    assertNoActiveTypeMessageSaysNoneIsActive();
   });
 });

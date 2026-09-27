@@ -6,6 +6,7 @@ import type {
   OnboardingPhase,
 } from "@bms/shared";
 
+import { echoedItems, moreTail } from "../spreadsheet-guard";
 import {
   draftAssetPointSchema,
   draftAssetSchema,
@@ -84,10 +85,11 @@ export class OnboardingValidateService {
         errors.push({ path: "location.type", message: "Location type is required" });
       } else if (!activeLocationTypeCodes.includes(d.location.type)) {
         // F4.162 (D9): the stored value is operator text and is not echoed; the
-        // codes are what the operator can pick from.
+        // codes are what the operator can pick from. The list is capped (the
+        // F4.105 echo bound): the vocabulary is admin-managed and can grow.
         errors.push({
           path: "location.type",
-          message: `Location type is not an active code; use one of: ${activeLocationTypeCodes.join(", ")}`,
+          message: inactiveLocationTypeMessage(activeLocationTypeCodes),
         });
       }
     }
@@ -225,4 +227,18 @@ export class OnboardingValidateService {
     const topic = String(rtu.config?.topic ?? rtu.config?.mqttTopic ?? "").trim();
     return !topic || topic === "-";
   }
+}
+
+/**
+ * `F4.162` (D9) — the `location.type` message for a type that is not active.
+ * Names at most {@link echoedItems}' cap of active codes, then a count; with no
+ * active code at all it says so, rather than ending on "use one of: ".
+ */
+function inactiveLocationTypeMessage(activeLocationTypeCodes: readonly string[]): string {
+  if (activeLocationTypeCodes.length === 0) {
+    return "Location type is not an active code; no location type is active";
+  }
+  const { shown, omitted } = echoedItems(activeLocationTypeCodes);
+  const list = [...shown, moreTail(omitted)].filter(Boolean).join(", ");
+  return `Location type is not an active code; use one of: ${list}`;
 }

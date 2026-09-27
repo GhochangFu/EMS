@@ -9,6 +9,7 @@
  */
 import type { OnboardingDraft } from "@bms/shared";
 
+import { MAX_ECHOED_ITEMS, moreTail } from "../spreadsheet-guard";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -134,4 +135,51 @@ export function assertInactiveLocationTypeIsNotReadyToCommit(): void {
 export function assertInactiveLocationTypeKeepsTheLocationPhase(): void {
   const phase = new OnboardingValidateService().inferPhase(completeDraft("space_port"), CODES);
   assert(phase === "location", `an inactive type must stay in the location phase, got ${phase}`);
+}
+
+/**
+ * More active codes than the echo cap: `MAX_ECHOED_ITEMS + 5`, zero-padded so
+ * no code is a substring of another (`lt_1` would match inside `lt_10`).
+ */
+const MANY_CODES: readonly string[] = Array.from(
+  { length: MAX_ECHOED_ITEMS + 5 },
+  (_, i) => `lt_${String(i + 1).padStart(2, "0")}`,
+);
+
+function inactiveTypeMessage(codes: readonly string[]): string {
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), codes);
+  const error = result.errors.find((candidate) => candidate.path === "location.type");
+  assert(error !== undefined, `an error at location.type exists, got ${JSON.stringify(result.errors)}`);
+  return error!.message;
+}
+
+/**
+ * N5 — security review L2: the message names at most `MAX_ECHOED_ITEMS` codes.
+ * Mutation: join every code without `echoedItems`.
+ */
+export function assertInactiveLocationTypeMessageNamesAtMostTheCap(): void {
+  const message = inactiveTypeMessage(MANY_CODES);
+  const named = message.match(/lt_\d{2}/g) ?? [];
+  assert(
+    named.length === MAX_ECHOED_ITEMS,
+    `the message must name ${MAX_ECHOED_ITEMS} codes, named ${named.length}: "${message}"`,
+  );
+}
+
+/** N5 — the cut list ends with the "more" tail counting the omitted codes. */
+export function assertInactiveLocationTypeMessageCarriesTheMoreTail(): void {
+  const message = inactiveTypeMessage(MANY_CODES);
+  assert(message.endsWith(moreTail(5)), `the message must end with "${moreTail(5)}", got "${message}"`);
+}
+
+/**
+ * N6 — with no active code the message says so, and never ends on "use one
+ * of: " with nothing after it. Mutation: drop the empty-list branch.
+ */
+export function assertNoActiveTypeMessageSaysNoneIsActive(): void {
+  const message = inactiveTypeMessage([]);
+  assert(
+    message.endsWith("no location type is active"),
+    `an empty active list must say no location type is active, got "${message}"`,
+  );
 }
