@@ -766,9 +766,21 @@
 > unknown type with no default** (decision 7, gate question 5): an empty or
 > unrecognised Excel type cell is a row error naming the valid codes, and the
 > rule-based chat asks for the type — offering the active labels as suggested
-> replies — rather than guessing `smoc_campus`. Deferred, by gate question 6: a
-> global-admin page to create, rename or deactivate a type, raised as `F4.162`
-> (#584). ADR 0077 is merged and closed.
+> replies — rather than guessing `smoc_campus`. Gate question 6 deferred a
+> global-admin page to `F4.162`, which **Amendment 1** (#588, seven gate
+> questions ruled 2026-09-27) and PR #593 then built: the global `admin` lists
+> every type with its fleet-wide location count, creates one (lower
+> snake_case code), renames or reorders one (`code` is fixed), and
+> deactivates or reactivates one at `/api/v1/admin/vocabularies/location-types`
+> (`LocationTypesVocabularyAdminController`) and on `/admin/location-types`,
+> which any other role sees as a status line; no hard delete, no migration.
+> The admin location row gains `typeLabel`, so the edit form shows a retired
+> type as "Label (retired)" and sends `type` only on a change. The onboarding
+> draft PATCH refuses an inactive type, and the validator — whose `validate`
+> and `inferPhase` now take the active codes — keeps a draft with an inactive
+> stored type in the `location` phase, so the rule-based chat asks again
+> (the OpenAI branch does not). ADR 0077 and its Amendment 1 are merged and
+> closed.
 > Next: `F4.160` is open (of the three spec files the row names, two remain,
 > `dashboard-builder-page` and `dashboard-builder-edit-page`, because `F3.70`
 > took the overview spec off `AppShell`); `F4.161` is closed (#578).
@@ -1069,6 +1081,11 @@ bms/
 │   │                            src/components/asset-templates/formula-editor.tsx
 │   │                            is the only module allowed to import CodeMirror
 │   │                            — reach it through formula-editor-lazy.tsx.
+│   │                            src/pages/admin/location-types-page.tsx
+│   │                            (F4.162, ADR 0077 Amendment 1) is the
+│   │                            global-admin page over api/admin/
+│   │                            location-types.ts; any other role gets a
+│   │                            status line and no query.
 │   │                            src/pages/control-room/ is the ADR 0076 shell
 │   │                            (F3.66): organizations-page, organization-page
 │   │                            and site-page — the three /control-room levels,
@@ -1124,6 +1141,16 @@ bms/
 │   │                            a retired severity becomes UNEDITABLE, because
 │   │                            updateRule funnels through the same assertion
 │   │                            even on an edit that never touches severity
+│   │                            src/admin/vocabularies/location-types.* is
+│   │                            the global-admin write path for location
+│   │                            types (ADR 0077 Amendment 1, F4.162), beside
+│   │                            asset-roles.*: create, label and order,
+│   │                            deactivate and reactivate — no code change,
+│   │                            no delete. src/admin/onboarding/
+│   │                            onboarding-chat-summaries.ts holds the chat's
+│   │                            MQTT template and assets-by-RTU summary,
+│   │                            moved out of onboarding-chat.service.ts for
+│   │                            §4.5 (F4.162).
 │   │                            src/alarm-kb/ (ADR 0059, E2.2) is a read over
 │   │                            template content for an OPERATIONS audience, so
 │   │                            it answers to neither src/alarms/ nor
@@ -1218,7 +1245,10 @@ bms/
 │   │                            ADR 0076 generated read (F3.68, with
 │   │                            HEADLINE_POINT_COUNT = 4); F3.68 moved
 │   │                            adminPointKeyDtoSchema to contracts/point-keys.ts
-│   │                            to keep admin.ts under the §4.5 cap (983 lines).
+│   │                            to keep admin.ts under the §4.5 cap (984 lines
+│   │                            since F4.162 added typeLabel). contracts/
+│   │                            location-types.ts also holds F4.162's
+│   │                            adminLocationTypeDtoSchema.
 │   │                            src/calc-dsl/ holds the bms-calc-v1 tokenizer,
 │   │                            recursive-descent parser, AST types and
 │   │                            validateFormula() (ADR 0036), plus since ADR 0037
@@ -1454,8 +1484,10 @@ Do not add top-level folders without updating this section.
   which only its migration writes — no admin route, and — since **ADR 0077**
   decision 1, `F4.157` — `location_types`, revoked to `SELECT` only for
   `bms_tenant` (migration `0085`, the `0059` pattern) and read through
-  `GET /api/v1/admin/location-types`, with no write route yet (ADR 0077 gate
-  question 6 deferred create/rename/deactivate to a new backlog row)) or the
+  `GET /api/v1/admin/location-types`, and — since ADR 0077 **Amendment 1**,
+  `F4.162` — written only by the global `admin` through
+  `/api/v1/admin/vocabularies/location-types` on the fleet pool, with an
+  org-less audit row) or the
   stated `telemetry.*` exception (decision 9).
   **The ruling is not only about a NEW table.** `bms.point_keys` was tenant
   data for the whole of its life until migration `0057` dropped its
