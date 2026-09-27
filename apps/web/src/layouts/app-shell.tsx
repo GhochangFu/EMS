@@ -110,9 +110,9 @@ export type CollapsedRailEntry = {
   readonly path: string;
   readonly label: string;
   readonly code: string;
-  readonly overridden: boolean;
 };
 
+/** Every rail item of both lists, hidden ones included, with the code the collapsed rail shows. */
 export function collapsedRailEntries(): CollapsedRailEntry[] {
   type RailItem = { readonly label: string; readonly path: string };
   const items: readonly RailItem[] = [
@@ -123,7 +123,6 @@ export function collapsedRailEntries(): CollapsedRailEntry[] {
     path: item.path,
     label: item.label,
     code: collapsedLabel(item),
-    overridden: COLLAPSED_LABEL_OVERRIDES[item.path] !== undefined,
   }));
 }
 
