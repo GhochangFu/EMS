@@ -6507,3 +6507,24 @@ run. Three reviews, one fixture finding fixed.
 
 **Cascade:** no row lists `F4.138` in *Depends*. No `chore(agents):` change
 owed.
+
+### `F4.168` — a button disabled while pending changes its name and carries `aria-busy` ✅ 2026-09-28
+
+PR #609, squash `dc7529e0`; plan `docs/plans/f4.168-pending-static-labels.md`.
+No ADR (owner ruling at step 2).
+
+The row named about 18 buttons from a text search. A parse keyed on the
+`disabled` expression found 34: buttons that went disabled while their action
+ran but kept a static name, three `F4.164` Import buttons whose `aria-label`
+did not change, and one dialog button the new gate found. Each now names its
+pending action ("Saving override…", "Deleting…") and carries `aria-busy` on
+its own flag; per-row buttons key on the mutation's variables, and two
+bystanders are declared with a marker.
+
+Verified: a `tests/` gate keyed on `disabled`, sharing the `F4.164` scanner;
+one jsdom spec per shape; CI green on the first run; the browser layer on the
+rebuilt web container. Two reviews; the code review's five false greens were
+fixed or listed as not covered.
+
+**Cascade:** no row lists `F4.168` in *Depends*. A `chore(agents):` §5 update
+for the wider rule follows separately.
