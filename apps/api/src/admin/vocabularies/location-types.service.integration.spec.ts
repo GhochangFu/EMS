@@ -75,6 +75,18 @@ export const organizationAdminJwt: JwtPayload = {
   role: "organization_admin",
 };
 
+/**
+ * An `asset_group_admin` (seeded `wc-hvac-admin`). `requireMasterDataUser`
+ * refuses this role before `isGlobalAdmin` is asked, so I18 names that gate
+ * by its message.
+ */
+export const assetGroupAdminJwt: JwtPayload = {
+  sub: "00000000-0000-4000-8000-0000f4162004",
+  email: "wc-hvac-admin@bms.local",
+  name: "integration:asset-group-admin",
+  role: "asset_group_admin",
+};
+
 /** The seeded codes, in `sort_order` order (migration `0085`: 10, 20, 30, 40). */
 export const SEEDED_CODES = ["smoc_campus", "rsmoc", "csmoc", "pump_station"] as const;
 
@@ -353,4 +365,29 @@ export async function assertI16OrganizationAdminIsRefusedCreate(ctx: Ctx): Promi
   await expect(
     ctx.svc.create(organizationAdminJwt, { code: fixtureCode("i16"), label: "never" }),
   ).rejects.toBeInstanceOf(ForbiddenException);
+}
+
+/**
+ * I17 — an `organization_admin` is refused `list`: the fleet-wide count is a
+ * figure about every tenant's estate (plan D2). Security review L1.
+ */
+export async function assertI17OrganizationAdminIsRefusedList(ctx: Ctx): Promise<void> {
+  await expect(ctx.svc.list(organizationAdminJwt)).rejects.toBeInstanceOf(ForbiddenException);
+}
+
+/**
+ * I18 — an `asset_group_admin` is refused `list` by `requireMasterDataUser`
+ * (`isMasterDataRole` excludes the role). Security review L1.
+ *
+ * The message is the claim, not only the class: `isGlobalAdmin` refuses this
+ * role too, with the same exception class, so a class check stays green when
+ * the first gate admits the role. Asserting the master-data message is what
+ * makes that mutation redden here. `list`, so a mutated run writes nothing.
+ */
+export async function assertI18AssetGroupAdminIsRefusedByTheMasterDataGate(
+  ctx: Ctx,
+): Promise<void> {
+  await expect(ctx.svc.list(assetGroupAdminJwt)).rejects.toThrow(
+    "Master data administration requires admin, organization_admin, or location_admin role",
+  );
 }

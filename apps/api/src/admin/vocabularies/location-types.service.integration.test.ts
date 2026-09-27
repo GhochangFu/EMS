@@ -20,6 +20,8 @@ import {
   assertI14LocationAdminIsRefusedReactivate,
   assertI15CreateWritesAnOrgLessAuditRow,
   assertI16OrganizationAdminIsRefusedCreate,
+  assertI17OrganizationAdminIsRefusedList,
+  assertI18AssetGroupAdminIsRefusedByTheMasterDataGate,
   assertI1CreateReturnsTheDefaults,
   assertI2ADuplicateCodeIsAConflict,
   assertI3UpdateWritesLabelAndSortOrder,
@@ -179,6 +181,14 @@ describe.skipIf(!connectionString)(
 
     it("I16 an organization_admin is refused create", async () => {
       await assertI16OrganizationAdminIsRefusedCreate(ctx);
+    });
+
+    it("I17 an organization_admin is refused list", async () => {
+      await assertI17OrganizationAdminIsRefusedList(ctx);
+    });
+
+    it("I18 an asset_group_admin is refused list by the master-data gate", async () => {
+      await assertI18AssetGroupAdminIsRefusedByTheMasterDataGate(ctx);
     });
   },
 );
