@@ -16,7 +16,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { resolveTelemetrySource } from "../telemetry-source";
-import { translateRtuCodeCollision } from "./rtus-conflict";
+import { translateRtuUniqueConflict } from "./rtus-conflict";
 import type { CreateRtuBody, UpdateRtuBody } from "./rtus.schema";
 
 /**
@@ -193,10 +193,12 @@ export class RtusAdminService {
       );
       return row;
     }).catch((err: unknown) => {
-      // `F4.60` — migration `0071` makes `rtus.rtu_code` unique fleet-wide when
-      // it is set, and this insert carries no `onConflict` (a duplicate is
-      // refused, never merged). Without this the driver's `23505` reached Nest's
-      // default handler and became a 500 for a value the caller chose.
+      // `F4.60` / `F4.141` — `bms.rtus` carries four unique constraints
+      // (`rtus_rtu_code_idx`, `rtus_external_rtu_idx`, `rtus_mqtt_topic_idx`,
+      // `rtus_location_code_unique`), and this insert carries no `onConflict` (a
+      // duplicate is refused, never merged). Without this the driver's `23505`
+      // reached Nest's default handler and became a 500 for a value the caller
+      // chose.
       //
       // `.catch` on the returned promise rather than a `try` around the block,
       // the shape `commit()` in `onboarding-commit.service.ts` uses, for the same
@@ -205,12 +207,12 @@ export class RtusAdminService {
       // back and re-throws the driver's own error object, so `code` and
       // `constraint` survive to here.
       //
-      // `translateRtuCodeCollision` is narrow on both axes and returns anything
-      // else unchanged, so this `throw` re-throws the original object with its
-      // stack intact: `rtus_location_code_unique`, `rtus_external_rtu_idx`,
-      // `rtus_mqtt_topic_idx`, a foreign-key violation and a dropped connection
+      // `translateRtuUniqueConflict` maps all four to a 409 with a constant
+      // message, is narrow on both axes, and returns anything else unchanged, so
+      // this `throw` re-throws the original object with its stack intact: a
+      // foreign-key violation, another table's `23505` and a dropped connection
       // all still answer exactly as they did.
-      throw translateRtuCodeCollision(err);
+      throw translateRtuUniqueConflict(err);
     });
 
     return this.fetchRow(created.id);
@@ -373,17 +375,20 @@ export class RtusAdminService {
         tx,
       );
     }).catch((err: unknown) => {
-      // `F4.60` — the same translation `create` applies, for the same index and
-      // in the same `.catch` shape. Justified in full there.
+      // `F4.60` / `F4.141` — the same translation `create` applies, for the same
+      // four constraints and in the same `.catch` shape: each maps to a 409, and
+      // a foreign-key violation or a dropped connection passes through by
+      // identity. Justified in full there. `rtus_location_code_unique` is
+      // reachable here too — `location_id` is fixed, but `code` is not.
       //
       // The `.set()` above restates `rtu_code` on every PATCH, including when
       // the body does not mention it. That is **not** a self-collision: Postgres
       // recognises the old tuple as the row's own prior version, so an update
       // that writes a row's existing `rtu_code` back is not a duplicate.
-      // `rtus.rtu-code-conflict.integration.spec.ts` fences that, because a
+      // `rtus.unique-conflict.integration.spec.ts` fences that, because a
       // pre-check written here instead — `SELECT … WHERE rtu_code = $1` without
       // excluding this row — would refuse every edit of an ingest-bound RTU.
-      throw translateRtuCodeCollision(err);
+      throw translateRtuUniqueConflict(err);
     });
     return this.fetchRow(id);
   }
