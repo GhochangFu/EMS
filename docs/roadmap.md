@@ -6447,3 +6447,23 @@ reviews; the code review's three gate holes were fixed test-first.
 **Cascade:** no row lists `F4.164` in *Depends*. New row `F4.168` (the
 buttons that go disabled while pending with a static label). A
 `chore(agents):` §5 note on the focusable locked entry follows separately.
+
+### `F4.167` — the rtus RLS suite removes the audit rows its lifecycle writes ✅ 2026-09-27
+
+PR #603, squash `615f5016`; plan `docs/plans/f4.167-rtus-rls-audit-cleanup.md`.
+No ADR (test-only).
+
+`rtus.service.rls.integration` now deletes the four `master.rtu.*` audit rows
+each run writes, and records the RTU id straight after `create` so a failed
+later step no longer leaks the RTU. Two new cases hold it: the lifecycle wrote
+exactly four audit rows, and after removal none remain. The dev database's
+1,560 orphan rows from this suite were deleted once by owner ruling; 76
+`F4.59` build-day rows remain.
+
+Verified: five mutations reddened their named case, one failure-path claim is
+held by a database count; CI green on the first run. Three reviews, one nit
+fixed.
+
+**Cascade:** no row lists `F4.167` in *Depends*. A note on `F4.15`: its
+append-only storage must account for the suites that delete their own audit
+rows. No `chore(agents):` change owed.
