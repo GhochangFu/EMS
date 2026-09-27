@@ -111,8 +111,9 @@ export async function assertAFarFutureRowStillRefreshesTheDayLevel(): Promise<vo
 }
 
 /**
- * The control: a row an hour in the past widens to at least two buckets at
- * every level, so the guard never fires and all four levels are refreshed.
+ * The control: a row an hour in the past widens to at least two bucket widths
+ * at every level — at least one complete bucket — so the guard never fires
+ * and all four levels are refreshed.
  * `to` is capped at `now` only where `to + margin` passes it (`_1h`, `_1d`).
  */
 export async function assertAPastRowRefreshesEveryLevel(): Promise<void> {
@@ -123,4 +124,39 @@ export async function assertAPastRowRefreshesEveryLevel(): Promise<void> {
     ["telemetry.point_values_1h", "2026-09-27T09:00:30.000Z", F4_166_NOW],
     ["telemetry.point_values_1d", "2026-09-25T11:00:30.000Z", F4_166_NOW],
   ]);
+}
+
+/** Every query an invalid-date call sends, `SET ROLE` included. */
+async function queriesForInvalidFrom(): Promise<{ queries: string[]; error: unknown }> {
+  const queries: string[] = [];
+  const fake = {
+    query: async (text: string) => {
+      queries.push(text);
+      return { rows: [] };
+    },
+  };
+  let error: unknown;
+  try {
+    await refreshAggregatesFrom(fake as unknown as pg.Client, new Date(Number.NaN), new Date());
+  } catch (err) {
+    error = err;
+  }
+  return { queries, error };
+}
+
+/**
+ * `NaN` makes every comparison in `inscribedWindowIsEmpty` false, so the guard
+ * alone reports "not empty". An invalid `Date` must throw instead.
+ */
+export async function assertAnInvalidDateThrows(): Promise<void> {
+  const { error } = await queriesForInvalidFrom();
+  expect((error as Error | undefined)?.message).toBe(
+    "refreshAggregatesFrom: `from` and `to` must be valid dates",
+  );
+}
+
+/** ...and it throws before `SET ROLE`, so no connection ever carries the role. */
+export async function assertAnInvalidDateSendsNoQuery(): Promise<void> {
+  const { queries } = await queriesForInvalidFrom();
+  expect(queries).toEqual([]);
 }

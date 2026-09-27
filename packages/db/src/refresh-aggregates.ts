@@ -268,8 +268,9 @@ const REFRESH_MARGIN_MS: Readonly<Record<(typeof LEVELS)[number]["view"], number
  * green build.
  *
  * **`F4.166` — a level whose widened window holds no complete bucket is
- * skipped.** The margin guarantees two buckets only while `from` is not
- * ahead of the clock. A row stamped ahead of it moves `from - margin` forward
+ * skipped.** The margin makes the window at least two bucket widths wide, so
+ * it holds at least one complete bucket — but only while `from` is not ahead
+ * of the clock. A row stamped ahead of it moves `from - margin` forward
  * while the cap holds `to` at `now`: a row 60 s ahead widens at `_1m` to
  * `[now - 60 s, now]`, which inscribes to nothing, and TimescaleDB raised
  * `22023 refresh window too small` — on every full CI run, from
@@ -282,12 +283,20 @@ const REFRESH_MARGIN_MS: Readonly<Record<(typeof LEVELS)[number]["view"], number
  * `CALL`, so it sees exactly the window TimescaleDB sees — `to` is explicit
  * here, never the server's `now()`. It is per level: an empty `_1m` window says
  * nothing about `_5m`'s, so a `break` would drop refreshes that have work.
+ *
+ * **An invalid `Date` throws before any connection is taken.** `NaN` makes
+ * `windowEnd <= windowStart` false, so the guard alone would call the window
+ * "not empty" and pass `NaN` to the `CALL`. No caller passes one today; this
+ * keeps the guard failing closed if one ever does.
  */
 export async function refreshAggregatesFrom(
   client: pg.Pool | pg.Client | pg.PoolClient,
   from: Date,
   to: Date = new Date(),
 ): Promise<void> {
+  if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime())) {
+    throw new Error("refreshAggregatesFrom: `from` and `to` must be valid dates");
+  }
   await withRollupRole(client, async (target) => {
     for (const { view, bucketWidthMs } of LEVELS) {
       const margin = REFRESH_MARGIN_MS[view];

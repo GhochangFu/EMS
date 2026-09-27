@@ -7,6 +7,8 @@ import {
   assertAMisalignedWindowCanBeEmptyEvenWhenWiderThanABucket,
   assertAnHourLevelWindowAtTheBoundaryIsNotEmpty,
   assertAnHourLevelWindowShortOfTheBoundaryIsEmpty,
+  assertAnInvalidDateSendsNoQuery,
+  assertAnInvalidDateThrows,
   assertAPastRowRefreshesEveryLevel,
   assertTheCiInstantIsEmpty,
 } from "./refresh-aggregates.spec";
@@ -44,5 +46,13 @@ describe("F4.166 — refreshAggregatesFrom skips a level whose window holds no c
 
   it("refreshes all four levels for a row in the past", async () => {
     await assertAPastRowRefreshesEveryLevel();
+  });
+
+  it("throws for an invalid Date instead of passing NaN to the guard", async () => {
+    await assertAnInvalidDateThrows();
+  });
+
+  it("throws for an invalid Date before it sends SET ROLE", async () => {
+    await assertAnInvalidDateSendsNoQuery();
   });
 });
