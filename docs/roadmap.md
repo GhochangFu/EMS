@@ -6426,3 +6426,24 @@ Three reviews; two test nits fixed, one informational security note recorded.
 **Cascade:** no row lists `F4.141` in *Depends*. New row `F4.167` (the RLS
 suite's orphan audit rows) and a note on `F4.113`. No `chore(agents):` §6
 change owed.
+
+### `F4.164` — four shell states made visible to keyboard and screen-reader users ✅ 2026-09-27
+
+PR #599, squash `9c361c8c`; plan `docs/plans/f4.164-shell-a11y.md`. No ADR
+(owner ruling at step 2).
+
+The locked Settings entry is now a focusable button with `aria-disabled`, a
+described reason and 3.43:1 text. A `KpiTile` error is an alert, and its stale
+caption follows the ring. All 47 pending label-swap buttons carry `aria-busy`,
+held by a `tests/` source scan that fails closed. The collapsed rail has
+unique codes (DS, AS, RTU, PT), and each collapsed link is named
+"label (code)" for WCAG 2.5.3.
+
+Verified: jsdom cases per claim with every planned mutation reddening its
+target; CI green on the first run; the browser layer on the rebuilt web
+container passed except a real keyboard Tab, which was not driven. Two
+reviews; the code review's three gate holes were fixed test-first.
+
+**Cascade:** no row lists `F4.164` in *Depends*. New row `F4.168` (the
+buttons that go disabled while pending with a static label). A
+`chore(agents):` §5 note on the focusable locked entry follows separately.
