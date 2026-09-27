@@ -62,6 +62,10 @@ import {
   updateAssetRoleBodySchema,
 } from "../admin/vocabularies/asset-roles.schema";
 import {
+  createLocationTypeBodySchema,
+  updateLocationTypeBodySchema,
+} from "../admin/vocabularies/location-types.schema";
+import {
   createRtuBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
@@ -240,6 +244,11 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createCalcParameterBodySchema,
   updateCalcParameterBodySchema,
   createLocationBodySchema,
+  // `F4.162`. Both `.strict()`: `bms.location_types` is global vocabulary, so
+  // an `organizationId` must be a 400, and `code` on the PATCH is a rename of
+  // the primary key `locations.type` references — refused, never dropped.
+  createLocationTypeBodySchema,
+  updateLocationTypeBodySchema,
   createMaintenanceScheduleBodySchema,
   createNotificationChannelBodySchema,
   createOrganizationBodySchema,

@@ -40,6 +40,8 @@ import { PointKeysAdminController } from "./point-keys/point-keys.controller";
 import { PointKeysAdminService } from "./point-keys/point-keys.service";
 import { AssetRolesAdminController } from "./vocabularies/asset-roles.controller";
 import { AssetRolesAdminService } from "./vocabularies/asset-roles.service";
+import { LocationTypesVocabularyAdminController } from "./vocabularies/location-types.controller";
+import { LocationTypesVocabularyAdminService } from "./vocabularies/location-types.service";
 import { MasterDataAuditService } from "./master-data-audit.service";
 import { OnboardingController } from "./onboarding/onboarding.controller";
 import { OnboardingCatalogService } from "./onboarding/onboarding-catalog.service";
@@ -88,6 +90,8 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     // E4.1a / ADR 0070 decision 2 — the calc parameter store and its vocabulary read.
     CalcParametersAdminController,
     AssetRolesAdminController,
+    // F4.162 / ADR 0077 Amendment 1 — the global-admin location-type catalog.
+    LocationTypesVocabularyAdminController,
     AssetTemplatesAdminController,
     DashboardTemplatesController,
     AuditAdminController,
@@ -116,6 +120,7 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
     PointKeysAdminService,
     CalcParametersAdminService,
     AssetRolesAdminService,
+    LocationTypesVocabularyAdminService,
     AssetTemplatesAdminService,
     AssetTemplateInstantiationService,
     // F3.2 / ADR 0067 decision 4 — the two triggers that write per-asset
