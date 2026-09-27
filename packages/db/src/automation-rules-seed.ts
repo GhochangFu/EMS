@@ -30,6 +30,12 @@ type AutomationRuleValues = Omit<
  * rather than filtering in SQL because seeded codes were historically stored
  * with stray whitespace and mixed case; the comparison normalises both, and the
  * update rewrites the code to its canonical form.
+ *
+ * The five control-room seeders call it. Since `F4.169` the ESKOM ladder
+ * path (`seedEskomLadderRules`) does not: a ladder code is built from an
+ * operator-editable asset code, and this compare upper-cases only its stored
+ * side, so a lowercase asset code missed it and a re-seed aborted with
+ * `23505`.
  */
 async function upsertRuleByCode(
   db: BmsDb,
@@ -452,9 +458,10 @@ async function seedCrEnvironmentRules(
  * and `pnpm db:migrate` runs BEFORE seed. On a fresh database the join in
  * `0033` hits empty tables, every INSERT there writes zero rows, and
  * `drizzle` still marks it applied. This table is the seed-side source of
- * truth for the same five rules: a no-op (via `upsertRuleByCode`, matched
- * by code) on a database where `0033` already seeded them, and the only
- * path that creates them on a fresh one.
+ * truth for the same five rules: a no-op (matched on `asset_id` and the
+ * code's suffix since `F4.169`, see {@link seedEskomLadderRules}) on a
+ * database where `0033` already seeded them, and the only path that creates
+ * them on a fresh one.
  *
  * Exported since `F4.129` so `automation-rules-seed.spec.ts` iterates the
  * five real suffixes rather than restating them. `packages/db/src/index.ts`
@@ -546,15 +553,13 @@ const LADDER_HASH_WIDTH = 8;
  *   that agree up to the cut produce the same `<cut>` and differ only in the
  *   tail the cut dropped. Raw (before the `-` → `_` fold), because `A-B…` and
  *   `A_B…` fold to the same `<cut>` and are still two assets.
- * - **`<hash>` is uppercase.** `upsertRuleByCode` upper-cases only the
- *   stored side of its compare, so an all-uppercase asset code gives a rule
- *   code it can match. A re-seed rarely reaches that compare — the
- *   condition-tuple guard in `seedEskomLadderRules` skips an already-seeded
- *   rule first — but it does once an operator edits a seeded rule's
- *   threshold. The cut keeps the asset code's own case, so a lowercase asset
- *   code misses the compare too, the INSERT repeats the stored code, and
- *   `pnpm db:seed` aborts with `23505` on `automation_rules_org_code_idx`.
- *   That gap predates `F4.129`; this function does not close it.
+ * - **`<hash>` is uppercase.** It was chosen for `upsertRuleByCode`, which
+ *   upper-cases only the stored side of its compare. Since `F4.169` case
+ *   decides no match: `seedEskomLadderRules` finds an already-seeded ladder
+ *   rule by `asset_id` and suffix ({@link ladderSuffixOf}), never by this
+ *   code, so a lowercase asset code, whose cut keeps its case, no longer
+ *   aborts a re-seed with `23505`. The hash stays uppercase so that every
+ *   code seeded under `F4.129` keeps its bytes.
  * - **`slice()` is exact**, not an approximation. Migration
  *   `0070_catalog_code_charset.sql` constrains `bms.assets.code` to
  *   `^[A-Za-z0-9_-]+$` — pure ASCII — so every asset code this reads is one
@@ -577,6 +582,25 @@ export function ladderRuleCode(assetCode: string, suffix: string): string {
     RULE_CODE_MAX - "ESKOM__".length - LADDER_HASH_WIDTH - "_".length - suffix.length;
   const cut = folded.slice(0, cutWidth);
   return `ESKOM_${cut}_${hash}_${suffix}`;
+}
+
+/** One of the five `ESKOM_LADDER_RULES` suffixes. */
+type LadderSuffix = (typeof ESKOM_LADDER_RULES)[number]["suffix"];
+
+/**
+ * `F4.169` — the `ESKOM_LADDER_RULES` suffix a stored rule code ends with,
+ * as its `_`-delimited tail, or `null` when it ends with none of them.
+ *
+ * `seedEskomLadderRules` reads this, with the rule's `asset_id`, to decide
+ * whether an asset already carries one of its five ladder rules. The tail is
+ * the one part of a ladder code that neither the asset code (renamed, or
+ * lower case) nor the `F4.129` hash-cut can change. No suffix is the
+ * `_`-tail of another (`automation-rules-seed.spec.ts` gates that), so a
+ * code matches at most one.
+ */
+export function ladderSuffixOf(code: string): LadderSuffix | null {
+  const rule = ESKOM_LADDER_RULES.find((candidate) => code.endsWith(`_${candidate.suffix}`));
+  return rule ? rule.suffix : null;
 }
 
 /** `bms.automation_rules.name` is `varchar(255)` (`schema/alarms-schema.ts`). */
@@ -633,9 +657,46 @@ function conditionKey(
  * condition (two `rule_id`s, so `alarms_open_per_rule_uidx` does not dedupe
  * them — the exact defect this item exists to close) or, for a duplicate
  * generated code, aborted `pnpm db:seed` on the `code` unique constraint.
- * Keying every rule on its condition tuple removes the dependency on the
- * code matching at all: an already-seeded condition is skipped outright,
- * whatever code it was seeded under.
+ * Keying every rule on its condition tuple skips an already-seeded
+ * condition outright, whatever code it was seeded under.
+ *
+ * `F4.169`: the condition tuple alone was not enough. Once an operator edits
+ * a seeded rule's threshold, the tuple no longer matches, and the fallback
+ * was still `upsertRuleByCode`'s code match — so a lowercase or renamed
+ * asset code INSERTed its stored code again and `pnpm db:seed` aborted with
+ * `23505` on `automation_rules_org_code_idx`. Each `(asset, ladder rule)` now
+ * runs three guards, in order, and never updates a stored code:
+ *
+ * 1. **Condition tuple** (above), first, for the `UPS-A`
+ *    `demand_ceiling_notify` case.
+ * 2. **Asset and suffix.** The asset already carries a
+ *    `source = 'simulator_threshold'` rule whose code's `_`-delimited tail
+ *    is this rule's suffix ({@link ladderSuffixOf}). `asset_id` keeps
+ *    `ups-a` and `UPS-A` apart and survives an asset rename; `source` is the
+ *    ladder marker `0033` and this seed both write, and `ruleDraftBodySchema`
+ *    has no `source` field, so an operator edit cannot clear it.
+ * 3. **Code already held.** A different row in the organization already
+ *    holds the code {@link ladderRuleCode} computes. That rule is skipped
+ *    and `log` gets one line naming both assets by code and id, the code,
+ *    and the holder's rule id; the rest of the seed runs. The check is a
+ *    read made before the loop, never a caught `23505`: the seed runs in
+ *    `withOrganization`'s one transaction, which a failed INSERT aborts
+ *    (`25P02`).
+ *
+ * Otherwise the rule is INSERTed and its code joins the held set. A stored
+ * code is never rewritten to a new asset code: the rewrite could itself hit
+ * the unique index inside the seed transaction, and no reader keys on a
+ * ladder code.
+ *
+ * Two residuals remain. `updateRule` (`apps/api/src/rules/rules.service.ts`)
+ * accepts a new `code` for a `simulator_threshold` rule: if an operator
+ * renames one so it no longer ends `_${suffix}` and also edits its
+ * threshold, the next seed adds a second rule with the original condition —
+ * not a boot failure. And a crafted asset code can hold one of another
+ * asset's hashed codes (guard 3), so several such assets can strip a victim
+ * of its ladder rules. `verifyHierarchySeed` counts ESKOM electrical assets
+ * with no `simulator_threshold` rule, so it reports a victim stripped of all
+ * five, not one stripped of fewer; the `log` line is the record of those.
  *
  * Queries `bms.assets`/`locations`/`organizations` directly — the same join
  * migration `0033` uses — rather than taking the eskom-assets-seed.ts
@@ -646,7 +707,7 @@ function conditionKey(
  * `seedAutomationRules`. `seed.ts` therefore calls this function separately,
  * once every ESKOM electrical asset actually exists.
  *
- * `F4.129`: the code and the name passed to `upsertRuleByCode` run through
+ * `F4.129`: the code and the name the seed writes run through
  * {@link ladderRuleCode} and {@link ladderRuleName} rather than raw
  * templates, so an asset code of 42+ characters, or an asset name of 236+,
  * no longer aborts `pnpm db:seed` with `22001 value too long`. See those
@@ -655,6 +716,7 @@ function conditionKey(
 export async function seedEskomLadderRules(
   db: BmsDb,
   organizationId: string,
+  log: (line: string) => void = (line) => console.error(line),
 ): Promise<void> {
   const electricalAssets = await db
     .select({ id: assets.id, code: assets.code, name: assets.name })
@@ -691,16 +753,54 @@ export async function seedEskomLadderRules(
       .map((row) => conditionKey(row.assetId, row.pointKey, row.operator, row.thresholdValue)),
   );
 
+  // `F4.169`: one read of the organization's rules, joined to their asset's
+  // code for the collision warning. `automation_rules_org_code_idx` is
+  // `(organization_id, code)`, byte-exact, so `codesHeld` is keyed on the
+  // stored bytes and holds every rule in the organization, ladder or not.
+  const organizationRules = await db
+    .select({
+      id: automationRules.id,
+      code: automationRules.code,
+      assetId: automationRules.assetId,
+      assetCode: assets.code,
+      source: automationRules.source,
+    })
+    .from(automationRules)
+    .leftJoin(assets, eq(assets.id, automationRules.assetId))
+    .where(eq(automationRules.organizationId, organizationId));
+  const seededLadderRules = new Set<string>();
+  const codesHeld = new Map<string, { id: string; assetId: string | null; assetCode: string | null }>();
+  for (const row of organizationRules) {
+    codesHeld.set(row.code, { id: row.id, assetId: row.assetId, assetCode: row.assetCode });
+    const suffix = ladderSuffixOf(row.code);
+    if (row.source === "simulator_threshold" && row.assetId !== null && suffix !== null) {
+      seededLadderRules.add(`${row.assetId}::${suffix}`);
+    }
+  }
+
   for (const asset of electricalAssets) {
     for (const rule of ESKOM_LADDER_RULES) {
       if (existingConditions.has(conditionKey(asset.id, rule.pointKey, rule.operator, rule.thresholdValue))) {
         continue;
       }
-      await upsertRuleByCode(
-        db,
-        organizationId,
-        ladderRuleCode(asset.code, rule.suffix),
-        {
+      if (seededLadderRules.has(`${asset.id}::${rule.suffix}`)) {
+        continue;
+      }
+      const code = ladderRuleCode(asset.code, rule.suffix);
+      const holder = codesHeld.get(code);
+      if (holder) {
+        log(
+          `seedEskomLadderRules: skipped ${code} for asset ${asset.code} (${asset.id}): ` +
+            `rule ${holder.id} on asset ${holder.assetCode ?? "<none>"} (${holder.assetId ?? "<none>"}) ` +
+            `already holds that code`,
+        );
+        continue;
+      }
+      const [inserted] = await db
+        .insert(automationRules)
+        .values({
+          code,
+          organizationId,
           name: ladderRuleName(asset.name, rule.nameSuffix),
           description: rule.description,
           category: rule.category,
@@ -716,8 +816,9 @@ export async function seedEskomLadderRules(
           severity: rule.severity,
           condition: rule.condition,
           action: { type: "notify", target: rule.category === "energy" ? "Energy Manager" : "Operations" },
-        },
-      );
+        })
+        .returning({ id: automationRules.id });
+      codesHeld.set(code, { id: inserted.id, assetId: asset.id, assetCode: asset.code });
     }
   }
 }

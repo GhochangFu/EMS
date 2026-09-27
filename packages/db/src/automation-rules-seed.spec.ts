@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 
 import { expect } from "vitest";
 
-import { ESKOM_LADDER_RULES, ladderRuleCode, ladderRuleName } from "./automation-rules-seed";
+import {
+  ESKOM_LADDER_RULES,
+  ladderRuleCode,
+  ladderRuleName,
+  ladderSuffixOf,
+} from "./automation-rules-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
@@ -128,9 +133,10 @@ export function assertEverySuffixStaysInsideTheBound(): void {
 
 /**
  * The hash segment is the first `LADDER_HASH_WIDTH` uppercase hex characters
- * of `sha256` of the full asset code. Uppercase is the case `upsertRuleByCode`
- * upper-cases its stored side to; see the helper's docblock for when a
- * re-seed reaches that compare.
+ * of `sha256` of the full asset code. Since `F4.169` the case decides no
+ * match: `seedEskomLadderRules` finds an already-seeded ladder rule by
+ * `asset_id` and suffix, never by code. Uppercase stays so that every code
+ * seeded under `F4.129` keeps its bytes.
  */
 export function assertTheHashIsOfTheFullCode(): void {
   const code = ladderRuleCode(P61A, "PF_LOW");
@@ -187,4 +193,43 @@ export function assertTheNameCutNeverSplitsASurrogatePair(): void {
   const name = ladderRuleName(ASTRAL.repeat(240), LONGEST_NAME_SUFFIX);
   expect(codePoints(name)).toBe(255);
   expect(name).toBe(`${ASTRAL.repeat(235)} ${LONGEST_NAME_SUFFIX}`);
+}
+
+/**
+ * `F4.169` — `ladderSuffixOf` names the ladder rule a stored code belongs to,
+ * by its `_`-delimited tail. A code carrying a second suffix in its body
+ * (`VOLTAGE_CRITICAL` here) is still the `PF_LOW` rule: only the tail counts.
+ * Mutation: `includes` for `endsWith` returns `VOLTAGE_CRITICAL`, the first
+ * suffix in `ESKOM_LADDER_RULES` the code contains, and reddens this.
+ */
+export function assertTheSuffixIsTheTail(): void {
+  expect(ladderSuffixOf("ESKOM_X_VOLTAGE_CRITICAL_PF_LOW")).toBe("PF_LOW");
+  expect(ladderSuffixOf("ESKOM_UPS_A_VOLTAGE_WARN")).toBe("VOLTAGE_WARN");
+}
+
+/**
+ * A code that is not a ladder code has no suffix — the demo rule, and a code
+ * whose tail spells a suffix with no `_` before it. Mutation: dropping the
+ * `_` separator from the compare matches `ESKOM_UPS_APF_LOW` as `PF_LOW`.
+ */
+export function assertANonLadderCodeHasNoSuffix(): void {
+  expect(ladderSuffixOf("demand_ceiling_notify")).toBeNull();
+  expect(ladderSuffixOf("ESKOM_UPS_APF_LOW")).toBeNull();
+}
+
+/**
+ * The data invariant `ladderSuffixOf` depends on: no suffix in
+ * `ESKOM_LADDER_RULES` is the `_`-delimited tail of another, so a stored code
+ * ends `_${suffix}` for at most one of them. A sixth suffix such as `LOW`
+ * would break it (`..._PF_LOW` ends `_LOW`) and reddens this.
+ */
+export function assertNoSuffixIsTheTailOfAnother(): void {
+  const suffixes = ESKOM_LADDER_RULES.map((rule) => rule.suffix);
+  expect(new Set(suffixes).size).toBe(suffixes.length);
+  for (const outer of suffixes) {
+    for (const inner of suffixes) {
+      if (outer === inner) continue;
+      expect(outer.endsWith(`_${inner}`), `${outer} must not end _${inner}`).toBe(false);
+    }
+  }
 }
