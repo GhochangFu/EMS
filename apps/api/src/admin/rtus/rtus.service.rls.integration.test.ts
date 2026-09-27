@@ -9,13 +9,22 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { RtusAdminService } from "./rtus.service";
-import { assertRtuWriteLifecycleSurvivesRealRls } from "./rtus.service.rls.integration.spec";
+import {
+  assertLifecycleWroteFourAuditRows,
+  assertNoFixtureRowsRemain,
+  assertRtuWriteLifecycleSurvivesRealRls,
+} from "./rtus.service.rls.integration.spec";
 
 /**
  * `E7.1b` — Vitest entry point. Assertions live in the sibling `.spec`
  * (ADR 0014); this file owns the database lifecycle. Same shape as
  * `assets.service.rls.integration.test.ts` against the other zero-coverage admin
  * write path.
+ *
+ * `F4.167` — the suite removes the `master.rtu.*` audit rows its lifecycle
+ * writes, as `rtus.unique-conflict` and `rtus.telemetry-source` already do.
+ * Until then every run left four audit rows naming an RTU that no longer
+ * existed.
  */
 const connectionString = requireIntegrationDb({
   item: "E7.1b",
@@ -100,19 +109,39 @@ describe.skipIf(!connectionString)("E7.1b — RtusAdminService under real RLS", 
     );
   });
 
+  /**
+   * `F4.167` — the audit rows go first, as in the sibling suites: a failure
+   * between the two deletes then leaves the RTU row, whose `e7.1b-rtu-` code
+   * names its author. `ownerPool` is `bms_fleet` (BYPASSRLS), so the audit
+   * delete is not a silent 0-row delete under FORCE RLS.
+   */
+  async function removeRtuFixtures(ids: readonly string[]): Promise<void> {
+    if (ids.length === 0) return;
+    await ownerPool.query("DELETE FROM bms.audit_log WHERE entity_id = ANY($1)", [ids]);
+    await ownerPool.query("DELETE FROM bms.rtus WHERE id = ANY($1)", [ids]);
+  }
+
   afterAll(async () => {
-    if (createdIds.length > 0) {
-      await ownerPool.query("DELETE FROM bms.rtus WHERE id = ANY($1)", [createdIds]);
-    }
+    // The safety net for a run that failed before the removal case below.
+    await removeRtuFixtures(createdIds);
     await Promise.all([ownerPool.end(), authPool.end(), tenantPool.end(), fleetPool.end()]);
   });
 
+  // One claim per `it`, in declaration order: the lifecycle, then its audit
+  // rows, then their removal.
   it("creates, updates, deactivates and reactivates an RTU with a stamped org under real RLS", async () => {
-    const id = await assertRtuWriteLifecycleSurvivesRealRls(
-      { svc, ownerPool, organizationId, locationId },
+    await assertRtuWriteLifecycleSurvivesRealRls(
+      { svc, ownerPool, organizationId, locationId, createdIds },
       jwt,
     );
-    createdIds.push(id);
-    await ownerPool.query("DELETE FROM bms.rtus WHERE id = $1", [id]);
+  });
+
+  it("the lifecycle wrote exactly the four master.rtu.* audit rows", async () => {
+    await assertLifecycleWroteFourAuditRows(ownerPool, createdIds[0]);
+  });
+
+  it("removing the fixture takes its audit rows with it", async () => {
+    await removeRtuFixtures(createdIds);
+    await assertNoFixtureRowsRemain(ownerPool, createdIds);
   });
 });
