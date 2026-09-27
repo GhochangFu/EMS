@@ -21,3 +21,22 @@ export const locationTypeDtoSchema = z.object({
   code: z.string(),
   label: z.string(),
 });
+
+/**
+ * One row of `GET /admin/vocabularies/location-types` — the global-admin
+ * catalog view (`F4.162`, ADR 0077 Amendment 1, plan D3). A fresh plain
+ * object, not `locationTypeDtoSchema.extend(…)`: ADR 0030 Amendment 1 rule 2
+ * forbids the flattening combinators for a derived contract, and this row
+ * carries fields (`sortOrder`, `active`, `createdAt`, `locationCount`) the
+ * dropdown-facing DTO above never needs.
+ */
+export const adminLocationTypeDtoSchema = z.object({
+  code: z.string(),
+  label: z.string(),
+  sortOrder: z.number().int(),
+  active: z.boolean(),
+  createdAt: z.string(),
+  /** `count(locations.id)` over every `bms.locations` row of this type,
+   * inactive locations included (OQ4). */
+  locationCount: z.number().int().nonnegative(),
+});

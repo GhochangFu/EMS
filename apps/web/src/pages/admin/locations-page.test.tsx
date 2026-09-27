@@ -3,12 +3,17 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  createStillSendsType,
+  editingARetiredTypeShowsItSelectedAsRetired,
   editingShowsTheRowsOwnTypeSelected,
   editPrefillsTheTimezone,
   emptyTimezoneSubmitsNull,
   formHasATimezoneInputWithADatalist,
   listRendersDashForANullTimezone,
   noSpecCallReachesTheNetwork,
+  pendingTypesShowNoRetiredOption,
+  pickingANewTypeThenSavingSendsIt,
+  savingARetiredTypeUntouchedOmitsType,
   typedTimezoneIsSubmitted,
   typeSelectListsTheFourTypesInOrder,
   untouchedCreatePostsTheFirstListedType,
@@ -61,5 +66,25 @@ describe("E4.1b locations page — the Timezone field", () => {
 
   it("P4 no spec call reaches the network", async () => {
     await noSpecCallReachesTheNetwork();
+  });
+
+  it("P5 editing a retired type shows it selected as retired", async () => {
+    await editingARetiredTypeShowsItSelectedAsRetired();
+  });
+
+  it("P6 saving a retired type untouched omits type from the PATCH", async () => {
+    await savingARetiredTypeUntouchedOmitsType();
+  });
+
+  it("P7 picking a new type then saving sends it", async () => {
+    await pickingANewTypeThenSavingSendsIt();
+  });
+
+  it("P8 a create still sends type", async () => {
+    await createStillSendsType();
+  });
+
+  it("P9 a pending types request shows no retired option", async () => {
+    await pendingTypesShowNoRetiredOption();
   });
 });

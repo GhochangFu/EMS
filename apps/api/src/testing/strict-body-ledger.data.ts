@@ -321,6 +321,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createEscalationProfileBodySchema: STRICT(CALLER_ERROR),
   "createEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   createLocationBodySchema: STRICT(CALLER_ERROR),
+  // `F4.162`. A global vocabulary: a caller sending `organizationId` must get a
+  // 400, not believe they scoped a fleet-wide type.
+  createLocationTypeBodySchema: STRICT(CALLER_ERROR),
   createMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
   createNotificationChannelBodySchema: STRICT(CALLER_ERROR),
   createOrganizationBodySchema: STRICT(CALLER_ERROR),
@@ -467,6 +470,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   updateEscalationProfileBodySchema: STRICT(ESCALATION_PATCH),
   "updateEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   updateLocationBodySchema: STRICT(CALLER_ERROR),
+  // `F4.162`. `code` is the primary key; a PATCH naming it is a 400.
+  updateLocationTypeBodySchema: STRICT(CALLER_ERROR),
   updateMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
   updateNotificationChannelBodySchema: STRICT(
     "The node E7.1f was raised for. `PATCH {\"name\":\"x\",\"organizationId\":\"<other>\"}` " +

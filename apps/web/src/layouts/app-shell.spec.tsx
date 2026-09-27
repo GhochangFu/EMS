@@ -357,3 +357,22 @@ export function namesTheExpandedLinkByItsLabel(): void {
     "Dashboards",
   );
 }
+
+/**
+ * `F4.162` S9 (plan D7) — an `organization_admin` has no *Location Types*
+ * entry. *Asset Groups* is the positive control: the Administration group
+ * rendered for this role.
+ */
+export function hidesLocationTypesFromAnOrganizationAdmin(): void {
+  renderShell(GLOBAL);
+  expect(within(sidebar()).getByRole("link", { name: "Asset Groups" })).toBeInTheDocument();
+  expect(within(sidebar()).queryAllByRole("link", { name: "Location Types" })).toHaveLength(0);
+}
+
+/** `F4.162` S10 — the global `admin` has one, pointing at `/admin/location-types`. */
+export function showsLocationTypesToTheGlobalAdmin(): void {
+  renderShell(GLOBAL, "/", "admin");
+  const links = within(sidebar()).queryAllByRole("link", { name: "Location Types" });
+  expect(links).toHaveLength(1);
+  expect(links[0]).toHaveAttribute("href", "/admin/location-types");
+}

@@ -64,7 +64,7 @@ import {
   notificationTestResultSchema,
 } from "./notifications";
 import { escalationDefaultDtoSchema, escalationProfileDtoSchema } from "./escalation";
-import { locationTypeDtoSchema } from "./location-types";
+import { adminLocationTypeDtoSchema, locationTypeDtoSchema } from "./location-types";
 import { adminPointKeyDtoSchema } from "./point-keys";
 
 /** `{ items: T[] }` — the shape every master-data list route returns. */
@@ -76,6 +76,9 @@ export const locationsListResponseSchema = itemsOf(adminLocationDtoSchema);
 export const rtusListResponseSchema = itemsOf(adminRtuDtoSchema);
 /** `GET /admin/location-types` (`F4.157`, D3) — the active vocabulary rows. */
 export const locationTypesListResponseSchema = itemsOf(locationTypeDtoSchema);
+/** `GET /admin/vocabularies/location-types` (`F4.162`, ADR 0077 Amendment 1, D3) —
+ * the global-admin catalog, active and retired rows, each with its count. */
+export const adminLocationTypesListResponseSchema = itemsOf(adminLocationTypeDtoSchema);
 export const assetsListResponseSchema = itemsOf(adminAssetDtoSchema);
 export const assetPointsListResponseSchema = itemsOf(adminAssetPointDtoSchema);
 export const pointKeysListResponseSchema = itemsOf(adminPointKeyDtoSchema);

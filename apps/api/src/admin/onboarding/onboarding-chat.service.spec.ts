@@ -23,8 +23,8 @@ function longCell(fill: string): string {
 }
 
 /**
- * `excelImportFollowUp` reads `this.mqttSetupTemplate`,
- * `this.formatAssetsByRtuSummary` and the draft it is handed, and touches none
+ * `excelImportFollowUp` reads `mqttSetupTemplate`,
+ * `formatAssetsByRtuSummary` and the draft it is handed, and touches none
  * of the four injected services — verified against the method, which is why
  * empty stubs are enough. `onboarding-credentials.spec.ts` is the precedent for
  * this style.
@@ -422,8 +422,8 @@ const FOUR = [
  * on every path below: `crypto` only inside `mergeDraft`, and `catalogService`
  * and `protocolService` only when an `organizationId` is passed.
  *
- * The fifth is the vocabulary the location branch reads (`F4.157`): a fake
- * answering the four seeded `bms.location_types` rows.
+ * The fifth is the vocabulary `handleTurn` reads once per turn (`F4.157`,
+ * `F4.162`): a fake answering the four seeded `bms.location_types` rows.
  */
 function ruleBasedChatService(): OnboardingChatService {
   return new OnboardingChatService(

@@ -16,6 +16,7 @@ import {
   assertCreateAcceptsALiveType,
   assertCreateRefusesAnUnknownTypeWithA400,
   assertDeactivateGuardSeesActiveAssetsUnderRls,
+  assertListCarriesTheRsmocTypeLabel,
   assertListLocationTypesRefusesANonMasterDataUser,
   assertListLocationTypesReturnsTheFour,
   assertPolicyRefusesMismatchedOrg,
@@ -256,5 +257,9 @@ describe.skipIf(!connectionString)("F4.16 — LocationsAdminService under real R
 
   it("F4.157 L4 — listLocationTypes returns the four active types in order", async () => {
     await assertListLocationTypesReturnsTheFour(svc, jwt);
+  });
+
+  it("F4.162 L5 — list carries typeLabel: \"RSMOC\" for a live rsmoc fixture location", async () => {
+    await assertListCarriesTheRsmocTypeLabel({ svc, tenantPool, ownerPool, organizationId }, jwt, register);
   });
 });

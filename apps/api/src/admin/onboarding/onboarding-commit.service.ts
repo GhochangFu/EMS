@@ -175,7 +175,10 @@ export class OnboardingCommitService {
       throw new BadRequestException(countProblem);
     }
 
-    const validation = this.validateService.validate(draft);
+    // F4.162 (plan D9): a type retired after it was stored fails here, with the
+    // other field errors, rather than alone at `assertLocationType` below.
+    const activeTypeCodes = (await this.vocabularies.listLocationTypes()).map((row) => row.code);
+    const validation = this.validateService.validate(draft, activeTypeCodes);
     if (!validation.readyToCommit) {
       throw new BadRequestException({
         message: "Draft is not ready to commit",

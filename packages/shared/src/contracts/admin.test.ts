@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   runAdminLocationDtoAcceptsPumpStationTest,
+  runAdminLocationDtoRequiresTypeLabelTest,
   runAssetInstantiationResultDashboardFieldsTests,
   runAssetInstantiationResultSeededRulesTests,
   runSeededRuleDriftVerdictTests,
@@ -32,5 +33,11 @@ describe("F3.2 — dashboardCount and per-asset dashboards report (ADR 0067 deci
 describe("F4.157 — adminLocationDtoSchema.type widens off the closed enum (ADR 0077 D1)", () => {
   it("C2 — parses an admin location row with type: pump_station", () => {
     runAdminLocationDtoAcceptsPumpStationTest();
+  });
+});
+
+describe("F4.162 — adminLocationDtoSchema.typeLabel (ADR 0077 Amendment 1, OQ2)", () => {
+  it("C10 — refuses a row without typeLabel", () => {
+    runAdminLocationDtoRequiresTypeLabelTest();
   });
 });

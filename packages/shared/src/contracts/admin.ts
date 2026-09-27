@@ -38,6 +38,7 @@ export const adminLocationDtoSchema = z.object({
   slug: z.string(),
   name: z.string(),
   type: locationTypeCodeSchema,
+  typeLabel: z.string(), // F4.162 (ADR 0077 Amendment 1, OQ2) — the joined bms.location_types.label.
   province: z.string().nullable(),
   capital: z.string().nullable(),
   timezone: z.string().nullable(),

@@ -204,6 +204,8 @@ function serviceFailingTheLocationInsert(err: unknown): OnboardingCommitService 
     assertAssetDomain: () => Promise.resolve(),
     // `F4.157` — the draft's `rsmoc` is a live code; the case is the insert.
     assertLocationType: () => Promise.resolve(),
+    // `F4.162` — the codes `validate` takes; `validate` is stubbed here.
+    listLocationTypes: () => Promise.resolve([]),
   } as never;
 
   return new OnboardingCommitService(

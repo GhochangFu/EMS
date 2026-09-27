@@ -60,6 +60,10 @@ import {
   updateAssetRoleBodySchema,
 } from "../admin/vocabularies/asset-roles.schema";
 import {
+  createLocationTypeBodySchema,
+  updateLocationTypeBodySchema,
+} from "../admin/vocabularies/location-types.schema";
+import {
   createRtuBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
@@ -258,6 +262,13 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   EscalationProfilesController_update: updateEscalationProfileBodySchema,
   LocationsAdminController_create: createLocationBodySchema,
   LocationsAdminController_update: updateLocationBodySchema,
+  // `F4.162` (ADR 0077 Amendment 1, plan D1/D4) — the two `.strict()` bodies
+  // of the global-admin location-type catalog, registered so the served
+  // document describes them and `strict-body-ledger.spec.ts` records their
+  // decision. `LocationTypesVocabularyAdminController_list`, `_deactivate`
+  // and `_reactivate` are deliberately absent — no body, no query.
+  LocationTypesVocabularyAdminController_create: createLocationTypeBodySchema,
+  LocationTypesVocabularyAdminController_update: updateLocationTypeBodySchema,
   // `F3.67` U4 (ADR 0076 decision 5, plan D4). `_getControlRoomView` is absent
   // — one path parameter, no body, no query, the `EscalationProfilesController_remove`
   // rule above. `SiteViewController_view` (the resolve read) is absent for the

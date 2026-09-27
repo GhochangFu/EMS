@@ -2,9 +2,14 @@ import { describe, it } from "vitest";
 
 import {
   assertADayAndOneMinuteIsNotEmpty,
+  assertAFarFutureRowStillRefreshesTheDayLevel,
+  assertAFutureRowSkipsOnlyTheEmptyMinuteLevel,
   assertAMisalignedWindowCanBeEmptyEvenWhenWiderThanABucket,
   assertAnHourLevelWindowAtTheBoundaryIsNotEmpty,
   assertAnHourLevelWindowShortOfTheBoundaryIsEmpty,
+  assertAnInvalidDateSendsNoQuery,
+  assertAnInvalidDateThrows,
+  assertAPastRowRefreshesEveryLevel,
   assertTheCiInstantIsEmpty,
 } from "./refresh-aggregates.spec";
 
@@ -27,5 +32,27 @@ describe("F4.71 — inscribedWindowIsEmpty", () => {
 
   it("calls a 1-hour-level window that reaches the boundary not empty", () => {
     assertAnHourLevelWindowAtTheBoundaryIsNotEmpty();
+  });
+});
+
+describe("F4.166 — refreshAggregatesFrom skips a level whose window holds no complete bucket", () => {
+  it("skips only the 1-minute level for a row 60 s ahead of the clock", async () => {
+    await assertAFutureRowSkipsOnlyTheEmptyMinuteLevel();
+  });
+
+  it("still refreshes the 1-day level for a row an hour ahead, after three empty levels", async () => {
+    await assertAFarFutureRowStillRefreshesTheDayLevel();
+  });
+
+  it("refreshes all four levels for a row in the past", async () => {
+    await assertAPastRowRefreshesEveryLevel();
+  });
+
+  it("throws for an invalid Date instead of passing NaN to the guard", async () => {
+    await assertAnInvalidDateThrows();
+  });
+
+  it("throws for an invalid Date before it sends SET ROLE", async () => {
+    await assertAnInvalidDateSendsNoQuery();
   });
 });

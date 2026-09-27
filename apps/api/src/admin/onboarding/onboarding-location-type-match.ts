@@ -2,17 +2,24 @@
  * `F4.157` / ADR 0077 decision 7 — how the onboarding chat reads a location
  * type out of a message, and keeps a model from writing one that is not live.
  *
- * The vocabulary is `bms.location_types`, read per turn through
- * `VocabulariesService.listLocationTypes()`; nothing here holds a list of its
- * own. The chat used to test the message for `rsmoc` and `csmoc` and default
- * everything else to `smoc_campus`, which made every new site a campus. Now a
- * message that names no active type gets a question instead of a default.
+ * The vocabulary is `bms.location_types`, read through
+ * `VocabulariesService` by the caller — once per chat turn, and by
+ * `PATCH :id/draft` through `assertLocationType`; nothing here holds a list of
+ * its own. The chat used to test the message for `rsmoc` and `csmoc` and
+ * default everything else to `smoc_campus`, which made every new site a campus.
+ * Now a message that names no active type gets a question instead of a default.
  *
- * Kept out of `onboarding-chat.service.ts` because that file sits at AGENTS.md
+ * `F4.162` (ADR 0077 Amendment 1, plan D9): a stored type that is not active —
+ * one retired after it was stored — counts as missing everywhere:
+ * `hasActiveLocationType` is the rule, and `assertPatchLocationTypeIsActive`
+ * keeps `PATCH :id/draft` from storing one.
+ *
+ * Kept out of `onboarding-chat.service.ts` so that file stays inside AGENTS.md
  * §4.5's 1,000-line ceiling.
  */
 import type { LocationTypeDto, OnboardingDraft } from "@bms/shared";
 
+import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 
 /**
@@ -84,6 +91,37 @@ export function withoutInactiveLocationType(
 type DraftLocation = NonNullable<OnboardingDraft["location"]>;
 
 /**
+ * Whether the stored location's type is an active **code** in `types`. An
+ * inactive or unknown one — a type retired after it was stored — is not, so the
+ * chat treats it as missing and asks for it again (`F4.162`, plan D9).
+ */
+export function hasActiveLocationType(
+  stored: DraftLocation | undefined,
+  types: readonly LocationTypeDto[],
+): boolean {
+  return types.some((t) => t.code === stored?.type);
+}
+
+/**
+ * `F4.162` (plan D9) — `PATCH :id/draft` refuses a `location.type` that is not
+ * an active code, with the vocabulary's 400, which names the valid codes.
+ *
+ * Only a patch that **names** a type is checked. A patch that repairs another
+ * field of a draft whose stored type was retired is accepted, or the operator
+ * could not repair the draft. `!== undefined`, not truthiness: an empty string
+ * is named, and the vocabulary refuses it.
+ */
+export async function assertPatchLocationTypeIsActive(
+  patch: OnboardingDraftInput,
+  vocabularies: Pick<VocabulariesService, "assertLocationType">,
+): Promise<void> {
+  const type = patch.location?.type;
+  if (type !== undefined) {
+    await vocabularies.assertLocationType(type);
+  }
+}
+
+/**
  * What one rule-based location turn keeps and which type it resolves.
  *
  * Owner ruling, 2026-09-27: the message is the location name exactly as before
@@ -114,7 +152,7 @@ export function resolveLocationTurn(
   types: readonly LocationTypeDto[],
 ): { type?: string; kept?: Omit<DraftLocation, "type"> } {
   const matched = matchLocationType(message, types);
-  const storedActive = types.some((t) => t.code === stored?.type) ? stored?.type : undefined;
+  const storedActive = hasActiveLocationType(stored, types) ? stored?.type : undefined;
   const type = matched ?? storedActive;
   if (!stored?.name || storedActive) {
     return { type };

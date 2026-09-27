@@ -31,6 +31,7 @@ import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
 import { draftCountProblem } from "./onboarding-draft-caps";
+import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { SetCredentialsBody } from "./onboarding.schema";
 import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
@@ -328,8 +329,13 @@ export class OnboardingService {
       throw new ForbiddenException("Session is not editable");
     }
 
+    // F4.162 (ADR 0077 Amendment 1, plan D9): a type this body names must be an
+    // active code — a 400 naming the valid codes. Checked after the session
+    // gate, so a caller outside it learns nothing, and only when the body names
+    // a type, so a draft whose stored type was retired can still be repaired.
+    await assertPatchLocationTypeIsActive(draft, this.vocabularies);
     const merged = this.chatService.mergeDraft(session.draft, draft);
-    const phase = this.validateService.inferPhase(merged);
+    const phase = this.validateService.inferPhase(merged, await this.activeLocationTypeCodes());
 
     const updated = await withTenant(this.tenantDb, session.organizationId, (tx) =>
       tx
@@ -356,7 +362,7 @@ export class OnboardingService {
   /** Validates draft without committing. */
   async validate(jwt: JwtPayload, sessionId: string): Promise<OnboardingValidateResponseDto> {
     const session = await this.loadSession(jwt, sessionId);
-    const validation = this.validateService.validate(session.draft);
+    const validation = this.validateService.validate(session.draft, await this.activeLocationTypeCodes());
     let autoOpenReason = validation.readyToCommit
       ? ("ready_to_commit" as const)
       : validation.errors.length > 0
@@ -399,7 +405,7 @@ export class OnboardingService {
     const draft = session.draft as OnboardingDraft;
     // F4.157 / ADR 0077 decision 7: the parser checks the type cell against the
     // live vocabulary, read here so the parser itself stays free of the database.
-    const locationTypeCodes = (await this.vocabularies.listLocationTypes()).map((row) => row.code);
+    const locationTypeCodes = await this.activeLocationTypeCodes();
     const parsed = this.excelService.parseUpload(buffer, locationTypeCodes);
     const orgPointKeys = await this.catalogService.listPointKeys(session.organizationId);
     const useExistingPointKeys = orgPointKeys.length > 0;
@@ -409,7 +415,7 @@ export class OnboardingService {
       patch,
       parsed.rtuCredentials.length > 0 ? parsed.rtuCredentials : undefined,
     ) as OnboardingDraft;
-    const phase = this.validateService.inferPhase(mergedDraft);
+    const phase = this.validateService.inferPhase(mergedDraft, locationTypeCodes);
 
     const followUp = this.chatService.excelImportFollowUp(
       mergedDraft,
@@ -451,7 +457,7 @@ export class OnboardingService {
       .where(eq(organizations.id, session.organizationId))
       .limit(1);
 
-    const validation = this.validateService.validate(mergedDraft);
+    const validation = this.validateService.validate(mergedDraft, locationTypeCodes);
 
     return {
       assistantMessage: assistantText,
@@ -462,6 +468,11 @@ export class OnboardingService {
       autoOpenPreview: true,
       autoOpenReason: validation.errors.length > 0 ? "validation_errors" : "review",
     };
+  }
+
+  /** The active `bms.location_types` codes, which the validator takes (F4.162, plan D9). */
+  private async activeLocationTypeCodes(): Promise<string[]> {
+    return (await this.vocabularies.listLocationTypes()).map((row) => row.code);
   }
 
   /**

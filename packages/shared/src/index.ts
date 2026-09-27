@@ -661,6 +661,10 @@ export type RtusListResponse = z.infer<typeof E.rtusListResponseSchema>;
 export type LocationTypeDto = z.infer<typeof Loc.locationTypeDtoSchema>;
 /** `GET /admin/location-types`. */
 export type LocationTypesListResponse = z.infer<typeof E.locationTypesListResponseSchema>;
+/** `F4.162` (ADR 0077 Amendment 1, D3) — one `GET /admin/vocabularies/location-types` row. */
+export type AdminLocationTypeDto = z.infer<typeof Loc.adminLocationTypeDtoSchema>;
+/** `GET /admin/vocabularies/location-types`. */
+export type AdminLocationTypesListResponse = z.infer<typeof E.adminLocationTypesListResponseSchema>;
 export type AssetsListResponse = z.infer<typeof E.assetsListResponseSchema>;
 export type AssetPointsListResponse = z.infer<typeof E.assetPointsListResponseSchema>;
 export type PointKeysListResponse = z.infer<typeof E.pointKeysListResponseSchema>;
