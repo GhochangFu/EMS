@@ -23,8 +23,8 @@ function longCell(fill: string): string {
 }
 
 /**
- * `excelImportFollowUp` reads `this.mqttSetupTemplate`,
- * `this.formatAssetsByRtuSummary` and the draft it is handed, and touches none
+ * `excelImportFollowUp` reads `mqttSetupTemplate`,
+ * `formatAssetsByRtuSummary` and the draft it is handed, and touches none
  * of the four injected services — verified against the method, which is why
  * empty stubs are enough. `onboarding-credentials.spec.ts` is the precedent for
  * this style.
