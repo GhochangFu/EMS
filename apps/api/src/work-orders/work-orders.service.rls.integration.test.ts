@@ -63,8 +63,11 @@ const ASSET_CODE = `${PREFIX}AS`;
  *
  * The per-run sweeps in afterAll narrow to this run's PREFIX, so they cannot see
  * a crashed run's rows — and unlike the other two E7.1b RLS suites, a leaked row
- * here matters: `db:seed`'s `verifyHierarchySeed` counts PHEWB locations, so one
- * stale `E71B-WO` location turns the seed red (the `F4.16` shape).
+ * here mattered: `db:seed`'s `verifyHierarchySeed` counted PHEWB locations
+ * exactly, so one stale `E71B-WO` location turned the seed red (the `F4.16`
+ * shape). Since the `F4.169`/`F4.170` addendum it counts only the six catalog
+ * PHE locations present, so a stale row no longer stops the seed; the sweep
+ * stays, because a stale row is still a stray PHEWB location.
  *
  * Bounded by `created_at`, which is the only thing that keeps it safe: a
  * concurrent instance's rows are seconds old, so a half-hour-old row cannot

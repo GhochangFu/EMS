@@ -197,8 +197,11 @@ async function main(): Promise<void> {
       // is certainly a second change, and keeping it makes this a pure
       // relocation, so the only thing that changed is *when* the pass runs.
       //
-      // `verifyHierarchySeed`'s three PHE membership counts are what hold this
+      // `verifyHierarchySeed`'s two PHE membership counts are what hold this
       // order — put these back above `seedPheCatalog` and it fails with 0 of 36.
+      // (The third, "no PHE environment member carries a role", moved to
+      // `asset-groups-seed.spec.ts` under owner ruling 10: it held the ruling,
+      // not the order.)
       await backfillAssetLocations(pool);
       // **`assignEskomAssetRtus` now runs AFTER the catalog that writes PHE's
       // own `rtu_id`, and cannot disturb it — but only because of a predicate

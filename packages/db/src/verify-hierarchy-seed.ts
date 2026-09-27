@@ -41,6 +41,27 @@ const MIGRATION_0029_ASSET_DOMAINS = 5;
  * either single-org pass and drop out of the `loc_mismatch` join — but such a
  * pairing cannot exist (an asset and its RTU share an org, empirically 0
  * divergence), so the per-org check is complete for every pairing that can.
+ *
+ * **The `F4.169`/`F4.170` addendum made each count an admin write can move a
+ * claim about the seed's own rows** (owner ruling 5, 2026-09-28). This check
+ * runs on every `compose up`, because the `migrate` service re-seeds and the
+ * `api` waits on it. The admin API adds organizations, locations, RTUs, assets,
+ * points and group members, so an exact `COUNT(*)` over a table stopped the
+ * whole stack after an ordinary write — a 12th ESKOM location, with a long code
+ * or a short one, read `expected 11, got 12`. Those counts now read the rows the
+ * seed writes, listed by `verify-hierarchy-expected.ts` from the seed's own
+ * catalogs, and the wanted number is the length of that list. That holds on
+ * every healthy boot: nothing deletes a seeded row (the admin surfaces have no
+ * DELETE for these tables) and the seed re-creates each one before this runs.
+ *
+ * What a presence count cannot see, a zero count states: the decommissioned
+ * fixture location stays inactive, no legacy per-RTU PHE location survives
+ * `cleanupLegacyPheRtuLocations`, and no `TS` point is catalogued. The counts
+ * no admin write can move stay exact: asset domains (no admin surface creates
+ * one), the four water counts and the RSMOC-WC control-room view (each already
+ * reads only seeded rows), and the zero counts for orphan and mismatched
+ * assets. The uncovered-electrical-asset count exempts the ladder seed's
+ * collision skips — see {@link EskomCheckOptions}.
  */
 export async function verifyHierarchySeed(
   pool: pg.Pool,

@@ -2,9 +2,10 @@ import type pg from "pg";
 
 /**
  * Location backfill and derived asset groups, split out of `seed.ts` to keep it
- * under the AGENTS.md §4.5 1000-line cap. Pure move — the statements and their
- * order are unchanged, and `assignEskomAssetRtus` still runs between the two
- * exported functions exactly as before.
+ * under the AGENTS.md §4.5 1000-line cap. It was a pure move, and
+ * `assignEskomAssetRtus` still runs between the two exported functions as
+ * before; `backfillAssetLocations` has since changed its statement (the
+ * `F4.169`/`F4.170` addendum, see its docblock).
  */
 
 /**

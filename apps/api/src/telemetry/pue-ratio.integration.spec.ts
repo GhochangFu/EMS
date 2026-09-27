@@ -60,9 +60,11 @@ import { PUE_LATEST_MAX_AGE_SECONDS, latestPueRatio, windowedPueRatio } from "./
  * instances on one database delete each other's committed rows mid-test, which
  * `tests/integration-fixture-isolation.test.ts` refuses. {@link reapStaleFixtures}
  * is the separate, `created_at`-bounded sweep that clears a run which died
- * before its `afterAll`; a stray organization here is not cosmetic, because
- * `verifyHierarchySeed` pins `bms.organizations` at exactly 2 and the `compose
- * up` boot gate runs it.
+ * before its `afterAll`. A stray organization here stopped the `compose up`
+ * boot gate while `verifyHierarchySeed` pinned `bms.organizations` at exactly
+ * 2; since the `F4.169`/`F4.170` addendum it counts only the two seed
+ * organizations present, so a stray row no longer stops the boot, but it is
+ * still a stray tenant on a shared database.
  *
  * Nothing is read off the seed except `bms.asset_domains`, a vocabulary table
  * that is nobody's fixture row — so none of the hazards in
@@ -204,11 +206,14 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
  * `tests/integration-fixture-isolation.test.ts` permits a family-wide sweep to
  * take.
  *
- * This is not housekeeping. `verifyHierarchySeed` asserts
- * `COUNT(*) FROM bms.organizations = 2` exactly, it runs on every `db:seed`, and
- * `compose up`'s `migrate` service is what the `api` service waits on — so one
- * orphaned fixture organization stops the whole stack from starting, with an
- * error that names the seed rather than the test that leaked.
+ * This was not housekeeping. `verifyHierarchySeed` asserted
+ * `COUNT(*) FROM bms.organizations = 2` exactly until the `F4.169`/`F4.170`
+ * addendum, it runs on every `db:seed`, and `compose up`'s `migrate` service is
+ * what the `api` service waits on — so one orphaned fixture organization
+ * stopped the whole stack from starting, with an error that named the seed
+ * rather than the test that leaked. The gate now counts only the two seed
+ * organizations present; the sweep stays, because an orphan is still a stray
+ * tenant on a shared database.
  */
 export async function reapStaleFixtures(pool: pg.Pool): Promise<void> {
   const cutoff = new Date(Date.now() - STALE_AFTER_MS);

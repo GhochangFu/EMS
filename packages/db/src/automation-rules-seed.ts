@@ -694,17 +694,34 @@ export type LadderCollisionSkip = { readonly assetId: string; readonly assetCode
  * Otherwise the rule is INSERTed and its code joins the held set. A stored
  * code is never rewritten to a new asset code: the rewrite could itself hit
  * the unique index inside the seed transaction, and no reader keys on a
- * ladder code.
+ * ladder code. The assets are read `ORDER BY created_at, code`, so which of
+ * two colliding assets takes a held code is fixed.
  *
- * Two residuals remain. `updateRule` (`apps/api/src/rules/rules.service.ts`)
- * accepts a new `code` for a `simulator_threshold` rule: if an operator
- * renames one so it no longer ends `_${suffix}` and also edits its
- * threshold, the next seed adds a second rule with the original condition —
- * not a boot failure. And a crafted asset code can hold one of another
- * asset's hashed codes (guard 3), so several such assets can strip a victim
- * of its ladder rules. `verifyHierarchySeed` counts ESKOM electrical assets
- * with no `simulator_threshold` rule, so it reports a victim stripped of all
- * five, not one stripped of fewer; the `log` line is the record of those.
+ * **Guard 3 has an ordinary cause, not only a crafted one: rename-and-reuse.**
+ * An operator renames asset A from `OLD` to `NEW`; A keeps its five rules at
+ * the `OLD` codes (guard 2). A new electrical asset B is then given `OLD`, so
+ * all five of B's codes are held by A's rules and guard 3 skips all five. A
+ * crafted asset code can do the same by holding one of another asset's
+ * hashed codes, and several such assets can strip a victim of its ladder
+ * rules. Neither case rewrites a code or invents a fallback code (owner
+ * ruling 2); each skip is logged here.
+ *
+ * The function returns one {@link LadderCollisionSkip} per asset that lost
+ * at least one rule to guard 3. `seed.ts` hands the list to
+ * `verifyHierarchySeed`, whose check for ESKOM electrical assets with no
+ * `simulator_threshold` rule exempts exactly those assets, by id, and logs
+ * one line for each asset it exempts, so a rename-and-reuse boots. An
+ * uncovered asset that is not on the list — one with no collision — still
+ * stops the boot, and the `verify:hierarchy` CLI, which passes no list,
+ * fails on every uncovered asset. The check reads only assets with no ladder
+ * rule at all: a victim that lost fewer than five is not in it, and the
+ * `log` line is the only record of that loss.
+ *
+ * One residual remains outside this function. `updateRule`
+ * (`apps/api/src/rules/rules.service.ts`) accepts a new `code` for a
+ * `simulator_threshold` rule: if an operator renames one so it no longer
+ * ends `_${suffix}` and also edits its threshold, the next seed adds a second
+ * rule with the original condition — not a boot failure.
  *
  * Queries `bms.assets`/`locations`/`organizations` directly — the same join
  * migration `0033` uses — rather than taking the eskom-assets-seed.ts
