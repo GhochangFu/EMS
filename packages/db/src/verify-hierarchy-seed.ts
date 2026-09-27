@@ -47,13 +47,72 @@ export async function verifyHierarchySeed(
   const eskomOrgId = organizationIds?.eskomOrgId ?? (await getOrganizationId(pool, "ESKOM"));
   const phewbOrgId = organizationIds?.phewbOrgId ?? (await getOrganizationId(pool, "PHEWB"));
 
-  const errors: string[] = [];
-  const expect = (label: string, actual: string | undefined, wanted: number): void => {
-    if (Number(actual) !== wanted) {
-      errors.push(`${label}: expected ${wanted}, got ${actual ?? "no row"}`);
-    }
-  };
+  const checks: HierarchyCheck[] = [...(await readGlobalChecks(pool))];
+  await withOrganization(pool, eskomOrgId, async () => {
+    checks.push(...(await readEskomChecks(pool, eskomOrgId)));
+  });
+  await withOrganization(pool, phewbOrgId, async () => {
+    checks.push(...(await readPhewbChecks(pool, phewbOrgId)));
+  });
 
+  const errors = failingChecks(checks);
+  if (errors.length > 0) {
+    throw new Error(`Hierarchy seed verification failed:\n- ${errors.join("\n- ")}`);
+  }
+}
+
+/**
+ * One claim the verifier makes: `actual` read from the database, `wanted` the
+ * number it must equal (`exact`) or reach (`atLeast`).
+ *
+ * The three `read*Checks` passes below return these and decide nothing;
+ * {@link failingChecks} decides. The split exists so an integration test can
+ * run a pass inside its own `BEGIN` … `ROLLBACK` — {@link verifyHierarchySeed}
+ * wraps Passes 2 and 3 in `withOrganization`, whose `COMMIT` on the `max: 1`
+ * seed pool would commit the test's fixture.
+ */
+export type HierarchyCheck = {
+  readonly label: string;
+  readonly actual: number;
+  readonly wanted: number;
+  readonly kind: "exact" | "atLeast";
+};
+
+/** A count column as a number; a missing row is `NaN`, which fails every check. */
+function countOf(value: string | undefined): number {
+  return value === undefined ? Number.NaN : Number(value);
+}
+
+function exactCheck(label: string, actual: string | undefined, wanted: number): HierarchyCheck {
+  return { label, actual: countOf(actual), wanted, kind: "exact" };
+}
+
+/**
+ * The failure message for every check that does not hold, in input order.
+ *
+ * Fails closed on `NaN` for both kinds: an `exact` check compares with `!==`,
+ * and an `atLeast` check is written `!(actual >= wanted)` rather than
+ * `actual < wanted`, because every comparison with `NaN` is false.
+ */
+export function failingChecks(checks: readonly HierarchyCheck[]): string[] {
+  const failures: string[] = [];
+  for (const check of checks) {
+    const got = Number.isNaN(check.actual) ? "no row" : String(check.actual);
+    if (check.kind === "atLeast") {
+      if (!(check.actual >= check.wanted)) {
+        failures.push(`${check.label}: expected at least ${check.wanted}, got ${got}`);
+      }
+    } else if (check.actual !== check.wanted) {
+      failures.push(`${check.label}: expected ${check.wanted}, got ${got}`);
+    }
+  }
+  return failures;
+}
+
+/**
+ * Pass 1 — the checks that need no tenant context.
+ */
+export async function readGlobalChecks(pool: pg.Pool): Promise<HierarchyCheck[]> {
   // ── Pass 1: no tenant context ─────────────────────────────────────────────
   // Only `bms.organizations` and `bms.asset_domains` live here — neither
   // carries a policy (`0047` left the global-vocabulary class unpoliced).
@@ -69,7 +128,7 @@ export async function verifyHierarchySeed(
   if (!g) {
     throw new Error("verifyHierarchySeed: no results");
   }
-  expect("organizations", g.orgs, 2);
+  const checks: HierarchyCheck[] = [exactCheck("organizations", g.orgs, 2)];
   // `E5.2`/`E5.3` — seven: five from migration `0029` plus the ones
   // `asset-domains-seed.ts` writes (`mechanical`, ADR 0053 decision 2;
   // `facility`, ADR 0054 decision 2), added through the seed path rather
@@ -84,286 +143,307 @@ export async function verifyHierarchySeed(
   // starting (the `E5.2` migration review's one Medium). `E5.3` appended
   // `facility` to `PACK_ASSET_DOMAINS`, and this expectation moved to 7 by
   // itself.
-  expect("asset domains", g.asset_domains, MIGRATION_0029_ASSET_DOMAINS + PACK_ASSET_DOMAINS.length);
+  checks.push(
+    exactCheck("asset domains", g.asset_domains, MIGRATION_0029_ASSET_DOMAINS + PACK_ASSET_DOMAINS.length),
+  );
+  return checks;
+}
 
+/**
+ * Pass 2 — the ESKOM checks. The caller holds ESKOM's tenant context
+ * (`app.current_organization`); this function opens no transaction.
+ */
+export async function readEskomChecks(pool: pg.Pool, eskomOrgId: string): Promise<HierarchyCheck[]> {
+  const checks: HierarchyCheck[] = [];
+  const expect = (label: string, actual: string | undefined, wanted: number): void => {
+    checks.push(exactCheck(label, actual, wanted));
+  };
   // ── Pass 2: ESKOM ─────────────────────────────────────────────────────────
-  await withOrganization(pool, eskomOrgId, async () => {
-    const res = await pool.query<{
-      eskom_locs: string;
-      eskom_uncovered_electrical_assets: string;
-      orphan_assets: string;
-      loc_mismatch: string;
-      eskom_incomers_on_pue_template: string;
-      eskom_it_load_members: string;
-      eskom_it_rack_kw_points: string;
-      eskom_energy_tariff_rows: string;
-      eskom_water_assets_roled: string;
-      eskom_water_assets_on_demo_templates: string;
-      eskom_water_intake_assets: string;
-      eskom_water_group_members: string;
-      eskom_rsmoc_wc_control_room_view: string;
-    }>(`
-      SELECT
-        (SELECT COUNT(*)::text FROM bms.locations l
-          INNER JOIN bms.organizations o ON o.id = l.organization_id
-          WHERE o.code = 'ESKOM') AS eskom_locs,
-        -- Zero uncovered assets, not a nonzero total: a total alone cannot tell
-        -- "every asset got its five rules" from "most did, one silently didn't"
-        -- (migration review, PR #100 -- the gap ESK-MANUAL-01 itself exposed).
-        (SELECT COUNT(*)::text FROM bms.assets a
-          INNER JOIN bms.locations l ON l.id = a.location_id
-          INNER JOIN bms.organizations o ON o.id = l.organization_id
-          WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
-            AND NOT EXISTS (
-              SELECT 1 FROM bms.automation_rules r
-              WHERE r.asset_id = a.id AND r.source = 'simulator_threshold'
-            )) AS eskom_uncovered_electrical_assets,
-        -- Whole-fleet invariants, ESKOM's half (the PHEWB pass has the other).
-        -- ADR 0018: a null rtu_id is legal — an asset need not be wired. The
-        -- axis that must never be null is the spatial one, because every scoped
-        -- authorization check filters on it. Asserting the old invariant here
-        -- would turn db:seed red on the first gateway-less asset from F1.8/F1.9.
-        (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
-        (SELECT COUNT(*)::text FROM bms.assets a
-          INNER JOIN bms.rtus r ON r.id = a.rtu_id
-          WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch,
-        -- F2.8. THE THREE COUNTS BELOW PROVE THE SEED ORDER FOR THE DEMO PUE,
-        -- the same way the PHE membership counts in the PHEWB pass do for
-        -- F3.41. seedPueDemo runs last in the ESKOM bracket and depends on
-        -- three earlier calls: seedAssetGroups (the incoming-supply role that
-        -- selects the incomer, and the IT_LOAD group), seedPointKeyCatalog
-        -- (the FK for rack_kw and the three derived keys) and
-        -- seedAssetTemplateHealth (the copy source and the pin it moves). A
-        -- developer database has been seeded many times and holds every row
-        -- already; only a cold database (CI, or the scratch container plan
-        -- section 8 asks for) can show a call that ran too early, and only
-        -- these counts read it.
-        --
-        -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
-        (SELECT COUNT(*)::text FROM bms.assets a
-          INNER JOIN bms.asset_templates t ON t.id = a.template_id
-          INNER JOIN bms.organizations o ON o.id = a.organization_id
-          WHERE o.code = 'ESKOM'
-            AND t.code = 'BASELINE-ELECTRICAL-INCOMER') AS eskom_incomers_on_pue_template,
-        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
-          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
-          INNER JOIN bms.organizations o ON o.id = ag.organization_id
-          WHERE o.code = 'ESKOM' AND ag.code = 'IT_LOAD') AS eskom_it_load_members,
-        (SELECT COUNT(*)::text FROM bms.asset_points ap
-          INNER JOIN bms.assets a ON a.id = ap.asset_id
-          INNER JOIN bms.organizations o ON o.id = a.organization_id
-          WHERE o.code = 'ESKOM' AND a.domain = 'it'
-            AND ap.point_key = 'rack_kw') AS eskom_it_rack_kw_points,
-        -- E4.1c. The demo tariff row (calc-parameters-demo-seed.ts): at least
-        -- one organization-scope energy_tariff_per_kwh row, effective or not.
-        -- A floor, not an exact count, because an administrator may end it and
-        -- enter another on the demo, and the seed must not put the first back.
-        (SELECT COUNT(*)::text FROM bms.calc_parameters cp
-          WHERE cp.organization_id = $1
-            AND cp.key = 'energy_tariff_per_kwh'
-            AND cp.location_id IS NULL
-            AND cp.asset_id IS NULL) AS eskom_energy_tariff_rows,
-        -- E4.3 U11. THE FOUR COUNTS BELOW PROVE THE DEMO WATER PLANT LANDED.
-        -- Fixed cardinalities read off the repository file
-        -- water-plant-demo-seed.ts (five classes, one intake), NOT lifetime
-        -- counters. They catch a role that was not written, a pin that was
-        -- dropped, a wrong intake, and a water asset filed under another
-        -- group (the demoGroupCodesForAsset branch). The seed ORDER is held
-        -- elsewhere: run after seedAssetTemplateHealth on a cold database,
-        -- the health seed pins the five assets to a BASELINE-WATER that
-        -- declares no point and throws unusable = 1 before this check runs.
-        -- Each count reads ONLY the five demo asset codes, passed as $2 from
-        -- DEMO_WATER_ASSET_CODES (owner ruling R1, 2026-09-24), so another
-        -- water asset in ESKOM cannot move them. The pin count pairs each
-        -- asset code with its own class template code ($3, from
-        -- DEMO_WATER_TEMPLATE_CODES, the same class order), so a demo asset
-        -- pinned to another class mirror is not counted.
-        --
-        -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
-        (SELECT COUNT(*)::text FROM bms.assets a
-          INNER JOIN bms.organizations o ON o.id = a.organization_id
-          WHERE o.code = 'ESKOM' AND a.domain = 'water'
-            AND a.code = ANY($2::varchar[])
-            AND a.water_balance_role IS NOT NULL) AS eskom_water_assets_roled,
-        (SELECT COUNT(*)::text FROM bms.assets a
-          INNER JOIN bms.asset_templates t ON t.id = a.template_id
-          INNER JOIN bms.organizations o ON o.id = a.organization_id
-          WHERE o.code = 'ESKOM' AND a.domain = 'water'
-            AND a.code = ANY($2::varchar[])
-            AND (a.code, t.code) IN (
-              SELECT x.asset_code, x.template_code
-              FROM unnest($2::varchar[], $3::varchar[]) AS x(asset_code, template_code)
-            )) AS eskom_water_assets_on_demo_templates,
-        (SELECT COUNT(*)::text FROM bms.assets a
-          INNER JOIN bms.organizations o ON o.id = a.organization_id
-          WHERE o.code = 'ESKOM' AND a.domain = 'water'
-            AND a.code = ANY($2::varchar[])
-            AND a.water_balance_role = 'intake') AS eskom_water_intake_assets,
-        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
-          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
-          INNER JOIN bms.organizations o ON o.id = ag.organization_id
-          INNER JOIN bms.assets a ON a.id = agm.asset_id
-          WHERE o.code = 'ESKOM' AND ag.code = 'water'
-            AND a.code = ANY($2::varchar[])) AS eskom_water_group_members,
-        -- F3.67 (ADR 0076 decision 6, owner ruling OQ2): the row must exist,
-        -- but the seed does not own its contents once written -- an admin may
-        -- have re-pointed RSMOC-WC at a dashboard or back to 'generated', and
-        -- a re-seed must not revert that. So this counts the row's presence,
-        -- of any kind, not only kind = 'builtin'.
-        --
-        -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
-        (SELECT COUNT(*)::text FROM bms.site_control_room_views scrv
-          INNER JOIN bms.locations l ON l.id = scrv.location_id
-          INNER JOIN bms.organizations o ON o.id = l.organization_id
-          WHERE o.code = 'ESKOM' AND l.code = 'RSMOC-WC') AS eskom_rsmoc_wc_control_room_view
-    `, [eskomOrgId, DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES]);
-    const row = res.rows[0];
-    // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
-    // needs in order to tell `WHERE active = true` apart from no predicate.
-    expect("ESKOM locations", row?.eskom_locs, 11);
-    expect("ESKOM assets without location_id", row?.orphan_assets, 0);
-    expect("ESKOM asset/RTU location mismatch", row?.loc_mismatch, 0);
-    // Migration review (F3.6): migration 0033's own seed of these rows is a
-    // silent no-op on a fresh database (it joins assets that only exist once
-    // seed has already run, and seed runs after migrate). This is what would
-    // have caught it — `automation-rules-seed.ts`'s `seedEskomLadderRules` is
-    // the seed-side source of truth now, so an asset with zero `simulator_
-    // threshold` rows here means it broke, not that a fresh database is merely
-    // missing a migration-only feature. A nonzero-total check alone would not
-    // have caught `ESK-MANUAL-01` being silently skipped — a total can stay
-    // nonzero while one asset quietly loses all five of its rules.
-    expect(
-      "ESKOM electrical assets with no simulator_threshold rule",
-      row?.eskom_uncovered_electrical_assets,
-      0,
-    );
-    // `F2.8`. Fixed seed cardinalities read off the ESKOM catalog
-    // (`eskom-assets-seed.ts`, a repository file) — NOT lifetime counters.
-    // Nine incomers: one `*-CR-UTILITY*` asset per RSMOC site, each carrying
-    // `role = 'incoming-supply'` from `demoRoleForAsset`; CSMOC Gauteng has
-    // no incomer and the decommissioned substation's one asset has no role,
-    // so both stay on `BASELINE-ELECTRICAL`. Fourteen IT assets: one at each
-    // of eight RSMOC sites and six at Western Cape, each a member of its
-    // site's `IT_LOAD` group and each with one `rack_kw` catalog row — the
-    // row `readScopeMembers` needs before `sum({rack_kw} @group('IT_LOAD'))`
-    // resolves any member at all.
-    expect("ESKOM incomers pinned to BASELINE-ELECTRICAL-INCOMER", row?.eskom_incomers_on_pue_template, 9);
-    expect("ESKOM IT_LOAD group members", row?.eskom_it_load_members, 14);
-    expect("ESKOM IT assets with a rack_kw catalog row", row?.eskom_it_rack_kw_points, 14);
-    // `E4.3` U11 (owner ruling Q7). Five demo water assets at CSMOC Gauteng,
-    // each carrying a balance role and pinned to its `DEMO-WATER-<CLASS>`
-    // mirror; one of them (`WTR-WTP-01`) is the balance's `intake`; all five
-    // are members of the site's `water` group (`demoGroupCodesForAsset`).
-    // Fixed cardinalities read off `water-plant-demo-seed.ts`, and each count
-    // reads only the five codes in `DEMO_WATER_ASSET_CODES` (owner ruling R1,
-    // 2026-09-24). What still fails the boot is a change to a demo asset
-    // itself: an admin who clears a demo asset's role or re-pins it fails
-    // these on the next boot — the same exposure the PUE incomer count above
-    // carries. An admin's own water assets, or a leaked test fixture in the
-    // water domain, can no longer move these counts.
-    expect("ESKOM water assets carrying a balance role", row?.eskom_water_assets_roled, 5);
-    expect("ESKOM water demo assets pinned to their own DEMO-WATER template", row?.eskom_water_assets_on_demo_templates, 5);
-    expect("ESKOM water intake assets", row?.eskom_water_intake_assets, 1);
-    expect("ESKOM water group members", row?.eskom_water_group_members, 5);
-    // F3.67 — RSMOC-WC always carries exactly one Control Room view row,
-    // whatever kind an administrator has set it to (OQ2).
-    expect("ESKOM RSMOC-WC control room view row", row?.eskom_rsmoc_wc_control_room_view, 1);
-    // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
-    // the floor is written as its own check.
-    if (Number(row?.eskom_energy_tariff_rows) < 1) {
-      errors.push(
-        `ESKOM organization-scope energy_tariff_per_kwh rows: expected at least 1, got ${row?.eskom_energy_tariff_rows ?? "no row"}`,
-      );
-    }
+  const res = await pool.query<{
+    eskom_locs: string;
+    eskom_uncovered_electrical_assets: string;
+    orphan_assets: string;
+    loc_mismatch: string;
+    eskom_incomers_on_pue_template: string;
+    eskom_it_load_members: string;
+    eskom_it_rack_kw_points: string;
+    eskom_energy_tariff_rows: string;
+    eskom_water_assets_roled: string;
+    eskom_water_assets_on_demo_templates: string;
+    eskom_water_intake_assets: string;
+    eskom_water_group_members: string;
+    eskom_rsmoc_wc_control_room_view: string;
+  }>(`
+    SELECT
+      (SELECT COUNT(*)::text FROM bms.locations l
+        INNER JOIN bms.organizations o ON o.id = l.organization_id
+        WHERE o.code = 'ESKOM') AS eskom_locs,
+      -- Zero uncovered assets, not a nonzero total: a total alone cannot tell
+      -- "every asset got its five rules" from "most did, one silently didn't"
+      -- (migration review, PR #100 -- the gap ESK-MANUAL-01 itself exposed).
+      (SELECT COUNT(*)::text FROM bms.assets a
+        INNER JOIN bms.locations l ON l.id = a.location_id
+        INNER JOIN bms.organizations o ON o.id = l.organization_id
+        WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
+          AND NOT EXISTS (
+            SELECT 1 FROM bms.automation_rules r
+            WHERE r.asset_id = a.id AND r.source = 'simulator_threshold'
+          )) AS eskom_uncovered_electrical_assets,
+      -- Whole-fleet invariants, ESKOM's half (the PHEWB pass has the other).
+      -- ADR 0018: a null rtu_id is legal — an asset need not be wired. The
+      -- axis that must never be null is the spatial one, because every scoped
+      -- authorization check filters on it. Asserting the old invariant here
+      -- would turn db:seed red on the first gateway-less asset from F1.8/F1.9.
+      (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
+      (SELECT COUNT(*)::text FROM bms.assets a
+        INNER JOIN bms.rtus r ON r.id = a.rtu_id
+        WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch,
+      -- F2.8. THE THREE COUNTS BELOW PROVE THE SEED ORDER FOR THE DEMO PUE,
+      -- the same way the PHE membership counts in the PHEWB pass do for
+      -- F3.41. seedPueDemo runs last in the ESKOM bracket and depends on
+      -- three earlier calls: seedAssetGroups (the incoming-supply role that
+      -- selects the incomer, and the IT_LOAD group), seedPointKeyCatalog
+      -- (the FK for rack_kw and the three derived keys) and
+      -- seedAssetTemplateHealth (the copy source and the pin it moves). A
+      -- developer database has been seeded many times and holds every row
+      -- already; only a cold database (CI, or the scratch container plan
+      -- section 8 asks for) can show a call that ran too early, and only
+      -- these counts read it.
+      --
+      -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
+      (SELECT COUNT(*)::text FROM bms.assets a
+        INNER JOIN bms.asset_templates t ON t.id = a.template_id
+        INNER JOIN bms.organizations o ON o.id = a.organization_id
+        WHERE o.code = 'ESKOM'
+          AND t.code = 'BASELINE-ELECTRICAL-INCOMER') AS eskom_incomers_on_pue_template,
+      (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+        INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+        INNER JOIN bms.organizations o ON o.id = ag.organization_id
+        WHERE o.code = 'ESKOM' AND ag.code = 'IT_LOAD') AS eskom_it_load_members,
+      (SELECT COUNT(*)::text FROM bms.asset_points ap
+        INNER JOIN bms.assets a ON a.id = ap.asset_id
+        INNER JOIN bms.organizations o ON o.id = a.organization_id
+        WHERE o.code = 'ESKOM' AND a.domain = 'it'
+          AND ap.point_key = 'rack_kw') AS eskom_it_rack_kw_points,
+      -- E4.1c. The demo tariff row (calc-parameters-demo-seed.ts): at least
+      -- one organization-scope energy_tariff_per_kwh row, effective or not.
+      -- A floor, not an exact count, because an administrator may end it and
+      -- enter another on the demo, and the seed must not put the first back.
+      (SELECT COUNT(*)::text FROM bms.calc_parameters cp
+        WHERE cp.organization_id = $1
+          AND cp.key = 'energy_tariff_per_kwh'
+          AND cp.location_id IS NULL
+          AND cp.asset_id IS NULL) AS eskom_energy_tariff_rows,
+      -- E4.3 U11. THE FOUR COUNTS BELOW PROVE THE DEMO WATER PLANT LANDED.
+      -- Fixed cardinalities read off the repository file
+      -- water-plant-demo-seed.ts (five classes, one intake), NOT lifetime
+      -- counters. They catch a role that was not written, a pin that was
+      -- dropped, a wrong intake, and a water asset filed under another
+      -- group (the demoGroupCodesForAsset branch). The seed ORDER is held
+      -- elsewhere: run after seedAssetTemplateHealth on a cold database,
+      -- the health seed pins the five assets to a BASELINE-WATER that
+      -- declares no point and throws unusable = 1 before this check runs.
+      -- Each count reads ONLY the five demo asset codes, passed as $2 from
+      -- DEMO_WATER_ASSET_CODES (owner ruling R1, 2026-09-24), so another
+      -- water asset in ESKOM cannot move them. The pin count pairs each
+      -- asset code with its own class template code ($3, from
+      -- DEMO_WATER_TEMPLATE_CODES, the same class order), so a demo asset
+      -- pinned to another class mirror is not counted.
+      --
+      -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
+      (SELECT COUNT(*)::text FROM bms.assets a
+        INNER JOIN bms.organizations o ON o.id = a.organization_id
+        WHERE o.code = 'ESKOM' AND a.domain = 'water'
+          AND a.code = ANY($2::varchar[])
+          AND a.water_balance_role IS NOT NULL) AS eskom_water_assets_roled,
+      (SELECT COUNT(*)::text FROM bms.assets a
+        INNER JOIN bms.asset_templates t ON t.id = a.template_id
+        INNER JOIN bms.organizations o ON o.id = a.organization_id
+        WHERE o.code = 'ESKOM' AND a.domain = 'water'
+          AND a.code = ANY($2::varchar[])
+          AND (a.code, t.code) IN (
+            SELECT x.asset_code, x.template_code
+            FROM unnest($2::varchar[], $3::varchar[]) AS x(asset_code, template_code)
+          )) AS eskom_water_assets_on_demo_templates,
+      (SELECT COUNT(*)::text FROM bms.assets a
+        INNER JOIN bms.organizations o ON o.id = a.organization_id
+        WHERE o.code = 'ESKOM' AND a.domain = 'water'
+          AND a.code = ANY($2::varchar[])
+          AND a.water_balance_role = 'intake') AS eskom_water_intake_assets,
+      (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+        INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+        INNER JOIN bms.organizations o ON o.id = ag.organization_id
+        INNER JOIN bms.assets a ON a.id = agm.asset_id
+        WHERE o.code = 'ESKOM' AND ag.code = 'water'
+          AND a.code = ANY($2::varchar[])) AS eskom_water_group_members,
+      -- F3.67 (ADR 0076 decision 6, owner ruling OQ2): the row must exist,
+      -- but the seed does not own its contents once written -- an admin may
+      -- have re-pointed RSMOC-WC at a dashboard or back to 'generated', and
+      -- a re-seed must not revert that. So this counts the row's presence,
+      -- of any kind, not only kind = 'builtin'.
+      --
+      -- NO BACKTICK MAY APPEAR IN THIS COMMENT (see the PHEWB pass).
+      (SELECT COUNT(*)::text FROM bms.site_control_room_views scrv
+        INNER JOIN bms.locations l ON l.id = scrv.location_id
+        INNER JOIN bms.organizations o ON o.id = l.organization_id
+        WHERE o.code = 'ESKOM' AND l.code = 'RSMOC-WC') AS eskom_rsmoc_wc_control_room_view
+  `, [eskomOrgId, DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES]);
+  const row = res.rows[0];
+  // 11 = 10 operational + the deliberately inactive ESK-DECOMM-01 that F4.10
+  // needs in order to tell `WHERE active = true` apart from no predicate.
+  expect("ESKOM locations", row?.eskom_locs, 11);
+  expect("ESKOM assets without location_id", row?.orphan_assets, 0);
+  expect("ESKOM asset/RTU location mismatch", row?.loc_mismatch, 0);
+  // Migration review (F3.6): migration 0033's own seed of these rows is a
+  // silent no-op on a fresh database (it joins assets that only exist once
+  // seed has already run, and seed runs after migrate). This is what would
+  // have caught it — `automation-rules-seed.ts`'s `seedEskomLadderRules` is
+  // the seed-side source of truth now, so an asset with zero `simulator_
+  // threshold` rows here means it broke, not that a fresh database is merely
+  // missing a migration-only feature. A nonzero-total check alone would not
+  // have caught `ESK-MANUAL-01` being silently skipped — a total can stay
+  // nonzero while one asset quietly loses all five of its rules.
+  expect(
+    "ESKOM electrical assets with no simulator_threshold rule",
+    row?.eskom_uncovered_electrical_assets,
+    0,
+  );
+  // `F2.8`. Fixed seed cardinalities read off the ESKOM catalog
+  // (`eskom-assets-seed.ts`, a repository file) — NOT lifetime counters.
+  // Nine incomers: one `*-CR-UTILITY*` asset per RSMOC site, each carrying
+  // `role = 'incoming-supply'` from `demoRoleForAsset`; CSMOC Gauteng has
+  // no incomer and the decommissioned substation's one asset has no role,
+  // so both stay on `BASELINE-ELECTRICAL`. Fourteen IT assets: one at each
+  // of eight RSMOC sites and six at Western Cape, each a member of its
+  // site's `IT_LOAD` group and each with one `rack_kw` catalog row — the
+  // row `readScopeMembers` needs before `sum({rack_kw} @group('IT_LOAD'))`
+  // resolves any member at all.
+  expect("ESKOM incomers pinned to BASELINE-ELECTRICAL-INCOMER", row?.eskom_incomers_on_pue_template, 9);
+  expect("ESKOM IT_LOAD group members", row?.eskom_it_load_members, 14);
+  expect("ESKOM IT assets with a rack_kw catalog row", row?.eskom_it_rack_kw_points, 14);
+  // `E4.3` U11 (owner ruling Q7). Five demo water assets at CSMOC Gauteng,
+  // each carrying a balance role and pinned to its `DEMO-WATER-<CLASS>`
+  // mirror; one of them (`WTR-WTP-01`) is the balance's `intake`; all five
+  // are members of the site's `water` group (`demoGroupCodesForAsset`).
+  // Fixed cardinalities read off `water-plant-demo-seed.ts`, and each count
+  // reads only the five codes in `DEMO_WATER_ASSET_CODES` (owner ruling R1,
+  // 2026-09-24). What still fails the boot is a change to a demo asset
+  // itself: an admin who clears a demo asset's role or re-pins it fails
+  // these on the next boot — the same exposure the PUE incomer count above
+  // carries. An admin's own water assets, or a leaked test fixture in the
+  // water domain, can no longer move these counts.
+  expect("ESKOM water assets carrying a balance role", row?.eskom_water_assets_roled, 5);
+  expect("ESKOM water demo assets pinned to their own DEMO-WATER template", row?.eskom_water_assets_on_demo_templates, 5);
+  expect("ESKOM water intake assets", row?.eskom_water_intake_assets, 1);
+  expect("ESKOM water group members", row?.eskom_water_group_members, 5);
+  // F3.67 — RSMOC-WC always carries exactly one Control Room view row,
+  // whatever kind an administrator has set it to (OQ2).
+  expect("ESKOM RSMOC-WC control room view row", row?.eskom_rsmoc_wc_control_room_view, 1);
+  // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
+  // the floor is written as its own check.
+  checks.push({
+    label: "ESKOM organization-scope energy_tariff_per_kwh rows",
+    actual: countOf(row?.eskom_energy_tariff_rows),
+    wanted: 1,
+    kind: "atLeast",
   });
+  return checks;
+}
 
+/**
+ * Pass 3 — the PHEWB checks. The caller holds PHEWB's tenant context; this
+ * function opens no transaction.
+ */
+export async function readPhewbChecks(pool: pg.Pool, phewbOrgId: string): Promise<HierarchyCheck[]> {
+  // The caller names the context it holds; Pass 3's SQL filters on the
+  // organization's code, so the id itself is not read here.
+  void phewbOrgId;
+  const checks: HierarchyCheck[] = [];
+  const expect = (label: string, actual: string | undefined, wanted: number): void => {
+    checks.push(exactCheck(label, actual, wanted));
+  };
   // ── Pass 3: PHEWB ─────────────────────────────────────────────────────────
-  await withOrganization(pool, phewbOrgId, async () => {
-    const res = await pool.query<{
-      phe_locs: string;
-      phe_rtus: string;
-      phe_assets: string;
-      phe_points: string;
-      orphan_assets: string;
-      loc_mismatch: string;
-      phe_elec_members: string;
-      phe_elec_roled: string;
-      phe_env_roled: string;
-    }>(`
-      SELECT
-        (SELECT COUNT(*)::text FROM bms.locations l
-          INNER JOIN bms.organizations o ON o.id = l.organization_id
-          WHERE o.code = 'PHEWB') AS phe_locs,
-        (SELECT COUNT(*)::text FROM bms.rtus r
-          INNER JOIN bms.locations l ON l.id = r.location_id
-          INNER JOIN bms.organizations o ON o.id = l.organization_id
-          WHERE o.code = 'PHEWB') AS phe_rtus,
-        -- Moved here from Pass 1: assets/asset_points are policied since 0047,
-        -- and every PHE row is PHEWB's, so this pass sees exactly them.
-        (SELECT COUNT(*)::text FROM bms.assets WHERE code LIKE 'PHE-%') AS phe_assets,
-        (SELECT COUNT(*)::text FROM bms.asset_points ap
-          INNER JOIN bms.assets a ON a.id = ap.asset_id
-          WHERE a.code LIKE 'PHE-%') AS phe_points,
-        -- Whole-fleet invariants, PHEWB's half (see the ESKOM pass).
-        (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
-        (SELECT COUNT(*)::text FROM bms.assets a
-          INNER JOIN bms.rtus r ON r.id = a.rtu_id
-          WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch,
-        -- F3.41. THE THREE COUNTS BELOW ARE WHAT PROVE THE SEED ORDER, and they
-        -- are the only gate that can. Until this row, PHEWB's seedAssetGroups
-        -- pass ran BEFORE seedPheCatalog created the assets it derives from, so
-        -- on a fresh database it matched nothing and PHE WB got no group, no
-        -- membership and no role. That was invisible on a developer machine —
-        -- which has been re-seeded many times and therefore holds the rows
-        -- already — and invisible in CI, which seeds once and asserted none of
-        -- this.
-        --
-        -- NO BACKTICK MAY APPEAR IN THIS COMMENT. The whole SELECT is a
-        -- JavaScript template literal, so a backtick here closes it and the
-        -- file fails to transform with "Expected ) but found ..." pointing at a
-        -- line that looks like ordinary prose.
-        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
-          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
-          INNER JOIN bms.assets a ON a.id = agm.asset_id
-          WHERE ag.code = 'electrical' AND a.code LIKE 'PHE-%') AS phe_elec_members,
-        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
-          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
-          INNER JOIN bms.assets a ON a.id = agm.asset_id
-          WHERE ag.code = 'electrical' AND a.code LIKE 'PHE-%'
-            AND agm.role IS NOT NULL) AS phe_elec_roled,
-        (SELECT COUNT(*)::text FROM bms.asset_group_members agm
-          INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
-          INNER JOIN bms.assets a ON a.id = agm.asset_id
-          WHERE ag.code = 'environment' AND a.code LIKE 'PHE-%'
-            AND agm.role IS NOT NULL) AS phe_env_roled
-    `);
-    const row = res.rows[0];
-    expect("PHEWB locations", row?.phe_locs, 6);
-    expect("PHEWB RTUs", row?.phe_rtus, 12);
-    expect("PHE assets", row?.phe_assets, 48);
-    // 252, not 264: the catalog's 12 `TS` sensors are the MQTT envelope's own
-    // timestamp, which the ingest adapter consumes as the sample time and can
-    // never deliver as a reading. `phe-pilot-seed.ts` stopped cataloguing them on
-    // 2026-08-06 rather than keep 12 rows claiming a provenance that is false by
-    // construction. One per PHE device that carries the sensor.
-    expect("PHE asset_points", row?.phe_points, 252);
-    expect("PHEWB assets without location_id", row?.orphan_assets, 0);
-    expect("PHEWB asset/RTU location mismatch", row?.loc_mismatch, 0);
-    // `F3.41`. 36 = 6 stations × (2 MFM + 2 PUMP-M + 2 PUMP-C). Fixed seed
-    // cardinalities read off `phe-catalog.json`, which is a frozen repository
-    // file — NOT lifetime counters that drift with use.
-    expect("PHE electrical group members", row?.phe_elec_members, 36);
-    // Every one of them carries a role after the owner's 2026-09-02 ruling:
-    // 12 `meter` and 24 `pump`. A NULL here means `demoRoleForAsset` stopped
-    // matching, or the group pass ran before the assets existed again.
-    expect("PHE electrical members carrying a role", row?.phe_elec_roled, 36);
-    // And the other half of the ruling, which nothing else would catch: the 12
-    // `PHE-AIRSP1051M-*` gateways are `environment` domain and must stay
-    // unroled. Without this line a branch that roled everything would pass.
-    expect("PHE environment members carrying a role", row?.phe_env_roled, 0);
-  });
-
-  if (errors.length > 0) {
-    throw new Error(`Hierarchy seed verification failed:\n- ${errors.join("\n- ")}`);
-  }
+  const res = await pool.query<{
+    phe_locs: string;
+    phe_rtus: string;
+    phe_assets: string;
+    phe_points: string;
+    orphan_assets: string;
+    loc_mismatch: string;
+    phe_elec_members: string;
+    phe_elec_roled: string;
+    phe_env_roled: string;
+  }>(`
+    SELECT
+      (SELECT COUNT(*)::text FROM bms.locations l
+        INNER JOIN bms.organizations o ON o.id = l.organization_id
+        WHERE o.code = 'PHEWB') AS phe_locs,
+      (SELECT COUNT(*)::text FROM bms.rtus r
+        INNER JOIN bms.locations l ON l.id = r.location_id
+        INNER JOIN bms.organizations o ON o.id = l.organization_id
+        WHERE o.code = 'PHEWB') AS phe_rtus,
+      -- Moved here from Pass 1: assets/asset_points are policied since 0047,
+      -- and every PHE row is PHEWB's, so this pass sees exactly them.
+      (SELECT COUNT(*)::text FROM bms.assets WHERE code LIKE 'PHE-%') AS phe_assets,
+      (SELECT COUNT(*)::text FROM bms.asset_points ap
+        INNER JOIN bms.assets a ON a.id = ap.asset_id
+        WHERE a.code LIKE 'PHE-%') AS phe_points,
+      -- Whole-fleet invariants, PHEWB's half (see the ESKOM pass).
+      (SELECT COUNT(*)::text FROM bms.assets WHERE location_id IS NULL) AS orphan_assets,
+      (SELECT COUNT(*)::text FROM bms.assets a
+        INNER JOIN bms.rtus r ON r.id = a.rtu_id
+        WHERE a.location_id IS DISTINCT FROM r.location_id) AS loc_mismatch,
+      -- F3.41. THE THREE COUNTS BELOW ARE WHAT PROVE THE SEED ORDER, and they
+      -- are the only gate that can. Until this row, PHEWB's seedAssetGroups
+      -- pass ran BEFORE seedPheCatalog created the assets it derives from, so
+      -- on a fresh database it matched nothing and PHE WB got no group, no
+      -- membership and no role. That was invisible on a developer machine —
+      -- which has been re-seeded many times and therefore holds the rows
+      -- already — and invisible in CI, which seeds once and asserted none of
+      -- this.
+      --
+      -- NO BACKTICK MAY APPEAR IN THIS COMMENT. The whole SELECT is a
+      -- JavaScript template literal, so a backtick here closes it and the
+      -- file fails to transform with "Expected ) but found ..." pointing at a
+      -- line that looks like ordinary prose.
+      (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+        INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+        INNER JOIN bms.assets a ON a.id = agm.asset_id
+        WHERE ag.code = 'electrical' AND a.code LIKE 'PHE-%') AS phe_elec_members,
+      (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+        INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+        INNER JOIN bms.assets a ON a.id = agm.asset_id
+        WHERE ag.code = 'electrical' AND a.code LIKE 'PHE-%'
+          AND agm.role IS NOT NULL) AS phe_elec_roled,
+      (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+        INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+        INNER JOIN bms.assets a ON a.id = agm.asset_id
+        WHERE ag.code = 'environment' AND a.code LIKE 'PHE-%'
+          AND agm.role IS NOT NULL) AS phe_env_roled
+  `);
+  const row = res.rows[0];
+  expect("PHEWB locations", row?.phe_locs, 6);
+  expect("PHEWB RTUs", row?.phe_rtus, 12);
+  expect("PHE assets", row?.phe_assets, 48);
+  // 252, not 264: the catalog's 12 `TS` sensors are the MQTT envelope's own
+  // timestamp, which the ingest adapter consumes as the sample time and can
+  // never deliver as a reading. `phe-pilot-seed.ts` stopped cataloguing them on
+  // 2026-08-06 rather than keep 12 rows claiming a provenance that is false by
+  // construction. One per PHE device that carries the sensor.
+  expect("PHE asset_points", row?.phe_points, 252);
+  expect("PHEWB assets without location_id", row?.orphan_assets, 0);
+  expect("PHEWB asset/RTU location mismatch", row?.loc_mismatch, 0);
+  // `F3.41`. 36 = 6 stations × (2 MFM + 2 PUMP-M + 2 PUMP-C). Fixed seed
+  // cardinalities read off `phe-catalog.json`, which is a frozen repository
+  // file — NOT lifetime counters that drift with use.
+  expect("PHE electrical group members", row?.phe_elec_members, 36);
+  // Every one of them carries a role after the owner's 2026-09-02 ruling:
+  // 12 `meter` and 24 `pump`. A NULL here means `demoRoleForAsset` stopped
+  // matching, or the group pass ran before the assets existed again.
+  expect("PHE electrical members carrying a role", row?.phe_elec_roled, 36);
+  // And the other half of the ruling, which nothing else would catch: the 12
+  // `PHE-AIRSP1051M-*` gateways are `environment` domain and must stay
+  // unroled. Without this line a branch that roled everything would pass.
+  expect("PHE environment members carrying a role", row?.phe_env_roled, 0);
+  return checks;
 }
