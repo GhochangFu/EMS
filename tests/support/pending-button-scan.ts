@@ -539,8 +539,9 @@ export function disabledPendingButtons(src: string): DisabledPendingButton[] {
 /**
  * One finding per `<button>` that breaks the `F4.168` rule, and one per `<button` the scanner
  * could not parse. For a button whose `disabled` reads pending tokens `D`:
- *  - with `data-pending-bystander="<flag>"`: the flag must resolve into `D`, and the tag must
- *    carry no `aria-busy` (`F4.168` D3);
+ *  - with `data-pending-bystander="<flag>"`: the flag must resolve into `D`, the name must not
+ *    pend on it (a button whose name swaps on the flag is that action, not a bystander), and
+ *    the tag must carry no `aria-busy` (`F4.168` D3);
  *  - else the name (`aria-label` if present, else the children) must pend on a token in `D`,
  *    and `aria-busy` must name that token, not negated.
  * A bystander marker on a button whose `disabled` does not pend is a finding too.
@@ -555,10 +556,19 @@ export function disabledPendingButtonFindings(src: string, file = "<source>"): s
     const d = expr === null ? [] : pendingTokensOf(expr, src);
     const marker = attributeString(s.tag, "data-pending-bystander");
     if (marker !== null || hasAttribute(s.tag, "data-pending-bystander")) {
+      const marked = pendingTokensOf(marker ?? "", src);
+      const name = nameTokens(s.tag, s.children, text);
+      const own = marked.filter((t) => name.tokens.has(t));
       if (d.length === 0) {
         add(s.line, `data-pending-bystander on a <button> whose disabled does not pend`);
-      } else if (!pendingTokensOf(marker ?? "", src).some((t) => d.includes(t))) {
+      } else if (!marked.some((t) => d.includes(t))) {
         add(s.line, `data-pending-bystander="${marker ?? ""}" names no pending flag of disabled (${d.join(", ")})`);
+      } else if (own.length > 0) {
+        // The marker silences the rule on the button's own action: its name swaps on that flag.
+        add(
+          s.line,
+          `bystander's name (${name.source}) pends on ${own.join(", ")}; a button that names the action is not a bystander`,
+        );
       } else if (hasAttribute(s.tag, "aria-busy")) {
         add(s.line, `bystander of ${d.join(", ")} carries aria-busy; a bystander is not busy`);
       }
@@ -582,4 +592,23 @@ export function disabledPendingButtonFindings(src: string, file = "<source>"): s
     }
   }
   return findings.sort((a, b) => a.line - b.line).map((f) => f.text);
+}
+
+/**
+ * Every `<button>` in `src` that carries `data-pending-bystander`: its line, the marker value
+ * (`""` for a non-string form) and its name, taken from the children's JSX text with every
+ * `{…}` expression dropped and whitespace collapsed.
+ */
+export function bystanderMarkers(src: string): { line: number; marker: string; name: string }[] {
+  return buttonSegments(src)
+    .segments.filter((s) => hasAttribute(s.tag, "data-pending-bystander"))
+    .map((s) => {
+      let text = s.children;
+      for (const e of jsxExpressions(s.children)) text = text.replace(`{${e}}`, " ");
+      return {
+        line: s.line,
+        marker: attributeString(s.tag, "data-pending-bystander") ?? "",
+        name: text.replace(/\s+/g, " ").trim(),
+      };
+    });
 }

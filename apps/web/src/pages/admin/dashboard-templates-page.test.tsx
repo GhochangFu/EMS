@@ -4,8 +4,10 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aFailedStockFetchDoesNotCountZeroDefaults,
+  anotherEntryKeepsItsNameWhileOneImports,
   importCallsTheApiWithTheChosenOrganization,
   importingAnnouncesImportingThisEntry,
+  importingRemovesThatEntrysIdleName,
   rendersTemplatesAndStockCatalog,
   sectionFilterComesFromTheVocabularyFetch,
   stockRowLinksToTheViewer,
@@ -42,7 +44,15 @@ describe("F3.36 dashboard templates list page", () => {
     await aFailedStockFetchDoesNotCountZeroDefaults();
   });
 
-  it("B5 importing announces Importing {name}… as the aria-label, old name absent", async () => {
+  it("B5 importing announces Importing {name}… as the aria-label, with aria-busy", async () => {
     await importingAnnouncesImportingThisEntry();
+  });
+
+  it("B5 importing removes that entry's idle Import {name} name", async () => {
+    await importingRemovesThatEntrysIdleName();
+  });
+
+  it("B5 another stock entry keeps Import {name} and is not busy while one imports", async () => {
+    await anotherEntryKeepsItsNameWhileOneImports();
   });
 });

@@ -182,14 +182,25 @@ export async function importCallsTheApiWithTheChosenOrganization(): Promise<void
   });
 }
 
+/** A second stock entry, so a per-entry pending name has a sibling to stay idle. */
+const WATER_STOCK = {
+  code: "water-default",
+  name: "Water (stock)",
+  section: "water",
+  description: "Repository default",
+  stockVersion: 1,
+  content: { widgets: [] },
+};
+
 /**
- * `F4.168` B5 — importing a stock entry announces "Importing {name}…" as the
- * button's `aria-label` (its accessible name), and the old "Import {name}"
- * name is absent while the mutation is pending, keyed per-entry on
- * `importM.variables === entry.code`.
+ * `F4.168` B5 arrange — two stock entries; Import on "Electrical (stock)" is
+ * clicked and its mutation held pending. Resolves once the pending name shows.
  */
-export async function importingAnnouncesImportingThisEntry(): Promise<void> {
+async function importElectricalHeldPending(): Promise<HTMLElement> {
   stubApi();
+  vi.spyOn(api, "fetchAdminStockDashboardTemplates").mockResolvedValue({
+    items: [...STOCK.items, WATER_STOCK],
+  } as never);
   vi.spyOn(api, "importAdminStockDashboardTemplate").mockReturnValue(new Promise(() => {}));
   renderPage();
 
@@ -198,9 +209,31 @@ export async function importingAnnouncesImportingThisEntry(): Promise<void> {
   await userEvent.selectOptions(orgSelect, "org-1");
   await userEvent.click(importButton);
 
-  const pending = await screen.findByRole("button", { name: "Importing Electrical (stock)…" });
+  return screen.findByRole("button", { name: "Importing Electrical (stock)…" });
+}
+
+/**
+ * `F4.168` B5 — importing a stock entry announces "Importing {name}…" as the
+ * button's `aria-label` (its accessible name), with `aria-busy="true"`.
+ */
+export async function importingAnnouncesImportingThisEntry(): Promise<void> {
+  const pending = await importElectricalHeldPending();
   expect(pending).toHaveAttribute("aria-busy", "true");
-  expect(
-    screen.queryByRole("button", { name: "Import Electrical (stock)" }),
-  ).not.toBeInTheDocument();
+}
+
+/** `F4.168` B5 — while the entry imports, its old "Import {name}" name is gone. */
+export async function importingRemovesThatEntrysIdleName(): Promise<void> {
+  await importElectricalHeldPending();
+  expect(screen.queryByRole("button", { name: "Import Electrical (stock)" })).not.toBeInTheDocument();
+}
+
+/**
+ * `F4.168` B5, D4 — the pending name is keyed per entry on
+ * `importM.variables === entry.code`: the other entry keeps "Import {name}"
+ * and is not busy while the first imports.
+ */
+export async function anotherEntryKeepsItsNameWhileOneImports(): Promise<void> {
+  await importElectricalHeldPending();
+  const other = screen.getByRole("button", { name: "Import Water (stock)" });
+  expect(other).toHaveAttribute("aria-busy", "false");
 }

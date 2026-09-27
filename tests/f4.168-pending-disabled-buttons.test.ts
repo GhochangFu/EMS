@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { repoRoot } from "./support/source-scan";
 import {
-  buttonSegments,
+  bystanderMarkers,
   disabledPendingButtonFindings,
   disabledPendingButtons,
   webSourceFiles,
@@ -51,25 +51,52 @@ import {
  *  - a pending button that is a component (`<Button>`) rather than a literal `<button>`;
  *  - a label computed into a variable before the `<button>`: the children read the variable,
  *    and the name counts only if that variable resolves through a same-file `const` to a token
- *    in `D`.
+ *    in `D`;
+ *  - WHICH mutation drives the name: the gate checks THAT the name pends on a token in `D`. A
+ *    per-row key that is removed (`const deactivatingThis = updateM.isPending`, no
+ *    `m.variables` check) or props swapped at a call site (`saving={clearOverrideM.isPending}`)
+ *    still pass; the jsdom specs hold those;
+ *  - a token anywhere in the children's `{…}` counts, even one that only changes a class or adds
+ *    a spinner (`<span className={save.isPending ? "a" : "b"}>Save</span>`,
+ *    `{save.isPending && <Spinner />}Save`). Requiring a string-literal branch was not taken: it
+ *    would reject the actions map (`actionPending[action] ? pendingActionLabel(…) : …`, a call
+ *    branch) and still accept a `className` ternary, whose branches are strings;
+ *  - `negatedAt` sees only a bare `!flag`: `aria-busy={!(flag)}`, `{flag ? false : true}` and a
+ *    negated local (`const idle = !flag`) all pass;
+ *  - `definitionOf` is file-scoped, not component-scoped: two components in one file that each
+ *    define `busy` are unioned;
+ *  - `disabled={props.busy}` and `disabled={isBusy()}` give an empty `D`: a member other than
+ *    `isPending` / `isFetching…` and a call are not read, so the button is out of scope.
  *
  * Lives in `tests/` because `apps/web`'s tsconfig carries no node types; `typecheck:tests` lists
  * it by hand. The scanner lives in `tests/support/pending-button-scan.ts`, shared with `F4.164`.
  */
 
-function scanTree(): { findings: string[]; buttons: number; bystanders: number } {
+type Bystander = { file: string; marker: string; name: string };
+
+function scanTree(): { findings: string[]; buttons: number; bystanders: Bystander[] } {
   const findings: string[] = [];
   let buttons = 0;
-  let bystanders = 0;
+  const bystanders: Bystander[] = [];
   for (const full of webSourceFiles()) {
     const src = readFileSync(full, "utf8");
     const rel = relative(repoRoot, full).split("\\").join("/");
     buttons += disabledPendingButtons(src).length;
     findings.push(...disabledPendingButtonFindings(src, rel));
-    bystanders += buttonSegments(src).segments.filter((s) => /data-pending-bystander/.test(s.tag)).length;
+    for (const b of bystanderMarkers(src)) bystanders.push({ file: rel, marker: b.marker, name: b.name });
   }
   return { findings, buttons, bystanders };
 }
+
+/**
+ * Every `data-pending-bystander` marker in the tree, exactly. A bystander keeps its name while a
+ * sibling action pends, so the gate cannot tell a real bystander from a pending button marked to
+ * silence it (H11e). A new marker is therefore a reviewed diff to this list.
+ */
+const BYSTANDER_ALLOWLIST: Bystander[] = [
+  { file: "apps/web/src/components/assets/point-calc-override-panel.tsx", marker: "busy", name: "Close" },
+  { file: "apps/web/src/components/report-schedules.tsx", marker: "deleting", name: "Edit" },
+];
 
 /**
  * A `<button>` with an arrow in `onClick` BEFORE `attrs`, a `[&>svg]` class after them, and
@@ -258,6 +285,16 @@ describe("F4.168: a <button> disabled while pending changes its name and carries
     ).toEqual(["<source>:3 data-pending-bystander on a <button> whose disabled does not pend"]);
   });
 
+  it("H11e flags a bystander marker on a button whose own name pends on the marked flag", () => {
+    expect(
+      disabledPendingButtonFindings(
+        fixture(["disabled={save.isPending}", 'data-pending-bystander="save.isPending"'], SWAP),
+      ),
+    ).toEqual([
+      "<source>:3 bystander's name (children) pends on save.isPending; a button that names the action is not a bystander",
+    ]);
+  });
+
   it("H12 an isLoading-only disabled is not pending (no finding)", () => {
     expect(disabledPendingButtonFindings(fixture(["disabled={q.isLoading}"], "Save"))).toEqual([]);
   });
@@ -292,7 +329,7 @@ describe("F4.168: a <button> disabled while pending changes its name and carries
     expect(scanTree().buttons).toBeGreaterThanOrEqual(77);
   });
 
-  it("H17 (U5) the real tree carries at least two data-pending-bystander markers", () => {
-    expect(scanTree().bystanders).toBeGreaterThanOrEqual(2);
+  it("H17 the real tree's data-pending-bystander markers are exactly the reviewed allowlist", () => {
+    expect(scanTree().bystanders).toEqual(BYSTANDER_ALLOWLIST);
   });
 });

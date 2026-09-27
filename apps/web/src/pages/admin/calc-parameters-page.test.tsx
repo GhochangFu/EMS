@@ -11,7 +11,9 @@ import { cleanup } from "@testing-library/react";
 import {
   adminHasTheOrganizationRadio,
   deleteAsksBeforeSending,
-  deletingRowAnnouncesDeletingSiblingsKeepTheirName,
+  deletingRowAnnouncesDeleting,
+  siblingRowsAreNotBusy,
+  siblingRowsKeepTheirDeleteName,
   editDisablesKeyAndScope,
   keySelectOffersExactlyTheFetchedKeys,
   locationAdminDefaultsToLocationScope,
@@ -70,7 +72,15 @@ describe("E4.1a calc parameters page", () => {
     await deleteAsksBeforeSending();
   });
 
-  it("B2 the deleting row announces Deleting…; sibling rows keep their name", async () => {
-    await deletingRowAnnouncesDeletingSiblingsKeepTheirName();
+  it("B2 the deleting row announces Deleting… with aria-busy", async () => {
+    await deletingRowAnnouncesDeleting();
+  });
+
+  it("B2 sibling rows keep the name Delete", async () => {
+    await siblingRowsKeepTheirDeleteName();
+  });
+
+  it("B2 sibling rows' Delete buttons are not busy", async () => {
+    await siblingRowsAreNotBusy();
   });
 });

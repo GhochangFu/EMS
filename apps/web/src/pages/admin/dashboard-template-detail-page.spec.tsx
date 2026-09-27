@@ -391,13 +391,10 @@ export async function aTypedNameLeavesTheInstantiateButtonDisabled(): Promise<vo
 }
 
 /**
- * `F4.168` B3 — the shared `busy` flag disables every lifecycle action, but
- * each one's own name is keyed on its own mutation: Publish becomes
- * "Publishing…" while `publishM` is pending, and Delete draft — disabled by
- * the same `busy` — keeps its name and reports `aria-busy="false"`, because
- * `deleteM` itself is not pending.
+ * `F4.168` B3 arrange — a draft template; Publish is clicked and `publishM`
+ * held pending. Resolves with the button once "Publishing…" shows.
  */
-export async function publishAnnouncesPublishingDeleteDraftKeepsItsName(): Promise<void> {
+async function publishHeldPending(): Promise<HTMLElement> {
   stubApi({
     fetchAdminDashboardTemplate: () => Promise.resolve(draftTemplate()),
     publishAdminDashboardTemplate: () => new Promise(() => {}),
@@ -405,11 +402,30 @@ export async function publishAnnouncesPublishingDeleteDraftKeepsItsName(): Promi
   renderPage();
 
   await userEvent.click(await screen.findByRole("button", { name: "Publish" }));
+  return screen.findByRole("button", { name: "Publishing…" });
+}
 
-  const pending = await screen.findByRole("button", { name: "Publishing…" });
+/**
+ * `F4.168` B3 — the shared `busy` disables every lifecycle action, but each
+ * one's own name is keyed on its own mutation: Publish becomes "Publishing…",
+ * with `aria-busy="true"`, while `publishM` is pending.
+ */
+export async function publishAnnouncesPublishing(): Promise<void> {
+  const pending = await publishHeldPending();
   expect(pending).toHaveAttribute("aria-busy", "true");
+}
 
-  const deleteButton = screen.getByRole("button", { name: "Delete draft" });
-  expect(deleteButton).toHaveAttribute("aria-busy", "false");
-  expect(deleteButton).toBeDisabled();
+/**
+ * `F4.168` B3 — Delete draft keeps its name and reports `aria-busy="false"`
+ * while Publish pends, because `deleteM` itself is not pending.
+ */
+export async function deleteDraftKeepsItsNameWhilePublishPends(): Promise<void> {
+  await publishHeldPending();
+  expect(screen.getByRole("button", { name: "Delete draft" })).toHaveAttribute("aria-busy", "false");
+}
+
+/** `F4.168` B3 — the shared `busy` disables Delete draft while Publish pends. */
+export async function deleteDraftIsDisabledWhilePublishPends(): Promise<void> {
+  await publishHeldPending();
+  expect(screen.getByRole("button", { name: "Delete draft" })).toBeDisabled();
 }

@@ -6,7 +6,9 @@ import {
   editPrefillsTheCurrencyAndSendsIt,
   formHasACurrencyInputWithADatalist,
   listRendersTheCurrencyColumn,
-  saveAnnouncesSavingWhilePendingAndSaveAtIdle,
+  saveAnnouncesSavingWhilePending,
+  saveIsNamedSaveAndNotBusyAtIdle,
+  saveLosesItsIdleNameWhilePending,
   typedCurrencyIsUppercasedAndSubmitted,
 } from "./organizations-page.spec";
 
@@ -39,7 +41,15 @@ describe("E4.1c organizations page — the Currency field", () => {
     await editPrefillsTheCurrencyAndSendsIt();
   });
 
-  it("B1 Save announces Saving… and aria-busy while pending, Save at idle", async () => {
-    await saveAnnouncesSavingWhilePendingAndSaveAtIdle();
+  it("B1 Save is named Save and not busy at idle", async () => {
+    await saveIsNamedSaveAndNotBusyAtIdle();
+  });
+
+  it("B1 Save announces Saving… with aria-busy while pending", async () => {
+    await saveAnnouncesSavingWhilePending();
+  });
+
+  it("B1 the idle name Save is gone while pending", async () => {
+    await saveLosesItsIdleNameWhilePending();
   });
 });

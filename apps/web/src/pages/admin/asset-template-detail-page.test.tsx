@@ -4,7 +4,10 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aRunningBackfillDisablesTheLifecycleActions,
-  archiveAnnouncesArchivingSiblingsKeepTheirNames,
+  archiveAnnouncesArchiving,
+  editThisVersionKeepsItsNameWhileArchivePends,
+  instantiateIsDisabledWhileArchivePends,
+  instantiateIsNotBusyWhileArchivePends,
   aTruncatedViewNamesItsOmittedCount,
   draftDoesNotOfferCreateDefaultDashboards,
   locationAdminIsNotOfferedCreateDefaultDashboards,
@@ -62,7 +65,19 @@ describe("F3.2 asset template detail page", () => {
     await theInstantiateDialogStaysOpenAndShowsTheSummary();
   });
 
-  it("B6 Archive announces Archiving…; siblings keep their names", async () => {
-    await archiveAnnouncesArchivingSiblingsKeepTheirNames();
+  it("B6 Archive announces Archiving… with aria-busy while archiveM is pending", async () => {
+    await archiveAnnouncesArchiving();
+  });
+
+  it("B6 Edit this version keeps its name and is not busy while Archive pends", async () => {
+    await editThisVersionKeepsItsNameWhileArchivePends();
+  });
+
+  it("B6 Instantiate is not busy while Archive pends", async () => {
+    await instantiateIsNotBusyWhileArchivePends();
+  });
+
+  it("B6 Instantiate stays disabled while Archive pends", async () => {
+    await instantiateIsDisabledWhileArchivePends();
   });
 });

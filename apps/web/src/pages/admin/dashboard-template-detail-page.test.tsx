@@ -12,7 +12,9 @@ import {
   refusedDeleteStaysOnThePage,
   aTypedNameLeavesTheInstantiateButtonDisabled,
   organizationWideOptionSendsANullAssetGroup,
-  publishAnnouncesPublishingDeleteDraftKeepsItsName,
+  deleteDraftIsDisabledWhilePublishPends,
+  deleteDraftKeepsItsNameWhilePublishPends,
+  publishAnnouncesPublishing,
   resolutionReportNamesAPartialWidget,
   roleFreeTemplateOffersTheOrganizationWideOption,
 } from "./dashboard-template-detail-page.spec";
@@ -72,7 +74,15 @@ describe("F3.36 dashboard template detail page", () => {
     await aTypedNameLeavesTheInstantiateButtonDisabled();
   });
 
-  it("B3 Publish announces Publishing…; Delete draft keeps its name", async () => {
-    await publishAnnouncesPublishingDeleteDraftKeepsItsName();
+  it("B3 Publish announces Publishing… with aria-busy", async () => {
+    await publishAnnouncesPublishing();
+  });
+
+  it("B3 Delete draft keeps its name and is not busy while Publish pends", async () => {
+    await deleteDraftKeepsItsNameWhilePublishPends();
+  });
+
+  it("B3 Delete draft stays disabled while Publish pends", async () => {
+    await deleteDraftIsDisabledWhilePublishPends();
   });
 });

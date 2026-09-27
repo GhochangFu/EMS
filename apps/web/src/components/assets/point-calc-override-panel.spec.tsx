@@ -228,39 +228,45 @@ export async function busyDisablesEveryControl(): Promise<void> {
   expect(screen.getByRole("button", { name: "Clear override" })).toBeEnabled();
 }
 
-/**
- * `F4.168` U4, B4 — `saving` swaps Save override's own name and `aria-busy`,
- * and Clear override stays disabled (by the shared `busy`) but is not itself
- * busy: it carries `aria-busy="false"` and keeps its idle name.
- */
-export async function savingShowsPendingLabelAndAriaBusyOnSaveOnly(): Promise<void> {
+/** `F4.168` B4 arrange — a submittable draft with `saving` or `clearing` held true. */
+function renderPending(flag: "saving" | "clearing"): void {
   const stored = config(V2, null, { calcIntervalSeconds: 120 });
   const submittable: OverrideDraft = { ...EMPTY_DRAFT, calcIntervalSeconds: "180" };
-
-  render(<Harness config={stored} initialDraft={submittable} saving />);
-
-  const savingButton = screen.getByRole("button", { name: "Saving override…" });
-  expect(savingButton).toHaveAttribute("aria-busy", "true");
-
-  const clearButton = screen.getByRole("button", { name: "Clear override" });
-  expect(clearButton).toBeDisabled();
-  expect(clearButton).toHaveAttribute("aria-busy", "false");
+  render(<Harness config={stored} initialDraft={submittable} saving={flag === "saving"} clearing={flag === "clearing"} />);
 }
 
-/**
- * `F4.168` U4, B4 mirror — `clearing` swaps Clear override's own name and
- * `aria-busy`, and Save override stays disabled but not busy.
- */
-export async function clearingShowsPendingLabelAndAriaBusyOnClearOnly(): Promise<void> {
-  const stored = config(V2, null, { calcIntervalSeconds: 120 });
-  const submittable: OverrideDraft = { ...EMPTY_DRAFT, calcIntervalSeconds: "180" };
+/** `F4.168` U4, B4 — `saving` names Save override "Saving override…", with `aria-busy="true"`. */
+export async function savingNamesSaveOverrideSavingAndBusy(): Promise<void> {
+  renderPending("saving");
+  expect(screen.getByRole("button", { name: "Saving override…" })).toHaveAttribute("aria-busy", "true");
+}
 
-  render(<Harness config={stored} initialDraft={submittable} clearing />);
+/** `F4.168` U4, B4 — while `saving`, Clear override keeps its name and is not busy. */
+export async function savingLeavesClearOverrideNamedAndNotBusy(): Promise<void> {
+  renderPending("saving");
+  expect(screen.getByRole("button", { name: "Clear override" })).toHaveAttribute("aria-busy", "false");
+}
 
-  const clearingButton = screen.getByRole("button", { name: "Clearing override…" });
-  expect(clearingButton).toHaveAttribute("aria-busy", "true");
+/** `F4.168` U4, B4 — while `saving`, the shared `busy` disables Clear override. */
+export async function savingDisablesClearOverride(): Promise<void> {
+  renderPending("saving");
+  expect(screen.getByRole("button", { name: "Clear override" })).toBeDisabled();
+}
 
-  const saveOverrideButton = screen.getByRole("button", { name: "Save override" });
-  expect(saveOverrideButton).toBeDisabled();
-  expect(saveOverrideButton).toHaveAttribute("aria-busy", "false");
+/** `F4.168` U4, B4 mirror — `clearing` names Clear override "Clearing override…", with `aria-busy="true"`. */
+export async function clearingNamesClearOverrideClearingAndBusy(): Promise<void> {
+  renderPending("clearing");
+  expect(screen.getByRole("button", { name: "Clearing override…" })).toHaveAttribute("aria-busy", "true");
+}
+
+/** `F4.168` U4, B4 mirror — while `clearing`, Save override keeps its name and is not busy. */
+export async function clearingLeavesSaveOverrideNamedAndNotBusy(): Promise<void> {
+  renderPending("clearing");
+  expect(screen.getByRole("button", { name: "Save override" })).toHaveAttribute("aria-busy", "false");
+}
+
+/** `F4.168` U4, B4 mirror — while `clearing`, the shared `busy` disables Save override. */
+export async function clearingDisablesSaveOverride(): Promise<void> {
+  renderPending("clearing");
+  expect(screen.getByRole("button", { name: "Save override" })).toBeDisabled();
 }
