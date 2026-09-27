@@ -4,6 +4,8 @@ import { CircleMarker, MapContainer, Popup, TileLayer } from "react-leaflet";
 
 import "leaflet/dist/leaflet.css";
 
+import { isOperationalSite } from "../lib/map-site";
+
 const TILE = {
   url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; CARTO',
@@ -26,27 +28,6 @@ function markerColor(site: MapSiteDto): string {
   }
 }
 
-function isOperationalLocation(site: MapSiteDto): boolean {
-  return (
-    site.kind === "smoc_campus" ||
-    site.kind === "rsmoc" ||
-    site.kind === "csmoc"
-  );
-}
-
-function locationKindLabel(site: MapSiteDto): string {
-  switch (site.kind) {
-    case "smoc_campus":
-      return "SMOC campus";
-    case "rsmoc":
-      return "RSMOC";
-    case "csmoc":
-      return "CSMOC";
-    case "eskom_station":
-      return "Station";
-  }
-}
-
 type WorldMapProps = {
   sites: MapSiteDto[];
 };
@@ -64,7 +45,7 @@ export function WorldMap({ sites }: WorldMapProps) {
         <CircleMarker
           key={s.id}
           center={[s.latitude, s.longitude]}
-          radius={isOperationalLocation(s) ? 12 : 7}
+          radius={isOperationalSite(s) ? 12 : 7}
           pathOptions={{
             color: "#1D2430",
             weight: 2,
@@ -76,7 +57,8 @@ export function WorldMap({ sites }: WorldMapProps) {
             <div className="min-w-[210px] text-bms-ink">
               <div className="font-condensed text-sm font-bold">{s.name}</div>
               <div className="text-[10px] uppercase tracking-wide text-bms-muted">
-                {s.organization?.code ?? locationKindLabel(s)} ·{" "}
+                <span data-testid="site-kind">{s.kindLabel}</span>
+                {s.organization ? ` · ${s.organization.code}` : ""} ·{" "}
                 <span className="font-mono">{s.live.status}</span>
               </div>
               {s.kind === "eskom_station" ? (

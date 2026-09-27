@@ -302,7 +302,7 @@ export async function setupFixtures(pool: pg.Pool): Promise<Fixtures> {
 
   const locRows = await pool.query<{ id: string }>(
     `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
-     VALUES ($1, $2, $3, $4, 'site', 0, 0) RETURNING id`,
+     VALUES ($1, $2, $3, $4, 'rsmoc', 0, 0) RETURNING id`,
     [
       organizationId,
       `${RUN_CODE}-LOC`,

@@ -116,6 +116,7 @@ describe("checkResponse", () => {
       name: "Campus",
       code: "SITE-l1",
       type: "smoc_campus",
+      typeLabel: "SMOC campus",
       province: null,
       organization: { id: "o1", code: "IONX", name: "Ion Exchange" },
       rtuCount: 1,

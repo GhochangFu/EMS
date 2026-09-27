@@ -1,4 +1,5 @@
 import {
+  adminLocationDtoSchema,
   assetInstantiationResultDtoSchema,
   instantiatedAssetDtoSchema,
 } from "./admin";
@@ -147,6 +148,35 @@ export function runSeededRuleDriftVerdictTests(): void {
     { ...validSeededRule, current: null },
     "current null — the alarm code no longer exists in the published version",
   );
+}
+
+const validLocation = {
+  id: "55555555-5555-4555-8555-555555555555",
+  organizationId: "66666666-6666-4666-8666-666666666666",
+  organizationCode: "PHEWB",
+  organizationName: "PHE West Bengal",
+  code: "LOTAPATA",
+  slug: "lotapata",
+  name: "Lotapata",
+  type: "pump_station",
+  province: null,
+  capital: null,
+  timezone: null,
+  latitude: 24.1,
+  longitude: 88.4,
+  active: true,
+  meta: null,
+  createdAt: "2026-09-26T00:00:00.000Z",
+  updatedAt: "2026-09-26T00:00:00.000Z",
+};
+
+/**
+ * `F4.157` (ADR 0077 D1) — `type` is no longer a closed three-value enum;
+ * `pump_station`, the fourth `bms.location_types` row the migration adds,
+ * must parse. C2's mutation ("restore the enum") is what this pins against.
+ */
+export function runAdminLocationDtoAcceptsPumpStationTest(): void {
+  expectAccepts(adminLocationDtoSchema, validLocation, "an admin location row with type: pump_station");
 }
 
 /**

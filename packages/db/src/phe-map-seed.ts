@@ -35,7 +35,7 @@ export function pheMapLocationRowsForInsert() {
     return {
       slug: stationSlug(name),
       name,
-      kind: "rsmoc" as const,
+      kind: "pump_station" as const,
       siteName: name,
       latitude: Number(head.Latitude),
       longitude: Number(head.Longitude),

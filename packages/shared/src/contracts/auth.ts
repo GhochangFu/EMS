@@ -6,6 +6,8 @@
  */
 import { z } from "zod";
 
+import { locationTypeCodeSchema } from "./location-types";
+
 /** Prototype role slugs stored in `bms.users.role`. */
 export const userRoleSchema = z.enum([
   "admin",
@@ -54,7 +56,7 @@ export const accessLocationSchema = z.object({
   code: z.string(),
   slug: z.string(),
   name: z.string(),
-  type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
+  type: locationTypeCodeSchema,
   province: z.string().nullable(),
 });
 

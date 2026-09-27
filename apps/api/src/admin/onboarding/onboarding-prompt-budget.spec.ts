@@ -600,6 +600,10 @@ async function openAiTurn(
       {} as never,
       {} as never,
       {} as never,
+      // F4.157: the OpenAI branch reads the location types for its prompt. A
+      // `{}` here throws inside the branch's catch and the turn silently falls
+      // through to the rule-based answer.
+      { listLocationTypes: async () => [{ code: "pump_station", label: "Pump station" }] } as never,
     );
     return await service.handleTurn("Tell me about the site", draft, "point_keys", "Ion Exchange");
   } finally {
@@ -783,6 +787,10 @@ export async function assertOpenAiTurnForwardsABoundedPrompt(requests: unknown[]
       {} as never,
       {} as never,
       {} as never,
+      // F4.157: the OpenAI branch reads the location types for its prompt. A
+      // `{}` here throws inside the branch's catch and the turn silently falls
+      // through to the rule-based answer.
+      { listLocationTypes: async () => [{ code: "pump_station", label: "Pump station" }] } as never,
     );
     await service.handleTurn("Tell me about the site", draft, "location", "Ion Exchange");
   } finally {

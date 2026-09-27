@@ -9,6 +9,7 @@
  */
 import { z } from "zod";
 
+import { locationTypeCodeSchema } from "./location-types";
 import {
   CONTROL_ROOM_ELECTRICAL_POINT_KEYS,
   CONTROL_ROOM_ENVIRONMENT_POINT_KEYS,
@@ -39,7 +40,8 @@ export const locationKpiSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
   code: z.string(),
-  type: z.enum(["smoc_campus", "rsmoc", "csmoc"]),
+  type: locationTypeCodeSchema,
+  typeLabel: z.string(),
   province: z.string().nullable(),
   organization: organizationRefSchema,
   rtuCount: z.number(),
@@ -166,7 +168,11 @@ export const mapSiteDtoSchema = z.object({
   canonicalLocationId: z.string().nullable(),
   slug: z.string(),
   name: z.string(),
-  kind: z.enum(["eskom_station", "smoc_campus", "rsmoc", "csmoc"]),
+  // `eskom_station` is a map-only kind with no `bms.location_types` row
+  // (§Out of scope) — `locationTypeCodeSchema`'s bound (a non-empty string up
+  // to 32 characters) is wide enough to admit it without a second schema.
+  kind: locationTypeCodeSchema,
+  kindLabel: z.string(),
   siteName: z.string().nullable(),
   organization: organizationRefSchema.nullable(),
   latitude: z.number(),

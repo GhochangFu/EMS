@@ -87,6 +87,7 @@ function buildService(opts: {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   return { service, calls };
 }

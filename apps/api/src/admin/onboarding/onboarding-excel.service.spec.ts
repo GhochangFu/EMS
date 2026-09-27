@@ -25,6 +25,12 @@ function assert(condition: boolean, message: string): void {
 }
 
 /**
+ * The four seeded `bms.location_types` codes (`F4.157`), passed where
+ * `OnboardingService.uploadExcel` passes the live vocabulary.
+ */
+const LOCATION_TYPE_CODES = ["smoc_campus", "rsmoc", "csmoc", "pump_station"] as const;
+
+/**
  * The message `parseUpload` refused a buffer with. Fails the test when the call
  * returns instead of throwing — a guard that silently accepts is the thing
  * every assertion below is looking for.
@@ -40,7 +46,7 @@ function assert(condition: boolean, message: string): void {
 export function refusalMessage(buffer: Buffer, what: string): string {
   const service = new OnboardingExcelService();
   try {
-    service.parseUpload(buffer);
+    service.parseUpload(buffer, LOCATION_TYPE_CODES);
   } catch (error) {
     assert(
       error instanceof BadRequestException,
@@ -64,11 +70,14 @@ export function refusalMessage(buffer: Buffer, what: string): string {
 export function assertTemplateRoundTripsUnchanged(): void {
   const service = new OnboardingExcelService();
   const buffer = service.buildTemplateBuffer("Berhampur");
-  const parsed = service.parseUpload(buffer);
+  const parsed = service.parseUpload(buffer, LOCATION_TYPE_CODES);
 
   assert(parsed.location.name === "Berhampur", `location.name, got ${JSON.stringify(parsed.location.name)}`);
   assert(parsed.location.code === "BERHAMPUR", `location.code is upper-cased, got ${JSON.stringify(parsed.location.code)}`);
   assert(parsed.location.slug === "berhampur", `location.slug is lower-cased, got ${JSON.stringify(parsed.location.slug)}`);
+  // F4.157 (owner ruling OQ3): the template's own type cell is a live code, so
+  // the generated workbook is never refused by the type check.
+  assert(parsed.location.type === "pump_station", `location.type, got ${JSON.stringify(parsed.location.type)}`);
 
   assert(parsed.rtus.length === 2, `the template carries two RTUs, got ${parsed.rtus.length}`);
   // `F4.103`'s headroom claim, gated instead of asserted in prose: the two count
@@ -200,7 +209,7 @@ export function assertUnreadableUploadIsLogged(): void {
   const buffer = syntheticZip([1024]);
   let refusal = "";
   try {
-    service.parseUpload(buffer);
+    service.parseUpload(buffer, LOCATION_TYPE_CODES);
   } catch (error) {
     refusal = (error as Error).message;
   }
@@ -423,6 +432,7 @@ export function assertDeclaredWidthIsRefusedNotWindowed(): void {
   // That silence is why ruling 1 refuses.
   const windowed = new OnboardingExcelService().parseUpload(
     buildWorkbookBuffer(movedRows.map((row) => row.slice(0, MAX_HEADER_COLUMNS))),
+    LOCATION_TYPE_CODES,
   );
   assert(
     windowed.rtuCredentials.length === 0 && windowed.rtus.every((rtu) => rtu.credentialsSet === false),
@@ -435,9 +445,11 @@ export function assertDeclaredWidthIsRefusedNotWindowed(): void {
   // `indexOf` and the blank-row break, so the parse must be identical.
   const atBound = new OnboardingExcelService().parseUpload(
     buildWorkbookBufferDeclaring(templateRows(), "A1:BL16", "Onboarding"),
+    LOCATION_TYPE_CODES,
   );
   const untouched = new OnboardingExcelService().parseUpload(
     new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+    LOCATION_TYPE_CODES,
   );
   assert(
     JSON.stringify(atBound) === JSON.stringify(untouched),
@@ -466,6 +478,7 @@ export function assertOverCapSectionIsRefused(): void {
   // --- ASSETS, from both sides ---------------------------------------------
   const atAssetCap = new OnboardingExcelService().parseUpload(
     buildWorkbookBuffer(rowsWithAssetCount(MAX_ONBOARDING_ASSETS)),
+    LOCATION_TYPE_CODES,
   );
   assert(
     atAssetCap.assets.length === MAX_ONBOARDING_ASSETS,
@@ -502,6 +515,7 @@ export function assertOverCapSectionIsRefused(): void {
   // --- RTUS, from both sides ------------------------------------------------
   const atRtuCap = new OnboardingExcelService().parseUpload(
     buildWorkbookBuffer(rowsWithRtuCount(MAX_ONBOARDING_RTUS)),
+    LOCATION_TYPE_CODES,
   );
   assert(
     atRtuCap.rtus.length === MAX_ONBOARDING_RTUS,
@@ -546,6 +560,7 @@ export function assertOverCapSectionIsRefused(): void {
   // both caps; this asserts the guard does not refuse it anyway.
   const template = new OnboardingExcelService().parseUpload(
     new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+    LOCATION_TYPE_CODES,
   );
   assert(
     template.rtus.length === 2 && template.assets.length === 3,
@@ -676,9 +691,11 @@ export function assertSheetReachingTheRowBoundIsRefused(): void {
  * received value, so a `z.enum` field fed straight from a cell is an echo site
  * however short the schema's other members are — see
  * `assertUnknownRtuProtocolIsRefused` below for `protocol`, the sixth site.
- * `location.type` is the other enum reachable from this sheet and is safe by a
- * different route: `parseLocation` maps anything that is not `rsmoc` or
- * `csmoc` onto `smoc_campus`, so no cell text ever reaches it.
+ * `location.type` was the other cell reachable from this sheet. It is no
+ * longer an enum (`F4.157`, ADR 0077) and is safe by the same route as
+ * `protocol`: `parseLocation` refuses a cell whose folded value is not an
+ * active code, describing it by length, so no cell text reaches the draft or
+ * the refusal — `onboarding-excel-location-type.spec.ts`.
  */
 export function assertEchoedSheetTextIsBounded(): void {
   // **`F4.104` shrank this fixture, and the case is the same one.** It used
@@ -712,7 +729,10 @@ export function assertEchoedSheetTextIsBounded(): void {
   rows[7][0] = duplicateCode;
   rows[7][1] = sharedName;
 
-  const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(rows));
+  const parsed = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(rows),
+    LOCATION_TYPE_CODES,
+  );
   assert(
     parsed.displayNameFixes.length === 1,
     `the duplicate display name is adjusted once, got ${parsed.displayNameFixes.length}`,
@@ -758,7 +778,10 @@ export function assertOverlongRtuTopicIsRefused(): void {
   const legalRows = templateRows();
   legalRows[7] = [...legalRows[7]];
   legalRows[7][5] = "L".repeat(MAX_RTU_TOPIC_CHARS);
-  const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(legalRows));
+  const parsed = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(legalRows),
+    LOCATION_TYPE_CODES,
+  );
   assert(
     String(parsed.rtus[1].config.topic).length === MAX_RTU_TOPIC_CHARS,
     `a topic of exactly ${MAX_RTU_TOPIC_CHARS} characters parses whole, got ${String(parsed.rtus[1].config.topic).length}`,
@@ -795,6 +818,7 @@ export function assertOverlongRtuTopicIsRefused(): void {
   // And the honest sheet is untouched: the template's own topics are short.
   const template = new OnboardingExcelService().parseUpload(
     new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+    LOCATION_TYPE_CODES,
   );
   assert(
     template.rtus[0].config.topic === "BERHAMPUR-RTU-1/Topic1",
@@ -837,7 +861,10 @@ export function assertUnknownRtuProtocolIsRefused(): void {
   const legalRows = templateRows();
   legalRows[7] = [...legalRows[7]];
   legalRows[7][2] = "modbus_tcp";
-  const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(legalRows));
+  const parsed = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(legalRows),
+    LOCATION_TYPE_CODES,
+  );
   assert(
     parsed.rtus[0].protocol === "mqtt",
     `an ordinary mqtt row parses unchanged, got ${JSON.stringify(parsed.rtus[0].protocol)}`,
@@ -860,7 +887,10 @@ export function assertUnknownRtuProtocolIsRefused(): void {
   const blankRows = templateRows();
   blankRows[6] = [...blankRows[6]];
   blankRows[6][2] = "";
-  const blank = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(blankRows));
+  const blank = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(blankRows),
+    LOCATION_TYPE_CODES,
+  );
   assert(
     blank.rtus[0].protocol === "mqtt",
     `a blank protocol cell still defaults to mqtt, got ${JSON.stringify(blank.rtus[0].protocol)}`,
@@ -877,7 +907,10 @@ export function assertUnknownRtuProtocolIsRefused(): void {
   casedRows[7] = [...casedRows[7]];
   casedRows[6][2] = "MQTT";
   casedRows[7][2] = "  Modbus_TCP  ";
-  const cased = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(casedRows));
+  const cased = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(casedRows),
+    LOCATION_TYPE_CODES,
+  );
   assert(
     cased.rtus[0].protocol === "mqtt",
     `an uppercase MQTT cell imports as mqtt, got ${JSON.stringify(cased.rtus[0].protocol)}`,
@@ -939,6 +972,7 @@ export function assertUnknownRtuProtocolIsRefused(): void {
   // And the honest sheet is untouched.
   const template = new OnboardingExcelService().parseUpload(
     new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+    LOCATION_TYPE_CODES,
   );
   assert(
     template.rtus.every((rtu) => rtu.protocol === "mqtt"),

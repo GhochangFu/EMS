@@ -33,6 +33,7 @@ import { AssetsAdminController } from "./assets/assets.controller";
 import { AssetsAdminService } from "./assets/assets.service";
 import { AuditAdminController } from "./audit/audit.controller";
 import { AuditAdminService } from "./audit/audit.service";
+import { LocationTypesAdminController } from "./locations/location-types.controller";
 import { LocationsAdminController } from "./locations/locations.controller";
 import { LocationsAdminService } from "./locations/locations.service";
 import { PointKeysAdminController } from "./point-keys/point-keys.controller";
@@ -75,6 +76,8 @@ import { TelemetryImportService } from "./telemetry-import/telemetry-import.serv
   controllers: [
     OrganizationsAdminController,
     LocationsAdminController,
+    // F4.157 / ADR 0077 — GET admin/location-types, the Type select's list.
+    LocationTypesAdminController,
     RtusAdminController,
     AssetGroupsAdminController,
     AssetGroupMembersAdminController,

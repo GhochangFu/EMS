@@ -166,8 +166,18 @@ function renderPage(role: "admin" | "organization_admin" = "admin"): void {
   );
 }
 
+const LOCATION_TYPES = {
+  items: [
+    { code: "pump_station", label: "Pump station" },
+    { code: "smoc_campus", label: "SMOC campus" },
+    { code: "rsmoc", label: "RSMOC" },
+    { code: "csmoc", label: "CSMOC" },
+  ],
+};
+
 function stubApi(stored: SiteControlRoomViewSettingDto): void {
   vi.spyOn(api, "fetchAdminLocations").mockResolvedValue(LOCATIONS);
+  vi.spyOn(api, "fetchAdminLocationTypes").mockResolvedValue(LOCATION_TYPES);
   vi.spyOn(api, "createAdminLocation").mockResolvedValue(LOCATIONS.items[0]!);
   vi.spyOn(api, "updateAdminLocation").mockResolvedValue(LOCATIONS.items[0]!);
   vi.spyOn(api, "fetchSiteControlRoomView").mockResolvedValue(stored);

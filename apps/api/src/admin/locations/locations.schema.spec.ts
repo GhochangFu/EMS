@@ -32,3 +32,12 @@ export function createAdmitsNullProvince(): void {
   const parsed = createLocationBodySchema.safeParse({ ...CREATE_BASE, province: null });
   expect(parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues)).toBe(true);
 }
+
+/**
+ * C5 (`F4.157`, ADR 0077 D1) — `type` is no longer a closed three-value enum;
+ * `pump_station`, the fourth `bms.location_types` row, must parse.
+ */
+export function createAdmitsPumpStationType(): void {
+  const parsed = createLocationBodySchema.safeParse({ ...CREATE_BASE, type: "pump_station" });
+  expect(parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues)).toBe(true);
+}

@@ -1,6 +1,10 @@
+import { locationTypeCodeSchema } from "@bms/shared";
 import { z } from "zod";
 
-export const locationTypeSchema = z.enum(["smoc_campus", "rsmoc", "csmoc"]);
+// `F4.157` (D1, §4.8 "re-export rather than restate"): the shared bounded
+// schema, kept under this file's existing name so no import at either write
+// path changes.
+export const locationTypeSchema = locationTypeCodeSchema;
 
 export const createLocationBodySchema = z
   .object({

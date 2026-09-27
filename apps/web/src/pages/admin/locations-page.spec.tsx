@@ -9,6 +9,7 @@ import * as groupsApi from "../../api/admin/asset-groups";
 import * as api from "../../api/admin/locations";
 import * as orgApi from "../../api/admin/organizations";
 import * as dashboardsApi from "../../api/dashboards";
+import * as systemStatusApi from "../../api/system-status";
 import type { AuthUser } from "../../stores/auth-store";
 import { LocationsAdminPage } from "./locations-page";
 
@@ -30,6 +31,17 @@ const user: AuthUser = {
 } as unknown as AuthUser;
 
 const ORG_ID = "33333333-3333-3333-3333-333333333333";
+
+/** `F4.157` D9 — `pump_station` first, `csmoc` third: P2 posts the first code, P3 needs the
+ * fixture's `csmoc` row to not already be first. */
+const LOCATION_TYPES = {
+  items: [
+    { code: "pump_station", label: "Pump station" },
+    { code: "smoc_campus", label: "SMOC campus" },
+    { code: "rsmoc", label: "RSMOC" },
+    { code: "csmoc", label: "CSMOC" },
+  ],
+};
 
 const ORGANIZATIONS = {
   items: [
@@ -93,6 +105,7 @@ function renderPage(): void {
 
 function stubApi(): void {
   vi.spyOn(api, "fetchAdminLocations").mockResolvedValue(LOCATIONS);
+  vi.spyOn(api, "fetchAdminLocationTypes").mockResolvedValue(LOCATION_TYPES);
   vi.spyOn(api, "createAdminLocation").mockResolvedValue(LOCATIONS.items[0]!);
   vi.spyOn(api, "updateAdminLocation").mockResolvedValue(LOCATIONS.items[0]!);
   vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue(ORGANIZATIONS as never);
@@ -200,4 +213,98 @@ export async function listRendersDashForANullTimezone(): Promise<void> {
   // Positive control: the same column carries the zone where one is set.
   expect(within(zoned).getByText("Africa/Johannesburg")).toBeInTheDocument();
   expect(within(zoned).queryByText("—")).toBeNull();
+}
+
+/** P1 (`F4.157` D9) — the Type select has four options, text the labels and value the codes,
+ * in the list's order. Mutation: hardcode three options. */
+export async function typeSelectListsTheFourTypesInOrder(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+
+  const select = screen.getByLabelText("Type") as HTMLSelectElement;
+  const options = Array.from(select.querySelectorAll("option"));
+  expect(options.map((option) => option.value)).toEqual(
+    LOCATION_TYPES.items.map((item) => item.code),
+  );
+  expect(options.map((option) => option.textContent)).toEqual(
+    LOCATION_TYPES.items.map((item) => item.label),
+  );
+}
+
+/** P2 (`F4.157` D9) — submitting the create form untouched posts `type` equal to the list's
+ * first code. Mutation: post `form.type` raw (`""`) instead of the resolved value. */
+export async function untouchedCreatePostsTheFirstListedType(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openCreateForm();
+  await fillRequired();
+
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
+  });
+  const payload = vi.mocked(api.createAdminLocation).mock.calls[0]![0];
+  expect(payload.type).toBe(LOCATION_TYPES.items[0]!.code);
+}
+
+/** P3 (`F4.157` D9) — editing a fixture row whose `type` is `"csmoc"`, while the list puts
+ * `pump_station` first, shows "CSMOC" selected. Mutation: reverse the resolve's precedence to
+ * `types[0]?.code || form.type`, which shows the list's first type ("Pump station") instead of
+ * the row's own. `value={form.type}` without the resolve is not this case's mutation: an edited
+ * row's `form.type` is already its own type, so that mutation leaves P3 green. */
+export async function editingShowsTheRowsOwnTypeSelected(): Promise<void> {
+  const csmocRow = location({
+    id: "33333333-3333-3333-3333-333333333331",
+    code: "E41B-CSMOC",
+    slug: "e41b-csmoc",
+    name: "CSMOC station",
+    type: "csmoc",
+  });
+  vi.spyOn(api, "fetchAdminLocations").mockResolvedValue({ items: [csmocRow, ...LOCATIONS.items] });
+  vi.spyOn(api, "fetchAdminLocationTypes").mockResolvedValue(LOCATION_TYPES);
+  vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue(ORGANIZATIONS as never);
+  vi.spyOn(api, "fetchSiteControlRoomView").mockResolvedValue({
+    locationId: csmocRow.id,
+    organizationId: ORG_ID,
+    kind: "generated",
+    dashboardId: null,
+    builtinKey: null,
+    updatedAt: null,
+    updatedBy: null,
+  });
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({ items: [] });
+  vi.spyOn(groupsApi, "fetchAdminAssetGroups").mockResolvedValue({ items: [] });
+  renderPage();
+  const row = (await screen.findByText("CSMOC station")).closest("tr")!;
+  await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("heading", { name: "Edit location" });
+
+  const select = (await screen.findByLabelText("Type")) as HTMLSelectElement;
+  expect(select.value).toBe("csmoc");
+  expect(select.selectedOptions[0]?.textContent).toBe("CSMOC");
+}
+
+/** P4 (`F4.157` D9) — every API call in this render goes through the stubbed module; the
+ * fetch spy sees zero calls. Mutation: an unstubbed producer would reach `:4000`.
+ *
+ * `MasterDataLayout` renders `AppShell`, which polls `fetchSystemStatus` — the `F4.160` /
+ * `point-keys-page.spec.tsx` lesson — so that producer is stubbed here too, or every render
+ * would fail this claim for a reason that has nothing to do with the location-type list. */
+export async function noSpecCallReachesTheNetwork(): Promise<void> {
+  const fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
+  vi.stubGlobal("fetch", fetchSpy);
+  vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
+  stubApi();
+  renderPage();
+  await openCreateForm();
+  await fillRequired();
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+  await waitFor(() => {
+    expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
+  });
+  expect(fetchSpy).not.toHaveBeenCalled();
+  vi.unstubAllGlobals();
 }

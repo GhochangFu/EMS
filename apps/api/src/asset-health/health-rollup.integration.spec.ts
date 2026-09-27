@@ -138,7 +138,7 @@ async function createLocationAndAsset(
   return withOrgWrite(pool, organizationId, async (client) => {
     const locResult = await client.query<{ id: string }>(
       `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
-       VALUES ($1, $2, $3, $4, 'site', 0, 0) RETURNING id`,
+       VALUES ($1, $2, $3, $4, 'rsmoc', 0, 0) RETURNING id`,
       [
         organizationId,
         `E13HR-${label}-LOC-${randomUUID()}`,

@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { is, TransactionRollbackError } from "drizzle-orm";
 
-import { alarmSkills, assetRoles, waterBalanceRoles } from "@bms/db";
+import { alarmSkills, assetRoles, locationTypes, waterBalanceRoles } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { VocabulariesService } from "./vocabularies.service";
@@ -324,4 +324,151 @@ export async function assertWaterBalanceRoleRejectsInactiveCode(db: BmsDb): Prom
 
     tx.rollback();
   });
+}
+
+/**
+ * `F4.157` (ADR 0077) — the eighth vocabulary, `bms.location_types`.
+ *
+ * Same properties as the vocabularies before it, for the same reason. Unlike
+ * the others it is served by its own read, `listLocationTypes()`, and not by
+ * `list()`: it feeds the admin locations form (`GET /admin/location-types`),
+ * not the everyone-readable `GET /vocabularies` response.
+ */
+
+/** The four seeded codes, in their seeded `sort_order` (migration `0085`). */
+const SEEDED_LOCATION_TYPES = ["smoc_campus", "rsmoc", "csmoc", "pump_station"] as const;
+
+/**
+ * `codes` with only the seeded four and `extra` kept, in the order given.
+ *
+ * ADR 0077's extension path is one INSERT, so a fifth type is data, not a
+ * code change. These cases assert the seeded four and their own test row, and
+ * filter out whatever else a live database holds; the order of what is kept is
+ * still the order the read returned.
+ */
+function seededAnd(codes: readonly string[], ...extra: string[]): string[] {
+  const kept = new Set<string>([...SEEDED_LOCATION_TYPES, ...extra]);
+  return codes.filter((code) => kept.has(code));
+}
+
+/**
+ * V2 — `listLocationTypes()` is ordered by `sortOrder`, then `code`.
+ *
+ * The seeded four are inserted in their sort order, so heap order already
+ * matches and a read with no `ORDER BY` would pass against them alone. The
+ * `sortOrder: 5` row is inserted last — it sits at the end of the heap — and
+ * must come back first.
+ */
+export async function assertListLocationTypesIsOrdered(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    await tx
+      .insert(locationTypes)
+      .values({ code: "f4157_test_first", label: "F4.157 First", sortOrder: 5 });
+
+    const service = new VocabulariesService(tx);
+    const codes = seededAnd(
+      (await service.listLocationTypes()).map((row) => row.code),
+      "f4157_test_first",
+    );
+
+    assert(
+      JSON.stringify(codes) === JSON.stringify(["f4157_test_first", ...SEEDED_LOCATION_TYPES]),
+      `expected the sortOrder-5 row first and the seeded four in order, got: ${codes.join(", ")}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/** V2b — `listLocationTypes()` leaves a retired row out. */
+export async function assertListLocationTypesIsActiveOnly(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    await tx
+      .insert(locationTypes)
+      .values({ code: "f4157_test_retired", label: "F4.157 Retired", sortOrder: 5, active: false });
+
+    const service = new VocabulariesService(tx);
+    const codes = seededAnd(
+      (await service.listLocationTypes()).map((row) => row.code),
+      "f4157_test_retired",
+    );
+
+    assert(
+      JSON.stringify(codes) === JSON.stringify([...SEEDED_LOCATION_TYPES]),
+      `expected the seeded four only, the retired row excluded, got: ${codes.join(", ")}`,
+    );
+
+    tx.rollback();
+  });
+}
+
+/** V3 — `assertLocationType` refuses a code that names no row with a 400. */
+export async function assertLocationTypeRejectsUnknownCode(db: BmsDb): Promise<void> {
+  const service = new VocabulariesService(db);
+  let refused: unknown = null;
+  try {
+    await service.assertLocationType("f4157_test_not_a_type");
+  } catch (err) {
+    refused = err;
+  }
+  assert(
+    refused instanceof BadRequestException,
+    `assertLocationType must refuse a code with no matching row with a BadRequestException, got ${String(refused)}`,
+  );
+}
+
+/**
+ * V3b — the refusal lists the location type codes, and only those.
+ *
+ * The negative half is the point: a `liveCodes` entry copied from a sibling
+ * and left pointing at `bms.asset_domains` would still name *some* live codes.
+ * `electrical` is an asset domain and never a location type.
+ */
+export async function assertLocationTypeRefusalListsLocationTypeCodes(db: BmsDb): Promise<void> {
+  const service = new VocabulariesService(db);
+  let message = "";
+  try {
+    await service.assertLocationType("f4157_test_not_a_type");
+  } catch (err) {
+    message = err instanceof Error ? err.message : String(err);
+  }
+  // The list closes the message; the seeded four appear in it, in order.
+  const listed = /Expected one of: (.*)\.$/.exec(message)?.[1]?.split(", ") ?? [];
+  assert(
+    JSON.stringify(seededAnd(listed)) === JSON.stringify([...SEEDED_LOCATION_TYPES]),
+    `expected the refusal to list the four location type codes in order, got: ${message}`,
+  );
+  assert(
+    !message.includes("electrical"),
+    `the refusal must list location types, not asset domains, got: ${message}`,
+  );
+}
+
+/** V4 — `assertLocationType` refuses an inactive (retired) code: existence is not enough. */
+export async function assertLocationTypeRejectsInactiveCode(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    await tx
+      .insert(locationTypes)
+      .values({ code: "f4157_test_retired", label: "F4.157 Retired", active: false });
+
+    const service = new VocabulariesService(tx);
+
+    let rejected = false;
+    try {
+      await service.assertLocationType("f4157_test_retired");
+    } catch (err) {
+      rejected = err instanceof BadRequestException;
+    }
+    assert(
+      rejected,
+      "assertLocationType must reject a retired (active=false) code with a BadRequestException, not just a missing one",
+    );
+
+    tx.rollback();
+  });
+}
+
+/** V4 positive control — a live code is accepted, so V4's refusal is about `active`. */
+export async function assertLocationTypeAcceptsALiveCode(db: BmsDb): Promise<void> {
+  await new VocabulariesService(db).assertLocationType("pump_station");
 }

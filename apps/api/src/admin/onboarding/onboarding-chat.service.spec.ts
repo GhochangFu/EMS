@@ -35,7 +35,7 @@ function longCell(fill: string): string {
  * services and only one of them would still be the one this file describes.
  */
 export function chatService(): OnboardingChatService {
-  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never);
+  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never);
 }
 
 /** A topic exactly at the bound — the longest one `parseRtus` accepts. */
@@ -404,6 +404,14 @@ export function assertAssetsByRtuSummaryIsIndexedNotRescanned(): void {
 // F4.104 — `handleRuleBasedTurn`, the draft's default producer
 // ---------------------------------------------------------------------------
 
+/** The four seeded `bms.location_types` rows (`F4.157`). */
+const FOUR = [
+  { code: "smoc_campus", label: "SMOC campus" },
+  { code: "rsmoc", label: "RSMOC" },
+  { code: "csmoc", label: "CSMOC" },
+  { code: "pump_station", label: "Pump station" },
+] as const;
+
 /**
  * The rule-based branch with a **real** validator behind it.
  *
@@ -413,6 +421,9 @@ export function assertAssetsByRtuSummaryIsIndexedNotRescanned(): void {
  * into the operator's permanent validation error. The other three are untouched
  * on every path below: `crypto` only inside `mergeDraft`, and `catalogService`
  * and `protocolService` only when an `organizationId` is passed.
+ *
+ * The fifth is the vocabulary the location branch reads (`F4.157`): a fake
+ * answering the four seeded `bms.location_types` rows.
  */
 function ruleBasedChatService(): OnboardingChatService {
   return new OnboardingChatService(
@@ -420,8 +431,10 @@ function ruleBasedChatService(): OnboardingChatService {
     {} as never,
     {} as never,
     {} as never,
+    { listLocationTypes: async () => [...FOUR] } as never,
   );
 }
+
 
 /**
  * Drives the **real** `handleTurn` into its rule-based branch.
@@ -577,9 +590,11 @@ export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<vo
     long.draftPatch.location,
     "this case must reach the rule-based location branch, or it measures the OpenAI one",
   );
+  // F4.157: the branch no longer defaults the type; it asks for it, and only
+  // the rule-based branch words the question this way.
   assert(
-    longLocation.type === "smoc_campus",
-    "only the rule-based branch defaults the location type — this patch came from elsewhere",
+    long.assistantMessage.startsWith("Which type of location is"),
+    "only the rule-based branch asks for the location type — this patch came from elsewhere",
   );
   assert(
     longLocation.name.length === ONBOARDING_DRAFT_STRING_MAX["location.name"],

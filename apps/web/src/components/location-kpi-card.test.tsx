@@ -3,6 +3,7 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   cleanupCard,
+  fallsBackToTheTypeLabelNotTheRawCode,
   theDefaultLinksToTheLocationDashboard,
   toReplacesTheLinkTarget,
 } from "./location-kpi-card.spec";
@@ -23,5 +24,9 @@ describe("F3.66 U3 LocationKpiCard link target (D4)", () => {
 
   it("K2 links to `to` when it is given", () => {
     toReplacesTheLinkTarget();
+  });
+
+  it("K4 falls back to typeLabel, not the raw type code, when province is null", () => {
+    fallsBackToTheTypeLabelNotTheRawCode();
   });
 });

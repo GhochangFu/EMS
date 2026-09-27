@@ -12,6 +12,8 @@ type LocRow = {
   slug: string;
   name: string;
   kind: string;
+  location_type: string | null;
+  location_type_label: string | null;
   site_name: string | null;
   org_id: string | null;
   org_code: string | null;
@@ -25,15 +27,17 @@ type LocRow = {
   station_operating_status: string | null;
 };
 
-function isOperationalLocation(kind: string): boolean {
-  return kind === "smoc_campus" || kind === "rsmoc" || kind === "csmoc";
-}
-
 /**
  * `F4.16` / ADR 0043 — read-only, and its `LEFT JOIN bms.locations` (RLS since
  * migration `0040`) means this pool must be `fleetPool` — `map_locations`
  * itself carries no organization column to filter on, so a tenant connection
  * could not serve this query even scoped.
+ *
+ * `F4.157` / ADR 0077 — a pin that joins a location takes its `kind` from
+ * `bms.locations.type` and its `kindLabel` from `bms.location_types.label`
+ * (`bms_fleet` holds SELECT on the lookup, migration `0085`), and carries
+ * live health because it joins a location. A pin that joins none keeps
+ * `map_locations.kind` (`eskom_station`) and its operating status.
  */
 @Injectable()
 export class MapService {
@@ -50,6 +54,8 @@ export class MapService {
               ml.slug,
               ml.name,
               ml.kind,
+              l.type AS location_type,
+              lt.label AS location_type_label,
               ml.site_name,
               o.id AS org_id,
               o.code AS org_code,
@@ -63,6 +69,7 @@ export class MapService {
               ml.station_operating_status
        FROM bms.map_locations ml
        LEFT JOIN bms.locations l ON l.slug = ml.slug
+       LEFT JOIN bms.location_types lt ON lt.code = l.type
        LEFT JOIN bms.organizations o ON o.id = l.organization_id
        ORDER BY ml.kind DESC, ml.name ASC`,
     );
@@ -139,7 +146,9 @@ export class MapService {
         canonicalLocationId: loc.canonical_location_id,
         slug: loc.slug,
         name: loc.name,
-        kind: loc.kind as MapSiteDto["kind"],
+        kind: loc.location_type ?? loc.kind,
+        kindLabel:
+          loc.location_type_label ?? (loc.kind === "eskom_station" ? "Station" : loc.kind),
         siteName: loc.site_name,
         organization,
         latitude: Number(loc.latitude),
@@ -151,7 +160,7 @@ export class MapService {
         stationOperatingStatus: loc.station_operating_status,
       };
 
-      if (isOperationalLocation(loc.kind) && loc.canonical_location_id) {
+      if (loc.canonical_location_id !== null) {
         const a = alarmMap.get(loc.canonical_location_id) ?? { open: 0, critical: 0 };
         const c = commMap.get(loc.canonical_location_id) ?? { total: 0, fresh: 0 };
         const live = this.campusLive(a, c);

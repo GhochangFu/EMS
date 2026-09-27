@@ -160,3 +160,15 @@ Ruled by the owner on 2026-09-26, one at a time.
   types — a new backlog row, raised when this row closes.
 - The Control Room (ADR 0076) does not read the location type, so no view
   changes.
+
+## Correction (2026-09-26)
+
+The Context bullet "The map is a second vocabulary" and gate question 3 say
+the PHE map pins show "RSMOC". They did not. The popup showed the
+organization code first (`s.organization?.code ?? locationKindLabel(s)`,
+`world-map.tsx:79` at `0a9fcba5`), so a joined PHE pin showed "PHEWB".
+
+The ruling on question 3 stands. After the data move, the three-literal test
+would have dropped live health from the PHE pins, because `pump_station` is
+not one of the three literals. The pins now show the type label next to the
+organization code ("Pump station · PHEWB").

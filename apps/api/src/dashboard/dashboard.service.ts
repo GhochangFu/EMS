@@ -49,7 +49,10 @@ export class DashboardService {
       id: string;
       name: string;
       code: string;
-      type: "smoc_campus" | "rsmoc" | "csmoc";
+      // F4.157 (D1): the type is no longer a closed set at the row-shape
+      // level — `bms.location_types` is the vocabulary now.
+      type: string;
+      type_label: string;
       province: string | null;
       org_id: string;
       org_code: string;
@@ -86,6 +89,7 @@ export class DashboardService {
         l.name,
         l.code,
         l.type,
+        COALESCE(lt.label, l.type) AS type_label,
         l.province,
         o.id AS org_id,
         o.code AS org_code,
@@ -111,6 +115,7 @@ export class DashboardService {
         )::int AS critical_alarms
       FROM bms.locations l
       INNER JOIN bms.organizations o ON o.id = l.organization_id
+      LEFT JOIN bms.location_types lt ON lt.code = l.type
       LEFT JOIN bms.rtus r ON r.location_id = l.id
       LEFT JOIN bms.assets a
         ON a.location_id = l.id
@@ -120,7 +125,7 @@ export class DashboardService {
       LEFT JOIN bms.alarms al ON al.asset_id = a.id
       WHERE l.active = true
         AND ($1::uuid[] IS NULL OR l.id = ANY($1::uuid[]))
-      GROUP BY l.id, l.name, l.code, l.type, l.province, o.id, o.code, o.name
+      GROUP BY l.id, l.name, l.code, l.type, lt.label, l.province, o.id, o.code, o.name
       ORDER BY l.name
       `,
       [opts?.locationIds ?? null, opts?.assetIds ?? null],
@@ -131,6 +136,7 @@ export class DashboardService {
         name: row.name,
         code: row.code,
         type: row.type,
+        typeLabel: row.type_label,
         province: row.province,
         organization: {
           id: row.org_id,

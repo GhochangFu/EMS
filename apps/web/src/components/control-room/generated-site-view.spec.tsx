@@ -117,6 +117,7 @@ function kpis(scopeLabel: "full" | "partial" = "full"): LocationDashboardDto {
     name: "Lotapata",
     code: "PHEWB-LOTAPATA",
     type: "rsmoc",
+    typeLabel: "RSMOC",
     province: null,
     organization: { id: "org-1", code: "PHEWB", name: "PHE West Bengal" },
     rtuCount: 3,

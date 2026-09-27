@@ -1,3 +1,4 @@
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 import pg from "pg";
 
@@ -208,4 +209,172 @@ export async function assertPolicyRefusesMismatchedOrg(
       }),
     ),
   ).rejects.toThrow(/row-level security/i);
+}
+
+/**
+ * `F4.157` (ADR 0077) — the admin write paths refuse a code that is not a live
+ * `bms.location_types` row with a 400 naming the codes, and the Type select's
+ * read is gated like `list`.
+ *
+ * Every fixture code here is in the `F4157-LT-` family, which the test file's
+ * stale sweep reaps; each case registers its row on creation and deletes it
+ * in a `finally`. Each row is created as `pump_station`, and the caller is
+ * `phe-admin`, so it lands in PHEWB. Since `92cdf14c`,
+ * `tests/f4.157-location-types-schema.integration.test.ts` I5 reads only the
+ * PHE seed's own rows (`meta ? 'phe'`), which these are not, so I5 does not
+ * constrain the type these rows carry.
+ */
+function f4157Code(tag: string): string {
+  return `F4157-LT-${tag}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+}
+
+async function createF4157Location(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  code: string,
+  type: string,
+  register: (id: string) => void,
+) {
+  const created = await ctx.svc.create(jwt, {
+    organizationId: ctx.organizationId,
+    code,
+    slug: code.toLowerCase(),
+    name: "F4.157 location type check",
+    type,
+    latitude: 0,
+    longitude: 0,
+  });
+  register(created.id);
+  return created;
+}
+
+async function countByCode(ctx: SvcWithFixtures, code: string): Promise<number> {
+  const { rows } = await ctx.ownerPool.query<{ n: number }>(
+    "SELECT count(*)::int AS n FROM bms.locations WHERE code = $1",
+    [code],
+  );
+  return rows[0]?.n ?? -1;
+}
+
+/** L1 — `create` with an unknown type is a 400, not the foreign key's 500. */
+export async function assertCreateRefusesAnUnknownTypeWithA400(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  register: (id: string) => void,
+): Promise<void> {
+  let refused: unknown = null;
+  try {
+    await createF4157Location(ctx, jwt, f4157Code("NOPE"), "nope", register);
+  } catch (err) {
+    refused = err;
+  }
+  expect(
+    refused,
+    "an unknown location type must be refused with a BadRequestException",
+  ).toBeInstanceOf(BadRequestException);
+}
+
+/**
+ * L1 absence — the refused create wrote no row. Read by `code` with the query
+ * L1's positive control proves can find a created row.
+ */
+export async function assertARefusedCreateWritesNoRow(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  register: (id: string) => void,
+): Promise<void> {
+  const code = f4157Code("ABSENT");
+  await createF4157Location(ctx, jwt, code, "nope", register).catch(() => undefined);
+  expect(await countByCode(ctx, code), "a refused create must leave no location row").toBe(0);
+}
+
+/** L1 positive control — a live type creates the row the absence query can see. */
+export async function assertCreateAcceptsALiveType(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  register: (id: string) => void,
+): Promise<void> {
+  const code = f4157Code("LIVE");
+  const created = await createF4157Location(ctx, jwt, code, "pump_station", register);
+  try {
+    expect(await countByCode(ctx, code), "the absence query must see a created row").toBe(1);
+  } finally {
+    await ctx.ownerPool.query("DELETE FROM bms.locations WHERE id = $1", [created.id]);
+  }
+}
+
+/** L2 — `update` naming an unknown type is a 400. */
+export async function assertUpdateRefusesAnUnknownTypeWithA400(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  register: (id: string) => void,
+): Promise<void> {
+  const created = await createF4157Location(ctx, jwt, f4157Code("UPD"), "pump_station", register);
+  try {
+    let refused: unknown = null;
+    try {
+      await ctx.svc.update(jwt, created.id, { type: "nope" });
+    } catch (err) {
+      refused = err;
+    }
+    expect(
+      refused,
+      "an unknown location type must be refused with a BadRequestException",
+    ).toBeInstanceOf(BadRequestException);
+  } finally {
+    await ctx.ownerPool.query("DELETE FROM bms.locations WHERE id = $1", [created.id]);
+  }
+}
+
+/** L2 — the refused update leaves the row's type as it was. */
+export async function assertARefusedUpdateLeavesTheTypeUnchanged(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  register: (id: string) => void,
+): Promise<void> {
+  const created = await createF4157Location(ctx, jwt, f4157Code("KEEP"), "pump_station", register);
+  try {
+    await ctx.svc.update(jwt, created.id, { type: "nope" }).catch(() => undefined);
+    const { rows } = await ctx.ownerPool.query<{ type: string }>(
+      "SELECT type FROM bms.locations WHERE id = $1",
+      [created.id],
+    );
+    expect(rows[0]?.type, "a refused update must leave the stored type unchanged").toBe("pump_station");
+  } finally {
+    await ctx.ownerPool.query("DELETE FROM bms.locations WHERE id = $1", [created.id]);
+  }
+}
+
+/** L3 — `listLocationTypes` refuses a caller who is not a master-data user with a 403. */
+export async function assertListLocationTypesRefusesANonMasterDataUser(
+  svc: LocationsAdminService,
+  nonMasterDataJwt: JwtPayload,
+): Promise<void> {
+  let refused: unknown = null;
+  try {
+    await svc.listLocationTypes(nonMasterDataJwt);
+  } catch (err) {
+    refused = err;
+  }
+  expect(
+    refused,
+    "a non-master-data user must be refused with a ForbiddenException",
+  ).toBeInstanceOf(ForbiddenException);
+}
+
+/**
+ * L4 — `listLocationTypes` returns `{ items }`, the four seeded types in
+ * order among them. Also L3's positive control: a master-data user is served.
+ *
+ * Filtered to the seeded four: ADR 0077's extension path is one INSERT, and a
+ * fifth type must not redden a gate about the first four. An empty `items`
+ * still fails, because the filtered list is then empty too.
+ */
+export async function assertListLocationTypesReturnsTheFour(
+  svc: LocationsAdminService,
+  jwt: JwtPayload,
+): Promise<void> {
+  const seeded = ["smoc_campus", "rsmoc", "csmoc", "pump_station"];
+  const { items } = await svc.listLocationTypes(jwt);
+  expect(items.map((row) => row.code).filter((code) => seeded.includes(code))).toEqual(seeded);
 }

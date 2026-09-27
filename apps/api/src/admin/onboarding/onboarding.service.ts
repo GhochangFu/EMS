@@ -24,6 +24,7 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
@@ -58,6 +59,7 @@ export class OnboardingService {
     private readonly commitService: OnboardingCommitService,
     private readonly excelService: OnboardingExcelService,
     private readonly catalogService: OnboardingCatalogService,
+    private readonly vocabularies: VocabulariesService,
   ) {}
 
   /** Creates a new onboarding session for an organization. */
@@ -395,7 +397,10 @@ export class OnboardingService {
     }
 
     const draft = session.draft as OnboardingDraft;
-    const parsed = this.excelService.parseUpload(buffer);
+    // F4.157 / ADR 0077 decision 7: the parser checks the type cell against the
+    // live vocabulary, read here so the parser itself stays free of the database.
+    const locationTypeCodes = (await this.vocabularies.listLocationTypes()).map((row) => row.code);
+    const parsed = this.excelService.parseUpload(buffer, locationTypeCodes);
     const orgPointKeys = await this.catalogService.listPointKeys(session.organizationId);
     const useExistingPointKeys = orgPointKeys.length > 0;
     const patch = this.excelService.toDraftPatch(parsed, draft, { useExistingPointKeys });

@@ -14,6 +14,7 @@ import {
   onboardingDraftSchema,
   onboardingSessionDtoSchema,
 } from "./onboarding";
+import { locationTypeCodeSchema } from "./location-types";
 import { assetDomainCodeSchema } from "./operations";
 
 /**
@@ -207,7 +208,9 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
 
 /**
  * The number of string fields those five schemas hold between them —
- * 5 + 6 + 5 + 4 + 4.
+ * 6 + 6 + 5 + 4 + 4 (`location` gained `type` — `F4.157`, `locationTypeCodeSchema`
+ * is a `ZodString` under its `.optional()` wrapper, same as every other
+ * optional string field the walk already counts).
  *
  * **Written as a literal on purpose: it is the non-vacuity anchor** (AGENTS.md
  * §4.4). Both key-set comparisons below are satisfied by two empty sets, so a
@@ -216,7 +219,7 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
  * no schema at all. Repair the walk when this number is what fails; do not
  * adjust the number to match a broken walk.
  */
-const DRAFT_STRING_FIELD_COUNT = 24;
+const DRAFT_STRING_FIELD_COUNT = 25;
 
 /** Only the wrappers zod puts *outside* the string: `.optional()`, `.default()`, `.nullable()`. */
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
@@ -377,10 +380,18 @@ export function assertDraftStringBoundsAreEnforced(): void {
         `the schema reports ${String(schema.maxLength)}`,
     );
 
-    // Length only. `assets.domain` is the single exception and it is not an
-    // exception this file grants — `assetDomainCodeSchema` is `.min(1).max(64)`
-    // and is shared with four other vocabularies.
-    const expectedMin = key === "assets.domain" ? assetDomainCodeSchema.minLength : null;
+    // Length only. `assets.domain` and `location.type` are the two exceptions
+    // and neither is one this file grants — `assetDomainCodeSchema` is
+    // `.min(1).max(64)` and shared with four other vocabularies;
+    // `locationTypeCodeSchema` is `.min(1).max(32)` and shared with three
+    // other contract files (`F4.157`, D1). Both floors bind the value when it
+    // is present; `.optional()` is what still admits an absent one.
+    const expectedMin =
+      key === "assets.domain"
+        ? assetDomainCodeSchema.minLength
+        : key === "location.type"
+          ? locationTypeCodeSchema.minLength
+          : null;
     assert(
       schema.minLength === expectedMin,
       `${key} must carry no minimum on the response contract (expected ` +
@@ -440,6 +451,26 @@ export function assertDraftStringBoundsAreEnforced(): void {
         (overBound.success ? "it parsed" : JSON.stringify(overBound.error.issues)),
     );
   }
+}
+
+/**
+ * `F4.157` (ADR 0077 D4, OQ2) — `location.type` is optional between turns: the
+ * operator may have named the location before the wizard learned its type.
+ * C4's mutation is removing `.optional()`.
+ */
+export function assertDraftLocationParsesWithoutType(): void {
+  const parsed = onboardingDraftLocationSchema.safeParse({
+    code: "DEMO_LOC",
+    slug: "demo-loc",
+    name: "Demo Location",
+    latitude: -25.7,
+    longitude: 28.2,
+  });
+  assert(
+    parsed.success,
+    "a draft location without type must parse, got: " +
+      (parsed.success ? "" : JSON.stringify(parsed.error.issues)),
+  );
 }
 
 /**

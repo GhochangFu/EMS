@@ -232,7 +232,9 @@ export class OnboardingExcelService {
     const rows: string[][] = [
       ["LOCATION"],
       [...LOCATION_HEADERS],
-      [locationExample, prefix, slug, "smoc_campus", "22.3159", "87.3222", "Odisha"],
+      // F4.157 (owner ruling OQ3): the example row uses a seeded code that
+      // describes an ordinary Ion Exchange site.
+      [locationExample, prefix, slug, "pump_station", "22.3159", "87.3222", "Odisha"],
       [],
       ["RTUS"],
       [...RTU_HEADERS],
@@ -279,8 +281,14 @@ export class OnboardingExcelService {
    * cap below: this is a public method, and any future caller reaching it
    * without the interceptor would otherwise be unbounded — the same reason
    * `mapping-sheet-rows.ts` keeps both.
+   *
+   * `activeLocationTypeCodes` is the live `bms.location_types` vocabulary
+   * (`F4.157`, ADR 0077 decision 7), read by the caller so this parser stays
+   * free of the database. It is **required**, not optional: an optional list
+   * at this boundary would let a caller forget it and every type cell would be
+   * refused, or — worse, with a fallback — accepted.
    */
-  parseUpload(buffer: Buffer): ParsedExcel {
+  parseUpload(buffer: Buffer, activeLocationTypeCodes: readonly string[]): ParsedExcel {
     if (buffer.length > MAX_IMPORT_FILE_BYTES) {
       throw new BadRequestException(
         `File is ${buffer.length} bytes, more than the ${MAX_IMPORT_FILE_BYTES}-byte limit`,
@@ -377,7 +385,7 @@ export class OnboardingExcelService {
       }
     }
 
-    const location = this.parseLocation(locationRows);
+    const location = this.parseLocation(locationRows, activeLocationTypeCodes);
     const { rtus: parsedRtus, rtuCredentials } = this.parseRtus(rtuRows);
     const { rtus, displayNameFixes } = this.normalizeRtuDisplayNames(parsedRtus);
     const rtuCodeToIndex = new Map(rtus.map((rtu, index) => [rtu.code, index]));
@@ -436,7 +444,10 @@ export class OnboardingExcelService {
     return section;
   }
 
-  private parseLocation(rows: string[][]): NonNullable<OnboardingDraft["location"]> {
+  private parseLocation(
+    rows: string[][],
+    activeLocationTypeCodes: readonly string[],
+  ): NonNullable<OnboardingDraft["location"]> {
     const headers = rows[0].map((h) => h.toLowerCase());
     const values = rows[1];
     const get = (key: string, fallback = ""): string => {
@@ -445,9 +456,6 @@ export class OnboardingExcelService {
     };
     const lat = Number.parseFloat(get("latitude", "-25.7"));
     const lng = Number.parseFloat(get("longitude", "28.2"));
-    const typeRaw = get("type", "smoc_campus");
-    const type =
-      typeRaw === "rsmoc" || typeRaw === "csmoc" ? typeRaw : ("smoc_campus" as const);
     // F4.104 — bounded **after** the transform, in `LOCATION_HEADERS` column
     // order so a row with two long cells always gets the same sentence.
     //
@@ -460,11 +468,12 @@ export class OnboardingExcelService {
     // `assertCellLengthGuardsSeeTheFoldedValue` in
     // `onboarding-excel-cell-bounds.spec.ts` is what refuses that edit.
     // (`.trim()` is not the reason: `sectionRows` has already trimmed every
-    // cell, and `get` does not trim again.) `latitude`, `longitude` and `type`
-    // are deliberately unbounded —
-    // the first two are `Number.parseFloat` results guarded by
-    // `Number.isFinite`, and `type` is compared against two literals and
-    // otherwise replaced, so no cell text survives any of the three.
+    // cell, and `get` does not trim again.) `latitude` and `longitude` are
+    // deliberately unbounded — both are `Number.parseFloat` results guarded by
+    // `Number.isFinite`, so no cell text survives either. `type` is not bounded
+    // by length either, and needs no bound: it is refused below unless its
+    // folded value is one of the active codes, so the only text that reaches
+    // the draft is a vocabulary row's own code.
     const name = get("name");
     const code = get("code").toUpperCase();
     const slug = get("slug").toLowerCase();
@@ -472,6 +481,27 @@ export class OnboardingExcelService {
     this.refuseIfTooLong("LOCATION", null, "name", name, ONBOARDING_DRAFT_STRING_MAX["location.name"]);
     this.refuseIfTooLong("LOCATION", null, "code", code, ONBOARDING_DRAFT_STRING_MAX["location.code"]);
     this.refuseIfTooLong("LOCATION", null, "slug", slug, ONBOARDING_DRAFT_STRING_MAX["location.slug"]);
+    // F4.157 / ADR 0077 decision 7 — checked in `LOCATION_HEADERS` column
+    // order, after `slug` and before `province`, like the length checks. The
+    // old code replaced anything that was not `rsmoc` or `csmoc` with
+    // `smoc_campus`, so a typo became a campus silently. Now an empty or
+    // unknown cell refuses the upload, in the `parseRtus` protocol shape: the
+    // sentence names the row, the length it read and the codes to use, and
+    // never repeats the cell (AGENTS.md §4.3). Case and spacing are folded
+    // first, for the reason `parseRtus` gives for `protocol`.
+    const type = get("type").trim().toLowerCase();
+    if (type === "") {
+      throw new BadRequestException(
+        `LOCATION row 1 has an empty type; use one of ${activeLocationTypeCodes.join(", ")} ` +
+          "and upload the workbook again",
+      );
+    }
+    if (!activeLocationTypeCodes.includes(type)) {
+      throw new BadRequestException(
+        `LOCATION row 1 has an unknown type of ${type.length} characters; ` +
+          `use one of ${activeLocationTypeCodes.join(", ")} and upload the workbook again`,
+      );
+    }
     this.refuseIfTooLong(
       "LOCATION",
       null,

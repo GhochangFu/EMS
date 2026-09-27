@@ -3,11 +3,15 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  editingShowsTheRowsOwnTypeSelected,
   editPrefillsTheTimezone,
   emptyTimezoneSubmitsNull,
   formHasATimezoneInputWithADatalist,
   listRendersDashForANullTimezone,
+  noSpecCallReachesTheNetwork,
   typedTimezoneIsSubmitted,
+  typeSelectListsTheFourTypesInOrder,
+  untouchedCreatePostsTheFirstListedType,
 } from "./locations-page.spec";
 
 /**
@@ -41,5 +45,21 @@ describe("E4.1b locations page — the Timezone field", () => {
 
   it("W5 the list renders — for a null timezone and the name where set", async () => {
     await listRendersDashForANullTimezone();
+  });
+
+  it("P1 the Type select lists the four types in order", async () => {
+    await typeSelectListsTheFourTypesInOrder();
+  });
+
+  it("P2 an untouched create posts the first listed type", async () => {
+    await untouchedCreatePostsTheFirstListedType();
+  });
+
+  it("P3 editing shows the row's own type selected", async () => {
+    await editingShowsTheRowsOwnTypeSelected();
+  });
+
+  it("P4 no spec call reaches the network", async () => {
+    await noSpecCallReachesTheNetwork();
   });
 });

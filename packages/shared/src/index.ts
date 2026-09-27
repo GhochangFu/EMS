@@ -35,6 +35,7 @@ import type * as E from "./contracts/envelopes";
 import type * as Esc from "./contracts/escalation";
 import type * as GSV from "./contracts/generated-site-view";
 import type * as He from "./contracts/health";
+import type * as Loc from "./contracts/location-types";
 import type * as Ms from "./contracts/mapping-sheet";
 import type * as Cv from "./contracts/metric-catalog-values";
 import type * as N from "./contracts/notifications";
@@ -656,6 +657,10 @@ export type OnboardingCommitResponseDto = z.infer<
 export type OrganizationsListResponse = z.infer<typeof E.organizationsListResponseSchema>;
 export type LocationsListResponse = z.infer<typeof E.locationsListResponseSchema>;
 export type RtusListResponse = z.infer<typeof E.rtusListResponseSchema>;
+/** `F4.157` (ADR 0077, D1/D3) — one `bms.location_types` row. */
+export type LocationTypeDto = z.infer<typeof Loc.locationTypeDtoSchema>;
+/** `GET /admin/location-types`. */
+export type LocationTypesListResponse = z.infer<typeof E.locationTypesListResponseSchema>;
 export type AssetsListResponse = z.infer<typeof E.assetsListResponseSchema>;
 export type AssetPointsListResponse = z.infer<typeof E.assetPointsListResponseSchema>;
 export type PointKeysListResponse = z.infer<typeof E.pointKeysListResponseSchema>;

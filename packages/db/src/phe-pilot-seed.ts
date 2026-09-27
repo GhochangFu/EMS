@@ -182,7 +182,7 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       code: locationCode,
       slug,
       name: head.StationName,
-      type: "rsmoc" as const,
+      type: "pump_station" as const,
       province: "West Bengal",
       capital: null,
       latitude: Number(head.Latitude),

@@ -34,9 +34,17 @@ function assert(condition: boolean, message: string): void {
 }
 
 /**
+ * The four seeded `bms.location_types` codes (`F4.157`), passed where
+ * `OnboardingService.uploadExcel` passes the live vocabulary.
+ */
+const LOCATION_TYPE_CODES = ["smoc_campus", "rsmoc", "csmoc", "pump_station"] as const;
+
+/**
  * Row 2 of the template: the one `LOCATION` data row. `parseLocation` reads
- * `rows[1]` of its own section and nothing else, which is why the refusals from
- * that section carry no row number to count.
+ * `rows[1]` of its own section and nothing else, which is why the length
+ * refusals from that section carry no row number to count. (The `type`
+ * refusal, `F4.157`, says "LOCATION row 1" to keep the `parseRtus` protocol
+ * shape.)
  */
 const LOCATION_DATA_ROW = 2;
 
@@ -85,7 +93,7 @@ type BoundedCellCase = {
  *
  * **Six** headers are deliberately absent: `port`, `latitude` and `longitude`
  * (numeric parses guarded by `Number.isFinite`), `tls` (compared against four
- * literals), `type` (two literals, everything else replaced) and the `rtu_code`
+ * literals), `type` (refused unless an active code, `F4.157`) and the `rtu_code`
  * column of the `ASSETS` section (a lookup key into `rtuCodeToIndex`, never
  * stored). `topic` and `protocol` are bounded, but by `F4.102`'s own checks
  * rather than by this table. Each reason is written at its own site in the
@@ -258,7 +266,10 @@ export function assertOverlongCellsAreRefused(): void {
     const legalValue = "-".repeat(max);
     const legalRows = templateRows();
     write(legalRows, legalValue);
-    const parsed = new OnboardingExcelService().parseUpload(buildWorkbookBuffer(legalRows));
+    const parsed = new OnboardingExcelService().parseUpload(
+      buildWorkbookBuffer(legalRows),
+      LOCATION_TYPE_CODES,
+    );
     assert(
       read(parsed) === legalValue,
       `a ${where} cell of exactly ${max} characters parses whole, got ${read(parsed).length}`,
@@ -334,6 +345,7 @@ export function assertOverlongCellsAreRefused(): void {
   // And the honest sheet is untouched — the template's own cells are short.
   const template = new OnboardingExcelService().parseUpload(
     new OnboardingExcelService().buildTemplateBuffer("Berhampur"),
+    LOCATION_TYPE_CODES,
   );
   assert(
     template.location.name === "Berhampur" && template.rtus.length === 2 && template.assets.length === 3,
@@ -369,7 +381,7 @@ export function assertPartialWorkbookStillParses(): void {
   writeCell(rows, SECOND_ASSET_ROW, 1, "");
 
   const service = new OnboardingExcelService();
-  const parsed = service.parseUpload(buildWorkbookBuffer(rows));
+  const parsed = service.parseUpload(buildWorkbookBuffer(rows), LOCATION_TYPE_CODES);
   assert(parsed.location.code === "", `the blank code cell parses to an empty string, got ${JSON.stringify(parsed.location.code)}`);
   assert(
     parsed.assets[1].name === parsed.assets[1].code && parsed.assets[1].name !== "",

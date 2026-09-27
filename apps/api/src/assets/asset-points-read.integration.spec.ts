@@ -407,7 +407,15 @@ export async function assertAdminListStillRefusesTheRole(pools: Pools, fx: Fixtu
 /** `GET /admin/locations` stays refused for the role (review, Security Low — pinned by message). */
 export async function assertAdminLocationsListStillRefusesTheRole(pools: Pools): Promise<void> {
   const { access } = services(pools);
-  const admin = new LocationsAdminService(pools.fleetDb, pools.fleetDb, access, NO_AUDIT);
+  // `F4.157` — the refusal fires before any vocabulary read, so the stub the
+  // asset-groups case below uses is enough; reaching it would be a TypeError.
+  const admin = new LocationsAdminService(
+    pools.fleetDb,
+    pools.fleetDb,
+    access,
+    NO_AUDIT,
+    {} as unknown as VocabulariesService,
+  );
   await assertRefusedAsNotMasterData("admin location list", () =>
     admin.list(jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin")),
   );

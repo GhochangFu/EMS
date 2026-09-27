@@ -2,7 +2,10 @@ import type pg from "pg";
 
 import { afterAll, beforeAll, describe, it } from "vitest";
 
-import { assertOpenAlarmCountsFollowClearedAt } from "./dashboard.integration.spec";
+import {
+  assertLocationKpiTypeLabelJoinsTheLookup,
+  assertOpenAlarmCountsFollowClearedAt,
+} from "./dashboard.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 
 /**
@@ -40,5 +43,9 @@ describe.skipIf(!connectionString)("F3.10 — dashboard open-alarm counts follow
 
   it("counts an acknowledged, uncleared alarm as open and excludes a cleared, unacknowledged one", async () => {
     await assertOpenAlarmCountsFollowClearedAt(pool);
+  }, 60_000);
+
+  it("K3 (F4.157 U8) reports the location_types label, not the raw code, for a csmoc location", async () => {
+    await assertLocationKpiTypeLabelJoinsTheLookup(pool);
   }, 60_000);
 });
