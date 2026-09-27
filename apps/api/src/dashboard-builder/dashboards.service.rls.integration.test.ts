@@ -300,8 +300,10 @@ describe.skipIf(!connectionString)(
         await ownerPool.query(`DELETE FROM bms.dashboards WHERE id = ANY($1::uuid[])`, [dashboardIds]);
       }
       // After the dashboards: `dashboards_asset_group_id_fkey` is NO ACTION, so the group can go
-      // only once every dashboard that references it is gone.
+      // only once every dashboard that references it is gone — including one a regression created
+      // outside `dashboardIds`, which would otherwise fail this delete with 23503 and skip the rest.
       if (createdAssetGroupIdForCleanup) {
+        await ownerPool.query(`DELETE FROM bms.dashboards WHERE asset_group_id = $1`, [createdAssetGroupIdForCleanup]);
         await ownerPool.query(`DELETE FROM bms.asset_groups WHERE id = $1`, [createdAssetGroupIdForCleanup]);
       }
       if (multiOrgUserIdForCleanup) {
