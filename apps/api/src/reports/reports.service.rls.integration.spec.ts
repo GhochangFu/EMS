@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { refreshAggregatesFrom } from "@bms/db";
 import type pg from "pg";
 
+import { retryOnConcurrentRefresh } from "../testing/cagg-materialize";
 import type { EnergyReportQuery } from "./reports.schema";
 import { ReportsService } from "./reports.service";
 
@@ -296,7 +297,11 @@ export async function resolveEnergyFixtureAssets(
  * hand-rolled one: it takes the role (`bms_rollup`) itself, refreshes every level
  * finest-first, caps the window at `now()` (watermark-safe), and applies the
  * `REFRESH_MARGIN_MS` a bare `refresh_continuous_aggregate(view, from, now())`
- * needs to not silently skip a boundary bucket.
+ * needs to not silently skip a boundary bucket. `refreshAggregatesFrom` already
+ * retries `55P03` internally with `REQUEST_PATH_RETRY` (2 attempts, 1 s) — a
+ * production request-path budget sized for a live API call, not for a fixture
+ * racing three sibling integration suites under `maxWorkers: 2`, so this call is
+ * wrapped a second time in `retryOnConcurrentRefresh` (`F4.71`, `FIXTURE_REFRESH_RETRY`).
  */
 export async function setUpEnergyFixture(
   ownerPool: pg.Pool,
@@ -359,7 +364,7 @@ export async function setUpEnergyFixture(
   // this fixture and the rows would orphan. Clean up here before rethrowing, so
   // the "leaves nothing behind" guarantee holds even on a failed setup.
   try {
-    await refreshAggregatesFrom(ownerPool, new Date(refreshFromIso));
+    await retryOnConcurrentRefresh(() => refreshAggregatesFrom(ownerPool, new Date(refreshFromIso)));
   } catch (err) {
     await cleanupEnergyFixture(ownerPool, fx);
     throw err;
@@ -405,7 +410,7 @@ export async function cleanupEnergyFixture(
     // rows are recomputed from a now-empty raw range and no orphan aggregate row
     // survives (ADR 0024 fact 7). The DELETE ran first, so even if this refresh
     // fails the raw rows are already gone.
-    await refreshAggregatesFrom(ownerPool, new Date(fx.refreshFromIso));
+    await retryOnConcurrentRefresh(() => refreshAggregatesFrom(ownerPool, new Date(fx.refreshFromIso)));
   } catch (err: unknown) {
     process.stderr.write(
       `\n[E7.1b] WARNING: energy RLS fixture cleanup failed: ` +
