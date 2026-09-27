@@ -6404,3 +6404,25 @@ Medium.
 
 **Cascade:** no row lists `F4.166` in *Depends*. No `chore(agents):`
 sentence is owed: AGENTS.md does not describe this helper.
+
+### `F4.141` — the three remaining `rtus` unique constraints answer 409 ✅ 2026-09-27
+
+PR #598, squash `01a3640f`; plan `docs/plans/f4.141-rtus-unique-conflicts.md`.
+No ADR (owner ruling: this row as written).
+
+`POST /admin/rtus` and `PATCH /admin/rtus/:id` answer a duplicate
+`externalRtuId`, `mqttTopic` or `code` within a location with `409` and a
+constant message, where the driver's `23505` reached Nest as `500`. `F4.60`'s
+one-constraint translation became a map over all four `bms.rtus` unique
+constraints; anything else is rethrown by identity. The owner ruled the three
+new messages, the location-scoped wording, and the suite rename.
+
+Gated by map unit cases, a service fake for the rethrow, and six integration
+cells; seven mutations each reddened their assertion. Verified live on the
+rebuilt API from an authenticated SPA tab: three duplicate POSTs and one PATCH
+answered 409 with the exact messages, no driver detail, no 500. Browser N/A.
+Three reviews; two test nits fixed, one informational security note recorded.
+
+**Cascade:** no row lists `F4.141` in *Depends*. New row `F4.167` (the RLS
+suite's orphan audit rows) and a note on `F4.113`. No `chore(agents):` §6
+change owed.
