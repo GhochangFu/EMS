@@ -373,10 +373,14 @@ async function attachAForeignOrgAsset(
     organization_id: string;
     location_id: string;
   }>(
+    // `created_at` leads (`F4.171`): `health-rollup` and `pue-ratio` commit a
+    // temporary organization with an active location, and a random uuid sorting
+    // first would hang this suite's asset off it — then that suite's teardown
+    // fails on the foreign key. The oldest foreign location is a seeded row.
     `SELECT l.organization_id, l.id AS location_id
        FROM bms.locations l
       WHERE l.organization_id <> $1 AND l.active = true
-      ORDER BY l.organization_id, l.created_at, l.code
+      ORDER BY l.created_at, l.code
       LIMIT 1`,
     [ctx.organizationId],
   );
