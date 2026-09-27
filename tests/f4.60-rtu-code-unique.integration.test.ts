@@ -102,7 +102,7 @@ describe.skipIf(!connectionString)("F4.60 rtus.rtu_code unique index (migration 
     pool = await openIntegrationPool(connectionString as string, "F4.60");
     const { rows } = await pool.query<{ id: string; organization_id: string }>(
       `SELECT id, organization_id FROM bms.locations WHERE active = true
-        AND organization_id IS NOT NULL ORDER BY code LIMIT 1`,
+        AND organization_id IS NOT NULL ORDER BY created_at, code LIMIT 1`,
     );
     if (!rows[0]) {
       throw new Error(

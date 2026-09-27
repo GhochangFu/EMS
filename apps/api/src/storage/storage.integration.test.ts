@@ -107,10 +107,11 @@ describe.skipIf(!connectionString || !storageConfig)(
       // resolution, on the fleet pool because bms.locations is tenant-policied
       // and the GUC cannot be chosen before the organization is known.
       const orgs = await fleetPool.query<{ id: string }>(
-        `SELECT DISTINCT o.id
+        `SELECT o.id
            FROM bms.organizations o
            JOIN bms.locations l ON l.organization_id = o.id AND l.active = true
-          ORDER BY o.id
+          GROUP BY o.id
+          ORDER BY o.created_at, o.code
           LIMIT 2`,
       );
       if (orgs.rows.length < 2) {

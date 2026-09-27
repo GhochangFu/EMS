@@ -34,9 +34,13 @@ import {
  *  - `F4.67` / `F4.68`: this suite **never reads `bms.assets`**, positionally or by pattern. It
  *    creates its own asset and point. Having no such read is stronger than having a careful
  *    one.
- *  - `F4.53`: no unordered `LIMIT`. `bms.organizations` is read `ORDER BY code`, the one
- *    documented-safe read — `apps/api/src/testing/integration-fixtures.ts:70-77` records that
- *    nothing under `apps/**`, `packages/**` or `tests/**` writes that table from a test.
+ *  - `F4.53`: every positional read of a seeded table resolves the oldest row. This file once
+ *    read `bms.organizations` `ORDER BY code` and called it documented-safe, on the strength of
+ *    `apps/api/src/testing/integration-fixtures.ts` recording that no test writes that table.
+ *    That stopped being true (`F4.71`): suites commit `E13HR-…`, `F330-FRESH-…` and
+ *    `F4161-EMPTY-…` organizations, and every one of them sorts before `PHEWB`. The reads are
+ *    now `ORDER BY created_at, code` — the seed writes ESKOM and PHEWB in one statement, so
+ *    `code` breaks their tie and a younger transient organization can never win.
  *  - `F4.65`: every code and slug carries a per-run `randomUUID()` suffix, so two instances of
  *    this file cannot collide even if the rollback were to fail.
  *  - `F4.66`: no assertion on a count over a whole table. Every assertion is over rows this
@@ -102,8 +106,8 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
     );
     client = (await pool.connect()) as unknown as IntegrationClient;
     const orgs = await client.query<{ id: string }>(
-      // ORDER BY code, never a bare LIMIT — F4.53.
-      `SELECT id FROM bms.organizations ORDER BY code`,
+      // The two oldest (the seeded ESKOM and PHEWB), never the first by code — F4.53/F4.71.
+      `SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 2`,
     );
     if (orgs.rows.length < 2) {
       throw new Error(
@@ -166,7 +170,7 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
 
     // Its OWN asset and point, never a read of bms.assets — F4.67/F4.68.
     const loc = await run(
-      `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`,
+      `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
       [orgA],
     );
     const locationId = loc.rows[0]?.id as string;
@@ -242,21 +246,26 @@ describe.skipIf(!has)("F3.1a — dashboard schema against a live database", () =
   it("permits one scope axis and refuses two", async () => {
     await inTx(async (run) => {
       const loc = await run(
-        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY code`,
-        [orgA],
-      );
-      const group = await run(
-        `SELECT id FROM bms.asset_groups WHERE organization_id = $1 ORDER BY code`,
+        `SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1`,
         [orgA],
       );
       const locationId = loc.rows[0]?.id;
+      // `F4.71` U6 — the group is this transaction's own, created here and discarded by the
+      // ROLLBACK. It used to be `ORDER BY code` over committed rows, which adopts another suite's
+      // committed fixture group whenever its code sorts first, and that suite deletes it before
+      // the `area` insert below references it (`23503`).
+      const group = await run(
+        `INSERT INTO bms.asset_groups (organization_id, location_id, code, name)
+         VALUES ($1, $2, $3, 'F3.1a scope group') RETURNING id`,
+        [orgA, locationId, `F31A-GRP-${RUN}`],
+      );
       const groupId = group.rows[0]?.id;
       // Asserted, not branched on. The both-axes-set case below is the ONLY exercise of
       // dashboards_scope_check, and behind an `if` it would stop running — silently, still
-      // green — the day the seed stopped creating a group for the first organization.
+      // green — the day this insert stopped returning a row.
       expect(
         groupId,
-        "F3.1a: needs an asset group in the first organization — run pnpm db:seed",
+        "F3.1a: could not create this transaction's asset group in the first organization",
       ).toBeDefined();
 
       // Organization-wide: both NULL.

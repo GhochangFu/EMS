@@ -790,7 +790,7 @@ export async function assertCanManageDashboard(
     throw new Error(`F3.1b: ${SEEDED.organizationAdmin} has no organization grant`);
   }
   const foreignOrg = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1`,
     [orgAId],
   );
   const orgBId = foreignOrg.rows[0]?.id;
@@ -815,7 +815,7 @@ export async function assertCanManageDashboard(
   // seeded organizations it can coincide with locOrgId itself, which silently turns finding
   // 4's regression test into a no-op assertion about the location_admin's own organization).
   const locForeignOrg = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1`,
     [locOrgId],
   );
   const locForeignOrgId = locForeignOrg.rows[0]?.id;
@@ -837,17 +837,17 @@ export async function assertCanManageDashboard(
     throw new Error(`F3.1b: ${SEEDED.assetGroupAdmin} has no asset-group grant`);
   }
   const foreignGroup = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.asset_groups WHERE id <> $1 AND organization_id <> $2 LIMIT 1`,
+    `SELECT id FROM bms.asset_groups WHERE id <> $1 AND organization_id <> $2 ORDER BY created_at, id LIMIT 1`,
     [groupId, groupOrgId],
   );
   let foreignGroupId = foreignGroup.rows[0]?.id;
   /** Set only when the seed supplied no foreign asset group and this function made one. */
   let createdForeignGroupId: string | undefined;
   if (!foreignGroupId) {
-    // **A fresh `pnpm db:seed` gives the second organization locations but no asset groups.**
-    // This threw "run pnpm db:seed" until CI proved the advice wrong: a developer database
-    // accumulates them from the pilot seed and from other suites' fixtures, so the requirement
-    // held on every machine and failed on the only database that is actually clean. Without
+    // **Before `F3.41` (62484480) a fresh seed gave the second organization no asset groups**;
+    // `seedAssetGroups` now gives PHEWB twelve, so on a full seed this branch no longer runs.
+    // It threw "run pnpm db:seed" until CI proved the advice wrong, and stays for a partial
+    // seed (`F4.71`). Without
     // this the refusal below has nothing foreign to be refused, which is the assertion the
     // whole block exists for.
     const foreignLocation = await pool.query<{ id: string; organization_id: string }>(
@@ -871,7 +871,7 @@ export async function assertCanManageDashboard(
     throw new Error("F3.1b: could not read or create a foreign asset group");
   }
   const groupForeignOrg = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1`,
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1`,
     [groupOrgId],
   );
   const groupForeignOrgId = groupForeignOrg.rows[0]?.id;
@@ -912,7 +912,7 @@ export async function assertCanManageDashboard(
   // line, and nothing pinned it before this case: the positive control is the assertion just
   // above (same actor, same location, location arm → true).
   const ownLocationGroup = await pool.query<{ id: string }>(
-    `SELECT ag.id FROM bms.asset_groups ag WHERE ag.location_id = $1 LIMIT 1`,
+    `SELECT ag.id FROM bms.asset_groups ag WHERE ag.location_id = $1 ORDER BY ag.created_at, ag.id LIMIT 1`,
     [locId],
   );
   const ownLocationGroupId = ownLocationGroup.rows[0]?.id;

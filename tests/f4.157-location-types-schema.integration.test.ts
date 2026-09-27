@@ -63,7 +63,7 @@ describe.skipIf(!has)("F4.157 — bms.location_types against a live database", (
       "F4.157",
     );
     client = (await pool.connect()) as unknown as IntegrationClient;
-    const orgs = await client.query(`SELECT id FROM bms.organizations ORDER BY code LIMIT 1`);
+    const orgs = await client.query(`SELECT id FROM bms.organizations ORDER BY created_at, code LIMIT 1`);
     orgId = orgs.rows[0]?.id as string;
     if (!orgId) throw new Error("F4.157: needs at least one bms.organizations row — run pnpm db:seed.");
   });

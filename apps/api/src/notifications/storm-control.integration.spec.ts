@@ -811,7 +811,7 @@ async function statusesByKey(
 /** The id of a seeded organization other than `organizationId` — the L1 row's tenant. */
 async function otherOrganization(pool: Pool, organizationId: string): Promise<string> {
   const res = await pool.query<{ id: string }>(
-    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY code LIMIT 1`,
+    `SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1`,
     [organizationId],
   );
   const id = res.rows[0]?.id;
@@ -868,7 +868,7 @@ async function plantDeliveries(
 
 /**
  * One open, rule-less alarm in the rule's organization, against the rule's
- * asset (or, for a rule with none, the organization's first asset), so that
+ * asset (or, for a rule with none, the organization's oldest — seeded — asset), so that
  * `notification_deliveries.alarm_id` has a real row to reference. The pool is
  * the fleet role (`BYPASSRLS`), so no GUC is needed for the insert.
  */
@@ -879,7 +879,7 @@ async function insertFixtureAlarm(pool: Pool, ruleId: string, organizationId: st
        $1,
        COALESCE(
          (SELECT asset_id FROM bms.automation_rules WHERE id = $2),
-         (SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY code LIMIT 1)
+         (SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1)
        ),
        'warning',
        $3

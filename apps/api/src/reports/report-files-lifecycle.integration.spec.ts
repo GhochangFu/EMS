@@ -162,23 +162,25 @@ type CapRun = {
   readonly err: unknown;
   readonly rendersDelta: number;
   readonly callsDelta: readonly string[];
-  readonly countBefore: number;
   readonly countAfter: number;
   readonly putCount: number;
   readonly heads: readonly ({ contentLength: number } | null)[];
 };
 
 /**
- * R-11 on real rows, in PHEWB so the ESKOM rows of other cases never move the
- * threshold: `onDemandCap = <count before> + 2`, two saves land, the third is
- * refused. Every row and object is removed in `finally`.
+ * R-11 on real rows, in this open's own cap organization (`F4.71` U4), which
+ * holds no row at the start of each run: `onDemandCap = 2`, two saves land,
+ * the third is refused. It ran in PHEWB at `<count before> + 2` — one row of
+ * slack against a sibling file's PHEWB save landing between the count and
+ * the second save; nothing else writes to the cap organization, so no count
+ * is read. Every row and object is removed in `finally`.
  */
 async function runCap(fx: ReportFileIntegrationFixtures): Promise<CapRun> {
   const recorder = recordingClient(fx);
-  const countBefore = await countFilesForOrganization(fx.fleetDb, fx.phewbId);
+  const organizationId = fx.capOrganizationId;
   const svc = service(fx, recorder.client, {
     config: {
-      onDemandCap: countBefore + 2,
+      onDemandCap: 2,
       retentionPerSchedule: 24,
       emailMaxBytes: 10_485_760,
       historyUrl: null,
@@ -187,13 +189,11 @@ async function runCap(fx: ReportFileIntegrationFixtures): Promise<CapRun> {
   const renderSpy = vi.spyOn(fx.reports, "energyPdf");
   const saved: ReportFileDto[] = [];
   try {
-    saved.push(await saveAsAdmin(fx, svc, "pdf", fx.phewbId));
-    saved.push(await saveAsAdmin(fx, svc, "pdf", fx.phewbId));
+    saved.push(await saveAsAdmin(fx, svc, "pdf", organizationId));
+    saved.push(await saveAsAdmin(fx, svc, "pdf", organizationId));
     const rendersBefore = renderSpy.mock.calls.length;
     const callsBefore = recorder.calls.length;
-    const err = await captureRejection(() =>
-      svc.saveOnDemand(admin(), { ...PERIOD, format: "pdf", organizationId: fx.phewbId }),
-    );
+    const err = await captureRejection(() => svc.saveOnDemand(admin(), { ...PERIOD, format: "pdf", organizationId }));
     const heads: ({ contentLength: number } | null)[] = [];
     for (const key of recorder.putKeys) {
       heads.push(await headObject(fx.client, key));
@@ -202,8 +202,7 @@ async function runCap(fx: ReportFileIntegrationFixtures): Promise<CapRun> {
       err,
       rendersDelta: renderSpy.mock.calls.length - rendersBefore,
       callsDelta: recorder.calls.slice(callsBefore),
-      countBefore,
-      countAfter: await countFilesForOrganization(fx.fleetDb, fx.phewbId),
+      countAfter: await countFilesForOrganization(fx.fleetDb, organizationId),
       putCount: recorder.putKeys.length,
       heads,
     };
@@ -230,13 +229,10 @@ export async function theCapRefusesBeforeTheRenderAndThePut(fx: ReportFileIntegr
   assert(run.callsDelta.length === 0, `the refused save must make no S3 call; delta ${run.callsDelta.join(", ")}`);
 }
 
-/** …and leaves exactly the cap behind: `before + 2` rows as fleet, and both objects present. */
+/** …and leaves exactly the cap behind: `2` rows as fleet, and both objects present. */
 export async function theCapLeavesExactlyTheCapBehind(fx: ReportFileIntegrationFixtures): Promise<void> {
   const run = await runCap(fx);
-  assert(
-    run.countAfter === run.countBefore + 2,
-    `PHEWB must hold exactly ${run.countBefore + 2} rows; the fleet count is ${run.countAfter}`,
-  );
+  assert(run.countAfter === 2, `the cap organization must hold exactly 2 rows; the fleet count is ${run.countAfter}`);
   assert(
     run.heads.length === 2 && run.heads.every((head) => head !== null),
     `both put keys must be in the bucket; heads: ${run.heads.map((h) => String(h?.contentLength)).join(", ")}`,

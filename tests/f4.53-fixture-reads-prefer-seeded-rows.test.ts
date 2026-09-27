@@ -11,8 +11,9 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  * `tests/integration-fixture-isolation.test.ts` already carries `F4.67` and
  * `F4.68` for `bms.assets`, and says in its own text that `F4.53` — the
  * unordered `LIMIT` — is "a different mechanism" it does not yet enforce. This
- * file is that rule, and it covers all four tables the mechanism has been seen
- * on: `bms.assets`, `bms.locations`, `bms.point_keys` and `bms.users`.
+ * file is that rule, and it covers all five tables the mechanism has been seen
+ * on: `bms.assets`, `bms.locations`, `bms.organizations`, `bms.point_keys` and
+ * `bms.users`.
  *
  * **Why a new file rather than a rule added to that one**: it is 836 lines
  * against the AGENTS.md §4.5 cap of 1000, and `tests/integration-fixture-sharing.test.ts`
@@ -61,19 +62,61 @@ import { repoRoot, stringLiterals, walk, withoutComments } from "./support/sourc
  * sibling rules carry. A read that resolves the row by name is out of scope by
  * design: naming a row is the *other* fix for this mechanism, and
  * `integration-fixture-sharing.test.ts` owns the collisions that naming creates.
+ *
+ * **The fifth table, `bms.organizations` (`F4.71`).** `energy-cost.integration.spec.ts`
+ * took the first organization `ORDER BY code` that had no tariff row, and every
+ * committed fixture organization in the tree (`E13HR-…`, `F330-FRESH-…`,
+ * `F4161-EMPTY-…`, and since `F4.71` U4 the report cap row's `F35A-CAP-…`)
+ * sorts before `PHEWB` — so the suite adopted a transient
+ * organization with no active locations and failed its own precondition.
+ * `rules.service.rls.integration.test.ts` read `WHERE id <> $1 LIMIT 1` with no
+ * order at all and then planted an asset and a rule under whatever came back.
+ * "Oldest wins" needs a seeded row to win, and here it has one only because of
+ * the tiebreaker: the seed writes `ESKOM` and `PHEWB` in one statement, so their
+ * `created_at` ties and `code` is what makes the read deterministic. A transient
+ * organization is always younger than both, so `ORDER BY created_at, code` can
+ * only resolve a seeded one.
+ *
+ * **Blind spots the `F4.71` sweep met, each fixed by hand where it hid a read:**
+ *
+ *   - `POSITIONAL` needs a `LIMIT`. A read that orders with no `LIMIT` and then
+ *     takes `rows[0]` in JS is positional and invisible — that was the
+ *     `energy-cost` read, the row's own defect, and the five `tests/` schema
+ *     suites that took `rows[0]` and `rows[1]` of `bms.organizations ORDER BY
+ *     code`, until each was rewritten to carry its `LIMIT` so this rule could
+ *     see it. Reverting such a read to its old, `LIMIT`-less text still passes.
+ *   - `NAMED_READ` tests one `SELECT` at a time (`selectSegments`), so an `id =`
+ *     in one subquery no longer hides a positional read in its neighbour — the
+ *     `INSERT … COALESCE(…)` in four notification suites was that shape. It
+ *     still hides one inside the *same* `SELECT`: the `=` in
+ *     `ORDER BY (code = 'ESKOM') DESC` (`alarms.service.rls.integration.test.ts`),
+ *     or an outer read whose `LIMIT` falls after a named subquery, as in
+ *     `WHERE organization_id = (SELECT … WHERE email = $1) LIMIT 1`.
+ *   - `PREFERS_OLDEST` accepts any `created_at` within reach of the `ORDER BY`,
+ *     including another alias's: an `ORDER BY o.code, l.created_at` join orders
+ *     its organizations by code and still passes. It rejects `created_at DESC`
+ *     (and the builder's `desc(x.createdAt)`), which resolves the NEWEST row.
+ *   - The scan walks `apps`, `packages` and `tests` spec files and
+ *     `*.integration.test.ts` suites, plus the shared fixture helpers in
+ *     `apps/api/src/testing/*.ts`. `fixtureLocation` in
+ *     `apps/api/src/testing/integration-fixtures.ts` is why: it was a builder
+ *     read of `bms.locations` ordered by `id` under a docblock that said no test
+ *     writes that table, which `F4.71` found untrue; it now orders by
+ *     `createdAt, code`, and this scan holds it there. `tests/support/` is
+ *     still outside the scan.
  */
 describe("F4.53 — positional fixture reads resolve the oldest row", () => {
-  /** The four tables suites resolve parents and actors from. */
-  const FIXTURE_TABLE = /\bFROM\s+bms\.(assets|locations|point_keys|users)\b/i;
+  /** The five tables suites resolve parents and actors from. */
+  const FIXTURE_TABLE = /\bFROM\s+bms\.(assets|locations|organizations|point_keys|users)\b/i;
   /**
-   * The same four tables in Drizzle's builder spelling.
+   * The same five tables in Drizzle's builder spelling.
    *
    * A string-literal scan cannot see `.from(users).orderBy(asc(users.id)).limit(1)`
    * at all, and `F4.53` quotes exactly that form. The `7543253` review refused to
    * close the row over it for that reason: without this half, a suite written in
    * builder form passes every rule in the tree.
    */
-  const BUILDER_READ = /\.from\(\s*(assets|locations|pointKeys|users)\s*\)/g;
+  const BUILDER_READ = /\.from\(\s*(assets|locations|organizations|pointKeys|users)\s*\)/g;
   /** `LIMIT` is the positional tell, exactly as the `F4.68` rule uses it. */
   const POSITIONAL = /\bLIMIT\b/i;
   /**
@@ -85,8 +128,14 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
    * does elsewhere.
    */
   const NAMED_READ = /\b(?:code|id|email)\s*(?:=|\bIN\s*\(|=\s*ANY)/i;
-  /** The fix: the oldest row, which is always a seeded one. */
-  const PREFERS_OLDEST = /\bORDER\s+BY\b[\s\S]{0,120}?\bcreated_at\b/i;
+  /**
+   * The fix: the oldest row, which is always a seeded one. The first
+   * `created_at` after `ORDER BY` must not be `DESC` — that resolves the
+   * NEWEST row, which is exactly the transient fixture this rule keeps out.
+   */
+  const PREFERS_OLDEST = /\bORDER\s+BY\b(?:(?!\bcreated_at\b)[\s\S]){0,120}\bcreated_at\b(?!\s+DESC\b)/i;
+  /** The builder spelling of the same mistake: `desc(x.createdAt)`. */
+  const BUILDER_NEWEST_FIRST = /\bdesc\s*\(\s*(?:\w+\.)*createdAt\b/;
   /**
    * A probe that projects a constant resolves no row identity, so there is
    * nothing for a concurrent suite to pull away — `select 1 from bms.locations
@@ -146,16 +195,40 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
    */
   const CHAIN_WINDOW = 400;
 
+  /** The shared integration-fixture helpers, scanned beside the suites that call them. */
+  const FIXTURE_HELPERS = /^apps\/api\/src\/testing\/[^/]+\.ts$/;
+
+  /** One SQL text that reads a fixture table positionally and not from the oldest row. */
+  function offends(sql: string): boolean {
+    return (
+      FIXTURE_TABLE.test(sql) &&
+      POSITIONAL.test(sql) &&
+      !NAMED_READ.test(sql) &&
+      !PROJECTS_A_CONSTANT.test(sql) &&
+      !PREFERS_OLDEST.test(sql)
+    );
+  }
+
+  /**
+   * A literal cut at every `SELECT`, each piece running to the next one.
+   *
+   * `NAMED_READ` tests the whole literal, so an `id =` in one subquery hid a
+   * positional read in its neighbour: the `INSERT … COALESCE((SELECT asset_id …
+   * WHERE id = $2), (SELECT id FROM bms.assets … ORDER BY code LIMIT 1))` that
+   * four notification suites carried (`F4.71`). Judged per piece as well, that
+   * second subquery stands on its own. This only ever *adds* offenders — a
+   * literal is still judged whole first — so it cannot hide a read the whole-
+   * literal test would have reported.
+   */
+  function selectSegments(literal: string): string[] {
+    return literal.split(/(?=\bSELECT\b)/i).filter((piece) => /^\s*SELECT\b/i.test(piece));
+  }
+
   /** Every positional fixture read in `source` that does not prefer the oldest row. */
   function offendingReads(source: string): string[] {
     const src = withoutComments(source);
     const literals = stringLiterals(src).filter(
-      (literal) =>
-        FIXTURE_TABLE.test(literal) &&
-        POSITIONAL.test(literal) &&
-        !NAMED_READ.test(literal) &&
-        !PROJECTS_A_CONSTANT.test(literal) &&
-        !PREFERS_OLDEST.test(literal),
+      (literal) => offends(literal) || selectSegments(literal).some(offends),
     );
 
     const chains: string[] = [];
@@ -168,7 +241,9 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
       if (!/\.limit\s*\(/.test(chain)) continue;
       // A named read is out of scope here for the same reason it is there.
       if (/\bwhere\s*\(/.test(chain) && /\beq\s*\(/.test(chain)) continue;
-      if (/\.orderBy\s*\(/.test(chain) && /\bcreatedAt\b/.test(chain)) continue;
+      if (/\.orderBy\s*\(/.test(chain) && /\bcreatedAt\b/.test(chain) && !BUILDER_NEWEST_FIRST.test(chain)) {
+        continue;
+      }
       chains.push(chain.replace(/\s+/g, " ").trim());
     }
     return [...literals, ...chains];
@@ -177,10 +252,12 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
   function scan(): { scanned: number; offenders: string[] } {
     const offenders: string[] = [];
     let scanned = 0;
-    for (const root of ["apps", "packages"]) {
+    for (const root of ["apps", "packages", "tests"]) {
       for (const file of walk(join(repoRoot, root))) {
-        if (!/(\.spec|\.integration\.test)\.tsx?$/.test(file)) continue;
         const rel = relative(repoRoot, file).replace(/\\/g, "/");
+        // The shared fixture helpers are read too: `fixtureLocation` resolves
+        // the location every fixture asset hangs off, and it is not a spec.
+        if (!/(\.spec|\.integration\.test)\.tsx?$/.test(file) && !FIXTURE_HELPERS.test(rel)) continue;
         // An exempt file is still scanned. Only the named queries are skipped,
         // so a new offending read in that same file still fails this rule.
         scanned += 1;
@@ -274,6 +351,55 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
       ),
     ).toEqual([]);
 
+    // `F4.71`: the `rules.service.rls` read — no order at all, and a rule and
+    // an asset are then written under whatever organization it returns.
+    expect(
+      offendingReads(
+        'await pool.query("SELECT id FROM bms.organizations WHERE id <> $1 LIMIT 1", [orgA]);',
+      ),
+    ).toHaveLength(1);
+    // The `energy-cost` read once it carries a `LIMIT`: ordered, but by `code`,
+    // which every committed fixture organization (`E…`, `F…`) wins.
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT id, currency FROM bms.organizations WHERE id <> ALL($1::uuid[]) ORDER BY code LIMIT 1`, [ids]);",
+      ),
+    ).toHaveLength(1);
+    // The fix: `created_at` first, `code` to break the ESKOM/PHEWB tie.
+    expect(
+      offendingReads(
+        'await pool.query("SELECT id FROM bms.organizations WHERE id <> $1 ORDER BY created_at, code LIMIT 1", [orgA]);',
+      ),
+    ).toEqual([]);
+    // A seeded organization named by code is out of scope, as it is for assets.
+    expect(
+      offendingReads("await pool.query(`SELECT id FROM bms.organizations WHERE code = 'ESKOM' LIMIT 1`);"),
+    ).toEqual([]);
+    // The builder spelling of the same table.
+    expect(
+      offendingReads("const [o] = await db.select({ id: organizations.id }).from(organizations).limit(1);"),
+    ).toHaveLength(1);
+    expect(
+      offendingReads(
+        "const [o] = await db.select({ id: organizations.id }).from(organizations)" +
+          ".orderBy(asc(organizations.createdAt), asc(organizations.code)).limit(1);",
+      ),
+    ).toEqual([]);
+
+    // `created_at DESC` resolves the NEWEST row — a transient fixture, not a
+    // seeded one — so it is not the fix, in either spelling.
+    expect(
+      offendingReads(
+        'await pool.query("SELECT id FROM bms.locations WHERE active = true ORDER BY created_at DESC LIMIT 1");',
+      ),
+    ).toHaveLength(1);
+    expect(
+      offendingReads(
+        "const [l] = await db.select({ id: locations.id }).from(locations)" +
+          ".orderBy(desc(locations.createdAt), asc(locations.code)).limit(1);",
+      ),
+    ).toHaveLength(1);
+
     // A different table is not this rule's business — `bms.work_orders` has no
     // seeded fixture row to prefer.
     expect(
@@ -336,6 +462,40 @@ describe("F4.53 — positional fixture reads resolve the oldest row", () => {
           "const other = await db.select().from(locations).orderBy(asc(locations.createdAt));",
       ),
     ).toHaveLength(1);
+  });
+
+  it("a named subquery does not hide a positional one beside it", () => {
+    // `F4.71`: the notification suites' fixture alarm. The first subquery names
+    // its row (`id = $2`), and judged as one literal that hid the second.
+    const coalesce = (order: string): string =>
+      "await pool.query(`INSERT INTO bms.alarms (organization_id, asset_id, severity, message)\n" +
+      "  VALUES ($1, COALESCE(\n" +
+      "    (SELECT asset_id FROM bms.automation_rules WHERE id = $2),\n" +
+      `    (SELECT id FROM bms.assets WHERE organization_id = $1 ORDER BY ${order} LIMIT 1)\n` +
+      "  ), 'warning', $3) RETURNING id`, [org, rule, msg]);";
+    expect(offendingReads(coalesce("code"))).toHaveLength(1);
+    // The fix.
+    expect(offendingReads(coalesce("created_at, code"))).toEqual([]);
+
+    // The same shape in an `UPDATE`, as `f2.23-catalog-code-charset` had it.
+    expect(
+      offendingReads(
+        "await c.query(`UPDATE bms.assets SET code = $1 WHERE id = (SELECT id FROM bms.assets LIMIT 1)`, [x]);",
+      ),
+    ).toHaveLength(1);
+
+    // A read bound to one id is still named, whole or cut.
+    expect(
+      offendingReads("await pool.query(`SELECT id FROM bms.assets WHERE id = $1 LIMIT 1`, [a]);"),
+    ).toEqual([]);
+    // A named read with an existence probe: the probe projects a constant, so
+    // its piece is not a read of any row.
+    expect(
+      offendingReads(
+        "await pool.query(`SELECT id FROM bms.assets a WHERE a.code = $1\n" +
+          "  AND EXISTS (SELECT 1 FROM bms.locations l WHERE l.id = a.location_id LIMIT 1) LIMIT 1`, [c]);",
+      ),
+    ).toEqual([]);
   });
 
   it("the exemption list only gets shorter, and every exemption names a query", () => {
