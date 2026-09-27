@@ -373,23 +373,22 @@ export async function wcAdminCannotReadTheWholeOrganizationSchedule(fx: Schedule
 
 /**
  * F3.5a R-11's promised change, gated: a `schedule_id` row does not count
- * toward `REPORT_ONDEMAND_CAP`. The cap is set to the on-demand count plus
- * one, so the save is admitted only if the scheduled row is excluded.
+ * toward `REPORT_ONDEMAND_CAP`. It runs in this open's own cap organization
+ * (`F4.71` U4), which holds no row but the scheduled one: the cap is `1`, so
+ * the save is admitted only if the scheduled row is excluded. No count is
+ * read — in ESKOM a sibling file's save landing between that read and the
+ * service's locked re-count was a 409.
  */
 export async function aScheduledFileDoesNotCountTowardTheOnDemandCap(fx: ScheduleIntegrationFixtures): Promise<void> {
-  const schedule = await createAs(fx, admin());
-  await insertScheduledFile(fx, schedule.id, fx.base.eskomId, null);
-  const onDemand = await fx.base.fleetDb.execute<{ n: string }>(
-    sql`select count(*)::text as n from bms.report_files where organization_id = ${fx.base.eskomId}::uuid and schedule_id is null`,
-  );
-  const onDemandCount = Number(onDemand.rows[0]?.n ?? "-1");
-  assert(onDemandCount >= 0, "the on-demand count read failed");
+  const organizationId = fx.base.capOrganizationId;
+  const schedule = await createAs(fx, admin(), { organizationId });
+  await insertScheduledFile(fx, schedule.id, organizationId, null);
   const files = reportFilesService(fx.base, fx.base.client, {
-    config: { onDemandCap: onDemandCount + 1, retentionPerSchedule: 24, emailMaxBytes: 10_485_760, historyUrl: null },
+    config: { onDemandCap: 1, retentionPerSchedule: 24, emailMaxBytes: 10_485_760, historyUrl: null },
   });
-  const dto = await files.saveOnDemand(admin(), { startDate: "2026-09-01", endDate: "2026-09-07", format: "pdf", organizationId: fx.base.eskomId });
+  const dto = await files.saveOnDemand(admin(), { startDate: "2026-09-01", endDate: "2026-09-07", format: "pdf", organizationId });
   fx.base.createdFileIds.push(dto.id);
-  fx.base.putKeys.push(buildReportObjectKey({ organizationId: fx.base.eskomId, fileId: dto.id }));
+  fx.base.putKeys.push(buildReportObjectKey({ organizationId, fileId: dto.id }));
   assert(dto.scheduleId === null, "the positive control failed: the on-demand save must answer a row with scheduleId null");
 }
 

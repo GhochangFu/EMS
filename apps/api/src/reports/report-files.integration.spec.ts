@@ -69,9 +69,11 @@ import { ReportsService } from "./reports.service";
  * here reads one as its expectation (see `assetIdsOfLocation`).
  *
  * **The cap row costs two saves, not fifty.** It builds its own service with
- * `REPORT_FILES_CONFIG = { onDemandCap: <count before> + 2 }` in PHEWB, so a
- * row another session left behind moves the threshold rather than turning
- * the third save's 409 into a refusal that proves nothing about the cap.
+ * `REPORT_FILES_CONFIG = { onDemandCap: 2 }` in the open's own cap
+ * organization (`F4.71` U4, `capOrganizationId`), which nothing else writes
+ * to — so no row another session or a sibling file writes can move the
+ * threshold or turn the third save's 409 into a refusal that proves nothing
+ * about the cap.
  *
  * **`jwtFor` is usable here.** Its `sub` is a synthetic uuid that matches no
  * user; `ReportFilesService.resolveActorId`, `MasterDataAuditService.write`
@@ -94,6 +96,16 @@ export type ReportFileIntegrationFixtures = {
   readonly wcId: string;
   /** `admin@bms.local`'s `bms.users.id`, read by email — the audit row's expected actor. */
   readonly adminUserId: string;
+  /**
+   * `F4.71` U4 — a committed organization `F35A-CAP-<uuid8>` this open
+   * created, with no location and no asset, that nothing else in the tree
+   * writes to. The cap rows run here: in ESKOM or PHEWB a sibling file's
+   * save landing between the row's count and the service's locked re-count
+   * (a render and a put apart) turned `count + 1` into a 409. Per open, so
+   * two files — or two instances of one file — never share it; `close`
+   * deletes it by id after the file, schedule and audit sweeps (FK order).
+   */
+  readonly capOrganizationId: string;
   /**
    * The seeded asset ids of one location, read as `bms_fleet` at call time —
    * the independent expectation for the render-scope row. It is an
@@ -781,6 +793,18 @@ export async function openReportFileFixtures(
   });
   await ensureBucket(client);
 
+  // F4.71 U4: committed on the fleet pool, per open — the last step that can
+  // throw, so a failed open leaves no organization — and deleted by id in `close`.
+  const capCode = `F35A-CAP-${randomUUID().slice(0, 8)}`;
+  const { rows: capRows } = await fleetPool.query<{ id: string }>(
+    `INSERT INTO bms.organizations (code, name, currency) VALUES ($1, $2, 'ZAR') RETURNING id`,
+    [capCode, `F3.5a cap fixture ${capCode}`],
+  );
+  const capOrganizationId = capRows[0]?.id;
+  if (!capOrganizationId) {
+    throw new Error(`F4.71: the cap organization ${capCode} was not created`);
+  }
+
   const fx: ReportFileIntegrationFixtures = {
     client,
     fleetDb,
@@ -791,6 +815,7 @@ export async function openReportFileFixtures(
     phewbId,
     wcId,
     adminUserId,
+    capOrganizationId,
     // Seed rows nothing writes to; read at call time so a fixture asset a
     // concurrent suite commits in RSMOC-WC cannot sit between the read and
     // the render scope it is compared with.
@@ -811,18 +836,28 @@ export async function openReportFileFixtures(
   };
 
   const close = async (): Promise<void> => {
-    if (fx.createdFileIds.length > 0) {
-      await fleetPool.query(
-        `DELETE FROM bms.audit_log WHERE entity_type = 'report_file' AND entity_id = ANY($1::uuid[])`,
-        [fx.createdFileIds],
-      );
-      await fleetPool.query(`DELETE FROM bms.report_files WHERE id = ANY($1::uuid[])`, [fx.createdFileIds]);
+    try {
+      if (fx.createdFileIds.length > 0) {
+        await fleetPool.query(
+          `DELETE FROM bms.audit_log WHERE entity_type = 'report_file' AND entity_id = ANY($1::uuid[])`,
+          [fx.createdFileIds],
+        );
+        await fleetPool.query(`DELETE FROM bms.report_files WHERE id = ANY($1::uuid[])`, [fx.createdFileIds]);
+      }
+      if (fx.client.kind === "configured") {
+        const { bucket, ops } = fx.client;
+        await Promise.allSettled(fx.putKeys.map((key) => ops.deleteObject(bucket, key)));
+      }
+      // Last: every row that references it (`report_files`, `report_schedules`
+      // — swept by `openScheduleFixtures` before it calls this — and
+      // `audit_log`) is gone by now, so a `23503` here names a leak.
+      const removed = await fleetPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [capOrganizationId]);
+      if (removed.rowCount !== 1) {
+        throw new Error(`F4.71: expected to delete the cap organization ${capCode}, deleted ${removed.rowCount}`);
+      }
+    } finally {
+      await Promise.all([fleetPool, tenantPool].map((p) => p.end()));
     }
-    if (fx.client.kind === "configured") {
-      const { bucket, ops } = fx.client;
-      await Promise.allSettled(fx.putKeys.map((key) => ops.deleteObject(bucket, key)));
-    }
-    await Promise.all([fleetPool, tenantPool].map((p) => p.end()));
   };
 
   return { fx, close };
