@@ -58,7 +58,7 @@ import type { BmsDb } from "@bms/db";
  * extracted it. This is the third, so it lands here rather than in one suite.
  */
 
-/** A seeded location and its organization. Neither table is written by any test. */
+/** A seeded location and its organization — see {@link fixtureLocation} for why a seeded one. */
 export interface FixtureLocation {
   readonly locationId: string;
   readonly organizationId: string;
@@ -67,7 +67,7 @@ export interface FixtureLocation {
 /**
  * The location every fixture asset hangs off, and its organization.
  *
- * **`F4.71` — the claim above this line used to be false.** It read "nothing
+ * **`F4.71` — the claim this docblock used to make was false.** It read "nothing
  * under `apps/**`, `packages/**` or `tests/**` writes `bms.locations`", which
  * was checked once and stopped being true: many committed-fixture suites
  * (`work-orders.service.rls.integration.test.ts`, and the `F…`/`E…`-prefixed
