@@ -138,6 +138,12 @@ const TEXT_PAIRS: Pair[] = [
   // sensor-table header or the SMOC boards' offline `well` panels.
   { fg: "warning-ink", bg: "well" },
   { fg: "critical-ink-strong", bg: "well" },
+  // F3.65c U10 — the header's Light / Dark switch (`components/theme-switch.tsx`) on `chrome`: the
+  // idle label at 0.85 (also the Logout button's `text-on-dark/85`, undeclared until now), the idle
+  // label under its `hover:bg-on-dark/10` wash, and the pressed label on its `bg-on-dark/15` wash.
+  { fg: "on-dark", bg: "chrome", alpha: 0.85 },
+  { fg: "on-dark", bg: "chrome", alpha: 0.85, wash: { tint: "on-dark", alpha: 0.1 } },
+  { fg: "on-dark", bg: "chrome", wash: { tint: "on-dark", alpha: 0.15 } },
 ];
 
 /**
@@ -168,6 +174,8 @@ const UI_PAIRS: Pair[] = [
   { fg: "ink-hint", bg: "surface" },
   // F3.65c OQ4: the health donut's Fair slice (`health-summary-donut.tsx`) on its `surface` card.
   { fg: "warning-on-dark", bg: "surface" },
+  // F3.65c U10 — the theme switch's focus ring (`focus-visible:ring-on-dark/80`) on `chrome`.
+  { fg: "on-dark", bg: "chrome", alpha: 0.8 },
 ];
 
 /**
