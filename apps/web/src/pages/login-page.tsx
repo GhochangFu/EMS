@@ -61,7 +61,7 @@ export function LoginPage() {
             <h1 className="mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
               Intelligent <span className="text-accent">Building Management</span> · Smart insight, always on.
             </h1>
-            <p className="mt-4 max-w-lg text-sm leading-6 text-on-dark/72">
+            <p className="mt-4 max-w-lg text-sm leading-6 text-on-dark/70">
               Unified enterprise EMS for power, HVAC, water, utilities, alarms,
               and work orders in one operator console for Ion Exchange (India)
               Ltd. operations.
@@ -81,7 +81,7 @@ export function LoginPage() {
                 <div className="font-condensed text-2xl font-bold text-on-dark">
                   {value}
                 </div>
-                <div className="mt-1 text-[11px] uppercase tracking-wide text-on-dark/58">
+                <div className="mt-1 text-[11px] uppercase tracking-wide text-on-dark/60">
                   {label}
                 </div>
               </div>

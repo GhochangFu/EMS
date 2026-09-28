@@ -183,6 +183,20 @@ export function namedColours(src: string): string[] {
   return [...blankComments(src).matchAll(NAMED_COLOUR)].map((m) => m[2] ?? m[3] ?? "");
 }
 
+/**
+ * Every role class in `src` that carries an opacity modifier: `text-on-dark/70`,
+ * `hover:bg-accent/[.06]` (variant stripped). `roles` are the token names (`on-dark`,
+ * `line-strong`); `index` is the class's offset in `src`, `modifier` the text after `/`.
+ */
+export function roleOpacityModifiers(
+  src: string,
+  roles: string[],
+): { index: number; className: string; modifier: string }[] {
+  const names = [...roles].sort((a, b) => b.length - a.length).join("|");
+  const re = new RegExp(`(?<![\\w-])(?:${COLOUR_UTILITIES})-(?:${names})\\/([^\\s"'\`}]+)`, "g");
+  return [...blankComments(src).matchAll(re)].map((m) => ({ index: m.index, className: m[0], modifier: m[1] }));
+}
+
 /** One file's counted kinds — the shape of a `FLOOR` row. */
 export type ColourFloorRow = { file: string; palette: number; hex: number; func: number };
 

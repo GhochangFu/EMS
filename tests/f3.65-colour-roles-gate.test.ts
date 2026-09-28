@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { join, relative } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -10,6 +11,7 @@ import {
   hexLiterals,
   namedColours,
   paletteClasses,
+  roleOpacityModifiers,
   scanColourFiles,
   webColourSourceFiles,
 } from "./support/colour-scan";
@@ -188,6 +190,15 @@ describe("F3.65 colour scan — fixtures", () => {
   it("R4m the two branches of a ternary are separate class strings", () => {
     const src = 'const c = `px-2 ${active ? "bg-accent text-on-accent" : "text-on-dark"}`;';
     expect(colourFindings(src, "f.tsx")).toEqual([]);
+  });
+
+  it("R4n roleOpacityModifiers reads the modifier of a role class, variant or not, and skips a palette class", () => {
+    const src = '"text-on-dark/72 hover:bg-accent/[.06] bg-surface text-white/58 border-line-strong/40"';
+    expect(roleOpacityModifiers(src, ["on-dark", "accent", "surface", "line", "line-strong"]).map((m) => m.className)).toEqual([
+      "text-on-dark/72",
+      "bg-accent/[.06]",
+      "border-line-strong/40",
+    ]);
   });
 
   it("R5 #0b1a2f_0% in an arbitrary-value class counts as hex", () => {
@@ -407,6 +418,11 @@ function floorDiff(): string[] {
 
 const INDEX_HTML = join(repoRoot, "apps/web/index.html");
 
+/** Tailwind's default `theme.opacity` scale, from the installed package (a dependency of `apps/web`). */
+const defaultOpacity = (
+  createRequire(join(repoRoot, "apps/web/package.json"))("tailwindcss/defaultTheme") as { opacity: Record<string, string> }
+).opacity;
+
 /** The hard-zero findings of every web source file plus `apps/web/index.html` (its HTML comments blanked). */
 function treeAndHtmlFindings(): string[] {
   return [
@@ -449,6 +465,23 @@ describe("F3.65 colour-roles gate — the tree", () => {
 
   it("R17 no class string puts text-on-dark on an opaque bg-accent or bg-accent-strong", () => {
     expect(treeAndHtmlFindings().filter((f) => / text-on-dark on an opaque accent fill /.test(f))).toEqual([]);
+  });
+
+  // Owner ruling 2026-09-28: `text-on-dark/72` and `/58` emitted no CSS (Tailwind 3 has no 72 or 58
+  // opacity step), so the login hero text showed full white. The scale is Tailwind's own.
+  it("R19 every opacity modifier on a role class is a Tailwind default opacity step or an arbitrary /[…] value", () => {
+    const steps = new Set(Object.keys(defaultOpacity));
+    const roles = [...parseTokenBlocks(readFileSync(join(repoRoot, "apps/web/src/index.css"), "utf8")).light.keys()];
+    const offScale: string[] = [];
+    for (const full of webColourSourceFiles()) {
+      const src = readFileSync(full, "utf8");
+      const file = relative(repoRoot, full).split("\\").join("/");
+      for (const { index, className, modifier } of roleOpacityModifiers(src, roles)) {
+        if (steps.has(modifier) || /^\[[^\]]+\]$/.test(modifier)) continue;
+        offScale.push(`${file}:${src.slice(0, index).split("\n").length} ${className}`);
+      }
+    }
+    expect(offScale).toEqual([]);
   });
 
   it("R18 every hard-zero finding carries a label a case above filters for", () => {
