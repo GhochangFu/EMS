@@ -40,7 +40,7 @@ export function w1NamesAGroupOfTwoButtons(): void {
   startIn("light");
   const names = within(group())
     .getAllByRole("button")
-    .map((b) => b.textContent);
+    .map((b) => b.getAttribute("aria-label"));
   expect(names).toEqual(["Light", "Dark"]);
 }
 
@@ -152,4 +152,39 @@ export async function w6AThrowingStorageStillPressesDark(): Promise<void> {
   startIn("light");
   await userEvent.click(dark());
   expect(dark().getAttribute("aria-pressed")).toBe("true");
+}
+
+/** W7 — the Light button shows the sun glyph, not a word. */
+export function w7LightShowsTheSunGlyph(): void {
+  startIn("light");
+  expect(light().querySelector('svg[data-icon="sun"]')).not.toBeNull();
+}
+
+/** W7 — the Dark button shows the moon glyph, not a word. */
+export function w7DarkShowsTheMoonGlyph(): void {
+  startIn("light");
+  expect(dark().querySelector('svg[data-icon="moon"]')).not.toBeNull();
+}
+
+/** W7 — neither button carries visible text; the name comes from `aria-label`. */
+export function w7ButtonsCarryNoVisibleText(): void {
+  startIn("light");
+  expect([light().textContent, dark().textContent]).toEqual(["", ""]);
+}
+
+/** W7 — each glyph is hidden from assistive technology, so the name is not read twice. */
+export function w7GlyphsAreAriaHidden(): void {
+  startIn("light");
+  expect(
+    [...group().querySelectorAll("svg")].map((svg) => svg.getAttribute("aria-hidden")),
+  ).toEqual(["true", "true"]);
+}
+
+/** W7 — each button has a hover tooltip naming its theme. */
+export function w7ButtonsHaveATooltip(): void {
+  startIn("light");
+  expect([light().getAttribute("title"), dark().getAttribute("title")]).toEqual([
+    "Light theme",
+    "Dark theme",
+  ]);
 }

@@ -19,6 +19,11 @@ import {
   w5TabReachesDark,
   w6AThrowingStorageStillFlipsTheAttribute,
   w6AThrowingStorageStillPressesDark,
+  w7ButtonsCarryNoVisibleText,
+  w7ButtonsHaveATooltip,
+  w7DarkShowsTheMoonGlyph,
+  w7GlyphsAreAriaHidden,
+  w7LightShowsTheSunGlyph,
 } from "./theme-switch.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), jsdom for the DOM. */
@@ -97,5 +102,25 @@ describe("F3.65c the Light / Dark switch", () => {
 
   it("W6 a throwing localStorage still presses Dark", async () => {
     await w6AThrowingStorageStillPressesDark();
+  });
+
+  it("W7 the Light button shows the sun glyph", () => {
+    w7LightShowsTheSunGlyph();
+  });
+
+  it("W7 the Dark button shows the moon glyph", () => {
+    w7DarkShowsTheMoonGlyph();
+  });
+
+  it("W7 neither button carries visible text", () => {
+    w7ButtonsCarryNoVisibleText();
+  });
+
+  it("W7 both glyphs are aria-hidden", () => {
+    w7GlyphsAreAriaHidden();
+  });
+
+  it("W7 each button has a tooltip naming its theme", () => {
+    w7ButtonsHaveATooltip();
   });
 });
