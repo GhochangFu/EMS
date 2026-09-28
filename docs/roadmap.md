@@ -6586,3 +6586,28 @@ five false greens and one wrong mapping rule were fixed test-first.
 
 **Cascade:** `F3.65b` is now startable (it depends on `F3.65a` alone). The
 `chore(agents):` §5 rule follows separately (#618).
+
+### `F4.173` — api, worker and sim survive a Postgres restart ✅ 2026-09-28
+
+PR #620, squash `06c96c50`; plan `docs/plans/f4.173-pg-pool-error-listener.md`
+(Fable). No ADR (owner ruling).
+
+pg emits `'error'` on a client whose backend the server ends, and with no
+listener Node exits. The three `DatabaseModule` pools had none, so a Postgres
+restart took down REST, auth, the websockets and the worker, and no compose
+service restarts them. `createPool` now adds a pool listener for idle clients
+and a per-checkout client listener for checked-out ones, since pg-pool drops
+its own for that span and every `withTenant` checks a client out. Each logs
+one line with `err.message` only. The simulator got the same two listeners.
+
+Verified: a DB-gated suite boots the real module and ends only its own
+backends — 15 cases, each shown red on its own mutation; a static gate for
+the sim. The stack check recreated Postgres under running `api`, `worker` and
+`sim`: all three stayed up, `/health` answered 200, the sim kept ticking. CI
+green on the first run. Three reviews; the code review found the checked-out
+half, fixed in the same PR by owner ruling.
+
+**Cascade:** no row lists `F4.173` in *Depends* except the new `F4.175`
+(`/health` has no database probe), raised by the owner's ruling. Whether
+compose sets `restart:` stays an open owner question. No `chore(agents):`
+change owed.
