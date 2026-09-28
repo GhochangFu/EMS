@@ -390,13 +390,14 @@ export function locationIdsWithoutSeedCode(outcomes: Iterable<SeedLocationOutcom
  *
  * A canonical value another row holds is left as it is, with one log line
  * naming both rows, and the rest of the row is written. An identity more than
- * one row claims, with no keyed row oldest, is not written at all, with one
- * line naming every candidate. `slugReader` must see every organization —
+ * one row claims is not written at all, with one line naming every candidate,
+ * unless the oldest is the one row keyed for it. `slugReader` must see every organization —
  * `seed.ts` passes its superuser pool (OQ2). `pool` holds ESKOM's tenant
  * context. `meta` is written whole, as before, with the key.
  *
- * **Residuals** (recorded in `F4.172`), each a state no rule here can resolve
- * without overwriting an administrator's row:
+ * **Residuals** (to be recorded in `F4.172`, a row reserved for this PR's
+ * closure, which lands after the merge), each a state no rule here can
+ * resolve without overwriting an administrator's row:
  * - before the first keyed boot, an administrator renames both the slug and
  *   the code of a canonical row and gives the canonical slug to another row:
  *   that row is the only candidate and is adopted;
@@ -413,6 +414,14 @@ export function locationIdsWithoutSeedCode(outcomes: Iterable<SeedLocationOutcom
  *   the oldest candidate can be the wrong row in a slug swap. So when an
  *   ambiguous site's name was also changed, `seedEskomAssets`, which finds
  *   its RTU by the catalog's site name, still throws, loudly (C4);
+ * - when RSMOC-WC's identity is ambiguous, `seedScopedDemoUsers` gets no row
+ *   and grants nothing: on a database where they are new, wc-admin has no
+ *   location and wc-hvac-admin no `hvac` group (found under that row);
+ * - `seedAccessControlFixtures` hosts `ESK-MANUAL-01` at the active ESKOM
+ *   location with the lowest code, not at a seed identity, and its upsert
+ *   moves `location_id` on every boot: an administrator location coded like
+ *   `AA` takes the fixture on the next boot (owner ruling: recorded, not
+ *   fixed here);
  * - the slug holder is read on the superuser pool, a second connection that
  *   cannot see this boot's uncommitted writes, so it can report a holder
  *   whose slug an earlier write of the same boot already moved: the slug is

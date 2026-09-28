@@ -867,6 +867,13 @@ export async function seedEskomLadderRules(
       if (heldEnabled !== undefined) {
         // Addendum 4: a skip only a published, disabled rule causes is logged,
         // since that asset raises no alarm on the condition until it is enabled.
+        // Known gap: the log is suppressed whenever the asset has its own
+        // ladder row for this suffix (guard 2's set), whatever that row's
+        // lifecycle status or condition. A draft or archived own row, or one
+        // an administrator moved to another threshold, therefore silences this
+        // line while the asset still raises nothing on the condition. Without
+        // guard 1, guard 2 would skip that asset with no line either, so the
+        // gap is guard 2's silence, not one this line adds.
         if (!heldEnabled && !seededLadderRules.has(`${asset.id}::${rule.suffix}`)) {
           log(
             `seedEskomLadderRules: skipped ${ladderRuleCode(asset.code, rule.suffix)} for asset ${asset.code} ` +

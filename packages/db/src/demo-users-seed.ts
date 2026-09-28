@@ -148,7 +148,9 @@ export async function seedScopedDemoUsers(
   // resolved for RSMOC-WC's identity, never a row found by slug: an admin
   // location may hold `rsmoc-western-cape` while the seed's row keeps another
   // slug. `null` (the identity was ambiguous, so no row is the seed's) grants
-  // nothing; the location seed's line names every candidate.
+  // nothing: neither wc-admin's location grant nor wc-hvac-admin's, whose
+  // `hvac` group is found under this row. The location seed's line names every
+  // candidate.
   const westernCape = westernCapeId === null ? undefined : { id: westernCapeId };
   const wcAdminId = scopedUserIds.get("wc-admin@bms.local");
   if (westernCape && wcAdminId) {

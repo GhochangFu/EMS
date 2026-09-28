@@ -36,7 +36,11 @@ export type HierarchyExpectations = {
   readonly organizationCodes: readonly string[];
   /** The canonical ESKOM locations plus the inactive `F4.10` fixture. */
   readonly eskomLocationCodes: readonly string[];
-  /** The fixture location that must stay inactive. */
+  /**
+   * The fixture's code, as it appears in `eskomLocationCodes`. The inactive
+   * check does not read by it: it reads the row resolved for
+   * `decommissionedLocation`.
+   */
   readonly decommissionedLocationCode: string;
   /** Its seed identity: the inactive check reads the row resolved for it. */
   readonly decommissionedLocation: SeedLocationIdentity;
