@@ -278,7 +278,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum 4 — an ambiguous seed ident
            FROM bms.locations l, bms.locations s
           WHERE l.organization_id = $1 AND s.organization_id = $1
             AND s.slug = 'rsmoc-western-cape' AND l.id <> s.id AND l.active
-          ORDER BY l.code LIMIT 1`,
+          ORDER BY l.created_at, l.code LIMIT 1`,
         [eskomOrgId],
       );
       const resolved = rows[0]?.id;
