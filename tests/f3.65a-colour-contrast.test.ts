@@ -27,6 +27,18 @@ import { blendOver, contrastRatio, parseTokenBlocks, type Channels, channelsToHe
  * never directly on the page canvas (§2.4). `line` / `line-strong` on `surface`, and each
  * `*-line` role on its own wash, are decorative boundaries under WCAG 1.4.11's exemption (a
  * boundary that is not the sole indicator of a state) and are not declared either (OQ5).
+ *
+ * `F3.65b` (plan §2.5) adds three pairs the migration creates: `neutral-ink` on `canvas` (the
+ * `bg-slate-100 text-slate-700` org-code chips), `ink-muted` on `line` (the `bg-gray-200
+ * text-gray-600` pills), and `on-dark` at 0.4 on `chrome` (the footer loading dot).
+ *
+ * Two pairs the same migration produces are declared not to hold, for a reason rather than an
+ * allowlist entry: `ink-faint` on `line` in the SMOC schematics' offline boxes
+ * (`smoc/sld.tsx:285/326/328` sub-labels on `fill-gray-200`, 3.84 | 3.64) — today `gray-500` on
+ * `gray-200` is already 3.50, an existing failure in an 8 px SVG label that `F3.65c` recolours
+ * with the rest of the schematic; and `critical-ink-soft` on `canvas` (4.38 light) — no
+ * `text-red-600` shares a string with a red wash (grep: 0), so F3.65a's stance holds. **The dark
+ * allowlist stays empty.**
  */
 
 const TOKENS_PATH = join(repoRoot, "apps/web/src/index.css");
@@ -71,9 +83,13 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "ink-muted", bg: "well-deep" },
   { fg: "ink-faint", bg: "surface" },
   { fg: "ink-faint", bg: "well" },
+  // F3.65b §2.5: the `bg-gray-200 text-gray-600` pills (`breaker-table.tsx`, `smoc/overview.tsx`) → `bg-line text-ink-muted`.
+  { fg: "ink-muted", bg: "line" },
   { fg: "neutral-ink", bg: "well-deep" },
   { fg: "neutral-ink", bg: "well" },
   { fg: "neutral-ink", bg: "surface" },
+  // F3.65b §2.5: the org-code chips (`bg-slate-100 text-slate-700` → `bg-canvas text-neutral-ink`).
+  { fg: "neutral-ink", bg: "canvas" },
   { fg: "accent", bg: "surface" },
   { fg: "accent", bg: "canvas" },
   { fg: "accent", bg: "well" },
@@ -122,6 +138,8 @@ const UI_PAIRS: Pair[] = [
   { fg: "focus", bg: "canvas" },
   { fg: "on-dark", bg: "chrome-nav", alpha: 0.8 },
   { fg: "on-dark", bg: "chrome-nav", alpha: 0.7 },
+  // F3.65b §2.5: the footer loading dot (`bg-white/40` → `bg-on-dark/40`) on the chrome footer.
+  { fg: "on-dark", bg: "chrome", alpha: 0.4 },
   { fg: "critical", bg: "surface" },
   { fg: "critical", bg: "canvas" },
   { fg: "critical", bg: "chrome" },
