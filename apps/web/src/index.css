@@ -2,6 +2,112 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * F3.65a — the role-token vocabulary. Every custom property is a space-separated RGB channel
+ * triplet (not a hex string) so `tailwind.config.js` can compose it with Tailwind's `<alpha-value>`
+ * placeholder (`rgb(var(--role) / <alpha-value>)`), which keeps `bg-accent/20` etc. working in
+ * both themes. The hex comment on each line is for review only; it is not read by code
+ * (`tests/f3.65a-colour-tokens.test.ts` T13 asserts index.css itself holds no live hex literal).
+ *
+ * `:root` is the light theme, always the default regardless of `data-theme` (ADR 0078 decision 4
+ * / plan decision D6). `:root[data-theme="dark"]` is set on `<html>` by the inline script in
+ * `index.html` before first paint. The 40 roles and their light/dark values are
+ * `docs/plans/f3.65a-colour-tokens.md` §2.2, ADR 0078 Amendment 1 records the arithmetic. A 41st
+ * role, `simulated-ink`, was added by owner ruling 2026-09-28 during the build — see
+ * `tests/support/colour-role-map.ts`'s docblock for why and its derivation.
+ */
+:root {
+  color-scheme: light;
+
+  --canvas: 242 244 247; /* #F2F4F7 */
+  --surface: 255 255 255; /* #FFFFFF */
+  --well: 249 250 251; /* #F9FAFB */
+  --well-deep: 243 244 246; /* #F3F4F6 */
+  --line: 229 231 235; /* #E5E7EB */
+  --line-strong: 209 213 219; /* #D1D5DB */
+  --ink: 26 34 48; /* #1A2230 */
+  --ink-muted: 74 84 100; /* #4A5464 */
+  --ink-faint: 100 116 139; /* #64748B */
+  --ink-hint: 156 163 175; /* #9CA3AF */
+  --neutral-ink: 55 65 81; /* #374151 */
+  --accent: 0 166 81; /* #00A651 */
+  --accent-strong: 0 124 60; /* #007C3C */
+  --chrome: 29 36 48; /* #1D2430 */
+  --chrome-nav: 0 124 60; /* #007C3C */
+  --on-dark: 255 255 255; /* #FFFFFF */
+  --on-accent: 255 255 255; /* #FFFFFF */
+  --focus: 0 166 81; /* #00A651 */
+  --scrim: 0 0 0; /* #000000 */
+  --critical: 220 38 38; /* #DC2626 */
+  --critical-ink-soft: 220 38 38; /* #DC2626 */
+  --critical-ink: 185 28 28; /* #B91C1C */
+  --critical-ink-strong: 153 27 27; /* #991B1B */
+  --critical-wash: 254 242 242; /* #FEF2F2 */
+  --critical-wash-strong: 254 226 226; /* #FEE2E2 */
+  --critical-line: 254 202 202; /* #FECACA */
+  --critical-line-strong: 252 165 165; /* #FCA5A5 */
+  --critical-on-dark: 248 113 113; /* #F87171 */
+  --warning: 245 158 11; /* #F59E0B */
+  --warning-ink: 120 53 15; /* #78350F */
+  --warning-wash: 255 251 235; /* #FFFBEB */
+  --warning-wash-strong: 254 243 199; /* #FEF3C7 */
+  --warning-line: 253 230 138; /* #FDE68A */
+  --warning-on-dark: 251 191 36; /* #FBBF24 */
+  --ok-ink: 6 78 59; /* #064E3B */
+  --ok-wash: 236 253 245; /* #ECFDF5 */
+  --info: 14 165 233; /* #0EA5E9 */
+  --info-ink: 7 89 133; /* #075985 */
+  --info-wash: 240 249 255; /* #F0F9FF */
+  --info-line: 186 230 253; /* #BAE6FD */
+  --simulated-ink: 109 40 217; /* #6D28D9 */
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --canvas: 20 27 37; /* #141B25 */
+  --surface: 26 34 45; /* #1A222D */
+  --well: 33 43 55; /* #212B37 */
+  --well-deep: 40 51 65; /* #283341 */
+  --line: 46 58 73; /* #2E3A49 */
+  --line-strong: 61 74 91; /* #3D4A5B */
+  --ink: 232 236 241; /* #E8ECF1 */
+  --ink-muted: 167 178 192; /* #A7B2C0 */
+  --ink-faint: 135 145 165; /* #8791A5 */
+  --ink-hint: 120 132 154; /* #78849A */
+  --neutral-ink: 142 156 178; /* #8E9CB2 */
+  --accent: 61 205 88; /* #3DCD58 */
+  --accent-strong: 101 215 122; /* #65D77A */
+  --chrome: 15 22 32; /* #0F1620 */
+  --chrome-nav: 0 124 60; /* #007C3C */
+  --on-dark: 255 255 255; /* #FFFFFF */
+  --on-accent: 15 22 32; /* #0F1620 */
+  --focus: 61 205 88; /* #3DCD58 */
+  --scrim: 0 0 0; /* #000000 */
+  --critical: 220 38 38; /* #DC2626 */
+  --critical-ink-soft: 231 106 106; /* #E76A6A */
+  --critical-ink: 232 106 106; /* #E86A6A */
+  --critical-ink-strong: 236 133 133; /* #EC8585 */
+  --critical-wash: 55 21 21; /* #371515 */
+  --critical-wash-strong: 74 28 28; /* #4A1C1C */
+  --critical-line: 107 46 46; /* #6B2E2E */
+  --critical-line-strong: 141 53 53; /* #8D3535 */
+  --critical-on-dark: 248 113 113; /* #F87171 */
+  --warning: 245 158 11; /* #F59E0B */
+  --warning-ink: 235 143 92; /* #EB8F5C */
+  --warning-wash: 55 43 21; /* #372B15 */
+  --warning-wash-strong: 74 57 28; /* #4A391C */
+  --warning-line: 107 84 46; /* #6B542E */
+  --warning-on-dark: 251 191 36; /* #FBBF24 */
+  --ok-ink: 13 173 131; /* #0DAD83 */
+  --ok-wash: 21 55 46; /* #15372E */
+  --info: 14 165 233; /* #0EA5E9 */
+  --info-ink: 12 152 227; /* #0C98E3 */
+  --info-wash: 21 45 55; /* #152D37 */
+  --info-line: 46 88 107; /* #2E586B */
+  --simulated-ink: 166 125 232; /* #A67DE8 */
+}
+
 body {
   margin: 0;
   min-height: 100vh;

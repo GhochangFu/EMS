@@ -45,23 +45,23 @@ export function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07111f] px-4 py-8 text-white">
-      <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-2xl lg:grid-cols-[1.12fr_0.88fr]">
+    <div className="min-h-screen bg-[#07111f] px-4 py-8 text-on-dark">
+      <div className="mx-auto grid min-h-[calc(100vh-4rem)] w-full max-w-6xl overflow-hidden rounded-2xl border border-on-dark/10 bg-on-dark/5 shadow-2xl lg:grid-cols-[1.12fr_0.88fr]">
         <section className="relative flex flex-col justify-between overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(0,166,81,0.34),_transparent_32%),linear-gradient(135deg,#0b1a2f_0%,#101827_54%,#05351f_100%)] p-8 lg:p-10">
-          <div className="absolute right-8 top-8 h-36 w-36 rounded-full border border-bms-green/30 bg-bms-green/10 blur-sm" />
-          <div className="absolute bottom-12 left-10 h-24 w-24 rounded-full border border-white/10 bg-white/5" />
+          <div className="absolute right-8 top-8 h-36 w-36 rounded-full border border-accent/30 bg-accent/10 blur-sm" />
+          <div className="absolute bottom-12 left-10 h-24 w-24 rounded-full border border-on-dark/10 bg-on-dark/5" />
           <div className="relative">
             <div className="flex justify-center">
               <img
                 src={trinetraLogoUrl}
                 alt="TRINETRA"
-                className="w-full max-w-[560px] rounded-lg bg-white px-5 py-3 shadow-xl"
+                className="w-full max-w-[560px] rounded-lg bg-on-dark px-5 py-3 shadow-xl"
               />
             </div>
             <h1 className="mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-              Intelligent <span className="text-bms-green">Building Management</span> · Smart insight, always on.
+              Intelligent <span className="text-accent">Building Management</span> · Smart insight, always on.
             </h1>
-            <p className="mt-4 max-w-lg text-sm leading-6 text-white/72">
+            <p className="mt-4 max-w-lg text-sm leading-6 text-on-dark/70">
               Unified enterprise EMS for power, HVAC, water, utilities, alarms,
               and work orders in one operator console for Ion Exchange (India)
               Ltd. operations.
@@ -76,12 +76,12 @@ export function LoginPage() {
             ].map(([value, label]) => (
               <div
                 key={label}
-                className="rounded-xl border border-white/10 bg-white/10 p-4 backdrop-blur"
+                className="rounded-xl border border-on-dark/10 bg-on-dark/10 p-4 backdrop-blur"
               >
-                <div className="font-condensed text-2xl font-bold text-white">
+                <div className="font-condensed text-2xl font-bold text-on-dark">
                   {value}
                 </div>
-                <div className="mt-1 text-[11px] uppercase tracking-wide text-white/58">
+                <div className="mt-1 text-[11px] uppercase tracking-wide text-on-dark/60">
                   {label}
                 </div>
               </div>
@@ -89,25 +89,25 @@ export function LoginPage() {
           </div>
         </section>
 
-        <section className="flex items-center justify-center bg-bms-canvas p-6 text-bms-ink sm:p-8">
-          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-7 shadow-xl">
+        <section className="flex items-center justify-center bg-canvas p-6 text-ink sm:p-8">
+          <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-7 shadow-xl">
             <div className="mb-7 flex items-center justify-between gap-3">
               <div>
-                <div className="font-condensed text-[11px] font-bold uppercase tracking-[0.18em] text-bms-green">
+                <div className="font-condensed text-[11px] font-bold uppercase tracking-[0.18em] text-accent">
                   Secure access
                 </div>
-                <h2 className="mt-2 font-condensed text-3xl font-bold text-bms-ink">
+                <h2 className="mt-2 font-condensed text-3xl font-bold text-ink">
                   Sign in to TRINETRA
                 </h2>
-                <p className="mt-1 text-sm text-bms-muted">
+                <p className="mt-1 text-sm text-ink-muted">
                   Enterprise SSO and local pilot access for the Intelligent Building Management System.
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2">
-                <span className="rounded bg-[#003366] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
+                <span className="rounded bg-[#003366] px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-on-dark">
                   Euphoria Delivery
                 </span>
-                <span className="font-mono text-[10px] uppercase tracking-wide text-bms-muted">
+                <span className="font-mono text-[10px] uppercase tracking-wide text-ink-muted">
                   Confidential
                 </span>
               </div>
@@ -115,13 +115,13 @@ export function LoginPage() {
         {oidcEnabled ? (
           <div className="mt-6 space-y-4">
             {formError ? (
-              <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              <p className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-sm text-critical-ink" role="alert">
                 {formError}
               </p>
             ) : null}
             <button
               type="button"
-              className="w-full rounded bg-bms-green py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-bms-green-dark"
+              className="w-full rounded bg-accent py-3 text-sm font-semibold text-on-accent shadow-sm transition hover:bg-accent-strong"
               onClick={() => void onOidcLogin()}
             >
               Sign in securely with Keycloak
@@ -131,7 +131,7 @@ export function LoginPage() {
           <form className="mt-6 space-y-4" onSubmit={onSubmit}>
             <div>
               <label
-                className="block text-xs font-semibold uppercase tracking-wide text-bms-muted"
+                className="block text-xs font-semibold uppercase tracking-wide text-ink-muted"
                 htmlFor="email"
               >
                 Login ID
@@ -141,7 +141,7 @@ export function LoginPage() {
                 name="email"
                 type="email"
                 autoComplete="username"
-                className="mt-1.5 w-full rounded border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition ring-bms-green focus:border-bms-green focus:ring-1"
+                className="mt-1.5 w-full rounded border border-line-strong bg-surface px-3 py-2.5 text-sm outline-none transition ring-focus focus:border-focus focus:ring-1"
                 value={email}
                 onChange={(ev) => setEmail(ev.target.value)}
                 required
@@ -149,7 +149,7 @@ export function LoginPage() {
             </div>
             <div>
               <label
-                className="block text-xs font-semibold uppercase tracking-wide text-bms-muted"
+                className="block text-xs font-semibold uppercase tracking-wide text-ink-muted"
                 htmlFor="password"
               >
                 Password
@@ -159,21 +159,21 @@ export function LoginPage() {
                 name="password"
                 type="password"
                 autoComplete="current-password"
-                className="mt-1.5 w-full rounded border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition ring-bms-green focus:border-bms-green focus:ring-1"
+                className="mt-1.5 w-full rounded border border-line-strong bg-surface px-3 py-2.5 text-sm outline-none transition ring-focus focus:border-focus focus:ring-1"
                 value={password}
                 onChange={(ev) => setPassword(ev.target.value)}
                 required
               />
             </div>
             <div>
-              <div className="mb-2 block text-xs font-semibold uppercase tracking-wide text-bms-muted">
+              <div className="mb-2 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
                 Access profile
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
                 {["TRINETRA Admin", "IBMS Operator", "Energy Manager"].map((role) => (
                   <span
                     key={role}
-                    className="rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-center font-semibold text-bms-muted"
+                    className="rounded-full border border-line bg-well px-2 py-1 text-center font-semibold text-ink-muted"
                   >
                     {role}
                   </span>
@@ -181,7 +181,7 @@ export function LoginPage() {
               </div>
             </div>
             {formError ? (
-              <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+              <p className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-sm text-critical-ink" role="alert">
                 {formError}
               </p>
             ) : null}
@@ -189,16 +189,16 @@ export function LoginPage() {
               type="submit"
               disabled={mutation.isPending}
               aria-busy={mutation.isPending}
-              className="w-full rounded bg-bms-green py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-bms-green-dark disabled:opacity-60"
+              className="w-full rounded bg-accent py-3 text-sm font-semibold text-on-accent shadow-sm transition hover:bg-accent-strong disabled:opacity-60"
             >
               {mutation.isPending ? "Signing in..." : "Sign in securely"}
             </button>
           </form>
         )}
-            <div className="mt-6 border-t border-gray-100 pt-4 text-center text-[11px] leading-5 text-bms-muted">
+            <div className="mt-6 border-t border-well-deep pt-4 text-center text-[11px] leading-5 text-ink-muted">
               TRINETRA v0.1<br />
               Powered By:{" "}
-              <b className="text-bms-ink">Euphoria Infotech India Limited</b>
+              <b className="text-ink">Euphoria Infotech India Limited</b>
             </div>
           </div>
         </section>

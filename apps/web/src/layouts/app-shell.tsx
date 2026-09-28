@@ -196,31 +196,31 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-bms-canvas text-bms-ink">
-      <header className="flex h-12 shrink-0 items-center justify-between bg-bms-header px-4 text-sm text-white">
+    <div className="flex min-h-screen flex-col bg-canvas text-ink">
+      <header className="flex h-12 shrink-0 items-center justify-between bg-chrome px-4 text-sm text-on-dark">
         <div className="flex items-center gap-3">
           <img
             src={trinetraLogoUrl}
             alt="TRINETRA"
-            className="h-7 rounded bg-white px-2 py-1"
+            className="h-7 rounded bg-on-dark px-2 py-1"
           />
-          <span className="font-condensed text-lg font-bold tracking-tight text-bms-green">
+          <span className="font-condensed text-lg font-bold tracking-tight text-accent">
             TRINETRA
           </span>
-          <span className="hidden text-white/70 sm:inline">
+          <span className="hidden text-on-dark/70 sm:inline">
             Intelligent Building Management System
           </span>
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
             <div className="font-medium">{user.displayName}</div>
-            <div className="text-xs text-white/60">
+            <div className="text-xs text-on-dark/60">
               {roleLabel(user.role)} · {locationScopeLabel}
             </div>
           </div>
           <button
             type="button"
-            className="rounded border border-white/20 px-3 py-1.5 text-xs font-semibold text-white/85 transition hover:border-white/40 hover:bg-white/10 hover:text-white"
+            className="rounded border border-on-dark/20 px-3 py-1.5 text-xs font-semibold text-on-dark/85 transition hover:border-on-dark/40 hover:bg-on-dark/10 hover:text-on-dark"
             onClick={handleLogout}
           >
             Logout
@@ -228,13 +228,13 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
         </div>
       </header>
 
-      <nav className="flex h-10 shrink-0 items-center gap-1 bg-bms-green-dark px-2 text-sm font-medium text-white shadow-sm">
+      <nav className="flex h-10 shrink-0 items-center gap-1 bg-chrome-nav px-2 text-sm font-medium text-on-dark shadow-sm">
         {topNav.map((item) => (
           <Link
             key={item.to}
             to={item.to}
-            className={`rounded px-3 py-1.5 hover:bg-white/10 ${
-              location.pathname === item.to ? "bg-white/15" : ""
+            className={`rounded px-3 py-1.5 hover:bg-on-dark/10 ${
+              location.pathname === item.to ? "bg-on-dark/15" : ""
             }`}
           >
             {item.label}
@@ -243,8 +243,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
         {isMasterDataAdmin(user.role) ? (
           <Link
             to="/admin"
-            className={`rounded px-3 py-1.5 hover:bg-white/10 ${
-              location.pathname.startsWith("/admin") ? "bg-white/15" : ""
+            className={`rounded px-3 py-1.5 hover:bg-on-dark/10 ${
+              location.pathname.startsWith("/admin") ? "bg-on-dark/15" : ""
             }`}
           >
             Settings
@@ -259,7 +259,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
               aria-describedby="settings-locked-reason"
               title={SETTINGS_LOCKED_REASON}
               onClick={(e) => e.preventDefault()}
-              className="ml-1 cursor-not-allowed rounded px-3 py-1.5 text-white/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
+              className="ml-1 cursor-not-allowed rounded px-3 py-1.5 text-on-dark/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-on-dark/80"
             >
               Settings
             </button>
@@ -272,19 +272,19 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
 
       <div className="flex min-h-0 flex-1">
         <aside
-          className={`shrink-0 border-r border-gray-200 bg-white py-3 text-sm transition-[width] duration-200 ${
+          className={`shrink-0 border-r border-line bg-surface py-3 text-sm transition-[width] duration-200 ${
             sidebarCollapsed ? "w-16" : "w-60"
           }`}
         >
           <div className={`mb-3 flex items-center px-3 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
             {sidebarCollapsed ? null : (
-              <span className="font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
+              <span className="font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
                 Modules
               </span>
             )}
             <button
               type="button"
-              className="rounded border border-gray-200 bg-white px-2 py-1 font-mono text-xs font-semibold text-bms-muted transition hover:border-bms-green hover:bg-bms-canvas hover:text-bms-ink"
+              className="rounded border border-line bg-surface px-2 py-1 font-mono text-xs font-semibold text-ink-muted transition hover:border-accent hover:bg-canvas hover:text-ink"
               aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
               onClick={toggleSidebar}
@@ -301,9 +301,9 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
             return (
               <div key={group.title} className="mb-3">
                 {sidebarCollapsed ? (
-                  <div className="mx-3 mb-1 border-t border-gray-100" title={group.title} />
+                  <div className="mx-3 mb-1 border-t border-well-deep" title={group.title} />
                 ) : (
-                  <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
+                  <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
                     {group.title}
                   </div>
                 )}
@@ -315,11 +315,11 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                         title={m.label}
                         // F4.164 — WCAG 2.5.3: a collapsed name carries the visible code; expanded, the label is the name.
                         aria-label={sidebarCollapsed ? `${m.label} (${collapsedLabel(m)})` : undefined}
-                        className={`block w-full border-l-2 hover:bg-bms-canvas ${
+                        className={`block w-full border-l-2 hover:bg-canvas ${
                           location.pathname === m.path ||
                           ("nested" in m && m.nested && location.pathname.startsWith(`${m.path}/`))
-                            ? "border-bms-green bg-bms-canvas/80 font-semibold text-bms-ink"
-                            : "border-transparent text-bms-muted"
+                            ? "border-accent bg-canvas/80 font-semibold text-ink"
+                            : "border-transparent text-ink-muted"
                         } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
                         {sidebarCollapsed ? collapsedLabel(m) : m.label}
@@ -333,9 +333,9 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
           {isMasterDataAdmin(user.role) ? (
             <div className="mb-3">
               {sidebarCollapsed ? (
-                <div className="mx-3 mb-1 border-t border-gray-100" title={adminModuleGroup.title} />
+                <div className="mx-3 mb-1 border-t border-well-deep" title={adminModuleGroup.title} />
               ) : (
-                <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-bms-muted">
+                <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
                   {adminModuleGroup.title}
                 </div>
               )}
@@ -356,11 +356,11 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
                         to={item.path}
                         title={item.label}
                         aria-label={sidebarCollapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
-                        className={`block w-full border-l-2 hover:bg-bms-canvas ${
+                        className={`block w-full border-l-2 hover:bg-canvas ${
                           location.pathname === item.path ||
                           (item.path !== "/admin" && location.pathname.startsWith(`${item.path}`))
-                            ? "border-bms-green bg-bms-canvas/80 font-semibold text-bms-ink"
-                            : "border-transparent text-bms-muted"
+                            ? "border-accent bg-canvas/80 font-semibold text-ink"
+                            : "border-transparent text-ink-muted"
                         } ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
                       >
                         {sidebarCollapsed ? collapsedLabel(item) : item.label}
@@ -373,21 +373,21 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col">
-          <section className="flex min-h-14 shrink-0 items-center border-b border-gray-200 bg-white px-4 py-2 text-xs text-bms-muted shadow-sm">
+          <section className="flex min-h-14 shrink-0 items-center border-b border-line bg-surface px-4 py-2 text-xs text-ink-muted shadow-sm">
             <div className="flex w-full flex-wrap items-center gap-3">
               {kpiRibbon}
               {scope?.kind === "asset_group" ? (
-                <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-800">
+                <span className="rounded border border-warning-line bg-warning-wash px-2 py-1 font-semibold text-warning-ink">
                   Limited asset-group access
                 </span>
               ) : null}
             </div>
           </section>
-          <div className="flex-1 overflow-auto bg-bms-canvas p-4">{children}</div>
+          <div className="flex-1 overflow-auto bg-canvas p-4">{children}</div>
         </main>
       </div>
 
-      <footer className="flex h-8 shrink-0 items-center justify-between bg-bms-header px-4 text-xs text-white/70">
+      <footer className="flex h-8 shrink-0 items-center justify-between bg-chrome px-4 text-xs text-on-dark/70">
         <span className="flex items-center gap-2">
           <span>TRINETRA · telemetry-driven</span>
           <StatusBarClock />
@@ -395,8 +395,8 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
         </span>
         <span className="flex items-center gap-2">
           <span className="font-mono">v0.1</span>
-          <span className="text-bms-green">
-            Powered By: <b className="text-white">Euphoria Infotech India Limited</b>
+          <span className="text-accent">
+            Powered By: <b className="text-on-dark">Euphoria Infotech India Limited</b>
           </span>
         </span>
       </footer>

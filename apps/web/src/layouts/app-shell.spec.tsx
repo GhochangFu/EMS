@@ -144,7 +144,7 @@ export async function doesNotReadAssets(): Promise<void> {
 export function highlightsTheEntryOnANestedPath(): void {
   renderShell(GLOBAL, "/control-room/org/x");
   const [link] = entries();
-  expect(link?.classList.contains("border-bms-green")).toBe(true);
+  expect(link?.classList.contains("border-accent")).toBe(true);
 }
 
 /** S7 — OQ4: the entry is the item directly after *Alarm Centre*. */
@@ -169,7 +169,7 @@ export function keepsOtherItemsExactMatch(): void {
  * `F4.164` U2 — the locked top-nav Settings entry. For a role that is not a
  * master-data administrator it is a focusable `button` with
  * `aria-disabled="true"`, an accessible description holding
- * `SETTINGS_LOCKED_REASON`, and `text-white/70` (3.43:1 on `bms-green-dark`).
+ * `SETTINGS_LOCKED_REASON`, and `text-on-dark/70` (3.43:1 on `chrome-nav`).
  * Every case reads inside the top navigation, where the entry lives.
  */
 function topNav(): HTMLElement {
@@ -221,12 +221,12 @@ export function givesAnOrganizationAdminTheSettingsLink(): void {
   expect(within(topNav()).queryByRole("button", { name: "Settings" })).toBeNull();
 }
 
-/** S14 — the text is `text-white/70` (3.43:1), not the 2.48:1 `text-white/50`. */
+/** S14 — the text is `text-on-dark/70` (3.43:1 on chrome-nav), not the 2.48:1 `text-on-dark/50`. */
 export function drawsTheLockedSettingsAtThreeToOne(): void {
   renderShell(GLOBAL, "/", "operator");
   const classes = lockedSettings().classList;
-  expect(classes.contains("text-white/70")).toBe(true);
-  expect(classes.contains("text-white/50")).toBe(false);
+  expect(classes.contains("text-on-dark/70")).toBe(true);
+  expect(classes.contains("text-on-dark/50")).toBe(false);
 }
 
 /**
