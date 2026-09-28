@@ -69,8 +69,10 @@ first option, and only one preset.
 1. **One new widget type, `mimic`.** `widgetTypeSchema` and
    `dashboard_widgets_widget_type_check` gain `mimic` together, in one change
    set (a new migration, the `0055` pattern).
-2. **The config names a preset from a closed list.** `config.preset` is a
-   `z.enum`. v1 ships one preset: `water_train` — intake → WTP → RO →
+2. **The config names a preset from a closed list.** The config is
+   `{ source: "preset", preset }`, and `preset` is a `z.enum`. The `source`
+   discriminator is there for decision 9: the full builder adds a second arm
+   beside this one, and a stored v1 widget never needs migrating. v1 ships one preset: `water_train` — intake → WTP → RO →
    softener → storage, with the STP and ETP branch to discharge. Each preset
    node shows the node name, a status colour (running / alarm / stale, ADR
    0027 gate), and up to three live values. A new preset is a code release, as
@@ -115,6 +117,15 @@ first option, and only one preset.
 8. **Out of this ADR:** a drawing surface, user-defined presets, network
    mimics, KPI overlays beyond the node values, and the SMOC pages moved onto a
    mimic. `F3.32` stays open for them.
+9. **This is the first stage of the full builder, not a throwaway.** The full
+   `F3.32` builder extends the same area and needs its own ADR. What it keeps:
+   the `mimic` widget type, its place in the dashboard builder, templates and
+   the site view, the node renderer, the membership-role binding and the
+   read-time node resolver. What it adds: a stored layout (nodes with
+   positions, symbols and pipes) in a new table, a new admin page that draws
+   one, and a second config arm `{ source: "layout", layoutId }`. The
+   `water_train` preset then becomes a read-only built-in layout, and every
+   dashboard that uses it keeps working.
 
 ## Gate questions
 
