@@ -147,7 +147,7 @@ export function nextNodeKey(nodes: readonly EditorNode[], prefix: string): strin
 }
 
 /** A symbol's default label: `clarifier` → `Clarifier`. */
-function symbolLabel(symbol: MimicSymbol): string {
+export function symbolLabel(symbol: MimicSymbol): string {
   return `${symbol.charAt(0).toUpperCase()}${symbol.slice(1)}`;
 }
 
