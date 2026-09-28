@@ -3,7 +3,12 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  alarmedNodeDrawsOneCallout,
   alarmNodeIsAlarm,
+  everyNodeDrawsItsSymbol,
+  flowRunsOnlyFromLiveNodes,
+  panelsHoldTheirTrains,
+  quietNodesDrawNoCallout,
   assignedNodeShowsItsAssetCode,
   atMostThreeValueRows,
   badgeCountsTheOtherMembers,
@@ -45,5 +50,27 @@ describe("F3.32 U4 — MimicWidget", () => {
   });
   it("W7 loading draws no node", () => {
     loadingDrawsNoNodes();
+  });
+});
+
+describe("F3.32b — MimicWidget, the reference look (ADR 0079 Amendment 2)", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("C1 a node with topAlarm draws one callout with its message and severity", () => {
+    alarmedNodeDrawsOneCallout();
+  });
+  it("C2 a node without topAlarm draws no callout", () => {
+    quietNodesDrawNoCallout();
+  });
+  it("P1 three panels hold their trains' nodes", () => {
+    panelsHoldTheirTrains();
+  });
+  it("G1 every node draws its mapped symbol; the tank fills to its level", () => {
+    everyNodeDrawsItsSymbol();
+  });
+  it("F1 the flow dash rides only pipes out of a live node", () => {
+    flowRunsOnlyFromLiveNodes();
   });
 });

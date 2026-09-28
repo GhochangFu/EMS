@@ -10,6 +10,7 @@ import {
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import type { WidgetStatus } from "../../lib/widget-catalog";
+import { MIMIC_NODE_GLYPHS } from "../../lib/mimic";
 import { MimicWidget } from "./mimic-widget";
 
 /**
@@ -25,11 +26,12 @@ const NOW = Date.parse("2026-09-28T10:00:00.000Z");
 const WTP_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const RO_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const STP_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const STORAGE_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 
 const PRESET_KEYS = MIMIC_PRESETS.water_train.nodes.map((n) => n.key);
 
-function point(pointKey: string, name: string): GeneratedSitePointDto {
-  return { pointKey, name, unit: "m3/h", headlineRank: null, latest: null };
+function point(pointKey: string, name: string, unit = "m3/h"): GeneratedSitePointDto {
+  return { pointKey, name, unit, headlineRank: null, latest: null };
 }
 
 function asset(id: string, code: string, points: GeneratedSitePointDto[]): GeneratedSiteAssetDto {
@@ -45,19 +47,29 @@ const WTP = asset(WTP_ID, "WTR-WTP-01", [
 ]);
 const RO = asset(RO_ID, "WTR-RO-01", [point("p1", "Permeate")]);
 const STP = asset(STP_ID, "WTR-STP-01", [point("p1", "Inflow")]);
+const STORAGE = asset(STORAGE_ID, "WTR-TNK-01", [point("clearwell_level_pct", "Level", "%")]);
 
-/** Every preset node; `ro` has three members, `wtp` an open alarm, `softener` nobody. */
+/** WTP's open alarm. Its severity is `warning` while WTP's STATUS is `alarm` (critical), so a
+ * callout coloured from the node's status rather than the alarm's severity reddens C1. */
+const WTP_ALARM = { severity: "warning", message: "High D.O. alarm · DO 2.1 mg/L", raisedAt: "2026-09-28T09:58:00.000Z" };
+
+/**
+ * Every preset node; `ro` has three members, `wtp` an open alarm (and its callout), `softener`
+ * nobody, `water_storage` a tank with a level point.
+ */
 function nodes(): MimicNodeDto[] {
   return MIMIC_PRESETS.water_train.nodes
     .map((n): MimicNodeDto => {
-      const base = { key: n.key, label: n.label, roleCode: n.roleCode };
+      const base = { key: n.key, label: n.label, roleCode: n.roleCode, topAlarm: null };
       switch (n.key) {
         case "wtp":
-          return { ...base, asset: WTP, memberCount: 1, activeAlarms: 1 };
+          return { ...base, asset: WTP, memberCount: 1, activeAlarms: 1, topAlarm: WTP_ALARM };
         case "ro":
           return { ...base, asset: RO, memberCount: 3, activeAlarms: 0 };
         case "stp":
           return { ...base, asset: STP, memberCount: 1, activeAlarms: 0 };
+        case "water_storage":
+          return { ...base, asset: STORAGE, memberCount: 1, activeAlarms: 0 };
         default:
           return { ...base, asset: null, memberCount: 0, activeAlarms: 0 };
       }
@@ -65,11 +77,15 @@ function nodes(): MimicNodeDto[] {
     .reverse();
 }
 
-/** WTP and RO reported a second ago; STP never did. */
+/** WTP, RO and storage reported a second ago; STP never did. Storage's level reads 64 %. */
 const READINGS: SiteLiveReadings = {
   nowMs: NOW,
   pointLatest: (assetId, p) =>
-    assetId === WTP_ID ? { value: Number(p.pointKey.slice(1)) * 10.5, time: "t", atMs: NOW - 1_000 } : null,
+    assetId === WTP_ID
+      ? { value: Number(p.pointKey.slice(1)) * 10.5, time: "t", atMs: NOW - 1_000 }
+      : assetId === STORAGE_ID
+        ? { value: 64, time: "t", atMs: NOW - 1_000 }
+        : null,
   assetLastSeenMs: (a) => (a.id === STP_ID ? null : NOW - 1_000),
 };
 
@@ -146,4 +162,67 @@ export function loadingDrawsNoNodes(): void {
   renderMimic("loading");
   expect(screen.getByText("Loading…")).toBeInTheDocument();
   expect(screen.queryAllByTestId("mimic-node")).toHaveLength(0);
+}
+
+/** C1 — a node with `topAlarm` draws one callout: its message, its severity's label and tone. */
+export function alarmedNodeDrawsOneCallout(): void {
+  renderMimic();
+  const callouts = within(nodeEl("wtp")).getAllByTestId("mimic-alarm-callout");
+  expect(callouts).toHaveLength(1);
+  const callout = callouts[0] as HTMLElement;
+  expect(callout.getAttribute("data-severity")).toBe("warning");
+  expect(callout.getAttribute("data-tone")).toBe("warning");
+  expect(callout.querySelector("rect")?.getAttribute("class")).toContain("fill-warning-wash");
+  expect(within(callout).getByTestId("mimic-alarm-message").textContent).toBe(
+    "High D.O. alarm · DO 2.1 mg/L".slice(0, 25) + "\u2026",
+  );
+  expect(callout.querySelector("title")?.textContent).toBe(WTP_ALARM.message);
+  expect(within(callout).getByTestId("mimic-alarm-severity").textContent).toBe("Warning");
+}
+
+/** C2 — a node without `topAlarm` draws none: the whole drawing holds exactly WTP's one. */
+export function quietNodesDrawNoCallout(): void {
+  renderMimic();
+  expect(within(nodeEl("ro")).queryAllByTestId("mimic-alarm-callout")).toHaveLength(0);
+  const owners = screen
+    .getAllByTestId("mimic-alarm-callout")
+    .map((c) => c.closest("[data-testid='mimic-node']")?.getAttribute("data-node-key"));
+  expect(owners).toEqual(["wtp"]);
+}
+
+/** P1 — three panels, each holding exactly its train's nodes, in preset order. */
+export function panelsHoldTheirTrains(): void {
+  renderMimic();
+  const panels = screen.getAllByTestId("mimic-panel");
+  const byPanel = Object.fromEntries(
+    panels.map((p) => [
+      p.getAttribute("data-panel-key"),
+      within(p).getAllByTestId("mimic-node").map((n) => n.getAttribute("data-node-key")),
+    ]),
+  );
+  expect(byPanel).toEqual({
+    treatment: ["water_intake", "wtp", "ro", "softener", "water_storage"],
+    utilities: ["cooling_tower"],
+    wastewater: ["stp", "etp"],
+  });
+  expect(screen.getAllByTestId("mimic-panel-frame")).toHaveLength(3);
+}
+
+/** G1 — every node draws its mapped symbol; the storage tank fills to its live level. */
+export function everyNodeDrawsItsSymbol(): void {
+  renderMimic();
+  for (const key of PRESET_KEYS) {
+    const glyphs = within(nodeEl(key)).getAllByTestId("mimic-glyph");
+    expect(glyphs[0]?.getAttribute("data-glyph"), key).toBe(MIMIC_NODE_GLYPHS.water_train[key]);
+  }
+  expect(within(nodeEl("water_storage")).getByTestId("mimic-tank-level").getAttribute("data-level")).toBe("64");
+  expect(within(nodeEl("water_intake")).queryByTestId("mimic-tank-level")).toBeNull();
+}
+
+/** F1 — a moving dash rides only the pipes whose upstream node is live, and it can be reduced away. */
+export function flowRunsOnlyFromLiveNodes(): void {
+  renderMimic();
+  const flows = screen.getAllByTestId("mimic-flow");
+  expect(flows.map((f) => f.getAttribute("data-flow-from"))).toEqual(["ro", "water_storage", "water_storage"]);
+  expect(flows[0]?.getAttribute("class")).toContain("motion-reduce:hidden");
 }

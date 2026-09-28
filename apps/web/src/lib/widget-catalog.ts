@@ -156,8 +156,9 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     // at 24px. Outlines, so it does not read as the `value_tile` square or the `table` grid.
     iconPath: "M2 8h5v5H2V8Zm1 1v3h3V9H3Zm7-1h5v5h-5V8Zm1 1v3h3V9h-3Zm7-1h5v5h-5V8Zm1 1v3h3V9h-3ZM7 10h3v1H7v-1Zm8 0h3v1h-3v-1Zm-3 3h1v3h-1v-3Zm-2 3h5v5h-5v-5Zm1 1v3h3v-3h-3Z",
     // Full width: the train is eight nodes in a row with a branch, and a narrower card would
-    // shrink every node below a readable size.
-    defaultSize: { w: 12, h: 6 },
+    // shrink every node below a readable size. Ten rows tall since `F3.32b`: the grouped
+    // panels, symbols and alarm callouts drop to unreadable text at six.
+    defaultSize: { w: 12, h: 10 },
     points: WIDGET_POINT_CARDINALITY.mimic,
     sources: WIDGET_SOURCE_CARDINALITY.mimic,
   },

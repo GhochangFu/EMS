@@ -132,7 +132,7 @@ const DASHBOARD_ID_SQL = `
 const WIDGET_INSERT_SQL = `
   INSERT INTO bms.dashboard_widgets
     (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h, config)
-  SELECT $1, $2, 'mimic', 0, 0, 12, 6, $3::jsonb
+  SELECT $1, $2, 'mimic', 0, 0, 12, 10, $3::jsonb
   WHERE NOT EXISTS (
     SELECT 1 FROM bms.dashboard_widgets
     WHERE dashboard_id = $2 AND widget_type = 'mimic'
