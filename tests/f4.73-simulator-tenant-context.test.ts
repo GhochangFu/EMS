@@ -90,3 +90,42 @@ describe("F4.73 — the simulator sets a tenant context before reading bms.asset
     expect(bodyOf("loadAssets")).toContain("assetLimit");
   });
 });
+
+/**
+ * `F4.173` — the simulator pool survives an idle client that the server ends.
+ *
+ * `pg.Pool` emits `'error'` when Postgres ends an idle pooled client (a restart,
+ * a failover, `pg_terminate_backend`); with no listener Node throws and the
+ * simulator exits, and with no compose `restart:` it stays down. The api and
+ * worker pools have a behavioural gate
+ * (`apps/api/src/database/database-module-pools.integration.test.ts`); the
+ * simulator cannot, because `main()` runs when `index.js` is imported, so on
+ * this file's precedent the gate reads the source.
+ *
+ * **What this holds:** a listener is registered on the pool, it logs
+ * `err.message` and not the error object (which carries the client and its
+ * connection parameters, password included), and it does not exit. **What it
+ * does not hold:** that the process survives at runtime and the next tick
+ * writes — that is the `F4.173` stack check, which recreates Postgres under a
+ * running simulator.
+ */
+describe("F4.173 — the simulator pool survives a server-ended idle client", () => {
+  /** The `pool.on("error", …)` handler's text, up to its closing `});`. */
+  function poolErrorHandler(): string {
+    const start = code.indexOf('pool.on("error"');
+    expect(start, 'pool.on("error", …) is missing from apps/sim/src/index.js').toBeGreaterThanOrEqual(0);
+    const end = code.indexOf("});", start);
+    expect(end, "the pool error handler has no closing });").toBeGreaterThan(start);
+    return code.slice(start, end);
+  }
+
+  it("registers an 'error' listener on the pool that logs the message", () => {
+    expect(poolErrorHandler()).toMatch(/console\.error\([^)]*\berr\.message\b/);
+  });
+
+  it("neither exits nor logs the error object from that listener", () => {
+    const handler = poolErrorHandler();
+    expect(handler).not.toMatch(/process\.exit/);
+    expect(handler).not.toMatch(/console\.error\([^)]*\berr\s*\)/);
+  });
+});

@@ -57,6 +57,11 @@ const NOTIFY_CHANNEL = "bms_telemetry";
 const MAX_NOTIFY_UTF8_BYTES = 7000;
 
 const pool = new pg.Pool({ connectionString: databaseUrl });
+// F4.173: a restarted Postgres ends idle pooled clients, and with no listener
+// Node throws and the simulator exits. Log the message only and keep ticking.
+pool.on("error", (err) => {
+  console.error("[sim] postgres pool error:", err.message);
+});
 
 const metricsRegistry = new promClient.Registry();
 metricsRegistry.setDefaultLabels({ service: "bms-sim" });
