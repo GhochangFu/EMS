@@ -111,7 +111,7 @@ describe("F4.164 locked Settings entry", () => {
     givesAnOrganizationAdminTheSettingsLink();
   });
 
-  it("S14 draws the locked entry in text-white/70", () => {
+  it("S14 draws the locked entry in text-on-dark/70", () => {
     drawsTheLockedSettingsAtThreeToOne();
   });
 });

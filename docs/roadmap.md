@@ -6565,3 +6565,49 @@ the security review's finding became Decision 3.
 
 **Cascade:** no row lists `F4.61` in *Depends*. Raised `F4.173` (`api` and
 `worker` exit when Postgres restarts). No `chore(agents):` change owed.
+
+### `F3.65a` — colour role tokens, the stored theme choice, and the shell ✅ 2026-09-28
+
+PR #617, squash `12000ab3`; ADR 0078 (#614) and its Amendment 1; plan
+`docs/plans/f3.65a-colour-tokens.md` (Fable), twelve owner rulings.
+
+`apps/web` now names colours by role. Forty-one RGB-channel CSS variables sit
+under `:root` and `:root[data-theme="dark"]`, mapped in Tailwind so opacity
+modifiers keep working; an inline `index.html` script reads `bms.theme`
+before the first paint, and light stays the default. The shell and the login
+page moved onto role classes with two declared light changes. The other pages
+(`F3.65b`) and the charts, schematics and visible switch (`F3.65c`) follow.
+
+Verified: five `tests/` gates — tokens, contrast in both themes, the
+shade-to-role map, the exact per-file ratchet with hard zeros, the boot script
+— each new assertion shown red on its mutation; the browser layer on the
+rebuilt web container, 20/20 by exact values. Two reviews; the code review's
+five false greens and one wrong mapping rule were fixed test-first.
+
+**Cascade:** `F3.65b` is now startable (it depends on `F3.65a` alone). The
+`chore(agents):` §5 rule follows separately (#618).
+
+### `F4.173` — api, worker and sim survive a Postgres restart ✅ 2026-09-28
+
+PR #620, squash `06c96c50`; plan `docs/plans/f4.173-pg-pool-error-listener.md`
+(Fable). No ADR (owner ruling).
+
+pg emits `'error'` on a client whose backend the server ends, and with no
+listener Node exits. The three `DatabaseModule` pools had none, so a Postgres
+restart took down REST, auth, the websockets and the worker, and no compose
+service restarts them. `createPool` now adds a pool listener for idle clients
+and a per-checkout client listener for checked-out ones, since pg-pool drops
+its own for that span and every `withTenant` checks a client out. Each logs
+one line with `err.message` only. The simulator got the same two listeners.
+
+Verified: a DB-gated suite boots the real module and ends only its own
+backends — 15 cases, each shown red on its own mutation; a static gate for
+the sim. The stack check recreated Postgres under running `api`, `worker` and
+`sim`: all three stayed up, `/health` answered 200, the sim kept ticking. CI
+green on the first run. Three reviews; the code review found the checked-out
+half, fixed in the same PR by owner ruling.
+
+**Cascade:** no row lists `F4.173` in *Depends* except the new `F4.175`
+(`/health` has no database probe), raised by the owner's ruling. Whether
+compose sets `restart:` stays an open owner question. No `chore(agents):`
+change owed.
