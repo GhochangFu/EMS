@@ -10,6 +10,7 @@ import {
   assertOnlyARowWithoutItsCodeIsSkipped,
   assertTheDemoUsersGetTheResolvedWesternCapeRow,
   assertTheRtuStepRunsAfterTheSeedRowsAndSkipsTheirHeldCodes,
+  assertTheSeedKeyNameIsBoundNotSpliced,
   assertTheSeedReadsSlugHoldersAsTheSuperuser,
 } from "./eskom-locations-seed.spec";
 
@@ -56,5 +57,11 @@ describe("F4.169/F4.170 addendum 4 — an ambiguous identity's consumers", () =>
 
   it("grants wc-admin the row seedEskomLocations resolved, in seed.ts", () => {
     assertTheDemoUsersGetTheResolvedWesternCapeRow();
+  });
+});
+
+describe("F4.170 compliance review B3 — the seed key name is a bound parameter", () => {
+  it("findSeedLocation binds the key name and splices nothing into its SQL", async () => {
+    await assertTheSeedKeyNameIsBoundNotSpliced();
   });
 });

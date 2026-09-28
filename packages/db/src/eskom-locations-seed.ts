@@ -185,15 +185,16 @@ export async function findSeedLocation(
 ): Promise<SeedLocationCandidates> {
   const found = await pool.query<{ id: string; keyed: boolean; code: string }>(
     `
-    SELECT id, code, COALESCE(meta->>'${SEED_LOCATION_KEY}' = $2, false) AS keyed
+    SELECT id, code, COALESCE(meta->>$5::text = $2, false) AS keyed
       FROM bms.locations
      WHERE organization_id = $1
-       AND (meta->>'${SEED_LOCATION_KEY}' = $2
+       AND (meta->>$5::text = $2
             OR ((slug = $3 OR code = $4)
-                AND (meta->>'${SEED_LOCATION_KEY}' IS NULL OR meta->>'${SEED_LOCATION_KEY}' = $2)))
+                AND (meta->>$5::text IS NULL OR meta->>$5::text = $2)))
      ORDER BY created_at, id
     `,
-    [organizationId, identity.key, identity.slug, identity.code],
+    // The key name is bound, not spliced into the text (compliance review B3).
+    [organizationId, identity.key, identity.slug, identity.code, SEED_LOCATION_KEY],
   );
   const oldest = found.rows[0];
   const keyedCount = found.rows.filter((row) => row.keyed).length;

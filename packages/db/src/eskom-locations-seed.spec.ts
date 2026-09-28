@@ -8,7 +8,10 @@ import {
   eskomCanonicalLocationRows,
   eskomLocationCode,
   eskomSeedLocationIdentity,
+  findSeedLocation,
+  type LocationQueryable,
   locationIdsWithoutSeedCode,
+  SEED_LOCATION_KEY,
   type SeedLocationClaim,
   seedLocationSkipLines,
 } from "./eskom-locations-seed";
@@ -209,4 +212,23 @@ export function assertAnAmbiguousIdentitysCandidatesWithoutTheCodeAreSkipped(): 
     ],
     "a row another identity adopted with its code written gets its RTUs",
   ).toEqual([]);
+}
+
+/**
+ * `F4.170` (compliance review B3) — `findSeedLocation` binds the key name as a
+ * parameter rather than splicing the constant into the SQL text. The lookup's
+ * behaviour is the integration suites'; this pins only where the name goes.
+ */
+export async function assertTheSeedKeyNameIsBoundNotSpliced(): Promise<void> {
+  const calls: { text: string; values: readonly unknown[] }[] = [];
+  const pool = {
+    query: async (text: string, values: readonly unknown[]) => {
+      calls.push({ text, values });
+      return { rows: [] };
+    },
+  } as unknown as LocationQueryable;
+  await findSeedLocation(pool, "org", { key: "k", slug: "s", code: "C" });
+  expect(calls, "one query").toHaveLength(1);
+  expect(calls[0]?.text, "no quoted key name in the SQL text").not.toContain(`'${SEED_LOCATION_KEY}'`);
+  expect(calls[0]?.values, "the key name is a bound value").toContain(SEED_LOCATION_KEY);
 }
