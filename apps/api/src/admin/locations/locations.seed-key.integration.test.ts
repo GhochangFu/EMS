@@ -11,11 +11,15 @@ import { asRole } from "../../testing/role-urls";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { LocationsAdminService } from "./locations.service";
 import {
+  createAuditRecordsTheStoredMeta,
   createStoresNoSeedKey,
   type SeedKeyCtx,
+  updateAuditRecordsTheStoredMeta,
   updateCannotForgeAKey,
   updateCannotMoveTheKey,
   updateWithEmptyMetaKeepsTheKey,
+  updateWithMetaKeepsAKeyWrittenAfterTheRead,
+  updateWithoutMetaKeepsAKeyWrittenAfterTheRead,
   updateWithoutMetaKeepsTheKey,
 } from "./locations.seed-key.integration.spec";
 
@@ -64,6 +68,28 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   }
 }
 
+/**
+ * The real vocabulary check, with a one-shot hook run first. `update` calls
+ * `assertLocationType` after its fleet read of the row and before its write
+ * transaction opens, so the hook lands a write in exactly that window (P6, P7).
+ */
+class HookedVocabularies extends VocabulariesService {
+  private hook: (() => Promise<void>) | undefined;
+
+  setHook(hook: () => Promise<void>): void {
+    this.hook = hook;
+  }
+
+  override async assertLocationType(code: string): Promise<void> {
+    const hook = this.hook;
+    this.hook = undefined;
+    if (hook) {
+      await hook();
+    }
+    await super.assertLocationType(code);
+  }
+}
+
 function jwtFor(email: string): JwtPayload {
   return { sub: SYNTHETIC_SUB, email, name: `integration:${email}`, role: "organization_admin" };
 }
@@ -104,12 +130,13 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — meta.seedKey on the loc
       throw new Error(`F4.170: ${ORGANIZATION_ADMIN_EMAIL} has no organization grant — run pnpm db:seed.`);
     }
 
+    const vocabularies = new HookedVocabularies(createDb(tenantPool));
     const svc = new LocationsAdminService(
       createDb(fleetPool),
       createDb(tenantPool),
       new AccessControlService(createDb(authPool), createDb(fleetPool)),
       new MasterDataAuditService(createDb(tenantPool), createDb(fleetPool)),
-      new VocabulariesService(createDb(tenantPool)),
+      vocabularies,
     );
     ctx = {
       svc,
@@ -119,6 +146,7 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — meta.seedKey on the loc
       register: (id) => createdIds.push(id),
       family: FAMILY,
       keyValue: (suffix) => `f4170-api-${RUN}-${suffix.toLowerCase()}`,
+      beforeNextTypeCheck: (hook) => vocabularies.setHook(hook),
     };
   });
 
@@ -151,5 +179,21 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — meta.seedKey on the loc
 
   it("P5 a PATCH without meta on a keyed row keeps the key", async () => {
     await updateWithoutMetaKeepsTheKey(ctx);
+  });
+
+  it("P6 a PATCH with meta keeps a key written after the service's read", async () => {
+    await updateWithMetaKeepsAKeyWrittenAfterTheRead(ctx);
+  });
+
+  it("P7 a PATCH without meta keeps a key written after the service's read", async () => {
+    await updateWithoutMetaKeepsAKeyWrittenAfterTheRead(ctx);
+  });
+
+  it("A1 the create's audit row records the stored meta, not the request's seedKey", async () => {
+    await createAuditRecordsTheStoredMeta(ctx);
+  });
+
+  it("A2 the update's audit row records the stored meta, not the request's seedKey", async () => {
+    await updateAuditRecordsTheStoredMeta(ctx);
   });
 });
