@@ -50,14 +50,13 @@ describe("F3.65a colour mapping table", () => {
     expect(roleFor("text-violet-700")).toEqual({ role: "simulated-ink", kind: "exact" });
   });
 
-  // Fix B: `CLASS_OVERRIDES` used to key on the class with opacity stripped, so `bg-white/10` (a
-  // translucent layer on chrome) resolved to `surface` like an opaque `bg-white` panel, and there
-  // was no `border-white` / `ring-white` entry at all, so those fell through to `SHADE_ROLES`'
-  // `white` row (`surface`) too. §2.3's white row and D1: `bg-white` / `fill-white` stay
-  // `surface`; `text-white`, `border-white`, `ring-white` (with or without `/NN`) and any
-  // `bg-white/NN` are `on-dark`.
-  it("N1 roleFor(\"bg-white/10\") is on-dark, not surface — a translucent layer on chrome", () => {
-    expect(roleFor("bg-white/10").role).toBe("on-dark");
+  // plan §2.3 D1: the role follows the utility, not the opacity step. `bg-white/NN` is not a
+  // chrome layer by rule — `dashboard-canvas.tsx`'s `bg-white/90` drag handle and the `bg-white/70`
+  // panels in `work-orders-page.tsx` and `alarm-summary-card.tsx` sit on a card; so `bg-white` at any
+  // step defaults to `surface` and lists `on-dark` (the logo plates, `bg-on-dark`) as the alternative
+  // the migrating hand picks, as `text-white` defaults to `on-dark` and lists `on-accent`.
+  it("N1 roleFor(\"bg-white/90\") is surface — the drag handle on a dashboard tile", () => {
+    expect(roleFor("bg-white/90").role).toBe("surface");
   });
 
   it("N2 roleFor(\"border-white/20\") is on-dark", () => {
@@ -68,8 +67,16 @@ describe("F3.65a colour mapping table", () => {
     expect(roleFor("ring-white/80").role).toBe("on-dark");
   });
 
-  it("N4 roleFor(\"bg-white\") is still surface — the guard that the fix does not over-reach", () => {
+  it("N4 roleFor(\"bg-white\") is surface", () => {
     expect(roleFor("bg-white").role).toBe("surface");
+  });
+
+  it("N5 bg-white lists on-dark as its alternative role (the logo plates)", () => {
+    expect(CLASS_OVERRIDES["bg-white"].altRoles).toEqual(["on-dark"]);
+  });
+
+  it("N6 text-white lists on-accent as its alternative role (text-white/80 on a bg-bms-green tab)", () => {
+    expect(CLASS_OVERRIDES["text-white"].altRoles).toEqual(["on-accent"]);
   });
 
   it("M2 every exact row's role light token equals resolveTailwindShade(shade)", () => {

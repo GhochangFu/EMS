@@ -13,11 +13,14 @@
  *
  * `CLASS_OVERRIDES` is the class-level split: some shades resolve to a *different* role depending
  * on which Tailwind utility carries them (`text-white` → `on-dark`, not the shade's default
- * `surface`). Keys are the class with any `/NN` or `/[…]` opacity modifier stripped — the same
- * role serves every opacity step **except** the `bg-white` family (Fix B, §2.3's white row):
- * `bg-white`/`fill-white` stay `surface`, but `text-white`/`border-white`/`ring-white`/`bg-white/NN`
- * are `on-dark` regardless of whether an opacity step is present — a translucent layer on chrome
- * reads differently from an opaque white panel.
+ * `surface`). Keys are the class with any `/NN` or `/[…]` opacity modifier stripped: the role
+ * follows the utility, never the opacity step (plan §2.3 D1). `bg-white` at any step defaults to
+ * `surface` — `dashboard-canvas.tsx`'s `bg-white/90` drag handle and the `bg-white/70` panels in
+ * `work-orders-page.tsx` and `alarm-summary-card.tsx` sit on a card — and lists `on-dark` as the
+ * alternative the migrating hand picks where the white sits on chrome (the logo plates,
+ * `system-status-indicator.tsx`'s `bg-white/40` footer dot). `text-white` defaults to `on-dark`
+ * and lists `on-accent` (`asset-templates-page-tab-strip.tsx`'s `text-white/80` sits on
+ * `bg-bms-green`).
  *
  * `text-violet-700` is not one of §2.3's 76 `.tsx` rows (§2.1 scopes that table to `.tsx`;
  * `lib/value-provenance.ts` is `.ts`) — it is `SHADE_ROLES`' 77th row, added so `roleFor` covers
@@ -141,7 +144,7 @@ export const CLASS_OVERRIDES: Record<string, ClassOverride> = {
   "text-white": { role: "on-dark", kind: "exact", altRoles: ["on-accent"] },
   "border-white": { role: "on-dark", kind: "exact" },
   "ring-white": { role: "on-dark", kind: "exact" },
-  "bg-white": { role: "surface", kind: "exact" },
+  "bg-white": { role: "surface", kind: "exact", altRoles: ["on-dark"] },
   "fill-white": { role: "surface", kind: "exact" },
   "text-red-600": { role: "critical-ink-soft", kind: "exact" },
   "text-gray-100": { role: "on-dark", kind: "merged" },
@@ -171,10 +174,6 @@ function stripOpacity(className: string): string {
  */
 export function roleFor(className: string): { role: string; kind: ShadeKind } {
   const stripped = stripOpacity(className);
-  // `bg-white/NN` (a translucent layer on chrome, e.g. `layouts/app-shell.tsx`'s hover states) is
-  // not the same thing `bg-white` (an opaque panel) is — Fix B, §2.3's white row. The opacity is
-  // visible only before stripping, so this check has to run before the stripped-key lookup below.
-  if (stripped === "bg-white" && stripped !== className) return { role: "on-dark", kind: "exact" };
   const override = CLASS_OVERRIDES[stripped];
   if (override) return { role: override.role, kind: override.kind };
   const m = COLOUR_UTILITY_PREFIX.exec(stripped);
