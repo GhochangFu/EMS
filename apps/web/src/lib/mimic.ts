@@ -5,7 +5,9 @@ import type {
   GeneratedSiteViewDto,
   MIMIC_PRESETS,
   MimicNodeDto,
+  MimicPanelTone as SharedMimicPanelTone,
   MimicPreset,
+  MimicSymbol,
   MimicWidgetNodesDto,
 } from "@bms/shared";
 
@@ -87,8 +89,11 @@ export const MIMIC_LAYOUTS: { readonly [P in MimicPreset]: MimicLayout<NodeKeyOf
   water_train: WATER_TRAIN_LAYOUT,
 };
 
-/** A panel's tint — ADR 0078 roles only, and never `warning` or `critical`, which mean status. */
-export type MimicPanelTone = "info" | "neutral" | "accent";
+/**
+ * A panel's tint — ADR 0078 roles only, and never `warning` or `critical`, which mean status.
+ * Declared once, as `mimicPanelToneSchema` in the shared contract (`F3.32c`, plan D12).
+ */
+export type MimicPanelTone = SharedMimicPanelTone;
 
 /** A tinted panel: one train of the plant, holding its nodes (Amendment 2 item 2). */
 export type MimicPanel<K extends string = string> = {
@@ -160,22 +165,16 @@ export function mimicPanelBox(
   };
 }
 
-/** The illustrated symbols `mimic-glyphs.tsx` draws. */
-export type MimicGlyphKind =
-  | "tank"
-  | "clarifier"
-  | "membrane"
-  | "vessel"
-  | "tower"
-  | "aeration"
-  | "dosing"
-  | "pump"
-  | "discharge"
-  | "alert";
+/**
+ * The illustrated symbols `mimic-glyphs.tsx` draws: every unit symbol of the closed shared set
+ * (`mimicSymbolSchema`, `F3.32c` plan D12), plus the callout's `alert`. A symbol added to the
+ * contract without a path is a compile error in `mimic-glyphs.tsx`.
+ */
+export type MimicGlyphKind = MimicSymbol | "alert";
 
 /** Node key → its symbol. Typed like `MIMIC_LAYOUTS`: a missing node key is a compile error. */
 export const MIMIC_NODE_GLYPHS: {
-  readonly [P in MimicPreset]: { readonly [key in NodeKeyOf<P>]: MimicGlyphKind };
+  readonly [P in MimicPreset]: { readonly [key in NodeKeyOf<P>]: MimicSymbol };
 } = {
   water_train: {
     water_intake: "tank",

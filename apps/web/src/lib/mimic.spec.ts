@@ -67,7 +67,7 @@ function node(key: string, a: GeneratedSiteAssetDto | null, activeAlarms = 0): M
 }
 
 function widget(nodes: MimicNodeDto[]): MimicWidgetNodesDto {
-  return { widgetId: WIDGET_ID, preset: "water_train", nodes };
+  return { source: "preset", widgetId: WIDGET_ID, preset: "water_train", nodes };
 }
 
 /** M1 — the synthetic view holds the assigned assets only, in node order. */
