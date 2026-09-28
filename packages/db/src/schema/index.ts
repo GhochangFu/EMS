@@ -8,3 +8,4 @@ export * from "./calc-parameters-schema";
 export * from "./report-schedules-schema";
 export * from "./report-files-schema";
 export * from "./site-control-room-views-schema";
+export * from "./mimic-layouts-schema";
