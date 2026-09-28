@@ -6695,3 +6695,14 @@ after a scope switch) and the other findings were fixed in the PR.
 
 **Cascade:** `F3.32` stays open for the drawing builder (ADR 0079 decisions
 8–9). No row lists `F3.32a` in *Depends*.
+
+### `F3.32b` — the water-train mimic in the Ion Exchange reference style ✅ 2026-09-28
+
+PR #632, squash `d4ee8d5b`; ADR 0079 Amendment 2.
+
+The v1 mimic was plain boxes. It now draws the reference's look: tinted panels,
+an illustrated symbol per unit with its values, flow along pipes that carry
+fresh data, and an alarm callout under the unit that raised it, coloured from
+the severity vocabulary. The owner reviewed it on the rebuilt stack.
+
+**Cascade:** the unit-level preset stays open under `F3.32`.
