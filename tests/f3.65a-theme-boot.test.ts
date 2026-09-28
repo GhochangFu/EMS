@@ -82,9 +82,15 @@ describe("F3.65a theme boot script", () => {
     expect(runBootScript(() => storageWithValue(null))).toBe("light");
   });
 
-  it('B5 "Dark", "system" and "" all set data-theme="light"', () => {
+  it('B5 "Dark" sets data-theme="light" (the match is exact)', () => {
     expect(runBootScript(() => storageWithValue("Dark"))).toBe("light");
+  });
+
+  it('B5 "system" sets data-theme="light" (there is no System choice)', () => {
     expect(runBootScript(() => storageWithValue("system"))).toBe("light");
+  });
+
+  it('B5 "" sets data-theme="light"', () => {
     expect(runBootScript(() => storageWithValue(""))).toBe("light");
   });
 
@@ -105,10 +111,12 @@ describe("F3.65a theme boot script", () => {
     ).toBe("light");
   });
 
-  it("B8 the script uses neither matchMedia nor prefers-color-scheme", () => {
-    const script = extractBootScript();
-    expect(script).not.toMatch(/matchMedia/);
-    expect(script).not.toMatch(/prefers-color-scheme/);
+  it("B8 the script does not use matchMedia", () => {
+    expect(extractBootScript()).not.toMatch(/matchMedia/);
+  });
+
+  it("B8 the script does not use prefers-color-scheme", () => {
+    expect(extractBootScript()).not.toMatch(/prefers-color-scheme/);
   });
 
   it('B9 the storage key literal is exactly "bms.theme"', () => {
