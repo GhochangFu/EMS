@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertApiDraftLocationParsesWithoutType,
+  assertDraftLocationMetaDescribesTheSeedKey,
   assertDraftDepthFixturesSitExactlyAtTheBound,
   assertOnboardingDraftSchemaCoversTheModelProducer,
   assertPatchDraftBodyAcceptsADraftAtTheBound,
@@ -67,5 +68,11 @@ describe("onboarding.schema — the draft's nesting depth (F4.115)", () => {
 describe("onboarding.schema — draftLocationSchema.type is optional (F4.157, ADR 0077 D4)", () => {
   it("C6 — parses a draft location without type", () => {
     assertApiDraftLocationParsesWithoutType();
+  });
+});
+
+describe("onboarding.schema — the OpenAPI document says location.meta.seedKey is seed-owned (F4.170)", () => {
+  it("D3 — the PATCH :id/draft body's draft.location.meta description", () => {
+    assertDraftLocationMetaDescribesTheSeedKey();
   });
 });

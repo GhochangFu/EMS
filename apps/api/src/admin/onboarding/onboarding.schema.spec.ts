@@ -9,6 +9,7 @@ import {
 } from "@bms/shared";
 import { z } from "zod";
 
+import { convertZodSchema } from "../../openapi/zod-openapi";
 import { createPointKeyBodySchema } from "../point-keys/point-keys.schema";
 import { exceedsDepth } from "../stack-safe-json";
 
@@ -863,5 +864,21 @@ export function assertApiDraftLocationParsesWithoutType(): void {
     `a draft location without type must parse, got: ${
       parsed.success ? "" : JSON.stringify(parsed.error.issues)
     }`,
+  );
+}
+
+/**
+ * D3 (`F4.170`, compliance review B1) — the generated document for
+ * `PATCH :id/draft` says a draft location's `meta.seedKey` is seed-owned and
+ * ignored on commit. Read from the converted schema, since a caller reads the
+ * document, not this file.
+ */
+export function assertDraftLocationMetaDescribesTheSeedKey(): void {
+  type Node = { properties?: Record<string, Node>; description?: unknown };
+  const { schema } = convertZodSchema(patchDraftBodySchema, "patchDraftBody");
+  const meta = (schema as Node).properties?.draft?.properties?.location?.properties?.meta;
+  assert(
+    typeof meta?.description === "string" && /seedKey.*seed-owned.*ignored/s.test(meta.description),
+    `draft.location.meta must say seedKey is seed-owned and ignored, got: ${JSON.stringify(meta?.description)}`,
   );
 }
