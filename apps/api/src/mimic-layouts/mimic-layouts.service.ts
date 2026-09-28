@@ -182,11 +182,27 @@ export class MimicLayoutsService {
     });
   }
 
-  /** Deletes a layout no dashboard widget names (ADR 0081 decision 3). */
+  /**
+   * Deletes a layout no dashboard widget names (ADR 0081 decision 3).
+   *
+   * **The row lock comes before the count.** `FOR UPDATE` conflicts with the
+   * `FOR KEY SHARE` a widget save takes on every layout it names
+   * (`assertMimicLayoutsInOrganization`), so a save in flight finishes first,
+   * and the count below then sees its committed widget. Counting first would
+   * read zero while that save is still open, and delete a layout it names.
+   */
   async remove(jwt: JwtPayload, id: string): Promise<MimicLayoutDeletedResponse> {
     const existing = await this.fetchReadable(jwt, id);
     await this.assertCanAuthor(jwt, existing.organizationId);
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      const [locked] = await tx
+        .select({ id: mimicLayouts.id })
+        .from(mimicLayouts)
+        .where(eq(mimicLayouts.id, id))
+        .for("update");
+      if (!locked) {
+        throw new NotFoundException("Mimic layout not found");
+      }
       const [{ n } = { n: 0 }] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(dashboardWidgets)

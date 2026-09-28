@@ -872,6 +872,12 @@ export class DashboardsService {
  * transaction today, and the predicate keeps it one if the handle ever changes. An unknown id and
  * another organization's id answer the SAME sentence, and neither is echoed, so the 400 never
  * confirms that a foreign layout exists.
+ *
+ * **`FOR KEY SHARE` holds each named layout until the save commits.** It conflicts with the
+ * `FOR UPDATE` `MimicLayoutsService.remove` takes before its in-use count, so a delete waits for
+ * this save and then counts its widget; a delete already in flight makes this read wait, then
+ * find no row. It does not conflict with the non-key `UPDATE` a layout replace runs, so an edit
+ * of the drawing never blocks a dashboard save.
  */
 async function assertMimicLayoutsInOrganization(
   tx: BmsTx,
@@ -891,7 +897,8 @@ async function assertMimicLayoutsInOrganization(
   const rows = await tx
     .select({ id: mimicLayouts.id })
     .from(mimicLayouts)
-    .where(and(inArray(mimicLayouts.id, layoutIds), eq(mimicLayouts.organizationId, organizationId)));
+    .where(and(inArray(mimicLayouts.id, layoutIds), eq(mimicLayouts.organizationId, organizationId)))
+    .for("key share");
   if (rows.length !== layoutIds.length) {
     throw new BadRequestException(MIMIC_LAYOUT_ORG_MESSAGE);
   }

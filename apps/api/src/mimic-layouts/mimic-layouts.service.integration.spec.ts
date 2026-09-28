@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import type pg from "pg";
 import { expect } from "vitest";
@@ -10,7 +12,7 @@ import type { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**
  * `F3.32c` U2 — what `MimicLayoutsService` does against a real database and
- * real row security (plan U2, C1–C11). Assertions live here;
+ * real row security (plan U2, C1–C11; C12 from U7). Assertions live here;
  * `mimic-layouts.service.integration.test.ts` is the Vitest entry point
  * (ADR 0014) and owns the pools, the fixtures and the cleanup.
  *
@@ -224,6 +226,60 @@ export async function assertListExcludesAnotherOrganization(ctx: Ctx): Promise<v
   expect(ids).not.toContain(eskom.id);
   expect(items.every((i) => i.organizationId === ctx.phewbOrgId)).toBe(true);
   expect(items.find((i) => i.id === phewb.id)?.unitCount).toBe(3);
+}
+
+/**
+ * C12 — a delete waits for a widget save that holds the layout, then counts its widget.
+ *
+ * The superuser client stands in for `DashboardsService.putWidgets`: it takes the same
+ * `FOR KEY SHARE` lock `assertMimicLayoutsInOrganization` takes, and inserts the widget in the
+ * same transaction. `remove()` must block on its `FOR UPDATE` until that commits, and then answer
+ * 409. With the lock after the count, the count reads zero and the delete removes a named layout.
+ */
+export async function assertDeleteWaitsForAConcurrentWidgetSave(ctx: Ctx): Promise<void> {
+  const dto = await create(ctx, "c12");
+  // A dashboard the cleanup tracks; its own widget names another id, so it does not count.
+  const dashboardId = await ctx.plantReferencingWidget(randomUUID());
+  const client = await ctx.ownerPool.connect();
+  let removal: Promise<unknown> | undefined;
+  try {
+    await client.query("BEGIN");
+    const held = await client.query(`SELECT id FROM bms.mimic_layouts WHERE id = $1 FOR KEY SHARE`, [dto.id]);
+    expect(held.rows).toHaveLength(1);
+
+    let settled = false;
+    removal = ctx.service.remove(ctx.globalAdmin, dto.id).then(
+      (value) => {
+        settled = true;
+        return value;
+      },
+      (err: unknown) => {
+        settled = true;
+        return err;
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(settled, "remove() must wait for the save that holds the layout").toBe(false);
+
+    await client.query(
+      `INSERT INTO bms.dashboard_widgets
+         (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h, config)
+       VALUES ($1, $2, 'mimic', 0, 6, 6, 6, $3::jsonb)`,
+      [ctx.eskomOrgId, dashboardId, JSON.stringify({ source: "layout", layoutId: dto.id })],
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  const outcome = await removal;
+  expect(outcome).toBeInstanceOf(ConflictException);
+  expect((outcome as Error).message).toBe(MIMIC_LAYOUT_IN_USE_MESSAGE(1));
+  const still = await ctx.ownerPool.query(`SELECT 1 FROM bms.mimic_layouts WHERE id = $1`, [dto.id]);
+  expect(still.rows).toHaveLength(1);
 }
 
 /** C11 — an unknown role code is a 400 that does not echo the code, and writes nothing. */

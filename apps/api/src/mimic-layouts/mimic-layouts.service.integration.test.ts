@@ -21,7 +21,7 @@ import { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**
  * `F3.32c` U2 — Vitest entry point for `MimicLayoutsService` against a real
- * database (plan U2, C1–C11). Assertions live in the sibling `.spec`
+ * database (plan U2, C1–C11; C12 from U7). Assertions live in the sibling `.spec`
  * (ADR 0014); this file owns the pools, the fixtures and the cleanup.
  *
  * **Cleanup deletes only rows this suite created, by id** — never a broad
@@ -170,5 +170,9 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
 
   it("C11 an unknown role code is a 400 that does not echo the code", async () => {
     await spec.assertUnknownRoleIs400WithoutTheCode(ctx);
+  }, 60_000);
+
+  it("C12 a delete waits for a concurrent widget save, then refuses with 409", async () => {
+    await spec.assertDeleteWaitsForAConcurrentWidgetSave(ctx);
   }, 60_000);
 });
