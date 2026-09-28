@@ -170,6 +170,68 @@ export async function updateWithoutMetaKeepsAKeyWrittenAfterTheRead(ctx: SeedKey
 }
 
 /**
+ * P8 — the update's read of `meta` takes the row lock. P6 and P7 key the row
+ * before the write transaction opens, so they prove only that `meta` is read
+ * inside it. Here a second session holds the row lock when the transaction
+ * opens, and writes the key only once `pg_blocking_pids` shows the service
+ * waiting on it. With the lock, the service's read waits and sees the key;
+ * without it, the read sees none and only the UPDATE waits, then writes the
+ * key away.
+ */
+export async function updateReadsMetaUnderTheRowLock(ctx: SeedKeyCtx): Promise<void> {
+  const created = await ctx.svc.create(ctx.jwt, { ...body(ctx, "P8"), meta: { note: "admin" } });
+  ctx.register(created.id);
+  const key = ctx.keyValue("P8");
+  const holder = await ctx.fleetPool.connect();
+  let holderOpen = false;
+  try {
+    const holderPid = (await holder.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]?.pid;
+    ctx.beforeNextTypeCheck(async () => {
+      await holder.query("BEGIN");
+      holderOpen = true;
+      await holder.query("SELECT id FROM bms.locations WHERE id = $1 FOR UPDATE", [created.id]);
+    });
+    const update = ctx.svc.update(
+      ctx.jwt,
+      created.id,
+      updateLocationBodySchema.parse({ type: "rsmoc", meta: { note: "n" } }),
+    );
+    // Swallowed here and re-thrown by the `await` below, so a failed update
+    // is not an unhandled rejection while the poll runs.
+    update.catch(() => undefined);
+    let blocked = 0;
+    for (let i = 0; i < 200 && blocked === 0; i += 1) {
+      const { rows } = await ctx.fleetPool.query<{ n: number }>(
+        "SELECT COUNT(*)::int AS n FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
+        [holderPid],
+      );
+      blocked = rows[0]?.n ?? 0;
+      if (blocked === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+    expect(blocked, "the service's write transaction waits on the held row lock").toBe(1);
+    await holder.query(
+      `UPDATE bms.locations SET meta = COALESCE(meta, '{}'::jsonb) || jsonb_build_object('seedKey', $2::text)
+        WHERE id = $1`,
+      [created.id, key],
+    );
+    await holder.query("COMMIT");
+    holderOpen = false;
+    await update;
+  } finally {
+    if (holderOpen) {
+      await holder.query("ROLLBACK");
+    }
+    holder.release();
+  }
+  expect(await storedMeta(ctx, created.id), "the key committed while the service waited").toEqual({
+    note: "n",
+    seedKey: key,
+  });
+}
+
+/**
  * A1 — the create's audit row records the `meta` stored, never the request's
  * `seedKey` (compliance review B2; the `assets.service.ts` `F4.139` rule: the
  * payload records what is in the table, not what was asked for).

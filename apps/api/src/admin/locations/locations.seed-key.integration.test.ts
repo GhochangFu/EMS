@@ -18,6 +18,7 @@ import {
   updateCannotForgeAKey,
   updateCannotMoveTheKey,
   updateWithEmptyMetaKeepsTheKey,
+  updateReadsMetaUnderTheRowLock,
   updateWithMetaKeepsAKeyWrittenAfterTheRead,
   updateWithoutMetaKeepsAKeyWrittenAfterTheRead,
   updateWithoutMetaKeepsTheKey,
@@ -188,6 +189,10 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — meta.seedKey on the loc
   it("P7 a PATCH without meta keeps a key written after the service's read", async () => {
     await updateWithoutMetaKeepsAKeyWrittenAfterTheRead(ctx);
   });
+
+  it("P8 the update reads meta under the row lock", async () => {
+    await updateReadsMetaUnderTheRowLock(ctx);
+  }, 30_000);
 
   it("A1 the create's audit row records the stored meta, not the request's seedKey", async () => {
     await createAuditRecordsTheStoredMeta(ctx);
