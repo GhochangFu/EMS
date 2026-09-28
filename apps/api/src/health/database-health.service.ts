@@ -21,14 +21,35 @@ import { DATABASE_HEALTH_TIMEOUT_MS, readDatabaseHealth } from "./database-healt
  */
 @Injectable()
 export class DatabaseHealthService {
+  /**
+   * **One `select 1` in the pool at a time** (the `F4.175` security review).
+   * The race in `readDatabaseHealth` stops waiting after 2 s but cannot cancel
+   * the query, which stays in the pool's unbounded wait queue. Both probe
+   * routes are unauthenticated, so while Postgres is slow a flood of probes
+   * would queue thousands of abandoned pings ahead of real requests. Every
+   * read while a ping is outstanding shares it instead, so the probe holds at
+   * most one pool slot at any request rate.
+   */
+  private inFlight: Promise<void> | null = null;
+
   constructor(@Inject(FLEET_POOL) private readonly pool: pg.Pool) {}
 
   read(): Promise<DatabaseHealth> {
     return readDatabaseHealth({
-      ping: async () => {
-        await this.pool.query("select 1");
-      },
+      ping: () => this.ping(),
       timeoutMs: DATABASE_HEALTH_TIMEOUT_MS,
     });
+  }
+
+  private ping(): Promise<void> {
+    if (this.inFlight === null) {
+      this.inFlight = this.pool
+        .query("select 1")
+        .then(() => undefined)
+        .finally(() => {
+          this.inFlight = null;
+        });
+    }
+    return this.inFlight;
   }
 }

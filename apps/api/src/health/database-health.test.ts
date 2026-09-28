@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   assertAnsweringPingIsReachable,
+  assertASettledPingFreesTheSlot,
+  assertConcurrentReadsShareOnePing,
+  assertLivenessKeepsTheDatabaseThroughTheStorageVerdict,
   assertASettledReadLeavesNoPendingTimer,
   assertDegradedStaysDegradedBesideReachableDatabase,
   assertHangingPingIsUnreachableInsideTheTimeout,
@@ -91,6 +94,20 @@ describe("F4.175 — database health", () => {
 
     it("GET /health takes no Response, so it cannot answer a non-200", () => {
       assertTheLivenessRouteTakesNoResponseObject();
+    });
+
+    it("GET /health keeps the database section through the storage verdict", async () => {
+      await assertLivenessKeepsTheDatabaseThroughTheStorageVerdict();
+    });
+  });
+
+  describe("DatabaseHealthService", () => {
+    it("queues one select 1 however many reads arrive during a hung ping", async () => {
+      await assertConcurrentReadsShareOnePing();
+    });
+
+    it("frees the slot once the ping settles", async () => {
+      await assertASettledPingFreesTheSlot();
     });
   });
 });

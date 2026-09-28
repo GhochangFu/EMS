@@ -1,5 +1,6 @@
 import type {
   DatabaseHealth,
+  StorageHealth,
   LivenessResponse,
   QueueHealth,
   ReadinessResponse,
@@ -8,6 +9,7 @@ import { vi } from "vitest";
 
 import { readRepoFile } from "../testing/repo-root";
 import { readDatabaseHealth, readinessFrom, withDatabaseVerdict } from "./database-health";
+import { DatabaseHealthService } from "./database-health.service";
 import { HealthController } from "./health.controller";
 
 /**
@@ -86,11 +88,35 @@ function fakeResponse(): FakeResponse {
   return res;
 }
 
-function controllerOver(database: DatabaseHealth): HealthController {
+function controllerOver(database: DatabaseHealth, storage?: StorageHealth): HealthController {
   return new HealthController(
     { read: () => Promise.resolve(okBase()) } as never,
     { read: () => Promise.resolve(database) } as never,
+    storage === undefined ? undefined : ({ read: () => Promise.resolve(storage) } as never),
   );
+}
+
+/** A pool whose `select 1` is held until the test releases it, counting every call. */
+function heldPool(): { pool: never; calls: () => number; release: () => void } {
+  let calls = 0;
+  const releases: Array<() => void> = [];
+  const pool = {
+    query: () => {
+      calls += 1;
+      return new Promise<void>((resolve) => {
+        releases.push(resolve);
+      });
+    },
+  };
+  return {
+    pool: pool as never,
+    calls: () => calls,
+    release: () => {
+      for (const release of releases.splice(0)) {
+        release();
+      }
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -246,5 +272,67 @@ export function assertTheLivenessRouteTakesNoResponseObject(): void {
   assert(
     getHealth?.[1]?.trim() === "",
     `expected getHealth to take no parameter, so it can never set a status code, got (${getHealth?.[1] ?? ""})`,
+  );
+}
+
+export async function assertLivenessKeepsTheDatabaseThroughTheStorageVerdict(): Promise<void> {
+  // Both processes resolve `StorageHealthService` since `F3.5b`, so the
+  // storage branch is the production path; `withStorageVerdict` must carry
+  // the database section it did not add.
+  const body = await controllerOver(UNREACHABLE, {
+    configured: true,
+    reachable: true,
+    bucket: "bms-asset-images",
+  }).getHealth();
+  assert(
+    body.status === "degraded" && shape(body.database) === shape(UNREACHABLE) && body.storage !== undefined,
+    `expected degraded with the database and storage sections, got ${shape(body)}`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DatabaseHealthService — one ping in the pool at a time
+// ---------------------------------------------------------------------------
+
+export async function assertConcurrentReadsShareOnePing(): Promise<void> {
+  vi.useFakeTimers();
+  try {
+    const held = heldPool();
+    const service = new DatabaseHealthService(held.pool);
+    const reads = Array.from({ length: 20 }, () => service.read());
+    await vi.advanceTimersByTimeAsync(2_000);
+    const results = await Promise.all(reads);
+    assert(
+      held.calls() === 1,
+      `expected 20 reads during a hung ping to queue one select 1, and ${held.calls()} were queued`,
+    );
+    assert(
+      results.every((r) => !r.reachable),
+      `expected every read to time out as unreachable, got ${shape(results)}`,
+    );
+
+    // A read after the budget, while the first ping is still held, shares it too.
+    const late = service.read();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await late;
+    assert(held.calls() === 1, `expected a late read to share the held ping, and ${held.calls()} were queued`);
+    held.release();
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+export async function assertASettledPingFreesTheSlot(): Promise<void> {
+  const held = heldPool();
+  const service = new DatabaseHealthService(held.pool);
+  const first = service.read();
+  held.release();
+  const firstResult = await first;
+  const second = service.read();
+  held.release();
+  const secondResult = await second;
+  assert(
+    held.calls() === 2 && firstResult.reachable && secondResult.reachable,
+    `expected a new select 1 after the first settled, got ${held.calls()} calls, ${shape([firstResult, secondResult])}`,
   );
 }

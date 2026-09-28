@@ -412,8 +412,10 @@ The owner ruled the shape on 2026-09-28, before any implementation code:
    timeout. An unreachable database reads `degraded` and still answers 200 —
    decision 10 and plan §15 ruling 1 stand: a probe that reads non-2xx here
    makes an orchestrator restart a process that a restart cannot help.
-2. **`GET /health/ready` is new, on both processes** (`PORT` and
-   `WORKER_PORT`). HTTP 200 `{ "status": "ready", "database": { "reachable":
+2. **`GET /health/ready` is new, on both processes**, unprefixed on both:
+   `PORT/health/ready` and `WORKER_PORT/health/ready`. The API's
+   `setGlobalPrefix` exclude list gains `health/ready`, because Nest matches
+   an exclude entry as a whole path (`apps/api/src/global-prefix.ts`). HTTP 200 `{ "status": "ready", "database": { "reachable":
    true } }` while the database answers, HTTP 503 `not_ready` while it does
    not. Only the database decides it; the queue and the object store stay in
    the liveness body.
@@ -426,6 +428,16 @@ Contract: `databaseHealthSchema` and `readinessResponseSchema` in
 `packages/shared/src/contracts/health.ts`; `livenessResponseSchema.database`
 is optional, as `storage` is. Code: `apps/api/src/health/database-health.ts`
 (pure reader and verdicts) and `database-health.service.ts` (the fleet pool).
+
+**One `select 1` in the pool at a time** (the review of this change). The
+race stops waiting after 2 s but cannot cancel the query, and both probe
+routes are unauthenticated: while Postgres is slow, a probe flood would queue
+abandoned pings ahead of real requests. `DatabaseHealthService` shares one
+outstanding ping between every read, so the probe holds at most one pool
+slot.
+
+**The probe reads the fleet role only.** A fault that hits only the `auth` or
+`tenant` role — a rotated password, say — still reads `ready`.
 
 **Recorded, not changed.** A pool with every client checked out waits for one
 and reads unreachable past the 2 s budget; for a readiness probe that is the
