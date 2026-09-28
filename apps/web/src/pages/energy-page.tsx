@@ -72,7 +72,7 @@ export function EnergyPage({ user }: EnergyPageProps) {
       user={user}
       kpiRibbon={
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-bms-ink">Energy Analytics · multi-site consumption</span>
+          <span className="text-ink">Energy Analytics · multi-site consumption</span>
           {/*
             `E4.1c` — the tariff is the organization's `energy_tariff_per_kwh`
             parameter in its own currency, or nothing: a `null` tariff (none
@@ -80,7 +80,7 @@ export function EnergyPage({ user }: EnergyPageProps) {
             than `R null`.
           */}
           {s && s.tariffPerKwh !== null && s.currency !== null ? (
-            <span className="hidden text-bms-muted sm:inline">
+            <span className="hidden text-ink-muted sm:inline">
               Tariff {formatMoney(s.tariffPerKwh, s.currency, 2)}/kWh
             </span>
           ) : null}
@@ -94,12 +94,12 @@ export function EnergyPage({ user }: EnergyPageProps) {
           subtitle="kWh from electrical telemetry · source mix · top loads"
           actions={
             <div className="flex items-center gap-2">
-            <label htmlFor="energy-window" className="text-xs text-bms-muted">
+            <label htmlFor="energy-window" className="text-xs text-ink-muted">
               Window
             </label>
             <select
               id="energy-window"
-              className="rounded border border-gray-300 bg-white px-2 py-1.5 text-sm"
+              className="rounded border border-line-strong bg-surface px-2 py-1.5 text-sm"
               value={energyWindow}
               onChange={(e) => setEnergyWindow(e.target.value)}
             >

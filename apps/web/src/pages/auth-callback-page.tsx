@@ -42,17 +42,17 @@ export function AuthCallbackPage() {
   }, [navigate, setSession]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-bms-header px-4">
-      <div className="w-full max-w-md rounded-lg border border-white/10 bg-white p-8 shadow-xl">
-        <h1 className="font-condensed text-2xl font-bold text-bms-ink">
+    <div className="flex min-h-screen items-center justify-center bg-chrome px-4">
+      <div className="w-full max-w-md rounded-lg border border-on-dark/10 bg-surface p-8 shadow-xl">
+        <h1 className="font-condensed text-2xl font-bold text-ink">
           Completing sign in
         </h1>
         {error ? (
-          <p className="mt-4 text-sm text-red-600" role="alert">
+          <p className="mt-4 text-sm text-critical-ink-soft" role="alert">
             {error}
           </p>
         ) : (
-          <p className="mt-4 text-sm text-bms-muted">
+          <p className="mt-4 text-sm text-ink-muted">
             Please wait while Keycloak returns you to TRINETRA.
           </p>
         )}

@@ -102,16 +102,16 @@ export function DashboardPage({ user }: DashboardPageProps) {
           <span
             className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
               stale
-                ? "bg-amber-100 text-amber-900"
-                : "bg-emerald-100 text-emerald-900"
+                ? "bg-warning-wash-strong text-warning-ink"
+                : "bg-ok-wash text-ok-ink"
             }`}
           >
             {stale ? "Stale" : "Live"}
           </span>
-          <span className="text-bms-ink">
+          <span className="text-ink">
             Executive Summary · TRINETRA Operating Dashboard
           </span>
-          <span className="hidden text-bms-muted sm:inline">
+          <span className="hidden text-ink-muted sm:inline">
             · Total load & alarms from telemetry + DB
           </span>
         </div>
@@ -183,9 +183,9 @@ export function DashboardPage({ user }: DashboardPageProps) {
           bodyClassName="p-3"
         >
           {locationQ.isLoading ? (
-            <div className="text-sm text-bms-muted">Loading locations...</div>
+            <div className="text-sm text-ink-muted">Loading locations...</div>
           ) : locationQ.isError ? (
-            <div className="text-sm text-red-700">Location KPIs unavailable.</div>
+            <div className="text-sm text-critical-ink">Location KPIs unavailable.</div>
           ) : (
             <>
               {organizations.length > 0 ? (
@@ -200,8 +200,8 @@ export function DashboardPage({ user }: DashboardPageProps) {
                     aria-selected={orgFilter === "all"}
                     className={`rounded border px-3 py-1.5 text-xs font-semibold ${
                       orgFilter === "all"
-                        ? "border-bms-green bg-emerald-50 text-emerald-900"
-                        : "border-gray-200 bg-white text-bms-ink"
+                        ? "border-accent bg-ok-wash text-ok-ink"
+                        : "border-line bg-surface text-ink"
                     }`}
                     onClick={() => setOrgFilter("all")}
                   >
@@ -215,8 +215,8 @@ export function DashboardPage({ user }: DashboardPageProps) {
                       aria-selected={orgFilter === organization.code}
                       className={`rounded border px-3 py-1.5 text-xs font-semibold ${
                         orgFilter === organization.code
-                          ? "border-bms-green bg-emerald-50 text-emerald-900"
-                          : "border-gray-200 bg-white text-bms-ink"
+                          ? "border-accent bg-ok-wash text-ok-ink"
+                          : "border-line bg-surface text-ink"
                       }`}
                       onClick={() => setOrgFilter(organization.code)}
                     >
@@ -226,7 +226,7 @@ export function DashboardPage({ user }: DashboardPageProps) {
                 </div>
               ) : null}
               {filteredLocations.length === 0 ? (
-                <div className="text-sm text-bms-muted">
+                <div className="text-sm text-ink-muted">
                   No locations in this organization for your access scope.
                 </div>
               ) : orgFilter === "all" ? (

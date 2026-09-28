@@ -14,7 +14,7 @@ export function ReportsPage({ user }: ReportsPageProps) {
     <AppShell
       user={user}
       kpiRibbon={
-        <span className="text-bms-ink">
+        <span className="text-ink">
           Operations · Reports & Analytics · Energy report preview, export, history and schedules
         </span>
       }
