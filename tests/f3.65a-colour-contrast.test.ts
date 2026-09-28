@@ -128,6 +128,12 @@ const TEXT_PAIRS: Pair[] = [
   // stopping point (4.51 / 4.87, failing `well` at 4.04) to also clear `well` (5.13 / 5.54 / 4.59).
   { fg: "simulated-ink", bg: "surface" },
   { fg: "simulated-ink", bg: "well" },
+  // F3.65c U4 — green text on the ok tint (D7): crac-schematic.tsx's chiller "Load … kW" label,
+  // electrical-sld's UPS labels (already `#007C3C`, U5).
+  { fg: "accent-strong", bg: "ok-wash" },
+  // F3.65c U4 — crac-schematic.tsx labels beside a `fill-well` panel (the fan hub, the compressor
+  // bank frame).
+  { fg: "info-ink", bg: "well" },
 ];
 
 /**

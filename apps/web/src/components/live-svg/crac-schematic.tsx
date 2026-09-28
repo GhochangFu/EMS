@@ -14,10 +14,20 @@ export type CracSchematicProps = {
   onSelectAsset: (assetId: string | undefined) => void;
 };
 
-const OK = "#039855";
-const MUTED = "#94A3B8";
-const FAULT = "#D92D20";
-const WARN = "#DC6803";
+/**
+ * `F3.65c` — role classes, not hex (ADR 0078 decision 5, plan D4–D7). `strokeFor`/`fillFor`
+ * return whole literal class strings; a box fill/tone pair is computed per component since each
+ * one's fill depends on a different local condition (`trip`, `warn`, `pumpRun`) that `status`
+ * alone does not carry.
+ */
+const STROKE_OK = "stroke-accent";
+const STROKE_MUTED = "stroke-ink-hint";
+const STROKE_FAULT = "stroke-critical";
+const STROKE_WARN = "stroke-warning";
+const FILL_OK = "fill-accent";
+const FILL_MUTED = "fill-ink-hint";
+const FILL_FAULT = "fill-critical";
+const FILL_WARN = "fill-warning";
 
 function cToF(c: number | null): string {
   if (c == null || Number.isNaN(c)) {
@@ -35,12 +45,22 @@ function lpsToGpm(lps: number | null): string {
 
 function strokeFor(status: LiveSvgStatus): string {
   if (status === "fault") {
-    return FAULT;
+    return STROKE_FAULT;
   }
   if (status === "offline") {
-    return MUTED;
+    return STROKE_MUTED;
   }
-  return OK;
+  return STROKE_OK;
+}
+
+function fillFor(status: LiveSvgStatus): string {
+  if (status === "fault") {
+    return FILL_FAULT;
+  }
+  if (status === "offline") {
+    return FILL_MUTED;
+  }
+  return FILL_OK;
 }
 
 function flowDur(flowLps: number | null): string {
@@ -139,8 +159,9 @@ function CompressorCell({
   const { assetId, slice, status } = useSchematicTelemetryByCode(assetCode);
   const trip = slice.compressorOk === 0;
   const mode = trip ? "TRIP" : status === "running" ? "ON" : "OFF";
-  const fill = trip ? "#FEE4E2" : status === "running" ? "#D1FADF" : "#F1F5F9";
-  const stroke = trip ? FAULT : status === "running" ? OK : MUTED;
+  const boxFillClass = trip ? "fill-critical-wash-strong" : status === "running" ? "fill-ok-wash" : "fill-well-deep";
+  const toneStrokeClass = trip ? STROKE_FAULT : status === "running" ? STROKE_OK : STROKE_MUTED;
+  const toneFillClass = trip ? FILL_FAULT : status === "running" ? FILL_OK : FILL_MUTED;
   const bx = 260 + col * 80;
   const by = 160 + row * 60;
 
@@ -162,20 +183,18 @@ function CompressorCell({
         width={70}
         height={48}
         rx={4}
-        fill={fill}
-        stroke={stroke}
+        className={`${boxFillClass} ${toneStrokeClass}`}
         strokeWidth={1.5}
       />
-      <circle cx={bx + 12} cy={by + 14} r={6} fill={stroke} />
+      <circle cx={bx + 12} cy={by + 14} r={6} className={toneFillClass} />
       <text
         x={bx + 24}
         y={by + 10}
-        className="font-mono text-[10px] font-bold"
-        fill={stroke}
+        className={`font-mono text-[10px] font-bold ${toneFillClass}`}
       >
         {label}
       </text>
-      <text x={bx + 24} y={by + 24} className="font-mono text-[9px]" fill={stroke}>
+      <text x={bx + 24} y={by + 24} className={`font-mono text-[9px] ${toneFillClass}`}>
         {mode}
       </text>
     </g>
@@ -197,8 +216,9 @@ function ZoneTile({
   const tempF = cToF(slice.supplyAirTempC);
   const numF = slice.supplyAirTempC != null ? slice.supplyAirTempC * (9 / 5) + 32 : null;
   const warn = numF != null && numF > 72;
-  const stroke = warn ? WARN : strokeFor(status);
-  const fill = warn ? "#FEF0C7" : status === "running" ? "#D1FADF" : "#F1F5F9";
+  const toneStrokeClass = warn ? STROKE_WARN : strokeFor(status);
+  const toneFillClass = warn ? FILL_WARN : fillFor(status);
+  const boxFillClass = warn ? "fill-warning-wash-strong" : status === "running" ? "fill-ok-wash" : "fill-well-deep";
 
   return (
     <g
@@ -218,16 +238,14 @@ function ZoneTile({
         width={100}
         height={50}
         rx={4}
-        fill={fill}
-        stroke={stroke}
+        className={`${boxFillClass} ${toneStrokeClass}`}
         strokeWidth={1}
       />
       <text
         x={x + 50}
         y={372}
         textAnchor="middle"
-        className="font-mono text-[10px] font-bold"
-        fill={stroke}
+        className={`font-mono text-[10px] font-bold ${toneFillClass}`}
       >
         {zoneLabel}
       </text>
@@ -235,8 +253,7 @@ function ZoneTile({
         x={x + 50}
         y={392}
         textAnchor="middle"
-        className="font-condensed text-base font-bold"
-        fill={stroke}
+        className={`font-condensed text-base font-bold ${toneFillClass}`}
       >
         {tempF.replace("°F", "F")}
       </text>
@@ -253,6 +270,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
   const plant = useCracAggregates();
 
   const pStroke = strokeFor(primary.status);
+  const pFill = fillFor(primary.status);
   const fanSpin =
     primary.status === "running" && (primary.slice.fanRpm ?? 0) > 50 ? "crac-spin" : "";
   const chwSupF = cToF(primary.slice.chwSupplyTempC);
@@ -264,17 +282,17 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
   return (
     <svg
       viewBox="0 0 1100 460"
-      className="h-auto w-full max-w-[1200px] bg-[#FAFBFC]"
+      className="h-auto w-full max-w-[1200px] bg-surface"
       aria-label="CRAC precision cooling schematic"
     >
       <defs>
         <linearGradient id="crac-ub" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#F0F2F5" />
-          <stop offset="100%" stopColor="#D8DCE3" />
+          <stop offset="0%" className="[stop-color:rgb(var(--canvas))]" />
+          <stop offset="100%" className="[stop-color:rgb(var(--line-strong))]" />
         </linearGradient>
         <linearGradient id="crac-cb" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#FFFFFF" />
-          <stop offset="100%" stopColor="#E5E8ED" />
+          <stop offset="0%" className="[stop-color:rgb(var(--surface))]" />
+          <stop offset="100%" className="[stop-color:rgb(var(--line))]" />
         </linearGradient>
       </defs>
 
@@ -285,7 +303,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         height={320}
         rx={8}
         fill="url(#crac-ub)"
-        stroke="#8A94A6"
+        className="stroke-ink-hint"
         strokeWidth={2}
       />
       <text
@@ -314,15 +332,14 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           width={120}
           height={35}
           rx={4}
-          fill="#E8EEF5"
-          stroke="#5A7CA8"
+          className="fill-info-wash stroke-ink-faint"
           strokeWidth={1.5}
         />
         <text
           x={160}
           y={148}
           textAnchor="middle"
-          className="font-mono text-[10px] font-semibold fill-[#1A3D6B]"
+          className="font-mono text-[10px] font-semibold fill-info-ink"
         >
           RET AIR · {cToF(primary.slice.returnAirTempC).replace("°F", "F")}
         </text>
@@ -332,15 +349,14 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           y={170}
           width={120}
           height={22}
-          fill="#FEF3C7"
-          stroke="#C48E1A"
+          className="fill-warning-wash-strong stroke-warning"
           strokeWidth={1}
         />
         <text
           x={160}
           y={184}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-[#7A5918]"
+          className="font-mono text-[9px] fill-warning-ink"
         >
           FILTERS · MERV 13
         </text>
@@ -350,15 +366,14 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           y={200}
           width={120}
           height={55}
-          fill="#D1E9FF"
-          stroke="#1570EF"
+          className="fill-info-wash stroke-info"
           strokeWidth={1.5}
         />
         <text
           x={160}
           y={220}
           textAnchor="middle"
-          className="font-mono text-[10px] font-semibold fill-[#1570EF]"
+          className="font-mono text-[10px] font-semibold fill-info-ink"
         >
           COOLING COIL
         </text>
@@ -366,12 +381,12 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           x={160}
           y={234}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-[#1570EF]"
+          className="font-mono text-[9px] fill-info-ink"
         >
           {chwSupF.replace("°F", "F")} supply
         </text>
 
-        <circle cx={160} cy={310} r={36} fill="#F7F8FA" stroke="#475569" strokeWidth={2} />
+        <circle cx={160} cy={310} r={36} className="fill-well stroke-ink-muted" strokeWidth={2} />
         <g
           transform="translate(160 310)"
           className={fanSpin}
@@ -381,11 +396,11 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
             } as CSSProperties
           }
         >
-          <path d="M0,-30 Q7,-15 0,0 Q-7,-15 0,-30" fill="#94A3B8" />
-          <path d="M30,0 Q15,7 0,0 Q15,-7 30,0" fill="#94A3B8" />
-          <path d="M0,30 Q-7,15 0,0 Q7,15 0,30" fill="#94A3B8" />
-          <path d="M-30,0 Q-15,-7 0,0 Q-15,7 -30,0" fill="#94A3B8" />
-          <circle cx={0} cy={0} r={5} fill="#475569" />
+          <path d="M0,-30 Q7,-15 0,0 Q-7,-15 0,-30" className="fill-ink-hint" />
+          <path d="M30,0 Q15,7 0,0 Q15,-7 30,0" className="fill-ink-hint" />
+          <path d="M0,30 Q-7,15 0,0 Q7,15 0,30" className="fill-ink-hint" />
+          <path d="M-30,0 Q-15,-7 0,0 Q-15,7 -30,0" className="fill-ink-hint" />
+          <circle cx={0} cy={0} r={5} className="fill-ink-muted" />
         </g>
         <text
           x={160}
@@ -405,16 +420,14 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
           width={120}
           height={22}
           rx={4}
-          fill="#D1FADF"
-          stroke={pStroke}
+          className={`fill-ok-wash ${pStroke}`}
           strokeWidth={1.5}
         />
         <text
           x={160}
           y={386}
           textAnchor="middle"
-          className="font-mono text-[10px] font-semibold"
-          fill={pStroke}
+          className={`font-mono text-[10px] font-semibold ${pFill}`}
         >
           SUP AIR · {cToF(primary.slice.supplyAirTempC).replace("°F", "F")}
         </text>
@@ -426,8 +439,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         width={170}
         height={155}
         rx={6}
-        fill="#FAFBFC"
-        stroke="#5A6476"
+        className="fill-well stroke-ink-muted"
         strokeWidth={1.5}
       />
       <text
@@ -446,34 +458,32 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
       <path
         d="M 220 230 L 470 230 L 470 170 L 680 170"
         fill="none"
-        stroke="#B84A9C"
+        className="stroke-info crac-flow-line"
         strokeWidth={6}
         strokeLinecap="round"
-        className="crac-flow-line"
         style={
           {
             "--crac-flow-dur": flowDur(plant.avgFlowLps),
           } as CSSProperties
         }
       />
-      <text x={380} y={222} className="font-mono text-[10px] fill-[#B84A9C]">
+      <text x={380} y={222} className="font-mono text-[10px] fill-info-ink">
         CHILLED {cToF(plant.avgChwSupC).replace("°F", "F")} · {flowGpm} →
       </text>
 
       <path
         d="M 680 200 L 470 200 L 470 245 L 220 245"
         fill="none"
-        stroke="#7C4DFF"
+        className="stroke-warning crac-flow-line"
         strokeWidth={6}
         strokeLinecap="round"
-        className="crac-flow-line"
         style={
           {
             "--crac-flow-dur": flowDur(plant.avgFlowLps),
           } as CSSProperties
         }
       />
-      <text x={380} y={262} className="font-mono text-[10px] fill-[#7C4DFF]">
+      <text x={380} y={262} className="font-mono text-[10px] fill-warning-ink">
         ← RETURN {cToF(plant.avgChwRetC).replace("°F", "F")}
       </text>
 
@@ -484,14 +494,14 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         height={100}
         rx={6}
         fill="url(#crac-cb)"
-        stroke="#0369A1"
+        className="stroke-info-ink"
         strokeWidth={2}
       />
       <text
         x={760}
         y={142}
         textAnchor="middle"
-        className="fill-[#0369A1] font-condensed text-[13px] font-bold"
+        className="fill-info-ink font-condensed text-[13px] font-bold"
       >
         CHILLER CHL-01
       </text>
@@ -499,16 +509,16 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={760}
         y={158}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-[#075985]"
+        className="font-mono text-[9px] fill-info-ink"
       >
         800 kW · plant avg
       </text>
-      <rect x={700} y={168} width={120} height={28} rx={3} fill="#D1FADF" stroke={OK} />
+      <rect x={700} y={168} width={120} height={28} rx={3} className="fill-ok-wash stroke-accent" />
       <text
         x={760}
         y={186}
         textAnchor="middle"
-        className="font-mono text-[10px] font-semibold fill-[#039855]"
+        className="font-mono text-[10px] font-semibold fill-accent-strong"
       >
         Load {chillerLoadPct ?? "—"}% · {plant.avgCoolingKw != null ? `${plant.avgCoolingKw.toFixed(0)} kW` : "—"}{" "}
         · COP 5.8
@@ -526,8 +536,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         cx={905}
         cy={180}
         r={22}
-        fill={pumpRun ? "#D1FADF" : "#F1F5F9"}
-        stroke={pumpRun ? OK : MUTED}
+        className={pumpRun ? "fill-ok-wash stroke-accent" : "fill-well-deep stroke-ink-hint"}
         strokeWidth={2}
       />
       <g
@@ -539,7 +548,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
       >
         <path
           d="M -12 0 L 12 0 M 0 -12 L 0 12"
-          stroke={pumpRun ? OK : MUTED}
+          className={pumpRun ? "stroke-accent" : "stroke-ink-hint"}
           strokeWidth={2.5}
           strokeLinecap="round"
         />
@@ -548,7 +557,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={905}
         y={215}
         textAnchor="middle"
-        className="font-mono text-[10px] font-bold fill-[#039855]"
+        className="font-mono text-[10px] font-bold fill-accent"
       >
         PMP-A1
       </text>
@@ -556,16 +565,16 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={905}
         y={227}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-[#039855]"
+        className="font-mono text-[9px] fill-accent"
       >
         {pumpRun ? "ON" : "—"} · {plant.avgFlowLps != null ? `${Math.round((plant.avgFlowLps / 5.5) * 100)}%` : "—"}
       </text>
 
-      <circle cx={970} cy={180} r={22} fill="#F1F5F9" stroke={MUTED} strokeWidth={2} />
+      <circle cx={970} cy={180} r={22} className="fill-well-deep stroke-ink-hint" strokeWidth={2} />
       <g transform="translate(970 180)">
         <path
           d="M -12 0 L 12 0 M 0 -12 L 0 12"
-          stroke={MUTED}
+          className="stroke-ink-hint"
           strokeWidth={2.5}
           strokeLinecap="round"
         />
@@ -574,7 +583,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={970}
         y={215}
         textAnchor="middle"
-        className="font-mono text-[10px] font-bold fill-[#4A5464]"
+        className="font-mono text-[10px] font-bold fill-ink-muted"
       >
         PMP-A2
       </text>
@@ -582,7 +591,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={970}
         y={227}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-[#4A5464]"
+        className="font-mono text-[9px] fill-ink-muted"
       >
         STBY
       </text>
@@ -593,19 +602,18 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         width={140}
         height={80}
         rx={6}
-        fill="#F0F9FF"
-        stroke="#0284C7"
+        className="fill-info-wash stroke-info"
         strokeWidth={1.5}
       />
       <text
         x={760}
         y={258}
         textAnchor="middle"
-        className="fill-[#0369A1] font-condensed text-xs font-bold"
+        className="fill-info-ink font-condensed text-xs font-bold"
       >
         COOLING TOWER
       </text>
-      <circle cx={760} cy={285} r={16} fill="none" stroke="#0284C7" strokeWidth={1.5} />
+      <circle cx={760} cy={285} r={16} fill="none" className="stroke-info" strokeWidth={1.5} />
       <g
         transform="translate(760 285)"
         className="crac-spin"
@@ -617,7 +625,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
       >
         <path
           d="M -12 0 L 12 0 M 0 -12 L 0 12"
-          stroke="#0284C7"
+          className="stroke-info"
           strokeWidth={2}
           strokeLinecap="round"
         />
@@ -626,7 +634,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={760}
         y={313}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-[#0369A1]"
+        className="font-mono text-[9px] fill-info-ink"
       >
         CT-01 · {cToF(plant.avgChwRetC != null ? plant.avgChwRetC + 18 : null).replace("°F", "F")}{" "}
         inlet
