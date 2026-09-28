@@ -8,7 +8,9 @@ import {
   type DashboardMimicNodesResponseDto,
   type DashboardWidgetDto,
   type GeneratedSiteAssetDto,
+  type MimicLayoutNodeDto,
   type MimicNodeDto,
+  type MimicSymbol,
   type TelemetryReading,
 } from "@bms/shared";
 
@@ -114,8 +116,55 @@ function response(widgetIds: string[], lastSeenAgoMs = 1_000): DashboardMimicNod
   return {
     dashboardId: DASHBOARD_ID,
     resolvedAt: new Date().toISOString(),
-    widgets: widgetIds.map((widgetId) => ({ widgetId, preset: "water_train", nodes: nodes(lastSeenAgoMs) })),
+    widgets: widgetIds.map((widgetId) => ({
+      source: "preset" as const,
+      widgetId,
+      preset: "water_train" as const,
+      nodes: nodes(lastSeenAgoMs),
+    })),
   };
+}
+
+const LAYOUT_ID = "55555555-5555-4555-8555-555555555555";
+
+function layoutWidget(id: string): MimicWidgetDto {
+  return { ...mimicWidget(id, "Plant B"), config: { source: "layout", layoutId: LAYOUT_ID } };
+}
+
+function layoutNode(key: string, symbol: MimicSymbol, roleCode: string | null, x: number): MimicLayoutNodeDto {
+  return { key, kind: "unit", symbol, label: key, roleCode, tone: null, x, y: 2, w: 20, h: 25, z: 0 };
+}
+
+/**
+ * A layout answer: `feed` (roled `wtp`, resolved to WTP) piped to a passive `drain`. Neither key
+ * is a preset key, so a widget that drew the preset instead reddens on the unit keys.
+ */
+function layoutResponse(widgetId: string): DashboardMimicNodesResponseDto {
+  return {
+    dashboardId: DASHBOARD_ID,
+    resolvedAt: new Date().toISOString(),
+    widgets: [
+      {
+        source: "layout",
+        widgetId,
+        layoutId: LAYOUT_ID,
+        layout: {
+          name: "Plant B",
+          canvasW: 80,
+          canvasH: 40,
+          nodes: [layoutNode("feed", "tank", "wtp", 2), layoutNode("drain", "discharge", null, 40)],
+          pipes: [{ fromKey: "feed", toKey: "drain" }],
+        },
+        nodes: [
+          { key: "feed", label: "feed", roleCode: "wtp", asset: wtp(1_000), memberCount: 1, activeAlarms: 0, topAlarm: null },
+        ],
+      },
+    ],
+  };
+}
+
+function unitKeys(): (string | null)[] {
+  return screen.getAllByTestId("mimic-node").map((n) => n.getAttribute("data-node-key"));
 }
 
 function dashboard(widgets: DashboardWidgetDto[]): DashboardDto {
@@ -281,4 +330,36 @@ export async function aFailedRefetchKeepsTheLastDrawing(): Promise<void> {
   expect(screen.getAllByTestId("mimic-node")).toHaveLength(8);
   expect(screen.getByText("WTR-WTP-01")).toBeInTheDocument();
   expect(screen.queryByText("Could not load widget.")).toBeNull();
+}
+
+/**
+ * LV9 (`F3.32c`) — a layout widget draws the layout the read answered: its units, the roled one
+ * resolved, the passive one marked passive, and the pipe between them.
+ */
+export async function aLayoutWidgetDrawsItsLayout(): Promise<void> {
+  renderWidget(() => Promise.resolve(layoutResponse(WIDGET_A)), layoutWidget(WIDGET_A));
+  await screen.findByText("WTR-WTP-01");
+  expect(unitKeys()).toEqual(["feed", "drain"]);
+  const drain = screen.getAllByTestId("mimic-node")[1] as HTMLElement;
+  expect(drain.getAttribute("data-status")).toBe("passive");
+  expect(screen.getAllByTestId("mimic-pipe")).toHaveLength(1);
+  expect(screen.getByRole("img", { name: "Plant B: Plant B" })).toBeInTheDocument();
+}
+
+/**
+ * LV10 (`F3.32c`) — the entry's `source` decides, not the widget's config: a widget whose config
+ * still says preset, answered with a layout, draws the layout.
+ */
+export async function theEntrySourceDecidesTheDrawing(): Promise<void> {
+  renderWidget(() => Promise.resolve(layoutResponse(WIDGET_A)), mimicWidget(WIDGET_A, "Plant B"));
+  await screen.findByText("WTR-WTP-01");
+  expect(unitKeys()).toEqual(["feed", "drain"]);
+  expect(screen.queryByTestId("mimic-sink")).toBeNull();
+}
+
+/** LV11 (`F3.32c`) — a layout widget the read does not list draws nothing, and does not throw. */
+export async function aLayoutWidgetMissingFromTheResponseDrawsNothing(): Promise<void> {
+  renderWidget(() => Promise.resolve(response([WIDGET_B])), layoutWidget(WIDGET_A));
+  await screen.findByRole("img", { name: "Plant B: Plant mimic" });
+  expect(screen.queryAllByTestId("mimic-node")).toHaveLength(0);
 }
