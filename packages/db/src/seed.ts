@@ -104,9 +104,11 @@ async function main(): Promise<void> {
   const pool = createSeedPool(databaseUrl);
   const db = createDb(pool);
 
-  // The identity connection (`bms_app` superuser). Only the three org-less
-  // `bms.users` seeders use it, and they run outside any `withOrganization`
-  // transaction, so it needs no `max: 1` and does not join the tenant dance.
+  // The identity connection (`bms_app` superuser). The three org-less
+  // `bms.users` seeders use it, outside any `withOrganization` transaction,
+  // and `seedEskomLocations` reads slug holders on it (owner ruling 16) —
+  // reads only, which never join the tenant transaction, so it needs no
+  // `max: 1`.
   const superuserPool = new pg.Pool({
     connectionString: resolveSeedSuperuserUrl(databaseUrl, process.env),
   });
@@ -141,7 +143,10 @@ async function main(): Promise<void> {
 
     // ── ESKOM ─────────────────────────────────────────────────────────────
     await withOrganization(pool, eskomOrgId, async () => {
-      await seedEskomLocations(db, mapLocationRows, eskomOrgId);
+      // Owner ruling 16 (OQ2): the slug-holder pre-read runs on the superuser
+      // pool, so a location of any organization holding a canonical slug is
+      // seen and skipped with a log line rather than met as 23505.
+      await seedEskomLocations(pool, superuserPool, mapLocationRows, eskomOrgId);
       // F3.67 (ADR 0076 decision 6, OQ2): RSMOC-WC must exist first — the
       // insert-if-absent below throws otherwise.
       await seedSiteControlRoomViews(db, eskomOrgId);

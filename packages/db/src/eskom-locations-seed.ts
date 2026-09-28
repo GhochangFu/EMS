@@ -1,14 +1,16 @@
 import { eq } from "drizzle-orm";
+import type pg from "pg";
 
 import type { BmsDb } from "./client";
 import type { mapLocationRowsForInsert } from "./map-locations-seed";
 import type { pheMapLocationRowsForInsert } from "./phe-map-seed";
-import { locations, mapLocations } from "./schema/bms-schema";
+import { mapLocations } from "./schema/bms-schema";
 
 /**
  * Map-marker and canonical-location seeding, split out of `seed.ts` to keep it
- * under the AGENTS.md §4.5 1000-line cap. Pure move: the callers still invoke
- * these in the original order, and every statement is unchanged.
+ * under the AGENTS.md §4.5 1000-line cap. The move was pure; since then
+ * `seedEskomLocations` finds its rows by a stable key and pre-reads a held
+ * slug or code (owner ruling 16, see its docblock).
  */
 
 /** One row of the combined Eskom + PHE map-marker dataset. */
@@ -106,11 +108,145 @@ export function eskomLocationCode(row: MapLocationSeedRow): string {
   return `${row.kind.replace("_campus", "").toUpperCase()}-${locationCode(row.slug, row.province)}`;
 }
 
-/** Upserts the canonical `bms.locations` rows for Eskom campuses and centres. */
+/**
+ * The `bms.locations.meta` key that marks a row the seed owns (owner ruling
+ * 16). Its value is the row's canonical slug, which is fixed by the seed's own
+ * catalog: the seed finds its row by this key first, so an administrator's
+ * edit of the row's slug or code no longer loses the row.
+ */
+export const SEED_LOCATION_KEY = "seedKey";
+
+/** Enough of `pg.Pool` (or a checked-out client) to run one statement. */
+export type LocationQueryable = Pick<pg.Pool, "query">;
+
+/** What the seed writes to identify one of its locations. */
+export type SeedLocationIdentity = {
+  /** The `meta.seedKey` value: the canonical slug. */
+  readonly key: string;
+  readonly slug: string;
+  readonly code: string;
+};
+
+/** Where one seed-owned location stands before the seed writes it. */
+export type SeedLocationClaim = {
+  /** The row the seed owns, or `null` when there is none and it must be inserted. */
+  readonly id: string | null;
+  /** Another row that holds the canonical slug (any organization), or `null`. */
+  readonly slugHolder: string | null;
+  /** Another row of the organization that holds the canonical code, or `null`. */
+  readonly codeHolder: string | null;
+};
+
+/**
+ * Finds the row the seed owns for `identity`, and any other row that holds its
+ * canonical slug or code — pre-read, so the write that follows never meets a
+ * unique violation. A caught `23505` is not an option: the seed runs inside
+ * `withOrganization`'s one transaction, which a failed statement aborts
+ * (`25P02`).
+ *
+ * - **The row**: by `meta.seedKey`, then by the canonical slug, then by the
+ *   canonical code, in `organizationId` and in the caller's tenant context. The
+ *   slug and code steps adopt a row written before the key existed (the first
+ *   boot of a live database), or one whose `meta` an administrator replaced;
+ *   the write that follows stamps the key again.
+ * - **The slug holder**: on `slugReader`. `bms.locations.slug` is unique across
+ *   every organization, and under `FORCE ROW LEVEL SECURITY` the caller's
+ *   context sees only its own rows, so `seed.ts` passes its superuser pool
+ *   (OQ2). A holder in another organization is then seen, not met as `23505`.
+ * - **The code holder**: on `pool`. `(organization_id, code)` is the unique key,
+ *   so the caller's own organization is the whole of it.
+ */
+export async function resolveSeedLocation(
+  pool: LocationQueryable,
+  slugReader: LocationQueryable,
+  organizationId: string,
+  identity: SeedLocationIdentity,
+): Promise<SeedLocationClaim> {
+  const found = await pool.query<{ id: string }>(
+    `
+    SELECT id FROM bms.locations
+     WHERE organization_id = $1
+       AND (meta->>'${SEED_LOCATION_KEY}' = $2 OR slug = $3 OR code = $4)
+     ORDER BY CASE
+                WHEN meta->>'${SEED_LOCATION_KEY}' = $2 THEN 0
+                WHEN slug = $3 THEN 1
+                ELSE 2
+              END,
+              created_at, id
+     LIMIT 1
+    `,
+    [organizationId, identity.key, identity.slug, identity.code],
+  );
+  const id = found.rows[0]?.id ?? null;
+  const slugHolder = await slugReader.query<{ id: string }>(
+    `SELECT id FROM bms.locations WHERE slug = $1 AND id IS DISTINCT FROM $2::uuid`,
+    [identity.slug, id],
+  );
+  const codeHolder = await pool.query<{ id: string }>(
+    `SELECT id FROM bms.locations
+      WHERE organization_id = $1 AND code = $2 AND id IS DISTINCT FROM $3::uuid`,
+    [organizationId, identity.code, id],
+  );
+  return {
+    id,
+    slugHolder: slugHolder.rows[0]?.id ?? null,
+    codeHolder: codeHolder.rows[0]?.id ?? null,
+  };
+}
+
+/**
+ * One line per canonical value the seed cannot write for `claim`, naming the
+ * seed's row and the row that holds the value. An INSERT cannot leave out a
+ * NOT NULL column, so a held value on a row that does not exist yet means the
+ * row is not inserted, and one line says so; the boot gate's presence count
+ * then fails, which is the failure a missing canonical row should have.
+ */
+export function seedLocationSkipLines(identity: SeedLocationIdentity, claim: SeedLocationClaim): string[] {
+  const where = `seed location ${identity.key}`;
+  if (claim.id === null) {
+    const holder = claim.slugHolder ?? claim.codeHolder;
+    if (holder === null) {
+      return [];
+    }
+    const what = claim.slugHolder !== null ? `slug ${identity.slug}` : `code ${identity.code}`;
+    return [`${where}: not inserted: location ${holder} already holds ${what}`];
+  }
+  const lines: string[] = [];
+  if (claim.slugHolder !== null) {
+    lines.push(`${where}: kept the slug of location ${claim.id}: location ${claim.slugHolder} holds ${identity.slug}`);
+  }
+  if (claim.codeHolder !== null) {
+    lines.push(`${where}: kept the code of location ${claim.id}: location ${claim.codeHolder} holds ${identity.code}`);
+  }
+  return lines;
+}
+
+/** The identity `seedEskomLocations` gives one canonical row: key and slug are the row's slug. */
+export function eskomSeedLocationIdentity(row: MapLocationSeedRow): SeedLocationIdentity {
+  return { key: row.slug, slug: row.slug, code: eskomLocationCode(row) };
+}
+
+/**
+ * Upserts the canonical `bms.locations` rows for Eskom campuses and centres.
+ *
+ * **The seed owns each row's slug and code** (owner ruling 16). The row is
+ * found by its `meta.seedKey` ({@link resolveSeedLocation}), so an
+ * administrator who PATCHes a canonical location's slug or code has the value
+ * reverted on the next boot, on the same row. It used to be found by slug
+ * alone: a renamed slug made the seed INSERT a second row with the canonical
+ * code, and the boot stopped with `23505`.
+ *
+ * A canonical value another row holds is left as it is, with one log line
+ * naming both rows, and the rest of the row is written. `slugReader` must see
+ * every organization — `seed.ts` passes its superuser pool (OQ2). `pool` holds
+ * ESKOM's tenant context. `meta` is written whole, as before, with the key.
+ */
 export async function seedEskomLocations(
-  db: BmsDb,
+  pool: LocationQueryable,
+  slugReader: LocationQueryable,
   mapLocationRows: readonly MapLocationSeedRow[],
   eskomOrgId: string,
+  log: (line: string) => void = (line) => console.error(line),
 ): Promise<void> {
   for (const row of eskomCanonicalLocationRows(mapLocationRows)) {
     const capital =
@@ -120,38 +256,67 @@ export async function seedEskomLocations(
       typeof row.meta.capital === "string"
         ? row.meta.capital
         : null;
-    const code = eskomLocationCode(row);
-    const existingLocation = await db
-      .select({ id: locations.id })
-      .from(locations)
-      .where(eq(locations.slug, row.slug))
-      .limit(1);
-    const values = {
-      organizationId: eskomOrgId,
-      code,
-      slug: row.slug,
-      name: row.name,
-      type: row.kind,
-      province: row.province,
-      capital,
-      latitude: row.latitude,
-      longitude: row.longitude,
-      // E4.1b (ADR 0070 decision 6): the Eskom demo estate keeps SAST.
-      // Seed-owned like `latitude` (ruled 2026-09-19 at the PR 1 review): the
-      // zone is a fact of the site, so a re-seed re-asserts it — unlike
-      // `ingest_enabled` (F1.7), which an operator owns.
-      timezone: "Africa/Johannesburg",
-      active: true,
-      meta: row.meta,
-      updatedAt: new Date(),
-    };
-    if (existingLocation[0]) {
-      await db
-        .update(locations)
-        .set(values)
-        .where(eq(locations.id, existingLocation[0].id));
-    } else {
-      await db.insert(locations).values(values);
+    const identity = eskomSeedLocationIdentity(row);
+    const claim = await resolveSeedLocation(pool, slugReader, eskomOrgId, identity);
+    for (const line of seedLocationSkipLines(identity, claim)) {
+      log(line);
+    }
+    const meta = JSON.stringify({ ...row.meta, [SEED_LOCATION_KEY]: identity.key });
+    // E4.1b (ADR 0070 decision 6): the Eskom demo estate keeps SAST.
+    // Seed-owned like `latitude` (ruled 2026-09-19 at the PR 1 review): the
+    // zone is a fact of the site, so a re-seed re-asserts it — unlike
+    // `ingest_enabled` (F1.7), which an operator owns.
+    const timezone = "Africa/Johannesburg";
+    if (claim.id !== null) {
+      await pool.query(
+        `
+        UPDATE bms.locations SET
+          slug = CASE WHEN $2::boolean THEN $3 ELSE slug END,
+          code = CASE WHEN $4::boolean THEN $5 ELSE code END,
+          organization_id = $6, name = $7, type = $8, province = $9, capital = $10,
+          latitude = $11, longitude = $12, timezone = $13, active = true,
+          meta = $14::jsonb, updated_at = now()
+        WHERE id = $1
+        `,
+        [
+          claim.id,
+          claim.slugHolder === null,
+          identity.slug,
+          claim.codeHolder === null,
+          identity.code,
+          eskomOrgId,
+          row.name,
+          row.kind,
+          row.province,
+          capital,
+          row.latitude,
+          row.longitude,
+          timezone,
+          meta,
+        ],
+      );
+    } else if (claim.slugHolder === null && claim.codeHolder === null) {
+      await pool.query(
+        `
+        INSERT INTO bms.locations
+          (organization_id, code, slug, name, type, province, capital, latitude, longitude,
+           timezone, active, meta)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true, $11::jsonb)
+        `,
+        [
+          eskomOrgId,
+          identity.code,
+          identity.slug,
+          row.name,
+          row.kind,
+          row.province,
+          capital,
+          row.latitude,
+          row.longitude,
+          timezone,
+          meta,
+        ],
+      );
     }
   }
 }

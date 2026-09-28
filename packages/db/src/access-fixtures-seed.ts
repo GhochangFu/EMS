@@ -1,5 +1,6 @@
 import pg from "pg";
 
+import { resolveSeedLocation, SEED_LOCATION_KEY, seedLocationSkipLines } from "./eskom-locations-seed";
 import { STOCK_POINT_KEY_CODES } from "./point-keys-seed";
 
 /**
@@ -27,6 +28,8 @@ import { STOCK_POINT_KEY_CODES } from "./point-keys-seed";
 
 /** Codes are referenced by `F4.10`'s assertions and by `assignEskomAssetRtus`. */
 export const DECOMMISSIONED_LOCATION_CODE = "ESK-DECOMM-01";
+/** The slug of the decommissioned location, and its `meta.seedKey`. */
+export const DECOMMISSIONED_LOCATION_SLUG = "esk-decomm-01";
 export const MANUAL_ASSET_CODE = "ESK-MANUAL-01";
 
 /**
@@ -67,16 +70,53 @@ export async function seedAccessControlFixtures(pool: pg.Pool): Promise<void> {
 
   // An inactive location. Every read-scope branch filters it out; without one,
   // `WHERE active = true` and no predicate at all return identical rows.
-  await pool.query(
-    `
-    INSERT INTO bms.locations
-      (organization_id, code, slug, name, type, province, latitude, longitude, active)
-    VALUES ($1, $2, 'esk-decomm-01', 'Decommissioned Substation', 'smoc_campus',
-            'Gauteng', -26.2041, 28.0473, false)
-    ON CONFLICT (organization_id, code) DO UPDATE SET active = false
-    `,
-    [organizationId, DECOMMISSIONED_LOCATION_CODE],
-  );
+  //
+  // Owner ruling 16 (OQ6): the seed owns this row's slug, code and `active`,
+  // found by its `meta.seedKey` the way `seedEskomLocations` finds the
+  // canonical rows, so an admin PATCH of any of the three is reverted on the
+  // same row. Name and type stay the admin's. It used to be an upsert on
+  // `(organization_id, code)`: a renamed code made it INSERT a second row with
+  // the slug the first still held, and the boot stopped with `23505`.
+  //
+  // The slug holder is read on `pool`, in ESKOM's context, not on the
+  // superuser pool `seedEskomLocations` gets: this function keeps its
+  // `(pool)` signature, which `asset-domains-seed.spec.ts` reads in
+  // `seed.ts`. A PHEWB row holding `esk-decomm-01` is therefore not seen, and
+  // the slug write meets `23505` — a residual that needs an ESKOM admin to
+  // rename this row's slug and a PHEWB admin to take it.
+  const identity = {
+    key: DECOMMISSIONED_LOCATION_SLUG,
+    slug: DECOMMISSIONED_LOCATION_SLUG,
+    code: DECOMMISSIONED_LOCATION_CODE,
+  };
+  const claim = await resolveSeedLocation(pool, pool, organizationId, identity);
+  for (const line of seedLocationSkipLines(identity, claim)) {
+    console.error(line);
+  }
+  const seedKey = JSON.stringify({ [SEED_LOCATION_KEY]: identity.key });
+  if (claim.id !== null) {
+    await pool.query(
+      `
+      UPDATE bms.locations SET
+        slug = CASE WHEN $2::boolean THEN $3 ELSE slug END,
+        code = CASE WHEN $4::boolean THEN $5 ELSE code END,
+        active = false,
+        meta = COALESCE(meta, '{}'::jsonb) || $6::jsonb
+      WHERE id = $1
+      `,
+      [claim.id, claim.slugHolder === null, identity.slug, claim.codeHolder === null, identity.code, seedKey],
+    );
+  } else if (claim.slugHolder === null && claim.codeHolder === null) {
+    await pool.query(
+      `
+      INSERT INTO bms.locations
+        (organization_id, code, slug, name, type, province, latitude, longitude, active, meta)
+      VALUES ($1, $2, $3, 'Decommissioned Substation', 'smoc_campus',
+              'Gauteng', -26.2041, 28.0473, false, $4::jsonb)
+      `,
+      [organizationId, identity.code, identity.slug, seedKey],
+    );
+  }
 
   // A gateway-less asset in an ACTIVE location, so it is inside every scope
   // that its location is inside — which is the point. Putting it in the
