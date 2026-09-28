@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  colourFindings,
   colourFunctions,
   darkVariants,
   hexLiterals,
@@ -18,14 +19,20 @@ import { repoRoot } from "./support/source-scan";
 /**
  * `F3.65` — the colour-roles ratchet gate (ADR 0078, plan `docs/plans/f3.65a-colour-tokens.md`
  * §2.5, D4). `apps/web` colours through role tokens (`bg-surface`, `text-ink-muted`,
- * `border-critical-line`); a stock Tailwind palette class, a `bms-*` class, a hex literal or an
- * `rgb()`/`hsl()` literal is a colour that no theme can move.
+ * `border-critical-line`); a stock Tailwind palette class, a `bms-*` class, a hex literal or a
+ * colour-function literal (`rgb()`, `hsl()`, `oklch()`, `color-mix()` …) is a colour that no
+ * theme can move.
  *
  * **The rule.** Scanned: `apps/web/src/**\/*.{ts,tsx,css}` minus `*.spec.*`, `*.test.*` and
  * `test-setup.ts`, comments blanked (`tests/support/colour-scan.ts`).
  *  - `palette`, `hex` and `func` are counted per file against `FLOOR`, an exact table compared in
  *    both directions (D4): a total would let one file rise while another falls.
- *  - `dark:` variants and CSS named colours have no table: any occurrence is a finding (OQ7).
+ *  - six kinds have no table; every occurrence is a `file:line` finding (OQ7 and the review of
+ *    this row) — a `dark:` variant (R12), an arbitrary variant on `data-theme` (R12b), a CSS named
+ *    colour (R14), `prefers-color-scheme` (R15) and `matchMedia(` (R16), both also in
+ *    `apps/web/index.html` with its `<!-- -->` comments blanked, and `text-on-dark` in one class
+ *    string with an opaque `bg-accent` / `bg-accent-strong` (R17; a variant prefix counts, a `/NN`
+ *    fill does not). R18 fails a finding whose label no case filters for.
  *
  * **The review rule for `FLOOR`.** A number may only fall, and a row may only disappear. A diff
  * that raises a number or adds a row is a new hard-coded colour and is refused in review; the
@@ -41,12 +48,21 @@ import { repoRoot } from "./support/source-scan";
  *  - a class name built by concatenation or from props (`` `bg-${tone}-600` ``, `className={c}`
  *    where `c` arrives from a caller);
  *  - `style={{ color }}` from a variable, and a colour computed at run time;
- *  - colours outside `apps/web/src`: `apps/web/index.html`, `tailwind.config.js`, `public/`, and
- *    the two mockups `TRINETRA.html` / `ESKOM_SMOC.html`;
+ *  - colours outside `apps/web/src`: `tailwind.config.js` (T11 holds its role leaves), `public/`,
+ *    and the two mockups `TRINETRA.html` / `ESKOM_SMOC.html`; `apps/web/index.html` is scanned
+ *    for the hard-zero kinds only, not counted for palette, hex or func;
  *  - a file under `apps/web/src` that is not `.ts`, `.tsx` or `.css` (none holds a colour today);
  *  - a four-digit `#RGBA` hex literal, `theme(colors.…)` in an arbitrary value, and a named
  *    colour inside a shorthand (`border: 1px solid red`), as a bare CSS value with no `;` after it,
- *    or in an arbitrary class (`text-[red]`).
+ *    or in an arbitrary class (`text-[red]`);
+ *  - `color(display-p3 …)`, and a colour function whose first argument is neither a number nor
+ *    `from` (`oklch(var(--x))`, `rgb(none …)`); `color-mix(` counts whatever its arguments;
+ *  - a raw CSS rule aimed at the theme in a `.css` file (`[data-theme="dark"] .x { … }`): only a
+ *    role declaration outside `index.css`'s two blocks is caught (tokens T14);
+ *  - `matchMedia` reached through an alias or a computed key (`window["matchMedia"]`);
+ *  - role misuse the R17 string check cannot see: a pair split across the branches of a ternary,
+ *    across props, or between a parent and a child; `text-on-dark` on any other light fill; and a
+ *    logo plate written `bg-surface` rather than `bg-on-dark` (it turns dark in the dark theme).
  *
  * **Known over-counts** (a finding with no colour; they fail loud, never silent): a fragment
  * such as `#bad-id` or `#add` reads as hex, because only a following hex digit ends a match; a
@@ -118,6 +134,60 @@ describe("F3.65 colour scan — fixtures", () => {
     const src =
       '<rect className="bg-white" fill="currentColor" stroke="none" />\n<p style={{ color: "transparent" }} />\nconst t = { tone: "red" };\n<line stroke={GREEN} />';
     expect(namedColours(src)).toEqual([]);
+  });
+
+  it("R3c oklch(, oklab(, lab(, lch(, hwb( and color-mix( are colour functions", () => {
+    const src = '"oklch(70% 0.1 200) oklab(0.5 0 0) lab(50% 1 2) lch(50 1 2) hwb(120 30% 20%) color-mix(in srgb, red, blue)"';
+    expect(colourFunctions(src)).toEqual(["oklch(", "oklab(", "lab(", "lch(", "hwb(", "color-mix("]);
+  });
+
+  it("R3d label(, the lch( inside oklch( and oklch(var(--x)) are not extra colour functions", () => {
+    expect(colourFunctions("label(1); const c = 'oklch(0.5 0.1 20)'; const v = 'oklch(var(--x))';")).toEqual(["oklch("]);
+  });
+
+  it("R4e an arbitrary variant on data-theme is a theme-variant finding", () => {
+    expect(colourFindings('"[[data-theme=dark]_&]:bg-surface"', "f.tsx")).toEqual([
+      "f.tsx:1 theme variant [[data-theme=dark]_&]:",
+    ]);
+  });
+
+  it("R4f data-[theme=dark]:, group-[[data-theme=dark]_&]: and [html[data-theme=dark]_&]: are each a theme-variant finding", () => {
+    const src = '"data-[theme=dark]:bg-x group-[[data-theme=dark]_&]:bg-x [html[data-theme=dark]_&]:bg-x"';
+    expect(colourFindings(src, "f.tsx").filter((f) => f.includes(" theme variant "))).toHaveLength(3);
+  });
+
+  it("R4g an @media (prefers-color-scheme) block is a finding", () => {
+    expect(colourFindings("@media (prefers-color-scheme: dark) {\n}\n", "f.css")).toEqual([
+      "f.css:1 prefers-color-scheme",
+    ]);
+  });
+
+  it("R4h a matchMedia( call is a finding", () => {
+    expect(colourFindings('const q = window.matchMedia("(min-width: 640px)");', "f.ts")).toEqual(["f.ts:1 matchMedia("]);
+  });
+
+  it("R4i prefers-color-scheme inside an HTML comment of an .html file is not a finding", () => {
+    expect(colourFindings("<!--\n  No prefers-color-scheme here.\n-->\n<div></div>", "f.html")).toEqual([]);
+  });
+
+  it("R4j text-on-dark in one class string with an opaque bg-accent is a finding, named by line", () => {
+    const src = 'const a = 1;\n<button className="rounded bg-accent py-3 text-on-dark" />';
+    expect(colourFindings(src, "f.tsx")).toEqual(["f.tsx:2 text-on-dark on an opaque accent fill bg-accent"]);
+  });
+
+  it("R4k hover:bg-accent-strong with text-on-dark/70 in one template literal is a finding", () => {
+    const src = "const c = `px-2 ${x} hover:bg-accent-strong text-on-dark/70`;";
+    expect(colourFindings(src, "f.tsx")).toEqual(["f.tsx:1 text-on-dark on an opaque accent fill hover:bg-accent-strong"]);
+  });
+
+  it("R4l text-on-dark beside a translucent bg-accent/10, and text-on-accent on bg-accent, are not findings", () => {
+    const src = '<a className="bg-accent/10 text-on-dark" /><b className="bg-accent text-on-accent" />';
+    expect(colourFindings(src, "f.tsx")).toEqual([]);
+  });
+
+  it("R4m the two branches of a ternary are separate class strings", () => {
+    const src = 'const c = `px-2 ${active ? "bg-accent text-on-accent" : "text-on-dark"}`;';
+    expect(colourFindings(src, "f.tsx")).toEqual([]);
   });
 
   it("R5 #0b1a2f_0% in an arbitrary-value class counts as hex", () => {
@@ -335,6 +405,16 @@ function floorDiff(): string[] {
   return out.sort();
 }
 
+const INDEX_HTML = join(repoRoot, "apps/web/index.html");
+
+/** The hard-zero findings of every web source file plus `apps/web/index.html` (its HTML comments blanked). */
+function treeAndHtmlFindings(): string[] {
+  return [
+    ...scanColourFiles(webColourSourceFiles()).findings,
+    ...colourFindings(readFileSync(INDEX_HTML, "utf8"), "apps/web/index.html"),
+  ];
+}
+
 describe("F3.65 colour-roles gate — the tree", () => {
   it("R11 every file's palette, hex and func count equals its FLOOR row, both directions", () => {
     expect(floorDiff()).toEqual([]);
@@ -345,6 +425,11 @@ describe("F3.65 colour-roles gate — the tree", () => {
     expect(findings).toEqual([]);
   });
 
+  it("R12b no file uses an arbitrary variant that targets data-theme", () => {
+    const findings = scanColourFiles(webColourSourceFiles()).findings.filter((f) => / theme variant /.test(f));
+    expect(findings).toEqual([]);
+  });
+
   it("R13 at least 300 files were walked", () => {
     expect(scanColourFiles(webColourSourceFiles()).walked).toBeGreaterThanOrEqual(300);
   });
@@ -352,5 +437,23 @@ describe("F3.65 colour-roles gate — the tree", () => {
   it("R14 no file uses a named colour as a colour value", () => {
     const findings = scanColourFiles(webColourSourceFiles()).findings.filter((f) => / named colour /.test(f));
     expect(findings).toEqual([]);
+  });
+
+  it("R15 no web source file and not index.html mentions prefers-color-scheme (ADR 0078 decision 4)", () => {
+    expect(treeAndHtmlFindings().filter((f) => f.endsWith(" prefers-color-scheme"))).toEqual([]);
+  });
+
+  it("R16 no web source file and not index.html calls matchMedia(", () => {
+    expect(treeAndHtmlFindings().filter((f) => f.endsWith(" matchMedia("))).toEqual([]);
+  });
+
+  it("R17 no class string puts text-on-dark on an opaque bg-accent or bg-accent-strong", () => {
+    expect(treeAndHtmlFindings().filter((f) => / text-on-dark on an opaque accent fill /.test(f))).toEqual([]);
+  });
+
+  it("R18 every hard-zero finding carries a label a case above filters for", () => {
+    const known =
+      /^\S+:\d+ (?:dark: variant|named colour \S+|theme variant \S+|prefers-color-scheme|matchMedia\(|text-on-dark on an opaque accent fill \S+)$/;
+    expect(treeAndHtmlFindings().filter((f) => !known.test(f))).toEqual([]);
   });
 });

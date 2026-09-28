@@ -6,17 +6,29 @@ import { repoRoot, walk } from "./source-scan";
 
 /*
  * `F3.65` — the colour scan `tests/f3.65-colour-roles-gate.test.ts` holds `apps/web` to (ADR 0078,
- * plan `docs/plans/f3.65a-colour-tokens.md` §2.1, §2.5). Five kinds:
+ * plan `docs/plans/f3.65a-colour-tokens.md` §2.1, §2.5). Three counted kinds:
  *
  *  - **palette** — a stock Tailwind palette class (`bg-red-600`, `text-white/70`) or a `bms-*`
  *    class (`hover:bg-bms-green-dark`), under any colour utility and any variant;
  *  - **hex** — `#` + 3, 6 or 8 hex digits;
- *  - **func** — an `rgb(`/`rgba(`/`hsl(`/`hsla(` literal whose first argument is a number;
- *  - **dark** — a `dark:` variant;
- *  - **named** — a CSS named colour as the value of a colour attribute, style key or declaration.
+ *  - **func** — an `rgb(`/`rgba(`/`hsl(`/`hsla(`/`oklch(`/`oklab(`/`lab(`/`lch(`/`hwb(` literal
+ *    whose first argument is a number or `from`, and every `color-mix(`;
  *
- * The first three are counted against a per-file floor; `dark` and `named` are a hard zero. Every
- * function blanks comments first, so prose about a colour is not a colour.
+ * and six hard-zero kinds, each a `file:line label` finding (`colourFindings`):
+ *
+ *  - **`dark:` variant**;
+ *  - **theme variant** — an arbitrary variant that targets the theme attribute
+ *    (`[[data-theme=dark]_&]:`, `data-[theme=dark]:`);
+ *  - **named colour** — a CSS named colour as the value of a colour attribute, style key or
+ *    declaration;
+ *  - **`prefers-color-scheme`** and **`matchMedia(`** — the theme is the stored choice, never the
+ *    OS preference (ADR 0078 decision 4);
+ *  - **`text-on-dark` on an opaque accent fill** — one class string holding `bg-accent` or
+ *    `bg-accent-strong` (any variant, no `/NN`) and `text-on-dark` (any opacity): white on the dark
+ *    accent is 2.09:1, so the pair must be `text-on-accent`.
+ *
+ * The counted kinds go against a per-file floor. Every function blanks comments first, so prose
+ * about a colour is not a colour; an `.html` file has its `<!-- -->` comments blanked too.
  *
  * This directory holds no `*.test.ts`: a module here is imported rather than run, and it is
  * typechecked as an import of the files that use it.
@@ -61,10 +73,40 @@ const HEX_LITERAL = /(?<![\w&])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})
  * `_` is a space inside a Tailwind arbitrary value, so it may precede the function; so may `(`
  * and `,`. `rgb(var(--x) / <alpha-value>)` is the token mapping, not a literal.
  */
-const COLOUR_FUNCTION = /(?<![A-Za-z0-9$])(?:rgba?|hsla?)\((?=\s*\d)/g;
+const COLOUR_FUNCTION = /(?<![A-Za-z0-9$])(?:(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb)\((?=\s*(?:[\d.]|from\b))|color-mix\()/g;
 
 /** `dark:` as a variant: not the tail of `--on-dark:`, and followed by a class, not a space. */
 const DARK_VARIANT = /(?<![\w-])dark:(?=[\w[!-])/g;
+
+/**
+ * An arbitrary variant aimed at the theme attribute: a bracketed selector holding `data-theme`
+ * (`[[data-theme=dark]_&]:`, `group-[[data-theme=dark]_&]:`, `[html[data-theme=dark]_&]:`) or the
+ * `data-[theme…]` shorthand (`data-[theme=dark]:`, `group-data-[theme=dark]:`).
+ */
+const THEME_VARIANT = /\[[^\s"'`]*data-theme[^\s"'`]*?\]:|data-\[theme[^\]\s]*\]:/g;
+
+/** `prefers-color-scheme` anywhere, and a `matchMedia(` call. */
+const PREFERS_COLOR_SCHEME = /prefers-color-scheme/g;
+const MATCH_MEDIA = /(?<![\w$])matchMedia\s*\(/g;
+
+/** A class token that paints an opaque accent fill (any variant, `!` allowed, no `/NN`). */
+const OPAQUE_ACCENT_FILL = /^(?:\S*:)?!?bg-accent(?:-strong)?$/;
+/** A class token that sets `text-on-dark` at any opacity. */
+const ON_DARK_TEXT = /^(?:\S*:)?!?text-on-dark(?:\/\S+)?$/;
+
+/**
+ * Every class string in `text`: a `"…"` or `'…'` literal on one line, and each backtick template
+ * with its `${…}` holes blanked — the strings inside a hole are scanned as quoted literals, so the
+ * two branches of a ternary are two strings, never one.
+ */
+function classStrings(text: string): { start: number; body: string }[] {
+  const out: { start: number; body: string }[] = [];
+  for (const m of text.matchAll(/"[^"\n]*"|'[^'\n]*'/g)) out.push({ start: m.index + 1, body: m[0].slice(1, -1) });
+  for (const m of text.matchAll(/`[^`]*`/g)) {
+    out.push({ start: m.index + 1, body: m[0].slice(1, -1).replace(/\$\{[^}]*\}/g, (h) => " ".repeat(h.length)) });
+  }
+  return out;
+}
 
 /** The CSS Color 4 named colours, less `transparent` / `currentColor`, which are not a colour choice. */
 const CSS_NAMED_COLOURS = [
@@ -144,13 +186,28 @@ export function namedColours(src: string): string[] {
 /** One file's counted kinds — the shape of a `FLOOR` row. */
 export type ColourFloorRow = { file: string; palette: number; hex: number; func: number };
 
-/** `file:line kind text` for every hard-zero finding (`dark:`, named colour) in `src`. */
+/**
+ * `file:line label` for every hard-zero finding in `src` (see the file docblock for the six
+ * labels). A `.html` file has its `<!-- -->` comments blanked, newlines kept.
+ */
 export function colourFindings(src: string, file: string): string[] {
-  const text = blankComments(src);
+  const html = file.endsWith(".html") ? src.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, " ")) : src;
+  const text = blankComments(html);
   const out: string[] = [];
   const at = (index: number): number => text.slice(0, index).split("\n").length;
   for (const m of text.matchAll(DARK_VARIANT)) out.push(`${file}:${at(m.index)} dark: variant`);
+  for (const m of text.matchAll(THEME_VARIANT)) out.push(`${file}:${at(m.index)} theme variant ${m[0]}`);
   for (const m of text.matchAll(NAMED_COLOUR)) out.push(`${file}:${at(m.index)} named colour ${m[2] ?? m[3]}`);
+  for (const m of text.matchAll(PREFERS_COLOR_SCHEME)) out.push(`${file}:${at(m.index)} prefers-color-scheme`);
+  for (const m of text.matchAll(MATCH_MEDIA)) out.push(`${file}:${at(m.index)} matchMedia(`);
+  for (const { start, body } of classStrings(text)) {
+    const tokens = [...body.matchAll(/\S+/g)];
+    const fill = tokens.find((t) => OPAQUE_ACCENT_FILL.test(t[0]));
+    if (!fill) continue;
+    for (const t of tokens) {
+      if (ON_DARK_TEXT.test(t[0])) out.push(`${file}:${at(start + t.index)} text-on-dark on an opaque accent fill ${fill[0]}`);
+    }
+  }
   return out;
 }
 
