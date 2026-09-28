@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   mimicHeadlinePointsIsThree,
+  mimicNodeAlarmRefusesAMissingLabel,
+  mimicNodeAlarmRefusesAToneOutsideTheToneSet,
   mimicNodeRefusesAMissingMemberCount,
   mimicResponseParsesAssignedAndUnassignedNodes,
   mimicResponseRefusesAnUndeclaredPreset,
@@ -23,5 +25,13 @@ describe("F3.32 — the mimic-nodes response contract (ADR 0079)", () => {
 
   it("shows three headline points per node", () => {
     mimicHeadlinePointsIsThree();
+  });
+
+  it("F3.32b refuses a top alarm whose tone is outside the tone set", () => {
+    mimicNodeAlarmRefusesAToneOutsideTheToneSet();
+  });
+
+  it("F3.32b refuses a top alarm without its severity label", () => {
+    mimicNodeAlarmRefusesAMissingLabel();
   });
 });

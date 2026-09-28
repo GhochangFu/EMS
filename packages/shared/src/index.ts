@@ -820,6 +820,8 @@ export type GeneratedSiteViewDto = z.infer<typeof GSV.generatedSiteViewDtoSchema
 export type MimicPreset = z.infer<typeof Db.mimicPresetSchema>;
 export type MimicConfig = z.infer<typeof Db.mimicConfigSchema>;
 export type MimicNodeDto = z.infer<typeof Mi.mimicNodeSchema>;
+/** `F3.32b` — a node's most severe open alarm, drawn as a callout under the unit. */
+export type MimicNodeAlarmDto = z.infer<typeof Mi.mimicNodeAlarmSchema>;
 export type MimicWidgetNodesDto = z.infer<typeof Mi.mimicWidgetNodesSchema>;
 export type DashboardMimicNodesResponseDto = z.infer<typeof Mi.dashboardMimicNodesResponseSchema>;
 

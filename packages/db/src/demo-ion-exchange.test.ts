@@ -12,6 +12,7 @@ import {
   assertNoIonxCodeCollidesWithTheEskomDemoPlant,
   assertRoleMapIsTheRuledOne,
   assertTheWidgetConfigIsTheWaterTrainPreset,
+  assertTheCommandResizesItsOwnDashboardsWidget,
   assertTheWidgetConfigParsesUnderMimicConfigSchema,
 } from "./demo-ion-exchange.spec";
 
@@ -62,5 +63,9 @@ describe("F3.32 / ADR 0079 Amendment 1 — the Ion Exchange demo command's pure 
 
   it("fewer widgets than the floor is still a shortfall", () => {
     assertFewerWidgetsThanTheFloorIsAShortfall();
+  });
+
+  it("F3.32b the command resizes its own dashboard's 12 x 6 mimic widget", async () => {
+    await assertTheCommandResizesItsOwnDashboardsWidget();
   });
 });

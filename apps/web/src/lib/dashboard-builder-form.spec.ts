@@ -453,12 +453,12 @@ export function runOtherTypesStayOfferedTests(): void {
   }
 }
 
-/** A new mimic row is the catalog's 12×6 with the one preset chosen. */
+/** A new mimic row is the catalog's 12×10 with the one preset chosen. */
 export function runBlankMimicRowTests(): void {
   const row = blankDashboardWidgetRow("mimic");
   assert(
-    row.gridW === 12 && row.gridH === 6 && row.config.mimicPreset === "water_train",
-    `a new mimic is 12×6 water_train — got ${row.gridW}×${row.gridH} ${JSON.stringify(row.config.mimicPreset)}`,
+    row.gridW === 12 && row.gridH === 10 && row.config.mimicPreset === "water_train",
+    `a new mimic is 12×10 water_train — got ${row.gridW}×${row.gridH} ${JSON.stringify(row.config.mimicPreset)}`,
   );
 }
 

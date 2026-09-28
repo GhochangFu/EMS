@@ -76,7 +76,7 @@ describe("dashboard builder form", () => {
     runOtherTypesStayOfferedTests();
   });
 
-  it("F3.32: a new mimic row is 12x6 with the water_train preset", () => {
+  it("F3.32b: a new mimic row is 12x10 with the water_train preset", () => {
     runBlankMimicRowTests();
   });
 

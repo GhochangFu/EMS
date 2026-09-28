@@ -5,8 +5,11 @@ import { inRolledBackTransaction } from "../dashboard/dashboard-freshness.integr
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertAllEightNodesInPresetOrder,
+  assertAssignedNodeWithoutAlarmHasNoTopAlarm,
   assertBadConfigWidgetIsSkipped,
+  assertClearedAlarmIsNeverTop,
   assertEightDayOldSampleIsNull,
+  assertForeignOrganizationAlarmIsNeverTop,
   assertForeignOrganizationIsNotFound,
   assertFullReadIsThreeStatements,
   assertGrouplessDashboardIsEightNullsInOneStatement,
@@ -18,6 +21,9 @@ import {
   assertRoShowsTheFirstCode,
   assertSixDayOldSampleIsPresent,
   assertSixUnassignedNodesAreNull,
+  assertTopAlarmCarriesTheVocabularyToneAndLabel,
+  assertTopAlarmIsTheMostSevere,
+  assertUnassignedNodesHaveNoTopAlarm,
   assertUnreadableWtpIsUnassigned,
   assertWtpAndRoBothShowExactlyThreePoints,
   assertWtpCountsOneOpenAlarm,
@@ -84,6 +90,24 @@ describe.skipIf(!connectionString)("F3.32 — MimicNodesService", () => {
   );
   it("M9 no mimic widget answers widgets: [] in one statement", rolledBack(assertNoMimicIsEmptyInOneStatement), 60_000);
   it("M10 a widget whose stored config fails the schema is skipped", rolledBack(assertBadConfigWidgetIsSkipped), 60_000);
+  it("A1 the top alarm is the most severe open one, then the newest", rolledBack(assertTopAlarmIsTheMostSevere), 60_000);
+  it("A2 a cleared alarm is never the top alarm", rolledBack(assertClearedAlarmIsNeverTop), 60_000);
+  it("A3 the six unassigned nodes answer topAlarm: null", rolledBack(assertUnassignedNodesHaveNoTopAlarm), 60_000);
+  it(
+    "A4 an assigned node with no open alarm answers topAlarm: null",
+    rolledBack(assertAssignedNodeWithoutAlarmHasNoTopAlarm),
+    60_000,
+  );
+  it(
+    "A5 another organization's alarm on the same asset id is never the top alarm",
+    rolledBack(assertForeignOrganizationAlarmIsNeverTop),
+    60_000,
+  );
+  it(
+    "A6 a severity added by INSERT carries its vocabulary tone and label",
+    rolledBack(assertTopAlarmCarriesTheVocabularyToneAndLabel),
+    60_000,
+  );
   it("M11a a foreign organization gets 404", rolledBack(assertForeignOrganizationIsNotFound), 60_000);
   it("M11b the owning organization reads the widget", rolledBack(assertOwningOrganizationReads), 60_000);
 });
