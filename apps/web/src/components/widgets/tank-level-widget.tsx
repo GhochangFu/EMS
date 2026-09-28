@@ -1,4 +1,4 @@
-import { WIDGET_TONE_COLOR, type TankLevelConfig, type WidgetStatus } from "../../lib/widget-catalog";
+import { WIDGET_TONE_FILL_CLASS, type TankLevelConfig, type WidgetStatus } from "../../lib/widget-catalog";
 import {
   TANK_FILL_MAX_HEIGHT,
   TANK_FILL_WIDTH,
@@ -37,7 +37,6 @@ type TankLevelWidgetProps = {
 export function TankLevelWidget({ title, status, primary, stale, config }: TankLevelWidgetProps) {
   const pct = tankFillPercent(primary, config.fullScale);
   const tone = config.fillTone ?? "ok";
-  const color = WIDGET_TONE_COLOR[tone];
   const { y, height, label, readout } = tankFillGeometry(pct, config.decimals);
 
   return (
@@ -58,7 +57,7 @@ export function TankLevelWidget({ title, status, primary, stale, config }: TankL
           strokeWidth={2}
           rx={4}
         />
-        <rect x={TANK_WALL} y={y} width={TANK_FILL_WIDTH} height={height} fill={color} />
+        <rect x={TANK_WALL} y={y} width={TANK_FILL_WIDTH} height={height} className={WIDGET_TONE_FILL_CLASS[tone]} />
         <text
           x={TANK_VIEW_W / 2}
           y={TANK_VIEW_H / 2}

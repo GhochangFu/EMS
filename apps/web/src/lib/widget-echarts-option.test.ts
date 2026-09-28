@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   chartAreaSeriesIsLineWithAreaStyle,
   chartBarAndScatterMapDirectly,
+  chartSeriesColoursAreTheRolePalette,
   chartLegendNamesEverySeriesInOrderWhenThereIsMoreThanOne,
   chartLineSeriesHasNoAreaStyle,
   chartNSeriesProduceNEntriesOrderedBySortOrder,
@@ -90,5 +91,9 @@ describe("widget-echarts-option: buildChartOption", () => {
 
   it("draws no legend for a single series", () => {
     chartSingleSeriesGetsNoLegend();
+  });
+
+  it("carries the series colours from the role palette (F3.65c)", () => {
+    chartSeriesColoursAreTheRolePalette();
   });
 });

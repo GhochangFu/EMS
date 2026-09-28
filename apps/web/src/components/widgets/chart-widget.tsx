@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import type { PointAggregateStats } from "@bms/shared";
 
+import { useChartTheme } from "../../lib/chart-theme";
 import type { ChartConfig, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { buildChartOption } from "../../lib/widget-echarts-option";
 import { formatBucketWidth, formatWidgetValue } from "../../lib/widget-value";
@@ -52,11 +53,15 @@ export function ChartWidget({
   stats,
   bucketSeconds,
 }: ChartWidgetProps) {
-  const option = useMemo<EChartsOption>(() => buildChartOption(config, series, now), [config, series, now]);
+  const { roles, theme } = useChartTheme();
+  const option = useMemo<EChartsOption>(
+    () => buildChartOption(config, series, now, roles),
+    [config, series, now, roles],
+  );
 
   return (
     <WidgetFrame title={title} status={status} stale={stale}>
-      <ReactECharts option={option} style={{ height: 220 }} notMerge lazyUpdate />
+      <ReactECharts option={option} theme={theme} style={{ height: 220 }} notMerge lazyUpdate />
       {config.footerStats && status === "ready" ? (
         <ChartFooter config={config} stats={stats ?? null} bucketSeconds={bucketSeconds ?? null} />
       ) : null}

@@ -276,7 +276,6 @@ const FLOOR: { file: string; palette: number; hex: number; func: number }[] = [
   { file: "components/live-svg/electrical-sld.tsx", palette: 0, hex: 19, func: 0 },
   { file: "components/load-trend-chart.tsx", palette: 0, hex: 6, func: 1 },
   { file: "components/world-map.tsx", palette: 0, hex: 7, func: 0 },
-  { file: "lib/widget-catalog.ts", palette: 0, hex: 4, func: 0 },
   { file: "pages/login-page.tsx", palette: 0, hex: 5, func: 1 },
 ];
 
