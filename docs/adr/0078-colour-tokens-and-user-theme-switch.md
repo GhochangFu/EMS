@@ -377,7 +377,7 @@ the SMOC offline boxes (an existing 3.50 failure in an 8 px SVG label that
 `F3.65c` recolours) and `critical-ink-soft` on `canvas` (no `text-red-600`
 shares a class string with a red wash). The review (§7) adds two UI pairs
 for the rule toggle knob — `on-accent` on `accent` 3.19 / 8.71 and `on-dark`
-on `line-strong` 1.47 / 9.02 — and one light allowlist entry for the second,
+on `line-strong` 1.47 / 9.02 — and one light allowlist entry for the second (owner ruling 2026-09-28),
 the existing white knob on the gray track. **The dark allowlist stays
 empty.**
 
@@ -429,3 +429,4 @@ because only one half of it follows the theme today. Dark ratios:
   `fill-info-ink` on `#eff6ff` 2.92, `fill-warning-ink` on `#fef3c7` 2.19,
   `fill-info-ink` on `#ecfeff` 3.05, `fill-critical-ink-strong` on
   `#fef2f2` 2.32, `fill-ink` on `#f3e8ff` 1.01.
+- `world-map.tsx` — Leaflet's popup close button keeps its stock grey  (`.leaflet-popup-close-button`) on the popup, which now paints from  `surface`; not measured in `F3.65b`.
